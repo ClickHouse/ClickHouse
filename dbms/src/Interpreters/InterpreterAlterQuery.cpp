@@ -20,7 +20,14 @@
 #include <algorithm>
 
 
-using namespace DB;
+namespace DB
+{
+
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+}
+
 
 InterpreterAlterQuery::InterpreterAlterQuery(ASTPtr query_ptr_, Context & context_)
 	: query_ptr(query_ptr_), context(context_)
@@ -203,4 +210,6 @@ void InterpreterAlterQuery::updateMetadata(
 	}
 
 	Poco::File(metadata_temp_path).renameTo(metadata_path);
+}
+
 }

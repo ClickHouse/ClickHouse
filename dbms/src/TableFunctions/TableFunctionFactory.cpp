@@ -7,6 +7,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int READONLY;
+	extern const int UNKNOWN_FUNCTION;
+}
+
 
 TableFunctionPtr TableFunctionFactory::get(
 	const String & name,

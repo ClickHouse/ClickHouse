@@ -23,6 +23,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int INDEX_NOT_USED;
+}
+
+
 MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
 	: data(data_), log(&Logger::get(data.getLogName() + " (SelectExecutor)"))
 {
@@ -611,7 +617,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 				BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(
 					data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
 					part.data_part, ranges_to_get_from_part, use_uncompressed_cache,
-					prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size);
+					prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true);
 
 				res.push_back(source_stream);
 
@@ -700,7 +706,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 			BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(
 				data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
 				part.data_part, part.ranges, use_uncompressed_cache,
-				prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size);
+				prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true);
 
 			for (const String & virt_column : virt_columns)
 			{
@@ -787,7 +793,6 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsP
 	sign->name = data.sign_column;
 	sign->kind = ASTIdentifier::Column;
 
-	one->type = new DataTypeInt8;
 	one->value = Field(static_cast<Int64>(1));
 
 	out_expression = ExpressionAnalyzer(function_ptr, context, {}, data.getColumnsList()).getActions(false);

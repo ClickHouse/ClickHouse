@@ -4,6 +4,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int SET_SIZE_LIMIT_EXCEEDED;
+}
+
+
 DistinctBlockInputStream::DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_, Names columns_)
 	: columns_names(columns_),
 	limit(limit_),

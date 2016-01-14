@@ -6,7 +6,6 @@
 
 #include <DB/Common/Stopwatch.h>
 
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Progress.h>
 
 #include <DB/IO/CompressedReadBuffer.h>
@@ -33,6 +32,18 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
+	extern const int UNKNOWN_DATABASE;
+	extern const int UNKNOWN_EXCEPTION;
+	extern const int UNKNOWN_PACKET_FROM_CLIENT;
+	extern const int POCO_EXCEPTION;
+	extern const int STD_EXCEPTION;
+	extern const int SOCKET_TIMEOUT;
+	extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+}
+
 
 void TCPHandler::runImpl()
 {
@@ -48,6 +59,12 @@ void TCPHandler::runImpl()
 	in = new ReadBufferFromPocoSocket(socket());
 	out = new WriteBufferFromPocoSocket(socket());
 
+	if (in->eof())
+	{
+		LOG_WARNING(log, "Client has not sent any data.");
+		return;
+	}
+
 	try
 	{
 		receiveHello();
@@ -57,6 +74,12 @@ void TCPHandler::runImpl()
 		if (e.code() == ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT)
 		{
 			LOG_DEBUG(log, "Client has connected to wrong port.");
+			return;
+		}
+
+		if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+		{
+			LOG_WARNING(log, "Client has gone away.");
 			return;
 		}
 
@@ -700,34 +723,16 @@ void TCPHandler::run()
 
 		LOG_INFO(log, "Done processing connection.");
 	}
-	catch (Exception & e)
-	{
-		LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
-			<< ", Stack trace:\n\n" << e.getStackTrace().toString());
-	}
 	catch (Poco::Exception & e)
 	{
-		std::stringstream message;
-		message << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
-
 		/// Таймаут - не ошибка.
 		if (!strcmp(e.what(), "Timeout"))
 		{
-			LOG_DEBUG(log, message.rdbuf());
+			LOG_DEBUG(log, "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
+				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
 		}
 		else
-		{
-			LOG_ERROR(log, message.rdbuf());
-		}
-	}
-	catch (std::exception & e)
-	{
-		LOG_ERROR(log, "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ". " << e.what());
-	}
-	catch (...)
-	{
-		LOG_ERROR(log, "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ".");
+			throw;
 	}
 }
 

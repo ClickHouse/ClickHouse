@@ -1,5 +1,4 @@
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
 #include <DB/Columns/ColumnArray.h>
@@ -9,6 +8,11 @@ namespace DB
 {
 
 using Poco::SharedPtr;
+
+namespace ErrorCodes
+{
+	extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+}
 
 
 BlockInputStreamFromRowInputStream::BlockInputStreamFromRowInputStream(

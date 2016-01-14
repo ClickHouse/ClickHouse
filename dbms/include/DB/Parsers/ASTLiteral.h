@@ -15,8 +15,6 @@ class ASTLiteral : public ASTWithAlias
 {
 public:
 	Field value;
-	/// тип
-	DataTypePtr type;
 
 	ASTLiteral() = default;
 	ASTLiteral(const StringRange range_, const Field & value_) : ASTWithAlias(range_), value(value_) {}

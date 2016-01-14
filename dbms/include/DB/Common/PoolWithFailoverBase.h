@@ -5,8 +5,17 @@
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/NetException.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Interpreters/Settings.h>
+
+
+namespace DB
+{
+namespace ErrorCodes
+{
+	extern const int ALL_CONNECTION_TRIES_FAILED;
+	extern const int CANNOT_CLOCK_GETTIME;
+}
+}
 
 
 namespace

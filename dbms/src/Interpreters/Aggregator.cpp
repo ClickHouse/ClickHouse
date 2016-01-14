@@ -24,6 +24,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CANNOT_COMPILE_CODE;
+	extern const int TOO_MUCH_ROWS;
+	extern const int EMPTY_DATA_PASSED;
+	extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
+}
+
 
 AggregatedDataVariants::~AggregatedDataVariants()
 {
@@ -995,13 +1003,13 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
 	ColumnPlainPtrs & final_aggregate_columns,
 	const Sizes & key_sizes) const
 {
-	for (typename Table::const_iterator it = data.begin(); it != data.end(); ++it)
+	for (const auto & value : data)
 	{
-		method.insertKeyIntoColumns(*it, key_columns, params.keys_size, key_sizes);
+		method.insertKeyIntoColumns(value, key_columns, params.keys_size, key_sizes);
 
 		for (size_t i = 0; i < params.aggregates_size; ++i)
 			aggregate_functions[i]->insertResultInto(
-				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i],
+				Method::getAggregateData(value.second) + offsets_of_aggregate_states[i],
 				*final_aggregate_columns[i]);
 	}
 
@@ -1016,13 +1024,15 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
 	AggregateColumnsData & aggregate_columns,
 	const Sizes & key_sizes) const
 {
-	size_t j = 0;
-	for (typename Table::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
+	for (auto & value : data)
 	{
-		method.insertKeyIntoColumns(*it, key_columns, params.keys_size, key_sizes);
+		method.insertKeyIntoColumns(value, key_columns, params.keys_size, key_sizes);
 
+		/// reserved, поэтому push_back не кидает исключений
 		for (size_t i = 0; i < params.aggregates_size; ++i)
-			(*aggregate_columns[i])[j] = Method::getAggregateData(it->second) + offsets_of_aggregate_states[i];
+			aggregate_columns[i]->push_back(Method::getAggregateData(value.second) + offsets_of_aggregate_states[i]);
+
+		Method::getAggregateData(value.second) = nullptr;
 	}
 }
 
@@ -1046,64 +1056,47 @@ Block Aggregator::prepareBlockAndFill(
 		key_columns[i]->reserve(rows);
 	}
 
-	try
+	for (size_t i = 0; i < params.aggregates_size; ++i)
 	{
-		for (size_t i = 0; i < params.aggregates_size; ++i)
+		if (!final)
 		{
-			if (!final)
+			/// Столбец ColumnAggregateFunction захватывает разделяемое владение ареной с состояниями агрегатных функций.
+			ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(
+				*res.getByPosition(i + params.keys_size).column);
+
+			for (size_t j = 0; j < data_variants.aggregates_pools.size(); ++j)
+				column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
+
+			aggregate_columns[i] = &column_aggregate_func.getData();
+			aggregate_columns[i]->reserve(rows);
+		}
+		else
+		{
+			ColumnWithTypeAndName & column = res.getByPosition(i + params.keys_size);
+			column.type = aggregate_functions[i]->getReturnType();
+			column.column = column.type->createColumn();
+			column.column->reserve(rows);
+
+			if (aggregate_functions[i]->isState())
 			{
 				/// Столбец ColumnAggregateFunction захватывает разделяемое владение ареной с состояниями агрегатных функций.
-				ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*res.getByPosition(i + params.keys_size).column);
+				ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*column.column);
 
 				for (size_t j = 0; j < data_variants.aggregates_pools.size(); ++j)
 					column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
-
-				aggregate_columns[i] = &column_aggregate_func.getData();
-				aggregate_columns[i]->resize(rows);
 			}
-			else
-			{
-				ColumnWithTypeAndName & column = res.getByPosition(i + params.keys_size);
-				column.type = aggregate_functions[i]->getReturnType();
-				column.column = column.type->createColumn();
-				column.column->reserve(rows);
 
-				if (aggregate_functions[i]->isState())
-				{
-					/// Столбец ColumnAggregateFunction захватывает разделяемое владение ареной с состояниями агрегатных функций.
-					ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*column.column);
-
-					for (size_t j = 0; j < data_variants.aggregates_pools.size(); ++j)
-						column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
-				}
-
-				final_aggregate_columns[i] = column.column;
-			}
+			final_aggregate_columns[i] = column.column;
 		}
-
-		filler(key_columns, aggregate_columns, final_aggregate_columns, data_variants.key_sizes, final);
-
-		/// Изменяем размер столбцов-констант в блоке.
-		size_t columns = res.columns();
-		for (size_t i = 0; i < columns; ++i)
-			if (res.getByPosition(i).column->isConst())
-				res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
 	}
-	catch (...)
-	{
-		/** Работа с состояниями агрегатных функций недостаточно exception-safe.
-		  * Если часть столбцов aggregate_columns была resize-на, но значения не были вставлены,
-		  *  то эти столбцы будут в некорректном состоянии
-		  *  (ColumnAggregateFunction попытаются в деструкторе вызвать деструкторы у элементов, которых нет),
-		  *  а также деструкторы будут вызываться у AggregatedDataVariants.
-		  * Поэтому, вручную "откатываем" их.
-		  */
-		for (size_t i = 0; i < params.aggregates_size; ++i)
-			if (aggregate_columns[i])
-				aggregate_columns[i]->clear();
 
-		throw;
-	}
+	filler(key_columns, aggregate_columns, final_aggregate_columns, data_variants.key_sizes, final);
+
+	/// Изменяем размер столбцов-констант в блоке.
+	size_t columns = res.columns();
+	for (size_t i = 0; i < columns; ++i)
+		if (res.getByPosition(i).column->isConst())
+			res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
 
 	return res;
 }
@@ -1125,10 +1118,15 @@ BlocksList Aggregator::prepareBlocksAndFillWithoutKey(AggregatedDataVariants & d
 			AggregatedDataWithoutKey & data = data_variants.without_key;
 
 			for (size_t i = 0; i < params.aggregates_size; ++i)
+			{
 				if (!final)
-					(*aggregate_columns[i])[0] = data + offsets_of_aggregate_states[i];
+					aggregate_columns[i]->push_back(data + offsets_of_aggregate_states[i]);
 				else
 					aggregate_functions[i]->insertResultInto(data + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
+			}
+
+			if (!final)
+				data = nullptr;
 
 			if (params.overflow_row)
 				for (size_t i = 0; i < params.keys_size; ++i)
@@ -1143,8 +1141,6 @@ BlocksList Aggregator::prepareBlocksAndFillWithoutKey(AggregatedDataVariants & d
 
 	if (final)
 		destroyWithoutKey(data_variants);
-	else
-		data_variants.without_key = nullptr;
 
 	BlocksList blocks;
 	blocks.emplace_back(std::move(block));
@@ -1240,38 +1236,12 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 
 	BlocksList blocks;
 
-	/** Если был хотя бы один эксепшен, то следует "откатить" владение состояниями агрегатных функций в ColumnAggregateFunction-ах
-	  *  - то есть, очистить их (см. комментарий в функции prepareBlockAndFill.)
-	  */
-	std::exception_ptr first_exception;
 	for (auto & task : tasks)
 	{
 		if (!task.valid())
 			continue;
 
-		try
-		{
-			blocks.emplace_back(task.get_future().get());
-		}
-		catch (...)
-		{
-			if (!first_exception)
-				first_exception = std::current_exception();
-		}
-	}
-
-	if (first_exception)
-	{
-		for (auto & block : blocks)
-		{
-			for (size_t column_num = params.keys_size; column_num < params.keys_size + params.aggregates_size; ++column_num)
-			{
-				IColumn & col = *block.getByPosition(column_num).column;
-				if (ColumnAggregateFunction * col_aggregate = typeid_cast<ColumnAggregateFunction *>(&col))
-					col_aggregate->getData().clear();
-			}
-		}
-		std::rethrow_exception(first_exception);
+		blocks.emplace_back(task.get_future().get());
 	}
 
 	return blocks;
@@ -1298,47 +1268,28 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 		&& data_variants.isTwoLevel())						/// TODO Использовать общий тред-пул с функцией merge.
 		thread_pool.reset(new boost::threadpool::pool(max_threads));
 
-	try
+	if (isCancelled())
+		return BlocksList();
+
+	if (data_variants.type == AggregatedDataVariants::Type::without_key || params.overflow_row)
+		blocks.splice(blocks.end(), prepareBlocksAndFillWithoutKey(
+			data_variants, final, data_variants.type != AggregatedDataVariants::Type::without_key));
+
+	if (isCancelled())
+		return BlocksList();
+
+	if (data_variants.type != AggregatedDataVariants::Type::without_key)
 	{
-		if (isCancelled())
-			return BlocksList();
-
-		if (data_variants.type == AggregatedDataVariants::Type::without_key || params.overflow_row)
-			blocks.splice(blocks.end(), prepareBlocksAndFillWithoutKey(
-				data_variants, final, data_variants.type != AggregatedDataVariants::Type::without_key));
-
-		if (isCancelled())
-			return BlocksList();
-
-		if (data_variants.type != AggregatedDataVariants::Type::without_key)
-		{
-			if (!data_variants.isTwoLevel())
-				blocks.splice(blocks.end(), prepareBlocksAndFillSingleLevel(data_variants, final));
-			else
-				blocks.splice(blocks.end(), prepareBlocksAndFillTwoLevel(data_variants, final, thread_pool.get()));
-		}
-	}
-	catch (...)
-	{
-		/** Если был хотя бы один эксепшен, то следует "откатить" владение состояниями агрегатных функций в ColumnAggregateFunction-ах
-		  *  - то есть, очистить их (см. комментарий в функции prepareBlockAndFill.)
-		  */
-		for (auto & block : blocks)
-		{
-			for (size_t column_num = params.keys_size; column_num < params.keys_size + params.aggregates_size; ++column_num)
-			{
-				IColumn & col = *block.getByPosition(column_num).column;
-				if (ColumnAggregateFunction * col_aggregate = typeid_cast<ColumnAggregateFunction *>(&col))
-					col_aggregate->getData().clear();
-			}
-		}
-
-		throw;
+		if (!data_variants.isTwoLevel())
+			blocks.splice(blocks.end(), prepareBlocksAndFillSingleLevel(data_variants, final));
+		else
+			blocks.splice(blocks.end(), prepareBlocksAndFillTwoLevel(data_variants, final, thread_pool.get()));
 	}
 
 	if (!final)
 	{
-		/// data_variants не будет уничтожать состояния агрегатных функций в деструкторе. Теперь состояниями владеют ColumnAggregateFunction.
+		/// data_variants не будет уничтожать состояния агрегатных функций в деструкторе.
+		/// Теперь состояниями владеют ColumnAggregateFunction.
 		data_variants.aggregator = nullptr;
 	}
 
@@ -1394,6 +1345,8 @@ void NO_INLINE Aggregator::mergeDataImpl(
 
 		Method::getAggregateData(it->second) = nullptr;
 	}
+
+	table_src.clearAndShrink();
 }
 
 
@@ -1422,6 +1375,8 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
 
 		Method::getAggregateData(it->second) = nullptr;
 	}
+
+	table_src.clearAndShrink();
 }
 
 template <typename Method, typename Table>
@@ -1449,6 +1404,8 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
 
 		Method::getAggregateData(it->second) = nullptr;
 	}
+
+	table_src.clearAndShrink();
 }
 
 
@@ -1505,7 +1462,6 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 
 		/// current не будет уничтожать состояния агрегатных функций в деструкторе
 		current.aggregator = nullptr;
-		getDataVariant<Method>(current).data.clearAndShrink();
 	}
 }
 
@@ -1548,15 +1504,6 @@ public:
 		std::stringstream res;
 		res << this;
 		return res.str();
-	}
-
-	~MergingAndConvertingBlockInputStream()
-	{
-		if (parallel_merge_data)
-		{
-			LOG_TRACE(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
-			parallel_merge_data->pool.wait();
-		}
 	}
 
 protected:
@@ -1662,6 +1609,12 @@ private:
 		std::condition_variable condvar;
 
 		ParallelMergeData(size_t threads) : pool(threads) {}
+
+		~ParallelMergeData()
+		{
+			LOG_TRACE(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
+			pool.wait();
+		}
 	};
 
 	std::unique_ptr<ParallelMergeData> parallel_merge_data;
@@ -1706,7 +1659,8 @@ private:
 		catch (...)
 		{
 			std::lock_guard<std::mutex> lock(parallel_merge_data->mutex);
-			parallel_merge_data->exception = std::current_exception();
+			if (!parallel_merge_data->exception)
+				parallel_merge_data->exception = std::current_exception();
 		}
 
 		parallel_merge_data->condvar.notify_all();
@@ -1714,7 +1668,8 @@ private:
 };
 
 
-std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads) const
+std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
+	ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads) const
 {
 	if (data_variants.empty())
 		throw Exception("Empty data passed to Aggregator::mergeAndConvertToBlocks.", ErrorCodes::EMPTY_DATA_PASSED);
@@ -1761,8 +1716,16 @@ std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(ManyAggre
 	AggregatedDataVariantsPtr & first = non_empty_data[0];
 
 	for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
+	{
 		if (first->type != non_empty_data[i]->type)
 			throw Exception("Cannot merge different aggregated data variants.", ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS);
+
+		/** В первое множество данных могут быть перемещены элементы из остальных множеств.
+		  * Поэтому, оно должно владеть всеми аренами всех остальных множеств.
+		  */
+		first->aggregates_pools.insert(first->aggregates_pools.end(),
+			non_empty_data[i]->aggregates_pools.begin(), non_empty_data[i]->aggregates_pools.end());
+	}
 
 	return std::unique_ptr<IBlockInputStream>(new MergingAndConvertingBlockInputStream(*this, non_empty_data, final, max_threads));
 }
@@ -2326,11 +2289,11 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::destroyImpl(
 	Method & method,
-	Table & data) const
+	Table & table) const
 {
-	for (auto elem : data)
+	for (auto elem : table)
 	{
-		char * data = Method::getAggregateData(elem.second);
+		AggregateDataPtr & data = Method::getAggregateData(elem.second);
 
 		/** Если исключение (обычно нехватка памяти, кидается MemoryTracker-ом) возникло
 		  *  после вставки ключа в хэш-таблицу, но до создания всех состояний агрегатных функций,

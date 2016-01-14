@@ -22,6 +22,7 @@
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <DB/Interpreters/LogicalExpressionsOptimizer.h>
 #include <DB/Interpreters/ExternalDictionaries.h>
@@ -45,10 +46,29 @@
 #include <DB/Functions/FunctionFactory.h>
 
 #include <ext/range.hpp>
+#include <DB/DataTypes/DataTypeFactory.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
+	extern const int UNKNOWN_IDENTIFIER;
+	extern const int CYCLIC_ALIASES;
+	extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
+	extern const int TOO_MUCH_ROWS;
+	extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+	extern const int INCORRECT_ELEMENT_OF_SET;
+	extern const int ALIAS_REQUIRED;
+	extern const int EMPTY_NESTED_TABLE;
+	extern const int NOT_AN_AGGREGATE;
+	extern const int UNEXPECTED_EXPRESSION;
+	extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
+	extern const int DUPLICATE_COLUMN;
+	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
+}
 
 
 /** Calls to these functions in the GROUP BY statement would be
@@ -168,7 +188,7 @@ void ExpressionAnalyzer::analyzeAggregation()
 	if (select_query && (select_query->group_expression_list || select_query->having_expression))
 		has_aggregation = true;
 
-	ExpressionActionsPtr temp_actions = new ExpressionActions(columns, settings);
+	ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(columns, settings);
 
 	if (select_query && select_query->array_join_expression_list)
 	{
@@ -333,7 +353,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 		external_table_name = "_data" + toString(external_table_id);
 	}
 
-	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {});
+	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth, {});
 
 	Block sample = interpreter->getSampleBlock();
 	NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
@@ -657,6 +677,10 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 		{
 			node->kind = ASTFunction::FUNCTION;
 		}
+
+		if (node->parameters && node->kind != ASTFunction::AGGREGATE_FUNCTION)
+			throw Exception("The only parametric functions (functions with two separate parenthesis pairs) are aggregate functions"
+				", and '" + node->name + "' is not an aggregate function.", ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS);
 	}
 
 	current_asts.erase(initial_ast);
@@ -699,20 +723,18 @@ void ExpressionAnalyzer::executeScalarSubqueries()
 
 static ASTPtr addTypeConversion(ASTLiteral * ast_, const String & type_name)
 {
-	if (0 == type_name.compare(0, strlen("Array"), "Array"))
-		return ast_;	/// Преобразование типов для массивов пока не поддерживаем.
-
 	auto ast = std::unique_ptr<ASTLiteral>(ast_);
 	ASTFunction * func = new ASTFunction(ast->range);
 	ASTPtr res = func;
 	func->alias = ast->alias;
 	ast->alias.clear();
 	func->kind = ASTFunction::FUNCTION;
-	func->name = "to" + type_name;
+	func->name = "CAST";
 	ASTExpressionList * exp_list = new ASTExpressionList(ast->range);
 	func->arguments = exp_list;
 	func->children.push_back(func->arguments);
-	exp_list->children.push_back(ast.release());
+	exp_list->children.emplace_back(ast.release());
+	exp_list->children.emplace_back(new ASTLiteral{{}, type_name});
 	return res;
 }
 
@@ -1348,7 +1370,7 @@ struct ExpressionAnalyzer::ScopeStack
 				all_columns.push_back(col);
 		}
 
-		stack.back().actions = new ExpressionActions(all_columns, settings);
+		stack.back().actions = std::make_shared<ExpressionActions>(all_columns, settings);
 	}
 
 	size_t getColumnLevel(const std::string & name)
@@ -1839,7 +1861,7 @@ void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, const NamesAn
 	if (chain.steps.empty())
 	{
 		chain.settings = settings;
-		chain.steps.emplace_back(new ExpressionActions(columns, settings));
+		chain.steps.emplace_back(std::make_shared<ExpressionActions>(columns, settings));
 	}
 }
 
@@ -2099,7 +2121,7 @@ Block ExpressionAnalyzer::getSelectSampleBlock()
 {
 	assertSelect();
 
-	ExpressionActionsPtr temp_actions = new ExpressionActions(aggregated_columns, settings);
+	ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(aggregated_columns, settings);
 	NamesWithAliases result_columns;
 
 	ASTs asts = select_query->select_expression_list->children;
@@ -2129,7 +2151,7 @@ void ExpressionAnalyzer::getActionsBeforeAggregation(ASTPtr ast, ExpressionActio
 
 ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 {
-	ExpressionActionsPtr actions = new ExpressionActions(columns, settings);
+	ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(columns, settings);
 	NamesWithAliases result_columns;
 	Names result_names;
 
@@ -2172,7 +2194,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 
 ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
 {
-	ExpressionActionsPtr actions = new ExpressionActions(NamesAndTypesList(), settings);
+	ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(NamesAndTypesList(), settings);
 
 	getRootActions(ast, true, true, actions);
 

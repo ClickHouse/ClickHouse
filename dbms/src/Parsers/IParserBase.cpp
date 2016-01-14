@@ -4,6 +4,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+}
+
+
 bool IParserBase::parse(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;

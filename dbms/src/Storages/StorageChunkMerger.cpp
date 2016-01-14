@@ -3,11 +3,14 @@
 #include <DB/Storages/StorageChunkRef.h>
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/InterpreterDropQuery.h>
+#include <DB/Interpreters/ExpressionActions.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/AddingDefaultBlockInputStream.h>
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -16,6 +19,14 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int UNKNOWN_DATABASE;
+	extern const int TYPE_MISMATCH;
+}
+
+
 const int NOTHING_TO_MERGE_PERIOD = 10;
 
 StorageChunkMerger::TableNames StorageChunkMerger::currently_written_groups;
@@ -334,23 +345,9 @@ bool StorageChunkMerger::MergeTask::merge()
 	{
 		merged = maybeMergeSomething();
 	}
-	catch (const Exception & e)
-	{
-		LOG_ERROR(log, "StorageChunkMerger at " << chunk_merger.this_database << "." << chunk_merger.name << " failed to merge: Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
-		<< ", Stack trace:\n\n" << e.getStackTrace().toString());
-	}
-	catch (const Poco::Exception & e)
-	{
-		LOG_ERROR(log, "StorageChunkMerger at " << chunk_merger.this_database << "." << chunk_merger.name << " failed to merge: Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-		<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
-	}
-	catch (const std::exception & e)
-	{
-		LOG_ERROR(log, "StorageChunkMerger at " << chunk_merger.this_database << "." << chunk_merger.name << " failed to merge: std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", e.what() = " << e.what());
-	}
 	catch (...)
 	{
-		LOG_ERROR(log, "StorageChunkMerger at " << chunk_merger.this_database << "." << chunk_merger.name << " failed to merge: unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION);
+		tryLogCurrentException(log, "StorageChunkMerger at " + chunk_merger.this_database + "." + chunk_merger.name + " failed to merge");
 	}
 
 	if (!merged)

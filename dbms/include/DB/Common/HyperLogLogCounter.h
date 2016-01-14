@@ -10,10 +10,19 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Core/Defines.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <cmath>
 #include <cstring>
+
+
+namespace DB
+{
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+}
+}
+
 
 namespace details
 {

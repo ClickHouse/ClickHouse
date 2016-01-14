@@ -6,6 +6,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int NO_SUCH_COLUMN_IN_TABLE;
+}
+
+
 DataTypePtr VirtualColumnFactory::getType(const String & name)
 {
 	auto res = tryGetType(name);

@@ -2,9 +2,12 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Functions/IFunction.h>
-#include <vectorf128.h>
-#include <vectormath_exp.h>
-#include <vectormath_trig.h>
+
+#if defined(__x86_64__)
+	#include <vectorf128.h>
+	#include <vectormath_exp.h>
+	#include <vectormath_trig.h>
+#endif
 
 
 namespace DB
@@ -156,6 +159,22 @@ private:
 	}
 };
 
+
+template <typename Name, Float64(&Function)(Float64)>
+struct UnaryFunctionPlain
+{
+	static constexpr auto name = Name::name;
+	static constexpr auto rows_per_iteration = 1;
+
+	template <typename T>
+	static void execute(const T * const src, Float64 * const dst)
+	{
+		dst[0] = static_cast<Float64>(Function(static_cast<Float64>(src[0])));
+	}
+};
+
+#if defined(__x86_64__)
+
 template <typename Name, Vec2d(&Function)(const Vec2d &)>
 struct UnaryFunctionVectorized
 {
@@ -170,18 +189,11 @@ struct UnaryFunctionVectorized
 	}
 };
 
-template <typename Name, Float64(&Function)(Float64)>
-struct UnaryFunctionPlain
-{
-	static constexpr auto name = Name::name;
-	static constexpr auto rows_per_iteration = 1;
+#else
 
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(Function(static_cast<Float64>(src[0])));
-	}
-};
+#define UnaryFunctionVectorized UnaryFunctionPlain
+
+#endif
 
 
 template <typename Impl> class FunctionMathBinaryFloat64 : public IFunction
@@ -422,6 +434,22 @@ private:
 	}
 };
 
+
+template <typename Name, Float64(&Function)(Float64, Float64)>
+struct BinaryFunctionPlain
+{
+	static constexpr auto name = Name::name;
+	static constexpr auto rows_per_iteration = 1;
+
+	template <typename T1, typename T2>
+	static void execute(const T1 * const src_left, const T2 * const src_right, Float64 * const dst)
+	{
+		dst[0] = static_cast<Float64>(Function(static_cast<Float64>(src_left[0]), static_cast<Float64>(src_right[0])));
+	}
+};
+
+#if defined(__x86_64__)
+
 template <typename Name, Vec2d(&Function)(const Vec2d &, const Vec2d &)>
 struct BinaryFunctionVectorized
 {
@@ -435,6 +463,12 @@ struct BinaryFunctionVectorized
 		result.store(dst);
 	}
 };
+
+#else
+
+#define BinaryFunctionVectorized BinaryFunctionPlain
+
+#endif
 
 
 struct EImpl
@@ -478,7 +512,15 @@ using FunctionLog2 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Log2Name, 
 using FunctionExp10 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Exp10Name, exp10>>;
 using FunctionLog10 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Log10Name, log10>>;
 using FunctionSqrt = FunctionMathUnaryFloat64<UnaryFunctionVectorized<SqrtName, sqrt>>;
-using FunctionCbrt = FunctionMathUnaryFloat64<UnaryFunctionVectorized<CbrtName, Power_rational<1, 3>::pow>>;
+
+using FunctionCbrt = FunctionMathUnaryFloat64<UnaryFunctionVectorized<CbrtName,
+#if defined(__x86_64__)
+	Power_rational<1, 3>::pow
+#else
+	cbrt
+#endif
+>>;
+
 using FunctionSin = FunctionMathUnaryFloat64<UnaryFunctionVectorized<SinName, sin>>;
 using FunctionCos = FunctionMathUnaryFloat64<UnaryFunctionVectorized<CosName, cos>>;
 using FunctionTan = FunctionMathUnaryFloat64<UnaryFunctionVectorized<TanName, tan>>;

@@ -188,6 +188,9 @@ struct Settings
 	M(SettingMilliseconds, 	read_backoff_min_interval_between_events_ms, 1000) \
 	/** Количество событий, после которого количество потоков будет уменьшено. */ \
 	M(SettingUInt64, 		read_backoff_min_events, 2) \
+	\
+	/** В целях тестирования exception safety - кидать исключение при каждом выделении памяти с указанной вероятностью. */ \
+	M(SettingFloat, memory_tracker_fault_probability, 0.) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

@@ -5,6 +5,9 @@
 #include <DB/Columns/ColumnConst.h>
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
+#include <ext/map.hpp>
+#include <ext/enumerate.hpp>
+#include <ext/range.hpp>
 
 
 namespace DB
@@ -38,44 +41,44 @@ public:
 
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const override
 	{
-		const Array & arr = get<const Array &>(field);
-		for (size_t i = 0, size = elems.size(); i < size; ++i)
-			elems[i]->serializeBinary(arr[i], ostr);
+		const auto & tuple = get<const Tuple &>(field).t;
+		for (const auto & idx_elem : ext::enumerate(elems))
+			idx_elem.second->serializeBinary(tuple[idx_elem.first], ostr);
 	}
 
 	void deserializeBinary(Field & field, ReadBuffer & istr) const override
 	{
-		size_t size = elems.size();
-		field = Array(size);
-		Array & arr = get<Array &>(field);
-		for (size_t i = 0; i < size; ++i)
-			elems[i]->deserializeBinary(arr[i], istr);
+		const size_t size = elems.size();
+		field = Tuple(TupleBackend(size));
+		TupleBackend & tuple = get<Tuple &>(field).t;
+		for (const auto i : ext::range(0, size))
+			elems[i]->deserializeBinary(tuple[i], istr);
 	}
 
 	void serializeText(const Field & field, WriteBuffer & ostr) const override
 	{
-		const Array & arr = get<const Array &>(field);
+		const TupleBackend & tuple = get<const Tuple &>(field).t;
 		writeChar('(', ostr);
-		for (size_t i = 0, size = elems.size(); i < size; ++i)
+		for (const auto i : ext::range(0, ext::size(elems)))
 		{
 			if (i != 0)
 				writeChar(',', ostr);
-			elems[i]->serializeTextQuoted(arr[i], ostr);
+			elems[i]->serializeTextQuoted(tuple[i], ostr);
 		}
 		writeChar(')', ostr);
 	}
 
 	void deserializeText(Field & field, ReadBuffer & istr) const override
 	{
-		size_t size = elems.size();
-		field = Array(size);
-		Array & arr = get<Array &>(field);
+		const size_t size = elems.size();
+		field = Tuple(TupleBackend(size));
+		TupleBackend & tuple = get<Tuple &>(field).t;
 		assertString("(", istr);
-		for (size_t i = 0; i < size; ++i)
+		for (const auto i : ext::range(0, size))
 		{
 			if (i != 0)
 				assertString(",", istr);
-			elems[i]->deserializeTextQuoted(arr[i], istr);
+			elems[i]->deserializeTextQuoted(tuple[i], istr);
 		}
 		assertString(")", istr);
 	}
@@ -102,13 +105,13 @@ public:
 
 	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override
 	{
-		const Array & arr = get<const Array &>(field);
+		const TupleBackend & tuple = get<const Tuple &>(field).t;
 		writeChar('[', ostr);
-		for (size_t i = 0, size = elems.size(); i < size; ++i)
+		for (const auto i : ext::range(0, ext::size(elems)))
 		{
 			if (i != 0)
 				writeChar(',', ostr);
-			elems[i]->serializeTextJSON(arr[i], ostr);
+			elems[i]->serializeTextJSON(tuple[i], ostr);
 		}
 		writeChar(']', ostr);
 	}
@@ -146,16 +149,12 @@ public:
 
 	ColumnPtr createConstColumn(size_t size, const Field & field) const override
 	{
-		return new ColumnConstArray(size, get<const Array &>(field), new DataTypeTuple(elems));
+		return new ColumnConstTuple(size, get<const Tuple &>(field), new DataTypeTuple(elems));
 	}
 
 	Field getDefault() const override
 	{
-		size_t size = elems.size();
-		Array res(size);
-		for (size_t i = 0; i < size; ++i)
-			res[i] = elems[i]->getDefault();
-		return res;
+		return Tuple(ext::map<TupleBackend>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));
 	}
 
 	const DataTypes & getElements() const { return elems; }

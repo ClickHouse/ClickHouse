@@ -3,7 +3,6 @@
 #include <Poco/AutoPtr.h>
 
 #include "OLAPQueryParser.h"
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Common/Exception.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
@@ -11,6 +10,23 @@
 
 namespace DB
 {
+
+	namespace ErrorCodes
+{
+	extern const int NOT_FOUND_NODE;
+	extern const int FOUND_MORE_THAN_ONE_NODE;
+	extern const int SYNTAX_ERROR;
+	extern const int UNKNOWN_FORMAT;
+	extern const int FIRST_DATE_IS_BIGGER_THAN_LAST_DATE;
+	extern const int UNKNOWN_OVERFLOW_MODE;
+	extern const int NOT_FOUND_FUNCTION_ELEMENT_FOR_AGGREGATE;
+	extern const int NOT_FOUND_RELATION_ELEMENT_FOR_CONDITION;
+	extern const int NOT_FOUND_RHS_ELEMENT_FOR_CONDITION;
+	extern const int NO_ATTRIBUTES_LISTED;
+	extern const int UNKNOWN_DIRECTION_OF_SORTING;
+	extern const int INDEX_OF_COLUMN_IN_SORT_CLAUSE_IS_OUT_OF_RANGE;
+}
+
 namespace OLAP
 {
 

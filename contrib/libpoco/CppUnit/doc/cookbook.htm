@@ -1,0 +1,164 @@
+<HTML>
+<HEAD>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=windows-1252">
+<META NAME="Generator" CONTENT="Microsoft Word 97">
+<TITLE>CppUnit Cookbook</TITLE>
+<META NAME="Template" CONTENT="C:\Program Files\MSOffice\Office\html.dot">
+</HEAD>
+<BODY LINK="#0000ff" VLINK="#800080">
+
+<P><!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN"></P>
+<H1>CppUnit Cookbook</H1>
+<P>Here is a short cookbook to help you get started. </P>
+<H2>Simple Test Case</H2>
+<P>You want to know whether your code is working. How do you do it? There are many ways. Stepping through a debugger or littering your code with stream output calls are two of the simpler ways, but they both have drawbacks. Stepping through your code is a good idea, but it is not automatic. You have to do it every time you make changes. Streaming out text is also fine, but it makes code ugly and it generates far more information than you need most of the time.</P>
+<P>Tests in CppUnit can be run automatically. They are easy to set up and once you have written them, they are always there to help you keep confidence in the quality of your code.</P>
+<P>To make a simple test, here is what you do:</P>
+<P>Subclass the TestCase class. Override the method "runTest ()". When you want to check a value, call "assert (bool)" and pass in an expression that is true if the test succeeds. </P>
+<P>For example, to test the equality comparison for a Complex number class, write:</P>
+<TT><PRE>&#9;class ComplexNumberTest : public TestCase {&nbsp;
+&#9;public: 
+                    ComplexNumberTest (string name) : TestCase (name) {}
+        void        runTest () {
+                        assert (Complex (10, 1) == Complex (10, 1));
+                        assert (!(Complex (1, 1) == Complex (2, 2)));
+                    }
+        };</PRE>
+</TT><P>That was a very simple test. Ordinarily, you'll have many little test cases that you'll want to run on the same set of objects. To do this, use a fixture.</P>
+<P>&nbsp;</P>
+<H2>Fixture</H2>
+<P>A fixture is a known set of objects that serves as a base for a set of test cases. Fixtures come in very handy when you are testing as you develop. Let's try out this style of development and learn about fixtures along the away. Suppose that we are really developing a complex number class. Let's start by defining a empty class named Complex.</P>
+<TT><PRE>&#9;class Complex {};&nbsp;</PRE>
+</TT><P>Now create an instance of ComplexNumberTest above, compile the code and see what happens. The first thing we notice is a few compiler errors. The test uses operator==, but it is not defined. Let's fix that.</P>
+<TT><PRE>&#9;bool operator== (const Complex&amp; a, const Complex&amp; b) { return true; }</PRE>
+</TT><P>Now compile the test, and run it. This time it compiles but the test fails. We need a bit more to get an operator== working correctly, so we revisit the code.</P>
+<TT><PRE>&#9;class Complex {&nbsp;
+        friend bool operator== (const Complex&amp; a, const Complex&amp; b);
+        double      real, imaginary;
+        public:
+                    Complex ()  {
+                    real = imaginary = 0.0;
+                    }
+        };
+
+        bool operator== (const Complex&amp; a, const Complex&amp; b)
+        { return eq(a.real,b.real) &amp;&amp; eq(a.imaginary,b.imaginary); }</PRE>
+</TT><P>If we compile now and run our test it will pass. </P>
+<P>Now we are ready to add new operations and new tests. At this point a fixture would be handy. We would probably be better off when doing our tests if we decided to instantiate three or four complex numbers and reuse them across our tests. </P>
+<P>Here is how we do it:</P>
+<OL>
+
+<LI>Add member variables for each part of the fixture </LI>
+<LI>Override "setUp ()" to initialize the variables </LI>
+<LI>Override "tearDown ()" to release any permanent resources you allocated in "setUp ()"</LI></OL>
+
+<TT><PRE>&#9;class ComplexNumberTest : public TestCase  {
+&#9;private:
+        Complex &#9;*m_10_1, *m_1_1; *m_11_2;
+&#9;protected:
+&#9;void&#9;&#9;setUp ()  {
+&#9;&#9;&#9;    m_10_1 = new Complex (10, 1);
+&#9;&#9;&#9;    m_1_1  = new Complex (1, 1);
+&#9;&#9;&#9;    m_11_2  = new Complex (11, 2);  
+                        }
+&#9;void&#9;&#9;tearDown ()  {
+&#9;&#9;&#9;    delete m_10_1, delete m_1_1, delete m_11_2;
+&#9;&#9;&#9;}
+&#9;};</PRE>
+</TT><P>Once we have this fixture, we can add the complex addition test case any any others that we need over the course of our development.</P>
+<P>&nbsp;</P>
+<H2>Test Case</H2>
+<P>How do you write and invoke individual tests using a fixture? </P>
+<P>There are two steps to this process:</P>
+<OL>
+
+<LI>Write the test case as a method in the fixture class</LI>
+<LI>Create a TestCaller which runs that particular method</LI></OL>
+
+<P>Here is our test case class with a few extra case methods:</P>
+<TT><PRE>&#9;class ComplexNumberTest : public TestCase  {
+&#9;private:
+        Complex &#9;*m_10_1, *m_1_1; *m_11_2;
+&#9;protected:
+&#9;void&#9;&#9;setUp ()  {
+&#9;&#9;&#9;    m_10_1 = new Complex (10, 1);
+&#9;&#9;&#9;    m_1_1  = new Complex (1, 1);
+&#9;&#9;&#9;    m_11_2 = new Complex (11, 2);  
+                        }
+&#9;void&#9;&#9;tearDown ()  {
+&#9;&#9;&#9;    delete m_10_1, delete m_1_1, delete m_11_2;
+&#9;&#9;&#9;}
+&#9;void&#9;&#9;testEquality ()  {
+&#9;&#9;&#9;    assert (*m_10_1 == *m_10_1);
+&#9;&#9;&#9;    assert (!(*m_10_1 == *m_11_2));
+&#9;&#9;&#9;}
+&#9;void&#9;&#9;testAddition ()  {
+&#9;&#9;&#9;    assert (*m_10_1 + *m_1_1 == *m_11_2);
+                 &#9;}
+&#9;};</PRE>
+</TT><P>Create and run instances for each test case like this:</P>
+<TT><PRE>&#9;test = new TestCaller&lt;ComplexNumberTest&gt;("testEquality", ComplexNumberTest::testEquality);
+        test->run (); </PRE>
+</TT><P>The second argument to the test caller constructor is the address of a method on ComplexNumberTest. When the test caller is run, that specific method will be run.</P>
+<P>Once you have several tests, organize them into a suite.</P>
+<P>&nbsp;</P>
+<H2>Suite</H2>
+<P>How do you set up your tests so that you can run them all at once?<BR>
+<BR>
+CppUnit provides a TestSuite class that runs any number of TestCases together. For example, to run a single test case, you execute:</P>
+<TT><PRE>&#9;TestResult result;
+&#9;TestCaller&lt;ComplexNumberTest&gt; test ("testAddition", ComplexNumberTest::testAddition);
+&#9;Test.run (&amp;result);</PRE>
+</TT><P>&nbsp;</P>
+<P>To create a suite of two or more tests, you do the following:</P>
+<TT><PRE>&#9;TestSuite suite;
+&#9;TestResult result;
+&#9;suite.addTest (new TestCaller&lt;ComplexNumberTest&gt;("testEquality", ComplexNumberTest::testEquality));
+&#9;suite.addTest (new TestCaller&lt;ComplexNumberTest&gt;("testAddition", ComplexNumberTest::testAddition));
+&#9;suite.run (&amp;result);
+           </PRE>
+</TT><P>TestSuites don't only have to contain callers for TestCases. They can contain any object that implements the Test interface. For example, you can create a TestSuite in your code and I can create one in mine, and we can run them together by creating a TestSuite that contains both: </P>
+<TT><PRE>&#9;TestSuite suite;
+&#9;suite.addTest (ComplexNumberTest.suite ());
+&#9;suite.addTest (SurrealNumberTest.suite ());
+&#9;suite.run (&amp;result);</PRE>
+</TT><P>&nbsp;</P>
+<H2>TestRunner</H2>
+<P>How do you run your tests and collect their results? </P>
+<P>Once you have a test suite, you'll want to run it. CppUnit provides tools to define the suite to be run and to display its results. You make your suite accessible to a TestRunner program with a static method <I>suite</I> that returns a test suite. <BR>
+For example, to make a ComplexNumberTest suite available to a TestRunner, add the following code to ComplexNumberTest: </P>
+<TT><PRE>&#9;public: static Test *suite ()  {
+&#9;    TestSuite *suiteOfTests = new TestSuite;
+&#9;    suiteOfTests-&gt;addTest (new TestCaller&lt;ComplexNumberTest&gt;("testEquality", testEquality));
+&#9;    suiteOfTests-&gt;addTest (new TestCaller&lt;ComplexNumberTest&gt;("testAddition", testAddition));
+            return suiteOfTests;
+&#9;}</PRE>
+</TT><P>CppUnit provides both a textual version of a TestRunner tool, and a Micosoft Visual C++ 5.0 graphical version. If you are running on another platform, take a look at the graphical version. It is easy to port.</P>
+<P>To use the text version, include the header file for the test in TestRunner.cpp:</P>
+<TT><PRE>&#9;#include "ExampleTestCase.h"
+&#9;#include "ComplexNumberTest.h"</PRE>
+</TT><P>And add a call to "addTest (string, Test *) in the "main ()" function:</P>
+<TT><PRE>&#9;int main (int ac, char **av)  {
+&#9;    TestRunner runner;
+&#9;    runner.addTest (ExampleTestCase::suite ());
+&#9;    runner.addTest (ComplexNumberTest::suite ());
+&#9;    runner.run ();
+&#9;    return 0;
+&#9;}</PRE>
+</TT><P>The TestRunner will run the tests. If all the tests pass, you'll get an informative message. If any fail, you'll get the following information:</P>
+<OL>
+
+<LI>The name of the test case that failed</LI>
+<LI>The name of the source file that contains the test</LI>
+<LI>The line number where the failure occurred</LI>
+<LI>All of the text inside the call to assert which detected the failure</LI></OL>
+
+<P>CppUnit distinguishes between <I>failures</I> and <I>errors</I>. A failure is anticipated and checked for with assertions. Errors are unanticipated problems like division by zero and other exceptions thrown by the C++ runtime or your code.</P>
+<P>If you are running MS Developer's Studio, you can build the GUI version rather easily. There are three projects: culib, TestRunner, and HostApp. They make a static library for the framework, a dialog based TestRunner in a DLL and an example Hosting application, respectively. To incorporate a TestRunner in an application you are developing, link with the static library and the TestRunner DLL. Note that the TestRunner DLL must be in the home directory of your application, the system directory or the path.  In your application, create an instance of TestRunnerDlg whenever you want to run tests. Pass tests you want to run to the dialog object and then execute.</P>
+<P>Here is a screen shot of the TestRunner in use:</P>
+<P><IMG SRC="test.gif" WIDTH=574 HEIGHT=351></P>
+<P>&nbsp;</P>
+<P>More notes about the implementation of CppUnit can be found in README.HTML.</P>
+<P>&nbsp;</P>
+<P>&nbsp;</P></BODY>
+</HTML>
