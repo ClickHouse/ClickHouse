@@ -12,7 +12,9 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/VarInt.h>
 
-#include <emmintrin.h>
+#if defined(__x86_64__)
+	#include <emmintrin.h>
+#endif
 
 
 namespace DB
@@ -91,6 +93,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, Column
 
 		if (size)
 		{
+#if defined(__x86_64__)
 			/// Оптимистичная ветка, в которой возможно более эффективное копирование.
 			if (offset + 16 * UNROLL_TIMES <= data.capacity() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
 			{
@@ -121,6 +124,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, Column
 				istr.position() += size;
 			}
 			else
+#endif
 			{
 				istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), size);
 			}

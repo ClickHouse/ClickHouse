@@ -1,4 +1,6 @@
-#include <emmintrin.h>
+#if defined(__x86_64__)
+	#include <emmintrin.h>
+#endif
 
 #include <iostream>
 #include <iomanip>
@@ -9,6 +11,7 @@
 #include <DB/Common/Stopwatch.h>
 
 
+#if defined(__x86_64__)
 std::ostream & operator<< (std::ostream & ostr, const __m128i vec)
 {
 	char digits[16];
@@ -21,6 +24,7 @@ std::ostream & operator<< (std::ostream & ostr, const __m128i vec)
 	
 	return ostr;
 }
+#endif
 
 
 namespace test

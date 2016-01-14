@@ -913,7 +913,10 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
 
 /// Оптимизации для целочисленного деления на константу.
 
-#define LIBDIVIDE_USE_SSE2 1
+#if defined(__x86_64__)
+	#define LIBDIVIDE_USE_SSE2 1
+#endif
+
 #include <libdivide.h>
 
 
@@ -947,6 +950,8 @@ struct DivideIntegralByConstantImpl
 		const A * a_pos = &a[0];
 		const A * a_end = a_pos + size;
 		ResultType * c_pos = &c[0];
+
+#if defined(__x86_64__)
 		static constexpr size_t values_per_sse_register = 16 / sizeof(A);
 		const A * a_end_sse = a_pos + size / values_per_sse_register * values_per_sse_register;
 
@@ -958,6 +963,7 @@ struct DivideIntegralByConstantImpl
 			a_pos += values_per_sse_register;
 			c_pos += values_per_sse_register;
 		}
+#endif
 
 		while (a_pos < a_end)
 		{

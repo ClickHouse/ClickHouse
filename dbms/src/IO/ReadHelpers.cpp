@@ -1,4 +1,6 @@
-#include <emmintrin.h>
+#if defined(__x86_64__)
+	#include <emmintrin.h>
+#endif
 
 #include <sstream>
 
@@ -112,6 +114,7 @@ void readStringUntilEOF(String & s, ReadBuffer & buf)
   */
 static inline const char * find_first_tab_lf_or_backslash(const char * begin, const char * end)
 {
+#if defined(__x86_64__)
 	static const char tab_chars[16] = {'\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t'};
 	static const char lf_chars[16]	= {'\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n'};
 	static const char bs_chars[16] 	= {'\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\'};
@@ -140,6 +143,7 @@ static inline const char * find_first_tab_lf_or_backslash(const char * begin, co
 		if (bit_mask)
 			return begin + __builtin_ctz(bit_mask);
 	}
+#endif
 
 	for (; begin < end; ++begin)
 		if (*begin == '\t' || *begin == '\n' || *begin == '\\')
@@ -202,6 +206,7 @@ void readEscapedString(DB::String & s, DB::ReadBuffer & buf)
 template <char quote>
 static inline const char * find_first_quote_or_backslash(const char * begin, const char * end)
 {
+#if defined(__x86_64__)
 	static const char quote_chars[16] 	= {quote, quote, quote, quote, quote, quote, quote, quote, quote, quote, quote, quote, quote, quote, quote, quote};
 	static const char bs_chars[16] 		= {'\\',  '\\',  '\\',  '\\',  '\\',  '\\',  '\\',  '\\',  '\\',  '\\',  '\\',  '\\',  '\\',  '\\',  '\\',  '\\' };
 
@@ -226,6 +231,7 @@ static inline const char * find_first_quote_or_backslash(const char * begin, con
 		if (bit_mask)
 			return begin + __builtin_ctz(bit_mask);
 	}
+#endif
 
 	for (; begin < end; ++begin)
 		if (*begin == quote || *begin == '\\')
