@@ -14,7 +14,6 @@
 #include <DB/Core/Defines.h>
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteHelpers.h>
@@ -29,6 +28,16 @@
 	#include <iomanip>
 	#include <DB/Common/Stopwatch.h>
 #endif
+
+
+namespace DB
+{
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+	extern const int NO_AVAILABLE_DATA;
+}
+}
 
 
 /** Состояние хэш-таблицы, которое влияет на свойства её ячеек.
@@ -559,6 +568,9 @@ public:
 
 	const_iterator begin() const
 	{
+		if (!buf)
+			return end();
+
 		if (this->hasZero())
 			return iteratorToZero();
 
@@ -571,6 +583,9 @@ public:
 
 	iterator begin()
 	{
+		if (!buf)
+			return end();
+
 		if (this->hasZero())
 			return iteratorToZero();
 
@@ -863,16 +878,14 @@ public:
 		memset(buf, 0, grower.bufSize() * sizeof(*buf));
 	}
 
+	/// После выполнения этой функции, таблицу можно только уничтожить,
+	///  а также можно использовать методы size, empty, begin, end.
 	void clearAndShrink()
 	{
 		destroyElements();
 		this->clearHasZero();
 		m_size = 0;
-
 		free();
-		Grower new_grower = grower;
-		new_grower.set(0);
-		alloc(new_grower);
 	}
 
 	size_t getBufferSizeInBytes() const

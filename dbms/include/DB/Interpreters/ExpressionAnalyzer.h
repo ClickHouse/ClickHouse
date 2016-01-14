@@ -7,13 +7,16 @@
 
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/AggregateDescription.h>
-#include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Interpreters/Set.h>
 #include <DB/Interpreters/Join.h>
 
 
 namespace DB
 {
+
+
+class ExpressionActions;
+struct ExpressionActionsChain;
 
 
 /** Информация о том, что делать при выполнении подзапроса в секции [GLOBAL] IN/JOIN.
@@ -36,7 +39,7 @@ struct SubqueryForSet
 };
 
 /// ID подзапроса -> что с ним делать.
-typedef std::unordered_map<String, SubqueryForSet> SubqueriesForSets;
+using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
 
 /** Превращает выражение из синтаксического дерева в последовательность действий для его выполнения.
@@ -45,6 +48,9 @@ typedef std::unordered_map<String, SubqueryForSet> SubqueriesForSets;
   */
 class ExpressionAnalyzer : private boost::noncopyable
 {
+private:
+	using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
 public:
 	ExpressionAnalyzer(
 		const ASTPtr & ast_,

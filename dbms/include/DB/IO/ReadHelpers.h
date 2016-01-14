@@ -14,7 +14,6 @@
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/VarInt.h>
@@ -25,6 +24,13 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int CANNOT_PARSE_DATE;
+	extern const int CANNOT_PARSE_DATETIME;
+	extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+}
 
 /// Функции-помошники для форматированного чтения
 

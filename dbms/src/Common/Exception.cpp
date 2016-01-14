@@ -12,6 +12,15 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int POCO_EXCEPTION;
+	extern const int STD_EXCEPTION;
+	extern const int UNKNOWN_EXCEPTION;
+	extern const int CANNOT_TRUNCATE_FILE;
+}
+
+
 void throwFromErrno(const std::string & s, int code, int e)
 {
 	char buf[128];

@@ -5,6 +5,8 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeEnum.h>
+
 
 namespace DB
 {
@@ -24,6 +26,8 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<Int64>;
 	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionTemplate<Float32>;
 	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionTemplate<Float64>;
+	else if (typeid_cast<const DataTypeEnum8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8>;
+	else if (typeid_cast<const DataTypeEnum16 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt16>;
 	else
 		return nullptr;
 }
@@ -41,6 +45,8 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<Int64, Data>;
 	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionTemplate<Float32, Data>;
 	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionTemplate<Float64, Data>;
+	else if (typeid_cast<const DataTypeEnum8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8, Data>;
+	else if (typeid_cast<const DataTypeEnum16 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt16, Data>;
 	else
 		return nullptr;
 }
@@ -59,6 +65,8 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<Int64, Data<Int64> >;
 	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionTemplate<Float32, Data<Float32> >;
 	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionTemplate<Float64, Data<Float64> >;
+	else if (typeid_cast<const DataTypeEnum8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8, Data<UInt8> >;
+	else if (typeid_cast<const DataTypeEnum16 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt16, Data<UInt16> >;
 	else
 		return nullptr;
 }
@@ -79,6 +87,8 @@ static IAggregateFunction * createWithTwoNumericTypesSecond(const IDataType & se
 	else if (typeid_cast<const DataTypeInt64 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, Int64>;
 	else if (typeid_cast<const DataTypeFloat32 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, Float32>;
 	else if (typeid_cast<const DataTypeFloat64 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, Float64>;
+	else if (typeid_cast<const DataTypeEnum8 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, UInt8>;
+	else if (typeid_cast<const DataTypeEnum16 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, UInt16>;
 	else
 		return nullptr;
 }
@@ -96,6 +106,8 @@ static IAggregateFunction * createWithTwoNumericTypes(const IDataType & first_ty
 	else if (typeid_cast<const DataTypeInt64 	*>(&first_type))	return createWithTwoNumericTypesSecond<Int64, AggregateFunctionTemplate>(second_type);
 	else if (typeid_cast<const DataTypeFloat32 	*>(&first_type))	return createWithTwoNumericTypesSecond<Float32, AggregateFunctionTemplate>(second_type);
 	else if (typeid_cast<const DataTypeFloat64 	*>(&first_type))	return createWithTwoNumericTypesSecond<Float64, AggregateFunctionTemplate>(second_type);
+	else if (typeid_cast<const DataTypeEnum8 	*>(&first_type))	return createWithTwoNumericTypesSecond<UInt8, AggregateFunctionTemplate>(second_type);
+	else if (typeid_cast<const DataTypeEnum16 	*>(&first_type))	return createWithTwoNumericTypesSecond<UInt16, AggregateFunctionTemplate>(second_type);
 	else
 		return nullptr;
 }

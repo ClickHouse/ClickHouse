@@ -4,8 +4,15 @@
 #include <DB/DataStreams/CreatingSetsBlockInputStream.h>
 #include <iomanip>
 
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int SET_SIZE_LIMIT_EXCEEDED;
+}
+
 
 Block CreatingSetsBlockInputStream::readImpl()
 {

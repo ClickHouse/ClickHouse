@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+}
+
 
 DataTypeArray::DataTypeArray(DataTypePtr nested_) : nested(nested_)
 {

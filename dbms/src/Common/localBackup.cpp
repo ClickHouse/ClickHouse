@@ -8,13 +8,21 @@
 #include <Poco/File.h>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
+
+
+namespace DB
+{
+namespace ErrorCodes
+{
+	extern const int TOO_DEEP_RECURSION;
+}
+}
 
 
 static void localBackupImpl(Poco::Path source_path, Poco::Path destination_path, size_t level)
 {
 	if (level >= 1000)
-		throw DB::Exception("Too deep recursion");
+		throw DB::Exception("Too deep recursion", DB::ErrorCodes::TOO_DEEP_RECURSION);
 
 	Poco::File(destination_path).createDirectories();
 

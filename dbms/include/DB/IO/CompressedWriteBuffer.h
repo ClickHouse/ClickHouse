@@ -21,6 +21,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CANNOT_COMPRESS;
+	extern const int UNKNOWN_COMPRESSION_METHOD;
+}
+
+
 class CompressedWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
 private:

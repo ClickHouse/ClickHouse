@@ -294,6 +294,21 @@ protected:
 	}
 };
 
+class ParserExpressionInCastExpression : public IParserBase
+{
+public:
+	ParserExpressionInCastExpression(bool allow_alias_without_as_keyword);
+protected:
+	ParserPtr impl;
+
+	const char * getName() const { return "expression in CAST expression"; }
+
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+	{
+		return impl->parse(pos, end, node, max_parsed_pos, expected);
+	}
+};
+
 
 /** Список выражений, разделённых запятыми, возможно пустой. */
 class ParserExpressionList : public IParserBase

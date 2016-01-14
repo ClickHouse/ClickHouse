@@ -4,6 +4,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int UNKNOWN_SETTING;
+	extern const int THERE_IS_NO_PROFILE;
+	extern const int NO_ELEMENTS_IN_CONFIG;
+}
+
+
 /// Установить настройку по имени.
 void Settings::set(const String & name, const Field & value)
 {

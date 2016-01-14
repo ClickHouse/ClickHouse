@@ -6,7 +6,18 @@
 
 #include <DB/Common/MemoryTracker.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
+
+
+namespace DB
+{
+namespace ErrorCodes
+{
+	extern const int BAD_ARGUMENTS;
+	extern const int CANNOT_ALLOCATE_MEMORY;
+	extern const int CANNOT_MUNMAP;
+	extern const int CANNOT_MREMAP;
+}
+}
 
 
 /** При использовании AllocatorWithStackMemory, размещённом на стеке,

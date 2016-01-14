@@ -10,6 +10,13 @@ namespace DB
 
 using Poco::SharedPtr;
 
+namespace ErrorCodes
+{
+	extern const int THERE_IS_NO_DEFAULT_VALUE;
+	extern const int NOT_IMPLEMENTED;
+}
+
+
 /** Тип - состояние агрегатной функции.
   * Параметры типа - это агрегатная функция, типы её аргументов и её параметры (для параметрических агрегатных функций).
   */

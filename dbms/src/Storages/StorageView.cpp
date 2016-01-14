@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+}
+
 
 StoragePtr StorageView::create(
 	const String & table_name_,

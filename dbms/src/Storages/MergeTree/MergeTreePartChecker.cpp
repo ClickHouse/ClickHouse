@@ -1,5 +1,5 @@
-#include <DB/Storages/MarkCache.h>
 #include <DB/Storages/MergeTree/MergeTreePartChecker.h>
+#include <DB/DataStreams/MarkInCompressedFile.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
@@ -15,6 +15,15 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int CORRUPTED_DATA;
+	extern const int INCORRECT_MARK;
+	extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+	extern const int UNKNOWN_TYPE;
+}
+
 
 struct Stream
 {

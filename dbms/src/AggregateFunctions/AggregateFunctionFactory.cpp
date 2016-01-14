@@ -7,6 +7,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int UNKNOWN_AGGREGATE_FUNCTION;
+	extern const int LOGICAL_ERROR;
+	extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+
 namespace
 {
 
@@ -71,6 +79,7 @@ void registerAggregateFunctionsStatistics(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory);
 void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory & factory);
+void registerAggregateFunctionDebug(AggregateFunctionFactory & factory);
 
 AggregateFunctionPtr createAggregateFunctionArray(AggregateFunctionPtr & nested);
 AggregateFunctionPtr createAggregateFunctionIf(AggregateFunctionPtr & nested);
@@ -96,6 +105,7 @@ AggregateFunctionFactory::AggregateFunctionFactory()
 	registerAggregateFunctionSum(*this);
 	registerAggregateFunctionsUniq(*this);
 	registerAggregateFunctionUniqUpTo(*this);
+	registerAggregateFunctionDebug(*this);
 }
 
 

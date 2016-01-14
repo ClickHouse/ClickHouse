@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/IO/WriteHelpers.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 
 namespace DB

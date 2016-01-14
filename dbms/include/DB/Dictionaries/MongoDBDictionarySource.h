@@ -12,6 +12,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int UNSUPPORTED_METHOD;
+	extern const int WRONG_PASSWORD;
+	extern const int MONGODB_INIT_FAILED;
+}
+
+
 /// Allows loading dictionaries from a MongoDB collection
 class MongoDBDictionarySource final : public IDictionarySource
 {

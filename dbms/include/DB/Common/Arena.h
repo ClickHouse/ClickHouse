@@ -3,6 +3,7 @@
 #include <string.h>
 #include <memory>
 #include <vector>
+#include <boost/noncopyable.hpp>
 #include <Poco/SharedPtr.h>
 #include <common/likely.h>
 #include <DB/Core/Defines.h>
@@ -22,7 +23,7 @@ namespace DB
   * - память выделяется и освобождается большими кусками;
   * - удаление части данных не предусмотрено;
   */
-class Arena
+class Arena : private boost::noncopyable
 {
 private:
 	/// Непрерывный кусок памяти и указатель на свободное место в нём. Односвязный список.

@@ -5,6 +5,15 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int UNSUPPORTED_PARAMETER;
+	extern const int UNKNOWN_IDENTIFIER;
+	extern const int UNKNOWN_RELATION;
+}
+
+
 namespace OLAP
 {
 
@@ -12,7 +21,7 @@ QueryConverter::QueryConverter(Poco::Util::AbstractConfiguration & config)
 {
 	table_for_single_counter = config.getString("olap_compatibility.table_for_single_counter");
 	table_for_all_counters = config.getString("olap_compatibility.table_for_all_counters");
-	
+
 	fillFormattedAttributeMap();
 	fillNumericAttributeMap();
 	fillFormattingAggregatedAttributeMap();
@@ -47,20 +56,20 @@ void QueryConverter::OLAPServerQueryToClickHouse(const QueryParseResult & query,
 	/// Проверим, умеем ли мы выполнять такой запрос.
 	if (query.format != FORMAT_TAB)
 		throw Exception("Only tab-separated output format is supported", ErrorCodes::UNSUPPORTED_PARAMETER);
-	
+
 	/// Учтем некоторые настройки (далеко не все).
-	
+
 	Settings new_settings = inout_context.getSettings();
-	
+
 	if (query.concurrency != 0)
 		new_settings.max_threads = query.concurrency;
-	
+
 	if (query.max_execution_time != 0)
 		new_settings.limits.max_execution_time = Poco::Timespan(query.max_execution_time, 0);
-	
+
 	if (query.max_result_size != 0)
 		new_settings.limits.max_rows_to_group_by = query.max_result_size;
-	
+
 	if (query.has_overflow_mode)
 	{
 		switch (query.overflow_mode)
@@ -76,54 +85,54 @@ void QueryConverter::OLAPServerQueryToClickHouse(const QueryParseResult & query,
 				break;
 		}
 	}
-	
+
 	inout_context.setSettings(new_settings);
-	
+
 	/// Составим запрос.
 	out_query = "SELECT ";
-	
+
 	std::vector<std::string> selected_expressions;
-	
+
 	/// Что выбирать: ключи агрегации и агрегированные значения.
 	for (size_t i = 0; i < query.key_attributes.size(); ++i)
 	{
 		const QueryParseResult::KeyAttribute & key = query.key_attributes[i];
 		std::string s = convertAttributeFormatted(key.attribute, key.parameter, regions_point_of_view_formatted);
-		
+
 		if (i > 0)
 			out_query += ", ";
 		out_query += s + " AS _" + firstWord(key.attribute) + (key.parameter ? "_" + toString(key.parameter) : "");
 		selected_expressions.push_back(s);
 	}
-	
+
 	for (size_t i = 0; i < query.aggregates.size(); ++i)
 	{
 		const QueryParseResult::Aggregate & aggregate = query.aggregates[i];
 		std::string s = convertAggregateFunction(aggregate.attribute, aggregate.parameter, aggregate.function, query, regions_point_of_view_formatted);
-		
+
 		if (query.key_attributes.size() + i > 0)
 			out_query += ", ";
 		out_query += s + " AS _" + firstWord(aggregate.function) + "_" + firstWord(aggregate.attribute) + (aggregate.parameter ? "_" + toString(aggregate.parameter) : "");
 		selected_expressions.push_back(s);
 	}
-	
+
 	/// Из какой таблицы.
 	out_query += " FROM " + getTableName(query.CounterID, query.local);
 
 	/// Добавляем сэмплирование.
 	if (query.sample != 1)
 		out_query += " SAMPLE " + toString(query.sample);
-	
+
 	/// Условия.
 	out_query += " WHERE ";
-	
+
 	/// Диапазон дат.
 	out_query += convertDateRange(query.date_first, query.date_last);
-	
+
 	/// Счетчик.
 	if (query.CounterID != 0)
 		out_query += " AND " + convertCounterID(query.CounterID);
-	
+
 	/// Произвольные условия.
 	for (size_t i = 0; i < query.where_conditions.size(); ++i)
 	{
@@ -131,7 +140,7 @@ void QueryConverter::OLAPServerQueryToClickHouse(const QueryParseResult & query,
 		out_query += " AND " + convertCondition(
 			condition.attribute, condition.parameter, condition.relation, condition.rhs, regions_point_of_view_formatted);
 	}
-	
+
 	/// Группировка.
 	if (!query.key_attributes.empty())
 	{
@@ -143,10 +152,10 @@ void QueryConverter::OLAPServerQueryToClickHouse(const QueryParseResult & query,
 			out_query += selected_expressions[i];
 		}
 	}
-	
+
 	/// Условие для групп.
 	out_query += " " + getHavingSection();
-	
+
 	/// Сортировка.
 	if (!query.sort_columns.empty())
 	{
@@ -154,14 +163,14 @@ void QueryConverter::OLAPServerQueryToClickHouse(const QueryParseResult & query,
 		for (size_t i = 0; i < query.sort_columns.size(); ++i)
 		{
 			const QueryParseResult::SortColumn & column = query.sort_columns[i];
-			
+
 			if (i > 0)
 				out_query += ", ";
 			out_query += selected_expressions[column.index - 1];
 			out_query += " " + convertSortDirection(column.direction);
 		}
 	}
-	
+
 	/// Ограничение на количество выводимых строк.
 	if (query.limit != 0)
 		out_query += " LIMIT " + toString(query.limit);
@@ -172,7 +181,7 @@ std::string QueryConverter::convertAttributeFormatted(const std::string & attrib
 {
 	if (formatted_attribute_map.count(attribute))
 		return Poco::format(formatted_attribute_map.at(attribute), parameter);
-	
+
 	/** Для атрибутов по регионам, выражение содержит подстановку %s,
 	  *  куда должна быть подставлена regions_point_of_view_formatted.
 	  */
@@ -182,13 +191,13 @@ std::string QueryConverter::convertAttributeFormatted(const std::string & attrib
 	if (numeric_attribute_map.count(attribute))
 	{
 		std::string numeric = Poco::format(numeric_attribute_map.at(attribute), parameter);
-		
+
 		if (formatting_aggregated_attribute_map.count(attribute))
 			return Poco::format(formatting_aggregated_attribute_map.at(attribute), std::string("(") + numeric + ")");
 		else
 			return numeric;
 	}
-	
+
 	throw Exception("Unknown attribute: " + attribute, ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
@@ -203,7 +212,7 @@ std::string QueryConverter::convertAttributeNumeric(const std::string & attribut
 
 	if (numeric_attribute_map.count(attribute))
 		return Poco::format(numeric_attribute_map.at(attribute), parameter);
-	
+
 	throw Exception("Unknown attribute: " + attribute, ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
@@ -228,9 +237,9 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 		else
 			return "sum(Sign)";
 	}
-	
+
 	std::string numeric = convertAttributeNumeric(attribute, parameter, regions_point_of_view_formatted);
-	
+
 	if (name == "uniq" ||
 		name == "uniq_sort" ||
 		name == "uniq_hash" ||
@@ -241,13 +250,13 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 
 	if (name == "uniq_state")
 		return "uniqState(" + numeric + ")";
-	
+
 	if (name == "uniq_hll12")
 		return "uniqHLL12(" + numeric + ")";
-	
+
 	if (name == "uniq_hll12_state")
 		return "uniqHLL12State(" + numeric + ")";
-	
+
 	if (name == "count_non_zero")
 	{
 		if (query.sample != 1)
@@ -271,7 +280,7 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 	}
 
 	bool trivial_format;
-	
+
 	std::string format;
 	if (formatting_aggregated_attribute_map.count(attribute))
 	{
@@ -285,7 +294,7 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 	}
 
 	std::string s;
-	
+
 	if (name == "sum")
 	{
 		if (query.sample != 1)
@@ -326,10 +335,10 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 		s = "min(" + numeric + ")";
 	if (name == "max")
 		s = "max(" + numeric + ")";
-	
+
 	/// Если агрегатная функция возвращает дробное число, и атрибут имеет нетривиальное форматирование, после агрегации приведем дробное число к целому.
 	bool need_cast = !trivial_format && float_value;
-	
+
 	return Poco::format(format, std::string() + (need_cast ? "toInt64" : "") + "(" + s + ")");
 }
 
@@ -349,7 +358,7 @@ std::string QueryConverter::convertCondition(
 {
 	std::string value = convertAttributeNumeric(attribute, parameter, regions_point_of_view_formatted);
 	std::string constant = convertConstant(attribute, rhs);
-	
+
 	if (name == "equals")
 		return "(" + value + ")" + " == " + constant;
 	if (name == "not_equals")
@@ -436,7 +445,7 @@ void QueryConverter::fillNumericAttributeMap()
 	M("VisitStartWeek",       				"toInt32(toDateTime(toMonday(StartDate)))")
 	M("VisitStartTime",       				"toInt32(toTime(StartTime))")
 	M("VisitStartTimeRoundedToMinute",		"toInt32(toStartOfMinute(toTime(StartTime)))")
-	
+
 	M("VisitStartYear",       "toYear(StartDate)")
 	M("VisitStartMonth",      "toMonth(StartDate)")
 	M("VisitStartDayOfWeek",  "toDayOfWeek(StartDate)")
@@ -449,7 +458,7 @@ void QueryConverter::fillNumericAttributeMap()
 	M("FirstVisitDate",       "toInt32(toDateTime(toDate(FirstVisit)))")
 	M("FirstVisitWeek",       "toInt32(toDateTime(toMonday(FirstVisit)))")
 	M("FirstVisitTime",       "toInt32(toTime(FirstVisit))")
-	
+
 	M("FirstVisitYear",       "toYear(FirstVisit)")
 	M("FirstVisitMonth",      "toMonth(FirstVisit)")
 	M("FirstVisitDayOfWeek",  "toDayOfWeek(FirstVisit)")
@@ -470,7 +479,7 @@ void QueryConverter::fillNumericAttributeMap()
 	M("ClientTimeHour",       "toHour(ClientEventTime)")
 	M("ClientTimeMinute",     "toMinute(ClientEventTime)")
 	M("ClientTimeSecond",     "toSecond(ClientEventTime)")
-	
+
 	M("SearchPhraseHash",     "SearchPhraseHash")
 	M("RefererDomainHash",    "RefererDomainHash")
 	M("StartURLHash",         "NormalizedStartURLHash")
@@ -495,10 +504,10 @@ void QueryConverter::fillNumericAttributeMap()
 	M("BouncePrecise",        "IsBounce")
 	M("IsYandex",             "IsYandex")
 	M("UserID",               "UserID")
-	
+
 	M("UserIDCreateDateTime", "(UserID > 10000000000000000000 OR UserID %% 10000000000 > 2000000000 OR UserID %% 10000000000 < 1000000000 ? toUInt64(0) : UserID %% 10000000000)")
 	M("UserIDCreateDate",     "(UserID > 10000000000000000000 OR UserID %% 10000000000 > 2000000000 OR UserID %% 10000000000 < 1000000000 ? toUInt64(0) : UserID %% 10000000000)")
-	
+
 	M("UserIDAge",            "(UserID > 10000000000000000000 OR UserID %% 10000000000 < 1000000000 OR UserID %% 10000000000 > toUInt64(StartTime) ? toInt64(-1) : intDiv(toInt64(StartTime) - UserID %% 10000000000, 86400))")
 	M("UserIDAgeInterval",    "(UserID > 10000000000000000000 OR UserID %% 10000000000 < 1000000000 OR UserID %% 10000000000 > toUInt64(StartTime) ? toInt64(-1) : toInt64(roundToExp2(intDiv(toUInt64(StartTime) - UserID %% 10000000000, 86400))))")
 	M("TotalVisits",          "TotalVisits")
@@ -508,18 +517,18 @@ void QueryConverter::fillNumericAttributeMap()
 	M("Sex",                  "Sex")
 	M("Income",               "Income")
 	M("AdvEngineID",          "AdvEngineID")
-	
+
 	M("DotNet",               "NetMajor * 256 + NetMinor")
-	
+
 	M("DotNetMajor",          "NetMajor")
-	
+
 	M("Flash",                "FlashMajor * 256 + FlashMinor")
-	
+
 	M("FlashExists",          "FlashMajor > 0")
 	M("FlashMajor",           "FlashMajor")
-	
+
 	M("Silverlight",          "SilverlightVersion1 * 72057594037927936 + SilverlightVersion2 * 281474976710656 + SilverlightVersion3 * 65536 + SilverlightVersion4")
-	
+
 	M("SilverlightMajor",     "SilverlightVersion1")
 	M("Hits",                 "Hits")
 	M("HitsInterval",         "roundToExp2(Hits)")
@@ -529,30 +538,30 @@ void QueryConverter::fillNumericAttributeMap()
 	M("IsMobile",             "IsMobile")
 	M("MobilePhoneID",        "MobilePhone")
 	M("MobilePhoneModelHash", "halfMD5(MobilePhoneModel)")
-	
+
 	M("MobilePhoneModel",     "reinterpretAsUInt64(MobilePhoneModel)")
 	M("BrowserLanguage",      "BrowserLanguage")
 	M("BrowserCountry",       "BrowserCountry")
 	M("TopLevelDomain",       "TopLevelDomain")
 	M("URLScheme",            "URLScheme")
-	
+
 	M("IPNetworkID",          "IPNetworkID")
 	M("ClientTimeZone",       "ClientTimeZone")
 	M("OSID",                 "OS")
 	M("OSMostAncestor",       "OSToRoot(OS)")
-	
+
 	M("ClientIP",             "ClientIP")
 	M("Resolution",           "ResolutionWidth * 16777216 + ResolutionHeight * 256 + ResolutionDepth")
 	M("ResolutionWidthHeight","ResolutionWidth * 65536 + ResolutionHeight")
-	
+
 	M("ResolutionWidth",      "ResolutionWidth")
 	M("ResolutionHeight",     "ResolutionHeight")
 	M("ResolutionWidthInterval","intDiv(ResolutionWidth, 100) * 100")
 	M("ResolutionHeightInterval","intDiv(ResolutionHeight, 100) * 100")
 	M("ResolutionColor",      "ResolutionDepth")
-	
+
 	M("WindowClientArea",     "WindowClientWidth * 65536 + WindowClientHeight")
-	
+
 	M("WindowClientAreaInterval","intDiv(WindowClientWidth, 100) * 6553600 + intDiv(WindowClientHeight, 100) * 100")
 	M("WindowClientWidth",    "WindowClientWidth")
 	M("WindowClientWidthInterval","intDiv(WindowClientWidth, 100) * 100")
@@ -561,11 +570,11 @@ void QueryConverter::fillNumericAttributeMap()
 	M("SearchEngineID",       "SearchEngineID")
 	M("SearchEngineMostAncestor", "SEToRoot(toUInt8(SearchEngineID))")
 	M("CodeVersion",          "CodeVersion")
-	
+
 	M("UserAgent",            "UserAgent * 16777216 + UserAgentMajor * 65536 + UserAgentMinor")
 	M("UserAgentVersion",     "UserAgentMajor * 65536 + UserAgentMinor")
 	M("UserAgentMajor",       "UserAgent * 256 + UserAgentMajor")
-	
+
 	M("UserAgentID",          "UserAgent")
 	M("ClickGoodEvent",       "ClickGoodEvent")
 	M("ClickPriorityID",      "ClickPriorityID")
@@ -588,9 +597,9 @@ void QueryConverter::fillNumericAttributeMap()
 	M("Converted",            "has(Goals.ID, toUInt32(%u))")
 	M("CounterID",            "CounterID")
 	M("VisitID",              "VisitID")
-	
+
 	M("Interests",            "Interests")
-	
+
 	M("HasInterestPhoto",     "modulo(intDiv(Interests, 128), 2)")
 	M("HasInterestMoviePremieres","modulo(intDiv(Interests, 64), 2)")
 	M("HasInterestTourism",   "modulo(intDiv(Interests, 32), 2)")
@@ -612,12 +621,12 @@ void QueryConverter::fillNumericAttributeMap()
 	M("UTMTermHash",          "UTMTermHash")
 	M("FromHash",             "FromHash")
 	M("CLID",                 "CLID")
-	
+
 	M("SocialSourceNetworkID","SocialSourceNetworkID")
 	/// где 26 это Яндекс (db_dumps/SearchEngines).
 	M("CorrectedTraficSourceID", "(IsYandex AND SEIn(toUInt8(SearchEngineID), 26)) ? -1 : TraficSourceID")
 	M("CorrectedSearchEngineID", "(IsYandex AND SEIn(toUInt8(SearchEngineID), 26)) ? 0 : toUInt8(SearchEngineID)")
-	
+
 #undef M
 }
 
@@ -633,33 +642,33 @@ void QueryConverter::fillFormattedAttributeMap()
 	M("VisitStartDateTimeRoundedToHour",   	"toStartOfHour(StartTime)")
 	M("VisitStartDateRoundedToMonth",      	"toDateTime(toStartOfMonth(StartDate))")
 	M("VisitStartTimeRoundedToMinute",		"substring(toString(toStartOfMinute(toTime(StartTime))), 12, 8)")
-	
+
 	M("FirstVisitDateTime",   "FirstVisit")
 	M("FirstVisitDate",       "toDate(FirstVisit)")
 	M("FirstVisitWeek",       "toMonday(FirstVisit)")
 	M("FirstVisitTime",       "substring(toString(FirstVisit), 12, 8)")
-	
+
 	M("PredLastVisitDate",    "PredLastVisit")
 	M("PredLastVisitWeek",    "toMonday(PredLastVisit)")
-	
+
 	M("ClientDateTime",       "ClientEventTime")
 	M("ClientTime",           "substring(toString(ClientEventTime), 12, 8)")
-	
+
 	M("DotNet",               "concat(concat(toString(NetMajor), '.'), toString(NetMinor))")
 	M("Flash",                "concat(concat(toString(FlashMajor),'.'),toString(FlashMinor))")
 	M("Silverlight",          "concat(concat(concat(concat(concat(concat(toString(SilverlightVersion1), '.'), toString(SilverlightVersion2)), '.'), toString(SilverlightVersion3)), '.'), toString(SilverlightVersion4))")
 	M("MobilePhoneModel",     "MobilePhoneModel")
-	
+
 	M("ClientIP",             "IPv4NumToString(ClientIP)")
 	M("Resolution",           "concat(concat(concat(concat(toString(ResolutionWidth),'x'),toString(ResolutionHeight)),'x'),toString(ResolutionDepth))")
 	M("ResolutionWidthHeight","concat(concat(toString(ResolutionWidth),'x'),toString(ResolutionHeight))")
-	
+
 	M("WindowClientArea",     "concat(concat(toString(WindowClientWidth),'x'),toString(WindowClientHeight))")
-	
+
 	M("UserAgent",            "concat(concat(concat(toString(UserAgent), ' '), toString(UserAgentMajor)), UserAgentMinor == 0 ? '' : concat('.', reinterpretAsString(UserAgentMinor)))")
 	M("UserAgentVersion",     "concat(toString(UserAgentMajor), UserAgentMinor == 0 ? '' : concat('.', reinterpretAsString(UserAgentMinor)))")
 	M("UserAgentMajor",       "concat(concat(toString(UserAgent), ' '), toString(UserAgentMajor))")
-#undef M	
+#undef M
 }
 
 void QueryConverter::fillFormattingAggregatedAttributeMap()

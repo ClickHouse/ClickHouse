@@ -1,7 +1,6 @@
 #include <iterator>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <DB/Core/Block.h>
 
@@ -19,6 +18,14 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int POSITION_OUT_OF_BOUND;
+	extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+	extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+	extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+}
 
 
 Block::Block(const Block & other)

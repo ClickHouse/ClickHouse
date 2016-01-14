@@ -43,7 +43,7 @@ public:
 		request.setKeepAlive(true);
 		request.setChunkedTransferEncoding(true);
 		request.setCredentials("Basic", user_password_base64.str());
-		request.setURI("/?database=" + connection.database + "&default_format=ODBC");	/// TODO Возможность передать настройки. TODO эскейпинг
+		request.setURI("/?database=" + connection.database + "&default_format=ODBCDriver");	/// TODO Возможность передать настройки. TODO эскейпинг
 
 //		if (in && in->peek() != EOF)
 			connection.session.reset();
