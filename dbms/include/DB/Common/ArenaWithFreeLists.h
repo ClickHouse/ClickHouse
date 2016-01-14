@@ -2,6 +2,15 @@
 
 #include <DB/Common/Arena.h>
 
+#if !defined(__x86_64__)
+
+unsigned int ALWAYS_INLINE _bit_scan_reverse(unsigned int x)
+{
+	return sizeof(unsigned int) - 1 - __builtin_clz(x);
+}
+
+#endif
+
 
 namespace DB
 {
