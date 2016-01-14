@@ -441,7 +441,7 @@ struct BinaryFunctionPlain
 	static constexpr auto name = Name::name;
 	static constexpr auto rows_per_iteration = 1;
 
-	template <typename T>
+	template <typename T1, typename T2>
 	static void execute(const T1 * const src_left, const T2 * const src_right, Float64 * const dst)
 	{
 		dst[0] = static_cast<Float64>(Function(static_cast<Float64>(src_left[0]), static_cast<Float64>(src_right[0])));
