@@ -345,7 +345,7 @@ UsersConfigReloader::UsersConfigReloader(const std::string & path_, Context * co
 	/// Сначала поищем его рядом с основным конфигом, потом - в текущей директории.
 	if (path.empty() || path[0] != '/')
 	{
-		std::string main_config_path = Application::instance().config().getString("config-file", "config.xml");
+		std::string main_config_path = Poco::Util::Application::instance().config().getString("config-file", "config.xml");
 		std::string config_dir = Poco::Path(main_config_path).parent().toString();
 		if (Poco::File(config_dir + path).exists())
 			path = config_dir + path;

@@ -16,6 +16,15 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CORRUPTED_DATA;
+	extern const int INCORRECT_MARK;
+	extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+	extern const int UNKNOWN_TYPE;
+}
+
+
 struct Stream
 {
 	static const size_t UNKNOWN = std::numeric_limits<size_t>::max();

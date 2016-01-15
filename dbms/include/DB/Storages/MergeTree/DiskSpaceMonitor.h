@@ -4,12 +4,18 @@
 #include <boost/noncopyable.hpp>
 #include <common/logger_useful.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Common/formatReadable.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int CANNOT_STATVFS;
+	extern const int NOT_ENOUGH_SPACE;
+}
+
 
 /** Узнает количество свободного места в файловой системе.
   * Можно "резервировать" место, чтобы разные операции могли согласованно планировать использование диска.

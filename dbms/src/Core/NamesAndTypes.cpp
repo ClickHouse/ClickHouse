@@ -9,6 +9,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int THERE_IS_NO_COLUMN;
+}
+
+
 void NamesAndTypesList::readText(ReadBuffer & buf)
 {
 	const DataTypeFactory & data_type_factory = DataTypeFactory::instance();

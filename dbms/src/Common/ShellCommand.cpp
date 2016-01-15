@@ -4,10 +4,23 @@
 #include <fcntl.h>
 #include <dlfcn.h>
 
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Common/Exception.h>
 #include <DB/Common/ShellCommand.h>
 #include <DB/IO/WriteBufferFromVector.h>
+
+
+namespace DB
+{
+	namespace ErrorCodes
+	{
+		extern const int CANNOT_PIPE;
+		extern const int CANNOT_DLSYM;
+		extern const int CANNOT_FORK;
+		extern const int CANNOT_WAITPID;
+		extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
+		extern const int CANNOT_CREATE_CHILD_PROCESS;
+	}
+}
 
 
 namespace

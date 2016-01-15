@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CANNOT_CONVERT_TYPE;
+}
+
 
 /** StaticVisitor (его наследники) - класс с перегруженными для разных типов операторами ().
   * Вызвать visitor для field можно с помощью функции apply_visitor.

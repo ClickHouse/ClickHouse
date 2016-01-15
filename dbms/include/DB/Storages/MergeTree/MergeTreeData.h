@@ -25,6 +25,24 @@ struct SimpleIncrement;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+	extern const int NO_FILE_IN_DATA_PART;
+	extern const int EXPECTED_END_OF_FILE;
+	extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
+	extern const int FORMAT_VERSION_TOO_OLD;
+	extern const int INVALID_PARTITION_NAME;
+	extern const int UNKNOWN_FORMAT;
+	extern const int UNEXPECTED_FILE_IN_DATA_PART;
+	extern const int TOO_MUCH_PARTS;
+	extern const int NO_SUCH_DATA_PART;
+	extern const int DUPLICATE_DATA_PART;
+	extern const int DIRECTORY_ALREADY_EXISTS;
+	extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
+	extern const int NO_SUCH_COLUMN_IN_TABLE;
+}
+
 /** Структура данных для *MergeTree движков.
   * Используется merge tree для инкрементальной сортировки данных.
   * Таблица представлена набором сортированных кусков.

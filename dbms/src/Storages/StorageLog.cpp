@@ -3,7 +3,6 @@
 #include <DB/Common/escapeForFileName.h>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/WriteBufferFromFile.h>
@@ -34,6 +33,14 @@ namespace DB
 {
 
 using Poco::SharedPtr;
+
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+	extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+	extern const int DUPLICATE_COLUMN;
+	extern const int SIZES_OF_MARKS_FILES_ARE_INCONSISTENT;
+}
 
 
 class LogBlockInputStream : public IProfilingBlockInputStream

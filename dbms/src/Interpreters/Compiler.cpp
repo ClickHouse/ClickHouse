@@ -187,13 +187,11 @@ void Compiler::compile(
 		" -isystem /usr/share/clickhouse/headers/usr/include/x86_64-linux-gnu/c++/*/"
 		" -isystem /usr/share/clickhouse/headers/usr/local/lib/clang/*/include/"
 		" -I /usr/share/clickhouse/headers/dbms/include/"
-		" -I /usr/share/clickhouse/headers/libs/libcityhash/"
+		" -I /usr/share/clickhouse/headers/contrib/libcityhash/"
+		" -I /usr/share/clickhouse/headers/contrib/libdouble-conversion/"
+		" -I /usr/share/clickhouse/headers/contrib/libcpuid/include/"
 		" -I /usr/share/clickhouse/headers/libs/libcommon/include/"
-		" -I /usr/share/clickhouse/headers/libs/libdouble-conversion/"
-		" -I /usr/share/clickhouse/headers/libs/libcpuid/include/"
 		" -I /usr/share/clickhouse/headers/libs/libmysqlxx/include/"
-		" -I /usr/share/clickhouse/headers/libs/libstatdaemons/include/"
-		" -I /usr/share/clickhouse/headers/libs/libstats/include/"
 		" " << additional_compiler_flags <<
 		" -o " << so_file_path << " " << cpp_file_path
 		<< " 2>&1 || echo Exit code: $?";

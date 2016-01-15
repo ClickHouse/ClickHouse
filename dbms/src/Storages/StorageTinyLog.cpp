@@ -6,7 +6,6 @@
 #include <DB/Common/escapeForFileName.h>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/WriteBufferFromFile.h>
@@ -33,6 +32,14 @@ namespace DB
 {
 
 using Poco::SharedPtr;
+
+namespace ErrorCodes
+{
+	extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+	extern const int CANNOT_CREATE_DIRECTORY;
+	extern const int CANNOT_READ_ALL_DATA;
+	extern const int DUPLICATE_COLUMN;
+}
 
 
 class TinyLogBlockInputStream : public IProfilingBlockInputStream

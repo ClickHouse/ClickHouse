@@ -15,7 +15,9 @@
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Interpreters/AggregationCommon.h>
 
-#include <smmintrin.h>
+#if defined(__x86_64__)
+	#include <smmintrin.h>
+#endif
 
 
 /** Выполнять так:
@@ -74,11 +76,15 @@ DefineStringRef(StringRef_Compare8_1_byUInt64)
 DefineStringRef(StringRef_Compare16_1_byMemcmp)
 DefineStringRef(StringRef_Compare16_1_byUInt64_logicAnd)
 DefineStringRef(StringRef_Compare16_1_byUInt64_bitAnd)
+
+#if defined(__x86_64__)
 DefineStringRef(StringRef_Compare16_1_byIntSSE)
 DefineStringRef(StringRef_Compare16_1_byFloatSSE)
 DefineStringRef(StringRef_Compare16_1_bySSE4)
 DefineStringRef(StringRef_Compare16_1_bySSE4_wide)
 DefineStringRef(StringRef_Compare16_1_bySSE_wide)
+#endif
+
 DefineStringRef(StringRef_CompareAlwaysTrue)
 DefineStringRef(StringRef_CompareAlmostAlwaysTrue)
 
@@ -190,6 +196,8 @@ inline bool compare_byUInt64_bitAnd(const char * p1, const char * p2)
 		 & (reinterpret_cast<const uint64_t *>(p1)[1] == reinterpret_cast<const uint64_t *>(p2)[1]);
 }
 
+#if defined(__x86_64__)
+
 inline bool compare_byIntSSE(const char * p1, const char * p2)
 {
 	return 0xFFFF == _mm_movemask_epi8(_mm_cmpeq_epi8(
@@ -203,6 +211,8 @@ inline bool compare_byFloatSSE(const char * p1, const char * p2)
 		_mm_loadu_ps(reinterpret_cast<const float *>(p1)),
 		_mm_loadu_ps(reinterpret_cast<const float *>(p2))));
 }
+
+#endif
 
 
 template <bool compare(const char *, const char *)>
@@ -252,6 +262,8 @@ inline bool memequal(const char * p1, const char * p2, size_t size)
 	return true;
 }
 
+
+#if defined(__x86_64__)
 
 inline bool memequal_sse41(const char * p1, const char * p2, size_t size)
 {
@@ -483,6 +495,8 @@ inline bool memequal_sse_wide(const char * p1, const char * p2, size_t size)
 	return true;
 }
 
+#endif
+
 
 #define Op(METHOD) \
 inline bool operator==(StringRef_Compare16_1_ ## METHOD lhs, StringRef_Compare16_1_ ## METHOD rhs) \
@@ -499,6 +513,9 @@ inline bool operator==(StringRef_Compare16_1_ ## METHOD lhs, StringRef_Compare16
 Op(byMemcmp)
 Op(byUInt64_logicAnd)
 Op(byUInt64_bitAnd)
+
+#if defined(__x86_64__)
+
 Op(byIntSSE)
 Op(byFloatSSE)
 
@@ -535,6 +552,8 @@ inline bool operator==(StringRef_Compare16_1_bySSE_wide lhs, StringRef_Compare16
 
 	return memequal_sse_wide(lhs.data, rhs.data, lhs.size);
 }
+
+#endif
 
 
 inline bool operator==(StringRef_CompareAlwaysTrue lhs, StringRef_CompareAlwaysTrue rhs)
@@ -623,11 +642,13 @@ int main(int argc, char ** argv)
 	if (!m || m == 5) bench<StringRef_Compare16_1_byMemcmp>			(data, "StringRef_Compare16_1_byMemcmp");
 	if (!m || m == 6) bench<StringRef_Compare16_1_byUInt64_logicAnd>(data, "StringRef_Compare16_1_byUInt64_logicAnd");
 	if (!m || m == 7) bench<StringRef_Compare16_1_byUInt64_bitAnd>	(data, "StringRef_Compare16_1_byUInt64_bitAnd");
+#if defined(__x86_64__)
 	if (!m || m == 8) bench<StringRef_Compare16_1_byIntSSE>			(data, "StringRef_Compare16_1_byIntSSE");
 	if (!m || m == 9) bench<StringRef_Compare16_1_byFloatSSE>		(data, "StringRef_Compare16_1_byFloatSSE");
 	if (!m || m == 10) bench<StringRef_Compare16_1_bySSE4>			(data, "StringRef_Compare16_1_bySSE4");
 	if (!m || m == 11) bench<StringRef_Compare16_1_bySSE4_wide>		(data, "StringRef_Compare16_1_bySSE4_wide");
 	if (!m || m == 12) bench<StringRef_Compare16_1_bySSE_wide>		(data, "StringRef_Compare16_1_bySSE_wide");
+#endif
 	if (!m || m == 100) bench<StringRef_CompareAlwaysTrue>			(data, "StringRef_CompareAlwaysTrue");
 	if (!m || m == 101) bench<StringRef_CompareAlmostAlwaysTrue>	(data, "StringRef_CompareAlmostAlwaysTrue");
 

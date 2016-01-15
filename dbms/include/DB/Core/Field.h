@@ -7,13 +7,19 @@
 #include <boost/static_assert.hpp>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Types.h>
 #include <common/strong_typedef.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int BAD_TYPE_OF_FIELD;
+	extern const int BAD_GET;
+	extern const int NOT_IMPLEMENTED;
+}
 
 class Field;
 using Array = std::vector<Field>; /// Значение типа "массив"
@@ -26,7 +32,7 @@ using Poco::SharedPtr;
 /** 32 хватает с запасом (достаточно 28), но выбрано круглое число,
   * чтобы арифметика при использовании массивов из Field была проще (не содержала умножения).
   */
-#define DBMS_TOTAL_FIELD_SIZE 32
+#define DBMS_MIN_FIELD_SIZE 32
 
 
 /** Discriminated union из нескольких типов.
@@ -37,7 +43,7 @@ using Poco::SharedPtr;
   * Используется для представления единичного значения одного из нескольких типов в оперативке.
   * Внимание! Предпочтительно вместо единичных значений хранить кусочки столбцов. См. Column.h
   */
-class __attribute__((aligned(DBMS_TOTAL_FIELD_SIZE))) Field
+class Field
 {
 public:
 	struct Types
@@ -262,16 +268,9 @@ public:
 	}
 
 private:
-	/// Хватает с запасом
-	static const size_t storage_size = DBMS_TOTAL_FIELD_SIZE - sizeof(Types::Which);
-
-	BOOST_STATIC_ASSERT(storage_size >= sizeof(Null));
-	BOOST_STATIC_ASSERT(storage_size >= sizeof(UInt64));
-	BOOST_STATIC_ASSERT(storage_size >= sizeof(Int64));
-	BOOST_STATIC_ASSERT(storage_size >= sizeof(Float64));
-	BOOST_STATIC_ASSERT(storage_size >= sizeof(String));
-	BOOST_STATIC_ASSERT(storage_size >= sizeof(Array));
-	BOOST_STATIC_ASSERT(storage_size >= sizeof(Tuple));
+	static const size_t storage_size = std::max({
+		DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
+		sizeof(Null), sizeof(UInt64), sizeof(Int64), sizeof(Float64), sizeof(String), sizeof(Array), sizeof(Tuple)});
 
 	char storage[storage_size] __attribute__((aligned(8)));
 	Types::Which which;
@@ -346,7 +345,7 @@ private:
 	}
 };
 
-#undef DBMS_TOTAL_FIELD_SIZE
+#undef DBMS_MIN_FIELD_SIZE
 
 
 template <> struct Field::TypeToEnum<Null> 								{ static const Types::Which value = Types::Null; };

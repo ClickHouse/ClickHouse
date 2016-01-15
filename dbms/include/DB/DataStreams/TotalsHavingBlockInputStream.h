@@ -1,14 +1,12 @@
 #pragma once
 
-#include <DB/Interpreters/Aggregator.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/Interpreters/ExpressionActions.h>
 
 
 namespace DB
 {
 
-using Poco::SharedPtr;
+class ExpressionActions;
 
 
 /** Принимает блоки после группировки, с нефиализированными агрегатными функциями.
@@ -17,26 +15,18 @@ using Poco::SharedPtr;
   */
 class TotalsHavingBlockInputStream : public IProfilingBlockInputStream
 {
+private:
+	using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
 public:
-	TotalsHavingBlockInputStream(BlockInputStreamPtr input_, const Names & keys_names_,
-		const AggregateDescriptions & aggregates_, bool overflow_row_, ExpressionActionsPtr expression_,
-		const std::string & filter_column_, TotalsMode totals_mode_, double auto_include_threshold_)
-		: overflow_row(overflow_row_),
-		expression(expression_), filter_column_name(filter_column_), totals_mode(totals_mode_),
-		auto_include_threshold(auto_include_threshold_)
-	{
-		children.push_back(input_);
-	}
+	TotalsHavingBlockInputStream(
+		BlockInputStreamPtr input_,
+		bool overflow_row_, ExpressionActionsPtr expression_,
+		const std::string & filter_column_, TotalsMode totals_mode_, double auto_include_threshold_);
 
 	String getName() const override { return "TotalsHaving"; }
 
-	String getID() const override
-	{
-		std::stringstream res;
-		res << "TotalsHavingBlockInputStream(" << children.back()->getID()
-			<< "," << filter_column_name << ")";
-		return res.str();
-	}
+	String getID() const override;
 
 	const Block & getTotals() override;
 

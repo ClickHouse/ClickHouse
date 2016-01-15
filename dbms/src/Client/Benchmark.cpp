@@ -2,10 +2,12 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <time.h>
 
 #include <iostream>
 #include <fstream>
 #include <iomanip>
+#include <random>
 
 #include <Poco/File.h>
 #include <Poco/SharedPtr.h>
@@ -45,15 +47,24 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int POCO_EXCEPTION;
+	extern const int STD_EXCEPTION;
+	extern const int UNKNOWN_EXCEPTION;
+}
+
 class Benchmark
 {
 public:
 	Benchmark(unsigned concurrency_, double delay_,
 			const String & host_, UInt16 port_, const String & default_database_,
 			const String & user_, const String & password_, const String & stage,
+			bool randomize_,
 			const Settings & settings_)
 		: concurrency(concurrency_), delay(delay_), queue(concurrency),
 		connections(concurrency, host_, port_, default_database_, user_, password_),
+		randomize(randomize_),
 		settings(settings_), pool(concurrency)
 	{
 		std::cerr << std::fixed << std::setprecision(3);
@@ -84,6 +95,7 @@ private:
 	Queue queue;
 
 	ConnectionPool connections;
+	bool randomize;
 	Settings settings;
 	QueryProcessingStage::Enum query_processing_stage;
 
@@ -161,6 +173,11 @@ private:
 
 	void run()
 	{
+		timespec current_clock;
+		clock_gettime(CLOCK_MONOTONIC, &current_clock);
+		std::mt19937 generator(current_clock.tv_nsec);
+		std::uniform_int_distribution<size_t> distribution(0, queries.size() - 1);
+
 		for (size_t i = 0; i < concurrency; ++i)
 			pool.schedule(std::bind(&Benchmark::thread, this, connections.IConnectionPool::get()));
 
@@ -175,7 +192,11 @@ private:
 			if (i >= queries.size())
 				i = 0;
 
-			queue.push(queries[i]);
+			size_t query_index = randomize
+				? distribution(generator)
+				: i;
+
+			queue.push(queries[query_index]);
 
 			if (watch.elapsedSeconds() > delay)
 			{
@@ -336,6 +357,7 @@ int main(int argc, char ** argv)
 			("password", boost::program_options::value<std::string>()->default_value(""), "")
 			("database", boost::program_options::value<std::string>()->default_value("default"), "")
 			("stage", boost::program_options::value<std::string>()->default_value("complete"), "request query processing up to specified stage")
+			("randomize,r", boost::program_options::value<bool>()->default_value(false), "randomize order of execution")
 		#define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
 		#define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
@@ -373,6 +395,7 @@ int main(int argc, char ** argv)
 			options["user"].as<std::string>(),
 			options["password"].as<std::string>(),
 			options["stage"].as<std::string>(),
+			options["randomize"].as<bool>(),
 			settings);
 	}
 	catch (const Exception & e)

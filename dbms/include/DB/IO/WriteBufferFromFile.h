@@ -12,6 +12,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int FILE_DOESNT_EXIST;
+	extern const int CANNOT_OPEN_FILE;
+	extern const int CANNOT_CLOSE_FILE;
+}
+
+
 /** Принимает имя файла. Самостоятельно открывает и закрывает файл.
   */
 class WriteBufferFromFile : public WriteBufferFromFileDescriptor

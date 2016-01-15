@@ -3,6 +3,15 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+	extern const int MISMATCH_REPLICAS_DATA_SOURCES;
+	extern const int NO_AVAILABLE_REPLICA;
+	extern const int TIMEOUT_EXCEEDED;
+}
+
+
 MultiplexedConnections::MultiplexedConnections(Connection * connection_, const Settings * settings_, ThrottlerPtr throttler_)
 	: settings(settings_), throttler(throttler_), supports_parallel_execution(false)
 {

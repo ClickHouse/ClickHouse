@@ -33,6 +33,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
+	extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+	extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
+}
+
+
 /** Функции по работе с массивами:
   *
   * array(с1, с2, ...) - создать массив из констант.

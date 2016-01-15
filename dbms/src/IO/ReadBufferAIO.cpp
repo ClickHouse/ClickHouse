@@ -1,7 +1,6 @@
 #include <DB/IO/ReadBufferAIO.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/Stopwatch.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Defines.h>
 
 #include <sys/types.h>
@@ -12,6 +11,16 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int FILE_DOESNT_EXIST;
+	extern const int CANNOT_OPEN_FILE;
+	extern const int LOGICAL_ERROR;
+	extern const int ARGUMENT_OUT_OF_BOUND;
+	extern const int AIO_READ_ERROR;
+}
+
 
 /// Примечание: выделяется дополнительная страница, которая содежрит те данные, которые
 /// не влезают в основной буфер.

@@ -19,6 +19,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int POCO_EXCEPTION;
+	extern const int STD_EXCEPTION;
+	extern const int UNKNOWN_EXCEPTION;
+}
+
+
 void OLAPHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
 	HTMLForm params(request);

@@ -6,6 +6,7 @@
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
+#include <DB/Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
@@ -153,23 +154,14 @@ public:
 		bool is_leader;
 		bool is_readonly;
 		bool is_session_expired;
-		UInt32 future_parts;
+		ReplicatedMergeTreeQueue::Status queue;
 		UInt32 parts_to_check;
 		String zookeeper_path;
 		String replica_name;
 		String replica_path;
 		Int32 columns_version;
-		UInt32 queue_size;
-		UInt32 inserts_in_queue;
-		UInt32 merges_in_queue;
-		UInt32 queue_oldest_time;
-		UInt32 inserts_oldest_time;
-		UInt32 merges_oldest_time;
-		String oldest_part_to_get;
-		String oldest_part_to_merge_to;
 		UInt64 log_max_index;
 		UInt64 log_pointer;
-		UInt32 last_queue_update;
 		UInt8 total_replicas;
 		UInt8 active_replicas;
 	};
@@ -189,15 +181,12 @@ private:
 	friend class ReplicatedMergeTreeRestartingThread;
 	friend class ReplicatedMergeTreeCleanupThread;
 	friend struct ReplicatedMergeTreeLogEntry;
-	friend struct FuturePartTagger;
 
-	typedef ReplicatedMergeTreeLogEntry LogEntry;
-	typedef LogEntry::Ptr LogEntryPtr;
+	using LogEntry = ReplicatedMergeTreeLogEntry;
+	using LogEntryPtr = LogEntry::Ptr;
 
-	typedef std::list<LogEntryPtr> LogEntries;
-
-	typedef std::set<String> StringSet;
-	typedef std::list<String> StringList;
+	using StringSet = std::set<String>;
+	using StringList = std::list<String>;
 
 	Context & context;
 
@@ -219,21 +208,6 @@ private:
 	/// Если true, таблица в офлайновом режиме, и в нее нельзя писать.
 	bool is_readonly = false;
 
-	/// Каким будет множество активных кусков после выполнения всей текущей очереди.
-	ActiveDataPartSet virtual_parts;
-
-	/** Очередь того, что нужно сделать на этой реплике, чтобы всех догнать. Берется из ZooKeeper (/replicas/me/queue/).
-	  * В ZK записи в хронологическом порядке. Здесь - не обязательно.
-	  */
-	LogEntries queue;
-	time_t last_queue_update = 0;
-	std::mutex queue_mutex;
-
-	/** Куски, которые появятся в результате действий, выполняемых прямо сейчас фоновыми потоками (этих действий нет в очереди).
-	  * Использовать под залоченным queue_mutex.
-	  */
-	StringSet future_parts;
-
 	/** Куски, для которых нужно проверить одно из двух:
 	  *  - Если кусок у нас есть, сверить, его данные с его контрольными суммами, а их с ZooKeeper.
 	  *  - Если куска у нас нет, проверить, есть ли он (или покрывающий его кусок) хоть у кого-то.
@@ -250,6 +224,11 @@ private:
 	String zookeeper_path;
 	String replica_name;
 	String replica_path;
+
+	/** Очередь того, что нужно сделать на этой реплике, чтобы всех догнать. Берется из ZooKeeper (/replicas/me/queue/).
+	  * В ZK записи в хронологическом порядке. Здесь - не обязательно.
+	  */
+	ReplicatedMergeTreeQueue queue;
 
 	/** /replicas/me/is_active.
 	  */
@@ -360,10 +339,6 @@ private:
 	  */
 	void checkParts(bool skip_sanity_checks);
 
-	/// Положить все куски из data в virtual_parts.
-	void initVirtualParts();
-
-
 	/** Проверить, что чексумма куска совпадает с чексуммой того же куска на какой-нибудь другой реплике.
 	  * Если ни у кого нет такого куска, ничего не проверяет.
 	  * Не очень надежно: если две реплики добавляют кусок почти одновременно, ни одной проверки не произойдет.
@@ -380,19 +355,10 @@ private:
 
 	/// Выполнение заданий из очереди.
 
-	/** Кладет в queue записи из ZooKeeper (/replicas/me/queue/).
-	  */
-	void loadQueue();
-
 	/** Копирует новые записи из логов всех реплик в очередь этой реплики.
 	  * Если next_update_event != nullptr, вызовет это событие, когда в логе появятся новые записи.
 	  */
 	void pullLogsToQueue(zkutil::EventPtr next_update_event = nullptr);
-
-	/** Можно ли сейчас попробовать выполнить это действие. Если нет, нужно оставить его в очереди и попробовать выполнить другое.
-	  * Вызывается под queue_mutex.
-	  */
-	bool shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason);
 
 	/** Выполнить действие из очереди. Бросает исключение, если что-то не так.
 	  * Возвращает, получилось ли выполнить. Если не получилось, запись нужно положить в конец очереди.
@@ -455,16 +421,6 @@ private:
 	/** Дождаться, пока указанная реплика выполнит указанное действие из лога.
 	  */
 	void waitForReplicaToProcessLogEntry(const String & replica_name, const LogEntry & entry);
-
-	/** Преобразовать число в строку формате суффиксов автоинкрементных нод в ZooKeeper.
-	  * Поддерживаются также отрицательные числа - для них имя ноды выглядит несколько глупо
-	  *  и не соответствует никакой автоинкрементной ноде в ZK.
-	  */
-	static String padIndex(Int64 index)
-	{
-		String index_str = toString(index);
-		return std::string(10 - index_str.size(), '0') + index_str;
-	}
 };
 
 }

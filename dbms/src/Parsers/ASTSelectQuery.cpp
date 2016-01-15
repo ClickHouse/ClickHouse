@@ -6,6 +6,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int UNION_ALL_COLUMN_ALIAS_MISMATCH;
+	extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
+	extern const int UNKNOWN_IDENTIFIER;
+}
+
+
 ASTSelectQuery::ASTSelectQuery(const StringRange range_) : ASTQueryWithOutput(range_)
 {
 }

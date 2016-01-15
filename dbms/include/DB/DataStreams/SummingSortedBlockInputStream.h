@@ -14,6 +14,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+}
+
+
 /** Соединяет несколько сортированных потоков в один.
   * При этом, для каждой группы идущих подряд одинаковых значений первичного ключа (столбцов, по которым сортируются данные),
   *  схлопывает их в одну строку, суммируя все числовые столбцы кроме первичного ключа.
@@ -33,22 +39,7 @@ public:
 
 	String getName() const override { return "SummingSorted"; }
 
-	String getID() const override
-	{
-		std::stringstream res;
-		res << "SummingSorted(inputs";
-
-		for (size_t i = 0; i < children.size(); ++i)
-			res << ", " << children[i]->getID();
-
-		res << ", description";
-
-		for (size_t i = 0; i < description.size(); ++i)
-			res << ", " << description[i].getID();
-
-		res << ")";
-		return res.str();
-	}
+	String getID() const override;
 
 protected:
 	/// Может возвращаться на 1 больше записей, чем max_block_size.
@@ -104,26 +95,6 @@ private:
 
 	/// Вставить в результат просуммированную строку для текущей группы.
 	void insertCurrentRow(ColumnPlainPtrs & merged_columns);
-
-
-	/** Реализует операцию +=.
-	  * Возвращает false, если результат получился нулевым.
-	  */
-	class FieldVisitorSum : public StaticVisitor<bool>
-	{
-	private:
-		const Field & rhs;
-	public:
-		FieldVisitorSum(const Field & rhs_) : rhs(rhs_) {}
-
-		bool operator() (UInt64 	& x) const { x += get<UInt64>(rhs); return x != 0; }
-		bool operator() (Int64 		& x) const { x += get<Int64>(rhs); return x != 0; }
-		bool operator() (Float64 	& x) const { x += get<Float64>(rhs); return x != 0; }
-
-		bool operator() (Null 		& x) const { throw Exception("Cannot sum Nulls", ErrorCodes::LOGICAL_ERROR); }
-		bool operator() (String 	& x) const { throw Exception("Cannot sum Strings", ErrorCodes::LOGICAL_ERROR); }
-		bool operator() (Array 		& x) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
-	};
 
 	/** Для вложенных Map выполняется слияние по ключу с выбрасыванием строк вложенных массивов, в которых
 	  * все элементы - нулевые.

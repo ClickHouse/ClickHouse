@@ -7,7 +7,6 @@
 #include <DB/Common/escapeForFileName.h>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/WriteBufferFromFile.h>
@@ -35,6 +34,12 @@ namespace DB
 {
 
 #define INDEX_BUFFER_SIZE 4096
+
+namespace ErrorCodes
+{
+	extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+	extern const int CANNOT_CREATE_DIRECTORY;
+}
 
 
 class StripeLogBlockInputStream : public IProfilingBlockInputStream

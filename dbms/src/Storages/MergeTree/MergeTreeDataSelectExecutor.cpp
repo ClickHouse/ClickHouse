@@ -23,6 +23,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int INDEX_NOT_USED;
+}
+
+
 MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
 	: data(data_), log(&Logger::get(data.getLogName() + " (SelectExecutor)"))
 {
