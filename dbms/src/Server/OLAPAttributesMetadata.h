@@ -13,8 +13,8 @@
 
 #include <common/DateLUT.h>
 
-#include <statdaemons/RegionsHierarchy.h>
-#include <statdaemons/TechDataHierarchy.h>
+#include <DB/Dictionaries/Embedded/RegionsHierarchy.h>
+#include <DB/Dictionaries/Embedded/TechDataHierarchy.h>
 
 
 /// Код в основном взят из из OLAP-server. Здесь нужен только для парсинга значений атрибутов.
