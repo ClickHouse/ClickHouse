@@ -18,7 +18,7 @@
 #include <Poco/Net/TCPServerConnection.h>
 
 #include <common/logger_useful.h>
-#include <common/Daemon.h>
+#include <daemon/Daemon.h>
 #include <DB/Common/HTMLForm.h>
 
 #include <DB/Interpreters/Context.h>

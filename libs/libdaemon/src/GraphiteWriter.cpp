@@ -1,5 +1,5 @@
-#include <common/GraphiteWriter.h>
-#include <common/Daemon.h>
+#include <daemon/GraphiteWriter.h>
+#include <daemon/Daemon.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Net/DNS.h>

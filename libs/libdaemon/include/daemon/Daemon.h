@@ -19,7 +19,7 @@
 #include <common/Common.h>
 #include <common/logger_useful.h>
 
-#include <common/GraphiteWriter.h>
+#include <daemon/GraphiteWriter.h>
 
 #include <boost/optional.hpp>
 #include <zkutil/ZooKeeperHolder.h>
