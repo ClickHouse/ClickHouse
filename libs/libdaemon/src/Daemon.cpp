@@ -232,8 +232,12 @@ private:
 
 		void * caller_address = nullptr;
 
+#if defined(__x86_64__)
 		/// Get the address at the time the signal was raised from the RIP (x86-64)
 		caller_address = reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
+#elif defined(__aarch64__)
+		caller_address = reinterpret_cast<void *>(context.uc_mcontext.pc);
+#endif
 
 		static const int max_frames = 50;
 		void * frames[max_frames];
