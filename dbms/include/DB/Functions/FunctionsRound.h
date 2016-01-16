@@ -168,6 +168,12 @@ namespace DB
 		NullScale 		// возвращать нулевое значение
 	};
 
+#if !defined(_MM_FROUND_NINT)
+	#define _MM_FROUND_NINT		0
+	#define _MM_FROUND_FLOOR 	1
+	#define _MM_FROUND_CEIL		2
+#endif
+
 	/** Реализация низкоуровневых функций округления для целочисленных значений.
 	  */
 	template<typename T, int rounding_mode, ScaleMode scale_mode, typename Enable = void>
@@ -530,10 +536,6 @@ namespace DB
 	};
 #else
 	/// Реализация для ARM. Не векторизована. Не исправляет отрицательные нули.
-
-	#define _MM_FROUND_NINT		0
-	#define _MM_FROUND_FLOOR 	1
-	#define _MM_FROUND_CEIL		2
 
 	template <int mode>
 	float roundWithMode(float x)
