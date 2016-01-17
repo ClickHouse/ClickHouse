@@ -120,23 +120,29 @@ public:
 
 		const auto & uri = request.getURI();
 
-		if (uri.find('?') != std::string::npos
-			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
-		{
-			return new HandlerType(server);
-		}
-		else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+		if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
 			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
 		{
 			if (uri == "/" || uri == "/ping")
 				return new PingRequestHandler;
 			else if (0 == uri.compare(0, strlen("/replicas_status"), "/replicas_status"))
 				return new ReplicasStatusHandler(*server.global_context);
-			else
-				return new NotFoundHandler;
 		}
-		else
-			return nullptr;
+
+		if (uri.find('?') != std::string::npos
+			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+		{
+			return new HandlerType(server);
+		}
+
+		if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
+			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+		{
+			return new NotFoundHandler;
+		}
+
+		return nullptr;
 	}
 };
 
