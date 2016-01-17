@@ -1,5 +1,11 @@
+#include <time.h>
 #include <ext/range.hpp>
+
+#include <zkutil/Types.h>
+#include <zkutil/KeeperException.h>
+
 #include <DB/Core/FieldVisitors.h>
+
 #include <DB/Storages/ColumnsDescription.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
@@ -9,22 +15,27 @@
 #include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+
 #include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/ASTInsertQuery.h>
+
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/Operators.h>
+
 #include <DB/Interpreters/InterpreterAlterQuery.h>
-#include <DB/Common/VirtualColumnUtils.h>
-#include <DB/Parsers/ASTInsertQuery.h>
+
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 #include <DB/DataStreams/NullBlockOutputStream.h>
 #include <DB/DataStreams/copyData.h>
+
 #include <DB/Common/Macros.h>
+#include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Common/formatReadable.h>
 #include <DB/Common/setThreadName.h>
+
 #include <Poco/DirectoryIterator.h>
-#include <time.h>
 
 
 namespace DB
@@ -56,6 +67,12 @@ namespace ErrorCodes
 
 
 const auto ERROR_SLEEP_MS = 1000;
+
+/// Если ждём какого-то события с помощью watch-а, то просыпаться на всякий случай вхолостую раз в указанное время.
+const auto WAIT_FOR_NEW_LOGS_SLEEP_MS = 60 * 1000;
+const auto WAIT_FOR_ALTER_SLEEP_MS = 300 * 1000;
+const auto WAIT_FOR_REPLICA_QUEUE_MS = 10 * 1000;
+
 const auto MERGE_SELECTING_SLEEP_MS = 5 * 1000;
 
 const Int64 RESERVED_BLOCK_NUMBERS = 200;
@@ -1206,7 +1223,7 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 		try
 		{
 			pullLogsToQueue(queue_updating_event);
-			queue_updating_event->wait();
+			queue_updating_event->tryWait(WAIT_FOR_NEW_LOGS_SLEEP_MS);
 		}
 		catch (const zkutil::KeeperException & e)
 		{
@@ -1214,13 +1231,11 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 				restarting_thread->wakeup();
 
 			tryLogCurrentException(__PRETTY_FUNCTION__);
-
 			queue_updating_event->tryWait(ERROR_SLEEP_MS);
 		}
 		catch (...)
 		{
 			tryLogCurrentException(__PRETTY_FUNCTION__);
-
 			queue_updating_event->tryWait(ERROR_SLEEP_MS);
 		}
 	}
@@ -1677,7 +1692,7 @@ void StorageReplicatedMergeTree::alterThread()
 				/// Важно, что уничтожается parts и merge_blocker перед wait-ом.
 			}
 
-			alter_thread_event->wait();
+			alter_thread_event->tryWait(WAIT_FOR_ALTER_SLEEP_MS);
 		}
 		catch (...)
 		{
@@ -2472,7 +2487,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 			if (stat.version != replica_columns_version)
 				continue;
 
-			alter_query_event->wait();
+			alter_query_event->tryWait(WAIT_FOR_ALTER_SLEEP_MS);
 		}
 
 		if (shutdown_called)
@@ -2860,7 +2875,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 			if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
 				break;
 
-			event->wait();
+			event->tryWait(WAIT_FOR_REPLICA_QUEUE_MS);
 		}
 	}
 	else if (0 == entry.znode_name.compare(0, strlen("queue-"), "queue-"))
@@ -2905,7 +2920,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 				if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
 					break;
 
-				event->wait();
+				event->tryWait(WAIT_FOR_REPLICA_QUEUE_MS);
 			}
 		}
 	}
