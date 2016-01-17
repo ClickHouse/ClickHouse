@@ -304,7 +304,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 
 	StoragePtr res_ptr = res->thisPtr();
 
-	if (res->getZooKeeper())
+	if (res->tryGetZooKeeper())
 	{
 		String endpoint_name = "ReplicatedMergeTree:" + res->replica_path;
 		InterserverIOEndpointPtr endpoint = new ReplicatedMergeTreePartsServer(res->data, *res);
