@@ -40,6 +40,9 @@ void ReplicatedMergeTreeBlockOutputStream::writePrefix()
 /// Позволяет проверить, что сессия в ZooKeeper ещё жива.
 static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
 {
+	if (!zookeeper)
+		throw Exception("No ZooKeeper session.", ErrorCodes::NO_ZOOKEEPER);
+
 	if (zookeeper->expired())
 		throw Exception("ZooKeeper session has been expired.", ErrorCodes::NO_ZOOKEEPER);
 }

@@ -193,17 +193,9 @@ private:
 	zkutil::ZooKeeperPtr current_zookeeper;		/// Используйте только с помощью методов ниже.
 	std::mutex current_zookeeper_mutex;			/// Для пересоздания сессии в фоновом потоке.
 
-	zkutil::ZooKeeperPtr getZooKeeper()
-	{
-		std::lock_guard<std::mutex> lock(current_zookeeper_mutex);
-		return current_zookeeper;
-	}
-
-	void setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
-	{
-		std::lock_guard<std::mutex> lock(current_zookeeper_mutex);
-		current_zookeeper = zookeeper;
-	}
+	zkutil::ZooKeeperPtr tryGetZooKeeper();
+	zkutil::ZooKeeperPtr getZooKeeper();
+	void setZooKeeper(zkutil::ZooKeeperPtr zookeeper);
 
 	/// Если true, таблица в офлайновом режиме, и в нее нельзя писать.
 	bool is_readonly = false;
@@ -421,6 +413,9 @@ private:
 	/** Дождаться, пока указанная реплика выполнит указанное действие из лога.
 	  */
 	void waitForReplicaToProcessLogEntry(const String & replica_name, const LogEntry & entry);
+
+	/// Кинуть исключение, если таблица readonly.
+	void assertNotReadonly() const;
 };
 
 }

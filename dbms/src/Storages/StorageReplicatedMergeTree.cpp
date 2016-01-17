@@ -115,6 +115,27 @@ const Int64 RESERVED_BLOCK_NUMBERS = 200;
 const auto MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER = 5 * 60;
 
 
+void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
+{
+	std::lock_guard<std::mutex> lock(current_zookeeper_mutex);
+	current_zookeeper = zookeeper;
+}
+
+zkutil::ZooKeeperPtr StorageReplicatedMergeTree::tryGetZooKeeper()
+{
+	std::lock_guard<std::mutex> lock(current_zookeeper_mutex);
+	return current_zookeeper;
+}
+
+zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeper()
+{
+	auto res = tryGetZooKeeper();
+	if (!res)
+		throw Exception("Cannot get ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
+	return res;
+}
+
+
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	const String & zookeeper_path_,
 	const String & replica_name_,
@@ -184,6 +205,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 			throw Exception("Can't create replicated table without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
 
 		/// Не активируем реплику. Она будет в режиме readonly.
+		LOG_ERROR(log, "No ZooKeeper: table will be in readonly mode.");
+		is_readonly = true;
 		return;
 	}
 
@@ -2304,6 +2327,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 		if (settings.select_sequential_consistency)
 		{
 			auto zookeeper = getZooKeeper();
+
 			String last_part;
 			zookeeper->tryGet(zookeeper_path + "/quorum/last_part", last_part);
 
@@ -2350,10 +2374,16 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 }
 
 
-BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query, const Settings & settings)
+void StorageReplicatedMergeTree::assertNotReadonly() const
 {
 	if (is_readonly)
 		throw Exception("Table is in readonly mode", ErrorCodes::TABLE_IS_READ_ONLY);
+}
+
+
+BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query, const Settings & settings)
+{
+	assertNotReadonly();
 
 	String insert_id;
 	if (query)
@@ -2392,6 +2422,8 @@ bool StorageReplicatedMergeTree::optimize(const Settings & settings)
 void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	const String & database_name, const String & table_name, Context & context)
 {
+	assertNotReadonly();
+
 	auto zookeeper = getZooKeeper();
 	const MergeTreeMergeBlocker merge_blocker{merger};
 	const auto unreplicated_merge_blocker = unreplicated_merger ?
@@ -2553,6 +2585,8 @@ void StorageReplicatedMergeTree::dropPartition(ASTPtr query, const Field & field
 		return;
 	}
 
+	assertNotReadonly();
+
 	auto zookeeper = getZooKeeper();
 	String month_name = MergeTreeData::getMonthName(field);
 
@@ -2646,6 +2680,8 @@ void StorageReplicatedMergeTree::dropPartition(ASTPtr query, const Field & field
 
 void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & field, bool unreplicated, bool attach_part, const Settings & settings)
 {
+	assertNotReadonly();
+
 	auto zookeeper = getZooKeeper();
 	String partition;
 
@@ -2751,12 +2787,12 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 
 void StorageReplicatedMergeTree::drop()
 {
-	if (is_readonly)
+	auto zookeeper = tryGetZooKeeper();
+
+	if (is_readonly || !zookeeper)
 		throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
 
 	shutdown();
-
-	auto zookeeper = getZooKeeper();
 
 	if (zookeeper->expired())
 		throw Exception("Table was not dropped because ZooKeeper session has been expired.", ErrorCodes::TABLE_WAS_NOT_DROPPED);
@@ -2967,7 +3003,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 
 void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 {
-	auto zookeeper = getZooKeeper();
+	auto zookeeper = tryGetZooKeeper();
 
 	res.is_leader = is_leader_node;
 	res.is_readonly = is_readonly;
