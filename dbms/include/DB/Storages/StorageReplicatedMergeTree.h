@@ -172,7 +172,7 @@ public:
 	using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
 	void getQueue(LogEntriesData & res, String & replica_name);
 
-	void getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay) const;
+	void getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay);
 
 private:
 	void dropUnreplicatedPartition(const Field & partition, bool detach, const Settings & settings);

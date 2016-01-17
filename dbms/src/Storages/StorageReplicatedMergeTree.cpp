@@ -272,6 +272,7 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
 
 	/// Отслеживание отставания реплик.
 	zookeeper->createIfNotExists(replica_path + "/min_unprocessed_insert_time", "");
+	zookeeper->createIfNotExists(replica_path + "/max_processed_insert_time", "");
 }
 
 
@@ -592,7 +593,7 @@ void StorageReplicatedMergeTree::createReplica()
 			zookeeper->create(replica_path + "/queue/queue-", entry, zkutil::CreateMode::PersistentSequential);
 		}
 
-		/// Далее оно будет загружено в переменную queue в методе queue.load.
+		/// Далее оно будет загружено в переменную queue в методе queue.initialize.
 
 		LOG_DEBUG(log, "Copied " << source_queue.size() << " queue entries");
 	}
@@ -731,7 +732,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 		log_entry.new_part_name = name;
 		log_entry.create_time = tryGetPartCreateTime(zookeeper, replica_path, name);
 
-		/// Полагаемся, что это происходит до загрузки очереди (queue.load).
+		/// Полагаемся, что это происходит до загрузки очереди (queue.initialize).
 		zkutil::Ops ops;
 		removePartFromZooKeeper(name, ops);
 		ops.push_back(new zkutil::Op::Create(
@@ -1764,7 +1765,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
 	String path_created = dynamic_cast<zkutil::Op::Create &>(ops[0]).getPathCreated();
 	log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
-	queue.insert(log_entry);
+	queue.insert(zookeeper, log_entry);
 }
 
 
@@ -3063,12 +3064,53 @@ void StorageReplicatedMergeTree::getQueue(LogEntriesData & res, String & replica
 }
 
 
-void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay) const
+void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay)
 {
-	if (!restarting_thread)
-		throw Exception("Table was shutted down or is in readonly mode.", ErrorCodes::TABLE_IS_READ_ONLY);
+	assertNotReadonly();
 
-	restarting_thread->getReplicaDelays(out_absolute_delay, out_relative_delay);
+	/** Абсолютная задержка - задержка отставания текущей реплики от реального времени.
+	  */
+
+	time_t min_unprocessed_insert_time = 0;
+	time_t max_processed_insert_time = 0;
+	queue.getInsertTimes(min_unprocessed_insert_time, max_processed_insert_time);
+
+	time_t current_time = time(0);
+	out_absolute_delay = 0;
+	out_relative_delay = 0;
+
+	if (min_unprocessed_insert_time)
+		out_absolute_delay = current_time - min_unprocessed_insert_time;
+
+	/** Относительная задержка - максимальная разница абсолютной задержки от какой-либо другой реплики,
+	  *  (если эта реплика отстаёт от какой-либо другой реплики, или ноль, иначе).
+	  * Вычисляется только если абсолютная задержка достаточно большая.
+	  */
+
+	if (out_absolute_delay < static_cast<time_t>(data.settings.min_relative_delay_to_yield_leadership))
+		return;
+
+	auto zookeeper = getZooKeeper();
+
+	time_t max_replicas_unprocessed_insert_time = 0;
+	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+
+	for (const auto & replica : replicas)
+	{
+		if (replica == replica_name)
+			continue;
+
+		String value;
+		if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/min_unprocessed_insert_time", value))
+			continue;
+
+		time_t replica_time = value.empty() ? 0 : parse<time_t>(value);
+		if (replica_time > max_replicas_unprocessed_insert_time)
+			max_replicas_unprocessed_insert_time = replica_time;
+	}
+
+	if (max_replicas_unprocessed_insert_time > min_unprocessed_insert_time)
+		out_relative_delay = max_replicas_unprocessed_insert_time - min_unprocessed_insert_time;
 }
 
 

@@ -197,6 +197,11 @@ public:
 	{
 		try
 		{
+			HTMLForm params(request);
+
+			/// Даже в случае, когда отставание небольшое, выводить подробную информацию об отставании.
+			bool verbose = params.get("verbose", "") == "1";
+
 			/// Собираем набор реплицируемых таблиц.
 			Databases replicated_tables;
 			{
@@ -210,28 +215,28 @@ public:
 
 			const MergeTreeSettings & settings = context.getMergeTreeSettings();
 
-			bool ok = /*true*/false;
+			bool ok = true;
 			std::stringstream message;
 
 			for (const auto & db : replicated_tables)
 			{
-				for (const auto & table : db.second)
+				for (auto & table : db.second)
 				{
 					time_t absolute_delay = 0;
 					time_t relative_delay = 0;
 
-					static_cast<const StorageReplicatedMergeTree &>(*table.second).getReplicaDelays(absolute_delay, relative_delay);
+					static_cast<StorageReplicatedMergeTree &>(*table.second).getReplicaDelays(absolute_delay, relative_delay);
 
 					if ((settings.min_absolute_delay_to_close && absolute_delay >= static_cast<time_t>(settings.min_absolute_delay_to_close))
 						|| (settings.min_relative_delay_to_close && relative_delay >= static_cast<time_t>(settings.min_relative_delay_to_close)))
 						ok = false;
 
 					message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(table.first)
-						<< "\tAbsolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".\n";
+						<< ":\tAbsolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".\n";
 				}
 			}
 
-			if (ok)
+			if (ok && !verbose)
 			{
 				const char * data = "Ok.\n";
 				response.sendBuffer(data, strlen(data));
@@ -243,8 +248,22 @@ public:
 		}
 		catch (...)
 		{
-			/// TODO Отправлять клиенту.
 			tryLogCurrentException("ReplicasStatusHandler");
+
+			try
+			{
+				response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+
+				if (!response.sent())
+				{
+					/// Ещё ничего не отправляли, и даже не знаем, нужно ли сжимать ответ.
+					response.send() << getCurrentExceptionMessage(false) << std::endl;
+				}
+			}
+			catch (...)
+			{
+				LOG_ERROR((&Logger::get("ReplicasStatusHandler")), "Cannot send exception to client");
+			}
 		}
 	}
 };
@@ -309,7 +328,7 @@ public:
 		{
 			if (uri == "/" || uri == "/ping")
 				return new PingRequestHandler;
-			else if (uri == "/replicas_status")
+			else if (0 == uri.compare(0, strlen("/replicas_status"), "/replicas_status"))
 				return new ReplicasStatusHandler(*server.global_context);
 			else
 				return new NotFoundHandler;
