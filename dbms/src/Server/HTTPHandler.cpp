@@ -4,8 +4,6 @@
 
 #include <DB/Common/Stopwatch.h>
 
-#include <DB/Core/ErrorCodes.h>
-
 #include <DB/IO/ReadBufferFromIStream.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/ConcatReadBuffer.h>
@@ -27,6 +25,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int READONLY;
+}
+
 
 void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, Output & used_output)
 {

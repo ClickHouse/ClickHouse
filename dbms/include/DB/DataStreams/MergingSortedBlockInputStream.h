@@ -13,6 +13,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CORRUPTED_DATA;
+}
+
+
 /** Соединяет несколько сортированных потоков в один.
   */
 class MergingSortedBlockInputStream : public IProfilingBlockInputStream

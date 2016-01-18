@@ -6,7 +6,6 @@
 
 #include <DB/Common/Stopwatch.h>
 
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Progress.h>
 
 #include <DB/IO/CompressedReadBuffer.h>
@@ -32,6 +31,18 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
+	extern const int UNKNOWN_DATABASE;
+	extern const int UNKNOWN_EXCEPTION;
+	extern const int UNKNOWN_PACKET_FROM_CLIENT;
+	extern const int POCO_EXCEPTION;
+	extern const int STD_EXCEPTION;
+	extern const int SOCKET_TIMEOUT;
+	extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+}
 
 
 void TCPHandler::runImpl()
@@ -712,34 +723,16 @@ void TCPHandler::run()
 
 		LOG_INFO(log, "Done processing connection.");
 	}
-	catch (Exception & e)
-	{
-		LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
-			<< ", Stack trace:\n\n" << e.getStackTrace().toString());
-	}
 	catch (Poco::Exception & e)
 	{
-		std::stringstream message;
-		message << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
-
 		/// Таймаут - не ошибка.
 		if (!strcmp(e.what(), "Timeout"))
 		{
-			LOG_DEBUG(log, message.rdbuf());
+			LOG_DEBUG(log, "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
+				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
 		}
 		else
-		{
-			LOG_ERROR(log, message.rdbuf());
-		}
-	}
-	catch (std::exception & e)
-	{
-		LOG_ERROR(log, "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ". " << e.what());
-	}
-	catch (...)
-	{
-		LOG_ERROR(log, "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ".");
+			throw;
 	}
 }
 

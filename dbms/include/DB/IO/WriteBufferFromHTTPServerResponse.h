@@ -3,7 +3,6 @@
 #include <Poco/Net/HTTPServerResponse.h>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
@@ -12,6 +11,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int CANNOT_WRITE_TO_OSTREAM;
+}
 
 
 /** Отличается от WriteBufferFromOStream тем, что инициализируется не std::ostream, а Poco::Net::HTTPServerResponse.

@@ -9,6 +9,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CANNOT_CLOCK_GETTIME;
+	extern const int REPLICA_IS_ALREADY_ACTIVE;
+}
+
 
 /// Используется для проверки, выставили ли ноду is_active мы, или нет.
 static String generateActiveNodeIdentifier()
@@ -101,22 +107,32 @@ void ReplicatedMergeTreeRestartingThread::run()
 			if (current_time >= prev_time_of_check_delay + static_cast<time_t>(storage.data.settings.check_delay_period))
 			{
 				/// Выясняем отставания реплик.
-				time_t new_absolute_delay = 0;
-				time_t new_relative_delay = 0;
+				time_t absolute_delay = 0;
+				time_t relative_delay = 0;
 
-				/// TODO Ловить здесь исключение.
-				checkReplicationDelays(new_absolute_delay, new_relative_delay);
-
-				absolute_delay.store(new_absolute_delay, std::memory_order_relaxed);
-				relative_delay.store(new_relative_delay, std::memory_order_relaxed);
+				bool error = false;
+				try
+				{
+					storage.getReplicaDelays(absolute_delay, relative_delay);
+					LOG_TRACE(log, "Absolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".");
+				}
+				catch (...)
+				{
+					tryLogCurrentException("__PRETTY_FUNCTION__", "Cannot get replica delays");
+					error = true;
+				}
 
 				prev_time_of_check_delay = current_time;
 
 				/// Уступаем лидерство, если относительное отставание больше порога.
-				if (storage.is_leader_node && new_relative_delay > static_cast<time_t>(storage.data.settings.min_relative_delay_to_yield_leadership))
+				if (storage.is_leader_node
+					&& (error || relative_delay > static_cast<time_t>(storage.data.settings.min_relative_delay_to_yield_leadership)))
 				{
-					LOG_INFO(log, "Relative replica delay (" << new_relative_delay << " seconds) is bigger than threshold ("
-						<< storage.data.settings.min_relative_delay_to_yield_leadership << "). Will yield leadership.");
+					if (error)
+						LOG_INFO(log, "Will yield leadership.");
+					else
+						LOG_INFO(log, "Relative replica delay (" << relative_delay << " seconds) is bigger than threshold ("
+							<< storage.data.settings.min_relative_delay_to_yield_leadership << "). Will yield leadership.");
 
 					need_restart = true;
 					continue;
@@ -365,19 +381,6 @@ void ReplicatedMergeTreeRestartingThread::goReadOnlyPermanently()
 	stop();
 
 	partialShutdown();
-}
-
-
-void ReplicatedMergeTreeRestartingThread::checkReplicationDelays(time_t & out_absolute_delay, time_t & out_relative_delay)
-{
-	out_absolute_delay = 0;
-	out_relative_delay = 0;
-
-	auto zookeeper = storage.getZooKeeper();
-
-	// TODO
-
-	LOG_TRACE(log, "Absolute delay: " << out_absolute_delay << ". Relative delay: " << out_relative_delay << ".");
 }
 
 

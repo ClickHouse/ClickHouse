@@ -12,6 +12,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int NETWORK_ERROR;
+	extern const int SOCKET_TIMEOUT;
+	extern const int LOGICAL_ERROR;
+}
+
+
 /** Пул соединений с отказоустойчивостью.
   * Инициализируется несколькими другими IConnectionPool-ами.
   * При получении соединения, пытается создать или выбрать живое соединение из какого-нибудь пула,

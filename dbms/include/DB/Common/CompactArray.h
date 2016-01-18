@@ -5,10 +5,15 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Core/Defines.h>
-#include <DB/Core/ErrorCodes.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int NO_AVAILABLE_DATA;
+}
+
 
 /** Компактный массив для хранения данных, размер content_width, в битах, которых составляет
   * меньше одного байта. Вместо того, чтобы хранить каждое значение в отдельный

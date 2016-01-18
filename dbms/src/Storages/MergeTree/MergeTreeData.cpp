@@ -508,7 +508,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 				/// Нужно изменить тип столбца.
 				if (!out_expression)
-					out_expression = new ExpressionActions(NamesAndTypesList(), context.getSettingsRef());
+					out_expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), context.getSettingsRef());
 
 				out_expression->addInput(ColumnWithTypeAndName(nullptr, column.type, column.name));
 

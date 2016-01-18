@@ -1,4 +1,6 @@
-#include <emmintrin.h>
+#if defined(__x86_64__)
+	#include <emmintrin.h>
+#endif
 
 #include <string>
 #include <iostream>
@@ -11,6 +13,14 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+	extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
+}
+}
 
 
 namespace test
@@ -27,6 +37,7 @@ namespace test
 	  */
 	static inline const char * find_first_tab_lf_or_backslash(const char * begin, const char * end)
 	{
+#if defined(__x86_64__)
 		static const char tab_chars[16] = {'\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t', '\t'};
 		static const char lf_chars[16]	= {'\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n', '\n'};
 		static const char bs_chars[16] 	= {'\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\'};
@@ -55,7 +66,7 @@ namespace test
 			if (bit_mask)
 				return begin + __builtin_ctz(bit_mask);
 		}
-
+#endif
 		for (; begin < end; ++begin)
 			if (*begin == '\t' || *begin == '\n' || *begin == '\\')
 				return begin;
@@ -108,7 +119,7 @@ int main(int argc, char ** argv)
 		{
 			test::readEscapedString(s, in);
 			in.ignore();
-			
+
 			++rows;
 
 /*			DB::writeEscapedString(s, out);

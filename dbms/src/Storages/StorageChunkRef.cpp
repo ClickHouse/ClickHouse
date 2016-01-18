@@ -7,6 +7,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int UNKNOWN_TABLE;
+}
+
+
 StoragePtr StorageChunkRef::create(const std::string & name_, const Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach)
 {
 	return (new StorageChunkRef(name_, context_, source_database_name_, source_table_name_, attach))->thisPtr();

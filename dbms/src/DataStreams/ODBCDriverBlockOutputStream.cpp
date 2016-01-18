@@ -1,13 +1,13 @@
-#include <DB/DataStreams/ODBCBlockOutputStream.h>
+#include <DB/DataStreams/ODBCDriverBlockOutputStream.h>
 
 namespace DB
 {
 
-ODBCBlockOutputStream::ODBCBlockOutputStream(WriteBuffer & out_)
+ODBCDriverBlockOutputStream::ODBCDriverBlockOutputStream(WriteBuffer & out_)
 	: out(out_) {}
 
 
-void ODBCBlockOutputStream::write(const Block & block)
+void ODBCDriverBlockOutputStream::write(const Block & block)
 {
 	size_t rows = block.rows();
 	size_t columns = block.columns();

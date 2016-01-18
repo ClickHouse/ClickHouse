@@ -10,7 +10,6 @@
 #include <DB/Common/Stopwatch.h>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBufferFromFileBase.h>
 #include <DB/IO/ReadBuffer.h>
@@ -20,6 +19,14 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+	extern const int ARGUMENT_OUT_OF_BOUND;
+	extern const int CANNOT_SEEK_THROUGH_FILE;
+	extern const int CANNOT_SELECT;
+}
 
 /** Работает с готовым файловым дескриптором. Не открывает и не закрывает файл.
   */

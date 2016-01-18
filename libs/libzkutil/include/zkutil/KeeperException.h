@@ -2,7 +2,16 @@
 #include <DB/Common/Exception.h>
 #include <zkutil/Types.h>
 #include <DB/Common/ProfileEvents.h>
-#include <DB/Core/ErrorCodes.h>
+
+
+namespace DB
+{
+	namespace ErrorCodes
+	{
+		extern const int KEEPER_EXCEPTION;
+	}
+}
+
 
 namespace zkutil
 {
@@ -32,6 +41,13 @@ public:
 	bool isUnrecoverable() const
 	{
 		return code == ZINVALIDSTATE || code == ZSESSIONEXPIRED || code == ZSESSIONMOVED;
+	}
+
+	/// любая ошибка связанная с работой сети, перевыбором мастера
+	/// при этих ошибках надо либо повторить запрос повторно, либо переинициализировать сессию (см. isUnrecoverable())
+	bool isHardwareError() const
+	{
+		return isUnrecoverable() || code == ZCONNECTIONLOSS || code == ZOPERATIONTIMEOUT;
 	}
 
 	const int32_t code;

@@ -8,6 +8,24 @@ namespace DB
 {
 
 
+String SummingSortedBlockInputStream::getID() const
+{
+	std::stringstream res;
+	res << "SummingSorted(inputs";
+
+	for (size_t i = 0; i < children.size(); ++i)
+		res << ", " << children[i]->getID();
+
+	res << ", description";
+
+	for (size_t i = 0; i < description.size(); ++i)
+		res << ", " << description[i].getID();
+
+	res << ")";
+	return res.str();
+}
+
+
 void SummingSortedBlockInputStream::insertCurrentRow(ColumnPlainPtrs & merged_columns)
 {
 	for (size_t i = 0; i < num_columns; ++i)
@@ -213,6 +231,26 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 
 	finished = true;
 }
+
+
+/** Реализует операцию +=.
+ * Возвращает false, если результат получился нулевым.
+ */
+class FieldVisitorSum : public StaticVisitor<bool>
+{
+private:
+	const Field & rhs;
+public:
+	FieldVisitorSum(const Field & rhs_) : rhs(rhs_) {}
+
+	bool operator() (UInt64 	& x) const { x += get<UInt64>(rhs); return x != 0; }
+	bool operator() (Int64 		& x) const { x += get<Int64>(rhs); return x != 0; }
+	bool operator() (Float64 	& x) const { x += get<Float64>(rhs); return x != 0; }
+
+	bool operator() (Null 		& x) const { throw Exception("Cannot sum Nulls", ErrorCodes::LOGICAL_ERROR); }
+	bool operator() (String 	& x) const { throw Exception("Cannot sum Strings", ErrorCodes::LOGICAL_ERROR); }
+	bool operator() (Array 		& x) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
+};
 
 
 template <class TSortCursor>

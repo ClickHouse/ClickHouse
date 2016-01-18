@@ -12,6 +12,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int TOO_MUCH_ROWS;
+	extern const int TOO_MUCH_BYTES;
+	extern const int TIMEOUT_EXCEEDED;
+	extern const int TOO_SLOW;
+}
+
 
 Block IProfilingBlockInputStream::read()
 {
@@ -173,7 +181,7 @@ bool IProfilingBlockInputStream::checkLimits()
 				+ (limits.mode == LIMITS_CURRENT ? "result bytes (uncompressed)" : "(uncompressed) bytes to read")
 				+ " exceeded: read " + toString(info.bytes)
 				+ " bytes, maximum: " + toString(limits.max_bytes_to_read),
-				ErrorCodes::TOO_MUCH_ROWS);
+				ErrorCodes::TOO_MUCH_BYTES);
 
 		if (limits.read_overflow_mode == OverflowMode::BREAK)
 			return false;
@@ -259,7 +267,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 				else
 					throw Exception("Limit for (uncompressed) bytes to read exceeded: " + toString(bytes_processed)
 						+ " bytes read, maximum: " + toString(limits.max_bytes_to_read),
-						ErrorCodes::TOO_MUCH_ROWS);
+						ErrorCodes::TOO_MUCH_BYTES);
 			}
 			else if (limits.read_overflow_mode == OverflowMode::BREAK)
 			{

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DB/Core/ErrorCodes.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/WriteBuffer.h>
@@ -15,6 +14,14 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int UNKNOWN_TYPE;
+	extern const int ARGUMENT_OUT_OF_BOUND;
+	extern const int TYPE_MISMATCH;
+}
+
 
 enum class AttributeUnderlyingType
 {

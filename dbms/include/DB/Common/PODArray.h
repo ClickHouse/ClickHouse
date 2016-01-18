@@ -13,7 +13,6 @@
 
 #include <DB/Common/Allocator.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 
 namespace DB

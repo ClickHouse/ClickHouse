@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
+}
+
 
 void ReplicatedMergeTreeQueue::initVirtualParts(const MergeTreeData::DataParts & parts)
 {
@@ -19,16 +24,21 @@ void ReplicatedMergeTreeQueue::initVirtualParts(const MergeTreeData::DataParts &
 
 void ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 {
+	auto queue_path = replica_path + "/queue";
+	LOG_DEBUG(log, "Loading queue from " << queue_path);
+
 	std::lock_guard<std::mutex> lock(mutex);
 
-	Strings children = zookeeper->getChildren(replica_path + "/queue");
+	Strings children = zookeeper->getChildren(queue_path);
+	LOG_DEBUG(log, "Having " << children.size() << " queue entries to load.");
+
 	std::sort(children.begin(), children.end());
 
 	std::vector<std::pair<String, zkutil::ZooKeeper::GetFuture>> futures;
 	futures.reserve(children.size());
 
 	for (const String & child : children)
-		futures.emplace_back(child, zookeeper->asyncGet(replica_path + "/queue/" + child));
+		futures.emplace_back(child, zookeeper->asyncGet(queue_path + "/" + child));
 
 	for (auto & future : futures)
 	{
@@ -38,6 +48,10 @@ void ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 		entry->znode_name = future.first;
 		insertUnlocked(entry);
 	}
+
+	updateTimesInZooKeeper(zookeeper, true, false);
+
+	LOG_TRACE(log, "Loaded queue");
 }
 
 
@@ -59,13 +73,88 @@ void ReplicatedMergeTreeQueue::insertUnlocked(LogEntryPtr & entry)
 {
 	virtual_parts.add(entry->new_part_name);
 	queue.push_back(entry);
+
+	if (entry->type == LogEntry::GET_PART)
+	{
+		inserts_by_time.insert(entry);
+
+		if (entry->create_time && (!min_unprocessed_insert_time || entry->create_time < min_unprocessed_insert_time))
+			min_unprocessed_insert_time = entry->create_time;
+	}
 }
 
 
-void ReplicatedMergeTreeQueue::insert(LogEntryPtr & entry)
+void ReplicatedMergeTreeQueue::insert(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry)
 {
-	std::lock_guard<std::mutex> lock(mutex);
-	insertUnlocked(entry);
+	time_t prev_min_unprocessed_insert_time;
+
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		prev_min_unprocessed_insert_time = min_unprocessed_insert_time;
+		insertUnlocked(entry);
+	}
+
+	if (min_unprocessed_insert_time != prev_min_unprocessed_insert_time)
+		updateTimesInZooKeeper(zookeeper, true, false);
+}
+
+
+void ReplicatedMergeTreeQueue::updateTimesOnRemoval(
+	const LogEntryPtr & entry,
+	bool & min_unprocessed_insert_time_changed,
+	bool & max_processed_insert_time_changed)
+{
+	if (entry->type != LogEntry::GET_PART)
+		return;
+
+	inserts_by_time.erase(entry);
+
+	if (inserts_by_time.empty())
+	{
+		min_unprocessed_insert_time = 0;
+		min_unprocessed_insert_time_changed = true;
+	}
+	else if ((*inserts_by_time.begin())->create_time > min_unprocessed_insert_time)
+	{
+		min_unprocessed_insert_time = (*inserts_by_time.begin())->create_time;
+		min_unprocessed_insert_time_changed = true;
+	}
+
+	if (entry->create_time > max_processed_insert_time)
+	{
+		max_processed_insert_time = entry->create_time;
+		max_processed_insert_time_changed = true;
+	}
+}
+
+
+void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
+	zkutil::ZooKeeperPtr zookeeper,
+	bool min_unprocessed_insert_time_changed,
+	bool max_processed_insert_time_changed)
+{
+	/// Здесь может быть race condition (при одновременном выполнении разных remove).
+	/// Считаем его несущественным (в течение небольшого времени, в ZK будет записано немного отличающееся значение времени).
+	/// Также читаем значения переменных min_unprocessed_insert_time, max_processed_insert_time без синхронизации.
+	zkutil::Ops ops;
+
+	if (min_unprocessed_insert_time_changed)
+		ops.push_back(new zkutil::Op::SetData(
+			replica_path + "/min_unprocessed_insert_time", toString(min_unprocessed_insert_time), -1));
+
+	if (max_processed_insert_time_changed)
+		ops.push_back(new zkutil::Op::SetData(
+			replica_path + "/max_processed_insert_time", toString(max_processed_insert_time), -1));
+
+	if (!ops.empty())
+	{
+		auto code = zookeeper->tryMulti(ops);
+
+		if (code != ZOK)
+			LOG_ERROR(log, "Couldn't set value of nodes for insert times ("
+				<< replica_path << "/min_unprocessed_insert_time, max_processed_insert_time)" << ": "
+				<< zkutil::ZooKeeper::error2string(code) + ". This shouldn't happen often.");
+	}
 }
 
 
@@ -74,57 +163,83 @@ void ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, LogEntryPt
 	auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry->znode_name);
 
 	if (code != ZOK)
-		LOG_ERROR(log, "Couldn't remove " << replica_path + "/queue/" + entry->znode_name << ": "
-			<< zkutil::ZooKeeper::error2string(code) + ". This shouldn't happen often.");
+		LOG_ERROR(log, "Couldn't remove " << replica_path << "/queue/" << entry->znode_name << ": "
+			<< zkutil::ZooKeeper::error2string(code) << ". This shouldn't happen often.");
 
-	std::lock_guard<std::mutex> lock(mutex);
+	bool min_unprocessed_insert_time_changed = false;
+	bool max_processed_insert_time_changed = false;
 
-	/// Удалим задание из очереди в оперативке.
-	/// Нельзя просто обратиться по заранее сохраненному итератору, потому что задание мог успеть удалить кто-то другой.
-	for (Queue::iterator it = queue.end(); it != queue.begin();)
 	{
-		--it;
-		if (*it == entry)
+		std::lock_guard<std::mutex> lock(mutex);
+
+		/// Удалим задание из очереди в оперативке.
+		/// Нельзя просто обратиться по заранее сохраненному итератору, потому что задание мог успеть удалить кто-то другой.
+		/// Почему просматриваем очередь с конца?
+		///  - потому что задание к выполнению сначала перемещается в конец очереди, чтобы в случае неуспеха оно осталось в конце.
+		for (Queue::iterator it = queue.end(); it != queue.begin();)
 		{
-			queue.erase(it);
-			break;
+			--it;
+			if (*it == entry)
+			{
+				queue.erase(it);
+				break;
+			}
 		}
+
+		updateTimesOnRemoval(entry, min_unprocessed_insert_time_changed, max_processed_insert_time_changed);
 	}
+
+	updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, max_processed_insert_time_changed);
 }
 
 
 bool ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name)
 {
-	std::lock_guard<std::mutex> lock(mutex);
+	LogEntryPtr found;
 
-	for (Queue::iterator it = queue.begin(); it != queue.end();)
+	bool min_unprocessed_insert_time_changed = false;
+	bool max_processed_insert_time_changed = false;
+
 	{
-		if ((*it)->new_part_name == part_name)
+		std::lock_guard<std::mutex> lock(mutex);
+
+		for (Queue::iterator it = queue.begin(); it != queue.end();)
 		{
-			zookeeper->tryRemove(replica_path + "/queue/" + (*it)->znode_name);
-			queue.erase(it++);
-			return true;
+			if ((*it)->new_part_name == part_name)
+			{
+				found = *it;
+				queue.erase(it++);
+				updateTimesOnRemoval(found, min_unprocessed_insert_time_changed, max_processed_insert_time_changed);
+				break;
+			}
+			else
+				++it;
 		}
-		else
-			++it;
 	}
 
-	return false;
+	if (!found)
+		return false;
+
+	zookeeper->tryRemove(replica_path + "/queue/" + found->znode_name);
+	updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, max_processed_insert_time_changed);
+
+	return true;
 }
 
 
 bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event)
 {
-	std::lock_guard<std::mutex> lock(mutex);
+	std::lock_guard<std::mutex> lock(pull_logs_to_queue_mutex);
 
 	String index_str = zookeeper->get(replica_path + "/log_pointer");
 	UInt64 index;
 
+	Strings log_entries = zookeeper->getChildren(zookeeper_path + "/log");
+
 	if (index_str.empty())
 	{
 		/// Если у нас еще нет указателя на лог, поставим указатель на первую запись в нем.
-		Strings entries = zookeeper->getChildren(zookeeper_path + "/log");
-		index = entries.empty() ? 0 : parse<UInt64>(std::min_element(entries.begin(), entries.end())->substr(strlen("log-")));
+		index = log_entries.empty() ? 0 : parse<UInt64>(std::min_element(log_entries.begin(), log_entries.end())->substr(strlen("log-")));
 
 		zookeeper->set(replica_path + "/log_pointer", toString(index));
 	}
@@ -133,33 +248,95 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 		index = parse<UInt64>(index_str);
 	}
 
-	UInt64 first_index = index;
+	String min_log_entry = "log-" + padIndex(index);
 
-	size_t count = 0;
-	String entry_str;
-	zkutil::Stat stat;
-	while (zookeeper->tryGet(zookeeper_path + "/log/log-" + padIndex(index), entry_str, &stat))
+	/// Множество записей лога, которые должны быть скопированы в очередь.
+
+	log_entries.erase(
+		std::remove_if(log_entries.begin(), log_entries.end(), [&min_log_entry](const String & entry) { return entry < min_log_entry; }),
+		log_entries.end());
+
+	if (!log_entries.empty())
 	{
-		++count;
-		++index;
+		std::sort(log_entries.begin(), log_entries.end());
 
-		LogEntryPtr entry = LogEntry::parse(entry_str, stat);
+		String last_entry = log_entries.back();
+		if (0 != last_entry.compare(0, strlen("log-"), "log-"))
+			throw Exception("Error in zookeeper data: unexpected node " + last_entry + " in " + zookeeper_path + "/log",
+				ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER);
 
-		/// Одновременно добавим запись в очередь и продвинем указатель на лог.
+		UInt64 last_entry_index = parse<UInt64>(last_entry.substr(strlen("log-")));
+
+		LOG_DEBUG(log, "Pulling " << log_entries.size() << " entries to queue: " << log_entries.front() << " - " << log_entries.back());
+
+		std::vector<std::pair<String, zkutil::ZooKeeper::GetFuture>> futures;
+		futures.reserve(log_entries.size());
+
+		for (const String & entry : log_entries)
+			futures.emplace_back(entry, zookeeper->asyncGet(zookeeper_path + "/log/" + entry));
+
+		/// Одновременно добавим все новые записи в очередь и продвинем указатель на лог.
+
 		zkutil::Ops ops;
-		ops.push_back(new zkutil::Op::Create(
-			replica_path + "/queue/queue-", entry_str, zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
+		std::vector<LogEntryPtr> copied_entries;
+		copied_entries.reserve(log_entries.size());
+
+		bool min_unprocessed_insert_time_changed = false;
+
+		for (auto & future : futures)
+		{
+			zkutil::ZooKeeper::ValueAndStat res = future.second.get();
+			copied_entries.emplace_back(LogEntry::parse(res.value, res.stat));
+
+			ops.push_back(new zkutil::Op::Create(
+				replica_path + "/queue/queue-", res.value, zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
+
+			const auto & entry = *copied_entries.back();
+			if (entry.type == LogEntry::GET_PART)
+			{
+				if (entry.create_time && (!min_unprocessed_insert_time || entry.create_time < min_unprocessed_insert_time))
+				{
+					min_unprocessed_insert_time = entry.create_time;
+					min_unprocessed_insert_time_changed = true;
+				}
+			}
+		}
+
 		ops.push_back(new zkutil::Op::SetData(
-			replica_path + "/log_pointer", toString(index), -1));
+			replica_path + "/log_pointer", toString(last_entry_index + 1), -1));
+
+		if (min_unprocessed_insert_time_changed)
+			ops.push_back(new zkutil::Op::SetData(
+				replica_path + "/min_unprocessed_insert_time", toString(min_unprocessed_insert_time), -1));
+
 		auto results = zookeeper->multi(ops);
 
-		String path_created = dynamic_cast<zkutil::Op::Create &>(ops[0]).getPathCreated();
-		entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
+		/// Сейчас мы успешно обновили очередь в ZooKeeper. Обновим её в оперативке.
 
-		insertUnlocked(entry);
+		try
+		{
+			std::lock_guard<std::mutex> lock(mutex);
+
+			for (size_t i = 0, size = copied_entries.size(); i < size; ++i)
+			{
+				String path_created = dynamic_cast<zkutil::Op::Create &>(ops[i]).getPathCreated();
+				copied_entries[i]->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
+
+				insertUnlocked(copied_entries[i]);
+			}
+
+			last_queue_update = time(0);
+		}
+		catch (...)
+		{
+			/// Если не удалось, то данные в оперативке некорректные. Во избежание возможной дальнейшей порчи данных в ZK, убъёмся.
+			/// Попадание сюда возможно лишь в случае неизвестной логической ошибки.
+			std::terminate();
+		}
+
+		if (!copied_entries.empty())
+			LOG_DEBUG(log, "Pulled " << copied_entries.size() << " entries to queue.");
 	}
-
-	last_queue_update = time(0);
 
 	if (next_update_event)
 	{
@@ -167,12 +344,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 			next_update_event->set();
 	}
 
-	if (!count)
-		return false;
-
-	LOG_DEBUG(log, "Pulled " << count << " entries to queue: log-" << padIndex(first_index) << " - log-" << padIndex(index - 1));
-
-	return true;
+	return !log_entries.empty();
 }
 
 
@@ -224,6 +396,8 @@ void ReplicatedMergeTreeQueue::removeGetsAndMergesInRange(zkutil::ZooKeeperPtr z
 {
 	Queue to_wait;
 	size_t removed_entries = 0;
+	bool min_unprocessed_insert_time_changed = false;
+	bool max_processed_insert_time_changed = false;
 
 	/// Удалим из очереди операции с кусками, содержащимися в удаляемом диапазоне.
 	std::unique_lock<std::mutex> lock(mutex);
@@ -238,12 +412,16 @@ void ReplicatedMergeTreeQueue::removeGetsAndMergesInRange(zkutil::ZooKeeperPtr z
 			if (code != ZOK)
 				LOG_INFO(log, "Couldn't remove " << replica_path + "/queue/" + (*it)->znode_name << ": "
 					<< zkutil::ZooKeeper::error2string(code));
+
+			updateTimesOnRemoval(*it, min_unprocessed_insert_time_changed, max_processed_insert_time_changed);
 			queue.erase(it++);
 			++removed_entries;
 		}
 		else
 			++it;
 	}
+
+	updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, max_processed_insert_time_changed);
 
 	LOG_DEBUG(log, "Removed " << removed_entries << " entries from queue. "
 		"Waiting for " << to_wait.size() << " entries that are currently executing.");
@@ -515,6 +693,13 @@ void ReplicatedMergeTreeQueue::countMerges(size_t & all_merges, size_t & big_mer
 			}
 		}
 	}
+}
+
+
+void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const
+{
+	out_min_unprocessed_insert_time = min_unprocessed_insert_time;
+	out_max_processed_insert_time = max_processed_insert_time;
 }
 
 

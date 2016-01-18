@@ -32,6 +32,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int READONLY;
+	extern const int UNKNOWN_TYPE_OF_QUERY;
+}
+
 
 static void throwIfReadOnly(Context & context)
 {

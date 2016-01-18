@@ -12,10 +12,10 @@ namespace DB
   * Выводится заголовок с нужной информацией.
   * Затем данные выводятся в порядке строк. Каждое значение выводится так: длина в формате VarUInt, затем данные в текстовом виде.
   */
-class ODBCBlockOutputStream : public IBlockOutputStream
+class ODBCDriverBlockOutputStream : public IBlockOutputStream
 {
 public:
-	ODBCBlockOutputStream(WriteBuffer & out_);
+	ODBCDriverBlockOutputStream(WriteBuffer & out_);
 
 	void write(const Block & block) override;
 

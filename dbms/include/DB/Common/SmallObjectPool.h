@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Common/Arena.h>
 #include <common/likely.h>
 #include <ext/range.hpp>

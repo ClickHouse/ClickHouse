@@ -8,6 +8,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int INCORRECT_DATA;
+}
+
+
 using Poco::SharedPtr;
 
 TabSeparatedRowInputStream::TabSeparatedRowInputStream(ReadBuffer & istr_, const Block & sample_, bool with_names_, bool with_types_)

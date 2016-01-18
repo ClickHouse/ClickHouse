@@ -2,7 +2,6 @@
 
 #include <unicode/ucol.h>
 
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Common/Exception.h>
 #include <DB/IO/WriteHelpers.h>
 
@@ -11,6 +10,17 @@
 #include <Poco/String.h>
 
 #include <boost/noncopyable.hpp>
+
+
+namespace DB
+{
+	namespace ErrorCodes
+	{
+		extern const int UNSUPPORTED_COLLATION_LOCALE;
+		extern const int COLLATION_COMPARISON_FAILED;
+	}
+}
+
 
 class Collator : private boost::noncopyable
 {

@@ -3,7 +3,6 @@
 #include <string.h>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Common/Arena.h>
 
 #include <DB/IO/WriteBuffer.h>
@@ -11,9 +10,19 @@
 
 #include <DB/Columns/IColumn.h>
 
+#if defined(__x86_64__)
+	#include <emmintrin.h>
+#endif
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int PARAMETER_OUT_OF_BOUND;
+	extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+}
 
 
 /** Штука для сравнения чисел.
@@ -283,17 +292,20 @@ public:
 		if (result_size_hint)
 			res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
 
-		/** Чуть более оптимизированная версия.
-		  * Исходит из допущения, что часто куски последовательно идущих значений
-		  *  полностью проходят или полностью не проходят фильтр.
-		  * Поэтому, будем оптимистично проверять куски по 16 значений.
-		  */
 		const UInt8 * filt_pos = &filt[0];
 		const UInt8 * filt_end = filt_pos + size;
-		const UInt8 * filt_end_sse = filt_pos + size / 16 * 16;
 		const T * data_pos = &data[0];
 
+#if defined(__x86_64__)
+		/** Чуть более оптимизированная версия.
+		 * Исходит из допущения, что часто куски последовательно идущих значений
+		 *  полностью проходят или полностью не проходят фильтр.
+		 * Поэтому, будем оптимистично проверять куски по SIMD_BYTES значений.
+		 */
+
+		static constexpr size_t SIMD_BYTES = 16;
 		const __m128i zero16 = _mm_setzero_si128();
+		const UInt8 * filt_end_sse = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
 		while (filt_pos < filt_end_sse)
 		{
@@ -305,18 +317,19 @@ public:
 			}
 			else if (0xFFFF == mask)
 			{
-				res_data.insert(data_pos, data_pos + 16);
+				res_data.insert(data_pos, data_pos + SIMD_BYTES);
 			}
 			else
 			{
-				for (size_t i = 0; i < 16; ++i)
+				for (size_t i = 0; i < SIMD_BYTES; ++i)
 					if (filt_pos[i])
 						res_data.push_back(data_pos[i]);
 			}
 
-			filt_pos += 16;
-			data_pos += 16;
+			filt_pos += SIMD_BYTES;
+			data_pos += SIMD_BYTES;
 		}
+#endif
 
 		while (filt_pos < filt_end)
 		{

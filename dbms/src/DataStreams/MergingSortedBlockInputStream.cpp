@@ -7,6 +7,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+	extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+	extern const int BLOCKS_HAS_DIFFERENT_STRUCTURE;
+}
+
 
 void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs & merged_columns)
 {

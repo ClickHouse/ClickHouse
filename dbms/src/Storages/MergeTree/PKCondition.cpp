@@ -1,6 +1,7 @@
 #include <DB/Storages/MergeTree/PKCondition.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Columns/ColumnSet.h>
 #include <DB/Columns/ColumnTuple.h>
 #include <DB/Parsers/ASTSet.h>

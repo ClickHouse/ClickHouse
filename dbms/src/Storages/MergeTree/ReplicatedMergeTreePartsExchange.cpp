@@ -5,6 +5,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int ABORTED;
+}
+
+
 void ReplicatedMergeTreePartsServer::processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out)
 {
 	if (is_cancelled)

@@ -15,8 +15,13 @@
 namespace DB
 {
 
-typedef std::pair<std::string, std::string> NameWithAlias;
-typedef std::vector<NameWithAlias> NamesWithAliases;
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+}
+
+using NameWithAlias = std::pair<std::string, std::string>;
+using NamesWithAliases = std::vector<NameWithAlias>;
 
 class Join;
 
@@ -262,7 +267,7 @@ private:
 	void optimizeArrayJoin();
 };
 
-typedef SharedPtr<ExpressionActions> ExpressionActionsPtr;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 
 /** Последовательность преобразований над блоком.

@@ -30,9 +30,14 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
   */
 inline DB::UInt64 intHashCRC32(DB::UInt64 x)
 {
+#if defined(__x86_64__)
 	DB::UInt64 crc = -1ULL;
 	asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x));
 	return crc;
+#else
+	/// На других платформах используем не обязательно CRC32. NOTE Это может сбить с толку.
+	return intHash64(x);
+#endif
 }
 
 

@@ -4,6 +4,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int UNKNOWN_FUNCTION;
+}
+
+
 /** Эти функции определены в отдельных translation unit-ах.
   * Это сделано для того, чтобы уменьшить потребление оперативки при сборке, и ускорить параллельную сборку.
   */

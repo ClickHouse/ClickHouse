@@ -11,6 +11,17 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int DUPLICATE_COLUMN;
+	extern const int UNKNOWN_IDENTIFIER;
+	extern const int UNKNOWN_ACTION;
+	extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+	extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+	extern const int TOO_MUCH_TEMPORARY_COLUMNS;
+	extern const int TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS;
+}
+
 
 Names ExpressionAction::getNeededColumns() const
 {
@@ -1002,7 +1013,7 @@ void ExpressionActionsChain::addStep()
 		throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
 	ColumnsWithTypeAndName columns = steps.back().actions->getSampleBlock().getColumns();
-	steps.push_back(Step(new ExpressionActions(columns, settings)));
+	steps.push_back(Step(std::make_shared<ExpressionActions>(columns, settings)));
 }
 
 void ExpressionActionsChain::finalize()

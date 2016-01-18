@@ -19,6 +19,11 @@ namespace DB
 
 using Poco::SharedPtr;
 
+namespace ErrorCodes
+{
+	extern const int CANNOT_READ_ALL_DATA;
+}
+
 
 std::string DataTypeFixedString::getName() const
 {
