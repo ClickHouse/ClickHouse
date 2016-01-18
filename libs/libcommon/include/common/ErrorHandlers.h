@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Poco/ErrorHandler.h>
-#include <Poco/Net/SocketDefs.h>
 #include <common/logger_useful.h>
+#include <DB/Common/Exception.h>
 
 
 /** ErrorHandler для потоков, который в случае неперехваченного исключения,
@@ -17,21 +17,20 @@ public:
 };
 
 
-/** То же самое, но не завершает работу в случае эксепшена типа Socket is not connected.
-  * Этот эксепшен возникает внутри реализаций Poco::Net::HTTPServer, Poco::Net::TCPServer,
-  *  и иначе его не удаётся перехватить, и сервер завершает работу.
+/** Выводит информацию об исключении в лог.
   */
-class ServerErrorHandler : public KillingErrorHandler
+class ServerErrorHandler : public Poco::ErrorHandler
 {
 public:
-	void exception(const Poco::Exception & e)
-	{
-		if (e.code() == POCO_ENOTCONN)
-			LOG_WARNING(log, "Client has gone away.");
-		else
-			std::terminate();
-	}
+	void exception(const Poco::Exception & e) 	{ logException(); }
+	void exception(const std::exception & e)	{ logException(); }
+	void exception()							{ logException(); }
 
 private:
 	Logger * log = &Logger::get("ServerErrorHandler");
+
+	void logException()
+	{
+		DB::tryLogCurrentException(log);
+	}
 };

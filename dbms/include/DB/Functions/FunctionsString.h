@@ -17,8 +17,10 @@
 #include <DB/Functions/IFunction.h>
 #include <ext/range.hpp>
 
-#include <emmintrin.h>
-#include <nmmintrin.h>
+#if defined(__x86_64__)
+	#include <emmintrin.h>
+	#include <nmmintrin.h>
+#endif
 
 
 namespace DB
@@ -233,10 +235,11 @@ struct LowerUpperImpl
 private:
 	static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 	{
+		const auto flip_case_mask = 'A' ^ 'a';
+
+#if defined(__x86_64__)
 		const auto bytes_sse = sizeof(__m128i);
 		const auto src_end_sse = src_end - (src_end - src) % bytes_sse;
-
-		const auto flip_case_mask = 'A' ^ 'a';
 
 		const auto v_not_case_lower_bound = _mm_set1_epi8(not_case_lower_bound - 1);
 		const auto v_not_case_upper_bound = _mm_set1_epi8(not_case_upper_bound + 1);
@@ -260,6 +263,7 @@ private:
 			/// store result back to destination
 			_mm_storeu_si128(reinterpret_cast<__m128i *>(dst), cased_chars);
 		}
+#endif
 
 		for (; src < src_end; ++src, ++dst)
 			if (*src >= not_case_lower_bound && *src <= not_case_upper_bound)
@@ -394,6 +398,7 @@ private:
 
 	static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 	{
+#if defined(__x86_64__)
 		const auto bytes_sse = sizeof(__m128i);
 		auto src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse;
 
@@ -455,7 +460,7 @@ private:
 				}
 			}
 		}
-
+#endif
 		/// handle remaining symbols
 		while (src < src_end)
 			toCase(src, src_end, dst);

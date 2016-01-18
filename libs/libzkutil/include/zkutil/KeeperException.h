@@ -43,6 +43,13 @@ public:
 		return code == ZINVALIDSTATE || code == ZSESSIONEXPIRED || code == ZSESSIONMOVED;
 	}
 
+	/// любая ошибка связанная с работой сети, перевыбором мастера
+	/// при этих ошибках надо либо повторить запрос повторно, либо переинициализировать сессию (см. isUnrecoverable())
+	bool isHardwareError() const
+	{
+		return isUnrecoverable() || code == ZCONNECTIONLOSS || code == ZOPERATIONTIMEOUT;
+	}
+
 	const int32_t code;
 
 private:
