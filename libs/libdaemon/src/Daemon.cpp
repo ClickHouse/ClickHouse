@@ -232,8 +232,12 @@ private:
 
 		void * caller_address = nullptr;
 
+#if defined(__x86_64__)
 		/// Get the address at the time the signal was raised from the RIP (x86-64)
 		caller_address = reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
+#elif defined(__aarch64__)
+		caller_address = reinterpret_cast<void *>(context.uc_mcontext.pc);
+#endif
 
 		static const int max_frames = 50;
 		void * frames[max_frames];
@@ -650,18 +654,61 @@ void Daemon::initialize(Application& self)
 		/** При создании pid файла и поиске конфигурации, будем интерпретировать относительные пути
 		  * от директории запуска программы.
 		  */
-		std::string path = config().getString("application.path");
-		if (0 != chdir(Poco::Path(path).setFileName("").toString().c_str()))
+		std::string path = Poco::Path(config().getString("application.path")).setFileName("").toString();
+		if (0 != chdir(path.c_str()))
 			throw Poco::Exception("Cannot change directory to " + path);
+	}
+
+	/// Считаем конфигурацию
+	reloadConfiguration();
+
+	std::string log_path = config().getString("logger.log", "");
+	if (!log_path.empty())
+		log_path = Poco::Path(log_path).setFileName("").toString();
+
+	if (is_daemon)
+	{
+		/** Переназначим stdout, stderr в отдельные файлы в директориях с логами.
+		  * Некоторые библиотеки пишут в stderr в случае ошибок или в отладочном режиме,
+		  *  и этот вывод иногда имеет смысл смотреть даже когда программа запущена в режиме демона.
+		  * Делаем это до buildLoggers, чтобы ошибки во время инициализации логгера, попали в эти файлы.
+		  */
+		if (!log_path.empty())
+		{
+			std::string stdout_path = log_path + "/stdout";
+			if (!freopen(stdout_path.c_str(), "a+", stdout))
+				throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
+
+			std::string stderr_path = log_path + "/stderr";
+			if (!freopen(stderr_path.c_str(), "a+", stderr))
+				throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
+		}
 
 		/// Создадим pid-file.
 		if (is_daemon && config().has("pid"))
 			pid.seed(config().getString("pid"));
 	}
 
-	/// Считаем конфигурацию
-	reloadConfiguration();
 	buildLoggers();
+
+	if (is_daemon)
+	{
+		/** Сменим директорию на ту, куда надо писать core файлы.
+		  * Делаем это после buildLoggers, чтобы не менять текущую директорию раньше.
+		  * Это важно, если конфиги расположены в текущей директории.
+		  */
+		Poco::File opt_cores = "/opt/cores";
+
+		std::string core_path = config().getString("core_path",
+			opt_cores.exists() && opt_cores.isDirectory()
+				? "/opt/cores/"
+				: (!log_path.empty()
+					? log_path
+					: "/opt/"));
+
+		if (0 != chdir(core_path.c_str()))
+			throw Poco::Exception("Cannot change directory to " + core_path);
+	}
 
 	/// Ставим terminate_handler
 	std::set_terminate(terminate_handler);
@@ -713,41 +760,6 @@ void Daemon::initialize(Application& self)
 
 	close_logs_listener.reset(new SignalListener);
 	close_logs_thread.start(*close_logs_listener);
-
-	if (is_daemon)
-	{
-		/// Сменим директорию на ту, куда надо писать core файлы.
-		Poco::File opt_cores = "/opt/cores";
-		std::string log_dir = config().getString("logger.log", "");
-		size_t pos_of_last_slash = log_dir.rfind("/");
-		if (pos_of_last_slash != std::string::npos)
-			log_dir.resize(pos_of_last_slash);
-
-		std::string core_path = config().getString("core_path",
-			opt_cores.exists() && opt_cores.isDirectory()
-				? "/opt/cores/"
-				: (!log_dir.empty()
-					? log_dir
-					: "/opt/"));
-
-		if (0 != chdir(core_path.c_str()))
-			throw Poco::Exception("Cannot change directory to " + core_path);
-
-		/** Переназначим stdout, stderr в отдельные файлы в директориях с логами.
-		  * Некоторые библиотеки пишут в stderr в случае ошибок или в отладочном режиме,
-		  *  и этот вывод иногда имеет смысл смотреть даже когда программа запущена в режиме демона.
-		  */
-		if (!log_dir.empty())
-		{
-			std::string stdout_path = log_dir + "/stdout";
-			if (!freopen(stdout_path.c_str(), "a+", stdout))
-				throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
-
-			std::string stderr_path = log_dir + "/stderr";
-			if (!freopen(stderr_path.c_str(), "a+", stderr))
-				throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
-		}
-	}
 
 	graphite_writer.reset(new GraphiteWriter("graphite"));
 }
