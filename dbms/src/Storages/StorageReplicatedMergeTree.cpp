@@ -1353,8 +1353,6 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 		try
 		{
-			std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
-
 			if (need_pull)
 			{
 				/// Нужно загрузить новые записи в очередь перед тем, как выбирать куски для слияния.
@@ -1362,6 +1360,8 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				pullLogsToQueue();
 				need_pull = false;
 			}
+
+			std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
 			/** Сколько в очереди или в фоновом потоке мерджей крупных кусков.
 			  * Если их больше половины от размера пула потоков для мерджа, то можно мерджить только мелкие куски.
