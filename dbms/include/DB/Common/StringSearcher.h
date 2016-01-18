@@ -7,6 +7,10 @@
 #include <stdint.h>
 #include <string.h>
 
+#if defined(__x86_64__)
+	#include <smmintrin.h>
+#endif
+
 
 namespace DB
 {
@@ -18,17 +22,29 @@ namespace ErrorCodes
 }
 
 
+struct StringSearcherBase
+{
+#if defined(__x86_64__)
+	static constexpr auto n = sizeof(__m128i);
+	const int page_size = getpagesize();
+
+	bool page_safe(const void * const ptr) const
+	{
+		return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - n;
+	}
+#endif
+};
+
+
 /// Performs case-sensitive and case-insensitive search of UTF-8 strings
 template <bool CaseSensitive, bool ASCII> class StringSearcher;
 
 /// Case-insensitive UTF-8 searcher
-template <> class StringSearcher<false, false>
+template <>
+class StringSearcher<false, false> : private StringSearcherBase
 {
+private:
 	using UTF8SequenceBuffer = UInt8[6];
-
-	static constexpr auto n = sizeof(__m128i);
-
-	const int page_size = getpagesize();
 
 	/// string to be searched for
 	const UInt8 * const needle;
@@ -38,6 +54,8 @@ template <> class StringSearcher<false, false>
 	bool first_needle_symbol_is_ascii{};
 	UInt8 l{};
 	UInt8 u{};
+
+#if defined(__x86_64__)
 	/// vectors filled with `l` and `u`, for determining leftmost position of the first symbol
 	__m128i patl, patu;
 	/// lower and uppercase vectors of first 16 characters of `needle`
@@ -45,11 +63,7 @@ template <> class StringSearcher<false, false>
 	int cachemask{};
 	std::size_t cache_valid_len{};
 	std::size_t cache_actual_len{};
-
-	bool page_safe(const void * const ptr) const
-	{
-		return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - n;
-	}
+#endif
 
 public:
 	StringSearcher(const char * const needle_, const std::size_t needle_size)
@@ -80,6 +94,7 @@ public:
 			u = u_seq[0];
 		}
 
+#if defined(__x86_64__)
 		/// for detecting leftmost position of the first symbol
 		patl = _mm_set1_epi8(l);
 		patu = _mm_set1_epi8(u);
@@ -133,12 +148,14 @@ public:
 				}
 			}
 		}
+#endif
 	}
 
 	bool compare(const UInt8 * pos) const
 	{
 		static const Poco::UTF8Encoding utf8;
 
+#if defined(__x86_64__)
 		if (page_safe(pos))
 		{
 			const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
@@ -172,6 +189,7 @@ public:
 
 			return false;
 		}
+#endif
 
 		if (*pos == l || *pos == u)
 		{
@@ -202,6 +220,7 @@ public:
 
 		while (haystack < haystack_end)
 		{
+#if defined(__x86_64__)
 			if (haystack + n <= haystack_end && page_safe(haystack))
 			{
 				const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
@@ -257,6 +276,7 @@ public:
 					continue;
 				}
 			}
+#endif
 
 			if (haystack == haystack_end)
 				return haystack_end;
@@ -286,13 +306,12 @@ public:
 	}
 };
 
+
 /// Case-insensitive ASCII searcher
-template <> class StringSearcher<false, true>
+template <>
+class StringSearcher<false, true> : private StringSearcherBase
 {
-	static constexpr auto n = sizeof(__m128i);
-
-	const int page_size = getpagesize();
-
+private:
 	/// string to be searched for
 	const UInt8 * const needle;
 	const std::size_t needle_size;
@@ -300,16 +319,14 @@ template <> class StringSearcher<false, true>
 	/// lower and uppercase variants of the first character in `needle`
 	UInt8 l{};
 	UInt8 u{};
+
+#if defined(__x86_64__)
 	/// vectors filled with `l` and `u`, for determining leftmost position of the first symbol
 	__m128i patl, patu;
 	/// lower and uppercase vectors of first 16 characters of `needle`
 	__m128i cachel = _mm_setzero_si128(), cacheu = _mm_setzero_si128();
 	int cachemask{};
-
-	bool page_safe(const void * const ptr) const
-	{
-		return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - n;
-	}
+#endif
 
 public:
 	StringSearcher(const char * const needle_, const std::size_t needle_size)
@@ -321,6 +338,7 @@ public:
 		l = static_cast<UInt8>(std::tolower(*needle));
 		u = static_cast<UInt8>(std::toupper(*needle));
 
+#if defined(__x86_64__)
 		patl = _mm_set1_epi8(l);
 		patu = _mm_set1_epi8(u);
 
@@ -339,10 +357,12 @@ public:
 				++needle_pos;
 			}
 		}
+#endif
 	}
 
 	bool compare(const UInt8 * pos) const
 	{
+#if defined(__x86_64__)
 		if (page_safe(pos))
 		{
 			const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
@@ -370,6 +390,7 @@ public:
 
 			return false;
 		}
+#endif
 
 		if (*pos == l || *pos == u)
 		{
@@ -393,6 +414,7 @@ public:
 
 		while (haystack < haystack_end)
 		{
+#if defined(__x86_64__)
 			if (haystack + n <= haystack_end && page_safe(haystack))
 			{
 				const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
@@ -441,6 +463,7 @@ public:
 					continue;
 				}
 			}
+#endif
 
 			if (haystack == haystack_end)
 				return haystack_end;
@@ -465,29 +488,26 @@ public:
 	}
 };
 
+
 /// Case-sensitive searcher (both ASCII and UTF-8)
-template <bool ASCII> class StringSearcher<true, ASCII>
+template <bool ASCII>
+class StringSearcher<true, ASCII> : private StringSearcherBase
 {
-	static constexpr auto n = sizeof(__m128i);
-
-	const int page_size = getpagesize();
-
+private:
 	/// string to be searched for
 	const UInt8 * const needle;
 	const std::size_t needle_size;
 	const UInt8 * const needle_end = needle + needle_size;
 	/// first character in `needle`
 	UInt8 first{};
+
+#if defined(__x86_64__)
 	/// vector filled `first` for determining leftmost position of the first symbol
 	__m128i pattern;
 	/// vector of first 16 characters of `needle`
 	__m128i cache = _mm_setzero_si128();
 	int cachemask{};
-
-	bool page_safe(const void * const ptr) const
-	{
-		return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - n;
-	}
+#endif
 
 public:
 	StringSearcher(const char * const needle_, const std::size_t needle_size)
@@ -497,6 +517,8 @@ public:
 			return;
 
 		first = *needle;
+
+#if defined(__x86_64__)
 		pattern = _mm_set1_epi8(first);
 
 		auto needle_pos = needle;
@@ -512,10 +534,12 @@ public:
 				++needle_pos;
 			}
 		}
+#endif
 	}
 
 	bool compare(const UInt8 * pos) const
 	{
+#if defined(__x86_64__)
 		if (page_safe(pos))
 		{
 			const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
@@ -541,6 +565,7 @@ public:
 
 			return false;
 		}
+#endif
 
 		if (*pos == first)
 		{
@@ -564,6 +589,7 @@ public:
 
 		while (haystack < haystack_end)
 		{
+#if defined(__x86_64__)
 			if (haystack + n <= haystack_end && page_safe(haystack))
 			{
 				/// find first character
@@ -611,6 +637,7 @@ public:
 					continue;
 				}
 			}
+#endif
 
 			if (haystack == haystack_end)
 				return haystack_end;

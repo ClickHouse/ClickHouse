@@ -45,12 +45,6 @@ public:
 		wakeup();
 	}
 
-	void getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay) const
-	{
-		out_absolute_delay = absolute_delay.load(std::memory_order_relaxed);
-		out_relative_delay = relative_delay.load(std::memory_order_relaxed);
-	}
-
 private:
 	StorageReplicatedMergeTree & storage;
 	Logger * log;
@@ -61,11 +55,6 @@ private:
 	String active_node_identifier;
 
 	std::thread thread;
-
-	/// Отставание реплики.
-	std::atomic<time_t> absolute_delay {};
-	std::atomic<time_t> relative_delay {};
-
 
 	void run();
 
@@ -85,9 +74,6 @@ private:
 
 	/// Запретить запись в таблицу и завершить все фоновые потоки.
 	void goReadOnlyPermanently();
-
-	/// Получить информацию об отставании реплик.
-	void checkReplicationDelays(time_t & out_absolute_delay, time_t & out_relative_delay);
 };
 
 

@@ -72,8 +72,12 @@ struct ContextShared
 {
 	Logger * log = &Logger::get("Context");					/// Логгер.
 
-	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
-	mutable Poco::Mutex external_dictionaries_mutex;		/// Для доступа к внешним словарям. Отдельный мьютекс, чтобы избежать локов при обращении сервера к самому себе.
+	/// Для доступа и модификации разделяемых объектов. Рекурсивный mutex.
+	mutable Poco::Mutex mutex;
+	/// Для доступа к внешним словарям. Отдельный мьютекс, чтобы избежать локов при обращении сервера к самому себе.
+	mutable std::mutex external_dictionaries_mutex;
+	/// Отдельный mutex для переинициализации zookeeper-а. Эта операция может заблокироваться на существенное время и не должна мешать остальным.
+	mutable std::mutex zookeeper_mutex;
 
 	mutable zkutil::ZooKeeperPtr zookeeper;					/// Клиент для ZooKeeper.
 
@@ -726,7 +730,7 @@ const Dictionaries & Context::getDictionariesImpl(const bool throw_on_error) con
 
 const ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_error) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->external_dictionaries_mutex);
+	std::lock_guard<std::mutex> lock(shared->external_dictionaries_mutex);
 
 	if (!shared->external_dictionaries)
 	{
@@ -829,7 +833,7 @@ void Context::resetCaches() const
 
 void Context::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	std::lock_guard<std::mutex> lock(shared->zookeeper_mutex);
 
 	if (shared->zookeeper)
 		throw Exception("ZooKeeper client has already been set.", ErrorCodes::LOGICAL_ERROR);
@@ -839,7 +843,7 @@ void Context::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	std::lock_guard<std::mutex> lock(shared->zookeeper_mutex);
 
 	if (shared->zookeeper && shared->zookeeper->expired())
 		shared->zookeeper = shared->zookeeper->startNewSession();
