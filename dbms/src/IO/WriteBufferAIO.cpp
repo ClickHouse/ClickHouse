@@ -1,6 +1,5 @@
 #include <DB/IO/WriteBufferAIO.h>
 #include <DB/Common/ProfileEvents.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <limits>
 #include <sys/types.h>
@@ -8,6 +7,21 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int FILE_DOESNT_EXIST;
+	extern const int CANNOT_OPEN_FILE;
+	extern const int LOGICAL_ERROR;
+	extern const int ARGUMENT_OUT_OF_BOUND;
+	extern const int AIO_READ_ERROR;
+	extern const int AIO_SUBMIT_ERROR;
+	extern const int AIO_WRITE_ERROR;
+	extern const int AIO_COMPLETION_ERROR;
+	extern const int CANNOT_TRUNCATE_FILE;
+	extern const int CANNOT_FSYNC;
+}
+
 
 /// Примечание: выделяется дополнительная страница, которая содежрит те данные, которые
 /// не влезают в основной буфер.

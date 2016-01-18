@@ -20,6 +20,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int TABLE_IS_DROPPED;
+}
+
 class Context;
 class IBlockInputStream;
 class IBlockOutputStream;

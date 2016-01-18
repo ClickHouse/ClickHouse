@@ -15,6 +15,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int TOO_SLOW;
+	extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+	extern const int TOO_MUCH_ARGUMENTS_FOR_FUNCTION;
+	extern const int SYNTAX_ERROR;
+}
+
 /// helper type for comparing `std::pair`s using solely the .first member
 template <template <typename> class Comparator>
 struct ComparePairFirst final

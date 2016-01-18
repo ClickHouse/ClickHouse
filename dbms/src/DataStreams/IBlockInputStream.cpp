@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int TOO_DEEP_PIPELINE;
+}
+
 
 String IBlockInputStream::getTreeID() const
 {

@@ -16,6 +16,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+}
+
 /// Allows processing results of a MySQL query as a sequence of Blocks, simplifies chaining
 class MySQLBlockInputStream final : public IProfilingBlockInputStream
 {

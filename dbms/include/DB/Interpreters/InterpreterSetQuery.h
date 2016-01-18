@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int READONLY;
+}
+
 
 /** Установить один или несколько параметров, для сессии или глобально... или для текущего запроса.
   */

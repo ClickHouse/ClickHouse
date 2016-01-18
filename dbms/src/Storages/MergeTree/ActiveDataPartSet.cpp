@@ -6,6 +6,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int BAD_DATA_PART_NAME;
+}
+
+
 ActiveDataPartSet::ActiveDataPartSet(const Strings & names)
 {
 	for (const auto & name : names)

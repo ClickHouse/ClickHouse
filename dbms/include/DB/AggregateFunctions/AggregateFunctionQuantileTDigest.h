@@ -17,6 +17,14 @@
 #include <DB/DataTypes/DataTypeArray.h>
 
 
+namespace DB
+{
+namespace ErrorCodes
+{
+	extern const int TOO_LARGE_ARRAY_SIZE;
+}
+}
+
 /** Алгоритм реализовал Алексей Борзенков https://███████████.yandex-team.ru/snaury
   * Ему принадлежит авторство кода и половины комментариев в данном namespace,
   *  за исключением слияния, сериализации и сортировки, а также выбора типов и других изменений.

@@ -4,12 +4,17 @@
 #include <cstring>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/IO/BufferBase.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
+}
+
 
 /** Простой абстрактный класс для буферизованной записи данных (последовательности char) куда-нибудь.
   * В отличие от std::ostream, предоставляет доступ к внутреннему буферу,

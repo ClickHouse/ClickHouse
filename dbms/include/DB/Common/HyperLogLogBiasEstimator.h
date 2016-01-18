@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <algorithm>
 #include <limits>

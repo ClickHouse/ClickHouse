@@ -19,6 +19,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int INCORRECT_FILE_NAME;
+	extern const int CHECKSUM_DOESNT_MATCH;
+	extern const int TOO_LARGE_SIZE_COMPRESSED;
+}
+
+
 namespace
 {
 	static constexpr const std::chrono::seconds max_sleep_time{30};

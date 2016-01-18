@@ -1,0 +1,132 @@
+POCO C++ Libraries Windows CE Platform Notes
+AAAIntroduction
+
+!!!Introduction
+
+Starting with release 1.4.0 the POCO C++ Libraries can be used on 
+Windows CE 6. Project files for Visual Studio 2008 are provided that
+support static and shared debug and release builds.
+
+The port should work for Windows CE 5 as well, however, this has not been tested.
+
+
+!!!Changing The Target In The Project Files
+
+The project files contain build configurations for the "Digi JumpStart (ARMV4I)"
+target. To use another target, the Visual Studio project and solution files
+must be changed accordingly. Note that the project files cannot be opened 
+by Visual Studio unless the target referenced in the project and solution files is available.
+To change the project and solution files for your platform, replace
+all occurrences of the string "Digi JumpStart (ARMV4I)" with the name
+of your platform (e.g. "Windows Mobile 6 Professional SDK (ARMV4I)").
+This is best done with a text editor that supports global search/replace
+across an entire directory tree (solution and project files are plain text/xml
+files, so there's no risk breaking something).
+
+
+!!!Restrictions
+
+!!Poco::Environment
+
+Windows CE does not support environment variables. 
+Therefore, Poco::Environment::get() and Poco::Environment::has() only support the
+following hardcoded "pseudo" environment variables:
+  * TEMP
+  * TMP
+  * HOMEPATH
+  * COMPUTERNAME
+  * OS
+  * NUMBER_OF_PROCESSORS
+  * PROCESSOR_ARCHITECTURE
+  
+Poco::Environment::set() always throws a Poco::NotImplementedException.
+
+
+!!Date/Time Support
+
+Some date/time features are implemented with the help of [[http://wcelibcex.sourceforge.net/ WCELIBCEX]].
+The library is statically included in the Foundation library to simplify the build process. 
+However, it is also possible to use WCELIBCEX as a separate library if the Foundation project file is modified accordingly
+(by removing or excluding from build the WCELIBCEX folder and modifying the header file search path accordingly).
+The following functions from WCELIBCEX are used:
+  * wceex_time()
+  * wceex_localtime()
+  * wceex_mktime()
+  
+It should also be possible to use wcecompat instead of WCELIBCEX, as this library provides 
+similar features. In this case, the calls to the wceex_* functions need to be replaced with
+the wcecompat counterparts. The affected files are Random.cpp, LocalDateTime.cpp,
+Timezone_WINCE.cpp and ThreadPool.cpp.
+
+To obtain the current date and time with millisecond resolution,
+the hack described in <http://community.opennetcf.com/articles/cf/archive/2007/11/20/getting-a-millisecond-resolution-datetime-under-windows-ce.aspx>
+is used. This means there will be a one second delay when starting up
+the application.
+
+
+!!Poco::Path
+
+Poco::Path::listRoots() returns the root directory ("\"), as well as all mounted storage devices 
+(e.g., "\Hard Disk"), even if they are also present in the root directory.
+
+Poco::Path::current() and Poco::Path::home() always return the root directory.
+
+
+!!Poco::RWLock
+
+In the reader/writer lock implementation for Windows CE, writers always take precedence over readers.
+
+
+!!Poco::Process
+
+Launching a process with pipes for redirecting input/output is not supported.
+
+
+!!Poco::Util::ServerApplication
+
+Poco::Util::ServerApplication::waitForTerminationRequest(): CTRL-C does not work to shut down the application as
+it's not supported by the Windows CE console. The pkill utility supplied as part of the Util library
+samples can be used to terminate a process from the command line.
+
+
+!!Crypto and NetSSL
+
+Crypto and NetSSL_OpenSSL have not been tested yet. Project files are there, but they might need some adaptions depending on 
+how OpenSSL has been built for the Windows CE target.
+
+
+!!Data
+
+Only the SQLite backend is currently supported.
+
+The SQLite engine in Data/SQLite is built without localtime support (SQLITE_OMIT_LOCALTIME) due to localtime_s() not being
+available on Windows CE.
+
+
+!!Raw Sockets in Net
+
+The test cases involving raw sockets will fail unless the testsuite is ran as a privileged (signed) application.
+These are RawSocketTest::testEchoIPv4(), RawSocketTest::testSendToReceiveFromIPv4() and ICMPClientTest::testPing().
+
+
+!!!Build Notes
+
+Optimization settings should be set as follows for release builds 
+(<*Properties > Configuration Properties > C/C++ > Optimization*>):
+  * Optimization: Custom
+  * Inline Function Expansion: Default
+  * Enable Intrinsic Functions: Yes (/Oi)
+  * Floating-Point Consistency: Default Consistency
+  * Favor Size or Speed: Favor Fast Code (/Ot)
+  * Whole Program Optimization: No
+
+Other settings may or may not produce working programs. 
+Specifically, setting <*Optimization*> to <*Maximize Speed (/O2)*> will result in failures in the 
+test suite for Foundation Events due to a compiler optimizer bug.
+
+For shared/DLL builds, the /FORCE:MULTIPLE option is passed to the linker. This is
+to avoid a problem with iostream classes and their methods (template instantiations), 
+which for some unknown reason (possibly bug) will be exported by the Foundation library 
+(and others) and thus cause multiply defined symbol errors.
+
+The reference system used for testing is a Digi ConnectCore 9P 9360 running Windows CE 6.0.

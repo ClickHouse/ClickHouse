@@ -1,9 +1,13 @@
 #include <DB/Common/Macros.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int SYNTAX_ERROR;
+}
 
 Macros::Macros() {}
 

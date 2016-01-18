@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
+}
+
 namespace
 {
 

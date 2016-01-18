@@ -14,6 +14,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int UNSUPPORTED_METHOD;
+}
+
+
 const auto max_connections = 16;
 
 /** Allows loading dictionaries from local or remote ClickHouse instance

@@ -4,10 +4,16 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int SYNTAX_ERROR;
+}
+
+
 /** Из позиции в (возможно многострочном) запросе получить номер строки и номер столбца в строке.
   * Используется в сообщении об ошибках.
   */
-static inline std::pair<size_t, size_t> getLineAndCol(IParser::Pos begin, IParser::Pos pos)
+static std::pair<size_t, size_t> getLineAndCol(IParser::Pos begin, IParser::Pos pos)
 {
 	size_t line = 0;
 
