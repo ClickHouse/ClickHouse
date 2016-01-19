@@ -1306,13 +1306,14 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 			}
 			else
 				tryLogCurrentException(__PRETTY_FUNCTION__);
+
+			throw;
 		}
 		catch (...)
 		{
 			tryLogCurrentException(__PRETTY_FUNCTION__);
+			throw;
 		}
-
-		return false;
 	});
 
 	/// Если не было исключения, не нужно спать.
