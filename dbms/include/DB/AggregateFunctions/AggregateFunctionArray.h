@@ -38,6 +38,9 @@ public:
 	{
 		num_agruments = arguments.size();
 
+		if (0 == num_agruments)
+			throw Exception("Array aggregate functions requires at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
 		DataTypes nested_arguments;
 		for (int i = 0; i < num_agruments; ++i)
 		{
@@ -46,6 +49,7 @@ public:
 			else
 				throw Exception("Illegal type " + arguments[i]->getName() + " of argument #" + toString(i + 1) + " for aggregate function " + getName() + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
+
 		nested_func->setArguments(nested_arguments);
 	}
 

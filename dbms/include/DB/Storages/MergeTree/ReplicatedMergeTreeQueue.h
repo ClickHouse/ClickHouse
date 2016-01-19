@@ -24,6 +24,19 @@ private:
 
 	using Queue = std::list<LogEntryPtr>;
 
+	struct ByTime
+	{
+		bool operator()(const LogEntryPtr & lhs, const LogEntryPtr & rhs) const
+		{
+			return std::forward_as_tuple(lhs.get()->create_time, lhs.get())
+				 < std::forward_as_tuple(rhs.get()->create_time, rhs.get());
+		}
+	};
+
+	/// Для вычисления min_unprocessed_insert_time, max_processed_insert_time, по которым вычисляется отставание реплик.
+	using InsertsByTime = std::set<LogEntryPtr, ByTime>;
+
+
 	String zookeeper_path;
 	String replica_path;
 	String logger_name;
@@ -33,13 +46,21 @@ private:
 	  */
 	Queue queue;
 
+	InsertsByTime inserts_by_time;
+	time_t min_unprocessed_insert_time = 0;
+	time_t max_processed_insert_time = 0;
+
 	time_t last_queue_update = 0;
 
 	/// Куски, которые появятся в результате действий, выполняемых прямо сейчас фоновыми потоками (этих действий нет в очереди).
 	/// Используется, чтобы не выполнять в тот же момент другие действия с этими кусками.
 	StringSet future_parts;
 
+	/// На доступ к queue, future_parts, ...
 	std::mutex mutex;
+
+	/// Обеспечивает только один одновременный вызов pullLogsToQueue.
+	std::mutex pull_logs_to_queue_mutex;
 
 	/** Каким будет множество активных кусков после выполнения всей текущей очереди - добавления новых кусков и выполнения слияний.
 	  * Используется, чтобы определять, какие мерджи уже были назначены:
@@ -67,16 +88,28 @@ private:
 	  */
 	bool shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason, MergeTreeDataMerger & merger);
 
+	/// После удаления элемента очереди, обновить времена insert-ов в оперативке. Выполняется под queue_mutex.
+	/// Возвращает информацию, какие времена изменились - эту информацию можно передать в updateTimesInZooKeeper.
+	void updateTimesOnRemoval(const LogEntryPtr & entry, bool & min_unprocessed_insert_time_changed, bool & max_processed_insert_time_changed);
+
+	/// Обновить времена insert-ов в ZooKeeper.
+	void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper, bool min_unprocessed_insert_time_changed, bool max_processed_insert_time_changed);
+
 public:
 	ReplicatedMergeTreeQueue() {}
 
 	void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
 		const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper);
 
-	/** Вставить действие в конец очереди. */
-	void insert(LogEntryPtr & entry);
+	/** Вставить действие в конец очереди.
+	  * Для восстановления битых кусков во время работы.
+	  * Не вставляет само действие в ZK (сделайте это самостоятельно).
+	  */
+	void insert(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
-	/** Удалить действие с указанным куском (в качестве new_part_name) из очереди. */
+	/** Удалить действие с указанным куском (в качестве new_part_name) из очереди.
+	  * Вызывается для невыполнимых действий в очереди - старых потерянных кусков.
+	  */
 	bool remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
 
 	/** Скопировать новые записи из общего лога в очередь этой реплики. Установить log_pointer в соответствующее значение.
@@ -138,6 +171,9 @@ public:
 	/// Получить данные элементов очереди.
 	using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
 	void getEntries(LogEntriesData & res);
+
+	/// Получить информацию о временах insert-ов.
+	void getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const;
 };
 
 

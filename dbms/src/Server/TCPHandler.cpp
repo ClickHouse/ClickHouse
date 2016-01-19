@@ -723,34 +723,16 @@ void TCPHandler::run()
 
 		LOG_INFO(log, "Done processing connection.");
 	}
-	catch (Exception & e)
-	{
-		LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
-			<< ", Stack trace:\n\n" << e.getStackTrace().toString());
-	}
 	catch (Poco::Exception & e)
 	{
-		std::stringstream message;
-		message << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
-
 		/// Таймаут - не ошибка.
 		if (!strcmp(e.what(), "Timeout"))
 		{
-			LOG_DEBUG(log, message.rdbuf());
+			LOG_DEBUG(log, "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
+				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
 		}
 		else
-		{
-			LOG_ERROR(log, message.rdbuf());
-		}
-	}
-	catch (std::exception & e)
-	{
-		LOG_ERROR(log, "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ". " << e.what());
-	}
-	catch (...)
-	{
-		LOG_ERROR(log, "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ".");
+			throw;
 	}
 }
 

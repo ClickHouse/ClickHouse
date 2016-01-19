@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Common/Arena.h>
+#include <DB/Common/ARMHelpers.h>
 
 
 namespace DB

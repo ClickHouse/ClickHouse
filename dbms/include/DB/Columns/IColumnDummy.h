@@ -7,6 +7,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+	extern const int NOT_IMPLEMENTED;
+}
+
+
 /** Базовый класс для столбцов-констант, содержащих значение, не входящее в Field.
   * Не является полноценым столбцом и используется особым образом.
   */

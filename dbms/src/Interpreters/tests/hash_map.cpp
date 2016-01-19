@@ -63,6 +63,9 @@ struct AlternativeHash
 	}
 };
 
+
+#if defined(__x86_64__)
+
 struct CRC32Hash_
 {
 	size_t operator() (UInt64 x) const
@@ -72,6 +75,8 @@ struct CRC32Hash_
 		return crc;
 	}
 };
+
+#endif
 
 
 int main(int argc, char ** argv)
@@ -200,6 +205,7 @@ int main(int argc, char ** argv)
 			<< std::endl;
 	}
 
+#if defined(__x86_64__)
 	if (argc < 3 || atoi(argv[2]) == 3)
 	{
 		Stopwatch watch;
@@ -229,6 +235,7 @@ int main(int argc, char ** argv)
 #endif
 			<< std::endl;
 	}
+#endif
 
 	if (argc < 3 || atoi(argv[2]) == 4)
 	{

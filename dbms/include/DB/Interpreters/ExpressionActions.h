@@ -267,7 +267,7 @@ private:
 	void optimizeArrayJoin();
 };
 
-typedef SharedPtr<ExpressionActions> ExpressionActionsPtr;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 
 /** Последовательность преобразований над блоком.

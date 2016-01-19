@@ -1,4 +1,6 @@
 #include <DB/DataStreams/TotalsHavingBlockInputStream.h>
+#include <DB/Interpreters/ExpressionActions.h>
+#include <DB/Interpreters/AggregateDescription.h>
 #include <DB/Columns/ColumnAggregateFunction.h>
 #include <DB/Columns/ColumnsNumber.h>
 
@@ -9,6 +11,27 @@ namespace ErrorCodes
 {
 	extern const int ILLEGAL_COLUMN;
 	extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+}
+
+
+TotalsHavingBlockInputStream::TotalsHavingBlockInputStream(
+	BlockInputStreamPtr input_,
+	bool overflow_row_, ExpressionActionsPtr expression_,
+	const std::string & filter_column_, TotalsMode totals_mode_, double auto_include_threshold_)
+	: overflow_row(overflow_row_),
+	expression(expression_), filter_column_name(filter_column_), totals_mode(totals_mode_),
+	auto_include_threshold(auto_include_threshold_)
+{
+	children.push_back(input_);
+}
+
+
+String TotalsHavingBlockInputStream::getID() const
+{
+	std::stringstream res;
+	res << "TotalsHavingBlockInputStream(" << children.back()->getID()
+		<< "," << filter_column_name << ")";
+	return res.str();
 }
 
 

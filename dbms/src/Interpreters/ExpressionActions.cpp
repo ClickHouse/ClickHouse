@@ -1013,7 +1013,7 @@ void ExpressionActionsChain::addStep()
 		throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
 	ColumnsWithTypeAndName columns = steps.back().actions->getSampleBlock().getColumns();
-	steps.push_back(Step(new ExpressionActions(columns, settings)));
+	steps.push_back(Step(std::make_shared<ExpressionActions>(columns, settings)));
 }
 
 void ExpressionActionsChain::finalize()

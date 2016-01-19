@@ -1,16 +1,12 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-
-#include <DB/Interpreters/ExpressionActions.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB
 {
 
-using Poco::SharedPtr;
-
+class ExpressionActions;
 
 /** Выполняет над блоком вычисление некоторого выражения.
   * Выражение состоит из идентификаторов столбцов из блока, констант, обычных функций.
@@ -19,44 +15,18 @@ using Poco::SharedPtr;
   */
 class ExpressionBlockInputStream : public IProfilingBlockInputStream
 {
+private:
+	using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
 public:
-	ExpressionBlockInputStream(BlockInputStreamPtr input_, ExpressionActionsPtr expression_)
-		: expression(expression_)
-	{
-		children.push_back(input_);
-	}
+	ExpressionBlockInputStream(BlockInputStreamPtr input_, ExpressionActionsPtr expression_);
 
-	String getName() const override { return "Expression"; }
-
-	String getID() const override
-	{
-		std::stringstream res;
-		res << "Expression(" << children.back()->getID() << ", " << expression->getID() << ")";
-		return res.str();
-	}
-
-	const Block & getTotals() override
-	{
-		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&*children.back()))
-		{
-			totals = child->getTotals();
-			expression->executeOnTotals(totals);
-		}
-
-		return totals;
-	}
+	String getName() const override;
+	String getID() const override;
+	const Block & getTotals() override;
 
 protected:
-	Block readImpl() override
-	{
-		Block res = children.back()->read();
-		if (!res)
-			return res;
-
-		expression->execute(res);
-
-		return res;
-	}
+	Block readImpl() override;
 
 private:
 	ExpressionActionsPtr expression;
