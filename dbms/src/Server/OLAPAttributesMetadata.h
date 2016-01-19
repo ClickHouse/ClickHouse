@@ -5,11 +5,11 @@
 
 #include <boost/algorithm/string.hpp>
 
-#include <Poco/NumberParser.h>
 #include <Poco/StringTokenizer.h>
 #include <Poco/ByteOrder.h>
 
 #include <DB/IO/WriteHelpers.h>
+#include <DB/IO/ReadHelpers.h>
 
 #include <common/DateLUT.h>
 
@@ -47,7 +47,7 @@ struct AttributeUIntBase : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
-		return static_cast<BinaryData>(Poco::NumberParser::parseUnsigned64(s));
+		return static_cast<BinaryData>(DB::parse<UInt64>(s));
 	}
 };
 
@@ -57,7 +57,7 @@ struct AttributeIntBase : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
-		return Poco::NumberParser::parse64(s);
+		return DB::parse<Int64>(s);
 	}
 };
 
@@ -225,7 +225,7 @@ struct UserNewnessInterval : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
-		return Poco::NumberParser::parseUnsigned(s);
+		return DB::parse<UInt64>(s);
 	}
 };
 
@@ -236,7 +236,7 @@ struct UserReturnTimeInterval : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
-		return Poco::NumberParser::parseUnsigned(s);
+		return DB::parse<UInt64>(s);
 	}
 };
 
@@ -247,7 +247,7 @@ struct UserVisitsPeriodInterval : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
-		return Poco::NumberParser::parseUnsigned(s);
+		return DB::parse<UInt64>(s);
 	}
 };
 
@@ -262,8 +262,8 @@ typedef AttributeUIntBase IsYandex;
 typedef AttributeUIntBase UserID;
 typedef AttributeDateTimeBase UserIDCreateDateTime;
 typedef AttributeDateBase UserIDCreateDate;
-typedef AttributeUIntBase UserIDAge;
-typedef AttributeUIntBase UserIDAgeInterval;
+typedef AttributeIntBase UserIDAge;
+typedef AttributeIntBase UserIDAgeInterval;
 typedef AttributeUIntBase TotalVisits;
 typedef AttributeUIntBase TotalVisitsInterval;
 typedef AttributeUIntBase Age;
@@ -278,8 +278,8 @@ struct DotNet : public IAttributeMetadata
 	{
 		Poco::StringTokenizer tokenizer(s, ".");
 		return tokenizer.count() == 0 ? 0
-		: (tokenizer.count() == 1 ? (Poco::NumberParser::parseUnsigned(tokenizer[0]) << 8)
-		: ((Poco::NumberParser::parseUnsigned(tokenizer[0]) << 8) + Poco::NumberParser::parseUnsigned(tokenizer[1])));
+		: (tokenizer.count() == 1 ? (DB::parse<UInt64>(tokenizer[0]) << 8)
+		: ((DB::parse<UInt64>(tokenizer[0]) << 8) + DB::parse<UInt64>(tokenizer[1])));
 	}
 };
 
@@ -288,7 +288,7 @@ struct DotNetMajor : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
-		return Poco::NumberParser::parseUnsigned(s);
+		return DB::parse<UInt64>(s);
 	}
 };
 
@@ -299,8 +299,8 @@ struct Flash : public IAttributeMetadata
 	{
 		Poco::StringTokenizer tokenizer(s, ".");
 		return tokenizer.count() == 0 ? 0
-		: (tokenizer.count() == 1 ? (Poco::NumberParser::parseUnsigned(tokenizer[0]) << 8)
-		: ((Poco::NumberParser::parseUnsigned(tokenizer[0]) << 8) + Poco::NumberParser::parseUnsigned(tokenizer[1])));
+		: (tokenizer.count() == 1 ? (DB::parse<UInt64>(tokenizer[0]) << 8)
+		: ((DB::parse<UInt64>(tokenizer[0]) << 8) + DB::parse<UInt64>(tokenizer[1])));
 	}
 };
 
@@ -309,7 +309,7 @@ struct FlashExists : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
-		return Poco::NumberParser::parseUnsigned(s);
+		return DB::parse<UInt64>(s);
 	}
 };
 
@@ -318,7 +318,7 @@ struct FlashMajor : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
-		return Poco::NumberParser::parseUnsigned(s);
+		return DB::parse<UInt64>(s);
 	}
 };
 
@@ -330,18 +330,18 @@ struct Silverlight : public IAttributeMetadata
 		Poco::StringTokenizer tokenizer(s, ".");
 		return tokenizer.count() == 0 ? 0
 		: (tokenizer.count() == 1
-		? (Poco::NumberParser::parseUnsigned64(tokenizer[0]) << 56)
+		? (DB::parse<UInt64>(tokenizer[0]) << 56)
 		: (tokenizer.count() == 2
-		? ((Poco::NumberParser::parseUnsigned64(tokenizer[0]) << 56)
-		| (Poco::NumberParser::parseUnsigned64(tokenizer[1]) << 48))
+		? ((DB::parse<UInt64>(tokenizer[0]) << 56)
+		| (DB::parse<UInt64>(tokenizer[1]) << 48))
 		: (tokenizer.count() == 3
-		? ((Poco::NumberParser::parseUnsigned64(tokenizer[0]) << 56)
-		| (Poco::NumberParser::parseUnsigned64(tokenizer[1]) << 48)
-		| (Poco::NumberParser::parseUnsigned64(tokenizer[2]) << 16))
-		: ((Poco::NumberParser::parseUnsigned64(tokenizer[0]) << 56)
-		| (Poco::NumberParser::parseUnsigned64(tokenizer[1]) << 48)
-		| (Poco::NumberParser::parseUnsigned64(tokenizer[2]) << 16)
-		| Poco::NumberParser::parseUnsigned64(tokenizer[3])))));
+		? ((DB::parse<UInt64>(tokenizer[0]) << 56)
+		| (DB::parse<UInt64>(tokenizer[1]) << 48)
+		| (DB::parse<UInt64>(tokenizer[2]) << 16))
+		: ((DB::parse<UInt64>(tokenizer[0]) << 56)
+		| (DB::parse<UInt64>(tokenizer[1]) << 48)
+		| (DB::parse<UInt64>(tokenizer[2]) << 16)
+		| DB::parse<UInt64>(tokenizer[3])))));
 	}
 };
 
@@ -382,16 +382,16 @@ struct ClientIP : public IAttributeMetadata
 	{
 		Poco::StringTokenizer tokenizer(s, ".");
 		return tokenizer.count() == 0 ? 0
-		: (tokenizer.count() == 1 ? (Poco::NumberParser::parseUnsigned64(tokenizer[0]) << 24)
-		: (tokenizer.count() == 2 ? (Poco::NumberParser::parseUnsigned64(tokenizer[0]) << 24)
-		+ (Poco::NumberParser::parseUnsigned(tokenizer[1]) << 16)
-		: (tokenizer.count() == 3 ? (Poco::NumberParser::parseUnsigned64(tokenizer[0]) << 24)
-		+ (Poco::NumberParser::parseUnsigned(tokenizer[1]) << 16)
-		+ (Poco::NumberParser::parseUnsigned(tokenizer[2]) << 8)
-		: ((Poco::NumberParser::parseUnsigned64(tokenizer[0]) << 24)
-		+ (Poco::NumberParser::parseUnsigned(tokenizer[1]) << 16)
-		+ (Poco::NumberParser::parseUnsigned(tokenizer[2]) << 8)
-		+ Poco::NumberParser::parseUnsigned(tokenizer[3])))));
+		: (tokenizer.count() == 1 ? (DB::parse<UInt64>(tokenizer[0]) << 24)
+		: (tokenizer.count() == 2 ? (DB::parse<UInt64>(tokenizer[0]) << 24)
+		+ (DB::parse<UInt64>(tokenizer[1]) << 16)
+		: (tokenizer.count() == 3 ? (DB::parse<UInt64>(tokenizer[0]) << 24)
+		+ (DB::parse<UInt64>(tokenizer[1]) << 16)
+		+ (DB::parse<UInt64>(tokenizer[2]) << 8)
+		: ((DB::parse<UInt64>(tokenizer[0]) << 24)
+		+ (DB::parse<UInt64>(tokenizer[1]) << 16)
+		+ (DB::parse<UInt64>(tokenizer[2]) << 8)
+		+ DB::parse<UInt64>(tokenizer[3])))));
 	}
 };
 
@@ -402,12 +402,12 @@ struct Resolution : public IAttributeMetadata
 	{
 		Poco::StringTokenizer tokenizer(s, "x");
 		return tokenizer.count() == 0 ? 0
-		: (tokenizer.count() == 1 ? (Poco::NumberParser::parseUnsigned64(tokenizer[0]) << 24)
-		: (tokenizer.count() == 2 ? (Poco::NumberParser::parseUnsigned64(tokenizer[0]) << 24)
-		+ (Poco::NumberParser::parseUnsigned(tokenizer[1]) << 8)
-		: ((Poco::NumberParser::parseUnsigned64(tokenizer[0]) << 24)
-		+ (Poco::NumberParser::parseUnsigned(tokenizer[1]) << 8)
-		+ Poco::NumberParser::parseUnsigned(tokenizer[2]))));
+		: (tokenizer.count() == 1 ? (DB::parse<UInt64>(tokenizer[0]) << 24)
+		: (tokenizer.count() == 2 ? (DB::parse<UInt64>(tokenizer[0]) << 24)
+		+ (DB::parse<UInt64>(tokenizer[1]) << 8)
+		: ((DB::parse<UInt64>(tokenizer[0]) << 24)
+		+ (DB::parse<UInt64>(tokenizer[1]) << 8)
+		+ DB::parse<UInt64>(tokenizer[2]))));
 	}
 };
 
@@ -418,9 +418,9 @@ struct ResolutionWidthHeight : public IAttributeMetadata
 	{
 		Poco::StringTokenizer tokenizer(s, "x");
 		return tokenizer.count() == 0 ? 0
-		: (tokenizer.count() == 1 ? (Poco::NumberParser::parseUnsigned64(tokenizer[0]) << 16)
-		: ((Poco::NumberParser::parseUnsigned64(tokenizer[0]) << 16)
-		+ Poco::NumberParser::parseUnsigned(tokenizer[1])));
+		: (tokenizer.count() == 1 ? (DB::parse<UInt64>(tokenizer[0]) << 16)
+		: ((DB::parse<UInt64>(tokenizer[0]) << 16)
+		+ DB::parse<UInt64>(tokenizer[1])));
 	}
 };
 
@@ -429,7 +429,7 @@ struct ResolutionWidth : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
-		return Poco::NumberParser::parseUnsigned(s);
+		return DB::parse<UInt64>(s);
 	}
 };
 
@@ -438,7 +438,7 @@ struct ResolutionHeight : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
-		return Poco::NumberParser::parseUnsigned(s);
+		return DB::parse<UInt64>(s);
 	}
 };
 
@@ -450,7 +450,7 @@ struct ResolutionColor : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
-		return Poco::NumberParser::parseUnsigned(s);
+		return DB::parse<UInt64>(s);
 	}
 };
 
@@ -461,9 +461,9 @@ struct WindowClientArea : public IAttributeMetadata
 	{
 		Poco::StringTokenizer tokenizer(s, "x");
 		return tokenizer.count() == 0 ? 0
-		: (tokenizer.count() == 1 ? (Poco::NumberParser::parseUnsigned64(tokenizer[0]) << 16)
-		: ((Poco::NumberParser::parseUnsigned64(tokenizer[0]) << 16)
-		+ Poco::NumberParser::parseUnsigned(tokenizer[1])));
+		: (tokenizer.count() == 1 ? (DB::parse<UInt64>(tokenizer[0]) << 16)
+		: ((DB::parse<UInt64>(tokenizer[0]) << 16)
+		+ DB::parse<UInt64>(tokenizer[1])));
 	}
 };
 
@@ -484,11 +484,11 @@ struct UserAgent : public IAttributeMetadata
 	{
 		Poco::StringTokenizer tokenizer(s, " .");
 		return tokenizer.count() == 0 ? 0
-			: (tokenizer.count() == 1 ? (Poco::NumberParser::parseUnsigned(tokenizer[0]) << 24)
-			: (tokenizer.count() == 2 ? (Poco::NumberParser::parseUnsigned(tokenizer[0]) << 24)
-				+ (Poco::NumberParser::parseUnsigned(tokenizer[1]) << 16)
-			: ((Poco::NumberParser::parseUnsigned(tokenizer[0]) << 24)
-				+ (Poco::NumberParser::parseUnsigned(tokenizer[1]) << 16)
+			: (tokenizer.count() == 1 ? (DB::parse<UInt64>(tokenizer[0]) << 24)
+			: (tokenizer.count() == 2 ? (DB::parse<UInt64>(tokenizer[0]) << 24)
+				+ (DB::parse<UInt64>(tokenizer[1]) << 16)
+			: ((DB::parse<UInt64>(tokenizer[0]) << 24)
+				+ (DB::parse<UInt64>(tokenizer[1]) << 16)
 				+ (static_cast<UInt32>(tokenizer[2][1]) << 8)
 				+ (tokenizer[2][0]))));
 	}
@@ -501,8 +501,8 @@ struct UserAgentVersion : public IAttributeMetadata
 	{
 		Poco::StringTokenizer tokenizer(s, ".");
 		return tokenizer.count() == 0 ? 0
-			: (tokenizer.count() == 1 ? (Poco::NumberParser::parseUnsigned(tokenizer[0]) << 16)
-			: ((Poco::NumberParser::parseUnsigned(tokenizer[0]) << 16)
+			: (tokenizer.count() == 1 ? (DB::parse<UInt64>(tokenizer[0]) << 16)
+			: ((DB::parse<UInt64>(tokenizer[0]) << 16)
 				+ (static_cast<UInt32>(tokenizer[1][1]) << 8)
 				+ tokenizer[1][0]));
 	}
@@ -515,9 +515,9 @@ struct UserAgentMajor : public IAttributeMetadata
 	{
 		Poco::StringTokenizer tokenizer(s, " ");
 		return tokenizer.count() == 0 ? 0
-			: (tokenizer.count() == 1 ? (Poco::NumberParser::parseUnsigned(tokenizer[0]) << 8)
-			: ((Poco::NumberParser::parseUnsigned(tokenizer[0]) << 8)
-				+ Poco::NumberParser::parseUnsigned(tokenizer[1])));
+			: (tokenizer.count() == 1 ? (DB::parse<UInt64>(tokenizer[0]) << 8)
+			: ((DB::parse<UInt64>(tokenizer[0]) << 8)
+				+ DB::parse<UInt64>(tokenizer[1])));
 	}
 };
 
@@ -526,7 +526,7 @@ struct UserAgentID : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
-		return Poco::NumberParser::parseUnsigned(s);
+		return DB::parse<UInt64>(s);
 	}
 };
 
@@ -542,12 +542,12 @@ typedef AttributeUIntBase ClickDomainID;
 typedef AttributeUIntBase ClickCost;
 typedef AttributeHashBase ClickURLHash;
 typedef AttributeUIntBase ClickOrderID;
-typedef AttributeUIntBase GoalReachesAny;
-typedef AttributeUIntBase GoalReachesDepth;
-typedef AttributeUIntBase GoalReachesURL;
-typedef AttributeUIntBase ConvertedAny;
-typedef AttributeUIntBase ConvertedDepth;
-typedef AttributeUIntBase ConvertedURL;
+typedef AttributeIntBase GoalReachesAny;
+typedef AttributeIntBase GoalReachesDepth;
+typedef AttributeIntBase GoalReachesURL;
+typedef AttributeIntBase ConvertedAny;
+typedef AttributeIntBase ConvertedDepth;
+typedef AttributeIntBase ConvertedURL;
 typedef AttributeUIntBase GoalReaches;
 typedef AttributeUIntBase Converted;
 typedef AttributeUIntBase CounterID;
@@ -567,7 +567,7 @@ struct Interests : public IAttributeMetadata
 			= make_split_iterator(s, token_finder(is_any_of(","),
 												  token_compress_on)); i != split_iterator<std::string::const_iterator>(); ++i)
 		{
-			UInt16 interest = Poco::NumberParser::parseUnsigned(boost::copy_range<std::string>(*i));
+			UInt16 interest = DB::parse<UInt64>(boost::copy_range<std::string>(*i));
 			value |= (interest == 0x2000 ? 0x2000 :
 			(interest == 0x1000 ? 0x1000 :
 			(interest == 0x800 ? 0x800 :
