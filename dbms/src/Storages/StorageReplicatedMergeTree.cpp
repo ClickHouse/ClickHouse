@@ -256,6 +256,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		database_name + "." + table_name + " (ReplicatedMergeTreeQueue)",
 		data.getDataParts(), current_zookeeper);
 
+	queue.pullLogsToQueue(current_zookeeper, nullptr);
+
 	/// В этом потоке реплика будет активирована.
 	restarting_thread.reset(new ReplicatedMergeTreeRestartingThread(*this));
 }
