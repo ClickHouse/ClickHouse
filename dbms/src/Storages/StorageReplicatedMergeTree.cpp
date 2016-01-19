@@ -1,5 +1,11 @@
+#include <time.h>
 #include <ext/range.hpp>
+
+#include <zkutil/Types.h>
+#include <zkutil/KeeperException.h>
+
 #include <DB/Core/FieldVisitors.h>
+
 #include <DB/Storages/ColumnsDescription.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
@@ -9,22 +15,27 @@
 #include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+
 #include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/ASTInsertQuery.h>
+
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/Operators.h>
+
 #include <DB/Interpreters/InterpreterAlterQuery.h>
-#include <DB/Common/VirtualColumnUtils.h>
-#include <DB/Parsers/ASTInsertQuery.h>
+
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 #include <DB/DataStreams/NullBlockOutputStream.h>
 #include <DB/DataStreams/copyData.h>
+
 #include <DB/Common/Macros.h>
+#include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Common/formatReadable.h>
 #include <DB/Common/setThreadName.h>
+
 #include <Poco/DirectoryIterator.h>
-#include <time.h>
 
 
 namespace DB
@@ -56,6 +67,12 @@ namespace ErrorCodes
 
 
 const auto ERROR_SLEEP_MS = 1000;
+
+/// Если ждём какого-то события с помощью watch-а, то просыпаться на всякий случай вхолостую раз в указанное время.
+const auto WAIT_FOR_NEW_LOGS_SLEEP_MS = 60 * 1000;
+const auto WAIT_FOR_ALTER_SLEEP_MS = 300 * 1000;
+const auto WAIT_FOR_REPLICA_QUEUE_MS = 10 * 1000;
+
 const auto MERGE_SELECTING_SLEEP_MS = 5 * 1000;
 
 const Int64 RESERVED_BLOCK_NUMBERS = 200;
@@ -96,6 +113,27 @@ const Int64 RESERVED_BLOCK_NUMBERS = 200;
   * Но здесь уже слишком легко запутаться с консистентностью этого флага.
   */
 const auto MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER = 5 * 60;
+
+
+void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
+{
+	std::lock_guard<std::mutex> lock(current_zookeeper_mutex);
+	current_zookeeper = zookeeper;
+}
+
+zkutil::ZooKeeperPtr StorageReplicatedMergeTree::tryGetZooKeeper()
+{
+	std::lock_guard<std::mutex> lock(current_zookeeper_mutex);
+	return current_zookeeper;
+}
+
+zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeper()
+{
+	auto res = tryGetZooKeeper();
+	if (!res)
+		throw Exception("Cannot get ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
+	return res;
+}
 
 
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
@@ -167,6 +205,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 			throw Exception("Can't create replicated table without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
 
 		/// Не активируем реплику. Она будет в режиме readonly.
+		LOG_ERROR(log, "No ZooKeeper: table will be in readonly mode.");
+		is_readonly = true;
 		return;
 	}
 
@@ -232,6 +272,7 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
 
 	/// Отслеживание отставания реплик.
 	zookeeper->createIfNotExists(replica_path + "/min_unprocessed_insert_time", "");
+	zookeeper->createIfNotExists(replica_path + "/max_processed_insert_time", "");
 }
 
 
@@ -264,7 +305,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 
 	StoragePtr res_ptr = res->thisPtr();
 
-	if (res->getZooKeeper())
+	if (res->tryGetZooKeeper())
 	{
 		String endpoint_name = "ReplicatedMergeTree:" + res->replica_path;
 		InterserverIOEndpointPtr endpoint = new ReplicatedMergeTreePartsServer(res->data, *res);
@@ -552,7 +593,7 @@ void StorageReplicatedMergeTree::createReplica()
 			zookeeper->create(replica_path + "/queue/queue-", entry, zkutil::CreateMode::PersistentSequential);
 		}
 
-		/// Далее оно будет загружено в переменную queue в методе queue.load.
+		/// Далее оно будет загружено в переменную queue в методе queue.initialize.
 
 		LOG_DEBUG(log, "Copied " << source_queue.size() << " queue entries");
 	}
@@ -691,7 +732,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 		log_entry.new_part_name = name;
 		log_entry.create_time = tryGetPartCreateTime(zookeeper, replica_path, name);
 
-		/// Полагаемся, что это происходит до загрузки очереди (queue.load).
+		/// Полагаемся, что это происходит до загрузки очереди (queue.initialize).
 		zkutil::Ops ops;
 		removePartFromZooKeeper(name, ops);
 		ops.push_back(new zkutil::Op::Create(
@@ -1206,7 +1247,7 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 		try
 		{
 			pullLogsToQueue(queue_updating_event);
-			queue_updating_event->wait();
+			queue_updating_event->tryWait(WAIT_FOR_NEW_LOGS_SLEEP_MS);
 		}
 		catch (const zkutil::KeeperException & e)
 		{
@@ -1214,13 +1255,11 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 				restarting_thread->wakeup();
 
 			tryLogCurrentException(__PRETTY_FUNCTION__);
-
 			queue_updating_event->tryWait(ERROR_SLEEP_MS);
 		}
 		catch (...)
 		{
 			tryLogCurrentException(__PRETTY_FUNCTION__);
-
 			queue_updating_event->tryWait(ERROR_SLEEP_MS);
 		}
 	}
@@ -1353,8 +1392,6 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 		try
 		{
-			std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
-
 			if (need_pull)
 			{
 				/// Нужно загрузить новые записи в очередь перед тем, как выбирать куски для слияния.
@@ -1362,6 +1399,8 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				pullLogsToQueue();
 				need_pull = false;
 			}
+
+			std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
 			/** Сколько в очереди или в фоновом потоке мерджей крупных кусков.
 			  * Если их больше половины от размера пула потоков для мерджа, то можно мерджить только мелкие куски.
@@ -1677,7 +1716,7 @@ void StorageReplicatedMergeTree::alterThread()
 				/// Важно, что уничтожается parts и merge_blocker перед wait-ом.
 			}
 
-			alter_thread_event->wait();
+			alter_thread_event->tryWait(WAIT_FOR_ALTER_SLEEP_MS);
 		}
 		catch (...)
 		{
@@ -1726,7 +1765,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
 	String path_created = dynamic_cast<zkutil::Op::Create &>(ops[0]).getPathCreated();
 	log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
-	queue.insert(log_entry);
+	queue.insert(zookeeper, log_entry);
 }
 
 
@@ -2289,6 +2328,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 		if (settings.select_sequential_consistency)
 		{
 			auto zookeeper = getZooKeeper();
+
 			String last_part;
 			zookeeper->tryGet(zookeeper_path + "/quorum/last_part", last_part);
 
@@ -2335,10 +2375,16 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 }
 
 
-BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query, const Settings & settings)
+void StorageReplicatedMergeTree::assertNotReadonly() const
 {
 	if (is_readonly)
 		throw Exception("Table is in readonly mode", ErrorCodes::TABLE_IS_READ_ONLY);
+}
+
+
+BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query, const Settings & settings)
+{
+	assertNotReadonly();
 
 	String insert_id;
 	if (query)
@@ -2377,6 +2423,8 @@ bool StorageReplicatedMergeTree::optimize(const Settings & settings)
 void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	const String & database_name, const String & table_name, Context & context)
 {
+	assertNotReadonly();
+
 	auto zookeeper = getZooKeeper();
 	const MergeTreeMergeBlocker merge_blocker{merger};
 	const auto unreplicated_merge_blocker = unreplicated_merger ?
@@ -2472,7 +2520,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 			if (stat.version != replica_columns_version)
 				continue;
 
-			alter_query_event->wait();
+			alter_query_event->tryWait(WAIT_FOR_ALTER_SLEEP_MS);
 		}
 
 		if (shutdown_called)
@@ -2537,6 +2585,8 @@ void StorageReplicatedMergeTree::dropPartition(ASTPtr query, const Field & field
 		dropUnreplicatedPartition(field, detach, settings);
 		return;
 	}
+
+	assertNotReadonly();
 
 	auto zookeeper = getZooKeeper();
 	String month_name = MergeTreeData::getMonthName(field);
@@ -2631,6 +2681,8 @@ void StorageReplicatedMergeTree::dropPartition(ASTPtr query, const Field & field
 
 void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & field, bool unreplicated, bool attach_part, const Settings & settings)
 {
+	assertNotReadonly();
+
 	auto zookeeper = getZooKeeper();
 	String partition;
 
@@ -2736,12 +2788,12 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 
 void StorageReplicatedMergeTree::drop()
 {
-	if (is_readonly)
+	auto zookeeper = tryGetZooKeeper();
+
+	if (is_readonly || !zookeeper)
 		throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
 
 	shutdown();
-
-	auto zookeeper = getZooKeeper();
 
 	if (zookeeper->expired())
 		throw Exception("Table was not dropped because ZooKeeper session has been expired.", ErrorCodes::TABLE_WAS_NOT_DROPPED);
@@ -2860,7 +2912,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 			if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
 				break;
 
-			event->wait();
+			event->tryWait(WAIT_FOR_REPLICA_QUEUE_MS);
 		}
 	}
 	else if (0 == entry.znode_name.compare(0, strlen("queue-"), "queue-"))
@@ -2905,7 +2957,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 				if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
 					break;
 
-				event->wait();
+				event->tryWait(WAIT_FOR_REPLICA_QUEUE_MS);
 			}
 		}
 	}
@@ -2952,7 +3004,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 
 void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 {
-	auto zookeeper = getZooKeeper();
+	auto zookeeper = tryGetZooKeeper();
 
 	res.is_leader = is_leader_node;
 	res.is_readonly = is_readonly;
@@ -3012,12 +3064,53 @@ void StorageReplicatedMergeTree::getQueue(LogEntriesData & res, String & replica
 }
 
 
-void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay) const
+void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay)
 {
-	if (!restarting_thread)
-		throw Exception("Table was shutted down or is in readonly mode.", ErrorCodes::TABLE_IS_READ_ONLY);
+	assertNotReadonly();
 
-	restarting_thread->getReplicaDelays(out_absolute_delay, out_relative_delay);
+	/** Абсолютная задержка - задержка отставания текущей реплики от реального времени.
+	  */
+
+	time_t min_unprocessed_insert_time = 0;
+	time_t max_processed_insert_time = 0;
+	queue.getInsertTimes(min_unprocessed_insert_time, max_processed_insert_time);
+
+	time_t current_time = time(0);
+	out_absolute_delay = 0;
+	out_relative_delay = 0;
+
+	if (min_unprocessed_insert_time)
+		out_absolute_delay = current_time - min_unprocessed_insert_time;
+
+	/** Относительная задержка - максимальная разница абсолютной задержки от какой-либо другой реплики,
+	  *  (если эта реплика отстаёт от какой-либо другой реплики, или ноль, иначе).
+	  * Вычисляется только если абсолютная задержка достаточно большая.
+	  */
+
+	if (out_absolute_delay < static_cast<time_t>(data.settings.min_relative_delay_to_yield_leadership))
+		return;
+
+	auto zookeeper = getZooKeeper();
+
+	time_t max_replicas_unprocessed_insert_time = 0;
+	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+
+	for (const auto & replica : replicas)
+	{
+		if (replica == replica_name)
+			continue;
+
+		String value;
+		if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/min_unprocessed_insert_time", value))
+			continue;
+
+		time_t replica_time = value.empty() ? 0 : parse<time_t>(value);
+		if (replica_time > max_replicas_unprocessed_insert_time)
+			max_replicas_unprocessed_insert_time = replica_time;
+	}
+
+	if (max_replicas_unprocessed_insert_time > min_unprocessed_insert_time)
+		out_relative_delay = max_replicas_unprocessed_insert_time - min_unprocessed_insert_time;
 }
 
 

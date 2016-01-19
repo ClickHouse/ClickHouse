@@ -4,12 +4,15 @@ using namespace zkutil;
 
 bool Lock::tryLock()
 {
+	auto zookeeper = zookeeper_holder->getZooKeeper();
 	if (locked)
 	{
 		/// проверим, что нода создана и я ее владелец
-		check();
+		if (tryCheck() != Status::LOCKED_BY_ME)
+			locked.reset(nullptr);
 	}
-	else
+
+	if (!locked)
 	{
 		size_t attempt;
 		std::string dummy;
@@ -18,80 +21,92 @@ bool Lock::tryLock()
 		if (code == ZNODEEXISTS)
 		{
 			if (attempt == 0)
-				locked = false;
+				locked.reset(nullptr);
 			else
 			{
 				zkutil::Stat stat;
 				zookeeper->get(lock_path, &stat);
 				if (stat.ephemeralOwner == zookeeper->getClientID())
-					locked = true;
+					locked.reset(new ZooKeeperHandler(zookeeper));
 				else
-					locked = false;
+					locked.reset(nullptr);
 			}
 		}
 		else if (code == ZOK)
 		{
-			locked = true;
+			locked.reset(new ZooKeeperHandler(zookeeper));
 		}
 		else
 		{
 			throw zkutil::KeeperException(code);
 		}
 	}
-	return locked;
+	return bool(locked);
 }
 
 void Lock::unlock()
 {
+	auto zookeeper = zookeeper_holder->getZooKeeper();
+
 	if (locked)
 	{
-		/// проверим, что до сих пор мы владельцы ноды
-		check();
-
-		size_t attempt;
-		int32_t code = zookeeper->tryRemoveWithRetries(lock_path, -1, &attempt);
-		if (attempt)
+		try
 		{
-			if (code != ZOK)
-				throw zkutil::KeeperException(code);
+			if (tryCheck() == Status::LOCKED_BY_ME)
+			{
+				size_t attempt;
+				int32_t code = zookeeper->tryRemoveWithRetries(lock_path, -1, &attempt);
+				if (attempt)
+				{
+					if (code != ZOK)
+						throw zkutil::KeeperException(code);
+				}
+				else
+				{
+					if (code == ZNONODE)
+						LOG_ERROR(log, "Node " << lock_path << " has been already removed. Probably due to network error.");
+					else if (code != ZOK)
+						throw zkutil::KeeperException(code);
+				}
+			}
 		}
-		else
+		catch (const zkutil::KeeperException & e)
 		{
-			if (code == ZNONODE)
-				LOG_ERROR(log, "Node " << lock_path << " has been already removed. Probably due to network error.");
-			else if (code != ZOK)
-				throw zkutil::KeeperException(code);
+			/// если сессия находится в невостанавливаемом состоянии, то эфимерные ноды нам больше не принадлежат
+			/// и лок через таймаут будет отпущен
+			if (!e.isUnrecoverable())
+				throw;
 		}
-		locked = false;
+		locked.reset(nullptr);
 	}
 }
 
-Lock::Status Lock::check()
+Lock::Status Lock::tryCheck() const
 {
-	Status status = checkImpl();
-	if ((locked && status != LOCKED_BY_ME) || (!locked && (status != UNLOCKED && status != LOCKED_BY_OTHER)))
-		throw zkutil::KeeperException(std::string("Incompability of local state and state in zookeeper. Local is ") + (locked ? "locked" : "unlocked") + ". Zookeeper state is " + status2String(status));
-	return status;
-}
-
-Lock::Status Lock::checkImpl()
-{
+	auto zookeeper = zookeeper_holder->getZooKeeper();
+	
+	Status lock_status;
 	Stat stat;
 	std::string dummy;
 	bool result = zookeeper->tryGet(lock_path, dummy, &stat);
 	if (!result)
-		return UNLOCKED;
+		lock_status = UNLOCKED;
 	else
 	{
 		if (stat.ephemeralOwner == zookeeper->getClientID())
 		{
-			return LOCKED_BY_ME;
+			lock_status = LOCKED_BY_ME;
 		}
 		else
 		{
-			return LOCKED_BY_OTHER;
+			lock_status = LOCKED_BY_OTHER;
 		}
 	}
+
+	if (locked && lock_status != LOCKED_BY_ME)
+		LOG_WARNING(log, "Lock is lost. It is normal if session was reinitialized. Path: " << lock_path << "/" << lock_message);
+
+	return lock_status;
 }
 
 std::string Lock::status2String(Status status)
@@ -101,3 +116,4 @@ std::string Lock::status2String(Status status)
 	static const char * names[] = {"Unlocked", "Locked by me", "Locked by other"};
 	return names[status];
 }
+
