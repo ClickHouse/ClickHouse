@@ -88,16 +88,20 @@ ProcessListEntry::~ProcessListEntry()
 
 	/// Важен порядок удаления memory_tracker-ов.
 
+	String user = it->user;
+	String query_id = it->query_id;
+	bool is_cancelled = it->is_cancelled;
+
 	/// Здесь удаляется memory_tracker одного запроса.
 	parent.cont.erase(it);
 
-	ProcessList::UserToQueries::iterator user_process_list = parent.user_to_queries.find(it->user);
+	ProcessList::UserToQueries::iterator user_process_list = parent.user_to_queries.find(user);
 	if (user_process_list != parent.user_to_queries.end())
 	{
 		/// В случае, если запрос отменяется, данные о нем удаляются из мапа в момент отмены, а не здесь.
-		if (!it->is_cancelled && !it->query_id.empty())
+		if (!is_cancelled && !query_id.empty())
 		{
-			ProcessListForUser::QueryToElement::iterator element = user_process_list->second.queries.find(it->query_id);
+			ProcessListForUser::QueryToElement::iterator element = user_process_list->second.queries.find(query_id);
 			if (element != user_process_list->second.queries.end())
 				user_process_list->second.queries.erase(element);
 		}

@@ -5,6 +5,10 @@
 #include <type_traits>
 #include <array>
 
+#if defined(__x86_64__)
+	#include <smmintrin.h>
+#endif
+
 
 namespace DB
 {
@@ -13,6 +17,7 @@ namespace DB
 	 * roundToExp2 - вниз до ближайшей степени двойки;
 	 * roundDuration - вниз до ближайшего из: 0, 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000;
 	 * roundAge - вниз до ближайшего из: 0, 18, 25, 35, 45.
+	 *
 	 * round(x, N) - арифметическое округление (N = 0 по умолчанию).
 	 * ceil(x, N) - наименьшее число, которое не меньше x (N = 0 по умолчанию).
 	 * floor(x, N) - наибольшее число, которое не больше x (N = 0 по умолчанию).
@@ -163,6 +168,12 @@ namespace DB
 		NullScale 		// возвращать нулевое значение
 	};
 
+#if !defined(_MM_FROUND_NINT)
+	#define _MM_FROUND_NINT		0
+	#define _MM_FROUND_FLOOR 	1
+	#define _MM_FROUND_CEIL		2
+#endif
+
 	/** Реализация низкоуровневых функций округления для целочисленных значений.
 	  */
 	template<typename T, int rounding_mode, ScaleMode scale_mode, typename Enable = void>
@@ -257,10 +268,11 @@ namespace DB
 		}
 	};
 
-	template<typename T>
+#if defined(__x86_64__)
+	template <typename T>
 	class BaseFloatRoundingComputation;
 
-	template<>
+	template <>
 	class BaseFloatRoundingComputation<Float32>
 	{
 	public:
@@ -298,7 +310,7 @@ namespace DB
 		}
 	};
 
-	template<>
+	template <>
 	class BaseFloatRoundingComputation<Float64>
 	{
 	public:
@@ -522,6 +534,81 @@ namespace DB
 			_mm_storeu_pd(out, val);
 		}
 	};
+#else
+	/// Реализация для ARM. Не векторизована. Не исправляет отрицательные нули.
+
+	template <int mode>
+	float roundWithMode(float x)
+	{
+		if (mode == _MM_FROUND_NINT) 	return roundf(x);
+		if (mode == _MM_FROUND_FLOOR) 	return floorf(x);
+		if (mode == _MM_FROUND_CEIL) 	return ceilf(x);
+		__builtin_unreachable();
+	}
+
+	template <int mode>
+	double roundWithMode(double x)
+	{
+		if (mode == _MM_FROUND_NINT) 	return round(x);
+		if (mode == _MM_FROUND_FLOOR) 	return floor(x);
+		if (mode == _MM_FROUND_CEIL) 	return ceil(x);
+		__builtin_unreachable();
+	}
+
+	template <typename T>
+	class BaseFloatRoundingComputation
+	{
+	public:
+		using Scale = T;
+		static const size_t data_count = 1;
+
+		static inline void prepare(size_t scale, Scale & mm_scale)
+		{
+			mm_scale = static_cast<T>(scale);
+		}
+	};
+
+	template <typename T, int rounding_mode, ScaleMode scale_mode>
+	class FloatRoundingComputation;
+
+	template <typename T, int rounding_mode>
+	class FloatRoundingComputation<T, rounding_mode, PositiveScale>
+		: public BaseFloatRoundingComputation<T>
+	{
+	public:
+		static inline void compute(const T * __restrict in, const T & scale, T * __restrict out)
+		{
+			out[0] = roundWithMode<rounding_mode>(in[0] * scale) / scale;
+		}
+	};
+
+	template <typename T, int rounding_mode>
+	class FloatRoundingComputation<T, rounding_mode, NegativeScale>
+		: public BaseFloatRoundingComputation<T>
+	{
+	public:
+		static inline void compute(const T * __restrict in, const T & scale, T * __restrict out)
+		{
+			out[0] = roundWithMode<rounding_mode>(in[0] / scale) * scale;
+		}
+	};
+
+	template <typename T, int rounding_mode>
+	class FloatRoundingComputation<T, rounding_mode, ZeroScale>
+		: public BaseFloatRoundingComputation<T>
+	{
+	public:
+		static inline void prepare(size_t scale, T & mm_scale)
+		{
+		}
+
+		static inline void compute(const T * __restrict in, const T & scale, T * __restrict out)
+		{
+			out[0] = roundWithMode<rounding_mode>(in[0]);
+		}
+	};
+#endif
+
 
 	/** Реализация высокоуровневых функций округления.
 	  */
@@ -906,7 +993,7 @@ namespace
 
 	/** Выбрать подходящий алгоритм обработки в зависимости от масштаба.
 	  */
-	template<typename T, template<typename> class U, int rounding_mode>
+	template<typename T, template <typename> class U, int rounding_mode>
 	struct Dispatcher
 	{
 		static inline void apply(Block & block, U<T> * col, const ColumnNumbers & arguments, size_t result)
@@ -1053,9 +1140,10 @@ namespace
 	typedef FunctionUnaryArithmetic<RoundToExp2Impl,	NameRoundToExp2> 	FunctionRoundToExp2;
 	typedef FunctionUnaryArithmetic<RoundDurationImpl,	NameRoundDuration>	FunctionRoundDuration;
 	typedef FunctionUnaryArithmetic<RoundAgeImpl,		NameRoundAge>		FunctionRoundAge;
+
 	typedef FunctionRounding<NameRound,	_MM_FROUND_NINT>	FunctionRound;
-	typedef FunctionRounding<NameCeil,	_MM_FROUND_CEIL>	FunctionCeil;
 	typedef FunctionRounding<NameFloor,	_MM_FROUND_FLOOR>	FunctionFloor;
+	typedef FunctionRounding<NameCeil,	_MM_FROUND_CEIL>	FunctionCeil;
 
 
 	struct PositiveMonotonicity

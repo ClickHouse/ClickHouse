@@ -1,6 +1,6 @@
 #pragma once
 
-#include <zkutil/ZooKeeper.h>
+#include <zkutil/ZooKeeperHolder.h>
 #include <common/logger_useful.h>
 #include <DB/Common/Exception.h>
 
@@ -11,13 +11,22 @@ namespace zkutil
 	public:
 		/// lock_prefix - относительный путь до блокировки в ZK. Начинается со слеша
 		/// lock_name - имя ноды блокировки в ZK
-		Lock(zkutil::ZooKeeperPtr zk, const std::string & lock_prefix_, const std::string & lock_name_, const std::string & lock_message_ = "",
-			 bool create_parent_path = false) :
-			zookeeper(zk), lock_path(lock_prefix_ + "/" + lock_name_), lock_message(lock_message_), log(&Logger::get("zkutil::Lock"))
+		Lock(
+			zkutil::ZooKeeperHolderPtr zookeeper_holder_,
+			const std::string & lock_prefix_,
+			const std::string & lock_name_,
+			const std::string & lock_message_ = "",
+			bool create_parent_path_ = false)
+		:
+			zookeeper_holder(zookeeper_holder_),
+			lock_path(lock_prefix_ + "/" + lock_name_),
+			lock_message(lock_message_),
+			log(&Logger::get("zkutil::Lock"))
 		{
-			if (create_parent_path)
+			auto zookeeper = zookeeper_holder->getZooKeeper();
+			if (create_parent_path_)
 				zookeeper->createAncestors(lock_prefix_);
-			
+
 			zookeeper->createIfNotExists(lock_prefix_, "");
 		}
 
@@ -46,9 +55,7 @@ namespace zkutil
 		std::string status2String(Status status);
 
 		/// проверяет создана ли эфемерная нода и кто ее владелец.
-		/// если мы сами создавали эфемерную ноду, то надо вызывать этот метод, чтобы убедится,
-		/// что сессия с зукипером не порвалось
-		Status check();
+		Status tryCheck() const;
 
 		void unlock();
 
@@ -58,11 +65,14 @@ namespace zkutil
 		const std::string & getPath() { return lock_path; }
 
 	private:
-		Status checkImpl();
-		zkutil::ZooKeeperPtr zookeeper;
+		zkutil::ZooKeeperHolderPtr zookeeper_holder;
+		/// пока храним указатель на хендлер, никто не может переиницализировать сессию с zookeeper
+		using ZooKeeperHandler = zkutil::ZooKeeperHolder::UnstorableZookeeperHandler;
+		std::unique_ptr<ZooKeeperHandler> locked;
+
 		std::string lock_path;
 		std::string lock_message;
 		Logger * log;
-		bool locked = false;
+
 	};
 }

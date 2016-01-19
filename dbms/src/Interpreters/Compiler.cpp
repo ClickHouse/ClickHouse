@@ -192,8 +192,6 @@ void Compiler::compile(
 		" -I /usr/share/clickhouse/headers/contrib/libcpuid/include/"
 		" -I /usr/share/clickhouse/headers/libs/libcommon/include/"
 		" -I /usr/share/clickhouse/headers/libs/libmysqlxx/include/"
-		" -I /usr/share/clickhouse/headers/libs/libstatdaemons/include/"
-		" -I /usr/share/clickhouse/headers/libs/libstats/include/"
 		" " << additional_compiler_flags <<
 		" -o " << so_file_path << " " << cpp_file_path
 		<< " 2>&1 || echo Exit code: $?";
