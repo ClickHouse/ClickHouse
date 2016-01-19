@@ -3095,6 +3095,8 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
 	auto zookeeper = getZooKeeper();
 
 	time_t max_replicas_unprocessed_insert_time = 0;
+	bool have_replica_with_nothing_unprocessed = false;
+
 	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
 
 	for (const auto & replica : replicas)
@@ -3107,11 +3109,20 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
 			continue;
 
 		time_t replica_time = value.empty() ? 0 : parse<time_t>(value);
+
+		if (replica_time == 0)
+		{
+			have_replica_with_nothing_unprocessed = true;
+			break;
+		}
+
 		if (replica_time > max_replicas_unprocessed_insert_time)
 			max_replicas_unprocessed_insert_time = replica_time;
 	}
 
-	if (max_replicas_unprocessed_insert_time > min_unprocessed_insert_time)
+	if (have_replica_with_nothing_unprocessed)
+		out_relative_delay = out_absolute_delay;
+	else if (max_replicas_unprocessed_insert_time > min_unprocessed_insert_time)
 		out_relative_delay = max_replicas_unprocessed_insert_time - min_unprocessed_insert_time;
 }
 
