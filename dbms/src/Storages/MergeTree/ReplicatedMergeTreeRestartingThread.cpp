@@ -134,6 +134,8 @@ void ReplicatedMergeTreeRestartingThread::run()
 						LOG_INFO(log, "Relative replica delay (" << relative_delay << " seconds) is bigger than threshold ("
 							<< storage.data.settings.min_relative_delay_to_yield_leadership << "). Will yield leadership.");
 
+					ProfileEvents::increment(ProfileEvents::ReplicaYieldLeadership);
+
 					need_restart = true;
 					continue;
 				}

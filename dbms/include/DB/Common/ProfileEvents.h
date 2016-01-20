@@ -80,6 +80,8 @@
 	M(SlowRead) \
 	M(ReadBackoff) \
 	\
+	M(ReplicaYieldLeadership) \
+	\
 	M(END)
 
 namespace ProfileEvents
