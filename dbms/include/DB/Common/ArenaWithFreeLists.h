@@ -1,92 +1,99 @@
 #pragma once
 
 #include <DB/Common/Arena.h>
-#include <ext/bit_cast.hpp>
-#include <ext/size.hpp>
-#include <cstdlib>
-#include <memory>
-#include <array>
+
+#if !defined(__x86_64__)
+
+inline unsigned int _bit_scan_reverse(unsigned int x)
+{
+	return sizeof(unsigned int) * 8 - 1 - __builtin_clz(x);
+}
+
+#endif
 
 
 namespace DB
 {
 
 
-class ArenaWithFreeLists : private Allocator<false>
+/** В отличие от Arena, позволяет освобождать (для последующего повторного использования)
+  *  выделенные ранее (не обязательно только что) куски памяти.
+  * Для этого, запрашиваемый размер округляется вверх до степени двух
+  *  (или до 8, если меньше; или используется выделение памяти вне Arena, если размер больше 65536).
+  * При освобождении памяти, для каждого размера (всего 14 вариантов: 8, 16... 65536),
+  *  поддерживается односвязный список свободных блоков.
+  * При аллокации, мы берём голову списка свободных блоков,
+  *  либо, если список пуст - выделяем новый блок, используя Arena.
+  */
+class ArenaWithFreeLists : private Allocator<false>, private boost::noncopyable
 {
 private:
-	struct Block { Block * next; };
-
-	static const std::array<std::size_t, 14> & getSizes()
+	/// Если блок свободен, то в его начале хранится указатель на следующий свободный блок, либо nullptr, если свободных блоков больше нет.
+	/// Если блок используется, то в нём хранятся какие-то данные.
+	union Block
 	{
-		static constexpr std::array<std::size_t, 14> sizes{
-			8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536
-		};
+		Block * next;
+		char data[0];
+	};
 
-		static_assert(sizes.front() >= sizeof(Block), "Can't make allocations smaller than sizeof(Block)");
+	/// Максимальный размер куска памяти, который выделяется с помощью Arena. Иначе используем Allocator напрямую.
+	static constexpr size_t max_fixed_block_size = 65536;
 
-		return sizes;
+	/// Получить индекс в массиве freelist-ов для заданного размера.
+	static size_t findFreeListIndex(const size_t size)
+	{
+		return size <= 8 ? 2 : _bit_scan_reverse(size - 1);
 	}
 
-	static auto sizeToPreviousPowerOfTwo(const int size) { return _bit_scan_reverse(size - 1); }
-
-	static auto getMinBucketNum()
-	{
-		static const auto val = sizeToPreviousPowerOfTwo(getSizes().front());
-		return val;
-	}
-	static auto getMaxFixedBlockSize() { return getSizes().back(); }
-
+	/// Для выделения блоков не слишком большого размера используется Arena.
 	Arena pool;
-	const std::unique_ptr<Block * []> free_lists = std::make_unique<Block * []>(ext::size(getSizes()));
 
-	static std::size_t findFreeListIndex(const std::size_t size)
-	{
-		/// shift powers of two into previous bucket by subtracting 1
-		const auto bucket_num = sizeToPreviousPowerOfTwo(size);
-
-		return std::max(bucket_num, getMinBucketNum()) - getMinBucketNum();
-	}
+	/// Списки свободных блоков. Каждый элемент указывает на голову соответствующего списка, либо равен nullptr.
+	/// Первые два элемента не используются, а предназначены для упрощения арифметики.
+	Block * free_lists[16] {};
 
 public:
 	ArenaWithFreeLists(
-		const std::size_t initial_size = 4096, const std::size_t growth_factor = 2,
-		const std::size_t linear_growth_threshold = 128 * 1024 * 1024)
+		const size_t initial_size = 4096, const size_t growth_factor = 2,
+		const size_t linear_growth_threshold = 128 * 1024 * 1024)
 		: pool{initial_size, growth_factor, linear_growth_threshold}
 	{
 	}
 
-	char * alloc(const std::size_t size)
+	char * alloc(const size_t size)
 	{
-		if (size > getMaxFixedBlockSize())
+		if (size > max_fixed_block_size)
 			return static_cast<char *>(Allocator::alloc(size));
 
 		/// find list of required size
 		const auto list_idx = findFreeListIndex(size);
 
-		if (auto & block = free_lists[list_idx])
+		/// Если есть свободный блок.
+		if (auto & free_block_ptr = free_lists[list_idx])
 		{
-			const auto res = ext::bit_cast<char *>(block);
-			block = block->next;
+			/// Возьмём его. И поменяем голову списка на следующий элемент списка.
+			const auto res = free_block_ptr->data;
+			free_block_ptr = free_block_ptr->next;
 			return res;
 		}
 
 		/// no block of corresponding size, allocate a new one
-		return pool.alloc(getSizes()[list_idx]);
+		return pool.alloc(1 << (list_idx + 1));
 	}
 
-	void free(const void * ptr, const std::size_t size)
+	void free(char * ptr, const size_t size)
 	{
-		if (size > getMaxFixedBlockSize())
-			return Allocator::free(const_cast<void *>(ptr), size);
+		if (size > max_fixed_block_size)
+			return Allocator::free(ptr, size);
 
 		/// find list of required size
 		const auto list_idx = findFreeListIndex(size);
 
-		auto & block = free_lists[list_idx];
-		const auto old = block;
-		block = ext::bit_cast<Block *>(ptr);
-		block->next = old;
+		/// Вставим освобождённый блок в голову списка.
+		auto & free_block_ptr = free_lists[list_idx];
+		const auto old_head = free_block_ptr;
+		free_block_ptr = reinterpret_cast<Block *>(ptr);
+		free_block_ptr->next = old_head;
 	}
 
 	/// Размер выделенного пула в байтах

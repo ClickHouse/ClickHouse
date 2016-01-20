@@ -20,7 +20,9 @@
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/parseQuery.h>
+
 #include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Interpreters/ExpressionActions.h>
 
 
 using Poco::SharedPtr;

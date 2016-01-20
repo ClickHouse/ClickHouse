@@ -9,7 +9,9 @@
 #include <functional>
 #include <ostream>
 
-#include <emmintrin.h>
+#if defined(__x86_64__)
+	#include <emmintrin.h>
+#endif
 
 
 /// Штука, чтобы не создавать строки для поиска подстроки в хэш таблице.
@@ -30,6 +32,8 @@ struct StringRef
 
 typedef std::vector<StringRef> StringRefs;
 
+
+#if defined(__x86_64__)
 
 /** Сравнение строк на равенство.
   * Подход является спорным и выигрывает не во всех случаях.
@@ -111,6 +115,8 @@ inline bool memequalSSE2Wide(const char * p1, const char * p2, size_t size)
 	return true;
 }
 
+#endif
+
 
 inline bool operator== (StringRef lhs, StringRef rhs)
 {
@@ -120,7 +126,11 @@ inline bool operator== (StringRef lhs, StringRef rhs)
 	if (lhs.size == 0)
 		return true;
 
+#if defined(__x86_64__)
 	return memequalSSE2Wide(lhs.data, rhs.data, lhs.size);
+#else
+	return 0 == memcmp(lhs.data, rhs.data, lhs.size);
+#endif
 }
 
 inline bool operator!= (StringRef lhs, StringRef rhs)
@@ -148,6 +158,8 @@ inline bool operator> (StringRef lhs, StringRef rhs)
   *  при использовании в хэш-таблице, работает существенно быстрее.
   * Подробнее см. hash_map_string_3.cpp
   */
+
+#if defined(__x86_64__)
 
 #ifdef __SSE4_1__
 #include <smmintrin.h>
@@ -246,9 +258,6 @@ struct CRC32Hash
 		return res;
 	}
 };
-
-
-#if 1
 
 struct StringRefHash : CRC32Hash {};
 

@@ -1,0 +1,294 @@
+This is the README file for the POCO C++ Libraries.
+
+In this document you will find a brief description of the directory layout,
+as well as a description necessary steps to build the POCO C++ Libraries.
+
+The Foundation library contains a platform abstraction layer (including classes
+for multithreading, file system access, logging, etc.), as well as
+a large number of useful utility classes, such various stream buffer and stream
+classes, URI handling, and many more.
+The XML library contains an XML parser with SAX2 and DOM interfaces,
+as well as an XMLWriter.
+The Util library contains classes for working with configuration files and 
+command line arguments, as well as various utility classes.
+The Net library contains network classes (sockets, HTTP client/server, etc.).
+All libraries come with a test suite and a number of sample programs.
+
+The basic directory layout is as follows:
+
+build/                     the build system for Unix/OpenVMS and additional utility scripts
+    config/                build configurations for various Unix platforms
+    rules/                 common build rules for all platforms
+    scripts/               build and utility scripts
+    vms/                   OpenVMS build system scripts
+    vxconfig/              VxWorks build configurations
+
+bin/                       all executables (dynamic link libraries on Windows)
+bin64/                     all 64-bit executables (and DLLs)
+
+doc/                       additional documentation
+
+lib/                       all libraries (import libraries on Windows)
+lib64/                     all 64-bit libraries
+
+CppUnit/                   project and make/build files for the CppUnit unit testing framework
+    doc/                   additional documentation
+    include/
+        CppUnit/           header files for CppUnit
+    src/                   source files for CppUnit
+    WinTestRunner/         Windows GUI for CppUnit
+
+Foundation/                project and make/build files for the Foundation library
+    include/
+        Poco/              header files for the Foundation library
+    src/                   source files for the Foundation library
+    testsuite/             project and make/build files for the Foundation testsuite
+              src/         source files for the Foundation testsuite
+              bin/         test suite executables
+    samples/               sample applications for the Foundation library
+
+XML/                       project and make/build files for the XML library
+    include/
+        Poco/
+            XML/           header files for the core XML library
+            SAX/           header files for SAX support
+            DOM/           header files for DOM support
+    src/                   source files for the XML library
+    testsuite/             project and make/build files for the XML testsuite
+              src/         source files for the XML testsuite
+              bin/         test suite executables
+    samples/               sample applications for the XML library
+
+Net/                       project and make/build files for the Net library
+    include/
+        Poco/
+            Net/           header files for the Net library
+    src/                   source files for the Net library
+    testsuite/             project and make/build files for the Net testsuite
+              src/         source files for the Net testsuite
+              bin/         test suite executables
+    samples/               sample applications for the Net library
+
+
+Depending on what package you have downloaded, there may be other libraries
+as well (such as Data, Crypto, NetSSL_OpenSSL and Zip).
+
+
+DOCUMENTATION
+=============
+
+Plenty of documentation (tutorial slides, articles and SDK reference)
+is available at <http://pocoproject.org/documentation/>.
+
+
+EXTERNAL DEPENDENCIES
+=====================
+
+The following libraries require third-party software (header files and
+libraries) being installed to build properly:
+
+- NetSSL_OpenSSL and Crypt require OpenSSL.
+- Data/ODBC requires ODBC 
+  (Microsoft ODBC on Windows, unixODBC or iODBC on Unix/Linux)
+- Data/MySQL requires the MySQL client.
+
+Most Unix/Linux systems already have OpenSSL preinstalled. If your system 
+does not have OpenSSL, please get it from http://www.openssl.org or 
+another source. You do not have to build OpenSSL yourself - a binary 
+distribution is fine (e.g., apt-get install openssl libssl-dev).
+
+The easiest way to install OpenSSL on Windows is to use a binary 
+(prebuild) release, for example the one from Shining Light 
+Productions that comes with a Windows installer
+(http://www.slproweb.com/products/Win32OpenSSL.html). 
+Depending on where you have installed the OpenSSL libraries, 
+you might have to edit the build script (buildwin.cmd), or add the 
+necessary paths to the INCLUDE and LIB environment variables.
+
+The Data library requires ODBC support on your system if you want 
+to build the ODBC connector (which is the default). On Windows 
+platforms, ODBC should be readily available if you have the 
+Windows SDK. On Unix/Linux platforms, you can use iODBC 
+(preinstalled on Mac OS X) or unixODBC. For the MySQL connector, 
+the MySQL client libraries and header files are required.
+
+The Data/ODBC and Data/MySQL Makefiles will search for the ODBC 
+and MySQL headers and libraries in various places. Nevertheless, 
+the Makefiles may not be able to find the headers and libraries. 
+In this case, please edit the Makefile in Data/ODBC and/or Data/MySQL 
+accordingly.
+
+
+BUILDING ON WINDOWS
+===================
+
+Microsoft Visual Studio 7.1 (2003), 8.0 (2005), 9.0 (2008) or 10.0 (2010) is required to 
+build the POCO C++ Libraries on Windows platforms. Solution and project files for all 
+versions are included. For Visual Studio 2008 and 2010, 64-bit (x64) builds are
+supported as well.
+You can either build from within Visual Studio (Build->Batch Build->Select All;Rebuild)
+or from the command line. To build from the command line, start the
+Visual Studio .NET 2003 (or 2005/2008/2010) Command Prompt and cd to the directory where you 
+have extracted the POCO C++ Libraries sources. Then, simply start the buildwin.cmd script
+and pass as argument the version of visual studio (71, 80, 90 or 100). You can customize
+what is being built by buildwin.cmd by passing appropriate command line arguments to
+it. Call buildwin.cmd without arguments to see what is available.
+
+To disable certain components (e.g., NetSSL_OpenSSL or Data/MySQL) from the build,
+edit the file named "components" and remove the respective lines.
+
+Certain libraries, like NetSSL_OpenSSL, Crypto or Data/MySQL have dependencies
+to other libraries. Since the build script does not know where to find the necessary
+header files and import libraries, you have to either add the header file paths to
+the INCLUDE environment variable and the library path to the LIB environment variable,
+or you'll have to edit the buildwin.cmd script, where these environment variables can
+be set as well. 
+
+In order to run the test suite and the samples, the top-most bin directory containing
+the shared libraries must be in the PATH environment variable.
+
+IMPORTANT NOTE: Please make sure that the path to the directory containing the
+POCO C++ Libraries source tree does not contain spaces. Otherwise, the Microsoft
+message compiler may fail when building the Foundation library.
+
+
+BUILDING FOR WINDOWS CE
+
+Building for Windows CE is supported with Microsoft Visual Studio 2008.
+Unless you have the Digi JumpStart Windows CE 6.0 SDK installed, you'll
+have to modify the included Visual Studio project and solution files.
+Please see the SDK Reference Documentation (http://pocoproject.org/documentation)
+for instructions.
+
+
+BUILDING ON UNIX/LINUX/MAC OS X
+===============================
+
+For building on Unix platforms, the POCO C++ Libraries come with their own
+build system. The build system is based on GNU Make 3.80 (or newer), with the help 
+from a few shell scripts. If you do not have GNU Make 3.80 (or later) installed on 
+your machine, you will need to download it from 
+http://directory.fsf.org/devel/build/make.html>, 
+build and install it prior to building the POCO C++ Libraries.
+
+You can check the version of GNU Make installed on your system with
+
+> gmake --version
+
+or
+
+> make --version
+
+Once you have GNU Make up and running, the rest is quite simple.
+To extract the sources and build all libraries, testsuites and samples, simply
+
+> gunzip poco-X.Y.tar.gz
+> tar -xf poco-X.Y.tar
+> cd poco-X.Y
+> ./configure
+> gmake -s
+
+See the configure script source for a list of possible options.
+For starters, we recommend --no-tests and --no-samples, to reduce build times.
+On a multicore or multiprocessor machine, use parallel makes to speed up
+the build (make -j4).
+
+Once you have successfully built POCO, you can install it
+to /usr/local (or another directory specified as parameter
+to configure --prefix=<path>):
+
+> sudo gmake -s install
+
+You can omit certain components from the build. For example, you might
+want to omit Data/ODBC or Data/MySQL if you do not have the corresponding
+third-party libraries (iodbc or unixodbc, mysqlclient) installed
+on your system. To do this, use the --omit argument to configure:
+
+> ./configure --omit=Data/ODBC,Data/MySQL
+
+
+To build on Mac OS X 10.3 with GCC 3, do the following:
+(NOTE: This only affects 10.3; for 10.4/10.5 see above)
+
+> ./configure --config=Darwin7
+> make -s
+
+
+IMPORTANT: Make sure that the path to the build directory does not
+contain symbolic links. Furthermore, on Mac OS X (or other systems
+with case insensitive filesystems), make sure that the characters in 
+the path have the correct case. Otherwise you'll get an error saying
+"Current working directory not under $PROJECT_BASE.".
+
+
+BUILDING ON QNX NEUTRINO
+========================
+
+For QNX Neutrino, the Unix build system (see the instructions above) is used.
+You can use the build system to cross-compile for a target platform on a Solaris or
+Linux host. Unfortunately, the Cygwin-based Windows host environment has some major
+quirks that prevent the build system from working there. You can also use the
+build system on a self-hosted QNX system. The default build configuration for QNX
+(found in build/config/QNX) is for a self-hosted x86 platform. To specify another
+target, edit the CCVER setting in the build configuration file. For example, to
+compile for a PowerPC target, specify CCVER=3.3.1,gcc_ntoppcbe.
+
+Service Pack 1 for QNX Neutrino 6.3 must be installed, otherwise compiling the
+Foundation library will fail due to a problem with the <list> header in the
+default (Dinkumware) C++ standard library.
+
+When building on QNX, you might want to disable NetSSL_OpenSSL, Crypto and
+some Data connectors, unless you have the necessary third party components
+available:
+
+> ./configure --omit=NetSSL_OpenSSL,Crypto,Data/ODBC,Data/MySQL
+
+
+BUILDING FOR VXWORKS
+====================
+
+Please see the VxWorks Platform Notes in the Reference Documentation for
+more information. The Reference Documentation can be found online
+at <http://pocoproject.org/docs/>.
+
+
+BUILDING ON OPENVMS
+===================
+
+OpenVMS is no longer supported in recent versions of POCO, due to both a
+lack of interest and a lack of contributors. The following
+instructions are here for historical reasons.
+
+The POCO C++ Libraries come with their own build system for OpenVMS, implemented
+by a bunch of DCL scripts. The scripts can be found in the build/vms directory.
+
+To build the POCO C++ Libraries on OpenVMS, follow the following steps.
+
+1) Download the .zip distribution of the POCO C++ Libraries
+
+2) Unzip the archive
+   $ unzip -aa poco-0_91_4.zip
+
+3) Change the directory
+   $ set def [.poco-0_01_4]
+
+4) Create a lib directory
+   $ create/dir [.lib]
+
+5) Run the buildvms.com script
+   $ @buildvms
+
+This will build the debug versions of the libraries. To build the release
+versions, use
+   $ @buildvms -release
+
+
+MORE INFORMATION
+================
+
+For more information, see the POCO C++ Libraries website
+at <http://pocoproject.org>.
+
+
+--
+$Id: //poco/1.4/dist/README#4 $

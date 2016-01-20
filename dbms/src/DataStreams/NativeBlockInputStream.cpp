@@ -14,6 +14,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int INCORRECT_INDEX;
+	extern const int LOGICAL_ERROR;
+	extern const int CANNOT_READ_ALL_DATA;
+}
+
 
 NativeBlockInputStream::NativeBlockInputStream(
 	ReadBuffer & istr_, UInt64 server_revision_,

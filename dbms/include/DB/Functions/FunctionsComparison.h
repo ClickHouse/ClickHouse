@@ -14,6 +14,7 @@
 
 #include <DB/Functions/FunctionsLogical.h>
 #include <DB/Functions/IFunction.h>
+#include <DB/DataTypes/DataTypeEnum.h>
 
 
 namespace DB
@@ -576,31 +577,32 @@ private:
 		}
 	}
 
-	void executeDateOrDateTimeWithConstString(Block & block, size_t result,
-		const IColumn * col_left_untyped, const IColumn * col_right_untyped,
-		bool left_is_num, bool right_is_num)
+	void executeDateOrDateTimeOrEnumWithConstString(
+		Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
+		const DataTypePtr & left_type, const DataTypePtr & right_type, bool left_is_num, bool right_is_num)
 	{
-		/// Особый случай - сравнение дат и дат-с-временем со строковой константой.
-		const IColumn * column_date_or_datetime = left_is_num ? col_left_untyped : col_right_untyped;
+		/// Уже не такой и особый случай - сравнение дат, дат-с-временем и перечислений со строковой константой.
 		const IColumn * column_string_untyped = !left_is_num ? col_left_untyped : col_right_untyped;
+		const IColumn * column_number = left_is_num ? col_left_untyped : col_right_untyped;
+		const IDataType * number_type = left_is_num ? left_type.get() : right_type.get();
 
 		bool is_date = false;
 		bool is_date_time = false;
+		bool is_enum8 = false;
+		bool is_enum16 = false;
 
-		is_date = typeid_cast<const ColumnVector<DataTypeDate::FieldType> *>(column_date_or_datetime)
-			|| typeid_cast<const ColumnConst<DataTypeDate::FieldType> *>(column_date_or_datetime);
+		const auto legal_types = (is_date = typeid_cast<const DataTypeDate *>(number_type))
+			|| (is_date_time = typeid_cast<const DataTypeDateTime *>(number_type))
+			|| (is_enum8 = typeid_cast<const DataTypeEnum8 *>(number_type))
+			|| (is_enum16 = typeid_cast<const DataTypeEnum16 *>(number_type));
 
-		if (!is_date)
-			is_date_time = typeid_cast<const ColumnVector<DataTypeDateTime::FieldType> *>(column_date_or_datetime)
-				|| typeid_cast<const ColumnConst<DataTypeDateTime::FieldType> *>(column_date_or_datetime);
-
-		const ColumnConstString * column_string = typeid_cast<const ColumnConstString *>(column_string_untyped);
-
-		if (!column_string
-			|| (!is_date && !is_date_time))
-			throw Exception("Illegal columns " + col_left_untyped->getName() + " and " + col_right_untyped->getName()
-				+ " of arguments of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN);
+		const auto column_string = typeid_cast<const ColumnConstString *>(column_string_untyped);
+		if (!column_string || !legal_types)
+			throw Exception{
+				"Illegal columns " + col_left_untyped->getName() + " and " + col_right_untyped->getName()
+					+ " of arguments of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN
+			};
 
 		if (is_date)
 		{
@@ -628,6 +630,28 @@ private:
 				left_is_num ? col_left_untyped : &parsed_const_date_time,
 				left_is_num ? &parsed_const_date_time : col_right_untyped);
 		}
+		else if (is_enum8)
+			executeEnumWithConstString<DataTypeEnum8>(block, result, column_number, column_string,
+				number_type, left_is_num);
+		else if (is_enum16)
+			executeEnumWithConstString<DataTypeEnum16>(block, result, column_number, column_string,
+				number_type, left_is_num);
+	}
+
+	/// Comparison between DataTypeEnum<T> and string constant containing the name of an enum element
+	template <typename EnumType>
+	void executeEnumWithConstString(
+		Block & block, const size_t result, const IColumn * column_number, const ColumnConstString * column_string,
+		const IDataType * type_untyped, const bool left_is_num)
+	{
+		const auto type = static_cast<const EnumType *>(type_untyped);
+
+		const Field x = nearestFieldType(type->getValue(column_string->getData()));
+		const auto enum_col = type->createConstColumn(block.rowsInFirstColumn(), x);
+
+		executeNumLeftType<typename EnumType::FieldType>(block, result,
+			left_is_num ? column_number : enum_col.get(),
+			left_is_num ? enum_col.get() : column_number);
 	}
 
 	void executeTuple(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
@@ -749,6 +773,8 @@ public:
 
 		bool left_is_date = false;
 		bool left_is_date_time = false;
+		bool left_is_enum8 = false;
+		bool left_is_enum16 = false;
 		bool left_is_string = false;
 		bool left_is_fixed_string = false;
 		const DataTypeTuple * left_tuple = nullptr;
@@ -756,12 +782,18 @@ public:
 		false
 			|| (left_is_date 		= typeid_cast<const DataTypeDate *>(arguments[0].get()))
 			|| (left_is_date_time 	= typeid_cast<const DataTypeDateTime *>(arguments[0].get()))
+			|| (left_is_enum8 		= typeid_cast<const DataTypeEnum8 *>(arguments[0].get()))
+			|| (left_is_enum16 		= typeid_cast<const DataTypeEnum16 *>(arguments[0].get()))
 			|| (left_is_string 		= typeid_cast<const DataTypeString *>(arguments[0].get()))
 			|| (left_is_fixed_string = typeid_cast<const DataTypeFixedString *>(arguments[0].get()))
 			|| (left_tuple 			= typeid_cast<const DataTypeTuple *>(arguments[0].get()));
 
+		const bool left_is_enum = left_is_enum8 || left_is_enum16;
+
 		bool right_is_date = false;
 		bool right_is_date_time = false;
+		bool right_is_enum8 = false;
+		bool right_is_enum16 = false;
 		bool right_is_string = false;
 		bool right_is_fixed_string = false;
 		const DataTypeTuple * right_tuple = nullptr;
@@ -769,18 +801,28 @@ public:
 		false
 			|| (right_is_date 		= typeid_cast<const DataTypeDate *>(arguments[1].get()))
 			|| (right_is_date_time 	= typeid_cast<const DataTypeDateTime *>(arguments[1].get()))
+			|| (right_is_enum8 		= typeid_cast<const DataTypeEnum8 *>(arguments[1].get()))
+			|| (right_is_enum16 	= typeid_cast<const DataTypeEnum16 *>(arguments[1].get()))
 			|| (right_is_string 	= typeid_cast<const DataTypeString *>(arguments[1].get()))
 			|| (right_is_fixed_string = typeid_cast<const DataTypeFixedString *>(arguments[1].get()))
 			|| (right_tuple 		= typeid_cast<const DataTypeTuple *>(arguments[1].get()));
 
-		if (!(	(arguments[0]->behavesAsNumber() && arguments[1]->behavesAsNumber())
+		const bool right_is_enum = right_is_enum8 || right_is_enum16;
+
+		if (!(	(arguments[0]->behavesAsNumber() && arguments[1]->behavesAsNumber() && !(left_is_enum ^ right_is_enum))
 			||	((left_is_string || left_is_fixed_string) && (right_is_string || right_is_fixed_string))
 			||	(left_is_date && right_is_date)
-			||	(left_is_date && right_is_string)	/// Можно сравнивать дату и дату-с-временем с константной строкой.
+			||	(left_is_date && right_is_string)	/// Можно сравнивать дату, дату-с-временем и перечисление с константной строкой.
 			||	(left_is_string && right_is_date)
 			||	(left_is_date_time && right_is_date_time)
 			||	(left_is_date_time && right_is_string)
 			||	(left_is_string && right_is_date_time)
+			||	(left_is_date_time && right_is_date_time)
+			||	(left_is_date_time && right_is_string)
+			||	(left_is_string && right_is_date_time)
+			||	(left_is_enum && right_is_enum && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
+			||	(left_is_enum && right_is_string)
+			||	(left_is_string && right_is_enum)
 			||	(left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())))
 			throw Exception("Illegal types of arguments (" + arguments[0]->getName() + ", " + arguments[1]->getName() + ")"
 				" of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -798,11 +840,13 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const IColumn * col_left_untyped = block.getByPosition(arguments[0]).column.get();
-		const IColumn * col_right_untyped = block.getByPosition(arguments[1]).column.get();
+		const auto & col_with_name_and_type_left = block.getByPosition(arguments[0]);
+		const auto & col_with_name_and_type_right = block.getByPosition(arguments[1]);
+		const IColumn * col_left_untyped = col_with_name_and_type_left.column.get();
+		const IColumn * col_right_untyped = col_with_name_and_type_right.column.get();
 
-		bool left_is_num = col_left_untyped->isNumeric();
-		bool right_is_num = col_right_untyped->isNumeric();
+		const bool left_is_num = col_left_untyped->isNumeric();
+		const bool right_is_num = col_right_untyped->isNumeric();
 
 		if (left_is_num && right_is_num)
 		{
@@ -820,22 +864,16 @@ public:
 					+ " of first argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
+		else if (typeid_cast<const ColumnTuple *>(col_left_untyped))
+			executeTuple(block, result, col_left_untyped, col_right_untyped);
+		else if (!left_is_num && !right_is_num)
+			executeString(block, result, col_left_untyped, col_right_untyped);
 		else
-		{
-			if (typeid_cast<const ColumnTuple *>(col_left_untyped))
-			{
-				executeTuple(block, result, col_left_untyped, col_right_untyped);
-			}
-			else if (!left_is_num && !right_is_num)
-			{
-				executeString(block, result, col_left_untyped, col_right_untyped);
-			}
-			else
-			{
-				executeDateOrDateTimeWithConstString(block, result, col_left_untyped, col_right_untyped, left_is_num, right_is_num);
-			}
-		}
-	}
+			executeDateOrDateTimeOrEnumWithConstString(
+				block, result, col_left_untyped, col_right_untyped,
+				col_with_name_and_type_left.type, col_with_name_and_type_right.type,
+				left_is_num, right_is_num);
+}
 };
 
 

@@ -1,0 +1,233 @@
+POCO C++ Libraries VxWorks Platform Notes
+AAAIntroduction
+
+!!!Introduction
+
+Starting with release 1.4.1 the POCO C++ Libraries can be used on 
+VxWorks 5.5.1 and newer. Project files for Tornado are provided that
+support debug and release builds using the Diab C++ compiler.
+
+
+!!!Requirements
+
+!!Compiling the POCO C++ Libraries
+
+When compiling the POCO C++ Libraries for a VxWorks target, as well as
+when including POCO C++ Libraries headers in a project for a VxWorks
+target, the preprocessor macro <[POCO_VXWORKS]> must be defined. This is
+because the Diab C++ compiler does not provide a predefined macro that
+allows for reliable detection of a VxWorks target. 
+
+
+!!VxWorks OS Libraries
+
+The following VxWorks OS libraries are required and must be
+available on the target:
+
+  - ansiTime
+  - clockLib
+  - cplusLib
+  - dirLib (for Poco::File and Poco::Environment)
+  - envLib (for Poco::Environment)
+  - ftruncate (for Poco::File)
+  - hostLib (for Poco::Environment)
+  - ifLib
+  - inetLib
+  - ioLib
+  - loadLib (for Poco::SharedLibrary)
+  - moduleLib (for Poco::SharedLibrary)
+  - netLib
+  - pthreadLib
+  - resolvLib
+  - sockLib
+  - symLib (for Poco::SharedLibrary)
+  - timerLib
+  - unldLib (for Poco::SharedLibrary)
+
+Some OS libraries can be omitted if the POCO class requiring it
+(given in parenthesis) is not used.
+
+
+!!!Restrictions
+
+!!Poco::Environment
+
+  - Poco::Environment::nodeName() returns the result of gethostname(); the host name
+    can be set with sethostname().
+  - Poco::Environment::processorCount() always returns 1.
+  
+
+!!Date/Time Support
+
+  - Timezone support requires that the <[TIMEZONE]> environment
+    variable is set accordingly on the target.
+  - Poco::Timezone::name(), Poco::Timezone::standardName() and
+    Poco::Timezone::dstName() all return the same value -- the
+    timezone name specified in the <[TIMEZONE]> environment variable.
+
+
+!!Poco::File
+
+  - Poco::File::canRead() and Poco::File::canWrite() always return
+    true. Poco::File::canExecute() always returns false, as does
+    Poco::File::isLink(). 
+  - Poco::File::isHidden() works the same as on Unix platforms
+    (files with names starting with a period are considered hidden).
+  - Poco::File::setWriteable() and Poco::File::setExecutable()
+    are no-ops.
+
+
+!!Poco::Path
+
+Poco::Path::home() returns the value of environment variable <[HOME]>, if defined,
+or else the root directory path ("/").
+  
+
+!!Poco::FPEnvironment
+
+The Poco::FPEnvironment class is not available on VxWorks and
+cannot be used.
+    
+    
+!!Poco::Process, Poco::Pipe, Poco::SharedMemory, Poco::NamedEvent, Poco::NamedMutex
+
+VxWorks does not support processes and POCO makes no attempt
+to hide this fact. Poco::Process, Poco::Pipe (and related stream classes), 
+Poco::SharedMemory, Poco::NamedEvent and Poco::NamedMutex are not available on VxWorks.
+
+
+!!Poco::RWLock
+
+On VxWorks, Poco::RWLock is an ordinary mutex.
+
+
+!!Poco::SharedLibrary
+
+Symbol lookup (Poco::SharedLibrary::hasSymbol() and Poco::SharedLibrary::getSymbol()) is
+slow, as the entire symbol table has to be searched sequentially (using symEach()) 
+to find a symbol defined in a specific module.
+
+
+!!Poco::UnicodeConverter
+
+Poco::UnicodeConverter is not available on VxWorks because VxWorks does
+not support std::wstring.
+
+
+!!Poco::Util::Application
+
+The macro <[POCO_APP_MAIN]> defines a function 
+
+    int pocoAppMain(const char* appName, ...);
+----
+
+with a variable number of arguments. The first argument specifies the
+name of the application and is equivalent to argv[0]. The remaining
+arguments of type <[const char*]> specify command-line arguments. The
+list of command-line arguments must be terminated by a NULL argument.
+
+
+!!Poco::Util::ServerApplication
+
+An application waiting in Poco::Util::ServerApplication::waitForTerminationRequest()
+can be shut down by calling Poco::Util::ServerApplication::terminate().
+
+The macro <[POCO_SERVER_MAIN]> defines a function 
+
+    int pocoSrvMain(const char* appName, ...);
+----
+
+which works in the same way as <[pocoAppMain()]>, defined by <[POCO_APP_MAIN]>.
+
+
+!!Crypto and NetSSL
+
+Crypto and NetSSL_OpenSSL are currently not supported.
+
+
+!!Data
+
+Only the SQLite backend is currently supported.
+Before building Data/SQLite for a VxWorks 5.5.1 target,
+the patch in <*$POCO_BASE/patches/VxWorks/sqlite3.c.patch*>
+must be applied by executing
+
+    $ patch -p0 <patches/VxWorks/sqlite3.c.patch
+----
+
+in a Unix/Linux or Cygwin shell (from the
+<*$POCO_BASE*> directory). The patch is for
+SQLite 3.7.4 and may not work with other releases.
+
+
+!!!Build Notes
+
+!!Generating Tornado 2.2 Project Files
+
+The POCO C++ Libraries source code package does not contain
+project files for Tornado. However, a Bash shell script is provided that
+will generate the project files (.wpj). On Windows, a Cygwin installation
+is required to run this script. Project files are
+generated from VxWorks build description files (<**.vxbuild*>),
+which are present in all library directories (<*$POCO_BASE/Foundation*>,
+<*$POCO_BASE/XML*>, etc.) of libraries that are available on VxWorks. Also 
+required are build configuration files that specify the build settings 
+for a specific target architecture. These are located in 
+<*$POCO_BASE/build/vxconfig*>. To generate
+a Tornado project file, run the <[vxprogen]> script from the
+respective directory and pass the name(s) of the desired build configuration
+as argument(s), e.g.:
+
+    $ cd Foundation
+    $ ../build/script/vxprogen PPC440diab_release
+
+A new directory named <*vx*> will be created, containing the
+generated Tornado project file. The project file can be
+opened in Tornado, and a build can be started.
+
+!!Testing
+
+Every testsuite exports a global function that runs the tests,
+similar to what the <*testrunner*> command does on Unix/Linux
+systems. For example, to invoke the Foundation testsuite on
+the target (using the host-based shell), first load the necessary modules:
+
+    => ld <p:/poco-1.4/CppUnit/vx/PPC440diab_debug/cppUnit.out
+    Loading p:/poco-1.4/CppUnit/vx/PPC440diab_debug/cppUnit.out \
+    value = 13481712 = 0xcdb6f0
+    => ld <p:/poco-1.4/Foundation/vx/PPC440diab_debug/pocoFoundation.out
+    Loading p:/poco-1.4/Foundation/vx/PPC440diab_debug/pocoFoundation.out -
+    value = 13294784 = 0xcadcc0
+    => ld <p:/poco-1.4/Foundation/testsuite/vx/PPC440diab_debug/FoundationTestSuite.out
+    Loading p:/poco-1.4/Foundation/testsuite/vx/PPC440diab_debug/FoundationTestSuite.out -
+    value = 51068280 = 0x30b3d78
+----
+
+Then, if the testsuite does file I/O, set the target's current directory
+to the testsuite directory:
+
+    => @cd "/tgtsvr/poco-1.4/Foundation/testsuite"
+----
+
+It's also a good ideal to redirect the standard output to the
+system console (serial port) with:
+
+    => ?shConfig SH_GET_TASK_IO off
+----
+
+Then, the testsuite can be started:
+
+    => FoundationTestSuiteRunner "-all"
+----
+
+The arguments passed to the FoundationTestSuiteRunner
+(or any other testsuite runner) function are the same
+as the ones passed to the <*testrunner*> command:
+one or more test/testsuite names, "-all" to run all
+tests, or "-print" to print all test/testsuite names.
+
+!!Reference System
+
+The reference system used for testing is an
+AMCC Canyonlands evaluation board
+(EV-460EX-KIT-05) running VxWorks 5.5.1.

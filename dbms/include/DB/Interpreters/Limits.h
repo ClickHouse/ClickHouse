@@ -88,7 +88,11 @@ struct Limits
 	M(SettingOverflowMode<false>, distinct_overflow_mode, OverflowMode::THROW) \
 	\
 	/** Максимальное использование памяти при обработке запроса. 0 - не ограничено. */ \
-	M(SettingUInt64, max_memory_usage, 0) \
+	M(SettingUInt64, max_memory_usage, 0) /* На один запрос */ \
+	/* Суммарно на одновременно выполняющиеся запросы одного пользователя */ \
+	M(SettingUInt64, max_memory_usage_for_user, 0) \
+	/* Суммарно на все одновременно выполняющиеся запросы */ \
+	M(SettingUInt64, max_memory_usage_for_all_queries, 0) \
 	\
 	/** Максимальная скорость обмена данными по сети в байтах в секунду. 0 - не ограничена. */ \
 	M(SettingUInt64, max_network_bandwidth, 0) \

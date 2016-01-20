@@ -1,30 +1,45 @@
 #pragma once
 
+#include <ext/enumerate.hpp>
+#include <ext/collection_cast.hpp>
+#include <ext/range.hpp>
+#include <type_traits>
+
 #include <DB/IO/WriteBufferFromVector.h>
 #include <DB/IO/ReadBufferFromString.h>
+#include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeTuple.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
-#include <DB/Functions/IFunction.h>
+#include <DB/Columns/ColumnArray.h>
 #include <DB/Core/FieldVisitors.h>
-#include <ext/range.hpp>
-#include <type_traits>
+#include <DB/Interpreters/ExpressionActions.h>
+#include <DB/Functions/IFunction.h>
+#include <DB/Functions/FunctionsMiscellaneous.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int CANNOT_PARSE_NUMBER;
+}
 
 /** Функции преобразования типов.
   * toType - преобразование "естественным образом";
   */
 
 
-/** Преобразование чисел друг в друга, дат/дат-с-временем в числа и наоборот: делается обычным присваиванием.
+/** Преобразование чисел друг в друга, перечислений в числа, дат/дат-с-временем в числа и наоборот: делается обычным присваиванием.
   *  (дата внутри хранится как количество дней с какого-то, дата-с-временем - как unix timestamp)
   */
 template <typename FromDataType, typename ToDataType, typename Name>
@@ -35,7 +50,8 @@ struct ConvertImpl
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<FromFieldType> * col_from
+			= typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
 			block.getByPosition(result).column = col_to;
@@ -101,7 +117,7 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 
 /// Реализация функции toDate.
 
-namespace details { namespace {
+namespace details {
 
 template<typename FromType, typename ToType, template <typename, typename> class Transformation>
 class Transformer
@@ -283,7 +299,7 @@ struct ToDateTransform32Or64
 	}
 };
 
-}}
+}
 
 /** Преобразование даты-с-временем в дату: отбрасывание времени.
   */
@@ -303,9 +319,50 @@ template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name> :
 
 /** Преобразование чисел, дат, дат-с-временем в строки: через форматирование.
   */
-template <typename DataType> void formatImpl(typename DataType::FieldType x, WriteBuffer & wb) { writeText(x, wb); }
-template <> inline void formatImpl<DataTypeDate>(DataTypeDate::FieldType x, WriteBuffer & wb) { writeDateText(DayNum_t(x), wb); }
-template <> inline void formatImpl<DataTypeDateTime>(DataTypeDateTime::FieldType x, WriteBuffer & wb) { writeDateTimeText(x, wb); }
+template <typename DataType> struct FormatImpl
+{
+	static void execute(const typename DataType::FieldType x, WriteBuffer & wb, const DataType & type = DataType{})
+	{
+		writeText(x, wb);
+	}
+};
+
+template <> struct FormatImpl<DataTypeDate>
+{
+	static void execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate & type = DataTypeDate{})
+	{
+		writeDateText(DayNum_t(x), wb);
+	}
+};
+
+template <> struct FormatImpl<DataTypeDateTime>
+{
+	static void execute(const DataTypeDateTime::FieldType x, WriteBuffer & wb, const DataTypeDateTime &type = DataTypeDateTime{})
+	{
+		writeDateTimeText(x, wb);
+	}
+};
+
+template <typename FieldType> struct FormatImpl<DataTypeEnum<FieldType>>
+{
+	static void execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> & type)
+	{
+		/// @todo should we escape the string here? Presumably no as it will be escaped twice otherwise
+		writeString(type.getNameForValue(x), wb);
+	}
+};
+
+
+/// DataTypeEnum<T> to DataType<T> free conversion
+template <typename FieldType, typename Name>
+struct ConvertImpl<DataTypeEnum<FieldType>, typename DataTypeFromFieldType<FieldType>::Type, Name>
+{
+	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
+	}
+};
+
 
 template <typename FromDataType, typename Name>
 struct ConvertImpl<FromDataType, DataTypeString, Name>
@@ -314,7 +371,10 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		const auto & col_with_name_and_type = block.getByPosition(arguments[0]);
+		const auto & type = static_cast<const FromDataType &>(*col_with_name_and_type.type);
+
+		if (const auto col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*col_with_name_and_type.column))
 		{
 			ColumnString * col_to = new ColumnString;
 			block.getByPosition(result).column = col_to;
@@ -330,17 +390,17 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 
 			for (size_t i = 0; i < size; ++i)
 			{
-				formatImpl<FromDataType>(vec_from[i], write_buffer);
+				FormatImpl<FromDataType>::execute(vec_from[i], write_buffer, type);
 				writeChar(0, write_buffer);
 				offsets_to[i] = write_buffer.count();
 			}
 			data_to.resize(write_buffer.count());
 		}
-		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const auto col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*col_with_name_and_type.column))
 		{
 			std::vector<char> buf;
 			WriteBufferFromVector<std::vector<char> > write_buffer(buf);
-			formatImpl<FromDataType>(col_from->getData(), write_buffer);
+			FormatImpl<FromDataType>::execute(col_from->getData(), write_buffer, type);
 			block.getByPosition(result).column = new ColumnConstString(col_from->size(), std::string(&buf[0], write_buffer.count()));
 		}
 		else
@@ -398,7 +458,7 @@ struct DateTimeToStringConverter
 			const auto & remote_date_lut = DateLUT::instance(time_zone);
 
 			auto ti = convertTimestamp(vec_from[i], remote_date_lut, local_date_lut);
-			formatImpl<DataTypeDateTime>(ti, write_buffer);
+			FormatImpl<DataTypeDateTime>::execute(ti, write_buffer);
 			writeChar(0, write_buffer);
 			offsets_to[i] = write_buffer.count();
 
@@ -424,7 +484,7 @@ struct DateTimeToStringConverter
 		for (size_t i = 0; i < size; ++i)
 		{
 			auto ti = convertTimestamp(vec_from[i], remote_date_lut, local_date_lut);
-			formatImpl<DataTypeDateTime>(ti, write_buffer);
+			FormatImpl<DataTypeDateTime>::execute(ti, write_buffer);
 			writeChar(0, write_buffer);
 			offsets_to[i] = write_buffer.count();
 		}
@@ -443,7 +503,7 @@ struct DateTimeToStringConverter
 
 		for (size_t i = 0; i < size; ++i)
 		{
-			formatImpl<DataTypeDateTime>(vec_from[i], write_buffer);
+			FormatImpl<DataTypeDateTime>::execute(vec_from[i], write_buffer);
 			writeChar(0, write_buffer);
 			offsets_to[i] = write_buffer.count();
 		}
@@ -473,7 +533,7 @@ struct DateTimeToStringConverter
 			const auto & remote_date_lut = DateLUT::instance(time_zone);
 
 			auto ti = convertTimestamp(from, remote_date_lut, local_date_lut);
-			formatImpl<DataTypeDateTime>(ti, write_buffer);
+			FormatImpl<DataTypeDateTime>::execute(ti, write_buffer);
 			writeChar(0, write_buffer);
 			offsets_to[i] = write_buffer.count();
 
@@ -490,7 +550,7 @@ struct DateTimeToStringConverter
 		std::vector<char> buf;
 		WriteBufferFromVector<std::vector<char> > write_buffer(buf);
 		auto ti = convertTimestamp(from, remote_date_lut, local_date_lut);
-		formatImpl<DataTypeDateTime>(ti, write_buffer);
+		FormatImpl<DataTypeDateTime>::execute(ti, write_buffer);
 		to = std::string(&buf[0], write_buffer.count());
 	}
 
@@ -498,7 +558,7 @@ struct DateTimeToStringConverter
 	{
 		std::vector<char> buf;
 		WriteBufferFromVector<std::vector<char> > write_buffer(buf);
-		formatImpl<DataTypeDateTime>(from, write_buffer);
+		FormatImpl<DataTypeDateTime>::execute(from, write_buffer);
 		to = std::string(&buf[0], write_buffer.count());
 	}
 };
@@ -998,10 +1058,12 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 /// Предварительное объявление.
 struct NameToDate			{ static constexpr auto name = "toDate"; };
 
-template <typename ToDataType, typename Name, typename Monotonic>
+template <typename ToDataType, typename Name, typename MonotonicityImpl>
 class FunctionConvert : public IFunction
 {
 public:
+	using Monotonic = MonotonicityImpl;
+
 	static constexpr auto name = Name::name;
 	static IFunction * create(const Context & context) { return new FunctionConvert; }
 
@@ -1036,6 +1098,8 @@ public:
 		else if (typeid_cast<const DataTypeDateTime *	>(from_type)) ConvertImpl<DataTypeDateTime,	ToDataType, Name>::execute(block, arguments, result);
 		else if (typeid_cast<const DataTypeString *		>(from_type)) ConvertImpl<DataTypeString, 	ToDataType, Name>::execute(block, arguments, result);
 		else if (typeid_cast<const DataTypeFixedString *>(from_type)) ConvertImpl<DataTypeFixedString, ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeEnum8 *>(from_type))		  ConvertImpl<DataTypeEnum8, ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeEnum16 *>(from_type))	  ConvertImpl<DataTypeEnum16, ToDataType, Name>::execute(block, arguments, result);
 		else
 			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1180,12 +1244,17 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		ColumnPtr column = block.getByPosition(arguments[0]).column;
-		size_t n = getSize(block.getByPosition(arguments[1]));
+		const auto n = getSize(block.getByPosition(arguments[1]));
+		return execute(block, arguments, result, n);
+	}
 
-		if (const ColumnConstString * column_const = typeid_cast<const ColumnConstString *>(&*column))
+	static void execute(Block & block, const ColumnNumbers & arguments, const size_t result, const size_t n)
+	{
+		const auto & column = block.getByPosition(arguments[0]).column;
+
+		if (const auto column_const = typeid_cast<const ColumnConstString *>(&*column))
 		{
 			if (column_const->getData().size() > n)
 				throw Exception("String too long for type FixedString(" + toString(n) + ")",
@@ -1194,25 +1263,31 @@ public:
 			auto resized_string = column_const->getData();
 			resized_string.resize(n);
 
-			block.getByPosition(result).column = new ColumnConst<String>(column_const->size(), std::move(resized_string), new DataTypeFixedString(n));
+			block.getByPosition(result).column = new ColumnConst<String>{
+				column_const->size(), std::move(resized_string), new DataTypeFixedString(n)
+			};
 		}
-		else if (const ColumnString * column_string = typeid_cast<const ColumnString *>(&*column))
+		else if (const auto column_string = typeid_cast<const ColumnString *>(&*column))
 		{
-			ColumnFixedString * column_fixed = new ColumnFixedString(n);
+			const auto column_fixed = new ColumnFixedString(n);
 			ColumnPtr result_ptr = column_fixed;
-			ColumnFixedString::Chars_t & out_chars = column_fixed->getChars();
-			const ColumnString::Chars_t & in_chars = column_string->getChars();
-			const ColumnString::Offsets_t & in_offsets = column_string->getOffsets();
+
+			auto & out_chars = column_fixed->getChars();
+			const auto & in_chars = column_string->getChars();
+			const auto & in_offsets = column_string->getOffsets();
+
 			out_chars.resize_fill(in_offsets.size() * n);
+
 			for (size_t i = 0; i < in_offsets.size(); ++i)
 			{
-				size_t off = i ? in_offsets[i - 1] : 0;
-				size_t len = in_offsets[i] - off - 1;
+				const size_t off = i ? in_offsets[i - 1] : 0;
+				const size_t len = in_offsets[i] - off - 1;
 				if (len > n)
 					throw Exception("String too long for type FixedString(" + toString(n) + ")",
 						ErrorCodes::TOO_LARGE_STRING_SIZE);
 				memcpy(&out_chars[i * n], &in_chars[off], len);
 			}
+
 			block.getByPosition(result).column = result_ptr;
 		}
 		else if (const auto column_fixed_string = typeid_cast<const ColumnFixedString *>(column.get()))
@@ -1302,8 +1377,9 @@ struct ToIntMonotonicity
 		if (sizeof(T) > size_of_type)
 			return { true };
 
-		/// Если тип совпадает - тоже.
-		if (typeid_cast<const typename DataTypeFromFieldType<T>::Type *>(&type))
+		/// Если тип совпадает - тоже. (Enum обрабатываем отдельно, так как он имеет другой тип)
+		if (typeid_cast<const typename DataTypeFromFieldType<T>::Type *>(&type) ||
+			typeid_cast<const DataTypeEnum<T> *>(&type))
 			return { true };
 
 		/// В других случаях, для неограниченного диапазона не знаем, будет ли функция монотонной.
@@ -1406,5 +1482,455 @@ typedef FunctionConvert<DataTypeDate,		NameToDate,		ToIntMonotonicity<UInt16>> F
 typedef FunctionConvert<DataTypeDateTime,	NameToDateTime,	ToIntMonotonicity<UInt32>> FunctionToDateTime;
 typedef FunctionConvert<DataTypeString,		NameToString, 	ToStringMonotonicity> 		FunctionToString;
 typedef FunctionConvert<DataTypeInt32,		NameToUnixTimestamp, ToIntMonotonicity<UInt32>> FunctionToUnixTimestamp;
+
+template <typename DataType> struct FunctionTo;
+template <> struct FunctionTo<DataTypeUInt8> { using Type = FunctionToUInt8; };
+template <> struct FunctionTo<DataTypeUInt16> { using Type = FunctionToUInt16; };
+template <> struct FunctionTo<DataTypeUInt32> { using Type = FunctionToUInt32; };
+template <> struct FunctionTo<DataTypeUInt64> { using Type = FunctionToUInt64; };
+template <> struct FunctionTo<DataTypeInt8> { using Type = FunctionToInt8; };
+template <> struct FunctionTo<DataTypeInt16> { using Type = FunctionToInt16; };
+template <> struct FunctionTo<DataTypeInt32> { using Type = FunctionToInt32; };
+template <> struct FunctionTo<DataTypeInt64> { using Type = FunctionToInt64; };
+template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32; };
+template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
+template <> struct FunctionTo<DataTypeDate> { using Type = FunctionToDate; };
+template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTime; };
+template <> struct FunctionTo<DataTypeString> { using Type = FunctionToString; };
+template <> struct FunctionTo<DataTypeFixedString> { using Type = FunctionToFixedString; };
+template <typename FieldType> struct FunctionTo<DataTypeEnum<FieldType>>
+	: FunctionTo<typename DataTypeFromFieldType<FieldType>::Type>
+{
+};
+
+
+class FunctionCast final : public IFunction
+{
+	using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t)>;
+	const Context & context;
+	WrapperType wrapper_function;
+	std::function<Monotonicity(const IDataType &, const Field &, const Field &)> monotonicity_for_range;
+
+	FunctionCast(const Context & context) : context(context) {}
+
+	template <typename DataType> auto createWrapper(const DataTypePtr & from_type, const DataType * const)
+	{
+		using FunctionType = typename FunctionTo<DataType>::Type;
+
+		std::shared_ptr<FunctionType> function{static_cast<FunctionType *>(FunctionType::create(context))};
+
+		/// Check conversion using underlying function
+		(void) function->getReturnType({ from_type });
+
+		return [function] (Block & block, const ColumnNumbers & arguments, const size_t result) {
+			function->execute(block, arguments, result);
+		};
+	}
+
+	static auto createFixedStringWrapper(const DataTypePtr & from_type, const size_t N)
+	{
+		if (!typeid_cast<const DataTypeString *>(from_type.get()) &&
+			!typeid_cast<const DataTypeFixedString *>(from_type.get()))
+			throw Exception{
+				"CAST AS FixedString is only implemented for types String and FixedString",
+				ErrorCodes::NOT_IMPLEMENTED
+			};
+
+		return [N] (Block & block, const ColumnNumbers & arguments, const size_t result)
+		{
+			FunctionToFixedString::execute(block, arguments, result, N);
+		};
+	}
+
+	auto createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray * to_type)
+	{
+		DataTypePtr from_nested_type, to_nested_type;
+		auto from_type = typeid_cast<const DataTypeArray *>(from_type_untyped.get());
+
+		/// get the most nested type
+		while (from_type && to_type)
+		{
+			from_nested_type = from_type->getNestedType();
+			to_nested_type = to_type->getNestedType();
+
+			from_type = typeid_cast<const DataTypeArray *>(from_nested_type.get());
+			to_type = typeid_cast<const DataTypeArray *>(to_nested_type.get());
+		}
+
+		/// both from_type and to_type should be nullptr now is array types had same dimensions
+		if (from_type || to_type)
+			throw Exception{
+				"CAST AS Array can only be performed between same-dimensional array types",
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		/// Prepare nested type conversion
+		const auto nested_function = prepare(from_nested_type, to_nested_type.get());
+
+		return [nested_function, from_nested_type, to_nested_type] (
+			Block & block, const ColumnNumbers & arguments, const size_t result)
+		{
+			auto array_arg = block.getByPosition(arguments.front());
+
+			/// @todo add const variant which retains array constness
+			if (const auto col_const_array = typeid_cast<const ColumnConstArray *>(array_arg.column.get()))
+				array_arg.column = col_const_array->convertToFullColumn();
+
+			if (auto col_array = typeid_cast<const ColumnArray *>(array_arg.column.get()))
+			{
+				auto res = new ColumnArray{nullptr, col_array->getOffsetsColumn()};
+				block.getByPosition(result).column = res;
+
+				/// get the most nested column
+				while (const auto nested_col_array = typeid_cast<const ColumnArray *>(col_array->getDataPtr().get()))
+				{
+					/// create new level of array, copy offsets
+					res->getDataPtr() = new ColumnArray{nullptr, nested_col_array->getOffsetsColumn()};
+
+					res = static_cast<ColumnArray *>(res->getDataPtr().get());
+					col_array = nested_col_array;
+				}
+
+				/// create block for converting nested column containing original and result columns
+				Block nested_block{
+					{ col_array->getDataPtr(), from_nested_type, "" },
+					{ nullptr, to_nested_type, "" }
+				};
+
+				const auto nested_result = 1;
+				/// convert nested column
+				nested_function(nested_block, {0 }, nested_result);
+
+				/// set converted nested column to result
+				res->getDataPtr() = nested_block.getByPosition(nested_result).column;
+			}
+			else
+				throw Exception{
+					"Illegal column " + array_arg.column->getName() + " for function CAST AS Array",
+					ErrorCodes::LOGICAL_ERROR
+				};
+		};
+	}
+
+	auto createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type)
+	{
+		const auto from_type = typeid_cast<const DataTypeTuple *>(from_type_untyped.get());
+		if (!from_type)
+			throw Exception{
+				"CAST AS Tuple can only be performed between tuple types.\nLeft type: " + from_type_untyped->getName() +
+					", right type: " + to_type->getName(),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		if (from_type->getElements().size() != to_type->getElements().size())
+			throw Exception{
+				"CAST AS Tuple can only be performed between tuple types with the same number of elements.\n"
+					"Left type: " + from_type->getName() + ", right type: " + to_type->getName(),
+				 ErrorCodes::TYPE_MISMATCH
+			};
+
+		const auto & from_element_types = from_type->getElements();
+		const auto & to_element_types = to_type->getElements();
+		std::vector<WrapperType> element_wrappers;
+		element_wrappers.reserve(from_element_types.size());
+
+		/// Create conversion wrapper for each element in tuple
+		for (const auto & idx_type : ext::enumerate(from_type->getElements()))
+			element_wrappers.push_back(prepare(idx_type.second, to_element_types[idx_type.first].get()));
+
+		std::shared_ptr<FunctionTuple> function_tuple{static_cast<FunctionTuple *>(FunctionTuple::create(context))};
+		return [element_wrappers, function_tuple, from_element_types, to_element_types]
+			(Block & block, const ColumnNumbers & arguments, const size_t result)
+		{
+			const auto col = block.getByPosition(arguments.front()).column.get();
+
+			/// copy tuple elements to a separate block
+			Block element_block;
+
+			/// @todo retain constness
+			if (const auto column_tuple = typeid_cast<const ColumnTuple *>(col))
+				element_block = column_tuple->getData();
+			else if (const auto column_const_tuple = typeid_cast<const ColumnConstTuple *>(col))
+				element_block = static_cast<const ColumnTuple &>(*column_const_tuple->convertToFullColumn()).getData();
+
+			/// create columns for converted elements
+			for (const auto & to_element_type : to_element_types)
+				element_block.insert({ nullptr, to_element_type, "" });
+
+			/// store position for converted tuple
+			const auto converted_tuple_pos = element_block.columns();
+
+			/// insert column for converted tuple
+			element_block.insert({ nullptr, new DataTypeTuple{to_element_types}, "" });
+
+			const auto converted_element_offset = from_element_types.size();
+
+			/// invoke conversion for each element
+			for (const auto & idx_element_wrapper : ext::enumerate(element_wrappers))
+				idx_element_wrapper.second(element_block, { idx_element_wrapper.first },
+					converted_element_offset + idx_element_wrapper.first);
+
+			/// form tuple from converted elements using FunctionTuple
+			function_tuple->execute(element_block,
+				ext::collection_cast<ColumnNumbers>(ext::range(converted_element_offset, 2 * converted_element_offset)),
+				converted_tuple_pos);
+
+			/// copy FunctionTuple's result from element_block to resulting block
+			block.getByPosition(result).column = element_block.getByPosition(converted_tuple_pos).column;
+		};
+	}
+
+	template <typename FieldType>
+	WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type)
+	{
+		using EnumType = DataTypeEnum<FieldType>;
+		using Function = typename FunctionTo<EnumType>::Type;
+
+		if (const auto from_enum8 = typeid_cast<const DataTypeEnum8 *>(from_type.get()))
+			checkEnumToEnumConversion(from_enum8, to_type);
+		else if (const auto from_enum16 = typeid_cast<const DataTypeEnum16 *>(from_type.get()))
+			checkEnumToEnumConversion(from_enum16, to_type);
+
+		if (typeid_cast<const DataTypeString *>(from_type.get()))
+			return createStringToEnumWrapper<ColumnString, EnumType>();
+		else if (typeid_cast<const DataTypeFixedString *>(from_type.get()))
+			return createStringToEnumWrapper<ColumnFixedString, EnumType>();
+		else if (from_type->behavesAsNumber())
+		{
+			std::shared_ptr<Function> function{static_cast<Function *>(Function::create(context))};
+
+			/// Check conversion using underlying function
+			(void) function->getReturnType({ from_type });
+
+			return [function] (Block & block, const ColumnNumbers & arguments, const size_t result) {
+				function->execute(block, arguments, result);
+			};
+		}
+		else
+			throw Exception{
+				"Conversion from " + from_type->getName() + " to " + to_type->getName() +
+					" is not supported",
+				ErrorCodes::CANNOT_CONVERT_TYPE
+			};
+	}
+
+	template <typename EnumTypeFrom, typename EnumTypeTo>
+	void checkEnumToEnumConversion(const EnumTypeFrom * const from_type, const EnumTypeTo * const to_type)
+	{
+		const auto & from_values = from_type->getValues();
+		const auto & to_values = to_type->getValues();
+
+		using ValueType = std::common_type_t<typename EnumTypeFrom::FieldType, typename EnumTypeTo::FieldType>;
+		using NameValuePair = std::pair<std::string, ValueType>;
+		using EnumValues = std::vector<NameValuePair>;
+
+//		EnumValues value_intersection;
+//		std::set_intersection(std::begin(from_values), std::end(from_values),
+//			std::begin(to_values), std::end(to_values), std::back_inserter(value_intersection),
+//			[] (auto && from, auto && to) { return from.second < to.second; });
+//
+//		for (const auto & name_value : value_intersection)
+//		{
+//			const auto & old_name = name_value.first;
+//			const auto & new_name = to_type->getNameForValue(name_value.second).toString();
+//			if (old_name != new_name)
+//				throw Exception{
+//					"Enum conversion changes name for value " + toString(name_value.second) +
+//						" from '" + old_name + "' to '" + new_name + "'",
+//					ErrorCodes::CANNOT_CONVERT_TYPE
+//				};
+//		}
+
+		EnumValues name_intersection;
+		std::set_intersection(std::begin(from_values), std::end(from_values),
+			std::begin(to_values), std::end(to_values), std::back_inserter(name_intersection),
+			[] (auto && from, auto && to) { return from.first < to.first; });
+
+		for (const auto & name_value : name_intersection)
+		{
+			const auto & old_value = name_value.second;
+			const auto & new_value = to_type->getValue(name_value.first);
+			if (old_value != new_value)
+				throw Exception{
+					"Enum conversion changes value for element '" + name_value.first +
+						"' from " + toString(old_value) + " to " + toString(new_value),
+					ErrorCodes::CANNOT_CONVERT_TYPE
+				};
+		}
+	};
+
+	template <typename ColumnStringType, typename EnumType>
+	auto createStringToEnumWrapper()
+	{
+		return [] (Block & block, const ColumnNumbers & arguments, const size_t result) {
+			const auto first_col = block.getByPosition(arguments.front()).column.get();
+
+			auto & col_with_type_and_name = block.getByPosition(result);
+			auto & result_col = col_with_type_and_name.column;
+			const auto & result_type = typeid_cast<EnumType &>(*col_with_type_and_name.type);
+
+			if (const auto col = typeid_cast<const ColumnStringType *>(first_col))
+			{
+				const auto size = col->size();
+
+				const auto res = result_type.createColumn();
+				auto & out_data = static_cast<typename EnumType::ColumnType &>(*result_col).getData();
+				out_data.resize(size);
+
+				for (const auto i : ext::range(0, size))
+					out_data[i] = result_type.getValue(col->getDataAt(i).toString());
+
+				result_col = res;
+			}
+			else if (const auto const_col = typeid_cast<const ColumnConstString *>(first_col))
+			{
+				result_col = result_type.createConstColumn(const_col->size(),
+					nearestFieldType(result_type.getValue(const_col->getData())));
+			}
+			else
+				throw Exception{
+					"Unexpected column " + first_col->getName() + " as first argument of function " +
+						name,
+					ErrorCodes::LOGICAL_ERROR
+				};
+		};
+	}
+
+	WrapperType prepare(const DataTypePtr & from_type, const IDataType * const to_type)
+	{
+		if (const auto to_actual_type = typeid_cast<const DataTypeUInt8 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeUInt16 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeUInt32 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeUInt64 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeInt8 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeInt16 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeInt32 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeInt64 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeFloat32 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeFloat64 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeDate *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeDateTime *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeString *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto type_fixed_string = typeid_cast<const DataTypeFixedString *>(to_type))
+			return createFixedStringWrapper(from_type, type_fixed_string->getN());
+		else if (const auto type_array = typeid_cast<const DataTypeArray *>(to_type))
+			return createArrayWrapper(from_type, type_array);
+		else if (const auto type_tuple = typeid_cast<const DataTypeTuple *>(to_type))
+			return createTupleWrapper(from_type, type_tuple);
+		else if (const auto type_enum = typeid_cast<const DataTypeEnum8 *>(to_type))
+			return createEnumWrapper(from_type, type_enum);
+		else if (const auto type_enum = typeid_cast<const DataTypeEnum16 *>(to_type))
+			return createEnumWrapper(from_type, type_enum);
+
+		throw Exception{
+			"Conversion from " + from_type->getName() + " to " + to_type->getName() +
+				" is not supported",
+			ErrorCodes::CANNOT_CONVERT_TYPE
+		};
+	}
+
+	template <typename DataType> static auto monotonicityForType(const DataType * const)
+	{
+		return FunctionTo<DataType>::Type::Monotonic::get;
+	}
+
+	void prepareMonotonicityInformation(const DataTypePtr & from_type, const IDataType * to_type)
+	{
+		if (const auto type = typeid_cast<const DataTypeUInt8 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeUInt16 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeUInt32 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeUInt64 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeInt8 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeInt16 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeInt32 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeInt64 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeFloat32 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeFloat64 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeDate *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeDateTime *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeString *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (from_type->isNumeric())
+		{
+			if (const auto type = typeid_cast<const DataTypeEnum8 *>(to_type))
+				monotonicity_for_range = monotonicityForType(type);
+			else if (const auto type = typeid_cast<const DataTypeEnum16 *>(to_type))
+				monotonicity_for_range = monotonicityForType(type);
+		}
+		/// other types like FixedString, Array and Tuple have no monotonicity defined
+	}
+
+public:
+	static constexpr auto name = "CAST";
+	static IFunction * create(const Context & context) { return new FunctionCast{context}; }
+
+	String getName() const override { return name; }
+
+	void getReturnTypeAndPrerequisites(
+		const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type,
+		std::vector<ExpressionAction> & out_prerequisites) override
+	{
+		if (arguments.size() != 2)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const auto type_col = typeid_cast<const ColumnConstString *>(arguments.back().column.get());
+		if (!type_col)
+			throw Exception("Second argument to " + getName() + " must be a constant string describing type",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		out_return_type = DataTypeFactory::instance().get(type_col->getData());
+
+		wrapper_function = prepare(arguments.front().type, out_return_type.get());
+
+		prepareMonotonicityInformation(arguments.front().type, out_return_type.get());
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	{
+		/// drop second argument, pass others
+		ColumnNumbers new_arguments{arguments.front()};
+		if (arguments.size() > 2)
+			new_arguments.insert(std::end(new_arguments), std::next(std::begin(arguments), 2), std::end(arguments));
+
+		wrapper_function(block, new_arguments, result);
+	}
+
+	bool hasInformationAboutMonotonicity() const override
+	{
+		return static_cast<bool>(monotonicity_for_range);
+	}
+
+	Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+	{
+		return monotonicity_for_range(type, left, right);
+	}
+};
 
 }

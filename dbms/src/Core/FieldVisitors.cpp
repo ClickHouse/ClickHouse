@@ -31,6 +31,25 @@ String FieldVisitorDump::operator() (const Array 	& x) const
 	return res;
 }
 
+String FieldVisitorDump::operator() (const Tuple 	& x_def) const
+{
+	auto & x = x_def.t;
+	String res;
+	WriteBufferFromString wb(res);
+	FieldVisitorDump visitor;
+
+	wb.write("Tuple_[", 7);
+	for (auto it = x.begin(); it != x.end(); ++it)
+	{
+		if (it != x.begin())
+			wb.write(", ", 2);
+		writeString(apply_visitor(visitor, *it), wb);
+	}
+	writeChar(']', wb);
+
+	return res;
+}
+
 
 String FieldVisitorToString::formatFloat(const Float64 x)
 {
@@ -59,6 +78,25 @@ String FieldVisitorToString::operator() (const Array 		& x) const
 		writeString(apply_visitor(visitor, *it), wb);
 	}
 	writeChar(']', wb);
+
+	return res;
+}
+
+String FieldVisitorToString::operator() (const Tuple 		& x_def) const
+{
+	auto & x = x_def.t;
+	String res;
+	WriteBufferFromString wb(res);
+	FieldVisitorToString visitor;
+
+	writeChar('(', wb);
+	for (auto it = x.begin(); it != x.end(); ++it)
+	{
+		if (it != x.begin())
+			wb.write(", ", 2);
+		writeString(apply_visitor(visitor, *it), wb);
+	}
+	writeChar(')', wb);
 
 	return res;
 }

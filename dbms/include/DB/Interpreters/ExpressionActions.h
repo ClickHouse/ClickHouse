@@ -6,6 +6,7 @@
 #include <DB/Core/Names.h>
 #include <DB/Core/ColumnWithTypeAndName.h>
 #include <DB/Core/Block.h>
+#include <DB/Functions/IFunction.h>
 
 #include <unordered_set>
 #include <unordered_map>
@@ -14,11 +15,13 @@
 namespace DB
 {
 
-class IFunction;
-typedef Poco::SharedPtr<IFunction> FunctionPtr;
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+}
 
-typedef std::pair<std::string, std::string> NameWithAlias;
-typedef std::vector<NameWithAlias> NamesWithAliases;
+using NameWithAlias = std::pair<std::string, std::string>;
+using NamesWithAliases = std::vector<NameWithAlias>;
 
 class Join;
 
@@ -76,7 +79,8 @@ public:
 	NamesWithAliases projection;
 
 	/// Если result_name_ == "", в качестве имени используется "имя_функции(аргументы через запятую)".
-	static ExpressionAction applyFunction(FunctionPtr function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
+	static ExpressionAction applyFunction(
+		const FunctionPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
 
 	static ExpressionAction addColumn(ColumnWithTypeAndName added_column_)
 	{
@@ -263,7 +267,7 @@ private:
 	void optimizeArrayJoin();
 };
 
-typedef SharedPtr<ExpressionActions> ExpressionActionsPtr;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 
 /** Последовательность преобразований над блоком.

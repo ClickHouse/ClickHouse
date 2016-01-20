@@ -9,6 +9,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int TABLE_WAS_NOT_DROPPED;
+	extern const int DATABASE_NOT_EMPTY;
+}
+
 
 InterpreterDropQuery::InterpreterDropQuery(ASTPtr query_ptr_, Context & context_)
 	: query_ptr(query_ptr_), context(context_)

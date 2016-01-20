@@ -35,6 +35,16 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int TABLE_MUST_NOT_BE_CREATED_MANUALLY;
+	extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+	extern const int BAD_ARGUMENTS;
+	extern const int UNKNOWN_STORAGE;
+	extern const int NO_REPLICA_NAME_GIVEN;
+}
+
+
 static bool endsWith(const std::string & s, const std::string & suffix)
 {
 	return s.size() >= suffix.size() && 0 == strncmp(s.data() + s.size() - suffix.size(), suffix.data(), suffix.size());

@@ -15,6 +15,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CHUNK_NOT_FOUND;
+	extern const int DUPLICATE_CHUNK_NAME;
+	extern const int SIZES_OF_MARKS_FILES_ARE_INCONSISTENT;
+}
+
+
 StoragePtr StorageChunks::create(
 	const std::string & path_,
 	const std::string & name_,

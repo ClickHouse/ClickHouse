@@ -78,7 +78,23 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int POCO_EXCEPTION;
+	extern const int STD_EXCEPTION;
+	extern const int UNKNOWN_EXCEPTION;
+	extern const int NETWORK_ERROR;
+	extern const int NO_DATA_TO_INSERT;
+	extern const int BAD_ARGUMENTS;
+	extern const int CANNOT_READ_HISTORY;
+	extern const int CANNOT_APPEND_HISTORY;
+	extern const int UNKNOWN_PACKET_FROM_SERVER;
+	extern const int UNEXPECTED_PACKET_FROM_SERVER;
+	extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
+}
+
 using Poco::SharedPtr;
+
 
 class Client : public Poco::Util::Application
 {
@@ -528,7 +544,7 @@ private:
 				while (isWhitespace(*begin) || *begin == ';')
 					++begin;
 
-				if (!processSingleQuery(query, ast))
+				if (!processSingleQuery(query, ast) || got_exception)
 					return false;
 			}
 

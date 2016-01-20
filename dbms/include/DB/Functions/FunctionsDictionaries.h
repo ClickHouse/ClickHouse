@@ -29,6 +29,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int DICTIONARIES_WAS_NOT_LOADED;
+}
+
 /** Функции, использующие словари Яндекс.Метрики
   * - словари регионов, операционных систем, поисковых систем.
   *

@@ -1,4 +1,6 @@
-#include <emmintrin.h>
+#if defined(__x86_64__)
+	#include <emmintrin.h>
+#endif
 
 #include <DB/Columns/IColumn.h>
 
@@ -15,10 +17,11 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
 	  * Лучше было бы использовать != 0, то это не позволяет SSE2.
 	  */
 
-	const __m128i zero16 = _mm_setzero_si128();
-
 	const Int8 * pos = reinterpret_cast<const Int8 *>(&filt[0]);
 	const Int8 * end = pos + filt.size();
+
+#if defined(__x86_64__)
+	const __m128i zero16 = _mm_setzero_si128();
 	const Int8 * end64 = pos + filt.size() / 64 * 64;
 
 	for (; pos < end64; pos += 64)
@@ -35,11 +38,18 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
 			| (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
 				_mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 48)),
 				zero16))) << 48));
+#endif
 
 	for (; pos < end; ++pos)
 		count += *pos > 0;
 
 	return count;
+}
+
+
+namespace ErrorCodes
+{
+	extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 
@@ -65,16 +75,11 @@ void filterArraysImpl(
 
 	IColumn::Offset_t current_src_offset = 0;
 
-	static constexpr size_t SIMD_BYTES = 16;
-
 	const UInt8 * filt_pos = &filt[0];
 	const auto filt_end = filt_pos + size;
-	const auto filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
 	auto offsets_pos = &src_offsets[0];
 	const auto offsets_begin = offsets_pos;
-
-	const __m128i zero_vec = _mm_setzero_si128();
 
 	/// copy array ending at *end_offset_ptr
 	const auto copy_array = [&] (const IColumn::Offset_t * offset_ptr)
@@ -89,6 +94,11 @@ void filterArraysImpl(
 		res_elems.resize(elems_size_old + size);
 		memcpy(&res_elems[elems_size_old], &src_elems[offset], size * sizeof(T));
 	};
+
+#if defined(__x86_64__)
+	const __m128i zero_vec = _mm_setzero_si128();
+	static constexpr size_t SIMD_BYTES = 16;
+	const auto filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
 	while (filt_pos < filt_end_aligned)
 	{
@@ -143,6 +153,7 @@ void filterArraysImpl(
 		filt_pos += SIMD_BYTES;
 		offsets_pos += SIMD_BYTES;
 	}
+#endif
 
 	while (filt_pos < filt_end)
 	{

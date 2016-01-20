@@ -7,6 +7,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int ABORTED;
+	extern const int POCO_EXCEPTION;
+	extern const int STD_EXCEPTION;
+	extern const int UNKNOWN_EXCEPTION;
+}
+
 
 void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
@@ -63,7 +71,11 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
 			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
 		if (!response.sent())
 			response.send() << s.str() << std::endl;
-		LOG_ERROR(log, s.str());
+
+		if (e.code() == ErrorCodes::ABORTED)
+			LOG_INFO(log, s.str());	/// Отдача куска на удалённый сервер была остановлена из-за остановки сервера или удаления таблицы.
+		else
+			LOG_ERROR(log, s.str());
 	}
 	catch (Poco::Exception & e)
 	{

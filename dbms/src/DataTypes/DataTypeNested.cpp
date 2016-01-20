@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int INVALID_NESTED_NAME;
+}
+
 
 DataTypeNested::DataTypeNested(NamesAndTypesListPtr nested_)
 	: nested(nested_)

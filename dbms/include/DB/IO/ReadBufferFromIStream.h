@@ -3,7 +3,6 @@
 #include <iostream>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
@@ -11,6 +10,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int CANNOT_READ_FROM_ISTREAM;
+}
+
 
 class ReadBufferFromIStream : public BufferWithOwnMemory<ReadBuffer>
 {

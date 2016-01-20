@@ -32,6 +32,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+	extern const int ILLEGAL_INDEX;
+	extern const int FUNCTION_IS_SPECIAL;
+}
+
 /** Вспомогательные функции:
   *
   * visibleWidth(x)	- вычисляет приблизительную ширину при выводе значения в текстовом (tab-separated) виде на консоль.

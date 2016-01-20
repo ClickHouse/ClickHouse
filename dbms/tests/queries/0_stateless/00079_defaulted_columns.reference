@@ -31,7 +31,7 @@ key	UInt64	MATERIALIZED	0 * rand()
 hello clickhouse	16
 some string	11
 payload	String		
-payload_length	UInt16	DEFAULT	toUInt16(length(payload))
+payload_length	UInt16	DEFAULT	CAST(length(payload) AS UInt16)
 date	Date	MATERIALIZED	today()
 key	UInt64	MATERIALIZED	0 * rand()
 payload	String		

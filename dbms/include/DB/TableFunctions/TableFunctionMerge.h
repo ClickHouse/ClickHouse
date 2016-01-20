@@ -14,6 +14,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+	extern const int UNKNOWN_TABLE;
+}
+
+
 /*
  * merge(db_name, tables_regexp)- создаёт временный StorageMerge.
  * Cтруктура таблицы берётся из первой попавшейся таблицы, подходящей под регексп.

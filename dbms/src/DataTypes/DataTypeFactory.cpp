@@ -18,10 +18,22 @@
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ParserEnumElement.h>
 #include <DB/Parsers/parseQuery.h>
+#include <DB/DataTypes/DataTypeEnum.h>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int ARGUMENT_OUT_OF_BOUND;
+	extern const int UNKNOWN_TYPE;
+	extern const int NESTED_TYPE_TOO_DEEP;
+	extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
+}
+
 
 DataTypeFactory::DataTypeFactory()
 	: non_parametric_data_types
@@ -41,6 +53,36 @@ DataTypeFactory::DataTypeFactory()
 		{"String",				new DataTypeString},
 	}
 {
+}
+
+
+template <typename DataTypeEnum>
+inline DataTypePtr parseEnum(const String & name, const String & base_name, const String & parameters)
+{
+	ParserList parser{std::make_unique<ParserEnumElement>(), std::make_unique<ParserString>(","), false};
+
+	ASTPtr elements = parseQuery(parser, parameters.data(), parameters.data() + parameters.size(), "parameters for enum type " + name);
+
+	typename DataTypeEnum::Values values;
+	values.reserve(elements->children.size());
+
+	using FieldType = typename DataTypeEnum::FieldType;
+
+	for (const auto & element : typeid_cast<const ASTExpressionList &>(*elements).children)
+	{
+		const auto & e = static_cast<const ASTEnumElement &>(*element);
+		const auto value = e.value.get<typename NearestFieldType<FieldType>::Type>();
+
+		if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
+			throw Exception{
+				"Value " + apply_visitor(FieldVisitorToString{}, e.value) + " for element '" + e.name + "' exceeds range of " + base_name,
+				ErrorCodes::ARGUMENT_OUT_OF_BOUND
+			};
+
+		values.emplace_back(e.name, value);
+	}
+
+	return new DataTypeEnum{values};
 }
 
 
@@ -102,7 +144,8 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			}
 
 			for (size_t i = 1; i < args_list.children.size(); ++i)
-				argument_types.push_back(get(args_list.children[i]->getColumnName()));
+				argument_types.push_back(get(
+					std::string{args_list.children[i]->range.first, args_list.children[i]->range.second}));
 
 			function = AggregateFunctionFactory().get(function_name, argument_types);
 			if (!params_row.empty())
@@ -139,17 +182,19 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			ParserExpressionList columns_p(false);
 			ASTPtr columns_ast = parseQuery(columns_p, parameters.data(), parameters.data() + parameters.size(), "parameters for data type " + name);
 
-			DataTypes elems;
-
-			ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*columns_ast);
-			for (ASTs::iterator it = columns_list.children.begin(); it != columns_list.children.end(); ++it)
-			{
-				StringRange range = (*it)->range;
-				elems.push_back(get(String(range.first, range.second - range.first)));
-			}
+			auto & columns_list = typeid_cast<ASTExpressionList &>(*columns_ast);
+			const auto elems = ext::map<DataTypes>(columns_list.children, [this] (const ASTPtr & elem_ast) {
+				return get(String(elem_ast->range.first, elem_ast->range.second));
+			});
 
 			return new DataTypeTuple(elems);
 		}
+
+		if (base_name == "Enum8")
+			return parseEnum<DataTypeEnum8>(name, base_name, parameters);
+
+		if (base_name == "Enum16")
+			return parseEnum<DataTypeEnum16>(name, base_name, parameters);
 
 		throw Exception("Unknown type " + base_name, ErrorCodes::UNKNOWN_TYPE);
 	}

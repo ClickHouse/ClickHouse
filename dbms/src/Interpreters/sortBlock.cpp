@@ -4,7 +4,13 @@
 namespace DB
 {
 
-typedef std::vector<std::pair<const IColumn *, SortColumnDescription> > ColumnsWithSortDescriptions;
+namespace ErrorCodes
+{
+	extern const int BAD_COLLATION;
+}
+
+
+using ColumnsWithSortDescriptions = std::vector<std::pair<const IColumn *, SortColumnDescription>>;
 
 
 static inline bool needCollation(const IColumn * column, const SortColumnDescription & description)
