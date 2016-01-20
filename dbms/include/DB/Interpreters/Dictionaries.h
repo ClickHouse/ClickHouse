@@ -3,9 +3,9 @@
 #include <thread>
 #include <common/MultiVersion.h>
 #include <common/logger_useful.h>
-#include <statdaemons/RegionsHierarchies.h>
-#include <statdaemons/TechDataHierarchy.h>
-#include <statdaemons/RegionsNames.h>
+#include <DB/Dictionaries/Embedded/RegionsHierarchies.h>
+#include <DB/Dictionaries/Embedded/TechDataHierarchy.h>
+#include <DB/Dictionaries/Embedded/RegionsNames.h>
 #include <DB/Common/setThreadName.h>
 
 

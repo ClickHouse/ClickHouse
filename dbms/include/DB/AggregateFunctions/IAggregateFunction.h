@@ -17,6 +17,7 @@ namespace ErrorCodes
 	extern const int AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS;
 	extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 	extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+	extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 using AggregateDataPtr = char *;
