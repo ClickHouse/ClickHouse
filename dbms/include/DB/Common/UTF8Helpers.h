@@ -1,7 +1,12 @@
 #pragma once
 
 #include <DB/Core/Types.h>
-#include <x86intrin.h>
+
+#if defined(__x86_64__)
+	#include <x86intrin.h>
+#else
+	#include <DB/Common/ARMHelpers.h>
+#endif
 
 
 namespace DB
