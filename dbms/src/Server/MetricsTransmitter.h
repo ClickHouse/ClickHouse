@@ -10,7 +10,10 @@
 namespace DB
 {
 
-/**	Automatically sends difference of ProfileEvents to Graphite at beginning of every minute
+/**	Automatically sends
+  * - difference of ProfileEvents;
+  * - values of CurrentMetrics;
+  *  to Graphite at beginning of every minute.
   */
 class MetricsTransmitter
 {
@@ -19,7 +22,7 @@ public:
 
 private:
 	void run();
-	void transmitCounters();
+	void transmit();
 
 	/// Значения счётчиков при предыдущей отправке (или нули, если ни разу не отправляли).
 	decltype(ProfileEvents::counters) prev_counters{};
@@ -30,6 +33,7 @@ private:
 	std::thread thread {&MetricsTransmitter::run, this};
 
 	static constexpr auto event_path_prefix = "ClickHouse.ProfileEvents.";
+	static constexpr auto metrics_path_prefix = "ClickHouse.Metrics.";
 };
 
 }

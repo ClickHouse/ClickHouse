@@ -14,6 +14,7 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Interpreters/QueryPriorities.h>
 #include <DB/Storages/IStorage.h>
+#include <DB/Common/CurrentMetrics.h>
 
 
 namespace DB
@@ -22,6 +23,23 @@ namespace DB
 /** Список исполняющихся в данный момент запросов.
   * Также реализует ограничение на их количество.
   */
+
+/** Информационная составляющая элемента списка процессов.
+  * Для вывода в SHOW PROCESSLIST. Не содержит никаких сложных объектов, которые что-то делают при копировании или в деструкторах.
+  */
+struct ProcessInfo
+{
+	String query;
+	String user;
+	String query_id;
+	Poco::Net::IPAddress ip_address;
+	double elapsed_seconds;
+	size_t rows;
+	size_t bytes;
+	size_t total_rows;
+	Int64 memory_usage;
+};
+
 
 /// Запрос и данные о его выполнении.
 struct ProcessListElement
@@ -38,6 +56,8 @@ struct ProcessListElement
 	MemoryTracker memory_tracker;
 
 	QueryPriorities::Handle priority_handle;
+
+	CurrentMetrics::Increment num_queries {CurrentMetrics::Query};
 
 	bool is_cancelled = false;
 
@@ -72,6 +92,21 @@ struct ProcessListElement
 			priority_handle->waitIfNeed(std::chrono::seconds(1));		/// NOTE Можно сделать настраиваемым таймаут.
 
 		return !is_cancelled;
+	}
+
+	ProcessInfo getInfo() const
+	{
+		return ProcessInfo{
+			.query 				= query,
+			.user 				= user,
+			.query_id 			= query_id,
+			.ip_address 		= ip_address,
+			.elapsed_seconds 	= watch.elapsedSeconds(),
+			.rows 				= progress.rows,
+			.bytes 				= progress.bytes,
+			.total_rows 		= progress.total_rows,
+			.memory_usage 		= memory_tracker.get(),
+		};
 	}
 };
 
@@ -122,6 +157,7 @@ public:
 
 	/// list, чтобы итераторы не инвалидировались. NOTE: можно заменить на cyclic buffer, но почти незачем.
 	using Container = std::list<Element>;
+	using Info = std::vector<ProcessInfo>;
 	/// User -> queries
 	using UserToQueries = std::unordered_map<String, ProcessListForUser>;
 
@@ -153,11 +189,17 @@ public:
 	/// Количество одновременно выполняющихся запросов.
 	size_t size() const { return cur_size; }
 
-	/// Получить текущее состояние (копию) списка запросов.
-	Container get() const
+	/// Получить текущее состояние списка запросов.
+	Info getInfo() const
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-		return cont;
+
+		Info res;
+		res.reserve(cur_size);
+		for (const auto & elem : cont)
+			res.emplace_back(elem.getInfo());
+
+		return res;
 	}
 
 	void setMaxSize(size_t max_size_)
