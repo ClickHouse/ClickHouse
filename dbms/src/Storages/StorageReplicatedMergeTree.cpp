@@ -1307,6 +1307,10 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 			else
 				tryLogCurrentException(__PRETTY_FUNCTION__);
 
+			/** Это исключение будет записано в элемент очереди, и его можно будет посмотреть с помощью таблицы system.replication_queue.
+			  * Поток, выполняющий это действие, будет спать несколько секунд после исключения.
+			  * См. функцию queue.processEntry.
+			  */
 			throw;
 		}
 		catch (...)
