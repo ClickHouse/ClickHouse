@@ -1328,6 +1328,8 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 	if (!entry)
 		return false;
 
+	time_t prev_attempt_time = entry->last_attempt_time;
+
 	bool res = queue.processEntry(getZooKeeper(), entry, [&](LogEntryPtr & entry)
 	{
 		try
@@ -1362,8 +1364,11 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 		}
 	});
 
+	/// Будем спать, если обработка прошла неуспешно и если мы недавно уже обрабатывали эту запись.
+	bool need_sleep = !res && (entry->last_attempt_time - prev_attempt_time < 10);
+
 	/// Если не было исключения, не нужно спать.
-	return res;
+	return !need_sleep;
 }
 
 
