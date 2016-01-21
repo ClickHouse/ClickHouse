@@ -21,6 +21,7 @@
 #include <DB/Client/Connection.h>
 
 #include <DB/Common/NetException.h>
+#include <DB/Common/CurrentMetrics.h>
 
 
 namespace DB
@@ -365,6 +366,8 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 	size_t out_bytes = out ? out->count() : 0;
 	size_t maybe_compressed_out_bytes = maybe_compressed_out ? maybe_compressed_out->count() : 0;
 	size_t rows = 0;
+
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::SendExternalTables};
 
 	for (auto & elem : data)
 	{

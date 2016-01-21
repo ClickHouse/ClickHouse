@@ -6,6 +6,7 @@
 #include <DB/Common/Exception.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Common/formatReadable.h>
+#include <DB/Common/CurrentMetrics.h>
 
 namespace DB
 {
@@ -73,13 +74,16 @@ public:
 			return size;
 		}
 	private:
-		Reservation(size_t size_) : size(size_)
+		Reservation(size_t size_)
+			: size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size)
 		{
 			Poco::ScopedLock<Poco::FastMutex> lock(DiskSpaceMonitor::mutex);
 			DiskSpaceMonitor::reserved_bytes += size;
 			++DiskSpaceMonitor::reservation_count;
 		}
+
 		size_t size;
+		CurrentMetrics::Increment metric_increment;
 	};
 
 	typedef Poco::SharedPtr<Reservation> ReservationPtr;

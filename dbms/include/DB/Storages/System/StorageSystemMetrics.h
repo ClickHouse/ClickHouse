@@ -6,14 +6,14 @@
 namespace DB
 {
 
-/** Реализует системную таблицу events, которая позволяет получить информацию для профайлинга.
-  */
-class StorageSystemEvents : public IStorage
+/** Реализует системную таблицу metrics, которая позволяет получить информацию о работе сервера.
+	*/
+class StorageSystemMetrics : public IStorage
 {
 public:
 	static StoragePtr create(const std::string & name_);
 
-	std::string getName() const override { return "SystemEvents"; }
+	std::string getName() const override { return "SystemMetrics"; }
 	std::string getTableName() const override { return name; }
 
 	const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
@@ -31,7 +31,7 @@ private:
 	const std::string name;
 	NamesAndTypesList columns;
 
-	StorageSystemEvents(const std::string & name_);
+	StorageSystemMetrics(const std::string & name_);
 };
 
 }

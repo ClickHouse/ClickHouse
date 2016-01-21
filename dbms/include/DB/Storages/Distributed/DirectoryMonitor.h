@@ -3,6 +3,7 @@
 #include <DB/DataStreams/RemoteBlockOutputStream.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/CurrentMetrics.h>
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/IO/ReadBufferFromFile.h>
 
@@ -181,6 +182,8 @@ private:
 
 		try
 		{
+			CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
+
 			ReadBufferFromFile in{file_path};
 
 			std::string insert_query;

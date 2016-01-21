@@ -1633,6 +1633,7 @@ private:
 	{
 		current_memory_tracker = memory_tracker;
 		setThreadName("MergingAggregtd");
+		CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
 		try
 		{

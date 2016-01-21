@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Server.h"
+#include <DB/Common/CurrentMetrics.h>
 
 
 namespace DB
@@ -23,6 +24,7 @@ private:
 	Server & server;
 	Logger * log;
 	const String profile;
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::HTTPConnection};
 
 	void processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response);
 };

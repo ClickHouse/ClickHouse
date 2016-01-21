@@ -1,5 +1,6 @@
 #include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <DB/Common/CurrentMetrics.h>
 
 
 namespace DB
@@ -26,6 +27,8 @@ void ReplicatedMergeTreePartsServer::processQuery(const Poco::Net::HTMLForm & pa
 		MergeTreeData::DataPartPtr part = findPart(part_name);
 
 		Poco::ScopedReadRWLock part_lock(part->columns_lock);
+
+		CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
 		/// Список файлов возьмем из списка контрольных сумм.
 		MergeTreeData::DataPart::Checksums checksums = part->checksums;
@@ -97,6 +100,8 @@ MergeTreeData::MutableDataPartPtr ReplicatedMergeTreePartsFetcher::fetchPart(
 		LOG_ERROR(log, "Directory " + part_path + " already exists. Removing.");
 		part_file.remove(true);
 	}
+
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
 
 	part_file.createDirectory();
 

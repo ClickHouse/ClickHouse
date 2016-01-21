@@ -1040,7 +1040,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 					/// Проверяем, что пока мы собирали версии, не ожила реплика с нужным куском.
 					replica = findReplicaHavingPart(entry.new_part_name, true);
 
-					/// Также за это время могла быть создана совсем новая реплика. Но если на старых не появится куска, то на новой его тоже не может быть.
+					/// Также за это время могла быть создана совсем новая реплика.
+					/// Но если на старых не появится куска, то на новой его тоже не может быть.
 
 					if (replica.empty())
 					{
@@ -1061,6 +1062,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 							if (part_info.left != part_info.right)
 								throw Exception("Logical error: log entry with quorum for part covering more than one block number",
 									ErrorCodes::LOGICAL_ERROR);
+
+							zookeeper->createIfNotExists(zookeeper_path + "/nonincrement_block_numbers/" + partition_str, "");
 
 							auto acl = zookeeper->getDefaultACL();
 
@@ -1094,7 +1097,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 							else if (code == ZBADVERSION || code == ZNONODE || code == ZNODEEXISTS)
 							{
 								LOG_DEBUG(log, "State was changed or isn't expected when trying to mark quorum for part "
-									<< entry.new_part_name << " as failed.");
+									<< entry.new_part_name << " as failed. Code: " << zerror(code));
 							}
 							else
 								throw zkutil::KeeperException(code);
@@ -1103,7 +1106,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 						{
 							LOG_WARNING(log, "No active replica has part " << entry.new_part_name
 								<< ", but that part needs quorum and /quorum/status contains entry about another part " << quorum_entry.part_name
-								<< ". It means that part was successfully written to " << entry.quorum << " replicas, but then all of them goes offline."
+								<< ". It means that part was successfully written to " << entry.quorum
+								<< " replicas, but then all of them goes offline."
 								<< " Or it is a bug.");
 						}
 					}
@@ -1920,7 +1924,6 @@ void StorageReplicatedMergeTree::searchForMissingPart(const String & part_name)
 	const auto partition_str = part_name.substr(0, 6);
 	for (auto i = part_info.left; i <= part_info.right; ++i)
 	{
-		zookeeper->createIfNotExists(zookeeper_path + "/nonincrement_block_numbers", "");
 		zookeeper->createIfNotExists(zookeeper_path + "/nonincrement_block_numbers/" + partition_str, "");
 		AbandonableLockInZooKeeper::createAbandonedIfNotExists(
 			zookeeper_path + "/nonincrement_block_numbers/" + partition_str + "/block-" + padIndex(i),

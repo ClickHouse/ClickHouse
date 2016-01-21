@@ -5,6 +5,7 @@
 #include <fcntl.h>
 
 #include <DB/Common/ProfileEvents.h>
+#include <DB/Common/CurrentMetrics.h>
 
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 
@@ -26,6 +27,7 @@ class WriteBufferFromFile : public WriteBufferFromFileDescriptor
 {
 private:
 	std::string file_name;
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForWrite};
 
 public:
 	WriteBufferFromFile(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1, mode_t mode = 0666,
@@ -73,6 +75,7 @@ public:
 			throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
 
 		fd = -1;
+		metric_increment.destroy();
 	}
 
 	/** fsync() transfers ("flushes") all modified in-core data of (i.e., modified buffer cache pages for) the file

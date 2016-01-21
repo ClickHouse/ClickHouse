@@ -70,6 +70,8 @@ void ReplicatedMergeTreeRestartingThread::run()
 					else
 						LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
 
+					if (!storage.is_readonly)
+						CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
 					storage.is_readonly = true;
 					partialShutdown();
 				}
@@ -98,6 +100,8 @@ void ReplicatedMergeTreeRestartingThread::run()
 					break;
 				}
 
+				if (storage.is_readonly)
+					CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
 				storage.is_readonly = false;
 				first_time = false;
 				need_restart = false;
@@ -118,7 +122,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 				}
 				catch (...)
 				{
-					tryLogCurrentException("__PRETTY_FUNCTION__", "Cannot get replica delays");
+					tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot get replica delays");
 					error = true;
 				}
 
@@ -133,6 +137,8 @@ void ReplicatedMergeTreeRestartingThread::run()
 					else
 						LOG_INFO(log, "Relative replica delay (" << relative_delay << " seconds) is bigger than threshold ("
 							<< storage.data.settings.min_relative_delay_to_yield_leadership << "). Will yield leadership.");
+
+					ProfileEvents::increment(ProfileEvents::ReplicaYieldLeadership);
 
 					need_restart = true;
 					continue;
@@ -336,6 +342,8 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 
 void ReplicatedMergeTreeRestartingThread::partialShutdown()
 {
+	ProfileEvents::increment(ProfileEvents::ReplicaPartialShutdown);
+
 	storage.leader_election = nullptr;
 	storage.shutdown_called = true;
 	storage.shutdown_event.set();
@@ -376,7 +384,10 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 void ReplicatedMergeTreeRestartingThread::goReadOnlyPermanently()
 {
 	LOG_INFO(log, "Going to readonly mode");
+	ProfileEvents::increment(ProfileEvents::ReplicaPermanentlyReadonly);
 
+	if (!storage.is_readonly)
+		CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
 	storage.is_readonly = true;
 	stop();
 

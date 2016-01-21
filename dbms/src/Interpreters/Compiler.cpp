@@ -189,7 +189,8 @@ void Compiler::compile(
 		" -I /usr/share/clickhouse/headers/dbms/include/"
 		" -I /usr/share/clickhouse/headers/contrib/libcityhash/"
 		" -I /usr/share/clickhouse/headers/contrib/libdouble-conversion/"
-		" -I /usr/share/clickhouse/headers/contrib/libcpuid/include/"
+		" -I /usr/share/clickhouse/headers/contrib/libpoco/Foundation/include/"
+		" -I /usr/share/clickhouse/headers/contrib/libpoco/Util/include/"
 		" -I /usr/share/clickhouse/headers/libs/libcommon/include/"
 		" -I /usr/share/clickhouse/headers/libs/libmysqlxx/include/"
 		" " << additional_compiler_flags <<

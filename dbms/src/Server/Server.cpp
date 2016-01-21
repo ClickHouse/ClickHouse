@@ -34,6 +34,7 @@
 #include <DB/Storages/System/StorageSystemColumns.h>
 #include <DB/Storages/System/StorageSystemFunctions.h>
 #include <DB/Storages/System/StorageSystemClusters.h>
+#include <DB/Storages/System/StorageSystemMetrics.h>
 
 #include <zkutil/ZooKeeper.h>
 
@@ -303,6 +304,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->addTable("system", "processes", StorageSystemProcesses::create("processes"));
 	global_context->addTable("system", "settings", 	StorageSystemSettings::create("settings"));
 	global_context->addTable("system", "events", 	StorageSystemEvents::create("events"));
+	global_context->addTable("system", "metrics", 	StorageSystemMetrics::create("metrics"));
 	global_context->addTable("system", "merges",	StorageSystemMerges::create("merges"));
 	global_context->addTable("system", "replicas",	StorageSystemReplicas::create("replicas"));
 	global_context->addTable("system", "replication_queue", StorageSystemReplicationQueue::create("replication_queue"));

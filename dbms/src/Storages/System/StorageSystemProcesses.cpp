@@ -54,15 +54,17 @@ BlockInputStreams StorageSystemProcesses::read(
 	ColumnWithTypeAndName col_query{new ColumnString, new DataTypeString, "query"};
 	ColumnWithTypeAndName col_query_id{new ColumnString, new DataTypeString, "query_id"};
 
-	for (const auto & process : context.getProcessList().get())
+	ProcessList::Info info = context.getProcessList().getInfo();
+
+	for (const auto & process : info)
 	{
 		col_user.column->insert(process.user);
 		col_address.column->insert(process.ip_address.toString());
-		col_elapsed.column->insert(process.watch.elapsedSeconds());
-		col_rows_read.column->insert(process.progress.rows);
-		col_bytes_read.column->insert(process.progress.bytes);
-		col_total_rows_approx.column->insert(process.progress.total_rows);
-		col_memory_usage.column->insert(static_cast<UInt64>(process.memory_tracker.get()));
+		col_elapsed.column->insert(process.elapsed_seconds);
+		col_rows_read.column->insert(process.rows);
+		col_bytes_read.column->insert(process.bytes);
+		col_total_rows_approx.column->insert(process.total_rows);
+		col_memory_usage.column->insert(static_cast<UInt64>(process.memory_usage));
 		col_query.column->insert(process.query);
 		col_query_id.column->insert(process.query_id);
 	}

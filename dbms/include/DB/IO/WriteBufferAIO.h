@@ -5,6 +5,7 @@
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <DB/Core/Defines.h>
 #include <DB/Common/AIO.h>
+#include <DB/Common/CurrentMetrics.h>
 
 #include <string>
 #include <unistd.h>
@@ -87,6 +88,8 @@ private:
 	bool is_pending_write = false;
 	/// Асинхронная операция завершилась неудачно?
 	bool aio_failed = false;
+
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForWrite};
 };
 
 }
