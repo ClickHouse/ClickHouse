@@ -1,5 +1,6 @@
 #include <DB/Common/Exception.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/CurrentMetrics.h>
 #include <DB/IO/WriteHelpers.h>
 #include <common/logger_useful.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
@@ -160,12 +161,16 @@ void BackgroundProcessingPool::threadFunction()
 			if (task->removed)
 				continue;
 
-			Context context(*this, counters_diff);
-			bool done_work = task->function(context);
+			{
+				CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundPoolTask};
 
-			/// Если задача сделала полезную работу, то она сможет выполняться в следующий раз хоть сразу.
-			/// Если нет - добавляем задержку перед повторным исполнением.
-			task->next_time_to_execute = time(0) + (done_work ? 0 : sleep_seconds);
+				Context context(*this, counters_diff);
+				bool done_work = task->function(context);
+
+				/// Если задача сделала полезную работу, то она сможет выполняться в следующий раз хоть сразу.
+				/// Если нет - добавляем задержку перед повторным исполнением.
+				task->next_time_to_execute = time(0) + (done_work ? 0 : sleep_seconds);
+			}
 		}
 		catch (...)
 		{

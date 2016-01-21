@@ -52,7 +52,7 @@ void MetricsTransmitter::run()
 
 void MetricsTransmitter::transmit()
 {
-	GraphiteWriter::KeyValueVector<size_t> key_vals{};
+	GraphiteWriter::KeyValueVector<ssize_t> key_vals{};
 	key_vals.reserve(ProfileEvents::END + CurrentMetrics::END);
 
 	for (size_t i = 0; i < ProfileEvents::END; ++i)

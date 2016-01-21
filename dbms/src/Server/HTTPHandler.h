@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/IO/WriteBufferFromHTTPServerResponse.h>
+#include <DB/Common/CurrentMetrics.h>
 #include "Server.h"
 
 
@@ -32,6 +33,8 @@ public:
 
 private:
 	Server & server;
+
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::HTTPConnection};
 
 	Logger * log;
 

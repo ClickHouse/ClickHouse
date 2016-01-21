@@ -11,6 +11,7 @@
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/HashingReadBuffer.h>
 #include <DB/Columns/ColumnsNumber.h>
+#include <DB/Common/CurrentMetrics.h>
 
 
 namespace DB
@@ -264,6 +265,8 @@ void MergeTreePartChecker::checkDataPart(
 	const DataTypes & primary_key_data_types,
 	MergeTreeData::DataPart::Checksums * out_checksums)
 {
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedChecks};
+
 	if (!path.empty() && path.back() != '/')
 		path += "/";
 

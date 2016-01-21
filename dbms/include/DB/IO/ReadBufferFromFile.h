@@ -3,6 +3,7 @@
 #include <fcntl.h>
 
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
+#include <DB/Common/CurrentMetrics.h>
 
 
 namespace DB
@@ -22,6 +23,7 @@ class ReadBufferFromFile : public ReadBufferFromFileDescriptor
 {
 private:
 	std::string file_name;
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForRead};
 
 public:
 	ReadBufferFromFile(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
@@ -58,6 +60,7 @@ public:
 			throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
 
 		fd = -1;
+		metric_increment.destroy();
 	}
 
 	virtual std::string getFileName()

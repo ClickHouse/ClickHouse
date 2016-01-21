@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Server.h"
+#include <DB/Common/CurrentMetrics.h>
 
 
 namespace DB
@@ -19,7 +20,7 @@ public:
 
 private:
 	Server & server;
-
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::InterserverConnection};
 	Logger * log;
 
  	void processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response);

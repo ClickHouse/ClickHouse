@@ -14,8 +14,8 @@ StorageSystemMetrics::StorageSystemMetrics(const std::string & name_)
 	: name(name_),
 	columns
 	{
-		{"event", 		new DataTypeString},
-		{"value",		new DataTypeUInt64},
+		{"metric", 		new DataTypeString},
+		{"value",		new DataTypeInt64},
 	}
 {
 }
@@ -48,19 +48,16 @@ BlockInputStreams StorageSystemMetrics::read(
 
 	ColumnWithTypeAndName col_value;
 	col_value.name = "value";
-	col_value.type = new DataTypeUInt64;
-	col_value.column = new ColumnUInt64;
+	col_value.type = new DataTypeInt64;
+	col_value.column = new ColumnInt64;
 	block.insert(col_value);
 
 	for (size_t i = 0; i < CurrentMetrics::END; ++i)
 	{
-		UInt64 value = CurrentMetrics::values[i];
+		auto value = CurrentMetrics::values[i];
 
-		if (0 != value)
-		{
-			col_metric.column->insert(String(CurrentMetrics::getDescription(CurrentMetrics::Metric(i))));
-			col_value.column->insert(value);
-		}
+		col_metric.column->insert(String(CurrentMetrics::getDescription(CurrentMetrics::Metric(i))));
+		col_value.column->insert(value);
 	}
 
 	return BlockInputStreams(1, new OneBlockInputStream(block));

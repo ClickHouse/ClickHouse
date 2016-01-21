@@ -1,5 +1,6 @@
 #include <future>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/CurrentMetrics.h>
 #include <DB/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 
 
@@ -111,6 +112,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
 			{
 				current_memory_tracker = memory_tracker;
 				setThreadName("MergeAggReadThr");
+				CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 				child->readPrefix();
 			});
 			reading_pool->schedule([&task] { task(); });
@@ -227,6 +229,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
 {
 	setThreadName("MergeAggMergThr");
 	current_memory_tracker = memory_tracker;
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
 	try
 	{
@@ -397,6 +400,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 				{
 					current_memory_tracker = memory_tracker;
 					setThreadName("MergeAggReadThr");
+					CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 					read_from_input(input);
 				});
 				auto & task = tasks.back();

@@ -81,6 +81,8 @@
 	M(ReadBackoff) \
 	\
 	M(ReplicaYieldLeadership) \
+	M(ReplicaPartialShutdown) \
+	M(ReplicaPermanentlyReadonly) \
 	\
 	M(END)
 

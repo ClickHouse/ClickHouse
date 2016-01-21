@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Common/Stopwatch.h>
+#include <DB/Common/CurrentMetrics.h>
 #include <memory>
 #include <list>
 #include <mutex>
@@ -41,6 +42,8 @@ class MergeListEntry
 
 	using container_t = std::list<MergeInfo>;
 	container_t::iterator it;
+
+	CurrentMetrics::Increment num_merges {CurrentMetrics::Merge};
 
 public:
 	MergeListEntry(const MergeListEntry &) = delete;

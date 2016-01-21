@@ -5,6 +5,7 @@
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <DB/Core/Defines.h>
 #include <DB/Common/AIO.h>
+#include <DB/Common/CurrentMetrics.h>
 
 #include <string>
 #include <limits>
@@ -95,6 +96,8 @@ private:
 	bool is_aio = false;
 	/// Асинхронная операция завершилась неудачно?
 	bool aio_failed = false;
+
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForRead};
 };
 
 }
