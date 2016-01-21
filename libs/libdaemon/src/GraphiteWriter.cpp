@@ -31,7 +31,7 @@ GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::strin
 		root_path += "." + sub_path;
 }
 
-static std::string getPerLayerPathImpl(const std::string prefix)
+std::string getPostfix()
 {
 	/// Угадываем имя среды по имени машинки
 	/// машинки имеют имена вида example01dt.yandex.ru
@@ -72,10 +72,10 @@ static std::string getPerLayerPathImpl(const std::string prefix)
 	return path_full.str();
 }
 
-const std::string & GraphiteWriter::getPerLayerPath(const std::string & prefix)
+std::string GraphiteWriter::getPerLayerPath(const std::string & prefix)
 {
-	static std::string path = getPerLayerPathImpl(prefix);	/// thread-safe statics.
-	return path;
+	const std::string static postfix = getPostfix();
+	return prefix + "." + postfix;
 }
 
 std::string GraphiteWriter::getPerServerPath(const std::string & server_name, const std::string & root_path)
