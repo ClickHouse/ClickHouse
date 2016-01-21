@@ -41,8 +41,6 @@ std::string getPostfix()
 
 	std::stringstream path_full;
 
-	path_full << prefix << ".";
-
 	std::string hostname = Poco::Net::DNS::hostName();
 	hostname = hostname.substr(0, hostname.find('.'));
 
