@@ -1,6 +1,3 @@
-#include <time.h>
-#include <ext/range.hpp>
-
 #include <zkutil/Types.h>
 #include <zkutil/KeeperException.h>
 
@@ -9,12 +6,12 @@
 #include <DB/Storages/ColumnsDescription.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
-#include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <DB/Storages/MergeTree/MergeTreePartChecker.h>
 #include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include <DB/Storages/MergeTree/ReshardingWorker.h>
 
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/ASTInsertQuery.h>
@@ -36,6 +33,15 @@
 #include <DB/Common/setThreadName.h>
 
 #include <Poco/DirectoryIterator.h>
+
+#include <common/threadpool.hpp>
+
+#include <ext/range.hpp>
+#include <cfenv>
+#include <ctime>
+#include <thread>
+#include <future>
+
 
 
 namespace DB
@@ -63,6 +69,13 @@ namespace ErrorCodes
 	extern const int TOO_MUCH_RETRIES_TO_FETCH_PARTS;
 	extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 	extern const int PARTITION_DOESNT_EXIST;
+	extern const int INCONSISTENT_TABLE_ACCROSS_SHARDS;
+	extern const int INSUFFICIENT_SPACE_FOR_RESHARDING;
+	extern const int RESHARDING_NO_WORKER;
+	extern const int INVALID_PARTITIONS_INTERVAL;
+	extern const int RESHARDING_INVALID_PARAMETERS;
+	extern const int INVALID_SHARD_WEIGHT;
+	extern const int SHARD_DOESNT_REFERENCE_TABLE;
 }
 
 
@@ -307,11 +320,34 @@ StoragePtr StorageReplicatedMergeTree::create(
 
 	StoragePtr res_ptr = res->thisPtr();
 
+	auto get_endpoint_holder = [&res](InterserverIOEndpointPtr endpoint)
+	{
+		return new InterserverIOEndpointHolder(endpoint->getId(res->replica_path), endpoint, res->context.getInterserverIOHandler());
+	};
+
 	if (res->tryGetZooKeeper())
 	{
-		String endpoint_name = "ReplicatedMergeTree:" + res->replica_path;
-		InterserverIOEndpointPtr endpoint = new ReplicatedMergeTreePartsServer(res->data, *res);
-		res->endpoint_holder = new InterserverIOEndpointHolder(endpoint_name, endpoint, res->context.getInterserverIOHandler());
+		{
+			InterserverIOEndpointPtr endpoint = new DataPartsExchange::Service(res->data, *res);
+			res->endpoint_holder = get_endpoint_holder(endpoint);
+		}
+
+		/// Сервисы для перешардирования.
+
+		{
+			InterserverIOEndpointPtr endpoint = new RemoteDiskSpaceMonitor::Service(res->full_path);
+			res->disk_space_monitor_endpoint_holder = get_endpoint_holder(endpoint);
+		}
+
+		{
+			InterserverIOEndpointPtr endpoint = new ShardedPartitionSender::Service(*res);
+			res->sharded_partition_sender_endpoint_holder = get_endpoint_holder(endpoint);
+		}
+
+		{
+			InterserverIOEndpointPtr endpoint = new RemoteQueryExecutor::Service(res->context);
+			res->remote_query_executor_endpoint_holder = get_endpoint_holder(endpoint);
+		}
 	}
 
 	return res_ptr;
@@ -366,6 +402,8 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/log", "",
 										 acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/blocks", "",
+										 acl, zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/detached_sharded_blocks", "",
 										 acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/block_numbers", "",
 										 acl, zkutil::CreateMode::Persistent));
@@ -2240,6 +2278,15 @@ void StorageReplicatedMergeTree::shutdown()
 
 	endpoint_holder = nullptr;
 	fetcher.cancel();
+
+	disk_space_monitor_endpoint_holder = nullptr;
+	free_disk_space_checker.cancel();
+
+	sharded_partition_sender_endpoint_holder = nullptr;
+	sharded_partition_sender_client.cancel();
+
+	remote_query_executor_endpoint_holder = nullptr;
+	remote_query_executor_client.cancel();
 }
 
 
@@ -2431,7 +2478,7 @@ bool StorageReplicatedMergeTree::optimize(const Settings & settings)
 
 
 void StorageReplicatedMergeTree::alter(const AlterCommands & params,
-	const String & database_name, const String & table_name, Context & context)
+	const String & database_name, const String & table_name, const Context & context)
 {
 	assertNotReadonly();
 
@@ -2638,35 +2685,8 @@ void StorageReplicatedMergeTree::dropPartition(ASTPtr query, const Field & field
 		return;
 	}
 
-	/** Пропустим один номер в block_numbers для удаляемого месяца, и будем удалять только куски до этого номера.
-	  * Это запретит мерджи удаляемых кусков с новыми вставляемыми данными.
-	  * Инвариант: в логе не появятся слияния удаляемых кусков с другими кусками.
-	  * NOTE: Если понадобится аналогично поддержать запрос DROP PART, для него придется придумать какой-нибудь новый механизм,
-	  *        чтобы гарантировать этот инвариант.
-	  */
-	Int64 right;
-
-	{
-		AbandonableLockInZooKeeper block_number_lock = allocateBlockNumber(month_name);
-		right = block_number_lock.getNumber();
-		block_number_lock.unlock();
-	}
-
-	/// Такого никогда не должно происходить.
-	if (right == 0)
-		throw Exception("Logical error: just allocated block number is zero", ErrorCodes::LOGICAL_ERROR);
-	--right;
-
-	String fake_part_name = getFakePartNameForDrop(month_name, 0, right);
-
-	/** Запретим выбирать для слияния удаляемые куски.
-	  * Инвариант: после появления в логе записи DROP_RANGE, в логе не появятся слияния удаляемых кусков.
-	  */
-	{
-		std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
-
-		queue.disableMergesInRange(fake_part_name);
-	}
+	ScopedPartitionMergeLock partition_merge_lock(*this, month_name);
+	std::string fake_part_name = partition_merge_lock.getId();
 
 	/// Наконец, добившись нужных инвариантов, можно положить запись в лог.
 	LogEntry entry;
@@ -2688,6 +2708,66 @@ void StorageReplicatedMergeTree::dropPartition(ASTPtr query, const Field & field
 	}
 }
 
+std::string StorageReplicatedMergeTree::acquirePartitionMergeLock(const std::string & partition_name)
+{
+	std::lock_guard<std::mutex> guard(mutex_partition_to_merge_lock);
+
+	auto it = partition_to_merge_lock.find(partition_name);
+	if (it != partition_to_merge_lock.end())
+	{
+		auto & info = it->second;
+		++info.ref_count;
+		return info.fake_part_name;
+	}
+
+	/** Пропустим один номер в block_numbers для удаляемого месяца, и будем удалять только куски до этого номера.
+	  * Это запретит мерджи удаляемых кусков с новыми вставляемыми данными.
+	  * Инвариант: в логе не появятся слияния удаляемых кусков с другими кусками.
+	  * NOTE: Если понадобится аналогично поддержать запрос DROP PART, для него придется придумать какой-нибудь новый механизм,
+	  *        чтобы гарантировать этот инвариант.
+	  */
+	Int64 right;
+
+	{
+		AbandonableLockInZooKeeper block_number_lock = allocateBlockNumber(partition_name);
+		right = block_number_lock.getNumber();
+		block_number_lock.unlock();
+	}
+
+	/// Такого никогда не должно происходить.
+	if (right == 0)
+		throw Exception("Logical error: just allocated block number is zero", ErrorCodes::LOGICAL_ERROR);
+	--right;
+
+	std::string fake_part_name = getFakePartNameForDrop(partition_name, 0, right);
+	partition_to_merge_lock.emplace(partition_name, PartitionMergeLockInfo(fake_part_name));
+
+	/** Запретим выбирать для слияния удаляемые куски.
+	  * Инвариант: после появления в логе записи DROP_RANGE, в логе не появятся слияния удаляемых кусков.
+	  */
+	{
+		std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
+
+		queue.disableMergesInRange(fake_part_name);
+	}
+
+	return fake_part_name;
+}
+
+void StorageReplicatedMergeTree::releasePartitionMergeLock(const std::string & partition_name)
+{
+	std::lock_guard<std::mutex> guard(mutex_partition_to_merge_lock);
+
+	auto it = partition_to_merge_lock.find(partition_name);
+	if (it == partition_to_merge_lock.end())
+		throw Exception("StorageReplicatedMergeTree: trying to release a non-existent partition merge lock",
+			ErrorCodes::LOGICAL_ERROR);
+
+	auto & info = it->second;
+	--info.ref_count;
+	if (info.ref_count == 0)
+		partition_to_merge_lock.erase(it);
+}
 
 void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & field, bool unreplicated, bool attach_part, const Settings & settings)
 {
@@ -2773,7 +2853,57 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 			zookeeper_path + "/log/log-", entry.toString(), zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
 	}
 
-	LOG_DEBUG(log, "Adding attaches to log");
+	std::string log_msg = "Adding attaches to log";
+
+	if (is_leader_node)
+	{
+		/// Если ATTACH PART выполняется в рамках перешардирования, обновляем информацию о блоках на шарде.
+		auto children = zookeeper->getChildren(zookeeper_path + "/detached_sharded_blocks");
+		if (!children.empty())
+		{
+			log_msg += ". Updating information about blocks in the context of the resharding operation.";
+
+			auto acl = zookeeper->getDefaultACL();
+
+			for (const auto & child : children)
+			{
+				std::string checksum = zookeeper->get(zookeeper_path + "/detached_sharded_blocks/" + child + "/checksum");
+				std::string number = zookeeper->get(zookeeper_path + "/detached_sharded_blocks/" + child + "/number");
+
+				ops.push_back(
+					new zkutil::Op::Create(
+						zookeeper_path + "/blocks/" + child,
+						"",
+						acl,
+						zkutil::CreateMode::Persistent));
+				ops.push_back(
+					new zkutil::Op::Create(
+						zookeeper_path + "/blocks/" + child + "/checksum",
+						checksum,
+						acl,
+						zkutil::CreateMode::Persistent));
+				ops.push_back(
+					new zkutil::Op::Create(
+						zookeeper_path + "/blocks/" + child + "/number",
+						number,
+						acl,
+						zkutil::CreateMode::Persistent));
+
+				ops.push_back(
+					new zkutil::Op::Remove(
+						zookeeper_path + "/detached_sharded_blocks/" + child + "/number", -1));
+				ops.push_back(
+					new zkutil::Op::Remove(
+						zookeeper_path + "/detached_sharded_blocks/" + child + "/checksum", -1));
+				ops.push_back(
+					new zkutil::Op::Remove(
+						zookeeper_path + "/detached_sharded_blocks/" + child, -1));
+			}
+		}
+	}
+
+	LOG_DEBUG(log, log_msg);
+
 	zookeeper->multi(ops);
 
 	/// Если надо - дожидаемся выполнения операции на себе или на всех репликах.
@@ -2847,7 +2977,7 @@ AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const
 	String month_path = zookeeper_path + "/block_numbers/" + month_name;
 	if (!zookeeper->exists(month_path))
 	{
-		/// Создадим в block_numbers ноду для месяца и пропустим в ней 200 значений инкремента.
+		/// Создадим в block_numbers ноду для месяца и пропустим в ней N=RESERVED_BLOCK_NUMBERS значений инкремента.
 		/// Нужно, чтобы в будущем при необходимости можно было добавить данные в начало.
 		zkutil::Ops ops;
 		auto acl = zookeeper->getDefaultACL();
@@ -3291,5 +3421,218 @@ void StorageReplicatedMergeTree::freezePartition(const Field & partition, const 
 		unreplicated_data->freezePartition(prefix);
 }
 
+void StorageReplicatedMergeTree::reshardPartitions(const String & database_name, const Field & first_partition, const Field & last_partition,
+	const WeightedZooKeeperPaths & weighted_zookeeper_paths, const String & sharding_key,
+	const Settings & settings)
+{
+	auto & resharding_worker = context.getReshardingWorker();
+	if (!resharding_worker.isStarted())
+		throw Exception("Resharding worker is not running.", ErrorCodes::RESHARDING_NO_WORKER);
+
+	for (const auto & weighted_path : weighted_zookeeper_paths)
+	{
+		UInt64 weight = weighted_path.second;
+		if (weight == 0)
+			throw Exception("Shard has invalid weight", ErrorCodes::INVALID_SHARD_WEIGHT);
+	}
+
+	for (const auto & weighted_path : weighted_zookeeper_paths)
+	{
+		const std::string & path = weighted_path.first;
+		if ((path.length() <= getTableName().length()) ||
+			(path.substr(path.length() - getTableName().length()) != getTableName()))
+			throw Exception("Shard does not reference table", ErrorCodes::SHARD_DOESNT_REFERENCE_TABLE);
+	}
+
+	DayNum_t first_partition_num = !first_partition.isNull() ? MergeTreeData::getMonthDayNum(first_partition) : DayNum_t();
+	DayNum_t last_partition_num = !last_partition.isNull() ? MergeTreeData::getMonthDayNum(last_partition) : DayNum_t();
+
+	if (first_partition_num && last_partition_num)
+	{
+		if (first_partition_num > last_partition_num)
+			throw Exception("Invalid interval of partitions", ErrorCodes::INVALID_PARTITIONS_INTERVAL);
+	}
+
+	if (!first_partition_num && last_partition_num)
+		throw Exception("Received invalid parameters for resharding", ErrorCodes::RESHARDING_INVALID_PARAMETERS);
+
+	bool include_all = !first_partition_num;
+
+	/// Составить список локальных партиций, которые надо перешардировать.
+	using PartitionList = std::set<std::string>;
+	PartitionList partition_list;
+
+	const MergeTreeData::DataParts & data_parts = data.getDataParts();
+	for (MergeTreeData::DataParts::iterator it = data_parts.cbegin(); it != data_parts.cend(); ++it)
+	{
+		const MergeTreeData::DataPartPtr & current_part = *it;
+		DayNum_t month = current_part->month;
+		if (include_all || ((month >= first_partition_num) && (month <= last_partition_num)))
+			partition_list.insert(MergeTreeData::getMonthName(month));
+	}
+
+	if (partition_list.empty())
+		throw Exception("No existing partition found", ErrorCodes::PARTITION_DOESNT_EXIST);
+
+	/// Убедиться, что структуры локальной и реплицируемых таблиц совпадают.
+	enforceShardsConsistency(weighted_zookeeper_paths);
+
+	/// Проверить, что для всех задач имеется достаточно свободного места локально и на всех репликах.
+	auto replica_to_space_info = gatherReplicaSpaceInfo(weighted_zookeeper_paths);
+	for (const auto & partition : partition_list)
+	{
+		size_t partition_size = data.getPartitionSize(partition);
+		if (!checkSpaceForResharding(replica_to_space_info, partition_size))
+			throw Exception("Insufficient space available for resharding operation "
+				"on partition " + partition, ErrorCodes::INSUFFICIENT_SPACE_FOR_RESHARDING);
+	}
+
+	/// Зарегистрировать фоновые задачи перешардирования.
+	for (const auto & partition : partition_list)
+		resharding_worker.submitJob(database_name, getTableName(), partition, weighted_zookeeper_paths, sharding_key);
+}
+
+void StorageReplicatedMergeTree::enforceShardsConsistency(const WeightedZooKeeperPaths & weighted_zookeeper_paths)
+{
+	const auto & columns = getColumnsList();
+
+	auto zookeeper = getZooKeeper();
+
+	for (const auto & weighted_path : weighted_zookeeper_paths)
+	{
+		auto columns_str = zookeeper->get(weighted_path.first + "/columns");
+		auto columns_desc = ColumnsDescription<true>::parse(columns_str);
+
+		if (!std::equal(columns.begin(), columns.end(), columns_desc.columns.begin()) ||
+			!std::equal(materialized_columns.begin(), materialized_columns.end(), columns_desc.materialized.begin()) ||
+			!std::equal(alias_columns.begin(), alias_columns.end(), columns_desc.alias.begin()) ||
+			!std::equal(column_defaults.begin(), column_defaults.end(), columns_desc.defaults.begin()))
+		throw Exception("Table is inconsistent accross shards", ErrorCodes::INCONSISTENT_TABLE_ACCROSS_SHARDS);
+	}
+}
+
+StorageReplicatedMergeTree::ReplicaToSpaceInfo
+StorageReplicatedMergeTree::gatherReplicaSpaceInfo(const WeightedZooKeeperPaths & weighted_zookeeper_paths)
+{
+	struct TaskInfo
+	{
+		TaskInfo(const std::string & replica_path_,
+			const ReplicatedMergeTreeAddress & address_)
+			: replica_path(replica_path_), address(address_)
+		{
+		}
+
+		std::string replica_path;
+		ReplicatedMergeTreeAddress address;
+	};
+
+	using TaskInfoList = std::vector<TaskInfo>;
+	TaskInfoList task_info_list;
+
+	ReplicaToSpaceInfo replica_to_space_info;
+
+	/// Теперь проверяем наличие свободного места на удаленных репликах.
+	UInt64 total_weight = 0;
+	for (const auto & weighted_path : weighted_zookeeper_paths)
+	{
+		UInt64 weight = weighted_path.second;
+		total_weight += weight;
+	}
+
+	auto & local_space_info = replica_to_space_info[replica_path];
+	local_space_info.factor = 1.1;
+	local_space_info.available_size = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
+
+	auto zookeeper = getZooKeeper();
+	for (const auto & weighted_path : weighted_zookeeper_paths)
+	{
+		const auto & path = weighted_path.first;
+		UInt64 weight = weighted_path.second;
+
+		long double factor = (weight / static_cast<long double>(total_weight)) * 1.1;
+
+		auto children = zookeeper->getChildren(path + "/replicas");
+		for (const auto & child : children)
+		{
+			const std::string child_replica_path = path + "/replicas/" + child;
+			if (child_replica_path != replica_path)
+			{
+				replica_to_space_info[child_replica_path].factor = factor;
+
+				auto host = zookeeper->get(child_replica_path + "/host");
+				ReplicatedMergeTreeAddress host_desc(host);
+
+				task_info_list.emplace_back(child_replica_path, host_desc);
+			}
+		}
+	}
+
+	boost::threadpool::pool pool(task_info_list.size());
+
+	using Tasks = std::vector<std::packaged_task<size_t()> >;
+	Tasks tasks(task_info_list.size());
+
+	try
+	{
+		for (size_t i = 0; i < task_info_list.size(); ++i)
+		{
+			const auto & entry = task_info_list[i];
+			const auto & replica_path = entry.replica_path;
+			const auto & address = entry.address;
+
+			InterserverIOEndpointLocation location(replica_path, address.host, address.replication_port);
+
+			tasks[i] = Tasks::value_type(std::bind(&RemoteDiskSpaceMonitor::Client::getFreeDiskSpace,
+				&free_disk_space_checker, location));
+			pool.schedule([i, &tasks]{ tasks[i](); });
+		}
+	}
+	catch (...)
+	{
+		pool.wait();
+		throw;
+	}
+
+	pool.wait();
+
+	for (size_t i = 0; i < task_info_list.size(); ++i)
+	{
+		size_t remote_available_size = tasks[i].get_future().get();
+		const auto & remote_replica_path = task_info_list[i].replica_path;
+		replica_to_space_info.at(remote_replica_path).available_size = remote_available_size;
+	}
+
+	return replica_to_space_info;
+}
+
+bool StorageReplicatedMergeTree::checkSpaceForResharding(const ReplicaToSpaceInfo & replica_to_space_info,
+	size_t partition_size) const
+{
+	/// Безопасное умножение.
+	auto scale_size = [](size_t size, long double factor)
+	{
+		feclearexcept(FE_OVERFLOW);
+		feclearexcept(FE_UNDERFLOW);
+
+		long double result = static_cast<long double>(size) * factor;
+
+		if ((fetestexcept(FE_OVERFLOW) != 0) || (fetestexcept(FE_UNDERFLOW) != 0))
+			throw Exception("StorageReplicatedMergeTree: floating point exception raised", ErrorCodes::LOGICAL_ERROR);
+		if (result > static_cast<long double>(std::numeric_limits<size_t>::max()))
+			throw Exception("StorageReplicatedMergeTree: integer overflow", ErrorCodes::LOGICAL_ERROR);
+
+		return static_cast<size_t>(result);
+	};
+
+	for (const auto & entry : replica_to_space_info)
+	{
+		const auto & info = entry.second;
+		size_t required_size = scale_size(partition_size, info.factor);
+		if (info.available_size < required_size)
+			return false;
+	}
+
+	return true;
+}
 
 }

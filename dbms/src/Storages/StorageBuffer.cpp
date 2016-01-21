@@ -490,7 +490,7 @@ void StorageBuffer::flushThread()
 }
 
 
-void StorageBuffer::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
+void StorageBuffer::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
 {
 	auto lock = lockStructureForAlter();
 

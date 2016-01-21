@@ -72,9 +72,13 @@ public:
 	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
 	/// в подтаблицах добавлять и удалять столбы нужно вручную
 	/// структура подтаблиц не проверяется
-	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
+	void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
 	void shutdown() override;
+
+	void reshardPartitions(const String  & database_name, const Field & first_partition, const Field & last_partition,
+		const WeightedZooKeeperPaths & weighted_zookeeper_paths, const String & sharding_key,
+		const Settings & settings) override;
 
 	/// От каждой реплики получить описание соответствующей локальной таблицы.
 	BlockInputStreams describe(const Context & context, const Settings & settings);
