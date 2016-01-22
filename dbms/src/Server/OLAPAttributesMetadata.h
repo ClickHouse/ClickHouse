@@ -548,8 +548,8 @@ typedef AttributeIntBase GoalReachesURL;
 typedef AttributeIntBase ConvertedAny;
 typedef AttributeIntBase ConvertedDepth;
 typedef AttributeIntBase ConvertedURL;
-typedef AttributeUIntBase GoalReaches;
-typedef AttributeUIntBase Converted;
+typedef AttributeIntBase GoalReaches;
+typedef AttributeIntBase Converted;
 typedef AttributeUIntBase CounterID;
 typedef AttributeUIntBase VisitID;
 
