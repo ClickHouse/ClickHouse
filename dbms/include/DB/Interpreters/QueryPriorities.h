@@ -5,6 +5,7 @@
 #include <condition_variable>
 #include <memory>
 #include <chrono>
+#include <DB/Common/CurrentMetrics.h>
 
 
 /** Реализует приоритеты запросов.
@@ -67,6 +68,7 @@ private:
 			if (!found)
 				return true;
 
+			CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryPreempted};
 			if (std::cv_status::timeout == condvar.wait_for(lock, timeout))
 				return false;
 		}

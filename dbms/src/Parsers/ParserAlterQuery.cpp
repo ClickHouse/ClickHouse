@@ -9,6 +9,7 @@
 
 namespace DB
 {
+
 bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
@@ -22,7 +23,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 	ParserString s_column("COLUMN", true, true);
 	ParserString s_after("AFTER", true, true);
 	ParserString s_modify("MODIFY", true, true);
-
+	ParserString s_reshard("RESHARD", true, true);
 	ParserString s_drop("DROP", true, true);
 	ParserString s_detach("DETACH", true, true);
 	ParserString s_attach("ATTACH", true, true);
@@ -32,12 +33,17 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 	ParserString s_part("PART", true, true);
 	ParserString s_partition("PARTITION", true, true);
 	ParserString s_from("FROM", true, true);
+	ParserString s_to("TO", true, true);
+	ParserString s_using("USING", true, true);
+	ParserString s_key("KEY", true, true);
 	ParserString s_comma(",");
+	ParserString s_doubledot("..");
 
 	ParserIdentifier table_parser;
 	ParserCompoundIdentifier parser_name;
 	ParserCompoundColumnDeclaration parser_col_decl;
 	ParserLiteral parser_literal;
+	ParserUnsignedInteger parser_uint;
 	ParserStringLiteral parser_string_literal;
 
 	ASTPtr table;
@@ -245,6 +251,58 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 			ws.ignore(pos, end);
 
 			params.type = ASTAlterQuery::MODIFY_COLUMN;
+		}
+		else if (s_reshard.ignore(pos, end, max_parsed_pos, expected))
+		{
+			ParserList weighted_zookeeper_paths_p(ParserPtr(new ParserWeightedZooKeeperPath), ParserPtr(new ParserString(",")), false);
+			ParserIdentifier sharding_key_parser;
+
+			ws.ignore(pos, end);
+
+			if (s_partition.ignore(pos, end, max_parsed_pos, expected))
+			{
+				ws.ignore(pos, end);
+
+				if (!parser_uint.parse(pos, end, params.partition, max_parsed_pos, expected))
+					return false;
+
+				ws.ignore(pos, end);
+
+				if (s_doubledot.ignore(pos, end, max_parsed_pos, expected))
+				{
+					ws.ignore(pos, end);
+
+					if (!parser_uint.parse(pos, end, params.last_partition, max_parsed_pos, expected))
+						return false;
+				}
+			}
+
+			ws.ignore(pos, end);
+
+			if (!s_to.ignore(pos, end, max_parsed_pos, expected))
+				return false;
+
+			ws.ignore(pos, end);
+
+			if (!weighted_zookeeper_paths_p.parse(pos, end, params.weighted_zookeeper_paths, max_parsed_pos, expected))
+				return false;
+
+			ws.ignore(pos, end);
+
+			if (!s_using.ignore(pos, end, max_parsed_pos, expected))
+				return false;
+
+			ws.ignore(pos, end);
+
+			ASTPtr ast_sharding_key;
+			if (!sharding_key_parser.parse(pos, end, ast_sharding_key, max_parsed_pos, expected))
+				return false;
+
+			params.sharding_key = typeid_cast<const ASTIdentifier &>(*ast_sharding_key).name;
+
+			ws.ignore(pos, end);
+
+			params.type = ASTAlterQuery::RESHARD_PARTITION;
 		}
 		else
 			return false;

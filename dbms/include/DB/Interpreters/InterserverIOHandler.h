@@ -2,6 +2,10 @@
 
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/WriteBuffer.h>
+#include <DB/IO/ReadBufferFromString.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/WriteHelpers.h>
 #include <DB/Core/Types.h>
 #include <map>
 #include <atomic>
@@ -16,12 +20,50 @@ namespace ErrorCodes
 	extern const int NO_SUCH_INTERSERVER_IO_ENDPOINT;
 }
 
+/** Местонахождение сервиса.
+  */
+struct InterserverIOEndpointLocation
+{
+public:
+	InterserverIOEndpointLocation(const std::string & name_, const std::string & host_, UInt16 port_)
+		: name(name_), host(host_), port(port_)
+	{
+	}
+
+	/// Создаёт местонахождение на основе его сериализованного представления.
+	InterserverIOEndpointLocation(const std::string & serialized_location)
+	{
+		ReadBufferFromString buf(serialized_location);
+		readBinary(name, buf);
+		readBinary(host, buf);
+		readBinary(port, buf);
+		assertEOF(buf);
+	}
+
+	/// Сериализует местонахождение.
+	std::string toString() const
+	{
+		std::string serialized_location;
+		WriteBufferFromString buf(serialized_location);
+		writeBinary(name, buf);
+		writeBinary(host, buf);
+		writeBinary(port, buf);
+		buf.next();
+		return serialized_location;
+	}
+
+public:
+	std::string name;
+	std::string host;
+	UInt16 port;
+};
 
 /** Обработчик запросов от других серверов.
   */
 class InterserverIOEndpoint
 {
 public:
+	virtual std::string getId(const std::string & path) const = 0;
 	virtual void processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out) = 0;
 	virtual ~InterserverIOEndpoint() {}
 

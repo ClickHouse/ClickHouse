@@ -9,6 +9,7 @@
 #include <DB/DataStreams/BlockIO.h>
 
 #include <DB/Common/Stopwatch.h>
+#include <DB/Common/CurrentMetrics.h>
 
 #include "Server.h"
 
@@ -97,6 +98,8 @@ private:
 
 	/// На данный момент, поддерживается одновременное выполнение только одного запроса в соединении.
 	QueryState state;
+
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::TCPConnection};
 
 
 	void runImpl();

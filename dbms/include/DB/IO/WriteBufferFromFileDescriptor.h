@@ -5,6 +5,7 @@
 
 #include <DB/Common/Exception.h>
 #include <DB/Common/ProfileEvents.h>
+#include <DB/Common/CurrentMetrics.h>
 
 #include <DB/IO/WriteBufferFromFileBase.h>
 #include <DB/IO/WriteBuffer.h>
@@ -40,7 +41,11 @@ protected:
 		{
 			ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWrite);
 
-			ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
+			ssize_t res = 0;
+			{
+				CurrentMetrics::Increment metric_increment{CurrentMetrics::Write};
+				res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
+			}
 
 			if ((-1 == res || 0 == res) && errno != EINTR)
 				throwFromErrno("Cannot write to file " + getFileName(), ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);

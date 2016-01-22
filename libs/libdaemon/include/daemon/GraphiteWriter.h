@@ -33,7 +33,7 @@ public:
 
 	/// Для облачных демонов удобней использовать
 	/// путь вида prefix.environment.layer.daemon_name.metrica
-	static const std::string & getPerLayerPath(const std::string & prefix = "one_min");
+	static std::string getPerLayerPath(const std::string & prefix = "one_min");
 	
 	/// возвращает путь root_path.server_name
 	static std::string getPerServerPath(const std::string & server_name, const std::string & root_path = "one_min");

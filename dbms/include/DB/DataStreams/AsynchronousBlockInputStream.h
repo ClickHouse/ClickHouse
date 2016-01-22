@@ -6,6 +6,7 @@
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/CurrentMetrics.h>
 
 
 namespace DB
@@ -123,6 +124,7 @@ protected:
 	{
 		setThreadName("AsyncBlockInput");
 		current_memory_tracker = memory_tracker;
+		CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
 		try
 		{

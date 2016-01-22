@@ -33,7 +33,7 @@ MergeTreeData::MergeTreeData(
 	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
-	const Context & context_,
+	Context & context_,
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_, const ASTPtr & sampling_expression_,
 	size_t index_granularity_,
@@ -1039,6 +1039,19 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
 	return nullptr;
 }
 
+MergeTreeData::DataPartPtr MergeTreeData::getShardedPartIfExists(const String & part_name, size_t shard_no)
+{
+	MutableDataPartPtr tmp_part(new DataPart(*this));
+	ActiveDataPartSet::parsePartName(part_name, *tmp_part);
+
+	const MutableDataParts & sharded_parts = per_shard_data_parts.at(shard_no);
+	MutableDataParts::const_iterator it = sharded_parts.lower_bound(tmp_part);
+	if ((it != sharded_parts.end()) && ((*it)->name == part_name))
+		return *it;
+
+	return nullptr;
+}
+
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const String & relative_path)
 {
 	MutableDataPartPtr part = std::make_shared<DataPart>(*this);
@@ -1339,6 +1352,31 @@ void MergeTreeData::freezePartition(const std::string & prefix)
 	LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
 }
 
+size_t MergeTreeData::getPartitionSize(const std::string & partition_name) const
+{
+	size_t size = 0;
+
+	Poco::DirectoryIterator end;
+	Poco::DirectoryIterator end2;
+
+	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
+	{
+		const auto filename = it.name();
+		if (!ActiveDataPartSet::isPartDirectory(filename))
+			continue;
+		if (0 != filename.compare(0, partition_name.size(), partition_name))
+			continue;
+
+		const auto part_path = it.path().absolute().toString();
+		for (Poco::DirectoryIterator it2(part_path); it2 != end2; ++it2)
+		{
+			const auto part_file_path = it2.path().absolute().toString();
+			size += Poco::File(part_file_path).getSize();
+		}
+	}
+
+	return size;
+}
 
 static std::pair<String, DayNum_t> getMonthNameAndDayNum(const Field & partition)
 {
@@ -1366,9 +1404,26 @@ String MergeTreeData::getMonthName(const Field & partition)
 	return getMonthNameAndDayNum(partition).first;
 }
 
+String MergeTreeData::getMonthName(DayNum_t month)
+{
+	return toString(DateLUT::instance().toNumYYYYMMDD(month) / 100);
+}
+
 DayNum_t MergeTreeData::getMonthDayNum(const Field & partition)
 {
 	return getMonthNameAndDayNum(partition).second;
+}
+
+DayNum_t MergeTreeData::getMonthFromName(const String & month_name)
+{
+	DayNum_t date = DateLUT::instance().YYYYMMDDToDayNum(parse<UInt32>(month_name + "01"));
+
+	/// Не можем просто сравнить date с нулем, потому что 0 тоже валидный DayNum.
+	if (month_name != toString(DateLUT::instance().toNumYYYYMMDD(date) / 100))
+		throw Exception("Invalid partition format: " + month_name + " doesn't look like month.",
+			ErrorCodes::INVALID_PARTITION_NAME);
+
+	return date;
 }
 
 }

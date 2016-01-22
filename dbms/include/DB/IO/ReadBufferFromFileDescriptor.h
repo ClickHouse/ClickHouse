@@ -10,6 +10,7 @@
 #include <DB/Common/Stopwatch.h>
 
 #include <DB/Common/Exception.h>
+#include <DB/Common/CurrentMetrics.h>
 
 #include <DB/IO/ReadBufferFromFileBase.h>
 #include <DB/IO/ReadBuffer.h>
@@ -47,7 +48,11 @@ protected:
 			if (profile_callback)
 				watch.emplace(clock_type);
 
-			ssize_t res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
+			ssize_t res = 0;
+			{
+				CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
+				res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
+			}
 			if (!res)
 				break;
 

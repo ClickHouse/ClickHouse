@@ -164,6 +164,8 @@ bool WriteBufferAIO::waitForAIOCompletion()
 	if (!is_pending_write)
 		return false;
 
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::Write};
+
 	while (io_getevents(aio_context.ctx, events.size(), events.size(), &events[0], nullptr) < 0)
 	{
 		if (errno != EINTR)

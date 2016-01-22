@@ -34,6 +34,9 @@
 #include <DB/Storages/System/StorageSystemColumns.h>
 #include <DB/Storages/System/StorageSystemFunctions.h>
 #include <DB/Storages/System/StorageSystemClusters.h>
+#include <DB/Storages/System/StorageSystemMetrics.h>
+#include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <DB/Storages/MergeTree/ReshardingWorker.h>
 
 #include <zkutil/ZooKeeper.h>
 
@@ -303,6 +306,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->addTable("system", "processes", StorageSystemProcesses::create("processes"));
 	global_context->addTable("system", "settings", 	StorageSystemSettings::create("settings"));
 	global_context->addTable("system", "events", 	StorageSystemEvents::create("events"));
+	global_context->addTable("system", "metrics", 	StorageSystemMetrics::create("metrics"));
 	global_context->addTable("system", "merges",	StorageSystemMerges::create("merges"));
 	global_context->addTable("system", "replicas",	StorageSystemReplicas::create("replicas"));
 	global_context->addTable("system", "replication_queue", StorageSystemReplicationQueue::create("replication_queue"));
@@ -315,6 +319,16 @@ int Server::main(const std::vector<std::string> & args)
 		global_context->addTable("system", "zookeeper", StorageSystemZooKeeper::create("zookeeper"));
 
 	global_context->setCurrentDatabase(config().getString("default_database", "default"));
+
+	if (has_zookeeper)
+	{
+		zkutil::ZooKeeperPtr zookeeper = global_context->getZooKeeper();
+		if (!zookeeper->getTaskQueuePath().empty())
+		{
+			auto & resharding_worker = global_context->getReshardingWorker();
+			resharding_worker.start();
+		}
+	}
 
 	SCOPE_EXIT(
 		LOG_DEBUG(log, "Closed all connections.");

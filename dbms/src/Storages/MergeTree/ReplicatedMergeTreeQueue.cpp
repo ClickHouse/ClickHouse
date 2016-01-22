@@ -260,82 +260,97 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 	{
 		std::sort(log_entries.begin(), log_entries.end());
 
-		String last_entry = log_entries.back();
-		if (0 != last_entry.compare(0, strlen("log-"), "log-"))
-			throw Exception("Error in zookeeper data: unexpected node " + last_entry + " in " + zookeeper_path + "/log",
-				ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER);
+		/// ZK содержит ограничение на количество или суммарный размер операций в multi-запросе.
+		/// При превышении ограничения просто разрывается соединение.
+		/// Константа выбрана с запасом. Ограничение по-умолчанию в ZK - 1 МБ данных суммарно.
+		/// Средний размер значения узла в данном случае, меньше килобайта.
+		static constexpr auto MAX_MULTI_OPS = 1000;
 
-		UInt64 last_entry_index = parse<UInt64>(last_entry.substr(strlen("log-")));
-
-		LOG_DEBUG(log, "Pulling " << log_entries.size() << " entries to queue: " << log_entries.front() << " - " << log_entries.back());
-
-		std::vector<std::pair<String, zkutil::ZooKeeper::GetFuture>> futures;
-		futures.reserve(log_entries.size());
-
-		for (const String & entry : log_entries)
-			futures.emplace_back(entry, zookeeper->asyncGet(zookeeper_path + "/log/" + entry));
-
-		/// Одновременно добавим все новые записи в очередь и продвинем указатель на лог.
-
-		zkutil::Ops ops;
-		std::vector<LogEntryPtr> copied_entries;
-		copied_entries.reserve(log_entries.size());
-
-		bool min_unprocessed_insert_time_changed = false;
-
-		for (auto & future : futures)
+		for (size_t i = 0, size = log_entries.size(); i < size; i += MAX_MULTI_OPS)
 		{
-			zkutil::ZooKeeper::ValueAndStat res = future.second.get();
-			copied_entries.emplace_back(LogEntry::parse(res.value, res.stat));
+			auto begin = log_entries.begin() + i;
+			auto end = i + MAX_MULTI_OPS >= log_entries.size()
+				? log_entries.end()
+				: (begin + MAX_MULTI_OPS);
+			auto last = end - 1;
 
-			ops.push_back(new zkutil::Op::Create(
-				replica_path + "/queue/queue-", res.value, zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
+			String last_entry = *last;
+			if (0 != last_entry.compare(0, strlen("log-"), "log-"))
+				throw Exception("Error in zookeeper data: unexpected node " + last_entry + " in " + zookeeper_path + "/log",
+					ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER);
 
-			const auto & entry = *copied_entries.back();
-			if (entry.type == LogEntry::GET_PART)
+			UInt64 last_entry_index = parse<UInt64>(last_entry.substr(strlen("log-")));
+
+			LOG_DEBUG(log, "Pulling " << (end - begin) << " entries to queue: " << *begin << " - " << *last);
+
+			std::vector<std::pair<String, zkutil::ZooKeeper::GetFuture>> futures;
+			futures.reserve(end - begin);
+
+			for (auto it = begin; it != end; ++it)
+				futures.emplace_back(*it, zookeeper->asyncGet(zookeeper_path + "/log/" + *it));
+
+			/// Одновременно добавим все новые записи в очередь и продвинем указатель на лог.
+
+			zkutil::Ops ops;
+			std::vector<LogEntryPtr> copied_entries;
+			copied_entries.reserve(end - begin);
+
+			bool min_unprocessed_insert_time_changed = false;
+
+			for (auto & future : futures)
 			{
-				if (entry.create_time && (!min_unprocessed_insert_time || entry.create_time < min_unprocessed_insert_time))
+				zkutil::ZooKeeper::ValueAndStat res = future.second.get();
+				copied_entries.emplace_back(LogEntry::parse(res.value, res.stat));
+
+				ops.push_back(new zkutil::Op::Create(
+					replica_path + "/queue/queue-", res.value, zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
+
+				const auto & entry = *copied_entries.back();
+				if (entry.type == LogEntry::GET_PART)
 				{
-					min_unprocessed_insert_time = entry.create_time;
-					min_unprocessed_insert_time_changed = true;
+					if (entry.create_time && (!min_unprocessed_insert_time || entry.create_time < min_unprocessed_insert_time))
+					{
+						min_unprocessed_insert_time = entry.create_time;
+						min_unprocessed_insert_time_changed = true;
+					}
 				}
 			}
-		}
 
-		ops.push_back(new zkutil::Op::SetData(
-			replica_path + "/log_pointer", toString(last_entry_index + 1), -1));
-
-		if (min_unprocessed_insert_time_changed)
 			ops.push_back(new zkutil::Op::SetData(
-				replica_path + "/min_unprocessed_insert_time", toString(min_unprocessed_insert_time), -1));
+				replica_path + "/log_pointer", toString(last_entry_index + 1), -1));
 
-		auto results = zookeeper->multi(ops);
+			if (min_unprocessed_insert_time_changed)
+				ops.push_back(new zkutil::Op::SetData(
+					replica_path + "/min_unprocessed_insert_time", toString(min_unprocessed_insert_time), -1));
 
-		/// Сейчас мы успешно обновили очередь в ZooKeeper. Обновим её в оперативке.
+			auto results = zookeeper->multi(ops);
 
-		try
-		{
-			std::lock_guard<std::mutex> lock(mutex);
+			/// Сейчас мы успешно обновили очередь в ZooKeeper. Обновим её в оперативке.
 
-			for (size_t i = 0, size = copied_entries.size(); i < size; ++i)
+			try
 			{
-				String path_created = dynamic_cast<zkutil::Op::Create &>(ops[i]).getPathCreated();
-				copied_entries[i]->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
+				std::lock_guard<std::mutex> lock(mutex);
 
-				insertUnlocked(copied_entries[i]);
+				for (size_t i = 0, size = copied_entries.size(); i < size; ++i)
+				{
+					String path_created = dynamic_cast<zkutil::Op::Create &>(ops[i]).getPathCreated();
+					copied_entries[i]->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
+
+					insertUnlocked(copied_entries[i]);
+				}
+
+				last_queue_update = time(0);
+			}
+			catch (...)
+			{
+				/// Если не удалось, то данные в оперативке некорректные. Во избежание возможной дальнейшей порчи данных в ZK, убъёмся.
+				/// Попадание сюда возможно лишь в случае неизвестной логической ошибки.
+				std::terminate();
 			}
 
-			last_queue_update = time(0);
+			if (!copied_entries.empty())
+				LOG_DEBUG(log, "Pulled " << copied_entries.size() << " entries to queue.");
 		}
-		catch (...)
-		{
-			/// Если не удалось, то данные в оперативке некорректные. Во избежание возможной дальнейшей порчи данных в ZK, убъёмся.
-			/// Попадание сюда возможно лишь в случае неизвестной логической ошибки.
-			std::terminate();
-		}
-
-		if (!copied_entries.empty())
-			LOG_DEBUG(log, "Pulled " << copied_entries.size() << " entries to queue.");
 	}
 
 	if (next_update_event)

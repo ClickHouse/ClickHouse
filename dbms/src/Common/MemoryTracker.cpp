@@ -1,6 +1,7 @@
 #include <common/likely.h>
 #include <common/logger_useful.h>
 #include <DB/Common/Exception.h>
+#include <DB/Common/CurrentMetrics.h>
 #include <DB/Common/formatReadable.h>
 #include <DB/IO/WriteHelpers.h>
 #include <iomanip>
@@ -21,6 +22,9 @@ MemoryTracker::~MemoryTracker()
 {
 	if (peak)
 		logPeakMemoryUsage();
+
+	if (amount && !next)
+		CurrentMetrics::sub(CurrentMetrics::MemoryTracking, amount);
 }
 
 
@@ -35,6 +39,9 @@ void MemoryTracker::logPeakMemoryUsage() const
 void MemoryTracker::alloc(Int64 size)
 {
 	Int64 will_be = __sync_add_and_fetch(&amount, size);
+
+	if (!next)
+		CurrentMetrics::add(CurrentMetrics::MemoryTracking, size);
 
 	/// Используется непотокобезопасный генератор случайных чисел. Совместное распределение в разных потоках не будет равномерным.
 	/// В данном случае, это нормально.
@@ -82,11 +89,16 @@ void MemoryTracker::free(Int64 size)
 
 	if (next)
 		next->free(size);
+	else
+		CurrentMetrics::sub(CurrentMetrics::MemoryTracking, size);
 }
 
 
 void MemoryTracker::reset()
 {
+	if (!next)
+		CurrentMetrics::sub(CurrentMetrics::MemoryTracking, amount);
+
 	amount = 0;
 	peak = 0;
 	limit = 0;

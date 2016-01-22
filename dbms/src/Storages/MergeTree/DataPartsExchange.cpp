@@ -1,5 +1,6 @@
-#include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
+#include <DB/Storages/MergeTree/DataPartsExchange.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <DB/Common/CurrentMetrics.h>
 
 
 namespace DB
@@ -8,24 +9,56 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int ABORTED;
+	extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
 }
 
+namespace DataPartsExchange
+{
 
-void ReplicatedMergeTreePartsServer::processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out)
+namespace
+{
+
+std::string getEndpointId(const std::string & node_id)
+{
+	return "DataPartsExchange:" + node_id;
+}
+
+}
+
+std::string Service::getId(const std::string & node_id) const
+{
+	return getEndpointId(node_id);
+}
+
+void Service::processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out)
 {
 	if (is_cancelled)
 		throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
 	String part_name = params.get("part");
+	String shard_str = params.get("shard");
+
+	bool send_sharded_part = !shard_str.empty();
+
 	LOG_TRACE(log, "Sending part " << part_name);
 
 	try
 	{
 		auto storage_lock = storage.lockStructure(false);
 
-		MergeTreeData::DataPartPtr part = findPart(part_name);
+		MergeTreeData::DataPartPtr part;
+
+		if (send_sharded_part)
+		{
+			size_t shard_no = std::stoul(shard_str);
+			part = findShardedPart(part_name, shard_no);
+		}
+		else
+			part = findPart(part_name);
 
 		Poco::ScopedReadRWLock part_lock(part->columns_lock);
+
+		CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
 		/// Список файлов возьмем из списка контрольных сумм.
 		MergeTreeData::DataPart::Checksums checksums = part->checksums;
@@ -40,7 +73,13 @@ void ReplicatedMergeTreePartsServer::processQuery(const Poco::Net::HTMLForm & pa
 		{
 			String file_name = it.first;
 
-			String path = data.getFullPath() + part_name + "/" + file_name;
+			String path;
+
+			if (send_sharded_part)
+				path = data.getFullPath() + "reshard/" + shard_str + "/" + part_name + "/" + file_name;
+			else
+				path = data.getFullPath() + part_name + "/" + file_name;
+
 			UInt64 size = Poco::File(path).getSize();
 
 			writeStringBinary(it.first, out);
@@ -72,17 +111,53 @@ void ReplicatedMergeTreePartsServer::processQuery(const Poco::Net::HTMLForm & pa
 	}
 }
 
-MergeTreeData::MutableDataPartPtr ReplicatedMergeTreePartsFetcher::fetchPart(
+MergeTreeData::DataPartPtr Service::findPart(const String & name)
+{
+	MergeTreeData::DataPartPtr part = data.getPartIfExists(name);
+	if (part)
+		return part;
+	throw Exception("No part " + name + " in table");
+}
+
+MergeTreeData::DataPartPtr Service::findShardedPart(const String & name, size_t shard_no)
+{
+	MergeTreeData::DataPartPtr part = data.getShardedPartIfExists(name, shard_no);
+	if (part)
+		return part;
+	throw Exception("No part " + name + " in table");
+}
+
+MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 	const String & part_name,
 	const String & replica_path,
 	const String & host,
 	int port,
 	bool to_detached)
 {
+	return fetchPartImpl(part_name, replica_path, host, port, "", to_detached);
+}
+
+MergeTreeData::MutableDataPartPtr Fetcher::fetchShardedPart(
+	const InterserverIOEndpointLocation & location,
+	const String & part_name,
+	size_t shard_no)
+{
+	return fetchPartImpl(part_name, location.name, location.host, location.port, toString(shard_no), true);
+}
+
+MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
+	const String & part_name,
+	const String & replica_path,
+	const String & host,
+	int port,
+	const String & shard_no,
+	bool to_detached)
+{
 	ReadBufferFromHTTP::Params params =
 	{
-		{"endpoint", "ReplicatedMergeTree:" + replica_path},
+		{"endpoint", getEndpointId(replica_path)},
 		{"part", part_name},
+		{"shard", shard_no},
 		{"compress", "false"}
 	};
 
@@ -97,6 +172,8 @@ MergeTreeData::MutableDataPartPtr ReplicatedMergeTreePartsFetcher::fetchPart(
 		LOG_ERROR(log, "Directory " + part_path + " already exists. Removing.");
 		part_file.remove(true);
 	}
+
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
 
 	part_file.createDirectory();
 
@@ -145,10 +222,12 @@ MergeTreeData::MutableDataPartPtr ReplicatedMergeTreePartsFetcher::fetchPart(
 	new_data_part->loadColumns(true);
 	new_data_part->loadChecksums(true);
 	new_data_part->loadIndex();
-
+	new_data_part->is_sharded = false;
 	new_data_part->checksums.checkEqual(checksums, false);
 
 	return new_data_part;
+}
+
 }
 
 }

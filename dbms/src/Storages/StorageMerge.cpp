@@ -215,7 +215,7 @@ void StorageMerge::getSelectedTables(StorageVector & selected_tables) const
 }
 
 
-void StorageMerge::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
+void StorageMerge::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
 {
 	auto lock = lockStructureForAlter();
 	params.apply(*columns, materialized_columns, alias_columns, column_defaults);

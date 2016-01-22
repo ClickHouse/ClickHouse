@@ -12,6 +12,7 @@
 #include <DB/Parsers/ASTOrderByElement.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTSubquery.h>
+#include <DB/Parsers/ASTWeightedZooKeeperPath.h>
 
 #include <DB/Parsers/CommonParsers.h>
 #include <DB/Parsers/ExpressionListParsers.h>
@@ -791,6 +792,45 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 	return true;
 }
 
+bool ParserWeightedZooKeeperPath::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+{
+	ParserString s_weight("WEIGHT", true, true);
+	ParserStringLiteral path_p;
+	ParserUnsignedInteger weight_p;
+	ParserWhiteSpaceOrComments ws;
+
+	auto weighted_zookeeper_path = new ASTWeightedZooKeeperPath;
+	node = weighted_zookeeper_path;
+
+	ws.ignore(pos, end);
+
+	ASTPtr path_node;
+	if (!path_p.parse(pos, end, path_node, max_parsed_pos, expected))
+		return false;
+
+	weighted_zookeeper_path->path = typeid_cast<const ASTLiteral &>(*path_node).value.get<const String &>();
+
+	ws.ignore(pos, end);
+
+	bool is_weight_set = false;
+
+	if (s_weight.ignore(pos, end, max_parsed_pos, expected))
+	{
+		ws.ignore(pos, end);
+
+		ASTPtr weight_node;
+		if (weight_p.parse(pos, end, weight_node, max_parsed_pos, expected))
+		{
+			is_weight_set = true;
+			weighted_zookeeper_path->weight = typeid_cast<const ASTLiteral &>(*weight_node).value.get<const UInt64 &>();
+		}
+	}
+
+	if (!is_weight_set)
+		weighted_zookeeper_path->weight = 1;
+
+	return true;
+}
 
 }
 

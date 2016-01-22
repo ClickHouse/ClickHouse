@@ -2,6 +2,7 @@
 
 #include <daemon/Daemon.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/CurrentMetrics.h>
 
 
 namespace DB
@@ -29,7 +30,7 @@ MetricsTransmitter::~MetricsTransmitter()
 
 void MetricsTransmitter::run()
 {
-	setThreadName("ProfileEventsTx");
+	setThreadName("MetricsTransmit");
 
 	const auto get_next_minute = [] {
 		return std::chrono::time_point_cast<std::chrono::minutes, std::chrono::system_clock>(
@@ -44,15 +45,15 @@ void MetricsTransmitter::run()
 		if (cond.wait_until(lock, get_next_minute(), [this] { return quit; }))
 			break;
 
-		transmitCounters();
+		transmit();
 	}
 }
 
 
-void MetricsTransmitter::transmitCounters()
+void MetricsTransmitter::transmit()
 {
-	GraphiteWriter::KeyValueVector<size_t> key_vals{};
-	key_vals.reserve(ProfileEvents::END);
+	GraphiteWriter::KeyValueVector<ssize_t> key_vals{};
+	key_vals.reserve(ProfileEvents::END + CurrentMetrics::END);
 
 	for (size_t i = 0; i < ProfileEvents::END; ++i)
 	{
@@ -60,8 +61,16 @@ void MetricsTransmitter::transmitCounters()
 		const auto counter_increment = counter - prev_counters[i];
 		prev_counters[i] = counter;
 
-		std::string key{ProfileEvents::getDescription(static_cast<ProfileEvents::Event>(i))};
+		std::string key {ProfileEvents::getDescription(static_cast<ProfileEvents::Event>(i))};
 		key_vals.emplace_back(event_path_prefix + key, counter_increment);
+	}
+
+	for (size_t i = 0; i < CurrentMetrics::END; ++i)
+	{
+		const auto value = CurrentMetrics::values[i];
+
+		std::string key {CurrentMetrics::getDescription(static_cast<CurrentMetrics::Metric>(i))};
+		key_vals.emplace_back(metrics_path_prefix + key, value);
 	}
 
 	Daemon::instance().writeToGraphite(key_vals);

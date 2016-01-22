@@ -10,6 +10,7 @@
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/CurrentMetrics.h>
 
 
 /** Позволяет обработать множество источников блоков параллельно, используя указанное количество потоков.
@@ -172,6 +173,7 @@ private:
 		std::exception_ptr exception;
 
 		setThreadName("ParalInputsProc");
+		CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
 		try
 		{

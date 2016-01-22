@@ -1,15 +1,10 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/Storages/IStorage.h>
 
 
 namespace DB
 {
-
-using Poco::SharedPtr;
-
 
 /** Реализует системную таблицу events, которая позволяет получить информацию для профайлинга.
   */

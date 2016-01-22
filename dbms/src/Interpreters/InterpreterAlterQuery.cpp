@@ -6,6 +6,7 @@
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTWeightedZooKeeperPath.h>
 
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/IO/copyData.h>
@@ -29,7 +30,7 @@ namespace ErrorCodes
 }
 
 
-InterpreterAlterQuery::InterpreterAlterQuery(ASTPtr query_ptr_, Context & context_)
+InterpreterAlterQuery::InterpreterAlterQuery(ASTPtr query_ptr_, const Context & context_)
 	: query_ptr(query_ptr_), context(context_)
 {
 }
@@ -63,6 +64,10 @@ BlockIO InterpreterAlterQuery::execute()
 
 			case PartitionCommand::FREEZE_PARTITION:
 				table->freezePartition(command.partition, context.getSettingsRef());
+				break;
+
+			case PartitionCommand::RESHARD_PARTITION:
+				table->reshardPartitions(database_name, command.partition, command.last_partition, command.weighted_zookeeper_paths, command.sharding_key, context.getSettingsRef());
 				break;
 
 			default:
@@ -164,6 +169,31 @@ void InterpreterAlterQuery::parseAlter(
 			const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
 			out_partition_commands.push_back(PartitionCommand::freezePartition(partition));
 		}
+		else if (params.type == ASTAlterQuery::RESHARD_PARTITION)
+		{
+			Field first_partition;
+			if (params.partition)
+				first_partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
+
+			Field last_partition;
+			if (params.last_partition)
+				last_partition = dynamic_cast<const ASTLiteral &>(*params.last_partition).value;
+			else
+				last_partition = first_partition;
+
+			WeightedZooKeeperPaths weighted_zookeeper_paths;
+
+			const ASTs & ast_weighted_zookeeper_paths = typeid_cast<const ASTExpressionList &>(*params.weighted_zookeeper_paths).children;
+			for (size_t i = 0; i < ast_weighted_zookeeper_paths.size(); ++i)
+			{
+				const auto & weighted_zookeeper_path = typeid_cast<const ASTWeightedZooKeeperPath &>(*ast_weighted_zookeeper_paths[i]);
+				weighted_zookeeper_paths.emplace_back(weighted_zookeeper_path.path, weighted_zookeeper_path.weight);
+			}
+
+			const auto & sharding_key = params.sharding_key;
+
+			out_partition_commands.push_back(PartitionCommand::reshardPartitions(first_partition, last_partition, weighted_zookeeper_paths, sharding_key));
+		}
 		else
 			throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 	}
@@ -176,7 +206,7 @@ void InterpreterAlterQuery::updateMetadata(
 	const NamesAndTypesList & materialized_columns,
 	const NamesAndTypesList & alias_columns,
 	const ColumnDefaults & column_defaults,
-	Context & context)
+	const Context & context)
 {
 	String path = context.getPath();
 
