@@ -201,7 +201,7 @@ public:
 	bool mayBeTrueAfter(const Field * left_pk, const DataTypes & data_types) const;
 
 	/// Проверяет, что индекс не может быть использован.
-	bool alwaysUnknown() const;
+	bool alwaysUnknownOrTrue() const;
 
 	/// Наложить дополнительное условие: значение в столбце column должно быть в диапазоне range.
 	/// Возвращает, есть ли такой столбец в первичном ключе.
@@ -230,6 +230,9 @@ private:
 			FUNCTION_NOT,
 			FUNCTION_AND,
 			FUNCTION_OR,
+			/// Константы
+			ALWAYS_FALSE,
+			ALWAYS_TRUE,
 		};
 
 		RPNElement() {}

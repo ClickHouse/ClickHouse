@@ -141,10 +141,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	PKCondition key_condition(query, context, data.getColumnsList(), data.getSortDescription());
 	PKCondition date_condition(query, context, data.getColumnsList(), SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
 
-	if (settings.force_primary_key && key_condition.alwaysUnknown())
+	if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
 		throw Exception("Primary key is not used and setting 'force_primary_key' is set.", ErrorCodes::INDEX_NOT_USED);
 
-	if (settings.force_index_by_date && date_condition.alwaysUnknown())
+	if (settings.force_index_by_date && date_condition.alwaysUnknownOrTrue())
 		throw Exception("Index by date is not used and setting 'force_index_by_date' is set.", ErrorCodes::INDEX_NOT_USED);
 
 	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition, и которые подходят под условие на _part,
@@ -811,7 +811,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 	size_t marks_count = index.size() / key_size;
 
 	/// Если индекс не используется.
-	if (key_condition.alwaysUnknown())
+	if (key_condition.alwaysUnknownOrTrue())
 	{
 		res.push_back(MarkRange(0, marks_count));
 	}

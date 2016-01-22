@@ -265,8 +265,10 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
 {
 	/** Функции < > = != <= >= in notIn, у которых один агрумент константа, другой - один из столбцов первичного ключа,
-	  *  либо он же, завёрнутый в цепочку возможно-монотонных функций.
+	  *  либо он же, завёрнутый в цепочку возможно-монотонных функций,
+	  *  либо константное выражение - число.
 	  */
+	Field value;
 	if (const ASTFunction * func = typeid_cast<const ASTFunction *>(&*node))
 	{
 		const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
@@ -277,7 +279,6 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 		/// Если true, слева константа.
 		bool inverted;
 		size_t column;
-		Field value;
 		RPNElement::MonotonicFunctionsChain chain;
 
 		if (getConstant(args[1], block_with_constants, value) && isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, column, chain))
@@ -325,6 +326,20 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 		atom_it->second(out, value, node);
 
 		return true;
+	}
+	else if (getConstant(node, block_with_constants, value))	/// Для случаев, когда написано, например, WHERE 0 AND something
+	{
+		if (value.getType() == Field::Types::UInt64
+			|| value.getType() == Field::Types::Int64
+			|| value.getType() == Field::Types::Float64)
+		{
+			/// Ноль во всех типах представлен в памяти так же, как в UInt64.
+			out.function = value.get<UInt64>()
+				? RPNElement::ALWAYS_TRUE
+				: RPNElement::ALWAYS_FALSE;
+
+			return true;
+		}
 	}
 
 	return false;
@@ -525,6 +540,14 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 			auto arg2 = rpn_stack.back();
 			rpn_stack.back() = arg1 | arg2;
 		}
+		else if (element.function == RPNElement::ALWAYS_FALSE)
+		{
+			rpn_stack.emplace_back(false, true);
+		}
+		else if (element.function == RPNElement::ALWAYS_TRUE)
+		{
+			rpn_stack.emplace_back(true, false);
+		}
 		else
 			throw Exception("Unexpected function type in PKCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
 	}
@@ -595,13 +618,17 @@ String PKCondition::RPNElement::toString() const
 			ss << ")";
 			return ss.str();
 		}
+		case ALWAYS_FALSE:
+			return "false";
+		case ALWAYS_TRUE:
+			return "true";
 		default:
 			throw Exception("Unknown function in RPNElement", ErrorCodes::LOGICAL_ERROR);
 	}
 }
 
 
-bool PKCondition::alwaysUnknown() const
+bool PKCondition::alwaysUnknownOrTrue() const
 {
 	std::vector<UInt8> rpn_stack;
 
@@ -609,14 +636,16 @@ bool PKCondition::alwaysUnknown() const
 	{
 		const auto & element = rpn[i];
 
-		if (element.function == RPNElement::FUNCTION_UNKNOWN)
+		if (element.function == RPNElement::FUNCTION_UNKNOWN
+			|| element.function == RPNElement::ALWAYS_TRUE)
 		{
 			rpn_stack.push_back(true);
 		}
 		else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE
 			|| element.function == RPNElement::FUNCTION_IN_RANGE
 			|| element.function == RPNElement::FUNCTION_IN_SET
-			|| element.function == RPNElement::FUNCTION_NOT_IN_SET)
+			|| element.function == RPNElement::FUNCTION_NOT_IN_SET
+			|| element.function == RPNElement::ALWAYS_FALSE)
 		{
 			rpn_stack.push_back(false);
 		}
