@@ -86,12 +86,10 @@ int main(int argc, char ** argv)
 		BlockInputStreamPtr in1 = fork.createInput();
 		BlockInputStreamPtr in2 = fork.createInput();
 
-		in1 = new ExpressionBlockInputStream(in1, expression);
-		in1 = new FilterBlockInputStream(in1, 1);
+		in1 = new FilterBlockInputStream(in1, expression, 1);
 		in1 = new LimitBlockInputStream(in1, 10, 0);
 
-		in2 = new ExpressionBlockInputStream(in2, expression);
-		in2 = new FilterBlockInputStream(in2, 1);
+		in2 = new FilterBlockInputStream(in2, expression, 1);
 		in2 = new LimitBlockInputStream(in2, 20, 5);
 
 		Block out_sample = expression->getSampleBlock();

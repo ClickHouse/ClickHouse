@@ -485,7 +485,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	if (use_sampling)
 		for (auto & stream : res)
-			stream = new FilterBlockInputStream(new ExpressionBlockInputStream(stream, filter_expression), filter_function->getColumnName());
+			stream = new FilterBlockInputStream(stream, filter_expression, filter_function->getColumnName());
 
 	return res;
 }
@@ -732,7 +732,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 
 			createPositiveSignCondition(sign_filter_expression, sign_filter_column, context);
 
-			res.push_back(new FilterBlockInputStream(new ExpressionBlockInputStream(to_merge[0], sign_filter_expression), sign_filter_column));
+			res.push_back(new FilterBlockInputStream(to_merge[0], sign_filter_expression, sign_filter_column));
 		}
 		else
 			res = to_merge;

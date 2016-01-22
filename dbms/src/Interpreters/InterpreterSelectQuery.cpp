@@ -853,8 +853,7 @@ void InterpreterSelectQuery::executeWhere(ExpressionActionsPtr expression)
 {
 	transformStreams([&](auto & stream)
 	{
-		stream = new ExpressionBlockInputStream(stream, expression);
-		stream = new FilterBlockInputStream(stream, query.where_expression->getColumnName());
+		stream = new FilterBlockInputStream(stream, expression, query.where_expression->getColumnName());
 	});
 }
 
@@ -962,8 +961,7 @@ void InterpreterSelectQuery::executeHaving(ExpressionActionsPtr expression)
 {
 	transformStreams([&](auto & stream)
 	{
-		stream = new ExpressionBlockInputStream(stream, expression);
-		stream = new FilterBlockInputStream(stream, query.having_expression->getColumnName());
+		stream = new FilterBlockInputStream(stream, expression, query.having_expression->getColumnName());
 	});
 }
 

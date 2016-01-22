@@ -1,5 +1,6 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnsCommon.h>
+#include <DB/Interpreters/ExpressionActions.h>
 
 #include <DB/DataStreams/FilterBlockInputStream.h>
 
@@ -13,22 +14,75 @@ namespace ErrorCodes
 }
 
 
-FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, ssize_t filter_column_)
-	: filter_column(filter_column_)
+FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, ExpressionActionsPtr expression_, ssize_t filter_column_)
+	: expression(expression_), filter_column(filter_column_)
 {
 	children.push_back(input_);
 }
 
-FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, const String & filter_column_name_)
-	: filter_column(-1), filter_column_name(filter_column_name_)
+FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, ExpressionActionsPtr expression_, const String & filter_column_name_)
+	: expression(expression_), filter_column(-1), filter_column_name(filter_column_name_)
 {
 	children.push_back(input_);
+}
+
+
+String FilterBlockInputStream::getName() const { return "Filter"; }
+
+
+String FilterBlockInputStream::getID() const
+{
+	std::stringstream res;
+	res << "Filter(" << children.back()->getID() << ", " << expression->getID() << ", " << filter_column << ", " << filter_column_name << ")";
+	return res.str();
+}
+
+
+const Block & FilterBlockInputStream::getTotals()
+{
+	if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&*children.back()))
+	{
+		totals = child->getTotals();
+		expression->executeOnTotals(totals);
+	}
+
+	return totals;
 }
 
 
 Block FilterBlockInputStream::readImpl()
 {
 	Block res;
+
+	if (is_first)
+	{
+		is_first = false;
+
+		const Block & sample_block = expression->getSampleBlock();
+
+		/// Найдём настоящую позицию столбца с фильтром в блоке.
+		if (filter_column == -1)
+			filter_column = sample_block.getPositionByName(filter_column_name);
+
+		/// Проверим, не является ли столбец с фильтром константой, содержащей 0 или 1.
+		ColumnPtr column = sample_block.getByPosition(filter_column).column;
+
+		if (column)
+		{
+			const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(&*column);
+
+			if (column_const)
+			{
+				if (column_const->getData())
+					filter_always_true = true;
+				else
+					filter_always_false = true;
+			}
+		}
+
+		if (filter_always_false)
+			return res;
+	}
 
 	/// Пока не встретится блок, после фильтрации которого что-нибудь останется, или поток не закончится.
 	while (1)
@@ -37,24 +91,13 @@ Block FilterBlockInputStream::readImpl()
 		if (!res)
 			return res;
 
-		/// Найдём настоящую позицию столбца с фильтром в блоке.
-		if (filter_column == -1)
-			filter_column = res.getPositionByName(filter_column_name);
+		expression->execute(res);
+
+		if (filter_always_true)
+			return res;
 
 		size_t columns = res.columns();
 		ColumnPtr column = res.getByPosition(filter_column).column;
-
-		/** Если фильтр - константа (например, написано WHERE 1),
-		  *  то либо вернём пустой блок, либо вернём блок без изменений.
-		  */
-		const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(&*column);
-		if (column_const)
-		{
-			if (!column_const->getData())
-				res.clear();
-
-			return res;
-		}
 
 		const ColumnUInt8 * column_vec = typeid_cast<const ColumnUInt8 *>(&*column);
 		if (!column_vec)
