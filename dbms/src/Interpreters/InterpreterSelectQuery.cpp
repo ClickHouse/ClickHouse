@@ -497,7 +497,9 @@ void InterpreterSelectQuery::executeSingleQuery()
 		if (hasNoData())
 			return;
 
-		/// Перед выполнением HAVING уберем из блока лишние столбцы (в основном, ключи агрегации).
+		/// Перед выполнением WHERE и HAVING уберем из блока лишние столбцы (в основном, ключи агрегации).
+		if (has_where)
+			before_where->prependProjectInput();
 		if (has_having)
 			before_having->prependProjectInput();
 
