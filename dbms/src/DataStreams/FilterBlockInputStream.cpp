@@ -113,7 +113,31 @@ Block FilterBlockInputStream::readImpl()
 
 		const ColumnUInt8 * column_vec = typeid_cast<const ColumnUInt8 *>(&*column);
 		if (!column_vec)
-			throw Exception("Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+		{
+			/** Бывает, что на этапе анализа выражений (в sample_block) столбцы-константы ещё не вычислены,
+			  *  а сейчас - вычислены. То есть, не все случаи покрываются кодом выше.
+			  * Это происходит, если функция возвращает константу для неконстантного аргумента.
+			  * Например, функция ignore.
+			  */
+			const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(&*column);
+
+			if (column_const)
+			{
+				if (column_const->getData())
+				{
+					filter_always_true = true;
+				}
+				else
+				{
+					filter_always_false = true;
+					res.clear();
+				}
+				return res;
+			}
+
+			throw Exception("Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8.",
+				ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+		}
 
 		const IColumn::Filter & filter = column_vec->getData();
 
