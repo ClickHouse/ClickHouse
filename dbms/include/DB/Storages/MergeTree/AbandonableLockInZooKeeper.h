@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+}
+
 /** Примитив синхронизации. Работает следующим образом:
   * При создании создает неэфемерную инкрементную ноду и помечает ее как заблокированную (LOCKED).
   * unlock() разблокирует ее (UNLOCKED).

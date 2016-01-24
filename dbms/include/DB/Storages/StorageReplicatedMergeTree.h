@@ -358,6 +358,12 @@ private:
 	  */
 	void checkPartAndAddToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String name_override = "");
 
+	/** Исходит из допущения, что такого куска ещё нигде нет (Это обеспечено, если номер куска выделен с помощью AbandonableLock).
+	  * Кладет в ops действия, добавляющие данные о куске в ZooKeeper.
+	  * Вызывать под TableStructureLock.
+	  */
+	void addNewPartToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String name_override = "");
+
 	/// Кладет в ops действия, удаляющие кусок из ZooKeeper.
 	void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
 
@@ -446,8 +452,14 @@ private:
 	  */
 	void releasePartitionMergeLock(const std::string & partition_name);
 
+
+	/// Проверить наличие узла в ZK. Если он есть - запомнить эту информацию, и затем сразу отвечать true.
+	std::unordered_set<std::string> existing_nodes_cache;
+	std::mutex existing_nodes_cache_mutex;
+	bool existsNodeCached(const std::string & path);
+
+
 	/// Перешардирование.
-private:
 	struct ReplicaSpaceInfo
 	{
 		long double factor = 0.0;
@@ -469,7 +481,6 @@ private:
 
 	using PartitionToMergeLock = std::map<std::string, PartitionMergeLockInfo>;
 
-private:
 	/** Проверяет, что структуры локальной и реплицируемых таблиц совпадают.
 	  */
 	void enforceShardsConsistency(const WeightedZooKeeperPaths & weighted_zookeeper_paths);
@@ -483,7 +494,6 @@ private:
 	  */
 	bool checkSpaceForResharding(const ReplicaToSpaceInfo & replica_to_space_info, size_t partition_size) const;
 
-private:
 	std::mutex mutex_partition_to_merge_lock;
 	PartitionToMergeLock partition_to_merge_lock;
 };

@@ -53,7 +53,7 @@ void ZooKeeper::processEvent(zhandle_t * zh, int type, int state, const char * p
 		if (type != ZOO_SESSION_EVENT)
 		{
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(watch->zk.mutex);
+				std::lock_guard<std::mutex> lock(watch->zk.mutex);
 				watch->zk.watch_store.erase(watch);
 			}
 			delete watch;
@@ -140,7 +140,7 @@ void * ZooKeeper::watchForEvent(EventPtr event)
 	{
 		WatchWithEvent * res = new WatchWithEvent(*this, event);
 		{
-			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+			std::lock_guard<std::mutex> lock(mutex);
 			watch_store.insert(res);
 			if (watch_store.size() % 10000 == 0)
 			{
@@ -621,13 +621,13 @@ Op::Create::Create(const std::string & path_, const std::string & value_, ACLPtr
 
 ACLPtr ZooKeeper::getDefaultACL()
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+	std::lock_guard<std::mutex> lock(mutex);
 	return default_acl;
 }
 
 void ZooKeeper::setDefaultACL(ACLPtr new_acl)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+	std::lock_guard<std::mutex> lock(mutex);
 	default_acl = new_acl;
 }
 

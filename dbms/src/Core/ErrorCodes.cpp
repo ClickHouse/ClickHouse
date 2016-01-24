@@ -323,6 +323,7 @@ namespace ErrorCodes
 	extern const int RESHARDING_INVALID_PARAMETERS = 317;
 	extern const int INVALID_SHARD_WEIGHT = 318;
 	extern const int SHARD_DOESNT_REFERENCE_TABLE = 319;
+	extern const int UNKNOWN_STATUS_OF_INSERT = 320;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;

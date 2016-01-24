@@ -860,6 +860,38 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(const MergeTreeData:
 }
 
 
+void StorageReplicatedMergeTree::addNewPartToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String part_name)
+{
+	auto zookeeper = getZooKeeper();
+
+	if (part_name.empty())
+		part_name = part->name;
+
+	check(part->columns);
+
+	auto acl = zookeeper->getDefaultACL();
+
+	ops.push_back(new zkutil::Op::Check(
+		zookeeper_path + "/columns",
+		columns_version));
+	ops.push_back(new zkutil::Op::Create(
+		replica_path + "/parts/" + part_name,
+		"",
+		acl,
+		zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(
+		replica_path + "/parts/" + part_name + "/columns",
+		part->columns.toString(),
+		acl,
+		zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(
+		replica_path + "/parts/" + part_name + "/checksums",
+		part->checksums.toString(),
+		acl,
+		zkutil::CreateMode::Persistent));
+}
+
+
 void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_event)
 {
 	if (queue.pullLogsToQueue(getZooKeeper(), next_update_event))
@@ -2453,7 +2485,8 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query, const Setti
 		if (ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*query))
 			insert_id = insert->insert_id;
 
-	return new ReplicatedMergeTreeBlockOutputStream(*this, insert_id, settings.insert_quorum);
+	return new ReplicatedMergeTreeBlockOutputStream(*this, insert_id,
+		settings.insert_quorum, settings.insert_quorum_timeout.totalMilliseconds());
 }
 
 
@@ -2975,12 +3008,33 @@ void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const Str
 }
 
 
+bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path)
+{
+	{
+		std::lock_guard<std::mutex> lock(existing_nodes_cache_mutex);
+		if (existing_nodes_cache.count(path))
+			return true;
+	}
+
+	auto zookeeper = getZooKeeper();
+	bool res = zookeeper->exists(path);
+
+	if (res)
+	{
+		std::lock_guard<std::mutex> lock(existing_nodes_cache_mutex);
+		existing_nodes_cache.insert(path);
+	}
+
+	return res;
+}
+
+
 AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const String & month_name)
 {
 	auto zookeeper = getZooKeeper();
 
 	String month_path = zookeeper_path + "/block_numbers/" + month_name;
-	if (!zookeeper->exists(month_path))
+	if (!existsNodeCached(month_path))
 	{
 		/// Создадим в block_numbers ноду для месяца и пропустим в ней N=RESERVED_BLOCK_NUMBERS значений инкремента.
 		/// Нужно, чтобы в будущем при необходимости можно было добавить данные в начало.

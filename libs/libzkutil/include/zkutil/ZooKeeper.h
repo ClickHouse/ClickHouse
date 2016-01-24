@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <common/logger_useful.h>
 
@@ -345,7 +346,7 @@ private:
 	std::string task_queue_path;
 	int32_t session_timeout_ms;
 
-	Poco::FastMutex mutex;
+	std::mutex mutex;
 	ACLPtr default_acl;
 	zhandle_t * impl;
 
