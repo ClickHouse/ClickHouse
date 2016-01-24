@@ -61,11 +61,19 @@ Block FilterBlockInputStream::readImpl()
 		const Block & sample_block = expression->getSampleBlock();
 
 		/// Найдём настоящую позицию столбца с фильтром в блоке.
-		if (filter_column == -1)
-			filter_column = sample_block.getPositionByName(filter_column_name);
+		/** sample_block имеет структуру результата вычисления выражения.
+		  * Но эта структура не обязательно совпадает с expression->execute(res) ниже,
+		  *  потому что выражение может применяться к блоку, который также содержит дополнительные,
+		  *  ненужные для данного выражения столбцы, но нужные позже, в следующих стадиях конвейера выполнения запроса.
+		  * Таких столбцов в sample_block не будет.
+		  * Поэтому, позиция столбца-фильтра в нём может быть другой.
+		  */
+		ssize_t filter_column_in_sample_block = filter_column;
+		if (filter_column_in_sample_block == -1)
+			filter_column_in_sample_block = sample_block.getPositionByName(filter_column_name);
 
 		/// Проверим, не является ли столбец с фильтром константой, содержащей 0 или 1.
-		ColumnPtr column = sample_block.getByPosition(filter_column).column;
+		ColumnPtr column = sample_block.getByPosition(filter_column_in_sample_block).column;
 
 		if (column)
 		{
@@ -95,6 +103,10 @@ Block FilterBlockInputStream::readImpl()
 
 		if (filter_always_true)
 			return res;
+
+		/// Найдём настоящую позицию столбца с фильтром в блоке.
+		if (filter_column == -1)
+			filter_column = res.getPositionByName(filter_column_name);
 
 		size_t columns = res.columns();
 		ColumnPtr column = res.getByPosition(filter_column).column;
