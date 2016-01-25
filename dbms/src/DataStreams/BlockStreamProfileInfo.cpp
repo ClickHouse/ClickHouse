@@ -31,6 +31,17 @@ void BlockStreamProfileInfo::write(WriteBuffer & out) const
 }
 
 
+void BlockStreamProfileInfo::setFrom(const BlockStreamProfileInfo & rhs)
+{
+	rows = rhs.rows;
+	blocks = rhs.blocks;
+	bytes = rhs.bytes;
+	applied_limit = rhs.applied_limit;
+	rows_before_limit = rhs.rows_before_limit;
+	calculated_rows_before_limit = rhs.calculated_rows_before_limit;
+}
+
+
 size_t BlockStreamProfileInfo::getRowsBeforeLimit() const
 {
 	if (!calculated_rows_before_limit)
@@ -75,22 +86,48 @@ void BlockStreamProfileInfo::calculateRowsBeforeLimit() const
 	/// есть ли Limit?
 	BlockStreamProfileInfos limits;
 	collectInfosForStreamsWithName("Limit", limits);
-	if (limits.empty())
-		return;
 
-	applied_limit = true;
+	if (!limits.empty())
+	{
+		applied_limit = true;
 
-	/** Берём количество строчек, прочитанных ниже PartialSorting-а, если есть, или ниже Limit-а.
-	  * Это нужно, потому что сортировка может вернуть только часть строк.
-	  */
-	BlockStreamProfileInfos partial_sortings;
-	collectInfosForStreamsWithName("PartialSorting", partial_sortings);
+		/** Берём количество строчек, прочитанных ниже PartialSorting-а, если есть, или ниже Limit-а.
+		  * Это нужно, потому что сортировка может вернуть только часть строк.
+		  */
+		BlockStreamProfileInfos partial_sortings;
+		collectInfosForStreamsWithName("PartialSorting", partial_sortings);
 
-	BlockStreamProfileInfos & limits_or_sortings = partial_sortings.empty() ? limits : partial_sortings;
+		BlockStreamProfileInfos & limits_or_sortings = partial_sortings.empty() ? limits : partial_sortings;
 
-	for (const auto & info_limit_or_sort : limits_or_sortings)
-		for (const auto & nested_info : info_limit_or_sort->nested_infos)
-			rows_before_limit += nested_info->rows;
+		for (const auto & info_limit_or_sort : limits_or_sortings)
+			for (const auto & nested_info : info_limit_or_sort->nested_infos)
+				rows_before_limit += nested_info->rows;
+	}
+	else
+	{
+		/// Тогда данные о rows_before_limit могут быть в RemoteBlockInputStream-е (приехать с удалённого сервера).
+
+		std::cerr << "Has no Limit\n";
+
+		BlockStreamProfileInfos remotes;
+		collectInfosForStreamsWithName("Remote", remotes);
+
+		if (remotes.empty())
+			return;
+
+		std::cerr << "Found Remote\n";
+
+		for (const auto & info : remotes)
+		{
+			if (info->applied_limit)
+			{
+				std::cerr << "Has info->applied_limit\n";
+
+				applied_limit = true;
+				rows_before_limit += info->rows_before_limit;
+			}
+		}
+	}
 }
 
 }

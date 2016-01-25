@@ -42,9 +42,12 @@ struct BlockStreamProfileInfo
 
 	void update(Block & block);
 
-	/// Методы для бинарной [де]сериализации
+	/// Методы для бинарной [де]сериализации. Передаются не все поля.
 	void read(ReadBuffer & in);
 	void write(WriteBuffer & out) const;
+
+	/// Установить поля из другого объекта, но только те, которые передаются по сети (методами выше).
+	void setFrom(const BlockStreamProfileInfo & rhs);
 
 private:
 	void calculateRowsBeforeLimit() const;
