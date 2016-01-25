@@ -1,6 +1,6 @@
 #pragma once
 
-#include <zkutil/ZooKeeper.h>
+#include <zkutil/ZooKeeperHolder.h>
 
 namespace zkutil
 {
@@ -8,10 +8,10 @@ namespace zkutil
 class Increment
 {
 public:
-	Increment(ZooKeeperPtr zk_, const std::string & path_)
-	: zk(zk_), path(path_)
+	Increment(ZooKeeperHolderPtr zk_holder_, const std::string & path_)
+	: zookeeper_holder(zk_holder_), path(path_)
 	{
-		zk->createAncestors(path);
+		zookeeper_holder->getZooKeeper()->createAncestors(path);
 	}
 	
 	size_t get()
@@ -23,16 +23,17 @@ public:
 		zkutil::Stat stat;
 		
 		bool success = false;
+		auto zookeeper = zookeeper_holder->getZooKeeper();
 		do
 		{
-			if (zk->tryGet(path, result_str, &stat))
+			if (zookeeper->tryGet(path, result_str, &stat))
 			{
 				result = std::stol(result_str) + 1;
-				success = zk->trySet(path, std::to_string(result), stat.version) == ZOK;
+				success = zookeeper->trySet(path, std::to_string(result), stat.version) == ZOK;
 			}
 			else
 			{
-				success = zk->tryCreate(path, std::to_string(result), zkutil::CreateMode::Persistent) == ZOK;
+				success = zookeeper->tryCreate(path, std::to_string(result), zkutil::CreateMode::Persistent) == ZOK;
 			}
 		}
 		while (!success);
@@ -40,7 +41,7 @@ public:
 		return result;
 	}
 private:
-	zkutil::ZooKeeperPtr zk;
+	zkutil::ZooKeeperHolderPtr zookeeper_holder;
 	std::string path;
 	Logger * log = &Logger::get("zkutil::Increment");
 };

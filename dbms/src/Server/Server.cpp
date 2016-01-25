@@ -1,27 +1,23 @@
 #include <sys/resource.h>
-#include <sys/file.h>
 
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Util/XMLConfiguration.h>
+#include <Poco/DirectoryIterator.h>
 
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
-#include <common/Revision.h>
 
-#include <DB/Common/ConfigProcessor.h>
 #include <ext/scope_guard.hpp>
 
 #include <memory>
-#include <thread>
-#include <atomic>
-#include <condition_variable>
 
 #include <DB/Common/Macros.h>
 #include <DB/Common/getFQDNOrHostName.h>
-#include <DB/Common/setThreadName.h>
+
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/ProcessList.h>
+
 #include <DB/Storages/System/StorageSystemNumbers.h>
 #include <DB/Storages/System/StorageSystemTables.h>
 #include <DB/Storages/System/StorageSystemParts.h>
@@ -38,128 +34,22 @@
 #include <DB/Storages/System/StorageSystemColumns.h>
 #include <DB/Storages/System/StorageSystemFunctions.h>
 #include <DB/Storages/System/StorageSystemClusters.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
-
-#include <DB/IO/copyData.h>
-#include <DB/IO/LimitReadBuffer.h>
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/Operators.h>
 
 #include <zkutil/ZooKeeper.h>
 
 #include "Server.h"
 #include "HTTPHandler.h"
+#include "ReplicasStatusHandler.h"
 #include "InterserverIOHTTPHandler.h"
 #include "OLAPHTTPHandler.h"
 #include "TCPHandler.h"
+#include "MetricsTransmitter.h"
+#include "UsersConfigReloader.h"
+#include "StatusFile.h"
 
-
-namespace
-{
-
-/**	Automatically sends difference of ProfileEvents to Graphite at beginning of every minute
-*/
-class ProfileEventsTransmitter
-{
-public:
-	~ProfileEventsTransmitter()
-	{
-		try
-		{
-			{
-				std::lock_guard<std::mutex> lock{mutex};
-				quit = true;
-			}
-
-			cond.notify_one();
-
-			thread.join();
-		}
-		catch (...)
-		{
-			DB::tryLogCurrentException(__FUNCTION__);
-		}
-	}
-
-private:
-	void run()
-	{
-		setThreadName("ProfileEventsTx");
-
-		const auto get_next_minute = [] {
-			return std::chrono::time_point_cast<std::chrono::minutes, std::chrono::system_clock>(
-				std::chrono::system_clock::now() + std::chrono::minutes(1)
-			);
-		};
-
-		std::unique_lock<std::mutex> lock{mutex};
-
-		while (true)
-		{
-			if (cond.wait_until(lock, get_next_minute(), [this] { return quit; }))
-				break;
-
-			transmitCounters();
-		}
-	}
-
-	void transmitCounters()
-	{
-		GraphiteWriter::KeyValueVector<size_t> key_vals{};
-		key_vals.reserve(ProfileEvents::END);
-
-		for (size_t i = 0; i < ProfileEvents::END; ++i)
-		{
-			const auto counter = ProfileEvents::counters[i];
-			const auto counter_increment = counter - prev_counters[i];
-			prev_counters[i] = counter;
-
-			std::string key{ProfileEvents::getDescription(static_cast<ProfileEvents::Event>(i))};
-			key_vals.emplace_back(event_path_prefix + key, counter_increment);
-		}
-
-		Daemon::instance().writeToGraphite(key_vals);
-	}
-
-	/// Значения счётчиков при предыдущей отправке (или нули, если ни разу не отправляли).
-	decltype(ProfileEvents::counters) prev_counters{};
-
-	bool quit = false;
-	std::mutex mutex;
-	std::condition_variable cond;
-	std::thread thread{&ProfileEventsTransmitter::run, this};
-
-	static constexpr auto event_path_prefix = "ClickHouse.ProfileEvents.";
-};
-
-}
 
 namespace DB
 {
-
-/** Каждые две секунды проверяет, не изменился ли конфиг.
-  *  Когда изменился, запускает на нем ConfigProcessor и вызывает setUsersConfig у контекста.
-  * NOTE: Не перезагружает конфиг, если изменились другие файлы, влияющие на обработку конфига: metrika.xml
-  *  и содержимое conf.d и users.d. Это можно исправить, переместив проверку времени изменения файлов в ConfigProcessor.
-  */
-class UsersConfigReloader
-{
-public:
-	UsersConfigReloader(const std::string & path, Context * context);
-	~UsersConfigReloader();
-private:
-	std::string path;
-	Context * context;
-
-	time_t file_modification_time;
-	std::atomic<bool> quit;
-	std::thread thread;
-
-	Logger * log;
-
-	void reloadIfNewer(bool force);
-	void run();
-};
 
 
 /// Отвечает "Ok.\n". Используется для проверки живости.
@@ -176,75 +66,6 @@ public:
 		catch (...)
 		{
 			tryLogCurrentException("PingRequestHandler");
-		}
-	}
-};
-
-
-/// Отвечает "Ok.\n", если все реплики на этом сервере не слишком сильно отстают. Иначе выводит информацию об отставании. TODO Вынести в отдельный файл.
-class ReplicasStatusHandler : public Poco::Net::HTTPRequestHandler
-{
-private:
-	Context & context;
-
-public:
-	ReplicasStatusHandler(Context & context_)
-		: context(context_)
-	{
-	}
-
-	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
-	{
-		try
-		{
-			/// Собираем набор реплицируемых таблиц.
-			Databases replicated_tables;
-			{
-				Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-
-				for (const auto & db : context.getDatabases())
-					for (const auto & table : db.second)
-						if (typeid_cast<const StorageReplicatedMergeTree *>(table.second.get()))
-							replicated_tables[db.first][table.first] = table.second;
-			}
-
-			const MergeTreeSettings & settings = context.getMergeTreeSettings();
-
-			bool ok = /*true*/false;
-			std::stringstream message;
-
-			for (const auto & db : replicated_tables)
-			{
-				for (const auto & table : db.second)
-				{
-					time_t absolute_delay = 0;
-					time_t relative_delay = 0;
-
-					static_cast<const StorageReplicatedMergeTree &>(*table.second).getReplicaDelays(absolute_delay, relative_delay);
-
-					if ((settings.min_absolute_delay_to_close && absolute_delay >= static_cast<time_t>(settings.min_absolute_delay_to_close))
-						|| (settings.min_relative_delay_to_close && relative_delay >= static_cast<time_t>(settings.min_relative_delay_to_close)))
-						ok = false;
-
-					message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(table.first)
-						<< "\tAbsolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".\n";
-				}
-			}
-
-			if (ok)
-			{
-				const char * data = "Ok.\n";
-				response.sendBuffer(data, strlen(data));
-			}
-			else
-			{
-				response.send() << message.rdbuf();
-			}
-		}
-		catch (...)
-		{
-			/// TODO Отправлять клиенту.
-			tryLogCurrentException("ReplicasStatusHandler");
 		}
 	}
 };
@@ -299,23 +120,29 @@ public:
 
 		const auto & uri = request.getURI();
 
+		if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
+		{
+			if (uri == "/" || uri == "/ping")
+				return new PingRequestHandler;
+			else if (0 == uri.compare(0, strlen("/replicas_status"), "/replicas_status"))
+				return new ReplicasStatusHandler(*server.global_context);
+		}
+
 		if (uri.find('?') != std::string::npos
 			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
 		{
 			return new HandlerType(server);
 		}
-		else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
-			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
+
+		if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
+			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
 		{
-			if (uri == "/" || uri == "/ping")
-				return new PingRequestHandler;
-			else if (uri == "/replicas_status")
-				return new ReplicasStatusHandler(*server.global_context);
-			else
-				return new NotFoundHandler;
+			return new NotFoundHandler;
 		}
-		else
-			return nullptr;
+
+		return nullptr;
 	}
 };
 
@@ -335,201 +162,6 @@ public:
 
 		return new TCPHandler(server, socket);
 	}
-};
-
-
-UsersConfigReloader::UsersConfigReloader(const std::string & path_, Context * context_)
-	: path(path_), context(context_), file_modification_time(0), quit(false), log(&Logger::get("UsersConfigReloader"))
-{
-	/// Если путь к конфигу не абсолютный, угадаем, относительно чего он задан.
-	/// Сначала поищем его рядом с основным конфигом, потом - в текущей директории.
-	if (path.empty() || path[0] != '/')
-	{
-		std::string main_config_path = Application::instance().config().getString("config-file", "config.xml");
-		std::string config_dir = Poco::Path(main_config_path).parent().toString();
-		if (Poco::File(config_dir + path).exists())
-			path = config_dir + path;
-	}
-
-	reloadIfNewer(true);
-	thread = std::thread(&UsersConfigReloader::run, this);
-}
-
-UsersConfigReloader::~UsersConfigReloader()
-{
-	try
-	{
-		quit = true;
-		thread.join();
-	}
-	catch (...)
-	{
-		tryLogCurrentException("~UsersConfigReloader");
-	}
-}
-
-void UsersConfigReloader::run()
-{
-	setThreadName("UserConfReload");
-
-	while (!quit)
-	{
-		std::this_thread::sleep_for(std::chrono::seconds(2));
-		reloadIfNewer(false);
-	}
-}
-
-void UsersConfigReloader::reloadIfNewer(bool force)
-{
-	Poco::File f(path);
-	if (!f.exists())
-	{
-		if (force)
-			throw Exception("Users config not found at: " + path, ErrorCodes::FILE_DOESNT_EXIST);
-		if (file_modification_time)
-		{
-			LOG_ERROR(log, "Users config not found at: " << path);
-			file_modification_time = 0;
-		}
-		return;
-	}
-	time_t new_modification_time = f.getLastModified().epochTime();
-	if (!force && new_modification_time == file_modification_time)
-		return;
-	file_modification_time = new_modification_time;
-
-	LOG_DEBUG(log, "Loading users config");
-
-	ConfigurationPtr config;
-
-	try
-	{
-		config = ConfigProcessor(!force).loadConfig(path);
-	}
-	catch (Poco::Exception & e)
-	{
-		if (force)
-			throw;
-
-		LOG_ERROR(log, "Error loading users config: " << e.what() << ": " << e.displayText());
-		return;
-	}
-	catch (...)
-	{
-		if (force)
-			throw;
-
-		LOG_ERROR(log, "Error loading users config.");
-		return;
-	}
-
-	try
-	{
-		context->setUsersConfig(config);
-	}
-	catch (Exception & e)
-	{
-		if (force)
-			throw;
-
-		LOG_ERROR(log, "Error updating users config: " << e.what() << ": " << e.displayText() << "\n" << e.getStackTrace().toString());
-	}
-	catch (Poco::Exception & e)
-	{
-		if (force)
-			throw;
-
-		LOG_ERROR(log, "Error updating users config: " << e.what() << ": " << e.displayText());
-	}
-	catch (...)
-	{
-		if (force)
-			throw;
-
-		LOG_ERROR(log, "Error updating users config.");
-	}
-}
-
-
-/** Обеспечивает, что с одной директорией с данными может одновременно работать не более одного сервера.
-  */
-class StatusFile : private boost::noncopyable
-{
-public:
-	StatusFile(const std::string & path_)
-		: path(path_)
-	{
-		/// Если файл уже существует. NOTE Незначительный race condition.
-		if (Poco::File(path).exists())
-		{
-			std::string contents;
-			{
-				ReadBufferFromFile in(path, 1024);
-				LimitReadBuffer limit_in(in, 1024);
-				WriteBufferFromString out(contents);
-				copyData(limit_in, out);
-			}
-
-			if (!contents.empty())
-				LOG_INFO(&Logger::get("StatusFile"), "Status file " << path << " already exists - unclean restart. Contents:\n" << contents);
-			else
-				LOG_INFO(&Logger::get("StatusFile"), "Status file " << path << " already exists and is empty - probably unclean hardware restart.");
-		}
-
-		fd = open(path.c_str(), O_WRONLY | O_CREAT, 0666);
-
-		if (-1 == fd)
-			throwFromErrno("Cannot open file " + path);
-
-		try
-		{
-			int flock_ret = flock(fd, LOCK_EX | LOCK_NB);
-			if (-1 == flock_ret)
-			{
-				if (errno == EWOULDBLOCK)
-					throw Exception("Cannot lock file " + path + ". Another server instance in same directory is already running.");
-				else
-					throwFromErrno("Cannot lock file " + path);
-			}
-
-			if (0 != ftruncate(fd, 0))
-				throwFromErrno("Cannot ftruncate " + path);
-
-			if (0 != lseek(fd, 0, SEEK_SET))
-				throwFromErrno("Cannot lseek " + path);
-
-			/// Записываем в файл информацию о текущем экземпляре сервера.
-			{
-				WriteBufferFromFileDescriptor out(fd, 1024);
-				out
-					<< "PID: " << getpid() << "\n"
-					<< "Started at: " << mysqlxx::DateTime(time(0)) << "\n"
-					<< "Revision: " << Revision::get() << "\n";
-			}
-		}
-		catch (...)
-		{
-			close(fd);
-			throw;
-		}
-	}
-
-	~StatusFile()
-	{
-		char buf[128];
-
-		if (0 != close(fd))
-			LOG_ERROR(&Logger::get("StatusFile"), "Cannot close file " << path << ", errno: "
-				<< errno << ", strerror: " << strerror_r(errno, buf, sizeof(buf)));
-
-		if (0 != unlink(path.c_str()))
-			LOG_ERROR(&Logger::get("StatusFile"), "Cannot unlink file " << path << ", errno: "
-				<< errno << ", strerror: " << strerror_r(errno, buf, sizeof(buf)));
-	}
-
-private:
-	const std::string path;
-	int fd = -1;
 };
 
 
@@ -704,8 +336,8 @@ int Server::main(const std::vector<std::string> & args)
 	);
 
 	{
-		const auto profile_events_transmitter = config().getBool("use_graphite", true)
-			? std::make_unique<ProfileEventsTransmitter>()
+		const auto metrics_transmitter = config().getBool("use_graphite", true)
+			? std::make_unique<MetricsTransmitter>()
 			: nullptr;
 
 		const std::string listen_host = config().getString("listen_host", "::");
