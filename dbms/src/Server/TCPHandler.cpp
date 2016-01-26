@@ -372,9 +372,6 @@ void TCPHandler::sendProfileInfo()
 	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
 	{
 		writeVarUInt(Protocol::Server::ProfileInfo, *out);
-
-		std::cerr << "Sending profile info, rows_before_limit: " << input->getInfo().getRowsBeforeLimit() << "\n";
-
 		input->getInfo().write(*out);
 		out->next();
 	}

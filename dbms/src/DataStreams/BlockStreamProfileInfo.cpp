@@ -106,23 +106,16 @@ void BlockStreamProfileInfo::calculateRowsBeforeLimit() const
 	else
 	{
 		/// Тогда данные о rows_before_limit могут быть в RemoteBlockInputStream-е (приехать с удалённого сервера).
-
-		std::cerr << "Has no Limit\n";
-
 		BlockStreamProfileInfos remotes;
 		collectInfosForStreamsWithName("Remote", remotes);
 
 		if (remotes.empty())
 			return;
 
-		std::cerr << "Found Remote\n";
-
 		for (const auto & info : remotes)
 		{
 			if (info->applied_limit)
 			{
-				std::cerr << "Has info->applied_limit\n";
-
 				applied_limit = true;
 				rows_before_limit += info->rows_before_limit;
 			}

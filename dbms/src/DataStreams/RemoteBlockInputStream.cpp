@@ -176,7 +176,6 @@ Block RemoteBlockInputStream::readImpl()
 
 			case Protocol::Server::ProfileInfo:
 				info.setFrom(packet.profile_info);
-				std::cerr << "received, has_applied_limit: " << info.hasAppliedLimit() << ", rows_before_limit: " << info.getRowsBeforeLimit() << "\n";
 				break;
 
 			case Protocol::Server::Totals:
