@@ -75,6 +75,7 @@ namespace ErrorCodes
 	extern const int INVALID_PARTITIONS_INTERVAL;
 	extern const int RESHARDING_INVALID_PARAMETERS;
 	extern const int INVALID_SHARD_WEIGHT;
+	extern const int SHARD_DOESNT_REFERENCE_TABLE;
 }
 
 
@@ -334,7 +335,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 		/// Сервисы для перешардирования.
 
 		{
-			InterserverIOEndpointPtr endpoint = new RemoteDiskSpaceMonitor::Service(res->context);
+			InterserverIOEndpointPtr endpoint = new RemoteDiskSpaceMonitor::Service(res->full_path);
 			res->disk_space_monitor_endpoint_holder = get_endpoint_holder(endpoint);
 		}
 
@@ -401,6 +402,8 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/log", "",
 										 acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/blocks", "",
+										 acl, zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/detached_sharded_blocks", "",
 										 acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/block_numbers", "",
 										 acl, zkutil::CreateMode::Persistent));
@@ -2314,7 +2317,7 @@ void StorageReplicatedMergeTree::shutdown()
 	fetcher.cancel();
 
 	disk_space_monitor_endpoint_holder = nullptr;
-	disk_space_monitor_client.cancel();
+	free_disk_space_checker.cancel();
 
 	sharded_partition_sender_endpoint_holder = nullptr;
 	sharded_partition_sender_client.cancel();
@@ -2888,7 +2891,56 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 			zookeeper_path + "/log/log-", entry.toString(), zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
 	}
 
-	LOG_DEBUG(log, "Adding attaches to log");
+	std::string log_msg = "Adding attaches to log";
+
+	if (is_leader_node)
+	{
+		/// Если ATTACH PART выполняется в рамках перешардирования, обновляем информацию о блоках на шарде.
+		auto children = zookeeper->getChildren(zookeeper_path + "/detached_sharded_blocks");
+		if (!children.empty())
+		{
+			log_msg += ". Updating information about blocks in the context of the resharding operation.";
+
+			auto acl = zookeeper->getDefaultACL();
+
+			for (const auto & child : children)
+			{
+				std::string checksum = zookeeper->get(zookeeper_path + "/detached_sharded_blocks/" + child + "/checksum");
+				std::string number = zookeeper->get(zookeeper_path + "/detached_sharded_blocks/" + child + "/number");
+
+				ops.push_back(
+					new zkutil::Op::Create(
+						zookeeper_path + "/blocks/" + child,
+						"",
+						acl,
+						zkutil::CreateMode::Persistent));
+				ops.push_back(
+					new zkutil::Op::Create(
+						zookeeper_path + "/blocks/" + child + "/checksum",
+						checksum,
+						acl,
+						zkutil::CreateMode::Persistent));
+				ops.push_back(
+					new zkutil::Op::Create(
+						zookeeper_path + "/blocks/" + child + "/number",
+						number,
+						acl,
+						zkutil::CreateMode::Persistent));
+
+				ops.push_back(
+					new zkutil::Op::Remove(
+						zookeeper_path + "/detached_sharded_blocks/" + child + "/number", -1));
+				ops.push_back(
+					new zkutil::Op::Remove(
+						zookeeper_path + "/detached_sharded_blocks/" + child + "/checksum", -1));
+				ops.push_back(
+					new zkutil::Op::Remove(
+						zookeeper_path + "/detached_sharded_blocks/" + child, -1));
+			}
+		}
+	}
+
+	LOG_DEBUG(log, log_msg);
 
 	zookeeper->multi(ops);
 
@@ -3429,18 +3481,26 @@ void StorageReplicatedMergeTree::freezePartition(const Field & partition, const 
 }
 
 void StorageReplicatedMergeTree::reshardPartitions(const String & database_name, const Field & first_partition, const Field & last_partition,
-	const WeightedZooKeeperPaths & weighted_zookeeper_paths, const ASTPtr & sharding_key_expr,
+	const WeightedZooKeeperPaths & weighted_zookeeper_paths, const String & sharding_key,
 	const Settings & settings)
 {
 	auto & resharding_worker = context.getReshardingWorker();
 	if (!resharding_worker.isStarted())
-		throw Exception("Resharding background thread is not running.", ErrorCodes::RESHARDING_NO_WORKER);
+		throw Exception("Resharding worker is not running.", ErrorCodes::RESHARDING_NO_WORKER);
 
 	for (const auto & weighted_path : weighted_zookeeper_paths)
 	{
 		UInt64 weight = weighted_path.second;
 		if (weight == 0)
 			throw Exception("Shard has invalid weight", ErrorCodes::INVALID_SHARD_WEIGHT);
+	}
+
+	for (const auto & weighted_path : weighted_zookeeper_paths)
+	{
+		const std::string & path = weighted_path.first;
+		if ((path.length() <= getTableName().length()) ||
+			(path.substr(path.length() - getTableName().length()) != getTableName()))
+			throw Exception("Shard does not reference table", ErrorCodes::SHARD_DOESNT_REFERENCE_TABLE);
 	}
 
 	DayNum_t first_partition_num = !first_partition.isNull() ? MergeTreeData::getMonthDayNum(first_partition) : DayNum_t();
@@ -3488,7 +3548,7 @@ void StorageReplicatedMergeTree::reshardPartitions(const String & database_name,
 
 	/// Зарегистрировать фоновые задачи перешардирования.
 	for (const auto & partition : partition_list)
-		resharding_worker.submitJob(database_name, getTableName(), partition, weighted_zookeeper_paths, sharding_key_expr);
+		resharding_worker.submitJob(database_name, getTableName(), partition, weighted_zookeeper_paths, sharding_key);
 }
 
 void StorageReplicatedMergeTree::enforceShardsConsistency(const WeightedZooKeeperPaths & weighted_zookeeper_paths)
@@ -3581,8 +3641,8 @@ StorageReplicatedMergeTree::gatherReplicaSpaceInfo(const WeightedZooKeeperPaths 
 
 			InterserverIOEndpointLocation location(replica_path, address.host, address.replication_port);
 
-			tasks[i] = Tasks::value_type(std::bind(&RemoteDiskSpaceMonitor::Client::getFreeSpace,
-				&disk_space_monitor_client, location));
+			tasks[i] = Tasks::value_type(std::bind(&RemoteDiskSpaceMonitor::Client::getFreeDiskSpace,
+				&free_disk_space_checker, location));
 			pool.schedule([i, &tasks]{ tasks[i](); });
 		}
 	}

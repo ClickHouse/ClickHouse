@@ -1,9 +1,7 @@
 #pragma once
 
-#include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
 #include <DB/Storages/AlterCommands.h>
 #include <common/logger_useful.h>
-#include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/SharedPtr.h>
 #include <string>
 #include <thread>
@@ -24,8 +22,7 @@ class ReshardingJob;
 class ReshardingWorker final
 {
 public:
-	ReshardingWorker(const Poco::Util::AbstractConfiguration & config,
-		const std::string & config_name, Context & context_);
+	ReshardingWorker(Context & context_);
 
 	ReshardingWorker(const ReshardingWorker &) = delete;
 	ReshardingWorker & operator=(const ReshardingWorker &) = delete;
@@ -40,12 +37,18 @@ public:
 		const std::string & table_name,
 		const std::string & partition,
 		const WeightedZooKeeperPaths & weighted_zookeeper_paths,
-		const ASTPtr & sharding_key_expr);
+		const std::string & sharding_key);
+
+	/// Прислать запрос на перешардирование.
+	void submitJob(const ReshardingJob & job);
 
 	/// Был ли поток запущен?
 	bool isStarted() const;
 
 private:
+	/// Прислать запрос на перешардирование (внутренняя версия).
+	void submitJobImpl(const std::string & serialized_job);
+
 	/// Следить за появлением новых задач. Выполнить их последовательно.
 	void pollAndExecute();
 
@@ -78,17 +81,18 @@ private:
 	/// Принудительно завершить поток.
 	void abortIfRequested() const;
 
+	/// Был ли поток завершён?
+	bool hasAborted(const Exception & ex) const;
+
 private:
 	Context & context;
 	Logger * log;
-	std::unique_ptr<MergeTreeDataMerger> merger;
 	std::thread polling_thread;
-	mutable std::mutex cancel_mutex;
 	std::string host_task_queue_path;
 	std::atomic<bool> is_started{false};
 	std::atomic<bool> must_stop{false};
 };
 
-using ReshardingWorkerPtr = std::shared_ptr<ReshardingWorker>;
+using ReshardingWorkerPtr = Poco::SharedPtr<ReshardingWorker>;
 
 }

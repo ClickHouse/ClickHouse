@@ -16,7 +16,7 @@ public:
 
 	ReshardingJob(const std::string & database_name_, const std::string & table_name_,
 		const std::string & partition_, const WeightedZooKeeperPaths & paths_,
-		const ASTPtr & sharding_key_expr_);
+		const std::string & sharding_key_);
 
 	ReshardingJob(const ReshardingJob &) = delete;
 	ReshardingJob & operator=(const ReshardingJob &) = delete;
@@ -29,7 +29,7 @@ public:
 	std::string table_name;
 	std::string partition;
 	WeightedZooKeeperPaths paths;
-	ASTPtr sharding_key_expr;
+	std::string sharding_key;
 };
 
 }

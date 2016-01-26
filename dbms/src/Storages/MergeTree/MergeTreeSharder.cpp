@@ -4,8 +4,6 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/IO/HashingWriteBuffer.h>
-#include <DB/Common/BlockFilterCreator.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
 
 #include <ctime>
 
@@ -18,6 +16,47 @@ namespace ErrorCodes
 	extern const int TYPE_MISMATCH;
 }
 
+namespace
+{
+
+template <typename T>
+std::vector<IColumn::Filter> createFiltersImpl(const size_t num_rows, const IColumn * column, size_t num_shards, const std::vector<size_t> & slots)
+{
+	const auto total_weight = slots.size();
+	std::vector<IColumn::Filter> filters(num_shards);
+
+	/** Деление отрицательного числа с остатком на положительное, в C++ даёт отрицательный остаток.
+	  * Для данной задачи это не подходит. Поэтому, будем обрабатывать знаковые типы как беззнаковые.
+	  * Это даёт уже что-то совсем не похожее на деление с остатком, но подходящее для данной задачи.
+	  */
+	using UnsignedT = typename std::make_unsigned<T>::type;
+
+	/// const columns contain only one value, therefore we do not need to read it at every iteration
+	if (column->isConst())
+	{
+		const auto data = typeid_cast<const ColumnConst<T> *>(column)->getData();
+		const auto shard_num = slots[static_cast<UnsignedT>(data) % total_weight];
+
+		for (size_t i = 0; i < num_shards; ++i)
+			filters[i].assign(num_rows, static_cast<UInt8>(shard_num == i));
+	}
+	else
+	{
+		const auto & data = typeid_cast<const ColumnVector<T> *>(column)->getData();
+
+		for (size_t i = 0; i < num_shards; ++i)
+		{
+			filters[i].resize(num_rows);
+			for (size_t j = 0; j < num_rows; ++j)
+				filters[i][j] = slots[static_cast<UnsignedT>(data[j]) % total_weight] == i;
+		}
+	}
+
+	return filters;
+}
+
+}
+
 ShardedBlockWithDateInterval::ShardedBlockWithDateInterval(const Block & block_,
 	size_t shard_no_, UInt16 min_date_, UInt16 max_date_)
 	: block(block_), shard_no(shard_no_), min_date(min_date_), max_date(max_date_)
@@ -25,9 +64,7 @@ ShardedBlockWithDateInterval::ShardedBlockWithDateInterval(const Block & block_,
 }
 
 MergeTreeSharder::MergeTreeSharder(MergeTreeData & data_, const ReshardingJob & job_)
-	: data(data_), job(job_), log(&Logger::get(data.getLogName() + " (Sharder)")),
-	sharding_key_expr(ExpressionAnalyzer(job.sharding_key_expr, data.context, nullptr, data.getColumnsList()).getActions(false)),
-	sharding_key_column_name(job.sharding_key_expr->getColumnName())
+	: data(data_), job(job_), log(&Logger::get(data.getLogName() + " (Sharder)"))
 {
 	for (size_t shard_no = 0; shard_no < job.paths.size(); ++shard_no)
 	{
@@ -164,19 +201,19 @@ std::vector<IColumn::Filter> MergeTreeSharder::createFilters(Block block)
 	using create_filters_sig = std::vector<IColumn::Filter>(size_t, const IColumn *, size_t num_shards, const std::vector<size_t> & slots);
 	/// hashmap of pointers to functions corresponding to each integral type
 	static std::unordered_map<std::string, create_filters_sig *> creators{
-		{ TypeName<UInt8>::get(), &BlockFilterCreator<UInt8>::perform },
-		{ TypeName<UInt16>::get(), &BlockFilterCreator<UInt16>::perform },
-		{ TypeName<UInt32>::get(), &BlockFilterCreator<UInt32>::perform },
-		{ TypeName<UInt64>::get(), &BlockFilterCreator<UInt64>::perform },
-		{ TypeName<Int8>::get(), &BlockFilterCreator<Int8>::perform },
-		{ TypeName<Int16>::get(), &BlockFilterCreator<Int16>::perform },
-		{ TypeName<Int32>::get(), &BlockFilterCreator<Int32>::perform },
-		{ TypeName<Int64>::get(), &BlockFilterCreator<Int64>::perform },
+		{ TypeName<UInt8>::get(), &createFiltersImpl<UInt8> },
+		{ TypeName<UInt16>::get(), &createFiltersImpl<UInt16> },
+		{ TypeName<UInt32>::get(), &createFiltersImpl<UInt32> },
+		{ TypeName<UInt64>::get(), &createFiltersImpl<UInt64> },
+		{ TypeName<Int8>::get(), &createFiltersImpl<Int8> },
+		{ TypeName<Int16>::get(), &createFiltersImpl<Int16> },
+		{ TypeName<Int32>::get(), &createFiltersImpl<Int32> },
+		{ TypeName<Int64>::get(), &createFiltersImpl<Int64> },
 	};
 
-	sharding_key_expr->execute(block);
+	data.getPrimaryExpression()->execute(block);
 
-	const auto & key_column = block.getByName(sharding_key_column_name);
+	const auto & key_column = block.getByName(job.sharding_key);
 
 	/// check that key column has valid type
 	const auto it = creators.find(key_column.type->getName());

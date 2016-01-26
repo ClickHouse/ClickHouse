@@ -320,11 +320,14 @@ int Server::main(const std::vector<std::string> & args)
 
 	global_context->setCurrentDatabase(config().getString("default_database", "default"));
 
-	if (has_zookeeper && config().has("resharding"))
+	if (has_zookeeper)
 	{
-		auto resharding_worker = std::make_shared<ReshardingWorker>(config(), "resharding", *global_context);
-		global_context->setReshardingWorker(resharding_worker);
-		resharding_worker->start();
+		zkutil::ZooKeeperPtr zookeeper = global_context->getZooKeeper();
+		if (!zookeeper->getTaskQueuePath().empty())
+		{
+			auto & resharding_worker = global_context->getReshardingWorker();
+			resharding_worker.start();
+		}
 	}
 
 	SCOPE_EXIT(

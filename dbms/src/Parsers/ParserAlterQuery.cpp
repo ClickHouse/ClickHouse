@@ -255,7 +255,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 		else if (s_reshard.ignore(pos, end, max_parsed_pos, expected))
 		{
 			ParserList weighted_zookeeper_paths_p(ParserPtr(new ParserWeightedZooKeeperPath), ParserPtr(new ParserString(",")), false);
-			ParserExpressionWithOptionalAlias parser_sharding_key_expr(false);
+			ParserIdentifier sharding_key_parser;
 
 			ws.ignore(pos, end);
 
@@ -294,8 +294,11 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 
 			ws.ignore(pos, end);
 
-			if (!parser_sharding_key_expr.parse(pos, end, params.sharding_key_expr, max_parsed_pos, expected))
+			ASTPtr ast_sharding_key;
+			if (!sharding_key_parser.parse(pos, end, ast_sharding_key, max_parsed_pos, expected))
 				return false;
+
+			params.sharding_key = typeid_cast<const ASTIdentifier &>(*ast_sharding_key).name;
 
 			ws.ignore(pos, end);
 

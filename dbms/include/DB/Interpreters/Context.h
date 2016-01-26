@@ -251,7 +251,6 @@ public:
 
 	BackgroundProcessingPool & getBackgroundPool();
 
-	void setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker);
 	ReshardingWorker & getReshardingWorker();
 
 	/** Очистить кэши разжатых блоков и засечек.

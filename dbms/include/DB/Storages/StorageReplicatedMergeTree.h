@@ -136,7 +136,7 @@ public:
 	void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
 	void freezePartition(const Field & partition, const Settings & settings) override;
 	void reshardPartitions(const String & database_name, const Field & first_partition, const Field & last_partition,
-		const WeightedZooKeeperPaths & weighted_zookeeper_paths, const ASTPtr & sharding_key_expr,
+		const WeightedZooKeeperPaths & weighted_zookeeper_paths, const String & sharding_key,
 		const Settings & settings) override;
 
 	/** Удаляет реплику из ZooKeeper. Если других реплик нет, удаляет всю таблицу из ZooKeeper.
@@ -257,7 +257,7 @@ private:
 	MergeTreeDataMerger merger;
 
 	DataPartsExchange::Fetcher fetcher;
-	RemoteDiskSpaceMonitor::Client disk_space_monitor_client;
+	RemoteDiskSpaceMonitor::Client free_disk_space_checker;
 	ShardedPartitionSender::Client sharded_partition_sender_client;
 	RemoteQueryExecutor::Client remote_query_executor_client;
 

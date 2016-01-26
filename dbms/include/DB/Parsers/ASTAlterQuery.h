@@ -70,7 +70,7 @@ public:
 		  */
 		ASTPtr last_partition;
 		ASTPtr weighted_zookeeper_paths;
-		ASTPtr sharding_key_expr;
+		String sharding_key;
 
 		/// deep copy
 		void clone(Parameters & p) const;
