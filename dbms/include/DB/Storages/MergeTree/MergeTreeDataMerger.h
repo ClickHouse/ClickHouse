@@ -8,7 +8,6 @@ namespace DB
 {
 
 class MergeListEntry;
-class ReshardingJob;
 
 
 /** Умеет выбирать куски для слияния и сливать их.
@@ -40,15 +39,11 @@ public:
 		bool only_small,
 		const AllowedMergingPredicate & can_merge);
 
-	/** Выбрать все куски принадлежащие одной партиции.
-	  */
-	MergeTreeData::DataPartsVector selectAllPartsFromPartition(DayNum_t partition);
-
 	/** Сливает куски.
 	  * Если reservation != nullptr, то и дело уменьшает размер зарезервированного места
 	  *  приблизительно пропорционально количеству уже выписанных данных.
 	  */
-	MergeTreeData::MutableDataPartPtr mergeParts(
+	MergeTreeData::DataPartPtr mergeParts(
 		const MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeListEntry & merge_entry,
 		size_t aio_threshold, MergeTreeData::Transaction * out_transaction = nullptr,
 		DiskSpaceMonitor::Reservation * disk_reservation = nullptr);

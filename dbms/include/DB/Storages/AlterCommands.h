@@ -6,10 +6,6 @@
 namespace DB
 {
 
-/// Для RESHARD PARTITION.
-using WeightedZooKeeperPath = std::pair<String, UInt64>;
-using WeightedZooKeeperPaths = std::vector<WeightedZooKeeperPath>;
-
 /// Операция из запроса ALTER (кроме манипуляции с PART/PARTITION). Добавление столбцов типа Nested не развернуто в добавление отдельных столбцов.
 struct AlterCommand
 {

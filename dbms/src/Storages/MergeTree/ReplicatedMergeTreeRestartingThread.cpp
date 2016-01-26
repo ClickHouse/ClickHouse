@@ -161,16 +161,6 @@ void ReplicatedMergeTreeRestartingThread::run()
 	{
 		storage.endpoint_holder->cancel();
 		storage.endpoint_holder = nullptr;
-
-		storage.disk_space_monitor_endpoint_holder->cancel();
-		storage.disk_space_monitor_endpoint_holder = nullptr;
-
-		storage.sharded_partition_sender_endpoint_holder->cancel();
-		storage.sharded_partition_sender_endpoint_holder = nullptr;
-
-		storage.remote_query_executor_endpoint_holder->cancel();
-		storage.remote_query_executor_endpoint_holder = nullptr;
-
 		partialShutdown();
 	}
 	catch (...)

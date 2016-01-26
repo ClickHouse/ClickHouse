@@ -61,13 +61,12 @@ void ZooKeeper::processEvent(zhandle_t * zh, int type, int state, const char * p
 	}
 }
 
-void ZooKeeper::init(const std::string & hosts_, int32_t session_timeout_ms_, const std::string & task_queue_path_)
+void ZooKeeper::init(const std::string & hosts_, int32_t session_timeout_ms_)
 {
 	log = &Logger::get("ZooKeeper");
 	zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
 	hosts = hosts_;
 	session_timeout_ms = session_timeout_ms_;
-	task_queue_path = task_queue_path_;
 
 	impl = zookeeper_init(hosts.c_str(), nullptr, session_timeout_ms, nullptr, nullptr, 0);
 	ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
@@ -105,10 +104,6 @@ struct ZooKeeperArgs
 			{
 				session_timeout_ms = config.getInt(config_name + "." + key);
 			}
-			else if (key == "task_queue_path")
-			{
-				task_queue_path = config.getString(config_name + "." + key);
-			}
 			else throw KeeperException(std::string("Unknown key ") + key + " in config file");
 		}
 
@@ -125,13 +120,12 @@ struct ZooKeeperArgs
 
 	std::string hosts;
 	size_t session_timeout_ms;
-	std::string task_queue_path;
 };
 
 ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
 {
 	ZooKeeperArgs args(config, config_name);
-	init(args.hosts, args.session_timeout_ms, args.task_queue_path);
+	init(args.hosts, args.session_timeout_ms);
 }
 
 void * ZooKeeper::watchForEvent(EventPtr event)
@@ -584,10 +578,6 @@ void ZooKeeper::waitForDisappear(const std::string & path)
 	}
 }
 
-std::string ZooKeeper::getTaskQueuePath() const
-{
-	return task_queue_path;
-}
 
 ZooKeeper::~ZooKeeper()
 {

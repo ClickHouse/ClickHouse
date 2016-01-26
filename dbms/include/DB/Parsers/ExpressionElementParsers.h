@@ -216,13 +216,5 @@ protected:
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
-/** Путь шарда в ZooKeeper вместе с весом.
-  */
-class ParserWeightedZooKeeperPath : public IParserBase
-{
-protected:
-	const char * getName() const { return "weighted ZooKeeper path"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
-};
 
 }

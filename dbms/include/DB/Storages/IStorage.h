@@ -206,7 +206,7 @@ public:
 	  * Этот метод должен полностью выполнить запрос ALTER, самостоятельно заботясь о блокировках.
 	  * Для обновления метаданных таблицы на диске этот метод должен вызвать InterpreterAlterQuery::updateMetadata.
 	  */
-	virtual void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
+	virtual void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
 	{
 		throw Exception("Method alter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
@@ -237,15 +237,6 @@ public:
 	virtual void freezePartition(const Field & partition, const Settings & settings)
 	{
 		throw Exception("Method freezePartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-	}
-
-	/** Выполнить запрос RESHARD PARTITION.
-	  */
-	virtual void reshardPartitions(const String & database_name, const Field & first_partition, const Field & last_partition,
-		const WeightedZooKeeperPaths & weighted_zookeeper_paths, const String & sharding_key,
-		const Settings & settings)
-	{
-		throw Exception("Method reshardPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	/** Выполнить какую-либо фоновую работу. Например, объединение кусков в таблице типа MergeTree.

@@ -161,7 +161,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 	/// TODO: Можно обновить названия логгеров у this, data, reader, writer, merger.
 }
 
-void StorageMergeTree::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
+void StorageMergeTree::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
 {
 	/// NOTE: Здесь так же как в ReplicatedMergeTree можно сделать ALTER, не блокирующий запись данных надолго.
 	const MergeTreeMergeBlocker merge_blocker{merger};
