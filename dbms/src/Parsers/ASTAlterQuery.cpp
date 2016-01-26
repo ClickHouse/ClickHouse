@@ -19,6 +19,7 @@ void ASTAlterQuery::Parameters::clone(Parameters & p) const
 	if (partition)		p.partition = partition->clone();
 	if (last_partition)	p.last_partition = last_partition->clone();
 	if (weighted_zookeeper_paths) p.weighted_zookeeper_paths = weighted_zookeeper_paths->clone();
+	if (sharding_key_expr) p.sharding_key_expr = sharding_key_expr->clone();
 }
 
 void ASTAlterQuery::addParameters(const Parameters & params)
@@ -34,6 +35,8 @@ void ASTAlterQuery::addParameters(const Parameters & params)
 		children.push_back(params.last_partition);
 	if (params.weighted_zookeeper_paths)
 		children.push_back(params.weighted_zookeeper_paths);
+	if (params.sharding_key_expr)
+		children.push_back(params.sharding_key_expr);
 }
 
 ASTAlterQuery::ASTAlterQuery(StringRange range_) : IAST(range_)
@@ -153,8 +156,9 @@ void ASTAlterQuery::formatImpl(const FormatSettings & settings, FormatState & st
 			settings.ostr << settings.nl_or_ws;
 
 			settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
-				<< "USING " << (settings.hilite ? hilite_none : "")
-				<< p.sharding_key;
+				<< "USING " << (settings.hilite ? hilite_none : "");
+
+			p.sharding_key_expr->formatImpl(settings, state, frame);
 		}
 		else
 			throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);

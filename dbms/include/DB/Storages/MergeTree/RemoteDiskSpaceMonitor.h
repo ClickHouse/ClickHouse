@@ -7,6 +7,8 @@
 namespace DB
 {
 
+class Context;
+
 namespace RemoteDiskSpaceMonitor
 {
 
@@ -15,14 +17,14 @@ namespace RemoteDiskSpaceMonitor
 class Service final : public InterserverIOEndpoint
 {
 public:
-	Service(const std::string & path_);
+	Service(const Context & context_);
 	Service(const Service &) = delete;
 	Service & operator=(const Service &) = delete;
 	std::string getId(const std::string & node_id) const override;
 	void processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out) override;
 
 private:
-	const std::string path;
+	const Context & context;
 };
 
 /** Клиент для получения информации о свободном месте на удалённом диске.
@@ -33,7 +35,7 @@ public:
 	Client() = default;
 	Client(const Client &) = delete;
 	Client & operator=(const Client &) = delete;
-	size_t getFreeDiskSpace(const InterserverIOEndpointLocation & location) const;
+	size_t getFreeSpace(const InterserverIOEndpointLocation & location) const;
 	void cancel() { is_cancelled = true; }
 
 private:

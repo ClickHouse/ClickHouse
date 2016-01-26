@@ -822,16 +822,19 @@ BackgroundProcessingPool & Context::getBackgroundPool()
 	return *shared->background_pool;
 }
 
+void Context::setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	if (shared->resharding_worker)
+		throw Exception("Resharding background thread has already been set.", ErrorCodes::LOGICAL_ERROR);
+	shared->resharding_worker = resharding_worker;
+}
+
 ReshardingWorker & Context::getReshardingWorker()
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-
-	if (!shared->zookeeper)
-		throw Exception("Resharding background processing requires ZooKeeper", ErrorCodes::LOGICAL_ERROR);
-
 	if (!shared->resharding_worker)
-		shared->resharding_worker = new ReshardingWorker(*this);
-
+		throw Exception("Resharding background thread not set.", ErrorCodes::LOGICAL_ERROR);
 	return *shared->resharding_worker;
 }
 
