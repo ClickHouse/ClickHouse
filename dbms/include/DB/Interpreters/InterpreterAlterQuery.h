@@ -55,7 +55,7 @@ private:
 		/// Для RESHARD PARTITION.
 		Field last_partition;
 		WeightedZooKeeperPaths weighted_zookeeper_paths;
-		String sharding_key;
+		ASTPtr sharding_key_expr;
 
 		static PartitionCommand dropPartition(const Field & partition, bool detach, bool unreplicated)
 		{
@@ -78,9 +78,9 @@ private:
 		}
 
 		static PartitionCommand reshardPartitions(const Field & first_partition_, const Field & last_partition_,
-			const WeightedZooKeeperPaths & weighted_zookeeper_paths_, const String & sharding_key_)
+			const WeightedZooKeeperPaths & weighted_zookeeper_paths_, const ASTPtr & sharding_key_expr)
 		{
-			return {RESHARD_PARTITION, first_partition_, false, false, false, {}, last_partition_, weighted_zookeeper_paths_, sharding_key_};
+			return {RESHARD_PARTITION, first_partition_, false, false, false, {}, last_partition_, weighted_zookeeper_paths_, sharding_key_expr};
 		}
 	};
 

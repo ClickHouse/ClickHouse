@@ -56,6 +56,8 @@ private:
 	const ReshardingJob & job;
 	Logger * log;
 	std::vector<size_t> slots;
+	ExpressionActionsPtr sharding_key_expr;
+	std::string sharding_key_column_name;
 };
 
 }

@@ -11,6 +11,7 @@
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Common/getFQDNOrHostName.h>
+#include <DB/Common/Increment.h>
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/Context.h>
 #include <common/threadpool.hpp>
@@ -30,7 +31,8 @@ namespace ErrorCodes
 	extern const int UNEXPECTED_ZOOKEEPER_ERROR;
 	extern const int PARTITION_COPY_FAILED;
 	extern const int PARTITION_ATTACH_FAILED;
-	extern const int RESHARDING_CLEANUP_FAILED;
+	extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+	extern const int INVALID_CONFIG_PARAMETER;
 }
 
 namespace
@@ -52,17 +54,52 @@ std::string createMergedPartName(const MergeTreeData::DataPartsVector & parts)
 	return ActiveDataPartSet::getPartName(left_date, right_date, parts.front()->left, parts.back()->right, level + 1);
 }
 
+class Arguments final
+{
+public:
+	Arguments(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
+	{
+		Poco::Util::AbstractConfiguration::Keys keys;
+		config.keys(config_name, keys);
+		for (const auto & key : keys)
+		{
+			if (key == "task_queue_path")
+			{
+				task_queue_path = config.getString(config_name + "." + key);
+				if (task_queue_path.empty())
+					throw Exception("Invalid parameter in resharding configuration", ErrorCodes::INVALID_CONFIG_PARAMETER);
+			}
+			else
+				throw Exception("Unknown parameter in resharding configuration", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+		}
+	}
+
+	Arguments(const Arguments &) = delete;
+	Arguments & operator=(const Arguments &) = delete;
+
+	std::string getTaskQueuePath() const
+	{
+		return task_queue_path;
+	}
+
+private:
+	std::string task_queue_path;
+};
+
 }
 
-ReshardingWorker::ReshardingWorker(Context & context_)
+ReshardingWorker::ReshardingWorker(const Poco::Util::AbstractConfiguration & config,
+	const std::string & config_name, Context & context_)
 	: context(context_), log(&Logger::get("ReshardingWorker"))
 {
+	Arguments arguments(config, config_name);
+
 	auto zookeeper = context.getZooKeeper();
 
 	host_task_queue_path = "/clickhouse";
 	zookeeper->createIfNotExists(host_task_queue_path, "");
 
-	host_task_queue_path += "/" + zookeeper->getTaskQueuePath();
+	host_task_queue_path += "/" + arguments.getTaskQueuePath();
 	zookeeper->createIfNotExists(host_task_queue_path, "");
 
 	host_task_queue_path += "/resharding";
@@ -75,6 +112,11 @@ ReshardingWorker::ReshardingWorker(Context & context_)
 ReshardingWorker::~ReshardingWorker()
 {
 	must_stop = true;
+	{
+		std::lock_guard<std::mutex> guard(cancel_mutex);
+		if (merger)
+			merger->cancel();
+	}
 	if (polling_thread.joinable())
 		polling_thread.join();
 }
@@ -88,16 +130,12 @@ void ReshardingWorker::submitJob(const std::string & database_name,
 	const std::string & table_name,
 	const std::string & partition,
 	const WeightedZooKeeperPaths & weighted_zookeeper_paths,
-	const std::string & sharding_key)
+	const ASTPtr & sharding_key_expr)
 {
-	auto str = ReshardingJob(database_name, table_name, partition, weighted_zookeeper_paths, sharding_key).toString();
-	submitJobImpl(str);
-}
-
-void ReshardingWorker::submitJob(const ReshardingJob & job)
-{
-	auto str = job.toString();
-	submitJobImpl(str);
+	auto serialized_job = ReshardingJob(database_name, table_name, partition, weighted_zookeeper_paths, sharding_key_expr).toString();
+	auto zookeeper = context.getZooKeeper();
+	(void) zookeeper->create(host_task_queue_path + "/task-", serialized_job,
+		zkutil::CreateMode::PersistentSequential);
 }
 
 bool ReshardingWorker::isStarted() const
@@ -105,23 +143,18 @@ bool ReshardingWorker::isStarted() const
 	return is_started;
 }
 
-void ReshardingWorker::submitJobImpl(const std::string & serialized_job)
-{
-	auto zookeeper = context.getZooKeeper();
-	(void) zookeeper->create(host_task_queue_path + "/task-", serialized_job,
-		zkutil::CreateMode::PersistentSequential);
-}
-
 void ReshardingWorker::pollAndExecute()
 {
+	bool error = false;
+
 	try
 	{
 		bool old_val = false;
 		if (!is_started.compare_exchange_strong(old_val, true, std::memory_order_seq_cst,
 			std::memory_order_relaxed))
-			throw Exception("Resharding worker thread already started", ErrorCodes::LOGICAL_ERROR);
+			throw Exception("Resharding background thread already started", ErrorCodes::LOGICAL_ERROR);
 
-		LOG_DEBUG(log, "Started resharding thread.");
+		LOG_DEBUG(log, "Started resharding background thread.");
 
 		try
 		{
@@ -129,10 +162,10 @@ void ReshardingWorker::pollAndExecute()
 		}
 		catch (const Exception & ex)
 		{
-			if ((ex.code() == ErrorCodes::RESHARDING_CLEANUP_FAILED) || hasAborted(ex))
+			if (ex.code() == ErrorCodes::ABORTED)
 				throw;
 			else
-				LOG_INFO(log, ex.message());
+				LOG_ERROR(log, ex.message());
 		}
 		catch (...)
 		{
@@ -166,10 +199,10 @@ void ReshardingWorker::pollAndExecute()
 			}
 			catch (const Exception & ex)
 			{
-				if ((ex.code() == ErrorCodes::RESHARDING_CLEANUP_FAILED) || hasAborted(ex))
+				if (ex.code() == ErrorCodes::ABORTED)
 					throw;
 				else
-					LOG_INFO(log, ex.message());
+					LOG_ERROR(log, ex.message());
 			}
 			catch (...)
 			{
@@ -179,11 +212,21 @@ void ReshardingWorker::pollAndExecute()
 	}
 	catch (const Exception & ex)
 	{
-		if (!hasAborted(ex))
-			throw;
+		if (ex.code() != ErrorCodes::ABORTED)
+			error = true;
+	}
+	catch (...)
+	{
+		error = true;
 	}
 
-	LOG_DEBUG(log, "Resharding thread terminated.");
+	if (error)
+	{
+		/// Если мы попали сюда, это значит, что где-то кроется баг.
+		LOG_ERROR(log, "Resharding background thread terminated with critical error.");
+	}
+	else
+		LOG_DEBUG(log, "Resharding background thread terminated.");
 }
 
 void ReshardingWorker::performPendingJobs()
@@ -204,8 +247,24 @@ void ReshardingWorker::perform(const Strings & job_nodes)
 		std::string  child_full_path = host_task_queue_path + "/" + child;
 		auto job_descriptor = zookeeper->get(child_full_path);
 		ReshardingJob job(job_descriptor);
+
+		try
+		{
+			perform(job);
+		}
+		catch (const Exception & ex)
+		{
+			if (ex.code() != ErrorCodes::ABORTED)
+				zookeeper->remove(child_full_path);
+			throw;
+		}
+		catch (...)
+		{
+			zookeeper->remove(child_full_path);
+			throw;
+		}
+
 		zookeeper->remove(child_full_path);
-		perform(job);
 	}
 }
 
@@ -229,12 +288,8 @@ void ReshardingWorker::perform(const ReshardingJob & job)
 	{
 		cleanup(storage, job);
 
-		if (hasAborted(ex))
-		{
-			/// Поток завершается. Сохраняем сведения о прерванной задаче.
-			submitJob(job);
-			LOG_DEBUG(log, "Resharding job cancelled then re-submitted for later processing.");
-		}
+		if (ex.code() == ErrorCodes::ABORTED)
+			LOG_DEBUG(log, "Resharding job cancelled.");
 
 		throw;
 	}
@@ -276,15 +331,24 @@ void ReshardingWorker::createShardedPartitions(StorageReplicatedMergeTree & stor
 	/// Для каждого шарда, куски, которые должны быть слиты.
 	std::unordered_map<size_t, PartsToBeMerged> to_merge;
 
+	/// Для нумерации блоков.
+	SimpleIncrement increment(storage.data.getMaxDataPartIndex());
+
 	MergeTreeData::PerShardDataParts & per_shard_data_parts = storage.data.per_shard_data_parts;
 
 	auto zookeeper = storage.getZooKeeper();
 	const auto & settings = context.getSettingsRef();
-	(void) settings;
 
 	DayNum_t month = MergeTreeData::getMonthFromName(job.partition);
 
-	auto parts_from_partition = storage.merger.selectAllPartsFromPartition(month);
+	{
+		std::lock_guard<std::mutex> guard(cancel_mutex);
+		merger = std::make_unique<MergeTreeDataMerger>(storage.data);
+	}
+
+	auto parts_from_partition = merger->selectAllPartsFromPartition(month);
+
+	MergeTreeSharder sharder(storage.data, job);
 
 	for (const auto & part : parts_from_partition)
 	{
@@ -305,8 +369,6 @@ void ReshardingWorker::createShardedPartitions(StorageReplicatedMergeTree & stor
 			DBMS_DEFAULT_BUFFER_SIZE,
 			true);
 
-		MergeTreeSharder sharder(storage.data, job);
-
 		Block block;
 		while (block = source.read())
 		{
@@ -318,57 +380,8 @@ void ReshardingWorker::createShardedPartitions(StorageReplicatedMergeTree & stor
 				abortIfRequested();
 
 				/// Создать новый кусок соответствующий новому блоку.
-				std::string month_name = toString(DateLUT::instance().toNumYYYYMMDD(DayNum_t(block_with_dates.min_date)) / 100);
-				AbandonableLockInZooKeeper block_number_lock = storage.allocateBlockNumber(month_name);
-				Int64 part_number = block_number_lock.getNumber();
-				MergeTreeData::MutableDataPartPtr block_part = sharder.writeTempPart(block_with_dates, part_number);
-
-				/// Добавить в БД ZooKeeper информацию о новом блоке.
-				SipHash hash;
-				block_part->checksums.summaryDataChecksum(hash);
-				union
-				{
-					char bytes[16];
-					UInt64 lo;
-					UInt64 hi;
-				} hash_value;
-				hash.get128(hash_value.bytes);
-
-				std::string checksum(hash_value.bytes, 16);
-
-				std::string block_id = toString(hash_value.lo) + "_" + toString(hash_value.hi);
-
-				zkutil::Ops ops;
-				auto acl = zookeeper->getDefaultACL();
-
-				std::string to_path = job.paths[block_with_dates.shard_no].first;
-
-				ops.push_back(
-					new zkutil::Op::Create(
-						to_path + "/detached_sharded_blocks/" + block_id,
-						"",
-						acl,
-						zkutil::CreateMode::Persistent));
-				ops.push_back(
-					new zkutil::Op::Create(
-						to_path + "/detached_sharded_blocks/" + block_id + "/checksum",
-						checksum,
-						acl,
-						zkutil::CreateMode::Persistent));
-				ops.push_back(
-					new zkutil::Op::Create(
-						to_path + "/detached_sharded_blocks/" + block_id + "/number",
-						toString(part_number),
-						acl,
-						zkutil::CreateMode::Persistent));
-
-				block_number_lock.getUnlockOps(ops);
-
-				auto code = zookeeper->tryMulti(ops);
-				if (code != ZOK)
-					throw Exception("Unexpected error while adding block " + toString(part_number)
-						+ " with ID " + block_id + ": " + zkutil::ZooKeeper::error2string(code),
-						ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
+				Int64 temp_index = increment.get();
+				MergeTreeData::MutableDataPartPtr block_part = sharder.writeTempPart(block_with_dates, temp_index);
 
 				abortIfRequested();
 
@@ -390,7 +403,7 @@ void ReshardingWorker::createShardedPartitions(StorageReplicatedMergeTree & stor
 						const auto & merge_entry = storage.data.context.getMergeList().insert(job.database_name,
 							job.table_name, merged_name);
 
-						MergeTreeData::MutableDataPartPtr new_part = storage.merger.mergeParts(parts, merged_name, *merge_entry,
+						MergeTreeData::MutableDataPartPtr new_part = merger->mergeParts(parts, merged_name, *merge_entry,
 							storage.data.context.getSettings().min_bytes_to_use_direct_io);
 
 						sharded_parts.insert(new_part);
@@ -424,7 +437,7 @@ void ReshardingWorker::createShardedPartitions(StorageReplicatedMergeTree & stor
 				const auto & merge_entry = storage.data.context.getMergeList().insert(job.database_name,
 					job.table_name, merged_name);
 
-				MergeTreeData::MutableDataPartPtr new_part = storage.merger.mergeParts(parts, merged_name, *merge_entry,
+				MergeTreeData::MutableDataPartPtr new_part = merger->mergeParts(parts, merged_name, *merge_entry,
 					storage.data.context.getSettings().min_bytes_to_use_direct_io);
 
 				sharded_parts.insert(new_part);
@@ -466,8 +479,6 @@ void ReshardingWorker::publishShardedPartitions(StorageReplicatedMergeTree & sto
 
 	auto zookeeper = storage.getZooKeeper();
 
-	MergeTreeData::PerShardDataParts & per_shard_data_parts = storage.data.per_shard_data_parts;
-
 	struct TaskInfo
 	{
 		TaskInfo(const std::string & replica_path_,
@@ -493,15 +504,19 @@ void ReshardingWorker::publishShardedPartitions(StorageReplicatedMergeTree & sto
 	/// Количество участвующих локальных реплик. Должно быть <= 1.
 	size_t local_count = 0;
 
-	for (size_t shard_no = 0; shard_no < job.paths.size(); ++shard_no)
+	for (const auto & entry : storage.data.per_shard_data_parts)
 	{
-		const WeightedZooKeeperPath & weighted_path = job.paths[shard_no];
-		const std::string & zookeeper_path = weighted_path.first;
+		size_t shard_no = entry.first;
+		const MergeTreeData::MutableDataParts & sharded_parts = entry.second;
+		if (sharded_parts.empty())
+			continue;
 
 		std::vector<std::string> part_names;
-		const MergeTreeData::MutableDataParts & sharded_parts = per_shard_data_parts.at(shard_no);
 		for (const MergeTreeData::DataPartPtr & sharded_part : sharded_parts)
 			part_names.push_back(sharded_part->name);
+
+		const WeightedZooKeeperPath & weighted_path = job.paths[shard_no];
+		const std::string & zookeeper_path = weighted_path.first;
 
 		auto children = zookeeper->getChildren(zookeeper_path + "/replicas");
 		for (const auto & child : children)
@@ -610,9 +625,14 @@ void ReshardingWorker::applyChanges(StorageReplicatedMergeTree & storage, const 
 	using TaskInfoList = std::vector<TaskInfo>;
 	TaskInfoList task_info_list;
 
-	for (size_t i = 0; i < job.paths.size(); ++i)
+	for (const auto & entry : storage.data.per_shard_data_parts)
 	{
-		const WeightedZooKeeperPath & weighted_path = job.paths[i];
+		size_t shard_no = entry.first;
+		const MergeTreeData::MutableDataParts & sharded_parts = entry.second;
+		if (sharded_parts.empty())
+			continue;
+
+		const WeightedZooKeeperPath & weighted_path = job.paths[shard_no];
 		const std::string & zookeeper_path = weighted_path.first;
 
 		auto children = zookeeper->getChildren(zookeeper_path + "/replicas");
@@ -668,47 +688,13 @@ void ReshardingWorker::cleanup(StorageReplicatedMergeTree & storage, const Resha
 {
 	LOG_DEBUG(log, "Performing cleanup.");
 
-	try
+	storage.data.per_shard_data_parts.clear();
+
+	Poco::DirectoryIterator end;
+	for (Poco::DirectoryIterator it(storage.full_path + "/reshard"); it != end; ++it)
 	{
-		storage.data.per_shard_data_parts.clear();
-
-		Poco::DirectoryIterator end;
-		for (Poco::DirectoryIterator it(storage.full_path + "/reshard"); it != end; ++it)
-		{
-			auto absolute_path = it.path().absolute().toString();
-			Poco::File(absolute_path).remove(true);
-		}
-
-		auto zookeeper = storage.getZooKeeper();
-		zkutil::Ops ops;
-		for (size_t i = 0; i < job.paths.size(); ++i)
-		{
-			const WeightedZooKeeperPath & weighted_path = job.paths[i];
-			const std::string & zookeeper_path = weighted_path.first;
-
-			auto children = zookeeper->getChildren(zookeeper_path + "/detached_sharded_blocks");
-			if (!children.empty())
-			{
-				for (const auto & child : children)
-				{
-					ops.push_back(
-						new zkutil::Op::Remove(
-							zookeeper_path + "/detached_sharded_blocks/" + child + "/number", -1));
-					ops.push_back(
-						new zkutil::Op::Remove(
-							zookeeper_path + "/detached_sharded_blocks/" + child + "/checksum", -1));
-					ops.push_back(
-						new zkutil::Op::Remove(
-							zookeeper_path + "/detached_sharded_blocks/" + child, -1));
-				}
-			}
-		}
-		zookeeper->multi(ops);
-	}
-	catch (...)
-	{
-		throw Exception("Failed to perform cleanup during resharding operation",
-			ErrorCodes::RESHARDING_CLEANUP_FAILED);
+		auto absolute_path = it.path().absolute().toString();
+		Poco::File(absolute_path).remove(true);
 	}
 }
 
@@ -716,11 +702,6 @@ void ReshardingWorker::abortIfRequested() const
 {
 	if (must_stop)
 		throw Exception("Cancelled resharding", ErrorCodes::ABORTED);
-}
-
-bool ReshardingWorker::hasAborted(const Exception & ex) const
-{
-	return must_stop && (ex.code() == ErrorCodes::ABORTED);
 }
 
 }
