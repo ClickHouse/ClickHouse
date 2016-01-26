@@ -117,6 +117,8 @@ public:
 		graphite_writer->write(key_vals, timestamp, custom_root_path);
 	}
 
+	GraphiteWriter * getGraphiteWriter() { return graphite_writer.get(); }
+
 	boost::optional<size_t> getLayer() const
 	{
 		return layer;	/// layer выставляется в классе-наследнике BaseDaemonApplication.
