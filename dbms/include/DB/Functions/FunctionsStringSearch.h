@@ -207,8 +207,8 @@ struct PositionImpl
 			{
 				size_t prev_offset = i != 0 ? offsets[i - 1] : 0;
 				res[i] = 1 + Impl::countChars(
-					reinterpret_cast<const char *>(begin),
-					reinterpret_cast<const char *>(pos - prev_offset));
+					reinterpret_cast<const char *>(begin + prev_offset),
+					reinterpret_cast<const char *>(pos));
 			}
 			else
 				res[i] = 0;
