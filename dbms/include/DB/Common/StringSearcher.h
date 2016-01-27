@@ -304,6 +304,11 @@ public:
 
 		return haystack_end;
 	}
+
+	const UInt8 * search(const UInt8 * haystack, const size_t haystack_size) const
+	{
+		return search(haystack, haystack + haystack_size);
+	}
 };
 
 
@@ -486,6 +491,11 @@ public:
 
 		return haystack_end;
 	}
+
+	const UInt8 * search(const UInt8 * haystack, const size_t haystack_size) const
+	{
+		return search(haystack, haystack + haystack_size);
+	}
 };
 
 
@@ -659,6 +669,11 @@ public:
 		}
 
 		return haystack_end;
+	}
+
+	const UInt8 * search(const UInt8 * haystack, const size_t haystack_size) const
+	{
+		return search(haystack, haystack + haystack_size);
 	}
 };
 
