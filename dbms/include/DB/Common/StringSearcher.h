@@ -22,6 +22,11 @@ namespace ErrorCodes
 }
 
 
+/** Варианты поиска подстроки в строке.
+  * В большинстве случаев, менее производительные, чем Volnitsky (см. Volnitsky.h).
+  */
+
+
 struct StringSearcherBase
 {
 #if defined(__x86_64__)
@@ -682,6 +687,57 @@ using ASCIICaseSensitiveStringSearcher = StringSearcher<true, true>;
 using ASCIICaseInsensitiveStringSearcher = StringSearcher<false, true>;
 using UTF8CaseSensitiveStringSearcher = StringSearcher<true, false>;
 using UTF8CaseInsensitiveStringSearcher = StringSearcher<false, false>;
+
+
+/** Используют функции из libc.
+  * Имеет смысл использовать для коротких строк, когда требуется дешёвая инициализация.
+  * Нет варианта для регистронезависимого поиска UTF-8 строк.
+  * Требуется, чтобы за концом строк был нулевой байт.
+  */
+
+struct LibCASCIICaseSensitiveStringSearcher
+{
+	const char * const needle;
+	const size_t needle_size;
+
+	LibCASCIICaseSensitiveStringSearcher(const char * const needle, const size_t needle_size)
+		: needle(needle), needle_size(needle_size) {}
+
+	const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
+	{
+		auto res = strstr(reinterpret_cast<const char *>(haystack), reinterpret_cast<const char *>(needle));
+		if (!res)
+			return haystack_end;
+		return reinterpret_cast<const UInt8 *>(res);
+	}
+
+	const UInt8 * search(const UInt8 * haystack, const size_t haystack_size) const
+	{
+		return search(haystack, haystack + haystack_size);
+	}
+};
+
+struct LibCASCIICaseInsensitiveStringSearcher
+{
+	const char * const needle;
+	const size_t needle_size;
+
+	LibCASCIICaseInsensitiveStringSearcher(const char * const needle, const size_t needle_size)
+		: needle(needle), needle_size(needle_size) {}
+
+	const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
+	{
+		auto res = strcasestr(reinterpret_cast<const char *>(haystack), reinterpret_cast<const char *>(needle));
+		if (!res)
+			return haystack_end;
+		return reinterpret_cast<const UInt8 *>(res);
+	}
+
+	const UInt8 * search(const UInt8 * haystack, const size_t haystack_size) const
+	{
+		return search(haystack, haystack + haystack_size);
+	}
+};
 
 
 }

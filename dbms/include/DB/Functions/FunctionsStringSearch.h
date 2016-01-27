@@ -62,7 +62,7 @@ struct PositionCaseSensitiveASCII
 	using SearcherInBigHaystack = VolnitskyImpl<true, true>;
 
 	/// Объект для поиска каждый раз разных подстрок, создаваемый на каждую подстроку. Не должен сложно инициализироваться.
-	using SearcherInSmallHaystack = ASCIICaseSensitiveStringSearcher;
+	using SearcherInSmallHaystack = LibCASCIICaseSensitiveStringSearcher;
 
 	static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
 	{
@@ -90,7 +90,7 @@ struct PositionCaseInsensitiveASCII
 {
 	/// Здесь не используется Volnitsky, потому что один человек померял, что так лучше. Будет хорошо, если вы подвергнете это сомнению.
 	using SearcherInBigHaystack = ASCIICaseInsensitiveStringSearcher;
-	using SearcherInSmallHaystack = ASCIICaseInsensitiveStringSearcher;
+	using SearcherInSmallHaystack = LibCASCIICaseInsensitiveStringSearcher;
 
 	static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
 	{
@@ -116,7 +116,7 @@ struct PositionCaseInsensitiveASCII
 struct PositionCaseSensitiveUTF8
 {
 	using SearcherInBigHaystack = VolnitskyImpl<true, false>;
-	using SearcherInSmallHaystack = UTF8CaseSensitiveStringSearcher;
+	using SearcherInSmallHaystack = LibCASCIICaseSensitiveStringSearcher;
 
 	static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
 	{
@@ -145,7 +145,7 @@ struct PositionCaseSensitiveUTF8
 struct PositionCaseInsensitiveUTF8
 {
 	using SearcherInBigHaystack = VolnitskyImpl<false, false>;
-	using SearcherInSmallHaystack = UTF8CaseInsensitiveStringSearcher;
+	using SearcherInSmallHaystack = UTF8CaseInsensitiveStringSearcher;	/// TODO Очень неоптимально.
 
 	static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
 	{
