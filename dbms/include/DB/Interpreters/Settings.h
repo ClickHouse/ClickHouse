@@ -221,7 +221,7 @@ struct Settings
 	void setProfile(const String & profile_name, Poco::Util::AbstractConfiguration & config);
 
 	/// Загрузить настройки по пути из конфига
-	void loadSettingsFromConfig(const String & path, Poco::Util::AbstractConfiguration & config);
+	void loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config);
 
 	/// Прочитать настройки из буфера. Они записаны как набор name-value пар, идущих подряд, заканчивающихся пустым name.
 	/// Если в настройках выставлено readonly=1, то игнорировать настройки.

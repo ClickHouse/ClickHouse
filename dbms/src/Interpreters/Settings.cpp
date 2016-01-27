@@ -91,7 +91,7 @@ void Settings::setProfile(const String & profile_name, Poco::Util::AbstractConfi
 	}
 }
 
-void Settings::loadSettingsFromConfig(const String & path, Poco::Util::AbstractConfiguration & config)
+void Settings::loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config)
 {
 	if (!config.has(path))
 		throw Exception("There is no path '" + path + "' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
