@@ -253,26 +253,27 @@ struct PositionImpl
 			{
 				/// Пустая строка всегда находится в самом начале haystack.
 				res[i] = 1;
-				continue;
-			}
-
-			/// Предполагается, что StringSearcher не очень сложно инициализировать.
-			typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(
-				reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
-				needle_offsets[i] - prev_needle_offset - 1);	/// нулевой байт на конце
-
-			/// searcher возвращает указатель на найденную подстроку или на конец haystack.
-			size_t pos = searcher.search(&haystack_data[prev_haystack_offset], &haystack_data[haystack_offsets[i] - 1])
-				- &haystack_data[prev_haystack_offset];
-
-			if (pos != haystack_size)
-			{
-				res[i] = 1 + Impl::countChars(
-					reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]),
-					reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset + pos]));
 			}
 			else
-				res[i] = 0;
+			{
+				/// Предполагается, что StringSearcher не очень сложно инициализировать.
+				typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(
+					reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
+					needle_offsets[i] - prev_needle_offset - 1);	/// нулевой байт на конце
+
+				/// searcher возвращает указатель на найденную подстроку или на конец haystack.
+				size_t pos = searcher.search(&haystack_data[prev_haystack_offset], &haystack_data[haystack_offsets[i] - 1])
+					- &haystack_data[prev_haystack_offset];
+
+				if (pos != haystack_size)
+				{
+					res[i] = 1 + Impl::countChars(
+						reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]),
+						reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset + pos]));
+				}
+				else
+					res[i] = 0;
+			}
 
 			prev_haystack_offset = haystack_offsets[i];
 			prev_needle_offset = needle_offsets[i];
@@ -298,23 +299,24 @@ struct PositionImpl
 			if (0 == needle_size)
 			{
 				res[i] = 1;
-				continue;
-			}
-
-			typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(
-				reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
-				needle_offsets[i] - prev_needle_offset - 1);
-
-			size_t pos = searcher.search(
-				reinterpret_cast<const UInt8 *>(haystack.data()),
-				reinterpret_cast<const UInt8 *>(haystack.data()) + haystack.size()) - reinterpret_cast<const UInt8 *>(haystack.data());
-
-			if (pos != haystack.size())
-			{
-				res[i] = 1 + Impl::countChars(haystack.data(), haystack.data() + pos);
 			}
 			else
-				res[i] = 0;
+			{
+				typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(
+					reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
+					needle_offsets[i] - prev_needle_offset - 1);
+
+				size_t pos = searcher.search(
+					reinterpret_cast<const UInt8 *>(haystack.data()),
+					reinterpret_cast<const UInt8 *>(haystack.data()) + haystack.size()) - reinterpret_cast<const UInt8 *>(haystack.data());
+
+				if (pos != haystack.size())
+				{
+					res[i] = 1 + Impl::countChars(haystack.data(), haystack.data() + pos);
+				}
+				else
+					res[i] = 0;
+			}
 
 			prev_needle_offset = needle_offsets[i];
 		}
