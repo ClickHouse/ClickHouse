@@ -280,13 +280,13 @@ struct ExtractString
  * Если поле не было найдено или полю соответствует некорректное значение,
  * то используется значение по умолчанию - 0.
  */
-template<typename ParamExtractor>
+template <typename ParamExtractor>
 struct ExtractParamImpl
 {
 	typedef typename ParamExtractor::ResultType ResultType;
 
 	/// Предполагается, что res нужного размера и инициализирован нулями.
-	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
+	static void vector_constant(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		std::string needle,
 		PODArray<ResultType> & res)
 	{
@@ -325,7 +325,7 @@ struct ExtractParamImpl
 		memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
 	}
 
-	static void constant(const std::string & data, std::string needle, ResultType & res)
+	static void constant_constant(const std::string & data, std::string needle, ResultType & res)
 	{
 		needle = "\"" + needle + "\":";
 		size_t pos = data.find(needle);
@@ -336,6 +336,22 @@ struct ExtractParamImpl
 				reinterpret_cast<const UInt8 *>(data.data() + pos + needle.size()),
 				reinterpret_cast<const UInt8 *>(data.data() + data.size())
 			);
+	}
+
+	static void vector_vector(
+		const ColumnString::Chars_t & haystack_data, const ColumnString::Offsets_t & haystack_offsets,
+		const ColumnString::Chars_t & needle_data, const ColumnString::Offsets_t & needle_offsets,
+		PODArray<ResultType> & res)
+	{
+		throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
+	}
+
+	static void constant_vector(
+		const String & haystack,
+		const ColumnString::Chars_t & needle_data, const ColumnString::Offsets_t & needle_offsets,
+		PODArray<ResultType> & res)
+	{
+		throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
 

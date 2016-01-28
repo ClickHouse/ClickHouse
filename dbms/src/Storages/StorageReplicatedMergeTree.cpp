@@ -2853,7 +2853,7 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 	/// Выделим добавляемым кускам максимальные свободные номера, меньшие RESERVED_BLOCK_NUMBERS.
 	/// NOTE: Проверка свободности номеров никак не синхронизируется. Выполнять несколько запросов ATTACH/DETACH/DROP одновременно нельзя.
 	Int64 min_used_number = RESERVED_BLOCK_NUMBERS;
-	DayNum_t month = DateLUT::instance().makeDayNum(parse<UInt16>(partition.substr(0, 4)), parse<UInt8>(partition.substr(4, 2)), 0);
+	DayNum_t month = DateLUT::instance().makeDayNum(parse<UInt16>(partition.substr(0, 4)), parse<UInt8>(partition.substr(4, 2)), 1);
 
 	{
 		auto existing_parts = data.getDataParts();

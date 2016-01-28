@@ -16,12 +16,11 @@
 #include <DB/Common/StringSearcher.h>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
-#include <Poco/UTF8Encoding.h>
+#include <Poco/UTF8String.h>
 
 #include <mutex>
 #include <stack>
 #include <ext/range.hpp>
-#include <Poco/Unicode.h>
 
 
 namespace DB
@@ -31,6 +30,8 @@ namespace DB
   *
   * position(haystack, needle)	- обычный поиск подстроки в строке, возвращает позицию (в байтах) найденной подстроки, начиная с 1, или 0, если подстрока не найдена.
   * positionUTF8(haystack, needle) - то же самое, но позиция вычисляется в кодовых точках, при условии, что строка в кодировке UTF-8.
+  * positionCaseInsensitive(haystack, needle)
+  * positionCaseInsensitiveUTF8(haystack, needle)
   *
   * like(haystack, pattern)		- поиск по регулярному выражению LIKE; возвращает 0 или 1. Регистронезависимое, но только для латиницы.
   * notLike(haystack, pattern)
@@ -53,162 +54,135 @@ namespace DB
   */
 
 
-template <bool CaseSensitive>
+/** Детали реализации функций семейства position в зависимости от ASCII/UTF8 и case sensitiveness.
+  */
+struct PositionCaseSensitiveASCII
+{
+	/// Объект для поиска одной подстроки среди большого количества данных, уложенных подряд. Может слегка сложно инициализироваться.
+	using SearcherInBigHaystack = VolnitskyImpl<true, true>;
+
+	/// Объект для поиска каждый раз разных подстрок, создаваемый на каждую подстроку. Не должен сложно инициализироваться.
+	using SearcherInSmallHaystack = LibCASCIICaseSensitiveStringSearcher;
+
+	static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
+	{
+		return SearcherInBigHaystack(needle_data, needle_size, haystack_size_hint);
+	}
+
+	static SearcherInSmallHaystack createSearcherInSmallHaystack(const char * needle_data, size_t needle_size)
+	{
+		return SearcherInSmallHaystack(needle_data, needle_size);
+	}
+
+	/// Посчитать число символов от begin до end.
+	static size_t countChars(const char * begin, const char * end)
+	{
+		return end - begin;
+	}
+
+	/// Перевести строку в нижний регистр. Только для регистронезависимого поиска. Можно неэффективно, так как вызывается от одиночной строки.
+	static void toLowerIfNeed(std::string & s)
+	{
+	}
+};
+
+struct PositionCaseInsensitiveASCII
+{
+	/// Здесь не используется Volnitsky, потому что один человек померял, что так лучше. Будет хорошо, если вы подвергнете это сомнению.
+	using SearcherInBigHaystack = ASCIICaseInsensitiveStringSearcher;
+	using SearcherInSmallHaystack = LibCASCIICaseInsensitiveStringSearcher;
+
+	static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
+	{
+		return SearcherInBigHaystack(needle_data, needle_size);
+	}
+
+	static SearcherInSmallHaystack createSearcherInSmallHaystack(const char * needle_data, size_t needle_size)
+	{
+		return SearcherInSmallHaystack(needle_data, needle_size);
+	}
+
+	static size_t countChars(const char * begin, const char * end)
+	{
+		return end - begin;
+	}
+
+	static void toLowerIfNeed(std::string & s)
+	{
+		std::transform(std::begin(s), std::end(s), std::begin(s), tolower);
+	}
+};
+
+struct PositionCaseSensitiveUTF8
+{
+	using SearcherInBigHaystack = VolnitskyImpl<true, false>;
+	using SearcherInSmallHaystack = LibCASCIICaseSensitiveStringSearcher;
+
+	static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
+	{
+		return SearcherInBigHaystack(needle_data, needle_size, haystack_size_hint);
+	}
+
+	static SearcherInSmallHaystack createSearcherInSmallHaystack(const char * needle_data, size_t needle_size)
+	{
+		return SearcherInSmallHaystack(needle_data, needle_size);
+	}
+
+	static size_t countChars(const char * begin, const char * end)
+	{
+		size_t res = 0;
+		for (auto it = begin; it != end; ++it)
+			if (!UTF8::isContinuationOctet(static_cast<UInt8>(*it)))
+				++res;
+		return res;
+	}
+
+	static void toLowerIfNeed(std::string & s)
+	{
+	}
+};
+
+struct PositionCaseInsensitiveUTF8
+{
+	using SearcherInBigHaystack = VolnitskyImpl<false, false>;
+	using SearcherInSmallHaystack = UTF8CaseInsensitiveStringSearcher;	/// TODO Очень неоптимально.
+
+	static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
+	{
+		return SearcherInBigHaystack(needle_data, needle_size, haystack_size_hint);
+	}
+
+	static SearcherInSmallHaystack createSearcherInSmallHaystack(const char * needle_data, size_t needle_size)
+	{
+		return SearcherInSmallHaystack(needle_data, needle_size);
+	}
+
+	static size_t countChars(const char * begin, const char * end)
+	{
+		size_t res = 0;
+		for (auto it = begin; it != end; ++it)
+			if (!UTF8::isContinuationOctet(static_cast<UInt8>(*it)))
+				++res;
+		return res;
+	}
+
+	static void toLowerIfNeed(std::string & s)
+	{
+		Poco::UTF8::toLowerInPlace(s);
+	}
+};
+
+
+template <typename Impl>
 struct PositionImpl
 {
-	typedef UInt64 ResultType;
-
-	/// @note res[i] = 0 намекает, что инициализации нулями не предполагается.
-	/// Предполагается, что res нужного размера и инициализирован нулями.
-	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-		const std::string & needle,
-		PODArray<UInt64> & res)
-	{
-		const UInt8 * begin = &data[0];
-		const UInt8 * pos = begin;
-		const UInt8 * end = pos + data.size();
-
-		/// Текущий индекс в массиве строк.
-		size_t i = 0;
-
-		VolnitskyImpl<CaseSensitive, true> searcher(needle.data(), needle.size(), end - pos);
-
-		/// Искать будем следующее вхождение сразу во всех строках.
-		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
-		{
-			/// Определим, к какому индексу оно относится.
-			while (begin + offsets[i] <= pos)
-			{
-				res[i] = 0;
-				++i;
-			}
-
-			/// Проверяем, что вхождение не переходит через границы строк.
-			if (pos + needle.size() < begin + offsets[i])
-				res[i] = (i != 0) ? pos - begin - offsets[i - 1] + 1 : (pos - begin + 1);
-			else
-				res[i] = 0;
-
-			pos = begin + offsets[i];
-			++i;
-		}
-
-		memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
-	}
-
-	static void constant(std::string data, std::string needle, UInt64 & res)
-	{
-		if (!CaseSensitive)
-		{
-			std::transform(std::begin(data), std::end(data), std::begin(data), tolower);
-			std::transform(std::begin(needle), std::end(needle), std::begin(needle), tolower);
-		}
-
-		res = data.find(needle);
-		if (res == std::string::npos)
-			res = 0;
-		else
-			++res;
-	}
-};
-
-
-template <bool CaseSensitive>
-struct PositionUTF8Impl
-{
-	typedef UInt64 ResultType;
-
-	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-		const std::string & needle,
-		PODArray<UInt64> & res)
-	{
-		const UInt8 * begin = &data[0];
-		const UInt8 * pos = begin;
-		const UInt8 * end = pos + data.size();
-
-		/// Текущий индекс в массиве строк.
-		size_t i = 0;
-
-		VolnitskyImpl<CaseSensitive, false> searcher(needle.data(), needle.size(), end - pos);
-
-		/// Искать будем следующее вхождение сразу во всех строках.
-		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
-		{
-			/// Определим, к какому индексу оно относится.
-			while (begin + offsets[i] <= pos)
-			{
-				res[i] = 0;
-				++i;
-			}
-
-			/// Проверяем, что вхождение не переходит через границы строк.
-			if (pos + needle.size() < begin + offsets[i])
-			{
-				/// А теперь надо найти, сколько кодовых точек находится перед pos.
-				res[i] = 1;
-				for (const UInt8 * c = begin + (i != 0 ? offsets[i - 1] : 0); c < pos; ++c)
-					if (!UTF8::isContinuationOctet(*c))
-						++res[i];
-			}
-			else
-				res[i] = 0;
-
-			pos = begin + offsets[i];
-			++i;
-		}
-
-		memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
-	}
-
-	static void constant(std::string data, std::string needle, UInt64 & res)
-	{
-		if (!CaseSensitive)
-		{
-			static const Poco::UTF8Encoding utf8;
-
-			auto data_pos = reinterpret_cast<UInt8 *>(&data[0]);
-			const auto data_end = data_pos + data.size();
-			while (data_pos < data_end)
-			{
-				const auto len = utf8.convert(Poco::Unicode::toLower(utf8.convert(data_pos)), data_pos, data_end - data_pos);
-				data_pos += len;
-			}
-
-			auto needle_pos = reinterpret_cast<UInt8 *>(&needle[0]);
-			const auto needle_end = needle_pos + needle.size();
-			while (needle_pos < needle_end)
-			{
-				const auto len = utf8.convert(Poco::Unicode::toLower(utf8.convert(needle_pos)), needle_pos, needle_end - needle_pos);
-				needle_pos += len;
-			}
-		}
-
-		const auto pos = data.find(needle);
-		if (pos != std::string::npos)
-		{
-			/// А теперь надо найти, сколько кодовых точек находится перед pos.
-			res = 1;
-			for (const auto i : ext::range(0, pos))
-				if (!UTF8::isContinuationOctet(static_cast<UInt8>(data[i])))
-					++res;
-		}
-		else
-			res = 0;
-	}
-};
-
-
-struct PositionCaseInsensitiveImpl
-{
-public:
 	using ResultType = UInt64;
 
-	static void vector(
-		const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets, const std::string & needle,
+	/// Поиск одной подстроки во многих строках.
+	static void vector_constant(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
+		const std::string & needle,
 		PODArray<UInt64> & res)
 	{
-		const ASCIICaseInsensitiveStringSearcher searcher{needle.data(), needle.size()};
-
 		const UInt8 * begin = &data[0];
 		const UInt8 * pos = begin;
 		const UInt8 * end = pos + data.size();
@@ -216,8 +190,10 @@ public:
 		/// Текущий индекс в массиве строк.
 		size_t i = 0;
 
+		typename Impl::SearcherInBigHaystack searcher = Impl::createSearcherInBigHaystack(needle.data(), needle.size(), end - pos);
+
 		/// Искать будем следующее вхождение сразу во всех строках.
-		while (pos < end && end != (pos = searcher.search(pos, end)))
+		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 		{
 			/// Определим, к какому индексу оно относится.
 			while (begin + offsets[i] <= pos)
@@ -228,7 +204,12 @@ public:
 
 			/// Проверяем, что вхождение не переходит через границы строк.
 			if (pos + needle.size() < begin + offsets[i])
-				res[i] = (i != 0) ? pos - begin - offsets[i - 1] + 1 : (pos - begin + 1);
+			{
+				size_t prev_offset = i != 0 ? offsets[i - 1] : 0;
+				res[i] = 1 + Impl::countChars(
+					reinterpret_cast<const char *>(begin + prev_offset),
+					reinterpret_cast<const char *>(pos));
+			}
 			else
 				res[i] = 0;
 
@@ -239,16 +220,106 @@ public:
 		memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
 	}
 
-	static void constant(std::string data, std::string needle, UInt64 & res)
+	/// Поиск одной подстроки в одной строке.
+	static void constant_constant(std::string data, std::string needle, UInt64 & res)
 	{
-		std::transform(std::begin(data), std::end(data), std::begin(data), tolower);
-		std::transform(std::begin(needle), std::end(needle), std::begin(needle), tolower);
+		Impl::toLowerIfNeed(data);
+		Impl::toLowerIfNeed(needle);
 
 		res = data.find(needle);
 		if (res == std::string::npos)
 			res = 0;
 		else
-			++res;
+			res = 1 + Impl::countChars(data.data(), data.data() + res);
+	}
+
+	/// Поиск каждой раз разной одной подстроки в каждой раз разной строке.
+	static void vector_vector(
+		const ColumnString::Chars_t & haystack_data, const ColumnString::Offsets_t & haystack_offsets,
+		const ColumnString::Chars_t & needle_data, const ColumnString::Offsets_t & needle_offsets,
+		PODArray<UInt64> & res)
+	{
+		ColumnString::Offset_t prev_haystack_offset = 0;
+		ColumnString::Offset_t prev_needle_offset = 0;
+
+		size_t size = haystack_offsets.size();
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
+			size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
+
+			if (0 == needle_size)
+			{
+				/// Пустая строка всегда находится в самом начале haystack.
+				res[i] = 1;
+			}
+			else
+			{
+				/// Предполагается, что StringSearcher не очень сложно инициализировать.
+				typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(
+					reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
+					needle_offsets[i] - prev_needle_offset - 1);	/// нулевой байт на конце
+
+				/// searcher возвращает указатель на найденную подстроку или на конец haystack.
+				size_t pos = searcher.search(&haystack_data[prev_haystack_offset], &haystack_data[haystack_offsets[i] - 1])
+					- &haystack_data[prev_haystack_offset];
+
+				if (pos != haystack_size)
+				{
+					res[i] = 1 + Impl::countChars(
+						reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]),
+						reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset + pos]));
+				}
+				else
+					res[i] = 0;
+			}
+
+			prev_haystack_offset = haystack_offsets[i];
+			prev_needle_offset = needle_offsets[i];
+		}
+	}
+
+	/// Поиск многих подстрок в одной строке.
+	static void constant_vector(
+		const String & haystack,
+		const ColumnString::Chars_t & needle_data, const ColumnString::Offsets_t & needle_offsets,
+		PODArray<UInt64> & res)
+	{
+		// NOTE Можно было бы использовать индексацию haystack. Но это - редкий случай.
+
+		ColumnString::Offset_t prev_needle_offset = 0;
+
+		size_t size = needle_offsets.size();
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
+
+			if (0 == needle_size)
+			{
+				res[i] = 1;
+			}
+			else
+			{
+				typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(
+					reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
+					needle_offsets[i] - prev_needle_offset - 1);
+
+				size_t pos = searcher.search(
+					reinterpret_cast<const UInt8 *>(haystack.data()),
+					reinterpret_cast<const UInt8 *>(haystack.data()) + haystack.size()) - reinterpret_cast<const UInt8 *>(haystack.data());
+
+				if (pos != haystack.size())
+				{
+					res[i] = 1 + Impl::countChars(haystack.data(), haystack.data() + pos);
+				}
+				else
+					res[i] = 0;
+			}
+
+			prev_needle_offset = needle_offsets[i];
+		}
 	}
 };
 
@@ -441,7 +512,7 @@ struct MatchImpl
 {
 	typedef UInt8 ResultType;
 
-	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
+	static void vector_constant(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		const std::string & pattern,
 		PODArray<UInt8> & res)
 	{
@@ -575,10 +646,27 @@ struct MatchImpl
 		}
 	}
 
-	static void constant(const std::string & data, const std::string & pattern, UInt8 & res)
+	static void constant_constant(const std::string & data, const std::string & pattern, UInt8 & res)
 	{
 		const auto & regexp = Regexps::get<like, true>(pattern);
 		res = revert ^ regexp->match(data);
+	}
+
+	static void vector_vector(
+		const ColumnString::Chars_t & haystack_data, const ColumnString::Offsets_t & haystack_offsets,
+		const ColumnString::Chars_t & needle_data, const ColumnString::Offsets_t & needle_offsets,
+		PODArray<UInt8> & res)
+	{
+		throw Exception("Functions 'like' and 'match' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
+	}
+
+	/// Поиск многих подстрок в одной строке.
+	static void constant_vector(
+		const String & haystack,
+		const ColumnString::Chars_t & needle_data, const ColumnString::Offsets_t & needle_offsets,
+		PODArray<UInt8> & res)
+	{
+		throw Exception("Functions 'like' and 'match' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
 
@@ -1087,11 +1175,11 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[1]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[1]))
 			throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[2]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[2]))
 			throw Exception("Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1186,33 +1274,50 @@ public:
 	{
 		typedef typename Impl::ResultType ResultType;
 
-		const ColumnPtr column = block.getByPosition(arguments[0]).column;
-		const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
+		const ColumnPtr & column_haystack = block.getByPosition(arguments[0]).column;
+		const ColumnPtr & column_needle = block.getByPosition(arguments[1]).column;
 
-		const ColumnConstString * col_needle = typeid_cast<const ColumnConstString *>(&*column_needle);
-		if (!col_needle)
-			throw Exception("Second argument of function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_COLUMN);
+		const ColumnConstString * col_haystack_const = typeid_cast<const ColumnConstString *>(&*column_haystack);
+		const ColumnConstString * col_needle_const = typeid_cast<const ColumnConstString *>(&*column_needle);
 
-		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
-		{
-			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
-			block.getByPosition(result).column = col_res;
-
-			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
-			vec_res.resize(col->size());
-			Impl::vector(col->getChars(), col->getOffsets(), col_needle->getData(), vec_res);
-		}
-		else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
+		if (col_haystack_const && col_needle_const)
 		{
 			ResultType res{};
-			Impl::constant(col->getData(), col_needle->getData(), res);
-
-			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col->size(), res);
+			Impl::constant_constant(col_haystack_const->getData(), col_needle_const->getData(), res);
+			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col_haystack_const->size(), res);
 			block.getByPosition(result).column = col_res;
+			return;
 		}
+
+		ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+		block.getByPosition(result).column = col_res;
+
+		typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+		vec_res.resize(column_haystack->size());
+
+		const ColumnString * col_haystack_vector = typeid_cast<const ColumnString *>(&*column_haystack);
+		const ColumnString * col_needle_vector = typeid_cast<const ColumnString *>(&*column_needle);
+
+		if (col_haystack_vector && col_needle_vector)
+			Impl::vector_vector(
+				col_haystack_vector->getChars(), col_haystack_vector->getOffsets(),
+				col_needle_vector->getChars(), col_needle_vector->getOffsets(),
+				vec_res);
+		else if (col_haystack_vector && col_needle_const)
+			Impl::vector_constant(
+				col_haystack_vector->getChars(), col_haystack_vector->getOffsets(),
+				col_needle_const->getData(),
+				vec_res);
+		else if (col_haystack_const && col_needle_vector)
+			Impl::constant_vector(
+				col_haystack_const->getData(),
+				col_needle_vector->getChars(), col_needle_vector->getOffsets(),
+				vec_res);
 		else
-		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-				+ " of argument of function " + getName(),
+			throw Exception("Illegal columns "
+				+ block.getByPosition(arguments[0]).column->getName()
+				+ " and " + block.getByPosition(arguments[1]).column->getName()
+				+ " of arguments of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
@@ -1309,10 +1414,10 @@ struct NameReplaceAll					{ static constexpr auto name = "replaceAll"; };
 struct NameReplaceRegexpOne				{ static constexpr auto name = "replaceRegexpOne"; };
 struct NameReplaceRegexpAll				{ static constexpr auto name = "replaceRegexpAll"; };
 
-typedef FunctionsStringSearch<PositionImpl<true>, 				NamePosition> 						FunctionPosition;
-typedef FunctionsStringSearch<PositionUTF8Impl<true>, 			NamePositionUTF8> 					FunctionPositionUTF8;
-typedef FunctionsStringSearch<PositionCaseInsensitiveImpl,		NamePositionCaseInsensitive> 		FunctionPositionCaseInsensitive;
-typedef FunctionsStringSearch<PositionUTF8Impl<false>,			NamePositionCaseInsensitiveUTF8>	FunctionPositionCaseInsensitiveUTF8;
+typedef FunctionsStringSearch<PositionImpl<PositionCaseSensitiveASCII>, NamePosition> 						FunctionPosition;
+typedef FunctionsStringSearch<PositionImpl<PositionCaseSensitiveUTF8>, NamePositionUTF8> 					FunctionPositionUTF8;
+typedef FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveASCII>, NamePositionCaseInsensitive> 		FunctionPositionCaseInsensitive;
+typedef FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveUTF8>, NamePositionCaseInsensitiveUTF8>	FunctionPositionCaseInsensitiveUTF8;
 
 typedef FunctionsStringSearch<MatchImpl<false>, 				NameMatch> 							FunctionMatch;
 typedef FunctionsStringSearch<MatchImpl<true>, 					NameLike> 							FunctionLike;
