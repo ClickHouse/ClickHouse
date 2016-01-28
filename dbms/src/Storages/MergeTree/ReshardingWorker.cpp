@@ -38,22 +38,6 @@ namespace ErrorCodes
 namespace
 {
 
-std::string createMergedPartName(const MergeTreeData::DataPartsVector & parts)
-{
-	DayNum_t left_date = DayNum_t(std::numeric_limits<UInt16>::max());
-	DayNum_t right_date = DayNum_t(std::numeric_limits<UInt16>::min());
-	UInt32 level = 0;
-
-	for (const MergeTreeData::DataPartPtr & part : parts)
-	{
-		level = std::max(level, part->level);
-		left_date = std::min(left_date, part->left_date);
-		right_date = std::max(right_date, part->right_date);
-	}
-
-	return ActiveDataPartSet::getPartName(left_date, right_date, parts.front()->left, parts.back()->right, level + 1);
-}
-
 class Arguments final
 {
 public:
@@ -93,20 +77,10 @@ ReshardingWorker::ReshardingWorker(const Poco::Util::AbstractConfiguration & con
 	: context(context_), log(&Logger::get("ReshardingWorker"))
 {
 	Arguments arguments(config, config_name);
-
 	auto zookeeper = context.getZooKeeper();
 
-	host_task_queue_path = "/clickhouse";
-	zookeeper->createIfNotExists(host_task_queue_path, "");
-
-	host_task_queue_path += "/" + arguments.getTaskQueuePath();
-	zookeeper->createIfNotExists(host_task_queue_path, "");
-
-	host_task_queue_path += "/resharding";
-	zookeeper->createIfNotExists(host_task_queue_path, "");
-
-	host_task_queue_path += "/" + getFQDNOrHostName();
-	zookeeper->createIfNotExists(host_task_queue_path, "");
+	host_task_queue_path = arguments.getTaskQueuePath() + "resharding/" + getFQDNOrHostName();
+	zookeeper->createAncestors(host_task_queue_path + "/");
 }
 
 ReshardingWorker::~ReshardingWorker()
@@ -276,7 +250,7 @@ void ReshardingWorker::perform(const ReshardingJob & job)
 	auto & storage = typeid_cast<StorageReplicatedMergeTree &>(*(generic_storage.get()));
 
 	/// Защитить перешардируемую партицию от задачи слияния.
-	ScopedPartitionMergeLock partition_merge_lock(storage, job.partition);
+	const MergeTreeMergeBlocker merge_blocker{storage.merger};
 
 	try
 	{
@@ -309,166 +283,13 @@ void ReshardingWorker::createShardedPartitions(StorageReplicatedMergeTree & stor
 
 	LOG_DEBUG(log, "Splitting partition shard-wise.");
 
-	/// Куски одношо шарда, которые должы быть слиты.
-	struct PartsToBeMerged
-	{
-		void add(MergeTreeData::MutableDataPartPtr & part)
-		{
-			parts.insert(part);
-			total_size += part->size_in_bytes;
-		}
-
-		void clear()
-		{
-			parts.clear();
-			total_size = 0;
-		}
-
-		MergeTreeData::MutableDataParts parts;
-		size_t total_size = 0;
-	};
-
-	/// Для каждого шарда, куски, которые должны быть слиты.
-	std::unordered_map<size_t, PartsToBeMerged> to_merge;
-
-	/// Для нумерации блоков.
-	SimpleIncrement increment(storage.data.getMaxDataPartIndex());
-
-	MergeTreeData::PerShardDataParts & per_shard_data_parts = storage.data.per_shard_data_parts;
-
-	auto zookeeper = storage.getZooKeeper();
-	const auto & settings = context.getSettingsRef();
-
-	DayNum_t month = MergeTreeData::getMonthFromName(job.partition);
-
 	{
 		std::lock_guard<std::mutex> guard(cancel_mutex);
 		merger = std::make_unique<MergeTreeDataMerger>(storage.data);
 	}
 
-	auto parts_from_partition = merger->selectAllPartsFromPartition(month);
-
-	MergeTreeSharder sharder(storage.data, job);
-
-	for (const auto & part : parts_from_partition)
-	{
-		MarkRanges ranges(1, MarkRange(0, part->size));
-
-		MergeTreeBlockInputStream source(
-			storage.data.getFullPath() + part->name + '/',
-			DEFAULT_MERGE_BLOCK_SIZE,
-			part->columns.getNames(),
-			storage.data,
-			part,
-			ranges,
-			false,
-			nullptr,
-			"",
-			true,
-			settings.min_bytes_to_use_direct_io,
-			DBMS_DEFAULT_BUFFER_SIZE,
-			true);
-
-		Block block;
-		while (block = source.read())
-		{
-			/// Разбить куски на несколько, согласно ключу шардирования.
-			ShardedBlocksWithDateIntervals blocks = sharder.shardBlock(block);
-
-			for (ShardedBlockWithDateInterval & block_with_dates : blocks)
-			{
-				abortIfRequested();
-
-				/// Создать новый кусок соответствующий новому блоку.
-				Int64 temp_index = increment.get();
-				MergeTreeData::MutableDataPartPtr block_part = sharder.writeTempPart(block_with_dates, temp_index);
-
-				abortIfRequested();
-
-				/// Добавить новый кусок в список кусков соответствущего шарда, которые должны
-				/// быть слиты. Если установлено, что при вставке этого куска, суммарный размер
-				/// кусков бы превышал некоторый предел, сначала слияем все куски, затем их
-				/// перемещаем в список кусков новой партиции.
-				PartsToBeMerged & parts_to_be_merged = to_merge[block_with_dates.shard_no];
-
-				if ((parts_to_be_merged.total_size + block_part->size_in_bytes) > storage.data.settings.max_bytes_to_merge_parts)
-				{
-					MergeTreeData::MutableDataParts & sharded_parts = per_shard_data_parts[block_with_dates.shard_no];
-
-					if (parts_to_be_merged.parts.size() >= 2)
-					{
-						MergeTreeData::DataPartsVector parts(parts_to_be_merged.parts.begin(), parts_to_be_merged.parts.end());
-						std::string merged_name = createMergedPartName(parts);
-
-						const auto & merge_entry = storage.data.context.getMergeList().insert(job.database_name,
-							job.table_name, merged_name);
-
-						MergeTreeData::MutableDataPartPtr new_part = merger->mergeParts(parts, merged_name, *merge_entry,
-							storage.data.context.getSettings().min_bytes_to_use_direct_io);
-
-						sharded_parts.insert(new_part);
-					}
-					else
-						sharded_parts.insert(block_part);
-
-					/// Удалить исходные куски.
-					parts_to_be_merged.clear();
-				}
-
-				parts_to_be_merged.add(block_part);
-			}
-		}
-
-		/// Обработать все оставшиеся куски.
-		for (auto & entry : to_merge)
-		{
-			abortIfRequested();
-
-			size_t shard_no = entry.first;
-			PartsToBeMerged & parts_to_be_merged = entry.second;
-
-			MergeTreeData::MutableDataParts & sharded_parts = per_shard_data_parts[shard_no];
-
-			if (parts_to_be_merged.parts.size() >= 2)
-			{
-				MergeTreeData::DataPartsVector parts(parts_to_be_merged.parts.begin(), parts_to_be_merged.parts.end());
-				std::string merged_name = createMergedPartName(parts);
-
-				const auto & merge_entry = storage.data.context.getMergeList().insert(job.database_name,
-					job.table_name, merged_name);
-
-				MergeTreeData::MutableDataPartPtr new_part = merger->mergeParts(parts, merged_name, *merge_entry,
-					storage.data.context.getSettings().min_bytes_to_use_direct_io);
-
-				sharded_parts.insert(new_part);
-			}
-			else
-			{
-				auto single_part = *(parts_to_be_merged.parts.begin());
-				sharded_parts.insert(single_part);
-			}
-
-			/// Удалить исходные куски.
-			parts_to_be_merged.clear();
-		}
-	}
-
-	/// До сих пор все куски новых партиций были временны.
-	for (auto & entry : per_shard_data_parts)
-	{
-		size_t shard_no = entry.first;
-		MergeTreeData::MutableDataParts & sharded_parts = entry.second;
-		for (auto & sharded_part : sharded_parts)
-		{
-			sharded_part->is_temp = false;
-			std::string prefix = storage.full_path + "reshard/" + toString(shard_no) + "/";
-			std::string old_name = sharded_part->name;
-			std::string new_name = ActiveDataPartSet::getPartName(sharded_part->left_date,
-				sharded_part->right_date, sharded_part->left, sharded_part->right, sharded_part->level);
-			sharded_part->name = new_name;
-			Poco::File(prefix + old_name).renameTo(prefix + new_name);
-		}
-	}
+	MergeTreeData::PerShardDataParts & per_shard_data_parts = storage.data.per_shard_data_parts;
+	per_shard_data_parts = merger->reshardPartition(job, storage.data.context.getSettings().min_bytes_to_use_direct_io);
 }
 
 void ReshardingWorker::publishShardedPartitions(StorageReplicatedMergeTree & storage, const ReshardingJob & job)
@@ -482,17 +303,17 @@ void ReshardingWorker::publishShardedPartitions(StorageReplicatedMergeTree & sto
 	struct TaskInfo
 	{
 		TaskInfo(const std::string & replica_path_,
-			const std::vector<std::string> & parts_,
+			const std::string & part_,
 			const ReplicatedMergeTreeAddress & dest_,
 			size_t shard_no_)
-			: replica_path(replica_path_), dest(dest_), parts(parts_),
+			: replica_path(replica_path_), dest(dest_), part(part_),
 			shard_no(shard_no_)
 		{
 		}
 
 		std::string replica_path;
 		ReplicatedMergeTreeAddress dest;
-		std::vector<std::string> parts;
+		std::string part;
 		size_t shard_no;
 	};
 
@@ -507,13 +328,9 @@ void ReshardingWorker::publishShardedPartitions(StorageReplicatedMergeTree & sto
 	for (const auto & entry : storage.data.per_shard_data_parts)
 	{
 		size_t shard_no = entry.first;
-		const MergeTreeData::MutableDataParts & sharded_parts = entry.second;
-		if (sharded_parts.empty())
+		const MergeTreeData::MutableDataPartPtr & part_from_shard = entry.second;
+		if (!part_from_shard)
 			continue;
-
-		std::vector<std::string> part_names;
-		for (const MergeTreeData::DataPartPtr & sharded_part : sharded_parts)
-			part_names.push_back(sharded_part->name);
 
 		const WeightedZooKeeperPath & weighted_path = job.paths[shard_no];
 		const std::string & zookeeper_path = weighted_path.first;
@@ -524,7 +341,7 @@ void ReshardingWorker::publishShardedPartitions(StorageReplicatedMergeTree & sto
 			const std::string replica_path = zookeeper_path + "/replicas/" + child;
 			auto host = zookeeper->get(replica_path + "/host");
 			ReplicatedMergeTreeAddress host_desc(host);
-			task_info_list.emplace_back(replica_path, part_names, host_desc, shard_no);
+			task_info_list.emplace_back(replica_path, part_from_shard->name, host_desc, shard_no);
 			if (replica_path == storage.replica_path)
 			{
 				++local_count;
@@ -554,14 +371,14 @@ void ReshardingWorker::publishShardedPartitions(StorageReplicatedMergeTree & sto
 			const TaskInfo & entry = task_info_list[i];
 			const auto & replica_path = entry.replica_path;
 			const auto & dest = entry.dest;
-			const auto & parts = entry.parts;
+			const auto & part = entry.part;
 			size_t shard_no = entry.shard_no;
 
 			InterserverIOEndpointLocation to_location(replica_path, dest.host, dest.replication_port);
 
 			size_t j = i - local_count;
 			tasks[j] = Tasks::value_type(std::bind(&ShardedPartitionSender::Client::send,
-				&storage.sharded_partition_sender_client, to_location, from_location, parts, shard_no));
+				&storage.sharded_partition_sender_client, to_location, from_location, part, shard_no));
 			pool.schedule([j, &tasks]{ tasks[j](); });
 		}
 	}
@@ -586,15 +403,12 @@ void ReshardingWorker::publishShardedPartitions(StorageReplicatedMergeTree & sto
 	{
 		/// На локальной реплике просто перемещаем шардированную паритцию в папку detached/.
 		const TaskInfo & entry = task_info_list[0];
-		const auto & parts = entry.parts;
+		const auto & part = entry.part;
 		size_t shard_no = entry.shard_no;
 
-		for (const auto & part : parts)
-		{
-			std::string from_path = storage.full_path + "reshard/" + toString(shard_no) + "/" + part + "/";
-			std::string to_path = storage.full_path + "detached/";
-			Poco::File(from_path).moveTo(to_path);
-		}
+		std::string from_path = storage.full_path + "reshard/" + toString(shard_no) + "/" + part + "/";
+		std::string to_path = storage.full_path + "detached/";
+		Poco::File(from_path).moveTo(to_path);
 	}
 }
 
@@ -628,8 +442,8 @@ void ReshardingWorker::applyChanges(StorageReplicatedMergeTree & storage, const 
 	for (const auto & entry : storage.data.per_shard_data_parts)
 	{
 		size_t shard_no = entry.first;
-		const MergeTreeData::MutableDataParts & sharded_parts = entry.second;
-		if (sharded_parts.empty())
+		const MergeTreeData::MutableDataPartPtr & part_from_shard = entry.second;
+		if (!part_from_shard)
 			continue;
 
 		const WeightedZooKeeperPath & weighted_path = job.paths[shard_no];

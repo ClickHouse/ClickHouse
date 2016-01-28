@@ -498,35 +498,4 @@ private:
 	PartitionToMergeLock partition_to_merge_lock;
 };
 
-/** Рекурсивная блокировка, которая защищает заданную партицию от задачи слияния.
-  */
-class ScopedPartitionMergeLock final
-{
-public:
-	ScopedPartitionMergeLock(StorageReplicatedMergeTree & storage_, const std::string & partition_name_)
-		: storage(storage_), partition_name(partition_name_)
-	{
-		fake_part_name = storage.acquirePartitionMergeLock(partition_name);
-	}
-
-	ScopedPartitionMergeLock(const ScopedPartitionMergeLock &) = delete;
-	ScopedPartitionMergeLock & operator=(const ScopedPartitionMergeLock &) = delete;
-
-	/// Получить уникальное название блокировки.
-	std::string getId() const
-	{
-		return fake_part_name;
-	}
-
-	~ScopedPartitionMergeLock()
-	{
-		storage.releasePartitionMergeLock(partition_name);
-	}
-
-private:
-	StorageReplicatedMergeTree & storage;
-	const std::string partition_name;
-	std::string fake_part_name;
-};
-
 }

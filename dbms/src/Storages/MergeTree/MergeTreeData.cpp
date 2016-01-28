@@ -1041,15 +1041,12 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
 
 MergeTreeData::DataPartPtr MergeTreeData::getShardedPartIfExists(const String & part_name, size_t shard_no)
 {
-	MutableDataPartPtr tmp_part(new DataPart(*this));
-	ActiveDataPartSet::parsePartName(part_name, *tmp_part);
+	const MutableDataPartPtr & part_from_shard = per_shard_data_parts.at(shard_no);
 
-	const MutableDataParts & sharded_parts = per_shard_data_parts.at(shard_no);
-	MutableDataParts::const_iterator it = sharded_parts.lower_bound(tmp_part);
-	if ((it != sharded_parts.end()) && ((*it)->name == part_name))
-		return *it;
-
-	return nullptr;
+	if (part_from_shard->name == part_name)
+		return part_from_shard;
+	else
+		return nullptr;
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const String & relative_path)
