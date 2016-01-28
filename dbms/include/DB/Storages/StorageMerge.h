@@ -62,7 +62,7 @@ public:
 
 	/// в подтаблицах добавлять и удалять столбы нужно вручную
 	/// структура подтаблиц не проверяется
-	void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
+	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
 
 private:
 	String name;

@@ -313,16 +313,7 @@ namespace ErrorCodes
 	extern const int TOO_MUCH_BYTES = 307;
 	extern const int UNEXPECTED_NODE_IN_ZOOKEEPER = 308;
 	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS = 309;
-	extern const int INCONSISTENT_TABLE_ACCROSS_SHARDS = 310;
-	extern const int INSUFFICIENT_SPACE_FOR_RESHARDING = 311;
-	extern const int PARTITION_COPY_FAILED = 312;
-	extern const int PARTITION_ATTACH_FAILED = 313;
-	extern const int RESHARDING_NO_WORKER = 314;
-	extern const int INVALID_PARTITIONS_INTERVAL = 315;
-	extern const int RESHARDING_INVALID_PARAMETERS = 316;
-	extern const int INVALID_SHARD_WEIGHT = 317;
-	extern const int INVALID_CONFIG_PARAMETER = 318;
-	extern const int UNKNOWN_STATUS_OF_INSERT = 319;
+	extern const int UNKNOWN_STATUS_OF_INSERT = 320;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;

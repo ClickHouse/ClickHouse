@@ -578,6 +578,7 @@ void ZooKeeper::waitForDisappear(const std::string & path)
 	}
 }
 
+
 ZooKeeper::~ZooKeeper()
 {
 	LOG_INFO(&Logger::get("~ZooKeeper"), "Closing ZooKeeper session");

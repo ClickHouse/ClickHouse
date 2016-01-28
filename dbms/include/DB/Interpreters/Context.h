@@ -30,7 +30,6 @@ class Dictionaries;
 class ExternalDictionaries;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
-class ReshardingWorker;
 class MergeList;
 class Cluster;
 class Compiler;
@@ -250,9 +249,6 @@ public:
 	std::shared_ptr<MarkCache> getMarkCache() const;
 
 	BackgroundProcessingPool & getBackgroundPool();
-
-	void setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker);
-	ReshardingWorker & getReshardingWorker();
 
 	/** Очистить кэши разжатых блоков и засечек.
 	  * Обычно это делается при переименовании таблиц, изменении типа столбцов, удалении таблицы.

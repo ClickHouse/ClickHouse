@@ -35,8 +35,6 @@
 #include <DB/Storages/System/StorageSystemFunctions.h>
 #include <DB/Storages/System/StorageSystemClusters.h>
 #include <DB/Storages/System/StorageSystemMetrics.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/Storages/MergeTree/ReshardingWorker.h>
 
 #include <zkutil/ZooKeeper.h>
 
@@ -319,13 +317,6 @@ int Server::main(const std::vector<std::string> & args)
 		global_context->addTable("system", "zookeeper", StorageSystemZooKeeper::create("zookeeper"));
 
 	global_context->setCurrentDatabase(config().getString("default_database", "default"));
-
-	if (has_zookeeper && config().has("resharding"))
-	{
-		auto resharding_worker = std::make_shared<ReshardingWorker>(config(), "resharding", *global_context);
-		global_context->setReshardingWorker(resharding_worker);
-		resharding_worker->start();
-	}
 
 	SCOPE_EXIT(
 		LOG_DEBUG(log, "Closed all connections.");

@@ -16,7 +16,7 @@ namespace DB
 class InterpreterAlterQuery : public IInterpreter
 {
 public:
-	InterpreterAlterQuery(ASTPtr query_ptr_, const Context & context_);
+	InterpreterAlterQuery(ASTPtr query_ptr_, Context & context_);
 
 	BlockIO execute() override;
 
@@ -28,8 +28,7 @@ public:
 		const NamesAndTypesList & materialized_columns,
 		const NamesAndTypesList & alias_columns,
 		const ColumnDefaults & column_defaults,
-		const Context & context);
-
+		Context & context);
 private:
 	struct PartitionCommand
 	{
@@ -39,7 +38,6 @@ private:
 			ATTACH_PARTITION,
 			FETCH_PARTITION,
 			FREEZE_PARTITION,
-			RESHARD_PARTITION
 		};
 
 		Type type;
@@ -51,11 +49,6 @@ private:
 		bool part;
 
 		String from; /// Для FETCH PARTITION - путь в ZK к шарду, с которого скачивать партицию.
-
-		/// Для RESHARD PARTITION.
-		Field last_partition;
-		WeightedZooKeeperPaths weighted_zookeeper_paths;
-		ASTPtr sharding_key_expr;
 
 		static PartitionCommand dropPartition(const Field & partition, bool detach, bool unreplicated)
 		{
@@ -75,12 +68,6 @@ private:
 		static PartitionCommand freezePartition(const Field & partition)
 		{
 			return {FREEZE_PARTITION, partition};
-		}
-
-		static PartitionCommand reshardPartitions(const Field & first_partition_, const Field & last_partition_,
-			const WeightedZooKeeperPaths & weighted_zookeeper_paths_, const ASTPtr & sharding_key_expr)
-		{
-			return {RESHARD_PARTITION, first_partition_, false, false, false, {}, last_partition_, weighted_zookeeper_paths_, sharding_key_expr};
 		}
 	};
 
