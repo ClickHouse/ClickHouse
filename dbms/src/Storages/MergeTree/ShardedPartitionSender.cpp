@@ -51,7 +51,7 @@ std::string getEndpointId(const std::string & node_id)
 }
 
 Service::Service(StorageReplicatedMergeTree & storage_)
-	: storage(storage_)
+	: storage(storage_), log(&Logger::get("ShardedPartitionSender::Service"))
 {
 }
 
@@ -79,13 +79,28 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out
 
 		MergeTreeData::MutableDataPartPtr part = storage.fetcher.fetchShardedPart(from_location, part_name, shard_no);
 		part->is_temp = false;
-		const std::string new_name = "detached/" + part_name;
-		Poco::File(storage.full_path + part->name).renameTo(storage.full_path + new_name);
+
+		const std::string old_part_path = storage.full_path + part->name;
+		const std::string new_part_path = storage.full_path + "detached/" + part_name;
+
+		Poco::File new_part_dir(new_part_path);
+		if (new_part_dir.exists())
+		{
+			LOG_WARNING(log, "Directory " + new_part_path + " already exists. Removing.");
+			new_part_dir.remove(true);
+		}
+
+		Poco::File(old_part_path).renameTo(new_part_path);
 	}
 
 	bool flag = true;
 	writeBinary(flag, out);
 	out.next();
+}
+
+Client::Client()
+	: log(&Logger::get("ShardedPartitionSender::Client"))
+{
 }
 
 bool Client::send(const InterserverIOEndpointLocation & to_location, const InterserverIOEndpointLocation & from_location,

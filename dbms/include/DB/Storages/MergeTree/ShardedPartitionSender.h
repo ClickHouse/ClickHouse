@@ -2,6 +2,7 @@
 
 #include <DB/Interpreters/InterserverIOHandler.h>
 #include <DB/IO/WriteBuffer.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -24,6 +25,7 @@ public:
 
 private:
 	StorageReplicatedMergeTree & storage;
+	Logger * log;
 };
 
 /** Клиент для отправления кусков из партиции таблицы *MergeTree.
@@ -31,7 +33,7 @@ private:
 class Client final
 {
 public:
-	Client() = default;
+	Client();
 	Client(const Client &) = delete;
 	Client & operator=(const Client &) = delete;
 	bool send(const InterserverIOEndpointLocation & to_location, const InterserverIOEndpointLocation & from_location,
@@ -40,6 +42,7 @@ public:
 
 private:
 	std::atomic<bool> is_cancelled{false};
+	Logger * log;
 };
 
 }

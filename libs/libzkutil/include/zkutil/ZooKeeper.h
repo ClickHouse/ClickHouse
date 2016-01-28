@@ -173,8 +173,6 @@ public:
 	  */
 	void waitForDisappear(const std::string & path);
 
-	std::string getTaskQueuePath() const;
-
 	/** Асинхронный интерфейс (реализовано небольшое подмножество операций).
 	  *
 	  * Использование:
@@ -300,7 +298,7 @@ private:
 	friend struct WatchWithEvent;
 	friend class EphemeralNodeHolder;
 
-	void init(const std::string & hosts, int32_t session_timeout_ms, const std::string & task_queue_path_ = "");
+	void init(const std::string & hosts, int32_t session_timeout_ms);
 	void removeChildrenRecursive(const std::string & path);
 	void tryRemoveChildrenRecursive(const std::string & path);
 	void * watchForEvent(EventPtr event);
@@ -343,7 +341,6 @@ private:
 	int32_t existsImpl(const std::string & path, Stat * stat_, EventPtr watch = nullptr);
 
 	std::string hosts;
-	std::string task_queue_path;
 	int32_t session_timeout_ms;
 
 	std::mutex mutex;

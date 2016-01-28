@@ -1,5 +1,6 @@
 #include <DB/Storages/MergeTree/RemoteDiskSpaceMonitor.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
+#include <DB/Interpreters/Context.h>
 #include <DB/IO/ReadBufferFromHTTP.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
@@ -25,8 +26,8 @@ std::string getEndpointId(const std::string & node_id)
 
 }
 
-Service::Service(const String & path_)
-	: path(path_)
+Service::Service(const Context & context_)
+	: context(context_)
 {
 }
 
@@ -40,12 +41,12 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out
 	if (is_cancelled)
 		throw Exception("RemoteDiskSpaceMonitor service terminated", ErrorCodes::ABORTED);
 
-	size_t free_space = DiskSpaceMonitor::getUnreservedFreeSpace(path);
+	size_t free_space = DiskSpaceMonitor::getUnreservedFreeSpace(context.getPath());
 	writeBinary(free_space, out);
 	out.next();
 }
 
-size_t Client::getFreeDiskSpace(const InterserverIOEndpointLocation & location) const
+size_t Client::getFreeSpace(const InterserverIOEndpointLocation & location) const
 {
 	ReadBufferFromHTTP::Params params =
 	{

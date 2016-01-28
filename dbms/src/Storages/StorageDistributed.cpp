@@ -228,7 +228,7 @@ void StorageDistributed::shutdown()
 
 void StorageDistributed::reshardPartitions(const String & database_name, const Field & first_partition,
 	const Field & last_partition, const WeightedZooKeeperPaths & weighted_zookeeper_paths,
-	const String & sharding_key, const Settings & settings)
+	const ASTPtr & sharding_key_expr, const Settings & settings)
 {
 	/// Создать запрос ALTER TABLE xxx.yyy RESHARD PARTITION zzz TO ttt USING uuu.
 
@@ -258,7 +258,7 @@ void StorageDistributed::reshardPartitions(const String & database_name, const F
 	}
 
 	parameters.weighted_zookeeper_paths = expr_list;
-	parameters.sharding_key = sharding_key;
+	parameters.sharding_key_expr = sharding_key_expr;
 
 	/** Функциональность shard_multiplexing не доделана - выключаем её.
 	  * (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
