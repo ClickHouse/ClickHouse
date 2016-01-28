@@ -1,6 +1,7 @@
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/DataStreams/BlockExtraInfoInputStream.h>
+#include <DB/DataStreams/UnionBlockInputStream.h>
 
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Storages/VirtualColumnFactory.h>
@@ -11,11 +12,19 @@
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/TablePropertiesQueriesASTs.h>
+#include <DB/Parsers/ParserAlterQuery.h>
+#include <DB/Parsers/parseQuery.h>
+#include <DB/Parsers/ASTWeightedZooKeeperPath.h>
+#include <DB/Parsers/ASTLiteral.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/Interpreters/InterpreterDescribeQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Interpreters/ClusterProxy/Query.h>
+#include <DB/Interpreters/ClusterProxy/SelectQueryConstructor.h>
+#include <DB/Interpreters/ClusterProxy/DescribeQueryConstructor.h>
+#include <DB/Interpreters/ClusterProxy/AlterQueryConstructor.h>
 
 #include <DB/Core/Field.h>
 
@@ -58,17 +67,6 @@ namespace
 		actual_query.select = nullptr;
 
 		return modified_query_ast;
-	}
-
-	BlockExtraInfo toBlockExtraInfo(const Cluster::Address & address)
-	{
-		BlockExtraInfo block_extra_info;
-		block_extra_info.host = address.host_name;
-		block_extra_info.resolved_address = address.resolved_address.toString();
-		block_extra_info.port = address.port;
-		block_extra_info.user = address.user;
-		block_extra_info.is_valid = true;
-		return block_extra_info;
 	}
 }
 
@@ -170,38 +168,19 @@ BlockInputStreams StorageDistributed::read(
 	const size_t max_block_size,
 	const unsigned threads)
 {
-	Settings new_settings = settings;
-	new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
-	/// Не имеет смысла на удалённых серверах, так как запрос отправляется обычно с другим user-ом.
-	new_settings.max_concurrent_queries_for_user = 0;
-
 	size_t result_size = (cluster.getRemoteShardCount() * settings.max_parallel_replicas) + cluster.getLocalShardCount();
 
 	processed_stage = result_size == 1 || settings.distributed_group_by_no_merge
 		? QueryProcessingStage::Complete
 		: QueryProcessingStage::WithMergeableState;
 
-	BlockInputStreams res;
 	const auto & modified_query_ast = rewriteSelectQuery(
 		query, remote_database, remote_table);
-	const auto & modified_query = queryToString(modified_query_ast);
-
-	/// Ограничение сетевого трафика, если нужно.
-	ThrottlerPtr throttler;
-	if (settings.limits.max_network_bandwidth || settings.limits.max_network_bytes)
-		throttler.reset(new Throttler(
-			settings.limits.max_network_bandwidth,
-			settings.limits.max_network_bytes,
-			"Limit for bytes to send or receive over network exceeded."));
 
 	Tables external_tables;
 
 	if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
 		external_tables = context.getExternalTables();
-
-	/// Распределить шарды равномерно по потокам.
-
-	size_t remote_count = cluster.getRemoteShardCount();
 
 	/// Отключаем мультиплексирование шардов, если есть ORDER BY без GROUP BY.
 	//const ASTSelectQuery & ast = *(static_cast<const ASTSelectQuery *>(modified_query_ast.get()));
@@ -213,79 +192,10 @@ BlockInputStreams StorageDistributed::read(
 	//bool enable_shard_multiplexing = !(ast.order_expression_list && !ast.group_expression_list);
 	bool enable_shard_multiplexing = false;
 
-	size_t thread_count;
+	ClusterProxy::SelectQueryConstructor select_query_constructor(processed_stage, external_tables);
 
-	if (!enable_shard_multiplexing)
-		thread_count = remote_count;
-	else if (remote_count == 0)
-		thread_count = 0;
-	else if (settings.max_distributed_processing_threads == 0)
-		thread_count = 1;
-	else
-		thread_count = std::min(remote_count, static_cast<size_t>(settings.max_distributed_processing_threads));
-
-	size_t pools_per_thread = (thread_count > 0) ? (remote_count / thread_count) : 0;
-	size_t remainder = (thread_count > 0) ? (remote_count % thread_count) : 0;
-
-	ConnectionPoolsPtr pools;
-	bool do_init = true;
-
-	/// Цикл по шардам.
-	size_t current_thread = 0;
-	for (const auto & shard_info : cluster.getShardsInfo())
-	{
-		if (shard_info.isLocal())
-		{
-			/// Добавляем запросы к локальному ClickHouse.
-
-			DB::Context new_context = context;
-			new_context.setSettings(new_settings);
-
-			for (size_t i = 0; i < shard_info.local_addresses.size(); ++i)
-			{
-				InterpreterSelectQuery interpreter(modified_query_ast, new_context, processed_stage);
-
-				/** Материализация нужна, так как с удалённых серверов константы приходят материализованными.
-				  * Если этого не делать, то в разных потоках будут получаться разные типы (Const и не-Const) столбцов,
-				  * а это не разрешено, так как весь код исходит из допущения, что в потоке блоков все типы одинаковые.
-				  */
-				res.emplace_back(new MaterializingBlockInputStream(interpreter.execute().in));
-			}
-		}
-		else
-		{
-			size_t excess = (current_thread < remainder) ? 1 : 0;
-			size_t actual_pools_per_thread = pools_per_thread + excess;
-
-			if (actual_pools_per_thread == 1)
-			{
-				res.emplace_back(new RemoteBlockInputStream{
-					shard_info.pool, modified_query, &new_settings, throttler,
-					external_tables, processed_stage, context});
-				++current_thread;
-			}
-			else
-			{
-				if (do_init)
-				{
-					pools = new ConnectionPools;
-					do_init = false;
-				}
-
-				pools->push_back(shard_info.pool);
-				if (pools->size() == actual_pools_per_thread)
-				{
-					res.emplace_back(new RemoteBlockInputStream{
-						pools, modified_query, &new_settings, throttler,
-						external_tables, processed_stage, context});
-					do_init = true;
-					++current_thread;
-				}
-			}
-		}
-	}
-
-	return res;
+	return ClusterProxy::Query(select_query_constructor, cluster, modified_query_ast,
+		context, settings, enable_shard_multiplexing).execute();
 }
 
 BlockOutputStreamPtr StorageDistributed::write(ASTPtr query, const Settings & settings)
@@ -303,7 +213,7 @@ BlockOutputStreamPtr StorageDistributed::write(ASTPtr query, const Settings & se
 	};
 }
 
-void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
+void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
 {
 	auto lock = lockStructureForAlter();
 	params.apply(*columns, materialized_columns, alias_columns, column_defaults);
@@ -316,120 +226,83 @@ void StorageDistributed::shutdown()
 	directory_monitors.clear();
 }
 
-BlockInputStreams StorageDistributed::describe(const Context & context, const Settings & settings)
+void StorageDistributed::reshardPartitions(const String & database_name, const Field & first_partition,
+	const Field & last_partition, const WeightedZooKeeperPaths & weighted_zookeeper_paths,
+	const String & sharding_key, const Settings & settings)
 {
-	Settings new_settings = settings;
-	new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
-	/// Не имеет смысла на удалённых серверах, так как запрос отправляется обычно с другим user-ом.
-	new_settings.max_concurrent_queries_for_user = 0;
+	/// Создать запрос ALTER TABLE xxx.yyy RESHARD PARTITION zzz TO ttt USING uuu.
 
-	/// Создать запрос DESCRIBE TABLE.
+	ASTPtr alter_query_ptr = new ASTAlterQuery;
+	auto & alter_query = static_cast<ASTAlterQuery &>(*alter_query_ptr);
 
-	auto describe_query = new ASTDescribeQuery;
-	describe_query->database = remote_database;
-	describe_query->table = remote_table;
+	alter_query.database = remote_database;
+	alter_query.table = remote_table;
 
-	ASTPtr ast = describe_query;
-	const auto query = queryToString(ast);
+	alter_query.parameters.emplace_back();
+	ASTAlterQuery::Parameters & parameters = alter_query.parameters.back();
 
-	/// Ограничение сетевого трафика, если нужно.
-	ThrottlerPtr throttler;
-	if (settings.limits.max_network_bandwidth || settings.limits.max_network_bytes)
-		throttler.reset(new Throttler(
-			settings.limits.max_network_bandwidth,
-			settings.limits.max_network_bytes,
-			"Limit for bytes to send or receive over network exceeded."));
+	parameters.type = ASTAlterQuery::RESHARD_PARTITION;
+	if (!first_partition.isNull())
+		parameters.partition = new ASTLiteral({}, first_partition);
+	if (!last_partition.isNull())
+		parameters.last_partition = new ASTLiteral({}, last_partition);
 
-	BlockInputStreams res;
-
-	/// Распределить шарды равномерно по потокам.
-
-	size_t remote_count = 0;
-	for (const auto & shard_info : cluster.getShardsInfo())
+	ASTPtr expr_list = new ASTExpressionList;
+	for (const auto & entry : weighted_zookeeper_paths)
 	{
-		if (shard_info.hasRemoteConnections())
-			++remote_count;
+		ASTPtr weighted_path_ptr = new ASTWeightedZooKeeperPath;
+		auto & weighted_path = static_cast<ASTWeightedZooKeeperPath &>(*weighted_path_ptr);
+		weighted_path.path = entry.first;
+		weighted_path.weight = entry.second;
+		expr_list->children.push_back(weighted_path_ptr);
 	}
 
-	size_t thread_count;
+	parameters.weighted_zookeeper_paths = expr_list;
+	parameters.sharding_key = sharding_key;
 
 	/** Функциональность shard_multiplexing не доделана - выключаем её.
 	  * (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
 	  * Подробнее смотрите в https://███████████.yandex-team.ru/METR-18300
 	  */
+	bool enable_shard_multiplexing = false;
 
-/*	if (remote_count == 0)
-		thread_count = 0;
-	else if (settings.max_distributed_processing_threads == 0)
-		thread_count = 1;
-	else
-		thread_count = std::min(remote_count, static_cast<size_t>(settings.max_distributed_processing_threads));
-	*/
-	thread_count = remote_count;
+	ClusterProxy::AlterQueryConstructor alter_query_constructor;
 
-	size_t pools_per_thread = (thread_count > 0) ? (remote_count / thread_count) : 0;
-	size_t remainder = (thread_count > 0) ?  (remote_count % thread_count) : 0;
+	BlockInputStreams streams = ClusterProxy::Query(alter_query_constructor, cluster, alter_query_ptr,
+		context, settings, enable_shard_multiplexing).execute();
 
-	ConnectionPoolsPtr pools;
-	bool do_init = true;
+	streams[0] = new UnionBlockInputStream<>(streams, nullptr, settings.max_distributed_connections);
+	streams.resize(1);
 
-	/// Цикл по шардам.
-	size_t current_thread = 0;
-	for (const auto & shard_info : cluster.getShardsInfo())
-	{
-		if (shard_info.isLocal())
-		{
-			/// Добавляем запросы к локальному ClickHouse.
+	auto stream_ptr = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]);
+	if (stream_ptr == nullptr)
+		throw Exception("StorageDistributed: Internal error", ErrorCodes::LOGICAL_ERROR);
+	auto & stream = *stream_ptr;
 
-			DB::Context new_context = context;
-			new_context.setSettings(new_settings);
+	while (!stream.isCancelled() && stream.read())
+		;
+}
 
-			for (const auto & address : shard_info.local_addresses)
-			{
-				InterpreterDescribeQuery interpreter(ast, new_context);
-				BlockInputStreamPtr stream = new MaterializingBlockInputStream(interpreter.execute().in);
-				stream = new BlockExtraInfoInputStream(stream, toBlockExtraInfo(address));
-				res.emplace_back(stream);
-			}
-		}
+BlockInputStreams StorageDistributed::describe(const Context & context, const Settings & settings)
+{
+	/// Создать запрос DESCRIBE TABLE.
 
-		if (shard_info.hasRemoteConnections())
-		{
-			size_t excess = (current_thread < remainder) ? 1 : 0;
-			size_t actual_pools_per_thread = pools_per_thread + excess;
+	ASTPtr describe_query_ptr = new ASTDescribeQuery;
+	auto & describe_query = static_cast<ASTDescribeQuery &>(*describe_query_ptr);
 
-			if (actual_pools_per_thread == 1)
-			{
-				auto stream = new RemoteBlockInputStream{shard_info.pool, query, &new_settings, throttler};
-				stream->doBroadcast();
-				stream->appendExtraInfo();
-				res.emplace_back(stream);
-				++current_thread;
-			}
-			else
-			{
-				if (do_init)
-				{
-					pools = new ConnectionPools;
-					do_init = false;
-				}
+	describe_query.database = remote_database;
+	describe_query.table = remote_table;
 
-				pools->push_back(shard_info.pool);
-				if (pools->size() == actual_pools_per_thread)
-				{
-					auto stream = new RemoteBlockInputStream{pools, query, &new_settings, throttler};
-					stream->doBroadcast();
-					stream->appendExtraInfo();
-					res.emplace_back(stream);
+	/** Функциональность shard_multiplexing не доделана - выключаем её.
+	  * (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
+	  * Подробнее смотрите в https://███████████.yandex-team.ru/METR-18300
+	  */
+	bool enable_shard_multiplexing = false;
 
-					do_init = true;
-					++current_thread;
-				}
-			}
-		}
-	}
+	ClusterProxy::DescribeQueryConstructor describe_query_constructor;
 
-	return res;
+	return ClusterProxy::Query(describe_query_constructor, cluster, describe_query_ptr,
+		context, settings, enable_shard_multiplexing).execute();
 }
 
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const

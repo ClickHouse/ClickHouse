@@ -17,6 +17,7 @@
 #include <DB/Storages/IStorage.h>
 #include <DB/Storages/MarkCache.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
+#include <DB/Storages/MergeTree/ReshardingWorker.h>
 #include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/Storages/MergeTree/MergeTreeSettings.h>
 #include <DB/Storages/CompressionMethodSelector.h>
@@ -102,6 +103,7 @@ struct ContextShared
 	ConfigurationPtr users_config;							/// Конфиг с секциями users, profiles и quotas.
 	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
 	BackgroundProcessingPoolPtr background_pool;			/// Пул потоков для фоновой работы, выполняемой таблицами.
+	ReshardingWorkerPtr resharding_worker;
 	Macros macros;											/// Подстановки из конфига.
 	std::unique_ptr<Compiler> compiler;						/// Для динамической компиляции частей запроса, при необходимости.
 	std::unique_ptr<QueryLog> query_log;					/// Для логгирования запросов.
@@ -818,6 +820,19 @@ BackgroundProcessingPool & Context::getBackgroundPool()
 	if (!shared->background_pool)
 		shared->background_pool = new BackgroundProcessingPool(settings.background_pool_size);
 	return *shared->background_pool;
+}
+
+ReshardingWorker & Context::getReshardingWorker()
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	if (!shared->zookeeper)
+		throw Exception("Resharding background processing requires ZooKeeper", ErrorCodes::LOGICAL_ERROR);
+
+	if (!shared->resharding_worker)
+		shared->resharding_worker = new ReshardingWorker(*this);
+
+	return *shared->resharding_worker;
 }
 
 void Context::resetCaches() const

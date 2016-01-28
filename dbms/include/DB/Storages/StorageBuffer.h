@@ -85,7 +85,7 @@ public:
 	bool supportsParallelReplicas() const override { return true; }
 
 	/// Структура подчинённой таблицы не проверяется и не изменяется.
-	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
+	void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
 private:
 	String name;

@@ -90,6 +90,8 @@ namespace ErrorCodes
 
 class MergeTreeData : public ITableDeclaration
 {
+	friend class ReshardingWorker;
+
 public:
 	/// Функция, которую можно вызвать, если есть подозрение, что данные куска испорчены.
 	typedef std::function<void (const String &)> BrokenPartCallback;
@@ -246,6 +248,10 @@ public:
 		/// Если true, деструктор удалит директорию с куском.
 		bool is_temp = false;
 
+		/// Для перешардирования.
+		bool is_sharded = false;
+		size_t shard_no = 0;
+
 		/// Первичный ключ. Всегда загружается в оперативку.
 		typedef std::vector<Field> Index;
 		Index index;
@@ -280,13 +286,15 @@ public:
 			{
 				try
 				{
-					Poco::File dir(storage.full_path + name);
+					std::string path = storage.full_path + (is_sharded ? ("reshard/" + toString(shard_no) + "/") : "") + name;
+
+					Poco::File dir(path);
 					if (!dir.exists())
 						return;
 
 					if (name.substr(0, strlen("tmp")) != "tmp")
 					{
-						LOG_ERROR(storage.log, "~DataPart() should remove part " << storage.full_path + name
+						LOG_ERROR(storage.log, "~DataPart() should remove part " << path
 							<< " but its name doesn't start with tmp. Too suspicious, keeping the part.");
 						return;
 					}
@@ -541,9 +549,10 @@ public:
 
 		bool hasColumnFiles(const String & column) const
 		{
+			String prefix = storage.full_path + (is_sharded ? ("reshard/" + toString(shard_no) + "/") : "") + name + "/";
 			String escaped_column = escapeForFileName(column);
-			return Poco::File(storage.full_path + name + "/" + escaped_column + ".bin").exists() &&
-			       Poco::File(storage.full_path + name + "/" + escaped_column + ".mrk").exists();
+			return Poco::File(prefix + escaped_column + ".bin").exists() &&
+			       Poco::File(prefix + escaped_column + ".mrk").exists();
 		}
 	};
 
@@ -554,6 +563,9 @@ public:
 	typedef std::set<DataPartPtr, DataPartPtrLess> DataParts;
 	typedef std::vector<DataPartPtr> DataPartsVector;
 
+	/// Для перешардирования.
+	using MutableDataParts = std::set<MutableDataPartPtr, DataPartPtrLess>;
+	using PerShardDataParts = std::unordered_map<size_t, MutableDataParts>;
 
 	/// Некоторые операции над множеством кусков могут возвращать такой объект.
 	/// Если не был вызван commit или rollback, деструктор откатывает операцию.
@@ -667,7 +679,7 @@ public:
 					const NamesAndTypesList & materialized_columns_,
 					const NamesAndTypesList & alias_columns_,
 					const ColumnDefaults & column_defaults_,
-					const Context & context_,
+					Context & context_,
 					ASTPtr & primary_expr_ast_,
 					const String & date_column_name_,
 					const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
@@ -752,6 +764,7 @@ public:
 	/** Возвращает кусок с таким именем (активный или не активный). Если нету, nullptr.
 	  */
 	DataPartPtr getPartIfExists(const String & part_name);
+	DataPartPtr getShardedPartIfExists(const String & part_name, size_t shard_no);
 
 	/** Переименовывает временный кусок в постоянный и добавляет его в рабочий набор.
 	  * Если increment != nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
@@ -841,6 +854,10 @@ public:
 	  */
 	void freezePartition(const std::string & prefix);
 
+	/** Возвращает размер заданной партиции в байтах.
+	  */
+	size_t getPartitionSize(const std::string & partition_name) const;
+
 	size_t getColumnSize(const std::string & name) const
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock{data_parts_mutex};
@@ -856,11 +873,13 @@ public:
 		return column_sizes;
 	}
 
-	/// Для ATTACH/DETACH/DROP PARTITION.
+	/// Для ATTACH/DETACH/DROP/RESHARD PARTITION.
 	static String getMonthName(const Field & partition);
+	static String getMonthName(DayNum_t month);
 	static DayNum_t getMonthDayNum(const Field & partition);
+	static DayNum_t getMonthFromName(const String & month_name);
 
-	const Context & context;
+	Context & context;
 	const String date_column_name;
 	const ASTPtr sampling_expression;
 	const size_t index_granularity;
@@ -905,6 +924,10 @@ private:
 	  */
 	DataParts all_data_parts;
 	mutable Poco::FastMutex all_data_parts_mutex;
+
+	/** Для каждого шарда множество шардированных кусков.
+	  */
+	PerShardDataParts per_shard_data_parts;
 
 	/** Выражение, преобразующее типы столбцов.
 	  * Если преобразований типов нет, out_expression=nullptr.

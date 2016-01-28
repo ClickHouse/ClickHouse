@@ -7,11 +7,14 @@
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeQueue.h>
-#include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <DB/Storages/MergeTree/AbandonableLockInZooKeeper.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
+#include <DB/Storages/MergeTree/DataPartsExchange.h>
+#include <DB/Storages/MergeTree/RemoteDiskSpaceMonitor.h>
+#include <DB/Storages/MergeTree/ShardedPartitionSender.h>
+#include <DB/Storages/MergeTree/RemoteQueryExecutor.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/LeaderElection.h>
@@ -126,12 +129,15 @@ public:
 
 	bool optimize(const Settings & settings) override;
 
-	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
+	void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
 	void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
 	void attachPartition(ASTPtr query, const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
 	void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
 	void freezePartition(const Field & partition, const Settings & settings) override;
+	void reshardPartitions(const String & database_name, const Field & first_partition, const Field & last_partition,
+		const WeightedZooKeeperPaths & weighted_zookeeper_paths, const String & sharding_key,
+		const Settings & settings) override;
 
 	/** Удаляет реплику из ZooKeeper. Если других реплик нет, удаляет всю таблицу из ZooKeeper.
 	  */
@@ -181,6 +187,11 @@ private:
 	friend class ReplicatedMergeTreeRestartingThread;
 	friend class ReplicatedMergeTreeCleanupThread;
 	friend struct ReplicatedMergeTreeLogEntry;
+	friend class ScopedPartitionMergeLock;
+
+	friend class ReshardingWorker;
+	friend class ShardedPartitionSender::Client;
+	friend class ShardedPartitionSender::Service;
 
 	using LogEntry = ReplicatedMergeTreeLogEntry;
 	using LogEntryPtr = LogEntry::Ptr;
@@ -236,12 +247,20 @@ private:
 	bool is_leader_node = false;
 
 	InterserverIOEndpointHolderPtr endpoint_holder;
+	InterserverIOEndpointHolderPtr disk_space_monitor_endpoint_holder;
+	InterserverIOEndpointHolderPtr sharded_partition_sender_endpoint_holder;
+	InterserverIOEndpointHolderPtr remote_query_executor_endpoint_holder;
 
 	MergeTreeData data;
 	MergeTreeDataSelectExecutor reader;
 	MergeTreeDataWriter writer;
 	MergeTreeDataMerger merger;
-	ReplicatedMergeTreePartsFetcher fetcher;
+
+	DataPartsExchange::Fetcher fetcher;
+	RemoteDiskSpaceMonitor::Client free_disk_space_checker;
+	ShardedPartitionSender::Client sharded_partition_sender_client;
+	RemoteQueryExecutor::Client remote_query_executor_client;
+
 	zkutil::LeaderElectionPtr leader_election;
 
 	/// Для чтения данных из директории unreplicated.
@@ -423,12 +442,91 @@ private:
 	/// Кинуть исключение, если таблица readonly.
 	void assertNotReadonly() const;
 
+	/** Получить блокировку, которая защищает заданную партицию от задачи слияния.
+	  * Блокировка является рекурсивной.
+	  */
+	std::string acquirePartitionMergeLock(const std::string & partition_name);
+
+	/** Заявить, что больше не ссылаемся на блокировку соответствующую заданной
+	  * партиции. Если ссылок больше нет, блокировка уничтожается.
+	  */
+	void releasePartitionMergeLock(const std::string & partition_name);
+
 
 	/// Проверить наличие узла в ZK. Если он есть - запомнить эту информацию, и затем сразу отвечать true.
 	std::unordered_set<std::string> existing_nodes_cache;
 	std::mutex existing_nodes_cache_mutex;
 	bool existsNodeCached(const std::string & path);
+
+
+	/// Перешардирование.
+	struct ReplicaSpaceInfo
+	{
+		long double factor = 0.0;
+		size_t available_size = 0;
+	};
+
+	using ReplicaToSpaceInfo = std::map<std::string, ReplicaSpaceInfo>;
+
+	struct PartitionMergeLockInfo
+	{
+		PartitionMergeLockInfo(const std::string & fake_part_name_)
+			: fake_part_name(fake_part_name_), ref_count(1)
+		{
+		}
+
+		std::string fake_part_name;
+		unsigned int ref_count;
+	};
+
+	using PartitionToMergeLock = std::map<std::string, PartitionMergeLockInfo>;
+
+	/** Проверяет, что структуры локальной и реплицируемых таблиц совпадают.
+	  */
+	void enforceShardsConsistency(const WeightedZooKeeperPaths & weighted_zookeeper_paths);
+
+	/** Получить информацию о свободном месте на репликах + дополнительную информацию
+	  * для функции checkSpaceForResharding.
+	  */
+	ReplicaToSpaceInfo gatherReplicaSpaceInfo(const WeightedZooKeeperPaths & weighted_zookeeper_paths);
+
+	/** Проверяет, что имеется достаточно свободного места локально и на всех репликах.
+	  */
+	bool checkSpaceForResharding(const ReplicaToSpaceInfo & replica_to_space_info, size_t partition_size) const;
+
+	std::mutex mutex_partition_to_merge_lock;
+	PartitionToMergeLock partition_to_merge_lock;
 };
 
+/** Рекурсивная блокировка, которая защищает заданную партицию от задачи слияния.
+  */
+class ScopedPartitionMergeLock final
+{
+public:
+	ScopedPartitionMergeLock(StorageReplicatedMergeTree & storage_, const std::string & partition_name_)
+		: storage(storage_), partition_name(partition_name_)
+	{
+		fake_part_name = storage.acquirePartitionMergeLock(partition_name);
+	}
+
+	ScopedPartitionMergeLock(const ScopedPartitionMergeLock &) = delete;
+	ScopedPartitionMergeLock & operator=(const ScopedPartitionMergeLock &) = delete;
+
+	/// Получить уникальное название блокировки.
+	std::string getId() const
+	{
+		return fake_part_name;
+	}
+
+	~ScopedPartitionMergeLock()
+	{
+		storage.releasePartitionMergeLock(partition_name);
+	}
+
+private:
+	StorageReplicatedMergeTree & storage;
+	const std::string partition_name;
+	std::string fake_part_name;
+};
 
 }

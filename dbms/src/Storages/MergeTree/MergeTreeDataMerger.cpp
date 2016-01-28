@@ -3,6 +3,7 @@
 #include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
 #include <DB/Storages/MergeTree/MergeList.h>
+#include <DB/Storages/MergeTree/ReshardingJob.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
@@ -278,18 +279,59 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 	return found;
 }
 
+MergeTreeData::DataPartsVector MergeTreeDataMerger::selectAllPartsFromPartition(DayNum_t partition)
+{
+	MergeTreeData::DataPartsVector parts_from_partition;
+
+	MergeTreeData::DataParts data_parts = data.getDataParts();
+
+	for (MergeTreeData::DataParts::iterator it = data_parts.cbegin(); it != data_parts.cend(); ++it)
+	{
+		const MergeTreeData::DataPartPtr & current_part = *it;
+		DayNum_t month = current_part->month;
+		if (month != partition)
+			continue;
+
+		parts_from_partition.push_back(*it);
+	}
+
+	return parts_from_partition;
+}
 
 /// parts должны быть отсортированы.
-MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
+MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergeParts(
 	const MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeList::Entry & merge_entry,
 	size_t aio_threshold, MergeTreeData::Transaction * out_transaction,
 	DiskSpaceMonitor::Reservation * disk_reservation)
 {
+	bool is_sharded = parts[0]->is_sharded;
+	for (size_t i = 1; i < parts.size(); ++i)
+	{
+		if (parts[i]->is_sharded != is_sharded)
+			throw Exception("Inconsistent set of parts provided for merging", ErrorCodes::LOGICAL_ERROR);
+	}
+
+	size_t shard_no = 0;
+	if (is_sharded)
+	{
+		shard_no = parts[0]->shard_no;
+		for (size_t i = 1; i < parts.size(); ++i)
+		{
+			if (parts[i]->shard_no != shard_no)
+				throw Exception("Inconsistent set of parts provided for merging", ErrorCodes::LOGICAL_ERROR);
+		}
+	}
+
 	merge_entry->num_parts = parts.size();
 
 	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name << " into " << merged_name);
 
-	String merged_dir = data.getFullPath() + merged_name;
+	String merged_dir;
+	if (is_sharded)
+		merged_dir = data.getFullPath() + "reshard/" + toString(shard_no) + merged_name;
+	else
+		merged_dir = data.getFullPath() + merged_name;
+
 	if (Poco::File(merged_dir).exists())
 		throw Exception("Directory " + merged_dir + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
@@ -333,8 +375,14 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	{
 		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
 
+		String part_path;
+		if (is_sharded)
+			part_path = data.getFullPath() + "reshard/" + toString(shard_no) + "/" + parts[i]->name + '/';
+		else
+			part_path = data.getFullPath() + parts[i]->name + '/';
+
 		auto input = std::make_unique<MergeTreeBlockInputStream>(
-			data.getFullPath() + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, union_column_names, data,
+			part_path, DEFAULT_MERGE_BLOCK_SIZE, union_column_names, data,
 			parts[i], ranges, false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
 
 		input->setProgressCallback([&merge_entry, rows_total] (const Progress & value)
@@ -388,7 +436,12 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(data.mode), ErrorCodes::LOGICAL_ERROR);
 	}
 
-	const String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
+	String new_part_tmp_path;
+
+	if (is_sharded)
+		new_part_tmp_path = data.getFullPath() + "reshard/" + toString(shard_no) + "/tmp_" + merged_name + "/";
+	else
+		new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
 
 	auto compression_method = data.context.chooseCompressionMethod(
 		merge_entry->total_size_bytes_compressed,
@@ -430,40 +483,45 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	new_data_part->size = to.marksCount();
 	new_data_part->modification_time = time(0);
 	new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(new_part_tmp_path);
+	new_data_part->is_sharded = is_sharded;
+	new_data_part->shard_no = shard_no;
 
-	/// Переименовываем новый кусок, добавляем в набор и убираем исходные куски.
-	auto replaced_parts = data.renameTempPartAndReplace(new_data_part, nullptr, out_transaction);
-
-	if (new_data_part->name != merged_name)
-		throw Exception("Unexpected part name: " + new_data_part->name + " instead of " + merged_name, ErrorCodes::LOGICAL_ERROR);
-
-	/// Проверим, что удалились все исходные куски и только они.
-	if (replaced_parts.size() != parts.size())
+	if (!is_sharded)
 	{
-		/** Это нормально, хотя такое бывает редко.
-		  * Ситуация - было заменено 0 кусков вместо N может быть, например, в следующем случае:
-		  * - у нас был кусок A, но не было куска B и C;
-		  * - в очереди был мердж A, B -> AB, но его не делали, так как куска B нет;
-		  * - в очереди был мердж AB, C -> ABC, но его не делали, так как куска AB и C нет;
-		  * - мы выполнили задачу на скачивание куска B;
-		  * - мы начали делать мердж A, B -> AB, так как все куски появились;
-		  * - мы решили скачать с другой реплики кусок ABC, так как невозможно было сделать мердж AB, C -> ABC;
-		  * - кусок ABC появился, при его добавлении, были удалены старые куски A, B, C;
-		  * - мердж AB закончился. Добавился кусок AB. Но это устаревший кусок. В логе будет сообщение Obsolete part added,
-		  *   затем попадаем сюда.
-		  * Ситуация - было заменено M > N кусков тоже нормальная.
-		  *
-		  * Хотя это должно предотвращаться проверкой в методе ReplicatedMergeTreeQueue::shouldExecuteLogEntry.
-		  */
-		LOG_WARNING(log, "Unexpected number of parts removed when adding " << new_data_part->name << ": " << replaced_parts.size()
-			<< " instead of " << parts.size());
-	}
-	else
-	{
-		for (size_t i = 0; i < parts.size(); ++i)
-			if (parts[i]->name != replaced_parts[i]->name)
-				throw Exception("Unexpected part removed when adding " + new_data_part->name + ": " + replaced_parts[i]->name
-					+ " instead of " + parts[i]->name, ErrorCodes::LOGICAL_ERROR);
+		/// Переименовываем новый кусок, добавляем в набор и убираем исходные куски.
+		auto replaced_parts = data.renameTempPartAndReplace(new_data_part, nullptr, out_transaction);
+
+		if (new_data_part->name != merged_name)
+			throw Exception("Unexpected part name: " + new_data_part->name + " instead of " + merged_name, ErrorCodes::LOGICAL_ERROR);
+
+		/// Проверим, что удалились все исходные куски и только они.
+		if (replaced_parts.size() != parts.size())
+		{
+			/** Это нормально, хотя такое бывает редко.
+			* Ситуация - было заменено 0 кусков вместо N может быть, например, в следующем случае:
+			* - у нас был кусок A, но не было куска B и C;
+			* - в очереди был мердж A, B -> AB, но его не делали, так как куска B нет;
+			* - в очереди был мердж AB, C -> ABC, но его не делали, так как куска AB и C нет;
+			* - мы выполнили задачу на скачивание куска B;
+			* - мы начали делать мердж A, B -> AB, так как все куски появились;
+			* - мы решили скачать с другой реплики кусок ABC, так как невозможно было сделать мердж AB, C -> ABC;
+			* - кусок ABC появился, при его добавлении, были удалены старые куски A, B, C;
+			* - мердж AB закончился. Добавился кусок AB. Но это устаревший кусок. В логе будет сообщение Obsolete part added,
+			*   затем попадаем сюда.
+			* Ситуация - было заменено M > N кусков тоже нормальная.
+			*
+			* Хотя это должно предотвращаться проверкой в методе StorageReplicatedMergeTree::shouldExecuteLogEntry.
+			*/
+			LOG_WARNING(log, "Unexpected number of parts removed when adding " << new_data_part->name << ": " << replaced_parts.size()
+				<< " instead of " << parts.size());
+		}
+		else
+		{
+			for (size_t i = 0; i < parts.size(); ++i)
+				if (parts[i]->name != replaced_parts[i]->name)
+					throw Exception("Unexpected part removed when adding " + new_data_part->name + ": " + replaced_parts[i]->name
+						+ " instead of " + parts[i]->name, ErrorCodes::LOGICAL_ERROR);
+		}
 	}
 
 	LOG_TRACE(log, "Merged " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
