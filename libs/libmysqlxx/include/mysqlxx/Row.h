@@ -63,6 +63,11 @@ public:
 		throw Exception(std::string("Unknown column ") + name);
 	}
 
+	Value operator[] (const std::string & name) const
+	{
+		return operator[](name.c_str());
+	}
+
 	/** Получить значение по индексу. */
 	Value at(size_t n) const
 	{

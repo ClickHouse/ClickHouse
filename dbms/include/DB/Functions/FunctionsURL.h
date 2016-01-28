@@ -407,7 +407,7 @@ struct ExtractURLParameterImpl
 			const char * str = reinterpret_cast<const char *>(&data[prev_offset]);
 
 			const char * pos = nullptr;
-			const char * begin = strchr(str, '?');
+			const char * begin = strpbrk(str, "?#");
 			if (begin != nullptr)
 			{
 				pos = begin + 1;
@@ -418,7 +418,7 @@ struct ExtractURLParameterImpl
 					if (pos == nullptr)
 						break;
 
-					if (pos[-1] != '?' && pos[-1] != '&')
+					if (pos[-1] != '?' && pos[-1] != '#' && pos[-1] != '&')
 					{
 						pos += param_len;
 						continue;
@@ -484,14 +484,15 @@ struct CutURLParameterImpl
 
 			do
 			{
-				const char * begin = strchr(url_begin, '?');
+				const char * begin = strpbrk(url_begin, "?#");
 				if (begin == nullptr)
 					break;
 
 				const char * pos = strstr(begin + 1, param_str);
 				if (pos == nullptr)
 					break;
-				if (pos != begin + 1 && *(pos - 1) != ';' && *(pos - 1) != '&')
+
+				if (pos[-1] != '?' && pos[-1] != '#' && pos[-1] != '&')
 				{
 					pos = nullptr;
 					break;
@@ -501,13 +502,13 @@ struct CutURLParameterImpl
 				end_pos = begin_pos + param_len;
 
 				/// Пропустим значение.
-				while (*end_pos && *end_pos != ';' && *end_pos != '&' && *end_pos != '#')
+				while (*end_pos && *end_pos != '&' && *end_pos != '#')
 					++end_pos;
 
-				/// Захватим ';' или '&' до или после параметра.
-				if (*end_pos == ';' || *end_pos == '&')
+				/// Захватим '&' до или после параметра.
+				if (*end_pos == '&')
 					++end_pos;
-				else if (*(begin_pos - 1) == ';' || *(begin_pos - 1) == '&')
+				else if (begin_pos[-1] == '&')
 					--begin_pos;
 			} while (false);
 
@@ -573,22 +574,41 @@ public:
 		if (first)
 		{
 			first = false;
-			pos = strchr(pos, '?');
+			pos = strpbrk(pos, "?#");
 			if (pos == nullptr)
 				return false;
 			++pos;
 		}
 
-		token_begin = pos;
-		pos = strchr(pos, '=');
-		if (pos == nullptr)
-			return false;
-		++pos;
-		pos = strpbrk(pos, "&;#");
-		if (pos == nullptr)
-			token_end = end;
-		else
+		while (true)
+		{
+			token_begin = pos;
+			pos = strpbrk(pos, "=&#?");
+			if (pos == nullptr)
+				return false;
+
+			if (*pos == '?')
+			{
+				++pos;
+				continue;
+			}
+
+			break;
+		}
+
+		if (*pos == '&' || *pos == '#')
+		{
 			token_end = pos++;
+		}
+		else
+		{
+			++pos;
+			pos = strpbrk(pos, "&#");
+			if (pos == nullptr)
+				token_end = end;
+			else
+				token_end = pos++;
+		}
 
 		return true;
 	}
@@ -642,22 +662,33 @@ public:
 		if (first)
 		{
 			first = false;
-			pos = strchr(pos, '?');
+			pos = strpbrk(pos, "?#");
 		}
 		else
-			pos = strchr(pos, '&');
+			pos = strpbrk(pos, "&#");
 
 		if (pos == nullptr)
 			return false;
 		++pos;
 
-		token_begin = pos;
+		while (true)
+		{
+			token_begin = pos;
 
-		pos = strchr(pos, '=');
-		if (pos == nullptr)
-			return false;
-		else
-			token_end = pos++;
+			pos = strpbrk(pos, "=&#?");
+			if (pos == nullptr)
+				return false;
+			else
+				token_end = pos;
+
+			if (*pos == '?')
+			{
+				++pos;
+				continue;
+			}
+
+			break;
+		}
 
 		return true;
 	}
@@ -981,12 +1012,12 @@ struct NameCutQueryStringAndFragment 	{ static constexpr auto name = "cutQuerySt
 struct NameExtractURLParameter			{ static constexpr auto name = "extractURLParameter"; };
 struct NameCutURLParameter 				{ static constexpr auto name = "cutURLParameter"; };
 
-typedef FunctionStringToString<ExtractSubstringImpl<ExtractProtocol>, 			NameProtocol>	 		FunctionProtocol;
+typedef FunctionStringToString<ExtractSubstringImpl<ExtractProtocol>, 				NameProtocol>	 		FunctionProtocol;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractDomain<false> >, 		NameDomain>	 			FunctionDomain;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractDomain<true>  >, 		NameDomainWithoutWWW>	FunctionDomainWithoutWWW;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractFirstSignificantSubdomain>, NameFirstSignificantSubdomain>	FunctionFirstSignificantSubdomain;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractTopLevelDomain>, 		NameTopLevelDomain>		FunctionTopLevelDomain;
-typedef FunctionStringToString<ExtractSubstringImpl<ExtractPath>, 				NamePath>				FunctionPath;
+typedef FunctionStringToString<ExtractSubstringImpl<ExtractPath>, 					NamePath>				FunctionPath;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractPathFull>,				NamePathFull>			FunctionPathFull;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractQueryString<true> >, 	NameQueryString>		FunctionQueryString;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractFragment<true> >, 		NameFragment>			FunctionFragment;
@@ -996,7 +1027,7 @@ typedef FunctionStringToString<ExtractSubstringImpl<CutToFirstSignificantSubdoma
 
 typedef FunctionStringToString<CutSubstringImpl<ExtractWWW>, 						NameCutWWW>				FunctionCutWWW;
 typedef FunctionStringToString<CutSubstringImpl<ExtractQueryString<false> >, 		NameCutQueryString>		FunctionCutQueryString;
-typedef FunctionStringToString<CutSubstringImpl<ExtractFragment<false> >, 		NameCutFragment>		FunctionCutFragment;
+typedef FunctionStringToString<CutSubstringImpl<ExtractFragment<false> >, 			NameCutFragment>		FunctionCutFragment;
 typedef FunctionStringToString<CutSubstringImpl<ExtractQueryStringAndFragment<false> >, NameCutQueryStringAndFragment>	FunctionCutQueryStringAndFragment;
 
 typedef FunctionsStringSearchToString<ExtractURLParameterImpl, NameExtractURLParameter> FunctionExtractURLParameter;
