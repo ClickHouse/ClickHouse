@@ -565,7 +565,7 @@ public:
 
 	/// Для перешардирования.
 	using MutableDataParts = std::set<MutableDataPartPtr, DataPartPtrLess>;
-	using PerShardDataParts = std::unordered_map<size_t, MutableDataParts>;
+	using PerShardDataParts = std::unordered_map<size_t, MutableDataPartPtr>;
 
 	/// Некоторые операции над множеством кусков могут возвращать такой объект.
 	/// Если не был вызван commit или rollback, деструктор откатывает операцию.

@@ -282,6 +282,11 @@ public:
 		}
 	}
 
+	std::string getPartPath() const
+	{
+		return part_path;
+	}
+
 	/// Если данные заранее отсортированы.
 	void write(const Block & block) override
 	{
