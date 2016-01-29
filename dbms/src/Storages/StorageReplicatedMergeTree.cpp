@@ -2856,7 +2856,8 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 	DayNum_t month = DateLUT::instance().makeDayNum(parse<UInt16>(partition.substr(0, 4)), parse<UInt8>(partition.substr(4, 2)), 1);
 
 	{
-		auto existing_parts = data.getDataParts();
+		/// Немного неоптимально.
+		auto existing_parts = data.getAllDataParts();
 		for (const auto & part : existing_parts)
 			if (part->month == month)
 				min_used_number = std::min(min_used_number, part->left);
