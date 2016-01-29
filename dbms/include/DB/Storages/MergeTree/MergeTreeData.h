@@ -278,7 +278,7 @@ public:
 		  * Взятие этого мьютекса означает, что мы хотим заблокировать columns_lock на чтение с намерением потом, не
 		  *  снимая блокировку, заблокировать его на запись.
 		  */
-		mutable Poco::FastMutex alter_mutex;
+		mutable std::mutex alter_mutex;
 
 		~DataPart()
 		{
@@ -644,7 +644,7 @@ public:
 		}
 
 		DataPartPtr data_part;
-		Poco::ScopedLockWithUnlock<Poco::FastMutex> alter_lock;
+		std::unique_lock<std::mutex> alter_lock;
 
 		DataPart::Checksums new_checksums;
 		NamesAndTypesList new_columns;
@@ -860,7 +860,7 @@ public:
 
 	size_t getColumnSize(const std::string & name) const
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock{data_parts_mutex};
+		std::lock_guard<std::mutex> lock{data_parts_mutex};
 
 		const auto it = column_sizes.find(name);
 		return it == std::end(column_sizes) ? 0 : it->second;
@@ -869,7 +869,7 @@ public:
 	using ColumnSizes = std::unordered_map<std::string, size_t>;
 	ColumnSizes getColumnSizes() const
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock{data_parts_mutex};
+		std::lock_guard<std::mutex> lock{data_parts_mutex};
 		return column_sizes;
 	}
 
@@ -916,14 +916,14 @@ private:
 
 	/** Актуальное множество кусков с данными. */
 	DataParts data_parts;
-	mutable Poco::FastMutex data_parts_mutex;
+	mutable std::mutex data_parts_mutex;
 
 	/** Множество всех кусков с данными, включая уже слитые в более крупные, но ещё не удалённые. Оно обычно небольшое (десятки элементов).
 	  * Ссылки на кусок есть отсюда, из списка актуальных кусков и из каждого потока чтения, который его сейчас использует.
 	  * То есть, если количество ссылок равно 1 - то кусок не актуален и не используется прямо сейчас, и его можно удалить.
 	  */
 	DataParts all_data_parts;
-	mutable Poco::FastMutex all_data_parts_mutex;
+	mutable std::mutex all_data_parts_mutex;
 
 	/** Для каждого шарда множество шардированных кусков.
 	  */

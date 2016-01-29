@@ -1,5 +1,3 @@
-#include <Poco/Ext/ScopedTry.h>
-
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
@@ -146,8 +144,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 {
 	LOG_DEBUG(log, "Loading data parts");
 
-	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+	std::lock_guard<std::mutex> lock(data_parts_mutex);
+	std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
 
 	data_parts.clear();
 
@@ -304,11 +302,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
 MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
 {
-	Poco::ScopedTry<Poco::FastMutex> lock;
+	std::unique_lock<std::mutex> lock(all_data_parts_mutex, std::defer_lock);
 	DataPartsVector res;
 
 	/// Если метод уже вызван из другого потока (или если all_data_parts прямо сейчас меняют), то можно ничего не делать.
-	if (!lock.lock(&all_data_parts_mutex))
+	if (!lock.try_lock())
 	{
 		LOG_TRACE(log, "grabOldParts: all_data_parts is locked");
 		return res;
@@ -349,7 +347,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
 
 void MergeTreeData::addOldParts(const MergeTreeData::DataPartsVector & parts)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
+	std::lock_guard<std::mutex> lock(all_data_parts_mutex);
 	all_data_parts.insert(parts.begin(), parts.end());
 }
 
@@ -386,8 +384,8 @@ void MergeTreeData::dropAllData()
 {
 	LOG_TRACE(log, "dropAllData: waiting for locks.");
 
-	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+	std::lock_guard<std::mutex> lock(data_parts_mutex);
+	std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
 
 	LOG_TRACE(log, "dropAllData: removing data from memory.");
 
@@ -719,8 +717,8 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
 	LOG_TRACE(log, "Renaming " << part->name << ".");
 
-	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+	std::lock_guard<std::mutex> lock(data_parts_mutex);
+	std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
 
 	String old_name = part->name;
 	String old_path = getFullPath() + old_name + "/";
@@ -813,7 +811,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
 void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	std::lock_guard<std::mutex> lock(data_parts_mutex);
 
 	for (const DataPartPtr & part : remove)
 	{
@@ -831,8 +829,8 @@ void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataParts
 
 void MergeTreeData::attachPart(const DataPartPtr & part)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+	std::lock_guard<std::mutex> lock(data_parts_mutex);
+	std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
 
 	if (!all_data_parts.insert(part).second)
 		throw Exception("Part " + part->name + " is already attached", ErrorCodes::DUPLICATE_DATA_PART);
@@ -845,8 +843,8 @@ void MergeTreeData::renameAndDetachPart(const DataPartPtr & part, const String &
 {
 	LOG_INFO(log, "Renaming " << part->name << " to " << prefix << part->name << " and detaching it.");
 
-	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+	std::lock_guard<std::mutex> lock(data_parts_mutex);
+	std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
 
 	if (!all_data_parts.erase(part))
 		throw Exception("No such data part", ErrorCodes::NO_SUCH_DATA_PART);
@@ -915,21 +913,20 @@ void MergeTreeData::detachPartInPlace(const DataPartPtr & part)
 
 MergeTreeData::DataParts MergeTreeData::getDataParts() const
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-
+	std::lock_guard<std::mutex> lock(data_parts_mutex);
 	return data_parts;
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector() const
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	std::lock_guard<std::mutex> lock(data_parts_mutex);
 
 	return DataPartsVector(std::begin(data_parts), std::end(data_parts));
 }
 
 size_t MergeTreeData::getTotalActiveSizeInBytes() const
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	std::lock_guard<std::mutex> lock(data_parts_mutex);
 
 	size_t res = 0;
 	for (auto & part : data_parts)
@@ -940,14 +937,13 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
 
 MergeTreeData::DataParts MergeTreeData::getAllDataParts() const
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
-
+	std::lock_guard<std::mutex> lock(all_data_parts_mutex);
 	return all_data_parts;
 }
 
 size_t MergeTreeData::getMaxPartsCountForMonth() const
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	std::lock_guard<std::mutex> lock(data_parts_mutex);
 
 	size_t res = 0;
 	size_t cur_count = 0;
@@ -1003,7 +999,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String &
 	MutableDataPartPtr tmp_part(new DataPart(*this));
 	ActiveDataPartSet::parsePartName(part_name, *tmp_part);
 
-	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	std::lock_guard<std::mutex> lock(data_parts_mutex);
 
 	/// Кусок может покрываться только предыдущим или следующим в data_parts.
 	DataParts::iterator it = data_parts.lower_bound(tmp_part);
@@ -1031,7 +1027,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
 	MutableDataPartPtr tmp_part(new DataPart(*this));
 	ActiveDataPartSet::parsePartName(part_name, *tmp_part);
 
-	Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
+	std::lock_guard<std::mutex> lock(all_data_parts_mutex);
 	DataParts::iterator it = all_data_parts.lower_bound(tmp_part);
 	if (it != all_data_parts.end() && (*it)->name == part_name)
 		return *it;
