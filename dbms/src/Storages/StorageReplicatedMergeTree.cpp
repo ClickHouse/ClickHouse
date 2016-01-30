@@ -2757,6 +2757,17 @@ void StorageReplicatedMergeTree::dropPartition(ASTPtr query, const Field & field
 		return;
 	}
 
+	auto number_and_exists = data.getMinBlockNumberForMonth(data.getMonthFromName(month_name));
+
+	/// Если в партиции нет данных
+	if (!number_and_exists.second)
+	{
+		LOG_DEBUG(log, "No data in partition " << month_name);
+		return;
+	}
+
+	Int64 left = number_and_exists.first;
+
 	/** Пропустим один номер в block_numbers для удаляемого месяца, и будем удалять только куски до этого номера.
 	  * Это запретит мерджи удаляемых кусков с новыми вставляемыми данными.
 	  * Инвариант: в логе не появятся слияния удаляемых кусков с другими кусками.
@@ -2776,16 +2787,17 @@ void StorageReplicatedMergeTree::dropPartition(ASTPtr query, const Field & field
 		throw Exception("Logical error: just allocated block number is zero", ErrorCodes::LOGICAL_ERROR);
 	--right;
 
-	String fake_part_name = getFakePartNameForDrop(month_name, 0, right);
+	String fake_part_name = getFakePartNameForDrop(month_name, left, right);
 
 	/** Запретим выбирать для слияния удаляемые куски.
 	  * Инвариант: после появления в логе записи DROP_RANGE, в логе не появятся слияния удаляемых кусков.
 	  */
 	{
 		std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
-
 		queue.disableMergesInRange(fake_part_name);
 	}
+
+	LOG_DEBUG(log, "Disabled merges in range " << left << " - " << right << " for month " << month_name);
 
 	/// Наконец, добившись нужных инвариантов, можно положить запись в лог.
 	LogEntry entry;
