@@ -818,14 +818,15 @@ void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataParts
 	for (const DataPartPtr & part : remove)
 	{
 		part->remove_time = clear_without_timeout ? 0 : time(0);
-		removePartContributionToColumnSizes(part);
-		data_parts.erase(part);
+
+		if (data_parts.erase(part))
+			removePartContributionToColumnSizes(part);
 	}
 
 	for (const DataPartPtr & part : add)
 	{
-		data_parts.insert(part);
-		addPartContributionToColumnSizes(part);
+		if (data_parts.insert(part).second)
+			addPartContributionToColumnSizes(part);
 	}
 }
 

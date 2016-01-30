@@ -1261,11 +1261,16 @@ void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 	size_t removed_parts = 0;
 
 	/// Удалим куски, содержащиеся в удаляемом диапазоне.
-	auto parts = data.getDataParts();
+	/// Важно, чтобы не осталось и старых кусков (оставшихся после мерджа), так как иначе,
+	///  после добавления новой реплики, эта новая реплика их скачает, но не удалит.
+	/// А также, если этого не делать, куски будут оживать после перезапуска сервера.
+	/// Поэтому, используем getAllDataParts.
+	auto parts = data.getAllDataParts();
 	for (const auto & part : parts)
 	{
 		if (!ActiveDataPartSet::contains(entry.new_part_name, part->name))
 			continue;
+
 		LOG_DEBUG(log, "Removing part " << part->name);
 		++removed_parts;
 
@@ -2872,7 +2877,7 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 	DayNum_t month = MergeTreeData::getMonthFromPartPrefix(partition);
 
 	auto num_and_exists = data.getMinBlockNumberForMonth(month);
-	if (num_and_exists.second)
+	if (num_and_exists.second && num_and_exists.first < min_used_number)
 		min_used_number = num_and_exists.first;
 
 	/// Добавим записи в лог.

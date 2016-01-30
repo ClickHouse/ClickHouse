@@ -801,7 +801,7 @@ public:
 	  */
 	void renameAndDetachPart(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false, bool move_to_detached = true);
 
-	/** Убирает кусок из списка кусков (включая all_data_parts), но не перемещщает директорию.
+	/** Убирает кусок из списка кусков (включая all_data_parts), но не перемещает директорию.
 	  */
 	void detachPartInPlace(const DataPartPtr & part);
 
@@ -951,7 +951,7 @@ private:
 	void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
 		ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata);
 
-	/// Рассчитывает размеры столбцов в сжатом виде для текущего состояния data_parts
+	/// Рассчитывает размеры столбцов в сжатом виде для текущего состояния data_parts. Вызывается под блокировкой.
 	void calculateColumnSizes();
 	/// Добавляет или вычитывает вклад part в размеры столбцов в сжатом виде
 	void addPartContributionToColumnSizes(const DataPartPtr & part);
