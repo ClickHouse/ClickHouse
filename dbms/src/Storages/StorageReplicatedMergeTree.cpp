@@ -2849,6 +2849,8 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 	{
 		LOG_DEBUG(log, "Looking for parts for partition " << partition << " in " << source_dir);
 		ActiveDataPartSet active_parts;
+
+		std::set<String> part_names;
 		for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
 		{
 			String name = it.name();
@@ -2858,9 +2860,18 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 				continue;
 			LOG_DEBUG(log, "Found part " << name);
 			active_parts.add(name);
+			part_names.insert(name);
 		}
 		LOG_DEBUG(log, active_parts.size() << " of them are active");
 		parts = active_parts.getParts();
+
+		/// Неактивные куски переименовываем, чтобы они не могли быть прикреплены в случае повторного ATTACH-а.
+		for (const auto & name : part_names)
+		{
+			String containing_part = active_parts.getContainingPart(name);
+			if (!containing_part.empty() && containing_part != name)
+				Poco::File(full_path + source_dir + name).renameTo(full_path + source_dir + "inactive_" + name);
+		}
 	}
 
 	/// Синхронно проверим, что добавляемые куски существуют и не испорчены хотя бы на этой реплике. Запишем checksums.txt, если его нет.
