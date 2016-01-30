@@ -752,6 +752,15 @@ public:
 	  */
 	size_t getMaxPartsCountForMonth() const;
 
+	/** Минимальный номер блока в указанном месяце.
+	  * Возвращает также bool - есть ли хоть один кусок.
+	  */
+	std::pair<Int64, bool> getMinBlockNumberForMonth(DayNum_t month) const;
+
+	/** Есть ли указанный номер блока в каком-нибудь куске указанного месяца.
+	  */
+	bool hasBlockNumberInMonth(Int64 block_number, DayNum_t month) const;
+
 	/** Если в таблице слишком много активных кусков, спит некоторое время, чтобы дать им возможность смерджиться.
 	  * Если передано until - проснуться раньше, если наступило событие.
 	  */
@@ -878,6 +887,8 @@ public:
 	static String getMonthName(DayNum_t month);
 	static DayNum_t getMonthDayNum(const Field & partition);
 	static DayNum_t getMonthFromName(const String & month_name);
+	/// Получить месяц из имени куска или достаточной его части.
+	static DayNum_t getMonthFromPartPrefix(const String & part_prefix);
 
 	Context & context;
 	const String date_column_name;

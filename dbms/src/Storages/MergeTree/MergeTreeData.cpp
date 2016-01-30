@@ -117,8 +117,10 @@ MergeTreeData::MergeTreeData(
 
 Int64 MergeTreeData::getMaxDataPartIndex()
 {
+	std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
+
 	Int64 max_part_id = 0;
-	for (const auto & part : data_parts)
+	for (const auto & part : all_data_parts)
 		max_part_id = std::max(max_part_id, part->right);
 
 	return max_part_id;
@@ -967,6 +969,36 @@ size_t MergeTreeData::getMaxPartsCountForMonth() const
 	return res;
 }
 
+
+std::pair<Int64, bool> MergeTreeData::getMinBlockNumberForMonth(DayNum_t month) const
+{
+	std::lock_guard<std::mutex> lock(data_parts_mutex);
+
+	for (const auto & part : data_parts)	/// Поиск можно сделать лучше.
+		if (part->month == month)
+			return { part->left, true };	/// Блоки в data_parts упорядочены по month и left.
+
+	return { 0, false };
+}
+
+
+bool MergeTreeData::hasBlockNumberInMonth(Int64 block_number, DayNum_t month) const
+{
+	std::lock_guard<std::mutex> lock(data_parts_mutex);
+
+	for (const auto & part : data_parts)	/// Поиск можно сделать лучше.
+	{
+		if (part->month == month && part->left <= block_number && part->right >= block_number)
+			return true;
+
+		if (part->month > month)
+			break;
+	}
+
+	return false;
+}
+
+
 void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 {
 	size_t parts_count = getMaxPartsCountForMonth();
@@ -1417,6 +1449,11 @@ DayNum_t MergeTreeData::getMonthFromName(const String & month_name)
 			ErrorCodes::INVALID_PARTITION_NAME);
 
 	return date;
+}
+
+DayNum_t MergeTreeData::getMonthFromPartPrefix(const String & part_prefix)
+{
+	return getMonthFromName(part_prefix.substr(0, strlen("YYYYMM")));
 }
 
 }

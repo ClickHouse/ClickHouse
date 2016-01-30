@@ -88,6 +88,27 @@ const auto WAIT_FOR_REPLICA_QUEUE_MS = 10 * 1000;
 
 const auto MERGE_SELECTING_SLEEP_MS = 5 * 1000;
 
+/** Добавляемым блокам данных присваиваются некоторые номера - целые числа.
+  * Для добавляемых обычным способом (INSERT) блоков, номера выделяются по возрастанию.
+  * Слияния делаются для диапазонов номеров блоков на числовой прямой:
+  *  если в слиянии участвуют номера блоков x, z, и есть блок с номером y, что x < y < z, то блок с номером y тоже участвует в слиянии.
+  * Это требуется для сохранения свойств некоторых операций, которые могут производиться при слиянии - например, в CollapsingMergeTree.
+  * В частности, это позволяет во время слияния знать, что в одном куске все данные были добавлены раньше, чем все данные в другом куске.
+  *
+  * Изредка возникает необходимость добавить в таблицу какой-то заведомо старый кусок данных,
+  *  чтобы он воспринимался как старый в логике работы CollapsingMergeTree.
+  * Такой кусок данных можно добавить с помощью специального запроса ATTACH.
+  * И в этом случае, мы должны выделить этому куску номера меньшие, чем номера всех остальных кусков.
+  * В связи с этим, номера обычных кусков, добавляемых INSERT-ом, начинаются не с нуля, а с большего числа,
+  *  а меньшие номера считаются "зарезервированными".
+  *
+  * Почему это число равно 200?
+  * Дело в том, что раньше не поддерживались отрицательные номера блоков.
+  * А также, слияние сделано так, что при увеличении количества кусков, вставка новых кусков специально замедляется,
+  *  пока слияния не успеют уменьшить число кусков; и это было рассчитано примерно для 200 кусков.
+  * А значит, что при вставке в таблицу всех кусков из другой таблицы, 200 номеров наверняка достаточно.
+  * В свою очередь, это число выбрано почти наугад.
+  */
 const Int64 RESERVED_BLOCK_NUMBERS = 200;
 
 
@@ -1455,15 +1476,30 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 		}
 
 		/// Можно слить куски, если все номера между ними заброшены - не соответствуют никаким блокам.
-		/// Номера до RESERVED_BLOCK_NUMBERS всегда не соответствуют никаким блокам.
-		for (Int64 number = std::max(RESERVED_BLOCK_NUMBERS, left->right + 1); number <= right->left - 1; ++number)
+		for (Int64 number = left->right + 1; number <= right->left - 1; ++number)
 		{
-			String path1 = zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number);
-			String path2 = zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number);
+			/** Для номеров до RESERVED_BLOCK_NUMBERS не используется AbandonableLock
+			  *  - такие номера не могут быть "заброшены" - то есть, не использованными для кусков.
+			  * Это номера кусков, которые были добавлены с помощью ALTER ... ATTACH.
+			  * Они должны идти без пропусков (для каждого номера должен быть кусок).
+			  * Проверяем, что для всех таких номеров есть куски,
+			  *  иначе, через "дыры" - отсутствующие куски, нельзя мерджить.
+			  */
 
-			if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
-				AbandonableLockInZooKeeper::check(path2, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
-				return false;
+			if (number < RESERVED_BLOCK_NUMBERS)
+			{
+				if (!data.hasBlockNumberInMonth(number, left->month))
+					return false;
+			}
+			else
+			{
+				String path1 = zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number);
+				String path2 = zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number);
+
+				if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
+					AbandonableLockInZooKeeper::check(path2, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
+					return false;
+			}
 		}
 
 		memoized_parts_that_could_be_merged.insert(key);
@@ -2821,15 +2857,11 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 	/// Выделим добавляемым кускам максимальные свободные номера, меньшие RESERVED_BLOCK_NUMBERS.
 	/// NOTE: Проверка свободности номеров никак не синхронизируется. Выполнять несколько запросов ATTACH/DETACH/DROP одновременно нельзя.
 	Int64 min_used_number = RESERVED_BLOCK_NUMBERS;
-	DayNum_t month = DateLUT::instance().makeDayNum(parse<UInt16>(partition.substr(0, 4)), parse<UInt8>(partition.substr(4, 2)), 1);
+	DayNum_t month = MergeTreeData::getMonthFromPartPrefix(partition);
 
-	{
-		/// Немного неоптимально.
-		auto existing_parts = data.getAllDataParts();
-		for (const auto & part : existing_parts)
-			if (part->month == month)
-				min_used_number = std::min(min_used_number, part->left);
-	}
+	auto num_and_exists = data.getMinBlockNumberForMonth(month);
+	if (num_and_exists.second)
+		min_used_number = num_and_exists.first;
 
 	/// Добавим записи в лог.
 	std::reverse(parts.begin(), parts.end());
