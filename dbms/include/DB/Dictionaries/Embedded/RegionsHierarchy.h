@@ -54,8 +54,10 @@ private:
 	RegionParents area;
 	/// регион -> округ, включающий его или 0, если такого нет
 	RegionParents district;
-	/// регион -> континет, включающий его или 0, если такого нет
+	/// регион -> континет (первый при подъёме по иерархии регионов), включающий его или 0, если такого нет
 	RegionParents continent;
+	/// регион -> континет (последний при подъёме по иерархии регионов), включающий его или 0, если такого нет
+	RegionParents top_continent;
 
 	/// регион -> население или 0, если неизвестно.
 	RegionPopulations populations;
@@ -88,6 +90,7 @@ public:
 		RegionParents new_area(initial_size);
 		RegionParents new_district(initial_size);
 		RegionParents new_continent(initial_size);
+		RegionParents new_top_continent(initial_size);
 		RegionPopulations new_populations(initial_size);
 		RegionDepths  new_depths(initial_size);
 		RegionTypes types(initial_size);
@@ -151,6 +154,7 @@ public:
 		new_area		.resize(max_region_id + 1);
 		new_district	.resize(max_region_id + 1);
 		new_continent	.resize(max_region_id + 1);
+		new_top_continent.resize(max_region_id + 1);
 		new_populations .resize(max_region_id + 1);
 		new_depths		.resize(max_region_id + 1);
 		types			.resize(max_region_id + 1);
@@ -173,7 +177,7 @@ public:
 			if (types[i] == REGION_TYPE_CONTINENT)
 			{
 				new_continent[i] = i;
-				continue;
+				new_top_continent[i] = i;
 			}
 
 			RegionDepth depth = 0;
@@ -203,8 +207,9 @@ public:
 
 				if (types[current] == REGION_TYPE_CONTINENT)
 				{
-					new_continent[i] = current;
-					break;
+					if (!new_continent[i])
+						new_continent[i] = current;
+					new_top_continent[i] = current;
 				}
 			}
 
@@ -217,6 +222,7 @@ public:
 		area.swap(new_area);
 		district.swap(new_district);
 		continent.swap(new_continent);
+		top_continent.swap(new_top_continent);
 		populations.swap(new_populations);
 		depths.swap(new_depths);
 	}
@@ -266,6 +272,13 @@ public:
 		if (static_cast<size_t>(region) >= continent.size())
 			return 0;
 		return continent[region];
+	}
+
+	RegionID toTopContinent(RegionID region) const
+	{
+		if (static_cast<size_t>(region) >= top_continent.size())
+			return 0;
+		return top_continent[region];
 	}
 
 	RegionID toParent(RegionID region) const

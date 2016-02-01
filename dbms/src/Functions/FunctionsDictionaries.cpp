@@ -11,6 +11,7 @@ void registerFunctionsDictionaries(FunctionFactory & factory)
 	factory.registerFunction<FunctionRegionToDistrict>();
 	factory.registerFunction<FunctionRegionToCountry>();
 	factory.registerFunction<FunctionRegionToContinent>();
+	factory.registerFunction<FunctionRegionToTopContinent>();
 	factory.registerFunction<FunctionRegionToPopulation>();
 	factory.registerFunction<FunctionOSToRoot>();
 	factory.registerFunction<FunctionSEToRoot>();

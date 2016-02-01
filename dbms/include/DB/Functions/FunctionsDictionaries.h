@@ -38,7 +38,7 @@ namespace ErrorCodes
   * - словари регионов, операционных систем, поисковых систем.
   *
   * Подняться по дереву до определенного уровня.
-  *  regionToCity, regionToArea, regionToCountry,
+  *  regionToCity, regionToArea, regionToCountry, ...
   *  OSToRoot,
   *  SEToRoot,
   *
@@ -89,6 +89,11 @@ struct RegionToCountryImpl
 struct RegionToContinentImpl
 {
 	static UInt32 apply(UInt32 x, const RegionsHierarchy & hierarchy) { return hierarchy.toContinent(x); }
+};
+
+struct RegionToTopContinentImpl
+{
+	static UInt32 apply(UInt32 x, const RegionsHierarchy & hierarchy) { return hierarchy.toTopContinent(x); }
 };
 
 struct RegionToPopulationImpl
@@ -513,6 +518,7 @@ struct NameRegionToArea				{ static constexpr auto name = "regionToArea"; };
 struct NameRegionToDistrict			{ static constexpr auto name = "regionToDistrict"; };
 struct NameRegionToCountry			{ static constexpr auto name = "regionToCountry"; };
 struct NameRegionToContinent		{ static constexpr auto name = "regionToContinent"; };
+struct NameRegionToTopContinent		{ static constexpr auto name = "regionToTopContinent"; };
 struct NameRegionToPopulation		{ static constexpr auto name = "regionToPopulation"; };
 struct NameOSToRoot					{ static constexpr auto name = "OSToRoot"; };
 struct NameSEToRoot					{ static constexpr auto name = "SEToRoot"; };
@@ -564,6 +570,15 @@ struct FunctionRegionToCountry :
 
 struct FunctionRegionToContinent :
 	public FunctionTransformWithDictionary<UInt32, RegionToContinentImpl, RegionsHierarchyGetter, NameRegionToContinent>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+	}
+};
+
+struct FunctionRegionToTopContinent :
+	public FunctionTransformWithDictionary<UInt32, RegionToTopContinentImpl, RegionsHierarchyGetter, NameRegionToTopContinent>
 {
 	static IFunction * create(const Context & context)
 	{
