@@ -1744,7 +1744,8 @@ class FunctionCast final : public IFunction
 	template <typename ColumnStringType, typename EnumType>
 	auto createStringToEnumWrapper()
 	{
-		return [] (Block & block, const ColumnNumbers & arguments, const size_t result) {
+		return [] (Block & block, const ColumnNumbers & arguments, const size_t result)
+		{
 			const auto first_col = block.getByPosition(arguments.front()).column.get();
 
 			auto & col_with_type_and_name = block.getByPosition(result);
@@ -1755,12 +1756,12 @@ class FunctionCast final : public IFunction
 			{
 				const auto size = col->size();
 
-				const auto res = result_type.createColumn();
-				auto & out_data = static_cast<typename EnumType::ColumnType &>(*result_col).getData();
+				auto res = result_type.createColumn();
+				auto & out_data = static_cast<typename EnumType::ColumnType &>(*res).getData();
 				out_data.resize(size);
 
 				for (const auto i : ext::range(0, size))
-					out_data[i] = result_type.getValue(col->getDataAt(i).toString());
+					out_data[i] = result_type.getValue(col->getDataAt(i));
 
 				result_col = res;
 			}
