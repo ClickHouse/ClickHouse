@@ -347,7 +347,6 @@ template <typename FieldType> struct FormatImpl<DataTypeEnum<FieldType>>
 {
 	static void execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> & type)
 	{
-		/// @todo should we escape the string here? Presumably no as it will be escaped twice otherwise
 		writeString(type.getNameForValue(x), wb);
 	}
 };
@@ -1723,23 +1722,6 @@ class FunctionCast final : public IFunction
 		using ValueType = std::common_type_t<typename EnumTypeFrom::FieldType, typename EnumTypeTo::FieldType>;
 		using NameValuePair = std::pair<std::string, ValueType>;
 		using EnumValues = std::vector<NameValuePair>;
-
-//		EnumValues value_intersection;
-//		std::set_intersection(std::begin(from_values), std::end(from_values),
-//			std::begin(to_values), std::end(to_values), std::back_inserter(value_intersection),
-//			[] (auto && from, auto && to) { return from.second < to.second; });
-//
-//		for (const auto & name_value : value_intersection)
-//		{
-//			const auto & old_name = name_value.first;
-//			const auto & new_name = to_type->getNameForValue(name_value.second).toString();
-//			if (old_name != new_name)
-//				throw Exception{
-//					"Enum conversion changes name for value " + toString(name_value.second) +
-//						" from '" + old_name + "' to '" + new_name + "'",
-//					ErrorCodes::CANNOT_CONVERT_TYPE
-//				};
-//		}
 
 		EnumValues name_intersection;
 		std::set_intersection(std::begin(from_values), std::end(from_values),

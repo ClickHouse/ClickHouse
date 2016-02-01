@@ -145,34 +145,24 @@ namespace VisibleWidth
 				const auto & in = col->getData();
 				auto & out = res->getData();
 
-				String str;
-				
 				for (const auto & idx_num : ext::enumerate(in))
 				{
-					/// escape name to calculate correct length
-					{
-						WriteBufferFromString out{str};
-						writeEscapedString(type->getNameForValue(idx_num.second), out);
-					}
-					
-					out[idx_num.first] = str.size();
+					StringRef name = type->getNameForValue(idx_num.second);
+					out[idx_num.first] = stringWidth(
+						reinterpret_cast<const UInt8 *>(name.data),
+						reinterpret_cast<const UInt8 *>(name.data) + name.size);
 				}
 
 				return true;
 			}
 			else if (const auto col = typeid_cast<const typename DataTypeEnum::ConstColumnType *>(column.get()))
 			{
-				String str;
-
-				/// escape name to calculate correct length
-				{
-					WriteBufferFromString out{str};
-					writeEscapedString(type->getNameForValue(col->getData()), out);
-				}
+				StringRef name = type->getNameForValue(col->getData());
 
 				block.getByPosition(result).column = new ColumnConstUInt64{
-					col->size(), str.size()
-				};
+					col->size(), stringWidth(
+						reinterpret_cast<const UInt8 *>(name.data),
+						reinterpret_cast<const UInt8 *>(name.data) + name.size)};
 
 				return true;
 			}

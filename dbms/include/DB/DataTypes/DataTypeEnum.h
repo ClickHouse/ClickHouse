@@ -125,13 +125,6 @@ public:
 
 	bool behavesAsNumber() const override { return true; }
 
-	/// Returns length of textual name for an enum element (used in FunctionVisibleWidth)
-	std::size_t getNameLength(const FieldType & value) const
-	{
-		/// @todo length of escaped string should be calculated here
-		return getNameForValue(value).size;
-	}
-
 	const StringRef & getNameForValue(const FieldType & value) const
 	{
 		const auto it = value_to_name_map.find(value);
