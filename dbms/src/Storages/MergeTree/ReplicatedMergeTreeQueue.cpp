@@ -449,7 +449,7 @@ void ReplicatedMergeTreeQueue::removeGetsAndMergesInRange(zkutil::ZooKeeperPtr z
 
 bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason, MergeTreeDataMerger & merger)
 {
-	/// queue_mutex уже захвачен. Функция вызывается только из selectEntryToProcess.
+	/// mutex уже захвачен. Функция вызывается только из selectEntryToProcess.
 
 	if (entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
 	{
@@ -522,7 +522,30 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(const LogEntry & entry, Str
 }
 
 
-ReplicatedMergeTreeQueue::LogEntryPtr ReplicatedMergeTreeQueue::selectEntryToProcess(MergeTreeDataMerger & merger)
+ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(ReplicatedMergeTreeQueue::LogEntryPtr & entry, ReplicatedMergeTreeQueue & queue)
+	: entry(entry), queue(queue)
+{
+	entry->currently_executing = true;
+	++entry->num_tries;
+	entry->last_attempt_time = time(0);
+
+	if (!queue.future_parts.insert(entry->new_part_name).second)
+		throw Exception("Tagging already tagged future part " + entry->new_part_name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+}
+
+ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
+{
+	std::lock_guard<std::mutex> lock(queue.mutex);
+
+	entry->currently_executing = false;
+	entry->execution_complete.notify_all();
+
+	if (!queue.future_parts.erase(entry->new_part_name))
+		LOG_ERROR(queue.log, "Untagging already untagged future part " + entry->new_part_name + ". This is a bug.");
+}
+
+
+ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToProcess(MergeTreeDataMerger & merger)
 {
 	std::lock_guard<std::mutex> lock(mutex);
 
@@ -546,47 +569,15 @@ ReplicatedMergeTreeQueue::LogEntryPtr ReplicatedMergeTreeQueue::selectEntryToPro
 		}
 	}
 
-	return entry;
+	if (entry)
+		return { entry, std::unique_ptr<CurrentlyExecuting>{ new CurrentlyExecuting(entry, *this) } };
+	else
+		return {};
 }
-
-
-class CurrentlyExecuting
-{
-private:
-	ReplicatedMergeTreeQueue::LogEntryPtr & entry;
-	ReplicatedMergeTreeQueue & queue;
-
-public:
-	CurrentlyExecuting(ReplicatedMergeTreeQueue::LogEntryPtr & entry, ReplicatedMergeTreeQueue & queue)
-		: entry(entry), queue(queue)
-	{
-		std::lock_guard<std::mutex> lock(queue.mutex);
-
-		entry->currently_executing = true;
-		++entry->num_tries;
-		entry->last_attempt_time = time(0);
-
-		if (!queue.future_parts.insert(entry->new_part_name).second)
-			throw Exception("Tagging already tagged future part " + entry->new_part_name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
-	}
-
-	~CurrentlyExecuting()
-	{
-		std::lock_guard<std::mutex> lock(queue.mutex);
-
-		entry->currently_executing = false;
-		entry->execution_complete.notify_all();
-
-		if (!queue.future_parts.erase(entry->new_part_name))
-			LOG_ERROR(queue.log, "Untagging already untagged future part " + entry->new_part_name + ". This is a bug.");
-	}
-};
 
 
 bool ReplicatedMergeTreeQueue::processEntry(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func)
 {
-	CurrentlyExecuting guard(entry, *this);
-
 	std::exception_ptr saved_exception;
 
 	try

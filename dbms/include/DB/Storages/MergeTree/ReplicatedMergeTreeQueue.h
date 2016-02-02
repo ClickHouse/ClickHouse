@@ -95,6 +95,22 @@ private:
 	/// Обновить времена insert-ов в ZooKeeper.
 	void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper, bool min_unprocessed_insert_time_changed, bool max_processed_insert_time_changed);
 
+
+	/// Помечает элемент очереди как выполняющийся.
+	class CurrentlyExecuting
+	{
+	private:
+		ReplicatedMergeTreeQueue::LogEntryPtr & entry;
+		ReplicatedMergeTreeQueue & queue;
+
+		friend class ReplicatedMergeTreeQueue;
+
+		/// Создаётся только в функции selectEntryToProcess. Вызывается под mutex-ом.
+		CurrentlyExecuting(ReplicatedMergeTreeQueue::LogEntryPtr & entry, ReplicatedMergeTreeQueue & queue);
+	public:
+		~CurrentlyExecuting();
+	};
+
 public:
 	ReplicatedMergeTreeQueue() {}
 
@@ -132,7 +148,8 @@ public:
 	/** Выбрать следующее действие для обработки.
 	  * merger используется только чтобы проверить, не приостановлены ли мерджи.
 	  */
-	LogEntryPtr selectEntryToProcess(MergeTreeDataMerger & merger);
+	using SelectedEntry = std::pair<ReplicatedMergeTreeQueue::LogEntryPtr, std::unique_ptr<CurrentlyExecuting>>;
+	SelectedEntry selectEntryToProcess(MergeTreeDataMerger & merger);
 
 	/** Выполнить функцию func для обработки действия.
 	  * При этом, на время выполнения, отметить элемент очереди как выполняющийся

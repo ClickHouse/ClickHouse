@@ -1370,16 +1370,19 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 
 bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & pool_context)
 {
-	LogEntryPtr entry;
+	/// Этот объект будет помечать элемент очереди как выполняющийся.
+	ReplicatedMergeTreeQueue::SelectedEntry selected;
 
 	try
 	{
-		entry = queue.selectEntryToProcess(merger);
+		selected = queue.selectEntryToProcess(merger);
 	}
 	catch (...)
 	{
 		tryLogCurrentException(__PRETTY_FUNCTION__);
 	}
+
+	LogEntryPtr & entry = selected.first;
 
 	if (!entry)
 		return false;
