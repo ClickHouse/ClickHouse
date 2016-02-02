@@ -19,9 +19,9 @@ namespace DB
 
 NativeBlockOutputStream::NativeBlockOutputStream(
 	WriteBuffer & ostr_, UInt64 client_revision_,
-	WriteBuffer * index_ostr_)
+	WriteBuffer * index_ostr_, size_t initial_size_of_file_)
 	: ostr(ostr_), client_revision(client_revision_),
-	index_ostr(index_ostr_)
+	index_ostr(index_ostr_), initial_size_of_file(initial_size_of_file_)
 {
 	if (index_ostr)
 	{
@@ -112,7 +112,7 @@ void NativeBlockOutputStream::write(const Block & block)
 		if (index_ostr)
 		{
 			ostr_concrete->next();	/// Заканчиваем сжатый блок.
-			mark.offset_in_compressed_file = ostr_concrete->getCompressedBytes();
+			mark.offset_in_compressed_file = initial_size_of_file + ostr_concrete->getCompressedBytes();
 			mark.offset_in_decompressed_block = ostr_concrete->getRemainingBytes();
 		}
 

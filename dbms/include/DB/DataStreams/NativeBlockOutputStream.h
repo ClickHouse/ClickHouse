@@ -14,6 +14,7 @@ class CompressedWriteBuffer;
   * Предназначено для взаимодействия между серверами.
   *
   * Может быть указан поток для записи индекса. Индекс содержит смещения до каждого кусочка каждого столбца.
+  * Если делается append в уже существующий файл, и нужно записать индекс, то укажите initial_size_of_file.
   */
 class NativeBlockOutputStream : public IBlockOutputStream
 {
@@ -23,7 +24,7 @@ public:
 	  */
 	NativeBlockOutputStream(
 		WriteBuffer & ostr_, UInt64 client_revision_ = 0,
-		WriteBuffer * index_ostr_ = nullptr);
+		WriteBuffer * index_ostr_ = nullptr, size_t initial_size_of_file_ = 0);
 
 	void write(const Block & block) override;
 	void flush() override { ostr.next(); }
@@ -37,6 +38,7 @@ private:
 	UInt64 client_revision;
 
 	WriteBuffer * index_ostr;
+	size_t initial_size_of_file;	/// Начальный размер файла с данными, если делается append. Используется для индекса.
 	/// Если требуется записывать индекс, то ostr обязан быть CompressedWriteBuffer.
 	CompressedWriteBuffer * ostr_concrete = nullptr;
 };
