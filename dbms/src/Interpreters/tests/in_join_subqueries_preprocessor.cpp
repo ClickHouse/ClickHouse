@@ -45,6 +45,7 @@ private:
 
 struct TestEntry
 {
+	unsigned int line_num;
 	std::string input;
 	std::string expected_output;
 	size_t shard_count;
@@ -69,6 +70,7 @@ void run()
 		/// Тривиальный запрос.
 
 		{
+			__LINE__,
 			"SELECT 1",
 			"SELECT 1",
 			0,
@@ -77,6 +79,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT 1",
 			"SELECT 1",
 			1,
@@ -85,6 +88,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT 1",
 			"SELECT 1",
 			2,
@@ -93,6 +97,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT 1",
 			"SELECT 1",
 			0,
@@ -101,6 +106,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT 1",
 			"SELECT 1",
 			1,
@@ -109,6 +115,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT 1",
 			"SELECT 1",
 			2,
@@ -117,6 +124,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT 1",
 			"SELECT 1",
 			0,
@@ -125,6 +133,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT 1",
 			"SELECT 1",
 			1,
@@ -133,6 +142,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT 1",
 			"SELECT 1",
 			2,
@@ -141,6 +151,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT 1",
 			"SELECT 1",
 			0,
@@ -149,6 +160,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT 1",
 			"SELECT 1",
 			1,
@@ -157,6 +169,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT 1",
 			"SELECT 1",
 			2,
@@ -167,6 +180,7 @@ void run()
 		/// Секция IN / глубина 1
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			1,
@@ -175,6 +189,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -183,6 +198,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			1,
@@ -191,6 +207,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -199,6 +216,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -207,6 +225,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits)",
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits)",
 			2,
@@ -215,6 +234,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits)",
 			2,
@@ -223,6 +243,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits)",
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits)",
 			2,
@@ -233,6 +254,7 @@ void run()
 		/// Секция NOT IN / глубина 1
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID NOT IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID NOT IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -241,6 +263,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID NOT IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID NOT IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -249,6 +272,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID NOT IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL NOT IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -257,6 +281,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID NOT IN (SELECT UserID FROM remote_db.remote_visits)",
 			"SELECT count() FROM test.visits_all WHERE UserID NOT IN (SELECT UserID FROM remote_db.remote_visits)",
 			2,
@@ -265,6 +290,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID NOT IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID NOT IN (SELECT UserID FROM remote_db.remote_visits)",
 			2,
@@ -273,6 +299,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID NOT IN (SELECT UserID FROM remote_db.remote_visits)",
 			"SELECT count() FROM test.visits_all WHERE UserID NOT IN (SELECT UserID FROM remote_db.remote_visits)",
 			2,
@@ -283,6 +310,7 @@ void run()
 		/// Секция GLOBAL IN / глубина 1
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -291,6 +319,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -299,6 +328,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -307,6 +337,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -317,6 +348,7 @@ void run()
 		/// Секция GLOBAL NOT IN / глубина 1
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL NOT IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL NOT IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -325,6 +357,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL NOT IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL NOT IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -333,6 +366,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL NOT IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL NOT IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -341,6 +375,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL NOT IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL NOT IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -351,6 +386,7 @@ void run()
 		/// Секция JOIN / глубина 1
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			2,
@@ -359,6 +395,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			2,
@@ -367,6 +404,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			2,
@@ -375,6 +413,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits) USING UserID",
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits) USING UserID",
 			2,
@@ -383,6 +422,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits) USING UserID",
 			2,
@@ -391,6 +431,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits) USING UserID",
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits) USING UserID",
 			2,
@@ -401,6 +442,7 @@ void run()
 		/// Секция GLOBAL JOIN / глубина 1
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			2,
@@ -409,6 +451,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			2,
@@ -417,6 +460,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			2,
@@ -425,6 +469,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			2,
@@ -435,6 +480,7 @@ void run()
 		/// Секция JOIN / глубина 1 / 2 подзапроса.
 
 		{
+			__LINE__,
 			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE RegionID = 2) USING UserID",
 			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE RegionID = 2) USING UserID",
 			2,
@@ -443,6 +489,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits WHERE RegionID = 2) USING UserID",
 			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits WHERE RegionID = 2) USING UserID",
 			2,
@@ -451,24 +498,27 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE RegionID = 2) USING UserID",
 			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE RegionID = 2) USING UserID",
 			2,
 			DB::DistributedProductMode::DENY,
-			false
+			true
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE RegionID = 2) USING UserID",
-			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE RegionID = 2) USING UserID",
+			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE RegionID = 2) USING UserID",
 			2,
 			DB::DistributedProductMode::GLOBAL,
 			true
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE RegionID = 2) USING UserID",
-			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits WHERE RegionID = 2) USING UserID",
+			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE RegionID = 2) USING UserID",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
@@ -477,6 +527,7 @@ void run()
 		/// Секция IN / глубина 1 / таблица на уровне 2
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
 			2,
@@ -485,6 +536,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
 			2,
@@ -493,6 +545,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
 			"SELECT count() FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
 			2,
@@ -501,6 +554,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits))",
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits))",
 			2,
@@ -509,6 +563,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits))",
 			2,
@@ -517,6 +572,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits))",
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits))",
 			2,
@@ -527,6 +583,7 @@ void run()
 		/// Секция GLOBAL IN / глубина 1 / таблица на уровне 2
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
 			"SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
 			2,
@@ -535,6 +592,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
 			"SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
 			2,
@@ -543,6 +601,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
 			"SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
 			2,
@@ -551,6 +610,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
 			"SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
 			2,
@@ -561,6 +621,7 @@ void run()
 		/// Секция IN на уровне 1, секция GLOBAL IN на уровне 2.
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
 			"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
 			2,
@@ -569,6 +630,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
 			"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
 			2,
@@ -577,6 +639,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
 			"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
 			2,
@@ -585,6 +648,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
 			"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)))",
 			2,
@@ -595,6 +659,7 @@ void run()
 		/// Секция JOIN / глубина 1 / таблица на уровне 2
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)) USING UserID",
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)) USING UserID",
 			2,
@@ -603,6 +668,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)) USING UserID",
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)) USING UserID",
 			2,
@@ -611,6 +677,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)) USING UserID",
 			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)) USING UserID",
 			2,
@@ -619,6 +686,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)) USING UserID",
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)) USING UserID",
 			2,
@@ -627,6 +695,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)) USING UserID",
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)) USING UserID",
 			2,
@@ -635,6 +704,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)) USING UserID",
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)) USING UserID",
 			2,
@@ -645,6 +715,7 @@ void run()
 		/// Секция IN / глубина 2
 
 		{
+			__LINE__,
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			2,
@@ -653,6 +724,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
 			2,
@@ -661,6 +733,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			2,
@@ -669,14 +742,16 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			2,
 			DB::DistributedProductMode::DENY,
-			false
+			true
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID GLOBAL IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			2,
@@ -685,6 +760,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
 			2,
@@ -693,6 +769,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM remote_db.remote_visits WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
 			2,
@@ -701,14 +778,16 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
-			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM remote_db.remote_visits WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
 			2,
@@ -719,6 +798,7 @@ void run()
 		/// Секция JOIN / глубина 2
 
 		{
+			__LINE__,
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM test.visits_all)) USING CounterID)",
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM test.visits_all)) USING CounterID)",
 			2,
@@ -727,6 +807,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM remote_db.remote_visits)) USING CounterID)",
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM remote_db.remote_visits)) USING CounterID)",
 			2,
@@ -735,14 +816,16 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM test.visits_all)) USING CounterID)",
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM test.visits_all)) USING CounterID)",
 			2,
 			DB::DistributedProductMode::DENY,
-			false
+			true
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM test.visits_all)) USING CounterID)",
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM test.visits_all)) USING CounterID)",
 			2,
@@ -751,6 +834,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM test.visits_all)) USING CounterID)",
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM remote_db.remote_visits ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM remote_db.remote_visits)) USING CounterID)",
 			2,
@@ -761,6 +845,7 @@ void run()
 		/// Секция JOIN / глубина 2
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
 			"SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
 			2,
@@ -769,6 +854,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2) USING OtherID)",
 			"SELECT UserID FROM test.visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2) USING OtherID)",
 			2,
@@ -777,14 +863,16 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
 			"SELECT UserID FROM test.visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
 			2,
 			DB::DistributedProductMode::DENY,
-			false
+			true
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
 			"SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
 			2,
@@ -793,6 +881,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
 			"SELECT UserID FROM test.visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) GLOBAL ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
 			2,
@@ -801,6 +890,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
 			"SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2) USING OtherID)",
 			2,
@@ -811,6 +901,7 @@ void run()
 		/// Секция JOIN / секция IN
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
 			2,
@@ -819,6 +910,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
 			2,
@@ -827,14 +919,16 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
 			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
 			2,
 			DB::DistributedProductMode::DENY,
-			false
+			true
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2)) USING UserID",
 			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2)) USING UserID",
 			2,
@@ -843,6 +937,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
 			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
 			2,
@@ -851,6 +946,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
 			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits WHERE OtherID IN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2)) USING UserID",
 			2,
@@ -861,6 +957,7 @@ void run()
 		/// Табличная функция.
 
 		{
+			__LINE__,
 			"SELECT count() FROM remote('127.0.0.{1,2}', test, visits_all) WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM remote('127.0.0.{1,2}', test, visits_all) WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -869,6 +966,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM remote('127.0.0.{1,2}', test, visits_all) WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM remote('127.0.0.{1,2}', test, visits_all) WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -877,6 +975,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote('127.0.0.{1,2}', test, visits_all))",
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote('127.0.0.{1,2}', test, visits_all))",
 			2,
@@ -885,6 +984,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM remote('127.0.0.{1,2}', test, visits_all) WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM remote('127.0.0.{1,2}', test, visits_all) WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -893,6 +993,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote('127.0.0.{1,2}', test, visits_all))",
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote('127.0.0.{1,2}', test, visits_all))",
 			2,
@@ -901,6 +1002,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM remote('127.0.0.{1,2}', test, visits_all) WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			"SELECT count() FROM remote('127.0.0.{1,2}', test, visits_all) WHERE UserID IN (SELECT UserID FROM test.visits_all)",
 			2,
@@ -909,6 +1011,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote('127.0.0.{1,2}', test, visits_all))",
 			"SELECT count() FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote('127.0.0.{1,2}', test, visits_all))",
 			2,
@@ -919,6 +1022,7 @@ void run()
 		/// Секция IN / глубина 2 / две распределённые таблицы
 
 		{
+			__LINE__,
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.hits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.hits_all WHERE BrowserID GLOBAL IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			2,
@@ -927,6 +1031,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.hits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM distant_db.distant_hits WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
 			2,
@@ -937,6 +1042,7 @@ void run()
 		/// Агрегатная функция.
 
 		{
+			__LINE__,
 			"SELECT sum(RegionID IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
 			"SELECT sum(RegionID IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
 			2,
@@ -945,6 +1051,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT sum(RegionID IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
 			"SELECT sum(RegionID IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
 			2,
@@ -953,6 +1060,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT sum(RegionID GLOBAL IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
 			"SELECT sum(RegionID GLOBAL IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
 			2,
@@ -961,6 +1069,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT sum(RegionID IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
 			"SELECT sum(RegionID GLOBAL IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
 			2,
@@ -969,6 +1078,7 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT sum(RegionID GLOBAL IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
 			"SELECT sum(RegionID GLOBAL IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
 			2,
@@ -977,12 +1087,51 @@ void run()
 		},
 
 		{
+			__LINE__,
 			"SELECT sum(RegionID IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
 			"SELECT sum(RegionID IN (SELECT RegionID from distant_db.distant_hits)) FROM test.visits_all",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
 		},
+
+		/// Miscellaneous.
+
+		{
+			__LINE__,
+			"SELECT count() FROM test.visits_all WHERE x GLOBAL IN (SELECT x FROM test.visits_all WHERE x GLOBAL IN (SELECT x FROM test.visits_all))",
+			"SELECT count() FROM test.visits_all WHERE x GLOBAL IN (SELECT x FROM test.visits_all WHERE x GLOBAL IN (SELECT x FROM test.visits_all))",
+			2,
+			DB::DistributedProductMode::DENY,
+			true
+		},
+
+		{
+			__LINE__,
+			"SELECT count() FROM test.visits_all WHERE x GLOBAL IN (SELECT x FROM test.visits_all WHERE x GLOBAL IN (SELECT x FROM test.visits_all))",
+			"SELECT count() FROM test.visits_all WHERE x GLOBAL IN (SELECT x FROM test.visits_all WHERE x GLOBAL IN (SELECT x FROM test.visits_all))",
+			2,
+			DB::DistributedProductMode::LOCAL,
+			true
+		},
+
+		{
+			__LINE__,
+			"SELECT count() FROM test.visits_all WHERE x GLOBAL IN (SELECT x FROM test.visits_all WHERE x GLOBAL IN (SELECT x FROM test.visits_all))",
+			"SELECT count() FROM test.visits_all WHERE x GLOBAL IN (SELECT x FROM test.visits_all WHERE x GLOBAL IN (SELECT x FROM test.visits_all))",
+			2,
+			DB::DistributedProductMode::GLOBAL,
+			true
+		},
+
+		{
+			__LINE__,
+			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM test.hits_all))",
+			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM test.hits_all))",
+			2,
+			DB::DistributedProductMode::DENY,
+			true
+		}
 	};
 
 	performTests(entries);
@@ -1002,7 +1151,8 @@ void performTests(const TestEntries & entries)
 			std::cout << "Test " << i << " passed.\n";
 		}
 		else
-			std::cout << "Test " << i << " failed. Expected: " << entry.expected_output << ". Received: " << res.second << "\n";
+			std::cout << "Test " << i << " at line " << entry.line_num << " failed. Expected: "
+				<< entry.expected_output << ". Received: " << res.second << "\n";
 
 		++i;
 	}
