@@ -19,6 +19,7 @@ public:
 	template <typename T> using KeyValuePair = std::pair<std::string, T>;
 	template <typename T> using KeyValueVector = std::vector<KeyValuePair<T>>;
 
+	/// TODO: Сделать custom_root_path = getPerLayerPath() по умолчанию
 	template <typename T> void write(const std::string & key, const T & value, 
 									 time_t timestamp = 0, const std::string & custom_root_path = "")
 	{
