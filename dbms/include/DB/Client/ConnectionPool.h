@@ -18,7 +18,7 @@ using Poco::SharedPtr;
   *
   *	void thread()
   *	{
-  *	  	sqxxl::Pool::Entry connection = pool.get();
+  *	  	auto connection = pool.get();
   *		connection->sendQuery("SELECT 'Hello, world!' AS world");
   *	}
   */
