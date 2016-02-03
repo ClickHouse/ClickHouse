@@ -393,7 +393,7 @@ inline void writeDateText(DayNum_t date, WriteBuffer & buf)
 	buf.write(s, 10);
 }
 
-inline void writeDateText(mysqlxx::Date date, WriteBuffer & buf)
+inline void writeDateText(LocalDate date, WriteBuffer & buf)
 {
 	char s[10] = {'0', '0', '0', '0', '-', '0', '0', '-', '0', '0'};
 
@@ -449,7 +449,7 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 }
 
 template <char date_delimeter = '-', char time_delimeter = ':'>
-inline void writeDateTimeText(mysqlxx::DateTime datetime, WriteBuffer & buf)
+inline void writeDateTimeText(LocalDateTime datetime, WriteBuffer & buf)
 {
 	char s[19] = {'0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0', ' ', '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'};
 
@@ -508,8 +508,8 @@ inline void writeBinary(const bool & x, 	WriteBuffer & buf) { writePODBinary(x, 
 inline void writeBinary(const uint128 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const VisitID_t & x, 	WriteBuffer & buf) { writePODBinary(static_cast<const UInt64 &>(x), buf); }
-inline void writeBinary(const mysqlxx::Date & x,		WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const mysqlxx::DateTime & x,	WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const LocalDate & x,		WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const LocalDateTime & x,	WriteBuffer & buf) { writePODBinary(x, buf); }
 
 
 /// Методы для вывода значения в текстовом виде для tab-separated формата.
@@ -531,8 +531,8 @@ inline void writeText(const char * x, 		WriteBuffer & buf) { writeEscapedString(
 inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEscapedString(x, size, buf); }
 
 inline void writeText(const VisitID_t & x, 	WriteBuffer & buf) { writeIntText(static_cast<const UInt64 &>(x), buf); }
-inline void writeText(const mysqlxx::Date & x,		WriteBuffer & buf) { writeDateText(x, buf); }
-inline void writeText(const mysqlxx::DateTime & x,	WriteBuffer & buf) { writeDateTimeText(x, buf); }
+inline void writeText(const LocalDate & x,		WriteBuffer & buf) { writeDateText(x, buf); }
+inline void writeText(const LocalDateTime & x,	WriteBuffer & buf) { writeDateTimeText(x, buf); }
 
 template<typename T>
 inline void writeText(const mysqlxx::Null<T> & x,	WriteBuffer & buf)
@@ -563,14 +563,14 @@ inline void writeQuoted(const VisitID_t & x, 	WriteBuffer & buf)
 	writeIntText(static_cast<const UInt64 &>(x), buf);
 }
 
-inline void writeQuoted(const mysqlxx::Date & x,		WriteBuffer & buf)
+inline void writeQuoted(const LocalDate & x,		WriteBuffer & buf)
 {
 	writeChar('\'', buf);
 	writeDateText(x, buf);
 	writeChar('\'', buf);
 }
 
-inline void writeQuoted(const mysqlxx::DateTime & x,	WriteBuffer & buf)
+inline void writeQuoted(const LocalDateTime & x,	WriteBuffer & buf)
 {
 	writeChar('\'', buf);
 	writeDateTimeText(x, buf);
@@ -606,14 +606,14 @@ inline void writeDoubleQuoted(const VisitID_t & x, 	WriteBuffer & buf)
 	writeIntText(static_cast<const UInt64 &>(x), buf);
 }
 
-inline void writeDoubleQuoted(const mysqlxx::Date & x,		WriteBuffer & buf)
+inline void writeDoubleQuoted(const LocalDate & x,		WriteBuffer & buf)
 {
 	writeChar('"', buf);
 	writeDateText(x, buf);
 	writeChar('"', buf);
 }
 
-inline void writeDoubleQuoted(const mysqlxx::DateTime & x,	WriteBuffer & buf)
+inline void writeDoubleQuoted(const LocalDateTime & x,	WriteBuffer & buf)
 {
 	writeChar('"', buf);
 	writeDateTimeText(x, buf);

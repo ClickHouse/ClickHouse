@@ -1,6 +1,6 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/Storages/MergeTree/ActiveDataPartSet.h>
-#include <mysqlxx/DateTime.h>
+#include <common/LocalDateTime.h>
 
 
 int main(int argc, char ** argv)
@@ -13,7 +13,7 @@ int main(int argc, char ** argv)
 		std::cerr << name << '\n';
 
 		time_t time = DateLUT::instance().YYYYMMDDToDate(DB::parse<UInt32>(name));
-		std::cerr << mysqlxx::DateTime(time) << '\n';
+		std::cerr << LocalDateTime(time) << '\n';
 	}
 
 	return 0;

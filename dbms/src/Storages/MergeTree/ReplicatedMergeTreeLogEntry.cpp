@@ -12,7 +12,7 @@ namespace DB
 void ReplicatedMergeTreeLogEntry::writeText(WriteBuffer & out) const
 {
 	out << "format version: 3\n"
-		<< "create_time: " << mysqlxx::DateTime(create_time ? create_time : time(0)) << "\n"
+		<< "create_time: " << LocalDateTime(create_time ? create_time : time(0)) << "\n"
 		<< "source replica: " << source_replica << '\n'
 		<< "block_id: " << escape << block_id << '\n';
 
@@ -68,7 +68,7 @@ void ReplicatedMergeTreeLogEntry::readText(ReadBuffer & in)
 
 	if (format_version >= 2)
 	{
-		mysqlxx::DateTime create_time_dt;
+		LocalDateTime create_time_dt;
 		in >> "create_time: " >> create_time_dt >> "\n";
 		create_time = create_time_dt;
 	}

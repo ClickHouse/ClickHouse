@@ -4,8 +4,8 @@
 #include <mysql/mysql.h>
 #include <Poco/Types.h>
 
-#include <mysqlxx/Date.h>
-#include <mysqlxx/DateTime.h>
+#include <common/LocalDate.h>
+#include <common/LocalDateTime.h>
 
 
 namespace mysqlxx

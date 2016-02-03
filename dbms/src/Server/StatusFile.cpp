@@ -8,7 +8,7 @@
 #include <Poco/File.h>
 #include <common/logger_useful.h>
 #include <common/Revision.h>
-#include <mysqlxx/DateTime.h>
+#include <common/LocalDateTime.h>
 
 #include <DB/IO/copyData.h>
 #include <DB/IO/ReadBufferFromFile.h>
@@ -69,7 +69,7 @@ StatusFile::StatusFile(const std::string & path_)
 			WriteBufferFromFileDescriptor out(fd, 1024);
 			out
 				<< "PID: " << getpid() << "\n"
-				<< "Started at: " << mysqlxx::DateTime(time(0)) << "\n"
+				<< "Started at: " << LocalDateTime(time(0)) << "\n"
 				<< "Revision: " << Revision::get() << "\n";
 		}
 	}

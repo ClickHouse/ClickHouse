@@ -57,7 +57,7 @@ String QuotaForInterval::toString() const
 	std::stringstream res;
 
 	res << std::fixed << std::setprecision(3)
-		<< "Interval:       " << mysqlxx::DateTime(rounded_time) << " - " << mysqlxx::DateTime(rounded_time + duration) << ".\n"
+		<< "Interval:       " << LocalDateTime(rounded_time) << " - " << LocalDateTime(rounded_time + duration) << ".\n"
 		<< "Queries:        " << used.queries 		<< ".\n"
 		<< "Errors:         " << used.errors 		<< ".\n"
 		<< "Result rows:    " << used.result_rows 	<< ".\n"
@@ -129,7 +129,7 @@ void QuotaForInterval::check(size_t max_amount, size_t used_amount, time_t curre
 
 		message << " has been exceeded. "
 			<< resource_name << ": " << used_amount << ", max: " << max_amount << ". "
-			<< "Interval will end at " << mysqlxx::DateTime(rounded_time + duration) << ".";
+			<< "Interval will end at " << LocalDateTime(rounded_time + duration) << ".";
 
 		throw Exception(message.str(), ErrorCodes::QUOTA_EXPIRED);
 	}

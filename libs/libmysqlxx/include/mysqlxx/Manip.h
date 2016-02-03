@@ -54,8 +54,8 @@ struct EscapeManipResult
 	std::ostream & operator<< (double value)				{ return ostr << value; }
 	std::ostream & operator<< (long long value)				{ return ostr << value; }
 	std::ostream & operator<< (unsigned long long value)	{ return ostr << value; }
-	std::ostream & operator<< (Date value)					{ return ostr << value; }
-	std::ostream & operator<< (DateTime value)				{ return ostr << value; }
+	std::ostream & operator<< (LocalDate value)				{ return ostr << value; }
+	std::ostream & operator<< (LocalDateTime value)			{ return ostr << value; }
 
 	std::ostream & operator<< (const std::string & value)
 	{
@@ -102,7 +102,7 @@ struct EscapeManipResult
 		{
 			if (i != 0)
 				ostr << '\t';
-			
+
 			if (row[i].isNull())
 			{
 				ostr << "\\N";
@@ -115,7 +115,7 @@ struct EscapeManipResult
 		return ostr;
 	}
 
-	
+
 	template <typename T>
 	std::ostream & operator<< (const Null<T> & value)
 	{
@@ -123,7 +123,7 @@ struct EscapeManipResult
 			ostr << "\\N";
 		else
 			*this << value.data;
-		
+
 		return ostr ;
 	}
 
@@ -181,8 +181,8 @@ public:
 	std::ostream & operator<< (double value)				{ return ostr << value; }
 	std::ostream & operator<< (long long value)				{ return ostr << value; }
 	std::ostream & operator<< (unsigned long long value)	{ return ostr << value; }
-	std::ostream & operator<< (Date value)					{ return ostr << '\'' << value << '\''; }
-	std::ostream & operator<< (DateTime value)				{ return ostr << '\'' << value << '\''; }
+	std::ostream & operator<< (LocalDate value)				{ return ostr << '\'' << value << '\''; }
+	std::ostream & operator<< (LocalDateTime value)			{ return ostr << '\'' << value << '\''; }
 
 	std::ostream & operator<< (const std::string & value)
 	{
@@ -201,7 +201,7 @@ public:
 		ostr.put('\'');
 		return ostr;
 	}
-	
+
 	template <typename T>
 	std::ostream & operator<< (const Null<T> & value)
 	{
@@ -395,19 +395,19 @@ struct UnEscapeManipResult
 		return istr;
 	}
 
-	std::istream & operator>> (Date & value)
+	std::istream & operator>> (LocalDate & value)
 	{
 		std::string s;
 		(*this) >> s;
-		value = Date(s);
+		value = LocalDate(s);
 		return istr;
 	}
 
-	std::istream & operator>> (DateTime & value)
+	std::istream & operator>> (LocalDateTime & value)
 	{
 		std::string s;
 		(*this) >> s;
-		value = DateTime(s);
+		value = LocalDateTime(s);
 		return istr;
 	}
 
@@ -499,5 +499,5 @@ inline UnQuoteManipResult operator>> (std::istream & istr, unquote_enum manip)
 	return UnQuoteManipResult(istr);
 }
 
-	
+
 }

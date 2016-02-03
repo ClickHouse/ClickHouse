@@ -113,9 +113,9 @@ private:
 	}
 
 
-	mysqlxx::DateTime getLastModification() const
+	LocalDateTime getLastModification() const
 	{
-		mysqlxx::DateTime update_time{std::time(nullptr)};
+		LocalDateTime update_time{std::time(nullptr)};
 
 		if (dont_check_update_time)
 			return update_time;
@@ -417,7 +417,7 @@ private:
 	Block sample_block;
 	mutable mysqlxx::PoolWithFailover pool;
 	const std::string load_all_query;
-	mysqlxx::DateTime last_modification;
+	LocalDateTime last_modification;
 };
 
 }
