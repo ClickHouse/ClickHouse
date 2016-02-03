@@ -20,11 +20,14 @@ void stat(DB::ReadBuffer & in, DB::WriteBuffer & out)
 		in.ignore(16);	/// checksum
 		in.readStrict(header, COMPRESSED_BLOCK_HEADER_SIZE);
 
-		size_t size_compressed = *reinterpret_cast<const UInt32 *>(&header[1]);
+		size_t size_compressed = 0;
+		memcpy(&size_compressed, &header[1], 4);	/// little endian
+
 		if (size_compressed > COMPRESSED_BLOCK_HEADER_SIZE)
 			throw DB::Exception("Too large size_compressed. Most likely corrupted data.", DB::ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
 
-		size_t size_decompressed = *reinterpret_cast<const UInt32 *>(&header[5]);
+		size_t size_decompressed = 0;
+		memcpy(&size_compressed, &header[5], 4);	/// little endian
 
 		DB::writeText(size_decompressed, out);
 		DB::writeChar('\t', out);
