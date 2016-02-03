@@ -15,23 +15,23 @@ void stat(DB::ReadBuffer & in, DB::WriteBuffer & out)
 {
 	while (!in.eof())
 	{
-		char header[QUICKLZ_HEADER_SIZE];
+		char header[COMPRESSED_BLOCK_HEADER_SIZE];
 
 		in.ignore(16);	/// checksum
-		in.readStrict(header, QUICKLZ_HEADER_SIZE);
+		in.readStrict(header, COMPRESSED_BLOCK_HEADER_SIZE);
 
-		size_t size_compressed = qlz_size_compressed(header);
-		if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
+		size_t size_compressed = *reinterpret_cast<const UInt32 *>(&header[1]);
+		if (size_compressed > COMPRESSED_BLOCK_HEADER_SIZE)
 			throw DB::Exception("Too large size_compressed. Most likely corrupted data.", DB::ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
 
-		size_t size_decompressed = qlz_size_decompressed(header);
+		size_t size_decompressed = *reinterpret_cast<const UInt32 *>(&header[5]);
 
 		DB::writeText(size_decompressed, out);
 		DB::writeChar('\t', out);
 		DB::writeText(size_compressed, out);
 		DB::writeChar('\n', out);
 
-		in.ignore(size_compressed - QUICKLZ_HEADER_SIZE);
+		in.ignore(size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
 	}
 }
 
