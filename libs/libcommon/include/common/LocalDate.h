@@ -2,17 +2,14 @@
 
 #include <string.h>
 #include <string>
+#include <sstream>
+#include <exception>
 #include <common/DateLUT.h>
 
-#include <mysqlxx/Exception.h>
-
-
-namespace mysqlxx
-{
 
 /** Хранит дату в broken-down виде.
   * Может быть инициализирован из даты в текстовом виде '2011-01-01' и из time_t.
-  * Может быть инициализирован из даты в текстовом виде '20110101...(юзаются первые 8 символов)
+  * Может быть инициализирован из даты в текстовом виде '20110101... (используются первые 8 символов)
   * Неявно преобразуется в time_t.
   * Сериализуется в ostream в текстовом виде.
   * Внимание: преобразование в unix timestamp и обратно производится в текущей тайм-зоне!
@@ -20,7 +17,7 @@ namespace mysqlxx
   *
   * packed - для memcmp (из-за того, что m_year - 2 байта, little endian, работает корректно только до 2047 года)
   */
-class __attribute__ ((__packed__)) Date
+class __attribute__ ((__packed__)) LocalDate
 {
 private:
 	unsigned short m_year;
@@ -40,14 +37,14 @@ private:
 	void init(const char * s, size_t length)
 	{
 		if (length < 8)
-			throw Exception("Cannot parse Date: " + std::string(s, length));
+			throw std::runtime_error("Cannot parse LocalDate: " + std::string(s, length));
 
 		m_year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
 
 		if (s[4] == '-')
 		{
 			if (length < 10)
-				throw Exception("Cannot parse Date: " + std::string(s, length));
+				throw std::runtime_error("Cannot parse LocalDate: " + std::string(s, length));
 			m_month = (s[5] - '0') * 10 + (s[6] - '0');
 			m_day = (s[8] - '0') * 10 + (s[9] - '0');
 		}
@@ -59,12 +56,12 @@ private:
 	}
 
 public:
-	explicit Date(time_t time)
+	explicit LocalDate(time_t time)
 	{
 		init(time);
 	}
 
-	Date(DayNum_t day_num)
+	LocalDate(DayNum_t day_num)
 	{
 		const auto & values = DateLUT::instance().getValues(day_num);
 		m_year 	= values.year;
@@ -72,31 +69,31 @@ public:
 		m_day 	= values.day_of_month;
 	}
 
-	Date(unsigned short year_, unsigned char month_, unsigned char day_)
+	LocalDate(unsigned short year_, unsigned char month_, unsigned char day_)
 		: m_year(year_), m_month(month_), m_day(day_)
 	{
 	}
 
-	explicit Date(const std::string & s)
+	explicit LocalDate(const std::string & s)
 	{
 		init(s.data(), s.size());
 	}
 
-	Date(const char * data, size_t length)
+	LocalDate(const char * data, size_t length)
 	{
 		init(data, length);
 	}
 
-	Date() : m_year(0), m_month(0), m_day(0)
+	LocalDate() : m_year(0), m_month(0), m_day(0)
 	{
 	}
 
-	Date(const Date & x)
+	LocalDate(const LocalDate & x)
 	{
 		operator=(x);
 	}
 
-	Date & operator= (const Date & x)
+	LocalDate & operator= (const LocalDate & x)
 	{
 		m_year = x.m_year;
 		m_month = x.m_month;
@@ -105,7 +102,7 @@ public:
 		return *this;
 	}
 
-	Date & operator= (time_t time)
+	LocalDate & operator= (time_t time)
 	{
 		init(time);
 		return *this;
@@ -134,36 +131,37 @@ public:
 	void month(unsigned char x) { m_month = x; }
 	void day(unsigned char x) { m_day = x; }
 
-	bool operator< (const Date & other) const
+	bool operator< (const LocalDate & other) const
 	{
 		return 0 > memcmp(this, &other, sizeof(*this));
 	}
 
-	bool operator> (const Date & other) const
+	bool operator> (const LocalDate & other) const
 	{
 		return 0 < memcmp(this, &other, sizeof(*this));
 	}
 
-	bool operator<= (const Date & other) const
+	bool operator<= (const LocalDate & other) const
 	{
 		return 0 >= memcmp(this, &other, sizeof(*this));
 	}
 
-	bool operator>= (const Date & other) const
+	bool operator>= (const LocalDate & other) const
 	{
 		return 0 <= memcmp(this, &other, sizeof(*this));
 	}
 
-	bool operator== (const Date & other) const
+	bool operator== (const LocalDate & other) const
 	{
 		return 0 == memcmp(this, &other, sizeof(*this));
 	}
 
-	bool operator!= (const Date & other) const
+	bool operator!= (const LocalDate & other) const
 	{
 		return !(*this == other);
 	}
 
+	/// NOTE Неэффективно.
 	std::string toString(char separator = '-') const
 	{
 		std::stringstream ss;
@@ -177,19 +175,17 @@ public:
 	}
 };
 
-inline std::ostream & operator<< (std::ostream & ostr, const Date & date)
+inline std::ostream & operator<< (std::ostream & ostr, const LocalDate & date)
 {
 	return ostr << date.year()
 		<< '-' << (date.month() / 10) << (date.month() % 10)
 		<< '-' << (date.day() / 10) << (date.day() % 10);
 }
 
-}
-
 
 namespace std
 {
-inline string to_string(const mysqlxx::Date & date)
+inline string to_string(const LocalDate & date)
 {
 	return date.toString();
 }

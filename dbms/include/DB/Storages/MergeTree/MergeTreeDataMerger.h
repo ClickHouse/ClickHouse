@@ -40,17 +40,20 @@ public:
 		bool only_small,
 		const AllowedMergingPredicate & can_merge);
 
-	/** Выбрать все куски принадлежащие одной партиции.
-	  */
-	MergeTreeData::DataPartsVector selectAllPartsFromPartition(DayNum_t partition);
-
 	/** Сливает куски.
 	  * Если reservation != nullptr, то и дело уменьшает размер зарезервированного места
 	  *  приблизительно пропорционально количеству уже выписанных данных.
 	  */
-	MergeTreeData::MutableDataPartPtr mergeParts(
+	MergeTreeData::DataPartPtr mergeParts(
 		const MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeListEntry & merge_entry,
 		size_t aio_threshold, MergeTreeData::Transaction * out_transaction = nullptr,
+		DiskSpaceMonitor::Reservation * disk_reservation = nullptr);
+
+	/** Перешардирует заданную партицию.
+	  */
+	MergeTreeData::PerShardDataParts reshardPartition(
+		const ReshardingJob & job,
+		size_t aio_threshold,
 		DiskSpaceMonitor::Reservation * disk_reservation = nullptr);
 
 	/// Примерное количество места на диске, нужное для мерджа. С запасом.
@@ -62,6 +65,13 @@ public:
 	void cancel() 	{ cancelled = true; }
 	void uncancel() { cancelled = false; }
 	bool isCancelled() const { return cancelled; }
+
+	void abortIfRequested() const;
+
+private:
+	/** Выбрать все куски принадлежащие одной партиции.
+	  */
+	MergeTreeData::DataPartsVector selectAllPartsFromPartition(DayNum_t partition);
 
 private:
 	MergeTreeData & data;

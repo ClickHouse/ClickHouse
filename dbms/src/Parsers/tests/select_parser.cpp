@@ -1,7 +1,5 @@
 #include <iostream>
 
-#include <mysqlxx/mysqlxx.h>
-
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/formatAST.h>

@@ -33,8 +33,8 @@ int main(int argc, char ** argv)
 
 				time_t t1 = row[0];
 				time_t t2 = row[1];
-				std::cerr << t1 << ", " << mysqlxx::DateTime(t1) << std::endl;
-				std::cerr << t2 << ", " << mysqlxx::DateTime(t2) << std::endl;
+				std::cerr << t1 << ", " << LocalDateTime(t1) << std::endl;
+				std::cerr << t2 << ", " << LocalDateTime(t2) << std::endl;
 			}
 		}
 

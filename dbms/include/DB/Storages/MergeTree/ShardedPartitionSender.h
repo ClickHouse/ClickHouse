@@ -37,7 +37,7 @@ public:
 	Client(const Client &) = delete;
 	Client & operator=(const Client &) = delete;
 	bool send(const InterserverIOEndpointLocation & to_location, const InterserverIOEndpointLocation & from_location,
-		const std::vector<std::string> & parts, size_t shard_no);
+		const std::string & part, size_t shard_no);
 	void cancel() { is_cancelled = true; }
 
 private:

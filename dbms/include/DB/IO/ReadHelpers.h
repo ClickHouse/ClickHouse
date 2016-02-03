@@ -9,8 +9,8 @@
 #include <common/Common.h>
 #include <common/DateLUT.h>
 
-#include <mysqlxx/Date.h>
-#include <mysqlxx/DateTime.h>
+#include <common/LocalDate.h>
+#include <common/LocalDateTime.h>
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
@@ -429,7 +429,7 @@ inline void readDateText(DayNum_t & date, ReadBuffer & buf)
 	date = DateLUT::instance().makeDayNum(year, month, day);
 }
 
-inline void readDateText(mysqlxx::Date & date, ReadBuffer & buf)
+inline void readDateText(LocalDate & date, ReadBuffer & buf)
 {
 	char s[10];
 	size_t size = buf.read(s, 10);
@@ -491,7 +491,7 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 		readDateTimeTextFallback(datetime, buf);
 }
 
-inline void readDateTimeText(mysqlxx::DateTime & datetime, ReadBuffer & buf)
+inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 {
 	char s[19];
 	size_t size = buf.read(s, 19);
@@ -527,8 +527,8 @@ inline void readBinary(bool & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(uint128 & x,	ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(VisitID_t & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(mysqlxx::Date & x, 	ReadBuffer & buf) 	{ readPODBinary(x, buf); }
-inline void readBinary(mysqlxx::DateTime & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(LocalDate & x, 	ReadBuffer & buf) 	{ readPODBinary(x, buf); }
+inline void readBinary(LocalDateTime & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 
 /// Общие методы для чтения значения в текстовом виде из tab-separated формата.
@@ -546,8 +546,8 @@ inline void readText(String & x, 	ReadBuffer & buf) { readEscapedString(x, buf);
 inline void readText(bool & x, 		ReadBuffer & buf) { readBoolText(x, buf); }
 
 inline void readText(VisitID_t & x, ReadBuffer & buf) { readIntText(x, buf); }
-inline void readText(mysqlxx::Date & x, 	ReadBuffer & buf) { readDateText(x, buf); }
-inline void readText(mysqlxx::DateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
+inline void readText(LocalDate & x, 	ReadBuffer & buf) { readDateText(x, buf); }
+inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 
 
 /// Общие методы для чтения значения в текстовом виде, при необходимости, в кавычках.
@@ -566,14 +566,14 @@ inline void readQuoted(bool & x, 	ReadBuffer & buf) { readBoolText(x, buf); }
 
 inline void readQuoted(VisitID_t & x, ReadBuffer & buf) { readIntText(x, buf); }
 
-inline void readQuoted(mysqlxx::Date & x, ReadBuffer & buf)
+inline void readQuoted(LocalDate & x, ReadBuffer & buf)
 {
 	assertString("'", buf);
 	readDateText(x, buf);
 	assertString("'", buf);
 }
 
-inline void readQuoted(mysqlxx::DateTime & x, ReadBuffer & buf)
+inline void readQuoted(LocalDateTime & x, ReadBuffer & buf)
 {
 	assertString("'", buf);
 	readDateTimeText(x, buf);
@@ -597,14 +597,14 @@ inline void readDoubleQuoted(bool & x, 		ReadBuffer & buf) { readBoolText(x, buf
 
 inline void readDoubleQuoted(VisitID_t & x, ReadBuffer & buf) { readIntText(x, buf); }
 
-inline void readDoubleQuoted(mysqlxx::Date & x, ReadBuffer & buf)
+inline void readDoubleQuoted(LocalDate & x, ReadBuffer & buf)
 {
 	assertString("\"", buf);
 	readDateText(x, buf);
 	assertString("\"", buf);
 }
 
-inline void readDoubleQuoted(mysqlxx::DateTime & x, ReadBuffer & buf)
+inline void readDoubleQuoted(LocalDateTime & x, ReadBuffer & buf)
 {
 	assertString("\"", buf);
 	readDateTimeText(x, buf);

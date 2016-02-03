@@ -227,7 +227,7 @@ BlockInputStreams StorageSystemParts::read(
 				table_column->insert(table);
 				engine_column->insert(engine);
 
-				mysqlxx::Date partition_date {part->month};
+				LocalDate partition_date {part->month};
 				String partition = toString(partition_date.year()) + (partition_date.month() < 10 ? "0" : "") + toString(partition_date.month());
 				partition_column->insert(partition);
 

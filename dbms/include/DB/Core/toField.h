@@ -16,12 +16,12 @@ inline Field toField(const T & x)
 	return Field(typename NearestFieldType<T>::Type(x));
 }
 
-inline Field toField(const mysqlxx::Date & x)
+inline Field toField(const LocalDate & x)
 {
 	return toField(static_cast<UInt16>(x.getDayNum()));
 }
 
-inline Field toField(const mysqlxx::DateTime & x)
+inline Field toField(const LocalDateTime & x)
 {
 	return toField(static_cast<UInt32>(static_cast<time_t>(x)));
 }

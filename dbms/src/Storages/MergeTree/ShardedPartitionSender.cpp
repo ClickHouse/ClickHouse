@@ -5,36 +5,12 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 
-#include <boost/algorithm/string.hpp>
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
 	extern const int ABORTED;
-}
-
-namespace
-{
-
-std::string glue(const std::vector<std::string> & names, char delim)
-{
-	std::string res;
-	bool is_first = true;
-
-	for (const auto & name : names)
-	{
-		if (is_first)
-			is_first = false;
-		else
-			res.append(1, delim);
-		res.append(name);
-	}
-
-	return res;
-}
-
 }
 
 namespace ShardedPartitionSender
@@ -66,32 +42,26 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out
 		throw Exception("ShardedPartitionSender service terminated", ErrorCodes::ABORTED);
 
 	InterserverIOEndpointLocation from_location(params.get("from_location"));
-	std::string glued_parts = params.get("parts");
+	std::string part_name = params.get("part");
 	size_t shard_no = std::stoul(params.get("shard"));
 
-	std::vector<std::string> parts;
-	boost::split(parts, glued_parts, boost::is_any_of(","));
+	if (is_cancelled)
+		throw Exception("ShardedPartitionSender service terminated", ErrorCodes::ABORTED);
 
-	for (const auto & part_name : parts)
+	MergeTreeData::MutableDataPartPtr part = storage.fetcher.fetchShardedPart(from_location, part_name, shard_no);
+	part->is_temp = false;
+
+	const std::string old_part_path = storage.full_path + part->name;
+	const std::string new_part_path = storage.full_path + "detached/" + part_name;
+
+	Poco::File new_part_dir(new_part_path);
+	if (new_part_dir.exists())
 	{
-		if (is_cancelled)
-			throw Exception("ShardedPartitionSender service terminated", ErrorCodes::ABORTED);
-
-		MergeTreeData::MutableDataPartPtr part = storage.fetcher.fetchShardedPart(from_location, part_name, shard_no);
-		part->is_temp = false;
-
-		const std::string old_part_path = storage.full_path + part->name;
-		const std::string new_part_path = storage.full_path + "detached/" + part_name;
-
-		Poco::File new_part_dir(new_part_path);
-		if (new_part_dir.exists())
-		{
-			LOG_WARNING(log, "Directory " + new_part_path + " already exists. Removing.");
-			new_part_dir.remove(true);
-		}
-
-		Poco::File(old_part_path).renameTo(new_part_path);
+		LOG_WARNING(log, "Directory " + new_part_path + " already exists. Removing.");
+		new_part_dir.remove(true);
 	}
+
+	Poco::File(old_part_path).renameTo(new_part_path);
 
 	bool flag = true;
 	writeBinary(flag, out);
@@ -104,16 +74,14 @@ Client::Client()
 }
 
 bool Client::send(const InterserverIOEndpointLocation & to_location, const InterserverIOEndpointLocation & from_location,
-	const std::vector<std::string> & parts, size_t shard_no)
+	const std::string & part, size_t shard_no)
 {
-	std::string glued_parts = glue(parts, ',');
-
 	ReadBufferFromHTTP::Params params =
 	{
 		{"endpoint", getEndpointId(to_location.name)},
 		{"from_location", from_location.toString()},
 		{"compress", "false"},
-		{"parts", glued_parts},
+		{"part", part},
 		{"shard", toString(shard_no)}
 	};
 

@@ -125,13 +125,6 @@ public:
 
 	bool behavesAsNumber() const override { return true; }
 
-	/// Returns length of textual name for an enum element (used in FunctionVisibleWidth)
-	std::size_t getNameLength(const FieldType & value) const
-	{
-		/// @todo length of escaped string should be calculated here
-		return getNameForValue(value).size;
-	}
-
 	const StringRef & getNameForValue(const FieldType & value) const
 	{
 		const auto it = value_to_name_map.find(value);
@@ -144,14 +137,13 @@ public:
 		return it->second;
 	}
 
-	FieldType getValue(const std::string & name) const
+	FieldType getValue(StringRef name) const
 	{
-		const auto it = name_to_value_map.find(StringRef{name});
+		const auto it = name_to_value_map.find(name);
 		if (it == std::end(name_to_value_map))
 			throw Exception{
-				"Unknown element '" + name + "' for type " + getName(),
-				ErrorCodes::LOGICAL_ERROR
-			};
+				"Unknown element '" + name.toString() + "' for type " + getName(),
+				ErrorCodes::LOGICAL_ERROR};
 
 		return it->second;
 	}
@@ -182,7 +174,7 @@ public:
 	{
 		std::string name;
 		readString(name, istr);
-		field = nearestFieldType(getValue(name));
+		field = nearestFieldType(getValue(StringRef(name)));
 	}
 
 	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const override
@@ -194,7 +186,7 @@ public:
 	{
 		std::string name;
 		readEscapedString(name, istr);
-		field = nearestFieldType(getValue(name));
+		field = nearestFieldType(getValue(StringRef(name)));
 	}
 
 	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const override
@@ -206,7 +198,7 @@ public:
 	{
 		std::string name;
 		readQuotedString(name, istr);
-		field = nearestFieldType(getValue(name));
+		field = nearestFieldType(getValue(StringRef(name)));
 	}
 
 	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override

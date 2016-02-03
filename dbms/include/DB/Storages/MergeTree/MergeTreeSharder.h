@@ -42,12 +42,6 @@ public:
 	  */
 	ShardedBlocksWithDateIntervals shardBlock(const Block & block);
 
-	/** Все строки должны относиться к одному месяцу.
-	  * temp_index - значение left и right для нового куска. Можно будет изменить при переименовании.
-	  * Возвращает временный кусок с именем, начинающимся с tmp_.
-	  */
-	MergeTreeData::MutableDataPartPtr writeTempPart(ShardedBlockWithDateInterval & sharded_block_with_dates, Int64 temp_index);
-
 private:
 	std::vector<IColumn::Filter> createFilters(Block block);
 

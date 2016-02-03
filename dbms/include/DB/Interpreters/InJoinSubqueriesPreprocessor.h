@@ -141,13 +141,7 @@ public:
 		if (select_query->attributes & IAST::IsPreprocessedForInJoinSubqueries)
 			return;
 
-		if (select_query->table.isNull())
-		{
-			select_query->setAttributes(IAST::IsPreprocessedForInJoinSubqueries);
-			return;
-		}
-
-		if (typeid_cast<const ASTFunction *>(select_query->table.get()) != nullptr)
+		if (!isQueryFromTable(*select_query))
 		{
 			select_query->setAttributes(IAST::IsPreprocessedForInJoinSubqueries);
 			return;
@@ -195,8 +189,8 @@ public:
 			else if ((node != static_cast<IAST *>(select_query))
 				&& ((sub_select_query = typeid_cast<ASTSelectQuery *>(node)) != nullptr))
 			{
-				if (isQueryFromTable(*sub_select_query))
-					++node->select_query_depth;
+				++node->select_query_depth;
+
 				if (sub_select_query->enclosing_in_or_join != nullptr)
 				{
 					/// Найден подзапрос внутри секции IN или JOIN.
@@ -204,18 +198,21 @@ public:
 				}
 			}
 
-			for (auto & child : node->children)
+			if (!(node->attributes & IAST::IsPreprocessedForInJoinSubqueries))
 			{
-				if (!(child->attributes & IAST::IsPreprocessedForInJoinSubqueries))
+				for (auto & child : node->children)
 				{
-					auto n = child.get();
-					n->enclosing_in_or_join = node->enclosing_in_or_join;
-					n->select_query_depth = node->select_query_depth;
-					to_preprocess.push_back(n);
+					if (!(child->attributes & IAST::IsPreprocessedForInJoinSubqueries))
+					{
+						auto n = child.get();
+						n->enclosing_in_or_join = node->enclosing_in_or_join;
+						n->select_query_depth = node->select_query_depth;
+						to_preprocess.push_back(n);
+					}
 				}
-			}
 
-			node->attributes |= IAST::IsPreprocessedForInJoinSubqueries;
+				node->attributes |= IAST::IsPreprocessedForInJoinSubqueries;
+			}
 		}
 	}
 
@@ -228,7 +225,10 @@ private:
 		/// Если подзапрос внутри секции IN или JOIN является непосредственным потомком
 		/// главного запроса и указано ключевое слово GLOBAL, то подзапрос пропускается.
 		if ((sub_select_query.select_query_depth == 1) && is_global)
+		{
+			sub_select_query.attributes |= IAST::IsPreprocessedForInJoinSubqueries;
 			return;
+		}
 
 		auto subquery_table_storage = getDistributedSubqueryStorage(sub_select_query);
 		if (!subquery_table_storage)

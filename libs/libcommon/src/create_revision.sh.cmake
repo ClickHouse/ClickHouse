@@ -18,7 +18,7 @@ fi
 
 is_it_github=$( git config --get remote.origin.url | grep 'github' )
 if [[ "$is_it_github" = "" ]]; then
-	revision=53190
+	revision=53694
 fi
 
 echo $revision >> "${CMAKE_CURRENT_BINARY_DIR}/src/revision.h";

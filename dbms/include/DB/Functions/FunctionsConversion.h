@@ -347,7 +347,6 @@ template <typename FieldType> struct FormatImpl<DataTypeEnum<FieldType>>
 {
 	static void execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> & type)
 	{
-		/// @todo should we escape the string here? Presumably no as it will be escaped twice otherwise
 		writeString(type.getNameForValue(x), wb);
 	}
 };
@@ -1724,23 +1723,6 @@ class FunctionCast final : public IFunction
 		using NameValuePair = std::pair<std::string, ValueType>;
 		using EnumValues = std::vector<NameValuePair>;
 
-//		EnumValues value_intersection;
-//		std::set_intersection(std::begin(from_values), std::end(from_values),
-//			std::begin(to_values), std::end(to_values), std::back_inserter(value_intersection),
-//			[] (auto && from, auto && to) { return from.second < to.second; });
-//
-//		for (const auto & name_value : value_intersection)
-//		{
-//			const auto & old_name = name_value.first;
-//			const auto & new_name = to_type->getNameForValue(name_value.second).toString();
-//			if (old_name != new_name)
-//				throw Exception{
-//					"Enum conversion changes name for value " + toString(name_value.second) +
-//						" from '" + old_name + "' to '" + new_name + "'",
-//					ErrorCodes::CANNOT_CONVERT_TYPE
-//				};
-//		}
-
 		EnumValues name_intersection;
 		std::set_intersection(std::begin(from_values), std::end(from_values),
 			std::begin(to_values), std::end(to_values), std::back_inserter(name_intersection),
@@ -1762,7 +1744,8 @@ class FunctionCast final : public IFunction
 	template <typename ColumnStringType, typename EnumType>
 	auto createStringToEnumWrapper()
 	{
-		return [] (Block & block, const ColumnNumbers & arguments, const size_t result) {
+		return [] (Block & block, const ColumnNumbers & arguments, const size_t result)
+		{
 			const auto first_col = block.getByPosition(arguments.front()).column.get();
 
 			auto & col_with_type_and_name = block.getByPosition(result);
@@ -1773,12 +1756,12 @@ class FunctionCast final : public IFunction
 			{
 				const auto size = col->size();
 
-				const auto res = result_type.createColumn();
-				auto & out_data = static_cast<typename EnumType::ColumnType &>(*result_col).getData();
+				auto res = result_type.createColumn();
+				auto & out_data = static_cast<typename EnumType::ColumnType &>(*res).getData();
 				out_data.resize(size);
 
 				for (const auto i : ext::range(0, size))
-					out_data[i] = result_type.getValue(col->getDataAt(i).toString());
+					out_data[i] = result_type.getValue(col->getDataAt(i));
 
 				result_col = res;
 			}

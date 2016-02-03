@@ -3,6 +3,7 @@
 #include <mysqlxx/Types.h>
 #include <mysqlxx/Value.h>
 #include <mysqlxx/ResultBase.h>
+#include <mysqlxx/Exception.h>
 
 
 namespace mysqlxx

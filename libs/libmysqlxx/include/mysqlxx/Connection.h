@@ -7,6 +7,7 @@
 #include <common/singleton.h>
 
 #include <mysqlxx/Query.h>
+#include <mysqlxx/Exception.h>
 
 #define MYSQLXX_DEFAULT_TIMEOUT 60
 #define MYSQLXX_DEFAULT_RW_TIMEOUT 1800

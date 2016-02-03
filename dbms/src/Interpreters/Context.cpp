@@ -826,7 +826,7 @@ void Context::setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_w
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 	if (shared->resharding_worker)
-		throw Exception("Resharding background thread has already been set.", ErrorCodes::LOGICAL_ERROR);
+		throw Exception("Resharding background thread has already been initialized.", ErrorCodes::LOGICAL_ERROR);
 	shared->resharding_worker = resharding_worker;
 }
 
@@ -834,7 +834,8 @@ ReshardingWorker & Context::getReshardingWorker()
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 	if (!shared->resharding_worker)
-		throw Exception("Resharding background thread not set.", ErrorCodes::LOGICAL_ERROR);
+		throw Exception("Resharding background thread not initialized: resharding missing in configuration file.",
+			ErrorCodes::LOGICAL_ERROR);
 	return *shared->resharding_worker;
 }
 

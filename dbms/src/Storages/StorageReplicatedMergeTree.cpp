@@ -75,6 +75,7 @@ namespace ErrorCodes
 	extern const int INVALID_PARTITIONS_INTERVAL;
 	extern const int RESHARDING_INVALID_PARAMETERS;
 	extern const int INVALID_SHARD_WEIGHT;
+	extern const int DUPLICATE_SHARD_PATHS;
 }
 
 
@@ -87,6 +88,27 @@ const auto WAIT_FOR_REPLICA_QUEUE_MS = 10 * 1000;
 
 const auto MERGE_SELECTING_SLEEP_MS = 5 * 1000;
 
+/** Добавляемым блокам данных присваиваются некоторые номера - целые числа.
+  * Для добавляемых обычным способом (INSERT) блоков, номера выделяются по возрастанию.
+  * Слияния делаются для диапазонов номеров блоков на числовой прямой:
+  *  если в слиянии участвуют номера блоков x, z, и есть блок с номером y, что x < y < z, то блок с номером y тоже участвует в слиянии.
+  * Это требуется для сохранения свойств некоторых операций, которые могут производиться при слиянии - например, в CollapsingMergeTree.
+  * В частности, это позволяет во время слияния знать, что в одном куске все данные были добавлены раньше, чем все данные в другом куске.
+  *
+  * Изредка возникает необходимость добавить в таблицу какой-то заведомо старый кусок данных,
+  *  чтобы он воспринимался как старый в логике работы CollapsingMergeTree.
+  * Такой кусок данных можно добавить с помощью специального запроса ATTACH.
+  * И в этом случае, мы должны выделить этому куску номера меньшие, чем номера всех остальных кусков.
+  * В связи с этим, номера обычных кусков, добавляемых INSERT-ом, начинаются не с нуля, а с большего числа,
+  *  а меньшие номера считаются "зарезервированными".
+  *
+  * Почему это число равно 200?
+  * Дело в том, что раньше не поддерживались отрицательные номера блоков.
+  * А также, слияние сделано так, что при увеличении количества кусков, вставка новых кусков специально замедляется,
+  *  пока слияния не успеют уменьшить число кусков; и это было рассчитано примерно для 200 кусков.
+  * А значит, что при вставке в таблицу всех кусков из другой таблицы, 200 номеров наверняка достаточно.
+  * В свою очередь, это число выбрано почти наугад.
+  */
 const Int64 RESERVED_BLOCK_NUMBERS = 200;
 
 
@@ -1239,11 +1261,16 @@ void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 	size_t removed_parts = 0;
 
 	/// Удалим куски, содержащиеся в удаляемом диапазоне.
-	auto parts = data.getDataParts();
+	/// Важно, чтобы не осталось и старых кусков (оставшихся после мерджа), так как иначе,
+	///  после добавления новой реплики, эта новая реплика их скачает, но не удалит.
+	/// А также, если этого не делать, куски будут оживать после перезапуска сервера.
+	/// Поэтому, используем getAllDataParts.
+	auto parts = data.getAllDataParts();
 	for (const auto & part : parts)
 	{
 		if (!ActiveDataPartSet::contains(entry.new_part_name, part->name))
 			continue;
+
 		LOG_DEBUG(log, "Removing part " << part->name);
 		++removed_parts;
 
@@ -1343,16 +1370,19 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 
 bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & pool_context)
 {
-	LogEntryPtr entry;
+	/// Этот объект будет помечать элемент очереди как выполняющийся.
+	ReplicatedMergeTreeQueue::SelectedEntry selected;
 
 	try
 	{
-		entry = queue.selectEntryToProcess(merger);
+		selected = queue.selectEntryToProcess(merger);
 	}
 	catch (...)
 	{
 		tryLogCurrentException(__PRETTY_FUNCTION__);
 	}
+
+	LogEntryPtr & entry = selected.first;
 
 	if (!entry)
 		return false;
@@ -1454,15 +1484,30 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 		}
 
 		/// Можно слить куски, если все номера между ними заброшены - не соответствуют никаким блокам.
-		/// Номера до RESERVED_BLOCK_NUMBERS всегда не соответствуют никаким блокам.
-		for (Int64 number = std::max(RESERVED_BLOCK_NUMBERS, left->right + 1); number <= right->left - 1; ++number)
+		for (Int64 number = left->right + 1; number <= right->left - 1; ++number)
 		{
-			String path1 = zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number);
-			String path2 = zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number);
+			/** Для номеров до RESERVED_BLOCK_NUMBERS не используется AbandonableLock
+			  *  - такие номера не могут быть "заброшены" - то есть, не использованными для кусков.
+			  * Это номера кусков, которые были добавлены с помощью ALTER ... ATTACH.
+			  * Они должны идти без пропусков (для каждого номера должен быть кусок).
+			  * Проверяем, что для всех таких номеров есть куски,
+			  *  иначе, через "дыры" - отсутствующие куски, нельзя мерджить.
+			  */
 
-			if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
-				AbandonableLockInZooKeeper::check(path2, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
-				return false;
+			if (number < RESERVED_BLOCK_NUMBERS)
+			{
+				if (!data.hasBlockNumberInMonth(number, left->month))
+					return false;
+			}
+			else
+			{
+				String path1 = zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number);
+				String path2 = zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number);
+
+				if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
+					AbandonableLockInZooKeeper::check(path2, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
+					return false;
+			}
 		}
 
 		memoized_parts_that_could_be_merged.insert(key);
@@ -2720,8 +2765,47 @@ void StorageReplicatedMergeTree::dropPartition(ASTPtr query, const Field & field
 		return;
 	}
 
-	ScopedPartitionMergeLock partition_merge_lock(*this, month_name);
-	std::string fake_part_name = partition_merge_lock.getId();
+	auto number_and_exists = data.getMinBlockNumberForMonth(data.getMonthFromName(month_name));
+
+	/// Если в партиции нет данных
+	if (!number_and_exists.second)
+	{
+		LOG_DEBUG(log, "No data in partition " << month_name);
+		return;
+	}
+
+	Int64 left = number_and_exists.first;
+
+	/** Пропустим один номер в block_numbers для удаляемого месяца, и будем удалять только куски до этого номера.
+	  * Это запретит мерджи удаляемых кусков с новыми вставляемыми данными.
+	  * Инвариант: в логе не появятся слияния удаляемых кусков с другими кусками.
+	  * NOTE: Если понадобится аналогично поддержать запрос DROP PART, для него придется придумать какой-нибудь новый механизм,
+	  *        чтобы гарантировать этот инвариант.
+	  */
+	Int64 right;
+
+	{
+		AbandonableLockInZooKeeper block_number_lock = allocateBlockNumber(month_name);
+		right = block_number_lock.getNumber();
+		block_number_lock.unlock();
+	}
+
+	/// Такого никогда не должно происходить.
+	if (right == 0)
+		throw Exception("Logical error: just allocated block number is zero", ErrorCodes::LOGICAL_ERROR);
+	--right;
+
+	String fake_part_name = getFakePartNameForDrop(month_name, left, right);
+
+	/** Запретим выбирать для слияния удаляемые куски.
+	  * Инвариант: после появления в логе записи DROP_RANGE, в логе не появятся слияния удаляемых кусков.
+	  */
+	{
+		std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
+		queue.disableMergesInRange(fake_part_name);
+	}
+
+	LOG_DEBUG(log, "Disabled merges in range " << left << " - " << right << " for month " << month_name);
 
 	/// Наконец, добившись нужных инвариантов, можно положить запись в лог.
 	LogEntry entry;
@@ -2743,66 +2827,6 @@ void StorageReplicatedMergeTree::dropPartition(ASTPtr query, const Field & field
 	}
 }
 
-std::string StorageReplicatedMergeTree::acquirePartitionMergeLock(const std::string & partition_name)
-{
-	std::lock_guard<std::mutex> guard(mutex_partition_to_merge_lock);
-
-	auto it = partition_to_merge_lock.find(partition_name);
-	if (it != partition_to_merge_lock.end())
-	{
-		auto & info = it->second;
-		++info.ref_count;
-		return info.fake_part_name;
-	}
-
-	/** Пропустим один номер в block_numbers для удаляемого месяца, и будем удалять только куски до этого номера.
-	  * Это запретит мерджи удаляемых кусков с новыми вставляемыми данными.
-	  * Инвариант: в логе не появятся слияния удаляемых кусков с другими кусками.
-	  * NOTE: Если понадобится аналогично поддержать запрос DROP PART, для него придется придумать какой-нибудь новый механизм,
-	  *        чтобы гарантировать этот инвариант.
-	  */
-	Int64 right;
-
-	{
-		AbandonableLockInZooKeeper block_number_lock = allocateBlockNumber(partition_name);
-		right = block_number_lock.getNumber();
-		block_number_lock.unlock();
-	}
-
-	/// Такого никогда не должно происходить.
-	if (right == 0)
-		throw Exception("Logical error: just allocated block number is zero", ErrorCodes::LOGICAL_ERROR);
-	--right;
-
-	std::string fake_part_name = getFakePartNameForDrop(partition_name, 0, right);
-	partition_to_merge_lock.emplace(partition_name, PartitionMergeLockInfo(fake_part_name));
-
-	/** Запретим выбирать для слияния удаляемые куски.
-	  * Инвариант: после появления в логе записи DROP_RANGE, в логе не появятся слияния удаляемых кусков.
-	  */
-	{
-		std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
-
-		queue.disableMergesInRange(fake_part_name);
-	}
-
-	return fake_part_name;
-}
-
-void StorageReplicatedMergeTree::releasePartitionMergeLock(const std::string & partition_name)
-{
-	std::lock_guard<std::mutex> guard(mutex_partition_to_merge_lock);
-
-	auto it = partition_to_merge_lock.find(partition_name);
-	if (it == partition_to_merge_lock.end())
-		throw Exception("StorageReplicatedMergeTree: trying to release a non-existent partition merge lock",
-			ErrorCodes::LOGICAL_ERROR);
-
-	auto & info = it->second;
-	--info.ref_count;
-	if (info.ref_count == 0)
-		partition_to_merge_lock.erase(it);
-}
 
 void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & field, bool unreplicated, bool attach_part, const Settings & settings)
 {
@@ -2828,6 +2852,8 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 	{
 		LOG_DEBUG(log, "Looking for parts for partition " << partition << " in " << source_dir);
 		ActiveDataPartSet active_parts;
+
+		std::set<String> part_names;
 		for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
 		{
 			String name = it.name();
@@ -2837,9 +2863,18 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 				continue;
 			LOG_DEBUG(log, "Found part " << name);
 			active_parts.add(name);
+			part_names.insert(name);
 		}
 		LOG_DEBUG(log, active_parts.size() << " of them are active");
 		parts = active_parts.getParts();
+
+		/// Неактивные куски переименовываем, чтобы они не могли быть прикреплены в случае повторного ATTACH-а.
+		for (const auto & name : part_names)
+		{
+			String containing_part = active_parts.getContainingPart(name);
+			if (!containing_part.empty() && containing_part != name)
+				Poco::File(full_path + source_dir + name).renameTo(full_path + source_dir + "inactive_" + name);
+		}
 	}
 
 	/// Синхронно проверим, что добавляемые куски существуют и не испорчены хотя бы на этой реплике. Запишем checksums.txt, если его нет.
@@ -2853,14 +2888,11 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 	/// Выделим добавляемым кускам максимальные свободные номера, меньшие RESERVED_BLOCK_NUMBERS.
 	/// NOTE: Проверка свободности номеров никак не синхронизируется. Выполнять несколько запросов ATTACH/DETACH/DROP одновременно нельзя.
 	Int64 min_used_number = RESERVED_BLOCK_NUMBERS;
-	DayNum_t month = DateLUT::instance().makeDayNum(parse<UInt16>(partition.substr(0, 4)), parse<UInt8>(partition.substr(4, 2)), 1);
+	DayNum_t month = MergeTreeData::getMonthFromPartPrefix(partition);
 
-	{
-		auto existing_parts = data.getDataParts();
-		for (const auto & part : existing_parts)
-			if (part->month == month)
-				min_used_number = std::min(min_used_number, part->left);
-	}
+	auto num_and_exists = data.getMinBlockNumberForMonth(month);
+	if (num_and_exists.second && num_and_exists.first < min_used_number)
+		min_used_number = num_and_exists.first;
 
 	/// Добавим записи в лог.
 	std::reverse(parts.begin(), parts.end());
@@ -3434,13 +3466,23 @@ void StorageReplicatedMergeTree::reshardPartitions(const String & database_name,
 {
 	auto & resharding_worker = context.getReshardingWorker();
 	if (!resharding_worker.isStarted())
-		throw Exception("Resharding background thread is not running.", ErrorCodes::RESHARDING_NO_WORKER);
+		throw Exception("Resharding background thread is not running", ErrorCodes::RESHARDING_NO_WORKER);
 
 	for (const auto & weighted_path : weighted_zookeeper_paths)
 	{
 		UInt64 weight = weighted_path.second;
 		if (weight == 0)
 			throw Exception("Shard has invalid weight", ErrorCodes::INVALID_SHARD_WEIGHT);
+	}
+
+	{
+		std::vector<std::string> all_paths;
+		all_paths.reserve(weighted_zookeeper_paths.size());
+		for (const auto & weighted_path : weighted_zookeeper_paths)
+			all_paths.push_back(weighted_path.first);
+		std::sort(all_paths.begin(), all_paths.end());
+		if (std::adjacent_find(all_paths.begin(), all_paths.end()) != all_paths.end())
+			throw Exception("Shard paths must be distinct", ErrorCodes::DUPLICATE_SHARD_PATHS);
 	}
 
 	DayNum_t first_partition_num = !first_partition.isNull() ? MergeTreeData::getMonthDayNum(first_partition) : DayNum_t();

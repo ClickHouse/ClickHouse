@@ -1,14 +1,11 @@
 #pragma once
 
 #include <string>
-#include <common/DateLUT.h>
-
-#include <mysqlxx/Date.h>
 #include <iomanip>
+#include <exception>
+#include <common/DateLUT.h>
+#include <common/LocalDate.h>
 
-
-namespace mysqlxx
-{
 
 /** Хранит дату и время в broken-down виде.
   * Может быть инициализирован из даты и времени в текстовом виде '2011-01-01 00:00:00' и из time_t.
@@ -19,7 +16,7 @@ namespace mysqlxx
   *
   * packed - для memcmp (из-за того, что m_year - 2 байта, little endian, работает корректно только до 2047 года)
   */
-class __attribute__ ((__packed__)) DateTime
+class __attribute__ ((__packed__)) LocalDateTime
 {
 private:
 	unsigned short m_year;
@@ -57,7 +54,7 @@ private:
 	void init(const char * s, size_t length)
 	{
 		if (length < 19)
-			throw Exception("Cannot parse DateTime: " + std::string(s, length));
+			throw std::runtime_error("Cannot parse LocalDateTime: " + std::string(s, length));
 
 		m_year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
 		m_month = (s[5] - '0') * 10 + (s[6] - '0');
@@ -69,40 +66,40 @@ private:
 	}
 
 public:
-	explicit DateTime(time_t time)
+	explicit LocalDateTime(time_t time)
 	{
 		init(time);
 	}
 
-	DateTime(unsigned short year_, unsigned char month_, unsigned char day_,
+	LocalDateTime(unsigned short year_, unsigned char month_, unsigned char day_,
 		unsigned char hour_, unsigned char minute_, unsigned char second_)
 		: m_year(year_), m_month(month_), m_day(day_), m_hour(hour_), m_minute(minute_), m_second(second_)
 	{
 	}
 
-	explicit DateTime(const std::string & s)
+	explicit LocalDateTime(const std::string & s)
 	{
 		if (s.size() < 19)
-			throw Exception("Cannot parse DateTime: " + s);
+			throw std::runtime_error("Cannot parse LocalDateTime: " + s);
 
 		init(s.data(), s.size());
 	}
 
-	DateTime() : m_year(0), m_month(0), m_day(0), m_hour(0), m_minute(0), m_second(0)
+	LocalDateTime() : m_year(0), m_month(0), m_day(0), m_hour(0), m_minute(0), m_second(0)
 	{
 	}
 
-	DateTime(const char * data, size_t length)
+	LocalDateTime(const char * data, size_t length)
 	{
 		init(data, length);
 	}
 
-	DateTime(const DateTime & x)
+	LocalDateTime(const LocalDateTime & x)
 	{
 		operator=(x);
 	}
 
-	DateTime & operator= (const DateTime & x)
+	LocalDateTime & operator= (const LocalDateTime & x)
 	{
 		m_year = x.m_year;
 		m_month = x.m_month;
@@ -114,7 +111,7 @@ public:
 		return *this;
 	}
 
-	DateTime & operator= (time_t time)
+	LocalDateTime & operator= (time_t time)
 	{
 		init(time);
 		return *this;
@@ -141,42 +138,42 @@ public:
 	void minute(unsigned char x) 	{ m_minute = x; }
 	void second(unsigned char x) 	{ m_second = x; }
 
-	Date toDate() const { return Date(m_year, m_month, m_day); }
+	LocalDate toDate() const { return LocalDate(m_year, m_month, m_day); }
 
-	DateTime toStartOfDate() { return DateTime(m_year, m_month, m_day, 0, 0, 0); }
+	LocalDateTime toStartOfDate() { return LocalDateTime(m_year, m_month, m_day, 0, 0, 0); }
 
-	bool operator< (const DateTime & other) const
+	bool operator< (const LocalDateTime & other) const
 	{
 		return 0 > memcmp(this, &other, sizeof(*this));
 	}
 
-	bool operator> (const DateTime & other) const
+	bool operator> (const LocalDateTime & other) const
 	{
 		return 0 < memcmp(this, &other, sizeof(*this));
 	}
 
-	bool operator<= (const DateTime & other) const
+	bool operator<= (const LocalDateTime & other) const
 	{
 		return 0 >= memcmp(this, &other, sizeof(*this));
 	}
 
-	bool operator>= (const DateTime & other) const
+	bool operator>= (const LocalDateTime & other) const
 	{
 		return 0 <= memcmp(this, &other, sizeof(*this));
 	}
 
-	bool operator== (const DateTime & other) const
+	bool operator== (const LocalDateTime & other) const
 	{
 		return 0 == memcmp(this, &other, sizeof(*this));
 	}
 
-	bool operator!= (const DateTime & other) const
+	bool operator!= (const LocalDateTime & other) const
 	{
 		return !(*this == other);
 	}
 };
 
-inline std::ostream & operator<< (std::ostream & ostr, const DateTime & datetime)
+inline std::ostream & operator<< (std::ostream & ostr, const LocalDateTime & datetime)
 {
 	ostr << std::setfill('0') << std::setw(4) << datetime.year();
 
@@ -189,12 +186,10 @@ inline std::ostream & operator<< (std::ostream & ostr, const DateTime & datetime
 	return ostr;
 }
 
-}
-
 
 namespace std
 {
-inline string to_string(const mysqlxx::DateTime & datetime)
+inline string to_string(const LocalDateTime & datetime)
 {
 	stringstream str;
 	str << datetime;

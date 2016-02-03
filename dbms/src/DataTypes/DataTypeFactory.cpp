@@ -1,4 +1,4 @@
-#include <mysqlxx/Value.h>
+#include <DB/IO/ReadHelpers.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeDate.h>
@@ -94,7 +94,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 
 	Poco::RegularExpression::MatchVec matches;
 	if (fixed_string_regexp.match(name, 0, matches) && matches.size() == 2)
-		return new DataTypeFixedString(mysqlxx::Value(name.data() + matches[1].offset, matches[1].length, nullptr).getUInt());
+		return new DataTypeFixedString(parse<size_t>(name.data() + matches[1].offset, matches[1].length));
 
 	if (nested_regexp.match(name, 0, matches) && matches.size() == 3)
 	{

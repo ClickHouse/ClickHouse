@@ -60,7 +60,7 @@ public:
 	{
 		if (unlikely(isNull()))
 			throwException("Value is NULL");
-		
+
 		return m_length > 0 && m_data[0] != '0';
 	}
 
@@ -69,7 +69,7 @@ public:
 	{
 		if (unlikely(isNull()))
 			throwException("Value is NULL");
-		
+
 		return readUIntText(m_data, m_length);;
 	}
 
@@ -84,20 +84,20 @@ public:
 	{
 		if (unlikely(isNull()))
 			throwException("Value is NULL");
-		
+
 		return readFloatText(m_data, m_length);
 	}
 
 	/// Получить дату-время (из значения вида '2011-01-01 00:00:00').
-	DateTime getDateTime() const
+	LocalDateTime getDateTime() const
 	{
-		return DateTime(data(), size());
+		return LocalDateTime(data(), size());
 	}
 
 	/// Получить дату (из значения вида '2011-01-01' или '2011-01-01 00:00:00').
-	Date getDate() const
+	LocalDate getDate() const
 	{
-		return Date(data(), size());
+		return LocalDate(data(), size());
 	}
 
 	/// Получить строку.
@@ -105,7 +105,7 @@ public:
 	{
 		if (unlikely(isNull()))
 			throwException("Value is NULL");
-		
+
 		return std::string(m_data, m_length);
 	}
 
@@ -136,7 +136,7 @@ private:
 	size_t m_length;
 	const ResultBase * res;
 
-	
+
 	bool checkDateTime() const
 	{
 		return (m_length == 10 || m_length == 19) && m_data[4] == '-' && m_data[7] == '-';
@@ -392,8 +392,8 @@ template <> inline unsigned long long 	Value::get<unsigned long long	>() const {
 template <> inline float 				Value::get<float				>() const { return getDouble(); }
 template <> inline double 				Value::get<double				>() const { return getDouble(); }
 template <> inline std::string			Value::get<std::string			>() const { return getString(); }
-template <> inline Date					Value::get<Date					>() const { return getDate(); }
-template <> inline DateTime				Value::get<DateTime				>() const { return getDateTime(); }
+template <> inline LocalDate			Value::get<LocalDate			>() const { return getDate(); }
+template <> inline LocalDateTime		Value::get<LocalDateTime		>() const { return getDateTime(); }
 
 template <> inline VisitID_t			Value::get<VisitID_t			>() const { return VisitID_t(getUInt()); }
 

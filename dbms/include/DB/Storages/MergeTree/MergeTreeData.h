@@ -278,7 +278,7 @@ public:
 		  * Взятие этого мьютекса означает, что мы хотим заблокировать columns_lock на чтение с намерением потом, не
 		  *  снимая блокировку, заблокировать его на запись.
 		  */
-		mutable Poco::FastMutex alter_mutex;
+		mutable std::mutex alter_mutex;
 
 		~DataPart()
 		{
@@ -565,7 +565,7 @@ public:
 
 	/// Для перешардирования.
 	using MutableDataParts = std::set<MutableDataPartPtr, DataPartPtrLess>;
-	using PerShardDataParts = std::unordered_map<size_t, MutableDataParts>;
+	using PerShardDataParts = std::unordered_map<size_t, MutableDataPartPtr>;
 
 	/// Некоторые операции над множеством кусков могут возвращать такой объект.
 	/// Если не был вызван commit или rollback, деструктор откатывает операцию.
@@ -644,7 +644,7 @@ public:
 		}
 
 		DataPartPtr data_part;
-		Poco::ScopedLockWithUnlock<Poco::FastMutex> alter_lock;
+		std::unique_lock<std::mutex> alter_lock;
 
 		DataPart::Checksums new_checksums;
 		NamesAndTypesList new_columns;
@@ -752,6 +752,15 @@ public:
 	  */
 	size_t getMaxPartsCountForMonth() const;
 
+	/** Минимальный номер блока в указанном месяце.
+	  * Возвращает также bool - есть ли хоть один кусок.
+	  */
+	std::pair<Int64, bool> getMinBlockNumberForMonth(DayNum_t month) const;
+
+	/** Есть ли указанный номер блока в каком-нибудь куске указанного месяца.
+	  */
+	bool hasBlockNumberInMonth(Int64 block_number, DayNum_t month) const;
+
 	/** Если в таблице слишком много активных кусков, спит некоторое время, чтобы дать им возможность смерджиться.
 	  * Если передано until - проснуться раньше, если наступило событие.
 	  */
@@ -792,7 +801,7 @@ public:
 	  */
 	void renameAndDetachPart(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false, bool move_to_detached = true);
 
-	/** Убирает кусок из списка кусков (включая all_data_parts), но не перемещщает директорию.
+	/** Убирает кусок из списка кусков (включая all_data_parts), но не перемещает директорию.
 	  */
 	void detachPartInPlace(const DataPartPtr & part);
 
@@ -860,7 +869,7 @@ public:
 
 	size_t getColumnSize(const std::string & name) const
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock{data_parts_mutex};
+		std::lock_guard<std::mutex> lock{data_parts_mutex};
 
 		const auto it = column_sizes.find(name);
 		return it == std::end(column_sizes) ? 0 : it->second;
@@ -869,7 +878,7 @@ public:
 	using ColumnSizes = std::unordered_map<std::string, size_t>;
 	ColumnSizes getColumnSizes() const
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock{data_parts_mutex};
+		std::lock_guard<std::mutex> lock{data_parts_mutex};
 		return column_sizes;
 	}
 
@@ -878,6 +887,8 @@ public:
 	static String getMonthName(DayNum_t month);
 	static DayNum_t getMonthDayNum(const Field & partition);
 	static DayNum_t getMonthFromName(const String & month_name);
+	/// Получить месяц из имени куска или достаточной его части.
+	static DayNum_t getMonthFromPartPrefix(const String & part_prefix);
 
 	Context & context;
 	const String date_column_name;
@@ -916,14 +927,14 @@ private:
 
 	/** Актуальное множество кусков с данными. */
 	DataParts data_parts;
-	mutable Poco::FastMutex data_parts_mutex;
+	mutable std::mutex data_parts_mutex;
 
 	/** Множество всех кусков с данными, включая уже слитые в более крупные, но ещё не удалённые. Оно обычно небольшое (десятки элементов).
 	  * Ссылки на кусок есть отсюда, из списка актуальных кусков и из каждого потока чтения, который его сейчас использует.
 	  * То есть, если количество ссылок равно 1 - то кусок не актуален и не используется прямо сейчас, и его можно удалить.
 	  */
 	DataParts all_data_parts;
-	mutable Poco::FastMutex all_data_parts_mutex;
+	mutable std::mutex all_data_parts_mutex;
 
 	/** Для каждого шарда множество шардированных кусков.
 	  */
@@ -940,7 +951,7 @@ private:
 	void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
 		ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata);
 
-	/// Рассчитывает размеры столбцов в сжатом виде для текущего состояния data_parts
+	/// Рассчитывает размеры столбцов в сжатом виде для текущего состояния data_parts. Вызывается под блокировкой.
 	void calculateColumnSizes();
 	/// Добавляет или вычитывает вклад part в размеры столбцов в сжатом виде
 	void addPartContributionToColumnSizes(const DataPartPtr & part);

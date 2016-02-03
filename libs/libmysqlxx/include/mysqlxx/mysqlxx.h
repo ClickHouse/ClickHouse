@@ -4,8 +4,8 @@
 #include <mysqlxx/Transaction.h>
 #include <mysqlxx/Manip.h>
 #include <mysqlxx/Pool.h>
-#include <mysqlxx/Date.h>
-#include <mysqlxx/DateTime.h>
+#include <common/LocalDate.h>
+#include <common/LocalDateTime.h>
 #include <mysqlxx/Null.h>
 
 
@@ -63,5 +63,5 @@
   *  из принципа "всё, что не используется сейчас - не реализовано",
   *  а также зависит от небольшого количества кода из других мест репозитория Метрики
   *  (при необходимости, зависимости можно убрать).
-  * Предполагается, что пользователь сам допишет недостающий функционал.
+  * Предполагается, что пользователь сам допишет недостающую функциональность.
   */

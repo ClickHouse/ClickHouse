@@ -263,7 +263,7 @@ private:
 		if (current_time % 3 != 0)
 			return false;
 
-		mysqlxx::Date now(current_time);
+		LocalDate now(current_time);
 		return (now.month() == 12 && now.day() >= 20)
 			|| (now.month() == 1 && now.day() <= 5);
 	}
@@ -500,7 +500,6 @@ private:
 		{
 			/** В случае, если параметр query не задан, то запрос будет читаться из stdin.
 			  * При этом, запрос будет читаться не потоково (целиком в оперативку).
-			  * Поддерживается только один запрос в stdin.
 			  */
 
 			ReadBufferFromFileDescriptor in(STDIN_FILENO);
