@@ -100,7 +100,7 @@ private:
 	class CurrentlyExecuting
 	{
 	private:
-		ReplicatedMergeTreeQueue::LogEntryPtr & entry;
+		ReplicatedMergeTreeQueue::LogEntryPtr entry;
 		ReplicatedMergeTreeQueue & queue;
 
 		friend class ReplicatedMergeTreeQueue;
