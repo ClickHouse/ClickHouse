@@ -44,7 +44,9 @@ int main(int argc, char ** argv)
 		("d,decompress", "decompress")
 		("block-size,b", boost::program_options::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
 		("hc", "use LZ4HC instead of LZ4")
+	#ifdef USE_QUICKLZ
 		("qlz", "use QuickLZ (level 1) instead of LZ4")
+	#endif
 		("zstd", "use ZSTD instead of LZ4")
 		("stat", "print block statistics of compressed data")
 	;
@@ -62,7 +64,13 @@ int main(int argc, char ** argv)
 	try
 	{
 		bool decompress = options.count("d");
+
+	#ifdef USE_QUICKLZ
 		bool use_qlz = options.count("qlz");
+	#else
+		bool use_qlz = false;
+	#endif
+
 		bool use_lz4hc = options.count("hc");
 		bool use_zstd = options.count("zstd");
 		bool stat_mode = options.count("stat");

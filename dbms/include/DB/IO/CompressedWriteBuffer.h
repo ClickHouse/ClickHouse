@@ -5,7 +5,11 @@
 #include <vector>
 
 #include <city.h>
-#include <quicklz/quicklz_level1.h>
+
+#ifdef USE_QUICKLZ
+	#include <quicklz/quicklz_level1.h>
+#endif
+
 #include <lz4/lz4.h>
 #include <lz4/lz4hc.h>
 #include <zstd/zstd.h>
@@ -35,7 +39,9 @@ private:
 	CompressionMethod method;
 
 	PODArray<char> compressed_buffer;
+#ifdef USE_QUICKLZ
 	qlz_state_compress * qlz_state;
+#endif
 
 	void nextImpl()
 	{
@@ -53,6 +59,7 @@ private:
 		{
 			case CompressionMethod::QuickLZ:
 			{
+			#ifdef USE_QUICKLZ
 				compressed_buffer.resize(uncompressed_size + QUICKLZ_ADDITIONAL_SPACE);
 
 				compressed_size = qlz_compress(
@@ -64,6 +71,9 @@ private:
 				compressed_buffer[0] &= 3;
 				compressed_buffer_ptr = &compressed_buffer[0];
 				break;
+			#else
+				throw Exception("QuickLZ compression method is disabled", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+			#endif
 			}
 			case CompressionMethod::LZ4:
 			case CompressionMethod::LZ4HC:
@@ -137,7 +147,12 @@ public:
 		WriteBuffer & out_,
 		CompressionMethod method_ = CompressionMethod::LZ4,
 		size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
-		: BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), method(method_), qlz_state(new qlz_state_compress) {}
+		: BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), method(method_)
+	#ifdef USE_QUICKLZ
+			, qlz_state(new qlz_state_compress)
+	#endif
+	{
+	}
 
 	/// Объём сжатых данных
 	size_t getCompressedBytes()
@@ -170,7 +185,9 @@ public:
 			tryLogCurrentException(__PRETTY_FUNCTION__);
 		}
 
+	#ifdef USE_QUICKLZ
 		delete qlz_state;
+	#endif
 	}
 };
 

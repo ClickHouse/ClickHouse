@@ -555,7 +555,13 @@ struct SettingCompressionMethod
 	static CompressionMethod getCompressionMethod(const String & s)
 	{
 		if (s == "quicklz")
+		{
+		#ifdef USE_QUICKLZ
 			return CompressionMethod::QuickLZ;
+		#else
+			throw Exception("QuickLZ compression method is disabled", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+		#endif
+		}
 		if (s == "lz4")
 			return CompressionMethod::LZ4;
 		if (s == "lz4hc")
