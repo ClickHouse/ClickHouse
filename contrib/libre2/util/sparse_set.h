@@ -128,7 +128,7 @@ class SparseSet {
   bool contains(int i) const {
     DCHECK_GE(i, 0);
     DCHECK_LT(i, max_size_);
-    if (static_cast<uint>(i) >= max_size_) {
+    if (static_cast<uint>(i) >= static_cast<uint>(max_size_)) {
       return false;
     }
     // Unsigned comparison avoids checking sparse_to_dense_[i] < 0.
@@ -145,7 +145,7 @@ class SparseSet {
   // Set the value at the new index i to v.
   // Fast but unsafe: only use if contains(i) is false.
   void insert_new(int i) {
-    if (static_cast<uint>(i) >= max_size_) {
+    if (static_cast<uint>(i) >= static_cast<uint>(max_size_)) {
       // Semantically, end() would be better here, but we already know
       // the user did something stupid, so begin() insulates them from
       // dereferencing an invalid pointer.

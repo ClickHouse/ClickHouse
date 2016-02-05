@@ -71,7 +71,7 @@ void UnsafeArena::Reset() {
 UnsafeArena::AllocatedBlock* UnsafeArena::AllocNewBlock(const size_t block_size) {
   AllocatedBlock *block;
   // Find the next block.
-  if ( blocks_alloced_ < arraysize(first_blocks_) ) {
+  if (static_cast<size_t>(blocks_alloced_) < arraysize(first_blocks_) ) {
     // Use one of the pre-allocated blocks
     block = &first_blocks_[blocks_alloced_++];
   } else {                   // oops, out of space, move to the vector
@@ -119,7 +119,7 @@ void* UnsafeArena::GetMemoryFallback(const size_t size, const int align) {
   if (overage) {
     const int waste = align - overage;
     freestart_ += waste;
-    if (waste < remaining_) {
+    if (waste < static_cast<int>(remaining_)) {
       remaining_ -= waste;
     } else {
       remaining_ = 0;

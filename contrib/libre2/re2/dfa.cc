@@ -787,7 +787,7 @@ void DFA::ClearCache() {
        it != state_cache_.end(); ++it)
     v.push_back(*it);
   state_cache_.clear();
-  for (int i = 0; i < v.size(); i++)
+  for (size_t i = 0; i < v.size(); i++)
     delete[] reinterpret_cast<const char*>(v[i]);
 }
 
@@ -1394,7 +1394,7 @@ inline bool DFA::InlinedSearchLoop(SearchParams* params,
         // of 10 bytes per state computation, fail so that RE2 can
         // fall back to the NFA.
         if (FLAGS_re2_dfa_bail_when_slow && resetp != NULL &&
-            (p - resetp) < 10*state_cache_.size()) {
+            (p - resetp) < static_cast<ptrdiff_t>(10*state_cache_.size())) {
           params->failed = true;
           return false;
         }
@@ -1932,7 +1932,7 @@ int DFA::BuildAllStates() {
   q.push_back(params.start);
 
   // Flood to expand every state.
-  for (int i = 0; i < q.size(); i++) {
+  for (size_t i = 0; i < q.size(); i++) {
     State* s = q[i];
     for (int c = 0; c < 257; c++) {
       State* ns = RunStateOnByteUnlocked(s, c);

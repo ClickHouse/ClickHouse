@@ -591,7 +591,7 @@ static struct ByteRangeProg {
 
 void Compiler::Add_80_10ffff() {
   int inst[arraysize(prog_80_10ffff)] = { 0 }; // does not need to be initialized; silences gcc warning
-  for (int i = 0; i < arraysize(prog_80_10ffff); i++) {
+  for (size_t i = 0; i < arraysize(prog_80_10ffff); i++) {
     const ByteRangeProg& p = prog_80_10ffff[i];
     int next = 0;
     if (p.next >= 0)
@@ -958,7 +958,7 @@ void Compiler::Setup(Regexp::ParseFlags flags, int64 max_mem,
   max_mem_ = max_mem;
   if (max_mem <= 0) {
     max_inst_ = 100000;  // more than enough
-  } else if (max_mem <= sizeof(Prog)) {
+  } else if (max_mem <= static_cast<int64>(sizeof(Prog))) {
     // No room for anything.
     max_inst_ = 0;
   } else {

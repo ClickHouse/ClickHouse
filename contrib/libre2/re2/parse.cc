@@ -246,9 +246,9 @@ const CaseFold* LookupCaseFold(const CaseFold *f, int n, Rune r) {
   // Binary search for entry containing r.
   while (n > 0) {
     int m = n/2;
-    if (f[m].lo <= r && r <= f[m].hi)
+    if (static_cast<Rune>(f[m].lo) <= r && r <= static_cast<Rune>(f[m].hi))
       return &f[m];
-    if (r < f[m].lo) {
+    if (r < static_cast<Rune>(f[m].lo)) {
       n = m;
     } else {
       f += m+1;
@@ -305,7 +305,7 @@ Rune ApplyFold(const CaseFold *f, Rune r) {
 //   CycleFoldRune('?') = '?'
 Rune CycleFoldRune(Rune r) {
   const CaseFold* f = LookupCaseFold(unicode_casefold, num_unicode_casefold, r);
-  if (f == NULL || r < f->lo)
+  if (f == NULL || r < static_cast<Rune>(f->lo))
     return r;
   return ApplyFold(f, r);
 }
@@ -330,7 +330,7 @@ static void AddFoldedRange(CharClassBuilder* cc, Rune lo, Rune hi, int depth) {
     const CaseFold* f = LookupCaseFold(unicode_casefold, num_unicode_casefold, lo);
     if (f == NULL)  // lo has no fold, nor does anything above lo
       break;
-    if (lo < f->lo) {  // lo has no fold; next rune with a fold is f->lo
+    if (lo < static_cast<Rune>(f->lo)) {  // lo has no fold; next rune with a fold is f->lo
       lo = f->lo;
       continue;
     }
@@ -716,7 +716,7 @@ void Regexp::RemoveLeadingString(Regexp* re, int n) {
   Regexp* stk[4];
   int d = 0;
   while (re->op() == kRegexpConcat) {
-    if (d < arraysize(stk))
+    if (static_cast<size_t>(d) < arraysize(stk))
       stk[d++] = re;
     re = re->sub()[0];
   }
@@ -1468,12 +1468,12 @@ static void AddUGroup(CharClassBuilder *cc, const UGroup *g, int sign,
     }
     int next = 0;
     for (int i = 0; i < g->nr16; i++) {
-      if (next < g->r16[i].lo)
+      if (next < static_cast<Rune>(g->r16[i].lo))
         cc->AddRangeFlags(next, g->r16[i].lo - 1, parse_flags);
       next = g->r16[i].hi + 1;
     }
     for (int i = 0; i < g->nr32; i++) {
-      if (next < g->r32[i].lo)
+      if (next < static_cast<Rune>(g->r32[i].lo))
         cc->AddRangeFlags(next, g->r32[i].lo - 1, parse_flags);
       next = g->r32[i].hi + 1;
     }
@@ -1540,7 +1540,7 @@ ParseStatus ParseUnicodeGroup(StringPiece* s, Regexp::ParseFlags parse_flags,
   } else {
     // Name is in braces. Look for closing }
     int end = s->find('}', 0);
-    if (end == s->npos) {
+    if (end == static_cast<int>(s->npos)) {
       if (!IsValidUTF8(seq, status))
         return kParseError;
       status->set_code(kRegexpBadCharRange);
@@ -1823,7 +1823,7 @@ bool Regexp::ParseState::ParsePerlFlags(StringPiece* s) {
   if (t.size() > 2 && t[0] == 'P' && t[1] == '<') {
     // Pull out name.
     int end = t.find('>', 2);
-    if (end == t.npos) {
+    if (end == static_cast<int>(t.npos)) {
       if (!IsValidUTF8(*s, status_))
         return false;
       status_->set_code(kRegexpBadNamedCapture);

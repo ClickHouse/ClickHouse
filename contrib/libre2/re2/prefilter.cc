@@ -31,7 +31,7 @@ Prefilter::Prefilter(Op op) {
 Prefilter::~Prefilter() {
   VLOG(10) << "Deleted: " << alloc_id_;
   if (subs_) {
-    for (int i = 0; i < subs_->size(); i++)
+    for (size_t i = 0; i < subs_->size(); i++)
       delete (*subs_)[i];
     delete subs_;
     subs_ = NULL;
@@ -100,7 +100,7 @@ Prefilter* Prefilter::AndOr(Op op, Prefilter* a, Prefilter* b) {
 
   // If a and b match op, merge their contents.
   if (a->op() == op && b->op() == op) {
-    for (int i = 0; i < b->subs()->size(); i++) {
+    for (size_t i = 0; i < b->subs()->size(); i++) {
       Prefilter* bb = (*b->subs())[i];
       a->subs()->push_back(bb);
     }
@@ -176,7 +176,7 @@ static Rune ToLowerRune(Rune r) {
   }
 
   const CaseFold *f = LookupCaseFold(unicode_tolower, num_unicode_tolower, r);
-  if (f == NULL || r < f->lo)
+  if (f == NULL || r < static_cast<Rune>(f->lo))
     return r;
   return ApplyFold(f, r);
 }
@@ -669,7 +669,7 @@ string Prefilter::DebugString() const {
       return "";
     case AND: {
       string s = "";
-      for (int i = 0; i < subs_->size(); i++) {
+      for (size_t i = 0; i < subs_->size(); i++) {
         if (i > 0)
           s += " ";
         Prefilter* sub = (*subs_)[i];
@@ -679,7 +679,7 @@ string Prefilter::DebugString() const {
     }
     case OR: {
       string s = "(";
-      for (int i = 0; i < subs_->size(); i++) {
+      for (size_t i = 0; i < subs_->size(); i++) {
         if (i > 0)
           s += "|";
         Prefilter* sub = (*subs_)[i];

@@ -20,7 +20,7 @@ RE2::Set::Set(const RE2::Options& options, RE2::Anchor anchor) {
 }
 
 RE2::Set::~Set() {
-  for (int i = 0; i < re_.size(); i++)
+  for (size_t i = 0; i < re_.size(); i++)
     re_[i]->Decref();
   delete prog_;
 }

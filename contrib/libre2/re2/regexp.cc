@@ -849,7 +849,7 @@ void CharClassBuilder::Negate() {
   }
 
   ranges_.clear();
-  for (int i = 0; i < v.size(); i++)
+  for (size_t i = 0; i < v.size(); i++)
     ranges_.insert(v[i]);
 
   upper_ = AlphaMask & ~upper_;
@@ -920,7 +920,7 @@ CharClass* CharClassBuilder::GetCharClass() {
   for (iterator it = begin(); it != end(); ++it)
     cc->ranges_[n++] = *it;
   cc->nranges_ = n;
-  DCHECK_LE(n, ranges_.size());
+  DCHECK_LE(n, static_cast<int>(ranges_.size()));
   cc->nrunes_ = nrunes_;
   cc->folds_ascii_ = FoldsASCII();
   return cc;

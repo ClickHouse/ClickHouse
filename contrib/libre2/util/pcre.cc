@@ -347,7 +347,7 @@ int PCRE::GlobalReplace(string *str,
   int count = 0;
   int vec[kVecSize];
   string out;
-  int start = 0;
+  size_t start = 0;
   bool last_match_was_empty_string = false;
 
   for (; start <= str->length();) {
@@ -378,7 +378,7 @@ int PCRE::GlobalReplace(string *str,
         break;
     }
     int matchstart = vec[0], matchend = vec[1];
-    assert(matchstart >= start);
+    assert(matchstart >= static_cast<int>(start));
     assert(matchend >= matchstart);
 
     out.append(*str, start, matchstart - start);
@@ -550,6 +550,9 @@ int PCRE::TryMatch(const StringPiece& text,
   return rc;
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+
 bool PCRE::DoMatchImpl(const StringPiece& text,
                      Anchor anchor,
                      int* consumed,
@@ -588,6 +591,8 @@ bool PCRE::DoMatchImpl(const StringPiece& text,
 
   return true;
 }
+
+#pragma GCC diagnostic pop
 
 bool PCRE::DoMatch(const StringPiece& text,
                  Anchor anchor,
