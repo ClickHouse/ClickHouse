@@ -73,9 +73,13 @@ typedef unsigned int uint;
 typedef unsigned short ushort;
 
 // COMPILE_ASSERT causes a compile error about msg if expr is not true.
+#if __cplusplus >= 201103L
+#define COMPILE_ASSERT(expr, msg) static_assert(expr, #msg)
+#else
 template<bool> struct CompileAssert {};
 #define COMPILE_ASSERT(expr, msg) \
   typedef CompileAssert<(bool(expr))> msg[bool(expr) ? 1 : -1]
+#endif
 
 // DISALLOW_EVIL_CONSTRUCTORS disallows the copy and operator= functions.
 // It goes in the private: declarations in a class.

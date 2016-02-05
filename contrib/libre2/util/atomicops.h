@@ -59,6 +59,12 @@ static inline void WriteMemoryBarrier() {
   __asm__ __volatile__("wmb" : : : "memory");
 }
 
+#elif defined(__aarch64__)
+
+static inline void WriteMemoryBarrier() {
+  __asm__ __volatile__("dmb st" : : : "memory");
+}
+
 #else
 
 #include "util/mutex.h"
@@ -96,16 +102,31 @@ static inline void MaybeReadMemoryBarrier() {
   __asm__ __volatile__("mb" : : : "memory");
 }
 
+#else
+
+static inline void MaybeReadMemoryBarrier() {}
+
+#endif  // __alpha__
+
+// Read barrier for various targets.
+
+#if defined(__aarch64__)
+
+static inline void ReadMemoryBarrier() {
+  __asm__ __volatile__("dmb ld" : : : "memory");
+}
+
+#elif defined(__alpha__)
+
 static inline void ReadMemoryBarrier() {
   __asm__ __volatile__("mb" : : : "memory");
 }
 
 #else
 
-static inline void MaybeReadMemoryBarrier() {}
 static inline void ReadMemoryBarrier() {}
 
-#endif // __alpha__
+#endif
 
 #endif  // old compiler
 

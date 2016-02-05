@@ -265,14 +265,6 @@ Prefilter* Prefilter::Info::TakeMatch() {
 
 // Format a Info in string form.
 string Prefilter::Info::ToString() {
-  if (this == NULL) {
-    // Sometimes when iterating on children of a node,
-    // some children might have NULL Info. Adding
-    // the check here for NULL to take care of cases where
-    // the caller is not checking.
-    return "";
-  }
-
   if (is_exact_) {
     int n = 0;
     string s;
@@ -640,7 +632,7 @@ Prefilter::Info* Prefilter::Info::Walker::PostVisit(
 
   if (Trace) {
     VLOG(0) << "BuildInfo " << re->ToString()
-            << ": " << info->ToString();
+            << ": " << (info ? info->ToString() : "");
   }
 
   return info;
@@ -665,9 +657,6 @@ Prefilter* Prefilter::FromRegexp(Regexp* re) {
 }
 
 string Prefilter::DebugString() const {
-  if (this == NULL)
-    return "<nil>";
-
   switch (op_) {
     default:
       LOG(DFATAL) << "Bad op in Prefilter::DebugString: " << op_;
@@ -683,7 +672,8 @@ string Prefilter::DebugString() const {
       for (int i = 0; i < subs_->size(); i++) {
         if (i > 0)
           s += " ";
-        s += (*subs_)[i]->DebugString();
+        Prefilter* sub = (*subs_)[i];
+        s += sub ? sub->DebugString() : "<nil>";
       }
       return s;
     }
@@ -692,7 +682,8 @@ string Prefilter::DebugString() const {
       for (int i = 0; i < subs_->size(); i++) {
         if (i > 0)
           s += "|";
-        s += (*subs_)[i]->DebugString();
+        Prefilter* sub = (*subs_)[i];
+        s += sub ? sub->DebugString() : "<nil>";
       }
       s += ")";
       return s;
