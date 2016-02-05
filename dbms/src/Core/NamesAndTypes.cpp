@@ -4,6 +4,7 @@
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
+#include <sparsehash/dense_hash_map>
 
 
 namespace DB

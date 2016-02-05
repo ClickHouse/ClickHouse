@@ -6,7 +6,6 @@
 #include <set>
 
 #include <Poco/SharedPtr.h>
-#include <sparsehash/dense_hash_map>
 
 #include <DB/DataTypes/IDataType.h>
 #include <DB/IO/ReadBufferFromString.h>
