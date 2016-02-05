@@ -1,12 +1,11 @@
 #include <zkutil/ZooKeeperHolder.h>
 #include <iostream>
-#include <statdaemons/Test.h>
 
 #include <Poco/Util/Application.h>
 
 int main()
 {
-	Test::initLogger();
+//	Test::initLogger();
 
 	zkutil::ZooKeeperHolder zk_holder;
 	zk_holder.init("localhost:2181");
