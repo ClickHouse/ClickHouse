@@ -7,7 +7,7 @@
 #include <Poco/SharedPtr.h>
 #include <Poco/Net/NetException.h>
 
-#include <common/threadpool.hpp>
+#include <threadpool.hpp>
 
 #include <DB/IO/WriteBuffer.h>
 

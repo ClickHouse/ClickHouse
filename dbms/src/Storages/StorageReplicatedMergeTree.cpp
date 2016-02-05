@@ -34,7 +34,7 @@
 
 #include <Poco/DirectoryIterator.h>
 
-#include <common/threadpool.hpp>
+#include <threadpool.hpp>
 
 #include <ext/range.hpp>
 #include <cfenv>

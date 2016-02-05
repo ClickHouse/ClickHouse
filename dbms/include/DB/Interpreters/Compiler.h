@@ -9,7 +9,7 @@
 #include <unordered_map>
 
 #include <common/logger_useful.h>
-#include <common/threadpool.hpp>
+#include <threadpool.hpp>
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>

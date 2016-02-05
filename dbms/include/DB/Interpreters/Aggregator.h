@@ -7,7 +7,7 @@
 #include <Poco/TemporaryFile.h>
 
 #include <common/logger_useful.h>
-#include <common/threadpool.hpp>
+#include <threadpool.hpp>
 
 #include <DB/Core/StringRef.h>
 #include <DB/Common/Arena.h>

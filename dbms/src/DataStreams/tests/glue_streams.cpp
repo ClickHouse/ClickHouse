@@ -1,7 +1,7 @@
 #include <iostream>
 #include <iomanip>
 
-#include <common/threadpool.hpp>
+#include <threadpool.hpp>
 
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 

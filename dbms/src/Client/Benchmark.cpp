@@ -14,7 +14,7 @@
 #include <Poco/Util/Application.h>
 
 #include <DB/Common/Stopwatch.h>
-#include <common/threadpool.hpp>
+#include <threadpool.hpp>
 #include <DB/AggregateFunctions/ReservoirSampler.h>
 
 #include <boost/program_options.hpp>

@@ -14,7 +14,7 @@
 #include <DB/Common/Increment.h>
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/Context.h>
-#include <common/threadpool.hpp>
+#include <threadpool.hpp>
 #include <zkutil/ZooKeeper.h>
 #include <Poco/Event.h>
 #include <Poco/DirectoryIterator.h>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/threadpool.hpp>
+#include <threadpool.hpp>
 
 #include <Poco/Event.h>
 

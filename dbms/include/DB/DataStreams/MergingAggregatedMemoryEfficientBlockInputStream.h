@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/threadpool.hpp>
+#include <threadpool.hpp>
 #include <DB/Interpreters/Aggregator.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Common/ConcurrentBoundedQueue.h>
