@@ -2767,14 +2767,9 @@ void StorageReplicatedMergeTree::dropPartition(ASTPtr query, const Field & field
 
 	auto number_and_exists = data.getMinBlockNumberForMonth(data.getMonthFromName(month_name));
 
-	/// Если в партиции нет данных
-	if (!number_and_exists.second)
-	{
-		LOG_DEBUG(log, "No data in partition " << month_name);
-		return;
-	}
-
-	Int64 left = number_and_exists.first;
+	/// Даже если в партиции нет данных, то всё-равно нужно отметить диапазон для удаления.
+	/// - Потому что до выполнения DETACH, могут выполниться задачи на скачивание кусков в эту партицию.
+	Int64 left = number_and_exists.second ? number_and_exists.first : RESERVED_BLOCK_NUMBERS;
 
 	/** Пропустим один номер в block_numbers для удаляемого месяца, и будем удалять только куски до этого номера.
 	  * Это запретит мерджи удаляемых кусков с новыми вставляемыми данными.
