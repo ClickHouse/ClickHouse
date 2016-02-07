@@ -1,0 +1,4 @@
+<!-- Конфиг, который ищется в текущей директории. -->
+<config>
+	<compression>false</compression>
+</config>
