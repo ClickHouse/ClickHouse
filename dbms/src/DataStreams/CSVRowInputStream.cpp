@@ -86,6 +86,14 @@ bool CSVRowInputStream::read(Row & row)
 				if (istr.eof())
 					break;
 
+				/// поддерживаем лишний разделитель на конце строки
+				if (*istr.position() == delimiter)
+				{
+					++istr.position();
+					if (istr.eof())
+						break;
+				}
+
 				/// \n (Unix) или \r\n (DOS/Windows) или \n\r (Mac OS Classic)
 
 				if (*istr.position() == '\n')
