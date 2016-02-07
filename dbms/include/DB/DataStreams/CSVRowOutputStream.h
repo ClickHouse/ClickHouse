@@ -8,6 +8,7 @@ namespace DB
 {
 
 /** Поток для вывода данных в формате csv.
+  * Не соответствует https://tools.ietf.org/html/rfc4180 потому что использует LF, а не CR LF.
   */
 class CSVRowOutputStream : public IRowOutputStream
 {

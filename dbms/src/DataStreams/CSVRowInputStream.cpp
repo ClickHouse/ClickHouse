@@ -24,28 +24,47 @@ CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & sample_, 
 }
 
 
-void CSVRowInputStream::readPrefix()
+static void skipLineFeed(ReadBuffer & istr)
 {
-	size_t columns = sample.columns();
-	String tmp;
+	/// \n (Unix) или \r\n (DOS/Windows) или \n\r (Mac OS Classic)
 
-	if (with_names)
+	if (*istr.position() == '\n')
 	{
-		for (size_t i = 0; i < columns; ++i)
-		{
-			readEscapedString(tmp, istr);
-			assertString(i == columns - 1 ? "\n" : "\t", istr);
-		}
+		++istr.position();
+		if (!istr.eof() && *istr.position() == '\r')
+			++istr.position();
 	}
+	else if (*istr.position() == '\r')
+	{
+		++istr.position();
+		if (!istr.eof() && *istr.position() == '\n')
+			++istr.position();
+		else
+			throw Exception("Cannot parse CSV format: found \\r (CR) not followed by \\n (LF)."
+				" Line must end by \\n (LF) or \\r\\n (CR LF) or \\n\\r.", ErrorCodes::INCORRECT_DATA);
+	}
+}
 
-	if (with_types)
+
+static void skipDelimiter(ReadBuffer & istr, const char delimiter, bool is_last_column)
+{
+	if (is_last_column)
 	{
-		for (size_t i = 0; i < columns; ++i)
+		if (istr.eof())
+			return;
+
+		/// поддерживаем лишний разделитель на конце строки
+		if (*istr.position() == delimiter)
 		{
-			readEscapedString(tmp, istr);
-			assertString(i == columns - 1 ? "\n" : "\t", istr);
+			++istr.position();
+			if (istr.eof())
+				return;
 		}
+
+		skipLineFeed(istr);
 	}
+	else
+		assertChar(delimiter, istr);
 }
 
 
@@ -56,6 +75,33 @@ static inline void skipWhitespacesAndTabs(ReadBuffer & buf)
 			&& (*buf.position() == ' '
 			|| *buf.position() == '\t'))
 		++buf.position();
+}
+
+
+static void skipRow(ReadBuffer & istr, const char delimiter, size_t columns)
+{
+	String tmp;
+	for (size_t i = 0; i < columns; ++i)
+	{
+		skipWhitespacesAndTabs(istr);
+		readCSVString(tmp, istr);
+		skipWhitespacesAndTabs(istr);
+
+		skipDelimiter(istr, i + 1 == columns, delimiter);
+	}
+}
+
+
+void CSVRowInputStream::readPrefix()
+{
+	size_t columns = sample.columns();
+	String tmp;
+
+	if (with_names)
+		skipRow(istr, delimiter, columns);
+
+	if (with_types)
+		skipRow(istr, delimiter, columns);
 }
 
 
@@ -80,40 +126,7 @@ bool CSVRowInputStream::read(Row & row)
 			data_types[i]->deserializeTextCSV(row[i], istr, delimiter);
 			skipWhitespacesAndTabs(istr);
 
-			/// пропускаем разделители
-			if (i + 1 == size)
-			{
-				if (istr.eof())
-					break;
-
-				/// поддерживаем лишний разделитель на конце строки
-				if (*istr.position() == delimiter)
-				{
-					++istr.position();
-					if (istr.eof())
-						break;
-				}
-
-				/// \n (Unix) или \r\n (DOS/Windows) или \n\r (Mac OS Classic)
-
-				if (*istr.position() == '\n')
-				{
-					++istr.position();
-					if (!istr.eof() && *istr.position() == '\r')
-						++istr.position();
-				}
-				else if (*istr.position() == '\r')
-				{
-					++istr.position();
-					if (!istr.eof() && *istr.position() == '\n')
-						++istr.position();
-					else
-						throw Exception("Cannot parse CSV format: found \\r (CR) not followed by \\n (LF)."
-							" Line must end by \\n (LF) or \\r\\n (CR LF) or \\n\\r.", ErrorCodes::INCORRECT_DATA);
-				}
-			}
-			else
-				assertChar(delimiter, istr);
+			skipDelimiter(istr, i + 1 == size, delimiter);
 		}
 	}
 	catch (Exception & e)
@@ -337,21 +350,29 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(
 		/// Разделители
 		if (i + 1 == size)
 		{
+			if (istr.eof())
+				return false;
+
+			/// поддерживаем лишний разделитель на конце строки
+			if (*istr.position() == delimiter)
+			{
+				++istr.position();
+				if (istr.eof())
+					break;
+			}
+
 			if (!istr.eof() && *istr.position() != '\n' && *istr.position() != '\r')
 			{
-				if (*istr.position() == delimiter)
-					out << "ERROR: Delimited (" << delimiter << ") found where line feed is expected."
-						" It's like your file has more columns than expected.\n"
-						"And if your file have right number of columns, maybe it have unquoted string value with comma.\n";
-				else
-				{
-					out << "ERROR: There is no line feed. ";
-					verbosePrintString(istr.position(), istr.position() + 1, out);
-					out << " found instead.\n";
-				}
+				out << "ERROR: There is no line feed. ";
+				verbosePrintString(istr.position(), istr.position() + 1, out);
+				out << " found instead.\n"
+					" It's like your file has more columns than expected.\n"
+					"And if your file have right number of columns, maybe it have unquoted string value with comma.\n";
 
 				return false;
 			}
+
+			skipLineFeed(istr);
 		}
 		else
 		{

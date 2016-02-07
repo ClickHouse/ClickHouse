@@ -9,6 +9,7 @@ namespace DB
 {
 
 /** Поток для ввода данных в формате csv.
+  * Не соответствует https://tools.ietf.org/html/rfc4180 потому что пропускает пробелы и табы между значениями.
   */
 class CSVRowInputStream : public IRowInputStream
 {
