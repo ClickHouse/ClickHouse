@@ -61,7 +61,9 @@ public:
 
 	void deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const override
 	{
-		deserializeText(field, istr);
+		typename NearestFieldType<FieldType>::Type x;
+		readCSV(x, istr);
+		field = x;
 	}
 
 	size_t getSizeOfField() const override { return sizeof(FieldType); }
