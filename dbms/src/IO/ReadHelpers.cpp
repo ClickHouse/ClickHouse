@@ -305,7 +305,7 @@ void readCSVString(String & s, ReadBuffer & buf, const char delimiter)
 	if (maybe_quote == delimiter)
 		return;
 
-	if (maybe_quote == '\'' || maybe_quote == '\"')
+	if (maybe_quote == '\'' || maybe_quote == '"')
 	{
 		++buf.position();
 

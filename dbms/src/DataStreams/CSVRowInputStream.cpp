@@ -24,7 +24,7 @@ CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & sample_, 
 }
 
 
-static void skipLineFeed(ReadBuffer & istr)
+static void skipEndOfLine(ReadBuffer & istr)
 {
 	/// \n (Unix) или \r\n (DOS/Windows) или \n\r (Mac OS Classic)
 
@@ -43,6 +43,8 @@ static void skipLineFeed(ReadBuffer & istr)
 			throw Exception("Cannot parse CSV format: found \\r (CR) not followed by \\n (LF)."
 				" Line must end by \\n (LF) or \\r\\n (CR LF) or \\n\\r.", ErrorCodes::INCORRECT_DATA);
 	}
+	else if (!istr.eof())
+		throw Exception("Expected end of line", ErrorCodes::INCORRECT_DATA);
 }
 
 
@@ -61,7 +63,7 @@ static void skipDelimiter(ReadBuffer & istr, const char delimiter, bool is_last_
 				return;
 		}
 
-		skipLineFeed(istr);
+		skipEndOfLine(istr);
 	}
 	else
 		assertChar(delimiter, istr);
@@ -73,7 +75,7 @@ static inline void skipWhitespacesAndTabs(ReadBuffer & buf)
 {
 	while (!buf.eof()
 			&& (*buf.position() == ' '
-			|| *buf.position() == '\t'))
+				|| *buf.position() == '\t'))
 		++buf.position();
 }
 
@@ -87,7 +89,7 @@ static void skipRow(ReadBuffer & istr, const char delimiter, size_t columns)
 		readCSVString(tmp, istr);
 		skipWhitespacesAndTabs(istr);
 
-		skipDelimiter(istr, i + 1 == columns, delimiter);
+		skipDelimiter(istr, delimiter, i + 1 == columns);
 	}
 }
 
@@ -126,7 +128,7 @@ bool CSVRowInputStream::read(Row & row)
 			data_types[i]->deserializeTextCSV(row[i], istr, delimiter);
 			skipWhitespacesAndTabs(istr);
 
-			skipDelimiter(istr, i + 1 == size, delimiter);
+			skipDelimiter(istr, delimiter, i + 1 == size);
 		}
 	}
 	catch (Exception & e)
@@ -372,7 +374,7 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(
 				return false;
 			}
 
-			skipLineFeed(istr);
+			skipEndOfLine(istr);
 		}
 		else
 		{
