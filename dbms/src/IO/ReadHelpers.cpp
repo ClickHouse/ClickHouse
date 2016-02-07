@@ -70,7 +70,7 @@ void assertEOF(ReadBuffer & buf)
 
 void readString(String & s, ReadBuffer & buf)
 {
-	s = "";
+	s.clear();
 	while (!buf.eof())
 	{
 		size_t bytes = 0;
@@ -88,7 +88,7 @@ void readString(String & s, ReadBuffer & buf)
 
 void readStringUntilEOF(String & s, ReadBuffer & buf)
 {
-	s = "";
+	s.clear();
 	while (!buf.eof())
 	{
 		size_t bytes = buf.buffer().end() - buf.position();
@@ -183,7 +183,7 @@ static void parseComplexEscapeSequence(String & s, ReadBuffer & buf)
 
 void readEscapedString(DB::String & s, DB::ReadBuffer & buf)
 {
-	s = "";
+	s.clear();
 	while (!buf.eof())
 	{
 		const char * next_pos = find_first_tab_lf_or_backslash(buf.position(), buf.buffer().end());
@@ -244,7 +244,7 @@ static inline const char * find_first_quote_or_backslash(const char * begin, con
 template <char quote>
 static void readAnyQuotedString(String & s, ReadBuffer & buf)
 {
-	s = "";
+	s.clear();
 
 	if (buf.eof() || *buf.position() != quote)
 		throw Exception("Cannot parse quoted string: expected opening quote",
@@ -289,6 +289,84 @@ void readDoubleQuotedString(String & s, ReadBuffer & buf)
 void readBackQuotedString(String & s, ReadBuffer & buf)
 {
 	readAnyQuotedString<'`'>(s, buf);
+}
+
+
+void readCSVString(String & s, ReadBuffer & buf, const char delimiter)
+{
+	s.clear();
+
+	if (buf.eof())
+		throwReadAfterEOF();
+
+	char maybe_quote = *buf.position();
+
+	/// Пустота и даже не в кавычках.
+	if (maybe_quote == delimiter)
+		return;
+
+	if (maybe_quote == '\'' || maybe_quote == '\"')
+	{
+		++buf.position();
+
+		/// Закавыченный случай. Ищем следующую кавычку.
+		while (!buf.eof())
+		{
+			const char * next_pos = reinterpret_cast<const char *>(memchr(buf.position(), maybe_quote, buf.buffer().end() - buf.position()));
+
+			if (nullptr == next_pos)
+				next_pos = buf.buffer().end();
+
+			s.append(buf.position(), next_pos - buf.position());
+			buf.position() += next_pos - buf.position();
+
+			if (!buf.hasPendingData())
+				continue;
+
+			/// Сейчас под курсором кавычка. Есть ли следующая?
+			++buf.position();
+			if (buf.eof())
+				return;
+
+			if (*buf.position() == maybe_quote)
+			{
+				s += maybe_quote;
+				++buf.position();
+				continue;
+			}
+
+			return;
+		}
+	}
+	else
+	{
+		/// Незакавыченный случай. Ищем delimiter или \r или \n.
+		while (!buf.eof())
+		{
+			const char * next_pos = buf.position();
+			while (next_pos < buf.buffer().end()
+				&& *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')	/// NOTE Можно сделать SIMD версию.
+				++next_pos;
+
+			s.append(buf.position(), next_pos - buf.position());
+			buf.position() += next_pos - buf.position();
+
+			if (!buf.hasPendingData())
+				continue;
+
+			/** CSV формат может содержать незначащие пробелы и табы.
+			  * Обычно задача их пропускать - у вызывающего кода.
+			  * Но в данном случае, сделать это будет сложно, поэтому удаляем концевые пробельные символы самостоятельно.
+			  */
+			size_t size = s.size();
+			while (size > 0
+				&& (s[size - 1] == ' ' || s[size - 1] == '\t'))
+				--size;
+
+			s.resize(size);
+			return;
+		}
+	}
 }
 
 

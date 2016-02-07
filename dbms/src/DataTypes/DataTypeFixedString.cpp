@@ -125,6 +125,19 @@ void DataTypeFixedString::serializeTextJSON(const Field & field, WriteBuffer & o
 }
 
 
+void DataTypeFixedString::serializeTextCSV(const Field & field, WriteBuffer & ostr) const
+{
+	writeCSV(get<const String &>(field), ostr);
+}
+
+
+void DataTypeFixedString::deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const
+{
+	field.assignString("", 0);
+	readCSV(get<String &>(field), istr, delimiter);
+}
+
+
 ColumnPtr DataTypeFixedString::createColumn() const
 {
 	return new ColumnFixedString(n);

@@ -49,6 +49,13 @@ public:
 		writeChar('\'', ostr);
 	}
 
+	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const override
+	{
+		assertChar('\'', istr);
+		deserializeText(field, istr);
+		assertChar('\'', istr);
+	}
+
 	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override
 	{
 		writeChar('"', ostr);
@@ -56,11 +63,18 @@ public:
 		writeChar('"', ostr);
 	}
 
-	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const override
+	void serializeTextCSV(const Field & field, WriteBuffer & ostr) const override
 	{
-		assertString("'", istr);
-		deserializeText(field, istr);
-		assertString("'", istr);
+		writeChar('"', ostr);
+		serializeText(field, ostr);
+		writeChar('"', ostr);
+	}
+
+	void deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const override
+	{
+		LocalDateTime value;
+		readCSV(value, istr);
+		field = static_cast<UInt64>(static_cast<time_t>(value));
 	}
 };
 

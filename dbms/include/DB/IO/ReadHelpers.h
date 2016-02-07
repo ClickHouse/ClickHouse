@@ -411,6 +411,20 @@ void readBackQuotedString(String & s, ReadBuffer & buf);
 void readStringUntilEOF(String & s, ReadBuffer & buf);
 
 
+/** Прочитать строку в формате CSV.
+  * Правила:
+  * - строка может быть заключена в кавычки; кавычки могут быть одинарными: ' или двойными: ";
+  * - а может быть не заключена в кавычки - это определяется по первому символу;
+  * - если строка не заключена в кавычки, то она читается до следующего разделителя,
+  *   либо до перевода строки (CR или LF),
+  *   либо до конца потока;
+  *   при этом, пробелы и табы на конце строки съедаются, но игнорируются.
+  * - если строка заключена в кавычки, то она читается до закрывающей кавычки,
+  *   но при этом, последовательность двух подряд идущих кавычек, считается одной кавычкой внутри строки;
+  */
+void readCSVString(String & s, ReadBuffer & buf, const char delimiter = ',');
+
+
 /// в формате YYYY-MM-DD
 inline void readDateText(DayNum_t & date, ReadBuffer & buf)
 {
@@ -568,16 +582,16 @@ inline void readQuoted(VisitID_t & x, ReadBuffer & buf) { readIntText(x, buf); }
 
 inline void readQuoted(LocalDate & x, ReadBuffer & buf)
 {
-	assertString("'", buf);
+	assertChar('\'', buf);
 	readDateText(x, buf);
-	assertString("'", buf);
+	assertChar('\'', buf);
 }
 
 inline void readQuoted(LocalDateTime & x, ReadBuffer & buf)
 {
-	assertString("'", buf);
+	assertChar('\'', buf);
 	readDateTimeText(x, buf);
-	assertString("'", buf);
+	assertChar('\'', buf);
 }
 
 
@@ -599,17 +613,52 @@ inline void readDoubleQuoted(VisitID_t & x, ReadBuffer & buf) { readIntText(x, b
 
 inline void readDoubleQuoted(LocalDate & x, ReadBuffer & buf)
 {
-	assertString("\"", buf);
+	assertChar('"', buf);
 	readDateText(x, buf);
-	assertString("\"", buf);
+	assertChar('"', buf);
 }
 
 inline void readDoubleQuoted(LocalDateTime & x, ReadBuffer & buf)
 {
-	assertString("\"", buf);
+	assertChar('"', buf);
 	readDateTimeText(x, buf);
-	assertString("\"", buf);
+	assertChar('"', buf);
 }
+
+
+/// CSV, для чисел, дат, дат-с-временем: кавычки не обязательны, специального эскейпинга нет.
+template <typename T>
+inline void readCSVSimple(T & x, ReadBuffer & buf)
+{
+	if (buf.eof())
+		throwReadAfterEOF();
+
+	char maybe_quote = *buf.position();
+
+	if (maybe_quote == '\'' || maybe_quote == '\"')
+		++buf.position();
+
+	readText(x, buf);
+
+	if (maybe_quote == '\'' || maybe_quote == '\"')
+		assertChar(maybe_quote, buf);
+}
+
+inline void readCSV(UInt8 & x, 		ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(UInt16 & x, 	ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(UInt32 & x, 	ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(UInt64 & x, 	ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(Int8 & x, 		ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(Int16 & x, 		ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(Int32 & x, 		ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(Int64 & x, 		ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(Float32 & x, 	ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(Float64 & x, 	ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(String & x, ReadBuffer & buf, const char delimiter = ',') { readCSVString(x, buf, delimiter); }
+inline void readCSV(bool & x, 		ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(VisitID_t & x, 	ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(LocalDate & x, 	ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
 
 template <typename T>
@@ -630,7 +679,7 @@ template <typename T>
 void readQuoted(std::vector<T> & x, ReadBuffer & buf)
 {
 	bool first = true;
-	assertString("[", buf);
+	assertChar('[', buf);
 	while (!buf.eof() && *buf.position() != ']')
 	{
 		if (!first)
@@ -646,14 +695,14 @@ void readQuoted(std::vector<T> & x, ReadBuffer & buf)
 		x.push_back(T());
 		readQuoted(x.back(), buf);
 	}
-	assertString("]", buf);
+	assertChar(']', buf);
 }
 
 template <typename T>
 void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf)
 {
 	bool first = true;
-	assertString("[", buf);
+	assertChar('[', buf);
 	while (!buf.eof() && *buf.position() != ']')
 	{
 		if (!first)
@@ -669,7 +718,7 @@ void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf)
 		x.push_back(T());
 		readDoubleQuoted(x.back(), buf);
 	}
-	assertString("]", buf);
+	assertChar(']', buf);
 }
 
 template <typename T>

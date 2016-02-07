@@ -348,6 +348,58 @@ inline void writeBackQuotedString(const String & s, WriteBuffer & buf)
 	writeAnyQuotedString<'`'>(s, buf);
 }
 
+
+/** Выводит строку в для формата CSV.
+  * Правила:
+  * - строка выводится в кавычках;
+  * - кавычка внутри строки выводится как двойная кавычка.
+  */
+template <char quote = '"'>
+void writeCSVString(const char * begin, const char * end, WriteBuffer & buf)
+{
+	writeChar(quote, buf);
+
+	const char * pos = begin;
+	while (true)
+	{
+		const char * next_pos = strchrnul(pos, quote);
+
+		if (next_pos == end)
+		{
+			buf.write(pos, end - pos);
+			break;
+		}
+		else if (*next_pos == 0)	/// Нулевой байт до конца строки.
+		{
+			++next_pos;
+			buf.write(pos, next_pos - pos);
+		}
+		else						/// Кавычка.
+		{
+			++next_pos;
+			buf.write(pos, next_pos - pos);
+			writeChar(quote, buf);
+		}
+
+		pos = next_pos;
+	}
+
+	writeChar(quote, buf);
+}
+
+template <char quote = '"'>
+void writeCSVString(const String & s, WriteBuffer & buf)
+{
+	writeCSVString<quote>(s.data(), s.data() + s.size(), buf);
+}
+
+template <char quote = '"'>
+void writeCSVString(const StringRef & s, WriteBuffer & buf)
+{
+	writeCSVString<quote>(s.data, s.data + s.size, buf);
+}
+
+
 /// То же самое, но обратные кавычки применяются только при наличии символов, не подходящих для идентификатора без обратных кавычек.
 inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
 {
@@ -544,19 +596,19 @@ inline void writeText(const mysqlxx::Null<T> & x,	WriteBuffer & buf)
 }
 
 
-/// Методы для вывода в текстовом виде в кавычках
-inline void writeQuoted(const UInt8 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeQuoted(const UInt16 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeQuoted(const UInt32 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeQuoted(const UInt64 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeQuoted(const Int8 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeQuoted(const Int16 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeQuoted(const Int32 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeQuoted(const Int64 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeQuoted(const Float32 & x, 	WriteBuffer & buf) { writeFloatText(x, buf); }
-inline void writeQuoted(const Float64 & x, 	WriteBuffer & buf) { writeFloatText(x, buf); }
+/// Строки, даты, даты-с-временем - в одинарных кавычках с C-style эскейпингом. Числа - без.
+inline void writeQuoted(const UInt8 & x, 	WriteBuffer & buf) { writeText(x, buf); }
+inline void writeQuoted(const UInt16 & x, 	WriteBuffer & buf) { writeText(x, buf); }
+inline void writeQuoted(const UInt32 & x, 	WriteBuffer & buf) { writeText(x, buf); }
+inline void writeQuoted(const UInt64 & x, 	WriteBuffer & buf) { writeText(x, buf); }
+inline void writeQuoted(const Int8 & x, 	WriteBuffer & buf) { writeText(x, buf); }
+inline void writeQuoted(const Int16 & x, 	WriteBuffer & buf) { writeText(x, buf); }
+inline void writeQuoted(const Int32 & x, 	WriteBuffer & buf) { writeText(x, buf); }
+inline void writeQuoted(const Int64 & x, 	WriteBuffer & buf) { writeText(x, buf); }
+inline void writeQuoted(const Float32 & x, 	WriteBuffer & buf) { writeText(x, buf); }
+inline void writeQuoted(const Float64 & x, 	WriteBuffer & buf) { writeText(x, buf); }
 inline void writeQuoted(const String & x,	WriteBuffer & buf) { writeQuotedString(x, buf); }
-inline void writeQuoted(const bool & x, 	WriteBuffer & buf) { writeBoolText(x, buf); }
+inline void writeQuoted(const bool & x, 	WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const VisitID_t & x, 	WriteBuffer & buf)
 {
@@ -587,19 +639,19 @@ inline void writeQuoted(const mysqlxx::Null<T> & x,		WriteBuffer & buf)
 }
 
 
-/// В двойных кавычках
-inline void writeDoubleQuoted(const UInt8 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeDoubleQuoted(const UInt16 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeDoubleQuoted(const UInt32 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeDoubleQuoted(const UInt64 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeDoubleQuoted(const Int8 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeDoubleQuoted(const Int16 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeDoubleQuoted(const Int32 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeDoubleQuoted(const Int64 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeDoubleQuoted(const Float32 & x, 	WriteBuffer & buf) { writeFloatText(x, buf); }
-inline void writeDoubleQuoted(const Float64 & x, 	WriteBuffer & buf) { writeFloatText(x, buf); }
+/// Строки, даты, даты-с-временем - в двойных кавычках с C-style эскейпингом. Числа - без.
+inline void writeDoubleQuoted(const UInt8 & x, 		WriteBuffer & buf) { writeText(x, buf); }
+inline void writeDoubleQuoted(const UInt16 & x, 	WriteBuffer & buf) { writeText(x, buf); }
+inline void writeDoubleQuoted(const UInt32 & x, 	WriteBuffer & buf) { writeText(x, buf); }
+inline void writeDoubleQuoted(const UInt64 & x, 	WriteBuffer & buf) { writeText(x, buf); }
+inline void writeDoubleQuoted(const Int8 & x, 		WriteBuffer & buf) { writeText(x, buf); }
+inline void writeDoubleQuoted(const Int16 & x, 		WriteBuffer & buf) { writeText(x, buf); }
+inline void writeDoubleQuoted(const Int32 & x, 		WriteBuffer & buf) { writeText(x, buf); }
+inline void writeDoubleQuoted(const Int64 & x, 		WriteBuffer & buf) { writeText(x, buf); }
+inline void writeDoubleQuoted(const Float32 & x, 	WriteBuffer & buf) { writeText(x, buf); }
+inline void writeDoubleQuoted(const Float64 & x, 	WriteBuffer & buf) { writeText(x, buf); }
 inline void writeDoubleQuoted(const String & x,		WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
-inline void writeDoubleQuoted(const bool & x, 		WriteBuffer & buf) { writeBoolText(x, buf); }
+inline void writeDoubleQuoted(const bool & x, 		WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeDoubleQuoted(const VisitID_t & x, 	WriteBuffer & buf)
 {
@@ -619,6 +671,24 @@ inline void writeDoubleQuoted(const LocalDateTime & x,	WriteBuffer & buf)
 	writeDateTimeText(x, buf);
 	writeChar('"', buf);
 }
+
+
+/// Строки - в двойных кавычках и с CSV-эскейпингом; даты, даты-с-временем - в двойных кавычках. Числа - без.
+inline void writeCSV(const UInt8 & x, 		WriteBuffer & buf) { writeText(x, buf); }
+inline void writeCSV(const UInt16 & x, 		WriteBuffer & buf) { writeText(x, buf); }
+inline void writeCSV(const UInt32 & x, 		WriteBuffer & buf) { writeText(x, buf); }
+inline void writeCSV(const UInt64 & x, 		WriteBuffer & buf) { writeText(x, buf); }
+inline void writeCSV(const Int8 & x, 		WriteBuffer & buf) { writeText(x, buf); }
+inline void writeCSV(const Int16 & x, 		WriteBuffer & buf) { writeText(x, buf); }
+inline void writeCSV(const Int32 & x, 		WriteBuffer & buf) { writeText(x, buf); }
+inline void writeCSV(const Int64 & x, 		WriteBuffer & buf) { writeText(x, buf); }
+inline void writeCSV(const Float32 & x, 	WriteBuffer & buf) { writeText(x, buf); }
+inline void writeCSV(const Float64 & x, 	WriteBuffer & buf) { writeText(x, buf); }
+inline void writeCSV(const String & x,		WriteBuffer & buf) { writeCSVString<>(x, buf); }
+inline void writeCSV(const bool & x, 		WriteBuffer & buf) { writeText(x, buf); }
+inline void writeCSV(const VisitID_t & x, 	WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
+inline void writeCSV(const LocalDate & x,	WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
+inline void writeCSV(const LocalDateTime & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 
 
 template <typename T>

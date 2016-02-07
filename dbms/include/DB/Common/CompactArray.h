@@ -60,7 +60,7 @@ public:
 		for (size_t i = 0; i < BITSET_SIZE; ++i)
 		{
 			if (i != 0)
-				assertString(",", in);
+				assertChar(',', in);
 			readIntText(bitset[i], in);
 		}
 	}

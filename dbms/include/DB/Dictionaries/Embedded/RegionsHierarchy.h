@@ -106,9 +106,9 @@ public:
 			RegionPopulation population = 0;
 
 			DB::readIntText(region_id, in);
-			DB::assertString("\t", in);
+			DB::assertChar('\t', in);
 			DB::readIntText(parent_id, in);
-			DB::assertString("\t", in);
+			DB::assertChar('\t', in);
 			DB::readIntText(type, in);
 
 			/** Далее может быть перевод строки (старый вариант)
@@ -123,7 +123,7 @@ public:
 					? std::numeric_limits<RegionPopulation>::max()
 					: population_big;
 			}
-			DB::assertString("\n", in);
+			DB::assertChar('\n', in);
 
 			if (region_id <= 0)
 				continue;

@@ -303,7 +303,7 @@ public:
 		for (size_t i = 0; i < NUM_BUCKETS; ++i)
 		{
 			if (i != 0)
-				DB::assertString(",", rb);
+				DB::assertChar(',', rb);
 			impls[i].readText(rb);
 		}
 	}

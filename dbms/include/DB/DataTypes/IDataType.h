@@ -73,6 +73,12 @@ public:
 	  */
 	virtual void serializeTextJSON(const Field & field, WriteBuffer & ostr) const = 0;
 
+	/** Текстовая сериализация для формата CSV.
+	  * delimiter - какого разделителя ожидать при чтении, если строковое значение не в кавычках (сам разделитель не съедается).
+	  */
+	virtual void serializeTextCSV(const Field & field, WriteBuffer & ostr) const = 0;
+	virtual void deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const = 0;
+
 	/** Создать пустой столбец соответствующего типа.
 	  */
 	virtual SharedPtr<IColumn> createColumn() const = 0;

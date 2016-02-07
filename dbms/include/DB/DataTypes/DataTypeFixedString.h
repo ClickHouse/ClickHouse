@@ -58,6 +58,9 @@ public:
 
 	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override;
 
+	void serializeTextCSV(const Field & field, WriteBuffer & ostr) const override;
+	void deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const override;
+
 	ColumnPtr createColumn() const override;
 	ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 

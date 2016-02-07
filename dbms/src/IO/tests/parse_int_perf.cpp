@@ -1208,7 +1208,7 @@ int main(int argc, char ** argv)
 			for (size_t i = 0; i < n; ++i)
 			{
 				DB::readIntText(data2[i], rb);
-				DB::assertString("\t", rb);
+				DB::assertChar('\t', rb);
 			}
 
 			watch.stop();

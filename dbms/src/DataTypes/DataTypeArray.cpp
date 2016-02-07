@@ -3,6 +3,7 @@
 
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/IO/ReadBufferFromString.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeArray.h>
@@ -157,7 +158,7 @@ void DataTypeArray::deserializeText(Field & field, ReadBuffer & istr) const
 	Array arr;
 
 	bool first = true;
-	assertString("[", istr);
+	assertChar('[', istr);
 	while (!istr.eof() && *istr.position() != ']')
 	{
 		if (!first)
@@ -180,7 +181,7 @@ void DataTypeArray::deserializeText(Field & field, ReadBuffer & istr) const
 
 		skipWhitespaceIfAny(istr);
 	}
-	assertString("]", istr);
+	assertChar(']', istr);
 
 	field = arr;
 }
@@ -222,6 +223,27 @@ void DataTypeArray::serializeTextJSON(const Field & field, WriteBuffer & ostr) c
 		nested->serializeTextJSON(arr[i], ostr);
 	}
 	writeChar(']', ostr);
+}
+
+
+void DataTypeArray::serializeTextCSV(const Field & field, WriteBuffer & ostr) const
+{
+	/// Хорошего способа сериализовать массив в CSV нет. Поэтому сериализуем его в строку, а затем полученную строку запишем в CSV.
+	String s;
+	{
+		WriteBufferFromString wb(s);
+		serializeText(field, wb);
+	}
+	writeCSV(s, ostr);
+}
+
+
+void DataTypeArray::deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const
+{
+	String s;
+	readCSV(s, istr, delimiter);
+	ReadBufferFromString rb(s);
+	deserializeText(field, rb);
 }
 
 

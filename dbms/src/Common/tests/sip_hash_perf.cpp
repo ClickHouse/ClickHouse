@@ -34,7 +34,7 @@ int main(int argc, char ** argv)
 		{
 			data.emplace_back();
 			DB::readEscapedString(data.back(), in);
-			DB::assertString("\n", in);
+			DB::assertChar('\n', in);
 		}
 
 		double seconds = watch.elapsedSeconds();

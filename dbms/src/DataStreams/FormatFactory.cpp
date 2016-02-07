@@ -20,6 +20,8 @@
 #include <DB/DataStreams/TSKVRowOutputStream.h>
 #include <DB/DataStreams/PrettyCompactMonoBlockOutputStream.h>
 #include <DB/DataStreams/ODBCDriverBlockOutputStream.h>
+#include <DB/DataStreams/CSVRowInputStream.h>
+#include <DB/DataStreams/CSVRowOutputStream.h>
 #include <DB/DataStreams/FormatFactory.h>
 
 
@@ -38,16 +40,20 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 {
 	if (name == "Native")
 		return new NativeBlockInputStream(buf);
-	else if (name == "TabSeparated")
-		return new BlockInputStreamFromRowInputStream(new TabSeparatedRowInputStream(buf, sample), sample, max_block_size);
 	else if (name == "RowBinary")
 		return new BlockInputStreamFromRowInputStream(new BinaryRowInputStream(buf, sample), sample, max_block_size);
+	else if (name == "TabSeparated")
+		return new BlockInputStreamFromRowInputStream(new TabSeparatedRowInputStream(buf, sample), sample, max_block_size);
 	else if (name == "TabSeparatedWithNames")
 		return new BlockInputStreamFromRowInputStream(new TabSeparatedRowInputStream(buf, sample, true), sample, max_block_size);
 	else if (name == "TabSeparatedWithNamesAndTypes")
 		return new BlockInputStreamFromRowInputStream(new TabSeparatedRowInputStream(buf, sample, true, true), sample, max_block_size);
 	else if (name == "Values")
 		return new BlockInputStreamFromRowInputStream(new ValuesRowInputStream(buf, sample), sample, max_block_size);
+	else if (name == "CSV")
+		return new BlockInputStreamFromRowInputStream(new CSVRowInputStream(buf, sample, ','), sample, max_block_size);
+	else if (name == "CSVWithNames")
+		return new BlockInputStreamFromRowInputStream(new CSVRowInputStream(buf, sample, ',', true), sample, max_block_size);
 	else if (name == "TabSeparatedRaw"
 		|| name == "BlockTabSeparated"
 		|| name == "Pretty"
@@ -75,10 +81,10 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 {
 	if (name == "Native")
 		return new NativeBlockOutputStream(buf);
-	else if (name == "TabSeparated")
-		return new BlockOutputStreamFromRowOutputStream(new TabSeparatedRowOutputStream(buf, sample));
 	else if (name == "RowBinary")
 		return new BlockOutputStreamFromRowOutputStream(new BinaryRowOutputStream(buf, sample));
+	else if (name == "TabSeparated")
+		return new BlockOutputStreamFromRowOutputStream(new TabSeparatedRowOutputStream(buf, sample));
 	else if (name == "TabSeparatedWithNames")
 		return new BlockOutputStreamFromRowOutputStream(new TabSeparatedRowOutputStream(buf, sample, true));
 	else if (name == "TabSeparatedWithNamesAndTypes")
@@ -87,6 +93,10 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 		return new BlockOutputStreamFromRowOutputStream(new TabSeparatedRawRowOutputStream(buf, sample));
 	else if (name == "BlockTabSeparated")
 		return new TabSeparatedBlockOutputStream(buf);
+	else if (name == "CSV")
+		return new BlockOutputStreamFromRowOutputStream(new CSVRowOutputStream(buf, sample));
+	else if (name == "CSVWithNames")
+		return new BlockOutputStreamFromRowOutputStream(new CSVRowOutputStream(buf, sample, true));
 	else if (name == "Pretty")
 		return new PrettyBlockOutputStream(buf);
 	else if (name == "PrettyCompact")

@@ -141,6 +141,20 @@ void DataTypeAggregateFunction::serializeTextJSON(const Field & field, WriteBuff
 	writeJSONString(get<const String &>(field), ostr);
 }
 
+
+void DataTypeAggregateFunction::serializeTextCSV(const Field & field, WriteBuffer & ostr) const
+{
+	writeCSV(get<const String &>(field), ostr);
+}
+
+
+void DataTypeAggregateFunction::deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const
+{
+	field.assignString("", 0);
+	readCSV(get<String &>(field), istr, delimiter);
+}
+
+
 ColumnPtr DataTypeAggregateFunction::createColumn() const
 {
 	return new ColumnAggregateFunction(function);

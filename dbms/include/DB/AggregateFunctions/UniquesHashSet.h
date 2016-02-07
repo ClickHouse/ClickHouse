@@ -490,7 +490,7 @@ public:
 		has_zero = false;
 
 		DB::readIntText(skip_degree, rb);
-		DB::assertString(",", rb);
+		DB::assertChar(',', rb);
 		DB::readIntText(m_size, rb);
 
 		if (m_size > UNIQUES_HASH_MAX_SIZE)
@@ -507,7 +507,7 @@ public:
 		for (size_t i = 0; i < m_size; ++i)
 		{
 			HashValue_t x = 0;
-			DB::assertString(",", rb);
+			DB::assertChar(',', rb);
 			DB::readIntText(x, rb);
 			if (x == 0)
 				has_zero = true;

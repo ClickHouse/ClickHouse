@@ -23,7 +23,7 @@ int main(int argc, char ** argv)
 		std::string read_s2;
 
 		DB::readEscapedString(read_s1, rb3);
-		DB::assertString("\t", rb3);
+		DB::assertChar('\t', rb3);
 		DB::readEscapedString(read_s2, rb3);
 
 		std::cerr << read_s1 << ", " << read_s2 << std::endl;

@@ -77,28 +77,28 @@ ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str)
 	{
 		String column_name;
 		readBackQuotedString(column_name, buf);
-		assertString(" ", buf);
+		assertChar(' ', buf);
 
 		String type_name;
 		readString(type_name, buf);
 		auto type = data_type_factory.get(type_name);
 		if (*buf.position() == '\n')
 		{
-			assertString("\n", buf);
+			assertChar('\n', buf);
 
 			result.columns.emplace_back(column_name, std::move(type));
 			continue;
 		}
-		assertString("\t", buf);
+		assertChar('\t', buf);
 
 		String default_type_str;
 		readString(default_type_str, buf);
 		const auto default_type = columnDefaultTypeFromString(default_type_str);
-		assertString("\t", buf);
+		assertChar('\t', buf);
 
 		String default_expr_str;
 		readText(default_expr_str, buf);
-		assertString("\n", buf);
+		assertChar('\n', buf);
 
 		ASTPtr default_expr;
 		Expected expected{};

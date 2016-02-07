@@ -224,6 +224,19 @@ void DataTypeString::serializeTextJSON(const Field & field, WriteBuffer & ostr) 
 }
 
 
+void DataTypeString::serializeTextCSV(const Field & field, WriteBuffer & ostr) const
+{
+	writeCSV(get<const String &>(field), ostr);
+}
+
+
+void DataTypeString::deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const
+{
+	field.assignString("", 0);
+	readCSV(get<String &>(field), istr, delimiter);
+}
+
+
 ColumnPtr DataTypeString::createColumn() const
 {
 	return new ColumnString;

@@ -28,11 +28,11 @@ void NamesAndTypesList::readText(ReadBuffer & buf)
 	for (NameAndTypePair & it : *this)
 	{
 		DB::readBackQuotedString(it.name, buf);
-		DB::assertString(" ", buf);
+		DB::assertChar(' ', buf);
 		String type_name;
 		DB::readString(type_name, buf);
 		it.type = data_type_factory.get(type_name);
-		DB::assertString("\n", buf);
+		DB::assertChar('\n', buf);
 	}
 }
 

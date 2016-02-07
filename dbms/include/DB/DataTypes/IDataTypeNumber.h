@@ -54,6 +54,16 @@ public:
 
 	inline void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override;
 
+	void serializeTextCSV(const Field & field, WriteBuffer & ostr) const override
+	{
+		serializeText(field, ostr);
+	}
+
+	void deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const override
+	{
+		deserializeText(field, istr);
+	}
+
 	size_t getSizeOfField() const override { return sizeof(FieldType); }
 
 	Field getDefault() const override

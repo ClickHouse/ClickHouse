@@ -31,19 +31,19 @@ bool ValuesRowInputStream::read(Row & row)
 		return false;
 	}
 
-	assertString("(", istr);
-	
+	assertChar('(', istr);
+
 	for (size_t i = 0; i < size; ++i)
 	{
 		if (i != 0)
-			assertString(",", istr);
-		
+			assertChar(',', istr);
+
 		skipWhitespaceIfAny(istr);
 		data_types[i]->deserializeTextQuoted(row[i], istr);
 		skipWhitespaceIfAny(istr);
 	}
-	
-	assertString(")", istr);
+
+	assertChar(')', istr);
 
 	skipWhitespaceIfAny(istr);
 	if (!istr.eof() && *istr.position() == ',')

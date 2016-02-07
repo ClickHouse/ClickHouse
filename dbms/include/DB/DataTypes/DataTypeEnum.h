@@ -194,6 +194,7 @@ public:
 		const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
 		writeQuotedString(getNameForValue(x), ostr);
 	}
+
 	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const override
 	{
 		std::string name;
@@ -205,6 +206,19 @@ public:
 	{
 		const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
 		writeJSONString(getNameForValue(x), ostr);
+	}
+
+	void serializeTextCSV(const Field & field, WriteBuffer & ostr) const override
+	{
+		const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
+		writeCSVString<>(getNameForValue(x), ostr);
+	}
+
+	void deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const override
+	{
+		std::string name;
+		readCSVString(name, istr, delimiter);
+		field = nearestFieldType(getValue(StringRef(name)));
 	}
 
 	/** Потоковая сериализация массивов устроена по-особенному:

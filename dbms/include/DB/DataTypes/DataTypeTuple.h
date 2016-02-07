@@ -73,14 +73,16 @@ public:
 		const size_t size = elems.size();
 		field = Tuple(TupleBackend(size));
 		TupleBackend & tuple = get<Tuple &>(field).t;
-		assertString("(", istr);
+		assertChar('(', istr);
 		for (const auto i : ext::range(0, size))
 		{
+			skipWhitespaceIfAny(istr);
 			if (i != 0)
-				assertString(",", istr);
+				assertChar(',', istr);
 			elems[i]->deserializeTextQuoted(tuple[i], istr);
 		}
-		assertString(")", istr);
+		skipWhitespaceIfAny(istr);
+		assertChar(')', istr);
 	}
 
 	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const override
@@ -114,6 +116,35 @@ public:
 			elems[i]->serializeTextJSON(tuple[i], ostr);
 		}
 		writeChar(']', ostr);
+	}
+
+	/// Кортежи в формате CSV будем сериализовать, как отдельные столбцы (то есть, теряя их вложенность в кортеж).
+	void serializeTextCSV(const Field & field, WriteBuffer & ostr) const override
+	{
+		const TupleBackend & tuple = get<const Tuple &>(field).t;
+		for (const auto i : ext::range(0, ext::size(elems)))
+		{
+			if (i != 0)
+				writeChar(',', ostr);
+			elems[i]->serializeTextCSV(tuple[i], ostr);
+		}
+	}
+
+	void deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const override
+	{
+		const size_t size = elems.size();
+		field = Tuple(TupleBackend(size));
+		TupleBackend & tuple = get<Tuple &>(field).t;
+		for (const auto i : ext::range(0, size))
+		{
+			if (i != 0)
+			{
+				skipWhitespaceIfAny(istr);
+				assertChar(delimiter, istr);
+				skipWhitespaceIfAny(istr);
+			}
+			elems[i]->deserializeTextCSV(tuple[i], istr, delimiter);
+		}
 	}
 
 	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override

@@ -28,7 +28,7 @@ int main(int argc, char ** argv)
 		{
 			strings.push_back(std::string());
 			DB::readEscapedString(strings.back(), in);
-			DB::assertString("\n", in);
+			DB::assertChar('\n', in);
 			bytes += strings.back().size() + 1;
 		}
 

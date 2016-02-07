@@ -41,7 +41,7 @@ int main(int argc, char ** argv)
 		for (size_t i = 0; i < n && !in.eof(); ++i)
 		{
 			DB::readEscapedString(s, in);
-			DB::assertString("\n", in);
+			DB::assertChar('\n', in);
 			vec.push_back(s);
 		}
 

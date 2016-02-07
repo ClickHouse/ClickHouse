@@ -852,7 +852,7 @@ public:
 		for (size_t i = 0; i < new_size; ++i)
 		{
 			Cell x;
-			DB::assertString(",", rb);
+			DB::assertChar(',', rb);
 			x.readText(rb);
 			insert(Cell::getKey(x.getValue()));
 		}

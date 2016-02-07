@@ -1,7 +1,7 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/Operators.h>
 
-#include <DB/DataStreams/TabSeparatedRowInputStream.h>
+#include <DB/DataStreams/CSVRowInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
 
@@ -14,10 +14,8 @@ namespace ErrorCodes
 }
 
 
-using Poco::SharedPtr;
-
-TabSeparatedRowInputStream::TabSeparatedRowInputStream(ReadBuffer & istr_, const Block & sample_, bool with_names_, bool with_types_)
-	: istr(istr_), sample(sample_), with_names(with_names_), with_types(with_types_)
+CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & sample_, const char delimiter_, bool with_names_, bool with_types_)
+	: istr(istr_), sample(sample_), delimiter(delimiter_), with_names(with_names_), with_types(with_types_)
 {
 	size_t columns = sample.columns();
 	data_types.resize(columns);
@@ -26,7 +24,7 @@ TabSeparatedRowInputStream::TabSeparatedRowInputStream(ReadBuffer & istr_, const
 }
 
 
-void TabSeparatedRowInputStream::readPrefix()
+void CSVRowInputStream::readPrefix()
 {
 	size_t columns = sample.columns();
 	String tmp;
@@ -36,7 +34,7 @@ void TabSeparatedRowInputStream::readPrefix()
 		for (size_t i = 0; i < columns; ++i)
 		{
 			readEscapedString(tmp, istr);
-			assertChar(i == columns - 1 ? '\n' : '\t', istr);
+			assertString(i == columns - 1 ? "\n" : "\t", istr);
 		}
 	}
 
@@ -45,26 +43,23 @@ void TabSeparatedRowInputStream::readPrefix()
 		for (size_t i = 0; i < columns; ++i)
 		{
 			readEscapedString(tmp, istr);
-			assertChar(i == columns - 1 ? '\n' : '\t', istr);
+			assertString(i == columns - 1 ? "\n" : "\t", istr);
 		}
 	}
 }
 
 
-/** Проверка на распространённый случай ошибки - использование Windows перевода строки.
-  */
-static void checkForCarriageReturn(ReadBuffer & istr)
+/// Пропустить допустимые в CSV пробельные символы.
+static inline void skipWhitespacesAndTabs(ReadBuffer & buf)
 {
-	if (istr.position()[0] == '\r' || (istr.position() != istr.buffer().begin() && istr.position()[-1] == '\r'))
-		throw Exception("\nYou have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
-			"\nIt's like your input data has DOS/Windows style line separators, that are illegal in TabSeparated format."
-			" You must transform your file to Unix format."
-			"\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\r.",
-			ErrorCodes::INCORRECT_DATA);
+	while (!buf.eof()
+			&& (*buf.position() == ' '
+			|| *buf.position() == '\t'))
+		++buf.position();
 }
 
 
-bool TabSeparatedRowInputStream::read(Row & row)
+bool CSVRowInputStream::read(Row & row)
 {
 	updateDiagnosticInfo();
 
@@ -81,21 +76,36 @@ bool TabSeparatedRowInputStream::read(Row & row)
 				return false;
 			}
 
-			data_types[i]->deserializeTextEscaped(row[i], istr);
+			skipWhitespacesAndTabs(istr);
+			data_types[i]->deserializeTextCSV(row[i], istr, delimiter);
+			skipWhitespacesAndTabs(istr);
 
 			/// пропускаем разделители
 			if (i + 1 == size)
 			{
-				if (!istr.eof())
-				{
-					if (unlikely(row_num == 1))
-						checkForCarriageReturn(istr);
+				if (istr.eof())
+					break;
 
-					assertChar('\n', istr);
+				/// \n (Unix) или \r\n (DOS/Windows) или \n\r (Mac OS Classic)
+
+				if (*istr.position() == '\n')
+				{
+					++istr.position();
+					if (!istr.eof() && *istr.position() == '\r')
+						++istr.position();
+				}
+				else if (*istr.position() == '\r')
+				{
+					++istr.position();
+					if (!istr.eof() && *istr.position() == '\n')
+						++istr.position();
+					else
+						throw Exception("Cannot parse CSV format: found \\r (CR) not followed by \\n (LF)."
+							" Line must end by \\n (LF) or \\r\\n (CR LF) or \\n\\r.", ErrorCodes::INCORRECT_DATA);
 				}
 			}
 			else
-				assertChar('\t', istr);
+				assertChar(delimiter, istr);
 		}
 	}
 	catch (Exception & e)
@@ -114,7 +124,7 @@ bool TabSeparatedRowInputStream::read(Row & row)
 }
 
 
-void TabSeparatedRowInputStream::printDiagnosticInfo(WriteBuffer & out)
+void CSVRowInputStream::printDiagnosticInfo(WriteBuffer & out)
 {
 	/// Вывести подробную диагностику возможно лишь если последняя и предпоследняя строка ещё находятся в буфере для чтения.
 	size_t bytes_read_at_start_of_buffer = istr.count() - istr.offset();
@@ -220,7 +230,7 @@ static void verbosePrintString(BufferBase::Position begin, BufferBase::Position 
 }
 
 
-bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(
+bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(
 	WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name)
 {
 	size_t size = data_types.size();
@@ -237,19 +247,22 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(
 			<< "type: " << data_types[i]->getName() << ", " << std::string(max_length_of_data_type_name - data_types[i]->getName().size(), ' ');
 
 		auto prev_position = istr.position();
+		auto curr_position = istr.position();
 		std::exception_ptr exception;
 
 		Field field;
 		try
 		{
-			data_types[i]->deserializeTextEscaped(field, istr);
+			skipWhitespacesAndTabs(istr);
+			prev_position = istr.position();
+			data_types[i]->deserializeTextCSV(field, istr, delimiter);
+			curr_position = istr.position();
+			skipWhitespacesAndTabs(istr);
 		}
 		catch (...)
 		{
 			exception = std::current_exception();
 		}
-
-		auto curr_position = istr.position();
 
 		if (curr_position < prev_position)
 			throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
@@ -284,7 +297,7 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(
 
 		if (data_types[i]->isNumeric())
 		{
-			if (*curr_position != '\n' && *curr_position != '\t')
+			if (*curr_position != '\n' && *curr_position != '\r' && *curr_position != delimiter)
 			{
 				out << "ERROR: garbage after " << data_types[i]->getName() << ": ";
 				verbosePrintString(curr_position, std::min(curr_position + 10, istr.buffer().end()), out);
@@ -316,56 +329,39 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(
 		/// Разделители
 		if (i + 1 == size)
 		{
-			if (!istr.eof())
+			if (!istr.eof() && *istr.position() != '\n' && *istr.position() != '\r')
 			{
-				try
+				if (*istr.position() == delimiter)
+					out << "ERROR: Delimited (" << delimiter << ") found where line feed is expected."
+						" It's like your file has more columns than expected.\n"
+						"And if your file have right number of columns, maybe it have unquoted string value with comma.\n";
+				else
 				{
-					assertChar('\n', istr);
+					out << "ERROR: There is no line feed. ";
+					verbosePrintString(istr.position(), istr.position() + 1, out);
+					out << " found instead.\n";
 				}
-				catch (const DB::Exception &)
-				{
-					if (*istr.position() == '\t')
-					{
-						out << "ERROR: Tab found where line feed is expected."
-							" It's like your file has more columns than expected.\n"
-							"And if your file have right number of columns, maybe it have unescaped tab in value.\n";
-					}
-					else if (*istr.position() == '\r')
-					{
-						out << "ERROR: Carriage return found where line feed is expected."
-							" It's like your file has DOS/Windows style line separators, that is illegal in TabSeparated format.\n";
-					}
-					else
-					{
-						out << "ERROR: There is no line feed. ";
-						verbosePrintString(istr.position(), istr.position() + 1, out);
-						out << " found instead.\n";
-					}
-					return false;
-				}
+
+				return false;
 			}
 		}
 		else
 		{
 			try
 			{
-				assertChar('\t', istr);
+				assertChar(delimiter, istr);
 			}
 			catch (const DB::Exception &)
 			{
-				if (*istr.position() == '\n')
+				if (*istr.position() == '\n' || *istr.position() == '\r')
 				{
-					out << "ERROR: Line feed found where tab is expected."
+					out << "ERROR: Line feed found where delimiter (" << delimiter << ") is expected."
 						" It's like your file has less columns than expected.\n"
-						"And if your file have right number of columns, maybe it have unescaped backslash in value before tab, which cause tab has escaped.\n";
-				}
-				else if (*istr.position() == '\r')
-				{
-					out << "ERROR: Carriage return found where tab is expected.\n";
+						"And if your file have right number of columns, maybe it have unescaped quotes in values.\n";
 				}
 				else
 				{
-					out << "ERROR: There is no tab. ";
+					out << "ERROR: There is no delimiter (" << delimiter << "). ";
 					verbosePrintString(istr.position(), istr.position() + 1, out);
 					out << " found instead.\n";
 				}

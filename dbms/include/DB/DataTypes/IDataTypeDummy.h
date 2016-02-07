@@ -39,6 +39,9 @@ public:
 
 	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override 						{ throwNoSerialization(); }
 
+	void serializeTextCSV(const Field & field, WriteBuffer & ostr) const override						{ throwNoSerialization(); }
+	void deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const override { throwNoSerialization(); }
+
 	SharedPtr<IColumn> createColumn() const override
 	{
 		throw Exception("Method createColumn() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);

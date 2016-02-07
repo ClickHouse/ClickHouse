@@ -1182,7 +1182,7 @@ bool MergeTreeData::DataPart::Checksums::read(ReadBuffer & in)
 	DB::assertString("checksums format version: ", in);
 	int format_version;
 	DB::readText(format_version, in);
-	DB::assertString("\n", in);
+	DB::assertChar('\n', in);
 
 	if (format_version < 1 || format_version > 4)
 		throw Exception("Bad checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
@@ -1229,7 +1229,7 @@ bool MergeTreeData::DataPart::Checksums::read_v2(ReadBuffer & in)
 			DB::assertString(" ", in);
 			DB::readText(sum.uncompressed_hash.second, in);
 		}
-		DB::assertString("\n", in);
+		DB::assertChar('\n', in);
 
 		files.insert(std::make_pair(name, sum));
 	}

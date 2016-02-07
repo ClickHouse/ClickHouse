@@ -380,7 +380,7 @@ public:
 		for (size_t i = 0; i < RankStore::size(); ++i)
 		{
 			if (i != 0)
-				DB::assertString(",", in);
+				DB::assertChar(',', in);
 			DB::readIntText(dummy, in);
 		}
 	}

@@ -149,7 +149,7 @@ private:
 		{
 			std::string query;
 			readText(query, in);
-			assertString("\n", in);
+			assertChar('\n', in);
 
 			if (!query.empty())
 				queries.emplace_back(query);

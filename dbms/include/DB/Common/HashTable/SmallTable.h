@@ -328,7 +328,7 @@ public:
 
 		for (size_t i = 0; i < new_size; ++i)
 		{
-			DB::assertString(",", rb);
+			DB::assertChar(',', rb);
 			buf[i].readText(rb);
 		}
 
