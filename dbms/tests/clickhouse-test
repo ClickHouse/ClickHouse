@@ -53,6 +53,16 @@ else
 fi
 
 
+# Тесты, зависящие от данных Метрики - не публикуются наружу. Создаём симлинки на внутренний репозиторий. Весьма неудобно.
+QUERIES_PRIVATE_DIR="../../../ClickHouse_private/tests/${QUERIES_DIR}"
+if [ -d "$QUERIES_PRIVATE_DIR" ]; then
+	for dir in $(ls $QUERIES_PRIVATE_DIR)
+	do
+		[ -d "$QUERIES_DIR/$dir" ] || ln -s "../$QUERIES_PRIVATE_DIR/$dir" "$QUERIES_DIR/$dir"
+	done
+fi
+
+
 for dir in $(ls $QUERIES_DIR)
 do
 	tests_name=$(echo $dir | sed -E 's/^[0-9_]+//')
