@@ -18,11 +18,26 @@ INCLUDE(${PROJECT_SOURCE_DIR}/tools/logrotate/CMakeLists.logrotate)
 target_link_libraries (clickhouse-server daemon)
 
 INSTALL(TARGETS clickhouse-server RUNTIME DESTINATION bin COMPONENT clickhouse-server)
-INSTALL(FILES config.xml users.xml DESTINATION /etc/clickhouse-server COMPONENT clickhouse-server)
-INSTALL(FILES metrika/config.xml metrika/users.xml DESTINATION /etc/clickhouse-server/metrika COMPONENT clickhouse-server)
-INSTALL(FILES metrika.conf DESTINATION /etc/security/limits.d COMPONENT clickhouse-server)
 
-INSTALL(FILES clickhouse-server.logrt DESTINATION /etc/logrotate.d
+INSTALL(
+    FILES config.xml users.xml
+    DESTINATION /etc/clickhouse-server
+    COMPONENT clickhouse-server)
+
+INSTALL(
+    FILES ../../../../ClickHouse_private/Server/metrika/config.xml ../../../../ClickHouse_private/Server/metrika/users.xml
+    DESTINATION /etc/clickhouse-server/metrika
+    COMPONENT clickhouse-server
+    OPTIONAL)
+
+INSTALL(
+    FILES metrika.conf
+    DESTINATION /etc/security/limits.d
+    COMPONENT clickhouse-server)
+
+INSTALL(
+    FILES clickhouse-server.logrt
+    DESTINATION /etc/logrotate.d
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
     COMPONENT clickhouse-server)
 
