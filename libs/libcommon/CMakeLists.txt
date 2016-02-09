@@ -2,7 +2,7 @@ SET(REVISIONFILE ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h)
 
 ADD_CUSTOM_COMMAND(
     OUTPUT ${REVISIONFILE}
-    COMMAND bash -f ${CMAKE_CURRENT_BINARY_DIR}/src/create_revision.sh ${REVISIONFILE}
+    COMMAND bash -f ${CMAKE_CURRENT_SOURCE_DIR}/src/create_revision.sh ${REVISIONFILE}
 )
 
 set_source_files_properties(
