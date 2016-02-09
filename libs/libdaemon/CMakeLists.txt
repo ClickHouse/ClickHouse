@@ -1,8 +1,8 @@
 add_library (daemon
-	src/Daemon.cpp
+	src/BaseDaemon.cpp
 	src/GraphiteWriter.cpp
 
-	include/daemon/Daemon.h
+	include/daemon/BaseDaemon.h
 	include/daemon/GraphiteWriter.h
 )
 

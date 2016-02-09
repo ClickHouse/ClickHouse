@@ -18,7 +18,7 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 
 #include <DB/Interpreters/Aggregator.h>
-#include <common/Revision.h>
+#include <common/ClickHouseRevision.h>
 
 
 namespace DB
@@ -793,7 +793,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
 	const std::string & path = file->path();
 	WriteBufferFromFile file_buf(path);
 	CompressedWriteBuffer compressed_buf(file_buf);
-	NativeBlockOutputStream block_out(compressed_buf, Revision::get());
+	NativeBlockOutputStream block_out(compressed_buf, ClickHouseRevision::get());
 
 	LOG_DEBUG(log, "Writing part of aggregation data into temporary file " << path << ".");
 	ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);

@@ -2,7 +2,7 @@
 
 #include <Poco/Net/NetException.h>
 
-#include <common/Revision.h>
+#include <common/ClickHouseRevision.h>
 
 #include <DB/Common/Stopwatch.h>
 
@@ -115,11 +115,11 @@ void TCPHandler::runImpl()
 	while (1)
 	{
 		/// Ждём пакета от клиента. При этом, каждые POLL_INTERVAL сек. проверяем, не требуется ли завершить работу.
-		while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !Daemon::instance().isCancelled())
+		while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !BaseDaemon::instance().isCancelled())
 			;
 
 		/// Если требуется завершить работу, или клиент отсоединился.
-		if (Daemon::instance().isCancelled() || in->eof())
+		if (BaseDaemon::instance().isCancelled() || in->eof())
 			break;
 
 		Stopwatch watch;
@@ -256,7 +256,7 @@ void TCPHandler::readData(const Settings & global_settings)
 				break;
 
 			/// Если требуется завершить работу.
-			if (Daemon::instance().isCancelled())
+			if (BaseDaemon::instance().isCancelled())
 				return;
 
 			/** Если ждём данных уже слишком долго.
@@ -490,7 +490,7 @@ void TCPHandler::sendHello()
 	writeStringBinary(DBMS_NAME, *out);
 	writeVarUInt(DBMS_VERSION_MAJOR, *out);
 	writeVarUInt(DBMS_VERSION_MINOR, *out);
-	writeVarUInt(Revision::get(), *out);
+	writeVarUInt(ClickHouseRevision::get(), *out);
 	out->next();
 }
 

@@ -18,7 +18,7 @@
 #include <Poco/Net/TCPServerConnection.h>
 
 #include <common/logger_useful.h>
-#include <daemon/Daemon.h>
+#include <daemon/BaseDaemon.h>
 #include <DB/Common/HTMLForm.h>
 
 #include <DB/Interpreters/Context.h>
@@ -39,7 +39,7 @@
 namespace DB
 {
 
-class Server : public Daemon
+class Server : public BaseDaemon
 {
 public:
 	/// Глобальные настройки севрера
@@ -51,14 +51,14 @@ public:
 protected:
 	void initialize(Application & self)
 	{
-		Daemon::initialize(self);
+		BaseDaemon::initialize(self);
 		logger().information("starting up");
 	}
 
 	void uninitialize()
 	{
 		logger().information("shutting down");
-		Daemon::uninitialize();
+		BaseDaemon::uninitialize();
 	}
 
 	int main(const std::vector<std::string> & args);

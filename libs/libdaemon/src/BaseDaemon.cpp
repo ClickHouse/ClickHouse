@@ -1,4 +1,4 @@
-#include <daemon/Daemon.h>
+#include <daemon/BaseDaemon.h>
 
 #include <DB/Common/ConfigProcessor.h>
 
@@ -51,7 +51,7 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 
-#include <common/Revision.h>
+#include <common/ClickHouseRevision.h>
 
 
 
@@ -157,7 +157,7 @@ static bool already_printed_stack_trace = false;
 class SignalListener : public Poco::Runnable
 {
 public:
-	SignalListener() : log(&Logger::get("Daemon"))
+	SignalListener() : log(&Logger::get("BaseDaemon"))
 	{
 	}
 
@@ -174,7 +174,7 @@ public:
 			if (sig == SIGHUP || sig == SIGUSR1)
 			{
 				LOG_DEBUG(log, "Received signal to close logs.");
-				Daemon::instance().closeLogs();
+				BaseDaemon::instance().closeLogs();
 				LOG_INFO(log, "Opened new log file after received signal.");
 			}
 			else if (sig == -1)		/// -1 для обозначения std::terminate.
@@ -400,7 +400,7 @@ static std::string createDirectory(const std::string & _path)
 };
 
 
-void Daemon::reloadConfiguration()
+void BaseDaemon::reloadConfiguration()
 {
 	/** Если программа запущена не в режиме демона, и не указан параметр config-file,
 	  *  то будем использовать параметры из файла config.xml в текущей директории,
@@ -436,7 +436,7 @@ public:
 		ADD_NOTHING = 0,
 		ADD_LAYER_TAG = 1 << 0
 	};
-	OwnPatternFormatter(const Daemon & daemon_, Options options_ = ADD_NOTHING) : Poco::PatternFormatter(""), daemon(daemon_), options(options_) {}
+	OwnPatternFormatter(const BaseDaemon & daemon_, Options options_ = ADD_NOTHING) : Poco::PatternFormatter(""), daemon(daemon_), options(options_) {}
 
 	void format(const Message & msg, std::string & text) override
 	{
@@ -479,42 +479,42 @@ public:
 	}
 
 private:
-	const Daemon & daemon;
+	const BaseDaemon & daemon;
 	Options options;
 };
 
 
 /// Для создания и уничтожения unique_ptr, который в заголовочном файле объявлен от incomplete type.
-Daemon::Daemon() = default;
-Daemon::~Daemon() = default;
+BaseDaemon::BaseDaemon() = default;
+BaseDaemon::~BaseDaemon() = default;
 
 
-void Daemon::terminate()
+void BaseDaemon::terminate()
 {
 	getTaskManager().cancelAll();
 	ServerApplication::terminate();
 }
 
-void Daemon::kill()
+void BaseDaemon::kill()
 {
 	pid.clear();
 	Poco::Process::kill(getpid());
 }
 
-void Daemon::sleep(double seconds)
+void BaseDaemon::sleep(double seconds)
 {
 	wakeup_event.reset();
 	wakeup_event.tryWait(seconds * 1000);
 }
 
-void Daemon::wakeup()
+void BaseDaemon::wakeup()
 {
 	wakeup_event.set();
 }
 
 
 /// Строит необходимые логгеры
-void Daemon::buildLoggers()
+void BaseDaemon::buildLoggers()
 {
 	/// Сменим директорию для лога
 	if (config().hasProperty("logger.log") && !log_to_console)
@@ -621,7 +621,7 @@ void Daemon::buildLoggers()
 }
 
 
-void Daemon::closeLogs()
+void BaseDaemon::closeLogs()
 {
 	if (log_file)
 		log_file->close();
@@ -632,7 +632,7 @@ void Daemon::closeLogs()
 		logger().warning("Logging to console but received signal to close log file (ignoring).");
 }
 
-void Daemon::initialize(Application& self)
+void BaseDaemon::initialize(Application& self)
 {
 	/// В случае падения - сохраняем коры
 	{
@@ -756,7 +756,7 @@ void Daemon::initialize(Application& self)
 	Poco::ErrorHandler::set(&killing_error_handler);
 
 	/// Выведем ревизию демона
-	Logger::root().information("Starting daemon with revision " + Poco::NumberFormatter::format(Revision::get()));
+	Logger::root().information("Starting daemon with revision " + Poco::NumberFormatter::format(getRevision()));
 
 	close_logs_listener.reset(new SignalListener);
 	close_logs_thread.start(*close_logs_listener);
@@ -764,16 +764,20 @@ void Daemon::initialize(Application& self)
 	graphite_writer.reset(new GraphiteWriter("graphite"));
 }
 
+unsigned BaseDaemon::getRevision() const
+{
+	return ClickHouseRevision::get();
+}
 
 /// Заставляет демон завершаться, если хотя бы одна задача завершилась неудачно
-void Daemon::exitOnTaskError()
+void BaseDaemon::exitOnTaskError()
 {
-	Observer<Daemon, Poco::TaskFailedNotification> obs(*this, &Daemon::handleNotification);
+	Observer<BaseDaemon, Poco::TaskFailedNotification> obs(*this, &BaseDaemon::handleNotification);
 	getTaskManager().addObserver(obs);
 }
 
 /// Используется при exitOnTaskError()
-void Daemon::handleNotification(Poco::TaskFailedNotification *_tfn)
+void BaseDaemon::handleNotification(Poco::TaskFailedNotification *_tfn)
 {
 	AutoPtr<Poco::TaskFailedNotification> fn(_tfn);
 	Logger *lg = &(logger());
@@ -781,7 +785,7 @@ void Daemon::handleNotification(Poco::TaskFailedNotification *_tfn)
 	ServerApplication::terminate();
 }
 
-void Daemon::defineOptions(Poco::Util::OptionSet& _options)
+void BaseDaemon::defineOptions(Poco::Util::OptionSet& _options)
 {
 	Poco::Util::ServerApplication::defineOptions (_options);
 
@@ -819,7 +823,7 @@ void Daemon::defineOptions(Poco::Util::OptionSet& _options)
 }
 
 
-void Daemon::PID::seed(const std::string & file_)
+void BaseDaemon::PID::seed(const std::string & file_)
 {
 	/// переведём путь в абсолютный
 	file = Poco::Path(file_).absolute().toString();
@@ -852,7 +856,7 @@ void Daemon::PID::seed(const std::string & file_)
 	close(fd);
 }
 
-void Daemon::PID::clear()
+void BaseDaemon::PID::clear()
 {
 	if (!file.empty())
 	{

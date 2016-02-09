@@ -2,7 +2,7 @@
 
 #include <Poco/Net/NetException.h>
 
-#include <common/Revision.h>
+#include <common/ClickHouseRevision.h>
 
 #include <DB/Core/Defines.h>
 #include <DB/Common/Exception.h>
@@ -101,7 +101,7 @@ void Connection::sendHello()
 	writeStringBinary((DBMS_NAME " ") + client_name, *out);
 	writeVarUInt(DBMS_VERSION_MAJOR, *out);
 	writeVarUInt(DBMS_VERSION_MINOR, *out);
-	writeVarUInt(Revision::get(), *out);
+	writeVarUInt(ClickHouseRevision::get(), *out);
 	writeStringBinary(default_database, *out);
 	writeStringBinary(user, *out);
 	writeStringBinary(password, *out);

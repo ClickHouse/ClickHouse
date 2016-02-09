@@ -1,5 +1,5 @@
 #include <daemon/GraphiteWriter.h>
-#include <daemon/Daemon.h>
+#include <daemon/BaseDaemon.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Net/DNS.h>
@@ -53,7 +53,7 @@ std::string getPostfix()
 	else
 		path_full << "production.";
 
-	const Daemon & daemon = Daemon::instance();
+	const BaseDaemon & daemon = BaseDaemon::instance();
 
 	if (daemon.getLayer())
 		path_full << "layer" << std::setfill('0') << std::setw(3) << *daemon.getLayer() << ".";

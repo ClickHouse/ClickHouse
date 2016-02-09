@@ -1,6 +1,6 @@
 #include "MetricsTransmitter.h"
 
-#include <daemon/Daemon.h>
+#include <daemon/BaseDaemon.h>
 #include <DB/Common/setThreadName.h>
 #include <DB/Common/CurrentMetrics.h>
 
@@ -73,7 +73,7 @@ void MetricsTransmitter::transmit()
 		key_vals.emplace_back(metrics_path_prefix + key, value);
 	}
 
-	Daemon::instance().writeToGraphite(key_vals);
+	BaseDaemon::instance().writeToGraphite(key_vals);
 }
 
 }

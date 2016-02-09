@@ -1,13 +1,12 @@
 SET(REVISIONFILE ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h)
 
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/src/create_revision.sh.cmake ${CMAKE_CURRENT_BINARY_DIR}/src/create_revision.sh)
 ADD_CUSTOM_COMMAND(
     OUTPUT ${REVISIONFILE}
-    COMMAND bash -f ${CMAKE_CURRENT_BINARY_DIR}/src/create_revision.sh
+    COMMAND bash -c ${CMAKE_CURRENT_BINARY_DIR}/src/create_revision.sh ${REVISIONFILE}
 )
 
 set_source_files_properties(
-	src/Revision.cpp PROPERTIES OBJECT_DEPENDS ${REVISIONFILE}
+	src/ClickHouseRevision.cpp PROPERTIES OBJECT_DEPENDS ${REVISIONFILE}
 )
 
 include_directories (${CMAKE_CURRENT_BINARY_DIR}/src/)
@@ -15,7 +14,7 @@ include_directories (${CMAKE_CURRENT_BINARY_DIR}/src/)
 add_library (common
 	src/DateLUT.cpp
 	src/DateLUTImpl.cpp
-	src/Revision.cpp
+	src/ClickHouseRevision.cpp
 	src/JSON.cpp
 
 	include/common/ApplicationExt.h
@@ -29,7 +28,7 @@ add_library (common
 	include/common/likely.h
 	include/common/logger_useful.h
 	include/common/MultiVersion.h
-	include/common/Revision.h
+	include/common/ClickHouseRevision.h
 	include/common/singleton.h
 	include/common/strong_typedef.h
 	include/common/JSON.h

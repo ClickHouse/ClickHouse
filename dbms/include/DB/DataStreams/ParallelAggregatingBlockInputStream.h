@@ -8,7 +8,7 @@
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 #include <DB/DataStreams/ParallelInputsProcessor.h>
-#include <common/Revision.h>
+#include <common/ClickHouseRevision.h>
 
 
 namespace DB
@@ -151,7 +151,7 @@ private:
 		BlockInputStreamPtr block_in;
 
 		TemporaryFileStream(const std::string & path)
-			: file_in(path), compressed_in(file_in), block_in(new NativeBlockInputStream(compressed_in, Revision::get())) {}
+			: file_in(path), compressed_in(file_in), block_in(new NativeBlockInputStream(compressed_in, ClickHouseRevision::get())) {}
 	};
 	std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
 

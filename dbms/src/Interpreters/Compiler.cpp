@@ -1,5 +1,5 @@
 #include <Poco/DirectoryIterator.h>
-#include <common/Revision.h>
+#include <common/ClickHouseRevision.h>
 #include <ext/unlock_guard.hpp>
 
 #include <DB/Common/SipHash.h>
@@ -48,7 +48,7 @@ static Compiler::HashedKey getHash(const std::string & key)
 {
 	SipHash hash;
 
-	auto revision = Revision::get();
+	auto revision = ClickHouseRevision::get();
 	hash.update(reinterpret_cast<const char *>(&revision), sizeof(revision));
 	hash.update(key.data(), key.size());
 

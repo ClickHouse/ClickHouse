@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Revision
+namespace ClickHouseRevision
 {
 	unsigned get();
 }

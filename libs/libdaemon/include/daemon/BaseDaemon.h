@@ -50,11 +50,11 @@ namespace Poco { class TaskManager; }
 /// Теги уровней вывода использовать можно в любом случае
 
 
-class Daemon : public Poco::Util::ServerApplication
+class BaseDaemon : public Poco::Util::ServerApplication
 {
 public:
-	Daemon();
-    ~Daemon();
+	BaseDaemon();
+    ~BaseDaemon();
 
 	/// Загружает конфигурацию и "строит" логгеры на запись в файлы
 	void initialize(Poco::Util::Application &);
@@ -87,9 +87,9 @@ public:
 	}
 
 	/// Получение ссылки на экземпляр демона
-	static Daemon & instance()
+	static BaseDaemon & instance()
 	{
-		return dynamic_cast<Daemon &>(Poco::Util::Application::instance());
+		return dynamic_cast<BaseDaemon &>(Poco::Util::Application::instance());
 	}
 
 	/// Спит заданное количество секунд или до события wakeup
@@ -123,6 +123,8 @@ public:
 	{
 		return layer;	/// layer выставляется в классе-наследнике BaseDaemonApplication.
 	}
+
+	virtual unsigned getRevision() const;
 
 protected:
 

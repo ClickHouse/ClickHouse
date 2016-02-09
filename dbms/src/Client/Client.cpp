@@ -19,7 +19,7 @@
 #include <Poco/SharedPtr.h>
 #include <Poco/Util/Application.h>
 
-#include <common/Revision.h>
+#include <common/ClickHouseRevision.h>
 
 #include <DB/Common/Stopwatch.h>
 
@@ -287,7 +287,7 @@ private:
 		if (is_interactive)
 			std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
 				<< "." << DBMS_VERSION_MINOR
-				<< "." << Revision::get()
+				<< "." << ClickHouseRevision::get()
 				<< "." << std::endl;
 
 		if (config().has("vertical"))

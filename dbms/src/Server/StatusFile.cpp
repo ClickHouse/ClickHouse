@@ -7,7 +7,7 @@
 
 #include <Poco/File.h>
 #include <common/logger_useful.h>
-#include <common/Revision.h>
+#include <common/ClickHouseRevision.h>
 #include <common/LocalDateTime.h>
 
 #include <DB/IO/copyData.h>
@@ -70,7 +70,7 @@ StatusFile::StatusFile(const std::string & path_)
 			out
 				<< "PID: " << getpid() << "\n"
 				<< "Started at: " << LocalDateTime(time(0)) << "\n"
-				<< "Revision: " << Revision::get() << "\n";
+				<< "Revision: " << ClickHouseRevision::get() << "\n";
 		}
 	}
 	catch (...)

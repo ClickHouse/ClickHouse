@@ -23,7 +23,7 @@
 #include <DB/Storages/StorageLog.h>
 
 #include <DB/Interpreters/Context.h>
-#include <common/Revision.h>
+#include <common/ClickHouseRevision.h>
 
 
 int main(int argc, char ** argv)
@@ -109,7 +109,7 @@ int main(int argc, char ** argv)
 			SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Context{}, Settings(), stage)[0];
 			WriteBufferFromFileDescriptor out1(STDOUT_FILENO);
 			CompressedWriteBuffer out2(out1);
-			NativeBlockOutputStream out3(out2, Revision::get());
+			NativeBlockOutputStream out3(out2, ClickHouseRevision::get());
 			copyData(*in, out3);
 		}
 
@@ -118,7 +118,7 @@ int main(int argc, char ** argv)
 		{
 			ReadBufferFromFileDescriptor in1(STDIN_FILENO);
 			CompressedReadBuffer in2(in1);
-			NativeBlockInputStream in3(in2, Revision::get());
+			NativeBlockInputStream in3(in2, ClickHouseRevision::get());
 			SharedPtr<IBlockOutputStream> out = table->write({}, {});
 			copyData(in3, *out);
 		}

@@ -12,7 +12,7 @@
 
 #include <DB/Common/Increment.h>
 #include <memory>
-#include <common/Revision.h>
+#include <common/ClickHouseRevision.h>
 
 #include <iostream>
 
@@ -159,7 +159,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
 
 			WriteBufferFromFile out{block_file_tmp_path};
 			CompressedWriteBuffer compress{out};
-			NativeBlockOutputStream stream{compress, Revision::get()};
+			NativeBlockOutputStream stream{compress, ClickHouseRevision::get()};
 
 			writeStringBinary(query_string, out);
 
