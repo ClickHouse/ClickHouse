@@ -17,7 +17,6 @@ add_library (common
 	src/ClickHouseRevision.cpp
 	src/JSON.cpp
 
-	include/common/ApplicationExt.h
 	include/common/ApplicationServerExt.h
 	include/common/Common.h
 	include/common/DateLUT.h
