@@ -79,7 +79,6 @@ include_directories (${METRICA_SOURCE_DIR}/contrib/libpoco/Zip/include/)
 include_directories (${METRICA_SOURCE_DIR}/libs/libcommon/include/)
 include_directories (${METRICA_SOURCE_DIR}/libs/libdaemon/include/)
 include_directories (${METRICA_SOURCE_DIR}/libs/libpocoext/include/)
-include_directories (${METRICA_BINARY_DIR}/libs/libpocoext/charsets/include/)
 include_directories (${METRICA_SOURCE_DIR}/libs/libmysqlxx/include/)
 include_directories (${METRICA_SOURCE_DIR}/libs/libzkutil/include/)
 
