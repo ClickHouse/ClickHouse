@@ -756,7 +756,7 @@ void BaseDaemon::initialize(Application& self)
 	Poco::ErrorHandler::set(&killing_error_handler);
 
 	/// Выведем ревизию демона
-	Logger::root().information("Starting daemon with revision " + Poco::NumberFormatter::format(getRevision()));
+	logRevision();
 
 	close_logs_listener.reset(new SignalListener);
 	close_logs_thread.start(*close_logs_listener);
@@ -764,9 +764,9 @@ void BaseDaemon::initialize(Application& self)
 	graphite_writer.reset(new GraphiteWriter("graphite"));
 }
 
-unsigned BaseDaemon::getRevision() const
+void BaseDaemon::logRevision() const
 {
-	return ClickHouseRevision::get();
+	Logger::root().information("Starting daemon with revision " + Poco::NumberFormatter::format(ClickHouseRevision::get()));
 }
 
 /// Заставляет демон завершаться, если хотя бы одна задача завершилась неудачно

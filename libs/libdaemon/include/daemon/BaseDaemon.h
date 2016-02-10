@@ -124,9 +124,8 @@ public:
 		return layer;	/// layer выставляется в классе-наследнике BaseDaemonApplication.
 	}
 
-	virtual unsigned getRevision() const;
-
 protected:
+	virtual void logRevision() const;
 
 	/// Используется при exitOnTaskError()
 	void handleNotification(Poco::TaskFailedNotification *);
