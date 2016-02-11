@@ -22,15 +22,17 @@ PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:$PATH"
 
 # Опция -mcx16 для того, чтобы выбиралось больше заголовочных файлов (с запасом).
 
-for i in $(clang -M -xc++ -std=gnu++1y -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC \
+for src_file in $(clang -M -xc++ -std=gnu++1y -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC \
 	$(cat "$SOURCE_PATH/CMakeLists.txt" | grep include_directories | grep -v METRICA_BINARY_DIR | sed -e "s!\${METRICA_SOURCE_DIR}!$SOURCE_PATH!; s!include_directories (!-I !; s!)!!;" | tr '\n' ' ') \
 	"$SOURCE_PATH/dbms/include/DB/Interpreters/SpecializedAggregator.h" |
 	tr -d '\\' |
 	grep -v '.o:' |
 	sed -r -e 's/^.+\.cpp / /');
 do
-	mkdir -p "$DST/$(echo $i | sed -r -e 's/\/[^/]*$/\//')";
-	cp "$i" "$DST/$i";
+	# Для совместимости со случаем сборки ClickHouse из репозитория Метрики, удаляем префикс ClickHouse из результирующих путей.
+	dst_file=$(echo $src_file | sed -r -e 's/^ClickHouse\///');
+	mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
+	cp "$src_file" "$DST/$dst_file";
 done
 
 
