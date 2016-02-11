@@ -80,12 +80,6 @@ namespace ErrorCodes
 
 
 const auto ERROR_SLEEP_MS = 1000;
-
-/// Если ждём какого-то события с помощью watch-а, то просыпаться на всякий случай вхолостую раз в указанное время.
-const auto WAIT_FOR_NEW_LOGS_SLEEP_MS = 60 * 1000;
-const auto WAIT_FOR_ALTER_SLEEP_MS = 300 * 1000;
-const auto WAIT_FOR_REPLICA_QUEUE_MS = 10 * 1000;
-
 const auto MERGE_SELECTING_SLEEP_MS = 5 * 1000;
 
 /** Добавляемым блокам данных присваиваются некоторые номера - целые числа.
@@ -1347,7 +1341,7 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 		try
 		{
 			pullLogsToQueue(queue_updating_event);
-			queue_updating_event->tryWait(WAIT_FOR_NEW_LOGS_SLEEP_MS);
+			queue_updating_event->wait();
 		}
 		catch (const zkutil::KeeperException & e)
 		{
@@ -1844,7 +1838,7 @@ void StorageReplicatedMergeTree::alterThread()
 				/// Важно, что уничтожается parts и merge_blocker перед wait-ом.
 			}
 
-			alter_thread_event->tryWait(WAIT_FOR_ALTER_SLEEP_MS);
+			alter_thread_event->wait();
 		}
 		catch (...)
 		{
@@ -2657,7 +2651,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 			if (stat.version != replica_columns_version)
 				continue;
 
-			alter_query_event->tryWait(WAIT_FOR_ALTER_SLEEP_MS);
+			alter_query_event->wait();
 		}
 
 		if (shutdown_called)
@@ -3086,7 +3080,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 			if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
 				break;
 
-			event->tryWait(WAIT_FOR_REPLICA_QUEUE_MS);
+			event->wait();
 		}
 	}
 	else if (0 == entry.znode_name.compare(0, strlen("queue-"), "queue-"))
@@ -3131,7 +3125,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 				if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
 					break;
 
-				event->tryWait(WAIT_FOR_REPLICA_QUEUE_MS);
+				event->wait();
 			}
 		}
 	}
