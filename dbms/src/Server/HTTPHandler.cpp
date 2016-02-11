@@ -50,9 +50,34 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	if (!query_param.empty())
 		query_param += '\n';
 
-	/// Если указано compress, то будем сжимать результат.
-	used_output.out = new WriteBufferFromHTTPServerResponse(response);
+	/** Клиент может указать поддерживаемый метод сжатия (gzip или deflate) в HTTP-заголовке.
+	  */
+	String http_compression_methods = request.get("Accept-Encoding");
+	bool http_compress = false;
+	Poco::DeflatingStreamBuf::StreamType http_compression_method;
 
+	if (!http_compression_methods.empty())
+	{
+		/// Мы поддерживаем gzip или deflate. Если клиент поддерживает оба, то предпочитается gzip.
+		/// NOTE Парсинг списка методов слегка некорректный.
+
+		if (std::string::npos != http_compression_methods.find("gzip"))
+		{
+			http_compress = true;
+			http_compression_method = Poco::DeflatingStreamBuf::STREAM_GZIP;
+		}
+		else if (std::string::npos != http_compression_methods.find("deflate"))
+		{
+			http_compress = true;
+			http_compression_method = Poco::DeflatingStreamBuf::STREAM_ZLIB;
+		}
+	}
+
+	used_output.out = new WriteBufferFromHTTPServerResponse(response, http_compress, http_compression_method);
+
+	/** Клиент может указать compress в query string.
+	  * В этом случае, результат сжимается несовместимым алгоритмом для внутреннего использования и этот факт не отражается в HTTP заголовках.
+	  */
 	if (parse<bool>(params.get("compress", "0")))
 		used_output.out_maybe_compressed = new CompressedWriteBuffer(*used_output.out);
 	else
