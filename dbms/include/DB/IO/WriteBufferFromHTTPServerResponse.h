@@ -58,7 +58,7 @@ private:
 
 				response_ostr = &response.send();
 				deflating_stream.emplace(*response_ostr, compression_method);
-				ostr = &deflating_stream;
+				ostr = &deflating_stream.value();
 			}
 			else
 			{
@@ -71,10 +71,10 @@ private:
 	void nextImpl()
 	{
 		sendHeaders();
-		
+
 		if (!offset())
 			return;
-		
+
 		ostr->write(working_buffer.begin(), offset());
 		ostr->flush();
 

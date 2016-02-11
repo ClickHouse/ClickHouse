@@ -52,9 +52,9 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 	/** Клиент может указать поддерживаемый метод сжатия (gzip или deflate) в HTTP-заголовке.
 	  */
-	String http_compression_methods = request.get("Accept-Encoding");
+	String http_compression_methods = request.get("Accept-Encoding", "");
 	bool http_compress = false;
-	Poco::DeflatingStreamBuf::StreamType http_compression_method;
+	Poco::DeflatingStreamBuf::StreamType http_compression_method {};
 
 	if (!http_compression_methods.empty())
 	{
