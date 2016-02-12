@@ -192,6 +192,9 @@ struct Settings
 	\
 	/** В целях тестирования exception safety - кидать исключение при каждом выделении памяти с указанной вероятностью. */ \
 	M(SettingFloat, memory_tracker_fault_probability, 0.) \
+	\
+	/** Уровень сжатия - используется, если клиент по HTTP сказал, что он понимает данные, сжатые методом gzip или deflate */ \
+	M(SettingInt64, http_zlib_compression_level, 3) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

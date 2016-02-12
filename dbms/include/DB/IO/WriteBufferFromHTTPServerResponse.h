@@ -35,8 +35,10 @@ class WriteBufferFromHTTPServerResponse : public BufferWithOwnMemory<WriteBuffer
 {
 private:
 	Poco::Net::HTTPServerResponse & response;
+
 	bool compress;
 	Poco::DeflatingStreamBuf::StreamType compression_method;
+	int compression_level = Z_DEFAULT_COMPRESSION;
 
 	std::ostream * response_ostr = nullptr;	/// Сюда записывается тело HTTP ответа, возможно, сжатое.
 	std::experimental::optional<Poco::DeflatingOutputStream> deflating_stream;
@@ -57,7 +59,7 @@ private:
 						ErrorCodes::LOGICAL_ERROR);
 
 				response_ostr = &response.send();
-				deflating_stream.emplace(*response_ostr, compression_method);
+				deflating_stream.emplace(*response_ostr, compression_method, compression_level);
 				ostr = &deflating_stream.value();
 			}
 			else
@@ -98,6 +100,15 @@ public:
 	void finalize()
 	{
 		sendHeaders();
+	}
+
+	/** Установить уровень сжатия, если данные будут сжиматься.
+	  * Работает только перед тем, как были отправлены HTTP заголовки.
+	  * Иначе - не имеет эффекта.
+	  */
+	void setCompressionLevel(int level)
+	{
+		compression_level = level;
 	}
 
 	~WriteBufferFromHTTPServerResponse()

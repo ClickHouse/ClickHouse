@@ -33,23 +33,23 @@ namespace ErrorCodes
   *  и удалённый сервер будет использовать своё значение по-умолчанию.
   */
 
-
-struct SettingUInt64
+template <typename IntType>
+struct SettingInt
 {
-	UInt64 value;
+	IntType value;
 	bool changed = false;
 
-	SettingUInt64(UInt64 x = 0) : value(x) {}
+	SettingInt(IntType x = 0) : value(x) {}
 
-	operator UInt64() const { return value; }
-	SettingUInt64 & operator= (UInt64 x) { set(x); return *this; }
+	operator IntType() const { return value; }
+	SettingInt & operator= (IntType x) { set(x); return *this; }
 
 	String toString() const
 	{
 		return DB::toString(value);
 	}
 
-	void set(UInt64 x)
+	void set(IntType x)
 	{
 		value = x;
 		changed = true;
@@ -57,28 +57,30 @@ struct SettingUInt64
 
 	void set(const Field & x)
 	{
-		set(safeGet<UInt64>(x));
+		set(safeGet<IntType>(x));
 	}
 
 	void set(const String & x)
 	{
-		set(parse<UInt64>(x));
+		set(parse<IntType>(x));
 	}
 
 	void set(ReadBuffer & buf)
 	{
-		UInt64 x = 0;
-		readVarUInt(x, buf);
+		IntType x = 0;
+		readVarT(x, buf);
 		set(x);
 	}
 
 	void write(WriteBuffer & buf) const
 	{
-		writeVarUInt(value, buf);
+		writeVarT(value, buf);
 	}
 };
 
-typedef SettingUInt64 SettingBool;
+using SettingUInt64 = SettingInt<UInt64>;
+using SettingInt64 = SettingInt<Int64>;
+using SettingBool = SettingUInt64;
 
 
 /** В отличие от SettingUInt64, поддерживает значение 'auto' - количество процессорных ядер без учёта SMT.

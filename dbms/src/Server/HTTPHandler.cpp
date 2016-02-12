@@ -202,6 +202,9 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	if (readonly)
 		context.getSettingsRef().limits.readonly = true;
 
+	if (http_response_compress)
+		used_output.out->setCompressionLevel(context.getSettingsRef().http_zlib_compression_level);
+
 	context.setInterface(Context::Interface::HTTP);
 
 	Context::HTTPMethod http_method = Context::HTTPMethod::UNKNOWN;
