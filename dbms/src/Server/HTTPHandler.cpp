@@ -1,4 +1,5 @@
 #include <iomanip>
+#include <Poco/InflatingStream.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
 
@@ -29,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int READONLY;
+	extern const int UNKNOWN_COMPRESSION_METHOD;
 }
 
 
@@ -38,7 +40,6 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 	HTMLForm params(request);
 	std::istream & istr = request.stream();
-	bool readonly = request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET;
 
 	BlockInputStreamPtr query_plan;
 
@@ -50,9 +51,34 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	if (!query_param.empty())
 		query_param += '\n';
 
-	/// Если указано compress, то будем сжимать результат.
-	used_output.out = new WriteBufferFromHTTPServerResponse(response);
+	/** Клиент может указать поддерживаемый метод сжатия (gzip или deflate) в HTTP-заголовке.
+	  */
+	String http_response_compression_methods = request.get("Accept-Encoding", "");
+	bool http_response_compress = false;
+	Poco::DeflatingStreamBuf::StreamType http_response_compression_method {};
 
+	if (!http_response_compression_methods.empty())
+	{
+		/// Мы поддерживаем gzip или deflate. Если клиент поддерживает оба, то предпочитается gzip.
+		/// NOTE Парсинг списка методов слегка некорректный.
+
+		if (std::string::npos != http_response_compression_methods.find("gzip"))
+		{
+			http_response_compress = true;
+			http_response_compression_method = Poco::DeflatingStreamBuf::STREAM_GZIP;
+		}
+		else if (std::string::npos != http_response_compression_methods.find("deflate"))
+		{
+			http_response_compress = true;
+			http_response_compression_method = Poco::DeflatingStreamBuf::STREAM_ZLIB;
+		}
+	}
+
+	used_output.out = new WriteBufferFromHTTPServerResponse(response, http_response_compress, http_response_compression_method);
+
+	/** Клиент может указать compress в query string.
+	  * В этом случае, результат сжимается несовместимым алгоритмом для внутреннего использования и этот факт не отражается в HTTP заголовках.
+	  */
 	if (parse<bool>(params.get("compress", "0")))
 		used_output.out_maybe_compressed = new CompressedWriteBuffer(*used_output.out);
 	else
@@ -80,10 +106,43 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	context.setCurrentQueryId(query_id);
 
 	SharedPtr<ReadBuffer> in_param = new ReadBufferFromString(query_param);
-	SharedPtr<ReadBuffer> in_post = new ReadBufferFromIStream(istr);
+
+	/// Данные POST-а могут быть сжаты алгоритмом, указанным в Content-Encoding заголовке.
+	String http_request_compression_method_str = request.get("Content-Encoding", "");
+	bool http_request_decompress = false;
+	Poco::InflatingStreamBuf::StreamType http_request_compression_method {};
+
+	if (!http_request_compression_method_str.empty())
+	{
+		if (http_request_compression_method_str == "gzip")
+		{
+			http_request_decompress = true;
+			http_request_compression_method = Poco::InflatingStreamBuf::STREAM_GZIP;
+		}
+		else if (http_request_compression_method_str == "deflate")
+		{
+			http_request_decompress = true;
+			http_request_compression_method = Poco::InflatingStreamBuf::STREAM_ZLIB;
+		}
+		else
+			throw Exception("Unknown Content-Encoding of HTTP request: " + http_request_compression_method_str,
+				ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+	}
+
+	std::experimental::optional<Poco::InflatingInputStream> decompressing_stream;
+	SharedPtr<ReadBuffer> in_post;
+
+	if (http_request_decompress)
+	{
+		decompressing_stream.emplace(istr, http_request_compression_method);
+		in_post = new ReadBufferFromIStream(decompressing_stream.value());
+	}
+	else
+		in_post = new ReadBufferFromIStream(istr);
+
+	/// Также данные могут быть сжаты несовместимым алгоритмом для внутреннего использования - это определяется параметром query_string.
 	SharedPtr<ReadBuffer> in_post_maybe_compressed;
 
-	/// Если указано decompress, то будем разжимать то, что передано POST-ом.
 	if (parse<bool>(params.get("decompress", "0")))
 		in_post_maybe_compressed = new CompressedReadBuffer(*in_post);
 	else
@@ -91,6 +150,7 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 	SharedPtr<ReadBuffer> in;
 
+	/// Поддержка "внешних данных для обработки запроса".
 	if (0 == strncmp(request.getContentType().data(), "multipart/form-data", strlen("multipart/form-data")))
 	{
 		in = in_param;
@@ -98,7 +158,7 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 		params.load(request, istr, handler);
 
-		/// Удаляем уже нененужные параметры из хранилища, чтобы впоследствии не перепутать их с натройками контекста и параметрами запроса.
+		/// Удаляем уже нененужные параметры из хранилища, чтобы впоследствии не перепутать их с наcтройками контекста и параметрами запроса.
 		for (const auto & it : handler.names)
 		{
 			params.erase(it + "_format");
@@ -109,7 +169,29 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	else
 		in = new ConcatReadBuffer(*in_param, *in_post_maybe_compressed);
 
-	/// Настройки могут быть переопределены в запросе.
+	/** Настройки могут быть переопределены в запросе.
+	  * Некоторые параметры (database, default_format, и все что использовались выше),
+	  *  не относятся к обычным настройкам (Settings).
+	  *
+	  * Среди настроек есть также readonly.
+	  * readonly = 0 - можно выполнять любые запросы и изменять любые настройки
+	  * readonly = 1 - можно выполнять только запросы на чтение, нельзя изменять настройки
+	  * readonly = 2 - можно выполнять только запросы на чтение, можно изменять настройки кроме настройки readonly
+	  *
+	  * Заметим, что в запросе, если до этого readonly было равно 0,
+	  *  пользователь может изменить любые настройки и одновременно выставить readonly в другое значение.
+	  */
+	auto & limits = context.getSettingsRef().limits;
+
+	/// Если метод GET, то это эквивалентно настройке readonly, выставленной в ненулевое значение.
+	if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
+	{
+		if (limits.readonly == 0)
+			limits.readonly = 2;
+	}
+
+	auto readonly_before_query = limits.readonly;
+
 	for (Poco::Net::NameValueCollection::ConstIterator it = params.begin(); it != params.end(); ++it)
 	{
 		if (it->first == "database")
@@ -120,10 +202,6 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 		{
 			context.setDefaultFormat(it->second);
 		}
-		else if (readonly && it->first == "readonly")
-		{
-			throw Exception("Setting 'readonly' cannot be overrided in readonly mode", ErrorCodes::READONLY);
-		}
 		else if (it->first == "query"
 			|| it->first == "compress"
 			|| it->first == "decompress"
@@ -133,12 +211,22 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 			|| it->first == "query_id")
 		{
 		}
-		else	/// Все неизвестные параметры запроса рассматриваются, как настройки.
+		else
+		{
+			/// Все остальные параметры запроса рассматриваются, как настройки.
+
+			if (readonly_before_query == 1)
+				throw Exception("Cannot override setting (" + it->first + ") in readonly mode", ErrorCodes::READONLY);
+
+			if (readonly_before_query && it->first == "readonly")
+				throw Exception("Setting 'readonly' cannot be overrided in readonly mode", ErrorCodes::READONLY);
+
 			context.setSetting(it->first, it->second);
+		}
 	}
 
-	if (readonly)
-		context.getSettingsRef().limits.readonly = true;
+	if (http_response_compress)
+		used_output.out->setCompressionLevel(context.getSettingsRef().http_zlib_compression_level);
 
 	context.setInterface(Context::Interface::HTTP);
 
