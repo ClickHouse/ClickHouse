@@ -109,7 +109,7 @@ void Settings::loadSettingsFromConfig(const String & path, const Poco::Util::Abs
 /// Если выставлен флаг check_readonly, в настройках выставлено readonly, но пришли какие-то изменения кинуть исключение.
 void Settings::deserialize(ReadBuffer & buf)
 {
-	bool readonly = limits.readonly == 1;	/// Если readonly = 2, то можно менять настройки.
+	auto before_readonly = limits.readonly;
 
 	while (true)
 	{
@@ -120,7 +120,8 @@ void Settings::deserialize(ReadBuffer & buf)
 		if (name.empty())
 			break;
 
-		if (!readonly)
+		/// Если readonly = 2, то можно менять настройки, кроме настройки readonly.
+		if (before_readonly == 0 || (before_readonly == 2 && name != "readonly"))
 			set(name, buf);
 		else
 			ignore(name, buf);
