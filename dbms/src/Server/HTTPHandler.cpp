@@ -1,4 +1,5 @@
 #include <iomanip>
+#include <Poco/InflatingStream.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
 
@@ -38,6 +39,8 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 	HTMLForm params(request);
 	std::istream & istr = request.stream();
+
+	/// Если метод GET, то это эквивалентно выставлению настройки readonly.
 	bool readonly = request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET;
 
 	BlockInputStreamPtr query_plan;
@@ -52,28 +55,28 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 	/** Клиент может указать поддерживаемый метод сжатия (gzip или deflate) в HTTP-заголовке.
 	  */
-	String http_compression_methods = request.get("Accept-Encoding", "");
-	bool http_compress = false;
-	Poco::DeflatingStreamBuf::StreamType http_compression_method {};
+	String http_response_compression_methods = request.get("Accept-Encoding", "");
+	bool http_response_compress = false;
+	Poco::DeflatingStreamBuf::StreamType http_response_compression_method {};
 
-	if (!http_compression_methods.empty())
+	if (!http_response_compression_methods.empty())
 	{
 		/// Мы поддерживаем gzip или deflate. Если клиент поддерживает оба, то предпочитается gzip.
 		/// NOTE Парсинг списка методов слегка некорректный.
 
-		if (std::string::npos != http_compression_methods.find("gzip"))
+		if (std::string::npos != http_response_compression_methods.find("gzip"))
 		{
-			http_compress = true;
-			http_compression_method = Poco::DeflatingStreamBuf::STREAM_GZIP;
+			http_response_compress = true;
+			http_response_compression_method = Poco::DeflatingStreamBuf::STREAM_GZIP;
 		}
-		else if (std::string::npos != http_compression_methods.find("deflate"))
+		else if (std::string::npos != http_response_compression_methods.find("deflate"))
 		{
-			http_compress = true;
-			http_compression_method = Poco::DeflatingStreamBuf::STREAM_ZLIB;
+			http_response_compress = true;
+			http_response_compression_method = Poco::DeflatingStreamBuf::STREAM_ZLIB;
 		}
 	}
 
-	used_output.out = new WriteBufferFromHTTPServerResponse(response, http_compress, http_compression_method);
+	used_output.out = new WriteBufferFromHTTPServerResponse(response, http_response_compress, http_response_compression_method);
 
 	/** Клиент может указать compress в query string.
 	  * В этом случае, результат сжимается несовместимым алгоритмом для внутреннего использования и этот факт не отражается в HTTP заголовках.
@@ -105,10 +108,43 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	context.setCurrentQueryId(query_id);
 
 	SharedPtr<ReadBuffer> in_param = new ReadBufferFromString(query_param);
-	SharedPtr<ReadBuffer> in_post = new ReadBufferFromIStream(istr);
+
+	/// Данные POST-а могут быть сжаты алгоритмом, указанным в Content-Encoding заголовке.
+	String http_request_compression_method_str = request.get("Content-Encoding", "");
+	bool http_request_decompress = false;
+	Poco::InflatingStreamBuf::StreamType http_request_compression_method {};
+
+	if (!http_request_compression_method_str.empty())
+	{
+		if (http_request_compression_method_str == "gzip")
+		{
+			http_request_decompress = true;
+			http_request_compression_method = Poco::InflatingStreamBuf::STREAM_GZIP;
+		}
+		else if (http_request_compression_method_str == "deflate")
+		{
+			http_request_decompress = true;
+			http_request_compression_method = Poco::InflatingStreamBuf::STREAM_ZLIB;
+		}
+		else
+			throw Exception("Unknown Content-Encoding of HTTP request: " + http_request_compression_method_str,
+				ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+	}
+
+	std::experimental::optional<Poco::InflatingInputStream> decompressing_stream;
+	SharedPtr<ReadBuffer> in_post;
+
+	if (http_request_decompress)
+	{
+		decompressing_stream.emplace(istr, http_request_compression_method);
+		in_post = new ReadBufferFromIStream(decompressing_stream.value());
+	}
+	else
+		in_post = new ReadBufferFromIStream(istr);
+
+	/// Также данные могут быть сжаты несовместимым алгоритмом для внутреннего использования - это определяется параметром query_string.
 	SharedPtr<ReadBuffer> in_post_maybe_compressed;
 
-	/// Если указано decompress, то будем разжимать то, что передано POST-ом.
 	if (parse<bool>(params.get("decompress", "0")))
 		in_post_maybe_compressed = new CompressedReadBuffer(*in_post);
 	else
@@ -116,6 +152,7 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 	SharedPtr<ReadBuffer> in;
 
+	/// Поддержка "внешних данных для обработки запроса".
 	if (0 == strncmp(request.getContentType().data(), "multipart/form-data", strlen("multipart/form-data")))
 	{
 		in = in_param;
@@ -123,7 +160,7 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 		params.load(request, istr, handler);
 
-		/// Удаляем уже нененужные параметры из хранилища, чтобы впоследствии не перепутать их с натройками контекста и параметрами запроса.
+		/// Удаляем уже нененужные параметры из хранилища, чтобы впоследствии не перепутать их с наcтройками контекста и параметрами запроса.
 		for (const auto & it : handler.names)
 		{
 			params.erase(it + "_format");
