@@ -30,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int READONLY;
+	extern const int UNKNOWN_COMPRESSION_METHOD;
 }
 
 
@@ -39,9 +40,6 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 	HTMLForm params(request);
 	std::istream & istr = request.stream();
-
-	/// Если метод GET, то это эквивалентно выставлению настройки readonly.
-	bool readonly = request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET;
 
 	BlockInputStreamPtr query_plan;
 
@@ -171,7 +169,29 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	else
 		in = new ConcatReadBuffer(*in_param, *in_post_maybe_compressed);
 
-	/// Настройки могут быть переопределены в запросе.
+	/** Настройки могут быть переопределены в запросе.
+	  * Некоторые параметры (database, default_format, и все что использовались выше),
+	  *  не относятся к обычным настройкам (Settings).
+	  *
+	  * Среди настроек есть также readonly.
+	  * readonly = 0 - можно выполнять любые запросы и изменять любые настройки
+	  * readonly = 1 - можно выполнять только запросы на чтение, нельзя изменять настройки
+	  * readonly = 2 - можно выполнять только запросы на чтение, можно изменять настройки кроме настройки readonly
+	  *
+	  * Заметим, что в запросе, если до этого readonly было равно 0,
+	  *  пользователь может изменить любые настройки и одновременно выставить readonly в другое значение.
+	  */
+	auto & limits = context.getSettingsRef().limits;
+
+	/// Если метод GET, то это эквивалентно настройке readonly, выставленной в ненулевое значение.
+	if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
+	{
+		if (limits.readonly == 0)
+			limits.readonly = 2;
+	}
+
+	auto readonly_before_query = limits.readonly;
+
 	for (Poco::Net::NameValueCollection::ConstIterator it = params.begin(); it != params.end(); ++it)
 	{
 		if (it->first == "database")
@@ -182,10 +202,6 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 		{
 			context.setDefaultFormat(it->second);
 		}
-		else if (readonly && it->first == "readonly")
-		{
-			throw Exception("Setting 'readonly' cannot be overrided in readonly mode", ErrorCodes::READONLY);
-		}
 		else if (it->first == "query"
 			|| it->first == "compress"
 			|| it->first == "decompress"
@@ -195,12 +211,19 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 			|| it->first == "query_id")
 		{
 		}
-		else	/// Все неизвестные параметры запроса рассматриваются, как настройки.
-			context.setSetting(it->first, it->second);
-	}
+		else
+		{
+			/// Все остальные параметры запроса рассматриваются, как настройки.
 
-	if (readonly)
-		context.getSettingsRef().limits.readonly = true;
+			if (readonly_before_query == 1)
+				throw Exception("Cannot override setting (" + it->first + ") in readonly mode", ErrorCodes::READONLY);
+
+			if (readonly_before_query && it->first == "readonly")
+				throw Exception("Setting 'readonly' cannot be overrided in readonly mode", ErrorCodes::READONLY);
+
+			context.setSetting(it->first, it->second);
+		}
+	}
 
 	if (http_response_compress)
 		used_output.out->setCompressionLevel(context.getSettingsRef().http_zlib_compression_level);
