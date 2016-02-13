@@ -305,6 +305,8 @@ add_library (dbms
 	include/DB/Interpreters/LogicalExpressionsOptimizer.h
 	include/DB/Interpreters/InterserverIOHandler.h
 	include/DB/Interpreters/evaluateMissingDefaults.h
+	include/DB/Interpreters/evaluateConstantExpression.h
+	include/DB/Interpreters/convertFieldToType.h
 	include/DB/Interpreters/ExpressionActions.h
 	include/DB/Interpreters/InterpreterRenameQuery.h
 	include/DB/Interpreters/Join.h
@@ -745,6 +747,8 @@ add_library (dbms
 	src/Interpreters/loadMetadata.cpp
 	src/Interpreters/sortBlock.cpp
 	src/Interpreters/evaluateMissingDefaults.cpp
+	src/Interpreters/evaluateConstantExpression.cpp
+	src/Interpreters/convertFieldToType.cpp
 	src/Interpreters/reinterpretAsIdentifier.cpp
 	src/Interpreters/Set.cpp
 	src/Interpreters/Join.cpp

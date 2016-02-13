@@ -8,21 +8,15 @@
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 
+#include <DB/DataTypes/DataTypeArray.h>
+
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTLiteral.h>
 
 #include <DB/Interpreters/Set.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Interpreters/ExpressionActions.h>
-
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/DataTypes/DataTypeDate.h>
-#include <DB/DataTypes/DataTypeDateTime.h>
-#include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/Interpreters/convertFieldToType.h>
+#include <DB/Interpreters/evaluateConstantExpression.h>
 
 
 namespace DB
@@ -34,7 +28,6 @@ namespace ErrorCodes
 	extern const int LOGICAL_ERROR;
 	extern const int SET_SIZE_LIMIT_EXCEEDED;
 	extern const int TYPE_MISMATCH;
-	extern const int BAD_ARGUMENTS;
 	extern const int INCORRECT_ELEMENT_OF_SET;
 	extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
@@ -244,166 +237,12 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 }
 
 
-/** Проверка попадания Field from, имеющим тип From в диапазон значений типа To.
-  * From и To - числовые типы. Могут быть типами с плавающей запятой.
-  * From - это одно из UInt64, Int64, Float64,
-  *  тогда как To может быть также 8, 16, 32 битным.
-  *
-  * Если попадает в диапазон, то from конвертируется в Field ближайшего к To типа.
-  * Если не попадает - возвращается Field(Null).
-  */
-
-template <typename From, typename To>
-static Field convertNumericTypeImpl(const Field & from)
-{
-	From value = from.get<From>();
-
-	if (static_cast<long double>(value) != static_cast<long double>(To(value)))
-		return {};
-
-	return Field(typename NearestFieldType<To>::Type(value));
-}
-
-template <typename To>
-static Field convertNumericType(const Field & from, const IDataType & type)
-{
-	if (from.getType() == Field::Types::UInt64)
-		return convertNumericTypeImpl<UInt64, To>(from);
-	if (from.getType() == Field::Types::Int64)
-		return convertNumericTypeImpl<Int64, To>(from);
-	if (from.getType() == Field::Types::Float64)
-		return convertNumericTypeImpl<Float64, To>(from);
-
-	throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
-		+ Field::Types::toString(from.getType()) + " at right", ErrorCodes::TYPE_MISMATCH);
-}
-
-
-/** Чтобы корректно работали выражения вида 1.0 IN (1) или чтобы 1 IN (1, 2.0, 2.5, -1) работало так же, как 1 IN (1, 2).
-  * Проверяет совместимость типов, проверяет попадание значений в диапазон допустимых значений типа, делает преобразование типа.
-  * Если значение не попадает в диапазон - возвращает Null.
-  */
-static Field convertToType(const Field & src, const IDataType & type)
-{
-	if (type.isNumeric())
-	{
-		if (typeid_cast<const DataTypeUInt8 *>(&type))		return convertNumericType<UInt8>(src, type);
-		if (typeid_cast<const DataTypeUInt16 *>(&type))		return convertNumericType<UInt16>(src, type);
-		if (typeid_cast<const DataTypeUInt32 *>(&type))		return convertNumericType<UInt32>(src, type);
-		if (typeid_cast<const DataTypeUInt64 *>(&type))		return convertNumericType<UInt64>(src, type);
-		if (typeid_cast<const DataTypeInt8 *>(&type))		return convertNumericType<Int8>(src, type);
-		if (typeid_cast<const DataTypeInt16 *>(&type))		return convertNumericType<Int16>(src, type);
-		if (typeid_cast<const DataTypeInt32 *>(&type))		return convertNumericType<Int32>(src, type);
-		if (typeid_cast<const DataTypeInt64 *>(&type))		return convertNumericType<Int64>(src, type);
-		if (typeid_cast<const DataTypeFloat32 *>(&type))	return convertNumericType<Float32>(src, type);
-		if (typeid_cast<const DataTypeFloat64 *>(&type))	return convertNumericType<Float64>(src, type);
-
-		const bool is_date = typeid_cast<const DataTypeDate *>(&type);
-		bool is_datetime = false;
-		bool is_enum8 = false;
-		bool is_enum16 = false;
-
-		if (!is_date)
-			if (!(is_datetime = typeid_cast<const DataTypeDateTime *>(&type)))
-				if (!(is_enum8 = typeid_cast<const DataTypeEnum8 *>(&type)))
-					if (!(is_enum16 = typeid_cast<const DataTypeEnum16 *>(&type)))
-						throw Exception{
-							"Logical error: unknown numeric type " + type.getName(),
-							ErrorCodes::LOGICAL_ERROR
-						};
-
-		const auto is_enum = is_enum8 || is_enum16;
-
-		/// Numeric values for Enums should not be used directly in IN section
-		if (src.getType() == Field::Types::UInt64 && !is_enum)
-			return src;
-
-		if (src.getType() == Field::Types::String)
-		{
-			/// Возможность сравнивать даты и даты-с-временем со строкой.
-			const String & str = src.get<const String &>();
-			ReadBufferFromString in(str);
-
-			if (is_date)
-			{
-				DayNum_t date{};
-				readDateText(date, in);
-				if (!in.eof())
-					throw Exception("String is too long for Date: " + str);
-
-				return Field(UInt64(date));
-			}
-			else if (is_datetime)
-			{
-				time_t date_time{};
-				readDateTimeText(date_time, in);
-				if (!in.eof())
-					throw Exception("String is too long for DateTime: " + str);
-
-				return Field(UInt64(date_time));
-			}
-			else if (is_enum8)
-				return Field(UInt64(static_cast<const DataTypeEnum8 &>(type).getValue(str)));
-			else if (is_enum16)
-				return Field(UInt64(static_cast<const DataTypeEnum16 &>(type).getValue(str)));
-		}
-
-		throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
-			+ Field::Types::toString(src.getType()) + " at right", ErrorCodes::TYPE_MISMATCH);
-	}
-	else
-	{
-		if (src.getType() == Field::Types::UInt64
-			|| src.getType() == Field::Types::Int64
-			|| src.getType() == Field::Types::Float64
-			|| src.getType() == Field::Types::Null
-			|| (src.getType() == Field::Types::String
-				&& !typeid_cast<const DataTypeString *>(&type)
-				&& !typeid_cast<const DataTypeFixedString *>(&type))
-			|| (src.getType() == Field::Types::Array
-				&& !typeid_cast<const DataTypeArray *>(&type)))
-			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
-				+ Field::Types::toString(src.getType()) + " at right", ErrorCodes::TYPE_MISMATCH);
-	}
-
-	return src;
-}
-
-
-/** Выполнить константное выражение (для элемента множества в IN). Весьма неоптимально. */
-static Field evaluateConstantExpression(ASTPtr & node, const Context & context)
-{
-	ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(
-		node, context, nullptr, NamesAndTypesList{{ "_dummy", new DataTypeUInt8 }}).getConstActions();
-
-	/// В блоке должен быть хотя бы один столбец, чтобы у него было известно число строк.
-	Block block_with_constants{{ new ColumnConstUInt8(1, 0), new DataTypeUInt8, "_dummy" }};
-
-	expr_for_constant_folding->execute(block_with_constants);
-
-	if (!block_with_constants || block_with_constants.rows() == 0)
-		throw Exception("Logical error: empty block after evaluation constant expression for IN", ErrorCodes::LOGICAL_ERROR);
-
-	String name = node->getColumnName();
-
-	if (!block_with_constants.has(name))
-		throw Exception("Element of set in IN is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
-
-	const IColumn & result_column = *block_with_constants.getByName(name).column;
-
-	if (!result_column.isConst())
-		throw Exception("Element of set in IN is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
-
-	return result_column[0];
-}
-
-
 static Field extractValueFromNode(ASTPtr & node, const IDataType & type, const Context & context)
 {
 	if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(node.get()))
-		return convertToType(lit->value, type);
+		return convertFieldToType(lit->value, type);
 	else if (typeid_cast<ASTFunction *>(node.get()))
-		return convertToType(evaluateConstantExpression(node, context), type);
+		return convertFieldToType(evaluateConstantExpression(node, context), type);
 	else
 		throw Exception("Incorrect element of set. Must be literal or constant expression.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 }

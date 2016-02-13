@@ -36,7 +36,7 @@ namespace ErrorCodes
 
 
 BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf,
-	const Block & sample, size_t max_block_size) const
+	const Block & sample, const Context & context, size_t max_block_size) const
 {
 	if (name == "Native")
 		return new NativeBlockInputStream(buf);
@@ -49,7 +49,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 	else if (name == "TabSeparatedWithNamesAndTypes")
 		return new BlockInputStreamFromRowInputStream(new TabSeparatedRowInputStream(buf, sample, true, true), sample, max_block_size);
 	else if (name == "Values")
-		return new BlockInputStreamFromRowInputStream(new ValuesRowInputStream(buf, sample), sample, max_block_size);
+		return new BlockInputStreamFromRowInputStream(new ValuesRowInputStream(buf, sample, context), sample, max_block_size);
 	else if (name == "CSV")
 		return new BlockInputStreamFromRowInputStream(new CSVRowInputStream(buf, sample, ','), sample, max_block_size);
 	else if (name == "CSVWithNames")
@@ -77,7 +77,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 
 
 BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer & buf,
-	const Block & sample) const
+	const Block & sample, const Context & context) const
 {
 	if (name == "Native")
 		return new NativeBlockOutputStream(buf);

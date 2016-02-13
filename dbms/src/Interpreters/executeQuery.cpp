@@ -4,7 +4,6 @@
 #include <DB/IO/ConcatReadBuffer.h>
 
 #include <DB/DataStreams/BlockIO.h>
-#include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
@@ -392,7 +391,7 @@ void executeQuery(
 			ConcatReadBuffer data_istr(buffers);
 
 			BlockInputStreamPtr in{
-				context.getFormatFactory().getInput(
+				context.getInputFormat(
 					format, data_istr, streams.out_sample, context.getSettings().max_insert_block_size)};
 
 			copyData(*in, *streams.out);
@@ -406,7 +405,7 @@ void executeQuery(
 				? typeid_cast<const ASTIdentifier &>(*ast_query_with_output->getFormat()).name
 				: context.getDefaultFormat();
 
-			BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, ostr, streams.in_sample);
+			BlockOutputStreamPtr out = context.getOutputFormat(format_name, ostr, streams.in_sample);
 
 			if (set_content_type)
 				set_content_type(out->getContentType());

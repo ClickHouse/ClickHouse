@@ -14,7 +14,6 @@
 #include <DB/DataStreams/FilterBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/ForkBlockInputStreams.h>
-#include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
@@ -93,13 +92,12 @@ int main(int argc, char ** argv)
 		in2 = new LimitBlockInputStream(in2, 20, 5);
 
 		Block out_sample = expression->getSampleBlock();
-		FormatFactory format_factory;
 
 		WriteBufferFromOStream ob1(std::cout);
 		WriteBufferFromOStream ob2(std::cerr);
 
-		BlockOutputStreamPtr out1 = format_factory.getOutput("TabSeparated", ob1, out_sample);
-		BlockOutputStreamPtr out2 = format_factory.getOutput("TabSeparated", ob2, out_sample);
+		BlockOutputStreamPtr out1 = context.getOutputFormat("TabSeparated", ob1, out_sample);
+		BlockOutputStreamPtr out2 = context.getOutputFormat("TabSeparated", ob2, out_sample);
 
 		std::thread thr1(std::bind(thread1, in1, out1, std::ref(ob1)));
 		std::thread thr2(std::bind(thread2, in2, out2, std::ref(ob2)));

@@ -3,7 +3,6 @@
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
-#include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/IO/copyData.h>
@@ -60,7 +59,7 @@ public:
 	{
 		initReadBuffer();
 		initSampleBlock(context);
-		ExternalTableData res = std::make_pair(new AsynchronousBlockInputStream(context.getFormatFactory().getInput(
+		ExternalTableData res = std::make_pair(new AsynchronousBlockInputStream(context.getInputFormat(
 			format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE)), name);
 		return res;
 	}

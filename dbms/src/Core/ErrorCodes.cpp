@@ -324,6 +324,7 @@ namespace ErrorCodes
 	extern const int INVALID_CONFIG_PARAMETER = 318;
 	extern const int UNKNOWN_STATUS_OF_INSERT = 319;
 	extern const int DUPLICATE_SHARD_PATHS = 320;
+	extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE = 321;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;

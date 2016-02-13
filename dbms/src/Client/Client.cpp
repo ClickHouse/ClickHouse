@@ -527,6 +527,9 @@ private:
 			{
 				const char * pos = begin;
 				ASTPtr ast = parseQuery(pos, end);
+				if (!ast)
+					return true;
+
 				ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*ast);
 
 				if (insert && insert->data)
@@ -753,7 +756,7 @@ private:
 			if (!insert->format.empty())
 				current_format = insert->format;
 
-		BlockInputStreamPtr block_input = context.getFormatFactory().getInput(
+		BlockInputStreamPtr block_input = context.getInputFormat(
 			current_format, buf, sample, insert_format_max_block_size);
 
 		BlockInputStreamPtr async_block_input = new AsynchronousBlockInputStream(block_input);
@@ -911,7 +914,7 @@ private:
 			if (has_vertical_output_suffix)
 				current_format = "Vertical";
 
-			block_std_out = context.getFormatFactory().getOutput(current_format, std_out, block);
+			block_std_out = context.getOutputFormat(current_format, std_out, block);
 			block_std_out->writePrefix();
 		}
 	}

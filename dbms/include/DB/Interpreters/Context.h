@@ -25,7 +25,6 @@ class ContextShared;
 class QuotaForIntervals;
 class TableFunctionFactory;
 class AggregateFunctionFactory;
-class FormatFactory;
 class Dictionaries;
 class ExternalDictionaries;
 class InterserverIOHandler;
@@ -186,11 +185,14 @@ public:
 
 	const TableFunctionFactory & getTableFunctionFactory() const;
 	const AggregateFunctionFactory & getAggregateFunctionFactory() const;
-	const FormatFactory & getFormatFactory() const;
 	const Dictionaries & getDictionaries() const;
 	const ExternalDictionaries & getExternalDictionaries() const;
 	void tryCreateDictionaries() const;
 	void tryCreateExternalDictionaries() const;
+
+	/// Форматы ввода-вывода.
+	BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, size_t max_block_size) const;
+	BlockOutputStreamPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
 
 	InterserverIOHandler & getInterserverIOHandler();
 

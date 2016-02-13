@@ -8,7 +8,6 @@
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/executeQuery.h>
 
-#include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/glueBlockInputStreams.h>
 
 
@@ -64,8 +63,8 @@ int main(int argc, char ** argv)
 
 		WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
 
-		BlockOutputStreamPtr out1 = context.getFormatFactory().getOutput("TabSeparated", wb, io1.in_sample);
-		BlockOutputStreamPtr out2 = context.getFormatFactory().getOutput("TabSeparated", wb, io2.in_sample);
+		BlockOutputStreamPtr out1 = context.getOutputFormat("TabSeparated", wb, io1.in_sample);
+		BlockOutputStreamPtr out2 = context.getOutputFormat("TabSeparated", wb, io2.in_sample);
 
 		BlockInputStreams inputs;
 		inputs.push_back(io1.in);

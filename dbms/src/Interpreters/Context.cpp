@@ -177,7 +177,6 @@ Context::~Context() = default;
 
 const TableFunctionFactory & Context::getTableFunctionFactory() const			{ return shared->table_function_factory; }
 const AggregateFunctionFactory & Context::getAggregateFunctionFactory() const	{ return shared->aggregate_function_factory; }
-const FormatFactory & Context::getFormatFactory() const							{ return shared->format_factory; }
 InterserverIOHandler & Context::getInterserverIOHandler()						{ return shared->interserver_io_handler; }
 Poco::Mutex & Context::getMutex() const 										{ return shared->mutex; }
 const Databases & Context::getDatabases() const 								{ return shared->databases; }
@@ -981,6 +980,17 @@ const MergeTreeSettings & Context::getMergeTreeSettings()
 	}
 
 	return *shared->merge_tree_settings;
+}
+
+
+BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, size_t max_block_size) const
+{
+	return shared->format_factory.getInput(name, buf, sample, *this, max_block_size);
+}
+
+BlockOutputStreamPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
+{
+	return shared->format_factory.getOutput(name, buf, sample, *this);
 }
 
 

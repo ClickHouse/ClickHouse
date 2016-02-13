@@ -10,8 +10,8 @@
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
 #include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
-#include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
+#include <DB/Interpreters/Context.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
@@ -80,9 +80,9 @@ int main(int argc, char ** argv)
 		//CollapsingSortedBlockInputStream collapsed(inputs, descr, "Sign", 1048576);
 		CollapsingFinalBlockInputStream collapsed(inputs, descr, "Sign");
 
-		FormatFactory formats;
+		Context context;
 		WriteBufferFromFileDescriptor out_buf(STDERR_FILENO);
-		BlockOutputStreamPtr output = formats.getOutput("TabSeparated", out_buf, block1);
+		BlockOutputStreamPtr output = context.getOutputFormat("TabSeparated", out_buf, block1);
 
 		copyData(collapsed, *output);
 	}

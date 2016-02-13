@@ -5,7 +5,6 @@
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/OwningBufferBlockInputStream.h>
 #include <DB/IO/ReadBufferFromFile.h>
-#include <DB/DataStreams/FormatFactory.h>
 #include <Poco/Timestamp.h>
 #include <Poco/File.h>
 
@@ -32,7 +31,7 @@ public:
 	BlockInputStreamPtr loadAll() override
 	{
 		auto in_ptr = std::make_unique<ReadBufferFromFile>(filename);
-		auto stream = context.getFormatFactory().getInput(
+		auto stream = context.getInputFormat(
 			format, *in_ptr, sample_block, max_block_size);
 		last_modification = getLastModification();
 

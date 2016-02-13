@@ -16,7 +16,6 @@
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataStreams/CreatingSetsBlockInputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
-#include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>

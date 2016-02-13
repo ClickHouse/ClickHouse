@@ -5,7 +5,6 @@
 #include <DB/DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DB/DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DB/DataStreams/NullAndDoCopyBlockInputStream.h>
-#include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTInsertQuery.h>
