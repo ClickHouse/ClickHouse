@@ -125,6 +125,12 @@ void DataTypeFixedString::serializeTextJSON(const Field & field, WriteBuffer & o
 }
 
 
+void DataTypeFixedString::serializeTextXML(const Field & field, WriteBuffer & ostr) const
+{
+	writeXMLString(get<const String &>(field), ostr);
+}
+
+
 void DataTypeFixedString::serializeTextCSV(const Field & field, WriteBuffer & ostr) const
 {
 	writeCSV(get<const String &>(field), ostr);

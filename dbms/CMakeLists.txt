@@ -211,6 +211,7 @@ add_library (dbms
 	include/DB/DataStreams/RemoteBlockOutputStream.h
 	include/DB/DataStreams/MergingSortedBlockInputStream.h
 	include/DB/DataStreams/JSONRowOutputStream.h
+	include/DB/DataStreams/XMLRowOutputStream.h
 	include/DB/DataStreams/TSKVRowOutputStream.h
 	include/DB/DataStreams/ODBCDriverBlockOutputStream.h
 	include/DB/DataStreams/MergeSortingBlockInputStream.h
@@ -676,6 +677,7 @@ add_library (dbms
 	src/DataStreams/FormatFactory.cpp
 	src/DataStreams/copyData.cpp
 	src/DataStreams/JSONRowOutputStream.cpp
+	src/DataStreams/XMLRowOutputStream.cpp
 	src/DataStreams/TSKVRowOutputStream.cpp
 	src/DataStreams/ODBCDriverBlockOutputStream.cpp
 	src/DataStreams/JSONCompactRowOutputStream.cpp
@@ -695,6 +697,8 @@ add_library (dbms
 	src/DataTypes/DataTypeNested.cpp
 	src/DataTypes/DataTypeFactory.cpp
 	src/DataTypes/DataTypeAggregateFunction.cpp
+	src/DataTypes/DataTypeEnum.cpp
+	src/DataTypes/DataTypeTuple.cpp
 	src/DataTypes/FieldToDataType.cpp
 
 	src/Parsers/ASTSelectQuery.cpp

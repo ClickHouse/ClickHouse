@@ -348,6 +348,25 @@ inline void writeBackQuotedString(const String & s, WriteBuffer & buf)
 	writeAnyQuotedString<'`'>(s, buf);
 }
 
+/// То же самое, но обратные кавычки применяются только при наличии символов, не подходящих для идентификатора без обратных кавычек.
+inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
+{
+	if (s.empty() || !((s[0] >= 'a' && s[0] <= 'z') || (s[0] >= 'A' && s[0] <= 'Z') || s[0] == '_'))
+		writeBackQuotedString(s, buf);
+	else
+	{
+		const char * pos = s.data() + 1;
+		const char * end = s.data() + s.size();
+		for (; pos < end; ++pos)
+			if (!((*pos >= 'a' && *pos <= 'z') || (*pos >= 'A' && *pos <= 'Z') || (*pos >= '0' && *pos <= '9') || *pos == '_'))
+				break;
+		if (pos != end)
+			writeBackQuotedString(s, buf);
+		else
+			writeString(s, buf);
+	}
+}
+
 
 /** Выводит строку в для формата CSV.
   * Правила:
@@ -400,23 +419,50 @@ void writeCSVString(const StringRef & s, WriteBuffer & buf)
 }
 
 
-/// То же самое, но обратные кавычки применяются только при наличии символов, не подходящих для идентификатора без обратных кавычек.
-inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
+/// Запись строки в текстовый узел в XML (не в атрибут - иначе нужно больше эскейпинга).
+inline void writeXMLString(const char * begin, const char * end, WriteBuffer & buf)
 {
-	if (s.empty() || !((s[0] >= 'a' && s[0] <= 'z') || (s[0] >= 'A' && s[0] <= 'Z') || s[0] == '_'))
-		writeBackQuotedString(s, buf);
-	else
+	const char * pos = begin;
+	while (true)
 	{
-		const char * pos = s.data() + 1;
-		const char * end = s.data() + s.size();
-		for (; pos < end; ++pos)
-			if (!((*pos >= 'a' && *pos <= 'z') || (*pos >= 'A' && *pos <= 'Z') || (*pos >= '0' && *pos <= '9') || *pos == '_'))
-				break;
-		if (pos != end)
-			writeBackQuotedString(s, buf);
-		else
-			writeString(s, buf);
+		const char * next_pos = strpbrk(pos, "<&");
+
+		if (next_pos == nullptr)
+		{
+			buf.write(pos, end - pos);
+			break;
+		}
+		else if (*next_pos == 0)	/// Нулевой байт до конца строки.
+		{
+			++next_pos;
+			buf.write(pos, next_pos - pos);
+		}
+		else if (*next_pos == '<')
+		{
+			buf.write(pos, next_pos - pos);
+			++next_pos;
+			writeCString("&lt;", buf);
+		}
+		else if (*next_pos == '&')
+		{
+			buf.write(pos, next_pos - pos);
+			++next_pos;
+			writeCString("&amp;", buf);
+		}
+		/// NOTE Возможно, для некоторых парсеров XML нужно ещё эскейпить нулевой байт и некоторые control characters.
+
+		pos = next_pos;
 	}
+}
+
+inline void writeXMLString(const String & s, WriteBuffer & buf)
+{
+	writeXMLString(s.data(), s.data() + s.size(), buf);
+}
+
+inline void writeXMLString(const StringRef & s, WriteBuffer & buf)
+{
+	writeXMLString(s.data, s.data + s.size, buf);
 }
 
 

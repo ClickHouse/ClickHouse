@@ -226,6 +226,21 @@ void DataTypeArray::serializeTextJSON(const Field & field, WriteBuffer & ostr) c
 }
 
 
+void DataTypeArray::serializeTextXML(const Field & field, WriteBuffer & ostr) const
+{
+	const Array & arr = get<const Array &>(field);
+
+	writeCString("<array>", ostr);
+	for (size_t i = 0, size = arr.size(); i < size; ++i)
+	{
+		writeCString("<elem>", ostr);
+		nested->serializeTextXML(arr[i], ostr);
+		writeCString("</elem>", ostr);
+	}
+	writeCString("</array>", ostr);
+}
+
+
 void DataTypeArray::serializeTextCSV(const Field & field, WriteBuffer & ostr) const
 {
 	/// Хорошего способа сериализовать массив в CSV нет. Поэтому сериализуем его в строку, а затем полученную строку запишем в CSV.

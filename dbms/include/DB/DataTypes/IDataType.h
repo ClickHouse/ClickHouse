@@ -73,6 +73,13 @@ public:
 	  */
 	virtual void serializeTextJSON(const Field & field, WriteBuffer & ostr) const = 0;
 
+	/** Текстовая сериализация для подстановки в формат XML.
+	  */
+	virtual void serializeTextXML(const Field & field, WriteBuffer & ostr) const
+	{
+		serializeText(field, ostr);
+	}
+
 	/** Текстовая сериализация для формата CSV.
 	  * delimiter - какого разделителя ожидать при чтении, если строковое значение не в кавычках (сам разделитель не съедается).
 	  */

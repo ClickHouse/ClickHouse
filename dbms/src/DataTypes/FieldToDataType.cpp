@@ -1,6 +1,7 @@
 #include <DB/Core/FieldVisitors.h>
 #include <DB/DataTypes/FieldToDataType.h>
 #include <DB/DataTypes/DataTypeTuple.h>
+#include <ext/size.hpp>
 
 
 namespace DB

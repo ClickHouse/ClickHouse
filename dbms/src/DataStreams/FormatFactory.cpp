@@ -17,6 +17,7 @@
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/JSONRowOutputStream.h>
 #include <DB/DataStreams/JSONCompactRowOutputStream.h>
+#include <DB/DataStreams/XMLRowOutputStream.h>
 #include <DB/DataStreams/TSKVRowOutputStream.h>
 #include <DB/DataStreams/PrettyCompactMonoBlockOutputStream.h>
 #include <DB/DataStreams/ODBCDriverBlockOutputStream.h>
@@ -68,6 +69,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 		|| name == "Null"
 		|| name == "JSON"
 		|| name == "JSONCompact"
+		|| name == "XML"
 		|| name == "TSKV"
 		|| name == "ODBCDriver")
 		throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
@@ -121,6 +123,8 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 		return new BlockOutputStreamFromRowOutputStream(new JSONRowOutputStream(buf, sample));
 	else if (name == "JSONCompact")
 		return new BlockOutputStreamFromRowOutputStream(new JSONCompactRowOutputStream(buf, sample));
+	else if (name == "XML")
+		return new BlockOutputStreamFromRowOutputStream(new XMLRowOutputStream(buf, sample));
 	else if (name == "TSKV")
 		return new BlockOutputStreamFromRowOutputStream(new TSKVRowOutputStream(buf, sample));
 	else if (name == "ODBCDriver")

@@ -142,6 +142,12 @@ void DataTypeAggregateFunction::serializeTextJSON(const Field & field, WriteBuff
 }
 
 
+void DataTypeAggregateFunction::serializeTextXML(const Field & field, WriteBuffer & ostr) const
+{
+	writeXMLString(get<const String &>(field), ostr);
+}
+
+
 void DataTypeAggregateFunction::serializeTextCSV(const Field & field, WriteBuffer & ostr) const
 {
 	writeCSV(get<const String &>(field), ostr);

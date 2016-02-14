@@ -4,6 +4,7 @@
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
+#include <DB/Columns/ColumnTuple.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
@@ -28,11 +29,12 @@ namespace DB
   * - строки и фиксированные строки;
   * - даты;
   * - даты-с-временем;
-  *   внутри каждой группы, но не из разных групп.
+  *   внутри каждой группы, но не из разных групп;
+  * - кортежи (сравнение лексикографическое).
   *
   * Исключение: можно сравнивать дату и дату-с-временем с константной строкой. Пример: EventDate = '2015-01-01'.
   *
-  * TODO Массивы, кортежи.
+  * TODO Массивы.
   */
 
 /** Игнорируем warning о сравнении signed и unsigned.

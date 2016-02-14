@@ -8,15 +8,14 @@
 namespace DB
 {
 
-/** Поток для вывода данных в формате JSON.
+/** Поток для вывода данных в формате XML.
   */
-class JSONRowOutputStream : public IRowOutputStream
+class XMLRowOutputStream : public IRowOutputStream
 {
 public:
-	JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
+	XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
 
 	void writeField(const Field & field) override;
-	void writeFieldDelimiter() override;
 	void writeRowStartDelimiter() override;
 	void writeRowEndDelimiter() override;
 	void writePrefix() override;
@@ -39,7 +38,7 @@ public:
 	void setTotals(const Block & totals_) override { totals = totals_; }
 	void setExtremes(const Block & extremes_) override { extremes = extremes_; }
 
-	String getContentType() const override { return "application/json; charset=UTF-8"; }
+	String getContentType() const override { return "application/xml; charset=UTF-8"; }
 
 protected:
 

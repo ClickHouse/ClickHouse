@@ -10,6 +10,7 @@
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/Columns/ColumnTuple.h>
 
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/Dictionaries.h>

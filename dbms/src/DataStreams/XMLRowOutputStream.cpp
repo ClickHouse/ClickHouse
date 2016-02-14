@@ -1,0 +1,168 @@
+#include <DB/IO/WriteHelpers.h>
+#include <DB/IO/WriteBufferValidUTF8.h>
+#include <DB/DataStreams/XMLRowOutputStream.h>
+
+
+namespace DB
+{
+
+using Poco::SharedPtr;
+
+
+XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
+	: dst_ostr(ostr_)
+{
+	NamesAndTypesList columns(sample_.getColumnsList());
+	fields.assign(columns.begin(), columns.end());
+
+	bool have_non_numeric_columns = false;
+	for (size_t i = 0; i < sample_.columns(); ++i)
+	{
+		if (!sample_.unsafeGetByPosition(i).type->isNumeric())
+		{
+			have_non_numeric_columns = true;
+			break;
+		}
+	}
+
+	if (have_non_numeric_columns)
+	{
+		validating_ostr.reset(new WriteBufferValidUTF8(dst_ostr));
+		ostr = validating_ostr.get();
+	}
+	else
+		ostr = &dst_ostr;
+}
+
+
+void XMLRowOutputStream::writePrefix()
+{
+	writeCString("<?xml version='1.0' encoding='UTF-8' ?>\n", *ostr);
+	writeCString("<result>\n", *ostr);
+	writeCString("\t<meta>\n", *ostr);
+	writeCString("\t\t<columns>\n", *ostr);
+
+	for (size_t i = 0; i < fields.size(); ++i)
+	{
+		writeCString("\t\t\t<column>\n", *ostr);
+
+		writeCString("\t\t\t\t<name>", *ostr);
+		writeXMLString(fields[i].name, *ostr);
+		writeCString("</name>\n", *ostr);
+		writeCString("\t\t\t\t<type>", *ostr);
+		writeXMLString(fields[i].type->getName(), *ostr);
+		writeCString("</type>\n", *ostr);
+
+		writeCString("\t\t\t</column>\n", *ostr);
+	}
+
+	writeCString("\t\t</columns>\n", *ostr);
+	writeCString("\t</meta>\n", *ostr);
+	writeCString("\t<data>\n", *ostr);
+}
+
+
+void XMLRowOutputStream::writeField(const Field & field)
+{
+	writeCString("\t\t\t<field>", *ostr);
+	fields[field_number].type->serializeTextXML(field, *ostr);
+	writeCString("</field>\n", *ostr);
+	++field_number;
+}
+
+
+void XMLRowOutputStream::writeRowStartDelimiter()
+{
+	writeCString("\t\t<row>\n", *ostr);
+}
+
+
+void XMLRowOutputStream::writeRowEndDelimiter()
+{
+	writeCString("\t\t</row>\n", *ostr);
+	field_number = 0;
+	++row_count;
+}
+
+
+void XMLRowOutputStream::writeSuffix()
+{
+	writeCString("\t</data>\n", *ostr);
+
+	writeTotals();
+	writeExtremes();
+
+	writeCString("\t<rows>", *ostr);
+	writeIntText(row_count, *ostr);
+	writeCString("</rows>\n", *ostr);
+
+	writeRowsBeforeLimitAtLeast();
+
+	writeCString("</result>\n", *ostr);
+	ostr->next();
+}
+
+void XMLRowOutputStream::writeRowsBeforeLimitAtLeast()
+{
+	if (applied_limit)
+	{
+		writeCString("\t<rows_before_limit_at_least>", *ostr);
+		writeIntText(rows_before_limit, *ostr);
+		writeCString("</rows_before_limit_at_least>\n", *ostr);
+	}
+}
+
+void XMLRowOutputStream::writeTotals()
+{
+	if (totals)
+	{
+		writeCString("\t<totals>\n", *ostr);
+
+		size_t totals_columns = totals.columns();
+		for (size_t i = 0; i < totals_columns; ++i)
+		{
+			const ColumnWithTypeAndName & column = totals.getByPosition(i);
+
+			writeCString("\t\t<field>", *ostr);
+			column.type->serializeTextXML((*column.column)[0], *ostr);
+			writeCString("</field>\n", *ostr);
+		}
+
+		writeCString("\t</totals>\n", *ostr);
+	}
+}
+
+
+static void writeExtremesElement(const char * title, const Block & extremes, size_t row_num, WriteBuffer & ostr)
+{
+	writeCString("\t\t<", ostr);
+	writeCString(title, ostr);
+	writeCString(">\n", ostr);
+
+	size_t extremes_columns = extremes.columns();
+	for (size_t i = 0; i < extremes_columns; ++i)
+	{
+		const ColumnWithTypeAndName & column = extremes.getByPosition(i);
+
+		writeCString("\t\t\t<field>", ostr);
+		column.type->serializeTextXML((*column.column)[row_num], ostr);
+		writeCString("</field>\n", ostr);
+	}
+
+	writeCString("\t\t</", ostr);
+	writeCString(title, ostr);
+	writeCString(">\n", ostr);
+}
+
+void XMLRowOutputStream::writeExtremes()
+{
+	if (extremes)
+	{
+		writeCString("\t<extremes>\n", *ostr);
+		writeExtremesElement("min", extremes, 0, *ostr);
+		writeExtremesElement("max", extremes, 1, *ostr);
+		writeCString("\t</extremes>\n", *ostr);
+	}
+}
+
+}

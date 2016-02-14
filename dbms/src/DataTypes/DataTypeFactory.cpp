@@ -22,6 +22,8 @@
 #include <DB/Parsers/parseQuery.h>
 #include <DB/DataTypes/DataTypeEnum.h>
 
+#include <ext/map.hpp>
+
 
 namespace DB
 {
@@ -32,6 +34,7 @@ namespace ErrorCodes
 	extern const int UNKNOWN_TYPE;
 	extern const int NESTED_TYPE_TOO_DEEP;
 	extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
+	extern const int SYNTAX_ERROR;
 }
 
 

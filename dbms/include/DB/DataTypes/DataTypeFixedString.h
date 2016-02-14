@@ -57,6 +57,7 @@ public:
 	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const override;
 
 	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override;
+	void serializeTextXML(const Field & field, WriteBuffer & ostr) const override;
 
 	void serializeTextCSV(const Field & field, WriteBuffer & ostr) const override;
 	void deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const override;

@@ -5,6 +5,7 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnTuple.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/DataTypes/DataTypeTuple.h>
 #include <ext/enumerate.hpp>
