@@ -352,7 +352,7 @@ public:
 
 	MergeTreeData::DataPart::Index & getIndex()
 	{
-		return index_vec;
+		return index_columns;
 	}
 
 	/// Сколько засечек уже записано.
@@ -439,10 +439,11 @@ private:
 		{
 			if (storage.mode != MergeTreeData::Unsorted)
 			{
-				for (const auto & primary_column : primary_columns)
+				for (size_t j = 0, size = primary_columns.size(); j < size; ++j)
 				{
-					index_vec.push_back((*primary_column.column)[i]);
-					primary_column.type->serializeBinary(index_vec.back(), *index_stream);
+					Field value = (*primary_columns[j].column.get())[i];
+					index_columns[j].get()->insert(value);
+					primary_columns[j].type.get()->serializeBinary(value, *index_stream);
 				}
 			}
 
@@ -461,7 +462,7 @@ private:
 
 	SharedPtr<WriteBufferFromFile> index_file_stream;
 	SharedPtr<HashingWriteBuffer> index_stream;
-	MergeTreeData::DataPart::Index index_vec;
+	MergeTreeData::DataPart::Index index_columns;
 };
 
 typedef Poco::SharedPtr<MergedBlockOutputStream> MergedBlockOutputStreamPtr;

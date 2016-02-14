@@ -106,7 +106,7 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
 	size_t shard_no = 0;
 
 	/// Первичный ключ. Всегда загружается в оперативку. Содержит каждое index_granularity значение первичного ключа.
-	using Index = std::vector<Field>;
+	using Index = Columns;
 	Index index;
 
 	/// NOTE Засечки кэшируются в оперативке. См. MarkCache.h.

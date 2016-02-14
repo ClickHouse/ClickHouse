@@ -119,8 +119,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	NamesAndTypesList columns = data.getColumnsList().filter(block.getColumnsList().getNames());
 	MergedBlockOutputStream out(data, part_tmp_path, columns, CompressionMethod::LZ4);
 
-	out.getIndex().reserve(part_size * sort_descr.size());
-
 	out.writePrefix();
 	out.writeWithPermutation(block, perm_ptr);
 	MergeTreeData::DataPart::Checksums checksums = out.writeSuffixAndGetChecksums();

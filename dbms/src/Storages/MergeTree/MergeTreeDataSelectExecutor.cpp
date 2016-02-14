@@ -808,7 +808,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 	MarkRanges res;
 
 	size_t key_size = data.getSortDescription().size();
-	size_t marks_count = index.size() / key_size;
+	size_t marks_count = index.at(0).get()->size();
 
 	/// Если индекс не используется.
 	if (key_condition.alwaysUnknownOrTrue())
@@ -824,6 +824,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 			*/
 		std::vector<MarkRange> ranges_stack;
 		ranges_stack.push_back(MarkRange(0, marks_count));
+
+		/// NOTE Лишнее копирование объектов типа Field для передачи в PKCondition.
+		Row index_left(key_size);
+		Row index_right(key_size);
+
 		while (!ranges_stack.empty())
 		{
 			MarkRange range = ranges_stack.back();
@@ -831,9 +836,24 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
 			bool may_be_true;
 			if (range.end == marks_count)
-				may_be_true = key_condition.mayBeTrueAfter(&index[range.begin * key_size], data.primary_key_data_types);
+			{
+				for (size_t i = 0; i < key_size; ++i)
+				{
+					index_left[i] = (*index[i].get())[range.begin];
+				}
+
+				may_be_true = key_condition.mayBeTrueAfter(&index_left[0], data.primary_key_data_types);
+			}
 			else
-				may_be_true = key_condition.mayBeTrueInRange(&index[range.begin * key_size], &index[range.end * key_size], data.primary_key_data_types);
+			{
+				for (size_t i = 0; i < key_size; ++i)
+				{
+					index_left[i] = (*index[i].get())[range.begin];
+					index_right[i] = (*index[i].get())[range.end];
+				}
+
+				may_be_true = key_condition.mayBeTrueInRange(&index_left[0], &index_right[0], data.primary_key_data_types);
+			}
 
 			if (!may_be_true)
 				continue;

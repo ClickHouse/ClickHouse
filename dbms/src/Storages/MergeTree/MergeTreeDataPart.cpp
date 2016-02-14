@@ -437,7 +437,13 @@ void MergeTreeDataPart::loadIndex()
 
 	if (key_size)
 	{
-		index.resize(key_size * size);
+		index.resize(key_size);
+
+		for (size_t i = 0; i < key_size; ++i)
+		{
+			index[i] = storage.primary_key_data_types[i].get()->createColumn();
+			index[i].get()->reserve(size);
+		}
 
 		String index_path = storage.full_path + name + "/primary.idx";
 		ReadBufferFromFile index_file(index_path,
@@ -445,10 +451,14 @@ void MergeTreeDataPart::loadIndex()
 
 		for (size_t i = 0; i < size; ++i)
 			for (size_t j = 0; j < key_size; ++j)
-				storage.primary_key_data_types[j].get()->deserializeBinary(index[i * key_size + j], index_file);
+				storage.primary_key_data_types[j].get()->deserializeBinary(*index[j].get(), index_file, 1, 0);
+
+		for (size_t i = 0; i < key_size; ++i)
+			if (index[i].get()->size() != size)
+				throw Exception("Cannot read all data from index file " + index_path, ErrorCodes::CANNOT_READ_ALL_DATA);
 
 		if (!index_file.eof())
-			throw Exception("index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
+			throw Exception("Index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
 	}
 
 	size_in_bytes = calcTotalSize(storage.full_path + name + "/");
