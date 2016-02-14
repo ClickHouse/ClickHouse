@@ -14,15 +14,37 @@ XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample
 {
 	NamesAndTypesList columns(sample_.getColumnsList());
 	fields.assign(columns.begin(), columns.end());
+	field_tag_names.resize(sample_.columns());
 
 	bool have_non_numeric_columns = false;
 	for (size_t i = 0; i < sample_.columns(); ++i)
 	{
 		if (!sample_.unsafeGetByPosition(i).type->isNumeric())
-		{
 			have_non_numeric_columns = true;
-			break;
+
+		/// В качестве имён элементов будем использовать имя столбца, если оно имеет допустимый вид, или "field", иначе.
+		/// Условие, приведённое ниже, более строгое, чем того требует стандарт XML.
+		bool is_column_name_suitable = true;
+		const char * begin = fields[i].name.data();
+		const char * end = begin + fields[i].name.size();
+		for (const char * pos = begin; pos != end; ++pos)
+		{
+			char c = *pos;
+			if (!( (c >= 'a' && c <= 'z')
+				|| (c >= 'A' && c <= 'Z')
+				|| (pos != begin && c >= '0' && c <= '9')
+				|| c == '_'
+				|| c == '-'
+				|| c == '.'))
+			{
+				is_column_name_suitable = false;
+				break;
+			}
 		}
+
+		field_tag_names[i] = is_column_name_suitable
+			? fields[i].name
+			: "field";
 	}
 
 	if (have_non_numeric_columns)
@@ -64,9 +86,13 @@ void XMLRowOutputStream::writePrefix()
 
 void XMLRowOutputStream::writeField(const Field & field)
 {
-	writeCString("\t\t\t<field>", *ostr);
+	writeCString("\t\t\t<", *ostr);
+	writeString(field_tag_names[field_number], *ostr);
+	writeCString(">", *ostr);
 	fields[field_number].type->serializeTextXML(field, *ostr);
-	writeCString("</field>\n", *ostr);
+	writeCString("</", *ostr);
+	writeString(field_tag_names[field_number], *ostr);
+	writeCString(">\n", *ostr);
 	++field_number;
 }
 
@@ -123,9 +149,13 @@ void XMLRowOutputStream::writeTotals()
 		{
 			const ColumnWithTypeAndName & column = totals.getByPosition(i);
 
-			writeCString("\t\t<field>", *ostr);
+			writeCString("\t\t<", *ostr);
+			writeString(field_tag_names[i], *ostr);
+			writeCString(">", *ostr);
 			column.type->serializeTextXML((*column.column)[0], *ostr);
-			writeCString("</field>\n", *ostr);
+			writeCString("</", *ostr);
+			writeString(field_tag_names[i], *ostr);
+			writeCString(">\n", *ostr);
 		}
 
 		writeCString("\t</totals>\n", *ostr);
@@ -133,7 +163,7 @@ void XMLRowOutputStream::writeTotals()
 }
 
 
-static void writeExtremesElement(const char * title, const Block & extremes, size_t row_num, WriteBuffer & ostr)
+static void writeExtremesElement(const char * title, const Block & extremes, size_t row_num, const Names & field_tag_names, WriteBuffer & ostr)
 {
 	writeCString("\t\t<", ostr);
 	writeCString(title, ostr);
@@ -144,9 +174,13 @@ static void writeExtremesElement(const char * title, const Block & extremes, siz
 	{
 		const ColumnWithTypeAndName & column = extremes.getByPosition(i);
 
-		writeCString("\t\t\t<field>", ostr);
+		writeCString("\t\t\t<", ostr);
+		writeString(field_tag_names[i], ostr);
+		writeCString(">", ostr);
 		column.type->serializeTextXML((*column.column)[row_num], ostr);
-		writeCString("</field>\n", ostr);
+		writeCString("</", ostr);
+		writeString(field_tag_names[i], ostr);
+		writeCString(">\n", ostr);
 	}
 
 	writeCString("\t\t</", ostr);
@@ -159,8 +193,8 @@ void XMLRowOutputStream::writeExtremes()
 	if (extremes)
 	{
 		writeCString("\t<extremes>\n", *ostr);
-		writeExtremesElement("min", extremes, 0, *ostr);
-		writeExtremesElement("max", extremes, 1, *ostr);
+		writeExtremesElement("min", extremes, 0, field_tag_names, *ostr);
+		writeExtremesElement("max", extremes, 1, field_tag_names, *ostr);
 		writeCString("\t</extremes>\n", *ostr);
 	}
 }

@@ -55,6 +55,7 @@ protected:
 	bool applied_limit = false;
 	size_t rows_before_limit = 0;
 	NamesAndTypes fields;
+	Names field_tag_names;
 	Block totals;
 	Block extremes;
 };
