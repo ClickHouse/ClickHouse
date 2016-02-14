@@ -1,5 +1,9 @@
 #include <DB/IO/WriteBufferValidUTF8.h>
 
+#ifdef __x86_64__
+#include <emmintrin.h>
+#endif
+
 
 namespace DB
 {
