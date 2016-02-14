@@ -409,6 +409,13 @@ private:
 				primary_columns[i].column = primary_columns[i].column->permute(*permutation, 0);
 		}
 
+		if (index_columns.empty())
+		{
+			index_columns.resize(sort_description.size());
+			for (size_t i = 0, size = sort_description.size(); i < size; ++i)
+				index_columns[i] = primary_columns[i].column.get()->cloneEmpty();
+		}
+
 		/// Теперь пишем данные.
 		for (const auto & it : columns_list)
 		{
