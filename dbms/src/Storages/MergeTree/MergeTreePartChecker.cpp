@@ -12,6 +12,7 @@
 #include <DB/IO/HashingReadBuffer.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Common/CurrentMetrics.h>
+#include <DB/Common/escapeForFileName.h>
 
 
 namespace DB

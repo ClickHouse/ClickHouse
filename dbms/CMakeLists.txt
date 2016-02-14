@@ -528,6 +528,7 @@ add_library (dbms
 	include/DB/Storages/MergeTree/DataPartsExchange.h
 	include/DB/Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h
 	include/DB/Storages/MergeTree/MergeTreeData.h
+	include/DB/Storages/MergeTree/MergeTreeDataPart.h
 	include/DB/Storages/MergeTree/MergeTreeSettings.h
 	include/DB/Storages/MergeTree/ReshardingJob.h
 	include/DB/Storages/MergeTree/ReshardingWorker.h
@@ -621,6 +622,7 @@ add_library (dbms
 	src/Storages/MergeTree/ActiveDataPartSet.cpp
 	src/Storages/MergeTree/BackgroundProcessingPool.cpp
 	src/Storages/MergeTree/MergeTreeData.cpp
+	src/Storages/MergeTree/MergeTreeDataPart.cpp
 	src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp
 	src/Storages/MergeTree/MergeTreeDataWriter.cpp
 	src/Storages/MergeTree/MergeTreeDataMerger.cpp

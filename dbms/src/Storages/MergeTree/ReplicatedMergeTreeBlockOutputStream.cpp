@@ -3,6 +3,7 @@
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
+#include <DB/Common/SipHash.h>
 #include <DB/IO/Operators.h>
 
 
