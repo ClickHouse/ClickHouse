@@ -51,6 +51,7 @@ StorageMergeTree::StorageMergeTree(
 {
 	data.loadDataParts(false);
 	data.clearOldParts();
+	data.clearOldTemporaryDirectories();
 	increment.set(data.getMaxDataPartIndex());
 
 	/** Если остался старый (не использующийся сейчас) файл increment.txt, то удалим его.
@@ -211,10 +212,11 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 
 bool StorageMergeTree::merge(size_t aio_threshold, bool aggressive, BackgroundProcessingPool::Context * pool_context)
 {
-	auto structure_lock = lockStructure(true);
-
 	/// Удаляем старые куски.
 	data.clearOldParts();
+	data.clearOldTemporaryDirectories();	/// TODO Делать это реже.
+
+	auto structure_lock = lockStructure(true);
 
 	size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 

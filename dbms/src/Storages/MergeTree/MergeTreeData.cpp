@@ -185,6 +185,18 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 			part->loadIndex();
 			part->checkNotBroken(require_part_metadata);
 		}
+		catch (const Exception & e)
+		{
+			/** Если не хватает памяти для загрузки куска - не нужно считать его битым.
+			  * На самом деле, похожих ситуаций может быть ещё много.
+			  * Но это не страшно, так как ниже есть защита от слишком большого количества кусков для удаления.
+			  */
+			if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+				throw;
+
+			broken = true;
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
 		catch (...)
 		{
 			broken = true;
@@ -197,7 +209,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 			if (part->level == 0)
 			{
 				/// Восстановить куски нулевого уровня невозможно.
-				LOG_ERROR(log, "Removing broken part " << full_path + file_name << " because it's impossible to repair.");
+				LOG_ERROR(log, "Considering to remove broken part " << full_path + file_name << " because it's impossible to repair.");
 				broken_parts_to_remove.push_back(part);
 			}
 			else
@@ -226,7 +238,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
 				if (contained_parts >= 2)
 				{
-					LOG_ERROR(log, "Removing broken part " << full_path + file_name << " because it covers at least 2 other parts");
+					LOG_ERROR(log, "Considering to remove broken part " << full_path + file_name << " because it covers at least 2 other parts");
 					broken_parts_to_remove.push_back(part);
 				}
 				else
@@ -302,18 +314,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 }
 
 
-MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
+void MergeTreeData::clearOldTemporaryDirectories()
 {
-	std::unique_lock<std::mutex> lock(all_data_parts_mutex, std::defer_lock);
-	DataPartsVector res;
-
-	/// Если метод уже вызван из другого потока (или если all_data_parts прямо сейчас меняют), то можно ничего не делать.
-	if (!lock.try_lock())
-	{
-		LOG_TRACE(log, "grabOldParts: all_data_parts is locked");
-		return res;
-	}
-
 	/// Удаляем временные директории старше суток.
 	Poco::DirectoryIterator end;
 	for (Poco::DirectoryIterator it{full_path}; it != end; ++it)
@@ -329,23 +331,43 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
 			}
 		}
 	}
+}
+
+
+MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
+{
+	DataPartsVector res;
+
+	/// Если метод уже вызван из другого потока, то можно ничего не делать.
+	std::unique_lock<std::mutex> lock(grab_old_parts_mutex, std::defer_lock);
+	if (!lock.try_lock())
+		return res;
 
 	time_t now = time(0);
-	for (DataParts::iterator it = all_data_parts.begin(); it != all_data_parts.end();)
+
 	{
-		if (it->unique() && /// После этого ref_count не может увеличиться.
-			(*it)->remove_time < now &&
-			now - (*it)->remove_time > settings.old_parts_lifetime)
+		std::lock_guard<std::mutex> lock(all_data_parts_mutex);
+
+		for (DataParts::iterator it = all_data_parts.begin(); it != all_data_parts.end();)
 		{
-			res.push_back(*it);
-			all_data_parts.erase(it++);
+			if (it->unique() && /// После этого ref_count не может увеличиться.
+				(*it)->remove_time < now &&
+				now - (*it)->remove_time > settings.old_parts_lifetime)
+			{
+				res.push_back(*it);
+				all_data_parts.erase(it++);
+			}
+			else
+				++it;
 		}
-		else
-			++it;
 	}
+
+	if (!res.empty())
+		LOG_TRACE(log, "Found " << res.size() << " old parts to remove.");
 
 	return res;
 }
+
 
 void MergeTreeData::addOldParts(const MergeTreeData::DataPartsVector & parts)
 {
@@ -719,9 +741,6 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
 	LOG_TRACE(log, "Renaming " << part->name << ".");
 
-	std::lock_guard<std::mutex> lock(data_parts_mutex);
-	std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
-
 	String old_name = part->name;
 	String old_path = getFullPath() + old_name + "/";
 
@@ -734,81 +753,88 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
 	String new_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
 
-	part->is_temp = false;
-	part->name = new_name;
-	bool duplicate = data_parts.count(part);
-	part->name = old_name;
-	part->is_temp = true;
-
-	if (duplicate)
-		throw Exception("Part " + new_name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
-
-	String new_path = getFullPath() + new_name + "/";
-
-	/// Переименовываем кусок.
-	Poco::File(old_path).renameTo(new_path);
-
-	part->is_temp = false;
-	part->name = new_name;
-
-	bool obsolete = false; /// Покрыт ли part каким-нибудь куском.
-	DataPartsVector res;
-
-	/// Куски, содержащиеся в part, идут в data_parts подряд, задевая место, куда вставился бы сам part.
-	DataParts::iterator it = data_parts.lower_bound(part);
-	/// Пойдем влево.
-	while (it != data_parts.begin())
+	DataPartsVector replaced;
 	{
-		--it;
-		if (!part->contains(**it))
+		std::lock_guard<std::mutex> lock(data_parts_mutex);
+
+		part->is_temp = false;
+		part->name = new_name;
+		bool duplicate = data_parts.count(part);
+		part->name = old_name;
+		part->is_temp = true;
+
+		if (duplicate)
+			throw Exception("Part " + new_name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+
+		String new_path = getFullPath() + new_name + "/";
+
+		/// Переименовываем кусок.
+		Poco::File(old_path).renameTo(new_path);
+
+		part->is_temp = false;
+		part->name = new_name;
+
+		bool obsolete = false; /// Покрыт ли part каким-нибудь куском.
+
+		/// Куски, содержащиеся в part, идут в data_parts подряд, задевая место, куда вставился бы сам part.
+		DataParts::iterator it = data_parts.lower_bound(part);
+		/// Пойдем влево.
+		while (it != data_parts.begin())
 		{
-			if ((*it)->contains(*part))
-				obsolete = true;
-			++it;
-			break;
+			--it;
+			if (!part->contains(**it))
+			{
+				if ((*it)->contains(*part))
+					obsolete = true;
+				++it;
+				break;
+			}
+			replaced.push_back(*it);
+			(*it)->remove_time = time(0);
+			removePartContributionToColumnSizes(*it);
+			data_parts.erase(it++); /// Да, ++, а не --.
 		}
-		res.push_back(*it);
-		(*it)->remove_time = time(0);
-		removePartContributionToColumnSizes(*it);
-		data_parts.erase(it++); /// Да, ++, а не --.
-	}
-	std::reverse(res.begin(), res.end()); /// Нужно получить куски в порядке возрастания.
-	/// Пойдем вправо.
-	while (it != data_parts.end())
-	{
-		if (!part->contains(**it))
+		std::reverse(replaced.begin(), replaced.end()); /// Нужно получить куски в порядке возрастания.
+		/// Пойдем вправо.
+		while (it != data_parts.end())
 		{
-			if ((*it)->name == part->name || (*it)->contains(*part))
-				obsolete = true;
-			break;
+			if (!part->contains(**it))
+			{
+				if ((*it)->name == part->name || (*it)->contains(*part))
+					obsolete = true;
+				break;
+			}
+			replaced.push_back(*it);
+			(*it)->remove_time = time(0);
+			removePartContributionToColumnSizes(*it);
+			data_parts.erase(it++);
 		}
-		res.push_back(*it);
-		(*it)->remove_time = time(0);
-		removePartContributionToColumnSizes(*it);
-		data_parts.erase(it++);
-	}
 
-	if (obsolete)
-	{
-		LOG_WARNING(log, "Obsolete part " << part->name << " added");
-		part->remove_time = time(0);
-	}
-	else
-	{
-		data_parts.insert(part);
-		addPartContributionToColumnSizes(part);
-	}
+		if (obsolete)
+		{
+			LOG_WARNING(log, "Obsolete part " << part->name << " added");
+			part->remove_time = time(0);
+		}
+		else
+		{
+			data_parts.insert(part);
+			addPartContributionToColumnSizes(part);
+		}
 
-	all_data_parts.insert(part);
+		{
+			std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
+			all_data_parts.insert(part);
+		}
+	}
 
 	if (out_transaction)
 	{
 		out_transaction->data = this;
-		out_transaction->parts_to_add_on_rollback = res;
+		out_transaction->parts_to_add_on_rollback = replaced;
 		out_transaction->parts_to_remove_on_rollback = DataPartsVector(1, part);
 	}
 
-	return res;
+	return replaced;
 }
 
 void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout)

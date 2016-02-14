@@ -45,9 +45,13 @@ void ReplicatedMergeTreeCleanupThread::run()
 void ReplicatedMergeTreeCleanupThread::iterate()
 {
 	clearOldParts();
+	storage.data.clearOldTemporaryDirectories();
 
 	if (storage.unreplicated_data)
+	{
 		storage.unreplicated_data->clearOldParts();
+		storage.unreplicated_data->clearOldTemporaryDirectories();
+	}
 
 	if (storage.is_leader_node)
 	{

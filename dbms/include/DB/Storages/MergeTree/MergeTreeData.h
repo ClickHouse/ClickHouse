@@ -347,6 +347,10 @@ public:
 	  */
 	void clearOldParts();
 
+	/** Удалить старые временные директории.
+	  */
+	void clearOldTemporaryDirectories();
+
 	/** После вызова dropAllData больше ничего вызывать нельзя.
 	  * Удаляет директорию с данными и сбрасывает кеши разжатых блоков и засечек.
 	  */
@@ -467,6 +471,9 @@ private:
 	  */
 	DataParts all_data_parts;
 	mutable std::mutex all_data_parts_mutex;
+
+	/// Используется, чтобы не выполнять одновременно функцию grabOldParts.
+	std::mutex grab_old_parts_mutex;
 
 	/** Для каждого шарда множество шардированных кусков.
 	  */
