@@ -639,7 +639,9 @@ void BaseDaemon::initialize(Application& self)
 		struct rlimit rlim;
 		if (getrlimit(RLIMIT_CORE, &rlim))
 			throw Poco::Exception("Cannot getrlimit");
-		rlim.rlim_cur = 1024 * 1024 * 1024;		/// 1 GiB. Если больше - они слишком долго пишутся на диск.
+		/// 1 GiB. Если больше - они слишком долго пишутся на диск.
+		rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
+
 		if (setrlimit(RLIMIT_CORE, &rlim))
 			throw Poco::Exception("Cannot setrlimit");
 	}
