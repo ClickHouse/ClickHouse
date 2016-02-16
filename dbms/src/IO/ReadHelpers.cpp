@@ -171,7 +171,7 @@ void readEscapedStringInto(Vector & s, ReadBuffer & buf)
 {
 	while (!buf.eof())
 	{
-		const char * next_pos = find_first_symbols<'\t','\n','\\'>(buf.position(), buf.buffer().end());
+		const char * next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
 
 		appendToStringOrVector(s, buf.position(), next_pos);
 		buf.position() += next_pos - buf.position();
@@ -206,7 +206,7 @@ static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
 
 	while (!buf.eof())
 	{
-		const char * next_pos = find_first_symbols<'\\',quote>(buf.position(), buf.buffer().end());
+		const char * next_pos = find_first_symbols<'\\', quote>(buf.position(), buf.buffer().end());
 
 		appendToStringOrVector(s, buf.position(), next_pos);
 		buf.position() += next_pos - buf.position();

@@ -32,7 +32,7 @@ namespace test
 		s = "";
 		while (!buf.eof())
 		{
-			const char * next_pos = find_first_symbols<'\t','\n','\\'>(buf.position(), buf.buffer().end());
+			const char * next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
 
 			s.append(buf.position(), next_pos - buf.position());
 			buf.position() += next_pos - buf.position();
