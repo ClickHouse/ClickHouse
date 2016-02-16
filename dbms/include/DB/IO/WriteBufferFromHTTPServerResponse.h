@@ -48,7 +48,7 @@ private:
 	{
 		if (!ostr)
 		{
-			if (compress)
+			if (compress && offset())	/// Пустой ответ сжимать не нужно.
 			{
 				if (compression_method == Poco::DeflatingStreamBuf::STREAM_GZIP)
 					response.set("Content-Encoding", "gzip");
@@ -72,10 +72,10 @@ private:
 
 	void nextImpl()
 	{
-		sendHeaders();
-
 		if (!offset())
 			return;
+
+		sendHeaders();
 
 		ostr->write(working_buffer.begin(), offset());
 		ostr->flush();
