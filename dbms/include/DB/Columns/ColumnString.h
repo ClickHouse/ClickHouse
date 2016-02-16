@@ -124,6 +124,13 @@ public:
 		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + length);
 	}
 
+	void popBack(size_t n) override
+	{
+		size_t nested_n = offsets.back() - offsetAt(offsets.size() - n);
+		chars.resize(chars.size() - nested_n);
+		offsets.resize_assume_reserved(offsets.size() - n);
+	}
+
 	StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
 	{
 		size_t string_size = sizeAt(n);

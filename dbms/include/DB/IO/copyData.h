@@ -2,12 +2,13 @@
 
 #include <atomic>
 
-#include <DB/IO/ReadBuffer.h>
-#include <DB/IO/WriteBuffer.h>
-
 
 namespace DB
 {
+
+class ReadBuffer;
+class WriteBuffer;
+
 
 /** Копирует данные из ReadBuffer в WriteBuffer, все что есть.
   */

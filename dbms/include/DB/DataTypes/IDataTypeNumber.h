@@ -6,6 +6,7 @@
 
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/Columns/ColumnVector.h>
 
 
 namespace DB
@@ -19,51 +20,51 @@ template <typename FType>
 class IDataTypeNumber : public IDataType
 {
 public:
-	typedef FType FieldType;
+	using FieldType = FType;
+	using ColumnType = ColumnVector<FieldType>;
 
 	bool isNumeric() const override { return true; }
-
 	bool behavesAsNumber() const override { return true; }
 
-	void serializeText(const Field & field, WriteBuffer & ostr) const override
+	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		writeText(static_cast<FieldType>(get<typename NearestFieldType<FieldType>::Type>(field)), ostr);
+		writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
 	}
 
-	inline void deserializeText(Field & field, ReadBuffer & istr) const override;
+	static inline void deserializeText(IColumn & column, ReadBuffer & istr);
 
-	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const override
+	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		serializeText(field, ostr);
+		serializeText(column, row_num, ostr);
 	}
 
-	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const override
+	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override
 	{
-		deserializeText(field, istr);
+		deserializeText(column, istr);
 	}
 
-	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const override
+	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		serializeText(field, ostr);
+		serializeText(column, row_num, ostr);
 	}
 
-	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const override
+	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override
 	{
-		deserializeText(field, istr);
+		deserializeText(column, istr);
 	}
 
-	inline void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override;
+	inline void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 
-	void serializeTextCSV(const Field & field, WriteBuffer & ostr) const override
+	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		serializeText(field, ostr);
+		serializeText(column, row_num, ostr);
 	}
 
-	void deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const override
+	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override
 	{
-		typename NearestFieldType<FieldType>::Type x;
+		FieldType x;
 		readCSV(x, istr);
-		field = x;
+		static_cast<ColumnType &>(column).getData().push_back(x);
 	}
 
 	size_t getSizeOfField() const override { return sizeof(FieldType); }
@@ -74,60 +75,62 @@ public:
 	}
 };
 
-template <typename FType> inline void IDataTypeNumber<FType>::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+template <typename FType> inline void IDataTypeNumber<FType>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	serializeText(field, ostr);
+	serializeText(column, row_num, ostr);
 }
 
-template <> inline void IDataTypeNumber<Int64>::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+template <> inline void IDataTypeNumber<Int64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeChar('"', ostr);
-	serializeText(field, ostr);
-	writeChar('"', ostr);
-}
-
-template <> inline void IDataTypeNumber<UInt64>::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
-{
-	writeChar('"', ostr);
-	serializeText(field, ostr);
+	serializeText(column, row_num, ostr);
 	writeChar('"', ostr);
 }
 
-template <> inline void IDataTypeNumber<Float32>::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+template <> inline void IDataTypeNumber<UInt64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (likely(std::isfinite(get<Float64>(field))))
-		serializeText(field, ostr);
+	writeChar('"', ostr);
+	serializeText(column, row_num, ostr);
+	writeChar('"', ostr);
+}
+
+template <> inline void IDataTypeNumber<Float32>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+	auto x = static_cast<const ColumnType &>(column).getData()[row_num];
+	if (likely(std::isfinite(x)))
+		writeText(x, ostr);
 	else
 		writeCString("null", ostr);
 }
 
-template <> inline void IDataTypeNumber<Float64>::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+template <> inline void IDataTypeNumber<Float64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (likely(std::isfinite(get<Float64>(field))))
-		serializeText(field, ostr);
+	auto x = static_cast<const ColumnType &>(column).getData()[row_num];
+	if (likely(std::isfinite(x)))
+		writeText(x, ostr);
 	else
 		writeCString("null", ostr);
 }
 
-template <typename FType> inline void IDataTypeNumber<FType>::deserializeText(Field & field, ReadBuffer & istr) const
+template <typename FType> inline void IDataTypeNumber<FType>::deserializeText(IColumn & column, ReadBuffer & istr)
 {
-	typename NearestFieldType<FieldType>::Type x;
+	FieldType x;
 	readIntTextUnsafe(x, istr);
-	field = x;
+	static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
-template <> inline void IDataTypeNumber<Float64>::deserializeText(Field & field, ReadBuffer & istr) const
+template <> inline void IDataTypeNumber<Float64>::deserializeText(IColumn & column, ReadBuffer & istr)
 {
 	Float64 x;
 	readText(x, istr);
-	field = x;
+	static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
-template <> inline void IDataTypeNumber<Float32>::deserializeText(Field & field, ReadBuffer & istr) const
+template <> inline void IDataTypeNumber<Float32>::deserializeText(IColumn & column, ReadBuffer & istr)
 {
 	Float64 x;
 	readText(x, istr);
-	field = x;
+	static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 

@@ -14,7 +14,6 @@ VerticalRowOutputStream::VerticalRowOutputStream(WriteBuffer & ostr_, const Bloc
 	: ostr(ostr_), sample(sample_), field_number(0), row_number(0)
 {
 	size_t columns = sample.columns();
-	data_types.resize(columns);
 	names.resize(columns);
 
 	typedef std::vector<size_t> Widths_t;
@@ -23,7 +22,6 @@ VerticalRowOutputStream::VerticalRowOutputStream(WriteBuffer & ostr_, const Bloc
 
 	for (size_t i = 0; i < columns; ++i)
 	{
-		data_types[i] = sample.getByPosition(i).type;
 		names[i] = sample.getByPosition(i).name;
 		stringWidthConstant(names[i], name_widths[i]);
 		if (name_widths[i] > max_name_width)
@@ -36,27 +34,27 @@ VerticalRowOutputStream::VerticalRowOutputStream(WriteBuffer & ostr_, const Bloc
 }
 
 
-void VerticalRowOutputStream::writeField(const Field & field)
+void VerticalRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
 	writeEscapedString(names[field_number], ostr);
 	writeCString(": ", ostr);
 	writeString(pads[field_number], ostr);
 
-	writeValue(field);
+	writeValue(column, type, row_num);
 
 	writeChar('\n', ostr);
 	++field_number;
 }
 
 
-void VerticalRowOutputStream::writeValue(const Field & field) const
+void VerticalRowOutputStream::writeValue(const IColumn & column, const IDataType & type, size_t row_num) const
 {
-	data_types[field_number]->serializeTextEscaped(field, ostr);
+	type.serializeTextEscaped(column, row_num, ostr);
 }
 
-void VerticalRawRowOutputStream::writeValue(const Field & field) const
+void VerticalRawRowOutputStream::writeValue(const IColumn & column, const IDataType & type, size_t row_num) const
 {
-	data_types[field_number]->serializeText(field, ostr);
+	type.serializeText(column, row_num, ostr);
 }
 
 

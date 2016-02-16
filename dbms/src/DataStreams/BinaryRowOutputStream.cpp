@@ -4,27 +4,14 @@
 namespace DB
 {
 
-
-BinaryRowOutputStream::BinaryRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
-	: ostr(ostr_), sample(sample_), field_number(0)
+BinaryRowOutputStream::BinaryRowOutputStream(WriteBuffer & ostr_)
+	: ostr(ostr_)
 {
-	size_t columns = sample.columns();
-	data_types.resize(columns);
-	for (size_t i = 0; i < columns; ++i)
-		data_types[i] = sample.getByPosition(i).type;
 }
 
-
-void BinaryRowOutputStream::writeField(const Field & field)
+void BinaryRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-	data_types[field_number]->serializeBinary(field, ostr);
-	++field_number;
-}
-
-
-void BinaryRowOutputStream::writeRowEndDelimiter()
-{
-	field_number = 0;
+	type.serializeBinary(column, row_num, ostr);
 }
 
 }

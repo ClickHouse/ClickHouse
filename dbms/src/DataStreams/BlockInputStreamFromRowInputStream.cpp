@@ -1,13 +1,9 @@
 #include <DB/Common/Exception.h>
-
 #include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
-#include <DB/Columns/ColumnArray.h>
 
 
 namespace DB
 {
-
-using Poco::SharedPtr;
 
 namespace ErrorCodes
 {
@@ -26,7 +22,7 @@ BlockInputStreamFromRowInputStream::BlockInputStreamFromRowInputStream(
 
 Block BlockInputStreamFromRowInputStream::readImpl()
 {
-	Block res;
+	Block res = sample.cloneEmpty();
 
 	try
 	{
@@ -35,20 +31,8 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 			if (total_rows == 0)
 				row_input->readRowBetweenDelimiter();
 
-			Row row;
-			bool has_row = row_input->read(row);
-
-			if (!has_row)
+			if (!row_input->read(res))
 				break;
-
-			if (!res)
-				res = sample.cloneEmpty();
-
-			if (row.size() != sample.columns())
-				throw Exception("Number of columns doesn't match", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
-
-			for (size_t i = 0; i < row.size(); ++i)
-				res.getByPosition(i).column->insert(row[i]);
 		}
 	}
 	catch (Exception & e)
@@ -57,7 +41,10 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 		throw;
 	}
 
-	res.optimizeNestedArraysOffsets();
+	if (res.rowsInFirstColumn() == 0)
+		res.clear();
+	else
+		res.optimizeNestedArraysOffsets();
 
 	return res;
 }

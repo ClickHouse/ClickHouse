@@ -12,15 +12,12 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 
 /** Интерфейс потока для записи данных в БД или в сеть, или в консоль и т. п.
   */
 class IBlockOutputStream : private boost::noncopyable
 {
 public:
-	
 	IBlockOutputStream() {}
 
 	/** Записать блок.

@@ -15,10 +15,9 @@ public:
 	TabSeparatedRawRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_ = false, bool with_types_ = false)
 		: TabSeparatedRowOutputStream(ostr_, sample_, with_names_, with_types_) {}
 
-	void writeField(const Field & field) override
+	void writeField(const IColumn & column, const IDataType & type, size_t row_num) override
 	{
-		data_types[field_number]->serializeText(field, ostr);
-		++field_number;
+		type.serializeText(column, row_num, ostr);
 	}
 };
 

@@ -28,6 +28,7 @@ public:
 	bool isConst() const override { return true; }
 	size_t size() const override { return s; }
 	void insertDefault() override { ++s; }
+	void popBack(size_t n) override { s -= n; }
 	size_t byteSize() const override { return 0; }
 	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override { return 0; }
 

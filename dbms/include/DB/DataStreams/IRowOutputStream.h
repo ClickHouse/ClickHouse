@@ -2,7 +2,6 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <DB/Core/Row.h>
 #include <DB/Core/Block.h>
 
 
@@ -19,10 +18,10 @@ public:
 	  * Есть реализация по умолчанию, которая использует методы для записи одиночных значений и разделителей
 	  * (кроме разделителя между строк (writeRowBetweenDelimiter())).
 	  */
-	virtual void write(const Row & row);
+	virtual void write(const Block & block, size_t row_num);
 
 	/** Записать значение. */
-	virtual void writeField(const Field & field) = 0;
+	virtual void writeField(const IColumn & column, const IDataType & type, size_t row_num) = 0;
 
 	/** Записать разделитель. */
 	virtual void writeFieldDelimiter() {};		/// разделитель между значениями

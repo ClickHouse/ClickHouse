@@ -398,12 +398,11 @@ private:
 			first = false;
 
 			const auto & key_description = (*dict_struct.key)[i];
-			const auto & value = (*key_columns[i])[row];
 
 			/// key_i=value_i
 			writeString(key_description.name, out);
 			writeString("=", out);
-			key_description.type->serializeTextQuoted(value, out);
+			key_description.type->serializeTextQuoted(*key_columns[i], row, out);
 		}
 
 		writeString(")", out);

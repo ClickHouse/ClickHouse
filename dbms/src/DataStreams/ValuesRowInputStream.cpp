@@ -4,6 +4,7 @@
 #include <DB/Parsers/ExpressionListParsers.h>
 #include <DB/DataStreams/ValuesRowInputStream.h>
 #include <DB/Core/FieldVisitors.h>
+#include <DB/Core/Block.h>
 
 
 namespace DB
@@ -22,28 +23,20 @@ namespace ErrorCodes
 }
 
 
-ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Block & sample_, const Context & context_)
-	: istr(istr_), sample(sample_), context(context_)
+ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Context & context_)
+	: istr(istr_), context(context_)
 {
-	size_t columns = sample.columns();
-	data_types.resize(columns);
-	for (size_t i = 0; i < columns; ++i)
-		data_types[i] = sample.getByPosition(i).type;
 }
 
 
-bool ValuesRowInputStream::read(Row & row)
+bool ValuesRowInputStream::read(Block & block)
 {
-	size_t size = data_types.size();
-	row.resize(size);
+	size_t size = block.columns();
 
 	skipWhitespaceIfAny(istr);
 
 	if (istr.eof() || *istr.position() == ';')
-	{
-		row.clear();
 		return false;
-	}
 
 	/** Как правило, это обычный формат для потокового парсинга.
 	  * Но в качестве исключения, поддерживается также обработка произвольных выражений вместо значений.
@@ -60,9 +53,13 @@ bool ValuesRowInputStream::read(Row & row)
 		char * prev_istr_position = istr.position();
 		size_t prev_istr_bytes = istr.count() - istr.offset();
 
+		auto & col = block.unsafeGetByPosition(i);
+
+		bool rollback_on_exception = false;
 		try
 		{
-			data_types[i]->deserializeTextQuoted(row[i], istr);
+			col.type.get()->deserializeTextQuoted(*col.column.get(), istr);
+			rollback_on_exception = true;
 			skipWhitespaceIfAny(istr);
 
 			if (i != size - 1)
@@ -89,6 +86,11 @@ bool ValuesRowInputStream::read(Row & row)
 				if (istr.count() - istr.offset() != prev_istr_bytes)
 					throw;
 
+				if (rollback_on_exception)
+					col.column.get()->popBack(1);
+
+				IDataType & type = *block.getByPosition(i).type;
+
 				IParser::Pos pos = prev_istr_position;
 
 				Expected expected = "";
@@ -96,20 +98,22 @@ bool ValuesRowInputStream::read(Row & row)
 
 				ASTPtr ast;
 				if (!parser.parse(pos, istr.buffer().end(), ast, max_parsed_pos, expected))
-					throw Exception("Cannot parse expression of type " + data_types[i]->getName() + " here: "
+					throw Exception("Cannot parse expression of type " + type.getName() + " here: "
 						+ String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
 						ErrorCodes::SYNTAX_ERROR);
 
 				istr.position() = const_cast<char *>(max_parsed_pos);
 
-				row[i] = convertFieldToType(evaluateConstantExpression(ast, context), *data_types[i]);
+				Field value = convertFieldToType(evaluateConstantExpression(ast, context), type);
 
 				/// TODO После добавления поддержки NULL, добавить сюда проверку на data type is nullable.
-				if (row[i].isNull())
-					throw Exception("Expression returns value " + apply_visitor(FieldVisitorToString(), row[i])
-						+ ", that is out of range of type " + data_types[i]->getName()
+				if (value.isNull())
+					throw Exception("Expression returns value " + apply_visitor(FieldVisitorToString(), value)
+						+ ", that is out of range of type " + type.getName()
 						+ ", at: " + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
 						ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE);
+
+				col.column->insert(value);
 
 				skipWhitespaceIfAny(istr);
 

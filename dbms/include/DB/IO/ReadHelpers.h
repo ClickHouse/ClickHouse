@@ -425,6 +425,29 @@ void readStringUntilEOF(String & s, ReadBuffer & buf);
 void readCSVString(String & s, ReadBuffer & buf, const char delimiter = ',');
 
 
+/// Добавляют прочитанный результат в массив символов.
+template <typename Vector>
+void readStringInto(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
+void readEscapedStringInto(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
+void readQuotedStringInto(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
+void readDoubleQuotedStringInto(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
+void readBackQuotedStringInto(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
+void readStringUntilEOFInto(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
+void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter = ',');
+
+
 /// в формате YYYY-MM-DD
 inline void readDateText(DayNum_t & date, ReadBuffer & buf)
 {

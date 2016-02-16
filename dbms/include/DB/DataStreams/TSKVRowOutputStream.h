@@ -14,10 +14,12 @@ class TSKVRowOutputStream : public TabSeparatedRowOutputStream
 {
 public:
 	TSKVRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
-	void writeField(const Field & field) override;
+	void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+	void writeRowEndDelimiter() override;
 
 protected:
 	NamesAndTypes fields;
+	size_t field_number = 0;
 };
 
 }

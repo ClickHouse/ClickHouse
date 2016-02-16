@@ -32,10 +32,13 @@ public:
 		output->write(block);
 	}
 
-	void flush() override { output->flush(); }
-
-	void writePrefix() override { output->writePrefix(); }
-	void writeSuffix() override { output->writeSuffix(); }
+	void flush() 										override { output->flush(); }
+	void writePrefix() 									override { output->writePrefix(); }
+	void writeSuffix() 									override { output->writeSuffix(); }
+	void setRowsBeforeLimit(size_t rows_before_limit) 	override { output->setRowsBeforeLimit(rows_before_limit); }
+	void setTotals(const Block & totals) 				override { output->setTotals(totals); }
+	void setExtremes(const Block & extremes) 			override { output->setExtremes(extremes); }
+	String getContentType() const 						override { return output->getContentType(); }
 
 private:
 	BlockOutputStreamPtr output;

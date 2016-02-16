@@ -4,6 +4,7 @@
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/ReadBufferFromString.h>
 #include <DB/Storages/ColumnsDescription.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 

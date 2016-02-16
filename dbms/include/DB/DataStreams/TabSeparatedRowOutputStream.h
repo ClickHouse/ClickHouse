@@ -20,7 +20,7 @@ public:
 	  */
 	TabSeparatedRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_ = false, bool with_types_ = false);
 
-	void writeField(const Field & field) override;
+	void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
 	void writeFieldDelimiter() override;
 	void writeRowEndDelimiter() override;
 	void writePrefix() override;
@@ -42,8 +42,6 @@ protected:
 	const Block sample;
 	bool with_names;
 	bool with_types;
-	DataTypes data_types;
-	size_t field_number;
 	Block totals;
 	Block extremes;
 };

@@ -3,8 +3,6 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Field.h>
-#include <DB/IO/ReadBuffer.h>
-#include <DB/IO/WriteBuffer.h>
 #include <DB/Columns/IColumn.h>
 
 
@@ -12,6 +10,10 @@ namespace DB
 {
 
 using Poco::SharedPtr;
+
+class ReadBuffer;
+class WriteBuffer;
+
 
 /** Метаданные типа для хранения (столбца).
   * Содержит методы для сериализации/десериализации.
@@ -32,14 +34,7 @@ public:
 	/// Клонировать
 	virtual SharedPtr<IDataType> clone() const = 0;
 
-	/** Бинарная сериализация - для сохранения на диск / в сеть и т. п.
-	  * Обратите внимание, что присутствует по два вида методов
-	  * - для работы с единичными значениями и целыми столбцами.
-	  */
-	virtual void serializeBinary(const Field & field, WriteBuffer & ostr) const = 0;
-	virtual void deserializeBinary(Field & field, ReadBuffer & istr) const = 0;
-
-	/** Сериализация столбца.
+	/** Бинарная сериализация диапазона значений столбца - для сохранения на диск / в сеть и т. п.
 	  * offset и limit используются, чтобы сериализовать часть столбца.
 	  * limit = 0 - означает - не ограничено.
 	  * offset не должен быть больше размера столбца.
@@ -53,38 +48,52 @@ public:
 	  */
 	virtual void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const = 0;
 
-	/** Текстовая сериализация - для вывода на экран / сохранения в текстовый файл и т. п.
-	  * Без эскейпинга и квотирования.
-	  */
-	virtual void serializeText(const Field & field, WriteBuffer & ostr) const = 0;
-	virtual void deserializeText(Field & field, ReadBuffer & istr) const = 0;
+	/// Сериализация единичных значений.
+
+	/// Для бинарной сериализации есть два варианта. Один вариант работает с Field.
+	virtual void serializeBinary(const Field & field, WriteBuffer & ostr) const = 0;
+	virtual void deserializeBinary(Field & field, ReadBuffer & istr) const = 0;
+
+	/// Все остальные варианты сериализации работают со столбцом, что позволяет избежать создания временного объекта типа Field.
+	/// При этом, столбец не должен быть константным.
+
+	/// Сериализовать одно значение на указанной позиции в столбце.
+	virtual void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+	/// Десериализвать одно значение и вставить его в столбец.
+	/// Если функция кидает исключение при чтении, то столбец будет находиться в таком же состоянии, как до вызова функции.
+	virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
 
 	/** Текстовая сериализация с эскейпингом, но без квотирования.
 	  */
-	virtual void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const = 0;
-	virtual void deserializeTextEscaped(Field & field, ReadBuffer & istr) const = 0;
+	virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+	virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const = 0;
 
 	/** Текстовая сериализация в виде литерала, который может быть вставлен в запрос.
 	  */
-	virtual void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const = 0;
-	virtual void deserializeTextQuoted(Field & field, ReadBuffer & istr) const = 0;
-
-	/** Текстовая сериализация в виде литерала для использования в формате JSON.
-	  */
-	virtual void serializeTextJSON(const Field & field, WriteBuffer & ostr) const = 0;
-
-	/** Текстовая сериализация для подстановки в формат XML.
-	  */
-	virtual void serializeTextXML(const Field & field, WriteBuffer & ostr) const
-	{
-		serializeText(field, ostr);
-	}
+	virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+	virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const = 0;
 
 	/** Текстовая сериализация для формата CSV.
 	  * delimiter - какого разделителя ожидать при чтении, если строковое значение не в кавычках (сам разделитель не съедается).
 	  */
-	virtual void serializeTextCSV(const Field & field, WriteBuffer & ostr) const = 0;
-	virtual void deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const = 0;
+	virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+	virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const = 0;
+
+	/** Текстовая сериализация - для вывода на экран / сохранения в текстовый файл и т. п.
+	  * Без эскейпинга и квотирования.
+	  */
+	virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+
+	/** Текстовая сериализация в виде литерала для использования в формате JSON.
+	  */
+	virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+
+	/** Текстовая сериализация для подстановки в формат XML.
+	  */
+	virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+	{
+		serializeText(column, row_num, ostr);
+	}
 
 	/** Создать пустой столбец соответствующего типа.
 	  */

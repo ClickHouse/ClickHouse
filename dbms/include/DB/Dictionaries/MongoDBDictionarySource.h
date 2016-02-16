@@ -154,7 +154,7 @@ public:
 
 					writeString(idx_key.second.name, out);
 					writeChar(':', out);
-					idx_key.second.type->serializeTextQuoted((*key_columns[idx_key.first])[row], out);
+					idx_key.second.type->serializeTextQuoted(*key_columns[idx_key.first], row, out);
 				}
 
 				writeChar('}', out);

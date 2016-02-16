@@ -15,7 +15,7 @@ class XMLRowOutputStream : public IRowOutputStream
 public:
 	XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
 
-	void writeField(const Field & field) override;
+	void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
 	void writeRowStartDelimiter() override;
 	void writeRowEndDelimiter() override;
 	void writePrefix() override;

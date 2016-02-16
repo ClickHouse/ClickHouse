@@ -1,15 +1,11 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/Columns/IColumn.h>
 #include <DB/DataTypes/IDataType.h>
 
 
 namespace DB
 {
-
-using Poco::SharedPtr;
 
 /** Тип данных для представления столбца вместе с его типом и именем в оперативке.
   */

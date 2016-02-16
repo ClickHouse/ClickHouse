@@ -1,23 +1,23 @@
 #pragma once
 
 #include <boost/noncopyable.hpp>
-
-#include <DB/Core/Row.h>
+#include <Poco/SharedPtr.h>
 
 
 namespace DB
 {
+
+class Block;
 
 /** Интерфейс потока для чтения данных по строкам.
   */
 class IRowInputStream : private boost::noncopyable
 {
 public:
-
-	/** Прочитать следующую строку.
-	  * Если строк больше нет - вернуть пустую строку.
+	/** Прочитать следующую строку и положить её в блок.
+	  * Если строк больше нет - вернуть false.
 	  */
-	virtual bool read(Row & row) = 0;
+	virtual bool read(Block & block) = 0;
 
 	/// Прочитать разделитель
 	virtual void readRowBetweenDelimiter() {};	/// разделитель между строками
@@ -27,6 +27,6 @@ public:
 	virtual ~IRowInputStream() {}
 };
 
-typedef SharedPtr<IRowInputStream> RowInputStreamPtr;
+using RowInputStreamPtr = Poco::SharedPtr<IRowInputStream>;
 
 }

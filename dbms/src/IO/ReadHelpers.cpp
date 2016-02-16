@@ -7,6 +7,7 @@
 #include <mysqlxx/Manip.h>
 
 #include <DB/Core/Defines.h>
+#include <DB/Common/PODArray.h>
 #include <DB/IO/ReadHelpers.h>
 
 
@@ -68,9 +69,26 @@ void assertEOF(ReadBuffer & buf)
 		throwAtAssertionFailed("eof", buf);
 }
 
-void readString(String & s, ReadBuffer & buf)
+
+template <typename T>
+static void appendToStringOrVector(T & s, const char * begin, const char * end);
+
+template <>
+inline void appendToStringOrVector(String & s, const char * begin, const char * end)
 {
-	s.clear();
+	s.append(begin, end - begin);
+}
+
+template <>
+inline void appendToStringOrVector(PODArray<UInt8> & s, const char * begin, const char * end)
+{
+	s.insert(begin, end);
+}
+
+
+template <typename Vector>
+void readStringInto(Vector & s, ReadBuffer & buf)
+{
 	while (!buf.eof())
 	{
 		size_t bytes = 0;
@@ -78,7 +96,31 @@ void readString(String & s, ReadBuffer & buf)
 			if (buf.position()[bytes] == '\t' || buf.position()[bytes] == '\n')
 				break;
 
-		s.append(buf.position(), bytes);
+		appendToStringOrVector(s, buf.position(), buf.position() + bytes);
+		buf.position() += bytes;
+
+		if (buf.hasPendingData())
+			return;
+	}
+}
+
+void readString(String & s, ReadBuffer & buf)
+{
+	s.clear();
+	readStringInto(s, buf);
+}
+
+template void readStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf);
+
+
+template <typename Vector>
+void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
+{
+	while (!buf.eof())
+	{
+		size_t bytes = buf.buffer().end() - buf.position();
+
+		appendToStringOrVector(s, buf.position(), buf.position() + bytes);
 		buf.position() += bytes;
 
 		if (buf.hasPendingData())
@@ -89,17 +131,11 @@ void readString(String & s, ReadBuffer & buf)
 void readStringUntilEOF(String & s, ReadBuffer & buf)
 {
 	s.clear();
-	while (!buf.eof())
-	{
-		size_t bytes = buf.buffer().end() - buf.position();
-
-		s.append(buf.position(), bytes);
-		buf.position() += bytes;
-
-		if (buf.hasPendingData())
-			return;
-	}
+	readStringUntilEOFInto(s, buf);
 }
+
+template void readStringUntilEOFInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf);
+
 
 /** Позволяет найти в куске памяти следующий символ \t, \n или \\.
   * Функция похожа на strpbrk, но со следующими отличиями:
@@ -156,7 +192,8 @@ static inline const char * find_first_tab_lf_or_backslash(const char * begin, co
 /** Распарсить escape-последовательность, которая может быть простой (один символ после бэкслеша) или более сложной (несколько символов).
   * Предполагается, что курсор расположен на символе \
   */
-static void parseComplexEscapeSequence(String & s, ReadBuffer & buf)
+template <typename Vector>
+static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
 {
 	++buf.position();
 	if (buf.eof())
@@ -170,25 +207,25 @@ static void parseComplexEscapeSequence(String & s, ReadBuffer & buf)
 		UInt8 c2;
 		readPODBinary(c1, buf);
 		readPODBinary(c2, buf);
-		s += static_cast<char>(unhex(c1) * 16 + unhex(c2));
+		s.push_back(static_cast<char>(unhex(c1) * 16 + unhex(c2)));
 	}
 	else
 	{
 		/// Обычная escape-последовательность из одного символа.
-		s += parseEscapeSequence(*buf.position());
+		s.push_back(parseEscapeSequence(*buf.position()));
 		++buf.position();
 	}
 }
 
 
-void readEscapedString(DB::String & s, DB::ReadBuffer & buf)
+template <typename Vector>
+void readEscapedStringInto(Vector & s, ReadBuffer & buf)
 {
-	s.clear();
 	while (!buf.eof())
 	{
 		const char * next_pos = find_first_tab_lf_or_backslash(buf.position(), buf.buffer().end());
 
-		s.append(buf.position(), next_pos - buf.position());
+		appendToStringOrVector(s, buf.position(), next_pos);
 		buf.position() += next_pos - buf.position();
 
 		if (!buf.hasPendingData())
@@ -201,6 +238,14 @@ void readEscapedString(DB::String & s, DB::ReadBuffer & buf)
 			parseComplexEscapeSequence(s, buf);
 	}
 }
+
+void readEscapedString(String & s, ReadBuffer & buf)
+{
+	s.clear();
+	readEscapedStringInto(s, buf);
+}
+
+template void readEscapedStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf);
 
 
 template <char quote>
@@ -241,11 +286,9 @@ static inline const char * find_first_quote_or_backslash(const char * begin, con
 }
 
 
-template <char quote>
-static void readAnyQuotedString(String & s, ReadBuffer & buf)
+template <char quote, typename Vector>
+static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
-	s.clear();
-
 	if (buf.eof() || *buf.position() != quote)
 		throw Exception("Cannot parse quoted string: expected opening quote",
 			ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
@@ -255,7 +298,7 @@ static void readAnyQuotedString(String & s, ReadBuffer & buf)
 	{
 		const char * next_pos = find_first_quote_or_backslash<quote>(buf.position(), buf.buffer().end());
 
-		s.append(buf.position(), next_pos - buf.position());
+		appendToStringOrVector(s, buf.position(), next_pos);
 		buf.position() += next_pos - buf.position();
 
 		if (!buf.hasPendingData())
@@ -275,27 +318,53 @@ static void readAnyQuotedString(String & s, ReadBuffer & buf)
 		ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
 }
 
+template <typename Vector>
+void readQuotedStringInto(Vector & s, ReadBuffer & buf)
+{
+	readAnyQuotedStringInto<'\''>(s, buf);
+}
+
+template <typename Vector>
+void readDoubleQuotedStringInto(Vector & s, ReadBuffer & buf)
+{
+	readAnyQuotedStringInto<'"'>(s, buf);
+}
+
+template <typename Vector>
+void readBackQuotedStringInto(Vector & s, ReadBuffer & buf)
+{
+	readAnyQuotedStringInto<'`'>(s, buf);
+}
+
 
 void readQuotedString(String & s, ReadBuffer & buf)
 {
-	readAnyQuotedString<'\''>(s, buf);
+	s.clear();
+	readQuotedStringInto(s, buf);
 }
+
+template void readQuotedStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf)
 {
-	readAnyQuotedString<'"'>(s, buf);
+	s.clear();
+	readDoubleQuotedStringInto(s, buf);
 }
+
+template void readDoubleQuotedStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf);
 
 void readBackQuotedString(String & s, ReadBuffer & buf)
 {
-	readAnyQuotedString<'`'>(s, buf);
+	s.clear();
+	readBackQuotedStringInto(s, buf);
 }
 
+template void readBackQuotedStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf);
 
-void readCSVString(String & s, ReadBuffer & buf, const char delimiter)
+
+template <typename Vector>
+void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter)
 {
-	s.clear();
-
 	if (buf.eof())
 		throwReadAfterEOF();
 
@@ -317,7 +386,7 @@ void readCSVString(String & s, ReadBuffer & buf, const char delimiter)
 			if (nullptr == next_pos)
 				next_pos = buf.buffer().end();
 
-			s.append(buf.position(), next_pos - buf.position());
+			appendToStringOrVector(s, buf.position(), next_pos);
 			buf.position() += next_pos - buf.position();
 
 			if (!buf.hasPendingData())
@@ -330,7 +399,7 @@ void readCSVString(String & s, ReadBuffer & buf, const char delimiter)
 
 			if (*buf.position() == maybe_quote)
 			{
-				s += maybe_quote;
+				s.push_back(maybe_quote);
 				++buf.position();
 				continue;
 			}
@@ -348,7 +417,7 @@ void readCSVString(String & s, ReadBuffer & buf, const char delimiter)
 				&& *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')	/// NOTE Можно сделать SIMD версию.
 				++next_pos;
 
-			s.append(buf.position(), next_pos - buf.position());
+			appendToStringOrVector(s, buf.position(), next_pos);
 			buf.position() += next_pos - buf.position();
 
 			if (!buf.hasPendingData())
@@ -368,6 +437,14 @@ void readCSVString(String & s, ReadBuffer & buf, const char delimiter)
 		}
 	}
 }
+
+void readCSVString(String & s, ReadBuffer & buf, const char delimiter)
+{
+	s.clear();
+	readCSVStringInto(s, buf, delimiter);
+}
+
+template void readCSVStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf, const char delimiter);
 
 
 void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf)

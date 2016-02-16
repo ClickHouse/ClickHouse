@@ -205,7 +205,6 @@ add_library (dbms
 	include/DB/DataStreams/AggregatingSortedBlockInputStream.h
 	include/DB/DataStreams/TabSeparatedBlockOutputStream.h
 	include/DB/DataStreams/narrowBlockInputStreams.h
-	include/DB/DataStreams/RowInputStreamFromBlockInputStream.h
 	include/DB/DataStreams/IProfilingBlockInputStream.h
 	include/DB/DataStreams/NativeBlockOutputStream.h
 	include/DB/DataStreams/RemoteBlockOutputStream.h
@@ -557,6 +556,7 @@ add_library (dbms
 	src/Core/Field.cpp
 	src/Core/FieldVisitors.cpp
 	src/Core/Block.cpp
+	src/Core/BlockInfo.cpp
 	src/Core/NamesAndTypes.cpp
 	src/Core/ErrorCodes.cpp
 
@@ -647,7 +647,6 @@ add_library (dbms
 	src/DataStreams/IBlockInputStream.cpp
 	src/DataStreams/IProfilingBlockInputStream.cpp
 	src/DataStreams/BlockStreamProfileInfo.cpp
-	src/DataStreams/RowInputStreamFromBlockInputStream.cpp
 	src/DataStreams/BlockInputStreamFromRowInputStream.cpp
 	src/DataStreams/BlockOutputStreamFromRowOutputStream.cpp
 	src/DataStreams/TabSeparatedRowInputStream.cpp

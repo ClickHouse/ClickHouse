@@ -104,6 +104,7 @@ DataTypePtr DataTypeEnum<Type>::clone() const
 	return new DataTypeEnum(*this);
 }
 
+
 template <typename Type>
 void DataTypeEnum<Type>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
@@ -120,77 +121,78 @@ void DataTypeEnum<Type>::deserializeBinary(Field & field, ReadBuffer & istr) con
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeText(const Field & field, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
-	writeString(getNameForValue(x), ostr);
+	writeBinary(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeText(Field & field, ReadBuffer & istr) const
+void DataTypeEnum<Type>::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-	std::string name;
-	readString(name, istr);
-	field = nearestFieldType(getValue(StringRef(name)));
+	typename ColumnType::value_type x;
+	readBinary(x, istr);
+	static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextEscaped(const Field & field, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
-	writeEscapedString(getNameForValue(x), ostr);
+	writeString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextEscaped(Field & field, ReadBuffer & istr) const
+void DataTypeEnum<Type>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
+	writeEscapedString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+}
+
+template <typename Type>
+void DataTypeEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
+{
+	/// NOTE Неплохо было бы сделать без создания временного объекта - хотя бы вынести std::string наружу.
 	std::string name;
 	readEscapedString(name, istr);
-	field = nearestFieldType(getValue(StringRef(name)));
+	static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextQuoted(const Field & field, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
-	writeQuotedString(getNameForValue(x), ostr);
+	writeQuotedString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextQuoted(Field & field, ReadBuffer & istr) const
+void DataTypeEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
 	std::string name;
 	readQuotedString(name, istr);
-	field = nearestFieldType(getValue(StringRef(name)));
+	static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
-	writeJSONString(getNameForValue(x), ostr);
+	writeJSONString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextXML(const Field & field, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
-	writeXMLString(getNameForValue(x), ostr);
+	writeXMLString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextCSV(const Field & field, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
-	writeCSVString<>(getNameForValue(x), ostr);
+	writeCSVString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const
+void DataTypeEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
 {
 	std::string name;
 	readCSVString(name, istr, delimiter);
-	field = nearestFieldType(getValue(StringRef(name)));
+	static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
 }
 
 template <typename Type>

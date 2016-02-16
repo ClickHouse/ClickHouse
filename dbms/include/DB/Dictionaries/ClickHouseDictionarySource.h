@@ -356,8 +356,7 @@ private:
 				writeString(", ", out);
 
 			first = false;
-			const auto & value = (*key_columns[i])[row];
-			(*dict_struct.key)[i].type->serializeTextQuoted(value, out);
+			(*dict_struct.key)[i].type->serializeTextQuoted(*key_columns[i], row, out);
 		}
 
 		writeString(")", out);

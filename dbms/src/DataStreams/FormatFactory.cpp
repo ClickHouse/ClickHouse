@@ -23,6 +23,7 @@
 #include <DB/DataStreams/ODBCDriverBlockOutputStream.h>
 #include <DB/DataStreams/CSVRowInputStream.h>
 #include <DB/DataStreams/CSVRowOutputStream.h>
+#include <DB/DataStreams/MaterializingBlockOutputStream.h>
 #include <DB/DataStreams/FormatFactory.h>
 
 
@@ -42,7 +43,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 	if (name == "Native")
 		return new NativeBlockInputStream(buf);
 	else if (name == "RowBinary")
-		return new BlockInputStreamFromRowInputStream(new BinaryRowInputStream(buf, sample), sample, max_block_size);
+		return new BlockInputStreamFromRowInputStream(new BinaryRowInputStream(buf), sample, max_block_size);
 	else if (name == "TabSeparated")
 		return new BlockInputStreamFromRowInputStream(new TabSeparatedRowInputStream(buf, sample), sample, max_block_size);
 	else if (name == "TabSeparatedWithNames")
@@ -50,7 +51,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 	else if (name == "TabSeparatedWithNamesAndTypes")
 		return new BlockInputStreamFromRowInputStream(new TabSeparatedRowInputStream(buf, sample, true, true), sample, max_block_size);
 	else if (name == "Values")
-		return new BlockInputStreamFromRowInputStream(new ValuesRowInputStream(buf, sample, context), sample, max_block_size);
+		return new BlockInputStreamFromRowInputStream(new ValuesRowInputStream(buf, context), sample, max_block_size);
 	else if (name == "CSV")
 		return new BlockInputStreamFromRowInputStream(new CSVRowInputStream(buf, sample, ','), sample, max_block_size);
 	else if (name == "CSVWithNames")
@@ -78,13 +79,13 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 }
 
 
-BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer & buf,
-	const Block & sample, const Context & context) const
+static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf,
+	const Block & sample, const Context & context)
 {
 	if (name == "Native")
 		return new NativeBlockOutputStream(buf);
 	else if (name == "RowBinary")
-		return new BlockOutputStreamFromRowOutputStream(new BinaryRowOutputStream(buf, sample));
+		return new BlockOutputStreamFromRowOutputStream(new BinaryRowOutputStream(buf));
 	else if (name == "TabSeparated")
 		return new BlockOutputStreamFromRowOutputStream(new TabSeparatedRowOutputStream(buf, sample));
 	else if (name == "TabSeparatedWithNames")
@@ -118,7 +119,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 	else if (name == "VerticalRaw")
 		return new BlockOutputStreamFromRowOutputStream(new VerticalRawRowOutputStream(buf, sample));
 	else if (name == "Values")
-		return new BlockOutputStreamFromRowOutputStream(new ValuesRowOutputStream(buf, sample));
+		return new BlockOutputStreamFromRowOutputStream(new ValuesRowOutputStream(buf));
 	else if (name == "JSON")
 		return new BlockOutputStreamFromRowOutputStream(new JSONRowOutputStream(buf, sample));
 	else if (name == "JSONCompact")
@@ -133,6 +134,15 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 		return new NullBlockOutputStream;
 	else
 		throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
+}
+
+BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer & buf,
+	const Block & sample, const Context & context) const
+{
+	/** Материализация нужна, так как форматы могут использовать функции IDataType,
+	  *  которые допускают работу только с полными столбцами.
+	  */
+	return new MaterializingBlockOutputStream(getOutputImpl(name, buf, sample, context));
 }
 
 }

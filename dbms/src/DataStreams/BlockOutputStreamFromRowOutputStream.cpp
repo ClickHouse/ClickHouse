@@ -18,16 +18,18 @@ void BlockOutputStreamFromRowOutputStream::write(const Block & block)
 		if (!first_row)
 			row_output->writeRowBetweenDelimiter();
 		first_row = false;
-		
+
 		row_output->writeRowStartDelimiter();
 
 		for (size_t j = 0; j < columns; ++j)
 		{
 			if (j != 0)
 				row_output->writeFieldDelimiter();
-			row_output->writeField((*block.getByPosition(j).column)[i]);
+
+			auto & col = block.unsafeGetByPosition(j);
+			row_output->writeField(*col.column.get(), *col.type.get(), i);
 		}
-		
+
 		row_output->writeRowEndDelimiter();
 	}
 }

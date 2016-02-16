@@ -125,6 +125,11 @@ public:
 
 	void insertDefault() override { ++s; }
 
+	void popBack(size_t n) override
+	{
+		s -= n;
+	}
+
 	StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
 	{
 		throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);

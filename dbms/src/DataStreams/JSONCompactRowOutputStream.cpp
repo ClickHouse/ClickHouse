@@ -15,9 +15,9 @@ JSONCompactRowOutputStream::JSONCompactRowOutputStream(WriteBuffer & ostr_, cons
 }
 
 
-void JSONCompactRowOutputStream::writeField(const Field & field)
+void JSONCompactRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-	fields[field_number].type->serializeTextJSON(field, *ostr);
+	type.serializeTextJSON(column, row_num, *ostr);
 	++field_number;
 }
 
@@ -59,7 +59,7 @@ void JSONCompactRowOutputStream::writeTotals()
 				writeChar(',', *ostr);
 
 			const ColumnWithTypeAndName & column = totals.getByPosition(i);
-			column.type->serializeTextJSON((*column.column)[0], *ostr);
+			column.type->serializeTextJSON(*column.column.get(), 0, *ostr);
 		}
 
 		writeChar(']', *ostr);
@@ -80,7 +80,7 @@ static void writeExtremesElement(const char * title, const Block & extremes, siz
 			writeChar(',', ostr);
 
 		const ColumnWithTypeAndName & column = extremes.getByPosition(i);
-		column.type->serializeTextJSON((*column.column)[row_num], ostr);
+		column.type->serializeTextJSON(*column.column.get(), row_num, ostr);
 	}
 
 	writeChar(']', ostr);

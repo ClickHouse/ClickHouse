@@ -24,11 +24,19 @@ TSKVRowOutputStream::TSKVRowOutputStream(WriteBuffer & ostr_, const Block & samp
 }
 
 
-void TSKVRowOutputStream::writeField(const Field & field)
+void TSKVRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
 	writeString(fields[field_number].name, ostr);
-	data_types[field_number]->serializeTextEscaped(field, ostr);
+	type.serializeTextEscaped(column, row_num, ostr);
 	++field_number;
 }
+
+
+void TSKVRowOutputStream::writeRowEndDelimiter()
+{
+	writeChar('\n', ostr);
+	field_number = 0;
+}
+
 
 }

@@ -355,7 +355,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 		String s;
 		{
 			WriteBufferFromString wb(s);
-			type->serializeTextEscaped(col->getData(), wb);
+			type->serializeTextEscaped(*col->convertToFullColumn(), 0, wb);
 		}
 
 		block.getByPosition(result).column = new ColumnConstUInt64(rows, s.size());

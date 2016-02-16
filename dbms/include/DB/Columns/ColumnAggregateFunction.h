@@ -50,14 +50,14 @@ namespace ErrorCodes
 class ColumnAggregateFunction final : public IColumn
 {
 public:
-	typedef PODArray<AggregateDataPtr> Container_t;
+	using Container_t = PODArray<AggregateDataPtr>;
 
 private:
 	Arenas arenas;			/// Пулы, в которых выделены состояния агрегатных функций.
 
 	struct Holder
 	{
-		typedef SharedPtr<Holder> Ptr;
+		using Ptr = SharedPtr<Holder>;
 
 		AggregateFunctionPtr func;	/// Используется для уничтожения состояний и для финализации значений.
 		const Ptr src;		/// Источник. Используется, если данный столбец создан из другого и использует все или часть его значений.
@@ -73,6 +73,18 @@ private:
 			if (!function->hasTrivialDestructor() && src.isNull())
 				for (auto val : data)
 					function->destroy(val);
+		}
+
+		void popBack(size_t n)
+		{
+			size_t size = data.size();
+			size_t new_size = size - n;
+
+			if (src.isNull())
+				for (size_t i = new_size; i < size; ++i)
+					func->destroy(data[i]);
+
+			data.resize_assume_reserved(new_size);
 		}
 	};
 
@@ -167,14 +179,20 @@ public:
 		holder.get()->func.get()->merge(getData().back(), static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
 	}
 
+	Arena & createOrGetArena()
+	{
+		if (unlikely(arenas.empty()))
+			arenas.emplace_back(new Arena);
+		return *arenas.back().get();
+	}
+
 	void insert(const Field & x) override
 	{
 		IAggregateFunction * function = holder.get()->func;
 
-		if (unlikely(arenas.empty()))
-			arenas.emplace_back(new Arena);
+		Arena & arena = createOrGetArena();
 
-		getData().push_back(arenas.back().get()->alloc(function->sizeOfData()));
+		getData().push_back(arena.alloc(function->sizeOfData()));
 		function->create(getData().back());
 		ReadBufferFromString read_buffer(x.get<const String &>());
 		function->deserializeMerge(getData().back(), read_buffer);
@@ -215,6 +233,11 @@ public:
 		size_t old_size = data.size();
 		data.resize(old_size + length);
 		memcpy(&data[old_size], &src_concrete.getData()[start], length * sizeof(data[0]));
+	}
+
+	void popBack(size_t n) override
+	{
+		holder.get()->popBack(n);
 	}
 
 	ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override

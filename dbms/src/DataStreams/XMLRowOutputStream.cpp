@@ -84,12 +84,12 @@ void XMLRowOutputStream::writePrefix()
 }
 
 
-void XMLRowOutputStream::writeField(const Field & field)
+void XMLRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
 	writeCString("\t\t\t<", *ostr);
 	writeString(field_tag_names[field_number], *ostr);
 	writeCString(">", *ostr);
-	fields[field_number].type->serializeTextXML(field, *ostr);
+	type.serializeTextXML(column, row_num, *ostr);
 	writeCString("</", *ostr);
 	writeString(field_tag_names[field_number], *ostr);
 	writeCString(">\n", *ostr);
@@ -152,7 +152,7 @@ void XMLRowOutputStream::writeTotals()
 			writeCString("\t\t<", *ostr);
 			writeString(field_tag_names[i], *ostr);
 			writeCString(">", *ostr);
-			column.type->serializeTextXML((*column.column)[0], *ostr);
+			column.type->serializeTextXML(*column.column.get(), 0, *ostr);
 			writeCString("</", *ostr);
 			writeString(field_tag_names[i], *ostr);
 			writeCString(">\n", *ostr);
@@ -177,7 +177,7 @@ static void writeExtremesElement(const char * title, const Block & extremes, siz
 		writeCString("\t\t\t<", ostr);
 		writeString(field_tag_names[i], ostr);
 		writeCString(">", ostr);
-		column.type->serializeTextXML((*column.column)[row_num], ostr);
+		column.type->serializeTextXML(*column.column.get(), row_num, ostr);
 		writeCString("</", ostr);
 		writeString(field_tag_names[i], ostr);
 		writeCString(">\n", ostr);

@@ -10,19 +10,15 @@ using Poco::SharedPtr;
 
 
 TabSeparatedRowOutputStream::TabSeparatedRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_, bool with_types_)
-	: ostr(ostr_), sample(sample_), with_names(with_names_), with_types(with_types_), field_number(0)
+	: ostr(ostr_), sample(sample_), with_names(with_names_), with_types(with_types_)
 {
-	size_t columns = sample.columns();
-	data_types.resize(columns);
-	for (size_t i = 0; i < columns; ++i)
-		data_types[i] = sample.getByPosition(i).type;
 }
 
 
 void TabSeparatedRowOutputStream::writePrefix()
 {
 	size_t columns = sample.columns();
-	
+
 	if (with_names)
 	{
 		for (size_t i = 0; i < columns; ++i)
@@ -43,10 +39,9 @@ void TabSeparatedRowOutputStream::writePrefix()
 }
 
 
-void TabSeparatedRowOutputStream::writeField(const Field & field)
+void TabSeparatedRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-	data_types[field_number]->serializeTextEscaped(field, ostr);
-	++field_number;
+	type.serializeTextEscaped(column, row_num, ostr);
 }
 
 
@@ -59,7 +54,6 @@ void TabSeparatedRowOutputStream::writeFieldDelimiter()
 void TabSeparatedRowOutputStream::writeRowEndDelimiter()
 {
 	writeChar('\n', ostr);
-	field_number = 0;
 }
 
 
@@ -83,7 +77,7 @@ void TabSeparatedRowOutputStream::writeTotals()
 		{
 			if (j != 0)
 				writeFieldDelimiter();
-			writeField((*totals.getByPosition(j).column)[0]);
+			writeField(*totals.unsafeGetByPosition(j).column.get(), *totals.unsafeGetByPosition(j).type.get(), 0);
 		}
 
 		writeRowEndDelimiter();
@@ -111,7 +105,7 @@ void TabSeparatedRowOutputStream::writeExtremes()
 			{
 				if (j != 0)
 					writeFieldDelimiter();
-				writeField((*extremes.getByPosition(j).column)[i]);
+				writeField(*extremes.unsafeGetByPosition(j).column.get(), *extremes.unsafeGetByPosition(j).type.get(), i);
 			}
 
 			writeRowEndDelimiter();

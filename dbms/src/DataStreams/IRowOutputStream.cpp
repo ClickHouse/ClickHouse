@@ -4,20 +4,21 @@
 namespace DB
 {
 
-void IRowOutputStream::write(const Row & row)
+void IRowOutputStream::write(const Block & block, size_t row_num)
 {
+	size_t columns = block.columns();
+
 	writeRowStartDelimiter();
 
-	if (!row.empty())
+	for (size_t i = 0; i < columns; ++i)
 	{
-		writeField(row[0]);
-		for (size_t i = 1; i < row.size(); ++i)
-		{
+		if (i != 0)
 			writeFieldDelimiter();
-			writeField(row[i]);
-		}
+
+		auto & col = block.unsafeGetByPosition(i);
+		writeField(*col.column.get(), *col.type.get(), row_num);
 	}
-		
+
 	writeRowEndDelimiter();
 }
 

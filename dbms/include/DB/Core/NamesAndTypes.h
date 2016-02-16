@@ -5,17 +5,12 @@
 #include <string>
 #include <set>
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/DataTypes/IDataType.h>
-#include <DB/IO/ReadBufferFromString.h>
-#include "Names.h"
+#include <DB/Core/Names.h>
 
 
 namespace DB
 {
-
-using Poco::SharedPtr;
 
 struct NameAndTypePair
 {
@@ -36,7 +31,7 @@ struct NameAndTypePair
 	}
 };
 
-typedef std::vector<NameAndTypePair> NamesAndTypes;
+using NamesAndTypes = std::vector<NameAndTypePair>;
 
 class NamesAndTypesList : public std::list<NameAndTypePair>
 {
@@ -68,6 +63,6 @@ public:
 	NamesAndTypesList addTypes(const Names & names) const;
 };
 
-typedef SharedPtr<NamesAndTypesList> NamesAndTypesListPtr;
+using NamesAndTypesListPtr = SharedPtr<NamesAndTypesList>;
 
 }

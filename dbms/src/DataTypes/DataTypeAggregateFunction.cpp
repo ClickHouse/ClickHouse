@@ -56,6 +56,32 @@ void DataTypeAggregateFunction::deserializeBinary(Field & field, ReadBuffer & is
 	istr.readStrict(&s[0], size);
 }
 
+void DataTypeAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+	function.get()->serialize(static_cast<const ColumnAggregateFunction &>(column).getData()[row_num], ostr);
+}
+
+void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+{
+	ColumnAggregateFunction & column_concrete = static_cast<ColumnAggregateFunction &>(column);
+
+	size_t size_of_state = function->sizeOfData();
+	AggregateDataPtr place = column_concrete.createOrGetArena().alloc(size_of_state);
+
+	function->create(place);
+	try
+	{
+		function->deserializeMerge(place, istr);
+	}
+	catch (...)
+	{
+		function->destroy(place);
+		throw;
+	}
+
+	column_concrete.getData().push_back(place);
+}
+
 void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
 	const ColumnAggregateFunction & real_column = typeid_cast<const ColumnAggregateFunction &>(column);
@@ -76,9 +102,8 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 	ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
 	ColumnAggregateFunction::Container_t & vec = real_column.getData();
 
-	Arena * arena = new Arena;
+	Arena & arena = real_column.createOrGetArena();
 	real_column.set(function);
-	real_column.addArena(arena);
 	vec.reserve(vec.size() + limit);
 
 	size_t size_of_state = function->sizeOfData();
@@ -88,76 +113,112 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 		if (istr.eof())
 			break;
 
-		AggregateDataPtr place = arena->alloc(size_of_state);
+		AggregateDataPtr place = arena.alloc(size_of_state);
 
 		function->create(place);
-		function->deserializeMerge(place, istr);
+
+		try
+		{
+			function->deserializeMerge(place, istr);
+		}
+		catch (...)
+		{
+			function->destroy(place);
+			throw;
+		}
 
 		vec.push_back(place);
 	}
 }
 
-void DataTypeAggregateFunction::serializeText(const Field & field, WriteBuffer & ostr) const
+static String serializeToString(const AggregateFunctionPtr & function, const IColumn & column, size_t row_num)
 {
-	writeString(get<const String &>(field), ostr);
+	String res;
+	WriteBufferFromString buffer(res);
+	function.get()->serialize(static_cast<const ColumnAggregateFunction &>(column).getData()[row_num], buffer);
+	return res;
+}
+
+static void deserializeFromString(const AggregateFunctionPtr & function, IColumn & column, const String & s)
+{
+	ColumnAggregateFunction & column_concrete = static_cast<ColumnAggregateFunction &>(column);
+
+	size_t size_of_state = function->sizeOfData();
+	AggregateDataPtr place = column_concrete.createOrGetArena().alloc(size_of_state);
+
+	function->create(place);
+
+	try
+	{
+		ReadBufferFromString istr(s);
+		function->deserializeMerge(place, istr);
+	}
+	catch (...)
+	{
+		function->destroy(place);
+		throw;
+	}
+
+	column_concrete.getData().push_back(place);
+}
+
+void DataTypeAggregateFunction::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+	writeString(serializeToString(function, column, row_num), ostr);
 }
 
 
-void DataTypeAggregateFunction::deserializeText(Field & field, ReadBuffer & istr) const
+void DataTypeAggregateFunction::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	field.assignString("", 0);
-	readString(get<String &>(field), istr);
+	writeEscapedString(serializeToString(function, column, row_num), ostr);
 }
 
 
-void DataTypeAggregateFunction::serializeTextEscaped(const Field & field, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
-	writeEscapedString(get<const String &>(field), ostr);
+	String s;
+	readEscapedString(s, istr);
+	deserializeFromString(function, column, s);
 }
 
 
-void DataTypeAggregateFunction::deserializeTextEscaped(Field & field, ReadBuffer & istr) const
+void DataTypeAggregateFunction::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	field.assignString("", 0);
-	readEscapedString(get<String &>(field), istr);
+	writeQuotedString(serializeToString(function, column, row_num), ostr);
 }
 
 
-void DataTypeAggregateFunction::serializeTextQuoted(const Field & field, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
-	writeQuotedString(get<const String &>(field), ostr);
+	String s;
+	readQuotedString(s, istr);
+	deserializeFromString(function, column, s);
 }
 
 
-void DataTypeAggregateFunction::deserializeTextQuoted(Field & field, ReadBuffer & istr) const
+void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	field.assignString("", 0);
-	readQuotedString(get<String &>(field), istr);
+	writeJSONString(serializeToString(function, column, row_num), ostr);
 }
 
 
-void DataTypeAggregateFunction::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	writeJSONString(get<const String &>(field), ostr);
+	writeXMLString(serializeToString(function, column, row_num), ostr);
 }
 
 
-void DataTypeAggregateFunction::serializeTextXML(const Field & field, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	writeXMLString(get<const String &>(field), ostr);
+	writeCSV(serializeToString(function, column, row_num), ostr);
 }
 
 
-void DataTypeAggregateFunction::serializeTextCSV(const Field & field, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
 {
-	writeCSV(get<const String &>(field), ostr);
-}
-
-
-void DataTypeAggregateFunction::deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const
-{
-	field.assignString("", 0);
-	readCSV(get<String &>(field), istr, delimiter);
+	String s;
+	readCSV(s, istr, delimiter);
+	deserializeFromString(function, column, s);
 }
 
 

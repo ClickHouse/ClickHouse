@@ -448,9 +448,9 @@ private:
 			{
 				for (size_t j = 0, size = primary_columns.size(); j < size; ++j)
 				{
-					Field value = (*primary_columns[j].column.get())[i];
-					index_columns[j].get()->insert(value);
-					primary_columns[j].type.get()->serializeBinary(value, *index_stream);
+					const IColumn & primary_column = *primary_columns[j].column.get();
+					index_columns[j].get()->insertFrom(primary_column, i);
+					primary_columns[j].type.get()->serializeBinary(primary_column, i, *index_stream);
 				}
 			}
 

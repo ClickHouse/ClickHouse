@@ -299,13 +299,17 @@ void MergeTreePartChecker::checkDataPart(
 
 		if (!primary_key_data_types.empty())
 		{
-			Field tmp_field;
 			size_t key_size = primary_key_data_types.size();
+			Columns tmp_columns(key_size);
+
+			for (size_t j = 0; j < key_size; ++j)
+				tmp_columns[j] = primary_key_data_types[j].get()->createColumn();
+
 			while (!hashing_buf.eof())
 			{
 				++marks_in_primary_key;
 				for (size_t j = 0; j < key_size; ++j)
-					primary_key_data_types[j].get()->deserializeBinary(tmp_field, hashing_buf);
+					primary_key_data_types[j].get()->deserializeBinary(*tmp_columns[j].get(), hashing_buf);
 			}
 		}
 		else

@@ -9,7 +9,7 @@
 #include <DB/Core/ColumnWithTypeAndName.h>
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Common/Exception.h>
-#include "ColumnsWithTypeAndName.h"
+#include <DB/Core/ColumnsWithTypeAndName.h>
 
 
 namespace DB

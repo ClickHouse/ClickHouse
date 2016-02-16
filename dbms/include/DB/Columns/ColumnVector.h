@@ -163,6 +163,11 @@ public:
 		data.push_back(T());
 	}
 
+	void popBack(size_t n) override
+	{
+		data.resize_assume_reserved(data.size() - n);
+	}
+
 	StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
 	{
 		auto pos = arena.allocContinue(sizeof(T), begin);

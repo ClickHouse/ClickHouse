@@ -89,11 +89,11 @@ void PrettyCompactBlockOutputStream::writeRow(
 			for (size_t k = 0; k < max_widths[j] - width; ++k)
 				writeChar(' ', ostr);
 
-			col.type->serializeTextEscaped((*col.column)[row_id], ostr);
+			col.type->serializeTextEscaped(*col.column.get(), row_id, ostr);
 		}
 		else
 		{
-			col.type->serializeTextEscaped((*col.column)[row_id], ostr);
+			col.type->serializeTextEscaped(*col.column.get(), row_id, ostr);
 
 			size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[row_id]);
 			for (size_t k = 0; k < max_widths[j] - width; ++k)

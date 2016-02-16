@@ -1,6 +1,5 @@
-#include <DB/DataStreams/RowInputStreamFromBlockInputStream.h>
-#include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
-
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 
@@ -45,34 +44,6 @@ void copyData(IBlockInputStream & from, IBlockOutputStream & to, std::atomic<boo
 
 	if (isAtomicSet(is_cancelled))
 		return;
-
-	from.readSuffix();
-	to.writeSuffix();
-}
-
-
-void copyData(IRowInputStream & from, IRowOutputStream & to)
-{
-	from.readPrefix();
-	to.writePrefix();
-
-	bool first = true;
-	while (1)
-	{
-		if (first)
-			first = false;
-		else
-		{
-			from.readRowBetweenDelimiter();
-			to.writeRowBetweenDelimiter();
-		}
-
-		Row row;
-		bool has_rows = from.read(row);
-		if (!has_rows)
-			break;
-		to.write(row);
-	}
 
 	from.readSuffix();
 	to.writeSuffix();

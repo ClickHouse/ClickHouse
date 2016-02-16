@@ -1,12 +1,14 @@
 #pragma once
 
 #include <DB/Core/Block.h>
-#include <DB/IO/ReadBuffer.h>
 #include <DB/DataStreams/IRowInputStream.h>
 
 
 namespace DB
 {
+
+class ReadBuffer;
+class WriteBuffer;
 
 /** Поток для ввода данных в формате csv.
   * Не соответствует https://tools.ietf.org/html/rfc4180 потому что пропускает пробелы и табы между значениями.
@@ -19,7 +21,7 @@ public:
 	  */
 	CSVRowInputStream(ReadBuffer & istr_, const Block & sample_, const char delimiter_, bool with_names_ = false, bool with_types_ = false);
 
-	bool read(Row & row) override;
+	bool read(Block & block) override;
 	void readPrefix() override;
 
 private:
@@ -38,13 +40,13 @@ private:
 	size_t bytes_read_at_start_of_buffer_on_current_row = 0;
 	size_t bytes_read_at_start_of_buffer_on_prev_row = 0;
 
-	BufferBase::Position pos_of_current_row = nullptr;
-	BufferBase::Position pos_of_prev_row = nullptr;
+	char * pos_of_current_row = nullptr;
+	char * pos_of_prev_row = nullptr;
 
 	/** В случае исключения при парсинге, вызывается эта функция.
 	  * Она выполняет заново парсинг последних двух строк и выводит подробную информацию о том, что происходит.
 	  */
-	void printDiagnosticInfo(WriteBuffer & out);
+	void printDiagnosticInfo(Block & block, WriteBuffer & out);
 
 	void updateDiagnosticInfo()
 	{
@@ -57,7 +59,8 @@ private:
 		pos_of_current_row = istr.position();
 	}
 
-	bool parseRowAndPrintDiagnosticInfo(WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name);
+	bool parseRowAndPrintDiagnosticInfo(Block & block,
+		WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name);
 };
 
 }

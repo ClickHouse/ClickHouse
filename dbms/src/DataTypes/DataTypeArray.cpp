@@ -46,6 +46,49 @@ void DataTypeArray::deserializeBinary(Field & field, ReadBuffer & istr) const
 }
 
 
+void DataTypeArray::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+	const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+
+	size_t offset = row_num == 0 ? 0 : offsets[row_num - 1];
+	size_t next_offset = offsets[row_num];
+	size_t size = next_offset - offset;
+
+	writeVarUInt(size, ostr);
+
+	const IColumn & nested_column = column_array.getData();
+	for (size_t i = offset; i < next_offset; ++i)
+		nested->serializeBinary(nested_column, i, ostr);
+}
+
+
+void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+{
+	ColumnArray & column_array = static_cast<ColumnArray &>(column);
+	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+
+	size_t size;
+	readVarUInt(size, istr);
+
+	IColumn & nested_column = column_array.getData();
+
+	size_t i = 0;
+	try
+	{
+		for (; i < size; ++i)
+			nested->deserializeBinary(nested_column, istr);
+	}
+	catch (...)
+	{
+		nested_column.popBack(i);
+		throw;
+	}
+
+	offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
+}
+
+
 void DataTypeArray::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
 	const ColumnArray & column_array = typeid_cast<const ColumnArray &>(column);
@@ -138,127 +181,158 @@ void DataTypeArray::deserializeOffsets(IColumn & column, ReadBuffer & istr, size
 }
 
 
-void DataTypeArray::serializeText(const Field & field, WriteBuffer & ostr) const
+void DataTypeArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	const Array & arr = get<const Array &>(field);
+	const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+
+	size_t offset = row_num == 0 ? 0 : offsets[row_num - 1];
+	size_t next_offset = offsets[row_num];
+
+	const IColumn & nested_column = column_array.getData();
 
 	writeChar('[', ostr);
-	for (size_t i = 0, size = arr.size(); i < size; ++i)
+	for (size_t i = offset; i < next_offset; ++i)
 	{
-		if (i != 0)
+		if (i != offset)
 			writeChar(',', ostr);
-		nested->serializeTextQuoted(arr[i], ostr);
+		nested->serializeTextQuoted(nested_column, i, ostr);
 	}
 	writeChar(']', ostr);
 }
 
 
-void DataTypeArray::deserializeText(Field & field, ReadBuffer & istr) const
+void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr) const
 {
-	Array arr;
+	ColumnArray & column_array = static_cast<ColumnArray &>(column);
+	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
 
+	IColumn & nested_column = column_array.getData();
+
+	size_t size = 0;
 	bool first = true;
 	assertChar('[', istr);
-	while (!istr.eof() && *istr.position() != ']')
+
+	try
 	{
-		if (!first)
+		while (!istr.eof() && *istr.position() != ']')
 		{
-			if (*istr.position() == ',')
-				++istr.position();
-			else
-				throw Exception("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
+			if (!first)
+			{
+				if (*istr.position() == ',')
+					++istr.position();
+				else
+					throw Exception("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
+			}
+
+			first = false;
+
+			skipWhitespaceIfAny(istr);
+
+			if (*istr.position() == ']')
+				break;
+
+			nested->deserializeTextQuoted(nested_column, istr);
+			++size;
+
+			skipWhitespaceIfAny(istr);
 		}
-
-		first = false;
-
-		skipWhitespaceIfAny(istr);
-
-		if (*istr.position() == ']')
-			break;
-
-		arr.push_back(Field());
-		nested->deserializeTextQuoted(arr.back(), istr);
-
-		skipWhitespaceIfAny(istr);
+		assertChar(']', istr);
 	}
-	assertChar(']', istr);
+	catch (...)
+	{
+		nested_column.popBack(size);
+		throw;
+	}
 
-	field = arr;
+	offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
 }
 
 
-void DataTypeArray::serializeTextEscaped(const Field & field, WriteBuffer & ostr) const
+void DataTypeArray::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	serializeText(field, ostr);
+	serializeText(column, row_num, ostr);
 }
 
 
-void DataTypeArray::deserializeTextEscaped(Field & field, ReadBuffer & istr) const
+void DataTypeArray::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
-	deserializeText(field, istr);
+	deserializeText(column, istr);
 }
 
 
-void DataTypeArray::serializeTextQuoted(const Field & field, WriteBuffer & ostr) const
+void DataTypeArray::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	serializeText(field, ostr);
+	serializeText(column, row_num, ostr);
 }
 
 
-void DataTypeArray::deserializeTextQuoted(Field & field, ReadBuffer & istr) const
+void DataTypeArray::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
-	deserializeText(field, istr);
+	deserializeText(column, istr);
 }
 
 
-void DataTypeArray::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	const Array & arr = get<const Array &>(field);
+	const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+
+	size_t offset = row_num == 0 ? 0 : offsets[row_num - 1];
+	size_t next_offset = offsets[row_num];
+
+	const IColumn & nested_column = column_array.getData();
 
 	writeChar('[', ostr);
-	for (size_t i = 0, size = arr.size(); i < size; ++i)
+	for (size_t i = offset; i < next_offset; ++i)
 	{
-		if (i != 0)
+		if (i != offset)
 			writeChar(',', ostr);
-		nested->serializeTextJSON(arr[i], ostr);
+		nested->serializeTextJSON(nested_column, i, ostr);
 	}
 	writeChar(']', ostr);
 }
 
 
-void DataTypeArray::serializeTextXML(const Field & field, WriteBuffer & ostr) const
+void DataTypeArray::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	const Array & arr = get<const Array &>(field);
+	const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+
+	size_t offset = row_num == 0 ? 0 : offsets[row_num - 1];
+	size_t next_offset = offsets[row_num];
+
+	const IColumn & nested_column = column_array.getData();
 
 	writeCString("<array>", ostr);
-	for (size_t i = 0, size = arr.size(); i < size; ++i)
+	for (size_t i = offset; i < next_offset; ++i)
 	{
 		writeCString("<elem>", ostr);
-		nested->serializeTextXML(arr[i], ostr);
+		nested->serializeTextXML(nested_column, i, ostr);
 		writeCString("</elem>", ostr);
 	}
 	writeCString("</array>", ostr);
 }
 
 
-void DataTypeArray::serializeTextCSV(const Field & field, WriteBuffer & ostr) const
+void DataTypeArray::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	/// Хорошего способа сериализовать массив в CSV нет. Поэтому сериализуем его в строку, а затем полученную строку запишем в CSV.
 	String s;
 	{
 		WriteBufferFromString wb(s);
-		serializeText(field, wb);
+		serializeText(column, row_num, wb);
 	}
 	writeCSV(s, ostr);
 }
 
 
-void DataTypeArray::deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const
+void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
 {
 	String s;
 	readCSV(s, istr, delimiter);
 	ReadBufferFromString rb(s);
-	deserializeText(field, rb);
+	deserializeText(column, rb);
 }
 
 

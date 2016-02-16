@@ -64,24 +64,20 @@ static void checkForCarriageReturn(ReadBuffer & istr)
 }
 
 
-bool TabSeparatedRowInputStream::read(Row & row)
+bool TabSeparatedRowInputStream::read(Block & block)
 {
 	updateDiagnosticInfo();
 
 	size_t size = data_types.size();
-	row.resize(size);
 
 	try
 	{
+		if (istr.eof())
+			return false;
+
 		for (size_t i = 0; i < size; ++i)
 		{
-			if (i == 0 && istr.eof())
-			{
-				row.clear();
-				return false;
-			}
-
-			data_types[i]->deserializeTextEscaped(row[i], istr);
+			data_types[i].get()->deserializeTextEscaped(*block.unsafeGetByPosition(i).column.get(), istr);
 
 			/// пропускаем разделители
 			if (i + 1 == size)
@@ -103,7 +99,7 @@ bool TabSeparatedRowInputStream::read(Row & row)
 		String verbose_diagnostic;
 		{
 			WriteBufferFromString diagnostic_out(verbose_diagnostic);
-			printDiagnosticInfo(diagnostic_out);
+			printDiagnosticInfo(block, diagnostic_out);
 		}
 
 		e.addMessage("\n" + verbose_diagnostic);
@@ -114,7 +110,7 @@ bool TabSeparatedRowInputStream::read(Row & row)
 }
 
 
-void TabSeparatedRowInputStream::printDiagnosticInfo(WriteBuffer & out)
+void TabSeparatedRowInputStream::printDiagnosticInfo(Block & block, WriteBuffer & out)
 {
 	/// Вывести подробную диагностику возможно лишь если последняя и предпоследняя строка ещё находятся в буфере для чтения.
 	size_t bytes_read_at_start_of_buffer = istr.count() - istr.offset();
@@ -141,7 +137,7 @@ void TabSeparatedRowInputStream::printDiagnosticInfo(WriteBuffer & out)
 		istr.position() = pos_of_prev_row;
 
 		out << "\nRow " << (row_num - 1) << ":\n";
-		if (!parseRowAndPrintDiagnosticInfo(out, max_length_of_column_name, max_length_of_data_type_name))
+		if (!parseRowAndPrintDiagnosticInfo(block, out, max_length_of_column_name, max_length_of_data_type_name))
 			return;
 	}
 	else
@@ -156,7 +152,7 @@ void TabSeparatedRowInputStream::printDiagnosticInfo(WriteBuffer & out)
 	}
 
 	out << "\nRow " << row_num << ":\n";
-	parseRowAndPrintDiagnosticInfo(out, max_length_of_column_name, max_length_of_data_type_name);
+	parseRowAndPrintDiagnosticInfo(block, out, max_length_of_column_name, max_length_of_data_type_name);
 	out << "\n";
 }
 
@@ -220,7 +216,7 @@ static void verbosePrintString(BufferBase::Position begin, BufferBase::Position 
 }
 
 
-bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(
+bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
 	WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name)
 {
 	size_t size = data_types.size();
@@ -239,10 +235,9 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(
 		auto prev_position = istr.position();
 		std::exception_ptr exception;
 
-		Field field;
 		try
 		{
-			data_types[i]->deserializeTextEscaped(field, istr);
+			data_types[i]->deserializeTextEscaped(*block.getByPosition(i).column, istr);
 		}
 		catch (...)
 		{
@@ -297,20 +292,6 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(
 
 				return false;
 			}
-		}
-
-		if (   (typeid_cast<const DataTypeUInt8  *>(data_types[i].get()) && field.get<UInt64>() > std::numeric_limits<UInt8>::max())
-			|| (typeid_cast<const DataTypeUInt16 *>(data_types[i].get()) && field.get<UInt64>() > std::numeric_limits<UInt16>::max())
-			|| (typeid_cast<const DataTypeUInt32 *>(data_types[i].get()) && field.get<UInt64>() > std::numeric_limits<UInt32>::max())
-			|| (typeid_cast<const DataTypeInt8 *>(data_types[i].get())
-				&& (field.get<Int64>() > std::numeric_limits<Int8>::max() || field.get<Int64>() < std::numeric_limits<Int8>::min()))
-			|| (typeid_cast<const DataTypeInt16 *>(data_types[i].get())
-				&& (field.get<Int64>() > std::numeric_limits<Int16>::max() || field.get<Int64>() < std::numeric_limits<Int16>::min()))
-			|| (typeid_cast<const DataTypeInt32 *>(data_types[i].get())
-				&& (field.get<Int64>() > std::numeric_limits<Int32>::max() || field.get<Int64>() < std::numeric_limits<Int32>::min())))
-		{
-			out << "ERROR: parsed number is out of range of data type.\n";
-			return false;
 		}
 
 		/// Разделители

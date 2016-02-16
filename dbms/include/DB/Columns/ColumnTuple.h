@@ -100,6 +100,12 @@ public:
 			column->insertDefault();
 	}
 
+	void popBack(size_t n) override
+	{
+		for (auto & column : columns)
+			column->popBack(n);
+	}
+
 
 	StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
 	{

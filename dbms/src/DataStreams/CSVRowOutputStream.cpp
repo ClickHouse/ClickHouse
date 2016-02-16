@@ -8,7 +8,7 @@ namespace DB
 
 
 CSVRowOutputStream::CSVRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_, bool with_types_)
-	: ostr(ostr_), sample(sample_), with_names(with_names_), with_types(with_types_), field_number(0)
+	: ostr(ostr_), sample(sample_), with_names(with_names_), with_types(with_types_)
 {
 	size_t columns = sample.columns();
 	data_types.resize(columns);
@@ -41,10 +41,9 @@ void CSVRowOutputStream::writePrefix()
 }
 
 
-void CSVRowOutputStream::writeField(const Field & field)
+void CSVRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-	data_types[field_number]->serializeTextCSV(field, ostr);
-	++field_number;
+	type.serializeTextCSV(column, row_num, ostr);
 }
 
 
@@ -57,7 +56,6 @@ void CSVRowOutputStream::writeFieldDelimiter()
 void CSVRowOutputStream::writeRowEndDelimiter()
 {
 	writeChar('\n', ostr);
-	field_number = 0;
 }
 
 
@@ -81,7 +79,7 @@ void CSVRowOutputStream::writeTotals()
 		{
 			if (j != 0)
 				writeFieldDelimiter();
-			writeField((*totals.getByPosition(j).column)[0]);
+			writeField(*totals.unsafeGetByPosition(j).column.get(), *totals.unsafeGetByPosition(j).type.get(), 0);
 		}
 
 		writeRowEndDelimiter();
@@ -109,7 +107,7 @@ void CSVRowOutputStream::writeExtremes()
 			{
 				if (j != 0)
 					writeFieldDelimiter();
-				writeField((*extremes.getByPosition(j).column)[i]);
+				writeField(*extremes.unsafeGetByPosition(j).column.get(), *extremes.unsafeGetByPosition(j).type.get(), i);
 			}
 
 			writeRowEndDelimiter();

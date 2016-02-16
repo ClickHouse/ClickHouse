@@ -15,10 +15,9 @@ namespace DB
 class BinaryRowOutputStream : public IRowOutputStream
 {
 public:
-	BinaryRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
+	BinaryRowOutputStream(WriteBuffer & ostr_);
 
-	void writeField(const Field & field) override;
-	void writeRowEndDelimiter() override;
+	void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
 
 	void flush() override { ostr.next(); }
 
@@ -26,9 +25,6 @@ public:
 
 protected:
 	WriteBuffer & ostr;
-	const Block sample;
-	DataTypes data_types;
-	size_t field_number;
 };
 
 }

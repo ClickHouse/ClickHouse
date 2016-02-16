@@ -20,61 +20,63 @@ public:
 	std::string getName() const override { return "DateTime"; }
 	DataTypePtr clone() const override { return new DataTypeDateTime; }
 
-	void serializeText(const Field & field, WriteBuffer & ostr) const override
+	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		writeDateTimeText(get<UInt64>(field), ostr);
+		writeDateTimeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
 	}
 
-	void deserializeText(Field & field, ReadBuffer & istr) const override
+	static void deserializeText(IColumn & column, ReadBuffer & istr)
 	{
 		time_t x;
 		readDateTimeText(x, istr);
-		field = NearestFieldType<UInt32>::Type(x);
+		static_cast<ColumnType &>(column).getData().push_back(x);
 	}
 
-	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const override
+	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		serializeText(field, ostr);
+		serializeText(column, row_num, ostr);
 	}
 
-	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const override
+	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override
 	{
-		deserializeText(field, istr);
+		deserializeText(column, istr);
 	}
 
-	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const override
+	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
 		writeChar('\'', ostr);
-		serializeText(field, ostr);
+		serializeText(column, row_num, ostr);
 		writeChar('\'', ostr);
 	}
 
-	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const override
+	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override
 	{
+		time_t x;
 		assertChar('\'', istr);
-		deserializeText(field, istr);
+		readDateTimeText(x, istr);
 		assertChar('\'', istr);
+		static_cast<ColumnType &>(column).getData().push_back(x);	/// Важно делать это в конце - для exception safety.
 	}
 
-	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override
+	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
 		writeChar('"', ostr);
-		serializeText(field, ostr);
+		serializeText(column, row_num, ostr);
 		writeChar('"', ostr);
 	}
 
-	void serializeTextCSV(const Field & field, WriteBuffer & ostr) const override
+	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
 		writeChar('"', ostr);
-		serializeText(field, ostr);
+		serializeText(column, row_num, ostr);
 		writeChar('"', ostr);
 	}
 
-	void deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const override
+	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override
 	{
 		LocalDateTime value;
 		readCSV(value, istr);
-		field = static_cast<UInt64>(static_cast<time_t>(value));
+		static_cast<ColumnType &>(column).getData().push_back(static_cast<time_t>(value));
 	}
 };
 

@@ -15,7 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int TOO_LARGE_STRING_SIZE;
-	extern const int SIZE_OF_ARRAY_DOESNT_MATCH_SIZE_OF_FIXEDARRAY_COLUMN;
+	extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
 	extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 	extern const int PARAMETER_OUT_OF_BOUND;
 }
@@ -100,7 +100,7 @@ public:
 		const ColumnFixedString & src = static_cast<const ColumnFixedString &>(src_);
 
 		if (n != src.getN())
-			throw Exception("Size of FixedString doesn't match", ErrorCodes::SIZE_OF_ARRAY_DOESNT_MATCH_SIZE_OF_FIXEDARRAY_COLUMN);
+			throw Exception("Size of FixedString doesn't match", ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH);
 
 		size_t old_size = chars.size();
 		chars.resize(old_size + n);
@@ -120,6 +120,11 @@ public:
 	void insertDefault() override
 	{
 		chars.resize_fill(chars.size() + n);
+	}
+
+	void popBack(size_t elems) override
+	{
+		chars.resize_assume_reserved(chars.size() - n * elems);
 	}
 
 	StringRef serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const override

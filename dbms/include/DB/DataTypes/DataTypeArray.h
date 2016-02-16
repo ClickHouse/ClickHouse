@@ -32,21 +32,23 @@ public:
 
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
 	void deserializeBinary(Field & field, ReadBuffer & istr) const override;
+	void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
 
-	void serializeText(const Field & field, WriteBuffer & ostr) const override;
-	void deserializeText(Field & field, ReadBuffer & istr) const override;
+	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeText(IColumn & column, ReadBuffer & istr) const;
 
-	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const override;
-	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const override;
+	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override;
 
-	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const override;
-	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const override;
+	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
 
-	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override;
-	void serializeTextXML(const Field & field, WriteBuffer & ostr) const override;
+	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 
-	void serializeTextCSV(const Field & field, WriteBuffer & ostr) const override;
-	void deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const override;
+	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
 
 	/** Потоковая сериализация массивов устроена по-особенному:
 	  * - записываются/читаются элементы, уложенные подряд, без размеров массивов;

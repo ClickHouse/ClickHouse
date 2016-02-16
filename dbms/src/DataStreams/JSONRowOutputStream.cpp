@@ -65,12 +65,12 @@ void JSONRowOutputStream::writePrefix()
 }
 
 
-void JSONRowOutputStream::writeField(const Field & field)
+void JSONRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
 	writeCString("\t\t\t", *ostr);
 	writeDoubleQuotedString(fields[field_number].name, *ostr);
 	writeCString(": ", *ostr);
-	fields[field_number].type->serializeTextJSON(field, *ostr);
+	type.serializeTextJSON(column, row_num, *ostr);
 	++field_number;
 }
 
@@ -147,7 +147,7 @@ void JSONRowOutputStream::writeTotals()
 			writeCString("\t\t", *ostr);
 			writeDoubleQuotedString(column.name, *ostr);
 			writeCString(": ", *ostr);
-			column.type->serializeTextJSON((*column.column)[0], *ostr);
+			column.type->serializeTextJSON(*column.column.get(), 0, *ostr);
 		}
 
 		writeChar('\n', *ostr);
@@ -174,7 +174,7 @@ static void writeExtremesElement(const char * title, const Block & extremes, siz
 		writeCString("\t\t\t", ostr);
 		writeDoubleQuotedString(column.name, ostr);
 		writeCString(": ", ostr);
-		column.type->serializeTextJSON((*column.column)[row_num], ostr);
+		column.type->serializeTextJSON(*column.column.get(), row_num, ostr);
 	}
 
 	writeChar('\n', ostr);

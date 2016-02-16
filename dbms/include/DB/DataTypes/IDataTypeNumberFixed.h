@@ -39,6 +39,18 @@ public:
 		field = typename NearestFieldType<FieldType>::Type(x);
 	}
 
+	void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
+	{
+		writeBinary(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
+	}
+
+	void deserializeBinary(IColumn & column, ReadBuffer & istr) const override
+	{
+		typename ColumnType::value_type x;
+		readBinary(x, istr);
+		static_cast<ColumnType &>(column).getData().push_back(x);
+	}
+
 	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override
 	{
 		const typename ColumnType::Container_t & x = typeid_cast<const ColumnType &>(column).getData();

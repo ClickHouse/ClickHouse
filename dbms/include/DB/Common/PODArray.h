@@ -245,6 +245,11 @@ public:
 		c_end += byte_size(1);
 	}
 
+	void pop_back()
+	{
+		c_end -= byte_size(1);
+	}
+
 	/// Не вставляйте в массив кусок самого себя. Потому что при ресайзе, итераторы на самого себя могут инвалидироваться.
 	template <typename It1, typename It2>
 	void insert(It1 from_begin, It2 from_end)
@@ -254,6 +259,23 @@ public:
 			reserve(round_up_to_power_of_two(required_capacity));
 
 		insert_assume_reserved(from_begin, from_end);
+	}
+
+	template <typename It1, typename It2>
+	void insert(iterator it, It1 from_begin, It2 from_end)
+	{
+		size_t required_capacity = size() + (from_end - from_begin);
+		if (required_capacity > capacity())
+			reserve(round_up_to_power_of_two(required_capacity));
+
+		size_t bytes_to_copy = byte_size(from_end - from_begin);
+		size_t bytes_to_move = (end() - it) * sizeof(T);
+
+		if (unlikely(bytes_to_move))
+			memcpy(c_end + bytes_to_copy - bytes_to_move, c_end - bytes_to_move, bytes_to_move);
+
+		memcpy(c_end - bytes_to_move, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
+		c_end += bytes_to_copy;
 	}
 
 	template <typename It1, typename It2>

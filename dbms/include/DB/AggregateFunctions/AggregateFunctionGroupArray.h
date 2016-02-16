@@ -35,13 +35,6 @@ struct AggregateFunctionGroupArrayDataNumeric
 };
 
 
-/// Общий случай (неэффективно). NOTE Можно ещё реализовать частный случай для строк.
-struct AggregateFunctionGroupArrayDataGeneric
-{
-	Array value;	/// TODO Добавить MemoryTracker
-};
-
-
 template <typename T>
 class AggregateFunctionGroupArrayNumeric final
 	: public IUnaryAggregateFunction<AggregateFunctionGroupArrayDataNumeric<T>, AggregateFunctionGroupArrayNumeric<T>>
@@ -107,9 +100,17 @@ public:
 };
 
 
+
+/// Общий случай (неэффективно). NOTE Можно ещё реализовать частный случай для строк.
+struct AggregateFunctionGroupArrayDataGeneric
+{
+	Array value;	/// TODO Добавить MemoryTracker
+};
+
+
 /// Складывает все значения в массив, общий случай. Реализовано неэффективно.
 class AggregateFunctionGroupArrayGeneric final
-	: public IUnaryAggregateFunction<AggregateFunctionGroupArrayDataGeneric, AggregateFunctionGroupArrayGeneric>
+: public IUnaryAggregateFunction<AggregateFunctionGroupArrayDataGeneric, AggregateFunctionGroupArrayGeneric>
 {
 private:
 	DataTypePtr type;

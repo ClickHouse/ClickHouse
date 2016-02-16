@@ -291,7 +291,9 @@ private:
 				try
 				{
 					ReadBufferFromString null_value_buffer{null_value_string};
-					type->deserializeText(null_value, null_value_buffer);
+					ColumnPtr column_with_null_value = type->createColumn();
+					type->deserializeTextEscaped(*column_with_null_value, null_value_buffer);
+					null_value = (*column_with_null_value)[0];
 				}
 				catch (const std::exception & e)
 				{

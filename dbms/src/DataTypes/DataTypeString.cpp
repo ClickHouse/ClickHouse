@@ -20,8 +20,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 
 void DataTypeString::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
@@ -39,6 +37,42 @@ void DataTypeString::deserializeBinary(Field & field, ReadBuffer & istr) const
 	String & s = get<String &>(field);
 	s.resize(size);
 	istr.readStrict(&s[0], size);
+}
+
+
+void DataTypeString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+	const StringRef & s = static_cast<const ColumnString &>(column).getDataAt(row_num);
+	writeVarUInt(s.size, ostr);
+	writeString(s, ostr);
+}
+
+
+void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+{
+	ColumnString & column_string = static_cast<ColumnString &>(column);
+	ColumnString::Chars_t & data = column_string.getChars();
+	ColumnString::Offsets_t & offsets = column_string.getOffsets();
+
+	UInt64 size;
+	readVarUInt(size, istr);
+
+	size_t old_chars_size = data.size();
+	size_t offset = old_chars_size + size + 1;
+	offsets.push_back(offset);
+
+	try
+	{
+		data.resize(offset);
+		istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), size);
+		data.back() = 0;
+	}
+	catch (...)
+	{
+		offsets.pop_back();
+		data.resize_assume_reserved(old_chars_size);
+		throw;
+	}
 }
 
 
@@ -179,67 +213,82 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 }
 
 
-void DataTypeString::serializeText(const Field & field, WriteBuffer & ostr) const
+void DataTypeString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	writeString(get<const String &>(field), ostr);
+	writeString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::deserializeText(Field & field, ReadBuffer & istr) const
+void DataTypeString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	field.assignString("", 0);
-	readString(get<String &>(field), istr);
+	writeEscapedString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::serializeTextEscaped(const Field & field, WriteBuffer & ostr) const
+template <typename Reader>
+static inline void read(IColumn & column, ReadBuffer & istr, Reader && reader)
 {
-	writeEscapedString(get<const String &>(field), ostr);
+	ColumnString & column_string = static_cast<ColumnString &>(column);
+	ColumnString::Chars_t & data = column_string.getChars();
+	ColumnString::Offsets_t & offsets = column_string.getOffsets();
+
+	size_t old_chars_size = data.size();
+	size_t old_offsets_size = offsets.size();
+
+	try
+	{
+		reader(data);
+		data.push_back(0);
+		offsets.push_back(data.size());
+	}
+	catch (...)
+	{
+		offsets.resize_assume_reserved(old_offsets_size);
+		data.resize_assume_reserved(old_chars_size);
+		throw;
+	}
 }
 
 
-void DataTypeString::deserializeTextEscaped(Field & field, ReadBuffer & istr) const
+void DataTypeString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
-	field.assignString("", 0);
-	readEscapedString(get<String &>(field), istr);
+	read(column, istr, [&](ColumnString::Chars_t & data) { readEscapedStringInto(data, istr); });
 }
 
 
-void DataTypeString::serializeTextQuoted(const Field & field, WriteBuffer & ostr) const
+void DataTypeString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	writeQuotedString(get<const String &>(field), ostr);
+	writeQuotedString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::deserializeTextQuoted(Field & field, ReadBuffer & istr) const
+void DataTypeString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
-	field.assignString("", 0);
-	readQuotedString(get<String &>(field), istr);
+	read(column, istr, [&](ColumnString::Chars_t & data) { readQuotedStringInto(data, istr); });
 }
 
 
-void DataTypeString::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	writeJSONString(get<const String &>(field), ostr);
+	writeJSONString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::serializeTextXML(const Field & field, WriteBuffer & ostr) const
+void DataTypeString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	writeXMLString(get<const String &>(field), ostr);
+	writeXMLString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::serializeTextCSV(const Field & field, WriteBuffer & ostr) const
+void DataTypeString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	writeCSV(get<const String &>(field), ostr);
+	writeCSVString<>(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::deserializeTextCSV(Field & field, ReadBuffer & istr, const char delimiter) const
+void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
 {
-	field.assignString("", 0);
-	readCSV(get<String &>(field), istr, delimiter);
+	read(column, istr, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr); });
 }
 
 

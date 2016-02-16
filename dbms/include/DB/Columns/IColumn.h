@@ -22,10 +22,11 @@ namespace ErrorCodes
 using Poco::SharedPtr;
 
 class IColumn;
-typedef SharedPtr<IColumn> ColumnPtr;
-typedef std::vector<ColumnPtr> Columns;
-typedef std::vector<IColumn *> ColumnPlainPtrs;
-typedef std::vector<const IColumn *> ConstColumnPlainPtrs;
+
+using ColumnPtr = SharedPtr<IColumn>;
+using Columns = std::vector<ColumnPtr>;
+using ColumnPlainPtrs = std::vector<IColumn *>;
+using ConstColumnPlainPtrs = std::vector<const IColumn *>;
 
 class Arena;
 
@@ -82,7 +83,7 @@ public:
 	bool empty() const { return size() == 0; }
 
 	/** Получить значение n-го элемента.
-	  * Используется для преобразования из блоков в строки (например, при выводе значений в текстовый дамп)
+	  * Используется в редких случаях, так как создание временного объекта типа Field может быть дорогим.
 	  */
 	virtual Field operator[](size_t n) const = 0;
 
@@ -159,6 +160,13 @@ public:
 	  * Например, для ColumnNullable, если взведён флаг null, то соответствующее значение во вложенном столбце игнорируется.
 	  */
 	virtual void insertDefault() = 0;
+
+	/** Удалить одно или несколько значений с конца.
+	  * Используется, чтобы сделать некоторые операции exception-safe,
+	  *  когда после вставки значения сделать что-то ещё не удалось, и нужно откатить вставку.
+	  * Если столбец пуст - поведение не определено.
+	  */
+	virtual void popBack(size_t n) = 0;
 
 	/** Сериализовать значение, расположив его в непрерывном куске памяти в Arena.
 	  * Значение можно будет потом прочитать обратно. Используется для агрегации.

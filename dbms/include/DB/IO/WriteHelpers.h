@@ -283,7 +283,7 @@ void writeAnyEscapedString(const String & s, WriteBuffer & buf)
 inline void writeEscapedString(const char * str, size_t size, WriteBuffer & buf)
 {
 	/// strpbrk в libc под Linux на процессорах с SSE 4.2 хорошо оптимизирована (этот if ускоряет код в 1.5 раза)
-	if (nullptr == strpbrk(str, "\b\f\n\r\t\'\\") && strlen(str) == size)
+	if (nullptr == strpbrk(str, "\b\f\n\r\t\'\\") && strlen(str) == size)			/// TODO Нельзя полагаться на наличие нулевого байта.
 		writeString(str, size, buf);
 	else
 		writeAnyEscapedString<'\''>(str, str + size, buf);
@@ -381,7 +381,7 @@ void writeCSVString(const char * begin, const char * end, WriteBuffer & buf)
 	const char * pos = begin;
 	while (true)
 	{
-		const char * next_pos = strchrnul(pos, quote);
+		const char * next_pos = strchrnul(pos, quote);		/// TODO Нельзя полагаться на наличие нулевого байта.
 
 		if (next_pos == end)
 		{
@@ -425,7 +425,7 @@ inline void writeXMLString(const char * begin, const char * end, WriteBuffer & b
 	const char * pos = begin;
 	while (true)
 	{
-		const char * next_pos = strpbrk(pos, "<&");
+		const char * next_pos = strpbrk(pos, "<&");		/// TODO Нельзя полагаться на наличие нулевого байта.
 
 		if (next_pos == nullptr)
 		{

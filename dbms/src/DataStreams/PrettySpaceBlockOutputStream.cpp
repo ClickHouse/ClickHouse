@@ -80,11 +80,11 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
 				for (ssize_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[j] - width)); ++k)
 					writeChar(' ', ostr);
 
-				col.type->serializeTextEscaped((*col.column)[i], ostr);
+				col.type->serializeTextEscaped(*col.column.get(), i, ostr);
 			}
 			else
 			{
-				col.type->serializeTextEscaped((*col.column)[i], ostr);
+				col.type->serializeTextEscaped(*col.column.get(), i, ostr);
 
 				size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[i]);
 				for (ssize_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[j] - width)); ++k)

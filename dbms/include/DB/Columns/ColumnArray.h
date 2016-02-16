@@ -181,6 +181,14 @@ public:
 		getOffsets().push_back(getOffsets().size() == 0 ? 0 : getOffsets().back());
 	}
 
+	void popBack(size_t n) override
+	{
+		auto & offsets = getOffsets();
+		size_t nested_n = offsets.back() - offsetAt(offsets.size() - n);
+		getData().popBack(nested_n);
+		offsets.resize_assume_reserved(offsets.size() - n);
+	}
+
 	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 
 	ColumnPtr permute(const Permutation & perm, size_t limit) const override;

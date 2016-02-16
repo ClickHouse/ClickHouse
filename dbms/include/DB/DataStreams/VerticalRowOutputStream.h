@@ -21,18 +21,17 @@ class VerticalRowOutputStream : public IRowOutputStream
 public:
 	VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
 
-	void writeField(const Field & field) override;
+	void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
 	void writeRowStartDelimiter() override;
 	void writeRowBetweenDelimiter() override;
 
 	void flush() override { ostr.next(); }
 
 protected:
-	virtual void writeValue(const Field & field) const;
+	virtual void writeValue(const IColumn & column, const IDataType & type, size_t row_num) const;
 
 	WriteBuffer & ostr;
 	const Block sample;
-	DataTypes data_types;
 	Names names;
 	size_t field_number;
 	size_t row_number;
@@ -51,7 +50,7 @@ public:
 		: VerticalRowOutputStream(ostr_, sample_) {}
 
 protected:
-	void writeValue(const Field & field) const override;
+	void writeValue(const IColumn & column, const IDataType & type, size_t row_num) const override;
 };
 
 }

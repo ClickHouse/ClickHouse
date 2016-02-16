@@ -1,5 +1,4 @@
 #include <DB/DataStreams/RemoteBlockInputStream.h>
-#include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/DataStreams/BlockExtraInfoInputStream.h>
 #include <DB/DataStreams/UnionBlockInputStream.h>
 

@@ -1,3 +1,6 @@
+#include <DB/Common/Exception.h>
+#include <DB/IO/ReadBuffer.h>
+#include <DB/IO/WriteBuffer.h>
 #include <DB/IO/copyData.h>
 
 
