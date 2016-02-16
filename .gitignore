@@ -157,6 +157,8 @@ utils/zookeeper-remove-by-list/zookeeper-remove-by-list
 
 dbms/src/Server/data/*
 dbms/src/Server/metadata/*
+dbms/src/Server/status
+config-9001.xml
 
 *-preprocessed.xml
 
