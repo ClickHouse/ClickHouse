@@ -16,3 +16,5 @@ echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gzip
 
 echo "'Hello, world'" | curl -sS --data-binary @- 'http://localhost:8123/?query=SELECT';
 echo "'Hello, world'" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/?query=SELECT';
+
+curl -sS 'http://localhost:8123/' -H 'Accept-Encoding: gzip'          -d 'SELECT number FROM system.numbers LIMIT 0' | wc -c;
