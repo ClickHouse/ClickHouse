@@ -7,6 +7,7 @@
 
 #include <common/Common.h>
 #include <common/DateLUT.h>
+#include <common/find_first_symbols.h>
 
 #include <mysqlxx/Row.h>
 #include <mysqlxx/Null.h>
@@ -218,44 +219,59 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
 template <char c>
 void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & buf)
 {
-	for (const char * it = begin; it != end; ++it)
+	const char * pos = begin;
+	while (true)
 	{
-		switch (*it)
+		/// Специально будем эскейпить больше символов, чем минимально необходимо.
+		const char * next_pos = find_first_symbols<'\b', '\f', '\n', '\r', '\t', '\0', '\\', c>(pos, end);
+
+		if (next_pos == end)
 		{
-			case '\b':
-				writeChar('\\', buf);
-				writeChar('b', buf);
-				break;
-			case '\f':
-				writeChar('\\', buf);
-				writeChar('f', buf);
-				break;
-			case '\n':
-				writeChar('\\', buf);
-				writeChar('n', buf);
-				break;
-			case '\r':
-				writeChar('\\', buf);
-				writeChar('r', buf);
-				break;
-			case '\t':
-				writeChar('\\', buf);
-				writeChar('t', buf);
-				break;
-			case '\0':
-				writeChar('\\', buf);
-				writeChar('0', buf);
-				break;
-			case '\\':
-				writeChar('\\', buf);
-				writeChar('\\', buf);
-				break;
-			case c:
-				writeChar('\\', buf);
-				writeChar(c, buf);
-				break;
-			default:
-				writeChar(*it, buf);
+			buf.write(pos, next_pos - pos);
+			break;
+		}
+		else
+		{
+			buf.write(pos, next_pos - pos);
+			pos = next_pos;
+			switch (*pos)
+			{
+				case '\b':
+					writeChar('\\', buf);
+					writeChar('b', buf);
+					break;
+				case '\f':
+					writeChar('\\', buf);
+					writeChar('f', buf);
+					break;
+				case '\n':
+					writeChar('\\', buf);
+					writeChar('n', buf);
+					break;
+				case '\r':
+					writeChar('\\', buf);
+					writeChar('r', buf);
+					break;
+				case '\t':
+					writeChar('\\', buf);
+					writeChar('t', buf);
+					break;
+				case '\0':
+					writeChar('\\', buf);
+					writeChar('0', buf);
+					break;
+				case '\\':
+					writeChar('\\', buf);
+					writeChar('\\', buf);
+					break;
+				case c:
+					writeChar('\\', buf);
+					writeChar(c, buf);
+					break;
+				default:
+					writeChar(*pos, buf);
+			}
+			++pos;
 		}
 	}
 }
@@ -282,11 +298,7 @@ void writeAnyEscapedString(const String & s, WriteBuffer & buf)
 
 inline void writeEscapedString(const char * str, size_t size, WriteBuffer & buf)
 {
-	/// strpbrk в libc под Linux на процессорах с SSE 4.2 хорошо оптимизирована (этот if ускоряет код в 1.5 раза)
-	if (nullptr == strpbrk(str, "\b\f\n\r\t\'\\") && strlen(str) == size)			/// TODO Нельзя полагаться на наличие нулевого байта.
-		writeString(str, size, buf);
-	else
-		writeAnyEscapedString<'\''>(str, str + size, buf);
+	writeAnyEscapedString<'\''>(str, str + size, buf);
 }
 
 
@@ -381,17 +393,12 @@ void writeCSVString(const char * begin, const char * end, WriteBuffer & buf)
 	const char * pos = begin;
 	while (true)
 	{
-		const char * next_pos = strchrnul(pos, quote);		/// TODO Нельзя полагаться на наличие нулевого байта.
+		const char * next_pos = find_first_symbols<quote>(pos, end);
 
 		if (next_pos == end)
 		{
 			buf.write(pos, end - pos);
 			break;
-		}
-		else if (*next_pos == 0)	/// Нулевой байт до конца строки.
-		{
-			++next_pos;
-			buf.write(pos, next_pos - pos);
 		}
 		else						/// Кавычка.
 		{
@@ -425,17 +432,13 @@ inline void writeXMLString(const char * begin, const char * end, WriteBuffer & b
 	const char * pos = begin;
 	while (true)
 	{
-		const char * next_pos = strpbrk(pos, "<&");		/// TODO Нельзя полагаться на наличие нулевого байта.
+		/// NOTE Возможно, для некоторых парсеров XML нужно ещё эскейпить нулевой байт и некоторые control characters.
+		const char * next_pos = find_first_symbols<'<', '&'>(pos, end);
 
-		if (next_pos == nullptr)
+		if (next_pos == end)
 		{
 			buf.write(pos, end - pos);
 			break;
-		}
-		else if (*next_pos == 0)	/// Нулевой байт до конца строки.
-		{
-			++next_pos;
-			buf.write(pos, next_pos - pos);
 		}
 		else if (*next_pos == '<')
 		{
@@ -449,7 +452,6 @@ inline void writeXMLString(const char * begin, const char * end, WriteBuffer & b
 			++next_pos;
 			writeCString("&amp;", buf);
 		}
-		/// NOTE Возможно, для некоторых парсеров XML нужно ещё эскейпить нулевой байт и некоторые control characters.
 
 		pos = next_pos;
 	}
