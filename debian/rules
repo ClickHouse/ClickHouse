@@ -104,9 +104,9 @@ install: build
 			echo "chown metrika: /etc/$$DAEMON_PKG/conf.d" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
 			if [ -e "debian/tmp/etc/init.d/$$DAEMON_PKG-metrika-yandex" ]; then \
 				if echo $$DAEMON_PKG | grep server > /dev/null; then\
-					echo "update-rc.d $$DAEMON_PKG-metrika-yandex defaults > /dev/null || exit \$?" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
+					echo "update-rc.d $$DAEMON_PKG-metrika-yandex defaults > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
 				else\
-					echo "update-rc.d $$DAEMON_PKG-metrika-yandex start 30 2 3 4 5 . stop 70 0 1 6 . > /dev/null || exit \$?" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
+					echo "update-rc.d $$DAEMON_PKG-metrika-yandex start 30 2 3 4 5 . stop 70 0 1 6 . > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
 				fi\
 			fi\
 			\
