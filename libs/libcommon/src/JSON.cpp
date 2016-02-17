@@ -225,6 +225,7 @@ JSON::Pos JSON::skipString() const
 	//std::cerr << "skipString()\t" << data() << std::endl;
 	
 	Pos pos = ptr_begin;
+	checkPos(pos);
 	if (*pos != '"')
 		throw JSONException(std::string("JSON: expected \", got ") + *pos);
 	++pos;
@@ -250,6 +251,7 @@ JSON::Pos JSON::skipString() const
 		++pos;
 	}
 
+	checkPos(pos);
 	if (*pos != '"')
 		throw JSONException(std::string("JSON: expected \", got ") + *pos);
 	++pos;
@@ -264,9 +266,9 @@ JSON::Pos JSON::skipNumber() const
 	
 	Pos pos = ptr_begin;
 
+	checkPos(pos);
 	if (*pos == '-')
 		++pos;
-	checkPos(pos);
 
 	while (pos < ptr_end && *pos >= '0' && *pos <= '9')
 		++pos;
@@ -290,6 +292,7 @@ JSON::Pos JSON::skipBool() const
 	//std::cerr << "skipBool()\t" << data() << std::endl;
 	
 	Pos pos = ptr_begin;
+	checkPos(pos);
 	
 	if (*ptr_begin == 't')
 		pos += 4;
@@ -341,11 +344,19 @@ JSON::Pos JSON::skipArray() const
 	while (1)
 	{
 		pos = JSON(pos, ptr_end, level + 1).skipElement();
-		if (*pos != ',')
-			break;
-		++pos;
+
+		checkPos(pos);
+
+		switch (*pos)
+		{
+			case ',':
+				++pos;
+			case ']':
+				return ++pos;
+			default:
+				throw JSONException(std::string("JSON: expected one of ',]', got ") + *pos);
+		}
 	}
-	return ++pos;
 }
 
 
@@ -364,11 +375,19 @@ JSON::Pos JSON::skipObject() const
 	while (1)
 	{
 		pos = JSON(pos, ptr_end, level + 1).skipNameValuePair();
-		if (*pos != ',')
-			break;
-		++pos;
+
+		checkPos(pos);
+
+		switch (*pos)
+		{
+			case ',':
+				++pos;
+			case '}':
+				return ++pos;
+			default:
+				throw JSONException(std::string("JSON: expected one of ',}', got ") + *pos);
+		}
 	}
-	return ++pos;
 }
 
 
