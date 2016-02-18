@@ -82,16 +82,17 @@ template <size_t num_chars,
 inline const char * find_first_symbols_sse42_impl(const char * begin, const char * end)
 {
 #if defined(__x86_64__)
+#define MODE (_SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT)
 	__m128i set = _mm_setr_epi8(c01, c02, c03, c04, c05, c06, c07, c08, c09, c10, c11, c12, c13, c14, c15, c16);
-	static constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;
 
 	for (; begin + 15 < end; begin += 16)
 	{
 		__m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(begin));
 
-		if (_mm_cmpestrc(set, num_chars, bytes, 16, mode))
-			return begin + _mm_cmpestri(set, num_chars, bytes, 16, mode);
+		if (_mm_cmpestrc(set, num_chars, bytes, 16, MODE))
+			return begin + _mm_cmpestri(set, num_chars, bytes, 16, MODE);
 	}
+#undef MODE
 #endif
 
 	for (; begin < end; ++begin)
