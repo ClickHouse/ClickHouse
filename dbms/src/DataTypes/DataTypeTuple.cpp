@@ -156,6 +156,26 @@ void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, Wr
 	writeChar(']', ostr);
 }
 
+void DataTypeTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+{
+	const size_t size = elems.size();
+	assertChar('[', istr);
+
+	deserializeSafe(elems, column, istr, [&]
+	{
+		for (const auto i : ext::range(0, size))
+		{
+			skipWhitespaceIfAny(istr);
+			if (i != 0)
+				assertChar(',', istr);
+			elems[i]->deserializeTextJSON(extractElementColumn(column, i), istr);
+		}
+	});
+
+	skipWhitespaceIfAny(istr);
+	assertChar(']', istr);
+}
+
 void DataTypeTuple::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeCString("<tuple>", ostr);

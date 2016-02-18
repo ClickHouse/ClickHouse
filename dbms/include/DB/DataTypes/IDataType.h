@@ -87,6 +87,7 @@ public:
 	/** Текстовая сериализация в виде литерала для использования в формате JSON.
 	  */
 	virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+	virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const = 0;
 
 	/** Текстовая сериализация для подстановки в формат XML.
 	  */

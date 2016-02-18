@@ -132,7 +132,7 @@ bool TSKVRowInputStream::read(Block & block)
 
 			if (istr.eof())
 			{
-				throw Exception("Unexpected end of stream after field '" + name_ref.toString() + "' in TSKV format", ErrorCodes::CANNOT_READ_ALL_DATA);
+				throw Exception("Unexpected end of stream after field in TSKV format", ErrorCodes::CANNOT_READ_ALL_DATA);
 			}
 			else if (*istr.position() == '\t')
 			{
@@ -145,7 +145,7 @@ bool TSKVRowInputStream::read(Block & block)
 				break;
 			}
 			else
-				throw Exception("Found garbage after field '" + name_ref.toString() + "' in TSKV format", ErrorCodes::INCORRECT_DATA);
+				throw Exception("Found garbage after field in TSKV format", ErrorCodes::INCORRECT_DATA);
 		}
 	}
 

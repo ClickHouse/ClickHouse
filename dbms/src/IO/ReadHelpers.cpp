@@ -167,6 +167,114 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
 
 
 template <typename Vector>
+static void parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
+{
+	++buf.position();
+	if (buf.eof())
+		throw Exception("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+
+	switch(*buf.position())
+	{
+		case '"':
+			s.push_back('"');
+			break;
+		case '\\':
+			s.push_back('\\');
+			break;
+		case '/':
+			s.push_back('/');
+			break;
+		case 'b':
+			s.push_back('\b');
+			break;
+		case 'f':
+			s.push_back('\f');
+			break;
+		case 'n':
+			s.push_back('\n');
+			break;
+		case 'r':
+			s.push_back('\r');
+			break;
+		case 't':
+			s.push_back('\t');
+			break;
+		case 'u':
+		{
+			++buf.position();
+
+			char hex_code[4];
+			readPODBinary(hex_code, buf);
+
+			/// \u0000 - частый случай.
+			if (0 == memcmp(hex_code, "0000", 4))
+			{
+				s.push_back(0);
+				return;
+			}
+
+			UInt16 code_point =
+				unhex(hex_code[0]) * 4096
+				+ unhex(hex_code[1]) * 256
+				+ unhex(hex_code[2]) * 16
+				+ unhex(hex_code[3]);
+
+			if (code_point <= 0x7F)
+			{
+				s.push_back(code_point);
+			}
+			else if (code_point <= 0x7FF)
+			{
+				s.push_back(((code_point >> 6) & 0x1F) | 0xC0);
+				s.push_back((code_point & 0x3F) | 0x80);
+			}
+			else
+			{
+				/// Суррогатная пара.
+				if (code_point >= 0xD800 && code_point <= 0xDBFF)
+				{
+					assertString("\\u", buf);
+					char second_hex_code[4];
+					readPODBinary(second_hex_code, buf);
+
+					UInt16 second_code_point =
+						unhex(second_hex_code[0]) * 4096
+						+ unhex(second_hex_code[1]) * 256
+						+ unhex(second_hex_code[2]) * 16
+						+ unhex(second_hex_code[3]);
+
+					if (second_code_point >= 0xDC00 && second_code_point <= 0xDFFF)
+					{
+						UInt32 full_code_point = 0x100000 + (code_point - 0xD800) * 1024 + (second_code_point - 0xDC00);
+
+						s.push_back(((full_code_point >> 18) & 0x07) | 0xF0);
+						s.push_back(((full_code_point >> 12) & 0x3F) | 0x80);
+						s.push_back(((full_code_point >> 6) & 0x3F) | 0x80);
+						s.push_back((full_code_point & 0x3F) | 0x80);
+					}
+					else
+						throw Exception("Incorrect surrogate pair of unicode escape sequences in JSON", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+				}
+				else
+				{
+					s.push_back(((code_point >> 12) & 0x0F) | 0xE0);
+					s.push_back(((code_point >> 6) & 0x3F) | 0x80);
+					s.push_back((code_point & 0x3F) | 0x80);
+				}
+			}
+
+			return;
+		}
+		default:
+			s.push_back(*buf.position());
+			break;
+	}
+
+	++buf.position();
+}
+
+
+template <typename Vector>
 void readEscapedStringInto(Vector & s, ReadBuffer & buf)
 {
 	while (!buf.eof())
@@ -355,6 +463,47 @@ void readCSVString(String & s, ReadBuffer & buf, const char delimiter)
 }
 
 template void readCSVStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf, const char delimiter);
+
+
+template <typename Vector>
+static void readJSONStringInto(Vector & s, ReadBuffer & buf)
+{
+	if (buf.eof() || *buf.position() != '"')
+		throw Exception("Cannot parse JSON string: expected opening quote",
+			ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
+	++buf.position();
+
+	while (!buf.eof())
+	{
+		const char * next_pos = find_first_symbols<'\\', '"'>(buf.position(), buf.buffer().end());
+
+		appendToStringOrVector(s, buf.position(), next_pos);
+		buf.position() += next_pos - buf.position();
+
+		if (!buf.hasPendingData())
+			continue;
+
+		if (*buf.position() == '"')
+		{
+			++buf.position();
+			return;
+		}
+
+		if (*buf.position() == '\\')
+			parseJSONEscapeSequence(s, buf);
+	}
+
+	throw Exception("Cannot parse JSON string: expected closing quote",
+		ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
+}
+
+void readJSONString(String & s, ReadBuffer & buf)
+{
+	s.clear();
+	readJSONStringInto(s, buf);
+}
+
+template void readJSONStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf);
 
 
 void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf)

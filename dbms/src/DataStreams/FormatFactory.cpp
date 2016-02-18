@@ -17,6 +17,8 @@
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/JSONRowOutputStream.h>
 #include <DB/DataStreams/JSONCompactRowOutputStream.h>
+#include <DB/DataStreams/JSONEachRowRowOutputStream.h>
+#include <DB/DataStreams/JSONEachRowRowInputStream.h>
 #include <DB/DataStreams/XMLRowOutputStream.h>
 #include <DB/DataStreams/TSKVRowOutputStream.h>
 #include <DB/DataStreams/TSKVRowInputStream.h>
@@ -59,6 +61,8 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 		return new BlockInputStreamFromRowInputStream(new CSVRowInputStream(buf, sample, ',', true), sample, max_block_size);
 	else if (name == "TSKV")
 		return new BlockInputStreamFromRowInputStream(new TSKVRowInputStream(buf, sample), sample, max_block_size);
+	else if (name == "JSONEachRow")
+		return new BlockInputStreamFromRowInputStream(new JSONEachRowRowInputStream(buf, sample), sample, max_block_size);
 	else if (name == "TabSeparatedRaw"
 		|| name == "BlockTabSeparated"
 		|| name == "Pretty"
@@ -126,6 +130,8 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
 		return new BlockOutputStreamFromRowOutputStream(new JSONRowOutputStream(buf, sample));
 	else if (name == "JSONCompact")
 		return new BlockOutputStreamFromRowOutputStream(new JSONCompactRowOutputStream(buf, sample));
+	else if (name == "JSONEachRow")
+		return new BlockOutputStreamFromRowOutputStream(new JSONEachRowRowOutputStream(buf, sample));
 	else if (name == "XML")
 		return new BlockOutputStreamFromRowOutputStream(new XMLRowOutputStream(buf, sample));
 	else if (name == "TSKV")

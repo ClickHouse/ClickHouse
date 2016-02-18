@@ -182,6 +182,14 @@ void DataTypeEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num
 }
 
 template <typename Type>
+void DataTypeEnum<Type>::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+{
+	std::string name;
+	readJSONString(name, istr);
+	static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
+}
+
+template <typename Type>
 void DataTypeEnum<Type>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeCSVString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);

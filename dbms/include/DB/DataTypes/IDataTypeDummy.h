@@ -39,6 +39,7 @@ public:
 	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override 							{ throwNoSerialization(); }
 
 	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override 		{ throwNoSerialization(); }
+	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override							{ throwNoSerialization(); }
 
 	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override		{ throwNoSerialization(); }
 	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override 		{ throwNoSerialization(); }

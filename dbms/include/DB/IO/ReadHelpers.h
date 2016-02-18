@@ -406,6 +406,8 @@ void readQuotedString(String & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf);
 
+void readJSONString(String & s, ReadBuffer & buf);
+
 void readBackQuotedString(String & s, ReadBuffer & buf);
 
 void readStringUntilEOF(String & s, ReadBuffer & buf);
@@ -446,6 +448,9 @@ void readStringUntilEOFInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter = ',');
+
+template <typename Vector>
+void readJSONStringInto(Vector & s, ReadBuffer & buf);
 
 
 /// в формате YYYY-MM-DD

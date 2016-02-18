@@ -6,8 +6,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 
 JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
 	: dst_ostr(ostr_)
@@ -19,10 +17,14 @@ JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & samp
 	for (size_t i = 0; i < sample_.columns(); ++i)
 	{
 		if (!sample_.unsafeGetByPosition(i).type->isNumeric())
-		{
 			have_non_numeric_columns = true;
-			break;
+
+		String field_name_quoted;
+		{
+			WriteBufferFromString out(field_name_quoted);
+			writeJSONString(fields[i].name, out);
 		}
+		fields[i].name = field_name_quoted;
 	}
 
 	if (have_non_numeric_columns)
@@ -46,10 +48,10 @@ void JSONRowOutputStream::writePrefix()
 		writeCString("\t\t{\n", *ostr);
 
 		writeCString("\t\t\t\"name\": ", *ostr);
-		writeDoubleQuotedString(fields[i].name, *ostr);
+		writeString(fields[i].name, *ostr);
 		writeCString(",\n", *ostr);
 		writeCString("\t\t\t\"type\": ", *ostr);
-		writeDoubleQuotedString(fields[i].type->getName(), *ostr);
+		writeJSONString(fields[i].type->getName(), *ostr);
 		writeChar('\n', *ostr);
 
 		writeCString("\t\t}", *ostr);
@@ -68,7 +70,7 @@ void JSONRowOutputStream::writePrefix()
 void JSONRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
 	writeCString("\t\t\t", *ostr);
-	writeDoubleQuotedString(fields[field_number].name, *ostr);
+	writeString(fields[field_number].name, *ostr);
 	writeCString(": ", *ostr);
 	type.serializeTextJSON(column, row_num, *ostr);
 	++field_number;
@@ -145,7 +147,7 @@ void JSONRowOutputStream::writeTotals()
 				writeCString(",\n", *ostr);
 
 			writeCString("\t\t", *ostr);
-			writeDoubleQuotedString(column.name, *ostr);
+			writeJSONString(column.name, *ostr);
 			writeCString(": ", *ostr);
 			column.type->serializeTextJSON(*column.column.get(), 0, *ostr);
 		}
@@ -172,7 +174,7 @@ static void writeExtremesElement(const char * title, const Block & extremes, siz
 			writeCString(",\n", ostr);
 
 		writeCString("\t\t\t", ostr);
-		writeDoubleQuotedString(column.name, ostr);
+		writeJSONString(column.name, ostr);
 		writeCString(": ", ostr);
 		column.type->serializeTextJSON(*column.column.get(), row_num, ostr);
 	}

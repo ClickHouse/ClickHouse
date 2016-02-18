@@ -274,6 +274,12 @@ void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, W
 }
 
 
+void DataTypeString::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+{
+	read(column, istr, [&](ColumnString::Chars_t & data) { readJSONStringInto(data, istr); });
+}
+
+
 void DataTypeString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeXMLString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);

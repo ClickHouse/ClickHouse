@@ -19,6 +19,9 @@ namespace DB
 template <typename FType>
 class IDataTypeNumber : public IDataType
 {
+private:
+	static FType valueForJSONNull();
+
 public:
 	using FieldType = FType;
 	using ColumnType = ColumnVector<FieldType>;
@@ -54,6 +57,36 @@ public:
 	}
 
 	inline void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+
+	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override
+	{
+		bool has_quote = false;
+		if (!istr.eof() && *istr.position() == '"')		/// Понимаем число как в кавычках, так и без.
+		{
+			has_quote = true;
+			++istr.position();
+		}
+
+		FieldType x;
+
+		/// null
+		if (!has_quote && !istr.eof() && *istr.position() == 'n')
+		{
+			++istr.position();
+			assertString("ull", istr);
+
+			x = valueForJSONNull();
+		}
+		else
+		{
+			readText(x, istr);
+
+			if (has_quote)
+				assertChar('"', istr);
+		}
+
+		static_cast<ColumnType &>(column).getData().push_back(x);
+	}
 
 	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
@@ -133,5 +166,8 @@ template <> inline void IDataTypeNumber<Float32>::deserializeText(IColumn & colu
 	static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
+template <typename FType> inline FType IDataTypeNumber<FType>::valueForJSONNull() { return 0; }
+template <> inline Float64 IDataTypeNumber<Float64>::valueForJSONNull() { return std::numeric_limits<Float64>::quiet_NaN(); }
+template <> inline Float32 IDataTypeNumber<Float32>::valueForJSONNull() { return std::numeric_limits<Float32>::quiet_NaN(); }
 
 }

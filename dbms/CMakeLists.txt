@@ -210,6 +210,8 @@ add_library (dbms
 	include/DB/DataStreams/RemoteBlockOutputStream.h
 	include/DB/DataStreams/MergingSortedBlockInputStream.h
 	include/DB/DataStreams/JSONRowOutputStream.h
+	include/DB/DataStreams/JSONEachRowRowOutputStream.h
+	include/DB/DataStreams/JSONEachRowRowInputStream.h
 	include/DB/DataStreams/XMLRowOutputStream.h
 	include/DB/DataStreams/TSKVRowOutputStream.h
 	include/DB/DataStreams/TSKVRowInputStream.h
@@ -679,6 +681,8 @@ add_library (dbms
 	src/DataStreams/FormatFactory.cpp
 	src/DataStreams/copyData.cpp
 	src/DataStreams/JSONRowOutputStream.cpp
+	src/DataStreams/JSONEachRowRowOutputStream.cpp
+	src/DataStreams/JSONEachRowRowInputStream.cpp
 	src/DataStreams/XMLRowOutputStream.cpp
 	src/DataStreams/TSKVRowOutputStream.cpp
 	src/DataStreams/TSKVRowInputStream.cpp

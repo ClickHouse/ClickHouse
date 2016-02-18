@@ -65,6 +65,15 @@ public:
 		writeChar('"', ostr);
 	}
 
+	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override
+	{
+		time_t x;
+		assertChar('"', istr);
+		readDateTimeText(x, istr);
+		assertChar('"', istr);
+		static_cast<ColumnType &>(column).getData().push_back(x);
+	}
+
 	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
 		writeChar('"', ostr);

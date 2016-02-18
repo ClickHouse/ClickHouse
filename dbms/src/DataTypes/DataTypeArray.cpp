@@ -202,7 +202,8 @@ void DataTypeArray::serializeText(const IColumn & column, size_t row_num, WriteB
 }
 
 
-void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr) const
+template <typename Reader>
+static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && read_nested)
 {
 	ColumnArray & column_array = static_cast<ColumnArray &>(column);
 	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
@@ -232,7 +233,7 @@ void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr) const
 			if (*istr.position() == ']')
 				break;
 
-			nested->deserializeTextQuoted(nested_column, istr);
+			read_nested(nested_column);
 			++size;
 
 			skipWhitespaceIfAny(istr);
@@ -246,6 +247,12 @@ void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr) const
 	}
 
 	offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
+}
+
+
+void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr) const
+{
+	deserializeTextImpl(column, istr, [&](IColumn & nested_column) { nested->deserializeTextQuoted(nested_column, istr); });
 }
 
 
@@ -291,6 +298,12 @@ void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, Wr
 		nested->serializeTextJSON(nested_column, i, ostr);
 	}
 	writeChar(']', ostr);
+}
+
+
+void DataTypeArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+{
+	deserializeTextImpl(column, istr, [&](IColumn & nested_column) { nested->deserializeTextJSON(nested_column, istr); });
 }
 
 

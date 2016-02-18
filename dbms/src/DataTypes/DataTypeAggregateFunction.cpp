@@ -202,6 +202,14 @@ void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t
 }
 
 
+void DataTypeAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+{
+	String s;
+	readJSONString(s, istr);
+	deserializeFromString(function, column, s);
+}
+
+
 void DataTypeAggregateFunction::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeXMLString(serializeToString(function, column, row_num), ostr);
