@@ -212,6 +212,7 @@ add_library (dbms
 	include/DB/DataStreams/JSONRowOutputStream.h
 	include/DB/DataStreams/XMLRowOutputStream.h
 	include/DB/DataStreams/TSKVRowOutputStream.h
+	include/DB/DataStreams/TSKVRowInputStream.h
 	include/DB/DataStreams/ODBCDriverBlockOutputStream.h
 	include/DB/DataStreams/MergeSortingBlockInputStream.h
 	include/DB/DataStreams/ExpressionBlockInputStream.h
@@ -680,6 +681,7 @@ add_library (dbms
 	src/DataStreams/JSONRowOutputStream.cpp
 	src/DataStreams/XMLRowOutputStream.cpp
 	src/DataStreams/TSKVRowOutputStream.cpp
+	src/DataStreams/TSKVRowInputStream.cpp
 	src/DataStreams/ODBCDriverBlockOutputStream.cpp
 	src/DataStreams/JSONCompactRowOutputStream.cpp
 	src/DataStreams/PrettyCompactMonoBlockOutputStream.cpp

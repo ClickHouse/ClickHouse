@@ -14,8 +14,6 @@ namespace ErrorCodes
 }
 
 
-using Poco::SharedPtr;
-
 TabSeparatedRowInputStream::TabSeparatedRowInputStream(ReadBuffer & istr_, const Block & sample_, bool with_names_, bool with_types_)
 	: istr(istr_), sample(sample_), with_names(with_names_), with_types(with_types_)
 {

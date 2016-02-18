@@ -19,6 +19,7 @@
 #include <DB/DataStreams/JSONCompactRowOutputStream.h>
 #include <DB/DataStreams/XMLRowOutputStream.h>
 #include <DB/DataStreams/TSKVRowOutputStream.h>
+#include <DB/DataStreams/TSKVRowInputStream.h>
 #include <DB/DataStreams/PrettyCompactMonoBlockOutputStream.h>
 #include <DB/DataStreams/ODBCDriverBlockOutputStream.h>
 #include <DB/DataStreams/CSVRowInputStream.h>
@@ -56,6 +57,8 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 		return new BlockInputStreamFromRowInputStream(new CSVRowInputStream(buf, sample, ','), sample, max_block_size);
 	else if (name == "CSVWithNames")
 		return new BlockInputStreamFromRowInputStream(new CSVRowInputStream(buf, sample, ',', true), sample, max_block_size);
+	else if (name == "TSKV")
+		return new BlockInputStreamFromRowInputStream(new TSKVRowInputStream(buf, sample), sample, max_block_size);
 	else if (name == "TabSeparatedRaw"
 		|| name == "BlockTabSeparated"
 		|| name == "Pretty"
@@ -71,7 +74,6 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 		|| name == "JSON"
 		|| name == "JSONCompact"
 		|| name == "XML"
-		|| name == "TSKV"
 		|| name == "ODBCDriver")
 		throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 	else
