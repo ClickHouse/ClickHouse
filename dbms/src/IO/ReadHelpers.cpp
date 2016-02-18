@@ -166,6 +166,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
 }
 
 
+/// TODO Обобщить с кодом в FunctionsVisitParam.h и JSON.h
 template <typename Vector>
 static void parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 {
