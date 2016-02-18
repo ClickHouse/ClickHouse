@@ -246,7 +246,7 @@ static void parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 
 					if (second_code_point >= 0xDC00 && second_code_point <= 0xDFFF)
 					{
-						UInt32 full_code_point = 0x100000 + (code_point - 0xD800) * 1024 + (second_code_point - 0xDC00);
+						UInt32 full_code_point = 0x10000 + (code_point - 0xD800) * 1024 + (second_code_point - 0xDC00);
 
 						s.push_back(((full_code_point >> 18) & 0x07) | 0xF0);
 						s.push_back(((full_code_point >> 12) & 0x3F) | 0x80);
