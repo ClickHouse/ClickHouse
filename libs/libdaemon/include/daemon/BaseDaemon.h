@@ -71,9 +71,6 @@ public:
 	/// Заставляет демон завершаться, если хотя бы одна задача завершилась неудачно
 	void exitOnTaskError();
 
-	/// Возвращает TaskManager приложения
-	Poco::TaskManager & getTaskManager() { return *task_manager; }
-
 	/// Завершение демона ("мягкое")
 	void terminate();
 
@@ -125,6 +122,11 @@ public:
 	}
 
 protected:
+	/// Возвращает TaskManager приложения
+	/// все методы task_manager следует вызывать из одного потока
+	/// иначе возможен deadlock, т.к. joinAll выполняется под локом, а любой метод тоже берет лок
+	Poco::TaskManager & getTaskManager() { return *task_manager; }
+
 	virtual void logRevision() const;
 
 	/// Используется при exitOnTaskError()
