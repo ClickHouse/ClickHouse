@@ -395,7 +395,12 @@ public:
 	{
 		try
 		{
-			zookeeper.tryRemove(path);
+			/** Важно, что в случае недоступности ZooKeeper, делаются повторные попытки удалить ноду, пока не истечёт сессия.
+			  * Иначе возможна ситуация, когда объект EphemeralNodeHolder уничтожен,
+			  *  но сессия восстановится в течние session timeout, и эфемерная нода в ZooKeeper останется ещё надолго.
+			  * А это может сломать механизм leader election и блокировок.
+			  */
+			zookeeper.tryRemoveWithRetries(path);
 		}
 		catch (const KeeperException & e)
 		{
