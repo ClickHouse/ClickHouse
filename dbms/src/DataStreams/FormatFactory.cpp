@@ -60,7 +60,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 	else if (name == "CSVWithNames")
 		return new BlockInputStreamFromRowInputStream(new CSVRowInputStream(buf, sample, ',', true), sample, max_block_size);
 	else if (name == "TSKV")
-		return new BlockInputStreamFromRowInputStream(new TSKVRowInputStream(buf, sample), sample, max_block_size);
+		return new BlockInputStreamFromRowInputStream(new TSKVRowInputStream(buf, sample, false), sample, max_block_size);
 	else if (name == "JSONEachRow")
 		return new BlockInputStreamFromRowInputStream(new JSONEachRowRowInputStream(buf, sample), sample, max_block_size);
 	else if (name == "TabSeparatedRaw"

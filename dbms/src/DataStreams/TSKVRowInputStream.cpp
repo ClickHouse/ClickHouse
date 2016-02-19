@@ -13,8 +13,8 @@ namespace ErrorCodes
 }
 
 
-TSKVRowInputStream::TSKVRowInputStream(ReadBuffer & istr_, const Block & sample_)
-	: istr(istr_), sample(sample_), name_map(sample.columns())
+TSKVRowInputStream::TSKVRowInputStream(ReadBuffer & istr_, const Block & sample_, bool skip_unknown_)
+	: istr(istr_), sample(sample_), skip_unknown(skip_unknown_), name_map(sample.columns())
 {
 	size_t columns = sample.columns();
 	for (size_t i = 0; i < columns; ++i)
@@ -111,17 +111,26 @@ bool TSKVRowInputStream::read(Block & block)
 
 				auto it = name_map.find(name_ref);
 				if (name_map.end() == it)
-					throw Exception("Unknown field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
+				{
+					if (!skip_unknown)
+						throw Exception("Unknown field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 
-				size_t index = it->second;
+					/// Если ключ не найден, то пропускаем значение.
+					NullSink sink;
+					readEscapedStringInto(sink, istr);
+				}
+				else
+				{
+					size_t index = it->second;
 
-				if (read_columns[index])
-					throw Exception("Duplicate field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
+					if (read_columns[index])
+						throw Exception("Duplicate field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 
-				read_columns[index] = true;
+					read_columns[index] = true;
 
-				auto & col = block.unsafeGetByPosition(index);
-				col.type.get()->deserializeTextEscaped(*col.column.get(), istr);
+					auto & col = block.unsafeGetByPosition(index);
+					col.type.get()->deserializeTextEscaped(*col.column.get(), istr);
+				}
 			}
 			else
 			{
