@@ -120,6 +120,13 @@ public:
 		for (IColumn::Offset_t i = begin; i != end; ++i)
 			set.insert(data[i]);
 	}
+
+	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num)
+	{
+		return static_cast<const AggregateFunctionGroupUniqArrays<T> &>(*that).addImpl(place, *columns[0], row_num);
+	}
+
+	IAggregateFunction::AddFunc getAddressOfAddFunction() const override { return &addFree; }
 };
 
 
