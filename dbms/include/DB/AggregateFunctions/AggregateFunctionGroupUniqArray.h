@@ -98,38 +98,6 @@ public:
 	}
 };
 
-
-/** То же самое, но в качестве аргумента - числовые массивы. Применяется ко всем элементам массивов.
-  * То есть, выдаёт массив, содержащий уникальные значения из внутренностей массивов-аргументов.
-  */
-template <typename T>
-class AggregateFunctionGroupUniqArrays final : public AggregateFunctionGroupUniqArray<T>
-{
-public:
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
-	{
-		const ColumnArray & arr = static_cast<const ColumnArray &>(column);
-		const ColumnArray::Offsets_t & offsets = arr.getOffsets();
-		const typename ColumnVector<T>::Container_t & data = static_cast<const ColumnVector<T> &>(arr.getData()).getData();
-
-		IColumn::Offset_t begin = row_num ? offsets[row_num - 1] : 0;
-		IColumn::Offset_t end = offsets[row_num];
-
-		typename AggregateFunctionGroupUniqArrayData<T>::Set & set = this->data(place).value;
-
-		for (IColumn::Offset_t i = begin; i != end; ++i)
-			set.insert(data[i]);
-	}
-
-	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num)
-	{
-		return static_cast<const AggregateFunctionGroupUniqArrays<T> &>(*that).addImpl(place, *columns[0], row_num);
-	}
-
-	IAggregateFunction::AddFunc getAddressOfAddFunction() const override { return &addFree; }
-};
-
-
 #undef AGGREGATE_FUNCTION_GROUP_ARRAY_UNIQ_MAX_SIZE
 
 }
