@@ -37,7 +37,7 @@ public:
 		return static_cast<const Derived &>(*that).addImpl(place, *columns[0], row_num);
 	}
 
-	IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
+	IAggregateFunction::AddFunc getAddressOfAddFunction() const override { return &addFree; }
 
 	/** Реализуйте это в классе-наследнике:
 	  * void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const;

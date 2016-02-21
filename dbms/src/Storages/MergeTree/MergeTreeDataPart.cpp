@@ -350,8 +350,8 @@ size_t MergeTreeDataPart::calcTotalSize(const String & from)
 
 void MergeTreeDataPart::remove() const
 {
-	String from = storage.full_path + name + "/";
-	String to = storage.full_path + "tmp2_" + name + "/";
+	String from = storage.full_path + name;
+	String to = storage.full_path + "tmp2_" + name;
 
 	Poco::File from_dir{from};
 	Poco::File to_dir{to};

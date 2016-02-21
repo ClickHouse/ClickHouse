@@ -452,6 +452,13 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter = ',')
 template <typename Vector>
 void readJSONStringInto(Vector & s, ReadBuffer & buf);
 
+/// Это можно использовать в качестве параметра шаблона для функций выше, если данные не надо никуда считывать, но нужно просто пропустить.
+struct NullSink
+{
+	void append(const char *, size_t) {};
+	void push_back(char) {};
+};
+
 
 /// в формате YYYY-MM-DD
 inline void readDateText(DayNum_t & date, ReadBuffer & buf)

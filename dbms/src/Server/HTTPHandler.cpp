@@ -54,7 +54,7 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	/** Клиент может указать поддерживаемый метод сжатия (gzip или deflate) в HTTP-заголовке.
 	  */
 	String http_response_compression_methods = request.get("Accept-Encoding", "");
-	bool http_response_compress = false;
+	bool client_supports_http_compression = false;
 	Poco::DeflatingStreamBuf::StreamType http_response_compression_method {};
 
 	if (!http_response_compression_methods.empty())
@@ -64,17 +64,17 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 		if (std::string::npos != http_response_compression_methods.find("gzip"))
 		{
-			http_response_compress = true;
+			client_supports_http_compression = true;
 			http_response_compression_method = Poco::DeflatingStreamBuf::STREAM_GZIP;
 		}
 		else if (std::string::npos != http_response_compression_methods.find("deflate"))
 		{
-			http_response_compress = true;
+			client_supports_http_compression = true;
 			http_response_compression_method = Poco::DeflatingStreamBuf::STREAM_ZLIB;
 		}
 	}
 
-	used_output.out = new WriteBufferFromHTTPServerResponse(response, http_response_compress, http_response_compression_method);
+	used_output.out = new WriteBufferFromHTTPServerResponse(response, client_supports_http_compression, http_response_compression_method);
 
 	/** Клиент может указать compress в query string.
 	  * В этом случае, результат сжимается несовместимым алгоритмом для внутреннего использования и этот факт не отражается в HTTP заголовках.
@@ -225,7 +225,10 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 		}
 	}
 
-	if (http_response_compress)
+	/// Сжатие ответа (Content-Encoding) включается только если клиент сказал, что он это понимает (Accept-Encoding)
+	/// и выставлена настройка, разрешающая сжатие.
+	used_output.out->setCompression(client_supports_http_compression && context.getSettingsRef().enable_http_compression);
+	if (client_supports_http_compression)
 		used_output.out->setCompressionLevel(context.getSettingsRef().http_zlib_compression_level);
 
 	context.setInterface(Context::Interface::HTTP);

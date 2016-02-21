@@ -71,10 +71,7 @@ void assertEOF(ReadBuffer & buf)
 
 
 template <typename T>
-static void appendToStringOrVector(T & s, const char * begin, const char * end);
-
-template <>
-inline void appendToStringOrVector(String & s, const char * begin, const char * end)
+static void appendToStringOrVector(T & s, const char * begin, const char * end)
 {
 	s.append(begin, end - begin);
 }
@@ -303,6 +300,7 @@ void readEscapedString(String & s, ReadBuffer & buf)
 }
 
 template void readEscapedStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf);
+template void readEscapedStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
 
 
 template <char quote, typename Vector>

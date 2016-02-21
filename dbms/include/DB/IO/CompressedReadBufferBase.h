@@ -43,6 +43,8 @@ protected:
 
 #ifdef USE_QUICKLZ
 	qlz_state_decompress * qlz_state = nullptr;
+#else
+	void * dirty_hack_to_ensure_the_same_size_of_the_structure = nullptr;
 #endif
 
 	/// Прочитать сжатые данные в compressed_buffer. Достать из их заголовка размер разжатых данных. Проверить чексумму.
