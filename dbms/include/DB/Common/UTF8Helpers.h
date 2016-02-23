@@ -26,10 +26,10 @@ inline bool isContinuationOctet(const UInt8 octet)
 	return (octet & CONTINUATION_OCTET_MASK) == CONTINUATION_OCTET;
 }
 
-/// moves `s` backward until either first non-continuation octet
-inline void syncBackward(const UInt8 * & s)
+/// moves `s` backward until either first non-continuation octet or begin
+inline void syncBackward(const UInt8 * & s, const UInt8 * const begin)
 {
-	while (isContinuationOctet(*s))
+	while (isContinuationOctet(*s) && s > begin)
 		--s;
 }
 

@@ -251,6 +251,43 @@ public:
 };
 
 
+class FunctionRowNumberInBlock : public IFunction
+{
+public:
+	static constexpr auto name = "rowNumberInBlock";
+	static IFunction * create(const Context & context) { return new FunctionRowNumberInBlock; }
+
+	/// Получить имя функции.
+	String getName() const override
+	{
+		return name;
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (!arguments.empty())
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 0.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new DataTypeUInt64;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		size_t size = block.rowsInFirstColumn();
+		auto column = new ColumnUInt64;
+		block.getByPosition(result).column = column;
+		auto & data = column->getData();
+		data.resize(size);
+		for (size_t i = 0; i < size; ++i)
+			data[i] = i;
+	}
+};
+
+
 class FunctionSleep : public IFunction
 {
 public:
