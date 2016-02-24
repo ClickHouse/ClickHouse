@@ -830,7 +830,7 @@ add_library (dbms
 )
 
 IF (NOT AARCH64)
-	SET(LINK_LIBRARIES_ONLY_ON_X86_64 cpuid vectorclass)
+	SET(LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
 ENDIF()
 
 target_link_libraries(dbms
