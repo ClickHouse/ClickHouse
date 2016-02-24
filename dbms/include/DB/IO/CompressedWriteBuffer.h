@@ -42,7 +42,7 @@ private:
 #ifdef USE_QUICKLZ
 	qlz_state_compress * qlz_state;
 #else
-	void * dirty_hack_to_ensure_the_same_size_of_the_structure = nullptr;
+	void * fixed_size_padding = nullptr;
 #endif
 
 	void nextImpl()
@@ -188,8 +188,7 @@ public:
 		}
 
 	#ifdef USE_QUICKLZ
-		if (qlz_state) /// It can be zero if it is actually dirty_hack_to_ensure_the_same_size_of_the_structure //_-)
-			delete qlz_state;
+		delete qlz_state;
 	#endif
 	}
 };
