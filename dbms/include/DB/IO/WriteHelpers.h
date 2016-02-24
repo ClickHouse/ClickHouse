@@ -74,6 +74,12 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
 	buf.write(s, strlen(s));
 }
 
+inline void writeStringBinary(const StringRef & s, WriteBuffer & buf)
+{
+	writeVarUInt(s.size, buf);
+	buf.write(s.data, s.size);
+}
+
 
 template <typename T>
 void writeVectorBinary(const std::vector<T> & v, WriteBuffer & buf)
