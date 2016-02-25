@@ -351,6 +351,7 @@ JSON::Pos JSON::skipArray() const
 		{
 			case ',':
 				++pos;
+				break;
 			case ']':
 				return ++pos;
 			default:
@@ -382,6 +383,7 @@ JSON::Pos JSON::skipObject() const
 		{
 			case ',':
 				++pos;
+				break;
 			case '}':
 				return ++pos;
 			default:
