@@ -14,4 +14,4 @@ target_link_libraries (date_lut4 common libicui18n.a libicuuc.a libicudata.a dl)
 target_link_libraries (multi_version common libboost_thread.a libboost_system.a rt)
 target_link_libraries (json_test statdaemons common libboost_thread.a libboost_system.a rt)
 
-add_test (libcommon/json json_test)
+add_check (json_test)
