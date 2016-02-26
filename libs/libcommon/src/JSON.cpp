@@ -4,6 +4,7 @@
 #include <Poco/NumberFormatter.h>
 #include <Poco/NumberParser.h>
 #include <common/JSON.h>
+#include <common/find_first_symbols.h>
 
 #include <iostream>
 
@@ -565,14 +566,22 @@ bool JSON::getBool() const
 std::string JSON::getString() const
 {
 	Pos s = ptr_begin;
+
 	if (*s != '"')
 		throw JSONException(std::string("JSON: expected \", got ") + *s);
 	++s;
 	checkPos(s);
 
 	std::string buf;
-	while (s < ptr_end)
+	do
 	{
+		Pos p = find_first_symbols<'\\','"'>(s, ptr_end);
+		if (p >= ptr_end)
+		{
+			break;
+		}
+		buf.append(s, p);
+		s = p;
 		switch (*s)
 		{
 			case '\\':
@@ -640,11 +649,9 @@ std::string JSON::getString() const
 			case '"':
 				return buf;
 			default:
-				buf += *s;
-				++s;
-				break;
+				throw JSONException("find_first_symbols<...>() failed in unexpected way");
 		}
-	}
+	} while (s < ptr_end);
 	throw JSONException("JSON: incorrect syntax (expected end of string, found end of JSON).");
 }
 
