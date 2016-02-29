@@ -8,6 +8,7 @@
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 
 #include <DB/DataStreams/OneBlockInputStream.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
 #include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
