@@ -25,7 +25,7 @@ INSTALL(
     COMPONENT clickhouse-server)
 
 INSTALL(
-    FILES ../../../private/Server/metrika/config.xml ../../../private/Server/metrika/users.xml
+    FILES ${CLICKHOUSE_PRIVATE_DIR}/Server/metrika/config.xml ${CLICKHOUSE_PRIVATE_DIR}/Server/metrika/users.xml
     DESTINATION /etc/clickhouse-server/metrika
     COMPONENT clickhouse-server
     OPTIONAL)
