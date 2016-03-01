@@ -30,7 +30,7 @@ std::string Service::getId(const std::string & node_id) const
 	return getEndpointId(node_id);
 }
 
-void Service::processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out)
+void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out)
 {
 	if (is_cancelled)
 		throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);

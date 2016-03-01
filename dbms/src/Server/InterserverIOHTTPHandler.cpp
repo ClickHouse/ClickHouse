@@ -2,6 +2,7 @@
 #include <DB/Interpreters/InterserverIOHandler.h>
 #include <DB/IO/WriteBufferFromHTTPServerResponse.h>
 #include <DB/IO/CompressedWriteBuffer.h>
+#include <DB/IO/ReadBufferFromIStream.h>
 
 
 namespace DB
@@ -20,19 +21,21 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 {
 	HTMLForm params(request);
 
-	std::ostringstream request_ostream;
-	request_ostream << request.stream().rdbuf();
-	std::string request_string = request_ostream.str();
+	//std::ostringstream request_ostream;
+	//request_ostream << request.stream().rdbuf();
+	//std::string request_string = request_ostream.str();
 
 	LOG_TRACE(log, "Request URI: " << request.getURI());
-	LOG_TRACE(log, "Request body: " << request_string);
+	//LOG_TRACE(log, "Request body: " << request_string);
 
-	std::istringstream request_istream(request_string);
+	//std::istringstream request_istream(request_string);
 
 	/// NOTE: Тут можно сделать аутентификацию, если понадобится.
 
 	String endpoint_name = params.get("endpoint");
 	bool compress = params.get("compress") == "true";
+
+	ReadBufferFromIStream body(request.stream());
 
 	WriteBufferFromHTTPServerResponse out(response);
 
@@ -41,11 +44,11 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 	if (compress)
 	{
 		CompressedWriteBuffer compressed_out(out);
-		endpoint->processQuery(params, compressed_out);
+		endpoint->processQuery(params, body, compressed_out);
 	}
 	else
 	{
-		endpoint->processQuery(params, out);
+		endpoint->processQuery(params, body, out);
 	}
 
 	out.finalize();

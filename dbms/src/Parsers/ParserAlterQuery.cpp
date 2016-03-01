@@ -36,6 +36,8 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 	ParserString s_to("TO", true, true);
 	ParserString s_using("USING", true, true);
 	ParserString s_key("KEY", true, true);
+	ParserString s_coordinate("COORDINATE", true, true);
+	ParserString s_with("WITH", true, true);
 	ParserString s_comma(",");
 	ParserString s_doubledot("..");
 
@@ -256,6 +258,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 		{
 			ParserList weighted_zookeeper_paths_p(ParserPtr(new ParserWeightedZooKeeperPath), ParserPtr(new ParserString(",")), false);
 			ParserExpressionWithOptionalAlias parser_sharding_key_expr(false);
+			ParserStringLiteral parser_coordinator;
 
 			ws.ignore(pos, end);
 
@@ -298,6 +301,21 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 				return false;
 
 			ws.ignore(pos, end);
+
+			if (s_coordinate.ignore(pos, end, max_parsed_pos, expected))
+			{
+				ws.ignore(pos, end);
+
+				if (!s_with.ignore(pos, end, max_parsed_pos, expected))
+					return false;
+
+				ws.ignore(pos, end);
+
+				if (!parser_coordinator.parse(pos, end, params.coordinator, max_parsed_pos, expected))
+					return false;
+
+				ws.ignore(pos, end);
+			}
 
 			params.type = ASTAlterQuery::RESHARD_PARTITION;
 		}

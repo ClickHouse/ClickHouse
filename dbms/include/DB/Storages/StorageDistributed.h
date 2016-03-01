@@ -76,8 +76,10 @@ public:
 
 	void shutdown() override;
 
-	void reshardPartitions(const String  & database_name, const Field & first_partition, const Field & last_partition,
-		const WeightedZooKeeperPaths & weighted_zookeeper_paths, const ASTPtr & sharding_key_expr,
+	void reshardPartitions(ASTPtr query, const String  & database_name,
+		const Field & first_partition, const Field & last_partition,
+		const WeightedZooKeeperPaths & weighted_zookeeper_paths,
+		const ASTPtr & sharding_key_expr, const Field & coordinator,
 		const Settings & settings) override;
 
 	/// От каждой реплики получить описание соответствующей локальной таблицы.

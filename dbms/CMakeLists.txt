@@ -232,6 +232,7 @@ add_library (dbms
 	include/DB/DataStreams/AddingDefaultBlockOutputStream.h
 	include/DB/DataStreams/JSONCompactRowOutputStream.h
 	include/DB/DataStreams/PartialSortingBlockInputStream.h
+	include/DB/DataStreams/PreSendCallbackInputStream.h
 	include/DB/DataStreams/MarkInCompressedFile.h
 	include/DB/DataStreams/CSVRowOutputStream.h
 	include/DB/DataStreams/CSVRowInputStream.h
@@ -331,6 +332,7 @@ add_library (dbms
 	include/DB/Interpreters/ClusterProxy/DescribeQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/AlterQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/Query.h
+	include/DB/Interpreters/ClusterProxy/PreSendHook.h
 	include/DB/Common/Allocator.h
 	include/DB/Common/CombinedCardinalityEstimator.h
 	include/DB/Common/ExternalTable.h
@@ -441,6 +443,7 @@ add_library (dbms
 	include/DB/IO/WriteBufferFromFileBase.h
 	include/DB/IO/ReadBufferFromIStream.h
 	include/DB/IO/UncompressedCache.h
+	include/DB/IO/InterserverWriteBuffer.h
 	include/DB/Columns/ColumnTuple.h
 	include/DB/Columns/ColumnVector.h
 	include/DB/Columns/IColumnDummy.h
@@ -535,7 +538,7 @@ add_library (dbms
 	include/DB/Storages/MergeTree/ReshardingJob.h
 	include/DB/Storages/MergeTree/ReshardingWorker.h
 	include/DB/Storages/MergeTree/MergeTreeSharder.h
-	include/DB/Storages/MergeTree/ShardedPartitionSender.h
+	include/DB/Storages/MergeTree/ShardedPartitionUploader.h
 	include/DB/Storages/MergeTree/RemoteQueryExecutor.h
 	include/DB/Storages/StorageNull.h
 	include/DB/Storages/System/StorageSystemSettings.h
@@ -576,6 +579,7 @@ add_library (dbms
 	src/IO/createWriteBufferFromFileBase.cpp
 	src/IO/ReadBufferFromFileBase.cpp
 	src/IO/WriteBufferFromFileBase.cpp
+	src/IO/InterserverWriteBuffer.cpp
 
 	src/Columns/ColumnConst.cpp
 	src/Columns/ColumnArray.cpp
@@ -638,7 +642,7 @@ add_library (dbms
 	src/Storages/MergeTree/ReshardingJob.cpp
 	src/Storages/MergeTree/ReshardingWorker.cpp
 	src/Storages/MergeTree/MergeTreeSharder.cpp
-	src/Storages/MergeTree/ShardedPartitionSender.cpp
+	src/Storages/MergeTree/ShardedPartitionUploader.cpp
 	src/Storages/MergeTree/RemoteQueryExecutor.cpp
 	src/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.cpp
 	src/Storages/ITableDeclaration.cpp

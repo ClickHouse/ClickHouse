@@ -64,7 +64,7 @@ class InterserverIOEndpoint
 {
 public:
 	virtual std::string getId(const std::string & path) const = 0;
-	virtual void processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out) = 0;
+	virtual void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out) = 0;
 	virtual ~InterserverIOEndpoint() {}
 
 	void cancel() { is_cancelled = true; }

@@ -68,11 +68,57 @@ BlockInputStreams Query::execute()
 	size_t pools_per_thread = (thread_count > 0) ? (remote_count / thread_count) : 0;
 	size_t remainder = (thread_count > 0) ? (remote_count % thread_count) : 0;
 
-	ConnectionPoolsPtr pools;
 	bool do_init = true;
 
-	/// Цикл по шардам.
+	/// Compute the number of parallel streams.
+	size_t stream_count = 0;
+	size_t pool_count = 0;
 	size_t current_thread = 0;
+
+	for (const auto & shard_info : cluster.getShardsInfo())
+	{
+		bool create_local_queries = shard_info.isLocal();
+		bool create_remote_queries = query_constructor.isInclusive() ? shard_info.hasRemoteConnections() : !create_local_queries;
+
+		if (create_local_queries)
+			stream_count += shard_info.local_addresses.size();
+
+		if (create_remote_queries)
+		{
+			size_t excess = (current_thread < remainder) ? 1 : 0;
+			size_t actual_pools_per_thread = pools_per_thread + excess;
+
+			if (actual_pools_per_thread == 1)
+			{
+				++stream_count;
+				++current_thread;
+			}
+			else
+			{
+				if (do_init)
+				{
+					pool_count = 0;
+					do_init = false;
+				}
+
+				++pool_count;
+				if (pool_count == actual_pools_per_thread)
+				{
+					++stream_count;
+					do_init = true;
+					++current_thread;
+				}
+			}
+		}
+	}
+
+	query_constructor.setupBarrier(stream_count);
+
+	/// Цикл по шардам.
+	ConnectionPoolsPtr pools;
+	do_init = true;
+	current_thread = 0;
+
 	for (const auto & shard_info : cluster.getShardsInfo())
 	{
 		bool create_local_queries = shard_info.isLocal();

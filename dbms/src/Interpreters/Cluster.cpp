@@ -2,8 +2,10 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/isLocalAddress.h>
 #include <DB/Common/SimpleCache.h>
+#include <DB/IO/HexWriteBuffer.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+#include <openssl/sha.h>
 
 namespace DB
 {
@@ -117,12 +119,13 @@ Clusters::Clusters(const Settings & settings, const String & config_name)
 	for (const auto & key : config_keys)
 		impl.emplace(std::piecewise_construct,
 			std::forward_as_tuple(key),
-			std::forward_as_tuple(settings, config_name + "." + key));
+			std::forward_as_tuple(settings, key, config_name + "." + key));
 }
 
 /// Реализация класса Cluster
 
-Cluster::Cluster(const Settings & settings, const String & cluster_name)
+Cluster::Cluster(const Settings & settings, const String & cluster_short_name, const String & cluster_name)
+	: name(cluster_short_name)
 {
 	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 	Poco::Util::AbstractConfiguration::Keys config_keys;
@@ -299,6 +302,43 @@ Cluster::Cluster(const Settings & settings, std::vector<std::vector<String>> nam
 		slot_to_shard.insert(std::end(slot_to_shard), default_weight, shards_info.size());
 		shards_info.push_back({{}, current_shard_num, default_weight, {}, shard_pool});
 		++current_shard_num;
+	}
+
+	/// Create a unique name based on the list of addresses.
+	/// We need it in order to be able to perform resharding requests
+	/// with the remote table function.
+	std::vector<std::string> elements;
+	for (const auto & address : addresses)
+	{
+		elements.push_back(address.host_name);
+		elements.push_back(address.resolved_address.host().toString());
+	}
+
+	for (const auto & addresses : addresses_with_failover)
+	{
+		for (const auto & address : addresses)
+		{
+			elements.push_back(address.host_name);
+			elements.push_back(address.resolved_address.host().toString());
+		}
+	}
+
+	std::sort(elements.begin(), elements.end());
+
+	unsigned char hash[SHA512_DIGEST_LENGTH];
+
+	SHA512_CTX ctx;
+	SHA512_Init(&ctx);
+
+	for (const auto & host : elements)
+		SHA512_Update(&ctx, reinterpret_cast<const void *>(host.data()), host.size());
+
+	SHA512_Final(hash, &ctx);
+
+	{
+		WriteBufferFromString buf(name);
+		HexWriteBuffer hex_buf(buf);
+		hex_buf.write(reinterpret_cast<const char *>(hash), sizeof(hash));
 	}
 
 	initMisc();
