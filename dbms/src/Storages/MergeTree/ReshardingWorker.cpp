@@ -351,35 +351,33 @@ void ReshardingWorker::perform(const Strings & job_nodes)
 			/// in the corresponding task queues for a later execution.
 			/// If an error has occurred, either locally or remotely, while
 			/// performing the job, we delete it from the corresponding task queues.
-
-			if ((ex.code() == ErrorCodes::RESHARDING_REMOTE_NODE_UNAVAILABLE) ||
-				(ex.code() == ErrorCodes::RESHARDING_DISTRIBUTED_JOB_ON_HOLD))
+			try
 			{
-				LOG_DEBUG(log, ex.displayText());
-				continue;
+				if (ex.code() == ErrorCodes::ABORTED)
+				{
+					/// nothing here
+				}
+				else if (ex.code() == ErrorCodes::RESHARDING_REMOTE_NODE_UNAVAILABLE)
+				{
+					/// nothing here
+				}
+				else if (ex.code() == ErrorCodes::RESHARDING_DISTRIBUTED_JOB_ON_HOLD)
+				{
+					/// nothing here
+				}
+				else if (ex.code() == ErrorCodes::RESHARDING_REMOTE_NODE_ERROR)
+					zookeeper->remove(child_full_path);
+				else if (ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED)
+					zookeeper->remove(child_full_path);
+				else
+					zookeeper->remove(child_full_path);
 			}
-			else
+			catch (...)
 			{
-				try
-				{
-					if (ex.code() == ErrorCodes::ABORTED)
-					{
-						/// nothing here
-					}
-					else if (ex.code() == ErrorCodes::RESHARDING_REMOTE_NODE_ERROR)
-						zookeeper->remove(child_full_path);
-					else if (ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED)
-						zookeeper->remove(child_full_path);
-					else
-						zookeeper->remove(child_full_path);
-				}
-				catch (...)
-				{
-					tryLogCurrentException(__PRETTY_FUNCTION__);
-				}
-
-				throw;
+				tryLogCurrentException(__PRETTY_FUNCTION__);
 			}
+
+			throw;
 		}
 		catch (...)
 		{
