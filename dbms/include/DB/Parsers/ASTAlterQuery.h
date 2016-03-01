@@ -17,8 +17,10 @@ namespace ErrorCodes
  * 		DROP COLUMN col_drop,
  * 		MODIFY COLUMN col_name type,
  * 		DROP PARTITION partition
- *      RESHARD PARTITION partition TO /path/to/zookeeper/table WEIGHT w, ... USING column
- * 		...
+ *		RESHARD PARTITION partition
+ *			TO '/path/to/zookeeper/table' [WEIGHT w], ...
+ * 			USING expression
+ *			[COORDINATE WITH 'coordinator_id']
  */
 
 class ASTAlterQuery : public IAST
@@ -71,6 +73,7 @@ public:
 		ASTPtr last_partition;
 		ASTPtr weighted_zookeeper_paths;
 		ASTPtr sharding_key_expr;
+		ASTPtr coordinator;
 
 		/// deep copy
 		void clone(Parameters & p) const;

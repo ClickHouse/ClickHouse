@@ -1,15 +1,17 @@
 #pragma once
 
 #include <DB/Interpreters/InterserverIOHandler.h>
+#include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/IO/WriteBuffer.h>
 #include <common/logger_useful.h>
+#include <functional>
 
 namespace DB
 {
 
 class StorageReplicatedMergeTree;
 
-namespace ShardedPartitionSender
+namespace ShardedPartitionUploader
 {
 
 /** Сервис для получения кусков из партиции таблицы *MergeTree.
@@ -21,10 +23,11 @@ public:
 	Service(const Service &) = delete;
 	Service & operator=(const Service &) = delete;
 	std::string getId(const std::string & node_id) const override;
-	void processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out) override;
+	void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out) override;
 
 private:
 	StorageReplicatedMergeTree & storage;
+	MergeTreeData & data;
 	Logger * log;
 };
 
@@ -33,14 +36,29 @@ private:
 class Client final
 {
 public:
-	Client();
+	using CancellationHook = std::function<void()>;
+
+public:
+	Client(StorageReplicatedMergeTree & storage_);
+
 	Client(const Client &) = delete;
 	Client & operator=(const Client &) = delete;
-	bool send(const InterserverIOEndpointLocation & to_location, const InterserverIOEndpointLocation & from_location,
-		const std::string & part, size_t shard_no);
+
+	void setCancellationHook(CancellationHook cancellation_hook_);
+
+	bool send(const std::string & part_name, size_t shard_no,
+		const InterserverIOEndpointLocation & to_location);
+
 	void cancel() { is_cancelled = true; }
 
 private:
+	MergeTreeData::DataPartPtr findShardedPart(const std::string & name, size_t shard_no);
+	void abortIfRequested();
+
+private:
+	StorageReplicatedMergeTree & storage;
+	MergeTreeData & data;
+	CancellationHook cancellation_hook;
 	std::atomic<bool> is_cancelled{false};
 	Logger * log;
 };

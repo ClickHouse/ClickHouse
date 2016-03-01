@@ -76,6 +76,10 @@ namespace ErrorCodes
 	extern const int RESHARDING_INVALID_PARAMETERS;
 	extern const int INVALID_SHARD_WEIGHT;
 	extern const int DUPLICATE_SHARD_PATHS;
+	extern const int RESHARDING_NO_SUCH_COORDINATOR;
+	extern const int RESHARDING_NO_COORDINATOR_MEMBERSHIP;
+	extern const int RESHARDING_ALREADY_SUBSCRIBED;
+	extern const int RESHARDING_INVALID_QUERY;
 }
 
 
@@ -193,8 +197,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		 sampling_expression_, index_granularity_, mode_, sign_column_, columns_to_sum_,
 		 settings_, database_name_ + "." + table_name, true,
 		 std::bind(&StorageReplicatedMergeTree::enqueuePartForCheck, this, std::placeholders::_1)),
-	reader(data), writer(data), merger(data), fetcher(data), shutdown_event(false),
-	log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
+	reader(data), writer(data), merger(data), fetcher(data), sharded_partition_uploader_client(*this),
+	shutdown_event(false), log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
 	if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
 		zookeeper_path.resize(zookeeper_path.size() - 1);
@@ -355,8 +359,8 @@ StoragePtr StorageReplicatedMergeTree::create(
 		}
 
 		{
-			InterserverIOEndpointPtr endpoint = new ShardedPartitionSender::Service(*res);
-			res->sharded_partition_sender_endpoint_holder = get_endpoint_holder(endpoint);
+			InterserverIOEndpointPtr endpoint = new ShardedPartitionUploader::Service(*res);
+			res->sharded_partition_uploader_endpoint_holder = get_endpoint_holder(endpoint);
 		}
 
 		{
@@ -2355,8 +2359,8 @@ void StorageReplicatedMergeTree::shutdown()
 	disk_space_monitor_endpoint_holder = nullptr;
 	disk_space_monitor_client.cancel();
 
-	sharded_partition_sender_endpoint_holder = nullptr;
-	sharded_partition_sender_client.cancel();
+	sharded_partition_uploader_endpoint_holder = nullptr;
+	sharded_partition_uploader_client.cancel();
 
 	remote_query_executor_endpoint_holder = nullptr;
 	remote_query_executor_client.cancel();
@@ -3449,77 +3453,234 @@ void StorageReplicatedMergeTree::freezePartition(const Field & partition, const 
 		unreplicated_data->freezePartition(prefix);
 }
 
-void StorageReplicatedMergeTree::reshardPartitions(const String & database_name, const Field & first_partition, const Field & last_partition,
-	const WeightedZooKeeperPaths & weighted_zookeeper_paths, const ASTPtr & sharding_key_expr,
+void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & database_name,
+	const Field & first_partition, const Field & last_partition,
+	const WeightedZooKeeperPaths & weighted_zookeeper_paths,
+	const ASTPtr & sharding_key_expr, const Field & coordinator,
 	const Settings & settings)
 {
 	auto & resharding_worker = context.getReshardingWorker();
 	if (!resharding_worker.isStarted())
 		throw Exception("Resharding background thread is not running", ErrorCodes::RESHARDING_NO_WORKER);
 
-	for (const auto & weighted_path : weighted_zookeeper_paths)
+	bool is_coordinated = !coordinator.isNull();
+	std::string coordinator_id;
+	UInt64 block_number = 0;
+
+	if (is_coordinated)
 	{
-		UInt64 weight = weighted_path.second;
-		if (weight == 0)
-			throw Exception("Shard has invalid weight", ErrorCodes::INVALID_SHARD_WEIGHT);
+		coordinator_id = coordinator.get<const String &>();
+		block_number = resharding_worker.subscribe(coordinator_id, queryToString(query));
 	}
 
+	/// List of local partitions that need to be resharded.
+	ReshardingWorker::PartitionList partition_list;
+
+	/// The aforementioned list comprises:
+	/// - first, the list of partitions that are to be resharded on more than one
+	/// shard. Given any such partition, a job runs on each shard under the supervision
+	/// of a coordinator;
+	/// - second, the list of partitions that are to be resharded only on this shard.
+	/// The iterator below indicates the beginning of the list of these so-called
+	/// uncoordinated partitions.
+	ReshardingWorker::PartitionList::const_iterator uncoordinated_begin;
+
+	try
 	{
-		std::vector<std::string> all_paths;
-		all_paths.reserve(weighted_zookeeper_paths.size());
 		for (const auto & weighted_path : weighted_zookeeper_paths)
-			all_paths.push_back(weighted_path.first);
-		std::sort(all_paths.begin(), all_paths.end());
-		if (std::adjacent_find(all_paths.begin(), all_paths.end()) != all_paths.end())
-			throw Exception("Shard paths must be distinct", ErrorCodes::DUPLICATE_SHARD_PATHS);
+		{
+			UInt64 weight = weighted_path.second;
+			if (weight == 0)
+				throw Exception("Shard has invalid weight", ErrorCodes::INVALID_SHARD_WEIGHT);
+		}
+
+		{
+			std::vector<std::string> all_paths;
+			all_paths.reserve(weighted_zookeeper_paths.size());
+			for (const auto & weighted_path : weighted_zookeeper_paths)
+				all_paths.push_back(weighted_path.first);
+			std::sort(all_paths.begin(), all_paths.end());
+			if (std::adjacent_find(all_paths.begin(), all_paths.end()) != all_paths.end())
+				throw Exception("Shard paths must be distinct", ErrorCodes::DUPLICATE_SHARD_PATHS);
+		}
+
+		DayNum_t first_partition_num = !first_partition.isNull() ? MergeTreeData::getMonthDayNum(first_partition) : DayNum_t();
+		DayNum_t last_partition_num = !last_partition.isNull() ? MergeTreeData::getMonthDayNum(last_partition) : DayNum_t();
+
+		if (first_partition_num && last_partition_num)
+		{
+			if (first_partition_num > last_partition_num)
+				throw Exception("Invalid interval of partitions", ErrorCodes::INVALID_PARTITIONS_INTERVAL);
+		}
+
+		if (!first_partition_num && last_partition_num)
+			throw Exception("Received invalid parameters for resharding", ErrorCodes::RESHARDING_INVALID_PARAMETERS);
+
+		bool include_all = !first_partition_num;
+
+		/// Составить список локальных партиций, которые надо перешардировать.
+		std::set<std::string> unique_partition_list;
+		const MergeTreeData::DataParts & data_parts = data.getDataParts();
+		for (MergeTreeData::DataParts::iterator it = data_parts.cbegin(); it != data_parts.cend(); ++it)
+		{
+			const MergeTreeData::DataPartPtr & current_part = *it;
+			DayNum_t month = current_part->month;
+			if (include_all || ((month >= first_partition_num) && (month <= last_partition_num)))
+				unique_partition_list.insert(MergeTreeData::getMonthName(month));
+		}
+
+		partition_list.assign(unique_partition_list.begin(), unique_partition_list.end());
+
+		if (partition_list.empty())
+		{
+			if (!is_coordinated)
+				throw Exception("No existing partition found", ErrorCodes::PARTITION_DOESNT_EXIST);
+		}
+		else
+		{
+			/// Убедиться, что структуры локальной и реплицируемых таблиц совпадают.
+			enforceShardsConsistency(weighted_zookeeper_paths);
+
+			/// Проверить, что для всех задач имеется достаточно свободного места локально и на всех репликах.
+			auto replica_to_space_info = gatherReplicaSpaceInfo(weighted_zookeeper_paths);
+			for (const auto & partition : partition_list)
+			{
+				size_t partition_size = data.getPartitionSize(partition);
+				if (!checkSpaceForResharding(replica_to_space_info, partition_size))
+					throw Exception("Insufficient space available for resharding operation "
+						"on partition " + partition, ErrorCodes::INSUFFICIENT_SPACE_FOR_RESHARDING);
+			}
+		}
+
+		if (is_coordinated)
+		{
+			size_t old_node_count = resharding_worker.getNodeCount(coordinator_id);
+			resharding_worker.addPartitions(coordinator_id, partition_list);
+			resharding_worker.waitForCheckCompletion(coordinator_id);
+
+			/// At this point, all the participating nodes know exactly the number
+			/// of partitions that are to be processed.
+
+			auto count = resharding_worker.getPartitionCount(coordinator_id);
+			if (count == 0)
+				throw Exception("No existing partition found", ErrorCodes::PARTITION_DOESNT_EXIST);
+
+			if (partition_list.empty())
+			{
+				/// We have no partitions, so we opt out.
+				resharding_worker.unsubscribe(coordinator_id);
+			}
+
+			resharding_worker.waitForOptOutCompletion(coordinator_id, old_node_count);
+
+			/// At this point, all the participating nodes that actually have some
+			/// partitions are in a coherent state.
+
+			if (partition_list.empty())
+				return;
+
+			if (resharding_worker.getNodeCount(coordinator_id) == 1)
+			{
+				/// Degenerate case: we are the only participating node.
+				/// All our jobs are uncoordinated.
+				resharding_worker.deleteCoordinator(coordinator_id);
+				uncoordinated_begin = partition_list.cbegin();
+			}
+			else
+			{
+				/// Split the list of partitions into a list of coordinated jobs
+				/// and a list of uncoordinated jobs.
+				uncoordinated_begin = resharding_worker.categorizePartitions(coordinator_id, partition_list);
+			}
+
+			if (uncoordinated_begin == partition_list.cbegin())
+			{
+				coordinator_id.clear();
+				is_coordinated = false;
+			}
+		}
+		else
+		{
+			/// All our jobs are uncoordinated.
+			uncoordinated_begin = partition_list.cbegin();
+		}
+
+		/// First, submit coordinated background resharding jobs.
+		for (auto it = partition_list.cbegin(); it != uncoordinated_begin; ++it)
+		{
+			ReshardingJob job;
+			job.database_name = database_name;
+			job.table_name = getTableName();
+			job.partition = *it;
+			job.paths = weighted_zookeeper_paths;
+			job.sharding_key_expr = sharding_key_expr;
+			job.coordinator_id = coordinator_id;
+			job.block_number = block_number;
+
+			resharding_worker.submitJob(job);
+		}
+
+		/// Then, submit uncoordinated background resharding jobs.
+		for (auto it = uncoordinated_begin; it != partition_list.cend(); ++it)
+		{
+			ReshardingJob job;
+			job.database_name = database_name;
+			job.table_name = getTableName();
+			job.partition = *it;
+			job.paths = weighted_zookeeper_paths;
+			job.sharding_key_expr = sharding_key_expr;
+
+			resharding_worker.submitJob(job);
+		}
 	}
-
-	DayNum_t first_partition_num = !first_partition.isNull() ? MergeTreeData::getMonthDayNum(first_partition) : DayNum_t();
-	DayNum_t last_partition_num = !last_partition.isNull() ? MergeTreeData::getMonthDayNum(last_partition) : DayNum_t();
-
-	if (first_partition_num && last_partition_num)
+	catch (const Exception & ex)
 	{
-		if (first_partition_num > last_partition_num)
-			throw Exception("Invalid interval of partitions", ErrorCodes::INVALID_PARTITIONS_INTERVAL);
+		if (is_coordinated)
+		{
+			if ((ex.code() == ErrorCodes::RESHARDING_NO_SUCH_COORDINATOR) ||
+				(ex.code() == ErrorCodes::RESHARDING_NO_COORDINATOR_MEMBERSHIP) ||
+				(ex.code() == ErrorCodes::RESHARDING_ALREADY_SUBSCRIBED) ||
+				(ex.code() == ErrorCodes::RESHARDING_INVALID_QUERY))
+			{
+				/// Theoretically any of these errors may have occurred because a user
+				/// has willfully attempted to botch an ongoing distributed resharding job.
+				/// Consequently we don't take them into account.
+			}
+			else
+			{
+				try
+				{
+					/// Before jobs are submitted, errors and cancellations are both
+					/// considered as errors.
+					resharding_worker.setStatus(coordinator_id, ReshardingWorker::STATUS_ERROR);
+				}
+				catch (...)
+				{
+					tryLogCurrentException(__PRETTY_FUNCTION__);
+				}
+			}
+		}
+
+		throw;
 	}
-
-	if (!first_partition_num && last_partition_num)
-		throw Exception("Received invalid parameters for resharding", ErrorCodes::RESHARDING_INVALID_PARAMETERS);
-
-	bool include_all = !first_partition_num;
-
-	/// Составить список локальных партиций, которые надо перешардировать.
-	using PartitionList = std::set<std::string>;
-	PartitionList partition_list;
-
-	const MergeTreeData::DataParts & data_parts = data.getDataParts();
-	for (MergeTreeData::DataParts::iterator it = data_parts.cbegin(); it != data_parts.cend(); ++it)
+	catch (...)
 	{
-		const MergeTreeData::DataPartPtr & current_part = *it;
-		DayNum_t month = current_part->month;
-		if (include_all || ((month >= first_partition_num) && (month <= last_partition_num)))
-			partition_list.insert(MergeTreeData::getMonthName(month));
+		if (is_coordinated)
+		{
+			try
+			{
+				/// Before jobs are submitted, errors and cancellations are both
+				/// considered as errors.
+				resharding_worker.setStatus(coordinator_id, ReshardingWorker::STATUS_ERROR);
+			}
+			catch (...)
+			{
+				tryLogCurrentException(__PRETTY_FUNCTION__);
+			}
+		}
+
+		throw;
 	}
-
-	if (partition_list.empty())
-		throw Exception("No existing partition found", ErrorCodes::PARTITION_DOESNT_EXIST);
-
-	/// Убедиться, что структуры локальной и реплицируемых таблиц совпадают.
-	enforceShardsConsistency(weighted_zookeeper_paths);
-
-	/// Проверить, что для всех задач имеется достаточно свободного места локально и на всех репликах.
-	auto replica_to_space_info = gatherReplicaSpaceInfo(weighted_zookeeper_paths);
-	for (const auto & partition : partition_list)
-	{
-		size_t partition_size = data.getPartitionSize(partition);
-		if (!checkSpaceForResharding(replica_to_space_info, partition_size))
-			throw Exception("Insufficient space available for resharding operation "
-				"on partition " + partition, ErrorCodes::INSUFFICIENT_SPACE_FOR_RESHARDING);
-	}
-
-	/// Зарегистрировать фоновые задачи перешардирования.
-	for (const auto & partition : partition_list)
-		resharding_worker.submitJob(database_name, getTableName(), partition, weighted_zookeeper_paths, sharding_key_expr);
 }
 
 void StorageReplicatedMergeTree::enforceShardsConsistency(const WeightedZooKeeperPaths & weighted_zookeeper_paths)
@@ -3537,7 +3698,7 @@ void StorageReplicatedMergeTree::enforceShardsConsistency(const WeightedZooKeepe
 			!std::equal(materialized_columns.begin(), materialized_columns.end(), columns_desc.materialized.begin()) ||
 			!std::equal(alias_columns.begin(), alias_columns.end(), columns_desc.alias.begin()) ||
 			!std::equal(column_defaults.begin(), column_defaults.end(), columns_desc.defaults.begin()))
-		throw Exception("Table is inconsistent accross shards", ErrorCodes::INCONSISTENT_TABLE_ACCROSS_SHARDS);
+			throw Exception("Table is inconsistent accross shards", ErrorCodes::INCONSISTENT_TABLE_ACCROSS_SHARDS);
 	}
 }
 

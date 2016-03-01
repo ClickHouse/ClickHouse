@@ -16,7 +16,7 @@ namespace DB
 class Cluster
 {
 public:
-	Cluster(const Settings & settings, const String & cluster_name);
+	Cluster(const Settings & settings, const String & cluster_short_name, const String & cluster_name);
 
 	/// Построить кластер по именам шардов и реплик. Локальные обрабатываются так же как удаленные.
 	Cluster(const Settings & settings, std::vector<std::vector<String>> names,
@@ -80,6 +80,7 @@ public:
 	using ShardsInfo = std::vector<ShardInfo>;
 
 public:
+	String getName() const { return name; }
 	const ShardsInfo & getShardsInfo() const { return shards_info; }
 	const Addresses & getShardsAddresses() const { return addresses; }
 	const AddressesWithFailover & getShardsWithFailoverAddresses() const { return addresses_with_failover; }
@@ -100,6 +101,8 @@ private:
 	void initMisc();
 
 private:
+	/// Название кластера, если существует.
+	String name;
 	/// Описание шардов кластера.
 	ShardsInfo shards_info;
 	/// Любой удалённый шард.
@@ -113,12 +116,19 @@ private:
 	size_t local_shard_count = 0;
 };
 
-struct Clusters
+class Clusters
 {
-	typedef std::map<String, Cluster> Impl;
-	Impl impl;
-
+public:
 	Clusters(const Settings & settings, const String & config_name = "remote_servers");
+
+	Clusters(const Clusters &) = delete;
+	Clusters & operator=(const Clusters &) = delete;
+
+public:
+	using Impl = std::map<String, Cluster>;
+
+public:
+	Impl impl;
 };
 
 }

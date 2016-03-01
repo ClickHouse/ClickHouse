@@ -3,6 +3,7 @@
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
 #include <atomic>
+#include <functional>
 
 namespace DB
 {
@@ -16,11 +17,15 @@ class ReshardingJob;
 class MergeTreeDataMerger
 {
 public:
+	using CancellationHook = std::function<void()>;
+	using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)>;
+
+public:
 	static const size_t NO_LIMIT = std::numeric_limits<size_t>::max();
 
 	MergeTreeDataMerger(MergeTreeData & data_) : data(data_), log(&Logger::get(data.getLogName() + " (Merger)")) {}
 
-	typedef std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)> AllowedMergingPredicate;
+	void setCancellationHook(CancellationHook cancellation_hook_);
 
 	/** Выбирает, какие куски слить. Использует кучу эвристик.
 	  * Если merge_anything_for_old_months, для кусков за прошедшие месяцы снимается ограничение на соотношение размеров.
@@ -53,7 +58,6 @@ public:
 	  */
 	MergeTreeData::PerShardDataParts reshardPartition(
 		const ReshardingJob & job,
-		size_t aio_threshold,
 		DiskSpaceMonitor::Reservation * disk_reservation = nullptr);
 
 	/// Примерное количество места на диске, нужное для мерджа. С запасом.
@@ -66,7 +70,7 @@ public:
 	void uncancel() { cancelled = false; }
 	bool isCancelled() const { return cancelled; }
 
-	void abortIfRequested() const;
+	void abortIfRequested();
 
 private:
 	/** Выбрать все куски принадлежащие одной партиции.
@@ -80,6 +84,8 @@ private:
 
 	/// Когда в последний раз писали в лог, что место на диске кончилось (чтобы не писать об этом слишком часто).
 	time_t disk_space_warning_time = 0;
+
+	CancellationHook cancellation_hook;
 
 	std::atomic<bool> cancelled {false};
 };

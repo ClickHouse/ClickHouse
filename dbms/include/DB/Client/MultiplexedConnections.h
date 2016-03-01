@@ -28,7 +28,7 @@ public:
 	  * Если флаг get_all_replicas установлен, достаются все соединения.
 	  */
 	MultiplexedConnections(IConnectionPool * pool_, const Settings * settings_, ThrottlerPtr throttler_,
-		bool append_extra_info = false, bool do_broadcast = false);
+		bool append_extra_info = false, PoolMode pool_mode_ = PoolMode::GET_MANY);
 
 	/** Принимает пулы, один для каждого шарда, из которих нужно будет достать одно или несколько
 	  * соединений.
@@ -37,7 +37,7 @@ public:
 	  * Если флаг do_broadcast установлен, достаются все соединения.
 	  */
 	MultiplexedConnections(ConnectionPools & pools_, const Settings * settings_, ThrottlerPtr throttler_,
-		bool append_extra_info = false, bool do_broadcast = false);
+		bool append_extra_info = false, PoolMode pool_mode_ = PoolMode::GET_MANY);
 
 	/// Отправить на реплики всё содержимое внешних таблиц.
 	void sendExternalTablesData(std::vector<ExternalTablesData> & data);
@@ -155,7 +155,7 @@ private:
 	/// Отменили запрос
 	bool cancelled = false;
 
-	bool do_broadcast = false;
+	PoolMode pool_mode = PoolMode::GET_MANY;
 
 	/// Мьютекс для того, чтобы функция sendCancel могла выполняться безопасно
 	/// в отдельном потоке.

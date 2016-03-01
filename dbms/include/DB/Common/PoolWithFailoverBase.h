@@ -14,6 +14,7 @@ namespace ErrorCodes
 {
 	extern const int ALL_CONNECTION_TRIES_FAILED;
 	extern const int CANNOT_CLOCK_GETTIME;
+	extern const int LOGICAL_ERROR;
 }
 }
 
@@ -112,15 +113,19 @@ public:
 	/** Выделяет до указанного количества соединений для работы
 	  * Соединения предоставляют доступ к разным репликам одного шарда.
 	  */
-	std::vector<Entry> getMany(const DB::Settings * settings, bool get_all)
+	std::vector<Entry> getMany(const DB::Settings * settings, PoolMode pool_mode)
 	{
 		ResourceTracker resource_tracker{nested_pools.size()};
 
 		UInt64 max_connections;
-		if (get_all)
+		if (pool_mode == PoolMode::GET_ALL)
 			max_connections = nested_pools.size();
-		else
+		else if (pool_mode == PoolMode::GET_ONE)
+			max_connections = 1;
+		else if (pool_mode == PoolMode::GET_MANY)
 			max_connections = settings ? UInt64(settings->max_parallel_replicas) : 1;
+		else
+			throw DB::Exception("Unknown pool allocation mode", DB::ErrorCodes::LOGICAL_ERROR);
 
 		bool skip_unavailable = settings ? UInt64(settings->skip_unavailable_shards) : false;
 
@@ -134,7 +139,7 @@ public:
 
 			if (getResource(entry, fail_messages, &resource_tracker, settings))
 				connections.push_back(entry);
-			else if (get_all || ((i == 0) && !skip_unavailable))
+			else if ((pool_mode == PoolMode::GET_ALL) || ((i == 0) && !skip_unavailable))
 				throw DB::NetException("All connection tries failed. Log: \n\n" + fail_messages.str() + "\n", DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
 			else
 				break;

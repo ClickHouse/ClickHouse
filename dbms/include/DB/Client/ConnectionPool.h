@@ -41,15 +41,16 @@ public:
 	  * Если флаг get_all установлен, все соединения достаются.
 	  * Выкидывает исключение, если не удалось выделить ни одного соединения.
 	  */
-	std::vector<Entry> getMany(const Settings * settings = nullptr, bool get_all = false)
+	std::vector<Entry> getMany(const Settings * settings = nullptr,
+		PoolMode pool_mode = PoolMode::GET_MANY)
 	{
-		return doGetMany(settings, get_all);
+		return doGetMany(settings, pool_mode);
 	}
 
 protected:
 	virtual Entry doGet(const Settings * settings) = 0;
 
-	virtual std::vector<Entry> doGetMany(const Settings * settings, bool get_all)
+	virtual std::vector<Entry> doGetMany(const Settings * settings, PoolMode pool_mode)
 	{
 		return std::vector<Entry>{ get(settings) };
 	}

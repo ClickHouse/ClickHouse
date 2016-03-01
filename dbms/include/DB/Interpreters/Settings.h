@@ -197,6 +197,8 @@ struct Settings
 	M(SettingBool, enable_http_compression, 0) \
 	/** Уровень сжатия - используется, если клиент по HTTP сказал, что он понимает данные, сжатые методом gzip или deflate */ \
 	M(SettingInt64, http_zlib_compression_level, 3) \
+	/** Таймаут в секундах */ \
+	M(SettingUInt64, resharding_barrier_timeout, 120) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

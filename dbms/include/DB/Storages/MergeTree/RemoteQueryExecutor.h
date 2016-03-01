@@ -20,7 +20,7 @@ public:
 	Service(const Service &) = delete;
 	Service & operator=(const Service &) = delete;
 	std::string getId(const std::string & node_id) const override;
-	void processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out) override;
+	void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out) override;
 
 private:
 	Context & context;
