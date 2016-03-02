@@ -924,6 +924,8 @@ UInt64 ReshardingWorker::subscribe(const std::string & coordinator_id, const std
 		}
 	}
 
+	UInt64 block_number;
+
 	{
 		auto lock = createCoordinatorLock(coordinator_id);
 		zkutil::RWLock::Guard<zkutil::RWLock::Write> guard{lock};
@@ -949,7 +951,7 @@ UInt64 ReshardingWorker::subscribe(const std::string & coordinator_id, const std
 		auto my_shard_no = zookeeper->get(getCoordinatorPath(coordinator_id) + "/cluster_addresses/"
 			+ current_host);
 		int32_t code = zookeeper->tryCreate(getCoordinatorPath(coordinator_id) + "/shards/"
-			+ toString(my_shard_no), "", zkutil::CreateMode::Persistent);
+			+ my_shard_no, "", zkutil::CreateMode::Persistent);
 		if (code == ZNODEEXISTS)
 			throw Exception("This shard has already subscribed to coordinator " + coordinator_id,
 				ErrorCodes::RESHARDING_ALREADY_SUBSCRIBED);
@@ -960,15 +962,9 @@ UInt64 ReshardingWorker::subscribe(const std::string & coordinator_id, const std
 			+ current_host,	"", zkutil::CreateMode::Persistent);
 
 		setStatus(coordinator_id, current_host, STATUS_OK);
-	}
 
-	/// Assign a unique block number to the current node. We will use it in order
-	/// to avoid any possible conflict when uploading resharded partitions.
-	UInt64 block_number;
-	{
-		auto lock = createCoordinatorLock(coordinator_id);
-		zkutil::RWLock::Guard<zkutil::RWLock::Write> guard{lock};
-
+		/// Assign a unique block number to the current node. We will use it in order
+		/// to avoid any possible conflict when uploading resharded partitions.
 		auto current_block_number = zookeeper->get(getCoordinatorPath(coordinator_id) + "/increment");
 		block_number = std::stoull(current_block_number);
 		zookeeper->set(getCoordinatorPath(coordinator_id) + "/increment", toString(block_number + 1));
