@@ -16,7 +16,7 @@ namespace DB
 class Cluster
 {
 public:
-	Cluster(const Settings & settings, const String & cluster_short_name, const String & cluster_name);
+	Cluster(const Settings & settings, const String & cluster_name);
 
 	/// Построить кластер по именам шардов и реплик. Локальные обрабатываются так же как удаленные.
 	Cluster(const Settings & settings, std::vector<std::vector<String>> names,
@@ -100,8 +100,13 @@ public:
 private:
 	void initMisc();
 
+	/// Create a unique name based on the list of addresses and ports.
+	/// We need it in order to be able to perform resharding requests
+	/// on tables that have the distributed engine.
+	void assignName();
+
 private:
-	/// Название кластера, если существует.
+	/// Название кластера.
 	String name;
 	/// Описание шардов кластера.
 	ShardsInfo shards_info;

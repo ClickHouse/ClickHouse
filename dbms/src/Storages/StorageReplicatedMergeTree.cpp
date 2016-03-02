@@ -3463,11 +3463,11 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 	if (!resharding_worker.isStarted())
 		throw Exception("Resharding background thread is not running", ErrorCodes::RESHARDING_NO_WORKER);
 
-	bool is_coordinated = !coordinator.isNull();
+	bool has_coordinator = !coordinator.isNull();
 	std::string coordinator_id;
 	UInt64 block_number = 0;
 
-	if (is_coordinated)
+	if (has_coordinator)
 	{
 		coordinator_id = coordinator.get<const String &>();
 		block_number = resharding_worker.subscribe(coordinator_id, queryToString(query));
@@ -3533,7 +3533,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 
 		if (partition_list.empty())
 		{
-			if (!is_coordinated)
+			if (!has_coordinator)
 				throw Exception("No existing partition found", ErrorCodes::PARTITION_DOESNT_EXIST);
 		}
 		else
@@ -3552,7 +3552,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 			}
 		}
 
-		if (is_coordinated)
+		if (has_coordinator)
 		{
 			size_t old_node_count = resharding_worker.getNodeCount(coordinator_id);
 			resharding_worker.addPartitions(coordinator_id, partition_list);
@@ -3596,7 +3596,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 			if (uncoordinated_begin == partition_list.cbegin())
 			{
 				coordinator_id.clear();
-				is_coordinated = false;
+				has_coordinator = false;
 			}
 		}
 		else
@@ -3635,7 +3635,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 	}
 	catch (const Exception & ex)
 	{
-		if (is_coordinated)
+		if (has_coordinator)
 		{
 			if ((ex.code() == ErrorCodes::RESHARDING_NO_SUCH_COORDINATOR) ||
 				(ex.code() == ErrorCodes::RESHARDING_NO_COORDINATOR_MEMBERSHIP) ||
@@ -3665,7 +3665,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 	}
 	catch (...)
 	{
-		if (is_coordinated)
+		if (has_coordinator)
 		{
 			try
 			{

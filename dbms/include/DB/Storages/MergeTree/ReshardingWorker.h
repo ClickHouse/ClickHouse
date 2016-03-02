@@ -129,11 +129,11 @@ private:
 
 	/// Принудительно завершить поток.
 	void abortPollingIfRequested();
-	void abortCoordinatorIfRequested();
+	void abortCoordinatorIfRequested(const std::string & coordinator_id);
 	void abortRecoveryIfRequested();
 	void abortJobIfRequested();
 
-	Status getCoordinatorStatus();
+	Status getCoordinatorStatus(const std::string & coordinator_id);
 
 	/// Зарегистрировать задачу в соответствующий координатор.
 	void attachJob();
@@ -148,7 +148,7 @@ private:
 	/// Функции, которые создают необходимые объекты для синхронизации
 	/// распределённых задач.
 	zkutil::RWLock createLock();
-	zkutil::RWLock createCoordinatorLock();
+	zkutil::RWLock createCoordinatorLock(const std::string & coordinator_id);
 	zkutil::Barrier createCheckBarrier(const std::string & coordinator_id);
 	zkutil::SingleBarrier createOptOutBarrier(const std::string & coordinator_id, size_t count);
 	zkutil::SingleBarrier createRecoveryBarrier(const ReshardingJob & job);
@@ -168,7 +168,6 @@ private:
 	std::string distributed_online_path;
 	std::string distributed_lock_path;
 	std::string coordination_path;
-	std::string current_coordinator_id;
 
 	Context & context;
 	Logger * log;

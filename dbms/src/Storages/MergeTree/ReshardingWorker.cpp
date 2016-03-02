@@ -45,6 +45,7 @@ namespace ErrorCodes
 	extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 	extern const int INVALID_CONFIG_PARAMETER;
 	extern const int RESHARDING_BUSY_CLUSTER;
+	extern const int RESHARDING_BUSY_SHARD;
 	extern const int RESHARDING_NO_SUCH_COORDINATOR;
 	extern const int RESHARDING_NO_COORDINATOR_MEMBERSHIP;
 	extern const int RESHARDING_ALREADY_SUBSCRIBED;
@@ -132,6 +133,8 @@ private:
 /// /cluster_addresses: the list of addresses, in both IP and hostname
 /// representations, of all the nodes of the cluster; used to check if a given node
 /// is a member of the cluster;
+///
+/// /shards: the list of shards that have subscribed;
 ///
 /// /check_barrier: when all the participating nodes have checked
 /// that they can perform resharding operations, proceed further;
@@ -803,7 +806,7 @@ std::string ReshardingWorker::createCoordinator(const Cluster & cluster)
 	{
 		auto effective_cluster_name = zookeeper->get(coordination_path + "/" + coordinator + "/cluster");
 		if (effective_cluster_name == cluster_name)
-			throw Exception("The cluster " + cluster_name + " is currently busy with another "
+			throw Exception("The cluster specified for this table is currently busy with another "
 				"distributed job. Please try later", ErrorCodes::RESHARDING_BUSY_CLUSTER);
 	}
 
@@ -824,6 +827,9 @@ std::string ReshardingWorker::createCoordinator(const Cluster & cluster)
 		toString(cluster.getRemoteShardCount() + cluster.getLocalShardCount()),
 		zkutil::CreateMode::Persistent);
 
+	(void) zookeeper->create(getCoordinatorPath(coordinator_id) + "/shards",
+		"", zkutil::CreateMode::Persistent);
+
 	(void) zookeeper->create(getCoordinatorPath(coordinator_id) + "/status",
 		"", zkutil::CreateMode::Persistent);
 	setStatus(coordinator_id, STATUS_OK);
@@ -836,31 +842,39 @@ std::string ReshardingWorker::createCoordinator(const Cluster & cluster)
 	(void) zookeeper->create(getCoordinatorPath(coordinator_id) + "/cluster_addresses",
 		"", zkutil::CreateMode::Persistent);
 
-	std::vector<std::string> cluster_addresses;
-	const auto & addresses = cluster.getShardsAddresses();
-	for (const auto & address : addresses)
-	{
-		cluster_addresses.push_back(address.host_name);
-		cluster_addresses.push_back(address.resolved_address.host().toString());
-	}
-
-	const auto & addresses_with_failover = cluster.getShardsWithFailoverAddresses();
-	for (const auto & addresses : addresses_with_failover)
-	{
-		for (const auto & address : addresses)
-		{
-			cluster_addresses.push_back(address.host_name);
-			cluster_addresses.push_back(address.resolved_address.host().toString());
-		}
-	}
-
-	for (const auto & host : cluster_addresses)
+	auto publish_address = [&](const std::string & host, size_t shard_no)
 	{
 		int32_t code = zookeeper->tryCreate(getCoordinatorPath(coordinator_id) + "/cluster_addresses/"
-			+ host, "", zkutil::CreateMode::Persistent);
+			+ host, toString(shard_no), zkutil::CreateMode::Persistent);
 		if ((code != ZOK) && (code != ZNODEEXISTS))
 			throw zkutil::KeeperException(code);
+	};
+
+	if (!cluster.getShardsAddresses().empty())
+	{
+		size_t shard_no = 0;
+		for (const auto & address : cluster.getShardsAddresses())
+		{
+			publish_address(address.host_name, shard_no);
+			publish_address(address.resolved_address.host().toString(), shard_no);
+			++shard_no;
+		}
 	}
+	else if (!cluster.getShardsWithFailoverAddresses().empty())
+	{
+		size_t shard_no = 0;
+		for (const auto & addresses : cluster.getShardsWithFailoverAddresses())
+		{
+			for (const auto & address : addresses)
+			{
+				publish_address(address.host_name, shard_no);
+				publish_address(address.resolved_address.host().toString(), shard_no);
+			}
+			++shard_no;
+		}
+	}
+	else
+		throw Exception("ReshardingWorker: ill-formed cluster", ErrorCodes::LOGICAL_ERROR);
 
 	return coordinator_id;
 }
@@ -883,20 +897,38 @@ UInt64 ReshardingWorker::subscribe(const std::string & coordinator_id, const std
 {
 	auto zookeeper = context.getZooKeeper();
 
-	current_coordinator_id = coordinator_id;
+	if (!zookeeper->exists(getCoordinatorPath(coordinator_id)))
+		throw Exception("Coordinator " + coordinator_id + " does not exist",
+		ErrorCodes::RESHARDING_NO_SUCH_COORDINATOR);
+
+	auto current_host = getFQDNOrHostName();
+
+	/// Make sure that this shard is not busy in another distributed job.
+	{
+		auto lock = createLock();
+		zkutil::RWLock::Guard<zkutil::RWLock::Read> guard{lock};
+
+		auto coordinators = zookeeper->getChildren(coordination_path);
+		for (const auto & coordinator : coordinators)
+		{
+			if (coordinator == coordinator_id)
+				continue;
+
+			auto cluster_addresses = zookeeper->getChildren(coordination_path + "/" + coordinator
+				+ "/cluster_addresses");
+			if (std::find(cluster_addresses.begin(), cluster_addresses.end(), current_host)
+				!= cluster_addresses.end())
+				throw Exception("This shard is already busy with another distributed job",
+					ErrorCodes::RESHARDING_BUSY_SHARD);
+		}
+	}
 
 	{
-		auto lock = createCoordinatorLock();
-		zkutil::RWLock::Guard<zkutil::RWLock::Read> guard{lock};
+		auto lock = createCoordinatorLock(coordinator_id);
+		zkutil::RWLock::Guard<zkutil::RWLock::Write> guard{lock};
 
 		/// Make sure that the query ALTER TABLE RESHARD with the "COORDINATE WITH" tag
 		/// is not bogus.
-
-		if (!zookeeper->exists(getCoordinatorPath(coordinator_id)))
-			throw Exception("Coordinator " + coordinator_id + " does not exist",
-			ErrorCodes::RESHARDING_NO_SUCH_COORDINATOR);
-
-		auto current_host = getFQDNOrHostName();
 
 		auto cluster_addresses = zookeeper->getChildren(getCoordinatorPath(coordinator_id)
 			+ "/cluster_addresses");
@@ -906,18 +938,25 @@ UInt64 ReshardingWorker::subscribe(const std::string & coordinator_id, const std
 				+ coordinator_id,
 				ErrorCodes::RESHARDING_NO_COORDINATOR_MEMBERSHIP);
 
-		int32_t code = zookeeper->tryCreate(getCoordinatorPath(coordinator_id) + "/status/" + current_host,
-			"", zkutil::CreateMode::Persistent);
-		if (code == ZNODEEXISTS)
-			throw Exception("Already subscribed to coordinator " + coordinator_id,
-				ErrorCodes::RESHARDING_ALREADY_SUBSCRIBED);
-		else if (code != ZOK)
-			throw zkutil::KeeperException(code);
-
+		/// Check that the coordinator recognizes our query.
 		auto query_hash = zookeeper->get(getCoordinatorPath(coordinator_id) + "/query_hash");
 		if (computeHash(query) != query_hash)
 			throw Exception("Coordinator " + coordinator_id + " does not handle this query",
 				ErrorCodes::RESHARDING_INVALID_QUERY);
+
+		/// Access granted. Now perform subscription.
+		auto my_shard_no = zookeeper->get(getCoordinatorPath(coordinator_id) + "/cluster_addresses/"
+			+ current_host);
+		int32_t code = zookeeper->tryCreate(getCoordinatorPath(coordinator_id) + "/shards/"
+			+ toString(my_shard_no), "", zkutil::CreateMode::Persistent);
+		if (code == ZNODEEXISTS)
+			throw Exception("This shard has already subscribed to coordinator " + coordinator_id,
+				ErrorCodes::RESHARDING_ALREADY_SUBSCRIBED);
+		else if (code != ZOK)
+			throw zkutil::KeeperException(code);
+
+		zookeeper->create(getCoordinatorPath(coordinator_id) + "/status/"
+			+ current_host,	"", zkutil::CreateMode::Persistent);
 
 		setStatus(coordinator_id, current_host, STATUS_OK);
 	}
@@ -926,7 +965,7 @@ UInt64 ReshardingWorker::subscribe(const std::string & coordinator_id, const std
 	/// to avoid any possible conflict when uploading resharded partitions.
 	UInt64 block_number;
 	{
-		auto lock = createCoordinatorLock();
+		auto lock = createCoordinatorLock(coordinator_id);
 		zkutil::RWLock::Guard<zkutil::RWLock::Write> guard{lock};
 
 		auto current_block_number = zookeeper->get(getCoordinatorPath(coordinator_id) + "/increment");
@@ -945,9 +984,13 @@ UInt64 ReshardingWorker::subscribe(const std::string & coordinator_id, const std
 
 void ReshardingWorker::unsubscribe(const std::string & coordinator_id)
 {
+	/// Note: we don't remove this shard from the /shards znode because
+	/// it can subscribe to a distributed job only if its cluster is not
+	/// currently busy with any distributed job.
+
 	auto zookeeper = context.getZooKeeper();
 
-	auto lock = createCoordinatorLock();
+	auto lock = createCoordinatorLock(coordinator_id);
 	zkutil::RWLock::Guard<zkutil::RWLock::Write> guard{lock};
 
 	auto current_host = getFQDNOrHostName();
@@ -965,7 +1008,7 @@ void ReshardingWorker::addPartitions(const std::string & coordinator_id,
 {
 	auto zookeeper = context.getZooKeeper();
 
-	auto lock = createCoordinatorLock();
+	auto lock = createCoordinatorLock(coordinator_id);
 	zkutil::RWLock::Guard<zkutil::RWLock::Write> guard{lock};
 
 	auto current_host = getFQDNOrHostName();
@@ -987,7 +1030,7 @@ ReshardingWorker::PartitionList::iterator ReshardingWorker::categorizePartitions
 	PartitionList uncoordinated_partition_list;
 
 	{
-		auto lock = createCoordinatorLock();
+		auto lock = createCoordinatorLock(coordinator_id);
 		zkutil::RWLock::Guard<zkutil::RWLock::Write> guard{lock};
 
 		auto current_host = getFQDNOrHostName();
@@ -1023,7 +1066,7 @@ ReshardingWorker::PartitionList::iterator ReshardingWorker::categorizePartitions
 
 size_t ReshardingWorker::getPartitionCount(const std::string & coordinator_id)
 {
-	auto lock = createCoordinatorLock();
+	auto lock = createCoordinatorLock(coordinator_id);
 	zkutil::RWLock::Guard<zkutil::RWLock::Read> guard{lock};
 
 	return getPartitionCountUnlocked(coordinator_id);
@@ -1037,7 +1080,7 @@ size_t ReshardingWorker::getPartitionCountUnlocked(const std::string & coordinat
 
 size_t ReshardingWorker::getNodeCount(const std::string & coordinator_id)
 {
-	auto lock = createCoordinatorLock();
+	auto lock = createCoordinatorLock(coordinator_id);
 	zkutil::RWLock::Guard<zkutil::RWLock::Read> guard{lock};
 
 	auto zookeeper = context.getZooKeeper();
@@ -1069,11 +1112,11 @@ void ReshardingWorker::setStatus(const std::string & coordinator_id, const std::
 		toString(static_cast<UInt64>(status)));
 }
 
-ReshardingWorker::Status ReshardingWorker::getCoordinatorStatus()
+ReshardingWorker::Status ReshardingWorker::getCoordinatorStatus(const std::string & coordinator_id)
 {
 	auto zookeeper = context.getZooKeeper();
 
-	auto status_str = zookeeper->get(getCoordinatorPath(current_coordinator_id) + "/status");
+	auto status_str = zookeeper->get(getCoordinatorPath(coordinator_id) + "/status");
 	return static_cast<Status>(std::stoull(status_str));
 }
 
@@ -1146,8 +1189,6 @@ void ReshardingWorker::attachJob()
 	if (!current_job.isCoordinated())
 		return;
 
-	current_coordinator_id = current_job.coordinator_id;
-
 	auto zookeeper = context.getZooKeeper();
 
 	/// Check if the corresponding coordinator exists. If it doesn't, throw an exception,
@@ -1202,7 +1243,7 @@ void ReshardingWorker::detachJob()
 	bool delete_coordinator = false;
 
 	{
-		auto lock = createCoordinatorLock();
+		auto lock = createCoordinatorLock(current_job.coordinator_id);
 		zkutil::RWLock::Guard<zkutil::RWLock::Write> guard{lock};
 
 		auto children = zookeeper->getChildren(getPartitionPath(current_job) + "/nodes");
@@ -1242,13 +1283,13 @@ void ReshardingWorker::abortPollingIfRequested()
 		throw Exception("Cancelled resharding", ErrorCodes::ABORTED);
 }
 
-void ReshardingWorker::abortCoordinatorIfRequested()
+void ReshardingWorker::abortCoordinatorIfRequested(const std::string & coordinator_id)
 {
 	bool must_abort;
 
 	try
 	{
-		must_abort = must_stop || (getCoordinatorStatus() != STATUS_OK);
+		must_abort = must_stop || (getCoordinatorStatus(coordinator_id) != STATUS_OK);
 	}
 	catch (...)
 	{
@@ -1347,13 +1388,14 @@ zkutil::RWLock ReshardingWorker::createLock()
 	return lock;
 }
 
-zkutil::RWLock ReshardingWorker::createCoordinatorLock()
+zkutil::RWLock ReshardingWorker::createCoordinatorLock(const std::string & coordinator_id)
 {
 	auto zookeeper = context.getZooKeeper();
 
-	zkutil::RWLock lock(zookeeper, getCoordinatorPath(current_coordinator_id) + "/lock");
+	zkutil::RWLock lock(zookeeper, getCoordinatorPath(coordinator_id) + "/lock");
 
-	zkutil::RWLock::CancellationHook hook = std::bind(&ReshardingWorker::abortCoordinatorIfRequested, this);
+	zkutil::RWLock::CancellationHook hook = std::bind(&ReshardingWorker::abortCoordinatorIfRequested, this,
+		coordinator_id);
 	lock.setCancellationHook(hook);
 
 	return lock;
@@ -1367,7 +1409,9 @@ zkutil::Barrier ReshardingWorker::createCheckBarrier(const std::string & coordin
 	zkutil::Barrier check_barrier{zookeeper, getCoordinatorPath(coordinator_id) + "/check_barrier",
 		std::stoull(node_count)};
 
-	zkutil::Barrier::CancellationHook hook = std::bind(&ReshardingWorker::abortCoordinatorIfRequested, this);
+	zkutil::Barrier::CancellationHook hook = std::bind(&ReshardingWorker::abortCoordinatorIfRequested, this,
+		coordinator_id
+	);
 	check_barrier.setCancellationHook(hook);
 
 	return check_barrier;
@@ -1381,7 +1425,8 @@ zkutil::SingleBarrier ReshardingWorker::createOptOutBarrier(const std::string & 
 	zkutil::SingleBarrier opt_out_barrier{zookeeper, getCoordinatorPath(coordinator_id)
 		+ "/opt_out_barrier", count};
 
-	zkutil::SingleBarrier::CancellationHook hook = std::bind(&ReshardingWorker::abortCoordinatorIfRequested, this);
+	zkutil::SingleBarrier::CancellationHook hook = std::bind(&ReshardingWorker::abortCoordinatorIfRequested, this,
+		coordinator_id);
 	opt_out_barrier.setCancellationHook(hook);
 
 	return opt_out_barrier;
