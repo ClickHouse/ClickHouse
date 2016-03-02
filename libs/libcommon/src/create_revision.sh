@@ -7,13 +7,6 @@ if [[ $# -ne 1 ]]; then
 	exit 1
 fi
 
-out_file=$1
-dir=$(dirname $out_file)
-
-mkdir -p $dir
-echo "#ifndef REVISION" > $out_file
-echo -n "#define REVISION " >> $out_file
-
 # для stash выставляем жестко ревизию
 if [ -z "$(git config --get remote.origin.url | grep github)" ];
 then
@@ -29,5 +22,11 @@ else
 	fi
 fi
 
-echo $revision >> $out_file
-echo "#endif" >> $out_file
+out_file=$1
+dir=$(dirname $out_file)
+
+mkdir -p $dir
+
+echo "#ifndef REVISION
+#define REVISION $revision
+#endif" > $out_file
