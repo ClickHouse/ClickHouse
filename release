@@ -6,6 +6,9 @@ CONTROL=debian/control
 CHLOG=debian/changelog
 CHDATE=$(LC_ALL=C date -R | sed -e 's/,/\\,/g') # Заменим запятую на '\,'
 
+# Собирать пакет с конфигурационными файлами для Яндекс.Метрики.
+BUILD_PACKAGE_FOR_METRIKA=$([ -f 'private/Server/metrika/config.xml' ] && echo 'yes')
+
 # Список демонов для сборки может быть указан в аргументах командной строки.
 if [ $# -gt 0 ]
 then
