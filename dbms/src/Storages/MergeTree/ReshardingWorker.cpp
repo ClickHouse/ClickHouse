@@ -2,6 +2,7 @@
 #include <DB/Storages/MergeTree/ReshardingJob.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/MergeTree/MergeList.h>
+#include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <DB/Storages/MergeTree/MergeTreeSharder.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
@@ -525,13 +526,13 @@ void ReshardingWorker::createShardedPartitions()
 
 	auto & storage = *(current_job.storage);
 
-	merger = std::make_unique<MergeTreeDataMerger>(storage.data);
+	MergeTreeDataMerger merger{storage.data};
 
 	MergeTreeDataMerger::CancellationHook hook = std::bind(&ReshardingWorker::abortJobIfRequested, this);
-	merger->setCancellationHook(hook);
+	merger.setCancellationHook(hook);
 
 	MergeTreeData::PerShardDataParts & per_shard_data_parts = storage.data.per_shard_data_parts;
-	per_shard_data_parts = merger->reshardPartition(current_job);
+	per_shard_data_parts = merger.reshardPartition(current_job);
 }
 
 void ReshardingWorker::publishShardedPartitions()

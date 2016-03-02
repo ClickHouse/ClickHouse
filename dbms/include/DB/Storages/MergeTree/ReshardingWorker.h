@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
 #include <DB/Storages/MergeTree/ReshardingJob.h>
 #include <DB/Storages/AlterCommands.h>
 #include <common/logger_useful.h>
@@ -171,7 +170,6 @@ private:
 
 	Context & context;
 	Logger * log;
-	std::unique_ptr<MergeTreeDataMerger> merger;
 
 	std::atomic<bool> is_started{false};
 	std::atomic<bool> must_stop{false};
