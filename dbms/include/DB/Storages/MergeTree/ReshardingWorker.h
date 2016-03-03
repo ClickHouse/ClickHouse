@@ -6,7 +6,6 @@
 
 #include <zkutil/RWLock.h>
 #include <zkutil/SingleBarrier.h>
-#include <zkutil/Barrier.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/SharedPtr.h>
@@ -91,6 +90,8 @@ public:
 	/// Получить статус заданной распределённой задачи.
 	Status getStatus();
 
+	zkutil::RWLock createDeletionLock(const std::string & coordinator_id);
+
 private:
 	/// Следить за появлением новых задач. Выполнить их последовательно.
 	void pollAndExecute();
@@ -142,13 +143,20 @@ private:
 	void waitForUploadCompletion();
 
 	size_t getPartitionCountUnlocked(const std::string & coordinator_id);
+
+	bool updateOfflineNodes(const std::string & coordinator_id);
 	bool updateOfflineNodes();
+	bool updateOfflineNodesCommon(const std::string & path, const std::string & coordinator_id);
+
+	Status getStatusCommon(const std::string & path, const std::string & coordinator_id);
 
 	/// Функции, которые создают необходимые объекты для синхронизации
 	/// распределённых задач.
 	zkutil::RWLock createLock();
 	zkutil::RWLock createCoordinatorLock(const std::string & coordinator_id);
-	zkutil::Barrier createCheckBarrier(const std::string & coordinator_id);
+
+	zkutil::SingleBarrier createSubscribeBarrier(const std::string & coordinator_id);
+	zkutil::SingleBarrier createCheckBarrier(const std::string & coordinator_id);
 	zkutil::SingleBarrier createOptOutBarrier(const std::string & coordinator_id, size_t count);
 	zkutil::SingleBarrier createRecoveryBarrier(const ReshardingJob & job);
 	zkutil::SingleBarrier createUploadBarrier(const ReshardingJob & job);

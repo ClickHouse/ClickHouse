@@ -60,6 +60,11 @@ RWLock::RWLock(ZooKeeperPtr & zookeeper_, const std::string & path_)
 		throw KeeperException(code);
 }
 
+RWLock::operator bool() const
+{
+	return zookeeper && !path.empty();
+}
+
 void RWLock::setCancellationHook(CancellationHook cancellation_hook_)
 {
 	cancellation_hook = cancellation_hook_;
@@ -79,11 +84,18 @@ void RWLock::release()
 {
 	__sync_synchronize();
 
+	if (!*this)
+	{
+		owns_lock = false;
+		return;
+	}
+
 	if (key.empty())
 		throw DB::Exception("RWLock: no lock is held", DB::ErrorCodes::LOGICAL_ERROR);
 
 	zookeeper->remove(path + "/" + key);
 	key.clear();
+	owns_lock = false;
 }
 
 template <typename RWLock::Type lock_type>
@@ -92,6 +104,12 @@ void RWLock::acquireImpl(Mode mode)
 	static_assert((lock_type == RWLock::Read) || (lock_type == RWLock::Write), "Invalid RWLock type");
 
 	__sync_synchronize();
+
+	if (!*this)
+	{
+		owns_lock = true;
+		return;
+	}
 
 	if (!key.empty())
 		throw DB::Exception("RWLock: lock already held", DB::ErrorCodes::RWLOCK_ALREADY_HELD);
