@@ -104,6 +104,14 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
 		part->checksums.checkEqual(data_checksums, false);
 	}
+	catch (const Exception & e)
+	{
+		if (e.code() != ErrorCodes::ABORTED)
+		{
+			storage.enqueuePartForCheck(part_name);
+			throw;
+		}
+	}
 	catch (...)
 	{
 		storage.enqueuePartForCheck(part_name);
