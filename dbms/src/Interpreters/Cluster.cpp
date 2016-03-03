@@ -130,6 +130,9 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 	Poco::Util::AbstractConfiguration::Keys config_keys;
 	config.keys(cluster_name, config_keys);
 
+	if (config_keys.empty())
+		throw Exception("No cluster elements (shard, node) specified in config at path " + cluster_name, ErrorCodes::SHARD_HAS_NO_CONNECTIONS);
+
 	const auto & config_prefix = cluster_name + ".";
 
 	UInt32 current_shard_num = 1;
