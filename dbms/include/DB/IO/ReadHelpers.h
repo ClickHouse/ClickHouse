@@ -225,21 +225,27 @@ bool tryReadIntText(T & x, ReadBuffer & buf)
   * - не поддерживается символ '+' перед числом;
   * - символы :;<=>? парсятся, как некоторые цифры.
   */
-template <typename T>
+template <typename T, bool throw_on_error = true>
 void readIntTextUnsafe(T & x, ReadBuffer & buf)
 {
 	bool negative = false;
 	x = 0;
 
+	auto on_error = []
+	{
+		if (throw_on_error)
+			throwReadAfterEOF();
+	};
+
 	if (unlikely(buf.eof()))
-		throwReadAfterEOF();
+		return on_error();
 
 	if (std::is_signed<T>::value && *buf.position() == '-')
 	{
 		++buf.position();
 		negative = true;
 		if (unlikely(buf.eof()))
-			throwReadAfterEOF();
+			return on_error();
 	}
 
 	if (*buf.position() == '0')					/// В реальных данных много нулей.
@@ -262,6 +268,12 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 
 	if (std::is_signed<T>::value && negative)
 		x = -x;
+}
+
+template<typename T>
+void tryReadIntTextUnsafe(T & x, ReadBuffer & buf)
+{
+	return readIntTextUnsafe<T, false>(x, buf);
 }
 
 

@@ -32,9 +32,14 @@ SET(CMAKE_C_FLAGS_RELEASE               "-O3 -DNDEBUG")
 SET(CMAKE_C_FLAGS_RELWITHDEBINFO        "-O3 -g")
 SET(CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++")
 
-# собираем с отслеживанием покрытия в Debug режиме
 # cmake -DCMAKE_BUILD_TYPE=Debug ..
+SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
+
+# Флаги для test coverage
+SET(TEST_COVERAGE TRUE CACHE BOOL "Add compliler flags for test coverage")
+IF (TEST_COVERAGE)
 SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -fprofile-arcs -ftest-coverage -fPIC -DIS_DEBUG")
+ENDIF(TEST_COVERAGE)
 
 # Собирать тесты?
 IF (NOT DEFINED TESTS)
