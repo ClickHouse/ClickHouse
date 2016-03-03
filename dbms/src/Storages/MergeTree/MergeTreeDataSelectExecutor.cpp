@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int INDEX_NOT_USED;
+	extern const int SAMPLING_NOT_SUPPORTED;
 }
 
 
@@ -265,6 +266,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	if (use_sampling)
 	{
+		if (!data.sampling_expression)
+			throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
+
 		RelativeSize size_of_universum = 0;
 		DataTypePtr type = data.getPrimaryExpression()->getSampleBlock().getByName(data.sampling_expression->getColumnName()).type;
 
