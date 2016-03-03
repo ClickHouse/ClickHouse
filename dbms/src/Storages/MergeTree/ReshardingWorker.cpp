@@ -206,9 +206,13 @@ void ReshardingWorker::start()
 
 void ReshardingWorker::shutdown()
 {
-	must_stop = true;
-	if (polling_thread.joinable())
-		polling_thread.join();
+	if (is_started)
+	{
+		must_stop = true;
+		if (polling_thread.joinable())
+			polling_thread.join();
+		is_started = false;
+	}
 }
 
 void ReshardingWorker::submitJob(const ReshardingJob & job)
@@ -1212,7 +1216,6 @@ void ReshardingWorker::attachJob()
 
 	auto status = getStatus();
 
-	/// Important: always check status in the following order.
 	if (status == STATUS_ERROR)
 	{
 		/// This case is triggered when an error occured on a participating node
