@@ -1,16 +1,27 @@
 #!/bin/bash
 
-set -e
-
-if [[ $# -ne 1 ]]; then
-	echo usage: create_revision.sh out_file_path
+if [[ $# -ne 1 ]] && [[ $# -ne 2 ]]; then
+	echo "usage: create_revision.sh out_file_path [--use_dbms_tcp_protocol_version]"
 	exit 1
 fi
 
-# для stash выставляем жестко ревизию
-if [ -z "$(git config --get remote.origin.url | grep github)" ];
+out_file=$1
+dir=$(dirname $out_file)
+
+use_dbms_tcp_protocol_version="$2"
+
+mkdir -p $dir
+
+if [ "$use_dbms_tcp_protocol_version" == "--use_dbms_tcp_protocol_version" ];
 then
-	revision=53694
+
+	echo "
+#include \"DB/Core/Defines.h\"
+#ifndef REVISION
+#define REVISION DBMS_TCP_PROTOCOL_VERSION
+#endif
+" > $out_file
+
 else
 	# GIT
 	git fetch --tags;
@@ -20,13 +31,17 @@ else
 	if [[ "$revision" = "" ]]; then
 		revision=$( ( git describe --tags) | cut -d "-" -f 1 )
 	fi
-fi
+	
+	if [[ "$revision" == "" ]]; then
+	    # в крайнем случае выбирем любую версию как версию демона
+	    # нужно для stash или неполноценной копии репозитория
+	    revision="777"
+	fi
 
-out_file=$1
-dir=$(dirname $out_file)
-
-mkdir -p $dir
-
-echo "#ifndef REVISION
+	echo "
+#ifndef REVISION
 #define REVISION $revision
-#endif" > $out_file
+#endif
+" > $out_file
+
+fi
