@@ -19,14 +19,14 @@ namespace ShardedPartitionUploader
 class Service final : public InterserverIOEndpoint
 {
 public:
-	Service(StorageReplicatedMergeTree & storage_);
+	Service(StoragePtr & storage_);
 	Service(const Service &) = delete;
 	Service & operator=(const Service &) = delete;
 	std::string getId(const std::string & node_id) const override;
 	void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out) override;
 
 private:
-	StorageReplicatedMergeTree & storage;
+	StoragePtr owned_storage;
 	MergeTreeData & data;
 	Logger * log;
 };

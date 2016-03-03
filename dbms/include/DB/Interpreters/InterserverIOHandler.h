@@ -134,6 +134,8 @@ public:
 		try
 		{
 			handler.removeEndpoint(name);
+			/// После уничтожения объекта, endpoint ещё может жить, так как владение им захватывается на время обработки запроса,
+			/// см. InterserverIOHTTPHandler.cpp
 		}
 		catch (...)
 		{

@@ -44,7 +44,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
 	try
 	{
-		auto storage_lock = storage.lockStructure(false);
+		auto storage_lock = owned_storage->lockStructure(false);
 
 		MergeTreeData::DataPartPtr part;
 
@@ -107,14 +107,12 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 	catch (const Exception & e)
 	{
 		if (e.code() != ErrorCodes::ABORTED)
-		{
-			storage.enqueuePartForCheck(part_name);
-			throw;
-		}
+			typeid_cast<StorageReplicatedMergeTree &>(*owned_storage).enqueuePartForCheck(part_name);
+		throw;
 	}
 	catch (...)
 	{
-		storage.enqueuePartForCheck(part_name);
+		typeid_cast<StorageReplicatedMergeTree &>(*owned_storage).enqueuePartForCheck(part_name);
 		throw;
 	}
 }

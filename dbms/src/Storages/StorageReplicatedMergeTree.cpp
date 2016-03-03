@@ -341,13 +341,16 @@ StoragePtr StorageReplicatedMergeTree::create(
 
 	auto get_endpoint_holder = [&res](InterserverIOEndpointPtr endpoint)
 	{
-		return new InterserverIOEndpointHolder(endpoint->getId(res->replica_path), endpoint, res->context.getInterserverIOHandler());
+		return new InterserverIOEndpointHolder(
+			endpoint->getId(res->replica_path),
+			endpoint,
+			res->context.getInterserverIOHandler());
 	};
 
 	if (res->tryGetZooKeeper())
 	{
 		{
-			InterserverIOEndpointPtr endpoint = new DataPartsExchange::Service(res->data, *res);
+			InterserverIOEndpointPtr endpoint = new DataPartsExchange::Service(res->data, res_ptr);
 			res->endpoint_holder = get_endpoint_holder(endpoint);
 		}
 
@@ -359,7 +362,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 		}
 
 		{
-			InterserverIOEndpointPtr endpoint = new ShardedPartitionUploader::Service(*res);
+			InterserverIOEndpointPtr endpoint = new ShardedPartitionUploader::Service(res_ptr);
 			res->sharded_partition_uploader_endpoint_holder = get_endpoint_holder(endpoint);
 		}
 
@@ -2353,16 +2356,32 @@ void StorageReplicatedMergeTree::shutdown()
 		restarting_thread.reset();
 	}
 
-	endpoint_holder = nullptr;
+	if (endpoint_holder)
+	{
+		endpoint_holder->cancel();
+		endpoint_holder = nullptr;
+	}
 	fetcher.cancel();
 
-	disk_space_monitor_endpoint_holder = nullptr;
+	if (disk_space_monitor_endpoint_holder)
+	{
+		disk_space_monitor_endpoint_holder->cancel();
+		disk_space_monitor_endpoint_holder = nullptr;
+	}
 	disk_space_monitor_client.cancel();
 
-	sharded_partition_uploader_endpoint_holder = nullptr;
+	if (sharded_partition_uploader_endpoint_holder)
+	{
+		sharded_partition_uploader_endpoint_holder->cancel();
+		sharded_partition_uploader_endpoint_holder = nullptr;
+	}
 	sharded_partition_uploader_client.cancel();
 
-	remote_query_executor_endpoint_holder = nullptr;
+	if (remote_query_executor_endpoint_holder)
+	{
+		remote_query_executor_endpoint_holder->cancel();
+		remote_query_executor_endpoint_holder = nullptr;
+	}
 	remote_query_executor_client.cancel();
 }
 

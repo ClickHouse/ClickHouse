@@ -29,8 +29,8 @@ std::string getEndpointId(const std::string & node_id)
 
 }
 
-Service::Service(StorageReplicatedMergeTree & storage_)
-	: storage(storage_), data(storage_.getData()),
+Service::Service(StoragePtr & storage_)
+	: owned_storage(storage_), data(static_cast<StorageReplicatedMergeTree &>(*storage_).getData()),
 	log(&Logger::get("ShardedPartitionUploader::Service"))
 {
 }

@@ -10,8 +10,6 @@
 namespace DB
 {
 
-class StorageReplicatedMergeTree;
-
 namespace DataPartsExchange
 {
 
@@ -20,8 +18,8 @@ namespace DataPartsExchange
 class Service final : public InterserverIOEndpoint
 {
 public:
-	Service(MergeTreeData & data_, StorageReplicatedMergeTree & storage_) : data(data_),
-		storage(storage_), log(&Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
+	Service(MergeTreeData & data_, StoragePtr & storage_) : data(data_),
+		owned_storage(storage_), log(&Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
 
 	Service(const Service &) = delete;
 	Service & operator=(const Service &) = delete;
@@ -35,7 +33,7 @@ private:
 
 private:
 	MergeTreeData & data;
-	StorageReplicatedMergeTree & storage;
+	StoragePtr owned_storage;
 	Logger * log;
 };
 
