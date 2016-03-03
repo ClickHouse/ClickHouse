@@ -2,8 +2,10 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/isLocalAddress.h>
 #include <DB/Common/SimpleCache.h>
+#include <DB/IO/HexWriteBuffer.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+#include <openssl/sha.h>
 
 namespace DB
 {
@@ -338,6 +340,48 @@ void Cluster::initMisc()
 			any_remote_shard_info = &shard_info;
 			break;
 		}
+	}
+
+	assignName();
+}
+
+
+void Cluster::assignName()
+{
+	std::vector<std::string> elements;
+
+	if (!addresses.empty())
+	{
+		for (const auto & address : addresses)
+			elements.push_back(address.host_name + ":" + toString(address.port));
+	}
+	else if (!addresses_with_failover.empty())
+	{
+		for (const auto & addresses : addresses_with_failover)
+		{
+			for (const auto & address : addresses)
+				elements.push_back(address.host_name + ":" + toString(address.port));
+		}
+	}
+	else
+		throw Exception("Cluster: ill-formed cluster", ErrorCodes::LOGICAL_ERROR);
+
+	std::sort(elements.begin(), elements.end());
+
+	unsigned char hash[SHA512_DIGEST_LENGTH];
+
+	SHA512_CTX ctx;
+	SHA512_Init(&ctx);
+
+	for (const auto & host : elements)
+		SHA512_Update(&ctx, reinterpret_cast<const void *>(host.data()), host.size());
+
+	SHA512_Final(hash, &ctx);
+
+	{
+		WriteBufferFromString buf(name);
+		HexWriteBuffer hex_buf(buf);
+		hex_buf.write(reinterpret_cast<const char *>(hash), sizeof(hash));
 	}
 }
 

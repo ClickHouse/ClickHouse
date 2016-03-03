@@ -13,7 +13,7 @@
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 #include <DB/Storages/MergeTree/DataPartsExchange.h>
 #include <DB/Storages/MergeTree/RemoteDiskSpaceMonitor.h>
-#include <DB/Storages/MergeTree/ShardedPartitionSender.h>
+#include <DB/Storages/MergeTree/ShardedPartitionUploader.h>
 #include <DB/Storages/MergeTree/RemoteQueryExecutor.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <zkutil/ZooKeeper.h>
@@ -135,8 +135,10 @@ public:
 	void attachPartition(ASTPtr query, const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
 	void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
 	void freezePartition(const Field & partition, const Settings & settings) override;
-	void reshardPartitions(const String & database_name, const Field & first_partition, const Field & last_partition,
-		const WeightedZooKeeperPaths & weighted_zookeeper_paths, const ASTPtr & sharding_key_expr,
+	void reshardPartitions(ASTPtr query, const String & database_name,
+		const Field & first_partition, const Field & last_partition,
+		const WeightedZooKeeperPaths & weighted_zookeeper_paths,
+		const ASTPtr & sharding_key_expr, const Field & coordinator,
 		const Settings & settings) override;
 
 	/** Удаляет реплику из ZooKeeper. Если других реплик нет, удаляет всю таблицу из ZooKeeper.
@@ -190,8 +192,8 @@ private:
 	friend class ScopedPartitionMergeLock;
 
 	friend class ReshardingWorker;
-	friend class ShardedPartitionSender::Client;
-	friend class ShardedPartitionSender::Service;
+	friend class ShardedPartitionUploader::Client;
+	friend class ShardedPartitionUploader::Service;
 
 	using LogEntry = ReplicatedMergeTreeLogEntry;
 	using LogEntryPtr = LogEntry::Ptr;
@@ -248,7 +250,7 @@ private:
 
 	InterserverIOEndpointHolderPtr endpoint_holder;
 	InterserverIOEndpointHolderPtr disk_space_monitor_endpoint_holder;
-	InterserverIOEndpointHolderPtr sharded_partition_sender_endpoint_holder;
+	InterserverIOEndpointHolderPtr sharded_partition_uploader_endpoint_holder;
 	InterserverIOEndpointHolderPtr remote_query_executor_endpoint_holder;
 
 	MergeTreeData data;
@@ -258,7 +260,7 @@ private:
 
 	DataPartsExchange::Fetcher fetcher;
 	RemoteDiskSpaceMonitor::Client disk_space_monitor_client;
-	ShardedPartitionSender::Client sharded_partition_sender_client;
+	ShardedPartitionUploader::Client sharded_partition_uploader_client;
 	RemoteQueryExecutor::Client remote_query_executor_client;
 
 	zkutil::LeaderElectionPtr leader_election;

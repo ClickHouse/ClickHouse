@@ -49,6 +49,9 @@ ENDIF(TESTS)
 # Префикс для установки
 SET(CMAKE_INSTALL_PREFIX /usr)
 
+# Директория для файлов, специфичных для Яндекса
+SET(CLICKHOUSE_PRIVATE_DIR ${METRICA_SOURCE_DIR}/private/)
+
 include_directories (${METRICA_SOURCE_DIR}/contrib/libcityhash/)
 include_directories (${METRICA_SOURCE_DIR}/contrib/liblz4/include/)
 include_directories (${METRICA_SOURCE_DIR}/contrib/libdivide/)

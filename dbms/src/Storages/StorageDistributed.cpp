@@ -6,6 +6,7 @@
 #include <DB/Storages/VirtualColumnFactory.h>
 #include <DB/Storages/Distributed/DistributedBlockOutputStream.h>
 #include <DB/Storages/Distributed/DirectoryMonitor.h>
+#include <DB/Storages/MergeTree/ReshardingWorker.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTSelectQuery.h>
@@ -35,6 +36,9 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int STORAGE_REQUIRES_PARAMETER;
+	extern const int RESHARDING_NO_WORKER;
+	extern const int RESHARDING_INVALID_PARAMETERS;
+	extern const int RESHARDING_INITIATOR_CHECK_FAILED;
 }
 
 
@@ -225,61 +229,118 @@ void StorageDistributed::shutdown()
 	directory_monitors.clear();
 }
 
-void StorageDistributed::reshardPartitions(const String & database_name, const Field & first_partition,
-	const Field & last_partition, const WeightedZooKeeperPaths & weighted_zookeeper_paths,
-	const ASTPtr & sharding_key_expr, const Settings & settings)
+void StorageDistributed::reshardPartitions(ASTPtr query, const String & database_name,
+	const Field & first_partition, const Field & last_partition,
+	const WeightedZooKeeperPaths & weighted_zookeeper_paths,
+	const ASTPtr & sharding_key_expr, const Field & coordinator,
+	const Settings & settings)
 {
-	/// Создать запрос ALTER TABLE xxx.yyy RESHARD PARTITION zzz TO ttt USING uuu.
+	auto & resharding_worker = context.getReshardingWorker();
+	if (!resharding_worker.isStarted())
+		throw Exception("Resharding background thread is not running", ErrorCodes::RESHARDING_NO_WORKER);
 
-	ASTPtr alter_query_ptr = new ASTAlterQuery;
-	auto & alter_query = static_cast<ASTAlterQuery &>(*alter_query_ptr);
+	if (!coordinator.isNull())
+		throw Exception("Use of COORDINATE WITH is forbidden in ALTER TABLE ... RESHARD"
+			" queries for distributed tables",
+			ErrorCodes::RESHARDING_INVALID_PARAMETERS);
 
-	alter_query.database = remote_database;
-	alter_query.table = remote_table;
+	std::string coordinator_id = resharding_worker.createCoordinator(cluster);
 
-	alter_query.parameters.emplace_back();
-	ASTAlterQuery::Parameters & parameters = alter_query.parameters.back();
-
-	parameters.type = ASTAlterQuery::RESHARD_PARTITION;
-	if (!first_partition.isNull())
-		parameters.partition = new ASTLiteral({}, first_partition);
-	if (!last_partition.isNull())
-		parameters.last_partition = new ASTLiteral({}, last_partition);
-
-	ASTPtr expr_list = new ASTExpressionList;
-	for (const auto & entry : weighted_zookeeper_paths)
+	try
 	{
-		ASTPtr weighted_path_ptr = new ASTWeightedZooKeeperPath;
-		auto & weighted_path = static_cast<ASTWeightedZooKeeperPath &>(*weighted_path_ptr);
-		weighted_path.path = entry.first;
-		weighted_path.weight = entry.second;
-		expr_list->children.push_back(weighted_path_ptr);
+		/// Создать запрос ALTER TABLE ... RESHARD PARTITION ... COORDINATE WITH ...
+
+		ASTPtr alter_query_ptr = new ASTAlterQuery;
+		auto & alter_query = static_cast<ASTAlterQuery &>(*alter_query_ptr);
+
+		alter_query.database = remote_database;
+		alter_query.table = remote_table;
+
+		alter_query.parameters.emplace_back();
+		ASTAlterQuery::Parameters & parameters = alter_query.parameters.back();
+
+		parameters.type = ASTAlterQuery::RESHARD_PARTITION;
+		if (!first_partition.isNull())
+			parameters.partition = new ASTLiteral({}, first_partition);
+		if (!last_partition.isNull())
+			parameters.last_partition = new ASTLiteral({}, last_partition);
+
+		ASTPtr expr_list = new ASTExpressionList;
+		for (const auto & entry : weighted_zookeeper_paths)
+		{
+			ASTPtr weighted_path_ptr = new ASTWeightedZooKeeperPath;
+			auto & weighted_path = static_cast<ASTWeightedZooKeeperPath &>(*weighted_path_ptr);
+			weighted_path.path = entry.first;
+			weighted_path.weight = entry.second;
+			expr_list->children.push_back(weighted_path_ptr);
+		}
+
+		parameters.weighted_zookeeper_paths = expr_list;
+		parameters.sharding_key_expr = sharding_key_expr;
+		parameters.coordinator = new ASTLiteral({}, coordinator_id);
+
+		resharding_worker.registerQuery(coordinator_id, queryToString(alter_query_ptr));
+
+		/// We enforce the strict policy under which resharding may start if and only if
+		/// all the required connections were established first.
+
+		std::atomic<size_t> effective_node_count{0};
+
+		ClusterProxy::PreSendHook::PreProcess pre_process = [&effective_node_count](const RemoteBlockInputStream * remote_stream)
+		{
+			size_t count = (remote_stream != nullptr) ? remote_stream->getConnectionCount() : 1;
+			effective_node_count += count;
+		};
+
+		size_t shard_count = cluster.getRemoteShardCount() + cluster.getLocalShardCount();
+
+		ClusterProxy::PreSendHook::PostProcess post_process = [&effective_node_count, shard_count, coordinator_id]()
+		{
+			if (effective_node_count != shard_count)
+			{
+				throw Exception("Unexpected number of nodes participating in distributed job "
+					+ coordinator_id, ErrorCodes::RESHARDING_INITIATOR_CHECK_FAILED);
+			}
+		};
+
+		ClusterProxy::PreSendHook pre_send_hook(pre_process, post_process);
+
+		ClusterProxy::AlterQueryConstructor alter_query_constructor;
+		alter_query_constructor.setPreSendHook(pre_send_hook);
+
+		/** Функциональность shard_multiplexing не доделана - выключаем её.
+		* (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
+		* Подробнее смотрите в https://███████████.yandex-team.ru/METR-18300
+		*/
+		bool enable_shard_multiplexing = false;
+
+		BlockInputStreams streams = ClusterProxy::Query(alter_query_constructor, cluster, alter_query_ptr,
+			context, settings, enable_shard_multiplexing).execute();
+
+		streams[0] = new UnionBlockInputStream<>(streams, nullptr, settings.max_distributed_connections);
+		streams.resize(1);
+
+		auto stream_ptr = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]);
+		if (stream_ptr == nullptr)
+			throw Exception("StorageDistributed: Internal error", ErrorCodes::LOGICAL_ERROR);
+		auto & stream = *stream_ptr;
+
+		while (!stream.isCancelled() && stream.read())
+			;
 	}
+	catch (...)
+	{
+		try
+		{
+			resharding_worker.deleteCoordinator(coordinator_id);
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
 
-	parameters.weighted_zookeeper_paths = expr_list;
-	parameters.sharding_key_expr = sharding_key_expr;
-
-	/** Функциональность shard_multiplexing не доделана - выключаем её.
-	  * (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
-	  * Подробнее смотрите в https://███████████.yandex-team.ru/METR-18300
-	  */
-	bool enable_shard_multiplexing = false;
-
-	ClusterProxy::AlterQueryConstructor alter_query_constructor;
-
-	BlockInputStreams streams = ClusterProxy::Query(alter_query_constructor, cluster, alter_query_ptr,
-		context, settings, enable_shard_multiplexing).execute();
-
-	streams[0] = new UnionBlockInputStream<>(streams, nullptr, settings.max_distributed_connections);
-	streams.resize(1);
-
-	auto stream_ptr = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]);
-	if (stream_ptr == nullptr)
-		throw Exception("StorageDistributed: Internal error", ErrorCodes::LOGICAL_ERROR);
-	auto & stream = *stream_ptr;
-
-	while (!stream.isCancelled() && stream.read())
-		;
+		throw;
+	}
 }
 
 BlockInputStreams StorageDistributed::describe(const Context & context, const Settings & settings)

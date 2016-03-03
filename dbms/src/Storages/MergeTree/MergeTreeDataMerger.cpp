@@ -50,6 +50,10 @@ static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 1.6;
 /// потому что между выбором кусков и резервированием места места может стать немного меньше.
 static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.4;
 
+void MergeTreeDataMerger::setCancellationHook(CancellationHook cancellation_hook_)
+{
+	cancellation_hook = cancellation_hook_;
+}
 
 /// Выбираем отрезок из не более чем max_parts_to_merge_at_once (или несколько больше, см merge_more_parts_if_sum_bytes_is_less_than)
 ///  кусков так, чтобы максимальный размер был меньше чем в max_size_ratio_to_merge_parts раз больше суммы остальных.
@@ -515,9 +519,10 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 }
 
 MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
-	const ReshardingJob & job,
-	size_t aio_threshold, DiskSpaceMonitor::Reservation * disk_reservation)
+	const ReshardingJob & job, DiskSpaceMonitor::Reservation * disk_reservation)
 {
+	size_t aio_threshold = data.context.getSettings().min_bytes_to_use_direct_io;
+
 	/// Собрать все куски партиции.
 	DayNum_t month = MergeTreeData::getMonthFromName(job.partition);
 	MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(month);
@@ -592,7 +597,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 	/// Шардирование слитых блоков.
 
 	/// Для нумерации блоков.
-	SimpleIncrement increment(data.getMaxDataPartIndex());
+	SimpleIncrement increment(job.block_number);
 
 	/// Создать новый кусок для каждого шарда.
 	MergeTreeData::PerShardDataParts per_shard_data_parts;
@@ -774,11 +779,13 @@ size_t MergeTreeDataMerger::estimateDiskSpaceForMerge(const MergeTreeData::DataP
 	return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }
 
-void MergeTreeDataMerger::abortIfRequested() const
+void MergeTreeDataMerger::abortIfRequested()
 {
 	if (cancelled)
 		throw Exception("Cancelled partition resharding", ErrorCodes::ABORTED);
-}
 
+	if (cancellation_hook)
+		cancellation_hook();
+}
 
 }

@@ -320,11 +320,13 @@ int Server::main(const std::vector<std::string> & args)
 
 	global_context->setCurrentDatabase(config().getString("default_database", "default"));
 
+	bool has_resharding_worker = false;
 	if (has_zookeeper && config().has("resharding"))
 	{
 		auto resharding_worker = std::make_shared<ReshardingWorker>(config(), "resharding", *global_context);
 		global_context->setReshardingWorker(resharding_worker);
 		resharding_worker->start();
+		has_resharding_worker = true;
 	}
 
 	SCOPE_EXIT(
@@ -422,7 +424,18 @@ int Server::main(const std::vector<std::string> & args)
 		LOG_INFO(log, "Ready for connections.");
 
 		SCOPE_EXIT(
-			LOG_DEBUG(log, "Received termination signal. Waiting for current connections to close.");
+			LOG_DEBUG(log, "Received termination signal.");
+
+			if (has_resharding_worker)
+			{
+				LOG_INFO(log, "Shutting down resharding thread");
+				auto & resharding_worker = global_context->getReshardingWorker();
+				if (resharding_worker.isStarted())
+					resharding_worker.shutdown();
+				LOG_DEBUG(log, "Shut down resharding thread");
+			}
+
+			LOG_DEBUG(log, "Waiting for current connections to close.");
 
 			users_config_reloader.reset();
 

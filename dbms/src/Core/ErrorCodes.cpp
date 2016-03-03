@@ -325,6 +325,19 @@ namespace ErrorCodes
 	extern const int UNKNOWN_STATUS_OF_INSERT = 319;
 	extern const int DUPLICATE_SHARD_PATHS = 320;
 	extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE = 321;
+	extern const int RESHARDING_BUSY_CLUSTER = 322;
+	extern const int RESHARDING_BUSY_SHARD = 323;
+	extern const int RESHARDING_NO_SUCH_COORDINATOR = 324;
+	extern const int RESHARDING_NO_COORDINATOR_MEMBERSHIP = 325;
+	extern const int RESHARDING_ALREADY_SUBSCRIBED = 326;
+	extern const int RESHARDING_REMOTE_NODE_UNAVAILABLE = 327;
+	extern const int RESHARDING_REMOTE_NODE_ERROR = 328;
+	extern const int RESHARDING_COORDINATOR_DELETED = 329;
+	extern const int RESHARDING_DISTRIBUTED_JOB_ON_HOLD = 330;
+	extern const int RESHARDING_INVALID_QUERY = 331;
+	extern const int RESHARDING_INITIATOR_CHECK_FAILED = 332;
+	extern const int RWLOCK_ALREADY_HELD = 333;
+	extern const int BARRIER_TIMEOUT = 334;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;

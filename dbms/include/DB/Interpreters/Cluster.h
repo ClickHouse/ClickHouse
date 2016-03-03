@@ -80,6 +80,7 @@ public:
 	using ShardsInfo = std::vector<ShardInfo>;
 
 public:
+	String getName() const { return name; }
 	const ShardsInfo & getShardsInfo() const { return shards_info; }
 	const Addresses & getShardsAddresses() const { return addresses; }
 	const AddressesWithFailover & getShardsWithFailoverAddresses() const { return addresses_with_failover; }
@@ -99,7 +100,14 @@ public:
 private:
 	void initMisc();
 
+	/// Create a unique name based on the list of addresses and ports.
+	/// We need it in order to be able to perform resharding requests
+	/// on tables that have the distributed engine.
+	void assignName();
+
 private:
+	/// Название кластера.
+	String name;
 	/// Описание шардов кластера.
 	ShardsInfo shards_info;
 	/// Любой удалённый шард.
@@ -113,12 +121,19 @@ private:
 	size_t local_shard_count = 0;
 };
 
-struct Clusters
+class Clusters
 {
-	typedef std::map<String, Cluster> Impl;
-	Impl impl;
-
+public:
 	Clusters(const Settings & settings, const String & config_name = "remote_servers");
+
+	Clusters(const Clusters &) = delete;
+	Clusters & operator=(const Clusters &) = delete;
+
+public:
+	using Impl = std::map<String, Cluster>;
+
+public:
+	Impl impl;
 };
 
 }

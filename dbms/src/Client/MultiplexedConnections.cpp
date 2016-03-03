@@ -39,8 +39,8 @@ MultiplexedConnections::MultiplexedConnections(Connection * connection_, const S
 }
 
 MultiplexedConnections::MultiplexedConnections(IConnectionPool * pool_, const Settings * settings_, ThrottlerPtr throttler_,
-	bool append_extra_info, bool do_broadcast_)
-	: settings(settings_), throttler(throttler_), do_broadcast(do_broadcast_)
+	bool append_extra_info, PoolMode pool_mode_)
+	: settings(settings_), throttler(throttler_), pool_mode(pool_mode_)
 {
 	if (pool_ == nullptr)
 		throw Exception("Invalid pool specified", ErrorCodes::LOGICAL_ERROR);
@@ -55,8 +55,8 @@ MultiplexedConnections::MultiplexedConnections(IConnectionPool * pool_, const Se
 }
 
 MultiplexedConnections::MultiplexedConnections(ConnectionPools & pools_, const Settings * settings_, ThrottlerPtr throttler_,
-	bool append_extra_info, bool do_broadcast_)
-	: settings(settings_), throttler(throttler_), do_broadcast(do_broadcast_)
+	bool append_extra_info, PoolMode pool_mode_)
+	: settings(settings_), throttler(throttler_), pool_mode(pool_mode_)
 {
 	if (pools_.empty())
 		throw Exception("Pools are not specified", ErrorCodes::LOGICAL_ERROR);
@@ -274,7 +274,7 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
 
 void MultiplexedConnections::initFromShard(IConnectionPool * pool)
 {
-	auto entries = pool->getMany(settings, do_broadcast);
+	auto entries = pool->getMany(settings, pool_mode);
 
 	/// Если getMany() не выделил соединений и не кинул исключения, это значит, что была
 	/// установлена настройка skip_unavailable_shards. Тогда просто возвращаемся.

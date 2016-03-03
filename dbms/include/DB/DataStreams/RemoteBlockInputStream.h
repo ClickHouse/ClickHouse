@@ -5,6 +5,7 @@
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Common/Throttler.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/ClusterProxy/PreSendHook.h>
 #include <DB/Client/ConnectionPool.h>
 #include <DB/Client/MultiplexedConnections.h>
 
@@ -42,11 +43,13 @@ public:
 
 	~RemoteBlockInputStream() override;
 
-	/// Отправить запрос на все существующие реплики.
-	void doBroadcast();
+	void setPoolMode(PoolMode pool_mode_);
 
 	/// Кроме блоков, получить информацию о блоках.
 	void appendExtraInfo();
+
+	///
+	void attachPreSendCallback(ClusterProxy::PreSendHook::Callback callback);
 
 	/// Отправляет запрос (инициирует вычисления) раньше, чем read.
 	void readPrefix() override;
@@ -70,6 +73,11 @@ public:
 	BlockExtraInfo getBlockExtraInfo() const override
 	{
 		return multiplexed_connections->getBlockExtraInfo();
+	}
+
+	size_t getConnectionCount() const
+	{
+		return multiplexed_connections->size();
 	}
 
 protected:
@@ -131,6 +139,8 @@ private:
 	std::vector<ExternalTablesData> external_tables_data;
 	std::mutex external_tables_mutex;
 
+	std::function<void()> pre_send_callback;
+
 	/// Установили соединения с репликами, но ещё не отправили запрос.
 	std::atomic<bool> established { false };
 
@@ -161,7 +171,7 @@ private:
 	std::atomic<bool> got_unknown_packet_from_replica { false };
 
 	bool append_extra_info = false;
-	bool do_broadcast = false;
+	PoolMode pool_mode = PoolMode::GET_MANY;
 
 	Logger * log = &Logger::get("RemoteBlockInputStream");
 };

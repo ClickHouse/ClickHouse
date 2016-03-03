@@ -54,7 +54,7 @@ fi
 
 
 # Тесты, зависящие от данных Метрики - не публикуются наружу. Создаём симлинки на внутренний репозиторий. Весьма неудобно.
-QUERIES_PRIVATE_DIR="../../../ClickHouse_private/tests/${QUERIES_DIR}"
+QUERIES_PRIVATE_DIR="../../../private/tests/${QUERIES_DIR}"
 if [ -d "$QUERIES_PRIVATE_DIR" ]; then
 	for dir in $(ls $QUERIES_PRIVATE_DIR)
 	do

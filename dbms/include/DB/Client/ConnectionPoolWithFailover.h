@@ -89,10 +89,10 @@ private:
 	/** Выделяет до указанного количества соединений для работы.
 	  * Соединения предоставляют доступ к разным репликам одного шарда.
 	  */
-	std::vector<Entry> doGetMany(const Settings * settings, bool get_all) override
+	std::vector<Entry> doGetMany(const Settings * settings, PoolMode pool_mode) override
 	{
 		applyLoadBalancing(settings);
-		return Base::getMany(settings, get_all);
+		return Base::getMany(settings, pool_mode);
 	}
 
 	void applyLoadBalancing(const Settings * settings)

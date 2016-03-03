@@ -13,7 +13,10 @@ namespace DB
   * 	[DROP|DETACH|ATTACH [UNREPLICATED] PARTITION|PART partition, ...]
   * 	[FETCH PARTITION partition FROM ...]
   * 	[FREEZE PARTITION]
-  * 	[RESHARD PARTITION partition TO zookeeper/path/to/partition [WEIGHT w] [, ...] USING sharding_key]
+  *		[RESHARD PARTITION partition
+  *			TO '/path/to/zookeeper/table' [WEIGHT w], ...
+  * 			USING expression
+  *			[COORDINATE WITH 'coordinator_id']]
   */
 class ParserAlterQuery : public IParserBase
 {

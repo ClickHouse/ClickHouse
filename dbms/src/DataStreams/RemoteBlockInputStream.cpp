@@ -1,6 +1,7 @@
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Common/VirtualColumnUtils.h>
+#include <DB/Common/NetException.h>
 
 namespace DB
 {
@@ -58,14 +59,19 @@ RemoteBlockInputStream::~RemoteBlockInputStream()
 		multiplexed_connections->disconnect();
 }
 
-void RemoteBlockInputStream::doBroadcast()
+void RemoteBlockInputStream::setPoolMode(PoolMode pool_mode_)
 {
-	do_broadcast = true;
+	pool_mode = pool_mode_;
 }
 
 void RemoteBlockInputStream::appendExtraInfo()
 {
 	append_extra_info = true;
+}
+
+void RemoteBlockInputStream::attachPreSendCallback(ClusterProxy::PreSendHook::Callback callback)
+{
+	pre_send_callback = std::bind(callback, this);
 }
 
 void RemoteBlockInputStream::readPrefix()
@@ -238,10 +244,10 @@ void RemoteBlockInputStream::createMultiplexedConnections()
 		multiplexed_connections = std::make_unique<MultiplexedConnections>(connection, multiplexed_connections_settings, throttler);
 	else if (pool != nullptr)
 		multiplexed_connections = std::make_unique<MultiplexedConnections>(pool, multiplexed_connections_settings, throttler,
-			append_extra_info, do_broadcast);
+			append_extra_info, pool_mode);
 	else if (!pools.isNull())
 		multiplexed_connections = std::make_unique<MultiplexedConnections>(*pools, multiplexed_connections_settings, throttler,
-			append_extra_info, do_broadcast);
+			append_extra_info, pool_mode);
 	else
 		throw Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 }
@@ -259,7 +265,19 @@ void RemoteBlockInputStream::init(const Settings * settings_)
 
 void RemoteBlockInputStream::sendQuery()
 {
-	createMultiplexedConnections();
+	try
+	{
+		createMultiplexedConnections();
+	}
+	catch (...)
+	{
+		if (pre_send_callback)
+			pre_send_callback();
+		throw;
+	}
+
+	if (pre_send_callback)
+		pre_send_callback();
 
 	if (settings.skip_unavailable_shards && 0 == multiplexed_connections->size())
 		return;
