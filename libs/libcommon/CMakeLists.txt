@@ -2,7 +2,7 @@ SET(REVISIONFILE ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h)
 
 ADD_CUSTOM_COMMAND(
     OUTPUT ${REVISIONFILE}
-    COMMAND bash -f -v -x ${CMAKE_CURRENT_SOURCE_DIR}/src/create_revision.sh ${REVISIONFILE}
+    COMMAND bash -f -v -x ${CMAKE_CURRENT_SOURCE_DIR}/src/create_revision.sh ${REVISIONFILE} ${USE_DBMS_TCP_PROTOCOL_VERSION_AS_CLICKHOUSE_REVISION}
 )
 
 set_source_files_properties(

@@ -3488,6 +3488,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 	std::string coordinator_id;
 	UInt64 block_number = 0;
 
+
 	/// List of local partitions that need to be resharded.
 	ReshardingWorker::PartitionList partition_list;
 
