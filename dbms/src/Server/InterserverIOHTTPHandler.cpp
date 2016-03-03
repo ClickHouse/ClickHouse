@@ -21,14 +21,7 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 {
 	HTMLForm params(request);
 
-	//std::ostringstream request_ostream;
-	//request_ostream << request.stream().rdbuf();
-	//std::string request_string = request_ostream.str();
-
 	LOG_TRACE(log, "Request URI: " << request.getURI());
-	//LOG_TRACE(log, "Request body: " << request_string);
-
-	//std::istringstream request_istream(request_string);
 
 	/// NOTE: Тут можно сделать аутентификацию, если понадобится.
 
