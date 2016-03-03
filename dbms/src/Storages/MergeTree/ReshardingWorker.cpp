@@ -55,6 +55,7 @@ namespace ErrorCodes
 	extern const int RESHARDING_COORDINATOR_DELETED;
 	extern const int RESHARDING_DISTRIBUTED_JOB_ON_HOLD;
 	extern const int RESHARDING_INVALID_QUERY;
+	extern const int RWLOCK_NO_SUCH_LOCK;
 }
 
 namespace
@@ -383,6 +384,8 @@ void ReshardingWorker::perform(const Strings & job_nodes)
 					zookeeper->remove(child_full_path);
 				else if (ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED)
 					zookeeper->remove(child_full_path);
+				else if (ex.code() == ErrorCodes::RWLOCK_NO_SUCH_LOCK)
+					zookeeper->remove(child_full_path);
 				else
 					zookeeper->remove(child_full_path);
 			}
@@ -409,6 +412,15 @@ void ReshardingWorker::perform(const std::string & job_descriptor)
 	LOG_DEBUG(log, "Performing resharding job.");
 
 	current_job = ReshardingJob{job_descriptor};
+
+	zkutil::RWLock deletion_lock;
+
+	if (current_job.isCoordinated())
+		deletion_lock = std::move(createDeletionLock(current_job.coordinator_id));
+
+	zkutil::RWLock::Guard<zkutil::RWLock::Read, zkutil::RWLock::NonBlocking> guard{deletion_lock};
+	if (!deletion_lock.ownsLock())
+		throw Exception("Coordinator has been deleted", ErrorCodes::RESHARDING_COORDINATOR_DELETED);
 
 	StoragePtr generic_storage = context.getTable(current_job.database_name, current_job.table_name);
 	auto & storage = typeid_cast<StorageReplicatedMergeTree &>(*(generic_storage.get()));
@@ -451,6 +463,7 @@ void ReshardingWorker::perform(const std::string & job_descriptor)
 			}
 			else if (ex.code() == ErrorCodes::RESHARDING_REMOTE_NODE_ERROR)
 			{
+				deletion_lock.release();
 				hardCleanup();
 			}
 			else if (ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED)
@@ -483,6 +496,7 @@ void ReshardingWorker::perform(const std::string & job_descriptor)
 						auto current_host = getFQDNOrHostName();
 						setStatus(current_job.coordinator_id, current_host, STATUS_ERROR);
 					}
+					deletion_lock.release();
 					hardCleanup();
 				}
 			}
@@ -514,6 +528,7 @@ void ReshardingWorker::perform(const std::string & job_descriptor)
 					auto current_host = getFQDNOrHostName();
 					setStatus(current_job.coordinator_id, current_host, STATUS_ERROR);
 				}
+				deletion_lock.release();
 				hardCleanup();
 			}
 		}
@@ -525,6 +540,7 @@ void ReshardingWorker::perform(const std::string & job_descriptor)
 		throw;
 	}
 
+	deletion_lock.release();
 	hardCleanup();
 	LOG_DEBUG(log, "Resharding job successfully completed.");
 }
@@ -1171,7 +1187,7 @@ bool ReshardingWorker::updateOfflineNodesCommon(const std::string & path, const 
 	offline.resize(end - offline.begin());
 
 	for (const auto & node : offline)
-		zookeeper->set(coordinator_id + "/status/" + node,
+		zookeeper->set(getCoordinatorPath(coordinator_id) + "/status/" + node,
 			toString(static_cast<UInt64>(STATUS_ON_HOLD)));
 
 	return !offline.empty();
@@ -1233,12 +1249,6 @@ void ReshardingWorker::attachJob()
 		return;
 
 	auto zookeeper = context.getZooKeeper();
-
-	/// Check if the corresponding coordinator exists. If it doesn't, throw an exception,
-	/// silently ignore this job, and switch to the next job.
-	if (!zookeeper->exists(getCoordinatorPath(current_job.coordinator_id)))
-		throw Exception("Coordinator " + current_job.coordinator_id + " was deleted. Ignoring",
-			ErrorCodes::RESHARDING_COORDINATOR_DELETED);
 
 	auto status = getStatus();
 

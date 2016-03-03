@@ -81,6 +81,7 @@ namespace ErrorCodes
 	extern const int RESHARDING_NO_COORDINATOR_MEMBERSHIP;
 	extern const int RESHARDING_ALREADY_SUBSCRIBED;
 	extern const int RESHARDING_INVALID_QUERY;
+	extern const int RWLOCK_NO_SUCH_LOCK;
 }
 
 
@@ -3675,7 +3676,8 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 				/// has willfully attempted to botch an ongoing distributed resharding job.
 				/// Consequently we don't take them into account.
 			}
-			else if (ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED)
+			else if ((ex.code() == ErrorCodes::RWLOCK_NO_SUCH_LOCK) ||
+				(ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED))
 			{
 				/// nothing here
 			}
