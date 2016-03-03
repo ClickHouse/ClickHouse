@@ -121,6 +121,75 @@ BlockIO InterpreterCreateQuery::executeImpl(bool assume_metadata_exists)
 		as_storage_lock = as_storage->lockStructure(false);
 	}
 
+	/// Получаем список столбцов
+	if (create.columns)
+	{
+		auto && columns_and_defaults = parseColumns(create.columns);
+		materialized_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Materialized);
+		alias_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Alias);
+		columns = new NamesAndTypesList{std::move(columns_and_defaults.first)};
+		column_defaults = std::move(columns_and_defaults.second);
+
+		if (columns->size() + materialized_columns.size() == 0)
+			throw Exception{"Cannot CREATE table without physical columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
+	}
+	else if (!create.as_table.empty())
+	{
+		columns = new NamesAndTypesList(as_storage->getColumnsListNonMaterialized());
+		materialized_columns = as_storage->materialized_columns;
+		alias_columns = as_storage->alias_columns;
+		column_defaults = as_storage->column_defaults;
+	}
+	else if (create.select)
+	{
+		columns = new NamesAndTypesList;
+		for (size_t i = 0; i < select_sample.columns(); ++i)
+			columns->push_back(NameAndTypePair(select_sample.getByPosition(i).name, select_sample.getByPosition(i).type));
+	}
+	else
+		throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
+
+	/// Даже если в запросе был список столбцов, на всякий случай приведем его к стандартному виду (развернем Nested).
+	ASTPtr new_columns = formatColumns(*columns, materialized_columns, alias_columns, column_defaults);
+	if (create.columns)
+	{
+		auto it = std::find(create.children.begin(), create.children.end(), create.columns);
+		if (it != create.children.end())
+			*it = new_columns;
+		else
+			create.children.push_back(new_columns);
+	}
+	else
+		create.children.push_back(new_columns);
+	create.columns = new_columns;
+
+	auto ast_element_for_engine = [](const char * engine)
+	{
+		ASTFunction * func = new ASTFunction();
+		func->name = engine;
+		return func;
+	};
+
+	/// Выбор нужного движка таблицы
+	if (create.storage)
+	{
+		storage_name = typeid_cast<ASTFunction &>(*create.storage).name;
+	}
+	else if (!create.as_table.empty())
+	{
+		/// NOTE Получение структуры у таблицы, указанной в AS делается не атомарно с созданием таблицы.
+		storage_name = as_storage->getName();
+		create.storage = typeid_cast<const ASTCreateQuery &>(*context.getCreateQuery(as_database_name, as_table_name)).storage;
+	}
+	else if (create.is_temporary)
+		create.storage = ast_element_for_engine("Memory");
+	else if (create.is_view)
+		create.storage = ast_element_for_engine("View");
+	else if (create.is_materialized_view)
+		create.storage = ast_element_for_engine("MaterializedView");
+	else
+		throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::ENGINE_REQUIRED);
+
 	{
 		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
 
@@ -137,88 +206,13 @@ BlockIO InterpreterCreateQuery::executeImpl(bool assume_metadata_exists)
 			}
 		}
 
-		/// Получаем список столбцов
-		if (create.columns)
-		{
-			auto && columns_and_defaults = parseColumns(create.columns);
-			materialized_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Materialized);
-			alias_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Alias);
-			columns = new NamesAndTypesList{std::move(columns_and_defaults.first)};
-			column_defaults = std::move(columns_and_defaults.second);
-
-			if (columns->size() + materialized_columns.size() == 0)
-				throw Exception{"Cannot CREATE table without physical columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
-		}
-		else if (!create.as_table.empty())
-		{
-			columns = new NamesAndTypesList(as_storage->getColumnsListNonMaterialized());
-			materialized_columns = as_storage->materialized_columns;
-			alias_columns = as_storage->alias_columns;
-			column_defaults = as_storage->column_defaults;
-		}
-		else if (create.select)
-		{
-			columns = new NamesAndTypesList;
-			for (size_t i = 0; i < select_sample.columns(); ++i)
-				columns->push_back(NameAndTypePair(select_sample.getByPosition(i).name, select_sample.getByPosition(i).type));
-		}
-		else
-			throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
-
-		/// Даже если в запросе был список столбцов, на всякий случай приведем его к стандартному виду (развернем Nested).
-		ASTPtr new_columns = formatColumns(*columns, materialized_columns, alias_columns, column_defaults);
-		if (create.columns)
-		{
-			auto it = std::find(create.children.begin(), create.children.end(), create.columns);
-			if (it != create.children.end())
-				*it = new_columns;
-			else
-				create.children.push_back(new_columns);
-		}
-		else
-			create.children.push_back(new_columns);
-		create.columns = new_columns;
-
-		/// Выбор нужного движка таблицы
-		if (create.storage)
-		{
-			storage_name = typeid_cast<ASTFunction &>(*create.storage).name;
-		}
-		else if (!create.as_table.empty())
-		{
-			storage_name = as_storage->getName();
-			create.storage = typeid_cast<const ASTCreateQuery &>(*context.getCreateQuery(as_database_name, as_table_name)).storage;
-		}
-		else if (create.is_temporary)
-		{
-			storage_name = "Memory";
-			ASTFunction * func = new ASTFunction();
-			func->name = storage_name;
-			create.storage = func;
-		}
-		else if (create.is_view)
-		{
-			storage_name = "View";
-			ASTFunction * func = new ASTFunction();
-			func->name = storage_name;
-			create.storage = func;
-		}
-		else if (create.is_materialized_view)
-		{
-			storage_name = "MaterializedView";
-			ASTFunction * func = new ASTFunction();
-			func->name = storage_name;
-			create.storage = func;
-		}
-		else
-			throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::ENGINE_REQUIRED);
-
 		res = StorageFactory::instance().get(
 			storage_name, data_path, table_name, database_name, context,
 			context.getGlobalContext(), query_ptr, columns,
 			materialized_columns, alias_columns, column_defaults, create.attach);
 
-		/// Проверка наличия метаданных таблицы на диске и создание метаданных
+		/// Проверка наличия метаданных таблицы на диске и создание метаданных.
+		/// TODO Операции с файловой системой не должны быть под глобальной блокировкой.
 		if (!assume_metadata_exists && !create.is_temporary)
 		{
 			if (Poco::File(metadata_path).exists())
