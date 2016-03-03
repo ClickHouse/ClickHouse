@@ -374,7 +374,7 @@ void Cluster::assignName()
 	SHA512_Init(&ctx);
 
 	for (const auto & host : elements)
-		SHA512_Update(&ctx, reinterpret_cast<const void *>(host.data()), host.size());
+		SHA512_Update(&ctx, reinterpret_cast<const void *>(host.c_str()), host.size() + 1);
 
 	SHA512_Final(hash, &ctx);
 
