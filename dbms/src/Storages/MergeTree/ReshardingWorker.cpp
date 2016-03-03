@@ -1021,44 +1021,60 @@ void ReshardingWorker::addPartitions(const std::string & coordinator_id,
 ReshardingWorker::PartitionList::iterator ReshardingWorker::categorizePartitions(const std::string & coordinator_id,
 	PartitionList & partition_list)
 {
-	std::sort(partition_list.begin(), partition_list.end());
+	auto current_host = getFQDNOrHostName();
+	auto zookeeper = context.getZooKeeper();
 
-	PartitionList coordinated_partition_list;
-	PartitionList uncoordinated_partition_list;
+	auto is_coordinated = [&](const std::string & partition)
+	{
+		auto path = getCoordinatorPath(coordinator_id) + "/partitions/" + partition + "/nodes";
+		auto nodes = zookeeper->getChildren(path);
+		if ((nodes.size() == 1) && (nodes[0] == current_host))
+		{
+			zookeeper->removeRecursive(getCoordinatorPath(coordinator_id) + "/partitions/" + partition);
+			return false;
+		}
+		else
+			return true;
+	};
+
+	int size = partition_list.size();
+	int i = -1;
+	int j = size;
 
 	{
 		auto lock = createCoordinatorLock(coordinator_id);
 		zkutil::RWLock::Guard<zkutil::RWLock::Write> guard{lock};
 
-		auto current_host = getFQDNOrHostName();
-		auto zookeeper = context.getZooKeeper();
-
-		for (const auto & partition : partition_list)
+		while (true)
 		{
-			auto path = getCoordinatorPath(coordinator_id) + "/partitions/" + partition + "/nodes";
-			auto nodes = zookeeper->getChildren(path);
-			if ((nodes.size() == 1) && (nodes[0] == current_host))
+			do
 			{
-				uncoordinated_partition_list.push_back(partition);
-				zookeeper->removeRecursive(getCoordinatorPath(coordinator_id) + "/partitions/" + partition);
+				++i;
 			}
-			else
-				coordinated_partition_list.push_back(partition);
-		}
+			while ((i < j) && (is_coordinated(partition_list[i])));
+
+			if (i >= j)
+				break;
+
+			do
+			{
+				--j;
+			}
+			while ((i < j) && (!is_coordinated(partition_list[j])));
+
+			if (i >= j)
+				break;
+
+			std::swap(partition_list[i], partition_list[j]);
+		};
 	}
 
-	partition_list.clear();
-	partition_list.reserve(coordinated_partition_list.size() + uncoordinated_partition_list.size());
+	auto uncoordinated_begin = std::next(partition_list.begin(), j);
 
-	partition_list.insert(partition_list.end(),
-		std::make_move_iterator(coordinated_partition_list.begin()),
-		std::make_move_iterator(coordinated_partition_list.end()));
+	std::sort(partition_list.begin(), uncoordinated_begin);
+	std::sort(uncoordinated_begin, partition_list.end());
 
-	partition_list.insert(partition_list.end(),
-		std::make_move_iterator(uncoordinated_partition_list.begin()),
-		std::make_move_iterator(uncoordinated_partition_list.end()));
-
-	return std::next(partition_list.begin(), coordinated_partition_list.size());
+	return uncoordinated_begin;
 }
 
 size_t ReshardingWorker::getPartitionCount(const std::string & coordinator_id)
