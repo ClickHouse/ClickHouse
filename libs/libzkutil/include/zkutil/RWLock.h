@@ -31,6 +31,8 @@ public:
 	using CancellationHook = std::function<void()>;
 
 public:
+	RWLock() = default;
+
 	/// Create under the specified ZooKeeper path a queue for lock requests
 	/// if it doesn't exist yet.
 	RWLock(ZooKeeperPtr & zookeeper_, const std::string & path_);
@@ -40,6 +42,8 @@ public:
 
 	RWLock(RWLock &&) = default;
 	RWLock & operator=(RWLock &&) = default;
+
+	operator bool() const;
 
 	/// Register a function that checks whether lock acquisition should be cancelled.
 	void setCancellationHook(CancellationHook cancellation_hook_);

@@ -76,6 +76,7 @@ namespace ErrorCodes
 	extern const int RESHARDING_INVALID_PARAMETERS;
 	extern const int INVALID_SHARD_WEIGHT;
 	extern const int DUPLICATE_SHARD_PATHS;
+	extern const int RESHARDING_COORDINATOR_DELETED;
 	extern const int RESHARDING_NO_SUCH_COORDINATOR;
 	extern const int RESHARDING_NO_COORDINATOR_MEMBERSHIP;
 	extern const int RESHARDING_ALREADY_SUBSCRIBED;
@@ -3486,12 +3487,6 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 	std::string coordinator_id;
 	UInt64 block_number = 0;
 
-	if (has_coordinator)
-	{
-		coordinator_id = coordinator.get<const String &>();
-		block_number = resharding_worker.subscribe(coordinator_id, queryToString(query));
-	}
-
 	/// List of local partitions that need to be resharded.
 	ReshardingWorker::PartitionList partition_list;
 
@@ -3506,6 +3501,21 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 
 	try
 	{
+		zkutil::RWLock deletion_lock;
+
+		if (has_coordinator)
+		{
+			coordinator_id = coordinator.get<const String &>();
+			deletion_lock = std::move(resharding_worker.createDeletionLock(coordinator_id));
+		}
+
+		zkutil::RWLock::Guard<zkutil::RWLock::Read, zkutil::RWLock::NonBlocking> guard{deletion_lock};
+		if (!deletion_lock.ownsLock())
+			throw Exception("Coordinator has been deleted", ErrorCodes::RESHARDING_COORDINATOR_DELETED);
+
+		if (has_coordinator)
+			block_number = resharding_worker.subscribe(coordinator_id, queryToString(query));
+
 		for (const auto & weighted_path : weighted_zookeeper_paths)
 		{
 			UInt64 weight = weighted_path.second;
@@ -3665,6 +3675,10 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 				/// has willfully attempted to botch an ongoing distributed resharding job.
 				/// Consequently we don't take them into account.
 			}
+			else if (ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED)
+			{
+				/// nothing here
+			}
 			else
 			{
 				try
@@ -3684,6 +3698,8 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 	}
 	catch (...)
 	{
+		tryLogCurrentException(__PRETTY_FUNCTION__);
+
 		if (has_coordinator)
 		{
 			try

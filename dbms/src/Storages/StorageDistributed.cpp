@@ -325,13 +325,20 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 			throw Exception("StorageDistributed: Internal error", ErrorCodes::LOGICAL_ERROR);
 		auto & stream = *stream_ptr;
 
+		stream.readPrefix();
+
 		while (!stream.isCancelled() && stream.read())
 			;
+
+		stream.readSuffix();
 	}
 	catch (...)
 	{
+		tryLogCurrentException(__PRETTY_FUNCTION__);
+
 		try
 		{
+			resharding_worker.setStatus(coordinator_id, ReshardingWorker::STATUS_ERROR);
 			resharding_worker.deleteCoordinator(coordinator_id);
 		}
 		catch (...)
