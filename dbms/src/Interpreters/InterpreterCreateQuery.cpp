@@ -163,11 +163,12 @@ BlockIO InterpreterCreateQuery::executeImpl(bool assume_metadata_exists)
 		create.children.push_back(new_columns);
 	create.columns = new_columns;
 
-	auto ast_element_for_engine = [](const char * engine)
+	auto set_engine = [&](const char * engine)
 	{
+		storage_name = engine;
 		ASTFunction * func = new ASTFunction();
 		func->name = engine;
-		return func;
+		create.storage = func;
 	};
 
 	/// Выбор нужного движка таблицы
@@ -182,11 +183,11 @@ BlockIO InterpreterCreateQuery::executeImpl(bool assume_metadata_exists)
 		create.storage = typeid_cast<const ASTCreateQuery &>(*context.getCreateQuery(as_database_name, as_table_name)).storage;
 	}
 	else if (create.is_temporary)
-		create.storage = ast_element_for_engine("Memory");
+		set_engine("Memory");
 	else if (create.is_view)
-		create.storage = ast_element_for_engine("View");
+		set_engine("View");
 	else if (create.is_materialized_view)
-		create.storage = ast_element_for_engine("MaterializedView");
+		set_engine("MaterializedView");
 	else
 		throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::ENGINE_REQUIRED);
 
