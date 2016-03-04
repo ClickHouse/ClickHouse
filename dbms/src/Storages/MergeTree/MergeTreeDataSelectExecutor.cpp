@@ -106,23 +106,40 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	QueryProcessingStage::Enum & processed_stage,
 	const size_t max_block_size,
 	const unsigned threads,
-	size_t * part_index,
+	size_t * inout_part_index,
 	Int64 max_block_number_to_read) const
 {
 	size_t part_index_var = 0;
-	if (!part_index)
-		part_index = &part_index_var;
+	if (!inout_part_index)
+		inout_part_index = &part_index_var;
 
 	MergeTreeData::DataPartsVector parts = data.getDataPartsVector();
 
-	/// Если в запросе есть ограничения на виртуальный столбец _part, выберем только подходящие под него куски.
-	Names virt_column_names, real_column_names;
+	/// Если в запросе есть ограничения на виртуальный столбец _part или _part_index, выберем только подходящие под него куски.
+	/// В запросе может быть запрошен виртуальный столбец _sample_factor - 1 / использованный коэффициент сэмплирования.
+	Names virt_column_names;
+	Names real_column_names;
+
+	bool sample_factor_column_queried = false;
+	Float64 used_sample_factor = 1;
+
 	for (const String & name : column_names_to_return)
-		if (name != "_part" &&
-			name != "_part_index")
-			real_column_names.push_back(name);
-		else
+	{
+		if (name == "_part"
+			|| name == "_part_index")
+		{
 			virt_column_names.push_back(name);
+		}
+		else if (name == "_sample_factor")
+		{
+			sample_factor_column_queried = true;
+			virt_column_names.push_back(name);
+		}
+		else
+		{
+			real_column_names.push_back(name);
+		}
+	}
 
 	/// Если в запросе только виртуальные столбцы, надо запросить хотя бы один любой другой.
 	if (real_column_names.empty())
@@ -268,6 +285,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	{
 		if (!data.sampling_expression)
 			throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
+
+		if (sample_factor_column_queried && relative_sample_size != 0)
+			used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
 
 		RelativeSize size_of_universum = 0;
 		DataTypePtr type = data.getPrimaryExpression()->getSampleBlock().getByName(data.sampling_expression->getColumnName()).type;
@@ -424,7 +444,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	size_t sum_ranges = 0;
 	for (auto & part : parts)
 	{
-		RangesInDataPart ranges(part, (*part_index)++);
+		RangesInDataPart ranges(part, (*inout_part_index)++);
 
 		if (data.mode != MergeTreeData::Unsorted)
 			ranges.ranges = markRangesFromPKRange(part->index, key_condition, settings);
@@ -490,6 +510,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	if (use_sampling)
 		for (auto & stream : res)
 			stream = new FilterBlockInputStream(stream, filter_expression, filter_function->getColumnName());
+
+	/// Кстати, если делается распределённый запрос или запрос к Merge-таблице, то в столбце _sample_factor могут быть разные значения.
+	if (sample_factor_column_queried)
+		for (auto & stream : res)
+			stream = new AddingConstColumnBlockInputStream<Float64>(
+				stream, new DataTypeFloat64, used_sample_factor, "_sample_factor");
 
 	return res;
 }
