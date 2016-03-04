@@ -121,6 +121,7 @@ private:
 	size_t local_shard_count = 0;
 };
 
+
 class Clusters
 {
 public:

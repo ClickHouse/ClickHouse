@@ -72,11 +72,13 @@ private:
 			context.assertDatabaseExists(source_database);
 			const Tables & tables = context.getDatabases().at(source_database);
 			for (Tables::const_iterator it = tables.begin(); it != tables.end(); ++it)
+			{
 				if (table_name_regexp.match(it->first))
 				{
 					any_table = it->second;
 					break;
 				}
+			}
 		}
 
 		if (!any_table)
