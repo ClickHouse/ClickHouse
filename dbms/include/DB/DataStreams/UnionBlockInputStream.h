@@ -67,14 +67,19 @@ struct OutputData<StreamUnionMode::ExtraInfo>
 template <StreamUnionMode mode = StreamUnionMode::Basic>
 class UnionBlockInputStream : public IProfilingBlockInputStream
 {
+public:
+	using ExceptionCallback = std::function<void()>;
+
 private:
 	using Self = UnionBlockInputStream<mode>;
 
 public:
-	UnionBlockInputStream(BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end, size_t max_threads) :
+	UnionBlockInputStream(BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end, size_t max_threads,
+		ExceptionCallback exception_callback_ = ExceptionCallback()) :
 		output_queue(std::min(inputs.size(), max_threads)),
 		handler(*this),
-		processor(inputs, additional_input_at_end, max_threads, handler)
+		processor(inputs, additional_input_at_end, max_threads, handler),
+		exception_callback(exception_callback_)
 	{
 		children = inputs;
 		if (additional_input_at_end)
@@ -203,7 +208,11 @@ protected:
 		output_queue.pop(received_payload);
 
 		if (received_payload.exception)
+		{
+			if (exception_callback)
+				exception_callback();
 			std::rethrow_exception(received_payload.exception);
+		}
 
 		if (!received_payload.block)
 			all_read = true;
@@ -298,6 +307,8 @@ private:
 
 	Handler handler;
 	ParallelInputsProcessor<Handler, mode> processor;
+
+	ExceptionCallback exception_callback;
 
 	Payload received_payload;
 

@@ -140,9 +140,6 @@ private:
 ///
 /// /shards: the list of shards that have subscribed;
 ///
-/// /subscribe_barrier: when all the participating nodes have subscribed
-/// to their coordinator, proceed further
-///
 /// /check_barrier: when all the participating nodes have checked
 /// that they can perform resharding operations, proceed further;
 ///
@@ -1008,12 +1005,6 @@ UInt64 ReshardingWorker::subscribe(const std::string & coordinator_id, const std
 		zookeeper->set(getCoordinatorPath(coordinator_id) + "/increment", toString(block_number + 1));
 	}
 
-	/// We set up a timeout for this barrier because until we cross it, we don't have
-	/// any guarantee that all the required nodes for this distributed job are online.
-	/// We are inside a lightweight function, so it is not an issue.
-	auto timeout = context.getSettingsRef().resharding_barrier_timeout;
-	createSubscribeBarrier(coordinator_id).enter(timeout);
-
 	return block_number;
 }
 
@@ -1209,6 +1200,7 @@ ReshardingWorker::Status ReshardingWorker::getStatusCommon(const std::string & p
 {
 	/// Note: we don't need any synchronization for the status.
 	/// That's why we don't acquire any read/write lock.
+	/// All the operations are either reads or idempotent writes.
 
 	auto zookeeper = context.getZooKeeper();
 
@@ -1489,21 +1481,6 @@ zkutil::RWLock ReshardingWorker::createDeletionLock(const std::string & coordina
 	lock.setCancellationHook(hook);
 
 	return lock;
-}
-
-zkutil::SingleBarrier ReshardingWorker::createSubscribeBarrier(const std::string & coordinator_id)
-{
-	auto zookeeper = context.getZooKeeper();
-
-	auto node_count = zookeeper->get(getCoordinatorPath(coordinator_id) + "/node_count");
-
-	zkutil::SingleBarrier subscribe_barrier{zookeeper, getCoordinatorPath(coordinator_id) + "/subscribe_barrier",
-		std::stoull(node_count)};
-	zkutil::SingleBarrier::CancellationHook hook = std::bind(&ReshardingWorker::abortCoordinatorIfRequested, this,
-		coordinator_id);
-	subscribe_barrier.setCancellationHook(hook);
-
-	return subscribe_barrier;
 }
 
 zkutil::SingleBarrier ReshardingWorker::createCheckBarrier(const std::string & coordinator_id)

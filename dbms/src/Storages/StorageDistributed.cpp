@@ -317,7 +317,24 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 		BlockInputStreams streams = ClusterProxy::Query(alter_query_constructor, cluster, alter_query_ptr,
 			context, settings, enable_shard_multiplexing).execute();
 
-		streams[0] = new UnionBlockInputStream<>(streams, nullptr, settings.max_distributed_connections);
+		/// This callback is called if an exception has occurred while attempting to read a block
+		/// from a shard. This is to avoid a potential deadlock if other shards are waiting
+		/// inside a barrier. Actually, even without this solution, we would avoid such a deadlock
+		/// because we would eventually timeout while trying to read blocks from these other shards.
+		/// Nevertheless this is not the ideal way of sorting out this issue.
+		auto exception_callback = [&resharding_worker, coordinator_id]()
+		{
+			try
+			{
+				resharding_worker.setStatus(coordinator_id, ReshardingWorker::STATUS_ERROR);
+			}
+			catch (...)
+			{
+				tryLogCurrentException(__PRETTY_FUNCTION__);
+			}
+		};
+
+		streams[0] = new UnionBlockInputStream<>(streams, nullptr, settings.max_distributed_connections, exception_callback);
 		streams.resize(1);
 
 		auto stream_ptr = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]);

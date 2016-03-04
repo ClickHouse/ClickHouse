@@ -3674,14 +3674,18 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 				(ex.code() == ErrorCodes::RESHARDING_ALREADY_SUBSCRIBED) ||
 				(ex.code() == ErrorCodes::RESHARDING_INVALID_QUERY))
 			{
-				/// Theoretically any of these errors may have occurred because a user
-				/// has willfully attempted to botch an ongoing distributed resharding job.
-				/// Consequently we don't take them into account.
+				/// Any of these errors occurs only when a user attempts to send
+				/// manually a query ALTER TABLE ... RESHARD ... that specifies
+				/// the parameter COORDINATE WITH, in spite of the fact that no user
+				/// should ever use this parameter. Since taking into account such
+				/// errors may botch an ongoing distributed resharding job, we
+				/// intentionally ignore them.
 			}
 			else if ((ex.code() == ErrorCodes::RWLOCK_NO_SUCH_LOCK) ||
 				(ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED))
 			{
-				/// nothing here
+				/// For any reason the coordinator has disappeared. So obviously
+				/// we don't have any means to notify other nodes of an error.
 			}
 			else
 			{
