@@ -3614,6 +3614,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 			{
 				/// Degenerate case: we are the only participating node.
 				/// All our jobs are uncoordinated.
+				deletion_lock.release();
 				resharding_worker.deleteCoordinator(coordinator_id);
 				uncoordinated_begin = partition_list.cbegin();
 			}

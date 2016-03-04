@@ -183,8 +183,10 @@ ReshardingWorker::ReshardingWorker(const Poco::Util::AbstractConfiguration & con
 	zookeeper->createIfNotExists(distributed_online_path, "");
 
 	/// Notify that we are online.
-	(void) zookeeper->tryCreate(distributed_online_path + "/" + current_host, "",
+	int32_t code = zookeeper->tryCreate(distributed_online_path + "/" + current_host, "",
 		zkutil::CreateMode::Ephemeral);
+	if ((code != ZOK) && (code != ZNODEEXISTS))
+		throw zkutil::KeeperException(code);
 
 	distributed_lock_path = distributed_path + "/lock";
 	zookeeper->createIfNotExists(distributed_lock_path, "");
