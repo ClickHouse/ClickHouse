@@ -3508,7 +3508,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 		if (has_coordinator)
 		{
 			coordinator_id = coordinator.get<const String &>();
-			deletion_lock = std::move(resharding_worker.createDeletionLock(coordinator_id));
+			deletion_lock = resharding_worker.createDeletionLock(coordinator_id);
 		}
 
 		zkutil::RWLock::Guard<zkutil::RWLock::Read, zkutil::RWLock::NonBlocking> guard{deletion_lock};

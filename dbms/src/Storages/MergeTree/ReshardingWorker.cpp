@@ -418,7 +418,7 @@ void ReshardingWorker::perform(const std::string & job_descriptor)
 	zkutil::RWLock deletion_lock;
 
 	if (current_job.isCoordinated())
-		deletion_lock = std::move(createDeletionLock(current_job.coordinator_id));
+		deletion_lock = createDeletionLock(current_job.coordinator_id);
 
 	zkutil::RWLock::Guard<zkutil::RWLock::Read, zkutil::RWLock::NonBlocking> guard{deletion_lock};
 	if (!deletion_lock.ownsLock())
