@@ -11,6 +11,7 @@ INSERT INTO test.sample2 (x) SELECT number AS x FROM system.numbers LIMIT 200000
 CREATE TABLE test.sample_merge AS test.sample1 ENGINE = Merge(test, '^sample\\d$');
 
 SELECT abs(sum(_sample_factor) - 3000000) / 3000000 < 0.001 FROM test.sample_merge SAMPLE 100000;
+SELECT abs(sum(_sample_factor) - 3000000) / 3000000 < 0.001 FROM merge(test, '^sample\\d$') SAMPLE 100000;
 
 DROP TABLE test.sample1;
 DROP TABLE test.sample2;

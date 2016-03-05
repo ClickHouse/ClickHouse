@@ -112,8 +112,8 @@ PKCondition::PKCondition(ASTPtr & query, const Context & context, const NamesAnd
 	}
 
 	/** Вычисление выражений, зависящих только от констант.
-	 * Чтобы индекс мог использоваться, если написано, например WHERE Date = toDate(now()).
-	 */
+	  * Чтобы индекс мог использоваться, если написано, например WHERE Date = toDate(now()).
+	  */
 	Block block_with_constants = getBlockWithConstants(query, context, all_columns);
 
 	/// Преобразуем секцию WHERE в обратную польскую строку.

@@ -37,7 +37,7 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
 
 
 /// Построить блок состоящий только из возможных значений виртуальных столбцов
-static Block getBlockWithVirtualColumns(const MergeTreeData::DataPartsVector & parts)
+static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts)
 {
 	Block res;
 	ColumnWithTypeAndName _part(new ColumnString, new DataTypeString, "_part");
@@ -120,13 +120,19 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	Names virt_column_names;
 	Names real_column_names;
 
+	bool part_column_queried = false;
+
 	bool sample_factor_column_queried = false;
 	Float64 used_sample_factor = 1;
 
 	for (const String & name : column_names_to_return)
 	{
-		if (name == "_part"
-			|| name == "_part_index")
+		if (name == "_part")
+		{
+			part_column_queried = true;
+			virt_column_names.push_back(name);
+		}
+		else if (name == "_part_index")
 		{
 			virt_column_names.push_back(name);
 		}
@@ -141,23 +147,28 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		}
 	}
 
+	NamesAndTypesList available_real_columns = data.getColumnsList();
+
+	NamesAndTypesList available_real_and_virtual_columns = available_real_columns;
+	for (const auto & name : virt_column_names)
+		available_real_and_virtual_columns.emplace_back(data.getColumn(name));
+
 	/// Если в запросе только виртуальные столбцы, надо запросить хотя бы один любой другой.
 	if (real_column_names.empty())
-		real_column_names.push_back(ExpressionActions::getSmallestColumn(data.getColumnsList()));
+		real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
 
-	Block virtual_columns_block = getBlockWithVirtualColumns(parts);
-
-	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
-	if (!virt_column_names.empty())
+	/// Если запрошен виртуальный столбец _part, пробуем использовать его в качестве индекса.
+	Block virtual_columns_block = getBlockWithPartColumn(parts);
+	if (part_column_queried)
 		VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context);
 
-	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+	std::multiset<String> part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 
 	data.check(real_column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	PKCondition key_condition(query, context, data.getColumnsList(), data.getSortDescription());
-	PKCondition date_condition(query, context, data.getColumnsList(), SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
+	PKCondition key_condition(query, context, available_real_and_virtual_columns, data.getSortDescription());
+	PKCondition date_condition(query, context, available_real_and_virtual_columns, SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
 
 	if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
 		throw Exception("Primary key is not used and setting 'force_primary_key' is set.", ErrorCodes::INDEX_NOT_USED);
@@ -175,7 +186,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 		for (const auto & part : prev_parts)
 		{
-			if (values.find(part->name) == values.end())
+			if (part_values.find(part->name) == part_values.end())
 				continue;
 
 			Field left = static_cast<UInt64>(part->left_date);
@@ -401,7 +412,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 				filter_function->children.push_back(filter_function->arguments);
 			}
 
-			filter_expression = ExpressionAnalyzer(filter_function, context, nullptr, data.getColumnsList()).getActions(false);
+			filter_expression = ExpressionAnalyzer(filter_function, context, nullptr, available_real_columns).getActions(false);
 
 			/// Добавим столбцы, нужные для sampling_expression.
 			std::vector<String> add_columns = filter_expression->getRequiredColumns();
@@ -425,7 +436,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	String prewhere_column;
 	if (select.prewhere_expression)
 	{
-		ExpressionAnalyzer analyzer(select.prewhere_expression, context, nullptr, data.getColumnsList());
+		ExpressionAnalyzer analyzer(select.prewhere_expression, context, nullptr, available_real_columns);
 		prewhere_actions = analyzer.getActions(false);
 		prewhere_column = select.prewhere_expression->getColumnName();
 		SubqueriesForSets prewhere_subqueries = analyzer.getSubqueriesForSets();
@@ -801,7 +812,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	return res;
 }
 
-void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column, const Context & context) const
+void MergeTreeDataSelectExecutor::createPositiveSignCondition(
+	ExpressionActionsPtr & out_expression, String & out_column, const Context & context) const
 {
 	ASTFunction * function = new ASTFunction;
 	ASTPtr function_ptr = function;

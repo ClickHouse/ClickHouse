@@ -1265,7 +1265,7 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 			}
 			else
 			{
-				/// Отличм случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
+				/// Отличим случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
 				ASTFunction * any_element = typeid_cast<ASTFunction *>(set_func->arguments->children.at(0).get());
 				if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
 					single_value = true;
