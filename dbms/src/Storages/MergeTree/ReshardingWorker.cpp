@@ -397,7 +397,6 @@ void ReshardingWorker::perform(const Strings & job_nodes)
 		}
 		catch (...)
 		{
-			tryLogCurrentException(__PRETTY_FUNCTION__);
 			zookeeper->remove(child_full_path);
 			throw;
 		}
@@ -774,7 +773,6 @@ void ReshardingWorker::applyChanges()
 	}
 	catch (...)
 	{
-		tryLogCurrentException(__PRETTY_FUNCTION__);
 		pool.wait();
 		throw;
 	}
