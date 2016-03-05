@@ -271,7 +271,8 @@ private:
 	  * Установить has_aggregation = true, если есть GROUP BY или хотя бы одна агрегатная функция.
 	  */
 	void analyzeAggregation();
-	void getAggregates(ASTPtr ast, ExpressionActionsPtr & actions);
+	void getAggregates(const ASTPtr & ast, ExpressionActionsPtr & actions);
+	void assertNoAggregates(const ASTPtr & ast, const char * description);
 
 	/** Получить множество нужных столбцов для чтения из таблицы.
 	  * При этом, столбцы, указанные в ignored_names, считаются ненужными. И параметр ignored_names может модифицироваться.

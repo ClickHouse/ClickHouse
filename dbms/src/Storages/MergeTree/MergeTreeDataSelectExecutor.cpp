@@ -301,7 +301,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		else if (typeid_cast<const DataTypeUInt8 *>(type.get()))
 			size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + 1;
 		else
-			throw Exception("Invalid sampling column type in storage parameters: " + type->getName() + ". Must be unsigned integer type.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+			throw Exception("Invalid sampling column type in storage parameters: " + type->getName() + ". Must be unsigned integer type.",
+				ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
 		if (settings.parallel_replicas_count > 1)
 		{
@@ -578,10 +579,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 				prewhere_column, settings, virt_columns
 			});
 
-
 			if (i == 0)
+			{
 				/// Выставим приблизительное количество строк только для первого источника
 				static_cast<IProfilingBlockInputStream &>(*res.front()).setTotalRowsApprox(total_rows);
+			}
 		}
 	}
 	else if (sum_marks > 0)
