@@ -143,7 +143,7 @@ private:
 				}
 
 				/// fetch remaining rows to avoid "commands out of sync" error
-				while (auto row = result.fetch())
+				while (result.fetch())
 					++fetched_rows;
 			}
 
@@ -172,35 +172,35 @@ private:
 
 			if (dict_struct.id)
 			{
-				if (!dict_struct.id->expression.empty())
+				if (!dict_struct.id.value().expression.empty())
 				{
-					writeParenthesisedString(dict_struct.id->expression, out);
+					writeParenthesisedString(dict_struct.id.value().expression, out);
 					writeString(" AS ", out);
 				}
 
-				writeProbablyBackQuotedString(dict_struct.id->name, out);
+				writeProbablyBackQuotedString(dict_struct.id.value().name, out);
 
 				if (dict_struct.range_min && dict_struct.range_max)
 				{
 					writeString(", ", out);
 
-					if (!dict_struct.range_min->expression.empty())
+					if (!dict_struct.range_min.value().expression.empty())
 					{
-						writeParenthesisedString(dict_struct.range_min->expression, out);
+						writeParenthesisedString(dict_struct.range_min.value().expression, out);
 						writeString(" AS ", out);
 					}
 
-					writeProbablyBackQuotedString(dict_struct.range_min->name, out);
+					writeProbablyBackQuotedString(dict_struct.range_min.value().name, out);
 
 					writeString(", ", out);
 
-					if (!dict_struct.range_max->expression.empty())
+					if (!dict_struct.range_max.value().expression.empty())
 					{
-						writeParenthesisedString(dict_struct.range_max->expression, out);
+						writeParenthesisedString(dict_struct.range_max.value().expression, out);
 						writeString(" AS ", out);
 					}
 
-					writeProbablyBackQuotedString(dict_struct.range_max->name, out);
+					writeProbablyBackQuotedString(dict_struct.range_max.value().name, out);
 				}
 			}
 			else if (dict_struct.key)
@@ -267,13 +267,13 @@ private:
 			WriteBufferFromString out{query};
 			writeString("SELECT ", out);
 
-			if (!dict_struct.id->expression.empty())
+			if (!dict_struct.id.value().expression.empty())
 			{
-				writeParenthesisedString(dict_struct.id->expression, out);
+				writeParenthesisedString(dict_struct.id.value().expression, out);
 				writeString(" AS ", out);
 			}
 
-			writeProbablyBackQuotedString(dict_struct.id->name, out);
+			writeProbablyBackQuotedString(dict_struct.id.value().name, out);
 
 			for (const auto & attr : dict_struct.attributes)
 			{
@@ -304,7 +304,7 @@ private:
 				writeString(" AND ", out);
 			}
 
-			writeProbablyBackQuotedString(dict_struct.id->name, out);
+			writeProbablyBackQuotedString(dict_struct.id.value().name, out);
 			writeString(" IN (", out);
 
 			auto first = true;

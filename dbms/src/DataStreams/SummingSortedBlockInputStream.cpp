@@ -268,7 +268,7 @@ bool SummingSortedBlockInputStream::mergeMaps(Row & row, TSortCursor & cursor)
 		/// returns a Field for pos-th item of val_index-th value
 		const auto val_getter_lhs = [&] (const auto val_index, const auto pos) -> decltype(auto)
 		{
-			return row[map.val_col_nums[val_index]].get<Array>()[pos];
+			return row[map.val_col_nums[val_index]].template get<Array>()[pos];
 		};
 
 		/// we will be sorting key positions, not the entire rows, to minimize actions
@@ -288,11 +288,11 @@ bool SummingSortedBlockInputStream::mergeMaps(Row & row, TSortCursor & cursor)
 			});
 
 		/// fetch key array reference from row under cursor
-		const auto & key_array_rhs = key_field_rhs.get<Array>();
+		const auto & key_array_rhs = key_field_rhs.template get<Array>();
 		/// returns a Field for pos-th item of val_index-th value
 		const auto val_getter_rhs = [&] (const auto val_index, const auto pos) -> decltype(auto)
 		{
-			return val_fields_rhs[val_index].get<Array>()[pos];
+			return val_fields_rhs[val_index].template get<Array>()[pos];
 		};
 
 		std::vector<std::size_t> key_pos_rhs(ext::range_iterator<std::size_t>{0},

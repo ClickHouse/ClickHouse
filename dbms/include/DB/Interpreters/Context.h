@@ -21,7 +21,7 @@ namespace zkutil
 namespace DB
 {
 
-class ContextShared;
+struct ContextShared;
 class QuotaForIntervals;
 class TableFunctionFactory;
 class AggregateFunctionFactory;

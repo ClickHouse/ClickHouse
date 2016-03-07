@@ -85,7 +85,7 @@ BlockIO InterpreterInsertQuery::execute()
 				new MaterializingBlockOutputStream{
 					new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr}
 				},
-				required_columns, table->column_defaults, context, context.getSettingsRef().strict_insert_defaults
+				required_columns, table->column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults)
 			},
 			table->materialized_columns
 		}
