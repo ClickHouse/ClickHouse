@@ -84,7 +84,7 @@ public:
 	  * This includes writing through or flushing a disk cache if present. The call blocks until the device
 	  * reports that the transfer has completed. It also flushes metadata information associated with the file (see stat(2)).
 	  *    - man fsync */
-	void sync()
+	void sync() override
 	{
 		fsync(fd);
 	}

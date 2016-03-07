@@ -63,7 +63,7 @@ public:
 		metric_increment.destroy();
 	}
 
-	virtual std::string getFileName()
+	std::string getFileName() const override
 	{
 		return file_name;
 	}
