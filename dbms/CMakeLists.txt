@@ -847,7 +847,7 @@ target_link_libraries(dbms
 	lz4 zstd
 	double-conversion
 	${LINK_LIBRARIES_ONLY_ON_X86_64}
-	libre2.a libre2_st.a
+	re2 re2_st
 	libcrypto.a
 	libboost_thread.a
 	libboost_system.a
