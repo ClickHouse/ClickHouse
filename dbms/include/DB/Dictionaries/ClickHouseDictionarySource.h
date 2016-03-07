@@ -119,23 +119,23 @@ private:
 				{
 					writeString(", ", out);
 
-					if (!dict_struct.range_min->expression.empty())
+					if (!dict_struct.range_min.value().expression.empty())
 					{
-						writeParenthesisedString(dict_struct.range_min->expression, out);
+						writeParenthesisedString(dict_struct.range_min.value().expression, out);
 						writeString(" AS ", out);
 					}
 
-					writeProbablyBackQuotedString(dict_struct.range_min->name, out);
+					writeProbablyBackQuotedString(dict_struct.range_min.value().name, out);
 
 					writeString(", ", out);
 
-					if (!dict_struct.range_max->expression.empty())
+					if (!dict_struct.range_max.value().expression.empty())
 					{
-						writeParenthesisedString(dict_struct.range_max->expression, out);
+						writeParenthesisedString(dict_struct.range_max.value().expression, out);
 						writeString(" AS ", out);
 					}
 
-					writeProbablyBackQuotedString(dict_struct.range_max->name, out);
+					writeProbablyBackQuotedString(dict_struct.range_max.value().name, out);
 				}
 			}
 			else if (dict_struct.key)

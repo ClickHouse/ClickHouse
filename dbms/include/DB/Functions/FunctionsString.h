@@ -1582,7 +1582,7 @@ private:
 		return new DataTypeString;
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto & column = block.getByPosition(arguments[0]).column;
 		const auto & column_char = block.getByPosition(arguments[1]).column;

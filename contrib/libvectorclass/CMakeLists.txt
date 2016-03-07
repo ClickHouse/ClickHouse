@@ -1,5 +1,7 @@
 include_directories (${CMAKE_CURRENT_BINARY_DIR})
 
+add_definitions( -Wno-shift-negative-value );
+
 add_library(vectorclass
 	instrset_detect.cpp
 

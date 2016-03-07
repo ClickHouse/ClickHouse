@@ -1,7 +1,7 @@
 #pragma once
 
 
-#if !defined(__x86_64__) || __clang__
+#if !defined(__x86_64__)
 
 inline unsigned int _bit_scan_reverse(unsigned int x)
 {
