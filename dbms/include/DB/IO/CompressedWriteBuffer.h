@@ -121,7 +121,8 @@ private:
 					&compressed_buffer[header_size],
 					compressed_buffer.size(),
 					working_buffer.begin(),
-					uncompressed_size);
+					uncompressed_size,
+					1);
 
 				if (ZSTD_isError(res))
 					throw Exception("Cannot compress block with ZSTD: " + std::string(ZSTD_getErrorName(res)), ErrorCodes::CANNOT_COMPRESS);
