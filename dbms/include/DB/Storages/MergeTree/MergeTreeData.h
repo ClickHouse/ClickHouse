@@ -445,7 +445,7 @@ public:
 	DataTypes primary_key_data_types;
 
 private:
-	friend class MergeTreeDataPart;
+	friend struct MergeTreeDataPart;
 
 	bool require_part_metadata;
 

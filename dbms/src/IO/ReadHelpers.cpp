@@ -465,7 +465,7 @@ template void readCSVStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer
 
 
 template <typename Vector>
-static void readJSONStringInto(Vector & s, ReadBuffer & buf)
+void readJSONStringInto(Vector & s, ReadBuffer & buf)
 {
 	if (buf.eof() || *buf.position() != '"')
 		throw Exception("Cannot parse JSON string: expected opening quote",

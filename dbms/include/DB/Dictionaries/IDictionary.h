@@ -12,11 +12,11 @@ namespace DB
 
 class IDictionarySource;
 
-class IDictionaryBase;
+struct IDictionaryBase;
 using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
 
-class DictionaryLifetime;
-class DictionaryStructure;
+struct DictionaryLifetime;
+struct DictionaryStructure;
 class ColumnString;
 
 struct IDictionaryBase

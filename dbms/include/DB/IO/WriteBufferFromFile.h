@@ -89,7 +89,7 @@ public:
 		fsync(fd);
 	}
 
-	virtual std::string getFileName()
+	std::string getFileName() const override
 	{
 		return file_name;
 	}

@@ -20,7 +20,7 @@ namespace ErrorCodes
 	extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
 }
 
-class ExpressionAction;
+struct ExpressionAction;
 
 
 /** Интерфейс для обычных функций.

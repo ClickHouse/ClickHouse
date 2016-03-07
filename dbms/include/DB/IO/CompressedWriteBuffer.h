@@ -39,10 +39,13 @@ private:
 	CompressionMethod method;
 
 	PODArray<char> compressed_buffer;
+
 #ifdef USE_QUICKLZ
 	qlz_state_compress * qlz_state;
 #else
 	void * fixed_size_padding = nullptr;
+	/// Отменяет warning unused-private-field.
+	void * fixed_size_padding_used() const { return fixed_size_padding; }
 #endif
 
 	void nextImpl()
