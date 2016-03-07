@@ -37,7 +37,7 @@ protected:
 	int fd;
 	off_t pos_in_file; /// Какому сдвигу в файле соответствует working_buffer.end().
 
-	bool nextImpl()
+	bool nextImpl() override
 	{
 		size_t bytes_read = 0;
 		while (!bytes_read)
@@ -86,7 +86,7 @@ protected:
 	}
 
 	/// Имя или описание файла
-	virtual std::string getFileName() const override
+	std::string getFileName() const override
 	{
 		return "(fd = " + toString(fd) + ")";
 	}
