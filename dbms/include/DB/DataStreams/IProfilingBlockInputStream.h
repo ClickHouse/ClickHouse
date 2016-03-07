@@ -13,7 +13,7 @@ namespace DB
 {
 
 class QuotaForIntervals;
-class ProcessListElement;
+struct ProcessListElement;
 
 
 /** Смотрит за тем, как работает источник блоков.

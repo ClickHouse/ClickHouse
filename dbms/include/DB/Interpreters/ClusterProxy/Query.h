@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class Settings;
+struct Settings;
 class Context;
 class Cluster;
 

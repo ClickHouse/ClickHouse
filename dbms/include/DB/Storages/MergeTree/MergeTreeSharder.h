@@ -24,7 +24,7 @@ struct ShardedBlockWithDateInterval final
 
 using ShardedBlocksWithDateIntervals = std::list<ShardedBlockWithDateInterval>;
 
-class ReshardingJob;
+struct ReshardingJob;
 
 /** Создаёт новые шардированные куски с данными.
   */
