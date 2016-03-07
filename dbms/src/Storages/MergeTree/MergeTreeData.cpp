@@ -516,7 +516,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 		{
 			const auto new_type = new_types[column.name].get();
 			const String new_type_name = new_type->getName();
-			const auto & old_type = column.type;
+			const auto old_type = column.type.get();
 
 			if (new_type_name != old_type->getName() && (!part || part->hasColumnFiles(column.name)))
 			{
