@@ -748,7 +748,7 @@ public:
 		return new DataTypeUInt64;
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto arg_count = arguments.size();
 

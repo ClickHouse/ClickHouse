@@ -6,7 +6,7 @@ namespace DB
 namespace
 {
 
-const UniqCombinedBiasData::InterpolatedData raw_estimates =
+const UniqCombinedBiasData::InterpolatedData raw_estimates
 {
 	99791.8496
 	,101386.91930000001

@@ -773,7 +773,7 @@ namespace
 	};
 
 	template<size_t... TArgs>
-	const std::array<size_t, sizeof...(TArgs)> TableContainer<TArgs...>::values = {{ TArgs... }};
+	const std::array<size_t, sizeof...(TArgs)> TableContainer<TArgs...>::values { TArgs... };
 
 	/// Генератор первых N степеней.
 

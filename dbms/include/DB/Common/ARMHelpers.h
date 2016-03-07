@@ -1,15 +1,11 @@
 #pragma once
 
 
-#if !defined(__x86_64__)
+#if !defined(__x86_64__) || __clang__
 
 inline unsigned int _bit_scan_reverse(unsigned int x)
 {
 	return sizeof(unsigned int) * 8 - 1 - __builtin_clz(x);
 }
-
-#else
-
-#include <x86intrin.h>
 
 #endif

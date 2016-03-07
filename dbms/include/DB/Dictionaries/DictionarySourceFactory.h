@@ -31,7 +31,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 
 	if (dict_struct.id)
 		block.insert(ColumnWithTypeAndName{
-			new ColumnUInt64{1}, new DataTypeUInt64, dict_struct.id->name
+			new ColumnUInt64{1}, new DataTypeUInt64, dict_struct.id.value().name
 		});
 
 	if (dict_struct.key)
