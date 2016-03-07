@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int INDEX_NOT_USED;
+	extern const int SAMPLING_NOT_SUPPORTED;
 }
 
 
@@ -36,7 +37,7 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
 
 
 /// Построить блок состоящий только из возможных значений виртуальных столбцов
-static Block getBlockWithVirtualColumns(const MergeTreeData::DataPartsVector & parts)
+static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts)
 {
 	Block res;
 	ColumnWithTypeAndName _part(new ColumnString, new DataTypeString, "_part");
@@ -105,41 +106,69 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	QueryProcessingStage::Enum & processed_stage,
 	const size_t max_block_size,
 	const unsigned threads,
-	size_t * part_index,
+	size_t * inout_part_index,
 	Int64 max_block_number_to_read) const
 {
 	size_t part_index_var = 0;
-	if (!part_index)
-		part_index = &part_index_var;
+	if (!inout_part_index)
+		inout_part_index = &part_index_var;
 
 	MergeTreeData::DataPartsVector parts = data.getDataPartsVector();
 
-	/// Если в запросе есть ограничения на виртуальный столбец _part, выберем только подходящие под него куски.
-	Names virt_column_names, real_column_names;
+	/// Если в запросе есть ограничения на виртуальный столбец _part или _part_index, выберем только подходящие под него куски.
+	/// В запросе может быть запрошен виртуальный столбец _sample_factor - 1 / использованный коэффициент сэмплирования.
+	Names virt_column_names;
+	Names real_column_names;
+
+	bool part_column_queried = false;
+
+	bool sample_factor_column_queried = false;
+	Float64 used_sample_factor = 1;
+
 	for (const String & name : column_names_to_return)
-		if (name != "_part" &&
-			name != "_part_index")
-			real_column_names.push_back(name);
-		else
+	{
+		if (name == "_part")
+		{
+			part_column_queried = true;
 			virt_column_names.push_back(name);
+		}
+		else if (name == "_part_index")
+		{
+			virt_column_names.push_back(name);
+		}
+		else if (name == "_sample_factor")
+		{
+			sample_factor_column_queried = true;
+			virt_column_names.push_back(name);
+		}
+		else
+		{
+			real_column_names.push_back(name);
+		}
+	}
+
+	NamesAndTypesList available_real_columns = data.getColumnsList();
+
+	NamesAndTypesList available_real_and_virtual_columns = available_real_columns;
+	for (const auto & name : virt_column_names)
+		available_real_and_virtual_columns.emplace_back(data.getColumn(name));
 
 	/// Если в запросе только виртуальные столбцы, надо запросить хотя бы один любой другой.
 	if (real_column_names.empty())
-		real_column_names.push_back(ExpressionActions::getSmallestColumn(data.getColumnsList()));
+		real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
 
-	Block virtual_columns_block = getBlockWithVirtualColumns(parts);
-
-	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
-	if (!virt_column_names.empty())
+	/// Если запрошен виртуальный столбец _part, пробуем использовать его в качестве индекса.
+	Block virtual_columns_block = getBlockWithPartColumn(parts);
+	if (part_column_queried)
 		VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context);
 
-	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+	std::multiset<String> part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 
 	data.check(real_column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	PKCondition key_condition(query, context, data.getColumnsList(), data.getSortDescription());
-	PKCondition date_condition(query, context, data.getColumnsList(), SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
+	PKCondition key_condition(query, context, available_real_and_virtual_columns, data.getSortDescription());
+	PKCondition date_condition(query, context, available_real_and_virtual_columns, SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
 
 	if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
 		throw Exception("Primary key is not used and setting 'force_primary_key' is set.", ErrorCodes::INDEX_NOT_USED);
@@ -157,7 +186,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 		for (const auto & part : prev_parts)
 		{
-			if (values.find(part->name) == values.end())
+			if (part_values.find(part->name) == part_values.end())
 				continue;
 
 			Field left = static_cast<UInt64>(part->left_date);
@@ -265,6 +294,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	if (use_sampling)
 	{
+		if (!data.sampling_expression)
+			throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
+
+		if (sample_factor_column_queried && relative_sample_size != 0)
+			used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
+
 		RelativeSize size_of_universum = 0;
 		DataTypePtr type = data.getPrimaryExpression()->getSampleBlock().getByName(data.sampling_expression->getColumnName()).type;
 
@@ -277,7 +312,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		else if (typeid_cast<const DataTypeUInt8 *>(type.get()))
 			size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + 1;
 		else
-			throw Exception("Invalid sampling column type in storage parameters: " + type->getName() + ". Must be unsigned integer type.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+			throw Exception("Invalid sampling column type in storage parameters: " + type->getName() + ". Must be unsigned integer type.",
+				ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
 		if (settings.parallel_replicas_count > 1)
 		{
@@ -376,7 +412,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 				filter_function->children.push_back(filter_function->arguments);
 			}
 
-			filter_expression = ExpressionAnalyzer(filter_function, context, nullptr, data.getColumnsList()).getActions(false);
+			filter_expression = ExpressionAnalyzer(filter_function, context, nullptr, available_real_columns).getActions(false);
 
 			/// Добавим столбцы, нужные для sampling_expression.
 			std::vector<String> add_columns = filter_expression->getRequiredColumns();
@@ -400,7 +436,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	String prewhere_column;
 	if (select.prewhere_expression)
 	{
-		ExpressionAnalyzer analyzer(select.prewhere_expression, context, nullptr, data.getColumnsList());
+		ExpressionAnalyzer analyzer(select.prewhere_expression, context, nullptr, available_real_columns);
 		prewhere_actions = analyzer.getActions(false);
 		prewhere_column = select.prewhere_expression->getColumnName();
 		SubqueriesForSets prewhere_subqueries = analyzer.getSubqueriesForSets();
@@ -420,7 +456,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	size_t sum_ranges = 0;
 	for (auto & part : parts)
 	{
-		RangesInDataPart ranges(part, (*part_index)++);
+		RangesInDataPart ranges(part, (*inout_part_index)++);
 
 		if (data.mode != MergeTreeData::Unsorted)
 			ranges.ranges = markRangesFromPKRange(part->index, key_condition, settings);
@@ -487,6 +523,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		for (auto & stream : res)
 			stream = new FilterBlockInputStream(stream, filter_expression, filter_function->getColumnName());
 
+	/// Кстати, если делается распределённый запрос или запрос к Merge-таблице, то в столбце _sample_factor могут быть разные значения.
+	if (sample_factor_column_queried)
+		for (auto & stream : res)
+			stream = new AddingConstColumnBlockInputStream<Float64>(
+				stream, new DataTypeFloat64, used_sample_factor, "_sample_factor");
+
 	return res;
 }
 
@@ -548,10 +590,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 				prewhere_column, settings, virt_columns
 			});
 
-
 			if (i == 0)
+			{
 				/// Выставим приблизительное количество строк только для первого источника
 				static_cast<IProfilingBlockInputStream &>(*res.front()).setTotalRowsApprox(total_rows);
+			}
 		}
 	}
 	else if (sum_marks > 0)
@@ -769,7 +812,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	return res;
 }
 
-void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column, const Context & context) const
+void MergeTreeDataSelectExecutor::createPositiveSignCondition(
+	ExpressionActionsPtr & out_expression, String & out_column, const Context & context) const
 {
 	ASTFunction * function = new ASTFunction;
 	ASTPtr function_ptr = function;

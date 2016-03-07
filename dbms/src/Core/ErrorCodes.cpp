@@ -337,7 +337,8 @@ namespace ErrorCodes
 	extern const int RESHARDING_INVALID_QUERY = 331;
 	extern const int RESHARDING_INITIATOR_CHECK_FAILED = 332;
 	extern const int RWLOCK_ALREADY_HELD = 333;
-	extern const int BARRIER_TIMEOUT = 334;
+	extern const int RWLOCK_NO_SUCH_LOCK = 334;
+	extern const int BARRIER_TIMEOUT = 335;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;

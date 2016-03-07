@@ -165,8 +165,8 @@ protected:
 	Poco::Event wakeup_event;
 
 	/// Поток, в котором принимается сигнал HUP/USR1 для закрытия логов.
-	Poco::Thread close_logs_thread;
-	std::unique_ptr<Poco::Runnable> close_logs_listener;
+	Poco::Thread signal_listener_thread;
+	std::unique_ptr<Poco::Runnable> signal_listener;
 
 	/// Файлы с логами.
 	Poco::AutoPtr<Poco::FileChannel> log_file;

@@ -81,6 +81,7 @@ namespace ErrorCodes
 	extern const int RESHARDING_NO_COORDINATOR_MEMBERSHIP;
 	extern const int RESHARDING_ALREADY_SUBSCRIBED;
 	extern const int RESHARDING_INVALID_QUERY;
+	extern const int RWLOCK_NO_SUCH_LOCK;
 }
 
 
@@ -3507,7 +3508,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 		if (has_coordinator)
 		{
 			coordinator_id = coordinator.get<const String &>();
-			deletion_lock = std::move(resharding_worker.createDeletionLock(coordinator_id));
+			deletion_lock = resharding_worker.createDeletionLock(coordinator_id);
 		}
 
 		zkutil::RWLock::Guard<zkutil::RWLock::Read, zkutil::RWLock::NonBlocking> guard{deletion_lock};
@@ -3613,6 +3614,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 			{
 				/// Degenerate case: we are the only participating node.
 				/// All our jobs are uncoordinated.
+				deletion_lock.release();
 				resharding_worker.deleteCoordinator(coordinator_id);
 				uncoordinated_begin = partition_list.cbegin();
 			}
@@ -3672,9 +3674,18 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 				(ex.code() == ErrorCodes::RESHARDING_ALREADY_SUBSCRIBED) ||
 				(ex.code() == ErrorCodes::RESHARDING_INVALID_QUERY))
 			{
-				/// Theoretically any of these errors may have occurred because a user
-				/// has willfully attempted to botch an ongoing distributed resharding job.
-				/// Consequently we don't take them into account.
+				/// Any of these errors occurs only when a user attempts to send
+				/// manually a query ALTER TABLE ... RESHARD ... that specifies
+				/// the parameter COORDINATE WITH, in spite of the fact that no user
+				/// should ever use this parameter. Since taking into account such
+				/// errors may botch an ongoing distributed resharding job, we
+				/// intentionally ignore them.
+			}
+			else if ((ex.code() == ErrorCodes::RWLOCK_NO_SUCH_LOCK) ||
+				(ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED))
+			{
+				/// For any reason the coordinator has disappeared. So obviously
+				/// we don't have any means to notify other nodes of an error.
 			}
 
 			else if (ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED)

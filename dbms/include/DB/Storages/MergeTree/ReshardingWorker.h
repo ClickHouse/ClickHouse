@@ -155,7 +155,6 @@ private:
 	zkutil::RWLock createLock();
 	zkutil::RWLock createCoordinatorLock(const std::string & coordinator_id);
 
-	zkutil::SingleBarrier createSubscribeBarrier(const std::string & coordinator_id);
 	zkutil::SingleBarrier createCheckBarrier(const std::string & coordinator_id);
 	zkutil::SingleBarrier createOptOutBarrier(const std::string & coordinator_id, size_t count);
 	zkutil::SingleBarrier createRecoveryBarrier(const ReshardingJob & job);

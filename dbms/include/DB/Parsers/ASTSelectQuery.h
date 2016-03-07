@@ -49,7 +49,7 @@ public:
 	bool distinct = false;
 	ASTPtr select_expression_list;
 	ASTPtr database;
-	ASTPtr table;	/// Идентификатор, табличная функция или подзапрос (рекурсивно ASTSelectQuery)
+	ASTPtr table;	/// Имя таблицы, табличная функция или подзапрос (рекурсивно ASTSelectQuery)
 	bool array_join_is_left = false;	/// LEFT ARRAY JOIN
 	ASTPtr array_join_expression_list;	/// ARRAY JOIN
 	ASTPtr join;						/// Обычный (не ARRAY) JOIN.

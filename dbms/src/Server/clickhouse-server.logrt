@@ -1,6 +1,6 @@
 /var/log/clickhouse-server/clickhouse-server*.log {
-	rotate 20
-	size 20M
+	rotate 100
+	size 100M
 	compress
 	missingok
 	sharedscripts

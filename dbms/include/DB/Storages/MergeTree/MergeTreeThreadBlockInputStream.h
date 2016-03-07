@@ -318,6 +318,7 @@ private:
 		const auto rows = block.rowsInFirstColumn();
 
 		/// add virtual columns
+		/// Кроме _sample_factor, который добавляется снаружи.
 		if (!virt_column_names.empty())
 		{
 			for (const auto & virt_column_name : virt_column_names)

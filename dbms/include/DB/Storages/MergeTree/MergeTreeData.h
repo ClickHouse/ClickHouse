@@ -252,16 +252,18 @@ public:
 			return NameAndTypePair("_part", new DataTypeString);
 		if (column_name == "_part_index")
 			return NameAndTypePair("_part_index", new DataTypeUInt64);
+		if (column_name == "_sample_factor")
+			return NameAndTypePair("_sample_factor", new DataTypeFloat64);
+
 		return ITableDeclaration::getColumn(column_name);
 	}
 
 	bool hasColumn(const String & column_name) const override
 	{
-		if (column_name == "_part")
-			return true;
-		if (column_name == "_part_index")
-			return true;
-		return ITableDeclaration::hasColumn(column_name);
+		return ITableDeclaration::hasColumn(column_name)
+			|| column_name == "_part"
+			|| column_name == "_part_index"
+			|| column_name == "_sample_factor";
 	}
 
 	String getFullPath() const { return full_path; }

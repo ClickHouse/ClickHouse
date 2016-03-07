@@ -17,7 +17,6 @@ public:
 	MergeTreeDataSelectExecutor(MergeTreeData & data_);
 
 	/** При чтении, выбирается набор кусков, покрывающий нужный диапазон индекса.
-	  * Если inout_part_index != nullptr, из этого счетчика берутся значения для виртуального столбца _part_index.
 	  * max_block_number_to_read - если не ноль - не читать все куски, у которых правая граница больше этого порога.
 	  */
 	BlockInputStreams read(
@@ -28,7 +27,7 @@ public:
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size,
 		unsigned threads,
-		size_t * inout_part_index,
+		size_t * inout_part_index,	/// Если не nullptr, из этого счетчика берутся значения для виртуального столбца _part_index.
 		Int64 max_block_number_to_read) const;
 
 private:
