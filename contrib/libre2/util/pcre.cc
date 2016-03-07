@@ -550,8 +550,10 @@ int PCRE::TryMatch(const StringPiece& text,
   return rc;
 }
 
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 
 bool PCRE::DoMatchImpl(const StringPiece& text,
                      Anchor anchor,
@@ -592,7 +594,9 @@ bool PCRE::DoMatchImpl(const StringPiece& text,
   return true;
 }
 
+#if !__clang__
 #pragma GCC diagnostic pop
+#endif
 
 bool PCRE::DoMatch(const StringPiece& text,
                  Anchor anchor,
