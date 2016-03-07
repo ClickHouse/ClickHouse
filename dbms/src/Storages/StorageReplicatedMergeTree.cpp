@@ -3706,8 +3706,6 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 	}
 	catch (...)
 	{
-		tryLogCurrentException(__PRETTY_FUNCTION__);
-
 		if (has_coordinator)
 		{
 			try
