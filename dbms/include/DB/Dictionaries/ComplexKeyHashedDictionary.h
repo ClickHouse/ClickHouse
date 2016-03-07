@@ -301,7 +301,7 @@ private:
 		stream->readPrefix();
 
 		/// created upfront to avoid excess allocations
-		const auto keys_size = dict_struct.key->size();
+		const auto keys_size = dict_struct.key.value().size();
 		StringRefs keys(keys_size);
 
 		const auto attributes_size = attributes.size();

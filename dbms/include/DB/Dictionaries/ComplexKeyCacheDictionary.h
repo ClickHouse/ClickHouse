@@ -248,7 +248,7 @@ public:
 		MapType<std::vector<std::size_t>> outdated_keys;
 
 		const auto rows = key_columns.front()->size();
-		const auto keys_size = dict_struct.key->size();
+		const auto keys_size = dict_struct.key.value().size();
 		StringRefs keys(keys_size);
 		Arena temporary_keys_pool;
 		PODArray<StringRef> keys_array(rows);
@@ -438,7 +438,7 @@ private:
 		auto & attribute_array = std::get<ContainerPtrType<T>>(attribute.arrays);
 
 		const auto rows = key_columns.front()->size();
-		const auto keys_size = dict_struct.key->size();
+		const auto keys_size = dict_struct.key.value().size();
 		StringRefs keys(keys_size);
 		Arena temporary_keys_pool;
 		PODArray<StringRef> keys_array(rows);
@@ -496,7 +496,7 @@ private:
 		/// save on some allocations
 		out->getOffsets().reserve(rows);
 
-		const auto keys_size = dict_struct.key->size();
+		const auto keys_size = dict_struct.key.value().size();
 		StringRefs keys(keys_size);
 		Arena temporary_keys_pool;
 
@@ -628,7 +628,7 @@ private:
 
 		const Poco::ScopedWriteRWLock write_lock{rw_lock};
 
-		const auto keys_size = dict_struct.key->size();
+		const auto keys_size = dict_struct.key.value().size();
 		StringRefs keys(keys_size);
 
 		const auto attributes_size = attributes.size();

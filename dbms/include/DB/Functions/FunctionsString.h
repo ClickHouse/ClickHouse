@@ -1028,7 +1028,7 @@ public:
 		return new DataTypeString;
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		if (arguments.size() == 2)
 			executeBinary(block, arguments, result);
