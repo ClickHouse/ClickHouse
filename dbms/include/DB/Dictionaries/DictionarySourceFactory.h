@@ -41,7 +41,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 			auto column = attribute.type->createColumn();
 			column->insertDefault();
 
-			block.insert(ColumnWithTypeAndName{column, attribute.type, attribute.value().name});
+			block.insert(ColumnWithTypeAndName{column, attribute.type, attribute.name});
 		}
 	}
 
