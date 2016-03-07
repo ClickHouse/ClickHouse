@@ -394,7 +394,7 @@ add_library (dbms
 	include/DB/Common/RadixSort.h
 	include/DB/Common/ShellCommand.h
 	include/DB/Common/getNumberOfPhysicalCPUCores.h
-	include/DB/Common/ARMHelpers.h
+	include/DB/Common/BitHelpers.h
 	include/DB/Common/BlockFilterCreator.h
 	include/DB/IO/CompressedStream.h
 	include/DB/IO/ReadBufferFromFileDescriptor.h

@@ -1,12 +1,7 @@
 #pragma once
 
 #include <DB/Core/Types.h>
-
-#if defined(__x86_64__)
-	#include <x86intrin.h>
-#else
-	#include <DB/Common/ARMHelpers.h>
-#endif
+#include <DB/Common/BitHelpers.h>
 
 
 namespace DB
@@ -47,7 +42,7 @@ inline std::size_t seqLength(const UInt8 first_octet)
 		return 1;
 
 	const std::size_t bits = 8;
-	const auto first_zero = _bit_scan_reverse(static_cast<UInt8>(~first_octet));
+	const auto first_zero = bit_scan_reverse(static_cast<UInt8>(~first_octet));
 
 	return bits - 1 - first_zero;
 }
