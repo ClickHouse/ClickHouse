@@ -1,3 +1,4 @@
+#define NO_METRIKA
 #include <common/Test.h>
 #include <vector>
 #include <string>
