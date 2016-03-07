@@ -7,7 +7,7 @@ namespace
 {
 
 const UniqCombinedBiasData::InterpolatedData raw_estimates
-{
+{{
 	99791.8496
 	,101386.91930000001
 	,105450.95623333333
@@ -208,10 +208,10 @@ const UniqCombinedBiasData::InterpolatedData raw_estimates
 	,649497.0210000001
 	,652049.6203333334
 	,654923.103
-};
+}};
 
-const UniqCombinedBiasData::InterpolatedData biases =
-{
+const UniqCombinedBiasData::InterpolatedData biases
+{{
 	83406.8496
 	,84682.41930000001
 	,83634.45623333333
@@ -412,7 +412,7 @@ const UniqCombinedBiasData::InterpolatedData biases =
 	,182.52100000000792
 	,179.12033333334452
 	,177.1030000000028
-};
+}};
 
 }
 
