@@ -41,15 +41,14 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 			auto column = attribute.type->createColumn();
 			column->insertDefault();
 
-			block.insert(ColumnWithTypeAndName{column, attribute.type, attribute.name});
+			block.insert(ColumnWithTypeAndName{column, attribute.type, attribute.value().name});
 		}
 	}
 
 	if (dict_struct.range_min)
 		for (const auto & attribute : { dict_struct.range_min, dict_struct.range_max })
 			block.insert(ColumnWithTypeAndName{
-				new ColumnUInt16{1}, new DataTypeDate, attribute->name
-			});
+				new ColumnUInt16{1}, new DataTypeDate, attribute.value().name});
 
 	for (const auto & attribute : dict_struct.attributes)
 	{
