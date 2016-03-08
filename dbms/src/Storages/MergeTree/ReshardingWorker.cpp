@@ -1128,7 +1128,11 @@ size_t ReshardingWorker::getNodeCount(const std::string & coordinator_id)
 
 void ReshardingWorker::waitForCheckCompletion(const std::string & coordinator_id)
 {
-	createCheckBarrier(coordinator_id).enter();
+	/// Since we get the information about all the shards only after
+	/// having crosssed this barrier, we set up a timeout for safety
+	/// purposes.
+	auto timeout = context.getSettingsRef().resharding_barrier_timeout;
+	createCheckBarrier(coordinator_id).enter(timeout);
 }
 
 void ReshardingWorker::waitForOptOutCompletion(const std::string & coordinator_id, size_t count)
