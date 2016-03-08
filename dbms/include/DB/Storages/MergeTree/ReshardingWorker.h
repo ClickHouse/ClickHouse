@@ -178,6 +178,8 @@ private:
 	Context & context;
 	Logger * log;
 
+	zkutil::EventPtr event = new Poco::Event;
+
 	std::atomic<bool> is_started{false};
 	std::atomic<bool> must_stop{false};
 };

@@ -270,7 +270,6 @@ void ReshardingWorker::pollAndExecute()
 
 				while (true)
 				{
-					zkutil::EventPtr event = new Poco::Event;
 					auto zookeeper = context.getZooKeeper();
 					children = zookeeper->getChildren(host_task_queue_path, nullptr, event);
 
@@ -322,17 +321,16 @@ void ReshardingWorker::pollAndExecute()
 
 void ReshardingWorker::jabScheduler()
 {
-	/// We create then delete a node so that the main loop of the job scheduler will notice
-	/// something has just happened. This forces the scheduler to fetch all the current
-	/// pending jobs. We need this when a distributed job is not ready to be performed yet.
-	/// Otherwise if no new jobs were submitted, we wouldn't be able to check again whether
-	/// we can perform the distributed job.
-	auto zookeeper = context.getZooKeeper();
-	(void) zookeeper->create(host_task_queue_path + "/fake_task", "", zkutil::CreateMode::Persistent);
-	zookeeper->remove(host_task_queue_path + "/fake_task");
+	/// We inform the job scheduler that something has just happened. This forces
+	/// the scheduler to fetch all the current pending jobs. We need this when a
+	/// distributed job is not ready to be performed yet. Otherwise if no new jobs
+	/// were submitted, we wouldn't be able to check again whether we can perform
+	/// the distributed job.
+	event->set();
 
 	/// Sleep for 3 time units in order to prevent scheduler overloading
 	/// if we were the only job in the queue.
+	auto zookeeper = context.getZooKeeper();
 	if (zookeeper->getChildren(host_task_queue_path).size() == 1)
 		std::this_thread::sleep_for(3 * std::chrono::milliseconds(wait_duration));
 }
