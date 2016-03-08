@@ -71,11 +71,6 @@ RWLock::operator bool() const
 	return zookeeper && !path.empty();
 }
 
-RWLock::operator bool() const
-{
-	return zookeeper && !path.empty();
-}
-
 void RWLock::setCancellationHook(CancellationHook cancellation_hook_)
 {
 	cancellation_hook = cancellation_hook_;
