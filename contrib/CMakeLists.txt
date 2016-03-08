@@ -10,5 +10,4 @@ add_subdirectory (libboost-threadpool)
 
 IF (NOT AARCH64)
 	add_subdirectory (libcpuid)
-	add_subdirectory (libvectorclass)
 ENDIF()

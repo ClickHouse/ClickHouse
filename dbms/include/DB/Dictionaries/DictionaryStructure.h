@@ -194,7 +194,7 @@ struct DictionaryStructure final
 
 	void validateKeyTypes(const DataTypes & key_types) const
 	{
-		if (key_types.size() != key->size())
+		if (key_types.size() != key.value().size())
 			throw Exception{
 				"Key structure does not match, expected " + getKeyDescription(),
 				ErrorCodes::TYPE_MISMATCH

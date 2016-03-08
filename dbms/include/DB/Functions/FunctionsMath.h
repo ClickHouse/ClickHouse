@@ -4,9 +4,18 @@
 #include <DB/Functions/IFunction.h>
 
 #if defined(__x86_64__)
+	#if __clang__
+		#pragma clang diagnostic push
+		#pragma clang diagnostic ignored "-Wshift-negative-value"
+	#endif
+
 	#include <vectorf128.h>
 	#include <vectormath_exp.h>
 	#include <vectormath_trig.h>
+
+	#if __clang__
+		#pragma clang diagnostic pop
+	#endif
 #endif
 
 

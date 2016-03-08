@@ -692,8 +692,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
 	MergeTreeSharder sharder(data, job);
 
-	Block block;
-	while (block = merged_stream->read())
+	while (Block block = merged_stream->read())
 	{
 		abortIfRequested();
 

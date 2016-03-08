@@ -84,8 +84,8 @@ void StorageSetOrJoinBase::restore()
 		return;
 	}
 
-	constexpr auto file_suffix = ".bin";
-	constexpr auto file_suffix_size = strlen(file_suffix);
+	static const auto file_suffix = ".bin";
+	static const auto file_suffix_size = strlen(".bin");
 
 	Poco::DirectoryIterator dir_end;
 	for (Poco::DirectoryIterator dir_it(path); dir_end != dir_it; ++dir_it)

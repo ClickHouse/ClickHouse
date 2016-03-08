@@ -684,7 +684,7 @@ namespace DB
 
 			if (p_in < end_in)
 			{
-				Data tmp{0};
+				Data tmp{{}};
 				T* begin_tmp = &tmp[0];
 				const T* end_tmp = begin_tmp + data_count;
 
@@ -717,7 +717,7 @@ namespace DB
 				Scale mm_scale;
 				Op::prepare(scale, mm_scale);
 
-				Data tmp{0};
+				Data tmp{{}};
 				tmp[0] = val;
 
 				Data res;
@@ -773,7 +773,7 @@ namespace
 	};
 
 	template<size_t... TArgs>
-	const std::array<size_t, sizeof...(TArgs)> TableContainer<TArgs...>::values = { TArgs... };
+	const std::array<size_t, sizeof...(TArgs)> TableContainer<TArgs...>::values {{ TArgs... }};
 
 	/// Генератор первых N степеней.
 

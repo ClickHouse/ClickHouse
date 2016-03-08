@@ -1421,7 +1421,7 @@ struct ToStringMonotonicity
 
 	static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
 	{
-		IFunction::Monotonicity positive = { .is_monotonic = true, .is_positive = true };
+		IFunction::Monotonicity positive(true, true);
 		IFunction::Monotonicity not_monotonic;
 
 		/// Функция toString монотонна, если аргумент - Date или DateTime, или неотрицательные числа с одинаковым количеством знаков.

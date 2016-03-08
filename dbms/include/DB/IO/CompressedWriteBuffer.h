@@ -39,10 +39,13 @@ private:
 	CompressionMethod method;
 
 	PODArray<char> compressed_buffer;
+
 #ifdef USE_QUICKLZ
 	qlz_state_compress * qlz_state;
 #else
 	void * fixed_size_padding = nullptr;
+	/// Отменяет warning unused-private-field.
+	void * fixed_size_padding_used() const { return fixed_size_padding; }
 #endif
 
 	void nextImpl()
@@ -118,7 +121,8 @@ private:
 					&compressed_buffer[header_size],
 					compressed_buffer.size(),
 					working_buffer.begin(),
-					uncompressed_size);
+					uncompressed_size,
+					1);
 
 				if (ZSTD_isError(res))
 					throw Exception("Cannot compress block with ZSTD: " + std::string(ZSTD_getErrorName(res)), ErrorCodes::CANNOT_COMPRESS);

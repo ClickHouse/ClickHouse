@@ -9,7 +9,7 @@ namespace DB
 {
 
 class MergeListEntry;
-class ReshardingJob;
+struct ReshardingJob;
 
 
 /** Умеет выбирать куски для слияния и сливать их.

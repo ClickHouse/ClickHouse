@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DB/Common/Arena.h>
-#include <DB/Common/ARMHelpers.h>
+#include <DB/Common/BitHelpers.h>
 
 
 namespace DB
@@ -34,7 +34,7 @@ private:
 	/// Получить индекс в массиве freelist-ов для заданного размера.
 	static size_t findFreeListIndex(const size_t size)
 	{
-		return size <= 8 ? 2 : _bit_scan_reverse(size - 1);
+		return size <= 8 ? 2 : bit_scan_reverse(size - 1);
 	}
 
 	/// Для выделения блоков не слишком большого размера используется Arena.

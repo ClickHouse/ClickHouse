@@ -90,7 +90,8 @@ bool TSKVRowInputStream::read(Block & block)
 
 	/// Множество столбцов, для которых были считаны значения. Остальные затем заполним значениями по-умолчанию.
 	/// TODO Возможность предоставить свои DEFAULT-ы.
-	bool read_columns[columns] = {};
+	bool read_columns[columns];
+	memset(read_columns, 0, columns);
 
 	if (unlikely(*istr.position() == '\n'))
 	{

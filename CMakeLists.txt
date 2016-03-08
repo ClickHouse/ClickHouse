@@ -24,12 +24,13 @@ IF (NOT AARCH64)
 ENDIF()
 
 SET(CMAKE_BUILD_COLOR_MAKEFILE          ON)
-SET(CMAKE_CXX_FLAGS                     "-std=gnu++1y -Wall -Werror -Wnon-virtual-dtor ${MACHINE_FLAGS} -static-libgcc -static-libstdc++")
+SET(CMAKE_CXX_FLAGS                     "-std=gnu++1y -Wall -Werror -Wnon-virtual-dtor ${MACHINE_FLAGS}")
 SET(CMAKE_CXX_FLAGS_RELEASE             "-O3 -DNDEBUG")
-SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO      "-O3 -g" )
-SET(CMAKE_C_FLAGS                       "-Wall -Werror ${MACHINE_FLAGS} -static-libgcc")
+SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO      "-O3 -g")
+SET(CMAKE_C_FLAGS                       "-Wall -Werror ${MACHINE_FLAGS}")
 SET(CMAKE_C_FLAGS_RELEASE               "-O3 -DNDEBUG")
-SET(CMAKE_C_FLAGS_RELWITHDEBINFO        "-O3 -g"      )
+SET(CMAKE_C_FLAGS_RELWITHDEBINFO        "-O3 -g")
+SET(CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++")
 
 # собираем с отслеживанием покрытия в Debug режиме
 # cmake -DCMAKE_BUILD_TYPE=Debug ..

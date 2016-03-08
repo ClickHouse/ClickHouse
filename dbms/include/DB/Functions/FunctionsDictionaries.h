@@ -965,7 +965,7 @@ private:
 		return new DataTypeString;
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[0]).column.get());
 		if (!dict_name_col)
@@ -1236,7 +1236,7 @@ private:
 		return new DataTypeString;
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[0]).column.get());
 		if (!dict_name_col)

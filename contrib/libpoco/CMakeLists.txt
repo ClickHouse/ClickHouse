@@ -136,6 +136,7 @@ endif(WIN32)
 
 if (UNIX AND NOT ANDROID )
   add_definitions( -DPOCO_OS_FAMILY_UNIX )
+  add_definitions( -Wno-unused-private-field -Wno-unused-local-typedef -Wno-for-loop-analysis -Wno-unknown-pragmas )
   # Standard 'must be' defines
   if (APPLE)
     add_definitions( -DPOCO_HAVE_IPv6 -DPOCO_NO_STAT64)

@@ -75,7 +75,7 @@ class ParserCastExpression : public IParserBase
 	static constexpr auto name = "CAST";
 
 protected:
-	const char * getName() const { return name; }
+	const char * getName() const override { return name; }
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) override;
 };
 

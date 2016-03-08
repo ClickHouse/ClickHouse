@@ -341,8 +341,8 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 		const IColumn * in_column = &*block.getByPosition(0).column;
 
 		/// Константный столбец слева от IN поддерживается не напрямую. Для этого, он сначала материализуется.
-		ColumnPtr materialized_column;
-		if (materialized_column = in_column->convertToFullColumnIfConst())
+		ColumnPtr materialized_column = in_column->convertToFullColumnIfConst();
+		if (materialized_column)
 			in_column = materialized_column.get();
 
 		if (const ColumnArray * col = typeid_cast<const ColumnArray *>(in_column))

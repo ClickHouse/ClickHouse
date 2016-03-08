@@ -394,7 +394,7 @@ add_library (dbms
 	include/DB/Common/RadixSort.h
 	include/DB/Common/ShellCommand.h
 	include/DB/Common/getNumberOfPhysicalCPUCores.h
-	include/DB/Common/ARMHelpers.h
+	include/DB/Common/BitHelpers.h
 	include/DB/Common/BlockFilterCreator.h
 	include/DB/IO/CompressedStream.h
 	include/DB/IO/ReadBufferFromFileDescriptor.h
@@ -847,7 +847,7 @@ target_link_libraries(dbms
 	lz4 zstd
 	double-conversion
 	${LINK_LIBRARIES_ONLY_ON_X86_64}
-	libre2.a libre2_st.a
+	re2 re2_st
 	libcrypto.a
 	libboost_thread.a
 	libboost_system.a

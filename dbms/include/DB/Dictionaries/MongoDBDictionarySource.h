@@ -115,7 +115,7 @@ public:
 
 		/// mongo::BSONObj has shitty design and does not use fixed width integral types
 		const auto query = BSON(
-			dict_struct.id->name << BSON("$in" << ext::collection_cast<std::vector<long long int>>(ids)));
+			dict_struct.id.value().name << BSON("$in" << ext::collection_cast<std::vector<long long int>>(ids)));
 
 		return new MongoDBBlockInputStream{
 			connection.query(db + '.' + collection, query, 0, 0, &fields_to_query),

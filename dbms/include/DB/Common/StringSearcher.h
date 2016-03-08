@@ -242,7 +242,7 @@ public:
 					continue;
 				}
 
-				const auto offset = _bit_scan_forward(mask);
+				const auto offset = __builtin_ctz(mask);
 				haystack += offset;
 
 				if (haystack < haystack_end && haystack + n <= haystack_end && page_safe(haystack))
@@ -440,7 +440,7 @@ public:
 					continue;
 				}
 
-				const auto offset = _bit_scan_forward(mask);
+				const auto offset = __builtin_ctz(mask);
 				haystack += offset;
 
 				if (haystack < haystack_end && haystack + n <= haystack_end && page_safe(haystack))
@@ -620,7 +620,7 @@ public:
 					continue;
 				}
 
-				const auto offset = _bit_scan_forward(mask);
+				const auto offset = __builtin_ctz(mask);
 				haystack += offset;
 
 				if (haystack < haystack_end && haystack + n <= haystack_end && page_safe(haystack))

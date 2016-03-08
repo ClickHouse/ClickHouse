@@ -116,7 +116,7 @@ public:
 		return new DataTypeString;
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		block.getByPosition(result).column = new ColumnConstString{
 			block.rowsInFirstColumn(), db_name

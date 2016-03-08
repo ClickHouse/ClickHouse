@@ -208,6 +208,7 @@ private:
 	/// Дополнительные данные - строки, а также продолжения односвязных списков строк.
 	Arena pool;
 
+public:
 	enum class Type
 	{
 		EMPTY,
@@ -217,6 +218,7 @@ private:
 		CROSS,
 	};
 
+private:
 	Type type = Type::EMPTY;
 
 	static Type chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);

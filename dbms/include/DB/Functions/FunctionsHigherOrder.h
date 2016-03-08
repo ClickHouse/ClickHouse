@@ -561,7 +561,7 @@ public:
 
 	/// Вызывается, если хоть один агрумент функции - лямбда-выражение.
 	/// Для аргументов-лямбда-выражений определяет типы аргументов этих выражений.
-	void getLambdaArgumentTypes(DataTypes & arguments) const
+	void getLambdaArgumentTypes(DataTypes & arguments) const override
 	{
 		if (arguments.size() < 1)
 			throw Exception("Function " + getName() + " needs at least one argument; passed "
@@ -661,7 +661,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result) override
 	{
 		if (arguments.size() == 1)
 		{

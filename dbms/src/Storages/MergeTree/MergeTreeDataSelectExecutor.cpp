@@ -1,3 +1,18 @@
+/// Совместимость с clang, в котором std::numeric_limits (из libstdc++ из gcc) почему-то не специализируется для __uint128_t.
+#if __clang__
+	#include <limits>
+
+	namespace std
+	{
+		template <>
+		struct numeric_limits<__uint128_t>
+		{
+			static constexpr bool is_specialized = true;
+			static constexpr bool is_signed = false;
+		};
+	}
+#endif
+
 #include <boost/rational.hpp>	/// Для вычислений, связанных с коэффициентами сэмплирования.
 
 #include <DB/Core/FieldVisitors.h>

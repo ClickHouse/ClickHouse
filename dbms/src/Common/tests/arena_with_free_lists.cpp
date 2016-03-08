@@ -2,7 +2,7 @@
   * ./arena_with_free_lists 5000000 < ../../Server/data/test/hits/20140317_20140323_2_178_4/Title.bin
   */
 
-#define USE_BAD_ARENA 1
+#define USE_BAD_ARENA 0
 
 #if !USE_BAD_ARENA
 	#include <DB/Common/ArenaWithFreeLists.h>

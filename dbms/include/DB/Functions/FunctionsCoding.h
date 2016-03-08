@@ -192,7 +192,7 @@ public:
 		return new DataTypeString;
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto & col_name_type = block.getByPosition(arguments[0]);
 		const ColumnPtr & column = col_name_type.column;
@@ -288,7 +288,7 @@ public:
 		return new DataTypeString;
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto & col_name_type = block.getByPosition(arguments[0]);
 		const ColumnPtr & column = col_name_type.column;
@@ -961,7 +961,7 @@ public:
 		return new DataTypeFixedString{16};
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto & col_name_type = block.getByPosition(arguments[0]);
 		const ColumnPtr & column = col_name_type.column;

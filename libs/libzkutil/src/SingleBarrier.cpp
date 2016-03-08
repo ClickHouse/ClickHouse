@@ -89,7 +89,6 @@ void SingleBarrier::abortIfRequested()
 		{
 			try
 			{
-				event->reset();
 				zookeeper->tryRemove(path + "/" + getFQDNOrHostName());
 			}
 			catch (...)

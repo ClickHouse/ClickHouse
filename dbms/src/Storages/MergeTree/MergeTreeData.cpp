@@ -516,13 +516,14 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 		{
 			const auto new_type = new_types[column.name].get();
 			const String new_type_name = new_type->getName();
-			const auto & old_type = column.type;
+			const auto old_type = column.type.get();
 
 			if (new_type_name != old_type->getName() && (!part || part->hasColumnFiles(column.name)))
 			{
 				// При ALTER между Enum с одинаковым подлежащим типом столбцы не трогаем, лишь просим обновить columns.txt
-				if (part && typeid(*new_type) == typeid(*old_type) &&
-					(typeid_cast<const DataTypeEnum8 *>(new_type) || typeid_cast<const DataTypeEnum16 *>(new_type)))
+				if (part
+					&& ((typeid_cast<const DataTypeEnum8 *>(new_type) && typeid_cast<const DataTypeEnum8 *>(old_type))
+						|| (typeid_cast<const DataTypeEnum16 *>(new_type) && typeid_cast<const DataTypeEnum16 *>(old_type))))
 				{
 					out_force_update_metadata = true;
 					continue;

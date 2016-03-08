@@ -11,7 +11,7 @@ namespace DB
 
 class ExpressionAnalyzer;
 class ASTSelectQuery;
-class SubqueryForSet;
+struct SubqueryForSet;
 
 
 /** Интерпретирует запрос SELECT. Возвращает поток блоков с результатами выполнения запроса до стадии to_stage.

@@ -49,8 +49,8 @@ protected:
 		UnstorableZookeeperHandler(ZooKeeper::Ptr zk_ptr_);
 
 		explicit operator bool() const { return bool(zk_ptr); }
-		bool operator==(nullptr_t) const { return zk_ptr == nullptr; }
-		bool operator!=(nullptr_t) const { return !(*this == nullptr); }
+		bool operator==(std::nullptr_t) const { return zk_ptr == nullptr; }
+		bool operator!=(std::nullptr_t) const { return !(*this == nullptr); }
 
 		/// в случае nullptr методы разыменования кидают исключение,
 		/// с более подробным текстом, чем просто nullptr
@@ -80,4 +80,4 @@ void ZooKeeperHolder::init(Args&&... args)
 
 using ZooKeeperHolderPtr = std::shared_ptr<ZooKeeperHolder>;
 
-}; /*namespace zkutil*/
+};

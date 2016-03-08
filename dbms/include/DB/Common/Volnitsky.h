@@ -165,15 +165,16 @@ protected:
 
 	void putNGramASCIICaseInsensitive(const UInt8 * const pos, const int offset)
 	{
+		struct Chars
+		{
+			UInt8 c0;
+			UInt8 c1;
+		};
+
 		union
 		{
 			ngram_t n;
-
-			struct Chars
-			{
-				UInt8 c0;
-				UInt8 c1;
-			} chars;
+			Chars chars;
 		};
 
 		n = toNGram(pos);
@@ -279,15 +280,16 @@ template <> struct VolnitskyImpl<false, false> : VolnitskyBase<VolnitskyImpl<fal
 
 	void putNGram(const UInt8 * const pos, const int offset, const UInt8 * const begin)
 	{
+		struct Chars
+		{
+			UInt8 c0;
+			UInt8 c1;
+		};
+
 		union
 		{
 			ngram_t n;
-
-			struct Chars
-			{
-				UInt8 c0;
-				UInt8 c1;
-			} chars;
+			Chars chars;
 		};
 
 		n = toNGram(pos);

@@ -271,7 +271,7 @@ BlockIO InterpreterCreateQuery::executeImpl(bool assume_metadata_exists)
 						}
 					},
 					/// @note shouldn't these two contexts be session contexts in case of temporary table?
-					columns, column_defaults, context, context.getSettingsRef().strict_insert_defaults
+					columns, column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults)
 				},
 				materialized_columns
 			}

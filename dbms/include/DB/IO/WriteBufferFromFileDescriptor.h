@@ -31,7 +31,7 @@ class WriteBufferFromFileDescriptor : public WriteBufferFromFileBase
 protected:
 	int fd;
 
-	void nextImpl()
+	void nextImpl() override
 	{
 		if (!offset())
 			return;
