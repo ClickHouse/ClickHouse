@@ -1,6 +1,6 @@
 #pragma once
 
-#include <google/dense_hash_map>
+#include <sparsehash/dense_hash_map>
 
 #include <Poco/File.h>
 #include <Poco/NumberParser.h>

@@ -1,4 +1,5 @@
-#include <statdaemons/Test.h>
+#define NO_METRIKA
+#include <common/Test.h>
 #include <vector>
 #include <string>
 #include <common/JSON.h>

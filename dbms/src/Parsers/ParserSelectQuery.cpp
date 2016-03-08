@@ -1,3 +1,4 @@
+#include <memory>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/IParserBase.h>
@@ -8,9 +9,15 @@
 #include <DB/Parsers/ParserSetQuery.h>
 #include <DB/Parsers/ParserSampleRatio.h>
 #include <DB/Parsers/ParserSelectQuery.h>
+#include <DB/Parsers/ParserTableExpression.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int SYNTAX_ERROR;
+}
 
 
 bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
@@ -75,65 +82,27 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	{
 		ws.ignore(pos, end);
 
-		ParserString s_lparen("(");
-		ParserString s_rparen(")");
-		ParserString s_dot(".");
-		ParserIdentifier ident;
-		ParserFunction table_function;
-		Pos before = pos;
+		ParserWithOptionalAlias table_p(std::make_unique<ParserTableExpression>(), true);
+		if (!table_p.parse(pos, end, select_query->table, max_parsed_pos, expected))
+			return false;
 
-		if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
+		/// Раскрываем составной идентификатор в имя БД и имя таблицы. NOTE Можно избавиться от этого в будущем.
+		if (const ASTIdentifier * table_identifier = typeid_cast<const ASTIdentifier *>(select_query->table.get()))
 		{
-			ws.ignore(pos, end);
+			if (table_identifier->children.size() > 2)
+				throw Exception("Too many components to table. Table may be specified either in database.table or in table form",
+					ErrorCodes::SYNTAX_ERROR);
 
-			ParserSelectQuery select_p;
-			if (!select_p.parse(pos, end, select_query->table, max_parsed_pos, expected))
-				return false;
-
-			ws.ignore(pos, end);
-
-			if (!s_rparen.ignore(pos, end, max_parsed_pos, expected))
-				return false;
-
-			ws.ignore(pos, end);
-		}
-		else if (ident.parse(pos, end, select_query->table, max_parsed_pos, expected))
-		{
-			/// Если сразу после identifier идет скобка, значит это должна быть табличная функция
-			if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
+			if (table_identifier->children.size() == 2)
 			{
-				pos = before;
-				if (!table_function.parse(pos, end, select_query->table, max_parsed_pos, expected))
-					return false;
-				if (select_query->table)
-					typeid_cast<ASTFunction &>(*select_query->table).kind = ASTFunction::TABLE_FUNCTION;
-				ws.ignore(pos, end);
-			}
-			else
-			{
-				ws.ignore(pos, end);
-				if (s_dot.ignore(pos, end, max_parsed_pos, expected))
-				{
-					select_query->database = select_query->table;
+				select_query->database = table_identifier->children.at(0);
+				typeid_cast<ASTIdentifier &>(*select_query->database).kind = ASTIdentifier::Database;
 
-					ws.ignore(pos, end);
-
-					if (!ident.parse(pos, end, select_query->table, max_parsed_pos, expected))
-						return false;
-
-					ws.ignore(pos, end);
-				}
-
-				if (select_query->database)
-					typeid_cast<ASTIdentifier &>(*select_query->database).kind = ASTIdentifier::Database;
+				select_query->table = table_identifier->children.at(1);
 				typeid_cast<ASTIdentifier &>(*select_query->table).kind = ASTIdentifier::Table;
 			}
 		}
-		else
-			return false;
 
-		/// Может быть указан алиас. На данный момент, он ничего не значит и не используется.
-		ParserAlias(true).ignore(pos, end);
 		ws.ignore(pos, end);
 	}
 

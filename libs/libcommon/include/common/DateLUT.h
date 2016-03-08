@@ -66,7 +66,7 @@ private:
 
 private:
 	/// Указатель на реализацию для часового пояса по-умолчанию.
-	DateLUTImpl * default_date_lut_impl;
+	std::unique_ptr<DateLUTImpl> default_date_lut_impl;
 	/// Соответствующиая группа часовых поясов по-умолчанию.
 	size_t default_group_id;
 	///

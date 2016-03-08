@@ -84,9 +84,9 @@ DateLUT::DateLUT()
 		throw Poco::Exception("Failed to get default time zone information.");
 	default_group_id = it->second;
 
-	default_date_lut_impl = new DateLUTImpl(default_time_zone);
+	default_date_lut_impl.reset(new DateLUTImpl(default_time_zone));
 	auto & wrapper = (*date_lut_impl_list)[default_group_id];
-	wrapper.store(default_date_lut_impl, std::memory_order_seq_cst);
+	wrapper.store(default_date_lut_impl.get(), std::memory_order_seq_cst);
 }
 
 const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone, size_t group_id) const

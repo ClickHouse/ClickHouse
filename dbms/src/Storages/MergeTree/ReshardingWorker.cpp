@@ -55,6 +55,7 @@ namespace ErrorCodes
 	extern const int RESHARDING_COORDINATOR_DELETED;
 	extern const int RESHARDING_DISTRIBUTED_JOB_ON_HOLD;
 	extern const int RESHARDING_INVALID_QUERY;
+	extern const int RWLOCK_NO_SUCH_LOCK;
 }
 
 namespace
@@ -182,8 +183,10 @@ ReshardingWorker::ReshardingWorker(const Poco::Util::AbstractConfiguration & con
 	zookeeper->createIfNotExists(distributed_online_path, "");
 
 	/// Notify that we are online.
-	(void) zookeeper->tryCreate(distributed_online_path + "/" + current_host, "",
+	int32_t code = zookeeper->tryCreate(distributed_online_path + "/" + current_host, "",
 		zkutil::CreateMode::Ephemeral);
+	if ((code != ZOK) && (code != ZNODEEXISTS))
+		throw zkutil::KeeperException(code);
 
 	distributed_lock_path = distributed_path + "/lock";
 	zookeeper->createIfNotExists(distributed_lock_path, "");
@@ -383,6 +386,8 @@ void ReshardingWorker::perform(const Strings & job_nodes)
 					zookeeper->remove(child_full_path);
 				else if (ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED)
 					zookeeper->remove(child_full_path);
+				else if (ex.code() == ErrorCodes::RWLOCK_NO_SUCH_LOCK)
+					zookeeper->remove(child_full_path);
 				else
 					zookeeper->remove(child_full_path);
 			}
@@ -409,6 +414,15 @@ void ReshardingWorker::perform(const std::string & job_descriptor)
 	LOG_DEBUG(log, "Performing resharding job.");
 
 	current_job = ReshardingJob{job_descriptor};
+
+	zkutil::RWLock deletion_lock;
+
+	if (current_job.isCoordinated())
+		deletion_lock = createDeletionLock(current_job.coordinator_id);
+
+	zkutil::RWLock::Guard<zkutil::RWLock::Read, zkutil::RWLock::NonBlocking> guard{deletion_lock};
+	if (!deletion_lock.ownsLock())
+		throw Exception("Coordinator has been deleted", ErrorCodes::RESHARDING_COORDINATOR_DELETED);
 
 	StoragePtr generic_storage = context.getTable(current_job.database_name, current_job.table_name);
 	auto & storage = typeid_cast<StorageReplicatedMergeTree &>(*(generic_storage.get()));
@@ -451,6 +465,7 @@ void ReshardingWorker::perform(const std::string & job_descriptor)
 			}
 			else if (ex.code() == ErrorCodes::RESHARDING_REMOTE_NODE_ERROR)
 			{
+				deletion_lock.release();
 				hardCleanup();
 			}
 			else if (ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED)
@@ -483,6 +498,7 @@ void ReshardingWorker::perform(const std::string & job_descriptor)
 						auto current_host = getFQDNOrHostName();
 						setStatus(current_job.coordinator_id, current_host, STATUS_ERROR);
 					}
+					deletion_lock.release();
 					hardCleanup();
 				}
 			}
@@ -514,6 +530,7 @@ void ReshardingWorker::perform(const std::string & job_descriptor)
 					auto current_host = getFQDNOrHostName();
 					setStatus(current_job.coordinator_id, current_host, STATUS_ERROR);
 				}
+				deletion_lock.release();
 				hardCleanup();
 			}
 		}
@@ -525,6 +542,7 @@ void ReshardingWorker::perform(const std::string & job_descriptor)
 		throw;
 	}
 
+	deletion_lock.release();
 	hardCleanup();
 	LOG_DEBUG(log, "Resharding job successfully completed.");
 }
@@ -990,12 +1008,6 @@ UInt64 ReshardingWorker::subscribe(const std::string & coordinator_id, const std
 		zookeeper->set(getCoordinatorPath(coordinator_id) + "/increment", toString(block_number + 1));
 	}
 
-	/// We set up a timeout for this barrier because until we cross it, we don't have
-	/// any guarantee that all the required nodes for this distributed job are online.
-	/// We are inside a lightweight function, so it is not an issue.
-	auto timeout = context.getSettingsRef().resharding_barrier_timeout;
-	createSubscribeBarrier(coordinator_id).enter(timeout);
-
 	return block_number;
 }
 
@@ -1171,7 +1183,7 @@ bool ReshardingWorker::updateOfflineNodesCommon(const std::string & path, const 
 	offline.resize(end - offline.begin());
 
 	for (const auto & node : offline)
-		zookeeper->set(coordinator_id + "/status/" + node,
+		zookeeper->set(getCoordinatorPath(coordinator_id) + "/status/" + node,
 			toString(static_cast<UInt64>(STATUS_ON_HOLD)));
 
 	return !offline.empty();
@@ -1191,6 +1203,7 @@ ReshardingWorker::Status ReshardingWorker::getStatusCommon(const std::string & p
 {
 	/// Note: we don't need any synchronization for the status.
 	/// That's why we don't acquire any read/write lock.
+	/// All the operations are either reads or idempotent writes.
 
 	auto zookeeper = context.getZooKeeper();
 
@@ -1233,12 +1246,6 @@ void ReshardingWorker::attachJob()
 		return;
 
 	auto zookeeper = context.getZooKeeper();
-
-	/// Check if the corresponding coordinator exists. If it doesn't, throw an exception,
-	/// silently ignore this job, and switch to the next job.
-	if (!zookeeper->exists(getCoordinatorPath(current_job.coordinator_id)))
-		throw Exception("Coordinator " + current_job.coordinator_id + " was deleted. Ignoring",
-			ErrorCodes::RESHARDING_COORDINATOR_DELETED);
 
 	auto status = getStatus();
 
@@ -1477,21 +1484,6 @@ zkutil::RWLock ReshardingWorker::createDeletionLock(const std::string & coordina
 	lock.setCancellationHook(hook);
 
 	return lock;
-}
-
-zkutil::SingleBarrier ReshardingWorker::createSubscribeBarrier(const std::string & coordinator_id)
-{
-	auto zookeeper = context.getZooKeeper();
-
-	auto node_count = zookeeper->get(getCoordinatorPath(coordinator_id) + "/node_count");
-
-	zkutil::SingleBarrier subscribe_barrier{zookeeper, getCoordinatorPath(coordinator_id) + "/subscribe_barrier",
-		std::stoull(node_count)};
-	zkutil::SingleBarrier::CancellationHook hook = std::bind(&ReshardingWorker::abortCoordinatorIfRequested, this,
-		coordinator_id);
-	subscribe_barrier.setCancellationHook(hook);
-
-	return subscribe_barrier;
 }
 
 zkutil::SingleBarrier ReshardingWorker::createCheckBarrier(const std::string & coordinator_id)

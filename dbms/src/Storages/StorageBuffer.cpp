@@ -125,7 +125,13 @@ BlockInputStreams StorageBuffer::read(
 		if (destination.get() == this)
 			throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-		streams_from_dst = destination->read(column_names, query, context, settings, processed_stage, max_block_size, threads);
+		/** Отключаем оптимизацию "перенос в PREWHERE",
+		  *  так как Buffer не поддерживает PREWHERE.
+		  */
+		Settings modified_settings = settings;
+		modified_settings.optimize_move_to_prewhere = false;
+
+		streams_from_dst = destination->read(column_names, query, context, modified_settings, processed_stage, max_block_size, threads);
 	}
 
 	BlockInputStreams streams_from_buffers;

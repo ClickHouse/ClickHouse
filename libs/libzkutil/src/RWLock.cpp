@@ -10,6 +10,7 @@ namespace ErrorCodes
 
 extern const int LOGICAL_ERROR;
 extern const int RWLOCK_ALREADY_HELD;
+extern const int RWLOCK_NO_SUCH_LOCK;
 extern const int ABORTED;
 
 }
@@ -57,7 +58,17 @@ RWLock::RWLock(ZooKeeperPtr & zookeeper_, const std::string & path_)
 {
 	int32_t code = zookeeper->tryCreate(path, "", CreateMode::Persistent);
 	if ((code != ZOK) && (code != ZNODEEXISTS))
-		throw KeeperException(code);
+	{
+		if (code == ZNONODE)
+			throw DB::Exception("No such lock", DB::ErrorCodes::RWLOCK_NO_SUCH_LOCK);
+		else
+			throw KeeperException(code);
+	}
+}
+
+RWLock::operator bool() const
+{
+	return zookeeper && !path.empty();
 }
 
 RWLock::operator bool() const
@@ -117,13 +128,23 @@ void RWLock::acquireImpl(Mode mode)
 	try
 	{
 		/// Enqueue a new request for a lock.
-		key = zookeeper->create(path + "/" + Prefix<lock_type>::name,
-			"", CreateMode::EphemeralSequential);
+		int32_t code = zookeeper->tryCreate(path + "/" + Prefix<lock_type>::name,
+			"", CreateMode::EphemeralSequential, key);
+		if (code == ZNONODE)
+			throw DB::Exception("No such lock", DB::ErrorCodes::RWLOCK_NO_SUCH_LOCK);
+		else if (code != ZOK)
+			throw KeeperException(code);
+
 		key = key.substr(path.length() + 1);
 
 		while (true)
 		{
-			auto children = zookeeper->getChildren(path);
+			std::vector<std::string> children;
+			int32_t code = zookeeper->tryGetChildren(path, children);
+			if (code == ZNONODE)
+				throw DB::Exception("No such lock", DB::ErrorCodes::RWLOCK_NO_SUCH_LOCK);
+			else if (code != ZOK)
+				throw KeeperException(code);
 
 			std::sort(children.begin(), children.end(), nodeQueueCmp);
 			auto it = std::lower_bound(children.cbegin(), children.cend(), key, nodeQueueCmp);
@@ -168,7 +189,12 @@ void RWLock::acquireImpl(Mode mode)
 
 			if (mode == NonBlocking)
 			{
-				zookeeper->remove(path + "/" + key);
+				int32_t code = zookeeper->tryRemove(path + "/" + key);
+				if (code == ZNONODE)
+					throw DB::Exception("No such lock", DB::ErrorCodes::RWLOCK_NO_SUCH_LOCK);
+				else if (code != ZOK)
+					throw KeeperException(code);
+
 				key.clear();
 				break;
 			}

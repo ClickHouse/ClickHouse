@@ -86,14 +86,31 @@ struct Pipe
 
 	Pipe()
 	{
+		read_fd = -1;
+		write_fd = -1;
+
 		if (0 != pipe(fds))
 			DB::throwFromErrno("Cannot create pipe");
 	}
 
+	void close()
+	{
+		if (-1 != read_fd)
+		{
+			::close(read_fd);
+			read_fd = -1;
+		}
+
+		if (-1 != write_fd)
+		{
+			::close(write_fd);
+			write_fd = -1;
+		}
+	}
+
 	~Pipe()
 	{
-		close(fds[0]);
-		close(fds[1]);
+		close();
 	}
 };
 
@@ -486,7 +503,13 @@ private:
 
 /// Для создания и уничтожения unique_ptr, который в заголовочном файле объявлен от incomplete type.
 BaseDaemon::BaseDaemon() = default;
-BaseDaemon::~BaseDaemon() = default;
+
+
+BaseDaemon::~BaseDaemon()
+{
+	signal_pipe.close();
+	signal_listener_thread.join();
+}
 
 
 void BaseDaemon::terminate()
@@ -760,8 +783,8 @@ void BaseDaemon::initialize(Application& self)
 	/// Выведем ревизию демона
 	logRevision();
 
-	close_logs_listener.reset(new SignalListener);
-	close_logs_thread.start(*close_logs_listener);
+	signal_listener.reset(new SignalListener);
+	signal_listener_thread.start(*signal_listener);
 
 	graphite_writer.reset(new GraphiteWriter("graphite"));
 }
