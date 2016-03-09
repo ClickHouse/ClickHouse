@@ -15,6 +15,6 @@ add_library(zkutil
     include/zkutil/Types.h
     include/zkutil/ZooKeeperHolder.h)
 
-target_link_libraries(zkutil libzookeeper_mt.a pthread PocoFoundation)
+target_link_libraries(zkutil libzookeeper_mt.a pthread)
 
 add_subdirectory (src)
