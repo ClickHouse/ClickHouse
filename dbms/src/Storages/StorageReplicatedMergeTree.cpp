@@ -3761,6 +3761,12 @@ StorageReplicatedMergeTree::gatherReplicaSpaceInfo(const WeightedZooKeeperPaths 
 		{
 		}
 
+		TaskInfo(const TaskInfo &) = delete;
+		TaskInfo & operator=(const TaskInfo &) = delete;
+
+		TaskInfo(TaskInfo &&) = default;
+		TaskInfo & operator=(TaskInfo &&) = default;
+
 		std::string replica_path;
 		ReplicatedMergeTreeAddress address;
 	};
