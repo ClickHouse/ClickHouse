@@ -100,7 +100,7 @@ private:
 
 }
 
-/// Rationale for distributed jobs.
+/// Rationale for distributed jobs:
 ///
 /// A distributed job is initiated in a query ALTER TABLE RESHARD inside which
 /// we specify a distributed table. Then ClickHouse creates a job coordinating
@@ -109,6 +109,23 @@ private:
 /// Each shard of the cluster specified in the distributed table metadata
 /// receives one query ALTER TABLE RESHARD with the keyword COORDINATE WITH
 /// indicating the aforementioned coordinator id.
+///
+/// Locking notes:
+///
+/// In order to avoid any deadlock situation, two approaches are implemented:
+///
+/// 1. As long as a cluster is busy with a distributed job, we forbid clients
+/// to submit any new distributed job on this cluster. For this purpose, clusters
+/// are identified by the hash value of the ordered list of their hostnames and
+/// ports. In the event that an initiator should identify a cluster node by means
+/// of a local address, some additional checks are performed on shards themselves.
+///
+/// 2. Also, the jobs that constitute a distributed job are submitted in identical
+/// order on all the shards of a cluster. If one or more shards fail while performing
+/// a distributed job, the latter is put on hold. Then no new jobs are performed
+/// until the failing shards have come back online.
+///
+/// ZooKeeper coordinator structure description:
 ///
 /// At the highest level we have under the /resharding_distributed znode:
 ///
