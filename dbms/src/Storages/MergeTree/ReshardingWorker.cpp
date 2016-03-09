@@ -1251,17 +1251,17 @@ void ReshardingWorker::setStatus(const std::string & coordinator_id, const std::
 		toString(static_cast<UInt64>(status)));
 }
 
-bool ReshardingWorker::updateOfflineNodes(const std::string & coordinator_id)
+bool ReshardingWorker::detectOfflineNodes(const std::string & coordinator_id)
 {
-	return updateOfflineNodesCommon(getCoordinatorPath(coordinator_id) + "/status", coordinator_id);
+	return detectOfflineNodesCommon(getCoordinatorPath(coordinator_id) + "/status", coordinator_id);
 }
 
-bool ReshardingWorker::updateOfflineNodes()
+bool ReshardingWorker::detectOfflineNodes()
 {
-	return updateOfflineNodesCommon(getPartitionPath(current_job) + "/nodes", current_job.coordinator_id);
+	return detectOfflineNodesCommon(getPartitionPath(current_job) + "/nodes", current_job.coordinator_id);
 }
 
-bool ReshardingWorker::updateOfflineNodesCommon(const std::string & path, const std::string & coordinator_id)
+bool ReshardingWorker::detectOfflineNodesCommon(const std::string & path, const std::string & coordinator_id)
 {
 	auto zookeeper = context.getZooKeeper();
 
@@ -1307,7 +1307,7 @@ ReshardingWorker::Status ReshardingWorker::getStatusCommon(const std::string & p
 	if (coordinator_status != STATUS_OK)
 		return static_cast<Status>(coordinator_status);
 
-	(void) updateOfflineNodesCommon(path, coordinator_id);
+	(void) detectOfflineNodesCommon(path, coordinator_id);
 
 	auto nodes = zookeeper->getChildren(path);
 
@@ -1433,7 +1433,7 @@ void ReshardingWorker::abortRecoveryIfRequested()
 
 	try
 	{
-		has_offline_nodes = updateOfflineNodes();
+		has_offline_nodes = detectOfflineNodes();
 		must_abort = must_stop || has_offline_nodes;
 	}
 	catch (...)

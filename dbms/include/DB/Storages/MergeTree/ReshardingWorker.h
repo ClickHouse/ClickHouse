@@ -48,9 +48,11 @@ public:
 
 	~ReshardingWorker();
 
-	/// Запустить поток выполняющий задачи перешардирования.
+	/// Start the thread which performs resharding jobs.
 	void start();
 
+	/// Stop the thread which performs resharding jobs.
+	/// If any job is in progress, put it on hold for further execution.
 	void shutdown();
 
 	/// Прислать запрос на перешардирование.
@@ -61,7 +63,7 @@ public:
 
 	/// Создать новый координатор распределённой задачи. Вызывается с инициатора.
 	std::string createCoordinator(const Cluster & cluster);
-	///
+	/// Register a query into a coordinator.
 	void registerQuery(const std::string & coordinator_id, const std::string & query);
 	/// Удалить координатор.
 	void deleteCoordinator(const std::string & coordinator_id);
@@ -72,8 +74,10 @@ public:
 	void unsubscribe(const std::string & coordinator_id);
 	/// Увеличить количество партиций входящих в одну распределённую задачу. Вызывается с исполнителя.
 	void addPartitions(const std::string & coordinator_id, const PartitionList & partition_list);
-	///
-	ReshardingWorker::PartitionList::iterator categorizePartitions(const std::string & coordinator_id, ReshardingWorker::PartitionList & partition_list);
+	/// Rearrange partitions into two categories: coordinated job, uncoordinated job.
+	/// Returns an iterator to the beginning of the list of uncoordinated jobs.
+	ReshardingWorker::PartitionList::iterator categorizePartitions(const std::string & coordinator_id,
+		ReshardingWorker::PartitionList & partition_list);
 	/// Получить количество партиций входящих в одну распределённую задачу. Вызывается с исполнителя.
 	size_t getPartitionCount(const std::string & coordinator_id);
 	/// Получить количество учавствующих узлов.
@@ -83,12 +87,10 @@ public:
 	/// Ждать завершение всех необходмых отмен подписей.
 	void waitForOptOutCompletion(const std::string & coordinator_id, size_t count);
 
-	/// Установить статус заданной распределённой задачи.
+	/// Set the shard-independent status of a given coordinator.
 	void setStatus(const std::string & coordinator_id, Status status);
-	///
+	/// Set the status of a shard under a given coordinator.
 	void setStatus(const std::string & coordinator_id, const std::string & hostname, Status status);
-	/// Получить статус заданной распределённой задачи.
-	Status getStatus();
 
 	zkutil::RWLock createDeletionLock(const std::string & coordinator_id);
 
@@ -125,15 +127,17 @@ private:
 	/// Удалить временные данные с локального узла и ZooKeeper'а.
 	void softCleanup();
 	void hardCleanup();
-	void cleanupCommon();
 
-	/// Принудительно завершить поток.
+	/// Принудительно завершить поток, если выполнено условие.
 	void abortPollingIfRequested();
 	void abortCoordinatorIfRequested(const std::string & coordinator_id);
 	void abortRecoveryIfRequested();
 	void abortJobIfRequested();
 
+	/// Get the current job-independent status of the coordinator.
 	Status getCoordinatorStatus(const std::string & coordinator_id);
+	/// Get the status of the current distributed job.
+	Status getStatus();
 
 	/// Зарегистрировать задачу в соответствующий координатор.
 	void attachJob();
@@ -144,26 +148,34 @@ private:
 
 	size_t getPartitionCountUnlocked(const std::string & coordinator_id);
 
-	bool updateOfflineNodes(const std::string & coordinator_id);
-	bool updateOfflineNodes();
-	bool updateOfflineNodesCommon(const std::string & path, const std::string & coordinator_id);
-
-	Status getStatusCommon(const std::string & path, const std::string & coordinator_id);
+	/// Detect offline nodes under a given coordinator.
+	bool detectOfflineNodes(const std::string & coordinator_id);
+	/// Detect offline nodes under the current job.
+	bool detectOfflineNodes();
 
 	/// Функции, которые создают необходимые объекты для синхронизации
 	/// распределённых задач.
 	zkutil::RWLock createLock();
 	zkutil::RWLock createCoordinatorLock(const std::string & coordinator_id);
-
 	zkutil::SingleBarrier createCheckBarrier(const std::string & coordinator_id);
 	zkutil::SingleBarrier createOptOutBarrier(const std::string & coordinator_id, size_t count);
 	zkutil::SingleBarrier createRecoveryBarrier(const ReshardingJob & job);
 	zkutil::SingleBarrier createUploadBarrier(const ReshardingJob & job);
 
-	std::string computeHash(const std::string & in);
-
+	/// Get the ZooKeeper path of a given coordinator.
 	std::string getCoordinatorPath(const std::string & coordinator_id) const;
+	/// Get the ZooKeeper path of a given job partition.
 	std::string getPartitionPath(const ReshardingJob & job) const;
+
+	/// Common code for softCleanup() and hardCleanup().
+	void cleanupCommon();
+	/// Common code for detectOfflineNodes().
+	bool detectOfflineNodesCommon(const std::string & path, const std::string & coordinator_id);
+	/// Common code for getStatus() and getCoordinatorStatus().
+	Status getStatusCommon(const std::string & path, const std::string & coordinator_id);
+
+	/// Compute the hash value of a given string.
+	std::string computeHash(const std::string & in);
 
 private:
 	ReshardingJob current_job;
