@@ -1,7 +1,8 @@
 #include <zkutil/SingleBarrier.h>
 #include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Common/Exception.h>
-#include <Poco/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
+
 
 namespace DB
 {
@@ -46,7 +47,7 @@ void SingleBarrier::enter(uint64_t timeout)
 	auto key = zookeeper->create(path + "/" + getFQDNOrHostName(), "", zkutil::CreateMode::Ephemeral);
 	key = key.substr(path.length() + 1);
 
-	Poco::Stopwatch watch;
+	Stopwatch watch;
 
 	if (timeout > 0)
 		watch.start();

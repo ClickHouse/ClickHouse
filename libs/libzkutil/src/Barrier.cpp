@@ -1,7 +1,7 @@
 #include <zkutil/Barrier.h>
 #include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Common/Exception.h>
-#include <Poco/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 namespace DB
 {
@@ -46,7 +46,7 @@ void Barrier::enter(uint64_t timeout)
 	auto key = zookeeper->create(path + "/" + getFQDNOrHostName(), "", zkutil::CreateMode::Ephemeral);
 	key = key.substr(path.length() + 1);
 
-	Poco::Stopwatch watch;
+	Stopwatch watch;
 
 	if (timeout > 0)
 		watch.start();
@@ -83,7 +83,7 @@ void Barrier::leave(uint64_t timeout)
 
 	zookeeper->remove(path + "/" + getFQDNOrHostName());
 
-	Poco::Stopwatch watch;
+	Stopwatch watch;
 
 	if (timeout > 0)
 		watch.start();
