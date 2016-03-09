@@ -30,8 +30,11 @@
 #include <Poco/SharedPtr.h>
 
 #include <openssl/sha.h>
+
 #include <future>
 #include <chrono>
+#include <cstdlib>
+#include <ctime>
 
 namespace DB
 {
@@ -582,6 +585,12 @@ void ReshardingWorker::publishShardedPartitions()
 		{
 		}
 
+		TaskInfo(const TaskInfo &) = delete;
+		TaskInfo & operator=(const TaskInfo &) = delete;
+
+		TaskInfo(TaskInfo &&) = default;
+		TaskInfo & operator=(TaskInfo &&) = default;
+
 		std::string replica_path;
 		ReplicatedMergeTreeAddress dest;
 		std::string part;
@@ -704,17 +713,24 @@ void ReshardingWorker::publishShardedPartitions()
 
 void ReshardingWorker::applyChanges()
 {
+	/// Note: since this method actually performs a distributed commit (i.e. it
+	/// attaches partitions on various shards), we should implement a two-phase
+	/// commit protocol in a future release in order to get even more safety
+	/// guarantees.
+
 	LOG_DEBUG(log, "Attaching new partitions.");
 
 	auto & storage = *(current_job.storage);
 	auto zookeeper = context.getZooKeeper();
 
-	/// На локальном узле удалить первоначальную партицию.
+	/// Locally drop the initial partition.
 	std::string query_str = "ALTER TABLE " + current_job.database_name + "."
 		+ current_job.table_name + " DROP PARTITION " + current_job.partition;
 	(void) executeQuery(query_str, context, true);
 
-	/// На всех участвующих репликах добавить соответствующие шардированные партиции в таблицу.
+	/// On each participating shard, attach the corresponding sharded partition to the table.
+
+	/// Description of a task on a replica.
 	struct TaskInfo
 	{
 		TaskInfo(const std::string & replica_path_, const ReplicatedMergeTreeAddress & dest_)
@@ -722,13 +738,52 @@ void ReshardingWorker::applyChanges()
 		{
 		}
 
+		TaskInfo(const TaskInfo &) = delete;
+		TaskInfo & operator=(const TaskInfo &) = delete;
+
+		TaskInfo(TaskInfo &&) = default;
+		TaskInfo & operator=(TaskInfo &&) = default;
+
 		std::string replica_path;
 		ReplicatedMergeTreeAddress dest;
 	};
 
-	using TaskInfoList = std::vector<TaskInfo>;
+	/// Description of tasks for each replica of a shard.
+	/// For fault tolerance purposes, some fields are provided
+	/// to perform attempts on more than one replica if needed.
+	struct ShardTaskInfo
+	{
+		ShardTaskInfo()
+		{
+			struct timespec times;
+			if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
+				throwFromErrno("Cannot clock_gettime.", DB::ErrorCodes::CANNOT_CLOCK_GETTIME);
+
+			(void) srand48_r(reinterpret_cast<intptr_t>(this) ^ times.tv_nsec, &rand_state);
+		}
+
+		ShardTaskInfo(const ShardTaskInfo &) = delete;
+		ShardTaskInfo & operator=(const ShardTaskInfo &) = delete;
+
+		ShardTaskInfo(ShardTaskInfo &&) = default;
+		ShardTaskInfo & operator=(ShardTaskInfo &&) = default;
+
+		/// one task for each replica
+		std::vector<TaskInfo> shard_tasks;
+		/// index to the replica to be used
+		size_t next = 0;
+		/// result of the operation on the current replica
+		bool is_success = false;
+		/// index to the corresponding thread pool entry
+		size_t pool_index;
+		drand48_data rand_state;
+	};
+
+	using TaskInfoList = std::vector<ShardTaskInfo>;
+
 	TaskInfoList task_info_list;
 
+	/// Initialize all the possible tasks for each replica of each shard.
 	for (const auto & entry : storage.data.per_shard_data_parts)
 	{
 		size_t shard_no = entry.first;
@@ -739,55 +794,95 @@ void ReshardingWorker::applyChanges()
 		const WeightedZooKeeperPath & weighted_path = current_job.paths[shard_no];
 		const std::string & zookeeper_path = weighted_path.first;
 
+		task_info_list.emplace_back();
+		ShardTaskInfo & shard_task_info = task_info_list.back();
+
 		auto children = zookeeper->getChildren(zookeeper_path + "/replicas");
 		for (const auto & child : children)
 		{
 			const std::string replica_path = zookeeper_path + "/replicas/" + child;
 			auto host = zookeeper->get(replica_path + "/host");
 			ReplicatedMergeTreeAddress host_desc(host);
-			task_info_list.emplace_back(replica_path, host_desc);
+
+			shard_task_info.shard_tasks.emplace_back(replica_path, host_desc);
 		}
 	}
 
-	boost::threadpool::pool pool(task_info_list.size());
-
-	using Tasks = std::vector<std::packaged_task<bool()> >;
-	Tasks tasks(task_info_list.size());
-
-	try
+	/// Loop as long as there are ATTACH operations that need to be performed
+	/// on some shards and there remains at least one valid replica on each of
+	/// these shards.
+	size_t remaining_task_count = task_info_list.size();
+	while (remaining_task_count > 0)
 	{
-		for (size_t i = 0; i < task_info_list.size(); ++i)
+		boost::threadpool::pool pool(remaining_task_count);
+
+		using Tasks = std::vector<std::packaged_task<bool()> >;
+		Tasks tasks(remaining_task_count);
+
+		try
 		{
-			const auto & entry = task_info_list[i];
-			const auto & replica_path = entry.replica_path;
-			const auto & dest = entry.dest;
+			size_t pool_index = 0;
+			for (auto & info : task_info_list)
+			{
+				if (info.is_success)
+				{
+					/// We have already successfully performed the operation on this shard.
+					continue;
+				}
 
-			InterserverIOEndpointLocation location(replica_path, dest.host, dest.replication_port);
+				/// Randomly choose a replica on which to perform the operation.
+				long int rand_res;
+				(void) lrand48_r(&info.rand_state, &rand_res);
+				size_t current = info.next + rand_res % (info.shard_tasks.size() - info.next);
+				std::swap(info.shard_tasks[info.next], info.shard_tasks[current]);
+				++info.next;
 
-			std::string query_str = "ALTER TABLE " + dest.database + "."
-				+ dest.table + " ATTACH PARTITION " + current_job.partition;
+				info.pool_index = pool_index;
 
-			tasks[i] = Tasks::value_type(std::bind(&RemoteQueryExecutor::Client::executeQuery,
-				&storage.remote_query_executor_client, location, query_str));
+				TaskInfo & cur_task_info = info.shard_tasks[info.next - 1];
 
-			pool.schedule([i, &tasks]{ tasks[i](); });
+				const auto & replica_path = cur_task_info.replica_path;
+				const auto & dest = cur_task_info.dest;
+
+				/// Create and register the task.
+
+				InterserverIOEndpointLocation location(replica_path, dest.host, dest.replication_port);
+
+				std::string query_str = "ALTER TABLE " + dest.database + "."
+					+ dest.table + " ATTACH PARTITION " + current_job.partition;
+
+				tasks[pool_index] = Tasks::value_type(std::bind(&RemoteQueryExecutor::Client::executeQuery,
+					&storage.remote_query_executor_client, location, query_str));
+
+				pool.schedule([pool_index, &tasks]{ tasks[pool_index](); });
+
+				/// Allocate an entry for the next task.
+				++pool_index;
+			}
 		}
-	}
-	catch (...)
-	{
-		tryLogCurrentException(__PRETTY_FUNCTION__);
+		catch (...)
+		{
+			pool.wait();
+			throw;
+		}
+
 		pool.wait();
-		throw;
-	}
 
-	pool.wait();
+		for (auto & info : task_info_list)
+		{
+			if (info.is_success)
+				continue;
 
-	for (auto & task : tasks)
-	{
-		bool res = task.get_future().get();
-		if (!res)
-			throw Exception("Failed to attach partition on replica",
-				ErrorCodes::PARTITION_ATTACH_FAILED);
+			info.is_success = tasks[info.pool_index].get_future().get();
+			if (info.is_success)
+				--remaining_task_count;
+			else if (info.next == info.shard_tasks.size())
+			{
+				/// No more attempts are possible.
+				throw Exception("Failed to attach partition on shard",
+					ErrorCodes::PARTITION_ATTACH_FAILED);
+			}
+		}
 	}
 }
 
@@ -863,8 +958,7 @@ std::string ReshardingWorker::createCoordinator(const Cluster & cluster)
 		"", zkutil::CreateMode::Persistent);
 
 	(void) zookeeper->create(getCoordinatorPath(coordinator_id) + "/status",
-		"", zkutil::CreateMode::Persistent);
-	setStatus(coordinator_id, STATUS_OK);
+		toString(static_cast<UInt64>(STATUS_OK)), zkutil::CreateMode::Persistent);
 
 	(void) zookeeper->create(getCoordinatorPath(coordinator_id) + "/partitions",
 		"", zkutil::CreateMode::Persistent);
@@ -995,9 +1089,7 @@ UInt64 ReshardingWorker::subscribe(const std::string & coordinator_id, const std
 			throw zkutil::KeeperException(code);
 
 		zookeeper->create(getCoordinatorPath(coordinator_id) + "/status/"
-			+ current_host,	"", zkutil::CreateMode::Persistent);
-
-		setStatus(coordinator_id, current_host, STATUS_OK);
+			+ current_host,	toString(static_cast<UInt64>(STATUS_OK)), zkutil::CreateMode::Persistent);
 
 		/// Assign a unique block number to the current node. We will use it in order
 		/// to avoid any possible conflict when uploading resharded partitions.
