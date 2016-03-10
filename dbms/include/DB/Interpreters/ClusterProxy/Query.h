@@ -19,13 +19,13 @@ class IQueryConstructor;
 class Query
 {
 public:
-	Query(IQueryConstructor & query_constructor_, Cluster & cluster_,
+	Query(IQueryConstructor & query_constructor_, const Cluster & cluster_,
 		ASTPtr query_ast_, const Context & context_, const Settings & settings_, bool enable_shard_multiplexing_);
 	BlockInputStreams execute();
 
 private:
 	IQueryConstructor & query_constructor;
-	Cluster & cluster;
+	const Cluster & cluster;
 	ASTPtr query_ast;
 	const Context & context;
 	const Settings & settings;

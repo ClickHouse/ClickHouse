@@ -79,7 +79,7 @@ StorageDistributed::StorageDistributed(
 	NamesAndTypesListPtr columns_,
 	const String & remote_database_,
 	const String & remote_table_,
-	Cluster & cluster_,
+	const Cluster & cluster_,
 	Context & context_,
 	const ASTPtr & sharding_key_,
 	const String & data_path_)
@@ -102,7 +102,7 @@ StorageDistributed::StorageDistributed(
 	const ColumnDefaults & column_defaults_,
 	const String & remote_database_,
 	const String & remote_table_,
-	Cluster & cluster_,
+	const Cluster & cluster_,
 	Context & context_,
 	const ASTPtr & sharding_key_,
 	const String & data_path_)

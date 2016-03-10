@@ -60,7 +60,7 @@ public:
 	}
 
 private:
-	NamesAndTypesListPtr chooseColumns(const String & source_database, const String & table_name_regexp_, Context & context) const
+	NamesAndTypesListPtr chooseColumns(const String & source_database, const String & table_name_regexp_, const Context & context) const
 	{
 		OptimizedRegularExpression table_name_regexp(table_name_regexp_);
 
