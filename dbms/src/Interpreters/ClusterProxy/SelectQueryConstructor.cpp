@@ -43,7 +43,7 @@ BlockInputStreamPtr SelectQueryConstructor::createRemote(ConnectionPoolsPtr & po
 	return stream;
 }
 
-bool SelectQueryConstructor::isInclusive() const
+bool SelectQueryConstructor::localAndRemote() const
 {
 	return false;
 }

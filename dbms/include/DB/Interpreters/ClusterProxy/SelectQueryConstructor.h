@@ -20,7 +20,7 @@ public:
 		const Settings & settings, ThrottlerPtr throttler, const Context & context) override;
 	BlockInputStreamPtr createRemote(ConnectionPoolsPtr & pools, const std::string & query,
 		const Settings & settings, ThrottlerPtr throttler, const Context & context) override;
-	bool isInclusive() const override;
+	bool localAndRemote() const override;
 
 private:
 	const QueryProcessingStage::Enum & processed_stage;

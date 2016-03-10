@@ -30,7 +30,7 @@ BlockInputStreamPtr AlterQueryConstructor::createRemote(ConnectionPoolsPtr & poo
 	return stream;
 }
 
-bool AlterQueryConstructor::isInclusive() const
+bool AlterQueryConstructor::localAndRemote() const
 {
 	return false;
 }

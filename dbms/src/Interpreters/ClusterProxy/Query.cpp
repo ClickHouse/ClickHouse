@@ -43,7 +43,7 @@ BlockInputStreams Query::execute()
 
 	size_t remote_count = 0;
 
-	if (query_constructor.isInclusive())
+	if (query_constructor.localAndRemote())
 	{
 		for (const auto & shard_info : cluster.getShardsInfo())
 		{
@@ -76,7 +76,7 @@ BlockInputStreams Query::execute()
 	for (const auto & shard_info : cluster.getShardsInfo())
 	{
 		bool create_local_queries = shard_info.isLocal();
-		bool create_remote_queries = query_constructor.isInclusive() ? shard_info.hasRemoteConnections() : !create_local_queries;
+		bool create_remote_queries = query_constructor.localAndRemote() ? shard_info.hasRemoteConnections() : !create_local_queries;
 
 		if (create_local_queries)
 		{

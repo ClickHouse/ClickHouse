@@ -26,7 +26,7 @@ public:
 		const Settings & settings, ThrottlerPtr throttler, const Context & context) = 0;
 	virtual BlockInputStreamPtr createRemote(ConnectionPoolsPtr & pools, const std::string & query,
 		const Settings & new_settings, ThrottlerPtr throttler, const Context & context) = 0;
-	virtual bool isInclusive() const = 0;
+	virtual bool localAndRemote() const = 0;
 };
 
 }
