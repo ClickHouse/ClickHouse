@@ -112,7 +112,7 @@ struct ContextShared
 
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
-	Poco::SharedPtr<Clusters> clusters;
+	mutable Poco::SharedPtr<Clusters> clusters;
 
 	Poco::UUIDGenerator uuid_generator;
 
@@ -892,17 +892,13 @@ UInt16 Context::getTCPPort() const
 }
 
 
-void Context::initClusters()
+const Cluster & Context::getCluster(const std::string & cluster_name) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-	if (!shared->clusters)
-		shared->clusters = new Clusters(settings);
-}
-
-Cluster & Context::getCluster(const std::string & cluster_name)
-{
-	if (!shared->clusters)
-		throw Poco::Exception("Clusters have not been initialized yet.");
+	{
+		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+		if (!shared->clusters)
+			shared->clusters = new Clusters(settings);
+	}
 
 	Clusters::Impl::iterator it = shared->clusters->impl.find(cluster_name);
 	if (it != shared->clusters->impl.end())
@@ -913,8 +909,12 @@ Cluster & Context::getCluster(const std::string & cluster_name)
 
 Poco::SharedPtr<Clusters> Context::getClusters() const
 {
-	if (!shared->clusters)
-		throw Poco::Exception("Clusters have not been initialized yet.");
+	{
+		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+		if (!shared->clusters)
+			shared->clusters = new Clusters(settings);
+	}
+
 	return shared->clusters;
 }
 

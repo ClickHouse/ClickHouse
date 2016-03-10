@@ -131,8 +131,6 @@ StoragePtr StorageDistributed::create(
 	const ASTPtr & sharding_key_,
 	const String & data_path_)
 {
-	context_.initClusters();
-
 	return (new StorageDistributed{
 		name_, columns_,
 		materialized_columns_, alias_columns_, column_defaults_,
