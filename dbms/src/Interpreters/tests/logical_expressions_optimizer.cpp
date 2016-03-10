@@ -76,7 +76,7 @@ void run()
 
 		{
 			"SELECT value FROM report WHERE ((value + 1) = 1000) OR ((2 * value) = 2000) OR ((2 * value) = 4000) OR ((value + 1) = 3000)",
-			"SELECT value FROM report WHERE (value + 1) IN (1000, 3000) OR (2 * value) IN (2000, 4000)",
+			"SELECT value FROM report WHERE ((value + 1) IN (1000, 3000)) OR ((2 * value) IN (2000, 4000))",
 			2
 		},
 
@@ -166,6 +166,12 @@ void run()
 			"SELECT number, count(), 1 AS T, 2 AS U FROM (SELECT * FROM system.numbers LIMIT 10) PREWHERE U IN (1, 2, 3) "
 			"WHERE (T = 1) OR (T = 2) GROUP BY number HAVING (number = 1) OR (number = 2)",
 			3
+		},
+
+		{
+			"SELECT x = 1 OR x=2 OR (x = 3 AS x3) AS y, 4 AS x",
+			"SELECT x IN (1, 2, 3) AS y, 4 AS x",
+			2
 		}
 	};
 
@@ -248,7 +254,7 @@ bool equals(const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
 	return lhs_reordered->getTreeID() == rhs_reordered->getTreeID();
 }
 
-void reorder(DB::IAST * ast)
+void reorderImpl(DB::IAST * ast)
 {
 	if (ast == nullptr)
 		return;
@@ -258,12 +264,26 @@ void reorder(DB::IAST * ast)
 		return;
 
 	for (auto & child : children)
-		reorder(&*child);
+		reorderImpl(&*child);
 
 	std::sort(children.begin(), children.end(), [](const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
 	{
 		return lhs->getTreeID() < rhs->getTreeID();
 	});
+}
+
+void reorder(DB::IAST * ast)
+{
+	if (ast == nullptr)
+		return;
+
+	auto select_query = typeid_cast<DB::ASTSelectQuery *>(ast);
+	if (select_query == nullptr)
+		return;
+
+	reorderImpl(select_query->where_expression);
+	reorderImpl(select_query->prewhere_expression);
+	reorderImpl(select_query->having_expression);
 }
 
 }

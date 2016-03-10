@@ -17,8 +17,9 @@ namespace ErrorCodes
 }
 
 
-LogicalExpressionsOptimizer::OrWithExpression::OrWithExpression(ASTFunction * or_function_, const std::string & expression_)
-	: or_function(or_function_), expression(expression_)
+LogicalExpressionsOptimizer::OrWithExpression::OrWithExpression(ASTFunction * or_function_,
+	const std::string & expression_, const std::string & alias_)
+	: or_function(or_function_), expression(expression_), alias(alias_)
 {
 }
 
@@ -39,6 +40,16 @@ void LogicalExpressionsOptimizer::perform()
 	if (select_query->attributes & IAST::IsVisited)
 		return;
 
+	size_t position = 0;
+	for (auto & column : select_query->select_expression_list->children)
+	{
+		bool inserted = column_to_position.emplace(column.get(), position).second;
+		if (!inserted)
+			throw Exception("LogicalExpressionsOptimizer: corrupted SELECT query",
+				ErrorCodes::LOGICAL_ERROR);
+		++position;
+	}
+
 	collectDisjunctiveEqualityChains();
 
 	for (auto & chain : disjunctive_equality_chains_map)
@@ -56,6 +67,22 @@ void LogicalExpressionsOptimizer::perform()
 	{
 		cleanupOrExpressions();
 		fixBrokenOrExpressions();
+		reorderColumns();
+	}
+}
+
+void LogicalExpressionsOptimizer::reorderColumns()
+{
+	auto & columns = select_query->select_expression_list->children;
+	size_t cur_position = 0;
+
+	while (cur_position < columns.size())
+	{
+		size_t expected_position = column_to_position.at(columns[cur_position].get());
+		if (cur_position != expected_position)
+			std::swap(columns[cur_position], columns[expected_position]);
+		else
+			++cur_position;
 	}
 }
 
@@ -98,7 +125,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 							if (literal != nullptr)
 							{
 								auto expr_lhs = equals_expression_list->children[0]->getTreeID();
-								OrWithExpression or_with_expression(function, expr_lhs);
+								OrWithExpression or_with_expression{function, expr_lhs, function->tryGetAlias()};
 								disjunctive_equality_chains_map[or_with_expression].functions.push_back(equals);
 								found_chain = true;
 							}
@@ -116,7 +143,8 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 			{
 				auto res = or_parent_map.insert(std::make_pair(function, ParentNodes{from_node}));
 				if (!res.second)
-					throw Exception("Parent node information is corrupted", ErrorCodes::LOGICAL_ERROR);
+					throw Exception("LogicalExpressionsOptimizer: parent node information is corrupted",
+						ErrorCodes::LOGICAL_ERROR);
 			}
 		}
 		else
@@ -153,7 +181,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 namespace
 {
 
-ASTs & getFunctionOperands(ASTFunction * or_function)
+inline ASTs & getFunctionOperands(ASTFunction * or_function)
 {
 	auto expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
 	return expression_list->children;
@@ -233,6 +261,7 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 	in_function->name = "in";
 	in_function->arguments = expression_list;
 	in_function->children.push_back(in_function->arguments);
+	in_function->setAlias(or_with_expression.alias);
 
 	/// 2. Вставить новое выражение IN.
 
@@ -271,7 +300,8 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
 
 		auto it = garbage_map.find(or_with_expression.or_function);
 		if (it == garbage_map.end())
-			throw Exception("Garbage map is corrupted", ErrorCodes::LOGICAL_ERROR);
+			throw Exception("LogicalExpressionsOptimizer: garbage map is corrupted",
+				ErrorCodes::LOGICAL_ERROR);
 
 		auto & first_erased = it->second;
 		first_erased = std::remove_if(operands.begin(), first_erased, [&](const ASTPtr & operand)
@@ -307,8 +337,19 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 		{
 			auto it = or_parent_map.find(or_function);
 			if (it == or_parent_map.end())
-				throw Exception("Parent node information is corrupted", ErrorCodes::LOGICAL_ERROR);
+				throw Exception("LogicalExpressionsOptimizer: parent node information is corrupted",
+					ErrorCodes::LOGICAL_ERROR);
 			auto & parents = it->second;
+
+			auto it2 = column_to_position.find(or_function);
+			if (it2 != column_to_position.end())
+			{
+				size_t position = it2->second;
+				bool inserted = column_to_position.emplace(operands[0].get(), position).second;
+				if (!inserted)
+					throw Exception("LogicalExpressionsOptimizer: internal error", ErrorCodes::LOGICAL_ERROR);
+				column_to_position.erase(it2);
+			}
 
 			for (auto & parent : parents)
 			{

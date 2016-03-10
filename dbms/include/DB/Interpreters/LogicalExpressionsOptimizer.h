@@ -39,11 +39,13 @@ private:
 	*/
 	struct OrWithExpression
 	{
-		OrWithExpression(ASTFunction * or_function_, const std::string & expression_);
+		OrWithExpression(ASTFunction * or_function_, const std::string & expression_,
+			const std::string & alias_);
 		bool operator<(const OrWithExpression & rhs) const;
 
 		ASTFunction * or_function;
 		const std::string expression;
+		const std::string alias;
 	};
 
 	struct Equalities
@@ -76,9 +78,13 @@ private:
 	/// Удалить выражения OR, которые имеют только один операнд.
 	void fixBrokenOrExpressions();
 
+	/// Восстановить исходный порядок столбцов после оптимизации.
+	void reorderColumns();
+
 private:
 	using ParentNodes = std::vector<IAST *>;
 	using FunctionParentMap = std::unordered_map<IAST *, ParentNodes>;
+	using ColumnToPosition = std::unordered_map<IAST *, size_t>;
 
 private:
 	ASTSelectQuery * select_query;
@@ -89,6 +95,8 @@ private:
 	size_t processed_count = 0;
 	/// Родители функций OR.
 	FunctionParentMap or_parent_map;
+	/// Позиция каждого столбца.
+	ColumnToPosition column_to_position;
 };
 
 }
