@@ -69,11 +69,6 @@ void RemoteBlockInputStream::appendExtraInfo()
 	append_extra_info = true;
 }
 
-void RemoteBlockInputStream::attachPreSendCallback(ClusterProxy::PreSendHook::Callback callback)
-{
-	pre_send_callback = std::bind(callback, this);
-}
-
 void RemoteBlockInputStream::readPrefix()
 {
 	if (!sent_query)
@@ -271,13 +266,8 @@ void RemoteBlockInputStream::sendQuery()
 	}
 	catch (...)
 	{
-		if (pre_send_callback)
-			pre_send_callback();
 		throw;
 	}
-
-	if (pre_send_callback)
-		pre_send_callback();
 
 	if (settings.skip_unavailable_shards && 0 == multiplexed_connections->size())
 		return;

@@ -233,7 +233,6 @@ add_library (dbms
 	include/DB/DataStreams/AddingDefaultBlockOutputStream.h
 	include/DB/DataStreams/JSONCompactRowOutputStream.h
 	include/DB/DataStreams/PartialSortingBlockInputStream.h
-	include/DB/DataStreams/PreSendCallbackInputStream.h
 	include/DB/DataStreams/MarkInCompressedFile.h
 	include/DB/DataStreams/CSVRowOutputStream.h
 	include/DB/DataStreams/CSVRowInputStream.h
@@ -333,7 +332,6 @@ add_library (dbms
 	include/DB/Interpreters/ClusterProxy/DescribeQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/AlterQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/Query.h
-	include/DB/Interpreters/ClusterProxy/PreSendHook.h
 	include/DB/Common/Allocator.h
 	include/DB/Common/CombinedCardinalityEstimator.h
 	include/DB/Common/ExternalTable.h
