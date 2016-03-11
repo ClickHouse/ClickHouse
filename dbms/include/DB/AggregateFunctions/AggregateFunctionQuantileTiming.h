@@ -127,6 +127,8 @@ namespace detail
 	#define BIG_SIZE ((BIG_THRESHOLD - SMALL_THRESHOLD) / BIG_PRECISION)
 	#define BIG_PRECISION 16
 
+	#define SIZE_OF_LARGE_WITHOUT_COUNT ((SMALL_THRESHOLD + BIG_SIZE) * sizeof(UInt64))
+
 
 	/** Для большого количества значений. Размер около 20 КБ.
 	  * TODO: Есть off-by-one ошибки - может возвращаться значение на 1 больше нужного.
@@ -158,7 +160,7 @@ namespace detail
 
 		QuantileTimingLarge(ReadBuffer & buf)
 		{
-			deserialize(buf);
+			deserialize(buf, true);
 		}
 
 		void insert(UInt64 x)
@@ -189,12 +191,70 @@ namespace detail
 
 		void serialize(WriteBuffer & buf) const
 		{
-			buf.write(reinterpret_cast<const char *>(this), sizeof(*this));
+			writeBinary(count, buf);
+
+			if (count * 2 > SMALL_THRESHOLD + BIG_SIZE)
+			{
+				/// Простая сериализация для сильно заполненного случая.
+				buf.write(reinterpret_cast<const char *>(this) + sizeof(count), SIZE_OF_LARGE_WITHOUT_COUNT);
+			}
+			else
+			{
+				/// Более компактная сериализация для разреженного случая.
+
+				for (size_t i = 0; i < SMALL_THRESHOLD; ++i)
+				{
+					if (count_small[i])
+					{
+						writeBinary(UInt16(i), buf);
+						writeBinary(count_small[i], buf);
+					}
+				}
+
+				for (size_t i = 0; i < BIG_SIZE; ++i)
+				{
+					if (count_big[i])
+					{
+						writeBinary(UInt16(i + SMALL_THRESHOLD), buf);
+						writeBinary(count_big[i], buf);
+					}
+				}
+
+				/// Символизирует конец данных.
+				writeBinary(UInt16(BIG_THRESHOLD), buf);
+			}
 		}
 
-		void deserialize(ReadBuffer & buf)
+		void deserialize(ReadBuffer & buf, bool need_memset = false)
 		{
-			buf.readStrict(reinterpret_cast<char *>(this), sizeof(*this));
+			readBinary(count, buf);
+
+			if (count * 2 > SMALL_THRESHOLD + BIG_SIZE)
+			{
+				buf.readStrict(reinterpret_cast<char *>(this) + sizeof(count), SIZE_OF_LARGE_WITHOUT_COUNT);
+			}
+			else
+			{
+				/// Используется, если в конструкторе ещё не был сделан memset.
+				if (need_memset)
+					memset(reinterpret_cast<char *>(this) + sizeof(count), 0, SIZE_OF_LARGE_WITHOUT_COUNT);
+
+				while (true)
+				{
+					UInt16 index = 0;
+					readBinary(index, buf);
+					if (index == BIG_THRESHOLD)
+						break;
+
+					UInt64 count = 0;
+					readBinary(count, buf);
+
+					if (index < SMALL_THRESHOLD)
+						count_small[index] = count;
+					else
+						count_big[index - SMALL_THRESHOLD] = count;
+				}
+			}
 		}
 
 		void deserializeMerge(ReadBuffer & buf)
