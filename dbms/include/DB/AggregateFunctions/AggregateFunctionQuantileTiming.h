@@ -26,11 +26,18 @@ namespace DB
 /** Вычисляет квантиль для времени в миллисекундах, меньшего 30 сек.
   * Если значение больше 30 сек, то значение приравнивается к 30 сек.
   *
-  * Если всего значений не больше 32, то вычисление точное.
+  * Если всего значений не больше примерно 5670, то вычисление точное.
   *
   * Иначе:
   *  Если время меньше 1024 мс., то вычисление точное.
   *  Иначе вычисление идёт с округлением до числа, кратного 16 мс.
+  *
+  * Используется три разные структуры данных:
+  * - плоский массив (всех встреченных значений) фиксированной длины, выделяемый inplace, размер 64 байта; хранит 0..31 значений;
+  * - плоский массив (всех встреченных значений), выделяемый отдельно, увеличивающейся длины;
+  * - гистограмма (то есть, отображение значение -> количество), состоящая из двух частей:
+  * -- для значений от 0 до 1023 - с шагом 1;
+  * -- для значений от 1024 до 30000 - с шагом 16;
   */
 
 #define TINY_MAX_ELEMS 31
@@ -45,8 +52,11 @@ namespace detail
 	struct QuantileTimingTiny
 	{
 		mutable UInt16 elems[TINY_MAX_ELEMS];	/// mutable потому что сортировка массива не считается изменением состояния.
-		UInt16 count;	/// Важно, чтобы count был в конце структуры, так как начало структуры будет впоследствии перезатёрто другими объектами.
-						/// Вы должны сами инициализировать его нулём.
+		/// Важно, чтобы count был в конце структуры, так как начало структуры будет впоследствии перезатёрто другими объектами.
+		/// Вы должны сами инициализировать его нулём.
+		/// Почему? Поле count переиспользуется и в тех случаях, когда в union-е лежат другие структуры
+		///  (размер которых не дотягивает до этого поля.)
+		UInt16 count;
 
 		/// Можно использовать только пока count < TINY_MAX_ELEMS.
 		void insert(UInt64 x)
@@ -230,7 +240,7 @@ namespace detail
 	#define SIZE_OF_LARGE_WITHOUT_COUNT ((SMALL_THRESHOLD + BIG_SIZE) * sizeof(UInt64))
 
 
-	/** Для большого количества значений. Размер около 20 КБ.
+	/** Для большого количества значений. Размер около 22 680 байт.
 	  * TODO: Есть off-by-one ошибки - может возвращаться значение на 1 больше нужного.
 	  */
 	class QuantileTimingLarge
@@ -238,6 +248,8 @@ namespace detail
 	private:
 		/// Общее число значений.
 		UInt64 count;
+		/// Использование UInt64 весьма расточительно.
+		/// Но UInt32 точно не хватает, а изобретать 6-байтные значения слишком сложно.
 
 		/// Число значений для каждого значения меньше small_threshold.
 		UInt64 count_small[SMALL_THRESHOLD];
@@ -256,11 +268,6 @@ namespace detail
 		QuantileTimingLarge()
 		{
 			memset(this, 0, sizeof(*this));
-		}
-
-		QuantileTimingLarge(ReadBuffer & buf)
-		{
-			deserialize(buf, true);
 		}
 
 		void insert(UInt64 x)
@@ -325,7 +332,7 @@ namespace detail
 			}
 		}
 
-		void deserialize(ReadBuffer & buf, bool need_memset = false)
+		void deserialize(ReadBuffer & buf)
 		{
 			readBinary(count, buf);
 
@@ -335,10 +342,6 @@ namespace detail
 			}
 			else
 			{
-				/// Используется, если в конструкторе ещё не был сделан memset.
-				if (need_memset)
-					memset(reinterpret_cast<char *>(this) + sizeof(count), 0, SIZE_OF_LARGE_WITHOUT_COUNT);
-
 				while (true)
 				{
 					UInt16 index = 0;
@@ -355,11 +358,6 @@ namespace detail
 						count_big[index - SMALL_THRESHOLD] = count;
 				}
 			}
-		}
-
-		void deserializeMerge(ReadBuffer & buf)
-		{
-			merge(QuantileTimingLarge(buf));
 		}
 
 
@@ -543,6 +541,11 @@ private:
 		tiny.count = TINY_MAX_ELEMS + 2;
 	}
 
+	bool mediumIsWorthToConvertToLarge() const
+	{
+		return medium.elems.size() >= sizeof(detail::QuantileTimingLarge) / sizeof(medium.elems[0]) / 2;
+	}
+
 public:
 	QuantileTiming()
 	{
@@ -579,7 +582,7 @@ public:
 
 			if (which() == Kind::Medium)
 			{
-				if (unlikely(medium.elems.size() >= sizeof(detail::QuantileTimingLarge) / sizeof(medium.elems[0]) / 2))
+				if (unlikely(mediumIsWorthToConvertToLarge()))
 				{
 					mediumToLarge();
 					large->insert(x);
@@ -609,7 +612,7 @@ public:
 		}
 	}
 
-	/// TODO Слишком сложный код.
+	/// NOTE Слишком сложный код.
 	void merge(const QuantileTiming & rhs)
 	{
 		if (tiny.count + rhs.tiny.count <= TINY_MAX_ELEMS)
@@ -621,12 +624,28 @@ public:
 			auto kind = which();
 			auto rhs_kind = rhs.which();
 
+			/// Если то, с чем сливаем, имеет бОльшую структуру данных, то приводим текущую структуру к такой же.
 			if (kind == Kind::Tiny && rhs_kind == Kind::Medium)
+			{
 				tinyToMedium();
+				kind = Kind::Medium;
+			}
 			else if (kind == Kind::Tiny && rhs_kind == Kind::Large)
+			{
 				tinyToLarge();
+				kind = Kind::Large;
+			}
 			else if (kind == Kind::Medium && rhs_kind == Kind::Large)
+			{
 				mediumToLarge();
+				kind = Kind::Large;
+			}
+			/// Случай, когда два состояния маленькие, но при их слиянии, они превратятся в средние.
+			else if (kind == Kind::Tiny && rhs_kind == Kind::Tiny)
+			{
+				tinyToMedium();
+				kind = Kind::Medium;
+			}
 
 			if (kind == Kind::Medium && rhs_kind == Kind::Medium)
 			{
@@ -649,6 +668,15 @@ public:
 			{
 				for (const auto & elem : rhs.medium.elems)
 					large->insert(elem);
+			}
+			else
+				throw Exception("Logical error in QuantileTiming::merge function: not all cases are covered", ErrorCodes::LOGICAL_ERROR);
+
+			/// Для детерминированности, мы должны всегда переводить в large при достижении условия на размер
+			///  - независимо от порядка мерджей.
+			if (kind == Kind::Medium && unlikely(mediumIsWorthToConvertToLarge()))
+			{
+				mediumToLarge();
 			}
 		}
 	}
@@ -687,14 +715,6 @@ public:
 			large->deserialize(buf);
 		}
 	}
-
-	void deserializeMerge(ReadBuffer & buf)
-	{
-		QuantileTiming rhs;
-		rhs.deserialize(buf);
-		merge(rhs);
-	}
-
 
 	/// Получить значение квантиля уровня level. Уровень должен быть от 0 до 1.
 	UInt16 get(double level) const
@@ -806,9 +826,9 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		this->data(place).deserializeMerge(buf);
+		this->data(place).deserialize(buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -866,9 +886,9 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		this->data(place).deserializeMerge(buf);
+		this->data(place).deserialize(buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -921,9 +941,9 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		this->data(place).deserializeMerge(buf);
+		this->data(place).deserialize(buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -984,9 +1004,9 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		this->data(place).deserializeMerge(buf);
+		this->data(place).deserialize(buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
