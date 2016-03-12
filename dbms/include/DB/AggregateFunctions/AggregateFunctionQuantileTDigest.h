@@ -320,9 +320,9 @@ public:
 		buf.write(reinterpret_cast<const char *>(&summary[0]), summary.size() * sizeof(summary[0]));
 	}
 
-	/** Прочитать из потока и объединить с текущим состоянием.
+	/** Прочитать из потока.
 	  */
-	void readAndMerge(const Params & params, DB::ReadBuffer & buf)
+	void read(const Params & params, DB::ReadBuffer & buf)
 	{
 		size_t size = 0;
 		DB::readVarUInt(size, buf);
@@ -330,12 +330,8 @@ public:
 		if (size > params.max_unmerged)
 			throw DB::Exception("Too large t-digest summary size", DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
-		for (size_t i = 0; i < size; ++i)
-		{
-			Centroid c;
-			DB::readPODBinary(c, buf);
-			add(params, c);
-		}
+		summary.resize(size);
+		buf.read(reinterpret_cast<char *>(&summary[0]), size * sizeof(summary[0]));
 	}
 };
 
@@ -401,9 +397,9 @@ public:
 		this->data(const_cast<AggregateDataPtr>(place)).digest.write(params, buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		this->data(place).digest.readAndMerge(params, buf);
+		this->data(place).digest.read(params, buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -470,9 +466,9 @@ public:
 		this->data(const_cast<AggregateDataPtr>(place)).digest.write(params, buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		this->data(place).digest.readAndMerge(params, buf);
+		this->data(place).digest.read(params, buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -532,9 +528,9 @@ public:
 		this->data(const_cast<AggregateDataPtr>(place)).digest.write(params, buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		this->data(place).digest.readAndMerge(params, buf);
+		this->data(place).digest.read(params, buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -614,9 +610,9 @@ public:
 		this->data(const_cast<AggregateDataPtr>(place)).digest.write(params, buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		this->data(place).digest.readAndMerge(params, buf);
+		this->data(place).digest.read(params, buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

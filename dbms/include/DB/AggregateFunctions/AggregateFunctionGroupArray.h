@@ -69,7 +69,7 @@ public:
 		buf.write(reinterpret_cast<const char *>(&value[0]), size * sizeof(value[0]));
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		size_t size = 0;
 		readVarUInt(size, buf);
@@ -79,9 +79,8 @@ public:
 
 		auto & value = this->data(place).value;
 
-		size_t old_size = value.size();
-		value.resize(old_size + size);
-		buf.read(reinterpret_cast<char *>(&value[old_size]), size * sizeof(value[0]));
+		value.resize(size);
+		buf.read(reinterpret_cast<char *>(&value[0]), size * sizeof(value[0]));
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -149,7 +148,7 @@ public:
 			type->serializeBinary(value[i], buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		size_t size = 0;
 		readVarUInt(size, buf);
@@ -159,10 +158,9 @@ public:
 
 		Array & value = data(place).value;
 
-		size_t old_size = value.size();
-		value.resize(old_size + size);
+		value.resize(size);
 		for (size_t i = 0; i < size; ++i)
-			type->deserializeBinary(value[old_size + i], buf);
+			type->deserializeBinary(value[i], buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

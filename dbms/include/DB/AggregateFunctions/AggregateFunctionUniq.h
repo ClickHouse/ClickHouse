@@ -356,9 +356,9 @@ public:
 		this->data(place).set.write(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		this->data(place).set.readAndMerge(buf);
+		this->data(place).set.read(buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -411,9 +411,9 @@ public:
 		this->data(place).set.write(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		this->data(place).set.readAndMerge(buf);
+		this->data(place).set.read(buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

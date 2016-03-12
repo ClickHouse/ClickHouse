@@ -93,9 +93,9 @@ public:
 		nested_func->serialize(place, buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		nested_func->deserializeMerge(place, buf);
+		nested_func->deserialize(place, buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

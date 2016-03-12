@@ -95,7 +95,7 @@ public:
 		this->data(place).map.write(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		typename AggregateFunctionQuantileExactWeightedData<ValueType>::Map::Reader reader(buf);
 
@@ -103,7 +103,7 @@ public:
 		while (reader.next())
 		{
 			const auto & pair = reader.get();
-			map[pair.first] += pair.second;
+			map[pair.first] = pair.second;
 		}
 	}
 
@@ -206,7 +206,7 @@ public:
 		this->data(place).map.write(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		typename AggregateFunctionQuantileExactWeightedData<ValueType>::Map::Reader reader(buf);
 
@@ -214,7 +214,7 @@ public:
 		while (reader.next())
 		{
 			const auto & pair = reader.get();
-			map[pair.first] += pair.second;
+			map[pair.first] = pair.second;
 		}
 	}
 

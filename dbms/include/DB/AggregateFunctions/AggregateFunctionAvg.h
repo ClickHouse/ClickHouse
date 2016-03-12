@@ -60,14 +60,10 @@ public:
 		writeVarUInt(this->data(place).count, buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		typename NearestFieldType<T>::Type tmp_sum = 0;
-		UInt64 tmp_count = 0;
-		readBinary(tmp_sum, buf);
-		readVarUInt(tmp_count, buf);
-		this->data(place).sum += tmp_sum;
-		this->data(place).count += tmp_count;
+		readBinary(this->data(place).sum, buf);
+		readVarUInt(this->data(place).count, buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
