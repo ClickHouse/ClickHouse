@@ -833,6 +833,34 @@ add_library (dbms
 	src/Client/MultiplexedConnections.cpp
 )
 
+# Не генерируем отладочную информацию для файлов с большим количеством инстанцирований шаблонов
+# - для более быстрой линковки и меньшего размера бинарника.
+SET_SOURCE_FILES_PROPERTIES(
+	src/Functions/FunctionsArithmetic.cpp
+	src/Functions/FunctionsArray.cpp
+	src/Functions/FunctionsCoding.cpp
+	src/Functions/FunctionsComparison.cpp
+	src/Functions/FunctionsConditional.cpp
+	src/Functions/FunctionsConversion.cpp
+	src/Functions/FunctionsDateTime.cpp
+	src/Functions/FunctionsDictionaries.cpp
+	src/Functions/FunctionsFormatting.cpp
+	src/Functions/FunctionsHashing.cpp
+	src/Functions/FunctionsHigherOrder.cpp
+	src/Functions/FunctionsLogical.cpp
+	src/Functions/FunctionsRandom.cpp
+	src/Functions/FunctionsReinterpret.cpp
+	src/Functions/FunctionsRound.cpp
+	src/Functions/FunctionsString.cpp
+	src/Functions/FunctionsStringArray.cpp
+	src/Functions/FunctionsStringSearch.cpp
+	src/Functions/FunctionsURL.cpp
+	src/Functions/FunctionsVisitParam.cpp
+	src/Functions/FunctionsMath.cpp
+	src/Functions/FunctionsMiscellaneous.cpp
+	src/Functions/FunctionsTransform.cpp
+	PROPERTIES COMPILE_FLAGS -g0)
+
 IF (NOT AARCH64)
 	SET(LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
 ENDIF()
