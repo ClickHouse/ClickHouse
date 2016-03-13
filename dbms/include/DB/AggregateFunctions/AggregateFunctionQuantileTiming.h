@@ -264,6 +264,45 @@ namespace detail
 				+ (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2));	/// Небольшая рандомизация, чтобы не было заметно, что все значения чётные.
 		}
 
+		/// Позволяет перебрать значения гистограммы, пропуская нули.
+		class Iterator
+		{
+		private:
+			const UInt64 * begin;
+			const UInt64 * pos;
+			const UInt64 * end;
+
+			void adjust()
+			{
+				while (isValid() && 0 == *pos)
+					++pos;
+			}
+
+		public:
+			Iterator(const QuantileTimingLarge & parent)
+				: begin(parent.count_small), pos(begin), end(&parent.count_big[BIG_SIZE])
+			{
+				adjust();
+			}
+
+			bool isValid() const { return pos < end; }
+
+			void next()
+			{
+				++pos;
+				adjust();
+			}
+
+			UInt64 count() const { return *pos; }
+
+			UInt16 key() const
+			{
+				return pos - begin < SMALL_THRESHOLD
+					? pos - begin
+					: indexInBigToValue(pos - begin - SMALL_THRESHOLD);
+			}
+		};
+
 	public:
 		QuantileTimingLarge()
 		{
@@ -367,28 +406,19 @@ namespace detail
 			UInt64 pos = count * level;
 
 			UInt64 accumulated = 0;
+			Iterator it(*this);
 
-			size_t i = 0;
-			while (i < SMALL_THRESHOLD && accumulated < pos)
+			while (it.isValid())
 			{
-				accumulated += count_small[i];
-				++i;
+				accumulated += it.count();
+
+				if (accumulated >= pos)
+					break;
+
+				it.next();
 			}
 
-			if (i < SMALL_THRESHOLD)
-				return i;
-
-			i = 0;
-			while (i < BIG_SIZE && accumulated < pos)
-			{
-				accumulated += count_big[i];
-				++i;
-			}
-
-			if (i < BIG_SIZE)
-				return indexInBigToValue(i);
-
-			return BIG_THRESHOLD;
+			return it.isValid() ? it.key() : BIG_THRESHOLD;
 		}
 
 		/// Получить значения size квантилей уровней levels. Записать size результатов начиная с адреса result.
@@ -402,20 +432,15 @@ namespace detail
 			UInt64 pos = count * levels[*index];
 
 			UInt64 accumulated = 0;
+			Iterator it(*this);
 
-			size_t i = 0;
-			while (i < SMALL_THRESHOLD)
+			while (it.isValid())
 			{
-				while (i < SMALL_THRESHOLD && accumulated < pos)
-				{
-					accumulated += count_small[i];
-					++i;
-				}
+				accumulated += it.count();
 
-				if (i < SMALL_THRESHOLD)
+				while (accumulated >= pos)
 				{
-					result[*index] = i;
-
+					result[*index] = it.key();
 					++index;
 
 					if (index == indices_end)
@@ -423,36 +448,11 @@ namespace detail
 
 					pos = count * levels[*index];
 				}
+
+				it.next();
 			}
 
-			i = 0;
-			while (i < BIG_SIZE)
-			{
-				while (i < BIG_SIZE && accumulated < pos)
-				{
-					accumulated += count_big[i];
-					++i;
-				}
 
-				if (i < BIG_SIZE)
-				{
-					result[*index] = indexInBigToValue(i);
-
-					++index;
-
-					if (index == indices_end)
-						return;
-
-					pos = count * levels[*index];
-				}
-			}
-
-			while (index < indices_end)
-			{
-				result[*index] = BIG_THRESHOLD;
-
-				++index;
-			}
 		}
 
 		/// То же самое, но в случае пустого состояния возвращается NaN.

@@ -139,9 +139,13 @@ public:
 
 		const Pair * it = array;
 		const Pair * end = array + size;
-		while (it < end && accumulated < threshold)
+		while (it < end)
 		{
 			accumulated += it->second;
+
+			if (accumulated >= threshold)
+				break;
+
 			++it;
 		}
 
@@ -262,17 +266,31 @@ public:
 		const Pair * it = array;
 		const Pair * end = array + size;
 
-		for (auto level_index : levels.permutation)
-		{
-			UInt64 threshold = sum_weight * levels.levels[level_index];
+		size_t level_index = 0;
+		UInt64 threshold = sum_weight * levels.levels[level_index];
 
-			while (it < end && accumulated < threshold)
+		while (it < end)
+		{
+			accumulated += it->second;
+
+			while (accumulated >= threshold)
 			{
-				accumulated += it->second;
-				++it;
+				data_to[old_size + level_index] = it->first;
+				++level_index;
+
+				if (level_index == num_levels)
+					return;
+
+				threshold = sum_weight * levels.levels[level_index];
 			}
 
-			data_to[old_size + level_index] = it < end ? it->first : it[-1].first;
+			++it;
+		}
+
+		while (level_index < num_levels)
+		{
+			data_to[old_size + level_index] = array[size - 1].first;
+			++level_index;
 		}
 	}
 };
