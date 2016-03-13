@@ -134,7 +134,7 @@ public:
 
 		std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
-		UInt64 threshold = sum_weight * level;
+		UInt64 threshold = std::ceil(sum_weight * level);
 		UInt64 accumulated = 0;
 
 		const Pair * it = array;
@@ -267,7 +267,7 @@ public:
 		const Pair * end = array + size;
 
 		size_t level_index = 0;
-		UInt64 threshold = sum_weight * levels.levels[levels.permutation[level_index]];
+		UInt64 threshold = std::ceil(sum_weight * levels.levels[levels.permutation[level_index]]);
 
 		while (it < end)
 		{
@@ -281,7 +281,7 @@ public:
 				if (level_index == num_levels)
 					return;
 
-				threshold = sum_weight * levels.levels[levels.permutation[level_index]];
+				threshold = std::ceil(sum_weight * levels.levels[levels.permutation[level_index]]);
 			}
 
 			++it;

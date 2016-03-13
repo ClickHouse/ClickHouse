@@ -402,7 +402,7 @@ namespace detail
 		/// Получить значение квантиля уровня level. Уровень должен быть от 0 до 1.
 		UInt16 get(double level) const
 		{
-			UInt64 pos = count * level;
+			UInt64 pos = std::ceil(count * level);
 
 			UInt64 accumulated = 0;
 			Iterator it(*this);
@@ -428,7 +428,7 @@ namespace detail
 			const auto indices_end = indices + size;
 			auto index = indices;
 
-			UInt64 pos = count * levels[*index];
+			UInt64 pos = std::ceil(count * levels[*index]);
 
 			UInt64 accumulated = 0;
 			Iterator it(*this);
@@ -445,7 +445,7 @@ namespace detail
 					if (index == indices_end)
 						return;
 
-					pos = count * levels[*index];
+					pos = std::ceil(count * levels[*index]);
 				}
 
 				it.next();
