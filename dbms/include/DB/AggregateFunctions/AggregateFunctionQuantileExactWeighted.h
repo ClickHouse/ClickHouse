@@ -267,7 +267,7 @@ public:
 		const Pair * end = array + size;
 
 		size_t level_index = 0;
-		UInt64 threshold = sum_weight * levels.levels[level_index];
+		UInt64 threshold = sum_weight * levels.levels[levels.permutation[level_index]];
 
 		while (it < end)
 		{
@@ -275,13 +275,13 @@ public:
 
 			while (accumulated >= threshold)
 			{
-				data_to[old_size + level_index] = it->first;
+				data_to[old_size + levels.permutation[level_index]] = it->first;
 				++level_index;
 
 				if (level_index == num_levels)
 					return;
 
-				threshold = sum_weight * levels.levels[level_index];
+				threshold = sum_weight * levels.levels[levels.permutation[level_index]];
 			}
 
 			++it;
@@ -289,7 +289,7 @@ public:
 
 		while (level_index < num_levels)
 		{
-			data_to[old_size + level_index] = array[size - 1].first;
+			data_to[old_size + levels.permutation[level_index]] = array[size - 1].first;
 			++level_index;
 		}
 	}
