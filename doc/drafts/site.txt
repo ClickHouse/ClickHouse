@@ -1,0 +1,85 @@
+ClickHouse is free column-oriented DBMS for big data.
+
+ClickHouse powers Yandex.Metrica - second largest web analytics system in the world.
+In Yandex.Metrica, all incoming data is ingested into ClickHouse in realtime (about 20 billion events each day).
+Currently, Yandex.Metrica has more than 13 trillion records in ClickHouse powered database.
+It is used for fully customizable reports, that are generated on-the-fly, directly from non-aggregated data.
+Yandex.Metrica allows customers to slice and dice data in every detail, even for huge traffic sites, with instant results.
+
+ClickHouse is the only open-source system, that is capable of doing such kind of things.
+
+
+Big Data
+
+
+Linearly scalable
+
+ClickHouse allows to add servers to cluster when necessary.
+For example, in Yandex.Metrica, main cluster has grown from 60 to 394 servers in two years.
+Servers are placed in six different geographically distributed datacenters.
+
+ClickHouse is using maximum of available hardware to process queries as fast as possible.
+We achieve peak performance of more than 2 terabytes per second for single query (data after decompression, only used columns).
+
+ClickHouse scales well both vertically and horizontally.
+We have installations with more than two trillion rows per single node, and another installations with 100 TB of storage per single node.
+
+
+Efficient use of hardware
+
+ClickHouse is space and time efficient. All data is stored compressed. Compression works surprisingly good, thanks to column store.
+ClickHouse constantly maintains data locality for loaded data. It minimizes number of seeks for range queries, so ClickHouse works fine on cheap rotational drives.
+ClickHouse is also CPU efficient, 
+ClickHouse is using IO throughput in 
+
+
+Fast
+
+We proud of high performance of ClickHouse. Throughput of query processing per single server is usually from hundreds millions to more than billion rows per second and to more than tens of gigabytes per second. It's hard to believe that is possible to process data in such high rates. But you don't need to beleive, because ClickHouse is actually do that.
+
+On our performance testing, ClickHouse works few times faster than best of available commercial column-oriented DBMS.
+
+
+Fault tolerance
+
+
+Feature rich
+
+
+Simple and handy
+
+
+Stable
+
+
+Opens new possibilities
+
+
+
+
+True column-oriented
+Vectorized query execution
+Data compression
+Parallel and distributed query execution
+Realtime data ingestion
+On-disk data locality
+Online query processing
+Cross-datacenter replication
+High availability
+SQL support
+Support for approximate query processing
+Sketching data structures
+Full support of IPv6
+Features for web analytics
+State-of-the-art algorithms
+Clean documented code
+
+
+Web and application analytics
+Advertisement networks and RTB
+Telecommunications analytics
+E-commerce analytics
+Analytics for information security
+Monitoring and telemetry
+Business intelligence
+Analytics for Internet of Things
