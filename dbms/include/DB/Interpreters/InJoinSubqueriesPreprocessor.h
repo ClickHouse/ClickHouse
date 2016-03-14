@@ -270,8 +270,17 @@ private:
 			auto & distributed_storage = static_cast<TStorageDistributed &>(*subquery_table_storage);
 
 			if (sub_select_query.database.isNull())
+			{
 				sub_select_query.database = new ASTIdentifier{{}, distributed_storage.getRemoteDatabaseName(),
 					ASTIdentifier::Database};
+
+				/// Поскольку был создан новый узел для БД, необходимо его вставить в список
+				/// потомков этого подзапроса. См. ParserSelectQuery для структуры потомков.
+				if (sub_select_query.children.size() < 2)
+					throw Exception("InJoinSubqueriesPreprocessor: Internal error", ErrorCodes::LOGICAL_ERROR);
+				auto it = ++sub_select_query.children.begin();
+				sub_select_query.children.insert(it, sub_select_query.database);
+			}
 			else
 			{
 				auto & db_name = typeid_cast<ASTIdentifier &>(*sub_select_query.database).name;
