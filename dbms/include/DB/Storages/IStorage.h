@@ -46,7 +46,7 @@ typedef std::shared_ptr<IStorage> StoragePtr;
   * - структура хранения данных (сжатие, etc.)
   * - конкуррентный доступ к данным (блокировки, etc.)
   */
-class IStorage : private boost::noncopyable, public ITableDeclaration
+class IStorage : private boost::noncopyable, public ITableDeclaration, private std::enable_shared_from_this<IStorage>
 {
 public:
 	/// Основное имя типа таблицы (например, StorageMergeTree).
@@ -279,13 +279,7 @@ public:
 	  */
 	std::shared_ptr<IStorage> thisPtr()
 	{
-		std::shared_ptr<IStorage> res = this_ptr.lock();
-		if (!res)
-		{
-			res.reset(this);
-			this_ptr = res;
-		}
-		return res;
+		return shared_from_this();
 	}
 
 	bool is_dropped{false};
@@ -300,8 +294,6 @@ protected:
 	using ITableDeclaration::ITableDeclaration;
 
 private:
-	std::weak_ptr<IStorage> this_ptr;
-
 	/// Брать следующие два лока всегда нужно в этом порядке.
 
 	/** Берется на чтение на все время запроса INSERT и на все время слияния кусков (для MergeTree).
