@@ -14,6 +14,7 @@ namespace DB
 class DatabaseEngineOrdinary : public IDatabaseEngine
 {
 private:
+	const String path;
 	std::mutex mutex;
 	Tables tables;
 
@@ -21,14 +22,14 @@ public:
 	DatabaseEngineOrdinary(const String & path_, boost::threadpool::pool & thread_pool_);
 
 	bool isTableExist(const String & name) const override;
-	
-	StoragePtr getTable(const String & name) override;
+
+	StoragePtr tryGetTable(const String & name) override;
 
 	DatabaseIteratorPtr getIterator() override;
 
-	void addTable(const String & name, StoragePtr table) override;
+	void addTable(const String & name, StoragePtr & table, const ASTPtr & query, const String & engine) override;
 
-	StoragePtr detachTable(const String & name) override;
+	StoragePtr detachTable(const String & name, bool remove_metadata) override;
 
 	ASTPtr getCreateQuery(const String & name) const override;
 };

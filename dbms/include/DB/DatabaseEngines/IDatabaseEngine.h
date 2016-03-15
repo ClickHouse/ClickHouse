@@ -35,18 +35,18 @@ public:
 	/// Проверить существование таблицы.
 	virtual bool isTableExist(const String & name) const = 0;
 
-	/// Получить таблицу для работы. Кинуть исключение, если таблицы не существует.
-	virtual StoragePtr getTable(const String & name) = 0;
+	/// Получить таблицу для работы. Вернуть nullptr, если таблицы нет.
+	virtual StoragePtr tryGetTable(const String & name) = 0;
 
 	/// Получить итератор, позволяющий перебрать все таблицы.
 	/// Допустимо наличие "скрытых" таблиц, которые не видны при переборе, но видны, если получать их по имени, используя функции выше.
 	virtual DatabaseIteratorPtr getIterator() = 0;
 
 	/// Добавить таблицу в базу данных.
-	virtual void addTable(const String & name, StoragePtr table) = 0;
+	virtual void addTable(const String & name, StoragePtr & table, const ASTPtr & query, const String & engine) = 0;
 
 	/// Убрать таблицу из базы данных и вернуть её.
-	virtual StoragePtr detachTable(const String & name) = 0;
+	virtual StoragePtr detachTable(const String & name, bool remove_metadata) = 0;
 
 	/// Получить запрос CREATE TABLE для таблицы.
 	virtual ASTPtr getCreateQuery(const String & name) const = 0;
