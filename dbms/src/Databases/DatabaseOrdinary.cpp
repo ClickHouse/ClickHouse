@@ -1,4 +1,4 @@
-#include <DB/DatabaseEngines/DatabaseEngineOrdinary.h>
+#include <DB/Databases/DatabaseOrdinary.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/formatAST.h>
@@ -20,21 +20,21 @@ namespace ErrorCodes
 }
 
 
-DatabaseEngineOrdinary::DatabaseEngineOrdinary(const String & path_, boost::threadpool::pool & thread_pool_)
+DatabaseOrdinary::DatabaseOrdinary(const String & path_, boost::threadpool::pool & thread_pool_)
 	: path(path_)
 {
 	/// TODO Удаление файлов .sql.tmp
 }
 
 
-bool DatabaseEngineOrdinary::isTableExist(const String & name) const
+bool DatabaseOrdinary::isTableExist(const String & name) const
 {
 	std::lock_guard<std::mutex> lock(mutex);
 	return tables.count(name);
 }
 
 
-StoragePtr DatabaseEngineOrdinary::tryGetTable(const String & name)
+StoragePtr DatabaseOrdinary::tryGetTable(const String & name)
 {
 	std::lock_guard<std::mutex> lock(mutex);
 	auto it = tables.find(name);
@@ -45,14 +45,14 @@ StoragePtr DatabaseEngineOrdinary::tryGetTable(const String & name)
 
 
 /// Копирует список таблиц. Таким образом, итерируется по их снапшоту.
-class DatabaseEngineOrdinaryIterator : public IDatabaseIterator
+class DatabaseOrdinaryIterator : public IDatabaseIterator
 {
 private:
 	Tables tables;
 	Tables::iterator it;
 
 public:
-	DatabaseEngineOrdinaryIterator(Tables & tables_) : tables(tables_) {}
+	DatabaseOrdinaryIterator(Tables & tables_) : tables(tables_) {}
 
 	StoragePtr next() override
 	{
@@ -66,14 +66,14 @@ public:
 };
 
 
-DatabaseIteratorPtr DatabaseEngineOrdinary::getIterator()
+DatabaseIteratorPtr DatabaseOrdinary::getIterator()
 {
 	std::lock_guard<std::mutex> lock(mutex);
-	return std::make_shared<DatabaseEngineOrdinaryIterator>(tables);
+	return std::make_shared<DatabaseOrdinaryIterator>(tables);
 }
 
 
-void DatabaseEngineOrdinary::addTable(const String & name, StoragePtr & table, const ASTPtr & query, const String & engine)
+void DatabaseOrdinary::addTable(const String & name, StoragePtr & table, const ASTPtr & query, const String & engine)
 {
 	/// Создаём файл с метаданными, если нужно - если запрос не ATTACH.
 	/// В него записывается запрос на ATTACH таблицы.
@@ -157,7 +157,7 @@ void DatabaseEngineOrdinary::addTable(const String & name, StoragePtr & table, c
 }
 
 
-StoragePtr DatabaseEngineOrdinary::detachTable(const String & name, bool remove_metadata)
+StoragePtr DatabaseOrdinary::detachTable(const String & name, bool remove_metadata)
 {
 	StoragePtr res;
 
@@ -182,7 +182,7 @@ StoragePtr DatabaseEngineOrdinary::detachTable(const String & name, bool remove_
 }
 
 
-ASTPtr DatabaseEngineOrdinary::getCreateQuery(const String & name) const
+ASTPtr DatabaseOrdinary::getCreateQuery(const String & name) const
 {
 	String table_name_escaped = escapeForFileName(name);
 	String table_metadata_path = path + "/" + table_name_escaped;
@@ -222,6 +222,17 @@ ASTPtr DatabaseEngineOrdinary::getCreateQuery(const String & name) const
 	ast_create_query.query_string = query;
 
 	return ast;
+}
+
+
+void DatabaseOrdinary::shutdown()
+{
+	std::lock_guard<std::mutex> lock(mutex);
+
+	for (auto & table : tables)
+		table.second->shutdown();
+
+	tables.clear();
 }
 
 }

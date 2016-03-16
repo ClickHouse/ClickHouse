@@ -41,6 +41,7 @@
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Client/ConnectionPool.h>
 #include <DB/Client/ConnectionPoolWithFailover.h>
+#include <DB/Databases/IDatabase.h>
 
 #include <DB/Common/ConfigProcessor.h>
 #include <zkutil/ZooKeeper.h>
@@ -154,9 +155,8 @@ struct ContextShared
 			current_databases = databases;
 		}
 
-		for (Databases::iterator it = current_databases.begin(); it != current_databases.end(); ++it)
-			for (Tables::iterator jt = it->second.begin(); jt != it->second.end(); ++jt)
-				jt->second->shutdown();
+		for (auto & database : current_databases)
+			database->shutdown();
 
 		{
 			Poco::ScopedLock<Poco::Mutex> lock(mutex);
@@ -305,7 +305,7 @@ bool Context::isTableExist(const String & database_name, const String & table_na
 
 	Databases::const_iterator it;
 	return shared->databases.end() != (it = shared->databases.find(db))
-		&& it->second.end() != it->second.find(table_name);
+		&& it->second.isTableExist(table_name);
 }
 
 
@@ -329,7 +329,7 @@ void Context::assertTableExists(const String & database_name, const String & tab
 	if (shared->databases.end() == it)
 		throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 
-	if (it->second.end() == it->second.find(table_name))
+	if (!it->second.isTableExist(table_name))
 		throw Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 }
 
@@ -344,7 +344,7 @@ void Context::assertTableDoesntExist(const String & database_name, const String 
 
 	Databases::const_iterator it;
 	if (shared->databases.end() != (it = shared->databases.find(db))
-		&& it->second.end() != it->second.find(table_name))
+		&& it->second.isTableExist(table_name))
 		throw Exception("Table " + db + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
@@ -460,18 +460,15 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 		return {};
 	}
 
-	Tables::const_iterator jt = it->second.find(table_name);
-	if (it->second.end() == jt)
+	auto table = it->second.tryGetTable(table_name);
+	if (!table)
 	{
 		if (exception)
 			*exception = Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 		return {};
 	}
 
-	if (!jt->second)
-		throw Exception("Logical error: entry for table " + db + "." + table_name + " exists in Context but it is nullptr.", ErrorCodes::LOGICAL_ERROR);
-
-	return jt->second;
+	return table;
 }
 
 
@@ -498,19 +495,16 @@ void Context::addTable(const String & database_name, const String & table_name, 
 	checkDatabaseAccessRights(db);
 
 	assertDatabaseExists(db, false);
-	assertTableDoesntExist(db, table_name, false);
-	shared->databases[db][table_name] = table;
+	shared->databases[db]->addTable(table_name, table);	/// TODO
 }
 
 
-void Context::addDatabase(const String & database_name)
+void Context::addDatabase(const String & database_name, DatabasePtr & database)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
-	String db = database_name.empty() ? current_database : database_name;
-
-	assertDatabaseDoesntExist(db);
-	shared->databases[db];
+	assertDatabaseDoesntExist(database_name);
+	shared->databases[database_name] = database;
 }
 
 
@@ -519,12 +513,7 @@ StoragePtr Context::detachTable(const String & database_name, const String & tab
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	String db = database_name.empty() ? current_database : database_name;
-
-	assertTableExists(db, table_name);
-	Tables::iterator it = shared->databases[db].find(table_name);
-	StoragePtr res = it->second;
-	shared->databases[db].erase(it);
-	return res;
+	return shared->databases[db]->detachTable(table_name, false);
 }
 
 
@@ -532,59 +521,20 @@ void Context::detachDatabase(const String & database_name)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
-	String db = database_name.empty() ? current_database : database_name;
-
-	assertDatabaseExists(db);
-	shared->databases.erase(db);
+	assertDatabaseExists(database_name);
+	shared->databases[database_name]->shutdown();
+	shared->databases.erase(database_name);
 }
 
 
 ASTPtr Context::getCreateQuery(const String & database_name, const String & table_name) const
 {
-	StoragePtr table;
-	String db;
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
-	{
-		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-		db = database_name.empty() ? current_database : database_name;
-		table = getTable(db, table_name);
-	}
+	String db = database_name.empty() ? current_database : database_name;
+	assertDatabaseExists(db);
 
-	auto table_lock = table->lockStructure(false);
-
-	/// Здесь хранится определение таблицы
-	String metadata_path = shared->path + "metadata/" + escapeForFileName(db) + "/" + escapeForFileName(table_name) + ".sql";
-
-	if (!Poco::File(metadata_path).exists())
-	{
-		try
-		{
-			/// Если файл .sql не предусмотрен (например, для таблиц типа ChunkRef), то движок может сам предоставить запрос CREATE.
-			return table->getCustomCreateQuery(*this);
-		}
-		catch (...)
-		{
-			throw Exception("Metadata file " + metadata_path + " for table " + db + "." + table_name + " doesn't exist.",
-				ErrorCodes::TABLE_METADATA_DOESNT_EXIST);
-		}
-	}
-
-	StringPtr query = new String();
-	{
-		ReadBufferFromFile in(metadata_path);
-		WriteBufferFromString out(*query);
-		copyData(in, out);
-	}
-
-	ParserCreateQuery parser;
-	ASTPtr ast = parseQuery(parser, query->data(), query->data() + query->size(), "in file " + metadata_path);
-
-	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
-	ast_create_query.attach = false;
-	ast_create_query.database = db;
-	ast_create_query.query_string = query;
-
-	return ast;
+	return shared->databases[db]->getCreateQuery(table_name);
 }
 
 

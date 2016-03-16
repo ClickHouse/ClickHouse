@@ -42,6 +42,7 @@ struct Progress;
 class Clusters;
 class QueryLog;
 struct MergeTreeSettings;
+class IDatabase;
 
 
 /// (имя базы данных, имя таблицы)
@@ -76,7 +77,7 @@ public:
 	};
 
 private:
-	typedef std::shared_ptr<ContextShared> Shared;
+	using Shared = std::shared_ptr<ContextShared>;
 	Shared shared;
 
 	String user;						/// Текущий пользователь.
@@ -97,6 +98,9 @@ private:
 	Tables external_tables;				/// Временные таблицы.
 	Context * session_context = nullptr;	/// Контекст сессии или nullptr, если его нет. (Возможно, равен this.)
 	Context * global_context = nullptr;		/// Глобальный контекст или nullptr, если его нет. (Возможно, равен this.)
+
+	using DatabasePtr = std::shared_ptr<IDatabase>;
+	using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
 public:
 	Context();
@@ -154,7 +158,7 @@ public:
 	StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
 	void addExternalTable(const String & table_name, StoragePtr storage);
 	void addTable(const String & database_name, const String & table_name, StoragePtr table);
-	void addDatabase(const String & database_name);
+	void addDatabase(const String & database_name, DatabasePtr & database);
 
 	/// Возвращает отцепленную таблицу.
 	StoragePtr detachTable(const String & database_name, const String & table_name);
@@ -208,9 +212,8 @@ public:
 	/// Для методов ниже может быть необходимо захватывать mutex самостоятельно.
 	Poco::Mutex & getMutex() const;
 
-	/// Метод getDatabases не потокобезопасен. При работе со списком БД и таблиц, вы должны захватить mutex.
-	const Databases & getDatabases() const;
-	Databases & getDatabases();
+	const Databases getDatabases() const;
+	Databases getDatabases();
 
 	Context & getSessionContext();
 	Context & getGlobalContext();

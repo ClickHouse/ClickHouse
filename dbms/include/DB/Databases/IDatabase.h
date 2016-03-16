@@ -29,7 +29,7 @@ using DatabaseIteratorPtr = std::unique_ptr<IDatabaseIterator>;
   * - переименовывание таблиц и перенос между БД с одинаковыми движками.
   */
 
-class IDatabaseEngine : protected std::enable_shared_from_this<IDatabaseEngine>
+class IDatabase : protected std::enable_shared_from_this<IDatabase>
 {
 public:
 	/// Проверить существование таблицы.
@@ -51,9 +51,13 @@ public:
 	/// Получить запрос CREATE TABLE для таблицы.
 	virtual ASTPtr getCreateQuery(const String & name) const = 0;
 
-	virtual ~IDatabaseEngine() {}
+	/// Попросить все таблицы завершить фоновые потоки, которые они используют, и удалить все объекты таблиц.
+	virtual void shutdown() = 0;
+
+	virtual ~IDatabase() {}
 };
 
-using DatabaseEnginePtr = std::shared_ptr<IDatabaseEngine>;
+using DatabasePtr = std::shared_ptr<IDatabase>;
+using Databases = std::map<String, DatabasePtr>;
 
 }

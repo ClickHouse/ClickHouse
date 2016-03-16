@@ -1,7 +1,7 @@
 #pragma once
 
 #include <threadpool.hpp>
-#include <DB/DatabaseEngines/IDatabaseEngine.h>
+#include <DB/Databases/IDatabase.h>
 
 
 namespace DB
@@ -11,7 +11,7 @@ namespace DB
   * Хранит список таблиц в локальной файловой системе в виде .sql файлов,
   *  содержащих определение таблицы в виде запроса ATTACH TABLE.
   */
-class DatabaseEngineOrdinary : public IDatabaseEngine
+class DatabaseOrdinary : public IDatabase
 {
 private:
 	const String path;
@@ -19,7 +19,7 @@ private:
 	Tables tables;
 
 public:
-	DatabaseEngineOrdinary(const String & path_, boost::threadpool::pool & thread_pool_);
+	DatabaseOrdinary(const String & path_, boost::threadpool::pool & thread_pool_);
 
 	bool isTableExist(const String & name) const override;
 
@@ -32,6 +32,8 @@ public:
 	StoragePtr detachTable(const String & name, bool remove_metadata) override;
 
 	ASTPtr getCreateQuery(const String & name) const override;
+
+	void shutdown() override;
 };
 
 }

@@ -541,6 +541,9 @@ add_library (dbms
 	include/DB/Storages/MergeTree/RemoteQueryExecutor.h
 	include/DB/Storages/StorageNull.h
 	include/DB/Storages/System/StorageSystemSettings.h
+	include/DB/Databases/IDatabase.h
+	include/DB/Databases/DatabasOrdinary.h
+	include/DB/Databases/DatabaseFactory.h
 
 	src/Common/ProfileEvents.cpp
 	src/Common/CurrentMetrics.cpp
@@ -828,6 +831,9 @@ add_library (dbms
 	src/AggregateFunctions/AggregateFunctionsUniq.cpp
 	src/AggregateFunctions/AggregateFunctionUniqUpTo.cpp
 	src/AggregateFunctions/AggregateFunctionDebug.cpp
+
+	src/Databases/DatabaseOrdinary.cpp
+	src/Databases/DatabaseFactory.cpp
 
 	src/Client/Connection.cpp
 	src/Client/MultiplexedConnections.cpp

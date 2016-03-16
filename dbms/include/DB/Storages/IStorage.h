@@ -331,8 +331,4 @@ using TableLocks = IStorage::TableStructureReadLocks;
 /// имя таблицы -> таблица
 using Tables = std::map<String, StoragePtr>;
 
-/// имя БД -> таблицы
-using Databases = std::map<String, Tables>;
-
-
 }
