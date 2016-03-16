@@ -14,12 +14,13 @@ namespace DB
 class DatabaseOrdinary : public IDatabase
 {
 private:
+	const String name;
 	const String path;
 	std::mutex mutex;
 	Tables tables;
 
 public:
-	DatabaseOrdinary(const String & path_, boost::threadpool::pool & thread_pool_);
+	DatabaseOrdinary(const String & name_, const String & path_, boost::threadpool::pool * thread_pool_);
 
 	bool isTableExist(const String & name) const override;
 
@@ -29,13 +30,17 @@ public:
 
 	bool empty() const override;
 
-	void addTable(const String & name, StoragePtr & table, const ASTPtr & query, const String & engine) override;
+	void createTable(const String & name, StoragePtr & table, const ASTPtr & query, const String & engine) override;
 
-	StoragePtr detachTable(const String & name, bool remove_metadata) override;
+	StoragePtr removeTable(const String & name) override;
+
+	void attachTable(const String & name, StoragePtr & table) override;
+
+	StoragePtr detachTable(const String & name) override;
 
 	ASTPtr getCreateQuery(const String & name) const override;
 
-	void drop() override;
+	void dropAll() override;
 
 	void shutdown() override;
 };

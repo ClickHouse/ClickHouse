@@ -20,8 +20,8 @@ namespace ErrorCodes
 }
 
 
-DatabaseOrdinary::DatabaseOrdinary(const String & path_, boost::threadpool::pool & thread_pool_)
-	: path(path_)
+DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & path_, boost::threadpool::pool * thread_pool_)
+	: name(name_), path(path_)
 {
 	/// TODO Удаление файлов .sql.tmp
 }
@@ -90,7 +90,16 @@ bool DatabaseOrdinary::empty() const
 }
 
 
-void DatabaseOrdinary::addTable(const String & name, StoragePtr & table, const ASTPtr & query, const String & engine)
+void DatabaseOrdinary::attachTable(const String & name, StoragePtr & table)
+{
+	/// Добавляем таблицу в набор.
+	std::lock_guard<std::mutex> lock(mutex);
+	if (!tables.emplace(name, table).second)
+		throw Exception("Table " + name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+}
+
+
+void DatabaseOrdinary::createTable(const String & name, StoragePtr & table, const ASTPtr & query, const String & engine)
 {
 	/// Создаём файл с метаданными, если нужно - если запрос не ATTACH.
 	/// В него записывается запрос на ATTACH таблицы.
@@ -106,10 +115,6 @@ void DatabaseOrdinary::addTable(const String & name, StoragePtr & table, const A
 	ASTPtr query_clone = query->clone();
 	ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_clone.get());
 
-	/// Если запрос ATTACH, то считается, что метаданные уже есть.
-	bool need_write_metadata = !create.attach;
-
-	if (need_write_metadata)
 	{
 		std::lock_guard<std::mutex> lock(mutex);
 		if (tables.count(name))
@@ -121,7 +126,6 @@ void DatabaseOrdinary::addTable(const String & name, StoragePtr & table, const A
 	String table_metadata_path;
 	String statement;
 
-	if (need_write_metadata)
 	{
 		/// Удаляем из запроса всё, что не нужно для ATTACH.
 		create.attach = true;
@@ -161,20 +165,17 @@ void DatabaseOrdinary::addTable(const String & name, StoragePtr & table, const A
 				throw Exception("Table " + name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 		}
 
-		if (need_write_metadata)
-			Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
+		Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
 	}
 	catch (...)
 	{
-		if (need_write_metadata)
-			Poco::File(table_metadata_tmp_path).remove();
-
+		Poco::File(table_metadata_tmp_path).remove();
 		throw;
 	}
 }
 
 
-StoragePtr DatabaseOrdinary::detachTable(const String & name, bool remove_metadata)
+StoragePtr DatabaseOrdinary::detachTable(const String & name)
 {
 	StoragePtr res;
 
@@ -187,12 +188,25 @@ StoragePtr DatabaseOrdinary::detachTable(const String & name, bool remove_metada
 		tables.erase(it);
 	}
 
-	if (remove_metadata)
-	{
-		String table_name_escaped = escapeForFileName(name);
-		String table_metadata_path = path + "/" + table_name_escaped;
+	return res;
+}
 
+
+StoragePtr DatabaseOrdinary::removeTable(const String & name)
+{
+	StoragePtr res = detachTable();
+
+	String table_name_escaped = escapeForFileName(name);
+	String table_metadata_path = path + "/" + table_name_escaped;
+
+	try
+	{
 		Poco::File(table_metadata_path).remove();
+	}
+	catch (...)
+	{
+		attachTable(name, res);
+		throw;
 	}
 
 	return res;
@@ -203,25 +217,6 @@ ASTPtr DatabaseOrdinary::getCreateQuery(const String & name) const
 {
 	String table_name_escaped = escapeForFileName(name);
 	String table_metadata_path = path + "/" + table_name_escaped;
-
-	if (!Poco::File(table_metadata_path).exists())
-	{
-/*TODO	StoragePtr table = tryGetTable(name);
-
-		if (!table)
-			throw Exception("Table " + name + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
-
-		try
-		{
-			/// Если файл .sql не предусмотрен (например, для таблиц типа ChunkRef), то движок может сам предоставить запрос CREATE.
-			return table->getCustomCreateQuery(*this);
-		}
-		catch (...)
-		{*/
-			throw Exception("Metadata file " + table_metadata_path + " for table " + name + " doesn't exist.",
-				ErrorCodes::TABLE_METADATA_DOESNT_EXIST);
-		//}
-	}
 
 	StringPtr query = new String();
 	{
@@ -235,15 +230,16 @@ ASTPtr DatabaseOrdinary::getCreateQuery(const String & name) const
 
 	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 	ast_create_query.attach = false;
-	ast_create_query.database = db;
+	ast_create_query.database = name;
 	ast_create_query.query_string = query;
 
 	return ast;
 }
 
 
-void DatabaseOrdinary::drop()
+void DatabaseOrdinary::dropAll()
 {
+	/// TODO
 }
 
 

@@ -157,12 +157,8 @@ public:
 	StoragePtr getTable(const String & database_name, const String & table_name) const;
 	StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
 	void addExternalTable(const String & table_name, StoragePtr storage);
-	void addTable(const String & database_name, const String & table_name, StoragePtr table);
+
 	void addDatabase(const String & database_name, DatabasePtr & database);
-
-	/// Возвращает отцепленную таблицу.
-	StoragePtr detachTable(const String & database_name, const String & table_name);
-
 	void detachDatabase(const String & database_name);
 
 	String getCurrentDatabase() const;

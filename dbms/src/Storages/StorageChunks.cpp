@@ -10,6 +10,7 @@
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/Databases/IDatabase.h>
 
 
 namespace DB
@@ -196,7 +197,9 @@ StorageChunks::StorageChunks(
 				context.detachTable(database_name, it->first);
 			}
 
-			context.addTable(database_name, it->first, StorageChunkRef::create(it->first, context, database_name, name, true));
+			context.getDatabase(database_name)->attachTable(
+				it->first, StorageChunkRef::create(it->first, context, database_name, name, true));
+
 			++refcount;
 		}
 	}

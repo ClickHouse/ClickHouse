@@ -9,6 +9,8 @@
 namespace DB
 {
 
+class ASTCreateQuery;
+
 
 /** Позволяет создать новую таблицу, или создать объект уже существующей таблицы, или создать БД, или создать объект уже существующей БД
   */
@@ -45,6 +47,9 @@ public:
 
 private:
 	BlockIO executeImpl(bool assume_metadata_exists);
+
+	void createDatabase(ASTCreateQuery & create, bool assume_metadata_exists);
+	BlockIO createTable(ASTCreateQuery & create, bool assume_metadata_exists);
 
 	/// AST в список столбцов с типами. Столбцы типа Nested развернуты в список настоящих столбцов.
 	using ColumnsAndDefaults = std::pair<NamesAndTypesList, ColumnDefaults>;

@@ -50,17 +50,23 @@ public:
 	/// Является ли БД пустой.
 	virtual bool empty() const = 0;
 
-	/// Добавить таблицу в базу данных.
-	virtual void addTable(const String & name, StoragePtr & table, const ASTPtr & query, const String & engine) = 0;
+	/// Добавить таблицу в базу данных. Прописать её наличие в метаданных.
+	virtual void createTable(const String & name, StoragePtr & table, const ASTPtr & query, const String & engine) = 0;
 
-	/// Убрать таблицу из базы данных и вернуть её.
-	virtual StoragePtr detachTable(const String & name, bool remove_metadata) = 0;
+	/// Удалить таблицу из базы данных и вернуть её. Удалить метаданные.
+	virtual StoragePtr removeTable(const String & name) = 0;
+
+	/// Добавить таблицу в базу данных, но не прописывать её в метаданных. БД может не поддерживать этот метод.
+	virtual void attachTable(const String & name, StoragePtr & table) = 0;
+
+	/// Забыть про таблицу, не удаляя её, и вернуть её. БД может не поддерживать этот метод.
+	virtual StoragePtr detachTable(const String & name) = 0;
 
 	/// Получить запрос CREATE TABLE для таблицы.
 	virtual ASTPtr getCreateQuery(const String & name) const = 0;
 
 	/// Удалить все таблицы.
-	virtual void drop() = 0;
+	virtual void dropAll() = 0;
 
 	/// Попросить все таблицы завершить фоновые потоки, которые они используют, и удалить все объекты таблиц.
 	virtual void shutdown() = 0;

@@ -9,6 +9,7 @@
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/TableFunctions/ITableFunction.h>
 #include <DB/Interpreters/reinterpretAsIdentifier.h>
+#include <DB/Databases/IDatabase.h>
 
 
 namespace DB

@@ -32,6 +32,7 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeFactory.h>
+#include <DB/Databases/DatabaseFactory.h>
 
 
 namespace DB
@@ -55,6 +56,45 @@ InterpreterCreateQuery::InterpreterCreateQuery(ASTPtr query_ptr_, Context & cont
 }
 
 
+void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create, bool assume_metadata_exists)
+{
+	String path = context.getPath();
+	String current_database = context.getCurrentDatabase();
+
+	String database_name = create.database.empty() ? current_database : create.database;
+	String database_name_escaped = escapeForFileName(database_name);
+
+	String data_path = path + "data/" + database_name_escaped + "/";
+	String metadata_path = path + "metadata/" + database_name_escaped + "/";
+
+	if (create.attach)
+	{
+		if (!Poco::File(data_path).exists())
+			throw Exception("Directory " + data_path + " doesn't exist.", ErrorCodes::DIRECTORY_DOESNT_EXIST);
+	}
+	else
+	{
+		if (!create.if_not_exists && Poco::File(metadata_path).exists())
+			throw Exception("Directory " + metadata_path + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+		if (!create.if_not_exists && Poco::File(data_path).exists())
+			throw Exception("Directory " + data_path + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+
+		Poco::File(metadata_path).createDirectory();
+		Poco::File(data_path).createDirectory();
+	}
+
+	DatabasePtr database = DatabaseFactory::get(create.en);
+
+	if (!create.if_not_exists || !context.isDatabaseExist(database_name))
+		context.addDatabase(database_name);
+
+	return {};
+}
+
+
+BlockIO createTable(bool assume_metadata_exists);
+
+
 BlockIO InterpreterCreateQuery::executeImpl(bool assume_metadata_exists)
 {
 	String path = context.getPath();
@@ -75,24 +115,6 @@ BlockIO InterpreterCreateQuery::executeImpl(bool assume_metadata_exists)
 	/// CREATE|ATTACH DATABASE
 	if (!database_name.empty() && table_name.empty())
 	{
-		if (create.attach)
-		{
-			if (!Poco::File(data_path).exists())
-				throw Exception("Directory " + data_path + " doesn't exist.", ErrorCodes::DIRECTORY_DOESNT_EXIST);
-		}
-		else
-		{
-			if (!create.if_not_exists && Poco::File(metadata_path).exists())
-				throw Exception("Directory " + metadata_path + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
-			if (!create.if_not_exists && Poco::File(data_path).exists())
-				throw Exception("Directory " + data_path + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
-
-			Poco::File(metadata_path).createDirectory();
-			Poco::File(data_path).createDirectory();
-		}
-
-		if (!create.if_not_exists || !context.isDatabaseExist(database_name))
-			context.addDatabase(database_name);
 
 		return {};
 	}
@@ -286,6 +308,7 @@ BlockIO InterpreterCreateQuery::executeImpl(bool assume_metadata_exists)
 
 	return {};
 }
+
 
 InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(ASTPtr expression_list)
 {

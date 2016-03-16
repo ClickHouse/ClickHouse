@@ -657,7 +657,7 @@ BlockInputStreams StorageLog::read(
 	unsigned threads)
 {
 	/** Если читаем все данные в один поток, то засечки не требуются.
-	  * Отсутствие необходимости загружать засечки позволяет уменьшить потребление памяти при использовании таблицы типа ChunkMerger.
+	  * Отсутствие необходимости загружать засечки позволяет уменьшить потребление памяти.
 	  */
 	bool read_all_data_in_one_thread = (threads == 1 && from_mark == 0 && to_mark == std::numeric_limits<size_t>::max());
 	if (!read_all_data_in_one_thread)

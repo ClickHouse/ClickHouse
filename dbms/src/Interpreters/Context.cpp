@@ -155,7 +155,7 @@ struct ContextShared
 		}
 
 		for (auto & database : current_databases)
-			database->shutdown();
+			database.second->shutdown();
 
 		{
 			Poco::ScopedLock<Poco::Mutex> lock(mutex);
@@ -349,9 +349,9 @@ bool Context::isTableExist(const String & database_name, const String & table_na
 	String db = database_name.empty() ? current_database : database_name;
 	checkDatabaseAccessRights(db);
 
-	Databases::const_iterator it;
-	return shared->databases.end() != (it = shared->databases.find(db))
-		&& it->second.isTableExist(table_name);
+	Databases::const_iterator it = shared->databases.find(db);
+	return shared->databases.end() != it
+		&& it->second->isTableExist(table_name);
 }
 
 
@@ -375,7 +375,7 @@ void Context::assertTableExists(const String & database_name, const String & tab
 	if (shared->databases.end() == it)
 		throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 
-	if (!it->second.isTableExist(table_name))
+	if (!it->second->isTableExist(table_name))
 		throw Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 }
 
@@ -388,9 +388,8 @@ void Context::assertTableDoesntExist(const String & database_name, const String 
 	if (check_database_access_rights)
 		checkDatabaseAccessRights(db);
 
-	Databases::const_iterator it;
-	if (shared->databases.end() != (it = shared->databases.find(db))
-		&& it->second.isTableExist(table_name))
+	Databases::const_iterator it = shared->databases.find(db);
+	if (shared->databases.end() != it && it->second->isTableExist(table_name))
 		throw Exception("Table " + db + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
@@ -506,7 +505,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 		return {};
 	}
 
-	auto table = it->second.tryGetTable(table_name);
+	auto table = it->second->tryGetTable(table_name);
 	if (!table)
 	{
 		if (exception)
@@ -533,33 +532,12 @@ void Context::addExternalTable(const String & table_name, StoragePtr storage)
 }
 
 
-void Context::addTable(const String & database_name, const String & table_name, StoragePtr table)
-{
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-
-	String db = database_name.empty() ? current_database : database_name;
-	checkDatabaseAccessRights(db);
-
-	assertDatabaseExists(db, false);
-	shared->databases[db]->addTable(table_name, table);	/// TODO
-}
-
-
 void Context::addDatabase(const String & database_name, DatabasePtr & database)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	assertDatabaseDoesntExist(database_name);
 	shared->databases[database_name] = database;
-}
-
-
-StoragePtr Context::detachTable(const String & database_name, const String & table_name)
-{
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-
-	String db = database_name.empty() ? current_database : database_name;
-	return shared->databases[db]->detachTable(table_name, false);
 }
 
 
