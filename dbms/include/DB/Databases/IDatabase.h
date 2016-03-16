@@ -47,6 +47,9 @@ public:
 	/// Допустимо наличие "скрытых" таблиц, которые не видны при переборе, но видны, если получать их по имени, используя функции выше.
 	virtual DatabaseIteratorPtr getIterator() = 0;
 
+	/// Является ли БД пустой.
+	virtual bool empty() const = 0;
+
 	/// Добавить таблицу в базу данных.
 	virtual void addTable(const String & name, StoragePtr & table, const ASTPtr & query, const String & engine) = 0;
 

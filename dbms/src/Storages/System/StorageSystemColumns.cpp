@@ -78,7 +78,9 @@ BlockInputStreams StorageSystemColumns::read(
 			for (auto iterator = database->getIterator(); iterator->isValid(); iterator->next())
 			{
 				const String & table_name = iterator->name();
-				storages.emplace({ { database_name, table_name }, iterator->table() });
+				storages.emplace(std::piecewise_construct,
+					std::forward_as_tuple(database_name, table_name),
+					std::forward_as_tuple(iterator->table()));
 				table_column->insert(table_name);
 				offsets[i] += 1;
 			}

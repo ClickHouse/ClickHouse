@@ -141,8 +141,7 @@ struct ContextShared
 			return;
 		shutdown_called = true;
 
-		/** В этот момент, некоторые таблицы могут иметь потоки,
-		  *  которые модифицируют список таблиц, и блокируют наш mutex (см. StorageChunkMerger).
+		/** В этот момент, некоторые таблицы могут иметь потоки, которые блокируют наш mutex.
 		  * Чтобы корректно их завершить, скопируем текущий список таблиц,
 		  *  и попросим их всех закончить свою работу.
 		  * Потом удалим все объекты с таблицами.
@@ -211,6 +210,26 @@ DatabasePtr Context::getDatabase(const String & database_name)
 	String db = database_name.empty() ? current_database : database_name;
 	assertDatabaseExists(db);
 	return shared->databases[db];
+}
+
+const DatabasePtr Context::tryGetDatabase(const String & database_name) const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	String db = database_name.empty() ? current_database : database_name;
+	auto it = shared->databases.find(db);
+	if (it == shared->databases.end())
+		return {};
+	return it->second;
+}
+
+DatabasePtr Context::tryGetDatabase(const String & database_name)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	String db = database_name.empty() ? current_database : database_name;
+	auto it = shared->databases.find(db);
+	if (it == shared->databases.end())
+		return {};
+	return it->second;
 }
 
 

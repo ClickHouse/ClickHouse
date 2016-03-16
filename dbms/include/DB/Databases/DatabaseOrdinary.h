@@ -27,6 +27,8 @@ public:
 
 	DatabaseIteratorPtr getIterator() override;
 
+	bool empty() const override;
+
 	void addTable(const String & name, StoragePtr & table, const ASTPtr & query, const String & engine) override;
 
 	StoragePtr detachTable(const String & name, bool remove_metadata) override;

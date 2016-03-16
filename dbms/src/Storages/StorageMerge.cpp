@@ -8,6 +8,7 @@
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/Databases/IDatabase.h>
 
 
 namespace DB

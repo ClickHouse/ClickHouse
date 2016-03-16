@@ -26,7 +26,6 @@
 #include <DB/Storages/StorageMaterializedView.h>
 #include <DB/Storages/StorageChunks.h>
 #include <DB/Storages/StorageChunkRef.h>
-#include <DB/Storages/StorageChunkMerger.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/StorageSet.h>
 #include <DB/Storages/StorageJoin.h>
@@ -150,6 +149,8 @@ StoragePtr StorageFactory::get(
 	}
 	else if (name == "ChunkMerger")
 	{
+		/// ChunkMerger устарел. Вместо него создаём таблицу типа Merge. TODO Через некоторое время, вовсе удалить эту ветку.
+
 		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
 
 		do
@@ -163,20 +164,12 @@ StoragePtr StorageFactory::get(
 				break;
 
 			String source_database = reinterpretAsIdentifier(args[0], local_context).name;
-			String source_table_name_regexp = safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[1]).value);
-			size_t chunks_to_merge = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*args[2]).value);
+			String table_name_regexp = safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[1]).value);
 
-			String destination_name_prefix = "group_";
-			String destination_database = source_database;
-
-			if (args.size() > 3)
-				destination_name_prefix = typeid_cast<ASTIdentifier &>(*args[3]).name;
-
-			return StorageChunkMerger::create(
-				database_name, table_name, columns,
+			return StorageMerge::create(
+				table_name, columns,
 				materialized_columns, alias_columns, column_defaults,
-				source_database, source_table_name_regexp,
-				destination_name_prefix, chunks_to_merge, context);
+				source_database, table_name_regexp, context);
 		} while (false);
 
 		throw Exception("Storage ChunkMerger requires from 3 to 4 parameters:"

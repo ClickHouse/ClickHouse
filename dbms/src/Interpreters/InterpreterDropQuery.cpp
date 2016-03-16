@@ -13,6 +13,7 @@ namespace ErrorCodes
 {
 	extern const int TABLE_WAS_NOT_DROPPED;
 	extern const int DATABASE_NOT_EMPTY;
+	extern const int UNKNOWN_DATABASE;
 }
 
 
@@ -55,17 +56,17 @@ BlockIO InterpreterDropQuery::execute()
 	{
 		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
 
-		if (!drop.if_exists)
-			context.assertDatabaseExists(database_name);
-		else if (!context.isDatabaseExist(database_name))
-			return {};
+		auto database = context.tryGetDatabase(database_name);
 
-		Tables tables = context.getDatabases()[database_name];
-
-		for (auto & it : tables)
+		if (!database)
 		{
-			tables_to_drop.push_back(it.second);
+			if (!drop.if_exists)
+				throw Exception("Database " + database_name + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+			return {};
 		}
+
+		for (auto iterator = database->getIterator(); iterator.isValid(); iterator.next())
+			tables_to_drop.push_back(iterator->table());
 	}
 
 	for (StoragePtr table : tables_to_drop)
@@ -136,7 +137,7 @@ BlockIO InterpreterDropQuery::execute()
 		context.assertDatabaseExists(database_name);
 
 		/// Кто-то мог успеть создать таблицу в удаляемой БД, пока мы удаляли таблицы без лока контекста.
-		if (!context.getDatabases()[database_name].empty())
+		if (!context.getDatabase(database_name)->empty())
 			throw Exception("New table appeared in database being dropped. Try dropping it again.", ErrorCodes::DATABASE_NOT_EMPTY);
 
 		/// Удаляем информацию о БД из оперативки

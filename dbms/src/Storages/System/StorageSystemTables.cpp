@@ -3,6 +3,7 @@
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Storages/System/StorageSystemTables.h>
 #include <DB/Common/VirtualColumnUtils.h>
+#include <DB/Databases/IDatabase.h>
 
 
 namespace DB
@@ -40,7 +41,7 @@ static ColumnWithTypeAndName getFilteredDatabases(ASTPtr query, const Context & 
 
 	Block block;
 	block.insert(column);
-	for (const auto db : context.getDatabases())
+	for (const auto & db : context.getDatabases())
 		column.column->insert(db.first);
 
 	VirtualColumnUtils::filterBlockWithQuery(query, block, context);
@@ -88,16 +89,16 @@ BlockInputStreams StorageSystemTables::read(
 	for (size_t row_number = 0; row_number < filtered_databases_column.column->size(); ++row_number)
 	{
 		std::string database_name = filtered_databases_column.column->getDataAt(row_number).toString();
-		auto database_it = context.getDatabases().find(database_name);
+		auto database = context.tryGetDatabase(database_name);
 
-		if (database_it == context.getDatabases().end())
+		if (!database)
 			throw DB::Exception(std::string("Fail to find database " + database_name), DB::ErrorCodes::LOGICAL_ERROR);
 
-		for (Tables::const_iterator jt = database_it->second.begin(); jt != database_it->second.end(); ++jt)
+		for (auto iterator = database->getIterator(); iterator->isValid(); iterator->next())
 		{
 			col_db.column->insert(database_name);
-			col_name.column->insert(jt->first);
-			col_engine.column->insert(jt->second->getName());
+			col_name.column->insert(iterator->name());
+			col_engine.column->insert(iterator->table()->getName());
 		}
 	}
 

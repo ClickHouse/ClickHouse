@@ -211,6 +211,9 @@ public:
 
 	const DatabasePtr getDatabase(const String & database_name) const;
 	DatabasePtr getDatabase(const String & database_name);
+	const DatabasePtr tryGetDatabase(const String & database_name) const;
+	DatabasePtr tryGetDatabase(const String & database_name);
+
 	const Databases getDatabases() const;
 	Databases getDatabases();
 

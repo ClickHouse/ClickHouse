@@ -54,14 +54,24 @@ private:
 public:
 	DatabaseOrdinaryIterator(Tables & tables_) : tables(tables_) {}
 
-	StoragePtr next() override
+	void next() override
 	{
-		if (it == tables.end())
-			return {};
-
-		auto res = it->second;
 		++it;
-		return res;
+	}
+
+	bool isValid() const override
+	{
+		return it != tables.end();
+	}
+
+	const String & name() const override
+	{
+		return it->first;
+	}
+
+	StoragePtr & table() const
+	{
+		return it->second;
 	}
 };
 
@@ -70,6 +80,13 @@ DatabaseIteratorPtr DatabaseOrdinary::getIterator()
 {
 	std::lock_guard<std::mutex> lock(mutex);
 	return std::make_shared<DatabaseOrdinaryIterator>(tables);
+}
+
+
+bool DatabaseOrdinary::empty() const
+{
+	std::lock_guard<std::mutex> lock(mutex);
+	return tables.empty();
 }
 
 
