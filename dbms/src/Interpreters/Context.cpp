@@ -179,12 +179,39 @@ const TableFunctionFactory & Context::getTableFunctionFactory() const			{ return
 const AggregateFunctionFactory & Context::getAggregateFunctionFactory() const	{ return shared->aggregate_function_factory; }
 InterserverIOHandler & Context::getInterserverIOHandler()						{ return shared->interserver_io_handler; }
 Poco::Mutex & Context::getMutex() const 										{ return shared->mutex; }
-const Databases & Context::getDatabases() const 								{ return shared->databases; }
-Databases & Context::getDatabases() 											{ return shared->databases; }
 ProcessList & Context::getProcessList()											{ return shared->process_list; }
 const ProcessList & Context::getProcessList() const								{ return shared->process_list; }
 MergeList & Context::getMergeList() 											{ return shared->merge_list; }
 const MergeList & Context::getMergeList() const 								{ return shared->merge_list; }
+
+
+const Databases Context::getDatabases() const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	return shared->databases;
+}
+
+Databases Context::getDatabases()
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	return shared->databases;
+}
+
+const DatabasePtr Context::getDatabase(const String & database_name) const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	String db = database_name.empty() ? current_database : database_name;
+	assertDatabaseExists(db);
+	return shared->databases[db];
+}
+
+DatabasePtr Context::getDatabase(const String & database_name)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	String db = database_name.empty() ? current_database : database_name;
+	assertDatabaseExists(db);
+	return shared->databases[db];
+}
 
 
 String Context::getPath() const

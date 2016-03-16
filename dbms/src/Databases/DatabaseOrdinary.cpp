@@ -225,6 +225,11 @@ ASTPtr DatabaseOrdinary::getCreateQuery(const String & name) const
 }
 
 
+void DatabaseOrdinary::drop()
+{
+}
+
+
 void DatabaseOrdinary::shutdown()
 {
 	std::lock_guard<std::mutex> lock(mutex);

@@ -204,14 +204,20 @@ Block StorageMerge::getBlockWithVirtualColumns(const std::vector<StoragePtr> & s
 
 void StorageMerge::getSelectedTables(StorageVector & selected_tables) const
 {
-	/// Список таблиц могут менять в другом потоке.
-	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-	context.assertDatabaseExists(source_database);
+	auto database = context.getDatabase(source_database);
+	auto iterator = database->getIterator();
 
-	const Tables & tables = context.getDatabases().at(source_database);
-	for (const auto & name_table_pair : tables)
-		if (name_table_pair.second.get() != this && table_name_regexp.match(name_table_pair.first))
-			selected_tables.push_back(name_table_pair.second);
+	while (iterator->isValid())
+	{
+		if (table_name_regexp.match(iterator->name()))
+		{
+			auto & table = iterator->table();
+			if (table.get() != this)
+				selected_tables.emplace_back(table);
+		}
+
+		iterator->next();
+	}
 }
 
 

@@ -67,17 +67,18 @@ private:
 		StoragePtr any_table;
 
 		{
-			/// Список таблиц могут менять в другом потоке.
-			Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-			context.assertDatabaseExists(source_database);
-			const Tables & tables = context.getDatabases().at(source_database);
-			for (Tables::const_iterator it = tables.begin(); it != tables.end(); ++it)
+			auto database = context.getDatabase(source_database);
+			auto iterator = database->getIterator();
+
+			while (iterator->isValid())
 			{
-				if (table_name_regexp.match(it->first))
+				if (table_name_regexp.match(iterator->name()))
 				{
-					any_table = it->second;
+					any_table = iterator->table();
 					break;
 				}
+
+				iterator->next();
 			}
 		}
 

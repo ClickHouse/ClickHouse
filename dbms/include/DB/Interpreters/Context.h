@@ -209,11 +209,14 @@ public:
 	/// Получить запрос на CREATE таблицы.
 	ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;
 
-	/// Для методов ниже может быть необходимо захватывать mutex самостоятельно.
-	Poco::Mutex & getMutex() const;
-
+	const DatabasePtr getDatabase(const String & database_name) const;
+	DatabasePtr getDatabase(const String & database_name);
 	const Databases getDatabases() const;
 	Databases getDatabases();
+
+
+	/// Для методов ниже может быть необходимо захватывать mutex самостоятельно.
+	Poco::Mutex & getMutex() const;
 
 	Context & getSessionContext();
 	Context & getGlobalContext();
@@ -223,6 +226,7 @@ public:
 
 	const Settings & getSettingsRef() const { return settings; };
 	Settings & getSettingsRef() { return settings; };
+
 
 	void setProgressCallback(ProgressCallback callback);
 	/// Используется в InterpreterSelectQuery, чтобы передать его в IProfilingBlockInputStream.
