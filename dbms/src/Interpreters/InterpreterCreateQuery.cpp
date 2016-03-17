@@ -6,6 +6,7 @@
 #include <DB/Common/escapeForFileName.h>
 
 #include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/WriteHelpers.h>
 
 #include <DB/DataStreams/NullAndDoCopyBlockInputStream.h>
@@ -17,15 +18,14 @@
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Parsers/ASTColumnDeclaration.h>
-
-#include <DB/Storages/StorageFactory.h>
-#include <DB/Storages/StorageLog.h>
-#include <DB/Storages/System/StorageSystemNumbers.h>
-
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/parseQuery.h>
+
+#include <DB/Storages/StorageFactory.h>
+#include <DB/Storages/StorageLog.h>
+#include <DB/Storages/System/StorageSystemNumbers.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
@@ -89,8 +89,12 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 	}
 
 	String database_engine_name;
-	if (const ASTIdentifier * engine_id = typeid_cast<const ASTIdentifier *>(create.storage.get()))
+	if (ASTIdentifier * engine_id = typeid_cast<ASTIdentifier *>(create.storage.get()))
+	{
+		if (engine_id->name.empty())
+			engine_id->name = "Ordinary";	/// Движок баз данных по-умолчанию.
 		database_engine_name = engine_id->name;
+	}
 	else
 	{
 		std::stringstream ostr;
@@ -98,7 +102,25 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 		throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
 	}
 
-	DatabasePtr database = DatabaseFactory::get(database_engine_name, database_name, metadata_path, nullptr);	/// TODO threadpool
+	DatabasePtr database = DatabaseFactory::get(database_engine_name, database_name, metadata_path, context, thread_pool);
+
+	/// Записываем файл с метаданными.
+	{
+		create.attach = true;
+		create.if_not_exists = false;
+
+		std::ostringstream statement_stream;
+		formatAST(create, statement_stream, 0, false);
+		statement_stream << '\n';
+		String statement = statement_stream.str();
+
+		/// Гарантирует, что база данных не создаётся прямо сейчас.
+		WriteBufferFromFile out(path + "metadata/" + database_name_escaped + ".sql", statement.size(), O_WRONLY | O_CREAT | O_EXCL);
+		writeString(statement, out);
+		out.next();
+		out.sync();
+		out.close();
+	}
 
 	if (!create.if_not_exists || !context.isDatabaseExist(database_name))
 		context.addDatabase(database_name, database);

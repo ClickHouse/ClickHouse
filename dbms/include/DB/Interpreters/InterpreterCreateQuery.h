@@ -1,5 +1,7 @@
 #pragma once
 
+#include <threadpool.hpp>
+
 #include <DB/Storages/IStorage.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/IInterpreter.h>
@@ -40,6 +42,11 @@ public:
 		const NamesAndTypesList & alias_columns,
 		const ColumnDefaults & column_defaults);
 
+	void setDatabaseLoadingThreadpool(boost::threadpool::pool & thread_pool_)
+	{
+		thread_pool = &thread_pool_;
+	}
+
 private:
 	BlockIO executeImpl(bool assume_metadata_exists);
 
@@ -67,6 +74,9 @@ private:
 
 	ASTPtr query_ptr;
 	Context context;
+
+	/// Используется при загрузке базы данных.
+	boost::threadpool::pool * thread_pool = nullptr;
 };
 
 

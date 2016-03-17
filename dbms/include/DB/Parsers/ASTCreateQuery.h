@@ -56,8 +56,18 @@ protected:
 
 		if (!database.empty() && table.empty())
 		{
-			settings.ostr << (settings.hilite ? hilite_keyword : "") << (attach ? "ATTACH DATABASE " : "CREATE DATABASE ") << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "")
-			<< backQuoteIfNeed(database);
+			settings.ostr << (settings.hilite ? hilite_keyword : "")
+				<< (attach ? "ATTACH DATABASE " : "CREATE DATABASE ")
+				<< (if_not_exists ? "IF NOT EXISTS " : "")
+				<< (settings.hilite ? hilite_none : "")
+				<< backQuoteIfNeed(database);
+
+			if (storage)
+			{
+				settings.ostr << (settings.hilite ? hilite_keyword : "") << " ENGINE" << (settings.hilite ? hilite_none : "") << " = ";
+				storage->formatImpl(settings, state, frame);
+			}
+
 			return;
 		}
 

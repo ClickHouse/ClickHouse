@@ -1,9 +1,13 @@
+#include <future>
+#include <Poco/DirectoryIterator.h>
+
 #include <DB/Databases/DatabaseOrdinary.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
+#include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/copyData.h>
@@ -17,13 +21,200 @@ namespace ErrorCodes
 	extern const int TABLE_ALREADY_EXISTS;
 	extern const int UNKNOWN_TABLE;
 	extern const int TABLE_METADATA_DOESNT_EXIST;
+	extern const int CANNOT_CREATE_TABLE_FROM_METADATA;
+	extern const int INCORRECT_FILE_NAME;
 }
 
 
-DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & path_, boost::threadpool::pool * thread_pool_)
+static constexpr size_t PRINT_MESSAGE_EACH_N_TABLES = 256;
+static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
+static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
+static constexpr size_t TABLES_PARALLEL_LOAD_BUNCH_SIZE = 100;
+
+
+static void executeCreateQuery(
+	const String & query,
+	Context & context,
+	const String & database,
+	const String & file_name)
+{
+	ParserCreateQuery parser;
+	ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + file_name);
+
+	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
+	ast_create_query.attach = true;
+	ast_create_query.database = database;
+
+	InterpreterCreateQuery interpreter(ast, context);
+	interpreter.executeLoadExisting();
+}
+
+
+static void loadTable(
+	Context & context,
+	const String & path,
+	const String & database,
+	const String & table_escaped)
+{
+	Logger * log = &Logger::get("loadTable");
+
+	const String path_to_metadata = path + "/" + table_escaped;
+
+	String s;
+	{
+		char in_buf[METADATA_FILE_BUFFER_SIZE];
+		ReadBufferFromFile in(path_to_metadata, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
+		WriteBufferFromString out(s);
+		copyData(in, out);
+	}
+
+	/** Пустые файлы с метаданными образуются после грубого перезапуска сервера.
+	  * Удаляем эти файлы, чтобы чуть-чуть уменьшить работу админов по запуску.
+	  */
+	if (s.empty())
+	{
+		LOG_ERROR(log, "File " << path_to_metadata << " is empty. Removing.");
+		Poco::File(path_to_metadata).remove();
+		return;
+	}
+
+	try
+	{
+		executeCreateQuery(s, context, database, path_to_metadata);
+	}
+	catch (const Exception & e)
+	{
+		throw Exception("Cannot create table from metadata file " + path_to_metadata + ", error: " + e.displayText() +
+			", stack trace:\n" + e.getStackTrace().toString(),
+			ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
+	}
+}
+
+
+static bool endsWith(const String & s, const char * suffix)
+{
+	return s.size() >= strlen(suffix) && 0 == s.compare(s.size() - strlen(suffix), strlen(suffix), suffix);
+}
+
+
+
+DatabaseOrdinary::DatabaseOrdinary(
+	const String & name_, const String & path_, Context & context, boost::threadpool::pool * thread_pool)
 	: name(name_), path(path_)
 {
-	/// TODO Удаление файлов .sql.tmp
+	using Tables = std::vector<String>;
+	Tables tables;
+
+	/** Часть таблиц должны быть загружены раньше других, так как используются в конструкторе этих других.
+	  * Это таблицы, имя которых начинается на .inner.
+	  * NOTE Это довольно криво. Можно сделать лучше.
+	  */
+	Tables tables_to_load_first;
+
+	/// Цикл по таблицам
+	using FileNames = std::vector<std::string>;
+	FileNames file_names;
+
+	Poco::DirectoryIterator dir_end;
+	for (Poco::DirectoryIterator dir_it(path); dir_it != dir_end; ++dir_it)
+	{
+		/// Для директории .svn
+		if (dir_it.name().at(0) == '.')
+			continue;
+
+		/// Есть файлы .sql.bak - пропускаем.
+		if (endsWith(dir_it.name(), ".sql.bak"))
+			continue;
+
+		/// Есть файлы .sql.tmp - удаляем.
+		if (endsWith(dir_it.name(), ".sql.tmp"))
+		{
+			LOG_INFO(log, "Removing file " << dir_it->path());
+			Poco::File(dir_it->path()).remove();
+			continue;
+		}
+
+		/// Нужные файлы имеют имена вида table_name.sql
+		if (endsWith(dir_it.name(), ".sql"))
+			file_names.push_back(dir_it.name());
+		else
+			throw Exception("Incorrect file extension: " + dir_it.name() + " in metadata directory " + path,
+				ErrorCodes::INCORRECT_FILE_NAME);
+	}
+
+	/** Таблицы быстрее грузятся, если их грузить в сортированном (по именам) порядке.
+	  * Иначе (для файловой системы ext4) DirectoryIterator перебирает их в некотором порядке,
+	  *  который не соответствует порядку создания таблиц и не соответствует порядку их расположения на диске.
+	  */
+	std::sort(file_names.begin(), file_names.end());
+
+	for (const auto & file_name : file_names)
+	{
+		(0 == file_name.compare(0, strlen("%2Einner%2E"), "%2Einner%2E")
+			? tables_to_load_first
+			: tables).emplace_back(file_name);
+	}
+
+	size_t total_tables = tables.size();
+	LOG_INFO(log, "Total " << total_tables << " tables.");
+
+	if (!tables_to_load_first.empty())
+	{
+		LOG_INFO(log, "Loading inner tables for materialized views (total " << tables_to_load_first.size() << " tables).");
+
+		for (const auto & table : tables_to_load_first)
+			loadTable(context, path, name, table);
+	}
+
+	StopwatchWithLock watch;
+	size_t tables_processed = 0;
+
+	auto task_function = [&](Tables::const_iterator begin, Tables::const_iterator end)
+	{
+		for (Tables::const_iterator it = begin; it != end; ++it)
+		{
+			const String & table = *it;
+
+			/// Сообщения, чтобы было не скучно ждать, когда сервер долго загружается.
+			if (__sync_add_and_fetch(&tables_processed, 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
+				|| watch.lockTestAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
+			{
+				LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
+				watch.restart();
+			}
+
+			loadTable(context, path, name, table);
+		}
+	};
+
+	/** packaged_task используются, чтобы исключения автоматически прокидывались в основной поток.
+	  * Недостаток - исключения попадают в основной поток только после окончания работы всех task-ов.
+	  */
+
+	const size_t bunch_size = TABLES_PARALLEL_LOAD_BUNCH_SIZE;
+	size_t num_bunches = (total_tables + bunch_size - 1) / bunch_size;
+	std::vector<std::packaged_task<void()>> tasks(num_bunches);
+
+	for (size_t i = 0; i < num_bunches; ++i)
+	{
+		auto begin = tables.begin() + i * bunch_size;
+		auto end = (i + 1 == num_bunches)
+			? tables.end()
+			: (tables.begin() + (i + 1) * bunch_size);
+
+		tasks[i] = std::packaged_task<void()>(std::bind(task_function, begin, end));
+
+		if (thread_pool)
+			thread_pool->schedule([i, &tasks]{ tasks[i](); });
+		else
+			tasks[i]();
+	}
+
+	if (thread_pool)
+		thread_pool->wait();
+
+	for (auto & task : tasks)
+		task.get_future().get();
 }
 
 
