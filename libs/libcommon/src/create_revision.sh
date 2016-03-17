@@ -37,7 +37,7 @@ else
 	    # нужно для stash или неполноценной копии репозитория
 	    revision="777"
 	fi
-	revision=$(echo $revision | sed 's/\([0-9]*\)-mobmet/\1/')
+	revision=$(echo $revision | sed 's/\([0-9]*\)[^0-9]*/\1/')
 
 	echo "
 #ifndef REVISION
