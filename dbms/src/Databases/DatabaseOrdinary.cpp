@@ -27,17 +27,17 @@ DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & path_, b
 }
 
 
-bool DatabaseOrdinary::isTableExist(const String & name) const
+bool DatabaseOrdinary::isTableExist(const String & table_name) const
 {
 	std::lock_guard<std::mutex> lock(mutex);
-	return tables.count(name);
+	return tables.count(table_name);
 }
 
 
-StoragePtr DatabaseOrdinary::tryGetTable(const String & name)
+StoragePtr DatabaseOrdinary::tryGetTable(const String & table_name)
 {
 	std::lock_guard<std::mutex> lock(mutex);
-	auto it = tables.find(name);
+	auto it = tables.find(table_name);
 	if (it == tables.end())
 		return {};
 	return it->second;
@@ -79,7 +79,7 @@ public:
 DatabaseIteratorPtr DatabaseOrdinary::getIterator()
 {
 	std::lock_guard<std::mutex> lock(mutex);
-	return std::make_shared<DatabaseOrdinaryIterator>(tables);
+	return std::make_unique<DatabaseOrdinaryIterator>(tables);
 }
 
 
@@ -90,16 +90,16 @@ bool DatabaseOrdinary::empty() const
 }
 
 
-void DatabaseOrdinary::attachTable(const String & name, StoragePtr & table)
+void DatabaseOrdinary::attachTable(const String & table_name, const StoragePtr & table)
 {
 	/// Добавляем таблицу в набор.
 	std::lock_guard<std::mutex> lock(mutex);
-	if (!tables.emplace(name, table).second)
-		throw Exception("Table " + name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+	if (!tables.emplace(table_name, table).second)
+		throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
 
-void DatabaseOrdinary::createTable(const String & name, StoragePtr & table, const ASTPtr & query, const String & engine)
+void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine)
 {
 	/// Создаём файл с метаданными, если нужно - если запрос не ATTACH.
 	/// В него записывается запрос на ATTACH таблицы.
@@ -117,8 +117,8 @@ void DatabaseOrdinary::createTable(const String & name, StoragePtr & table, cons
 
 	{
 		std::lock_guard<std::mutex> lock(mutex);
-		if (tables.count(name))
-			throw Exception("Table " + name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+		if (tables.count(table_name))
+			throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 	}
 
 	String table_name_escaped;
@@ -144,7 +144,7 @@ void DatabaseOrdinary::createTable(const String & name, StoragePtr & table, cons
 		statement_stream << '\n';
 		statement = statement_stream.str();
 
-		table_name_escaped = escapeForFileName(name);
+		table_name_escaped = escapeForFileName(table_name);
 		table_metadata_tmp_path = path + "/" + table_name_escaped + ".sql.tmp";
 		table_metadata_path = path + "/" + table_name_escaped;
 
@@ -161,8 +161,8 @@ void DatabaseOrdinary::createTable(const String & name, StoragePtr & table, cons
 		/// Добавляем таблицу в набор.
 		{
 			std::lock_guard<std::mutex> lock(mutex);
-			if (!tables.emplace(name, table).second)
-				throw Exception("Table " + name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+			if (!tables.emplace(table_name, table).second)
+				throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 		}
 
 		Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
@@ -175,15 +175,15 @@ void DatabaseOrdinary::createTable(const String & name, StoragePtr & table, cons
 }
 
 
-StoragePtr DatabaseOrdinary::detachTable(const String & name)
+StoragePtr DatabaseOrdinary::detachTable(const String & table_name)
 {
 	StoragePtr res;
 
 	{
 		std::lock_guard<std::mutex> lock(mutex);
-		auto it = tables.find(name);
+		auto it = tables.find(table_name);
 		if (it == tables.end())
-			throw Exception("Table " + name + " doesn't exist.", ErrorCodes::TABLE_ALREADY_EXISTS);
+			throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::TABLE_ALREADY_EXISTS);
 		res = it->second;
 		tables.erase(it);
 	}
@@ -192,11 +192,11 @@ StoragePtr DatabaseOrdinary::detachTable(const String & name)
 }
 
 
-StoragePtr DatabaseOrdinary::removeTable(const String & name)
+StoragePtr DatabaseOrdinary::removeTable(const String & table_name)
 {
-	StoragePtr res = detachTable();
+	StoragePtr res = detachTable(table_name);
 
-	String table_name_escaped = escapeForFileName(name);
+	String table_name_escaped = escapeForFileName(table_name);
 	String table_metadata_path = path + "/" + table_name_escaped;
 
 	try
@@ -205,7 +205,7 @@ StoragePtr DatabaseOrdinary::removeTable(const String & name)
 	}
 	catch (...)
 	{
-		attachTable(name, res);
+		attachTable(table_name, res);
 		throw;
 	}
 
@@ -213,25 +213,65 @@ StoragePtr DatabaseOrdinary::removeTable(const String & name)
 }
 
 
-ASTPtr DatabaseOrdinary::getCreateQuery(const String & name) const
+static ASTPtr getCreateQueryImpl(const String & path, const String & table_name)
 {
-	String table_name_escaped = escapeForFileName(name);
+	String table_name_escaped = escapeForFileName(table_name);
 	String table_metadata_path = path + "/" + table_name_escaped;
 
-	StringPtr query = new String();
+	String query;
 	{
 		ReadBufferFromFile in(table_metadata_path, 4096);
-		WriteBufferFromString out(*query);
+		WriteBufferFromString out(query);
 		copyData(in, out);
 	}
 
 	ParserCreateQuery parser;
-	ASTPtr ast = parseQuery(parser, query->data(), query->data() + query->size(), "in file " + table_metadata_path);
+	return parseQuery(parser, query.data(), query.data() + query.size(), "in file " + table_metadata_path);
+}
+
+
+void DatabaseOrdinary::renameTable(const String & table_name, IDatabase & to_database, const String & to_table_name)
+{
+	DatabaseOrdinary * to_database_concrete = typeid_cast<DatabaseOrdinary *>(&to_database);
+
+	if (!to_database_concrete)
+		throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
+
+	StoragePtr table = tryGetTable(table_name);
+
+	if (!table)
+		throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::TABLE_ALREADY_EXISTS);
+
+	/// Уведомляем таблицу о том, что она переименовывается. Если таблица не поддерживает переименование - кинется исключение.
+	try
+	{
+		table->rename(path + "data/" + escapeForFileName(to_database_concrete->name) + "/",
+			to_database_concrete->name,
+			to_table_name);
+	}
+	catch (const Poco::Exception & e)
+	{
+		/// Более хорошая диагностика.
+		throw Exception{e};
+	}
+
+	ASTPtr ast = getCreateQueryImpl(path, table_name);
+	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
+	ast_create_query.table = to_table_name;
+
+	/// NOTE Неатомарно.
+	to_database_concrete->createTable(to_table_name, table, ast, table->getName());
+	removeTable(table_name);
+}
+
+
+ASTPtr DatabaseOrdinary::getCreateQuery(const String & table_name) const
+{
+	ASTPtr ast = getCreateQueryImpl(path, table_name);
 
 	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 	ast_create_query.attach = false;
 	ast_create_query.database = name;
-	ast_create_query.query_string = query;
 
 	return ast;
 }

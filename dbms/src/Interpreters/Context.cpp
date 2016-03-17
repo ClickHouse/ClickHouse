@@ -532,7 +532,7 @@ void Context::addExternalTable(const String & table_name, StoragePtr storage)
 }
 
 
-void Context::addDatabase(const String & database_name, DatabasePtr & database)
+void Context::addDatabase(const String & database_name, const DatabasePtr & database)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 

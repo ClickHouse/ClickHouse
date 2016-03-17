@@ -16,29 +16,31 @@ class DatabaseOrdinary : public IDatabase
 private:
 	const String name;
 	const String path;
-	std::mutex mutex;
+	mutable std::mutex mutex;
 	Tables tables;
 
 public:
 	DatabaseOrdinary(const String & name_, const String & path_, boost::threadpool::pool * thread_pool_);
 
-	bool isTableExist(const String & name) const override;
+	bool isTableExist(const String & table_name) const override;
 
-	StoragePtr tryGetTable(const String & name) override;
+	StoragePtr tryGetTable(const String & table_name) override;
 
 	DatabaseIteratorPtr getIterator() override;
 
 	bool empty() const override;
 
-	void createTable(const String & name, StoragePtr & table, const ASTPtr & query, const String & engine) override;
+	void createTable(const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine) override;
 
-	StoragePtr removeTable(const String & name) override;
+	StoragePtr removeTable(const String & table_name) override;
 
-	void attachTable(const String & name, StoragePtr & table) override;
+	void attachTable(const String & table_name, const StoragePtr & table) override;
 
-	StoragePtr detachTable(const String & name) override;
+	StoragePtr detachTable(const String & table_name) override;
 
-	ASTPtr getCreateQuery(const String & name) const override;
+	void renameTable(const String & table_name, IDatabase & to_database, const String & to_table_name) override;
+
+	ASTPtr getCreateQuery(const String & table_name) const override;
 
 	void shutdown() override;
 };

@@ -295,20 +295,20 @@ int Server::main(const std::vector<std::string> & args)
 	{
 		Poco::File(path + "data/system").createDirectories();
 		Poco::File(path + "metadata/system").createDirectories();
-		global_context->addDatabase("system", new DatabaseOrdinary("system", path + "metadata/system/", nullptr));
+		global_context->addDatabase("system", std::make_shared<DatabaseOrdinary>("system", path + "metadata/system/", nullptr));
 	}
 
 	DatabasePtr system_database = global_context->getDatabase("system");
 
-	system_database->attachTable("one",		StorageSystemOne::create("one"));
+	system_database->attachTable("one",			StorageSystemOne::create("one"));
 	system_database->attachTable("numbers", 	StorageSystemNumbers::create("numbers"));
-	system_database->attachTable("numbers_mt", StorageSystemNumbers::create("numbers_mt", true));
-	system_database->attachTable("tables", 	StorageSystemTables::create("tables"));
+	system_database->attachTable("numbers_mt", 	StorageSystemNumbers::create("numbers_mt", true));
+	system_database->attachTable("tables", 		StorageSystemTables::create("tables"));
 	system_database->attachTable("parts", 		StorageSystemParts::create("parts"));
 	system_database->attachTable("databases", 	StorageSystemDatabases::create("databases"));
 	system_database->attachTable("processes", 	StorageSystemProcesses::create("processes"));
 	system_database->attachTable("settings", 	StorageSystemSettings::create("settings"));
-	system_database->attachTable("events", 	StorageSystemEvents::create("events"));
+	system_database->attachTable("events", 		StorageSystemEvents::create("events"));
 	system_database->attachTable("metrics", 	StorageSystemMetrics::create("metrics"));
 	system_database->attachTable("merges",		StorageSystemMerges::create("merges"));
 	system_database->attachTable("replicas",	StorageSystemReplicas::create("replicas"));

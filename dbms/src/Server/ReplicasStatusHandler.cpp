@@ -3,6 +3,7 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Common/HTMLForm.h>
+#include <DB/Databases/IDatabase.h>
 
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -37,10 +38,10 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
 		/// Перебираем все реплицируемые таблицы.
 		for (const auto & db : databases)
 		{
-			for (auto iterator = db.second->getIterator(); iterator.isValid(); iterator.next())
+			for (auto iterator = db.second->getIterator(); iterator->isValid(); iterator->next())
 			{
-				const auto & table = iterator.table();
-				const StorageReplicatedMergeTree * table_replicated = typeid_cast<const StorageReplicatedMergeTree *>(table.get());
+				auto & table = iterator->table();
+				StorageReplicatedMergeTree * table_replicated = typeid_cast<StorageReplicatedMergeTree *>(table.get());
 
 				if (!table_replicated)
 					continue;
@@ -54,7 +55,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
 					|| (settings.min_relative_delay_to_close && relative_delay >= static_cast<time_t>(settings.min_relative_delay_to_close)))
 					ok = false;
 
-				message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(table.first)
+				message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(iterator->name())
 					<< ":\tAbsolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".\n";
 			}
 		}

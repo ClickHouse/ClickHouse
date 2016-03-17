@@ -34,7 +34,7 @@ using DatabaseIteratorPtr = std::unique_ptr<IDatabaseIterator>;
   * - переименовывание таблиц и перенос между БД с одинаковыми движками.
   */
 
-class IDatabase : protected std::enable_shared_from_this<IDatabase>
+class IDatabase : public std::enable_shared_from_this<IDatabase>
 {
 public:
 	/// Проверить существование таблицы.
@@ -51,16 +51,19 @@ public:
 	virtual bool empty() const = 0;
 
 	/// Добавить таблицу в базу данных. Прописать её наличие в метаданных.
-	virtual void createTable(const String & name, StoragePtr & table, const ASTPtr & query, const String & engine) = 0;
+	virtual void createTable(const String & name, const StoragePtr & table, const ASTPtr & query, const String & engine) = 0;
 
 	/// Удалить таблицу из базы данных и вернуть её. Удалить метаданные.
 	virtual StoragePtr removeTable(const String & name) = 0;
 
 	/// Добавить таблицу в базу данных, но не прописывать её в метаданных. БД может не поддерживать этот метод.
-	virtual void attachTable(const String & name, StoragePtr & table) = 0;
+	virtual void attachTable(const String & name, const StoragePtr & table) = 0;
 
 	/// Забыть про таблицу, не удаляя её, и вернуть её. БД может не поддерживать этот метод.
 	virtual StoragePtr detachTable(const String & name) = 0;
+
+	/// Переименовать таблицу и, возможно, переместить таблицу в другую БД.
+	virtual void renameTable(const String & name, IDatabase & to_database, const String & to_name) = 0;
 
 	/// Получить запрос CREATE TABLE для таблицы.
 	virtual ASTPtr getCreateQuery(const String & name) const = 0;

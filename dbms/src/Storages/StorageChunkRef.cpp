@@ -33,27 +33,6 @@ BlockInputStreams StorageChunkRef::read(
 		max_block_size, threads);
 }
 
-ASTPtr StorageChunkRef::getCustomCreateQuery(const Context & context) const
-{
-	/// Берём CREATE запрос для таблицы, на которую эта ссылается, и меняем в ней имя и движок.
-	ASTPtr res = context.getCreateQuery(source_database_name, source_table_name);
-	ASTCreateQuery & res_create = typeid_cast<ASTCreateQuery &>(*res);
-
-	res_create.database.clear();
-	res_create.table = name;
-
-	res_create.storage = new ASTFunction;
-	ASTFunction & storage_ast = static_cast<ASTFunction &>(*res_create.storage);
-	storage_ast.name = "ChunkRef";
-	storage_ast.arguments = new ASTExpressionList;
-	storage_ast.children.push_back(storage_ast.arguments);
-	ASTExpressionList & args_ast = static_cast<ASTExpressionList &>(*storage_ast.arguments);
-	args_ast.children.push_back(new ASTIdentifier(StringRange(), source_database_name, ASTIdentifier::Database));
-	args_ast.children.push_back(new ASTIdentifier(StringRange(), source_table_name, ASTIdentifier::Table));
-
-	return res;
-}
-
 void StorageChunkRef::drop()
 {
 	try
