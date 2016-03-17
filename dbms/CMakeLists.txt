@@ -233,7 +233,6 @@ add_library (dbms
 	include/DB/DataStreams/AddingDefaultBlockOutputStream.h
 	include/DB/DataStreams/JSONCompactRowOutputStream.h
 	include/DB/DataStreams/PartialSortingBlockInputStream.h
-	include/DB/DataStreams/PreSendCallbackInputStream.h
 	include/DB/DataStreams/MarkInCompressedFile.h
 	include/DB/DataStreams/CSVRowOutputStream.h
 	include/DB/DataStreams/CSVRowInputStream.h
@@ -333,7 +332,6 @@ add_library (dbms
 	include/DB/Interpreters/ClusterProxy/DescribeQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/AlterQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/Query.h
-	include/DB/Interpreters/ClusterProxy/PreSendHook.h
 	include/DB/Common/Allocator.h
 	include/DB/Common/CombinedCardinalityEstimator.h
 	include/DB/Common/ExternalTable.h
@@ -834,6 +832,34 @@ add_library (dbms
 	src/Client/Connection.cpp
 	src/Client/MultiplexedConnections.cpp
 )
+
+# Не генерируем отладочную информацию для файлов с большим количеством инстанцирований шаблонов
+# - для более быстрой линковки и меньшего размера бинарника.
+SET_SOURCE_FILES_PROPERTIES(
+	src/Functions/FunctionsArithmetic.cpp
+	src/Functions/FunctionsArray.cpp
+	src/Functions/FunctionsCoding.cpp
+	src/Functions/FunctionsComparison.cpp
+	src/Functions/FunctionsConditional.cpp
+	src/Functions/FunctionsConversion.cpp
+	src/Functions/FunctionsDateTime.cpp
+	src/Functions/FunctionsDictionaries.cpp
+	src/Functions/FunctionsFormatting.cpp
+	src/Functions/FunctionsHashing.cpp
+	src/Functions/FunctionsHigherOrder.cpp
+	src/Functions/FunctionsLogical.cpp
+	src/Functions/FunctionsRandom.cpp
+	src/Functions/FunctionsReinterpret.cpp
+	src/Functions/FunctionsRound.cpp
+	src/Functions/FunctionsString.cpp
+	src/Functions/FunctionsStringArray.cpp
+	src/Functions/FunctionsStringSearch.cpp
+	src/Functions/FunctionsURL.cpp
+	src/Functions/FunctionsVisitParam.cpp
+	src/Functions/FunctionsMath.cpp
+	src/Functions/FunctionsMiscellaneous.cpp
+	src/Functions/FunctionsTransform.cpp
+	PROPERTIES COMPILE_FLAGS -g0)
 
 IF (NOT AARCH64)
 	SET(LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)

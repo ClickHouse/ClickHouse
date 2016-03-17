@@ -87,8 +87,8 @@ public:
 	/// Сериализовать состояние (например, для передачи по сети).
 	virtual void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const = 0;
 
-	/// Десериализовать состояние и объединить своё состояние с ним.
-	virtual void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const = 0;
+	/// Десериализовать состояние. Вызывается для пустого (только что созданного) состояния.
+	virtual void deserialize(AggregateDataPtr place, ReadBuffer & buf) const = 0;
 
 	/// Вставить результат в столбец.
 	virtual void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const = 0;

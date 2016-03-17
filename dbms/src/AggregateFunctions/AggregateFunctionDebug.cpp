@@ -63,7 +63,7 @@ public:
 		writeBinary(UInt8(0), buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		UInt8 tmp;
 		readBinary(tmp, buf);

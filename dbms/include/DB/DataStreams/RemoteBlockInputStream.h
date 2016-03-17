@@ -5,7 +5,6 @@
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Common/Throttler.h>
 #include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/ClusterProxy/PreSendHook.h>
 #include <DB/Client/ConnectionPool.h>
 #include <DB/Client/MultiplexedConnections.h>
 
@@ -48,9 +47,6 @@ public:
 	/// Кроме блоков, получить информацию о блоках.
 	void appendExtraInfo();
 
-	///
-	void attachPreSendCallback(ClusterProxy::PreSendHook::Callback callback);
-
 	/// Отправляет запрос (инициирует вычисления) раньше, чем read.
 	void readPrefix() override;
 
@@ -73,11 +69,6 @@ public:
 	BlockExtraInfo getBlockExtraInfo() const override
 	{
 		return multiplexed_connections->getBlockExtraInfo();
-	}
-
-	size_t getConnectionCount() const
-	{
-		return multiplexed_connections->size();
 	}
 
 protected:
@@ -138,8 +129,6 @@ private:
 	/// Потоки для чтения из временных таблиц - для последующей отправки данных на удалённые серверы для GLOBAL-подзапросов.
 	std::vector<ExternalTablesData> external_tables_data;
 	std::mutex external_tables_mutex;
-
-	std::function<void()> pre_send_callback;
 
 	/// Установили соединения с репликами, но ещё не отправили запрос.
 	std::atomic<bool> established { false };

@@ -195,7 +195,7 @@ public:
 		getData().push_back(arena.alloc(function->sizeOfData()));
 		function->create(getData().back());
 		ReadBufferFromString read_buffer(x.get<const String &>());
-		function->deserializeMerge(getData().back(), read_buffer);
+		function->deserialize(getData().back(), read_buffer);
 	}
 
 	void insertDefault() override
@@ -215,7 +215,12 @@ public:
 
 	size_t byteSize() const override
 	{
-		return getData().size() * sizeof(getData()[0]);
+		size_t res = getData().size() * sizeof(getData()[0]);
+
+		for (const auto & arena : arenas)
+			res += arena.get()->size();
+
+		return res;
 	}
 
 	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override

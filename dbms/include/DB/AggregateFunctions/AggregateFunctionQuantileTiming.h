@@ -26,11 +26,18 @@ namespace DB
 /** Вычисляет квантиль для времени в миллисекундах, меньшего 30 сек.
   * Если значение больше 30 сек, то значение приравнивается к 30 сек.
   *
-  * Если всего значений не больше 32, то вычисление точное.
+  * Если всего значений не больше примерно 5670, то вычисление точное.
   *
   * Иначе:
   *  Если время меньше 1024 мс., то вычисление точное.
   *  Иначе вычисление идёт с округлением до числа, кратного 16 мс.
+  *
+  * Используется три разные структуры данных:
+  * - плоский массив (всех встреченных значений) фиксированной длины, выделяемый inplace, размер 64 байта; хранит 0..31 значений;
+  * - плоский массив (всех встреченных значений), выделяемый отдельно, увеличивающейся длины;
+  * - гистограмма (то есть, отображение значение -> количество), состоящая из двух частей:
+  * -- для значений от 0 до 1023 - с шагом 1;
+  * -- для значений от 1024 до 30000 - с шагом 16;
   */
 
 #define TINY_MAX_ELEMS 31
@@ -38,13 +45,18 @@ namespace DB
 
 namespace detail
 {
-	/** Вспомогательная структура для оптимизации в случае маленького количества значений.
+	/** Вспомогательная структура для оптимизации в случае маленького количества значений
+	  * - плоский массив фиксированного размера "на стеке", в который кладутся все встреченные значения подряд.
 	  * Размер - 64 байта. Должна быть POD-типом (используется в union).
 	  */
 	struct QuantileTimingTiny
 	{
 		mutable UInt16 elems[TINY_MAX_ELEMS];	/// mutable потому что сортировка массива не считается изменением состояния.
-		UInt16 count;	/// Важно, чтобы count был не в первых 8 байтах структуры. Вы должны сами инициализировать его нулём.
+		/// Важно, чтобы count был в конце структуры, так как начало структуры будет впоследствии перезатёрто другими объектами.
+		/// Вы должны сами инициализировать его нулём.
+		/// Почему? Поле count переиспользуется и в тех случаях, когда в union-е лежат другие структуры
+		///  (размер которых не дотягивает до этого поля.)
+		UInt16 count;
 
 		/// Можно использовать только пока count < TINY_MAX_ELEMS.
 		void insert(UInt64 x)
@@ -123,19 +135,120 @@ namespace detail
 	};
 
 
+	/** Вспомогательная структура для оптимизации в случае среднего количества значений
+	  *  - плоский массив, выделенный отдельно, в который кладутся все встреченные значения подряд.
+	  */
+	struct QuantileTimingMedium
+	{
+		/// sizeof - 24 байта.
+		using Array = PODArray<UInt16, 64>;
+		mutable Array elems;	/// mutable потому что сортировка массива не считается изменением состояния.
+
+		QuantileTimingMedium() {}
+		QuantileTimingMedium(const UInt16 * begin, const UInt16 * end) : elems(begin, end) {}
+
+		void insert(UInt64 x)
+		{
+			if (unlikely(x > BIG_THRESHOLD))
+				x = BIG_THRESHOLD;
+
+			elems.emplace_back(x);
+		}
+
+		void merge(const QuantileTimingMedium & rhs)
+		{
+			elems.insert(rhs.elems.begin(), rhs.elems.end());
+		}
+
+		void serialize(WriteBuffer & buf) const
+		{
+			writeBinary(elems.size(), buf);
+			buf.write(reinterpret_cast<const char *>(&elems[0]), elems.size() * sizeof(elems[0]));
+		}
+
+		void deserialize(ReadBuffer & buf)
+		{
+			size_t size = 0;
+			readBinary(size, buf);
+			elems.resize(size);
+			buf.readStrict(reinterpret_cast<char *>(&elems[0]), size * sizeof(elems[0]));
+		}
+
+		UInt16 get(double level) const
+		{
+			UInt16 quantile = 0;
+
+			if (!elems.empty())
+			{
+				size_t n = level < 1
+					? level * elems.size()
+					: (elems.size() - 1);
+
+				/// Сортировка массива не будет считаться нарушением константности.
+				auto & array = const_cast<Array &>(elems);
+				std::nth_element(array.begin(), array.begin() + n, array.end());
+				quantile = array[n];
+			}
+
+			return quantile;
+		}
+
+		template <typename ResultType>
+		void getMany(const double * levels, const size_t * levels_permutation, size_t size, ResultType * result) const
+		{
+			size_t prev_n = 0;
+			auto & array = const_cast<Array &>(elems);
+			for (size_t i = 0; i < size; ++i)
+			{
+				auto level_index = levels_permutation[i];
+				auto level = levels[level_index];
+
+				size_t n = level < 1
+					? level * elems.size()
+					: (elems.size() - 1);
+
+				std::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
+
+				result[level_index] = array[n];
+				prev_n = n;
+			}
+		}
+
+		/// То же самое, но в случае пустого состояния возвращается NaN.
+		float getFloat(double level) const
+		{
+			return !elems.empty()
+				? get(level)
+				: std::numeric_limits<float>::quiet_NaN();
+		}
+
+		void getManyFloat(const double * levels, const size_t * levels_permutation, size_t size, float * result) const
+		{
+			if (!elems.empty())
+				getMany(levels, levels_permutation, size, result);
+			else
+				for (size_t i = 0; i < size; ++i)
+					result[i] = std::numeric_limits<float>::quiet_NaN();
+		}
+	};
+
+
 	#define SMALL_THRESHOLD 1024
 	#define BIG_SIZE ((BIG_THRESHOLD - SMALL_THRESHOLD) / BIG_PRECISION)
 	#define BIG_PRECISION 16
 
+	#define SIZE_OF_LARGE_WITHOUT_COUNT ((SMALL_THRESHOLD + BIG_SIZE) * sizeof(UInt64))
 
-	/** Для большого количества значений. Размер около 20 КБ.
-	  * TODO: Есть off-by-one ошибки - может возвращаться значение на 1 больше нужного.
+
+	/** Для большого количества значений. Размер около 22 680 байт.
 	  */
 	class QuantileTimingLarge
 	{
 	private:
 		/// Общее число значений.
 		UInt64 count;
+		/// Использование UInt64 весьма расточительно.
+		/// Но UInt32 точно не хватает, а изобретать 6-байтные значения слишком сложно.
 
 		/// Число значений для каждого значения меньше small_threshold.
 		UInt64 count_small[SMALL_THRESHOLD];
@@ -150,15 +263,49 @@ namespace detail
 				+ (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2));	/// Небольшая рандомизация, чтобы не было заметно, что все значения чётные.
 		}
 
+		/// Позволяет перебрать значения гистограммы, пропуская нули.
+		class Iterator
+		{
+		private:
+			const UInt64 * begin;
+			const UInt64 * pos;
+			const UInt64 * end;
+
+			void adjust()
+			{
+				while (isValid() && 0 == *pos)
+					++pos;
+			}
+
+		public:
+			Iterator(const QuantileTimingLarge & parent)
+				: begin(parent.count_small), pos(begin), end(&parent.count_big[BIG_SIZE])
+			{
+				adjust();
+			}
+
+			bool isValid() const { return pos < end; }
+
+			void next()
+			{
+				++pos;
+				adjust();
+			}
+
+			UInt64 count() const { return *pos; }
+
+			UInt16 key() const
+			{
+				return pos - begin < SMALL_THRESHOLD
+					? pos - begin
+					: indexInBigToValue(pos - begin - SMALL_THRESHOLD);
+			}
+		};
+
 	public:
 		QuantileTimingLarge()
 		{
 			memset(this, 0, sizeof(*this));
-		}
-
-		QuantileTimingLarge(ReadBuffer & buf)
-		{
-			deserialize(buf);
 		}
 
 		void insert(UInt64 x)
@@ -189,48 +336,88 @@ namespace detail
 
 		void serialize(WriteBuffer & buf) const
 		{
-			buf.write(reinterpret_cast<const char *>(this), sizeof(*this));
+			writeBinary(count, buf);
+
+			if (count * 2 > SMALL_THRESHOLD + BIG_SIZE)
+			{
+				/// Простая сериализация для сильно заполненного случая.
+				buf.write(reinterpret_cast<const char *>(this) + sizeof(count), SIZE_OF_LARGE_WITHOUT_COUNT);
+			}
+			else
+			{
+				/// Более компактная сериализация для разреженного случая.
+
+				for (size_t i = 0; i < SMALL_THRESHOLD; ++i)
+				{
+					if (count_small[i])
+					{
+						writeBinary(UInt16(i), buf);
+						writeBinary(count_small[i], buf);
+					}
+				}
+
+				for (size_t i = 0; i < BIG_SIZE; ++i)
+				{
+					if (count_big[i])
+					{
+						writeBinary(UInt16(i + SMALL_THRESHOLD), buf);
+						writeBinary(count_big[i], buf);
+					}
+				}
+
+				/// Символизирует конец данных.
+				writeBinary(UInt16(BIG_THRESHOLD), buf);
+			}
 		}
 
 		void deserialize(ReadBuffer & buf)
 		{
-			buf.readStrict(reinterpret_cast<char *>(this), sizeof(*this));
-		}
+			readBinary(count, buf);
 
-		void deserializeMerge(ReadBuffer & buf)
-		{
-			merge(QuantileTimingLarge(buf));
+			if (count * 2 > SMALL_THRESHOLD + BIG_SIZE)
+			{
+				buf.readStrict(reinterpret_cast<char *>(this) + sizeof(count), SIZE_OF_LARGE_WITHOUT_COUNT);
+			}
+			else
+			{
+				while (true)
+				{
+					UInt16 index = 0;
+					readBinary(index, buf);
+					if (index == BIG_THRESHOLD)
+						break;
+
+					UInt64 count = 0;
+					readBinary(count, buf);
+
+					if (index < SMALL_THRESHOLD)
+						count_small[index] = count;
+					else
+						count_big[index - SMALL_THRESHOLD] = count;
+				}
+			}
 		}
 
 
 		/// Получить значение квантиля уровня level. Уровень должен быть от 0 до 1.
 		UInt16 get(double level) const
 		{
-			UInt64 pos = count * level;
+			UInt64 pos = std::ceil(count * level);
 
 			UInt64 accumulated = 0;
+			Iterator it(*this);
 
-			size_t i = 0;
-			while (i < SMALL_THRESHOLD && accumulated < pos)
+			while (it.isValid())
 			{
-				accumulated += count_small[i];
-				++i;
+				accumulated += it.count();
+
+				if (accumulated >= pos)
+					break;
+
+				it.next();
 			}
 
-			if (i < SMALL_THRESHOLD)
-				return i;
-
-			i = 0;
-			while (i < BIG_SIZE && accumulated < pos)
-			{
-				accumulated += count_big[i];
-				++i;
-			}
-
-			if (i < BIG_SIZE)
-				return indexInBigToValue(i);
-
-			return BIG_THRESHOLD;
+			return it.isValid() ? it.key() : BIG_THRESHOLD;
 		}
 
 		/// Получить значения size квантилей уровней levels. Записать size результатов начиная с адреса result.
@@ -241,60 +428,30 @@ namespace detail
 			const auto indices_end = indices + size;
 			auto index = indices;
 
-			UInt64 pos = count * levels[*index];
+			UInt64 pos = std::ceil(count * levels[*index]);
 
 			UInt64 accumulated = 0;
+			Iterator it(*this);
 
-			size_t i = 0;
-			while (i < SMALL_THRESHOLD)
+			while (it.isValid())
 			{
-				while (i < SMALL_THRESHOLD && accumulated < pos)
-				{
-					accumulated += count_small[i];
-					++i;
-				}
+				accumulated += it.count();
 
-				if (i < SMALL_THRESHOLD)
+				while (accumulated >= pos)
 				{
-					result[*index] = i;
-
+					result[*index] = it.key();
 					++index;
 
 					if (index == indices_end)
 						return;
 
-					pos = count * levels[*index];
-				}
-			}
-
-			i = 0;
-			while (i < BIG_SIZE)
-			{
-				while (i < BIG_SIZE && accumulated < pos)
-				{
-					accumulated += count_big[i];
-					++i;
+					pos = std::ceil(count * levels[*index]);
 				}
 
-				if (i < BIG_SIZE)
-				{
-					result[*index] = indexInBigToValue(i);
-
-					++index;
-
-					if (index == indices_end)
-						return;
-
-					pos = count * levels[*index];
-				}
+				it.next();
 			}
 
-			while (index < indices_end)
-			{
-				result[*index] = BIG_THRESHOLD;
 
-				++index;
-			}
 		}
 
 		/// То же самое, но в случае пустого состояния возвращается NaN.
@@ -326,24 +483,66 @@ private:
 	union
 	{
 		detail::QuantileTimingTiny tiny;
+		detail::QuantileTimingMedium medium;
 		detail::QuantileTimingLarge * large;
 	};
 
-	bool isLarge() const { return tiny.count == TINY_MAX_ELEMS + 1; }
+	enum class Kind : UInt8
+	{
+		Tiny 	= 1,
+		Medium 	= 2,
+		Large 	= 3
+	};
 
-	void toLarge()
+	Kind which() const
+	{
+		if (tiny.count <= TINY_MAX_ELEMS)
+			return Kind::Tiny;
+		if (tiny.count == TINY_MAX_ELEMS + 1)
+			return Kind::Medium;
+		return Kind::Large;
+	}
+
+	void tinyToMedium()
+	{
+		detail::QuantileTimingTiny tiny_copy = tiny;
+		new (&medium) detail::QuantileTimingMedium(tiny_copy.elems, tiny_copy.elems + tiny_copy.count);
+		tiny.count = TINY_MAX_ELEMS + 1;
+	}
+
+	void mediumToLarge()
 	{
 		if (current_memory_tracker)
 			current_memory_tracker->alloc(sizeof(detail::QuantileTimingLarge));
 
-		/// На время копирования данных из tiny, устанавливать значение large ещё нельзя (иначе оно перезатрёт часть данных).
+		/// На время копирования данных из medium, устанавливать значение large ещё нельзя (иначе оно перезатрёт часть данных).
+		detail::QuantileTimingLarge * tmp_large = new detail::QuantileTimingLarge;
+
+		for (const auto & elem : medium.elems)
+			tmp_large->insert(elem);
+
+		large = tmp_large;
+		tiny.count = TINY_MAX_ELEMS + 2;
+	}
+
+	void tinyToLarge()
+	{
+		if (current_memory_tracker)
+			current_memory_tracker->alloc(sizeof(detail::QuantileTimingLarge));
+
+		/// На время копирования данных из medium, устанавливать значение large ещё нельзя (иначе оно перезатрёт часть данных).
 		detail::QuantileTimingLarge * tmp_large = new detail::QuantileTimingLarge;
 
 		for (size_t i = 0; i < tiny.count; ++i)
 			tmp_large->insert(tiny.elems[i]);
 
 		large = tmp_large;
-		tiny.count = TINY_MAX_ELEMS + 1;
+		tiny.count = TINY_MAX_ELEMS + 2;
+	}
+
+	bool mediumIsWorthToConvertToLarge() const
+	{
+		return medium.elems.size() >= sizeof(detail::QuantileTimingLarge) / sizeof(medium.elems[0]) / 2;
 	}
 
 public:
@@ -354,7 +553,13 @@ public:
 
 	~QuantileTiming()
 	{
-		if (isLarge())
+		Kind kind = which();
+
+		if (kind == Kind::Medium)
+		{
+			medium.~QuantileTimingMedium();
+		}
+		else if (kind == Kind::Large)
 		{
 			delete large;
 
@@ -372,9 +577,20 @@ public:
 		else
 		{
 			if (unlikely(tiny.count == TINY_MAX_ELEMS))
-				toLarge();
+				tinyToMedium();
 
-			large->insert(x);
+			if (which() == Kind::Medium)
+			{
+				if (unlikely(mediumIsWorthToConvertToLarge()))
+				{
+					mediumToLarge();
+					large->insert(x);
+				}
+				else
+					medium.insert(x);
+			}
+			else
+				large->insert(x);
 		}
 	}
 
@@ -389,12 +605,13 @@ public:
 		else
 		{
 			if (unlikely(tiny.count <= TINY_MAX_ELEMS))
-				toLarge();
+				tinyToLarge();	/// Для weighted варианта medium не используем - предположительно, нецелесообразно.
 
 			large->insertWeighted(x, weight);
 		}
 	}
 
+	/// NOTE Слишком сложный код.
 	void merge(const QuantileTiming & rhs)
 	{
 		if (tiny.count + rhs.tiny.count <= TINY_MAX_ELEMS)
@@ -403,95 +620,118 @@ public:
 		}
 		else
 		{
-			if (!isLarge())
-				toLarge();
+			auto kind = which();
+			auto rhs_kind = rhs.which();
 
-			if (rhs.isLarge())
+			/// Если то, с чем сливаем, имеет бОльшую структуру данных, то приводим текущую структуру к такой же.
+			if (kind == Kind::Tiny && rhs_kind == Kind::Medium)
+			{
+				tinyToMedium();
+				kind = Kind::Medium;
+			}
+			else if (kind == Kind::Tiny && rhs_kind == Kind::Large)
+			{
+				tinyToLarge();
+				kind = Kind::Large;
+			}
+			else if (kind == Kind::Medium && rhs_kind == Kind::Large)
+			{
+				mediumToLarge();
+				kind = Kind::Large;
+			}
+			/// Случай, когда два состояния маленькие, но при их слиянии, они превратятся в средние.
+			else if (kind == Kind::Tiny && rhs_kind == Kind::Tiny)
+			{
+				tinyToMedium();
+				kind = Kind::Medium;
+			}
+
+			if (kind == Kind::Medium && rhs_kind == Kind::Medium)
+			{
+				medium.merge(rhs.medium);
+			}
+			else if (kind == Kind::Large && rhs_kind == Kind::Large)
 			{
 				large->merge(*rhs.large);
 			}
-			else
+			else if (kind == Kind::Medium && rhs_kind == Kind::Tiny)
+			{
+				medium.elems.insert(rhs.tiny.elems, rhs.tiny.elems + rhs.tiny.count);
+			}
+			else if (kind == Kind::Large && rhs_kind == Kind::Tiny)
 			{
 				for (size_t i = 0; i < rhs.tiny.count; ++i)
 					large->insert(rhs.tiny.elems[i]);
+			}
+			else if (kind == Kind::Large && rhs_kind == Kind::Medium)
+			{
+				for (const auto & elem : rhs.medium.elems)
+					large->insert(elem);
+			}
+			else
+				throw Exception("Logical error in QuantileTiming::merge function: not all cases are covered", ErrorCodes::LOGICAL_ERROR);
+
+			/// Для детерминированности, мы должны всегда переводить в large при достижении условия на размер
+			///  - независимо от порядка мерджей.
+			if (kind == Kind::Medium && unlikely(mediumIsWorthToConvertToLarge()))
+			{
+				mediumToLarge();
 			}
 		}
 	}
 
 	void serialize(WriteBuffer & buf) const
 	{
-		bool is_large = isLarge();
-		DB::writeBinary(is_large, buf);
+		auto kind = which();
+		DB::writePODBinary(kind, buf);
 
-		if (is_large)
-			large->serialize(buf);
-		else
+		if (kind == Kind::Tiny)
 			tiny.serialize(buf);
+		else if (kind == Kind::Medium)
+			medium.serialize(buf);
+		else
+			large->serialize(buf);
 	}
 
+	/// Вызывается для пустого объекта.
 	void deserialize(ReadBuffer & buf)
 	{
-		bool is_rhs_large;
-		DB::readBinary(is_rhs_large, buf);
+		Kind kind;
+		DB::readPODBinary(kind, buf);
 
-		if (is_rhs_large)
+		if (kind == Kind::Tiny)
 		{
-			if (!isLarge())
-			{
-				tiny.count = TINY_MAX_ELEMS + 1;
-
-				if (current_memory_tracker)
-					current_memory_tracker->alloc(sizeof(detail::QuantileTimingLarge));
-
-				large = new detail::QuantileTimingLarge;
-			}
-
+			tiny.deserialize(buf);
+		}
+		else if (kind == Kind::Medium)
+		{
+			tinyToMedium();
+			medium.deserialize(buf);
+		}
+		else if (kind == Kind::Large)
+		{
+			tinyToLarge();
 			large->deserialize(buf);
 		}
-		else
-			tiny.deserialize(buf);
 	}
-
-	void deserializeMerge(ReadBuffer & buf)
-	{
-		bool is_rhs_large;
-		DB::readBinary(is_rhs_large, buf);
-
-		if (is_rhs_large)
-		{
-			if (!isLarge())
-			{
-				tiny.count = TINY_MAX_ELEMS + 1;
-
-				if (current_memory_tracker)
-					current_memory_tracker->alloc(sizeof(detail::QuantileTimingLarge));
-
-				large = new detail::QuantileTimingLarge;
-			}
-
-			large->merge(detail::QuantileTimingLarge(buf));
-		}
-		else
-		{
-			QuantileTiming rhs;
-			rhs.tiny.deserialize(buf);
-
-			merge(rhs);
-		}
-	}
-
 
 	/// Получить значение квантиля уровня level. Уровень должен быть от 0 до 1.
 	UInt16 get(double level) const
 	{
-		if (isLarge())
-		{
-			return large->get(level);
-		}
-		else
+		Kind kind = which();
+
+		if (kind == Kind::Tiny)
 		{
 			tiny.prepare();
 			return tiny.get(level);
+		}
+		else if (kind == Kind::Medium)
+		{
+			return medium.get(level);
+		}
+		else
+		{
+			return large->get(level);
 		}
 	}
 
@@ -499,14 +739,20 @@ public:
 	template <typename ResultType>
 	void getMany(const double * levels, const size_t * levels_permutation, size_t size, ResultType * result) const
 	{
-		if (isLarge())
-		{
-			return large->getMany(levels, levels_permutation, size, result);
-		}
-		else
+		Kind kind = which();
+
+		if (kind == Kind::Tiny)
 		{
 			tiny.prepare();
-			return tiny.getMany(levels, size, result);
+			tiny.getMany(levels, size, result);
+		}
+		else if (kind == Kind::Medium)
+		{
+			medium.getMany(levels, levels_permutation, size, result);
+		}
+		else if (kind == Kind::Large)
+		{
+			large->getMany(levels, levels_permutation, size, result);
 		}
 	}
 
@@ -579,9 +825,9 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		this->data(place).deserializeMerge(buf);
+		this->data(place).deserialize(buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -639,9 +885,9 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		this->data(place).deserializeMerge(buf);
+		this->data(place).deserialize(buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -694,9 +940,9 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		this->data(place).deserializeMerge(buf);
+		this->data(place).deserialize(buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -757,9 +1003,9 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		this->data(place).deserializeMerge(buf);
+		this->data(place).deserialize(buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

@@ -71,7 +71,7 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 	function->create(place);
 	try
 	{
-		function->deserializeMerge(place, istr);
+		function->deserialize(place, istr);
 	}
 	catch (...)
 	{
@@ -119,7 +119,7 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 
 		try
 		{
-			function->deserializeMerge(place, istr);
+			function->deserialize(place, istr);
 		}
 		catch (...)
 		{
@@ -151,7 +151,7 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
 	try
 	{
 		ReadBufferFromString istr(s);
-		function->deserializeMerge(place, istr);
+		function->deserialize(place, istr);
 	}
 	catch (...)
 	{

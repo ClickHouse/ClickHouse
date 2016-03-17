@@ -567,12 +567,9 @@ public:
 		this->data(place).write(buf, *type.get());
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		Data rhs;	/// Для строчек не очень оптимально, так как может делаться одна лишняя аллокация.
-		rhs.read(buf, *type.get());
-
-		this->data(place).changeIfBetter(rhs);
+		this->data(place).read(buf, *type.get());
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

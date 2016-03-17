@@ -59,15 +59,10 @@ public:
 		this->data(place).value.write(buf, *type_val.get());
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		Data rhs;	/// Для строчек не очень оптимально, так как может делаться одна лишняя аллокация.
-
-		rhs.result.read(buf, *type_res.get());
-		rhs.value.read(buf, *type_val.get());
-
-		if (this->data(place).value.changeIfBetter(rhs.value))
-			this->data(place).result.change(rhs.result);
+		this->data(place).result.read(buf, *type_res.get());
+		this->data(place).value.read(buf, *type_val.get());
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

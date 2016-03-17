@@ -83,24 +83,12 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 			wb.write(reinterpret_cast<const char *>(&data[0]), count * sizeof(data[0]));
 	}
 
-	void readAndMerge(ReadBuffer & rb, UInt8 threshold)
+	void read(ReadBuffer & rb, UInt8 threshold)
 	{
-		UInt8 rhs_count;
-		readBinary(rhs_count, rb);
+		readBinary(count, rb);
 
-		if (rhs_count > threshold)
-		{
-			/// Если rhs переполнено, то выставляем у текущего состояния count тоже переполненным.
-			count = rhs_count;
-			return;
-		}
-
-		for (size_t i = 0; i < rhs_count; ++i)
-		{
-			T x;
-			readBinary(x, rb);
-			insert(x, threshold);
-		}
+		if (count <= threshold)
+			rb.read(reinterpret_cast<char *>(&data[0]), count * sizeof(data[0]));
 	}
 
 
@@ -178,9 +166,9 @@ public:
 		this->data(place).write(buf, threshold);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		this->data(place).readAndMerge(buf, threshold);
+		this->data(place).read(buf, threshold);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -251,9 +239,9 @@ public:
 		this->data(place).write(buf, threshold);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		this->data(place).readAndMerge(buf, threshold);
+		this->data(place).read(buf, threshold);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

@@ -29,7 +29,6 @@ StorageSystemClusters::StorageSystemClusters(const std::string & name_, Context 
 
 StoragePtr StorageSystemClusters::create(const std::string & name_, Context & context_)
 {
-	context_.initClusters();
 	return (new StorageSystemClusters{name_, context_})->thisPtr();
 }
 

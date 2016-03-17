@@ -216,12 +216,9 @@ public:
 		data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		AggregateFunctionSequenceMatchData tmp;
-		tmp.deserialize(buf);
-
-		data(place).merge(tmp);
+		data(place).deserialize(buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

@@ -264,8 +264,7 @@ public:
 	  */
 	void resetCaches() const;
 
-	void initClusters();
-	Cluster & getCluster(const std::string & cluster_name);
+	const Cluster & getCluster(const std::string & cluster_name) const;
 	Poco::SharedPtr<Clusters> getClusters() const;
 
 	Compiler & getCompiler();

@@ -46,11 +46,9 @@ public:
 		writeVarUInt(data(place).count, buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		UInt64 tmp;
-		readVarUInt(tmp, buf);
-		data(place).count += tmp;
+		readVarUInt(data(place).count, buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

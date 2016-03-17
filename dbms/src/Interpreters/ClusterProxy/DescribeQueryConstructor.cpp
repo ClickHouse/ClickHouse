@@ -2,7 +2,6 @@
 #include <DB/Interpreters/InterpreterDescribeQuery.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/DataStreams/BlockExtraInfoInputStream.h>
-#include <DB/DataStreams/PreSendCallbackInputStream.h>
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 
 namespace DB
@@ -27,19 +26,8 @@ namespace ClusterProxy
 
 BlockInputStreamPtr DescribeQueryConstructor::createLocal(ASTPtr query_ast, const Context & context, const Cluster::Address & address)
 {
-	BlockInputStreamPtr stream;
-
-	if (pre_send_hook)
-	{
-		Poco::SharedPtr<IInterpreter> interpreter = new InterpreterDescribeQuery(query_ast, context);
-		auto callback = pre_send_hook.makeCallback();
-		stream = new PreSendCallbackInputStream(interpreter, callback);
-	}
-	else
-	{
-		InterpreterDescribeQuery interpreter(query_ast, context);
-		stream = interpreter.execute().in;
-	}
+	InterpreterDescribeQuery interpreter(query_ast, context);
+	BlockInputStreamPtr stream = interpreter.execute().in;
 
 	/** Материализация нужна, так как с удалённых серверов константы приходят материализованными.
 	* Если этого не делать, то в разных потоках будут получаться разные типы (Const и не-Const) столбцов,
@@ -56,13 +44,6 @@ BlockInputStreamPtr DescribeQueryConstructor::createRemote(IConnectionPool * poo
 	auto stream = new RemoteBlockInputStream{pool, query, &settings, throttler};
 	stream->setPoolMode(PoolMode::GET_ALL);
 	stream->appendExtraInfo();
-
-	if (pre_send_hook)
-	{
-		auto callback = pre_send_hook.makeCallback();
-		stream->attachPreSendCallback(callback);
-	}
-
 	return stream;
 }
 
@@ -72,17 +53,10 @@ BlockInputStreamPtr DescribeQueryConstructor::createRemote(ConnectionPoolsPtr & 
 	auto stream =  new RemoteBlockInputStream{pools, query, &settings, throttler};
 	stream->setPoolMode(PoolMode::GET_ALL);
 	stream->appendExtraInfo();
-
-	if (pre_send_hook)
-	{
-		auto callback = pre_send_hook.makeCallback();
-		stream->attachPreSendCallback(callback);
-	}
-
 	return stream;
 }
 
-bool DescribeQueryConstructor::isInclusive() const
+bool DescribeQueryConstructor::localAndRemote() const
 {
 	return true;
 }

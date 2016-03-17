@@ -87,15 +87,14 @@ public:
 		buf.write(reinterpret_cast<const char *>(&array[0]), size * sizeof(array[0]));
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		auto & array = this->data(place).array;
 
 		size_t size = 0;
 		readVarUInt(size, buf);
-		size_t old_size = array.size();
-		array.resize(old_size + size);
-		buf.read(reinterpret_cast<char *>(&array[old_size]), size * sizeof(array[0]));
+		array.resize(size);
+		buf.read(reinterpret_cast<char *>(&array[0]), size * sizeof(array[0]));
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -170,15 +169,14 @@ public:
 		buf.write(reinterpret_cast<const char *>(&array[0]), size * sizeof(array[0]));
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		auto & array = this->data(place).array;
 
 		size_t size = 0;
 		readVarUInt(size, buf);
-		size_t old_size = array.size();
-		array.resize(old_size + size);
-		buf.read(reinterpret_cast<char *>(&array[old_size]), size * sizeof(array[0]));
+		array.resize(size);
+		buf.read(reinterpret_cast<char *>(&array[0]), size * sizeof(array[0]));
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

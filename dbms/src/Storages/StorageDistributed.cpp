@@ -79,7 +79,7 @@ StorageDistributed::StorageDistributed(
 	NamesAndTypesListPtr columns_,
 	const String & remote_database_,
 	const String & remote_table_,
-	Cluster & cluster_,
+	const Cluster & cluster_,
 	Context & context_,
 	const ASTPtr & sharding_key_,
 	const String & data_path_)
@@ -102,7 +102,7 @@ StorageDistributed::StorageDistributed(
 	const ColumnDefaults & column_defaults_,
 	const String & remote_database_,
 	const String & remote_table_,
-	Cluster & cluster_,
+	const Cluster & cluster_,
 	Context & context_,
 	const ASTPtr & sharding_key_,
 	const String & data_path_)
@@ -131,8 +131,6 @@ StoragePtr StorageDistributed::create(
 	const ASTPtr & sharding_key_,
 	const String & data_path_)
 {
-	context_.initClusters();
-
 	return (new StorageDistributed{
 		name_, columns_,
 		materialized_columns_, alias_columns_, column_defaults_,
@@ -283,38 +281,13 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 
 		resharding_worker.registerQuery(coordinator_id, queryToString(alter_query_ptr));
 
-		/// We enforce the strict policy under which resharding may start if and only if
-		/// all the required connections were established first.
-
-		std::atomic<size_t> effective_node_count{0};
-
-		ClusterProxy::PreSendHook::PreProcess pre_process = [&effective_node_count](const RemoteBlockInputStream * remote_stream)
-		{
-			size_t count = (remote_stream != nullptr) ? remote_stream->getConnectionCount() : 1;
-			effective_node_count += count;
-		};
-
-		size_t shard_count = cluster.getRemoteShardCount() + cluster.getLocalShardCount();
-
-		ClusterProxy::PreSendHook::PostProcess post_process = [&effective_node_count, shard_count, coordinator_id]()
-		{
-			if (effective_node_count != shard_count)
-			{
-				throw Exception("Unexpected number of nodes participating in distributed job "
-					+ coordinator_id, ErrorCodes::RESHARDING_INITIATOR_CHECK_FAILED);
-			}
-		};
-
-		ClusterProxy::PreSendHook pre_send_hook(pre_process, post_process);
-
-		ClusterProxy::AlterQueryConstructor alter_query_constructor;
-		alter_query_constructor.setPreSendHook(pre_send_hook);
-
 		/** Функциональность shard_multiplexing не доделана - выключаем её.
 		* (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
 		* Подробнее смотрите в https://███████████.yandex-team.ru/METR-18300
 		*/
 		bool enable_shard_multiplexing = false;
+
+		ClusterProxy::AlterQueryConstructor alter_query_constructor;
 
 		BlockInputStreams streams = ClusterProxy::Query(alter_query_constructor, cluster, alter_query_ptr,
 			context, settings, enable_shard_multiplexing).execute();

@@ -55,11 +55,9 @@ public:
 		writeBinary(this->data(place).sum, buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		typename NearestFieldType<T>::Type tmp;
-		readBinary(tmp, buf);
-		this->data(place).sum += tmp;
+		readBinary(this->data(place).sum, buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

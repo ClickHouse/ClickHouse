@@ -144,12 +144,9 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		AggregateFunctionVarianceData<T, Op> source;
-		source.deserialize(buf);
-
-		this->data(place).mergeWith(source);
+		this->data(place).deserialize(buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -415,11 +412,9 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		CovarianceData<T, U, Op, compute_marginal_moments> source;
-		source.deserialize(buf);
-		this->data(place).mergeWith(source);
+		this->data(place).deserialize(buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

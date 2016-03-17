@@ -99,7 +99,7 @@ private:
 		NamesAndTypesListPtr columns_,
 		const String & remote_database_,
 		const String & remote_table_,
-		Cluster & cluster_,
+		const Cluster & cluster_,
 		Context & context_,
 		const ASTPtr & sharding_key_ = nullptr,
 		const String & data_path_ = String{});
@@ -112,7 +112,7 @@ private:
 		const ColumnDefaults & column_defaults_,
 		const String & remote_database_,
 		const String & remote_table_,
-		Cluster & cluster_,
+		const Cluster & cluster_,
 		Context & context_,
 		const ASTPtr & sharding_key_ = nullptr,
 		const String & data_path_ = String{});
@@ -136,7 +136,7 @@ private:
 	SharedPtr<Cluster> owned_cluster;
 
 	/// Соединения с удалёнными серверами.
-	Cluster & cluster;
+	const Cluster & cluster;
 
 	ExpressionActionsPtr sharding_key_expr;
 	String sharding_key_column_name;

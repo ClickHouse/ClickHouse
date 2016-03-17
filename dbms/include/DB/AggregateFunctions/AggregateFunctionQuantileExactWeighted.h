@@ -95,7 +95,7 @@ public:
 		this->data(place).map.write(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		typename AggregateFunctionQuantileExactWeightedData<ValueType>::Map::Reader reader(buf);
 
@@ -103,7 +103,7 @@ public:
 		while (reader.next())
 		{
 			const auto & pair = reader.get();
-			map[pair.first] += pair.second;
+			map[pair.first] = pair.second;
 		}
 	}
 
@@ -134,14 +134,18 @@ public:
 
 		std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
-		UInt64 threshold = sum_weight * level;
+		UInt64 threshold = std::ceil(sum_weight * level);
 		UInt64 accumulated = 0;
 
 		const Pair * it = array;
 		const Pair * end = array + size;
-		while (it < end && accumulated < threshold)
+		while (it < end)
 		{
 			accumulated += it->second;
+
+			if (accumulated >= threshold)
+				break;
+
 			++it;
 		}
 
@@ -206,7 +210,7 @@ public:
 		this->data(place).map.write(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		typename AggregateFunctionQuantileExactWeightedData<ValueType>::Map::Reader reader(buf);
 
@@ -214,7 +218,7 @@ public:
 		while (reader.next())
 		{
 			const auto & pair = reader.get();
-			map[pair.first] += pair.second;
+			map[pair.first] = pair.second;
 		}
 	}
 
@@ -262,17 +266,31 @@ public:
 		const Pair * it = array;
 		const Pair * end = array + size;
 
-		for (auto level_index : levels.permutation)
-		{
-			UInt64 threshold = sum_weight * levels.levels[level_index];
+		size_t level_index = 0;
+		UInt64 threshold = std::ceil(sum_weight * levels.levels[levels.permutation[level_index]]);
 
-			while (it < end && accumulated < threshold)
+		while (it < end)
+		{
+			accumulated += it->second;
+
+			while (accumulated >= threshold)
 			{
-				accumulated += it->second;
-				++it;
+				data_to[old_size + levels.permutation[level_index]] = it->first;
+				++level_index;
+
+				if (level_index == num_levels)
+					return;
+
+				threshold = std::ceil(sum_weight * levels.levels[levels.permutation[level_index]]);
 			}
 
-			data_to[old_size + level_index] = it < end ? it->first : it[-1].first;
+			++it;
+		}
+
+		while (level_index < num_levels)
+		{
+			data_to[old_size + levels.permutation[level_index]] = array[size - 1].first;
+			++level_index;
 		}
 	}
 };

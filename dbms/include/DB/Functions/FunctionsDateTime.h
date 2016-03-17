@@ -593,30 +593,15 @@ public:
 		}
 		else if (arguments.size() == 2)
 		{
-			std::string error_msg;
-
-			if (typeid_cast<const DataTypeDate *>(&*arguments[0]) != nullptr)
-				error_msg += "Illegal type " + arguments[0]->getName() + " of argument 1."
-					" Should be a date with time (timezones are not supported for dates)";
-			else if (typeid_cast<const DataTypeDateTime *>(&*arguments[0]) != nullptr)
-			{
-				/// Ничего не делаем.
-			}
-			else
-				error_msg += "Illegal type " + arguments[0]->getName() + " of argument 1."
-					" Should be a date with time";
-	
-			if (typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr)
-			{
-				if (!error_msg.empty())
-					error_msg += ". ";
-				error_msg += "Illegal type " + arguments[1]->getName() + " of argument 2."
-					" Should be a string describing a timezone";
-			}
-
-			if (!error_msg.empty())
+			if ((typeid_cast<const DataTypeDate *>(&*arguments[0]) != nullptr)
+				|| (typeid_cast<const DataTypeDateTime *>(&*arguments[0]) == nullptr)
+				|| (typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr))
 				throw Exception{
-					"In function " + getName() + ": " + error_msg, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+					"Function " + getName() + " supports 1 or 2 arguments. The 1st argument "
+					"must be of type Date or DateTime. The 2nd argument (optional) must be "
+					"a constant string with timezone name. The timezone argument is allowed "
+					"only when the 1st argument has the type DateTime",
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 				};
 		}
 		else
