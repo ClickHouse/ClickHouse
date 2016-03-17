@@ -65,9 +65,6 @@ public:
 	/// Получить запрос CREATE TABLE для таблицы.
 	virtual ASTPtr getCreateQuery(const String & name) const = 0;
 
-	/// Удалить все таблицы.
-	virtual void dropAll() = 0;
-
 	/// Попросить все таблицы завершить фоновые потоки, которые они используют, и удалить все объекты таблиц.
 	virtual void shutdown() = 0;
 

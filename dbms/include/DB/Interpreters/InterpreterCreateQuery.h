@@ -12,24 +12,19 @@ namespace DB
 class ASTCreateQuery;
 
 
-/** Позволяет создать новую таблицу, или создать объект уже существующей таблицы, или создать БД, или создать объект уже существующей БД
+/** Позволяет создать новую таблицу, или создать объект уже существующей таблицы, или создать БД, или создать объект уже существующей БД.
   */
 class InterpreterCreateQuery : public IInterpreter
 {
 public:
 	InterpreterCreateQuery(ASTPtr query_ptr_, Context & context_);
 
-	/** В случае таблицы: добавляет созданную таблицу в контекст, а также возвращает её.
-	  * В случае БД: добавляет созданную БД в контекст и возвращает NULL.
-	  * assume_metadata_exists - не проверять наличие файла с метаданными и не создавать его
-	  *  (для случая выполнения запроса из существующего файла с метаданными).
-	  */
 	BlockIO execute() override
 	{
 		return executeImpl(false);
 	}
 
-	/** assume_metadata_exists - не проверять наличие файла с метаданными и не создавать его
+	/** Не проверять наличие файла с метаданными и не создавать его
 	  *  (для случая выполнения запроса из существующего файла с метаданными).
 	  */
 	void executeLoadExisting()
@@ -48,12 +43,24 @@ public:
 private:
 	BlockIO executeImpl(bool assume_metadata_exists);
 
-	void createDatabase(ASTCreateQuery & create, bool assume_metadata_exists);
+	void createDatabase(ASTCreateQuery & create);
 	BlockIO createTable(ASTCreateQuery & create, bool assume_metadata_exists);
+
+	struct ColumnsInfo
+	{
+		NamesAndTypesListPtr columns = new NamesAndTypesList;
+		NamesAndTypesList materialized_columns;
+		NamesAndTypesList alias_columns;
+		ColumnDefaults column_defaults;
+	};
+
+	/// Вычислить список столбцов таблицы и вернуть его.
+	ColumnsInfo setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
+	String setEngine(ASTCreateQuery & create, const StoragePtr & as_storage) const;
 
 	/// AST в список столбцов с типами. Столбцы типа Nested развернуты в список настоящих столбцов.
 	using ColumnsAndDefaults = std::pair<NamesAndTypesList, ColumnDefaults>;
-	ColumnsAndDefaults parseColumns(ASTPtr expression_list);
+	ColumnsAndDefaults parseColumns(ASTPtr expression_list) const;
 
 	/// removes columns from the columns list and return them in a separate list
 	static NamesAndTypesList removeAndReturnColumns(ColumnsAndDefaults & columns_and_defaults, ColumnDefaultType type);

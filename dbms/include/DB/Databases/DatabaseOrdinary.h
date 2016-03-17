@@ -40,8 +40,6 @@ public:
 
 	ASTPtr getCreateQuery(const String & name) const override;
 
-	void dropAll() override;
-
 	void shutdown() override;
 };
 

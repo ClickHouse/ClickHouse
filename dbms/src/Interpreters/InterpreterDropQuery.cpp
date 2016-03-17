@@ -4,6 +4,7 @@
 #include <DB/Parsers/ASTDropQuery.h>
 #include <DB/Interpreters/InterpreterDropQuery.h>
 #include <DB/Storages/IStorage.h>
+#include <DB/Databases/IDatabase.h>
 
 
 namespace DB
@@ -36,6 +37,10 @@ BlockIO InterpreterDropQuery::execute()
 	String data_path = path + "data/" + database_name_escaped + "/";
 	String metadata_path = path + "metadata/" + database_name_escaped + "/";
 
+	auto database = context.tryGetDatabase(database_name);
+	if (!database && !drop.if_exists)
+		throw Exception("Database " + database_name + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+
 	StorageVector tables_to_drop;
 
 	if (!drop.table.empty())
@@ -54,10 +59,6 @@ BlockIO InterpreterDropQuery::execute()
 	}
 	else
 	{
-		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-
-		auto database = context.tryGetDatabase(database_name);
-
 		if (!database)
 		{
 			if (!drop.if_exists)
@@ -65,7 +66,7 @@ BlockIO InterpreterDropQuery::execute()
 			return {};
 		}
 
-		for (auto iterator = database->getIterator(); iterator.isValid(); iterator.next())
+		for (auto iterator = database->getIterator(); iterator->isValid(); iterator->next())
 			tables_to_drop.push_back(iterator->table());
 	}
 
@@ -78,49 +79,16 @@ BlockIO InterpreterDropQuery::execute()
 
 		String current_table_name = table->getTableName();
 
-		/// Удаляем информацию о таблице из оперативки
-		StoragePtr detached = context.detachTable(database_name, current_table_name);
+		/// Удаляем метаданные таблицы.
+		database->removeTable(current_table_name);
 
 		/// Удаляем данные таблицы
 		if (!drop.detach)
 		{
-			String current_data_path = data_path + escapeForFileName(current_table_name);
-			String current_metadata_path = metadata_path + escapeForFileName(current_table_name) + ".sql";
-
-			/// Для таблиц типа ChunkRef, файла с метаданными не существует.
-			bool metadata_file_exists = Poco::File(current_metadata_path).exists();
-			if (metadata_file_exists)
-			{
-				if (Poco::File(current_metadata_path + ".bak").exists())
-					Poco::File(current_metadata_path + ".bak").remove();
-
-				Poco::File(current_metadata_path).renameTo(current_metadata_path + ".bak");
-			}
-
-			try
-			{
-				table->drop();
-			}
-			catch (const Exception & e)
-			{
-				/// Такая ошибка означает, что таблицу невозможно удалить, и данные пока ещё консистентны. Можно вернуть таблицу на место.
-				/// NOTE Таблица будет оставаться в состоянии после shutdown - не производить всевозможной фоновой работы.
-				if (e.code() == ErrorCodes::TABLE_WAS_NOT_DROPPED)
-				{
-					if (metadata_file_exists)
-						Poco::File(current_metadata_path + ".bak").renameTo(current_metadata_path);
-
-					context.addTable(database_name, current_table_name, detached);
-					throw;
-				}
-				else
-					throw;
-			}
-
+			table->drop();		/// TODO Не удалять метаданные, если таблицу не получилось удалить.
 			table->is_dropped = true;
 
-			if (metadata_file_exists)
-				Poco::File(current_metadata_path + ".bak").remove();
+			String current_data_path = data_path + escapeForFileName(current_table_name);
 
 			if (Poco::File(current_data_path).exists())
 				Poco::File(current_data_path).remove(true);
