@@ -361,7 +361,7 @@ void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr &
 
 		table_name_escaped = escapeForFileName(table_name);
 		table_metadata_tmp_path = path + "/" + table_name_escaped + ".sql.tmp";
-		table_metadata_path = path + "/" + table_name_escaped;
+		table_metadata_path = path + "/" + table_name_escaped + ".sql";
 
 		/// Гарантирует, что таблица не создаётся прямо сейчас.
 		WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
