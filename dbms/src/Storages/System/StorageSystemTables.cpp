@@ -82,8 +82,6 @@ BlockInputStreams StorageSystemTables::read(
 	col_engine.column = new ColumnString;
 	block.insert(col_engine);
 
-	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-
 	ColumnWithTypeAndName filtered_databases_column = getFilteredDatabases(query, context);
 
 	for (size_t row_number = 0; row_number < filtered_databases_column.column->size(); ++row_number)
@@ -92,7 +90,10 @@ BlockInputStreams StorageSystemTables::read(
 		auto database = context.tryGetDatabase(database_name);
 
 		if (!database)
-			throw DB::Exception(std::string("Fail to find database " + database_name), DB::ErrorCodes::LOGICAL_ERROR);
+		{
+			/// Базу данных только что удалили.
+			continue;
+		}
 
 		for (auto iterator = database->getIterator(); iterator->isValid(); iterator->next())
 		{
