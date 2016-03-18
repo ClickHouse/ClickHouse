@@ -19,7 +19,7 @@ private:
 	mutable std::mutex mutex;
 	Tables tables;
 
-	Logger * log = &Logger::get("DatabaseOrdinary");
+	Logger * log;
 
 public:
 	DatabaseOrdinary(const String & name_, const String & path_, Context & context, boost::threadpool::pool * thread_pool);

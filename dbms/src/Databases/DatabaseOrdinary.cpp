@@ -7,6 +7,7 @@
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
+#include <DB/Storages/StorageFactory.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadBufferFromFile.h>
@@ -35,35 +36,53 @@ static constexpr size_t TABLES_PARALLEL_LOAD_BUNCH_SIZE = 100;
 static void executeCreateQuery(
 	const String & query,
 	Context & context,
-	const String & database,
-	const String & file_name)
+	DatabaseOrdinary & database,
+	const String & database_name,
+	const String & table_data_path,
+	const String & table_metadata_path)
 {
 	ParserCreateQuery parser;
-	ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + file_name);
+	ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + table_metadata_path);
 
 	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 	ast_create_query.attach = true;
-	ast_create_query.database = database;
+	ast_create_query.database = database_name;
 
-	InterpreterCreateQuery interpreter(ast, context);
-	interpreter.executeLoadExisting();
+	/// Не используем напрямую InterpreterCreateQuery::execute, так как:
+	/// - база данных ещё не создана;
+	/// - код проще, так как запрос уже приведён к подходящему виду.
+
+	InterpreterCreateQuery::ColumnsInfo columns_info = InterpreterCreateQuery::getColumnsInfo(ast_create_query.columns, context);
+
+	String storage_name = typeid_cast<ASTFunction &>(*ast_create_query.storage).name;
+
+	StoragePtr res = StorageFactory::instance().get(
+		storage_name, table_data_path, ast_create_query.table, database_name, context,
+		context.getGlobalContext(), ast, columns_info.columns,
+		columns_info.materialized_columns, columns_info.alias_columns, columns_info.column_defaults,
+		true);
+
+	database.attachTable(ast_create_query.table, res);
 }
 
 
 static void loadTable(
 	Context & context,
-	const String & path,
-	const String & database,
-	const String & table_escaped)
+	const String & database_metadata_path,
+	DatabaseOrdinary & database,
+	const String & database_name,
+	const String & database_data_path,
+	const String & file_name)
 {
 	Logger * log = &Logger::get("loadTable");
 
-	const String path_to_metadata = path + "/" + table_escaped;
+	const String table_metadata_path = database_metadata_path + "/" + file_name;
+	const String table_data_path = database_data_path + "/" + file_name;
 
 	String s;
 	{
 		char in_buf[METADATA_FILE_BUFFER_SIZE];
-		ReadBufferFromFile in(path_to_metadata, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
+		ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
 		WriteBufferFromString out(s);
 		copyData(in, out);
 	}
@@ -73,18 +92,18 @@ static void loadTable(
 	  */
 	if (s.empty())
 	{
-		LOG_ERROR(log, "File " << path_to_metadata << " is empty. Removing.");
-		Poco::File(path_to_metadata).remove();
+		LOG_ERROR(log, "File " << table_metadata_path << " is empty. Removing.");
+		Poco::File(table_metadata_path).remove();
 		return;
 	}
 
 	try
 	{
-		executeCreateQuery(s, context, database, path_to_metadata);
+		executeCreateQuery(s, context, database, database_name, table_data_path, table_metadata_path);
 	}
 	catch (const Exception & e)
 	{
-		throw Exception("Cannot create table from metadata file " + path_to_metadata + ", error: " + e.displayText() +
+		throw Exception("Cannot create table from metadata file " + table_metadata_path + ", error: " + e.displayText() +
 			", stack trace:\n" + e.getStackTrace().toString(),
 			ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
 	}
@@ -102,6 +121,8 @@ DatabaseOrdinary::DatabaseOrdinary(
 	const String & name_, const String & path_, Context & context, boost::threadpool::pool * thread_pool)
 	: name(name_), path(path_)
 {
+	log = &Logger::get("DatabaseOrdinary (" + name + ")");
+
 	using Tables = std::vector<String>;
 	Tables tables;
 
@@ -158,12 +179,14 @@ DatabaseOrdinary::DatabaseOrdinary(
 	size_t total_tables = tables.size();
 	LOG_INFO(log, "Total " << total_tables << " tables.");
 
+	String data_path = context.getPath() + "/data/" + escapeForFileName(name) + "/";
+
 	if (!tables_to_load_first.empty())
 	{
 		LOG_INFO(log, "Loading inner tables for materialized views (total " << tables_to_load_first.size() << " tables).");
 
 		for (const auto & table : tables_to_load_first)
-			loadTable(context, path, name, table);
+			loadTable(context, path, *this, name, data_path, table);
 	}
 
 	StopwatchWithLock watch;
@@ -183,7 +206,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 				watch.restart();
 			}
 
-			loadTable(context, path, name, table);
+			loadTable(context, path, *this, name, data_path, table);
 		}
 	};
 

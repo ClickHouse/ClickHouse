@@ -89,22 +89,32 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 	}
 
 	String database_engine_name;
-	if (ASTIdentifier * engine_id = typeid_cast<ASTIdentifier *>(create.storage.get()))
+	if (!create.storage)
 	{
-		if (engine_id->name.empty())
-			engine_id->name = "Ordinary";	/// Движок баз данных по-умолчанию.
-		database_engine_name = engine_id->name;
+		database_engine_name = "Ordinary";	/// Движок баз данных по-умолчанию.
+		ASTFunction * func = new ASTFunction();
+		func->name = database_engine_name;
+		create.storage = func;
 	}
 	else
 	{
-		std::stringstream ostr;
-		formatAST(*create.storage, ostr, 0, false, false);
-		throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+		const ASTFunction & engine_id = typeid_cast<const ASTFunction &>(*create.storage);
+
+		/// На данный момент, движков таблиц с аргументами не бывает.
+		if (engine_id.arguments || engine_id.parameters)
+		{
+			std::stringstream ostr;
+			formatAST(*create.storage, ostr, 0, false, false);
+			throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+		}
+
+		database_engine_name = engine_id.name;
 	}
 
 	DatabasePtr database = DatabaseFactory::get(database_engine_name, database_name, metadata_path, context, thread_pool);
 
 	/// Записываем файл с метаданными.
+	if (!create.attach)
 	{
 		create.attach = true;
 		create.if_not_exists = false;
@@ -127,218 +137,11 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 }
 
 
-InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
-	ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const
-{
-	ColumnsInfo res;
+using ColumnsAndDefaults = std::pair<NamesAndTypesList, ColumnDefaults>;
 
-	if (create.columns)
-	{
-		auto && columns_and_defaults = parseColumns(create.columns);
-		res.materialized_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Materialized);
-		res.alias_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Alias);
-		res.columns = new NamesAndTypesList{std::move(columns_and_defaults.first)};
-		res.column_defaults = std::move(columns_and_defaults.second);
-
-		if (res.columns->size() + res.materialized_columns.size() == 0)
-			throw Exception{"Cannot CREATE table without physical columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
-	}
-	else if (!create.as_table.empty())
-	{
-		res.columns = new NamesAndTypesList(as_storage->getColumnsListNonMaterialized());
-		res.materialized_columns = as_storage->materialized_columns;
-		res.alias_columns = as_storage->alias_columns;
-		res.column_defaults = as_storage->column_defaults;
-	}
-	else if (create.select)
-	{
-		res.columns = new NamesAndTypesList;
-		for (size_t i = 0; i < as_select_sample.columns(); ++i)
-			res.columns->push_back(NameAndTypePair(as_select_sample.getByPosition(i).name, as_select_sample.getByPosition(i).type));
-	}
-	else
-		throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
-
-	/// Даже если в запросе был список столбцов, на всякий случай приведем его к стандартному виду (развернём Nested).
-	ASTPtr new_columns = formatColumns(*res.columns, res.materialized_columns, res.alias_columns, res.column_defaults);
-	if (create.columns)
-	{
-		auto it = std::find(create.children.begin(), create.children.end(), create.columns);
-		if (it != create.children.end())
-			*it = new_columns;
-		else
-			create.children.push_back(new_columns);
-	}
-	else
-		create.children.push_back(new_columns);
-	create.columns = new_columns;
-
-	return res;
-}
-
-
-String InterpreterCreateQuery::setEngine(
-	ASTCreateQuery & create, const StoragePtr & as_storage) const
-{
-	String storage_name;
-
-	auto set_engine = [&](const char * engine)
-	{
-		storage_name = engine;
-		ASTFunction * func = new ASTFunction();
-		func->name = engine;
-		create.storage = func;
-	};
-
-	if (create.storage)
-	{
-		storage_name = typeid_cast<ASTFunction &>(*create.storage).name;
-	}
-	else if (!create.as_table.empty())
-	{
-		/// NOTE Получение структуры у таблицы, указанной в AS делается не атомарно с созданием таблицы.
-
-		String as_database_name = create.as_database.empty() ? context.getCurrentDatabase() : create.as_database;
-		String as_table_name = create.as_table;
-
-		storage_name = as_storage->getName();
-		create.storage = typeid_cast<const ASTCreateQuery &>(*context.getCreateQuery(as_database_name, as_table_name)).storage;
-	}
-	else if (create.is_temporary)
-		set_engine("Memory");
-	else if (create.is_view)
-		set_engine("View");
-	else if (create.is_materialized_view)
-		set_engine("MaterializedView");
-	else
-		throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::ENGINE_REQUIRED);
-
-	return storage_name;
-}
-
-
-BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create, bool assume_metadata_exists)
-{
-	String path = context.getPath();
-	String current_database = context.getCurrentDatabase();
-
-	String database_name = create.database.empty() ? current_database : create.database;
-	String database_name_escaped = escapeForFileName(database_name);
-	String table_name = create.table;
-	String table_name_escaped = escapeForFileName(table_name);
-
-	String data_path = path + "data/" + database_name_escaped + "/";
-	String metadata_path = path + "metadata/" + database_name_escaped + "/" + table_name_escaped + ".sql";
-
-	std::unique_ptr<InterpreterSelectQuery> interpreter_select;
-	Block as_select_sample;
-	/// Для таблиц типа view, чтобы получить столбцы, может понадобиться sample_block.
-	if (create.select && (!create.attach || (!create.columns && (create.is_view || create.is_materialized_view))))
-	{
-		interpreter_select = std::make_unique<InterpreterSelectQuery>(create.select, context);
-		as_select_sample = interpreter_select->getSampleBlock();
-	}
-
-	String as_database_name = create.as_database.empty() ? current_database : create.as_database;
-	String as_table_name = create.as_table;
-
-	StoragePtr as_storage;
-	IStorage::TableStructureReadLockPtr as_storage_lock;
-	if (!as_table_name.empty())
-	{
-		as_storage = context.getTable(as_database_name, as_table_name);
-		as_storage_lock = as_storage->lockStructure(false);
-	}
-
-	/// Устанавливаем и получаем список столбцов.
-	ColumnsInfo columns = setColumns(create, as_select_sample, as_storage);
-
-	/// Выбор нужного движка таблицы
-	String storage_name = setEngine(create, as_storage);
-
-	StoragePtr res;
-
-	{
-		/// TODO Операции с файловой системой не должны быть под глобальной блокировкой.
-		/// Сделать DDLTableLock
-		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-
-		if (!create.is_temporary)
-		{
-			context.assertDatabaseExists(database_name);
-
-			if (context.isTableExist(database_name, table_name))
-			{
-				if (create.if_not_exists)
-					return {};
-				else
-					throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-			}
-		}
-
-		res = StorageFactory::instance().get(
-			storage_name, data_path, table_name, database_name, context,
-			context.getGlobalContext(), query_ptr, columns.columns,
-			columns.materialized_columns, columns.alias_columns, columns.column_defaults, create.attach);
-
-		if (create.is_temporary)
-			context.getSessionContext().addExternalTable(table_name, res);
-		else if (assume_metadata_exists)
-			context.getDatabase(database_name)->attachTable(table_name, res);
-		else
-			context.getDatabase(database_name)->createTable(table_name, res, query_ptr, storage_name);
-	}
-
-	/// Если запрос CREATE SELECT, то вставим в таблицу данные
-	if (create.select && storage_name != "View" && (storage_name != "MaterializedView" || create.is_populate))
-	{
-		auto table_lock = res->lockStructure(true);
-
-		/// Также см. InterpreterInsertQuery.
-		BlockOutputStreamPtr out{
-			new ProhibitColumnsBlockOutputStream{
-				new AddingDefaultBlockOutputStream{
-					new MaterializingBlockOutputStream{
-						new PushingToViewsBlockOutputStream{
-							create.database, create.table,
-							create.is_temporary ? context.getSessionContext() : context,
-							query_ptr
-						}
-					},
-					/// @note shouldn't these two contexts be session contexts in case of temporary table?
-					columns.columns, columns.column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults)
-				},
-				columns.materialized_columns
-			}
-		};
-
-		BlockIO io;
-		io.in_sample = as_select_sample;
-		io.in = new NullAndDoCopyBlockInputStream(interpreter_select->execute().in, out);
-
-		return io;
-	}
-
-	return {};
-}
-
-
-BlockIO InterpreterCreateQuery::executeImpl(bool assume_metadata_exists)
-{
-	ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_ptr);
-
-	/// CREATE|ATTACH DATABASE
-	if (!create.database.empty() && create.table.empty())
-	{
-		createDatabase(create);
-		return {};
-	}
-	else
-		return createTable(create, assume_metadata_exists);
-}
-
-
-InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(ASTPtr expression_list) const
+/// AST в список столбцов с типами. Столбцы типа Nested развернуты в список настоящих столбцов.
+static ColumnsAndDefaults parseColumns(
+	ASTPtr expression_list, const Context & context)
 {
 	auto & column_list_ast = typeid_cast<ASTExpressionList &>(*expression_list);
 
@@ -440,7 +243,8 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 	return { *DataTypeNested::expandNestedColumns(columns), defaults };
 }
 
-NamesAndTypesList InterpreterCreateQuery::removeAndReturnColumns(
+
+static NamesAndTypesList removeAndReturnColumns(
 	ColumnsAndDefaults & columns_and_defaults, const ColumnDefaultType type)
 {
 	auto & columns = columns_and_defaults.first;
@@ -462,6 +266,7 @@ NamesAndTypesList InterpreterCreateQuery::removeAndReturnColumns(
 
 	return removed;
 }
+
 
 ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 {
@@ -525,6 +330,226 @@ ASTPtr InterpreterCreateQuery::formatColumns(NamesAndTypesList columns,
 	}
 
 	return columns_list_ptr;
+}
+
+
+InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::getColumnsInfo(
+	const ASTPtr & columns, const Context & context)
+{
+	ColumnsInfo res;
+
+	auto && columns_and_defaults = parseColumns(columns, context);
+	res.materialized_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Materialized);
+	res.alias_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Alias);
+	res.columns = new NamesAndTypesList{std::move(columns_and_defaults.first)};
+	res.column_defaults = std::move(columns_and_defaults.second);
+
+	if (res.columns->size() + res.materialized_columns.size() == 0)
+		throw Exception{"Cannot CREATE table without physical columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
+
+	return res;
+}
+
+
+InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
+	ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const
+{
+	ColumnsInfo res;
+
+	if (create.columns)
+	{
+		res = getColumnsInfo(create.columns, context);
+	}
+	else if (!create.as_table.empty())
+	{
+		res.columns = new NamesAndTypesList(as_storage->getColumnsListNonMaterialized());
+		res.materialized_columns = as_storage->materialized_columns;
+		res.alias_columns = as_storage->alias_columns;
+		res.column_defaults = as_storage->column_defaults;
+	}
+	else if (create.select)
+	{
+		res.columns = new NamesAndTypesList;
+		for (size_t i = 0; i < as_select_sample.columns(); ++i)
+			res.columns->push_back(NameAndTypePair(as_select_sample.getByPosition(i).name, as_select_sample.getByPosition(i).type));
+	}
+	else
+		throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
+
+	/// Даже если в запросе был список столбцов, на всякий случай приведем его к стандартному виду (развернём Nested).
+	ASTPtr new_columns = formatColumns(*res.columns, res.materialized_columns, res.alias_columns, res.column_defaults);
+	if (create.columns)
+	{
+		auto it = std::find(create.children.begin(), create.children.end(), create.columns);
+		if (it != create.children.end())
+			*it = new_columns;
+		else
+			create.children.push_back(new_columns);
+	}
+	else
+		create.children.push_back(new_columns);
+	create.columns = new_columns;
+
+	return res;
+}
+
+
+String InterpreterCreateQuery::setEngine(
+	ASTCreateQuery & create, const StoragePtr & as_storage) const
+{
+	String storage_name;
+
+	auto set_engine = [&](const char * engine)
+	{
+		storage_name = engine;
+		ASTFunction * func = new ASTFunction();
+		func->name = engine;
+		create.storage = func;
+	};
+
+	if (create.storage)
+	{
+		storage_name = typeid_cast<ASTFunction &>(*create.storage).name;
+	}
+	else if (!create.as_table.empty())
+	{
+		/// NOTE Получение структуры у таблицы, указанной в AS делается не атомарно с созданием таблицы.
+
+		String as_database_name = create.as_database.empty() ? context.getCurrentDatabase() : create.as_database;
+		String as_table_name = create.as_table;
+
+		storage_name = as_storage->getName();
+		create.storage = typeid_cast<const ASTCreateQuery &>(*context.getCreateQuery(as_database_name, as_table_name)).storage;
+	}
+	else if (create.is_temporary)
+		set_engine("Memory");
+	else if (create.is_view)
+		set_engine("View");
+	else if (create.is_materialized_view)
+		set_engine("MaterializedView");
+	else
+		throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::ENGINE_REQUIRED);
+
+	return storage_name;
+}
+
+
+BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
+{
+	String path = context.getPath();
+	String current_database = context.getCurrentDatabase();
+
+	String database_name = create.database.empty() ? current_database : create.database;
+	String database_name_escaped = escapeForFileName(database_name);
+	String table_name = create.table;
+	String table_name_escaped = escapeForFileName(table_name);
+
+	String data_path = path + "data/" + database_name_escaped + "/";
+	String metadata_path = path + "metadata/" + database_name_escaped + "/" + table_name_escaped + ".sql";
+
+	std::unique_ptr<InterpreterSelectQuery> interpreter_select;
+	Block as_select_sample;
+	/// Для таблиц типа view, чтобы получить столбцы, может понадобиться sample_block.
+	if (create.select && (!create.attach || (!create.columns && (create.is_view || create.is_materialized_view))))
+	{
+		interpreter_select = std::make_unique<InterpreterSelectQuery>(create.select, context);
+		as_select_sample = interpreter_select->getSampleBlock();
+	}
+
+	String as_database_name = create.as_database.empty() ? current_database : create.as_database;
+	String as_table_name = create.as_table;
+
+	StoragePtr as_storage;
+	IStorage::TableStructureReadLockPtr as_storage_lock;
+	if (!as_table_name.empty())
+	{
+		as_storage = context.getTable(as_database_name, as_table_name);
+		as_storage_lock = as_storage->lockStructure(false);
+	}
+
+	/// Устанавливаем и получаем список столбцов.
+	ColumnsInfo columns = setColumns(create, as_select_sample, as_storage);
+
+	/// Выбор нужного движка таблицы
+	String storage_name = setEngine(create, as_storage);
+
+	StoragePtr res;
+
+	{
+		/// TODO Операции с файловой системой не должны быть под глобальной блокировкой.
+		/// Сделать DDLTableLock
+		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+
+		if (!create.is_temporary)
+		{
+			context.assertDatabaseExists(database_name);
+
+			if (context.isTableExist(database_name, table_name))
+			{
+				if (create.if_not_exists)
+					return {};
+				else
+					throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+			}
+		}
+
+		res = StorageFactory::instance().get(
+			storage_name, data_path, table_name, database_name, context,
+			context.getGlobalContext(), query_ptr, columns.columns,
+			columns.materialized_columns, columns.alias_columns, columns.column_defaults, create.attach);
+
+		if (create.is_temporary)
+			context.getSessionContext().addExternalTable(table_name, res);
+		else
+			context.getDatabase(database_name)->createTable(table_name, res, query_ptr, storage_name);
+	}
+
+	/// Если запрос CREATE SELECT, то вставим в таблицу данные
+	if (create.select && storage_name != "View" && (storage_name != "MaterializedView" || create.is_populate))
+	{
+		auto table_lock = res->lockStructure(true);
+
+		/// Также см. InterpreterInsertQuery.
+		BlockOutputStreamPtr out{
+			new ProhibitColumnsBlockOutputStream{
+				new AddingDefaultBlockOutputStream{
+					new MaterializingBlockOutputStream{
+						new PushingToViewsBlockOutputStream{
+							create.database, create.table,
+							create.is_temporary ? context.getSessionContext() : context,
+							query_ptr
+						}
+					},
+					/// @note shouldn't these two contexts be session contexts in case of temporary table?
+					columns.columns, columns.column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults)
+				},
+				columns.materialized_columns
+			}
+		};
+
+		BlockIO io;
+		io.in_sample = as_select_sample;
+		io.in = new NullAndDoCopyBlockInputStream(interpreter_select->execute().in, out);
+
+		return io;
+	}
+
+	return {};
+}
+
+
+BlockIO InterpreterCreateQuery::execute()
+{
+	ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_ptr);
+
+	/// CREATE|ATTACH DATABASE
+	if (!create.database.empty() && create.table.empty())
+	{
+		createDatabase(create);
+		return {};
+	}
+	else
+		return createTable(create);
 }
 
 

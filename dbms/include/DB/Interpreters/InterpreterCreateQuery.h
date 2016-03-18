@@ -21,18 +21,7 @@ class InterpreterCreateQuery : public IInterpreter
 public:
 	InterpreterCreateQuery(ASTPtr query_ptr_, Context & context_);
 
-	BlockIO execute() override
-	{
-		return executeImpl(false);
-	}
-
-	/** Не проверять наличие файла с метаданными и не создавать его
-	  *  (для случая выполнения запроса из существующего файла с метаданными).
-	  */
-	void executeLoadExisting()
-	{
-		executeImpl(true);
-	}
+	BlockIO execute() override;
 
 	/// Список столбцов с типами в AST.
 	static ASTPtr formatColumns(const NamesAndTypesList & columns);
@@ -47,12 +36,6 @@ public:
 		thread_pool = &thread_pool_;
 	}
 
-private:
-	BlockIO executeImpl(bool assume_metadata_exists);
-
-	void createDatabase(ASTCreateQuery & create);
-	BlockIO createTable(ASTCreateQuery & create, bool assume_metadata_exists);
-
 	struct ColumnsInfo
 	{
 		NamesAndTypesListPtr columns = new NamesAndTypesList;
@@ -61,16 +44,16 @@ private:
 		ColumnDefaults column_defaults;
 	};
 
+	/// Получить информацию о столбцах и типах их default-ов, для случая, когда столбцы в запросе create указаны явно.
+	static ColumnsInfo getColumnsInfo(const ASTPtr & columns, const Context & context);
+
+private:
+	void createDatabase(ASTCreateQuery & create);
+	BlockIO createTable(ASTCreateQuery & create);
+
 	/// Вычислить список столбцов таблицы и вернуть его.
 	ColumnsInfo setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
 	String setEngine(ASTCreateQuery & create, const StoragePtr & as_storage) const;
-
-	/// AST в список столбцов с типами. Столбцы типа Nested развернуты в список настоящих столбцов.
-	using ColumnsAndDefaults = std::pair<NamesAndTypesList, ColumnDefaults>;
-	ColumnsAndDefaults parseColumns(ASTPtr expression_list) const;
-
-	/// removes columns from the columns list and return them in a separate list
-	static NamesAndTypesList removeAndReturnColumns(ColumnsAndDefaults & columns_and_defaults, ColumnDefaultType type);
 
 	ASTPtr query_ptr;
 	Context context;

@@ -41,7 +41,7 @@ static void executeCreateQuery(
 
 	InterpreterCreateQuery interpreter(ast, context);
 	interpreter.setDatabaseLoadingThreadpool(pool);
-	interpreter.executeLoadExisting();
+	interpreter.execute();
 }
 
 
