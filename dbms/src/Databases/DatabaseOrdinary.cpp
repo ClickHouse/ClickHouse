@@ -266,7 +266,8 @@ private:
 	Tables::iterator it;
 
 public:
-	DatabaseOrdinaryIterator(Tables & tables_) : tables(tables_) {}
+	DatabaseOrdinaryIterator(Tables & tables_)
+		: tables(tables_), it(tables.begin()) {}
 
 	void next() override
 	{
