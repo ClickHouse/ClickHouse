@@ -44,6 +44,7 @@ else
 	    # нужно для stash или неполноценной копии репозитория
 	    revision="77777"
 	fi
+	revision=$(echo $revision | sed 's/\([0-9]*\)[^0-9]*/\1/')
 
 	echo "
 #ifndef REVISION

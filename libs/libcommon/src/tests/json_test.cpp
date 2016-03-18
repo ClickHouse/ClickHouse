@@ -23,7 +23,6 @@ struct GetStringTestRecord
 
 void get_string()
 {
-	/// Inspired by http://robthedoodler.deviantart.com/art/Coo-man-407376198
 	std::vector<GetStringTestRecord> test_data =
 	{
 		{ R"COO("name")COO"s, ResultType::Return, R"MAN(name)MAN"s },
