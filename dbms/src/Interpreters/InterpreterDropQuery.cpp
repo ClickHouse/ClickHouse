@@ -79,12 +79,17 @@ BlockIO InterpreterDropQuery::execute()
 
 		String current_table_name = table->getTableName();
 
-		/// Удаляем метаданные таблицы.
-		database->removeTable(current_table_name);
-
-		/// Удаляем данные таблицы
-		if (!drop.detach)
+		if (drop.detach)
 		{
+			/// Удаляем таблицу из оперативки, метаданные и данные не трогаем.
+			database->detachTable(current_table_name);
+		}
+		else
+		{
+			/// Удаляем метаданные и саму таблицу из оперативки.
+			database->removeTable(current_table_name);
+
+			/// Удаляем данные таблицы
 			table->drop();		/// TODO Не удалять метаданные, если таблицу не получилось удалить.
 			table->is_dropped = true;
 

@@ -38,7 +38,7 @@ static void executeCreateQuery(
 	Context & context,
 	DatabaseOrdinary & database,
 	const String & database_name,
-	const String & table_data_path,
+	const String & database_data_path,
 	const String & table_metadata_path)
 {
 	ParserCreateQuery parser;
@@ -57,7 +57,7 @@ static void executeCreateQuery(
 	String storage_name = typeid_cast<ASTFunction &>(*ast_create_query.storage).name;
 
 	StoragePtr res = StorageFactory::instance().get(
-		storage_name, table_data_path, ast_create_query.table, database_name, context,
+		storage_name, database_data_path, ast_create_query.table, database_name, context,
 		context.getGlobalContext(), ast, columns_info.columns,
 		columns_info.materialized_columns, columns_info.alias_columns, columns_info.column_defaults,
 		true);
@@ -77,7 +77,6 @@ static void loadTable(
 	Logger * log = &Logger::get("loadTable");
 
 	const String table_metadata_path = database_metadata_path + "/" + file_name;
-	const String table_data_path = database_data_path + "/" + file_name;
 
 	String s;
 	{
@@ -99,7 +98,7 @@ static void loadTable(
 
 	try
 	{
-		executeCreateQuery(s, context, database, database_name, table_data_path, table_metadata_path);
+		executeCreateQuery(s, context, database, database_name, database_data_path, table_metadata_path);
 	}
 	catch (const Exception & e)
 	{
@@ -412,7 +411,7 @@ StoragePtr DatabaseOrdinary::removeTable(const String & table_name)
 	StoragePtr res = detachTable(table_name);
 
 	String table_name_escaped = escapeForFileName(table_name);
-	String table_metadata_path = path + "/" + table_name_escaped;
+	String table_metadata_path = path + "/" + table_name_escaped + ".sql";
 
 	try
 	{
