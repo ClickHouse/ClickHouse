@@ -1,3 +1,9 @@
+# фильтрует теги, не являющиеся релизными тегами
+function tag_filter
+{
+    grep -E "^[0-9]{5,8}$"
+}
+
 function add_daemon_impl {
 	local daemon=$1
 	local control=$CONTROL
@@ -54,7 +60,7 @@ function gen_revision_author {
 	git fetch --tags
 	IS_IT_GITHUB=$( git config --get remote.origin.url | grep 'github')
 
-	REVISION=$( git tag | awk '/[0-9]+/ {print $0;}' | tail -1 | sed s/[^0-9]*//g)
+	REVISION=$( git tag | tag_filter | tail -1 )
 	MAX_REVISION=$(($REVISION + 10))	# Максимальное количество попыток отправить тег в Git.
 
 	# Создадим номер ревизии и попытаемся залить на сервер.
