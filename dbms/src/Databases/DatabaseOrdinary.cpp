@@ -335,9 +335,9 @@ void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr &
 			throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 	}
 
-	String table_name_escaped;
-	String table_metadata_tmp_path;
-	String table_metadata_path;
+	String table_name_escaped = escapeForFileName(table_name);
+	String table_metadata_tmp_path = path + "/" + table_name_escaped + ".sql.tmp";
+	String table_metadata_path = path + "/" + table_name_escaped + ".sql";
 	String statement;
 
 	{
@@ -358,10 +358,6 @@ void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr &
 		statement_stream << '\n';
 		statement = statement_stream.str();
 
-		table_name_escaped = escapeForFileName(table_name);
-		table_metadata_tmp_path = path + "/" + table_name_escaped + ".sql.tmp";
-		table_metadata_path = path + "/" + table_name_escaped + ".sql";
-
 		/// Гарантирует, что таблица не создаётся прямо сейчас.
 		WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
 		writeString(statement, out);
@@ -379,6 +375,8 @@ void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr &
 				throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 		}
 
+		/// Если запрос ATTACH, и метаданные таблицы уже существуют
+		/// (то есть, ATTACH сделан после DETACH), то rename атомарно заменяет старый файл новым.
 		Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
 	}
 	catch (...)
@@ -430,7 +428,7 @@ StoragePtr DatabaseOrdinary::removeTable(const String & table_name)
 static ASTPtr getCreateQueryImpl(const String & path, const String & table_name)
 {
 	String table_name_escaped = escapeForFileName(table_name);
-	String table_metadata_path = path + "/" + table_name_escaped;
+	String table_metadata_path = path + "/" + table_name_escaped + ".sql";
 
 	String query;
 	{
