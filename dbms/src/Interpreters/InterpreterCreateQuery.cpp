@@ -63,30 +63,10 @@ InterpreterCreateQuery::InterpreterCreateQuery(ASTPtr query_ptr_, Context & cont
 
 void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
-	String path = context.getPath();
-	String current_database = context.getCurrentDatabase();
+	String database_name = create.database;
 
-	String database_name = create.database.empty() ? current_database : create.database;
-	String database_name_escaped = escapeForFileName(database_name);
-
-	String data_path = path + "data/" + database_name_escaped + "/";
-	String metadata_path = path + "metadata/" + database_name_escaped + "/";
-
-	if (create.attach)
-	{
-		if (!Poco::File(data_path).exists())
-			throw Exception("Directory " + data_path + " doesn't exist.", ErrorCodes::DIRECTORY_DOESNT_EXIST);
-	}
-	else
-	{
-		if (!create.if_not_exists && Poco::File(metadata_path).exists())
-			throw Exception("Directory " + metadata_path + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
-		if (!create.if_not_exists && Poco::File(data_path).exists())
-			throw Exception("Directory " + data_path + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
-
-		Poco::File(metadata_path).createDirectory();
-		Poco::File(data_path).createDirectory();
-	}
+	if (create.if_not_exists && context.isDatabaseExist(database_name))
+		return;
 
 	String database_engine_name;
 	if (!create.storage)
@@ -111,6 +91,15 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 		database_engine_name = engine_id.name;
 	}
 
+	String database_name_escaped = escapeForFileName(database_name);
+
+	String path = context.getPath();
+	String data_path = path + "data/" + database_name_escaped + "/";
+	String metadata_path = path + "metadata/" + database_name_escaped + "/";
+
+	Poco::File(metadata_path).createDirectory();
+	Poco::File(data_path).createDirectory();
+
 	DatabasePtr database = DatabaseFactory::get(database_engine_name, database_name, metadata_path, context, thread_pool);
 
 	/// Записываем файл с метаданными.
@@ -124,7 +113,7 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 		statement_stream << '\n';
 		String statement = statement_stream.str();
 
-		/// Гарантирует, что база данных не создаётся прямо сейчас.
+		/// Гарантирует, что база данных не создаётся прямо сейчас.	/// TODO .sql.tmp и rename
 		WriteBufferFromFile out(path + "metadata/" + database_name_escaped + ".sql", statement.size(), O_WRONLY | O_CREAT | O_EXCL);
 		writeString(statement, out);
 		out.next();
@@ -132,8 +121,7 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 		out.close();
 	}
 
-	if (!create.if_not_exists || !context.isDatabaseExist(database_name))
-		context.addDatabase(database_name, database);
+	context.addDatabase(database_name, database);
 }
 
 
