@@ -1,6 +1,7 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
+#include <DB/Databases/IDatabase.h>
 #include <DB/Storages/System/StorageSystemDatabases.h>
 
 
@@ -9,7 +10,12 @@ namespace DB
 
 
 StorageSystemDatabases::StorageSystemDatabases(const std::string & name_)
-	: name(name_), columns{{"name", new DataTypeString}}
+	: name(name_),
+	columns
+	{
+		{"name", 	new DataTypeString},
+		{"engine", 	new DataTypeString},
+	}
 {
 }
 
@@ -33,16 +39,18 @@ BlockInputStreams StorageSystemDatabases::read(
 
 	Block block;
 
-	ColumnWithTypeAndName col_name;
-	col_name.name = "name";
-	col_name.type = new DataTypeString;
-	col_name.column = new ColumnString;
+	ColumnWithTypeAndName col_name{new ColumnString, new DataTypeString, "name"};
 	block.insert(col_name);
 
-	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+	ColumnWithTypeAndName col_engine{new ColumnString, new DataTypeString, "engine"};
+	block.insert(col_engine);
 
-	for (Databases::const_iterator it = context.getDatabases().begin(); it != context.getDatabases().end(); ++it)
-		col_name.column->insert(it->first);
+	auto databases = context.getDatabases();
+	for (const auto & database : databases)
+	{
+		col_name.column->insert(database.first);
+		col_engine.column->insert(database.second->getEngineName());
+	}
 
 	return BlockInputStreams(1, new OneBlockInputStream(block));
 }

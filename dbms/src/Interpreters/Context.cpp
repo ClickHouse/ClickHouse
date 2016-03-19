@@ -41,6 +41,7 @@
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Client/ConnectionPool.h>
 #include <DB/Client/ConnectionPoolWithFailover.h>
+#include <DB/Databases/IDatabase.h>
 
 #include <DB/Common/ConfigProcessor.h>
 #include <zkutil/ZooKeeper.h>
@@ -140,8 +141,7 @@ struct ContextShared
 			return;
 		shutdown_called = true;
 
-		/** В этот момент, некоторые таблицы могут иметь потоки,
-		  *  которые модифицируют список таблиц, и блокируют наш mutex (см. StorageChunkMerger).
+		/** В этот момент, некоторые таблицы могут иметь потоки, которые блокируют наш mutex.
 		  * Чтобы корректно их завершить, скопируем текущий список таблиц,
 		  *  и попросим их всех закончить свою работу.
 		  * Потом удалим все объекты с таблицами.
@@ -154,9 +154,8 @@ struct ContextShared
 			current_databases = databases;
 		}
 
-		for (Databases::iterator it = current_databases.begin(); it != current_databases.end(); ++it)
-			for (Tables::iterator jt = it->second.begin(); jt != it->second.end(); ++jt)
-				jt->second->shutdown();
+		for (auto & database : current_databases)
+			database.second->shutdown();
 
 		{
 			Poco::ScopedLock<Poco::Mutex> lock(mutex);
@@ -179,12 +178,59 @@ const TableFunctionFactory & Context::getTableFunctionFactory() const			{ return
 const AggregateFunctionFactory & Context::getAggregateFunctionFactory() const	{ return shared->aggregate_function_factory; }
 InterserverIOHandler & Context::getInterserverIOHandler()						{ return shared->interserver_io_handler; }
 Poco::Mutex & Context::getMutex() const 										{ return shared->mutex; }
-const Databases & Context::getDatabases() const 								{ return shared->databases; }
-Databases & Context::getDatabases() 											{ return shared->databases; }
 ProcessList & Context::getProcessList()											{ return shared->process_list; }
 const ProcessList & Context::getProcessList() const								{ return shared->process_list; }
 MergeList & Context::getMergeList() 											{ return shared->merge_list; }
 const MergeList & Context::getMergeList() const 								{ return shared->merge_list; }
+
+
+const Databases Context::getDatabases() const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	return shared->databases;
+}
+
+Databases Context::getDatabases()
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	return shared->databases;
+}
+
+const DatabasePtr Context::getDatabase(const String & database_name) const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	String db = database_name.empty() ? current_database : database_name;
+	assertDatabaseExists(db);
+	return shared->databases[db];
+}
+
+DatabasePtr Context::getDatabase(const String & database_name)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	String db = database_name.empty() ? current_database : database_name;
+	assertDatabaseExists(db);
+	return shared->databases[db];
+}
+
+const DatabasePtr Context::tryGetDatabase(const String & database_name) const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	String db = database_name.empty() ? current_database : database_name;
+	auto it = shared->databases.find(db);
+	if (it == shared->databases.end())
+		return {};
+	return it->second;
+}
+
+DatabasePtr Context::tryGetDatabase(const String & database_name)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	String db = database_name.empty() ? current_database : database_name;
+	auto it = shared->databases.find(db);
+	if (it == shared->databases.end())
+		return {};
+	return it->second;
+}
 
 
 String Context::getPath() const
@@ -303,9 +349,9 @@ bool Context::isTableExist(const String & database_name, const String & table_na
 	String db = database_name.empty() ? current_database : database_name;
 	checkDatabaseAccessRights(db);
 
-	Databases::const_iterator it;
-	return shared->databases.end() != (it = shared->databases.find(db))
-		&& it->second.end() != it->second.find(table_name);
+	Databases::const_iterator it = shared->databases.find(db);
+	return shared->databases.end() != it
+		&& it->second->isTableExist(table_name);
 }
 
 
@@ -329,7 +375,7 @@ void Context::assertTableExists(const String & database_name, const String & tab
 	if (shared->databases.end() == it)
 		throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 
-	if (it->second.end() == it->second.find(table_name))
+	if (!it->second->isTableExist(table_name))
 		throw Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 }
 
@@ -342,9 +388,8 @@ void Context::assertTableDoesntExist(const String & database_name, const String 
 	if (check_database_access_rights)
 		checkDatabaseAccessRights(db);
 
-	Databases::const_iterator it;
-	if (shared->databases.end() != (it = shared->databases.find(db))
-		&& it->second.end() != it->second.find(table_name))
+	Databases::const_iterator it = shared->databases.find(db);
+	if (shared->databases.end() != it && it->second->isTableExist(table_name))
 		throw Exception("Table " + db + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
@@ -460,18 +505,15 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 		return {};
 	}
 
-	Tables::const_iterator jt = it->second.find(table_name);
-	if (it->second.end() == jt)
+	auto table = it->second->tryGetTable(table_name);
+	if (!table)
 	{
 		if (exception)
 			*exception = Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 		return {};
 	}
 
-	if (!jt->second)
-		throw Exception("Logical error: entry for table " + db + "." + table_name + " exists in Context but it is nullptr.", ErrorCodes::LOGICAL_ERROR);
-
-	return jt->second;
+	return table;
 }
 
 
@@ -490,41 +532,12 @@ void Context::addExternalTable(const String & table_name, StoragePtr storage)
 }
 
 
-void Context::addTable(const String & database_name, const String & table_name, StoragePtr table)
+void Context::addDatabase(const String & database_name, const DatabasePtr & database)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
-	String db = database_name.empty() ? current_database : database_name;
-	checkDatabaseAccessRights(db);
-
-	assertDatabaseExists(db, false);
-	assertTableDoesntExist(db, table_name, false);
-	shared->databases[db][table_name] = table;
-}
-
-
-void Context::addDatabase(const String & database_name)
-{
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-
-	String db = database_name.empty() ? current_database : database_name;
-
-	assertDatabaseDoesntExist(db);
-	shared->databases[db];
-}
-
-
-StoragePtr Context::detachTable(const String & database_name, const String & table_name)
-{
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-
-	String db = database_name.empty() ? current_database : database_name;
-
-	assertTableExists(db, table_name);
-	Tables::iterator it = shared->databases[db].find(table_name);
-	StoragePtr res = it->second;
-	shared->databases[db].erase(it);
-	return res;
+	assertDatabaseDoesntExist(database_name);
+	shared->databases[database_name] = database;
 }
 
 
@@ -532,59 +545,20 @@ void Context::detachDatabase(const String & database_name)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
-	String db = database_name.empty() ? current_database : database_name;
-
-	assertDatabaseExists(db);
-	shared->databases.erase(db);
+	assertDatabaseExists(database_name);
+	shared->databases[database_name]->shutdown();
+	shared->databases.erase(database_name);
 }
 
 
 ASTPtr Context::getCreateQuery(const String & database_name, const String & table_name) const
 {
-	StoragePtr table;
-	String db;
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
-	{
-		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-		db = database_name.empty() ? current_database : database_name;
-		table = getTable(db, table_name);
-	}
+	String db = database_name.empty() ? current_database : database_name;
+	assertDatabaseExists(db);
 
-	auto table_lock = table->lockStructure(false);
-
-	/// Здесь хранится определение таблицы
-	String metadata_path = shared->path + "metadata/" + escapeForFileName(db) + "/" + escapeForFileName(table_name) + ".sql";
-
-	if (!Poco::File(metadata_path).exists())
-	{
-		try
-		{
-			/// Если файл .sql не предусмотрен (например, для таблиц типа ChunkRef), то движок может сам предоставить запрос CREATE.
-			return table->getCustomCreateQuery(*this);
-		}
-		catch (...)
-		{
-			throw Exception("Metadata file " + metadata_path + " for table " + db + "." + table_name + " doesn't exist.",
-				ErrorCodes::TABLE_METADATA_DOESNT_EXIST);
-		}
-	}
-
-	StringPtr query = new String();
-	{
-		ReadBufferFromFile in(metadata_path);
-		WriteBufferFromString out(*query);
-		copyData(in, out);
-	}
-
-	ParserCreateQuery parser;
-	ASTPtr ast = parseQuery(parser, query->data(), query->data() + query->size(), "in file " + metadata_path);
-
-	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
-	ast_create_query.attach = false;
-	ast_create_query.database = db;
-	ast_create_query.query_string = query;
-
-	return ast;
+	return shared->databases[db]->getCreateQuery(table_name);
 }
 
 

@@ -7,6 +7,8 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Common/VirtualColumnUtils.h>
+#include <DB/Databases/IDatabase.h>
+
 
 namespace DB
 {
@@ -47,9 +49,7 @@ BlockInputStreams StorageSystemColumns::read(
 	std::map<std::pair<std::string, std::string>, StoragePtr> storages;
 
 	{
-		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-
-		const Databases & databases = context.getDatabases();
+		Databases databases = context.getDatabases();
 
 		/// Добавляем столбец database.
 		ColumnPtr database_column = new ColumnString;
@@ -72,13 +72,16 @@ BlockInputStreams StorageSystemColumns::read(
 		for (size_t i = 0; i < rows; ++i)
 		{
 			const std::string database_name = (*database_column)[i].get<std::string>();
-			const Tables & tables = databases.at(database_name);
+			const DatabasePtr database = databases.at(database_name);
 			offsets[i] = i ? offsets[i - 1] : 0;
 
-			for (const auto & table : tables)
+			for (auto iterator = database->getIterator(); iterator->isValid(); iterator->next())
 			{
-				storages.insert(std::make_pair(std::make_pair(database_name, table.first), table.second));
-				table_column->insert(table.first);
+				const String & table_name = iterator->name();
+				storages.emplace(std::piecewise_construct,
+					std::forward_as_tuple(database_name, table_name),
+					std::forward_as_tuple(iterator->table()));
+				table_column->insert(table_name);
 				offsets[i] += 1;
 			}
 		}

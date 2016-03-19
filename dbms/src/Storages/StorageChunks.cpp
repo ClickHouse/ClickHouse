@@ -10,6 +10,7 @@
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/Databases/IDatabase.h>
 
 
 namespace DB
@@ -193,10 +194,12 @@ StorageChunks::StorageChunks(
 			if (context.isTableExist(database_name, it->first))
 			{
 				LOG_WARNING(log, "Chunk " << it->first << " already exists.");
-				context.detachTable(database_name, it->first);
+				context.getDatabase(database_name)->detachTable(it->first);
 			}
 
-			context.addTable(database_name, it->first, StorageChunkRef::create(it->first, context, database_name, name, true));
+			auto table = StorageChunkRef::create(it->first, context, database_name, name, true);
+			context.getDatabase(database_name)->attachTable(it->first, table);
+
 			++refcount;
 		}
 	}

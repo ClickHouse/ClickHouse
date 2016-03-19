@@ -218,7 +218,7 @@ protected:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS ENGINE = engine SELECT ...
   *
   * Или:
-  * CREATE|ATTACH DATABASE db
+  * CREATE|ATTACH DATABASE db [ENGINE = engine]
   *
   * Или:
   * CREATE|ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [ENGINE = engine] [POPULATE] AS SELECT ...

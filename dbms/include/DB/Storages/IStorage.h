@@ -258,16 +258,6 @@ public:
 		throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	/** Получить запрос CREATE TABLE, который описывает данную таблицу.
-	  * Обычно этот запрос хранится и достаётся из .sql файла из директории с метаданными.
-	  * Этот метод используется и имеет смысл только если для таблицы не создаётся .sql файл
-	  *  - то есть, только для таблиц, которые создаются не пользователем, а самой системой - например, для таблиц типа ChunkRef.
-	  */
-	virtual ASTPtr getCustomCreateQuery(const Context & context) const
-	{
-		throw Exception("Method getCustomCreateQuery is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-	}
-
 	/** Если при уничтожении объекта надо сделать какую-то сложную работу - сделать её заранее.
 	  * Например, если таблица содержит какие-нибудь потоки для фоновой работы - попросить их завершиться и дождаться завершения.
 	  * По-умолчанию - ничего не делать.
@@ -330,9 +320,5 @@ using TableLocks = IStorage::TableStructureReadLocks;
 
 /// имя таблицы -> таблица
 using Tables = std::map<String, StoragePtr>;
-
-/// имя БД -> таблицы
-using Databases = std::map<String, Tables>;
-
 
 }

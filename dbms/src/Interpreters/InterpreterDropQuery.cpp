@@ -4,6 +4,7 @@
 #include <DB/Parsers/ASTDropQuery.h>
 #include <DB/Interpreters/InterpreterDropQuery.h>
 #include <DB/Storages/IStorage.h>
+#include <DB/Databases/IDatabase.h>
 
 
 namespace DB
@@ -13,6 +14,7 @@ namespace ErrorCodes
 {
 	extern const int TABLE_WAS_NOT_DROPPED;
 	extern const int DATABASE_NOT_EMPTY;
+	extern const int UNKNOWN_DATABASE;
 }
 
 
@@ -29,15 +31,27 @@ BlockIO InterpreterDropQuery::execute()
 
 	ASTDropQuery & drop = typeid_cast<ASTDropQuery &>(*query_ptr);
 
+	bool drop_database = drop.table.empty() && !drop.database.empty();
+
+	if (drop_database && drop.detach)
+	{
+		context.detachDatabase(drop.database);
+		return {};
+	}
+
 	String database_name = drop.database.empty() ? current_database : drop.database;
 	String database_name_escaped = escapeForFileName(database_name);
 
 	String data_path = path + "data/" + database_name_escaped + "/";
 	String metadata_path = path + "metadata/" + database_name_escaped + "/";
 
+	auto database = context.tryGetDatabase(database_name);
+	if (!database && !drop.if_exists)
+		throw Exception("Database " + database_name + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+
 	StorageVector tables_to_drop;
 
-	if (!drop.table.empty())
+	if (!drop_database)
 	{
 		StoragePtr table;
 
@@ -53,19 +67,15 @@ BlockIO InterpreterDropQuery::execute()
 	}
 	else
 	{
-		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-
-		if (!drop.if_exists)
-			context.assertDatabaseExists(database_name);
-		else if (!context.isDatabaseExist(database_name))
-			return {};
-
-		Tables tables = context.getDatabases()[database_name];
-
-		for (auto & it : tables)
+		if (!database)
 		{
-			tables_to_drop.push_back(it.second);
+			if (!drop.if_exists)
+				throw Exception("Database " + database_name + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+			return {};
 		}
+
+		for (auto iterator = database->getIterator(); iterator->isValid(); iterator->next())
+			tables_to_drop.push_back(iterator->table());
 	}
 
 	for (StoragePtr table : tables_to_drop)
@@ -77,56 +87,28 @@ BlockIO InterpreterDropQuery::execute()
 
 		String current_table_name = table->getTableName();
 
-		/// Удаляем информацию о таблице из оперативки
-		StoragePtr detached = context.detachTable(database_name, current_table_name);
-
-		/// Удаляем данные таблицы
-		if (!drop.detach)
+		if (drop.detach)
 		{
-			String current_data_path = data_path + escapeForFileName(current_table_name);
-			String current_metadata_path = metadata_path + escapeForFileName(current_table_name) + ".sql";
+			/// Удаляем таблицу из оперативки, метаданные и данные не трогаем.
+			database->detachTable(current_table_name);
+		}
+		else
+		{
+			/// Удаляем метаданные и саму таблицу из оперативки.
+			database->removeTable(current_table_name);
 
-			/// Для таблиц типа ChunkRef, файла с метаданными не существует.
-			bool metadata_file_exists = Poco::File(current_metadata_path).exists();
-			if (metadata_file_exists)
-			{
-				if (Poco::File(current_metadata_path + ".bak").exists())
-					Poco::File(current_metadata_path + ".bak").remove();
-
-				Poco::File(current_metadata_path).renameTo(current_metadata_path + ".bak");
-			}
-
-			try
-			{
-				table->drop();
-			}
-			catch (const Exception & e)
-			{
-				/// Такая ошибка означает, что таблицу невозможно удалить, и данные пока ещё консистентны. Можно вернуть таблицу на место.
-				/// NOTE Таблица будет оставаться в состоянии после shutdown - не производить всевозможной фоновой работы.
-				if (e.code() == ErrorCodes::TABLE_WAS_NOT_DROPPED)
-				{
-					if (metadata_file_exists)
-						Poco::File(current_metadata_path + ".bak").renameTo(current_metadata_path);
-
-					context.addTable(database_name, current_table_name, detached);
-					throw;
-				}
-				else
-					throw;
-			}
-
+			/// Удаляем данные таблицы
+			table->drop();		/// TODO Не удалять метаданные, если таблицу не получилось удалить.
 			table->is_dropped = true;
 
-			if (metadata_file_exists)
-				Poco::File(current_metadata_path + ".bak").remove();
+			String current_data_path = data_path + escapeForFileName(current_table_name);
 
 			if (Poco::File(current_data_path).exists())
 				Poco::File(current_data_path).remove(true);
 		}
 	}
 
-	if (drop.table.empty())
+	if (drop_database)
 	{
 		/// Удаление базы данных. Таблицы в ней уже удалены.
 
@@ -136,7 +118,7 @@ BlockIO InterpreterDropQuery::execute()
 		context.assertDatabaseExists(database_name);
 
 		/// Кто-то мог успеть создать таблицу в удаляемой БД, пока мы удаляли таблицы без лока контекста.
-		if (!context.getDatabases()[database_name].empty())
+		if (!context.getDatabase(database_name)->empty())
 			throw Exception("New table appeared in database being dropped. Try dropping it again.", ErrorCodes::DATABASE_NOT_EMPTY);
 
 		/// Удаляем информацию о БД из оперативки

@@ -6,6 +6,8 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Storages/IStorage.h>
+#include <DB/Databases/IDatabase.h>
+#include <DB/Databases/DatabaseOrdinary.h>
 
 #include <iostream>
 #include <vector>
@@ -1168,9 +1170,11 @@ TestResult check(const TestEntry & entry)
 		auto storage_distributed_visits = StorageDistributedFake::create("remote_db", "remote_visits", entry.shard_count);
 		auto storage_distributed_hits = StorageDistributedFake::create("distant_db", "distant_hits", entry.shard_count);
 
-		context.addDatabase("test");
-		context.addTable("test", "visits_all", storage_distributed_visits);
-		context.addTable("test", "hits_all", storage_distributed_hits);
+		DB::DatabasePtr database = new DB::DatabaseOrdinary("test", "./metadata/test/", context, nullptr);
+
+		context.addDatabase("test", database);
+		database->attachTable("visits_all", storage_distributed_visits);
+		database->attachTable("hits_all", storage_distributed_hits);
 		context.setCurrentDatabase("test");
 
 		auto & settings = context.getSettingsRef();

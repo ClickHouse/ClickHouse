@@ -9,6 +9,7 @@
 #include <DB/Storages/System/StorageSystemReplicationQueue.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Common/VirtualColumnUtils.h>
+#include <DB/Databases/IDatabase.h>
 
 
 namespace DB
@@ -64,16 +65,11 @@ BlockInputStreams StorageSystemReplicationQueue::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	/// Собираем набор реплицируемых таблиц.
-	Databases replicated_tables;
-	{
-		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-
-		for (const auto & db : context.getDatabases())
-			for (const auto & table : db.second)
-				if (typeid_cast<const StorageReplicatedMergeTree *>(table.second.get()))
-					replicated_tables[db.first][table.first] = table.second;
-	}
+	std::map<String, std::map<String, StoragePtr>> replicated_tables;
+	for (const auto & db : context.getDatabases())
+		for (auto iterator = db.second->getIterator(); iterator->isValid(); iterator->next())
+			if (typeid_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
+				replicated_tables[db.first][iterator->name()] = iterator->table();
 
 	ColumnWithTypeAndName col_database_to_filter		{ new ColumnString,	new DataTypeString,	"database" };
 	ColumnWithTypeAndName col_table_to_filter			{ new ColumnString,	new DataTypeString,	"table" };

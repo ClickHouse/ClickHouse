@@ -31,8 +31,6 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1) override;
 
-	ASTPtr getCustomCreateQuery(const Context & context) const override;
-
 	void drop() override;
 
 	String source_database_name;

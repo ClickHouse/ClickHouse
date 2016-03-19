@@ -8,6 +8,7 @@
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Common/VirtualColumnUtils.h>
+#include <DB/Databases/IDatabase.h>
 
 
 namespace DB
@@ -66,9 +67,7 @@ BlockInputStreams StorageSystemParts::read(
 	std::map<std::pair<String, String>, StoragePtr> storages;
 
 	{
-		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-
-		const Databases & databases = context.getDatabases();
+		Databases databases = context.getDatabases();
 
 		/// Добавим столбец database.
 		ColumnPtr database_column = new ColumnString;
@@ -94,38 +93,33 @@ BlockInputStreams StorageSystemParts::read(
 
 		for (size_t i = 0; i < rows; ++i)
 		{
-			String database = (*database_column)[i].get<String>();
-			const Tables & tables = databases.at(database);
+			String database_name = (*database_column)[i].get<String>();
+			const DatabasePtr database = databases.at(database_name);
+
 			offsets[i] = i ? offsets[i - 1] : 0;
-			for (const auto & table : tables)
+			for (auto iterator = database->getIterator(); iterator->isValid(); iterator->next())
 			{
-				StoragePtr storage = table.second;
+				String table_name = iterator->name();
+				StoragePtr storage = iterator->table();
+				String engine_name = storage->getName();
+
 				if (!dynamic_cast<StorageMergeTree *>(&*storage) &&
 					!dynamic_cast<StorageReplicatedMergeTree *>(&*storage))
 					continue;
 
-				storages[std::make_pair(database, table.first)] = storage;
+				storages[std::make_pair(database_name, iterator->name())] = storage;
 
 				/// Добавим все 4 комбинации флагов replicated и active.
-				table_column->insert(table.first);
-				engine_column->insert(storage->getName());
-				replicated_column->insert(static_cast<UInt64>(0));
-				active_column->insert(static_cast<UInt64>(0));
-
-				table_column->insert(table.first);
-				engine_column->insert(storage->getName());
-				replicated_column->insert(static_cast<UInt64>(0));
-				active_column->insert(static_cast<UInt64>(1));
-
-				table_column->insert(table.first);
-				engine_column->insert(storage->getName());
-				replicated_column->insert(static_cast<UInt64>(1));
-				active_column->insert(static_cast<UInt64>(0));
-
-				table_column->insert(table.first);
-				engine_column->insert(storage->getName());
-				replicated_column->insert(static_cast<UInt64>(1));
-				active_column->insert(static_cast<UInt64>(1));
+				for (UInt64 replicated : {0, 1})
+				{
+					for (UInt64 active : {0, 1})
+					{
+						table_column->insert(table_name);
+						engine_column->insert(engine_name);
+						replicated_column->insert(replicated);
+						active_column->insert(active);
+					}
+				}
 
 				offsets[i] += 4;
 			}

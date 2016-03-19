@@ -42,6 +42,7 @@ struct Progress;
 class Clusters;
 class QueryLog;
 struct MergeTreeSettings;
+class IDatabase;
 
 
 /// (имя базы данных, имя таблицы)
@@ -76,7 +77,7 @@ public:
 	};
 
 private:
-	typedef std::shared_ptr<ContextShared> Shared;
+	using Shared = std::shared_ptr<ContextShared>;
 	Shared shared;
 
 	String user;						/// Текущий пользователь.
@@ -97,6 +98,9 @@ private:
 	Tables external_tables;				/// Временные таблицы.
 	Context * session_context = nullptr;	/// Контекст сессии или nullptr, если его нет. (Возможно, равен this.)
 	Context * global_context = nullptr;		/// Глобальный контекст или nullptr, если его нет. (Возможно, равен this.)
+
+	using DatabasePtr = std::shared_ptr<IDatabase>;
+	using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
 public:
 	Context();
@@ -153,12 +157,8 @@ public:
 	StoragePtr getTable(const String & database_name, const String & table_name) const;
 	StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
 	void addExternalTable(const String & table_name, StoragePtr storage);
-	void addTable(const String & database_name, const String & table_name, StoragePtr table);
-	void addDatabase(const String & database_name);
 
-	/// Возвращает отцепленную таблицу.
-	StoragePtr detachTable(const String & database_name, const String & table_name);
-
+	void addDatabase(const String & database_name, const DatabasePtr & database);
 	void detachDatabase(const String & database_name);
 
 	String getCurrentDatabase() const;
@@ -205,12 +205,17 @@ public:
 	/// Получить запрос на CREATE таблицы.
 	ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;
 
+	const DatabasePtr getDatabase(const String & database_name) const;
+	DatabasePtr getDatabase(const String & database_name);
+	const DatabasePtr tryGetDatabase(const String & database_name) const;
+	DatabasePtr tryGetDatabase(const String & database_name);
+
+	const Databases getDatabases() const;
+	Databases getDatabases();
+
+
 	/// Для методов ниже может быть необходимо захватывать mutex самостоятельно.
 	Poco::Mutex & getMutex() const;
-
-	/// Метод getDatabases не потокобезопасен. При работе со списком БД и таблиц, вы должны захватить mutex.
-	const Databases & getDatabases() const;
-	Databases & getDatabases();
 
 	Context & getSessionContext();
 	Context & getGlobalContext();
@@ -220,6 +225,7 @@ public:
 
 	const Settings & getSettingsRef() const { return settings; };
 	Settings & getSettingsRef() { return settings; };
+
 
 	void setProgressCallback(ProgressCallback callback);
 	/// Используется в InterpreterSelectQuery, чтобы передать его в IProfilingBlockInputStream.
