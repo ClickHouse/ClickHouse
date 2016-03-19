@@ -37,6 +37,9 @@ using DatabaseIteratorPtr = std::unique_ptr<IDatabaseIterator>;
 class IDatabase : public std::enable_shared_from_this<IDatabase>
 {
 public:
+	/// Получить имя движка базы данных.
+	virtual String getEngineName() const = 0;
+
 	/// Проверить существование таблицы.
 	virtual bool isTableExist(const String & name) const = 0;
 

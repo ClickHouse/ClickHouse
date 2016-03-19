@@ -93,6 +93,7 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
 	String database_name_escaped = escapeForFileName(database_name);
 
+	/// Создаём директории с данными и метаданными таблиц.
 	String path = context.getPath();
 	String data_path = path + "data/" + database_name_escaped + "/";
 	String metadata_path = path + "metadata/" + database_name_escaped + "/";
@@ -102,8 +103,13 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
 	DatabasePtr database = DatabaseFactory::get(database_engine_name, database_name, metadata_path, context, thread_pool);
 
-	/// Записываем файл с метаданными.
-	if (!create.attach)
+	/// Записываем файл с метаданными, если нужно.
+	String metadata_file_tmp_path = path + "metadata/" + database_name_escaped + ".sql.tmp";
+	String metadata_file_path = path + "metadata/" + database_name_escaped + ".sql";
+
+	bool need_write_metadata = !create.attach;
+
+	if (need_write_metadata)
 	{
 		create.attach = true;
 		create.if_not_exists = false;
@@ -113,15 +119,28 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 		statement_stream << '\n';
 		String statement = statement_stream.str();
 
-		/// Гарантирует, что база данных не создаётся прямо сейчас.	/// TODO .sql.tmp и rename
-		WriteBufferFromFile out(path + "metadata/" + database_name_escaped + ".sql", statement.size(), O_WRONLY | O_CREAT | O_EXCL);
+		/// Гарантирует, что база данных не создаётся прямо сейчас.
+		WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
 		writeString(statement, out);
 		out.next();
 		out.sync();
 		out.close();
 	}
 
-	context.addDatabase(database_name, database);
+	try
+	{
+		context.addDatabase(database_name, database);
+
+		if (need_write_metadata)
+			Poco::File(metadata_file_tmp_path).renameTo(metadata_file_path);
+	}
+	catch (...)
+	{
+		if (need_write_metadata)
+			Poco::File(metadata_file_tmp_path).remove();
+
+		throw;
+	}
 }
 
 

@@ -24,6 +24,8 @@ private:
 public:
 	DatabaseOrdinary(const String & name_, const String & path_, Context & context, boost::threadpool::pool * thread_pool);
 
+	String getEngineName() const override { return "Ordinary"; }
+
 	bool isTableExist(const String & table_name) const override;
 	StoragePtr tryGetTable(const String & table_name) override;
 

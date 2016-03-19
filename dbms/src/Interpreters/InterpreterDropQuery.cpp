@@ -31,6 +31,14 @@ BlockIO InterpreterDropQuery::execute()
 
 	ASTDropQuery & drop = typeid_cast<ASTDropQuery &>(*query_ptr);
 
+	bool drop_database = drop.table.empty() && !drop.database.empty();
+
+	if (drop_database && drop.detach)
+	{
+		context.detachDatabase(drop.database);
+		return {};
+	}
+
 	String database_name = drop.database.empty() ? current_database : drop.database;
 	String database_name_escaped = escapeForFileName(database_name);
 
@@ -43,7 +51,7 @@ BlockIO InterpreterDropQuery::execute()
 
 	StorageVector tables_to_drop;
 
-	if (!drop.table.empty())
+	if (!drop_database)
 	{
 		StoragePtr table;
 
@@ -100,7 +108,7 @@ BlockIO InterpreterDropQuery::execute()
 		}
 	}
 
-	if (drop.table.empty())
+	if (drop_database)
 	{
 		/// Удаление базы данных. Таблицы в ней уже удалены.
 
