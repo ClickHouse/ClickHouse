@@ -442,7 +442,8 @@ static ASTPtr getCreateQueryImpl(const String & path, const String & table_name)
 }
 
 
-void DatabaseOrdinary::renameTable(const String & table_name, IDatabase & to_database, const String & to_table_name)
+void DatabaseOrdinary::renameTable(
+	const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name)
 {
 	DatabaseOrdinary * to_database_concrete = typeid_cast<DatabaseOrdinary *>(&to_database);
 
@@ -457,7 +458,7 @@ void DatabaseOrdinary::renameTable(const String & table_name, IDatabase & to_dat
 	/// Уведомляем таблицу о том, что она переименовывается. Если таблица не поддерживает переименование - кинется исключение.
 	try
 	{
-		table->rename(path + "data/" + escapeForFileName(to_database_concrete->name) + "/",
+		table->rename(context.getPath() + "/data/" + escapeForFileName(to_database_concrete->name) + "/",
 			to_database_concrete->name,
 			to_table_name);
 	}

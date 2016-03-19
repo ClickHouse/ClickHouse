@@ -39,7 +39,7 @@ public:
 	void attachTable(const String & table_name, const StoragePtr & table) override;
 	StoragePtr detachTable(const String & table_name) override;
 
-	void renameTable(const String & table_name, IDatabase & to_database, const String & to_table_name) override;
+	void renameTable(const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name) override;
 
 	ASTPtr getCreateQuery(const String & table_name) const override;
 

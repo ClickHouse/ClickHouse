@@ -66,7 +66,7 @@ public:
 	virtual StoragePtr detachTable(const String & name) = 0;
 
 	/// Переименовать таблицу и, возможно, переместить таблицу в другую БД.
-	virtual void renameTable(const String & name, IDatabase & to_database, const String & to_name) = 0;
+	virtual void renameTable(const Context & context, const String & name, IDatabase & to_database, const String & to_name) = 0;
 
 	/// Получить запрос CREATE TABLE для таблицы. Может выдавать информацию и для detached таблиц, для которых есть метаданные.
 	virtual ASTPtr getCreateQuery(const String & name) const = 0;
