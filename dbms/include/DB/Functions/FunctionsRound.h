@@ -672,7 +672,7 @@ namespace DB
 			T* begin_out = &out[0];
 			const T* end_out = begin_out + out.size();
 
-			const T* limit = end_in - (data_count - 1);
+			const T* limit = begin_in + in.size() / data_count * data_count;
 
 			const T* __restrict p_in = begin_in;
 			T* __restrict p_out = begin_out;
