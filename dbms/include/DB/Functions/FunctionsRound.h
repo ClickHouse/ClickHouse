@@ -980,6 +980,9 @@ namespace
 			typename ColumnVector<T>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col->getData().size());
 
+			if (vec_res.empty())
+				return;
+
 			Op::apply(col->getData(), scale, vec_res);
 		}
 
