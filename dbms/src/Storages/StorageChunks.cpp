@@ -188,7 +188,8 @@ StorageChunks::StorageChunks(
 
 	/// Создадим все таблицы типа ChunkRef. Они должны располагаться в той же БД.
 	{
-		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+		auto lock = context.getLock();
+
 		for (ChunkIndices::const_iterator it = chunk_indices.begin(); it != chunk_indices.end(); ++it)
 		{
 			if (context.isTableExist(database_name, it->first))

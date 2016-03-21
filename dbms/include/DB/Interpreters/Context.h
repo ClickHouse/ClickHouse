@@ -219,8 +219,8 @@ public:
 	Databases getDatabases();
 
 
-	/// Для методов ниже может быть необходимо захватывать mutex самостоятельно.
-	Poco::Mutex & getMutex() const;
+	/// Для методов ниже может быть необходимо захватывать блокировку самостоятельно.
+	std::unique_lock<Poco::Mutex> getLock() const;
 
 	Context & getSessionContext();
 	Context & getGlobalContext();

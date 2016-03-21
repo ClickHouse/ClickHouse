@@ -95,7 +95,7 @@ BlockIO InterpreterRenameQuery::execute()
 	  *  но лишь в случаях, когда в процессе переименования не было исключений и сервер не падал.
 	  */
 
-	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+	auto lock = context.getLock();
 
 	for (const auto & elem : descriptions)
 	{

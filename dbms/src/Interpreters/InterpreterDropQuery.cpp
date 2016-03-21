@@ -116,7 +116,7 @@ BlockIO InterpreterDropQuery::execute()
 	{
 		/// Удаление базы данных. Таблицы в ней уже удалены.
 
-		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+		auto lock = context.getLock();
 
 		/// Кто-то мог успеть удалить БД до нас.
 		context.assertDatabaseExists(database_name);

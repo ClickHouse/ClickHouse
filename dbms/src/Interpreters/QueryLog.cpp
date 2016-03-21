@@ -31,7 +31,7 @@ QueryLog::QueryLog(Context & context_, const String & database_name_, const Stri
 	{
 		String description = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name);
 
-		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+		auto lock = context.getLock();
 
 		table = context.tryGetTable(database_name, table_name);
 

@@ -187,7 +187,7 @@ Context::~Context() = default;
 const TableFunctionFactory & Context::getTableFunctionFactory() const			{ return shared->table_function_factory; }
 const AggregateFunctionFactory & Context::getAggregateFunctionFactory() const	{ return shared->aggregate_function_factory; }
 InterserverIOHandler & Context::getInterserverIOHandler()						{ return shared->interserver_io_handler; }
-Poco::Mutex & Context::getMutex() const 										{ return shared->mutex; }
+std::unique_lock<Poco::Mutex> Context::getLock() const							{ return std::unique_lock<Poco::Mutex>(shared->mutex); }
 ProcessList & Context::getProcessList()											{ return shared->process_list; }
 const ProcessList & Context::getProcessList() const								{ return shared->process_list; }
 MergeList & Context::getMergeList() 											{ return shared->merge_list; }
