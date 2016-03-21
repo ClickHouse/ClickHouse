@@ -147,6 +147,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
 		QuotaForIntervals & quota = context.getQuota();
 
+		quota.addQuery(current_time);
 		quota.checkExceeded(current_time);
 
 		const Settings & settings = context.getSettingsRef();
@@ -179,8 +180,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 				stream->setProcessListElement(context.getProcessListElement());
 			}
 		}
-
-		quota.addQuery(current_time);
 
 		/// Всё, что связано с логом запросов.
 		{

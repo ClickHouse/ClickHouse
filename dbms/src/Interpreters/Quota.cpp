@@ -81,23 +81,23 @@ void QuotaForInterval::addError(time_t current_time, const String & quota_name) 
 
 void QuotaForInterval::checkAndAddResultRowsBytes(time_t current_time, const String & quota_name, size_t rows, size_t bytes)
 {
-	checkExceeded(current_time, quota_name);
 	__sync_fetch_and_add(&used.result_rows, rows);
 	__sync_fetch_and_add(&used.result_bytes, bytes);
+	checkExceeded(current_time, quota_name);
 }
 
 void QuotaForInterval::checkAndAddReadRowsBytes(time_t current_time, const String & quota_name, size_t rows, size_t bytes)
 {
-	checkExceeded(current_time, quota_name);
 	__sync_fetch_and_add(&used.read_rows, rows);
 	__sync_fetch_and_add(&used.read_bytes, bytes);
+	checkExceeded(current_time, quota_name);
 }
 
 void QuotaForInterval::checkAndAddExecutionTime(time_t current_time, const String & quota_name, Poco::Timespan amount)
 {
-	checkExceeded(current_time, quota_name);
 	/// Используется информация о внутреннем представлении Poco::Timespan.
 	__sync_fetch_and_add(reinterpret_cast<Int64 *>(&used.execution_time), amount.totalMicroseconds());
+	checkExceeded(current_time, quota_name);
 }
 
 void QuotaForInterval::updateTime(time_t current_time)
@@ -111,7 +111,7 @@ void QuotaForInterval::updateTime(time_t current_time)
 
 void QuotaForInterval::check(size_t max_amount, size_t used_amount, time_t current_time, const String & quota_name, const char * resource_name)
 {
-	if (max_amount && used_amount >= max_amount)
+	if (max_amount && used_amount > max_amount)
 	{
 		std::stringstream message;
 		message << "Quota '" << quota_name << "' for ";
