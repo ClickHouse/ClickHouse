@@ -60,6 +60,7 @@ namespace ErrorCodes
 	extern const int TABLE_METADATA_DOESNT_EXIST;
 	extern const int THERE_IS_NO_SESSION;
 	extern const int NO_ELEMENTS_IN_CONFIG;
+	extern const int DDL_GUARD_IS_ACTIVE;
 }
 
 class TableFunctionFactory;
@@ -108,7 +109,8 @@ struct ContextShared
 	Macros macros;											/// Подстановки из конфига.
 	std::unique_ptr<Compiler> compiler;						/// Для динамической компиляции частей запроса, при необходимости.
 	std::unique_ptr<QueryLog> query_log;					/// Для логгирования запросов.
-	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector; /// Правила для выбора метода сжатия в зависимости от размера куска.
+	/// Правила для выбора метода сжатия в зависимости от размера куска.
+	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
 	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Настройки для движка MergeTree.
 
 	/// Кластеры для distributed таблиц
@@ -118,6 +120,14 @@ struct ContextShared
 	Poco::UUIDGenerator uuid_generator;
 
 	bool shutdown_called = false;
+
+	/// Позволяют запретить одновременное выполнение DDL запросов над одной и той же таблицей.
+	/// database -> table -> exception_message
+	/// На время выполнения операции, сюда помещается элемент, и возвращается объект, который в деструкторе удаляет элемент.
+	/// В случае, если элемент уже есть - кидается исключение. См. class DDLGuard ниже.
+	using DDLGuards = std::unordered_map<String, std::unordered_map<String, String>>;
+	DDLGuards ddl_guards;
+	mutable std::mutex ddl_guards_mutex;
 
 
 	~ContextShared()
@@ -532,6 +542,28 @@ void Context::addExternalTable(const String & table_name, StoragePtr storage)
 }
 
 
+DDLGuard::DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && lock, const String & elem, const String & message)
+	: map(map_), mutex(mutex_)
+{
+	bool inserted;
+	std::tie(it, inserted) = map.emplace(elem, message);
+	if (!inserted)
+		throw Exception(it->second, ErrorCodes::DDL_GUARD_IS_ACTIVE);
+}
+
+DDLGuard::~DDLGuard()
+{
+	std::lock_guard<std::mutex> lock(mutex);
+	map.erase(it);
+}
+
+std::unique_ptr<DDLGuard> Context::getDDLGuard(const String & database, const String & table, const String & message) const
+{
+	std::unique_lock<std::mutex> lock(shared->ddl_guards_mutex);
+	return std::make_unique<DDLGuard>(shared->ddl_guards[database], shared->ddl_guards_mutex, std::move(lock), table, message);
+}
+
+
 void Context::addDatabase(const String & database_name, const DatabasePtr & database)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
@@ -541,13 +573,13 @@ void Context::addDatabase(const String & database_name, const DatabasePtr & data
 }
 
 
-void Context::detachDatabase(const String & database_name)
+DatabasePtr Context::detachDatabase(const String & database_name)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
-	assertDatabaseExists(database_name);
-	shared->databases[database_name]->shutdown();
+	auto res = getDatabase(database_name);
 	shared->databases.erase(database_name);
+	return res;
 }
 
 

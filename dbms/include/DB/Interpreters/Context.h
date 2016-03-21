@@ -43,14 +43,15 @@ class Clusters;
 class QueryLog;
 struct MergeTreeSettings;
 class IDatabase;
+class DDLGuard;
 
 
 /// (имя базы данных, имя таблицы)
-typedef std::pair<String, String> DatabaseAndTableName;
+using DatabaseAndTableName = std::pair<String, String>;
 
 /// Таблица -> множество таблиц-представлений, которые деляют SELECT из неё.
-typedef std::map<DatabaseAndTableName, std::set<DatabaseAndTableName>> ViewDependencies;
-typedef std::vector<DatabaseAndTableName> Dependencies;
+using ViewDependencies = std::map<DatabaseAndTableName, std::set<DatabaseAndTableName>>;
+using Dependencies = std::vector<DatabaseAndTableName>;
 
 
 /** Набор известных объектов, которые могут быть использованы в запросе.
@@ -159,7 +160,11 @@ public:
 	void addExternalTable(const String & table_name, StoragePtr storage);
 
 	void addDatabase(const String & database_name, const DatabasePtr & database);
-	void detachDatabase(const String & database_name);
+	DatabasePtr detachDatabase(const String & database_name);
+
+	/// Получить объект, который защищает таблицу от одновременного выполнения нескольких DDL операций.
+	/// Если такой объект уже есть - кидается исключение.
+	std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table, const String & message) const;
 
 	String getCurrentDatabase() const;
 	String getCurrentQueryId() const;
@@ -295,5 +300,22 @@ private:
 	StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
 };
 
+
+/** Кладёт элемент в map, в деструкторе - удаляет.
+  * Если элемент уже есть - кидает исключение.
+  */
+class DDLGuard
+{
+	/// Имя объекта -> сообщение.
+	using Map = std::unordered_map<String, String>;
+
+	Map & map;
+	Map::iterator it;
+	std::mutex & mutex;
+
+public:
+	DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && lock, const String & elem, const String & message);
+	~DDLGuard();
+};
 
 }

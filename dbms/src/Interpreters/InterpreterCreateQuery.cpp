@@ -483,12 +483,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 	StoragePtr res;
 
 	{
-		/// TODO Операции с файловой системой не должны быть под глобальной блокировкой.
-		/// Сделать DDLTableLock
-		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+		std::unique_ptr<DDLGuard> guard;
 
 		if (!create.is_temporary)
 		{
+			guard = context.getDDLGuard(database_name, table_name,
+				"Table " + database_name + "." + table_name + " is creating or attaching right now");
+
 			context.assertDatabaseExists(database_name);
 
 			if (context.isTableExist(database_name, table_name))

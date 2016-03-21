@@ -49,7 +49,9 @@ BlockIO InterpreterDropQuery::execute()
 	if (!database && !drop.if_exists)
 		throw Exception("Database " + database_name + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 
-	StorageVector tables_to_drop;
+	std::vector<std::pair<
+		StoragePtr,
+		std::unique_ptr<DDLGuard>>> tables_to_drop;
 
 	if (!drop_database)
 	{
@@ -61,7 +63,8 @@ BlockIO InterpreterDropQuery::execute()
 			table = context.getTable(database_name, drop.table);
 
 		if (table)
-			tables_to_drop.push_back(table);
+			tables_to_drop.emplace_back(table, context.getDDLGuard(database_name, drop.table,
+				"Table " + database_name + "." + drop.table + " is dropping or detaching right now"));
 		else
 			return {};
 	}
@@ -75,17 +78,18 @@ BlockIO InterpreterDropQuery::execute()
 		}
 
 		for (auto iterator = database->getIterator(); iterator->isValid(); iterator->next())
-			tables_to_drop.push_back(iterator->table());
+			tables_to_drop.emplace_back(iterator->table(), context.getDDLGuard(database_name, iterator->name(),
+				"Table " + database_name + "." + iterator->name() + " is dropping or detaching right now"));
 	}
 
-	for (StoragePtr table : tables_to_drop)
+	for (auto & table : tables_to_drop)
 	{
-		table->shutdown();
+		table.first->shutdown();
 
 		/// Если кто-то успел удалить эту таблицу, выбросит исключение.
-		auto table_lock = table->lockForAlter();
+		auto table_lock = table.first->lockForAlter();
 
-		String current_table_name = table->getTableName();
+		String current_table_name = table.first->getTableName();
 
 		if (drop.detach)
 		{
@@ -98,8 +102,8 @@ BlockIO InterpreterDropQuery::execute()
 			database->removeTable(current_table_name);
 
 			/// Удаляем данные таблицы
-			table->drop();		/// TODO Не удалять метаданные, если таблицу не получилось удалить.
-			table->is_dropped = true;
+			table.first->drop();		/// TODO Не удалять метаданные, если таблицу не получилось удалить.
+			table.first->is_dropped = true;
 
 			String current_data_path = data_path + escapeForFileName(current_table_name);
 
