@@ -86,7 +86,7 @@ protected:
 
 		std::lock_guard<std::mutex> lock(buffer.mutex);
 
-		if (!buffer.data)
+		if (!buffer.data.rowsInFirstColumn())
 			return res;
 
 		for (const auto & name : column_names)
