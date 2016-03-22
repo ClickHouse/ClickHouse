@@ -196,19 +196,19 @@ const MergeList & Context::getMergeList() const 								{ return shared->merge_l
 
 const Databases Context::getDatabases() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	return shared->databases;
 }
 
 Databases Context::getDatabases()
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	return shared->databases;
 }
 
 const DatabasePtr Context::getDatabase(const String & database_name) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	String db = database_name.empty() ? current_database : database_name;
 	assertDatabaseExists(db);
 	return shared->databases[db];
@@ -216,7 +216,7 @@ const DatabasePtr Context::getDatabase(const String & database_name) const
 
 DatabasePtr Context::getDatabase(const String & database_name)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	String db = database_name.empty() ? current_database : database_name;
 	assertDatabaseExists(db);
 	return shared->databases[db];
@@ -224,7 +224,7 @@ DatabasePtr Context::getDatabase(const String & database_name)
 
 const DatabasePtr Context::tryGetDatabase(const String & database_name) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	String db = database_name.empty() ? current_database : database_name;
 	auto it = shared->databases.find(db);
 	if (it == shared->databases.end())
@@ -234,7 +234,7 @@ const DatabasePtr Context::tryGetDatabase(const String & database_name) const
 
 DatabasePtr Context::tryGetDatabase(const String & database_name)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	String db = database_name.empty() ? current_database : database_name;
 	auto it = shared->databases.find(db);
 	if (it == shared->databases.end())
@@ -245,33 +245,33 @@ DatabasePtr Context::tryGetDatabase(const String & database_name)
 
 String Context::getPath() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	return shared->path;
 }
 
 String Context::getTemporaryPath() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	return shared->tmp_path;
 }
 
 
 void Context::setPath(const String & path)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	shared->path = path;
 }
 
 void Context::setTemporaryPath(const String & path)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	shared->tmp_path = path;
 }
 
 
 void Context::setUsersConfig(ConfigurationPtr config)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	shared->users_config = config;
 	shared->users.loadFromConfig(*shared->users_config);
 	shared->quotas.loadFromConfig(*shared->users_config);
@@ -279,14 +279,14 @@ void Context::setUsersConfig(ConfigurationPtr config)
 
 ConfigurationPtr Context::getUsersConfig()
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	return shared->users_config;
 }
 
 
 void Context::setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, const String & quota_key)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	const User & user_props = shared->users.get(name, password, address);
 	setSetting("profile", user_props.profile);
@@ -299,14 +299,14 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
 void Context::setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	quota = shared->quotas.get(name, quota_key, user_name, address);
 }
 
 
 QuotaForIntervals & Context::getQuota()
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	return *quota;
 }
 
@@ -324,7 +324,7 @@ void Context::checkDatabaseAccessRights(const std::string & database_name) const
 
 void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	checkDatabaseAccessRights(from.first);
 	checkDatabaseAccessRights(where.first);
 	shared->view_dependencies[from].insert(where);
@@ -332,7 +332,7 @@ void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAnd
 
 void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	checkDatabaseAccessRights(from.first);
 	checkDatabaseAccessRights(where.first);
 	shared->view_dependencies[from].erase(where);
@@ -340,7 +340,7 @@ void Context::removeDependency(const DatabaseAndTableName & from, const Database
 
 Dependencies Context::getDependencies(const String & database_name, const String & table_name) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	String db = database_name.empty() ? current_database : database_name;
 	checkDatabaseAccessRights(db);
@@ -354,7 +354,7 @@ Dependencies Context::getDependencies(const String & database_name, const String
 
 bool Context::isTableExist(const String & database_name, const String & table_name) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	String db = database_name.empty() ? current_database : database_name;
 	checkDatabaseAccessRights(db);
@@ -367,7 +367,7 @@ bool Context::isTableExist(const String & database_name, const String & table_na
 
 bool Context::isDatabaseExist(const String & database_name) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	String db = database_name.empty() ? current_database : database_name;
 	checkDatabaseAccessRights(db);
 	return shared->databases.end() != shared->databases.find(db);
@@ -376,7 +376,7 @@ bool Context::isDatabaseExist(const String & database_name) const
 
 void Context::assertTableExists(const String & database_name, const String & table_name) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	String db = database_name.empty() ? current_database : database_name;
 	checkDatabaseAccessRights(db);
@@ -392,7 +392,7 @@ void Context::assertTableExists(const String & database_name, const String & tab
 
 void Context::assertTableDoesntExist(const String & database_name, const String & table_name, bool check_database_access_rights) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	String db = database_name.empty() ? current_database : database_name;
 	if (check_database_access_rights)
@@ -406,7 +406,7 @@ void Context::assertTableDoesntExist(const String & database_name, const String 
 
 void Context::assertDatabaseExists(const String & database_name, bool check_database_access_rights) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	String db = database_name.empty() ? current_database : database_name;
 	if (check_database_access_rights)
@@ -419,7 +419,7 @@ void Context::assertDatabaseExists(const String & database_name, bool check_data
 
 void Context::assertDatabaseDoesntExist(const String & database_name) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	String db = database_name.empty() ? current_database : database_name;
 	checkDatabaseAccessRights(db);
@@ -431,7 +431,7 @@ void Context::assertDatabaseDoesntExist(const String & database_name) const
 
 Tables Context::getExternalTables() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	Tables res = external_tables;
 	if (session_context && session_context != this)
@@ -450,7 +450,7 @@ Tables Context::getExternalTables() const
 
 StoragePtr Context::tryGetExternalTable(const String & table_name) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	Tables::const_iterator jt = external_tables.find(table_name);
 	if (external_tables.end() == jt)
@@ -478,7 +478,7 @@ StoragePtr Context::tryGetTable(const String & database_name, const String & tab
 
 StoragePtr Context::getTableImpl(const String & database_name, const String & table_name, Exception * exception) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	/** Возможность обратиться к временным таблицам другого запроса в виде _query_QUERY_ID.table
 	  * NOTE В дальнейшем может потребоваться подумать об изоляции.
@@ -536,7 +536,7 @@ void Context::addExternalTable(const String & table_name, StoragePtr storage)
 
 	if (process_list_elem)
 	{
-		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+		auto lock = getLock();
 		shared->process_list.addTemporaryTable(*process_list_elem, table_name, storage);
 	}
 }
@@ -566,7 +566,7 @@ std::unique_ptr<DDLGuard> Context::getDDLGuard(const String & database, const St
 
 void Context::addDatabase(const String & database_name, const DatabasePtr & database)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	assertDatabaseDoesntExist(database_name);
 	shared->databases[database_name] = database;
@@ -575,7 +575,7 @@ void Context::addDatabase(const String & database_name, const DatabasePtr & data
 
 DatabasePtr Context::detachDatabase(const String & database_name)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	auto res = getDatabase(database_name);
 	shared->databases.erase(database_name);
@@ -585,7 +585,7 @@ DatabasePtr Context::detachDatabase(const String & database_name)
 
 ASTPtr Context::getCreateQuery(const String & database_name, const String & table_name) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	String db = database_name.empty() ? current_database : database_name;
 	assertDatabaseExists(db);
@@ -596,28 +596,28 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 
 Settings Context::getSettings() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	return settings;
 }
 
 
 Limits Context::getLimits() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	return settings.limits;
 }
 
 
 void Context::setSettings(const Settings & settings_)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	settings = settings_;
 }
 
 
 void Context::setSetting(const String & name, const Field & value)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	if (name == "profile")
 		settings.setProfile(value.safeGet<String>(), *shared->users_config);
 	else
@@ -627,7 +627,7 @@ void Context::setSetting(const String & name, const Field & value)
 
 void Context::setSetting(const String & name, const std::string & value)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	if (name == "profile")
 		settings.setProfile(value, *shared->users_config);
 	else
@@ -637,21 +637,21 @@ void Context::setSetting(const String & name, const std::string & value)
 
 String Context::getCurrentDatabase() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	return current_database;
 }
 
 
 String Context::getCurrentQueryId() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	return current_query_id;
 }
 
 
 void Context::setCurrentDatabase(const String & name)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	assertDatabaseExists(name);
 	current_database = name;
 }
@@ -666,21 +666,21 @@ void Context::setCurrentQueryId(const String & query_id)
 	if (query_id_to_set.empty())	/// Если пользователь не передал свой query_id, то генерируем его самостоятельно.
 		query_id_to_set = shared->uuid_generator.createRandom().toString();
 
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	current_query_id = query_id_to_set;
 }
 
 
 String Context::getDefaultFormat() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	return default_format.empty() ? "TabSeparated" : default_format;
 }
 
 
 void Context::setDefaultFormat(const String & name)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	default_format = name;
 }
 
@@ -726,7 +726,7 @@ const ExternalDictionaries & Context::getExternalDictionaries() const
 
 const Dictionaries & Context::getDictionariesImpl(const bool throw_on_error) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	if (!shared->dictionaries)
 		shared->dictionaries = new Dictionaries{throw_on_error};
@@ -788,7 +788,7 @@ ProcessList::Element * Context::getProcessListElement()
 
 void Context::setUncompressedCache(size_t max_size_in_bytes)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	if (shared->uncompressed_cache)
 		throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
@@ -799,13 +799,13 @@ void Context::setUncompressedCache(size_t max_size_in_bytes)
 
 UncompressedCachePtr Context::getUncompressedCache() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	return shared->uncompressed_cache;
 }
 
 void Context::setMarkCache(size_t cache_size_in_bytes)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	if (shared->mark_cache)
 		throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
@@ -815,13 +815,13 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
 
 MarkCachePtr Context::getMarkCache() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	return shared->mark_cache;
 }
 
 BackgroundProcessingPool & Context::getBackgroundPool()
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	if (!shared->background_pool)
 		shared->background_pool = new BackgroundProcessingPool(settings.background_pool_size);
 	return *shared->background_pool;
@@ -829,7 +829,7 @@ BackgroundProcessingPool & Context::getBackgroundPool()
 
 void Context::setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	if (shared->resharding_worker)
 		throw Exception("Resharding background thread has already been initialized.", ErrorCodes::LOGICAL_ERROR);
 	shared->resharding_worker = resharding_worker;
@@ -837,7 +837,7 @@ void Context::setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_w
 
 ReshardingWorker & Context::getReshardingWorker()
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 	if (!shared->resharding_worker)
 		throw Exception("Resharding background thread not initialized: resharding missing in configuration file.",
 			ErrorCodes::LOGICAL_ERROR);
@@ -846,7 +846,7 @@ ReshardingWorker & Context::getReshardingWorker()
 
 void Context::resetCaches() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	if (shared->uncompressed_cache)
 		shared->uncompressed_cache->reset();
@@ -901,7 +901,7 @@ UInt16 Context::getTCPPort() const
 const Cluster & Context::getCluster(const std::string & cluster_name) const
 {
 	{
-		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+		auto lock = getLock();
 		if (!shared->clusters)
 			shared->clusters = new Clusters(settings);
 	}
@@ -916,7 +916,7 @@ const Cluster & Context::getCluster(const std::string & cluster_name) const
 Poco::SharedPtr<Clusters> Context::getClusters() const
 {
 	{
-		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+		auto lock = getLock();
 		if (!shared->clusters)
 			shared->clusters = new Clusters(settings);
 	}
@@ -926,7 +926,7 @@ Poco::SharedPtr<Clusters> Context::getClusters() const
 
 Compiler & Context::getCompiler()
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	if (!shared->compiler)
 		shared->compiler.reset(new Compiler{ shared->path + "build/", 1 });
@@ -937,7 +937,7 @@ Compiler & Context::getCompiler()
 
 QueryLog & Context::getQueryLog()
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	if (!shared->query_log)
 	{
@@ -957,7 +957,7 @@ QueryLog & Context::getQueryLog()
 
 CompressionMethod Context::chooseCompressionMethod(size_t part_size, double part_size_ratio) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	if (!shared->compression_method_selector)
 	{
@@ -976,7 +976,7 @@ CompressionMethod Context::chooseCompressionMethod(size_t part_size, double part
 
 const MergeTreeSettings & Context::getMergeTreeSettings()
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	auto lock = getLock();
 
 	if (!shared->merge_tree_settings)
 	{
