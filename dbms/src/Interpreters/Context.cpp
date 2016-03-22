@@ -943,6 +943,12 @@ QueryLog & Context::getQueryLog()
 
 	if (!shared->query_log)
 	{
+		if (shared->shutdown_called)
+			throw Exception("Will not get query_log because shutdown was called", ErrorCodes::LOGICAL_ERROR);
+
+		if (!global_context)
+			throw Exception("Logical error: no global context for query log", ErrorCodes::LOGICAL_ERROR);
+
 		auto & config = Poco::Util::Application::instance().config();
 
 		String database = config.getString("query_log.database", "system");
@@ -950,7 +956,7 @@ QueryLog & Context::getQueryLog()
 		size_t flush_interval_milliseconds = parse<size_t>(
 			config.getString("query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS_STR));
 
-		shared->query_log.reset(new QueryLog{ *this, database, table, flush_interval_milliseconds });
+		shared->query_log.reset(new QueryLog{ *global_context, database, table, flush_interval_milliseconds });
 	}
 
 	return *shared->query_log;
