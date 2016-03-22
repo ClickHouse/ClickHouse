@@ -4,6 +4,7 @@
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ASTRenameQuery.h>
 #include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
@@ -15,6 +16,7 @@
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/Interpreters/InterpreterRenameQuery.h>
 #include <DB/Interpreters/QueryLog.h>
+#include <DB/Interpreters/InterpreterInsertQuery.h>
 #include <DB/Common/setThreadName.h>
 #include <common/ClickHouseRevision.h>
 
@@ -268,11 +270,20 @@ void QueryLog::flush()
 			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(ClickHouseRevision::get()));
 		}
 
-		BlockOutputStreamPtr stream = table->write({}, {});
+		/// Мы пишем не напрямую в таблицу, а используем InterpreterInsertQuery.
+		/// Это нужно, чтобы поддержать наличие DEFAULT-столбцов в таблице.
 
-		stream->writePrefix();
-		stream->write(block);
-		stream->writeSuffix();
+		std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
+		insert->database = database_name;
+		insert->table = table_name;
+		ASTPtr query_ptr(insert.release());
+
+		InterpreterInsertQuery interpreter(query_ptr, context);
+		BlockIO io = interpreter.execute();
+
+		io.out->writePrefix();
+		io.out->write(block);
+		io.out->writeSuffix();
 	}
 	catch (...)
 	{
