@@ -264,6 +264,7 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, const Context & context,
 		block.insert(col);
 	}
 
+	Row tuple_values;
 	ASTExpressionList & list = typeid_cast<ASTExpressionList &>(*node);
 	for (ASTs::iterator it = list.children.begin(); it != list.children.end(); ++it)
 	{
@@ -274,7 +275,7 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, const Context & context,
 			if (!value.isNull())
 				block.getByPosition(0).column->insert(value);
 		}
-		else if (ASTFunction * func = typeid_cast<ASTFunction *>(&**it))
+		else if (ASTFunction * func = typeid_cast<ASTFunction *>(it->get()))
 		{
 			if (func->name != "tuple")
 				throw Exception("Incorrect element of set. Must be tuple.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
@@ -283,13 +284,24 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, const Context & context,
 			if (tuple_size != data_types.size())
 				throw Exception("Incorrect size of tuple in set.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
-			for (size_t j = 0; j < tuple_size; ++j)
+			if (tuple_values.empty())
+				tuple_values.resize(tuple_size);
+
+			size_t j = 0;
+			for (; j < tuple_size; ++j)
 			{
 				Field value = extractValueFromNode(func->arguments->children[j], *data_types[j], context);
 
-				if (!value.isNull())
-					block.getByPosition(j).column->insert(value);
+				/// Если хотя бы один из элементов кортежа имеет невозможное (вне диапазона типа) значение, то и весь кортеж тоже.
+				if (value.isNull())
+					break;
+
+				tuple_values[j] = value;	/// TODO Сделать move семантику для Field.
 			}
+
+			if (j == tuple_size)
+				for (j = 0; j < tuple_size; ++j)
+					block.getByPosition(j).column->insert(tuple_values[j]);
 		}
 		else
 			throw Exception("Incorrect element of set", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
