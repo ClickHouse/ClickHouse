@@ -75,27 +75,52 @@ BlockIO InterpreterRenameQuery::execute()
 		}
 	};
 
-	std::set<UniqueTableName> unique_tables;
+	std::set<UniqueTableName> unique_tables_from;
+
+	/// Не даёт удалять переименовываемые таблицы или создавать таблицы на месте, куда они переименовываются.
+	std::map<UniqueTableName, std::unique_ptr<DDLGuard>> table_guards;
 
 	for (const auto & elem : rename.elements)
 	{
 		descriptions.emplace_back(elem, path, current_database);
-		unique_tables.emplace(descriptions.back().from_database_name, descriptions.back().from_table_name);
+
+		UniqueTableName from(descriptions.back().from_database_name, descriptions.back().from_table_name);
+		UniqueTableName to(descriptions.back().to_database_name, descriptions.back().to_table_name);
+
+		unique_tables_from.emplace(from);
+
+		if (!table_guards.count(from))
+			table_guards.emplace(from,
+				context.getDDLGuard(
+					from.database_name,
+					from.table_name,
+					"Table " + from.database_name + "." + from.table_name + " is being renamed right now"));
+
+		if (!table_guards.count(to))
+			table_guards.emplace(to,
+				context.getDDLGuard(
+					to.database_name,
+					to.table_name,
+					"Some table right now is being renamed to " + to.database_name + "." + to.table_name));
 	}
 
 	std::vector<IStorage::TableFullWriteLockPtr> locks;
-	locks.reserve(unique_tables.size());
+	locks.reserve(unique_tables_from.size());
 
-	for (const auto & names : unique_tables)
+	for (const auto & names : unique_tables_from)
 		if (auto table = context.tryGetTable(names.database_name, names.table_name))
 			locks.emplace_back(table->lockForAlter());
 
-	/** Все таблицы заблокированы. Теперь можно блокировать Context. Порядок важен, чтобы избежать deadlock-ов.
+	/** Все таблицы заблокированы. Если переименований больше одного в цепочке, то
+	  *  на время их проведения, надо взять глобальную блокировку. Порядок важен, чтобы избежать deadlock-ов.
 	  * Это обеспечивает атомарность всех указанных RENAME с точки зрения пользователя СУБД,
 	  *  но лишь в случаях, когда в процессе переименования не было исключений и сервер не падал.
 	  */
 
-	auto lock = context.getLock();
+	decltype(context.getLock()) lock;
+
+	if (descriptions.size() > 1)
+		lock = context.getLock();
 
 	for (const auto & elem : descriptions)
 	{
