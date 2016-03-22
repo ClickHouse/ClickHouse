@@ -54,7 +54,14 @@ static void executeCreateQuery(
 
 	InterpreterCreateQuery::ColumnsInfo columns_info = InterpreterCreateQuery::getColumnsInfo(ast_create_query.columns, context);
 
-	String storage_name = typeid_cast<ASTFunction &>(*ast_create_query.storage).name;
+	String storage_name;
+
+	if (ast_create_query.is_view)
+		storage_name = "View";
+	else if (ast_create_query.is_materialized_view)
+		storage_name = "MaterializedView";
+	else
+		storage_name = typeid_cast<ASTFunction &>(*ast_create_query.storage).name;
 
 	StoragePtr res = StorageFactory::instance().get(
 		storage_name, database_data_path, ast_create_query.table, database_name, context,
