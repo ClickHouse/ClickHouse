@@ -22,15 +22,16 @@ public:
 
 	std::string getName() const override { return "MaterializedView"; }
 	std::string getInnerTableName() const { return  ".inner." + table_name; }
+	StoragePtr getInnerTable() const { return context.getTable(database_name, getInnerTableName()); }
 
 	NameAndTypePair getColumn(const String & column_name) const override;
 	bool hasColumn(const String & column_name) const override;
 
-	bool supportsSampling() const override 			{ return data->supportsSampling(); }
-	bool supportsPrewhere() const override 			{ return data->supportsPrewhere(); }
-	bool supportsFinal() const override 			{ return data->supportsFinal(); }
-	bool supportsIndexForIn() const override 		{ return data->supportsIndexForIn(); }
-	bool supportsParallelReplicas() const override 	{ return data->supportsParallelReplicas(); }
+	bool supportsSampling() const override 			{ return getInnerTable()->supportsSampling(); }
+	bool supportsPrewhere() const override 			{ return getInnerTable()->supportsPrewhere(); }
+	bool supportsFinal() const override 			{ return getInnerTable()->supportsFinal(); }
+	bool supportsIndexForIn() const override 		{ return getInnerTable()->supportsIndexForIn(); }
+	bool supportsParallelReplicas() const override 	{ return getInnerTable()->supportsParallelReplicas(); }
 
 	BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
 	void drop() override;
@@ -46,8 +47,6 @@ public:
 		unsigned threads = 1) override;
 
 private:
-	StoragePtr data;
-
 	StorageMaterializedView(
 		const String & table_name_,
 		const String & database_name_,

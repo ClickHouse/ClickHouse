@@ -129,16 +129,6 @@ DatabaseOrdinary::DatabaseOrdinary(
 {
 	log = &Logger::get("DatabaseOrdinary (" + name + ")");
 
-	using Tables = std::vector<String>;
-	Tables tables;
-
-	/** Часть таблиц должны быть загружены раньше других, так как используются в конструкторе этих других.
-	  * Это таблицы, имя которых начинается на .inner.
-	  * NOTE Это довольно криво. Можно сделать лучше.
-	  */
-	Tables tables_to_load_first;
-
-	/// Цикл по таблицам
 	using FileNames = std::vector<std::string>;
 	FileNames file_names;
 
@@ -175,32 +165,17 @@ DatabaseOrdinary::DatabaseOrdinary(
 	  */
 	std::sort(file_names.begin(), file_names.end());
 
-	for (const auto & file_name : file_names)
-	{
-		(0 == file_name.compare(0, strlen("%2Einner%2E"), "%2Einner%2E")
-			? tables_to_load_first
-			: tables).emplace_back(file_name);
-	}
-
-	size_t total_tables = tables.size();
+	size_t total_tables = file_names.size();
 	LOG_INFO(log, "Total " << total_tables << " tables.");
 
 	String data_path = context.getPath() + "/data/" + escapeForFileName(name) + "/";
 
-	if (!tables_to_load_first.empty())
-	{
-		LOG_INFO(log, "Loading inner tables for materialized views (total " << tables_to_load_first.size() << " tables).");
-
-		for (const auto & table : tables_to_load_first)
-			loadTable(context, path, *this, name, data_path, table);
-	}
-
 	StopwatchWithLock watch;
 	size_t tables_processed = 0;
 
-	auto task_function = [&](Tables::const_iterator begin, Tables::const_iterator end)
+	auto task_function = [&](FileNames::const_iterator begin, FileNames::const_iterator end)
 	{
-		for (Tables::const_iterator it = begin; it != end; ++it)
+		for (FileNames::const_iterator it = begin; it != end; ++it)
 		{
 			const String & table = *it;
 
@@ -226,10 +201,10 @@ DatabaseOrdinary::DatabaseOrdinary(
 
 	for (size_t i = 0; i < num_bunches; ++i)
 	{
-		auto begin = tables.begin() + i * bunch_size;
+		auto begin = file_names.begin() + i * bunch_size;
 		auto end = (i + 1 == num_bunches)
-			? tables.end()
-			: (tables.begin() + (i + 1) * bunch_size);
+			? file_names.end()
+			: (file_names.begin() + (i + 1) * bunch_size);
 
 		tasks[i] = std::packaged_task<void()>(std::bind(task_function, begin, end));
 

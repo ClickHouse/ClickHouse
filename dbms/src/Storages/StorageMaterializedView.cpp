@@ -52,16 +52,7 @@ StorageMaterializedView::StorageMaterializedView(
 	auto inner_table_name = getInnerTableName();
 
 	/// Если запрос ATTACH, то к этому моменту внутренняя таблица уже должна быть подключена.
-	if (attach_)
-	{
-		data = context.tryGetTable(database_name, inner_table_name);
-		if (!data)
-			throw Exception("Inner table is not attached yet."
-				" Materialized view: " + database_name + "." + table_name + "."
-				" Inner table: " + database_name + "." + inner_table_name + ".",
-				DB::ErrorCodes::LOGICAL_ERROR);
-	}
-	else
+	if (!attach_)
 	{
 		/// Составим запрос для создания внутреннего хранилища.
 		ASTCreateQuery * manual_create_query = new ASTCreateQuery();
@@ -87,8 +78,6 @@ StorageMaterializedView::StorageMaterializedView(
 		/// Выполним запрос.
 		InterpreterCreateQuery create_interpreter(ast_create_query, context);
 		create_interpreter.execute();
-
-		data = context.getTable(database_name, inner_table_name);
 	}
 }
 
@@ -115,12 +104,12 @@ BlockInputStreams StorageMaterializedView::read(
 	const size_t max_block_size,
 	const unsigned threads)
 {
-	return data->read(column_names, query, context, settings, processed_stage, max_block_size, threads);
+	return getInnerTable()->read(column_names, query, context, settings, processed_stage, max_block_size, threads);
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(ASTPtr query, const Settings & settings)
 {
-	return data->write(query, settings);
+	return getInnerTable()->write(query, settings);
 }
 
 void StorageMaterializedView::drop()
@@ -145,7 +134,7 @@ void StorageMaterializedView::drop()
 
 bool StorageMaterializedView::optimize(const Settings & settings)
 {
-	return data->optimize(settings);
+	return getInnerTable()->optimize(settings);
 }
 
 
