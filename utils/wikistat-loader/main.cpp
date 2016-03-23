@@ -98,6 +98,35 @@ static void readPath(std::string & s, DB::ReadBuffer & buf)
 }
 
 
+static void skipUntilNewline(DB::ReadBuffer & buf)
+{
+	while (!buf.eof())
+	{
+		const char * next_pos = find_first_symbols<'\n'>(buf.position(), buf.buffer().end());
+
+		buf.position() += next_pos - buf.position();
+
+		if (!buf.hasPendingData())
+			continue;
+
+		if (*buf.position() == '\n')
+		{
+			++buf.position();
+			return;
+		}
+	}
+}
+
+
+namespace DB
+{
+	namespace ErrorCodes
+	{
+		extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+	}
+}
+
+
 int main(int argc, char ** argv)
 try
 {
@@ -132,25 +161,43 @@ try
 	UInt64 hits = 0;
 	UInt64 size = 0;
 
+	size_t row_num = 0;
 	while (!in.eof())
 	{
-		readString<true>(project, in);
+		try
+		{
+			++row_num;
+			readString<true>(project, in);
 
-		if (in.eof())
-			break;
+			if (in.eof())
+				break;
 
-		if (*in.position() == '.')
-			readString<false>(subproject, in);
-		else
-			subproject.clear();
+			if (*in.position() == '.')
+				readString<false>(subproject, in);
+			else
+				subproject.clear();
 
-		DB::assertChar(' ', in);
-		readPath(path, in);
-		DB::assertChar(' ', in);
-		DB::readIntText(hits, in);
-		DB::assertChar(' ', in);
-		DB::readIntText(size, in);
-		DB::assertChar('\n', in);
+			DB::assertChar(' ', in);
+			readPath(path, in);
+			DB::assertChar(' ', in);
+			DB::readIntText(hits, in);
+			DB::assertChar(' ', in);
+			DB::readIntText(size, in);
+			DB::assertChar('\n', in);
+		}
+		catch (const DB::Exception & e)
+		{
+			/// Sometimes, input data has errors. For example, look at first lines in pagecounts-20130210-130000.gz
+			/// To save rest of data, just skip lines with errors.
+			if (e.code() == DB::ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED)
+			{
+				std::cerr << "At row " << row_num << ": " << DB::getCurrentExceptionMessage(false) << '\n';
+				skipUntilNewline(in);
+				continue;
+			}
+			else
+				throw;
+		}
 
 		DB::writeText(date, out);
 		DB::writeChar('\t', out);
