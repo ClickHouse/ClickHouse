@@ -23,7 +23,7 @@ void stat(DB::ReadBuffer & in, DB::WriteBuffer & out)
 		size_t size_compressed = 0;
 		memcpy(&size_compressed, &header[1], 4);	/// little endian
 
-		if (size_compressed > COMPRESSED_BLOCK_HEADER_SIZE)
+		if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
 			throw DB::Exception("Too large size_compressed. Most likely corrupted data.", DB::ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
 
 		size_t size_decompressed = 0;
