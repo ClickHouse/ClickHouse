@@ -53,10 +53,13 @@ inline bool nodeQueueEquals(const std::string & lhs, const std::string & rhs)
 
 }
 
-RWLock::RWLock(ZooKeeperPtr & zookeeper_, const std::string & path_)
-	: zookeeper{zookeeper_}, path{path_}
+RWLock::RWLock(GetZooKeeper get_zookeeper_, const std::string & path_)
+	: get_zookeeper{get_zookeeper_}, path{path_}
 {
-	int32_t code = zookeeper->tryCreate(path, "", CreateMode::Persistent);
+	if (!get_zookeeper)
+		throw DB::Exception{"No ZooKeeper accessor specified", DB::ErrorCodes::LOGICAL_ERROR};
+
+	int32_t code = get_zookeeper()->tryCreate(path, "", CreateMode::Persistent);
 	if ((code != ZOK) && (code != ZNODEEXISTS))
 	{
 		if (code == ZNONODE)
@@ -68,7 +71,7 @@ RWLock::RWLock(ZooKeeperPtr & zookeeper_, const std::string & path_)
 
 RWLock::operator bool() const
 {
-	return zookeeper && !path.empty();
+	return get_zookeeper && !path.empty();
 }
 
 void RWLock::setCancellationHook(CancellationHook cancellation_hook_)
@@ -99,7 +102,7 @@ void RWLock::release()
 	if (key.empty())
 		throw DB::Exception{"RWLock: no lock is held", DB::ErrorCodes::LOGICAL_ERROR};
 
-	zookeeper->remove(path + "/" + key);
+	get_zookeeper()->remove(path + "/" + key);
 	key.clear();
 	owns_lock = false;
 }
@@ -119,6 +122,8 @@ void RWLock::acquireImpl(Mode mode)
 
 	if (!key.empty())
 		throw DB::Exception{"RWLock: lock already held", DB::ErrorCodes::RWLOCK_ALREADY_HELD};
+
+	auto zookeeper = get_zookeeper();
 
 	try
 	{

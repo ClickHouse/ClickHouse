@@ -8,6 +8,7 @@ add_library(zkutil
 	include/zkutil/Increment.h
     include/zkutil/LeaderElection.h
     include/zkutil/KeeperException.h
+    include/zkutil/Common.h
     include/zkutil/Lock.h
     include/zkutil/SingleBarrier.h
     include/zkutil/RWLock.h

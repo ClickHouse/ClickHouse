@@ -384,6 +384,7 @@ private:
 	Logger * log = &Logger::get("ReshardingWorker");
 
 	zkutil::EventPtr event = new Poco::Event;
+	zkutil::GetZooKeeper get_zookeeper;
 
 	std::atomic<bool> is_started{false};
 	std::atomic<bool> must_stop{false};

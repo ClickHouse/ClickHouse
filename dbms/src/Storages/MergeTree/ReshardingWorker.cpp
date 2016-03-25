@@ -257,13 +257,13 @@ private:
 
 ReshardingWorker::ReshardingWorker(const Poco::Util::AbstractConfiguration & config,
 	const std::string & config_name, Context & context_)
-	: context{context_}
+	: context{context_}, get_zookeeper{[&]() { return context.getZooKeeper(); }}
 {
 	Arguments arguments(config, config_name);
 	auto zookeeper = context.getZooKeeper();
 
 	std::string root = arguments.getTaskQueuePath();
-	if (*(root.rbegin()) != '/')
+	if (root.back() != '/')
 		root += "/";
 
 	auto current_host = getFQDNOrHostName();
@@ -2292,9 +2292,7 @@ void ReshardingWorker::abortJobIfRequested()
 
 zkutil::RWLock ReshardingWorker::createLock()
 {
-	auto zookeeper = context.getZooKeeper();
-
-	zkutil::RWLock lock{zookeeper, distributed_lock_path};
+	zkutil::RWLock lock{get_zookeeper, distributed_lock_path};
 	zkutil::RWLock::CancellationHook hook = std::bind(&ReshardingWorker::abortPollingIfRequested, this);
 	lock.setCancellationHook(hook);
 
@@ -2304,9 +2302,7 @@ zkutil::RWLock ReshardingWorker::createLock()
 zkutil::RWLock ReshardingWorker::createCoordinatorLock(const std::string & coordinator_id,
 	bool usable_in_emergency)
 {
-	auto zookeeper = context.getZooKeeper();
-
-	zkutil::RWLock lock{zookeeper, getCoordinatorPath(coordinator_id) + "/lock"};
+	zkutil::RWLock lock{get_zookeeper, getCoordinatorPath(coordinator_id) + "/lock"};
 
 	zkutil::RWLock::CancellationHook hook;
 	if (usable_in_emergency)
@@ -2322,9 +2318,7 @@ zkutil::RWLock ReshardingWorker::createCoordinatorLock(const std::string & coord
 
 zkutil::RWLock ReshardingWorker::createDeletionLock(const std::string & coordinator_id)
 {
-	auto zookeeper = context.getZooKeeper();
-
-	zkutil::RWLock lock{zookeeper, getCoordinatorPath(coordinator_id) + "/deletion_lock"};
+	zkutil::RWLock lock{get_zookeeper, getCoordinatorPath(coordinator_id) + "/deletion_lock"};
 	zkutil::RWLock::CancellationHook hook = std::bind(&ReshardingWorker::abortPollingIfRequested, this);
 	lock.setCancellationHook(hook);
 
@@ -2337,7 +2331,7 @@ zkutil::SingleBarrier ReshardingWorker::createCheckBarrier(const std::string & c
 
 	auto node_count = zookeeper->get(getCoordinatorPath(coordinator_id) + "/node_count");
 
-	zkutil::SingleBarrier check_barrier{zookeeper, getCoordinatorPath(coordinator_id) + "/check_barrier",
+	zkutil::SingleBarrier check_barrier{get_zookeeper, getCoordinatorPath(coordinator_id) + "/check_barrier",
 		std::stoull(node_count)};
 	zkutil::SingleBarrier::CancellationHook hook = std::bind(&ReshardingWorker::abortCoordinatorIfRequested, this,
 		coordinator_id);
@@ -2349,9 +2343,7 @@ zkutil::SingleBarrier ReshardingWorker::createCheckBarrier(const std::string & c
 zkutil::SingleBarrier ReshardingWorker::createOptOutBarrier(const std::string & coordinator_id,
 	size_t count)
 {
-	auto zookeeper = context.getZooKeeper();
-
-	zkutil::SingleBarrier opt_out_barrier{zookeeper, getCoordinatorPath(coordinator_id)
+	zkutil::SingleBarrier opt_out_barrier{get_zookeeper, getCoordinatorPath(coordinator_id)
 		+ "/opt_out_barrier", count};
 	zkutil::SingleBarrier::CancellationHook hook = std::bind(&ReshardingWorker::abortCoordinatorIfRequested, this,
 		coordinator_id);
@@ -2366,7 +2358,7 @@ zkutil::SingleBarrier ReshardingWorker::createRecoveryBarrier(const ReshardingJo
 
 	auto node_count = zookeeper->getChildren(getPartitionPath(job) + "/nodes").size();
 
-	zkutil::SingleBarrier recovery_barrier{zookeeper, getPartitionPath(job) + "/recovery_barrier", node_count};
+	zkutil::SingleBarrier recovery_barrier{get_zookeeper, getPartitionPath(job) + "/recovery_barrier", node_count};
 	zkutil::SingleBarrier::CancellationHook hook = std::bind(&ReshardingWorker::abortRecoveryIfRequested, this);
 	recovery_barrier.setCancellationHook(hook);
 
@@ -2379,7 +2371,7 @@ zkutil::SingleBarrier ReshardingWorker::createUploadBarrier(const ReshardingJob 
 
 	auto node_count = zookeeper->getChildren(getPartitionPath(job) + "/nodes").size();
 
-	zkutil::SingleBarrier upload_barrier{zookeeper, getPartitionPath(job) + "/upload_barrier", node_count};
+	zkutil::SingleBarrier upload_barrier{get_zookeeper, getPartitionPath(job) + "/upload_barrier", node_count};
 
 	zkutil::SingleBarrier::CancellationHook hook = std::bind(&ReshardingWorker::abortJobIfRequested, this);
 	upload_barrier.setCancellationHook(hook);
@@ -2393,7 +2385,7 @@ zkutil::SingleBarrier ReshardingWorker::createElectionBarrier(const ReshardingJo
 
 	auto node_count = zookeeper->getChildren(getPartitionPath(job) + "/nodes").size();
 
-	zkutil::SingleBarrier election_barrier{zookeeper, getPartitionPath(job) + "/election_barrier", node_count};
+	zkutil::SingleBarrier election_barrier{get_zookeeper, getPartitionPath(job) + "/election_barrier", node_count};
 
 	zkutil::SingleBarrier::CancellationHook hook = std::bind(&ReshardingWorker::abortJobIfRequested, this);
 	election_barrier.setCancellationHook(hook);
@@ -2407,7 +2399,7 @@ zkutil::SingleBarrier ReshardingWorker::createCommitBarrier(const ReshardingJob 
 
 	auto node_count = zookeeper->getChildren(getPartitionPath(job) + "/nodes").size();
 
-	zkutil::SingleBarrier commit_barrier{zookeeper, getPartitionPath(job) + "/commit_barrier", node_count};
+	zkutil::SingleBarrier commit_barrier{get_zookeeper, getPartitionPath(job) + "/commit_barrier", node_count};
 	zkutil::SingleBarrier::CancellationHook hook = std::bind(&ReshardingWorker::abortJobIfRequested, this);
 	commit_barrier.setCancellationHook(hook);
 

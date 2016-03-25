@@ -1,6 +1,7 @@
 #pragma once
 
 #include <zkutil/ZooKeeper.h>
+#include <zkutil/Common.h>
 #include <DB/Common/Exception.h>
 #include <Poco/Event.h>
 #include <string>
@@ -35,7 +36,7 @@ public:
 
 	/// Create under the specified ZooKeeper path a queue for lock requests
 	/// if it doesn't exist yet.
-	RWLock(ZooKeeperPtr & zookeeper_, const std::string & path_);
+	RWLock(GetZooKeeper get_zookeeper_, const std::string & path_);
 
 	RWLock(const RWLock &) = delete;
 	RWLock & operator=(const RWLock &) = delete;
@@ -68,7 +69,7 @@ private:
 	void abortIfRequested();
 
 private:
-	ZooKeeperPtr zookeeper;
+	GetZooKeeper get_zookeeper;
 	EventPtr event = new Poco::Event;
 	CancellationHook cancellation_hook;
 	/// Path to the lock request queue.

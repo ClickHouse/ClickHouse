@@ -29,9 +29,14 @@ constexpr long wait_duration = 1000;
 
 }
 
-SingleBarrier::SingleBarrier(ZooKeeperPtr zookeeper_, const std::string & path_, size_t counter_)
-	: zookeeper{zookeeper_}, path{path_}, counter{counter_}
+SingleBarrier::SingleBarrier(GetZooKeeper get_zookeeper_, const std::string & path_, size_t counter_)
+	: get_zookeeper{get_zookeeper_}, path{path_}, counter{counter_}
 {
+	if (!get_zookeeper)
+		throw DB::Exception{"No ZooKeeper accessor specified", DB::ErrorCodes::LOGICAL_ERROR};
+
+	auto zookeeper = get_zookeeper();
+
 	int32_t code = zookeeper->tryCreate(path, "", CreateMode::Persistent);
 	if ((code != ZOK) && (code != ZNODEEXISTS))
 		throw KeeperException{code};
@@ -65,7 +70,9 @@ void SingleBarrier::enter(uint64_t timeout)
 
 	bool is_first_crossing = true;
 
-	RWLock lock{zookeeper, path + "/lock"};
+	RWLock lock{get_zookeeper, path + "/lock"};
+
+	auto zookeeper = get_zookeeper();
 
 	try
 	{
@@ -177,7 +184,7 @@ void SingleBarrier::abortIfRequested()
 			{
 				/// We have received a cancellation request while trying
 				/// to cross the barrier. Therefore we delete our token.
-				(void) zookeeper->tryRemove(path + "/tokens/" + token);
+				(void) get_zookeeper()->tryRemove(path + "/tokens/" + token);
 			}
 			catch (...)
 			{

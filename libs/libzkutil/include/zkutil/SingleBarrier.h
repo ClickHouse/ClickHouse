@@ -1,6 +1,6 @@
 #pragma once
 
-#include <zkutil/ZooKeeperHolder.h>
+#include <zkutil/Common.h>
 #include <string>
 #include <functional>
 
@@ -15,7 +15,7 @@ public:
 	using CancellationHook = std::function<void()>;
 
 public:
-	SingleBarrier(ZooKeeperPtr zookeeper_, const std::string & path_, size_t counter_);
+	SingleBarrier(GetZooKeeper get_zookeeper_, const std::string & path_, size_t counter_);
 
 	SingleBarrier(const SingleBarrier &) = delete;
 	SingleBarrier & operator=(const SingleBarrier &) = delete;
@@ -32,7 +32,7 @@ private:
 	void abortIfRequested();
 
 private:
-	ZooKeeperPtr zookeeper;
+	GetZooKeeper get_zookeeper;
 	EventPtr event = new Poco::Event;
 	CancellationHook cancellation_hook;
 	std::string path;
