@@ -474,11 +474,10 @@ ASTPtr DatabaseOrdinary::getCreateQuery(const String & table_name) const
 
 void DatabaseOrdinary::shutdown()
 {
+	for (auto iterator = getIterator(); iterator->isValid(); iterator->next())
+		iterator->table()->shutdown();
+
 	std::lock_guard<std::mutex> lock(mutex);
-
-	for (auto & table : tables)
-		table.second->shutdown();
-
 	tables.clear();
 }
 
