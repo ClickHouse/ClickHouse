@@ -171,6 +171,9 @@ void ReplicatedMergeTreeRestartingThread::run()
 		storage.remote_query_executor_endpoint_holder->cancel();
 		storage.remote_query_executor_endpoint_holder = nullptr;
 
+		storage.remote_part_checker_endpoint_holder->cancel();
+		storage.remote_part_checker_endpoint_holder = nullptr;
+
 		partialShutdown();
 	}
 	catch (...)

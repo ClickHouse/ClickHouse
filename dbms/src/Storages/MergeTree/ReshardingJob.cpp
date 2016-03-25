@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 ReshardingJob::ReshardingJob(const std::string & serialized_job)
 {
-	ReadBufferFromString buf(serialized_job);
+	ReadBufferFromString buf{serialized_job};
 
 	readBinary(database_name, buf);
 	readBinary(table_name, buf);
@@ -32,18 +32,22 @@ ReshardingJob::ReshardingJob(const std::string & serialized_job)
 	ParserExpressionWithOptionalAlias parser(false);
 	Expected expected = "";
 	if (!parser.parse(pos, end, sharding_key_expr, max_parsed_pos, expected))
-		throw Exception("ReshardingJob: Internal error", ErrorCodes::LOGICAL_ERROR);
+		throw Exception{"ReshardingJob: Internal error", ErrorCodes::LOGICAL_ERROR};
 
 	readBinary(coordinator_id, buf);
-	readBinary(block_number, buf);
+	readVarUInt(block_number, buf);
+	readBinary(do_copy, buf);
 
-	while (!buf.eof())
+	size_t s;
+	readVarUInt(s, buf);
+
+	for (size_t i = 0; i < s; ++i)
 	{
 		std::string path;
 		readBinary(path, buf);
 
 		UInt64 weight;
-		readBinary(weight, buf);
+		readVarUInt(weight, buf);
 
 		paths.emplace_back(path, weight);
 	}
@@ -52,12 +56,12 @@ ReshardingJob::ReshardingJob(const std::string & serialized_job)
 ReshardingJob::ReshardingJob(const std::string & database_name_, const std::string & table_name_,
 	const std::string & partition_, const WeightedZooKeeperPaths & paths_,
 	const ASTPtr & sharding_key_expr_, const std::string & coordinator_id_)
-	: database_name(database_name_),
-	table_name(table_name_),
-	partition(partition_),
-	paths(paths_),
-	sharding_key_expr(sharding_key_expr_),
-	coordinator_id(coordinator_id_)
+	: database_name{database_name_},
+	table_name{table_name_},
+	partition{partition_},
+	paths{paths_},
+	sharding_key_expr{sharding_key_expr_},
+	coordinator_id{coordinator_id_}
 {
 }
 
@@ -73,19 +77,21 @@ ReshardingJob::operator bool() const
 std::string ReshardingJob::toString() const
 {
 	std::string serialized_job;
-	WriteBufferFromString buf(serialized_job);
+	WriteBufferFromString buf{serialized_job};
 
 	writeBinary(database_name, buf);
 	writeBinary(table_name, buf);
 	writeBinary(partition, buf);
 	writeBinary(queryToString(sharding_key_expr), buf);
 	writeBinary(coordinator_id, buf);
-	writeBinary(block_number, buf);
+	writeVarUInt(block_number, buf);
+	writeBinary(do_copy, buf);
 
+	writeVarUInt(paths.size(), buf);
 	for (const auto & path : paths)
 	{
 		writeBinary(path.first, buf);
-		writeBinary(path.second, buf);
+		writeVarUInt(path.second, buf);
 	}
 	buf.next();
 

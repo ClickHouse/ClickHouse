@@ -17,7 +17,7 @@ namespace ErrorCodes
  * 		DROP COLUMN col_drop,
  * 		MODIFY COLUMN col_name type,
  * 		DROP PARTITION partition
- *		RESHARD PARTITION partition
+ *		RESHARD [COPY] PARTITION partition
  *			TO '/path/to/zookeeper/table' [WEIGHT w], ...
  * 			USING expression
  *			[COORDINATE WITH 'coordinator_id']
@@ -63,6 +63,8 @@ public:
 
 		bool part = false; /// true для ATTACH [UNREPLICATED] PART
 		bool unreplicated = false; /// true для ATTACH UNREPLICATED, DROP UNREPLICATED ...
+
+		bool do_copy = false; /// для RESHARD PARTITION.
 
 		/** Для FETCH PARTITION - путь в ZK к шарду, с которого скачивать партицию.
 		  */

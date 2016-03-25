@@ -30,8 +30,7 @@ std::string getEndpointId(const std::string & node_id)
 }
 
 Service::Service(StoragePtr & storage_)
-	: owned_storage(storage_), data(static_cast<StorageReplicatedMergeTree &>(*storage_).getData()),
-	log(&Logger::get("ShardedPartitionUploader::Service"))
+	: owned_storage{storage_}, data{static_cast<StorageReplicatedMergeTree &>(*storage_).getData()}
 {
 }
 
@@ -47,7 +46,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
 	String full_part_name = std::string("detached/") + "tmp_" + part_name;
 	String part_path = data.getFullPath() + full_part_name + "/";
-	Poco::File part_file(part_path);
+	Poco::File part_file{part_path};
 
 	if (part_file.exists())
 	{
@@ -74,21 +73,21 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 		readStringBinary(file_name, body);
 		readBinary(file_size, body);
 
-		WriteBufferFromFile file_out(part_path + file_name);
-		HashingWriteBuffer hashing_out(file_out);
+		WriteBufferFromFile file_out{part_path + file_name};
+		HashingWriteBuffer hashing_out{file_out};
 		copyData(body, hashing_out, file_size, is_cancelled);
 
 		if (is_cancelled)
 		{
 			part_file.remove(true);
-			throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
+			throw Exception{"Fetching of part was cancelled", ErrorCodes::ABORTED};
 		}
 
 		uint128 expected_hash;
 		readBinary(expected_hash, body);
 
 		if (expected_hash != hashing_out.getHash())
-			throw Exception("Checksum mismatch for file " + part_path + file_name + " transferred from " + replica_path);
+			throw Exception{"Checksum mismatch for file " + part_path + file_name + " transferred from " + replica_path};
 
 		if (file_name != "checksums.txt" &&
 			file_name != "columns.txt")
@@ -110,19 +109,18 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 	const std::string old_part_path = data.getFullPath() + full_part_name;
 	const std::string new_part_path = data.getFullPath() + "detached/" + part_name;
 
-	Poco::File new_part_dir(new_part_path);
+	Poco::File new_part_dir{new_part_path};
 	if (new_part_dir.exists())
 	{
 		LOG_WARNING(log, "Directory " + new_part_path + " already exists. Removing.");
 		new_part_dir.remove(true);
 	}
 
-	Poco::File(old_part_path).renameTo(new_part_path);
+	Poco::File{old_part_path}.renameTo(new_part_path);
 }
 
 Client::Client(StorageReplicatedMergeTree & storage_)
-	: storage(storage_), data(storage_.getData()),
-	log(&Logger::get("ShardedPartitionUploader::Client"))
+	: storage{storage_}, data{storage_.getData()}
 {
 }
 
@@ -146,7 +144,7 @@ bool Client::send(const std::string & part_name, size_t shard_no,
 
 	abortIfRequested();
 
-	InterserverWriteBuffer out(to_location.host, to_location.port, getEndpointId(to_location.name), part_name);
+	InterserverWriteBuffer out{to_location.host, to_location.port, getEndpointId(to_location.name), part_name};
 
 	LOG_TRACE(log, "Sending part " << part_name);
 
@@ -154,7 +152,7 @@ bool Client::send(const std::string & part_name, size_t shard_no,
 
 	MergeTreeData::DataPartPtr part = findShardedPart(part_name, shard_no);
 
-	Poco::ScopedReadRWLock part_lock(part->columns_lock);
+	Poco::ScopedReadRWLock part_lock{part->columns_lock};
 
 	CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
@@ -176,14 +174,14 @@ bool Client::send(const std::string & part_name, size_t shard_no,
 		writeStringBinary(it.first, out);
 		writeBinary(size, out);
 
-		ReadBufferFromFile file_in(path);
-		HashingWriteBuffer hashing_out(out);
+		ReadBufferFromFile file_in{path};
+		HashingWriteBuffer hashing_out{out};
 		copyData(file_in, hashing_out, copy_hook);
 
 		abortIfRequested();
 
 		if (hashing_out.count() != size)
-			throw Exception("Unexpected size of file " + path, ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+			throw Exception{"Unexpected size of file " + path, ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART};
 
 		writeBinary(hashing_out.getHash(), out);
 
@@ -200,7 +198,7 @@ bool Client::send(const std::string & part_name, size_t shard_no,
 void Client::abortIfRequested()
 {
 	if (is_cancelled)
-		throw Exception("ShardedPartitionUploader service terminated", ErrorCodes::ABORTED);
+		throw Exception{"ShardedPartitionUploader service terminated", ErrorCodes::ABORTED};
 
 	if (cancellation_hook)
 		cancellation_hook();

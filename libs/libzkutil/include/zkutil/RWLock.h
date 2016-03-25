@@ -49,10 +49,10 @@ public:
 	void setCancellationHook(CancellationHook cancellation_hook_);
 
 	/// Get a read lock.
-	void acquireRead(RWLock::Mode mode);
+	void acquireRead(RWLock::Mode mode = RWLock::Blocking);
 
 	/// Get a write lock.
-	void acquireWrite(RWLock::Mode mode);
+	void acquireWrite(RWLock::Mode mode = RWLock::Blocking);
 
 	/// Check whether we have acquired the lock.
 	bool ownsLock() const;

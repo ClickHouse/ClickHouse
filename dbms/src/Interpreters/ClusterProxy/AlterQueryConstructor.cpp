@@ -10,7 +10,7 @@ namespace ClusterProxy
 
 BlockInputStreamPtr AlterQueryConstructor::createLocal(ASTPtr query_ast, const Context & context, const Cluster::Address & address)
 {
-	InterpreterAlterQuery interpreter(query_ast, context);
+	InterpreterAlterQuery interpreter{query_ast, context};
 	return interpreter.execute().in;
 }
 

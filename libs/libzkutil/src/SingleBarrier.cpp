@@ -1,8 +1,9 @@
 #include <zkutil/SingleBarrier.h>
+#include <zkutil/RWLock.h>
 #include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Common/Exception.h>
 #include <DB/Common/Stopwatch.h>
-
+#include <DB/IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -12,6 +13,7 @@ namespace ErrorCodes
 
 extern const int LOGICAL_ERROR;
 extern const int BARRIER_TIMEOUT;
+extern const int NO_SUCH_BARRIER;
 
 }
 
@@ -28,11 +30,28 @@ constexpr long wait_duration = 1000;
 }
 
 SingleBarrier::SingleBarrier(ZooKeeperPtr zookeeper_, const std::string & path_, size_t counter_)
-	: zookeeper(zookeeper_), path(path_), counter(counter_)
+	: zookeeper{zookeeper_}, path{path_}, counter{counter_}
 {
 	int32_t code = zookeeper->tryCreate(path, "", CreateMode::Persistent);
 	if ((code != ZOK) && (code != ZNODEEXISTS))
-		throw KeeperException(code);
+		throw KeeperException{code};
+
+	/// List of tokens.
+	code = zookeeper->tryCreate(path + "/tokens", "", CreateMode::Persistent);
+	if ((code != ZOK) && (code != ZNODEEXISTS))
+		throw KeeperException{code};
+
+	/// Tokens are tagged so that we can differentiate obsolete tokens that may
+	/// be deleted from those that are currently used to cross this barrier.
+	code = zookeeper->tryCreate(path + "/tag", "0", CreateMode::Persistent);
+	if ((code != ZOK) && (code != ZNODEEXISTS))
+		throw KeeperException{code};
+
+	/// We protect some areas of the code in order to reliably determine which
+	/// token has unblocked this barrier.
+	code = zookeeper->tryCreate(path + "/lock", "", CreateMode::Persistent);
+	if ((code != ZOK) && (code != ZNODEEXISTS))
+		throw KeeperException{code};
 }
 
 void SingleBarrier::setCancellationHook(CancellationHook cancellation_hook_)
@@ -44,37 +63,103 @@ void SingleBarrier::enter(uint64_t timeout)
 {
 	__sync_synchronize();
 
-	auto key = zookeeper->create(path + "/" + getFQDNOrHostName(), "", zkutil::CreateMode::Ephemeral);
-	key = key.substr(path.length() + 1);
+	bool is_first_crossing = true;
 
-	Stopwatch watch;
+	RWLock lock{zookeeper, path + "/lock"};
 
-	if (timeout > 0)
-		watch.start();
-
-	while (true)
+	try
 	{
-		auto children = zookeeper->getChildren(path, nullptr, event);
+		lock.acquireWrite();
 
-		std::sort(children.begin(), children.end());
-		auto it = std::lower_bound(children.cbegin(), children.cend(), key);
+		auto tag = zookeeper->get(path + "/tag");
 
-		/// This should never happen.
-		if ((it == children.cend()) || (*it != key))
-			throw DB::Exception("SingleBarrier: corrupted queue. Own request not found.",
-				DB::ErrorCodes::LOGICAL_ERROR);
+		token = tag + "_" + getFQDNOrHostName();
 
-		if (children.size() == counter)
-			break;
-
-		do
+		int32_t code = zookeeper->tryCreate(path + "/tokens/" + token, "", zkutil::CreateMode::Ephemeral);
+		if (code == ZNONODE)
+			throw DB::Exception{"No such barrier", DB::ErrorCodes::NO_SUCH_BARRIER};
+		else if (code == ZNODEEXISTS)
 		{
-			if (static_cast<uint32_t>(watch.elapsedSeconds()) > timeout)
-				throw DB::Exception("SingleBarrier: timeout", DB::ErrorCodes::BARRIER_TIMEOUT);
-
-			abortIfRequested();
+			/// nothing here
 		}
-		while (!event->tryWait(wait_duration));
+		else if (code != ZOK)
+			throw KeeperException{code};
+
+		Stopwatch watch;
+
+		while (true)
+		{
+			auto tokens = zookeeper->getChildren(path + "/tokens", nullptr, event);
+
+			std::sort(tokens.begin(), tokens.end());
+			auto it = std::lower_bound(tokens.cbegin(), tokens.cend(), token);
+
+			/// This should never happen.
+			if ((it == tokens.cend()) || (*it != token))
+				throw DB::Exception{"SingleBarrier: corrupted queue. Own token not found.",
+					DB::ErrorCodes::LOGICAL_ERROR};
+
+			size_t token_count = tokens.size();
+
+			if (is_first_crossing)
+			{
+				/// Delete all the obsolete tokens.
+				for (auto it = tokens.cbegin(); it != tokens.cend(); ++it)
+				{
+					const auto & cur_token = *it;
+
+					size_t pos = cur_token.find('_');
+					if (pos == std::string::npos)
+						throw DB::Exception{"SingleBarrier: corrupted token",
+							DB::ErrorCodes::LOGICAL_ERROR};
+
+					if (cur_token.compare(0, pos, tag) == 0)
+					{
+						/// All the obsolete tokens have been deleted.
+						break;
+					}
+
+					(void) zookeeper->tryRemove(path + "/tokens/" + cur_token);
+					--token_count;
+				}
+			}
+
+			if (token_count == counter)
+			{
+				if (is_first_crossing)
+				{
+					/// We are the token that has unblocked this barrier. As such,
+					/// it is our duty to update the tag.
+					UInt64 new_tag = std::stoull(tag) + 1;
+					zookeeper->set(path + "/tag", DB::toString(new_tag));
+				}
+
+				lock.release();
+				break;
+			}
+
+			is_first_crossing = false;
+
+			/// Allow other nodes to progress while we are idling.
+			lock.release();
+
+			do
+			{
+				if ((timeout > 0) && (static_cast<uint32_t>(watch.elapsedSeconds()) > timeout))
+					throw DB::Exception{"SingleBarrier: timeout", DB::ErrorCodes::BARRIER_TIMEOUT};
+
+				abortIfRequested();
+			}
+			while (!event->tryWait(wait_duration));
+
+			lock.acquireWrite();
+		}
+	}
+	catch (...)
+	{
+		if (lock.ownsLock())
+			lock.release();
+		throw;
 	}
 }
 
@@ -90,10 +175,13 @@ void SingleBarrier::abortIfRequested()
 		{
 			try
 			{
-				zookeeper->tryRemove(path + "/" + getFQDNOrHostName());
+				/// We have received a cancellation request while trying
+				/// to cross the barrier. Therefore we delete our token.
+				(void) zookeeper->tryRemove(path + "/tokens/" + token);
 			}
 			catch (...)
 			{
+				DB::tryLogCurrentException(__PRETTY_FUNCTION__);
 			}
 			throw;
 		}

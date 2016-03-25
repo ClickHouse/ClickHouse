@@ -244,7 +244,7 @@ public:
 	virtual void reshardPartitions(ASTPtr query, const String & database_name,
 		const Field & first_partition, const Field & last_partition,
 		const WeightedZooKeeperPaths & weighted_zookeeper_paths,
-		const ASTPtr & sharding_key_expr, const Field & coordinator,
+		const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
 		const Settings & settings)
 	{
 		throw Exception("Method reshardPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);

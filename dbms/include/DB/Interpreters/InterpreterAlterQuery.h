@@ -56,6 +56,7 @@ private:
 		Field last_partition;
 		WeightedZooKeeperPaths weighted_zookeeper_paths;
 		ASTPtr sharding_key_expr;
+		bool do_copy;
 		Field coordinator;
 
 		static PartitionCommand dropPartition(const Field & partition, bool detach, bool unreplicated)
@@ -79,10 +80,11 @@ private:
 		}
 
 		static PartitionCommand reshardPartitions(const Field & first_partition_, const Field & last_partition_,
-			const WeightedZooKeeperPaths & weighted_zookeeper_paths_, const ASTPtr & sharding_key_expr_, const Field & coordinator_)
+			const WeightedZooKeeperPaths & weighted_zookeeper_paths_, const ASTPtr & sharding_key_expr_,
+			bool do_copy_, const Field & coordinator_)
 		{
 			return {RESHARD_PARTITION, first_partition_, false, false, false, {},
-				last_partition_, weighted_zookeeper_paths_, sharding_key_expr_, coordinator_};
+				last_partition_, weighted_zookeeper_paths_, sharding_key_expr_, do_copy_, coordinator_};
 		}
 	};
 

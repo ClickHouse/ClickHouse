@@ -41,11 +41,13 @@ public:
 	std::string database_name;
 	std::string table_name;
 	std::string partition;
+	std::string job_name;
 	WeightedZooKeeperPaths paths;
 	ASTPtr sharding_key_expr;
 	std::string coordinator_id;
 	StorageReplicatedMergeTree * storage = nullptr;
 	UInt64 block_number = 0;
+	bool do_copy;
 	bool is_aborted = false;
 };
 

@@ -36,6 +36,7 @@ private:
 	EventPtr event = new Poco::Event;
 	CancellationHook cancellation_hook;
 	std::string path;
+	std::string token;
 	size_t counter;
 };
 

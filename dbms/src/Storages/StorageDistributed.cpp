@@ -193,10 +193,10 @@ BlockInputStreams StorageDistributed::read(
 	//bool enable_shard_multiplexing = !(ast.order_expression_list && !ast.group_expression_list);
 	bool enable_shard_multiplexing = false;
 
-	ClusterProxy::SelectQueryConstructor select_query_constructor(processed_stage, external_tables);
+	ClusterProxy::SelectQueryConstructor select_query_constructor{processed_stage, external_tables};
 
-	return ClusterProxy::Query(select_query_constructor, cluster, modified_query_ast,
-		context, settings, enable_shard_multiplexing).execute();
+	return ClusterProxy::Query{select_query_constructor, cluster, modified_query_ast,
+		context, settings, enable_shard_multiplexing}.execute();
 }
 
 BlockOutputStreamPtr StorageDistributed::write(ASTPtr query, const Settings & settings)
@@ -230,25 +230,42 @@ void StorageDistributed::shutdown()
 void StorageDistributed::reshardPartitions(ASTPtr query, const String & database_name,
 	const Field & first_partition, const Field & last_partition,
 	const WeightedZooKeeperPaths & weighted_zookeeper_paths,
-	const ASTPtr & sharding_key_expr, const Field & coordinator,
+	const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
 	const Settings & settings)
 {
 	auto & resharding_worker = context.getReshardingWorker();
 	if (!resharding_worker.isStarted())
-		throw Exception("Resharding background thread is not running", ErrorCodes::RESHARDING_NO_WORKER);
+		throw Exception{"Resharding background thread is not running", ErrorCodes::RESHARDING_NO_WORKER};
 
 	if (!coordinator.isNull())
-		throw Exception("Use of COORDINATE WITH is forbidden in ALTER TABLE ... RESHARD"
+		throw Exception{"Use of COORDINATE WITH is forbidden in ALTER TABLE ... RESHARD"
 			" queries for distributed tables",
-			ErrorCodes::RESHARDING_INVALID_PARAMETERS);
+			ErrorCodes::RESHARDING_INVALID_PARAMETERS};
 
 	std::string coordinator_id = resharding_worker.createCoordinator(cluster);
 
 	std::atomic<bool> has_notified_error{false};
 
+	std::string dumped_coordinator_state;
+
+	auto handle_exception = [&](const std::string & msg = "")
+	{
+		try
+		{
+			if (!has_notified_error)
+				resharding_worker.setStatus(coordinator_id, ReshardingWorker::STATUS_ERROR, msg);
+			dumped_coordinator_state = resharding_worker.dumpCoordinatorState(coordinator_id);
+			resharding_worker.deleteCoordinator(coordinator_id);
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+	};
+
 	try
 	{
-		/// Создать запрос ALTER TABLE ... RESHARD PARTITION ... COORDINATE WITH ...
+		/// Создать запрос ALTER TABLE ... RESHARD [COPY] PARTITION ... COORDINATE WITH ...
 
 		ASTPtr alter_query_ptr = new ASTAlterQuery;
 		auto & alter_query = static_cast<ASTAlterQuery &>(*alter_query_ptr);
@@ -261,9 +278,9 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 
 		parameters.type = ASTAlterQuery::RESHARD_PARTITION;
 		if (!first_partition.isNull())
-			parameters.partition = new ASTLiteral({}, first_partition);
+			parameters.partition = new ASTLiteral{{}, first_partition};
 		if (!last_partition.isNull())
-			parameters.last_partition = new ASTLiteral({}, last_partition);
+			parameters.last_partition = new ASTLiteral{{}, last_partition};
 
 		ASTPtr expr_list = new ASTExpressionList;
 		for (const auto & entry : weighted_zookeeper_paths)
@@ -277,7 +294,8 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 
 		parameters.weighted_zookeeper_paths = expr_list;
 		parameters.sharding_key_expr = sharding_key_expr;
-		parameters.coordinator = new ASTLiteral({}, coordinator_id);
+		parameters.do_copy = do_copy;
+		parameters.coordinator = new ASTLiteral{{}, coordinator_id};
 
 		resharding_worker.registerQuery(coordinator_id, queryToString(alter_query_ptr));
 
@@ -289,8 +307,8 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 
 		ClusterProxy::AlterQueryConstructor alter_query_constructor;
 
-		BlockInputStreams streams = ClusterProxy::Query(alter_query_constructor, cluster, alter_query_ptr,
-			context, settings, enable_shard_multiplexing).execute();
+		BlockInputStreams streams = ClusterProxy::Query{alter_query_constructor, cluster, alter_query_ptr,
+			context, settings, enable_shard_multiplexing}.execute();
 
 		/// This callback is called if an exception has occurred while attempting to read
 		/// a block from a shard. This is to avoid a potential deadlock if other shards are
@@ -311,13 +329,13 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 			}
 		};
 
-		streams[0] = new UnionBlockInputStream<>(streams, nullptr, settings.max_distributed_connections,
-			exception_callback);
+		streams[0] = new UnionBlockInputStream<>{streams, nullptr, settings.max_distributed_connections,
+			exception_callback};
 		streams.resize(1);
 
 		auto stream_ptr = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]);
 		if (stream_ptr == nullptr)
-			throw Exception("StorageDistributed: Internal error", ErrorCodes::LOGICAL_ERROR);
+			throw Exception{"StorageDistributed: Internal error", ErrorCodes::LOGICAL_ERROR};
 		auto & stream = *stream_ptr;
 
 		stream.readPrefix();
@@ -328,21 +346,22 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 		if (!stream.isCancelled())
 			stream.readSuffix();
 	}
+	catch (const Exception & ex)
+	{
+		handle_exception(ex.message());
+		LOG_ERROR(log, dumped_coordinator_state);
+		throw;
+	}
+	catch (const std::exception & ex)
+	{
+		handle_exception(ex.what());
+		LOG_ERROR(log, dumped_coordinator_state);
+		throw;
+	}
 	catch (...)
 	{
-		tryLogCurrentException(__PRETTY_FUNCTION__);
-
-		try
-		{
-			if (!has_notified_error)
-				resharding_worker.setStatus(coordinator_id, ReshardingWorker::STATUS_ERROR);
-			resharding_worker.deleteCoordinator(coordinator_id);
-		}
-		catch (...)
-		{
-			tryLogCurrentException(__PRETTY_FUNCTION__);
-		}
-
+		handle_exception();
+		LOG_ERROR(log, dumped_coordinator_state);
 		throw;
 	}
 }
@@ -365,8 +384,8 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 
 	ClusterProxy::DescribeQueryConstructor describe_query_constructor;
 
-	return ClusterProxy::Query(describe_query_constructor, cluster, describe_query_ptr,
-		context, settings, enable_shard_multiplexing).execute();
+	return ClusterProxy::Query{describe_query_constructor, cluster, describe_query_ptr,
+		context, settings, enable_shard_multiplexing}.execute();
 }
 
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const

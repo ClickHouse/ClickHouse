@@ -23,7 +23,7 @@ public:
 public:
 	static const size_t NO_LIMIT = std::numeric_limits<size_t>::max();
 
-	MergeTreeDataMerger(MergeTreeData & data_) : data(data_), log(&Logger::get(data.getLogName() + " (Merger)")) {}
+	MergeTreeDataMerger(MergeTreeData & data_);
 
 	void setCancellationHook(CancellationHook cancellation_hook_);
 
@@ -50,7 +50,7 @@ public:
 	  *  приблизительно пропорционально количеству уже выписанных данных.
 	  */
 	MergeTreeData::DataPartPtr mergeParts(
-		const MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeListEntry & merge_entry,
+		MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeListEntry & merge_entry,
 		size_t aio_threshold, MergeTreeData::Transaction * out_transaction = nullptr,
 		DiskSpaceMonitor::Reservation * disk_reservation = nullptr);
 
@@ -62,6 +62,9 @@ public:
 
 	/// Примерное количество места на диске, нужное для мерджа. С запасом.
 	static size_t estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts);
+
+	void freezePartition(const std::string & partition);
+	void unfreezePartition(const std::string & partition);
 
 	/** Отменяет все мерджи. Все выполняющиеся сейчас вызовы mergeParts скоро бросят исключение.
 	  * Все новые вызовы будут бросать исключения, пока не будет вызван uncancel().
@@ -76,6 +79,10 @@ private:
 	/** Выбрать все куски принадлежащие одной партиции.
 	  */
 	MergeTreeData::DataPartsVector selectAllPartsFromPartition(DayNum_t partition);
+	bool isPartitionFrozen(const MergeTreeData::DataPart & part) const;
+
+private:
+	using FrozenPartitions = std::unordered_set<DayNum_t>;
 
 private:
 	MergeTreeData & data;
@@ -84,6 +91,9 @@ private:
 
 	/// Когда в последний раз писали в лог, что место на диске кончилось (чтобы не писать об этом слишком часто).
 	time_t disk_space_warning_time = 0;
+
+	std::mutex freeze_lock;
+	FrozenPartitions frozen_partitions;
 
 	CancellationHook cancellation_hook;
 

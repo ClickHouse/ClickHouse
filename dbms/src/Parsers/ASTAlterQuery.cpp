@@ -134,6 +134,9 @@ void ASTAlterQuery::formatImpl(const FormatSettings & settings, FormatState & st
 		{
 			settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "RESHARD ";
 
+			if (p.do_copy)
+				settings.ostr << "COPY ";
+
 			if (p.partition)
 				settings.ostr << "PARTITION ";
 

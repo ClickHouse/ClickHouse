@@ -82,6 +82,7 @@ namespace ErrorCodes
 	extern const int RESHARDING_ALREADY_SUBSCRIBED;
 	extern const int RESHARDING_INVALID_QUERY;
 	extern const int RWLOCK_NO_SUCH_LOCK;
+	extern const int NO_SUCH_BARRIER;
 }
 
 
@@ -292,6 +293,11 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
 	queue.pullLogsToQueue(current_zookeeper, nullptr);
 
+	/// Замораживаем партиции, которые прежне были в этом состоянии.
+	auto frozen_partitions = current_zookeeper->getChildren(replica_path + "/frozen_partitions");
+	for (const auto & partition : frozen_partitions)
+		merger.freezePartition(partition);
+
 	/// В этом потоке реплика будет активирована.
 	restarting_thread.reset(new ReplicatedMergeTreeRestartingThread(*this));
 }
@@ -309,6 +315,9 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
 	/// Отслеживание отставания реплик.
 	zookeeper->createIfNotExists(replica_path + "/min_unprocessed_insert_time", "");
 	zookeeper->createIfNotExists(replica_path + "/max_processed_insert_time", "");
+
+	/// Партиции, для которых временно не проводятся слияния.
+	zookeeper->createIfNotExists(replica_path + "/frozen_partitions", "");
 }
 
 
@@ -371,6 +380,11 @@ StoragePtr StorageReplicatedMergeTree::create(
 		{
 			InterserverIOEndpointPtr endpoint = new RemoteQueryExecutor::Service(res->context);
 			res->remote_query_executor_endpoint_holder = get_endpoint_holder(endpoint);
+		}
+
+		{
+			InterserverIOEndpointPtr endpoint = new RemotePartChecker::Service(res_ptr);
+			res->remote_part_checker_endpoint_holder = get_endpoint_holder(endpoint);
 		}
 	}
 
@@ -2385,6 +2399,12 @@ void StorageReplicatedMergeTree::shutdown()
 		remote_query_executor_endpoint_holder = nullptr;
 	}
 	remote_query_executor_client.cancel();
+
+	if (remote_part_checker_endpoint_holder)
+	{
+		remote_part_checker_endpoint_holder->cancel();
+		remote_part_checker_endpoint_holder = nullptr;
+	}
 }
 
 
@@ -3477,17 +3497,16 @@ void StorageReplicatedMergeTree::freezePartition(const Field & partition, const 
 void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & database_name,
 	const Field & first_partition, const Field & last_partition,
 	const WeightedZooKeeperPaths & weighted_zookeeper_paths,
-	const ASTPtr & sharding_key_expr, const Field & coordinator,
+	const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
 	const Settings & settings)
 {
 	auto & resharding_worker = context.getReshardingWorker();
 	if (!resharding_worker.isStarted())
-		throw Exception("Resharding background thread is not running", ErrorCodes::RESHARDING_NO_WORKER);
+		throw Exception{"Resharding background thread is not running", ErrorCodes::RESHARDING_NO_WORKER};
 
 	bool has_coordinator = !coordinator.isNull();
 	std::string coordinator_id;
 	UInt64 block_number = 0;
-
 
 	/// List of local partitions that need to be resharded.
 	ReshardingWorker::PartitionList partition_list;
@@ -3501,6 +3520,23 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 	/// uncoordinated partitions.
 	ReshardingWorker::PartitionList::const_iterator uncoordinated_begin;
 
+	std::string dumped_coordinator_state;
+
+	auto handle_exception = [&](const std::string & msg = "")
+	{
+		try
+		{
+			/// Before jobs are submitted, errors and cancellations are both
+			/// considered as errors.
+			resharding_worker.setStatus(coordinator_id, ReshardingWorker::STATUS_ERROR, msg);
+			dumped_coordinator_state = resharding_worker.dumpCoordinatorState(coordinator_id);
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+	};
+
 	try
 	{
 		zkutil::RWLock deletion_lock;
@@ -3513,7 +3549,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 
 		zkutil::RWLock::Guard<zkutil::RWLock::Read, zkutil::RWLock::NonBlocking> guard{deletion_lock};
 		if (!deletion_lock.ownsLock())
-			throw Exception("Coordinator has been deleted", ErrorCodes::RESHARDING_COORDINATOR_DELETED);
+			throw Exception{"Coordinator has been deleted", ErrorCodes::RESHARDING_COORDINATOR_DELETED};
 
 		if (has_coordinator)
 			block_number = resharding_worker.subscribe(coordinator_id, queryToString(query));
@@ -3522,7 +3558,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 		{
 			UInt64 weight = weighted_path.second;
 			if (weight == 0)
-				throw Exception("Shard has invalid weight", ErrorCodes::INVALID_SHARD_WEIGHT);
+				throw Exception{"Shard has invalid weight", ErrorCodes::INVALID_SHARD_WEIGHT};
 		}
 
 		{
@@ -3532,7 +3568,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 				all_paths.push_back(weighted_path.first);
 			std::sort(all_paths.begin(), all_paths.end());
 			if (std::adjacent_find(all_paths.begin(), all_paths.end()) != all_paths.end())
-				throw Exception("Shard paths must be distinct", ErrorCodes::DUPLICATE_SHARD_PATHS);
+				throw Exception{"Shard paths must be distinct", ErrorCodes::DUPLICATE_SHARD_PATHS};
 		}
 
 		DayNum_t first_partition_num = !first_partition.isNull() ? MergeTreeData::getMonthDayNum(first_partition) : DayNum_t();
@@ -3541,11 +3577,11 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 		if (first_partition_num && last_partition_num)
 		{
 			if (first_partition_num > last_partition_num)
-				throw Exception("Invalid interval of partitions", ErrorCodes::INVALID_PARTITIONS_INTERVAL);
+				throw Exception{"Invalid interval of partitions", ErrorCodes::INVALID_PARTITIONS_INTERVAL};
 		}
 
 		if (!first_partition_num && last_partition_num)
-			throw Exception("Received invalid parameters for resharding", ErrorCodes::RESHARDING_INVALID_PARAMETERS);
+			throw Exception{"Received invalid parameters for resharding", ErrorCodes::RESHARDING_INVALID_PARAMETERS};
 
 		bool include_all = !first_partition_num;
 
@@ -3565,7 +3601,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 		if (partition_list.empty())
 		{
 			if (!has_coordinator)
-				throw Exception("No existing partition found", ErrorCodes::PARTITION_DOESNT_EXIST);
+				throw Exception{"No existing partition found", ErrorCodes::PARTITION_DOESNT_EXIST};
 		}
 		else
 		{
@@ -3578,8 +3614,8 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 			{
 				size_t partition_size = data.getPartitionSize(partition);
 				if (!checkSpaceForResharding(replica_to_space_info, partition_size))
-					throw Exception("Insufficient space available for resharding operation "
-						"on partition " + partition, ErrorCodes::INSUFFICIENT_SPACE_FOR_RESHARDING);
+					throw Exception{"Insufficient space available for resharding operation "
+						"on partition " + partition, ErrorCodes::INSUFFICIENT_SPACE_FOR_RESHARDING};
 			}
 		}
 
@@ -3594,7 +3630,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 
 			auto count = resharding_worker.getPartitionCount(coordinator_id);
 			if (count == 0)
-				throw Exception("No existing partition found", ErrorCodes::PARTITION_DOESNT_EXIST);
+				throw Exception{"No existing partition found", ErrorCodes::PARTITION_DOESNT_EXIST};
 
 			if (partition_list.empty())
 			{
@@ -3648,6 +3684,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 			job.sharding_key_expr = sharding_key_expr;
 			job.coordinator_id = coordinator_id;
 			job.block_number = block_number;
+			job.do_copy = do_copy;
 
 			resharding_worker.submitJob(job);
 		}
@@ -3661,6 +3698,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 			job.partition = *it;
 			job.paths = weighted_zookeeper_paths;
 			job.sharding_key_expr = sharding_key_expr;
+			job.do_copy = do_copy;
 
 			resharding_worker.submitJob(job);
 		}
@@ -3682,6 +3720,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 				/// intentionally ignore them.
 			}
 			else if ((ex.code() == ErrorCodes::RWLOCK_NO_SUCH_LOCK) ||
+				(ex.code() == ErrorCodes::NO_SUCH_BARRIER) ||
 				(ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED))
 			{
 				/// For any reason the coordinator has disappeared. So obviously
@@ -3693,40 +3732,27 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 				/// nothing here
 			}
 			else
-			{
-				try
-				{
-					/// Before jobs are submitted, errors and cancellations are both
-					/// considered as errors.
-					resharding_worker.setStatus(coordinator_id, ReshardingWorker::STATUS_ERROR);
-				}
-				catch (...)
-				{
-					tryLogCurrentException(__PRETTY_FUNCTION__);
-				}
-			}
+				handle_exception(ex.message());
 		}
 
 		throw;
 	}
-	catch (...)
+	catch (const std::exception & ex)
 	{
-		tryLogCurrentException(__PRETTY_FUNCTION__);
-
 		if (has_coordinator)
 		{
-			try
-			{
-				/// Before jobs are submitted, errors and cancellations are both
-				/// considered as errors.
-				resharding_worker.setStatus(coordinator_id, ReshardingWorker::STATUS_ERROR);
-			}
-			catch (...)
-			{
-				tryLogCurrentException(__PRETTY_FUNCTION__);
-			}
+			handle_exception(ex.what());
+			LOG_ERROR(log, dumped_coordinator_state);
 		}
-
+		throw;
+	}
+	catch (...)
+	{
+		if (has_coordinator)
+		{
+			handle_exception();
+			LOG_ERROR(log, dumped_coordinator_state);
+		}
 		throw;
 	}
 }
@@ -3746,7 +3772,7 @@ void StorageReplicatedMergeTree::enforceShardsConsistency(const WeightedZooKeepe
 			!std::equal(materialized_columns.begin(), materialized_columns.end(), columns_desc.materialized.begin()) ||
 			!std::equal(alias_columns.begin(), alias_columns.end(), columns_desc.alias.begin()) ||
 			!std::equal(column_defaults.begin(), column_defaults.end(), columns_desc.defaults.begin()))
-			throw Exception("Table is inconsistent accross shards", ErrorCodes::INCONSISTENT_TABLE_ACCROSS_SHARDS);
+			throw Exception{"Table is inconsistent accross shards", ErrorCodes::INCONSISTENT_TABLE_ACCROSS_SHARDS};
 	}
 }
 
@@ -3825,10 +3851,10 @@ StorageReplicatedMergeTree::gatherReplicaSpaceInfo(const WeightedZooKeeperPaths 
 			const auto & replica_path = entry.replica_path;
 			const auto & address = entry.address;
 
-			InterserverIOEndpointLocation location(replica_path, address.host, address.replication_port);
+			InterserverIOEndpointLocation location{replica_path, address.host, address.replication_port};
 
-			tasks[i] = Tasks::value_type(std::bind(&RemoteDiskSpaceMonitor::Client::getFreeSpace,
-				&disk_space_monitor_client, location));
+			tasks[i] = Tasks::value_type{std::bind(&RemoteDiskSpaceMonitor::Client::getFreeSpace,
+				&disk_space_monitor_client, location)};
 			pool.schedule([i, &tasks]{ tasks[i](); });
 		}
 	}
@@ -3862,9 +3888,9 @@ bool StorageReplicatedMergeTree::checkSpaceForResharding(const ReplicaToSpaceInf
 		long double result = static_cast<long double>(size) * factor;
 
 		if ((fetestexcept(FE_OVERFLOW) != 0) || (fetestexcept(FE_UNDERFLOW) != 0))
-			throw Exception("StorageReplicatedMergeTree: floating point exception raised", ErrorCodes::LOGICAL_ERROR);
+			throw Exception{"StorageReplicatedMergeTree: floating point exception triggered", ErrorCodes::LOGICAL_ERROR};
 		if (result > static_cast<long double>(std::numeric_limits<size_t>::max()))
-			throw Exception("StorageReplicatedMergeTree: integer overflow", ErrorCodes::LOGICAL_ERROR);
+			throw Exception{"StorageReplicatedMergeTree: integer overflow", ErrorCodes::LOGICAL_ERROR};
 
 		return static_cast<size_t>(result);
 	};

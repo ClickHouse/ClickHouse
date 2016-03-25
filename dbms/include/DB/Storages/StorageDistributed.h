@@ -6,6 +6,7 @@
 #include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ExpressionActions.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -79,7 +80,7 @@ public:
 	void reshardPartitions(ASTPtr query, const String  & database_name,
 		const Field & first_partition, const Field & last_partition,
 		const WeightedZooKeeperPaths & weighted_zookeeper_paths,
-		const ASTPtr & sharding_key_expr, const Field & coordinator,
+		const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
 		const Settings & settings) override;
 
 	/// От каждой реплики получить описание соответствующей локальной таблицы.
@@ -131,6 +132,7 @@ private:
 	String remote_table;
 
 	Context & context;
+	Logger * log = &Logger::get("StorageDistributed");
 
 	/// Используется только, если таблица должна владеть объектом Cluster, которым больше никто не владеет - для реализации TableFunctionRemote.
 	SharedPtr<Cluster> owned_cluster;

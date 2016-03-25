@@ -5,6 +5,7 @@
 
 namespace DB
 {
+
 /** Запрос типа такого:
   * ALTER TABLE [db.]name
   * 	[ADD COLUMN col_name type [AFTER col_after],]
@@ -13,7 +14,7 @@ namespace DB
   * 	[DROP|DETACH|ATTACH [UNREPLICATED] PARTITION|PART partition, ...]
   * 	[FETCH PARTITION partition FROM ...]
   * 	[FREEZE PARTITION]
-  *		[RESHARD PARTITION partition
+  *		[RESHARD [COPY] PARTITION partition
   *			TO '/path/to/zookeeper/table' [WEIGHT w], ...
   * 			USING expression
   *			[COORDINATE WITH 'coordinator_id']]

@@ -54,15 +54,15 @@ inline bool nodeQueueEquals(const std::string & lhs, const std::string & rhs)
 }
 
 RWLock::RWLock(ZooKeeperPtr & zookeeper_, const std::string & path_)
-	: zookeeper(zookeeper_), path(path_)
+	: zookeeper{zookeeper_}, path{path_}
 {
 	int32_t code = zookeeper->tryCreate(path, "", CreateMode::Persistent);
 	if ((code != ZOK) && (code != ZNODEEXISTS))
 	{
 		if (code == ZNONODE)
-			throw DB::Exception("No such lock", DB::ErrorCodes::RWLOCK_NO_SUCH_LOCK);
+			throw DB::Exception{"No such lock", DB::ErrorCodes::RWLOCK_NO_SUCH_LOCK};
 		else
-			throw KeeperException(code);
+			throw KeeperException{code};
 	}
 }
 
@@ -97,7 +97,7 @@ void RWLock::release()
 	}
 
 	if (key.empty())
-		throw DB::Exception("RWLock: no lock is held", DB::ErrorCodes::LOGICAL_ERROR);
+		throw DB::Exception{"RWLock: no lock is held", DB::ErrorCodes::LOGICAL_ERROR};
 
 	zookeeper->remove(path + "/" + key);
 	key.clear();
@@ -118,7 +118,7 @@ void RWLock::acquireImpl(Mode mode)
 	}
 
 	if (!key.empty())
-		throw DB::Exception("RWLock: lock already held", DB::ErrorCodes::RWLOCK_ALREADY_HELD);
+		throw DB::Exception{"RWLock: lock already held", DB::ErrorCodes::RWLOCK_ALREADY_HELD};
 
 	try
 	{
@@ -126,7 +126,7 @@ void RWLock::acquireImpl(Mode mode)
 		int32_t code = zookeeper->tryCreate(path + "/" + Prefix<lock_type>::name,
 			"", CreateMode::EphemeralSequential, key);
 		if (code == ZNONODE)
-			throw DB::Exception("No such lock", DB::ErrorCodes::RWLOCK_NO_SUCH_LOCK);
+			throw DB::Exception{"No such lock", DB::ErrorCodes::RWLOCK_NO_SUCH_LOCK};
 		else if (code != ZOK)
 			throw KeeperException(code);
 
@@ -137,17 +137,17 @@ void RWLock::acquireImpl(Mode mode)
 			std::vector<std::string> children;
 			int32_t code = zookeeper->tryGetChildren(path, children);
 			if (code == ZNONODE)
-				throw DB::Exception("No such lock", DB::ErrorCodes::RWLOCK_NO_SUCH_LOCK);
+				throw DB::Exception{"No such lock", DB::ErrorCodes::RWLOCK_NO_SUCH_LOCK};
 			else if (code != ZOK)
-				throw KeeperException(code);
+				throw KeeperException{code};
 
 			std::sort(children.begin(), children.end(), nodeQueueCmp);
 			auto it = std::lower_bound(children.cbegin(), children.cend(), key, nodeQueueCmp);
 
 			/// This should never happen.
 			if ((it == children.cend()) || !nodeQueueEquals(*it, key))
-				throw DB::Exception("RWLock: corrupted lock request queue. Own request not found.",
-					DB::ErrorCodes::LOGICAL_ERROR);
+				throw DB::Exception{"RWLock: corrupted lock request queue. Own request not found.",
+					DB::ErrorCodes::LOGICAL_ERROR};
 
 			const std::string * observed_key = nullptr;
 
@@ -186,9 +186,9 @@ void RWLock::acquireImpl(Mode mode)
 			{
 				int32_t code = zookeeper->tryRemove(path + "/" + key);
 				if (code == ZNONODE)
-					throw DB::Exception("No such lock", DB::ErrorCodes::RWLOCK_NO_SUCH_LOCK);
+					throw DB::Exception{"No such lock", DB::ErrorCodes::RWLOCK_NO_SUCH_LOCK};
 				else if (code != ZOK)
-					throw KeeperException(code);
+					throw KeeperException{code};
 
 				key.clear();
 				break;

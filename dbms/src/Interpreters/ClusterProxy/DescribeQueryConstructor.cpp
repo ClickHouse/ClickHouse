@@ -26,16 +26,16 @@ namespace ClusterProxy
 
 BlockInputStreamPtr DescribeQueryConstructor::createLocal(ASTPtr query_ast, const Context & context, const Cluster::Address & address)
 {
-	InterpreterDescribeQuery interpreter(query_ast, context);
+	InterpreterDescribeQuery interpreter{query_ast, context};
 	BlockInputStreamPtr stream = interpreter.execute().in;
 
 	/** Материализация нужна, так как с удалённых серверов константы приходят материализованными.
 	* Если этого не делать, то в разных потоках будут получаться разные типы (Const и не-Const) столбцов,
 	* а это не разрешено, так как весь код исходит из допущения, что в потоке блоков все типы одинаковые.
 	*/
-	BlockInputStreamPtr materialized_stream = new MaterializingBlockInputStream(stream);
+	BlockInputStreamPtr materialized_stream = new MaterializingBlockInputStream{stream};
 
-	return new BlockExtraInfoInputStream(materialized_stream, toBlockExtraInfo(address));
+	return new BlockExtraInfoInputStream{materialized_stream, toBlockExtraInfo(address)};
 }
 
 BlockInputStreamPtr DescribeQueryConstructor::createRemote(IConnectionPool * pool, const std::string & query,

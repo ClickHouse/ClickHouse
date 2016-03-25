@@ -11,20 +11,20 @@ namespace ClusterProxy
 
 SelectQueryConstructor::SelectQueryConstructor(const QueryProcessingStage::Enum & processed_stage_,
 	const Tables & external_tables_)
-	: processed_stage(processed_stage_), external_tables(external_tables_)
+	: processed_stage{processed_stage_}, external_tables{external_tables_}
 {
 }
 
 BlockInputStreamPtr SelectQueryConstructor::createLocal(ASTPtr query_ast, const Context & context, const Cluster::Address & address)
 {
-	InterpreterSelectQuery interpreter(query_ast, context, processed_stage);
+	InterpreterSelectQuery interpreter{query_ast, context, processed_stage};
 	BlockInputStreamPtr stream = interpreter.execute().in;
 
 	/** Материализация нужна, так как с удалённых серверов константы приходят материализованными.
 	* Если этого не делать, то в разных потоках будут получаться разные типы (Const и не-Const) столбцов,
 	* а это не разрешено, так как весь код исходит из допущения, что в потоке блоков все типы одинаковые.
 	*/
-	return new MaterializingBlockInputStream(stream);
+	return new MaterializingBlockInputStream{stream};
 }
 
 BlockInputStreamPtr SelectQueryConstructor::createRemote(IConnectionPool * pool, const std::string & query,

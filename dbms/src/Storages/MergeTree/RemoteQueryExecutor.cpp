@@ -26,7 +26,7 @@ std::string getEndpointId(const std::string & node_id)
 }
 
 Service::Service(Context & context_)
-	: context(context_)
+	: context{context_}
 {
 }
 
@@ -38,7 +38,7 @@ std::string Service::getId(const std::string & node_id) const
 void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out)
 {
 	if (is_cancelled)
-		throw Exception("RemoteQueryExecutor service terminated", ErrorCodes::ABORTED);
+		throw Exception{"RemoteQueryExecutor service terminated", ErrorCodes::ABORTED};
 
 	std::string query = params.get("query");
 
@@ -67,7 +67,7 @@ bool Client::executeQuery(const InterserverIOEndpointLocation & location, const 
 		{"query", query}
 	};
 
-	ReadBufferFromHTTP in(location.host, location.port, params);
+	ReadBufferFromHTTP in{location.host, location.port, params};
 
 	bool flag;
 	readBinary(flag, in);

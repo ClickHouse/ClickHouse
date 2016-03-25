@@ -1,7 +1,6 @@
 #include <DB/Storages/MergeTree/ReshardingWorker.h>
 #include <DB/Storages/MergeTree/ReshardingJob.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
-#include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <DB/Storages/MergeTree/MergeTreeSharder.h>
@@ -11,10 +10,10 @@
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/HexWriteBuffer.h>
 #include <DB/IO/WriteHelpers.h>
 
 #include <DB/Common/getFQDNOrHostName.h>
+#include <DB/Common/SHA512Utils.h>
 
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/Context.h>
@@ -27,7 +26,6 @@
 #include <Poco/Event.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
-#include <Poco/SharedPtr.h>
 
 #include <openssl/sha.h>
 
@@ -59,6 +57,8 @@ namespace ErrorCodes
 	extern const int RESHARDING_DISTRIBUTED_JOB_ON_HOLD;
 	extern const int RESHARDING_INVALID_QUERY;
 	extern const int RWLOCK_NO_SUCH_LOCK;
+	extern const int NO_SUCH_BARRIER;
+	extern const int RESHARDING_ILL_FORMED_LOG;
 }
 
 namespace
@@ -66,6 +66,8 @@ namespace
 
 constexpr long wait_duration = 1000;
 
+/// Helper class which extracts from the ClickHouse configuration file
+/// the parameters we need for operating the resharding thread.
 class Arguments final
 {
 public:
@@ -79,10 +81,10 @@ public:
 			{
 				task_queue_path = config.getString(config_name + "." + key);
 				if (task_queue_path.empty())
-					throw Exception("Invalid parameter in resharding configuration", ErrorCodes::INVALID_CONFIG_PARAMETER);
+					throw Exception{"Invalid parameter in resharding configuration", ErrorCodes::INVALID_CONFIG_PARAMETER};
 			}
 			else
-				throw Exception("Unknown parameter in resharding configuration", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+				throw Exception{"Unknown parameter in resharding configuration", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
 		}
 	}
 
@@ -98,7 +100,71 @@ private:
 	std::string task_queue_path;
 };
 
+/// Helper class we use to read and write the status of a coordinator
+/// or a node that has subscribed to a coordinator.
+/// The status format is: status_code [, optional_message]
+class Status final
+{
+public:
+	Status(ReshardingWorker::StatusCode code_, const std::string & msg_)
+		: code{code_}, msg{msg_}
+	{
+	}
+
+	Status(const std::string & str)
+	{
+		size_t pos = str.find(',');
+		code = static_cast<ReshardingWorker::StatusCode>(std::stoull(str.substr(0, pos)));
+		if (pos != std::string::npos)
+		{
+			if ((pos + 1) < str.length())
+				msg = str.substr(pos + 1);
+		}
+	}
+
+	Status(const Status &) = delete;
+	Status & operator=(const Status &) = delete;
+
+	std::string toString() const
+	{
+		return DB::toString(static_cast<UInt64>(code)) + (msg.empty() ? "" : ",") + msg;
+	}
+
+	ReshardingWorker::StatusCode getCode() const
+	{
+		return code;
+	}
+
+	std::string getMessage() const
+	{
+		return msg;
+	}
+
+private:
+	ReshardingWorker::StatusCode code;
+	std::string msg;
+};
+
 }
+
+/// Job structure:
+///
+/// /shards: various information on target shards that is needed in order to build
+/// the log;
+///
+/// /log: contains one log record for each operation to be performed;
+///
+/// /is_published: znode created after uploading sharded partitions. If we have just
+/// recovered from a failure, and this znode exists, apply changes without resharding
+/// the initial partition. Indeed we could experience a failure after completing a
+/// "ALTER TABLE ... DROP PARTITION ...", which would rule out any further attempt
+/// to reshard the initial partition;
+///
+/// /is_log_created: znode created after creating the log. Prevents from recreating
+/// it after a failure;
+///
+/// /is_committed: changes have been committed locally.
+///
 
 /// Rationale for distributed jobs:
 ///
@@ -149,6 +215,9 @@ private:
 ///
 /// /status/${host}: status if an individual participating node;
 ///
+/// /status_probe: node that we update just after having updated either the status
+/// of a participating node or the status of the coordinator as a whole;
+///
 /// /cluster: cluster on which the distributed job is to be performed;
 ///
 /// /node_count: number of nodes of the cluster that participate in at
@@ -176,13 +245,19 @@ private:
 /// /partitions/${partition_id}/upload_barrier: when all the participating
 /// nodes have uploaded new data to their respective replicas, we can apply changes;
 ///
+/// /partitions/${partition_id}/election_barrier: used for the election of
+/// a leader among the participating nodes;
+///
+/// /partitions/${partition_id}/commit_barrier: crossed when all the changes
+/// have been applied on the target nodes;
+///
 /// /partitions/${partition_id}/recovery_barrier: recovery if
 /// one or several participating nodes had previously gone offline.
 ///
 
 ReshardingWorker::ReshardingWorker(const Poco::Util::AbstractConfiguration & config,
 	const std::string & config_name, Context & context_)
-	: context(context_), log(&Logger::get("ReshardingWorker"))
+	: context{context_}
 {
 	Arguments arguments(config, config_name);
 	auto zookeeper = context.getZooKeeper();
@@ -193,7 +268,9 @@ ReshardingWorker::ReshardingWorker(const Poco::Util::AbstractConfiguration & con
 
 	auto current_host = getFQDNOrHostName();
 
-	host_task_queue_path = root + "resharding/" + current_host;
+	task_queue_path = root + "resharding/";
+
+	host_task_queue_path = task_queue_path + current_host;
 	zookeeper->createAncestors(host_task_queue_path + "/");
 
 	distributed_path = root + "resharding_distributed";
@@ -206,7 +283,7 @@ ReshardingWorker::ReshardingWorker(const Poco::Util::AbstractConfiguration & con
 	int32_t code = zookeeper->tryCreate(distributed_online_path + "/" + current_host, "",
 		zkutil::CreateMode::Ephemeral);
 	if ((code != ZOK) && (code != ZNODEEXISTS))
-		throw zkutil::KeeperException(code);
+		throw zkutil::KeeperException{code};
 
 	distributed_lock_path = distributed_path + "/lock";
 	zookeeper->createIfNotExists(distributed_lock_path, "");
@@ -229,7 +306,7 @@ ReshardingWorker::~ReshardingWorker()
 
 void ReshardingWorker::start()
 {
-	polling_thread = std::thread(&ReshardingWorker::pollAndExecute, this);
+	polling_thread = std::thread{&ReshardingWorker::pollAndExecute, this};
 }
 
 void ReshardingWorker::shutdown()
@@ -258,14 +335,14 @@ bool ReshardingWorker::isStarted() const
 
 void ReshardingWorker::pollAndExecute()
 {
-	bool error = false;
+	std::string error_msg;
 
 	try
 	{
 		bool old_val = false;
 		if (!is_started.compare_exchange_strong(old_val, true, std::memory_order_seq_cst,
 			std::memory_order_relaxed))
-			throw Exception("Resharding background thread already started", ErrorCodes::LOGICAL_ERROR);
+			throw Exception{"Resharding background thread already started", ErrorCodes::LOGICAL_ERROR};
 
 		LOG_DEBUG(log, "Started resharding background thread.");
 
@@ -279,6 +356,10 @@ void ReshardingWorker::pollAndExecute()
 				throw;
 			else
 				LOG_ERROR(log, ex.message());
+		}
+		catch (const std::exception & ex)
+		{
+			LOG_ERROR(log, ex.what());
 		}
 		catch (...)
 		{
@@ -316,6 +397,10 @@ void ReshardingWorker::pollAndExecute()
 				else
 					LOG_ERROR(log, ex.message());
 			}
+			catch (const std::exception & ex)
+			{
+				LOG_ERROR(log, ex.what());
+			}
 			catch (...)
 			{
 				tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -325,19 +410,21 @@ void ReshardingWorker::pollAndExecute()
 	catch (const Exception & ex)
 	{
 		if (ex.code() != ErrorCodes::ABORTED)
-			error = true;
+			error_msg = ex.message();
+	}
+	catch (const std::exception & ex)
+	{
+		error_msg = ex.what();
 	}
 	catch (...)
 	{
-		error = true;
+		error_msg = "unspecified";
 		tryLogCurrentException(__PRETTY_FUNCTION__);
 	}
 
-	if (error)
-	{
-		/// Если мы попали сюда, это значит, что где-то кроется баг.
-		LOG_ERROR(log, "Resharding background thread terminated with critical error.");
-	}
+	if (!error_msg.empty())
+		LOG_ERROR(log, "Resharding background thread terminated with critical error: "
+			<< error_msg);
 	else
 		LOG_DEBUG(log, "Resharding background thread terminated.");
 }
@@ -378,7 +465,7 @@ void ReshardingWorker::perform(const Strings & job_nodes)
 
 		try
 		{
-			perform(job_descriptor);
+			perform(job_descriptor, child);
 		}
 		catch (const Exception & ex)
 		{
@@ -401,13 +488,15 @@ void ReshardingWorker::perform(const Strings & job_nodes)
 					/// nothing here
 				}
 				else if (ex.code() == ErrorCodes::RESHARDING_REMOTE_NODE_ERROR)
-					zookeeper->remove(child_full_path);
+					zookeeper->removeRecursive(child_full_path);
 				else if (ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED)
-					zookeeper->remove(child_full_path);
+					zookeeper->removeRecursive(child_full_path);
 				else if (ex.code() == ErrorCodes::RWLOCK_NO_SUCH_LOCK)
-					zookeeper->remove(child_full_path);
+					zookeeper->removeRecursive(child_full_path);
+				else if (ex.code() == ErrorCodes::NO_SUCH_BARRIER)
+					zookeeper->removeRecursive(child_full_path);
 				else
-					zookeeper->remove(child_full_path);
+					zookeeper->removeRecursive(child_full_path);
 			}
 			catch (...)
 			{
@@ -418,20 +507,20 @@ void ReshardingWorker::perform(const Strings & job_nodes)
 		}
 		catch (...)
 		{
-			tryLogCurrentException(__PRETTY_FUNCTION__);
-			zookeeper->remove(child_full_path);
+			zookeeper->removeRecursive(child_full_path);
 			throw;
 		}
 
-		zookeeper->remove(child_full_path);
+		zookeeper->removeRecursive(child_full_path);
 	}
 }
 
-void ReshardingWorker::perform(const std::string & job_descriptor)
+void ReshardingWorker::perform(const std::string & job_descriptor, const std::string & job_name)
 {
 	LOG_DEBUG(log, "Performing resharding job.");
 
 	current_job = ReshardingJob{job_descriptor};
+	current_job.job_name = job_name;
 
 	zkutil::RWLock deletion_lock;
 
@@ -440,22 +529,97 @@ void ReshardingWorker::perform(const std::string & job_descriptor)
 
 	zkutil::RWLock::Guard<zkutil::RWLock::Read, zkutil::RWLock::NonBlocking> guard{deletion_lock};
 	if (!deletion_lock.ownsLock())
-		throw Exception("Coordinator has been deleted", ErrorCodes::RESHARDING_COORDINATOR_DELETED);
+		throw Exception{"Coordinator has been deleted", ErrorCodes::RESHARDING_COORDINATOR_DELETED};
 
 	StoragePtr generic_storage = context.getTable(current_job.database_name, current_job.table_name);
 	auto & storage = typeid_cast<StorageReplicatedMergeTree &>(*(generic_storage.get()));
 	current_job.storage = &storage;
 
-	/// Защитить перешардируемую партицию от задачи слияния.
-	const MergeTreeMergeBlocker merge_blocker{current_job.storage->merger};
+	/// Protect the source partition from merging jobs.
+	freezeSourcePartition();
+
+	std::string dumped_coordinator_state;
+
+	auto handle_exception = [&](const std::string & cancel_msg, const std::string & error_msg)
+	{
+		try
+		{
+			/// Cancellation has priority over errors.
+			if (must_stop)
+			{
+				if (current_job.isCoordinated())
+				{
+					setStatus(current_job.coordinator_id, getFQDNOrHostName(), STATUS_ON_HOLD,
+						cancel_msg);
+					dumped_coordinator_state = dumpCoordinatorState(current_job.coordinator_id);
+				}
+				softCleanup();
+			}
+			else
+			{
+				/// An error has occurred on this node.
+				if (current_job.isCoordinated())
+				{
+					setStatus(current_job.coordinator_id, getFQDNOrHostName(), STATUS_ERROR,
+						error_msg);
+					dumped_coordinator_state = dumpCoordinatorState(current_job.coordinator_id);
+				}
+				deletion_lock.release();
+				unfreezeSourcePartition();
+				hardCleanup();
+			}
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+	};
 
 	try
 	{
 		attachJob();
-		createShardedPartitions();
-		publishShardedPartitions();
-		waitForUploadCompletion();
-		applyChanges();
+
+		{
+			ScopedAnomalyMonitor scoped_anomaly_monitor{anomaly_monitor};
+
+			/// Create the new sharded partitions. Upload them to their target
+			/// shards. Collect into persistent storage all the information we
+			/// need in order to commit changes.
+			if (!isPublished())
+			{
+				createShardedPartitions();
+				storeTargetShards();
+				publishShardedPartitions();
+				deleteTemporaryData();
+				markAsPublished();
+			}
+
+			waitForUploadCompletion();
+
+			/// If the current job is part of a distributed job, take participation
+			/// in a leader election among all the participating nodes. All the 
+			/// participating nodes drop their source partition. Moreover the leader
+			/// sends all the required attach requests to the target shards.
+			electLeader();
+
+			/// Build into persistent storage a log consisting of a description
+			/// of all the operations to be performed within the commit operation.
+			if (!isLogCreated())
+			{
+				createLog();
+				markLogAsCreated();
+			}
+
+			if (!isCommitted())
+			{
+				commit();
+				markAsCommitted();
+			}
+
+			/// A distributed job is considered to be complete if and only if
+			/// changes have been committed on all the participating nodes.
+			waitForCommitCompletion();
+		}
 	}
 	catch (const Exception & ex)
 	{
@@ -468,7 +632,11 @@ void ReshardingWorker::perform(const std::string & job_descriptor)
 				/// Put the current distributed job on hold in order to reliably handle
 				/// the scenario in which the remote nodes undergo a hard shutdown.
 				if (current_job.isCoordinated())
-					setStatus(current_job.coordinator_id, getFQDNOrHostName(), STATUS_ON_HOLD);
+				{
+					setStatus(current_job.coordinator_id, getFQDNOrHostName(), STATUS_ON_HOLD,
+						ex.message());
+					dumped_coordinator_state = dumpCoordinatorState(current_job.coordinator_id);
+				}
 				softCleanup();
 			}
 			else if (ex.code() == ErrorCodes::RESHARDING_REMOTE_NODE_UNAVAILABLE)
@@ -477,91 +645,65 @@ void ReshardingWorker::perform(const std::string & job_descriptor)
 				/// Put the current distributed job on hold. Also jab the job scheduler
 				/// so that it will come accross this distributed job even if no new jobs
 				/// are submitted.
-				setStatus(current_job.coordinator_id, getFQDNOrHostName(), STATUS_ON_HOLD);
+				setStatus(current_job.coordinator_id, getFQDNOrHostName(), STATUS_ON_HOLD,
+					ex.message());
+				dumped_coordinator_state = dumpCoordinatorState(current_job.coordinator_id);
 				softCleanup();
 				jabScheduler();
 			}
 			else if (ex.code() == ErrorCodes::RESHARDING_REMOTE_NODE_ERROR)
 			{
+				dumped_coordinator_state = dumpCoordinatorState(current_job.coordinator_id);
 				deletion_lock.release();
+				unfreezeSourcePartition();
 				hardCleanup();
 			}
 			else if (ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED)
 			{
-				// nothing here
+				/// nothing here
 			}
 			else if (ex.code() == ErrorCodes::RESHARDING_DISTRIBUTED_JOB_ON_HOLD)
 			{
 				/// The current distributed job is on hold and one or more required nodes
 				/// have not gone online yet. Jab the job scheduler so that it will come
 				/// accross this distributed job even if no new jobs are submitted.
-				setStatus(current_job.coordinator_id, getFQDNOrHostName(), STATUS_ON_HOLD);
+				setStatus(current_job.coordinator_id, getFQDNOrHostName(), STATUS_ON_HOLD,
+					ex.message());
+				dumped_coordinator_state = dumpCoordinatorState(current_job.coordinator_id);
 				jabScheduler();
 			}
 			else
-			{
-				/// Cancellation has priority over errors.
-				if (must_stop)
-				{
-					LOG_DEBUG(log, "Resharding job cancelled.");
-					if (current_job.isCoordinated())
-						setStatus(current_job.coordinator_id, getFQDNOrHostName(), STATUS_ON_HOLD);
-					softCleanup();
-				}
-				else
-				{
-					/// An error has occurred on this node.
-					if (current_job.isCoordinated())
-					{
-						auto current_host = getFQDNOrHostName();
-						setStatus(current_job.coordinator_id, current_host, STATUS_ERROR);
-					}
-					deletion_lock.release();
-					hardCleanup();
-				}
-			}
+				handle_exception(ex.message(), ex.message());
 		}
 		catch (...)
 		{
 			tryLogCurrentException(__PRETTY_FUNCTION__);
 		}
 
+		LOG_ERROR(log, dumped_coordinator_state);
+		throw;
+	}
+	catch (const std::exception & ex)
+	{
+		/// An error has occurred on this node.
+		handle_exception("Resharding job cancelled", ex.what());
+		LOG_ERROR(log, dumped_coordinator_state);
 		throw;
 	}
 	catch (...)
 	{
 		/// An error has occurred on this node.
-		try
-		{
-			/// Cancellation has priority over errors.
-			if (must_stop)
-			{
-				LOG_DEBUG(log, "Resharding job cancelled.");
-				if (current_job.isCoordinated())
-					setStatus(current_job.coordinator_id, getFQDNOrHostName(), STATUS_ON_HOLD);
-				softCleanup();
-			}
-			else
-			{
-				if (current_job.isCoordinated())
-				{
-					auto current_host = getFQDNOrHostName();
-					setStatus(current_job.coordinator_id, current_host, STATUS_ERROR);
-				}
-				deletion_lock.release();
-				hardCleanup();
-			}
-		}
-		catch (...)
-		{
-			tryLogCurrentException(__PRETTY_FUNCTION__);
-		}
-
+		handle_exception("Resharding job cancelled", "An unspecified error has occurred");
+		LOG_ERROR(log, dumped_coordinator_state);
 		throw;
 	}
 
 	deletion_lock.release();
+	/// Although the source partition has been dropped, the following function
+	/// must be called in order to delete all the data that makes freezing fail-safe.
+	unfreezeSourcePartition();
 	hardCleanup();
+
 	LOG_DEBUG(log, "Resharding job successfully completed.");
 }
 
@@ -580,6 +722,81 @@ void ReshardingWorker::createShardedPartitions()
 
 	MergeTreeData::PerShardDataParts & per_shard_data_parts = storage.data.per_shard_data_parts;
 	per_shard_data_parts = merger.reshardPartition(current_job);
+}
+
+void ReshardingWorker::storeTargetShards()
+{
+	auto & storage = *(current_job.storage);
+	MergeTreeData::PerShardDataParts & per_shard_data_parts = storage.data.per_shard_data_parts;
+
+	auto zookeeper = context.getZooKeeper();
+
+	zookeeper->tryRemove(getLocalJobPath(current_job) + "/shards");
+
+	std::string out;
+	WriteBufferFromString buf{out};
+
+	size_t entries_count = 0;
+	for (const auto & entry : per_shard_data_parts)
+	{
+		const MergeTreeData::MutableDataPartPtr & part_from_shard = entry.second;
+		if (!part_from_shard)
+			continue;
+		++entries_count;
+	}
+
+	writeVarUInt(entries_count, buf);
+
+	for (const auto & entry : per_shard_data_parts)
+	{
+		size_t shard_no = entry.first;
+		const MergeTreeData::MutableDataPartPtr & part_from_shard = entry.second;
+		if (!part_from_shard)
+			continue;
+
+		std::string part = storage.data.getFullPath() + "reshard/" + toString(shard_no) + "/" + part_from_shard->name;
+		auto hash = SHA512Utils::computeHashFromFolder(part);
+
+		writeVarUInt(shard_no, buf);
+		writeBinary(part_from_shard->name, buf);
+		writeBinary(hash, buf);
+	}
+
+	buf.next();
+
+	(void) zookeeper->create(getLocalJobPath(current_job) + "/shards", out,
+		zkutil::CreateMode::Persistent);
+}
+
+ReshardingWorker::ShardList ReshardingWorker::getTargetShards(const std::string & hostname,
+	const std::string & job_name)
+{
+	ShardList shard_list;
+
+	auto zookeeper = context.getZooKeeper();
+
+	auto shards = zookeeper->get(task_queue_path + hostname + "/" + job_name + "/shards");
+
+	ReadBufferFromString buf{shards};
+
+	size_t entries_count;
+	readVarUInt(entries_count, buf);
+
+	for (size_t i = 0; i < entries_count; ++i)
+	{
+		size_t shard_no;
+		readVarUInt(shard_no, buf);
+
+		std::string part_name;
+		readBinary(part_name, buf);
+
+		std::string hash;
+		readBinary(hash, buf);
+
+		shard_list.emplace_back(shard_no, part_name, hash);
+	}
+
+	return shard_list;
 }
 
 void ReshardingWorker::publishShardedPartitions()
@@ -643,7 +860,7 @@ void ReshardingWorker::publishShardedPartitions()
 			{
 				++local_count;
 				if (local_count > 1)
-					throw Exception("Detected more than one local replica", ErrorCodes::LOGICAL_ERROR);
+					throw Exception{"Detected more than one local replica", ErrorCodes::LOGICAL_ERROR};
 				std::swap(task_info_list[0], task_info_list[task_info_list.size() - 1]);
 			}
 		}
@@ -658,10 +875,11 @@ void ReshardingWorker::publishShardedPartitions()
 	using Tasks = std::vector<std::packaged_task<bool()> >;
 	Tasks tasks(remote_count);
 
-	ReplicatedMergeTreeAddress local_address(zookeeper->get(storage.replica_path + "/host"));
-	InterserverIOEndpointLocation from_location(storage.replica_path, local_address.host, local_address.replication_port);
+	ReplicatedMergeTreeAddress local_address{zookeeper->get(storage.replica_path + "/host")};
+	InterserverIOEndpointLocation from_location{storage.replica_path, local_address.host, local_address.replication_port};
 
 	ShardedPartitionUploader::Client::CancellationHook hook = std::bind(&ReshardingWorker::abortJobIfRequested, this);
+
 	storage.sharded_partition_uploader_client.setCancellationHook(hook);
 
 	try
@@ -674,11 +892,11 @@ void ReshardingWorker::publishShardedPartitions()
 			const auto & part = entry.part;
 			size_t shard_no = entry.shard_no;
 
-			InterserverIOEndpointLocation to_location(replica_path, dest.host, dest.replication_port);
+			InterserverIOEndpointLocation to_location{replica_path, dest.host, dest.replication_port};
 
 			size_t j = i - local_count;
-			tasks[j] = Tasks::value_type(std::bind(&ShardedPartitionUploader::Client::send,
-				&storage.sharded_partition_uploader_client, part, shard_no, to_location));
+			tasks[j] = Tasks::value_type{std::bind(&ShardedPartitionUploader::Client::send,
+				&storage.sharded_partition_uploader_client, part, shard_no, to_location)};
 			pool.schedule([j, &tasks]{ tasks[j](); });
 		}
 	}
@@ -710,7 +928,7 @@ void ReshardingWorker::publishShardedPartitions()
 	{
 		bool res = task.get_future().get();
 		if (!res)
-			throw Exception("Failed to copy partition", ErrorCodes::PARTITION_COPY_FAILED);
+			throw Exception{"Failed to copy partition", ErrorCodes::PARTITION_COPY_FAILED};
 	}
 
 	abortJobIfRequested();
@@ -724,28 +942,311 @@ void ReshardingWorker::publishShardedPartitions()
 
 		std::string from_path = storage.full_path + "reshard/" + toString(shard_no) + "/" + part + "/";
 		std::string to_path = storage.full_path + "detached/";
-		Poco::File(from_path).moveTo(to_path);
+		Poco::File{from_path}.moveTo(to_path);
 	}
 }
 
-void ReshardingWorker::applyChanges()
+void ReshardingWorker::commit()
 {
-	/// Note: since this method actually performs a distributed commit (i.e. it
-	/// attaches partitions on various shards), we should implement a two-phase
-	/// commit protocol in a future release in order to get even more safety
-	/// guarantees.
+	/// Note: we never rollback any change. After having recovered from an abnormal
+	/// situation, we attempt to apply all the pending changes.
 
-	LOG_DEBUG(log, "Attaching new partitions.");
-
-	auto & storage = *(current_job.storage);
 	auto zookeeper = context.getZooKeeper();
 
-	/// Locally drop the initial partition.
+	auto log_path = getLocalJobPath(current_job) + "/log";
+
+	std::vector<LogRecord> log_records;
+
+	auto children = zookeeper->getChildren(log_path);
+	if (children.empty())
+		return;
+
+	LOG_DEBUG(log, "Committing changes.");
+
+	std::sort(children.begin(), children.end());
+
+	for (const auto & child : children)
+		log_records.emplace_back(zookeeper, log_path + "/" + child);
+
+	/// Find defective log records and repair them.
+	for (LogRecord & log_record : log_records)
+	{
+		if (log_record.state == LogRecord::RUNNING)
+			repairLogRecord(log_record);
+	}
+
+	size_t operation_count = 0;
+	for (const LogRecord & log_record : log_records)
+	{
+		if (log_record.state == LogRecord::READY)
+			++operation_count;
+	}
+
+	if (operation_count == 0)
+	{
+		/// All the operations have already been performed.
+		return;
+	}
+
+	if (!current_job.do_copy)
+	{
+		/// If the keyword COPY is not specified, we have drop operations. They are
+		/// always performed first. This is to prevent a name clash if an attach
+		/// operation should ever happen to run locally.
+		if (log_records[0].operation != LogRecord::OP_DROP)
+			throw Exception{"Ill-formed log", ErrorCodes::RESHARDING_ILL_FORMED_LOG};
+
+		if (log_records[0].state == LogRecord::READY)
+			executeLogRecord(log_records[0]);
+
+		--operation_count;
+
+		if (operation_count == 0)
+		{
+			/// The drop operation was the only task to be performed.
+			return;
+		}
+	}
+
+	/// Execute all the remaining log records.
+
+	size_t pool_size = operation_count;
+	boost::threadpool::pool pool(pool_size);
+
+	using Tasks = std::vector<std::packaged_task<void()> >;
+	Tasks tasks(pool_size);
+
+	try
+	{
+		size_t j = 0;
+		/// Note: yes, i = 0 is correct indeed since, if we have just performed
+		/// a drop, it won't be run again. Maintaining a supplementary variable
+		/// to keep track of what we have already done is definitely not worth
+		/// the price.
+		for (size_t i = 0; i < log_records.size(); ++i)
+		{
+			if (log_records[i].state == LogRecord::READY)
+			{
+				if (operation_count == 0)
+					throw Exception{"ReshardingWorker: found discrepancy while committing",
+						ErrorCodes::LOGICAL_ERROR};
+
+				tasks[j] = Tasks::value_type{std::bind(&ReshardingWorker::executeLogRecord, this,
+					log_records[i])};
+				pool.schedule([j, &tasks]{ tasks[j](); });
+				++j;
+				--operation_count;
+			}
+		}
+	}
+	catch (...)
+	{
+		try
+		{
+			pool.wait();
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+
+		throw;
+	}
+
+	pool.wait();
+
+	LOG_DEBUG(log, "Changes successfully committed.");
+}
+
+void ReshardingWorker::repairLogRecord(LogRecord & log_record)
+{
+	bool found = true;
+
+	if (log_record.operation == LogRecord::OP_DROP)
+	{
+		/// We make the following conservative assumptions:
+		/// 1. If there is no partition with the source partition name, the source partition
+		/// has already been dropped.
+		/// 2. If there is such a partition but it has changed since we built from it
+		/// new sharded partitions, we cannot drop it since it could result in data loss.
+		auto & storage = *(current_job.storage);
+
+		if (storage.data.getPartitionSize(current_job.partition) == 0)
+			found = false;
+		else
+		{
+			auto current_hash = storage.data.computePartitionHash(current_job.partition);
+			if (current_hash != log_record.partition_hash)
+			{
+				LOG_WARNING(log, "The source partition " << current_job.partition
+					<< " cannot be dropped because it has changed since the last"
+					" time we were online");
+				found = false;
+			}
+		}
+	}
+	else if (log_record.operation == LogRecord::OP_ATTACH)
+		found = checkAttachLogRecord(log_record);
+	else
+		throw Exception{"Ill-formed log", ErrorCodes::RESHARDING_ILL_FORMED_LOG};
+
+	if (!found)
+	{
+		/// The operation was completed.
+		log_record.state = LogRecord::DONE;
+	}
+	else
+	{
+		/// The operation was not performed. Do it again.
+		log_record.state = LogRecord::READY;
+	}
+
+	log_record.writeBack();
+}
+
+void ReshardingWorker::executeLogRecord(LogRecord & log_record)
+{
+	if (log_record.operation == LogRecord::OP_DROP)
+		executeDrop(log_record);
+	else if (log_record.operation == LogRecord::OP_ATTACH)
+		executeAttach(log_record);
+	else
+		throw Exception{"Ill-formed log", ErrorCodes::RESHARDING_ILL_FORMED_LOG};
+}
+
+void ReshardingWorker::executeDrop(LogRecord & log_record)
+{
+	log_record.state = LogRecord::RUNNING;
+	log_record.writeBack();
+
+	/// Locally drop the source partition.
 	std::string query_str = "ALTER TABLE " + current_job.database_name + "."
 		+ current_job.table_name + " DROP PARTITION " + current_job.partition;
 	(void) executeQuery(query_str, context, true);
 
-	/// On each participating shard, attach the corresponding sharded partition to the table.
+	log_record.state = LogRecord::DONE;
+	log_record.writeBack();
+}
+
+bool ReshardingWorker::checkAttachLogRecord(LogRecord & log_record)
+{
+	/// We check that all the replicas of the shard that must receive an attach
+	/// request store all the required detached partitions. Moreover we verify
+	/// that these detached partitions have not changed. We conservatively
+	/// assume that, if this check fails, the attach request cannot be applied.
+
+	auto & storage = *(current_job.storage);
+	auto zookeeper = context.getZooKeeper();
+
+	struct TaskInfo
+	{
+		TaskInfo(const std::string & replica_path_,
+			const ReplicatedMergeTreeAddress & dest_,
+			const std::string & part_, const std::string & hash_)
+			: replica_path(replica_path_), dest(dest_),
+			part(part_), hash(hash_)
+		{
+		}
+
+		TaskInfo(const TaskInfo &) = delete;
+		TaskInfo & operator=(const TaskInfo &) = delete;
+
+		TaskInfo(TaskInfo &&) = default;
+		TaskInfo & operator=(TaskInfo &&) = default;
+
+		std::string replica_path;
+		ReplicatedMergeTreeAddress dest;
+		std::string part;
+		std::string hash;
+	};
+
+	using TaskInfoList = std::vector<TaskInfo>;
+	TaskInfoList task_info_list;
+
+	const WeightedZooKeeperPath & weighted_path = current_job.paths[log_record.shard_no];
+	const std::string & zookeeper_path = weighted_path.first;
+
+	auto children = zookeeper->getChildren(zookeeper_path + "/replicas");
+	for (const auto & child : children)
+	{
+		const std::string & replica_path = zookeeper_path + "/replicas/" + child;
+		auto host = zookeeper->get(replica_path + "/host");
+		ReplicatedMergeTreeAddress host_desc{host};
+
+		for (const auto & entry : log_record.parts_with_hash)
+		{
+			const auto & part = entry.first;
+			const auto & hash = entry.second;
+			task_info_list.emplace_back(replica_path, host_desc, part, hash);
+		}
+	}
+
+	boost::threadpool::pool pool(task_info_list.size());
+
+	using Tasks = std::vector<std::packaged_task<RemotePartChecker::Status()> >;
+	Tasks tasks(task_info_list.size());
+
+	try
+	{
+		for (size_t i = 0; i < task_info_list.size(); ++i)
+		{
+			const TaskInfo & entry = task_info_list[i];
+			const auto & replica_path = entry.replica_path;
+			const auto & dest = entry.dest;
+			const auto & part = entry.part;
+			const auto & hash = entry.hash;
+
+			InterserverIOEndpointLocation to_location{replica_path, dest.host, dest.replication_port};
+
+			tasks[i] = Tasks::value_type{std::bind(&RemotePartChecker::Client::check,
+				&storage.remote_part_checker_client, part, hash, to_location)};
+			pool.schedule([i, &tasks]{ tasks[i](); });
+		}
+	}
+	catch (...)
+	{
+		try
+		{
+			pool.wait();
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+
+		throw;
+	}
+
+	pool.wait();
+
+	bool may_perform_attach = true;
+
+	for (size_t i = 0; i < tasks.size(); ++i)
+	{
+		RemotePartChecker::Status status = tasks[i].get_future().get();
+		if (status != RemotePartChecker::Status::OK)
+		{
+			may_perform_attach = false;
+			const TaskInfo & entry = task_info_list[i];
+
+			if (status == RemotePartChecker::Status::INCONSISTENT)
+				LOG_WARNING(log, "Cannot attach sharded partition " << current_job.partition
+					<< " on host " << entry.dest.host << " because some changes have occurred "
+					" in part " << entry.part << " since the last time we were online.");
+			else if (status == RemotePartChecker::Status::ERROR)
+				LOG_WARNING(log, "Cannot attach sharded partition " << current_job.partition
+					<< " on host " << entry.dest.host << " because an unexpected error "
+					<< " was triggered while trying to check part " << entry.part);
+		}
+	}
+
+	return may_perform_attach;
+}
+
+void ReshardingWorker::executeAttach(LogRecord & log_record)
+{
+	auto & storage = *(current_job.storage);
+	auto zookeeper = context.getZooKeeper();
 
 	/// Description of a task on a replica.
 	struct TaskInfo
@@ -791,145 +1292,224 @@ void ReshardingWorker::applyChanges()
 		size_t next = 0;
 		/// result of the operation on the current replica
 		bool is_success = false;
-		/// index to the corresponding thread pool entry
-		size_t pool_index;
+		/// For pseudo-random number generation.
 		drand48_data rand_state;
 	};
 
-	using TaskInfoList = std::vector<ShardTaskInfo>;
+	const WeightedZooKeeperPath & weighted_path = current_job.paths[log_record.shard_no];
+	const std::string & zookeeper_path = weighted_path.first;
 
-	TaskInfoList task_info_list;
+	ShardTaskInfo shard_task_info;
 
-	/// Initialize all the possible tasks for each replica of each shard.
-	for (const auto & entry : storage.data.per_shard_data_parts)
+	auto children = zookeeper->getChildren(zookeeper_path + "/replicas");
+	for (const auto & child : children)
 	{
-		size_t shard_no = entry.first;
-		const MergeTreeData::MutableDataPartPtr & part_from_shard = entry.second;
-		if (!part_from_shard)
-			continue;
+		const std::string replica_path = zookeeper_path + "/replicas/" + child;
+		auto host = zookeeper->get(replica_path + "/host");
+		ReplicatedMergeTreeAddress host_desc(host);
 
-		const WeightedZooKeeperPath & weighted_path = current_job.paths[shard_no];
-		const std::string & zookeeper_path = weighted_path.first;
+		shard_task_info.shard_tasks.emplace_back(replica_path, host_desc);
+	}
 
-		task_info_list.emplace_back();
-		ShardTaskInfo & shard_task_info = task_info_list.back();
+	log_record.state = LogRecord::RUNNING;
+	log_record.writeBack();
 
-		auto children = zookeeper->getChildren(zookeeper_path + "/replicas");
-		for (const auto & child : children)
+	while (true)
+	{
+		/// Randomly choose a replica on which to perform the operation.
+		long int rand_res;
+		(void) lrand48_r(&shard_task_info.rand_state, &rand_res);
+		size_t current = shard_task_info.next + rand_res % (shard_task_info.shard_tasks.size() - shard_task_info.next);
+		std::swap(shard_task_info.shard_tasks[shard_task_info.next], shard_task_info.shard_tasks[current]);
+		++shard_task_info.next;
+
+		TaskInfo & cur_task_shard_task_info = shard_task_info.shard_tasks[shard_task_info.next - 1];
+
+		const auto & replica_path = cur_task_shard_task_info.replica_path;
+		const auto & dest = cur_task_shard_task_info.dest;
+
+		/// Run the operation.
+
+		InterserverIOEndpointLocation location(replica_path, dest.host, dest.replication_port);
+
+		std::string query_str = "ALTER TABLE " + dest.database + "."
+			+ dest.table + " ATTACH PARTITION " + current_job.partition;
+
+		bool res = storage.remote_query_executor_client.executeQuery(location, query_str);
+		if (res)
+			break;
+		else if (shard_task_info.next == shard_task_info.shard_tasks.size())
 		{
-			const std::string replica_path = zookeeper_path + "/replicas/" + child;
-			auto host = zookeeper->get(replica_path + "/host");
-			ReplicatedMergeTreeAddress host_desc(host);
-
-			shard_task_info.shard_tasks.emplace_back(replica_path, host_desc);
+			/// No more attempts are possible.
+			throw Exception{"Failed to attach partition on shard",
+				ErrorCodes::PARTITION_ATTACH_FAILED};
 		}
 	}
 
-	/// Loop as long as there are ATTACH operations that need to be performed
-	/// on some shards and there remains at least one valid replica on each of
-	/// these shards.
-	size_t remaining_task_count = task_info_list.size();
-	while (remaining_task_count > 0)
+	log_record.state = LogRecord::DONE;
+	log_record.writeBack();
+}
+
+void ReshardingWorker::electLeader()
+{
+	/// If we are not a distributed job, do nothing since we are obviously the
+	/// leader. Otherwise each node of the distributed job creates an ephemeral
+	/// sequential znode onto ZooKeeper persistent storage. When all these nodes
+	/// have entered the game, i.e. the election barrier is released, the winner
+	/// is the node having the znode with the lowest ID.
+	/// Then one of the nodes publishes this piece of information as a new znode.
+	///
+	/// In case of failure this election scheme is guaranteed to always succeed:
+	///
+	/// 1. If one node experiences a failure, it will eventually get winner
+	/// information if another node was able to publish it.
+	///
+	/// 2. If all the nodes experience a failure before any of them could publish
+	/// winner information, the election is simply re-run. This is possible since
+	/// SingleBarrier objects may be, by design, crossed again after release.
+	///
+	/// 3. If two nodes A, B get inconsistent winner information because of the
+	/// failure of a third node C (e.g. A determines that C is the winner, but
+	/// then, C fails; consequently the corresponding znode disappears; then B
+	/// determines that A is the winner), save for any failure, either A or B
+	/// will succeed to publish first its information. That is indeed all what
+	/// we need.
+
+	if (!current_job.isCoordinated())
+		return;
+
+	LOG_DEBUG(log, "Performing leader election");
+
+	auto leader = getPartitionPath(current_job) + "/leader";
+	auto election_path = getPartitionPath(current_job) + "/leader_election";
+
+	auto zookeeper = context.getZooKeeper();
+
+	if (!zookeeper->exists(leader))
 	{
-		boost::threadpool::pool pool(remaining_task_count);
+		zookeeper->create(election_path + "/node-", getFQDNOrHostName(),
+			zkutil::CreateMode::EphemeralSequential);
 
-		using Tasks = std::vector<std::packaged_task<bool()> >;
-		Tasks tasks(remaining_task_count);
+		waitForElectionCompletion();
 
-		try
+		auto nodes = zookeeper->getChildren(election_path);
+		std::sort(nodes.begin(), nodes.end());
+		auto winner = zookeeper->get(election_path + "/" + nodes.front());
+
+		zookeeper->createIfNotExists(leader, winner);
+	}
+}
+
+bool ReshardingWorker::isLeader()
+{
+	if (!current_job.isCoordinated())
+		return true;
+
+	auto zookeeper = context.getZooKeeper();
+	return zookeeper->get(getPartitionPath(current_job) + "/leader") == getFQDNOrHostName();
+}
+
+void ReshardingWorker::createLog()
+{
+	LOG_DEBUG(log, "Creating log");
+
+	auto & storage = *(current_job.storage);
+	auto zookeeper = context.getZooKeeper();
+
+	auto log_path = getLocalJobPath(current_job) + "/log";
+
+	if (zookeeper->exists(log_path))
+	{
+		/// An abnormal condition occurred while creating the log the last time
+		/// we were online. Therefore we assume that it must be garbage.
+		zookeeper->removeRecursive(log_path);
+	}
+
+	(void) zookeeper->create(log_path, "", zkutil::CreateMode::Persistent);
+
+	/// If the keyword COPY is not specified, a drop request is performed on
+	/// each participating node.
+	if (!current_job.do_copy)
+	{
+		LogRecord log_record{zookeeper};
+		log_record.operation = LogRecord::OP_DROP;
+		log_record.partition = current_job.partition;
+		log_record.partition_hash = storage.data.computePartitionHash(current_job.partition);
+		log_record.state = LogRecord::READY;
+
+		log_record.enqueue(log_path);
+	}
+
+	if (!isLeader())
+		return;
+
+	/// The leader performs all the attach requests on the target shards.
+
+	std::unordered_map<size_t, ShardList> shard_to_info;
+
+	if (current_job.isCoordinated())
+	{
+		auto nodes = zookeeper->getChildren(getPartitionPath(current_job) + "/nodes");
+		for (const auto & node : nodes)
 		{
-			size_t pool_index = 0;
-			for (auto & info : task_info_list)
-			{
-				if (info.is_success)
-				{
-					/// We have already successfully performed the operation on this shard.
-					continue;
-				}
-
-				/// Randomly choose a replica on which to perform the operation.
-				long int rand_res;
-				(void) lrand48_r(&info.rand_state, &rand_res);
-				size_t current = info.next + rand_res % (info.shard_tasks.size() - info.next);
-				std::swap(info.shard_tasks[info.next], info.shard_tasks[current]);
-				++info.next;
-
-				info.pool_index = pool_index;
-
-				TaskInfo & cur_task_info = info.shard_tasks[info.next - 1];
-
-				const auto & replica_path = cur_task_info.replica_path;
-				const auto & dest = cur_task_info.dest;
-
-				/// Create and register the task.
-
-				InterserverIOEndpointLocation location(replica_path, dest.host, dest.replication_port);
-
-				std::string query_str = "ALTER TABLE " + dest.database + "."
-					+ dest.table + " ATTACH PARTITION " + current_job.partition;
-
-				tasks[pool_index] = Tasks::value_type(std::bind(&RemoteQueryExecutor::Client::executeQuery,
-					&storage.remote_query_executor_client, location, query_str));
-
-				pool.schedule([pool_index, &tasks]{ tasks[pool_index](); });
-
-				/// Allocate an entry for the next task.
-				++pool_index;
-			}
+			auto job_name = zookeeper->get(getPartitionPath(current_job) + "/nodes/" + node);
+			ShardList shards_from_node = getTargetShards(node, job_name);
+			for (const TargetShardInfo & shard_info : shards_from_node)
+				shard_to_info[shard_info.shard_no].push_back(shard_info);
 		}
-		catch (...)
-		{
-			pool.wait();
-			throw;
-		}
+	}
+	else
+	{
+		ShardList shards_from_node = getTargetShards(getFQDNOrHostName(), current_job.job_name);
+		for (const TargetShardInfo & shard_info : shards_from_node)
+			shard_to_info[shard_info.shard_no].push_back(shard_info);
+	}
 
-		pool.wait();
+	for (const auto & entry : shard_to_info)
+	{
+		size_t shard_no = entry.first;
+		const ShardList & shard_list = entry.second;
 
-		for (auto & info : task_info_list)
-		{
-			if (info.is_success)
-				continue;
+		LogRecord log_record{zookeeper};
+		log_record.operation = LogRecord::OP_ATTACH;
+		log_record.partition = current_job.partition;
+		log_record.shard_no = shard_no;
+		log_record.state = LogRecord::READY;
 
-			info.is_success = tasks[info.pool_index].get_future().get();
-			if (info.is_success)
-				--remaining_task_count;
-			else if (info.next == info.shard_tasks.size())
-			{
-				/// No more attempts are possible.
-				throw Exception("Failed to attach partition on shard",
-					ErrorCodes::PARTITION_ATTACH_FAILED);
-			}
-		}
+		for (const TargetShardInfo & info : shard_list)
+			log_record.parts_with_hash.emplace(info.part_name, info.hash);
+
+		log_record.enqueue(log_path);
 	}
 }
 
 void ReshardingWorker::softCleanup()
 {
 	LOG_DEBUG(log, "Performing soft cleanup.");
-	cleanupCommon();
+	deleteTemporaryData();
 	current_job.clear();
 }
 
 void ReshardingWorker::hardCleanup()
 {
 	LOG_DEBUG(log, "Performing cleanup.");
-	cleanupCommon();
+	deleteTemporaryData();
 	detachJob();
 	current_job.clear();
 }
 
-void ReshardingWorker::cleanupCommon()
+void ReshardingWorker::deleteTemporaryData()
 {
 	auto & storage = *(current_job.storage);
 	storage.data.per_shard_data_parts.clear();
 
-	if (Poco::File(storage.full_path + "/reshard").exists())
+	if (Poco::File{storage.full_path + "/reshard"}.exists())
 	{
 		Poco::DirectoryIterator end;
 		for (Poco::DirectoryIterator it(storage.full_path + "/reshard"); it != end; ++it)
 		{
 			auto absolute_path = it.path().absolute().toString();
-			Poco::File(absolute_path).remove(true);
+			Poco::File{absolute_path}.remove(true);
 		}
 	}
 }
@@ -947,8 +1527,8 @@ std::string ReshardingWorker::createCoordinator(const Cluster & cluster)
 	{
 		auto effective_cluster_name = zookeeper->get(coordination_path + "/" + coordinator + "/cluster");
 		if (effective_cluster_name == cluster_name)
-			throw Exception("The cluster specified for this table is currently busy with another "
-				"distributed job. Please try later", ErrorCodes::RESHARDING_BUSY_CLUSTER);
+			throw Exception{"The cluster specified for this table is currently busy with another "
+				"distributed job. Please try later", ErrorCodes::RESHARDING_BUSY_CLUSTER};
 	}
 
 	std::string coordinator_id = zookeeper->create(coordination_path + "/coordinator-", "",
@@ -977,6 +1557,9 @@ std::string ReshardingWorker::createCoordinator(const Cluster & cluster)
 	(void) zookeeper->create(getCoordinatorPath(coordinator_id) + "/status",
 		toString(static_cast<UInt64>(STATUS_OK)), zkutil::CreateMode::Persistent);
 
+	(void) zookeeper->create(getCoordinatorPath(coordinator_id) + "/status_probe",
+		"", zkutil::CreateMode::Persistent);
+
 	(void) zookeeper->create(getCoordinatorPath(coordinator_id) + "/partitions",
 		"", zkutil::CreateMode::Persistent);
 
@@ -990,7 +1573,7 @@ std::string ReshardingWorker::createCoordinator(const Cluster & cluster)
 		int32_t code = zookeeper->tryCreate(getCoordinatorPath(coordinator_id) + "/cluster_addresses/"
 			+ host, toString(shard_no), zkutil::CreateMode::Persistent);
 		if ((code != ZOK) && (code != ZNODEEXISTS))
-			throw zkutil::KeeperException(code);
+			throw zkutil::KeeperException{code};
 	};
 
 	if (!cluster.getShardsAddresses().empty())
@@ -1017,7 +1600,7 @@ std::string ReshardingWorker::createCoordinator(const Cluster & cluster)
 		}
 	}
 	else
-		throw Exception("ReshardingWorker: ill-formed cluster", ErrorCodes::LOGICAL_ERROR);
+		throw Exception{"ReshardingWorker: ill-formed cluster", ErrorCodes::LOGICAL_ERROR};
 
 	return coordinator_id;
 }
@@ -1025,8 +1608,8 @@ std::string ReshardingWorker::createCoordinator(const Cluster & cluster)
 void ReshardingWorker::registerQuery(const std::string & coordinator_id, const std::string & query)
 {
 	auto zookeeper = context.getZooKeeper();
-	(void) zookeeper->create(getCoordinatorPath(coordinator_id) + "/query_hash", computeHash(query),
-		zkutil::CreateMode::Persistent);
+	(void) zookeeper->create(getCoordinatorPath(coordinator_id) + "/query_hash",
+		SHA512Utils::computeHashFromString(query), zkutil::CreateMode::Persistent);
 }
 
 void ReshardingWorker::deleteCoordinator(const std::string & coordinator_id)
@@ -1038,7 +1621,6 @@ void ReshardingWorker::deleteCoordinator(const std::string & coordinator_id)
 	auto zookeeper = context.getZooKeeper();
 	if (zookeeper->exists(getCoordinatorPath(coordinator_id)))
 		zookeeper->removeRecursive(getCoordinatorPath(coordinator_id));
-
 }
 
 UInt64 ReshardingWorker::subscribe(const std::string & coordinator_id, const std::string & query)
@@ -1046,8 +1628,8 @@ UInt64 ReshardingWorker::subscribe(const std::string & coordinator_id, const std
 	auto zookeeper = context.getZooKeeper();
 
 	if (!zookeeper->exists(getCoordinatorPath(coordinator_id)))
-		throw Exception("Coordinator " + coordinator_id + " does not exist",
-		ErrorCodes::RESHARDING_NO_SUCH_COORDINATOR);
+		throw Exception{"Coordinator " + coordinator_id + " does not exist",
+		ErrorCodes::RESHARDING_NO_SUCH_COORDINATOR};
 
 	auto current_host = getFQDNOrHostName();
 
@@ -1066,8 +1648,8 @@ UInt64 ReshardingWorker::subscribe(const std::string & coordinator_id, const std
 				+ "/cluster_addresses");
 			if (std::find(cluster_addresses.begin(), cluster_addresses.end(), current_host)
 				!= cluster_addresses.end())
-				throw Exception("This shard is already busy with another distributed job",
-					ErrorCodes::RESHARDING_BUSY_SHARD);
+				throw Exception{"This shard is already busy with another distributed job",
+					ErrorCodes::RESHARDING_BUSY_SHARD};
 		}
 	}
 
@@ -1084,15 +1666,15 @@ UInt64 ReshardingWorker::subscribe(const std::string & coordinator_id, const std
 			+ "/cluster_addresses");
 		if (std::find(cluster_addresses.begin(), cluster_addresses.end(), current_host)
 			== cluster_addresses.end())
-			throw Exception("This host is not allowed to subscribe to coordinator "
+			throw Exception{"This host is not allowed to subscribe to coordinator "
 				+ coordinator_id,
-				ErrorCodes::RESHARDING_NO_COORDINATOR_MEMBERSHIP);
+				ErrorCodes::RESHARDING_NO_COORDINATOR_MEMBERSHIP};
 
 		/// Check that the coordinator recognizes our query.
 		auto query_hash = zookeeper->get(getCoordinatorPath(coordinator_id) + "/query_hash");
-		if (computeHash(query) != query_hash)
-			throw Exception("Coordinator " + coordinator_id + " does not handle this query",
-				ErrorCodes::RESHARDING_INVALID_QUERY);
+		if (SHA512Utils::computeHashFromString(query) != query_hash)
+			throw Exception{"Coordinator " + coordinator_id + " does not handle this query",
+				ErrorCodes::RESHARDING_INVALID_QUERY};
 
 		/// Access granted. Now perform subscription.
 		auto my_shard_no = zookeeper->get(getCoordinatorPath(coordinator_id) + "/cluster_addresses/"
@@ -1100,13 +1682,13 @@ UInt64 ReshardingWorker::subscribe(const std::string & coordinator_id, const std
 		int32_t code = zookeeper->tryCreate(getCoordinatorPath(coordinator_id) + "/shards/"
 			+ my_shard_no, "", zkutil::CreateMode::Persistent);
 		if (code == ZNODEEXISTS)
-			throw Exception("This shard has already subscribed to coordinator " + coordinator_id,
-				ErrorCodes::RESHARDING_ALREADY_SUBSCRIBED);
+			throw Exception{"This shard has already subscribed to coordinator " + coordinator_id,
+				ErrorCodes::RESHARDING_ALREADY_SUBSCRIBED};
 		else if (code != ZOK)
-			throw zkutil::KeeperException(code);
+			throw zkutil::KeeperException{code};
 
 		zookeeper->create(getCoordinatorPath(coordinator_id) + "/status/"
-			+ current_host,	toString(static_cast<UInt64>(STATUS_OK)), zkutil::CreateMode::Persistent);
+			+ current_host, Status(STATUS_OK, "").toString(), zkutil::CreateMode::Persistent);
 
 		/// Assign a unique block number to the current node. We will use it in order
 		/// to avoid any possible conflict when uploading resharded partitions.
@@ -1135,7 +1717,7 @@ void ReshardingWorker::unsubscribe(const std::string & coordinator_id)
 	auto node_count = zookeeper->get(getCoordinatorPath(coordinator_id) + "/node_count");
 	UInt64 cur_node_count = std::stoull(node_count);
 	if (cur_node_count == 0)
-		throw Exception("ReshardingWorker: invalid node count", ErrorCodes::LOGICAL_ERROR);
+		throw Exception{"ReshardingWorker: invalid node count", ErrorCodes::LOGICAL_ERROR};
 	zookeeper->set(getCoordinatorPath(coordinator_id) + "/node_count", toString(cur_node_count - 1));
 }
 
@@ -1151,9 +1733,13 @@ void ReshardingWorker::addPartitions(const std::string & coordinator_id,
 
 	for (const auto & partition : partition_list)
 	{
-		auto path = getCoordinatorPath(coordinator_id) + "/partitions/" + partition + "/nodes/";
-		zookeeper->createAncestors(path);
-		(void) zookeeper->create(path + current_host, "", zkutil::CreateMode::Persistent);
+		auto partition_path = getCoordinatorPath(coordinator_id) + "/partitions/" + partition;
+
+		auto nodes_path = partition_path + "/nodes/";
+		zookeeper->createAncestors(nodes_path);
+		(void) zookeeper->create(nodes_path + current_host, "", zkutil::CreateMode::Persistent);
+
+		zookeeper->createAncestors(partition_path + "/leader_election/");
 	}
 }
 
@@ -1254,18 +1840,21 @@ void ReshardingWorker::waitForOptOutCompletion(const std::string & coordinator_i
 	createOptOutBarrier(coordinator_id, count).enter();
 }
 
-void ReshardingWorker::setStatus(const std::string & coordinator_id, Status status)
+void ReshardingWorker::setStatus(const std::string & coordinator_id, StatusCode status,
+	const std::string & msg)
 {
 	auto zookeeper = context.getZooKeeper();
-	zookeeper->set(getCoordinatorPath(coordinator_id) + "/status", toString(static_cast<UInt64>(status)));
+	zookeeper->set(getCoordinatorPath(coordinator_id) + "/status", Status(status, msg).toString());
+	zookeeper->set(getCoordinatorPath(coordinator_id) + "/status_probe", "");
 }
 
 void ReshardingWorker::setStatus(const std::string & coordinator_id, const std::string & hostname,
-	Status status)
+	StatusCode status, const std::string & msg)
 {
 	auto zookeeper = context.getZooKeeper();
 	zookeeper->set(getCoordinatorPath(coordinator_id) + "/status/" + hostname,
-		toString(static_cast<UInt64>(status)));
+		Status(status, msg).toString());
+	zookeeper->set(getCoordinatorPath(coordinator_id) + "/status_probe", "");
 }
 
 bool ReshardingWorker::detectOfflineNodes(const std::string & coordinator_id)
@@ -1293,24 +1882,67 @@ bool ReshardingWorker::detectOfflineNodesCommon(const std::string & path, const 
 		online.begin(), online.end(), offline.begin());
 	offline.resize(end - offline.begin());
 
-	for (const auto & node : offline)
-		zookeeper->set(getCoordinatorPath(coordinator_id) + "/status/" + node,
-			toString(static_cast<UInt64>(STATUS_ON_HOLD)));
+	if (!offline.empty())
+	{
+		for (const auto & node : offline)
+			zookeeper->set(getCoordinatorPath(coordinator_id) + "/status/" + node,
+				Status(STATUS_ON_HOLD, "Node has gone offline").toString());
+		zookeeper->set(getCoordinatorPath(coordinator_id) + "/status_probe", "");
+	}
 
 	return !offline.empty();
 }
 
-ReshardingWorker::Status ReshardingWorker::getCoordinatorStatus(const std::string & coordinator_id)
+bool ReshardingWorker::isPublished()
+{
+	auto zookeeper = context.getZooKeeper();
+	return zookeeper->exists(getLocalJobPath(current_job) + "/is_published");
+}
+
+void ReshardingWorker::markAsPublished()
+{
+	auto zookeeper = context.getZooKeeper();
+	(void) zookeeper->create(getLocalJobPath(current_job) + "/is_published",
+		"", zkutil::CreateMode::Persistent);
+}
+
+bool ReshardingWorker::isLogCreated()
+{
+	auto zookeeper = context.getZooKeeper();
+	return zookeeper->exists(getLocalJobPath(current_job) + "/is_log_created");
+}
+
+void ReshardingWorker::markLogAsCreated()
+{
+	auto zookeeper = context.getZooKeeper();
+	(void) zookeeper->create(getLocalJobPath(current_job) + "/is_log_created",
+		"", zkutil::CreateMode::Persistent);
+}
+
+bool ReshardingWorker::isCommitted()
+{
+	auto zookeeper = context.getZooKeeper();
+	return zookeeper->exists(getLocalJobPath(current_job) + "/is_committed");
+}
+
+void ReshardingWorker::markAsCommitted()
+{
+	auto zookeeper = context.getZooKeeper();
+	(void) zookeeper->create(getLocalJobPath(current_job) + "/is_committed",
+		"", zkutil::CreateMode::Persistent);
+}
+
+ReshardingWorker::StatusCode ReshardingWorker::getCoordinatorStatus(const std::string & coordinator_id)
 {
 	return getStatusCommon(getCoordinatorPath(coordinator_id) + "/status", coordinator_id);
 }
 
-ReshardingWorker::Status ReshardingWorker::getStatus()
+ReshardingWorker::StatusCode ReshardingWorker::getStatus()
 {
 	return getStatusCommon(getPartitionPath(current_job) + "/nodes", current_job.coordinator_id);
 }
 
-ReshardingWorker::Status ReshardingWorker::getStatusCommon(const std::string & path, const std::string & coordinator_id)
+ReshardingWorker::StatusCode ReshardingWorker::getStatusCommon(const std::string & path, const std::string & coordinator_id)
 {
 	/// Note: we don't need any synchronization for the status.
 	/// That's why we don't acquire any read/write lock.
@@ -1318,11 +1950,10 @@ ReshardingWorker::Status ReshardingWorker::getStatusCommon(const std::string & p
 
 	auto zookeeper = context.getZooKeeper();
 
-	auto status_str = zookeeper->get(getCoordinatorPath(coordinator_id) + "/status");
-	auto coordinator_status = std::stoull(status_str);
+	auto coordinator_status = Status(zookeeper->get(getCoordinatorPath(coordinator_id) + "/status")).getCode();
 
 	if (coordinator_status != STATUS_OK)
-		return static_cast<Status>(coordinator_status);
+		return coordinator_status;
 
 	(void) detectOfflineNodesCommon(path, coordinator_id);
 
@@ -1334,8 +1965,7 @@ ReshardingWorker::Status ReshardingWorker::getStatusCommon(const std::string & p
 	/// Determine the status.
 	for (const auto & node : nodes)
 	{
-		auto status_str = zookeeper->get(getCoordinatorPath(coordinator_id) + "/status/" + node);
-		auto status = std::stoull(status_str);
+		auto status = Status(zookeeper->get(getCoordinatorPath(coordinator_id) + "/status/" + node)).getCode();
 		if (status == STATUS_ERROR)
 			has_error = true;
 		else if (status == STATUS_ON_HOLD)
@@ -1351,6 +1981,117 @@ ReshardingWorker::Status ReshardingWorker::getStatusCommon(const std::string & p
 		return STATUS_OK;
 }
 
+std::string ReshardingWorker::dumpCoordinatorState(const std::string & coordinator_id)
+{
+	std::string out;
+
+	auto current_host = getFQDNOrHostName();
+
+	try
+	{
+		WriteBufferFromString buf{out};
+
+		writeString("Coordinator dump: ", buf);
+		writeString("ID: {", buf);
+		writeString(coordinator_id + "}; ", buf);
+
+		auto zookeeper = context.getZooKeeper();
+
+		Status status(zookeeper->get(getCoordinatorPath(coordinator_id) + "/status"));
+
+		if (status.getCode() != STATUS_OK)
+		{
+			writeString("Global status: {", buf);
+			writeString(status.getMessage() + "}; ", buf);
+		}
+
+		auto hosts = zookeeper->getChildren(getCoordinatorPath(coordinator_id) + "/status");
+		for (const auto & host : hosts)
+		{
+			Status status(zookeeper->get(getCoordinatorPath(coordinator_id) + "/status/" + host));
+
+			if (status.getCode() != STATUS_OK)
+			{
+				writeString("NODE ", buf);
+				writeString(((host == current_host) ? "localhost" : host) + ": {", buf);
+				writeString(status.getMessage() + "}; ", buf);
+			}
+		}
+
+		buf.next();
+	}
+	catch (...)
+	{
+		tryLogCurrentException(__PRETTY_FUNCTION__);
+	}
+
+	return out;
+}
+
+ReshardingWorker::AnomalyType ReshardingWorker::probeForAnomaly()
+{
+	AnomalyType anomaly_type = ANOMALY_NONE;
+
+	bool is_remote_node_unavailable = false;
+	bool is_remote_node_error = false;
+
+	bool cancellation_result = false;
+	if (current_job.isCoordinated())
+	{
+		try
+		{
+			auto status = getStatus();
+			if (status == STATUS_ON_HOLD)
+				is_remote_node_unavailable = true;
+			else if (status == STATUS_ERROR)
+				is_remote_node_error = true;
+
+			cancellation_result = status != STATUS_OK;
+		}
+		catch (...)
+		{
+			cancellation_result = true;
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+	}
+
+	bool must_abort = must_stop || cancellation_result;
+
+	if (must_abort)
+	{
+		/// Important: always keep the following order.
+		if (must_stop)
+			anomaly_type = ANOMALY_LOCAL_SHUTDOWN;
+		else if (is_remote_node_unavailable)
+			anomaly_type = ANOMALY_REMOTE_NODE_UNAVAILABLE;
+		else if (is_remote_node_error)
+			anomaly_type = ANOMALY_REMOTE_ERROR;
+		else
+			anomaly_type = ANOMALY_LOCAL_ERROR;
+	}
+
+	return anomaly_type;
+}
+
+void ReshardingWorker::processAnomaly(AnomalyType anomaly_type)
+{
+	if (anomaly_type == ANOMALY_NONE)
+		return;
+
+	current_job.is_aborted = true;
+
+	if (anomaly_type == ANOMALY_LOCAL_SHUTDOWN)
+		throw Exception{"Cancelled resharding", ErrorCodes::ABORTED};
+	else if (anomaly_type == ANOMALY_REMOTE_NODE_UNAVAILABLE)
+		throw Exception{"Remote node unavailable",
+			ErrorCodes::RESHARDING_REMOTE_NODE_UNAVAILABLE};
+	else if (anomaly_type == ANOMALY_REMOTE_ERROR)
+		throw Exception{"An error occurred on a remote node",
+			ErrorCodes::RESHARDING_REMOTE_NODE_ERROR};
+	else
+		throw Exception{"An error occurred on local node", ErrorCodes::LOGICAL_ERROR};
+}
+
 void ReshardingWorker::attachJob()
 {
 	if (!current_job.isCoordinated())
@@ -1364,32 +2105,32 @@ void ReshardingWorker::attachJob()
 	{
 		/// This case is triggered when an error occured on a participating node
 		/// while we went offline.
-		throw Exception("An error occurred on a remote node", ErrorCodes::RESHARDING_REMOTE_NODE_ERROR);
+		throw Exception{"An error occurred on a remote node", ErrorCodes::RESHARDING_REMOTE_NODE_ERROR};
 	}
 	else if (status == STATUS_ON_HOLD)
 	{
-		/// The current distributed job is on hold. Check that all the required nodes are online.
-		/// If it is so, proceed further. Otherwise throw an exception and switch to the
-		/// next job.
-		auto current_host = getFQDNOrHostName();
+		/// The current distributed job is on hold. Check that all the required nodes
+		/// are online. If it is so, wait for them to be ready to perform the job.
 
-		setStatus(current_job.coordinator_id, current_host, STATUS_OK);
+		setStatus(current_job.coordinator_id, getFQDNOrHostName(), STATUS_OK);
 
-		/// Wait for all the participating nodes to be ready.
 		createRecoveryBarrier(current_job).enter();
 
 		/// Catch any error that could have happened while crossing the barrier.
-		abortJobIfRequested();
+		processAnomaly(probeForAnomaly());
 	}
 	else if (status == STATUS_OK)
 	{
-		/// nothing here
+		/// For the purpose of creating the log, we need to know the locations
+		/// of all the jobs that constitute this distributed job.
+		zookeeper->set(getPartitionPath(current_job) + "/nodes/" + getFQDNOrHostName(),
+			current_job.job_name);
 	}
 	else
 	{
 		/// This should never happen but we must take this case into account for the sake
 		/// of completeness.
-		throw Exception("ReshardingWorker: unexpected status", ErrorCodes::LOGICAL_ERROR);
+		throw Exception{"ReshardingWorker: unexpected status", ErrorCodes::LOGICAL_ERROR};
 	}
 }
 
@@ -1403,12 +2144,15 @@ void ReshardingWorker::detachJob()
 	bool delete_coordinator = false;
 
 	{
-		auto lock = createCoordinatorLock(current_job.coordinator_id);
+		/// detachJob() may be called when an error has occurred. For this reason,
+		/// in the call to createCoordinatorLock(), the flag may_use_in_emergency
+		/// is set to true: local or remote errors won't interrupt lock acquisition.
+		auto lock = createCoordinatorLock(current_job.coordinator_id, true);
 		zkutil::RWLock::Guard<zkutil::RWLock::Write> guard{lock};
 
 		auto children = zookeeper->getChildren(getPartitionPath(current_job) + "/nodes");
 		if (children.empty())
-			throw Exception("ReshardingWorker: unable to detach job", ErrorCodes::LOGICAL_ERROR);
+			throw Exception{"ReshardingWorker: unable to detach job", ErrorCodes::LOGICAL_ERROR};
 		bool was_last_node = children.size() == 1;
 
 		auto current_host = getFQDNOrHostName();
@@ -1437,10 +2181,22 @@ void ReshardingWorker::waitForUploadCompletion()
 	createUploadBarrier(current_job).enter();
 }
 
+void ReshardingWorker::waitForElectionCompletion()
+{
+	createElectionBarrier(current_job).enter();
+}
+
+void ReshardingWorker::waitForCommitCompletion()
+{
+	if (!current_job.isCoordinated())
+		return;
+	createCommitBarrier(current_job).enter();
+}
+
 void ReshardingWorker::abortPollingIfRequested()
 {
 	if (must_stop)
-		throw Exception("Cancelled resharding", ErrorCodes::ABORTED);
+		throw Exception{"Cancelled resharding", ErrorCodes::ABORTED};
 }
 
 void ReshardingWorker::abortRecoveryIfRequested()
@@ -1462,17 +2218,18 @@ void ReshardingWorker::abortRecoveryIfRequested()
 	if (must_abort)
 	{
 		if (must_stop)
-			throw Exception("Cancelled resharding", ErrorCodes::ABORTED);
+			throw Exception{"Cancelled resharding", ErrorCodes::ABORTED};
 		else if (has_offline_nodes)
-			throw Exception("Distributed job on hold. Ignoring for now",
-				ErrorCodes::RESHARDING_DISTRIBUTED_JOB_ON_HOLD);
+			throw Exception{"Distributed job on hold. Ignoring for now",
+				ErrorCodes::RESHARDING_DISTRIBUTED_JOB_ON_HOLD};
 		else
 		{
 			/// We don't throw any exception here because the other nodes waiting
 			/// to cross the recovery barrier would get stuck forever into a loop.
 			/// Instead we rely on cancellation points to detect this error and
 			/// therefore terminate the job.
-			setStatus(current_job.coordinator_id, getFQDNOrHostName(), STATUS_ERROR);
+			setStatus(current_job.coordinator_id, getFQDNOrHostName(), STATUS_ERROR,
+				"Recovery failed for an unspecified reason");
 		}
 	}
 }
@@ -1506,61 +2263,31 @@ void ReshardingWorker::abortCoordinatorIfRequested(const std::string & coordinat
 	{
 		/// Important: always keep the following order.
 		if (must_stop)
-			throw Exception("Cancelled resharding", ErrorCodes::ABORTED);
+			throw Exception{"Cancelled resharding", ErrorCodes::ABORTED};
 		else if (is_remote_node_unavailable)
-			throw Exception("Remote node unavailable",
-				ErrorCodes::RESHARDING_REMOTE_NODE_UNAVAILABLE);
+			throw Exception{"Remote node unavailable",
+				ErrorCodes::RESHARDING_REMOTE_NODE_UNAVAILABLE};
 		else if (is_remote_node_error)
-			throw Exception("An error occurred on a remote node",
-				ErrorCodes::RESHARDING_REMOTE_NODE_ERROR);
+			throw Exception{"An error occurred on a remote node",
+				ErrorCodes::RESHARDING_REMOTE_NODE_ERROR};
 		else
-			throw Exception("An error occurred on local node", ErrorCodes::LOGICAL_ERROR);
+			throw Exception{"An error occurred on local node", ErrorCodes::LOGICAL_ERROR};
 	}
 }
 
 void ReshardingWorker::abortJobIfRequested()
 {
-	bool is_remote_node_unavailable = false;
-	bool is_remote_node_error = false;
+	AnomalyType anomaly;
 
-	bool cancellation_result = false;
 	if (current_job.isCoordinated())
+		anomaly = anomaly_monitor.getAnomalyType();
+	else
 	{
-		try
-		{
-			auto status = getStatus();
-			if (status == STATUS_ON_HOLD)
-				is_remote_node_unavailable = true;
-			else if (status == STATUS_ERROR)
-				is_remote_node_error = true;
-
-			cancellation_result = status != STATUS_OK;
-		}
-		catch (...)
-		{
-			cancellation_result = true;
-			tryLogCurrentException(__PRETTY_FUNCTION__);
-		}
+		/// Very cheap because it actually just checks for must_stop.
+		anomaly = probeForAnomaly();
 	}
 
-	bool must_abort = must_stop || cancellation_result;
-
-	if (must_abort)
-	{
-		current_job.is_aborted = true;
-
-		/// Important: always keep the following order.
-		if (must_stop)
-			throw Exception("Cancelled resharding", ErrorCodes::ABORTED);
-		else if (is_remote_node_unavailable)
-			throw Exception("Remote node unavailable",
-				ErrorCodes::RESHARDING_REMOTE_NODE_UNAVAILABLE);
-		else if (is_remote_node_error)
-			throw Exception("An error occurred on a remote node",
-				ErrorCodes::RESHARDING_REMOTE_NODE_ERROR);
-		else
-			throw Exception("An error occurred on local node", ErrorCodes::LOGICAL_ERROR);
-	}
+	processAnomaly(anomaly);
 }
 
 zkutil::RWLock ReshardingWorker::createLock()
@@ -1574,13 +2301,20 @@ zkutil::RWLock ReshardingWorker::createLock()
 	return lock;
 }
 
-zkutil::RWLock ReshardingWorker::createCoordinatorLock(const std::string & coordinator_id)
+zkutil::RWLock ReshardingWorker::createCoordinatorLock(const std::string & coordinator_id,
+	bool usable_in_emergency)
 {
 	auto zookeeper = context.getZooKeeper();
 
 	zkutil::RWLock lock{zookeeper, getCoordinatorPath(coordinator_id) + "/lock"};
-	zkutil::RWLock::CancellationHook hook = std::bind(&ReshardingWorker::abortCoordinatorIfRequested, this,
-		coordinator_id);
+
+	zkutil::RWLock::CancellationHook hook;
+	if (usable_in_emergency)
+		hook = std::bind(&ReshardingWorker::abortPollingIfRequested, this);
+	else
+		hook = std::bind(&ReshardingWorker::abortCoordinatorIfRequested,
+			this, coordinator_id);
+
 	lock.setCancellationHook(hook);
 
 	return lock;
@@ -1646,29 +2380,57 @@ zkutil::SingleBarrier ReshardingWorker::createUploadBarrier(const ReshardingJob 
 	auto node_count = zookeeper->getChildren(getPartitionPath(job) + "/nodes").size();
 
 	zkutil::SingleBarrier upload_barrier{zookeeper, getPartitionPath(job) + "/upload_barrier", node_count};
+
 	zkutil::SingleBarrier::CancellationHook hook = std::bind(&ReshardingWorker::abortJobIfRequested, this);
 	upload_barrier.setCancellationHook(hook);
 
 	return upload_barrier;
 }
 
-std::string ReshardingWorker::computeHash(const std::string & in)
+zkutil::SingleBarrier ReshardingWorker::createElectionBarrier(const ReshardingJob & job)
 {
-	unsigned char hash[SHA512_DIGEST_LENGTH];
+	auto zookeeper = context.getZooKeeper();
 
-	SHA512_CTX ctx;
-	SHA512_Init(&ctx);
-	SHA512_Update(&ctx, reinterpret_cast<const void *>(in.data()), in.size());
-	SHA512_Final(hash, &ctx);
+	auto node_count = zookeeper->getChildren(getPartitionPath(job) + "/nodes").size();
 
-	std::string out;
-	{
-		WriteBufferFromString buf(out);
-		HexWriteBuffer hex_buf(buf);
-		hex_buf.write(reinterpret_cast<const char *>(hash), sizeof(hash));
-	}
+	zkutil::SingleBarrier election_barrier{zookeeper, getPartitionPath(job) + "/election_barrier", node_count};
 
-	return out;
+	zkutil::SingleBarrier::CancellationHook hook = std::bind(&ReshardingWorker::abortJobIfRequested, this);
+	election_barrier.setCancellationHook(hook);
+
+	return election_barrier;
+}
+
+zkutil::SingleBarrier ReshardingWorker::createCommitBarrier(const ReshardingJob & job)
+{
+	auto zookeeper = context.getZooKeeper();
+
+	auto node_count = zookeeper->getChildren(getPartitionPath(job) + "/nodes").size();
+
+	zkutil::SingleBarrier commit_barrier{zookeeper, getPartitionPath(job) + "/commit_barrier", node_count};
+	zkutil::SingleBarrier::CancellationHook hook = std::bind(&ReshardingWorker::abortJobIfRequested, this);
+	commit_barrier.setCancellationHook(hook);
+
+	return commit_barrier;
+}
+
+void ReshardingWorker::freezeSourcePartition()
+{
+	auto zookeeper = context.getZooKeeper();
+	auto & storage = *(current_job.storage);
+
+	zookeeper->createIfNotExists(storage.replica_path + "/frozen_partitions/"
+		+ current_job.partition, "");
+	storage.merger.freezePartition(current_job.partition);
+}
+
+void ReshardingWorker::unfreezeSourcePartition()
+{
+	auto zookeeper = context.getZooKeeper();
+	auto & storage = *(current_job.storage);
+
+	zookeeper->remove(storage.replica_path + "/frozen_partitions/" + current_job.partition);
+	storage.merger.unfreezePartition(current_job.partition);
 }
 
 std::string ReshardingWorker::getCoordinatorPath(const std::string & coordinator_id) const
@@ -1679,6 +2441,168 @@ std::string ReshardingWorker::getCoordinatorPath(const std::string & coordinator
 std::string ReshardingWorker::getPartitionPath(const ReshardingJob & job) const
 {
 	return coordination_path + "/" + job.coordinator_id + "/partitions/" + job.partition;
+}
+
+std::string ReshardingWorker::getLocalJobPath(const ReshardingJob & job) const
+{
+	return host_task_queue_path + "/" + job.job_name;
+}
+
+ReshardingWorker::AnomalyMonitor::AnomalyMonitor(ReshardingWorker & resharding_worker_)
+	: resharding_worker{resharding_worker_}
+{
+}
+
+ReshardingWorker::AnomalyMonitor::~AnomalyMonitor()
+{
+	try
+	{
+		shutdown();
+	}
+	catch (...)
+	{
+		tryLogCurrentException(__PRETTY_FUNCTION__);
+	}
+}
+
+void ReshardingWorker::AnomalyMonitor::start()
+{
+	if (resharding_worker.current_job.isCoordinated())
+		thread_routine = std::thread{&ReshardingWorker::AnomalyMonitor::routine, this};
+}
+
+void ReshardingWorker::AnomalyMonitor::shutdown()
+{
+	if (is_started)
+	{
+		must_stop = true;
+
+		if (thread_routine.joinable())
+			thread_routine.join();
+
+		is_started = false;
+		must_stop = false;
+		anomaly_type = ANOMALY_NONE;
+	}
+}
+
+void ReshardingWorker::AnomalyMonitor::routine()
+{
+	bool old_val = false;
+	if (!is_started.compare_exchange_strong(old_val, true, std::memory_order_seq_cst,
+		std::memory_order_relaxed))
+		throw Exception{"Anomaly probing thread already started", ErrorCodes::LOGICAL_ERROR};
+
+	anomaly_type = ANOMALY_NONE;
+
+	while (!must_stop)
+	{
+		auto zookeeper = resharding_worker.context.getZooKeeper();
+		auto coordinator_id = resharding_worker.current_job.coordinator_id;
+
+		/// We create a new instance of Poco::Event each time we run
+		/// the loop body in order to avoid multiple notifications.
+		zkutil::EventPtr event = new Poco::Event;
+
+		/// Monitor both status changes and movements of the participating nodes.
+		(void) zookeeper->get(resharding_worker.getCoordinatorPath(coordinator_id)
+			+ "/status_probe", nullptr, event);
+		(void) zookeeper->getChildren(resharding_worker.distributed_online_path,
+			nullptr, event);
+
+		auto probed_anomaly_type = resharding_worker.probeForAnomaly();
+		if (probed_anomaly_type != ANOMALY_NONE)
+		{
+			/// An anomaly has just been found. No need to monitor further.
+			anomaly_type = probed_anomaly_type;
+			break;
+		}
+
+		while (!event->tryWait(wait_duration))
+		{
+			/// We are going offline.
+			if (resharding_worker.must_stop)
+				break;
+			/// We have received a request to stop this thread.
+			if (must_stop)
+				break;
+		}
+	}
+}
+
+ReshardingWorker::AnomalyType ReshardingWorker::AnomalyMonitor::getAnomalyType() const
+{
+	return anomaly_type;
+}
+
+ReshardingWorker::LogRecord::LogRecord(zkutil::ZooKeeperPtr zookeeper_)
+	: zookeeper{zookeeper_}
+{
+}
+
+ReshardingWorker::LogRecord::LogRecord(zkutil::ZooKeeperPtr zookeeper_, const std::string & zk_path_)
+	: zookeeper{zookeeper_}, zk_path{zk_path_}
+{
+	auto serialized_record = zookeeper->get(zk_path);
+	ReadBufferFromString buf{serialized_record};
+
+	unsigned int val;
+	readVarUInt(val, buf);
+	operation = static_cast<Operation>(val);
+
+	readVarUInt(val, buf);
+	state = static_cast<State>(val);
+
+	readBinary(partition, buf);
+	readBinary(partition_hash, buf);
+	readVarUInt(shard_no, buf);
+
+	size_t s;
+	readVarUInt(s, buf);
+
+	for (size_t i = 0; i < s; ++i)
+	{
+		std::string part;
+		readBinary(part, buf);
+
+		std::string hash;
+		readBinary(hash, buf);
+
+		parts_with_hash.emplace(part, hash);
+	}
+}
+
+void ReshardingWorker::LogRecord::enqueue(const std::string & log_path)
+{
+	(void) zookeeper->create(log_path + "/rec-", toString(), zkutil::CreateMode::PersistentSequential);
+}
+
+void ReshardingWorker::LogRecord::writeBack()
+{
+	zookeeper->set(zk_path, toString());
+}
+
+std::string ReshardingWorker::LogRecord::toString()
+{
+	std::string out;
+	WriteBufferFromString buf{out};
+
+	writeVarUInt(static_cast<unsigned int>(operation), buf);
+	writeVarUInt(static_cast<unsigned int>(state), buf);
+	writeBinary(partition, buf);
+	writeBinary(partition_hash, buf);
+	writeVarUInt(shard_no, buf);
+
+	writeVarUInt(parts_with_hash.size(), buf);
+	for (const auto & entry : parts_with_hash)
+	{
+		writeBinary(entry.first, buf);
+		writeBinary(entry.second, buf);
+	}
+
+	buf.next();
+
+	return out;
 }
 
 }

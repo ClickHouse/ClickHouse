@@ -28,7 +28,7 @@ public:
 private:
 	StoragePtr owned_storage;
 	MergeTreeData & data;
-	Logger * log;
+	Logger * log = &Logger::get("ShardedPartitionUploader::Service");
 };
 
 /** Клиент для отправления кусков из партиции таблицы *MergeTree.
@@ -60,7 +60,7 @@ private:
 	MergeTreeData & data;
 	CancellationHook cancellation_hook;
 	std::atomic<bool> is_cancelled{false};
-	Logger * log;
+	Logger * log = &Logger::get("ShardedPartitionUploader::Client");
 };
 
 }

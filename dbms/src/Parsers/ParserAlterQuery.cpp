@@ -33,6 +33,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 	ParserString s_part("PART", true, true);
 	ParserString s_partition("PARTITION", true, true);
 	ParserString s_from("FROM", true, true);
+	ParserString s_copy("COPY", true, true);
 	ParserString s_to("TO", true, true);
 	ParserString s_using("USING", true, true);
 	ParserString s_key("KEY", true, true);
@@ -259,6 +260,11 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 			ParserList weighted_zookeeper_paths_p(ParserPtr(new ParserWeightedZooKeeperPath), ParserPtr(new ParserString(",")), false);
 			ParserExpressionWithOptionalAlias parser_sharding_key_expr(false);
 			ParserStringLiteral parser_coordinator;
+
+			ws.ignore(pos, end);
+
+			if (s_copy.ignore(pos, end, max_parsed_pos, expected))
+				params.do_copy = true;
 
 			ws.ignore(pos, end);
 

@@ -341,6 +341,8 @@ namespace ErrorCodes
 	extern const int BARRIER_TIMEOUT = 335;
 	extern const int UNKNOWN_DATABASE_ENGINE = 336;
 	extern const int DDL_GUARD_IS_ACTIVE = 337;
+	extern const int NO_SUCH_BARRIER = 338;
+	extern const int RESHARDING_ILL_FORMED_LOG = 339;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;

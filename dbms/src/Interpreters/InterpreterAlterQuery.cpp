@@ -68,7 +68,7 @@ BlockIO InterpreterAlterQuery::execute()
 
 			case PartitionCommand::RESHARD_PARTITION:
 				table->reshardPartitions(query_ptr, database_name, command.partition, command.last_partition,
-					command.weighted_zookeeper_paths, command.sharding_key_expr,
+					command.weighted_zookeeper_paths, command.sharding_key_expr, command.do_copy,
 					command.coordinator, context.getSettingsRef());
 				break;
 
@@ -197,7 +197,8 @@ void InterpreterAlterQuery::parseAlter(
 				coordinator = dynamic_cast<const ASTLiteral &>(*params.coordinator).value;
 
 			out_partition_commands.push_back(PartitionCommand::reshardPartitions(
-				first_partition, last_partition, weighted_zookeeper_paths, params.sharding_key_expr, coordinator));
+				first_partition, last_partition, weighted_zookeeper_paths, params.sharding_key_expr,
+				params.do_copy, coordinator));
 		}
 		else
 			throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);

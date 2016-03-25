@@ -15,6 +15,7 @@
 #include <DB/Storages/MergeTree/RemoteDiskSpaceMonitor.h>
 #include <DB/Storages/MergeTree/ShardedPartitionUploader.h>
 #include <DB/Storages/MergeTree/RemoteQueryExecutor.h>
+#include <DB/Storages/MergeTree/RemotePartChecker.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/LeaderElection.h>
@@ -138,7 +139,7 @@ public:
 	void reshardPartitions(ASTPtr query, const String & database_name,
 		const Field & first_partition, const Field & last_partition,
 		const WeightedZooKeeperPaths & weighted_zookeeper_paths,
-		const ASTPtr & sharding_key_expr, const Field & coordinator,
+		const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
 		const Settings & settings) override;
 
 	/** Удаляет реплику из ZooKeeper. Если других реплик нет, удаляет всю таблицу из ZooKeeper.
@@ -252,6 +253,7 @@ private:
 	InterserverIOEndpointHolderPtr disk_space_monitor_endpoint_holder;
 	InterserverIOEndpointHolderPtr sharded_partition_uploader_endpoint_holder;
 	InterserverIOEndpointHolderPtr remote_query_executor_endpoint_holder;
+	InterserverIOEndpointHolderPtr remote_part_checker_endpoint_holder;
 
 	MergeTreeData data;
 	MergeTreeDataSelectExecutor reader;
@@ -262,6 +264,7 @@ private:
 	RemoteDiskSpaceMonitor::Client disk_space_monitor_client;
 	ShardedPartitionUploader::Client sharded_partition_uploader_client;
 	RemoteQueryExecutor::Client remote_query_executor_client;
+	RemotePartChecker::Client remote_part_checker_client;
 
 	zkutil::LeaderElectionPtr leader_election;
 

@@ -50,6 +50,11 @@ static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 1.6;
 /// потому что между выбором кусков и резервированием места места может стать немного меньше.
 static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.4;
 
+MergeTreeDataMerger::MergeTreeDataMerger(MergeTreeData & data_)
+	: data(data_), log(&Logger::get(data.getLogName() + " (Merger)"))
+{
+}
+
 void MergeTreeDataMerger::setCancellationHook(CancellationHook cancellation_hook_)
 {
 	cancellation_hook = cancellation_hook_;
@@ -77,6 +82,22 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 	bool merge_anything_for_old_months, bool aggressive, bool only_small, const AllowedMergingPredicate & can_merge_callback)
 {
 	MergeTreeData::DataParts data_parts = data.getDataParts();
+
+	{
+		std::lock_guard<std::mutex> guard{freeze_lock};
+
+		for (auto it = data_parts.begin(); it != data_parts.end(); )
+		{
+			const MergeTreeData::DataPartPtr & part = *it;
+			if (isPartitionFrozen(*part))
+				it = data_parts.erase(it);
+			else
+				++it;
+		}
+	}
+
+	if (data_parts.empty())
+		return false;
 
 	const auto & date_lut = DateLUT::instance();
 
@@ -326,10 +347,32 @@ MergeTreeData::DataPartsVector MergeTreeDataMerger::selectAllPartsFromPartition(
 
 /// parts должны быть отсортированы.
 MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
-	const MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeList::Entry & merge_entry,
+	MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeList::Entry & merge_entry,
 	size_t aio_threshold, MergeTreeData::Transaction * out_transaction,
 	DiskSpaceMonitor::Reservation * disk_reservation)
 {
+	std::lock_guard<std::mutex> guard{freeze_lock};
+
+	if (!frozen_partitions.empty())
+	{
+		size_t old_parts_size = parts.size();
+
+		auto first_removed = std::remove_if(parts.begin(), parts.end(), [&](const MergeTreeData::DataPartPtr & part)
+		{
+			return isPartitionFrozen(*part);
+		});
+		parts.erase(first_removed, parts.end());
+
+		if (parts.empty())
+			throw Exception("All the chosen parts lie inside a frozen partition. Cancelling.", ErrorCodes::ABORTED);
+
+		if (disk_reservation && (parts.size() != old_parts_size))
+		{
+			size_t sum_parts_size_in_bytes = MergeTreeDataMerger::estimateDiskSpaceForMerge(parts);
+			disk_reservation = DiskSpaceMonitor::reserve(data.getFullPath(), sum_parts_size_in_bytes);
+		}
+	}
+
 	merge_entry->num_parts = parts.size();
 
 	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name << " into " << merged_name);
@@ -776,6 +819,23 @@ size_t MergeTreeDataMerger::estimateDiskSpaceForMerge(const MergeTreeData::DataP
 		res += part->size_in_bytes;
 
 	return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);
+}
+
+void MergeTreeDataMerger::freezePartition(const std::string & partition)
+{
+	std::lock_guard<std::mutex> guard{freeze_lock};
+	frozen_partitions.insert(MergeTreeData::getMonthFromName(partition));
+}
+
+void MergeTreeDataMerger::unfreezePartition(const std::string & partition)
+{
+	std::lock_guard<std::mutex> guard{freeze_lock};
+	frozen_partitions.erase(MergeTreeData::getMonthFromName(partition));
+}
+
+bool MergeTreeDataMerger::isPartitionFrozen(const MergeTreeData::DataPart & part) const
+{
+	return frozen_partitions.count(part.month);
 }
 
 void MergeTreeDataMerger::abortIfRequested()
