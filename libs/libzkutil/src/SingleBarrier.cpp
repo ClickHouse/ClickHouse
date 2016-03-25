@@ -72,11 +72,11 @@ void SingleBarrier::enter(uint64_t timeout)
 
 	RWLock lock{get_zookeeper, path + "/lock"};
 
-	auto zookeeper = get_zookeeper();
-
 	try
 	{
 		lock.acquireWrite();
+
+		auto zookeeper = get_zookeeper();
 
 		auto tag = zookeeper->get(path + "/tag");
 
@@ -96,6 +96,8 @@ void SingleBarrier::enter(uint64_t timeout)
 
 		while (true)
 		{
+			auto zookeeper = get_zookeeper();
+
 			auto tokens = zookeeper->getChildren(path + "/tokens", nullptr, event);
 
 			std::sort(tokens.begin(), tokens.end());

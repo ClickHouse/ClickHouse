@@ -123,12 +123,10 @@ void RWLock::acquireImpl(Mode mode)
 	if (!key.empty())
 		throw DB::Exception{"RWLock: lock already held", DB::ErrorCodes::RWLOCK_ALREADY_HELD};
 
-	auto zookeeper = get_zookeeper();
-
 	try
 	{
 		/// Enqueue a new request for a lock.
-		int32_t code = zookeeper->tryCreate(path + "/" + Prefix<lock_type>::name,
+		int32_t code = get_zookeeper()->tryCreate(path + "/" + Prefix<lock_type>::name,
 			"", CreateMode::EphemeralSequential, key);
 		if (code == ZNONODE)
 			throw DB::Exception{"No such lock", DB::ErrorCodes::RWLOCK_NO_SUCH_LOCK};
@@ -139,6 +137,8 @@ void RWLock::acquireImpl(Mode mode)
 
 		while (true)
 		{
+			auto zookeeper = get_zookeeper();
+
 			std::vector<std::string> children;
 			int32_t code = zookeeper->tryGetChildren(path, children);
 			if (code == ZNONODE)
@@ -217,7 +217,7 @@ void RWLock::acquireImpl(Mode mode)
 		try
 		{
 			if (!key.empty())
-				zookeeper->remove(path + "/" + key);
+				get_zookeeper()->remove(path + "/" + key);
 		}
 		catch (...)
 		{
