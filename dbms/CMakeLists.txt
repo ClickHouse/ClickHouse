@@ -544,7 +544,9 @@ add_library (dbms
 	include/DB/Storages/System/StorageSystemSettings.h
 	include/DB/Databases/IDatabase.h
 	include/DB/Databases/DatabaseOrdinary.h
+	include/DB/Databases/DatabaseCloud.h
 	include/DB/Databases/DatabaseFactory.h
+	include/DB/Databases/DatabasesCommon.h
 
 	src/Common/ProfileEvents.cpp
 	src/Common/CurrentMetrics.cpp
@@ -836,6 +838,7 @@ add_library (dbms
 
 	src/Databases/DatabaseOrdinary.cpp
 	src/Databases/DatabaseFactory.cpp
+	src/Databases/DatabasesCommon.cpp
 
 	src/Client/Connection.cpp
 	src/Client/MultiplexedConnections.cpp

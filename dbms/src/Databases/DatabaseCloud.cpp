@@ -4,10 +4,12 @@
 #include <DB/Common/SipHash.h>
 #include <DB/Common/UInt128.h>
 #include <DB/Databases/DatabaseCloud.h>
+#include <DB/Databases/DatabasesCommon.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/ReadBufferFromString.h>
+#include <DB/IO/HexWriteBuffer.h>
 
 
 namespace DB
@@ -21,6 +23,8 @@ namespace ErrorCodes
 namespace
 {
 	constexpr size_t TABLE_TO_NODE_DIVISOR = 4096;
+
+	using Hash = DatabaseCloud::Hash;
 }
 
 
@@ -36,6 +40,7 @@ void DatabaseCloud::createZookeeperNodes()
 	ops.push_back(new zkutil::Op::Create(zookeeper_path, "", acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/table_definitions", "", acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/tables", "", acl, zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/local_tables", "", acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/ordered_locality_keys", "", acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/nodes", "", acl, zkutil::CreateMode::Persistent));
 
@@ -48,6 +53,7 @@ void DatabaseCloud::createZookeeperNodes()
 		throw zkutil::KeeperException(code);
 
 	zookeeper->createIfNotExists(zookeeper_path + "/tables/" + name);
+	zookeeper->createIfNotExists(zookeeper_path + "/local_tables/" + name);
 	zookeeper->createIfNotExists(zookeeper_path + "/nodes/" + hostname);
 }
 
@@ -83,19 +89,45 @@ DatabaseCloud::DatabaseCloud(
 }
 
 
-String DatabaseCloud::getNameOfNodeWithTables(const String & table_name)
+Hash DatabaseCloud::getTableHash(const String & table_name) const
 {
 	SipHash hash;
-	hash.update(name.data(), name.size());
+	hash.update(name.data(), name.size() + 1);	/// Хэшируем также нулевой байт в качестве разделителя.
 	hash.update(table_name.data(), table_name.size());
-	/// Коллизии из-за конкатенации строк не имеют значения.
 
-	UInt64 value = hash.get64();
+	Hash res;
+	hash.get128(reinterpret_cast<char *>(&res));
+	return res;
+}
+
+
+String DatabaseCloud::getNameOfNodeWithTables(const String & table_name) const
+{
+	Hash hash = getTableHash(table_name);
 	String res;
 	WriteBufferFromString out(res);
-	writeText(value % TABLE_TO_NODE_DIVISOR, out);
+	writeText(hash.first % TABLE_TO_NODE_DIVISOR, out);
 	out.next();
 	return res;
+}
+
+
+static String hashToHex(Hash hash)
+{
+	String res;
+	WriteBufferFromString str_out(res);
+	HexWriteBuffer hex_out(str_out);
+	writePODBinary(hash, hex_out);
+	hex_out.next();
+	str_out.next();
+	return res;
+}
+
+
+String DatabaseCloud::getTableDefinitionFromHash(Hash hash) const
+{
+	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
+	return zookeeper->get(zookeeper_path + "/table_definitions/" + hashToHex(hash));
 }
 
 
@@ -105,7 +137,7 @@ String DatabaseCloud::getNameOfNodeWithTables(const String & table_name)
 struct TableDescription
 {
 	/// Хэш от структуры таблицы. Сама структура хранится отдельно.
-	UInt128 definition_hash;
+	Hash definition_hash;
 	/// Список хостов, на которых расположены данные таблицы. Может быть пустым, если в таблицу ещё ничего не записывали.
 	std::vector<String> hosts;
 
@@ -167,10 +199,60 @@ struct TableSet
 };
 
 
+/** Множество локальных таблиц в ZooKeeper.
+  * Точнее, его кусок, относящийся к одной ноде.
+  * (Всё множество разбито по TABLE_TO_NODE_DIVISOR нод.)
+  */
+struct LocalTableSet
+{
+	/// Хэш от имени -> хэш от структуры.
+	using Container = std::map<Hash, Hash>;
+	Container map;
+
+	TableSet(const String & data)
+	{
+		ReadBufferFromString in(data);
+		read(in);
+	}
+
+	void write(WriteBuffer & buf) const
+	{
+		writeCString("Version 1\n", buf);
+
+		CompressedWriteBuffer out(buf);		/// NOTE Можно уменьшить размер выделяемого буфера.
+		for (const auto & kv : map)
+		{
+			writePODBinary(kv.first, out);
+			writePODBinary(kv.second, out);
+		}
+	}
+
+	void read(ReadBuffer & buf)
+	{
+		assertString("Version 1\n", buf);
+
+		CompressedReadBuffer in(buf);
+		while (!in.eof())
+		{
+			Container::value_type kv;
+			readPODBinary(kv.first, in);
+			readPODBinary(kv.second, in);
+			map.emplace(std::move(kv));
+		}
+	}
+};
+
+
 bool DatabaseCloud::isTableExist(const String & table_name) const
 {
-	/// Ищем локальную таблицу в path.
+	/// Ищем локальную таблицу в кэше локальных таблиц или в файловой системе в path.
 	/// Если не нашли - ищем облачную таблицу в ZooKeeper.
+
+	{
+		std::lock_guard<std::mutex> lock(local_tables_mutex);
+		if (local_tables_cache.count(table_name))
+			return true;
+	}
 
 	String table_name_escaped = escapeForFileName(table_name);
 	if (Poco::File(data_path + table_name_escaped).exists())
@@ -189,7 +271,56 @@ bool DatabaseCloud::isTableExist(const String & table_name) const
 
 StoragePtr DatabaseCloud::tryGetTable(const String & table_name)
 {
+	/// Ищем локальную таблицу.
+	/// Если не нашли - ищем облачную таблицу в ZooKeeper.
 
+	{
+		std::lock_guard<std::mutex> lock(local_tables_mutex);
+		auto it = local_tables_cache.find(table_name);
+		if (it != local_tables_cache.end())
+			return it->second;
+	}
+
+	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
+
+	String table_name_escaped = escapeForFileName(table_name);
+	if (Poco::File(data_path + table_name_escaped).exists())
+	{
+		LocalTableSet local_tables_info(zookeeper->get(
+			zookeeper_path + "/local_tables/" + name + "/" + getNameOfNodeWithTables(table_name)));
+
+		Hash table_hash = getTableHash(table_name);
+		String definition = getTableDefinitionFromHash(local_tables_info.map.at(table_hash));
+
+		/// Инициализируем локальную таблицу.
+		{
+			std::lock_guard<std::mutex> lock(local_tables_mutex);
+
+			/// А если таблицу только что создали?
+			auto it = local_tables_cache.find(table_name);
+			if (it != local_tables_cache.end())
+				return it->second;
+
+			String table_name;
+			StoragePtr table;
+			std::tie(table_name, table) = createTableFromDefinition(
+				definition, name, data_path, context,
+				"in zookeeper node " + zookeeper_path + "/table_definitions/" + hashToHex(table_hash));
+
+			local_tables_cache.emplace(table_name, table);
+			return table;
+		}
+	}
+	else
+	{
+		const TableSet tables_info(zookeeper->get(
+			zookeeper_path + "/tables/" + name + "/" + getNameOfNodeWithTables(table_name)));
+
+		const TableDescription & description = tables_info.at(table_name);
+
+		/// TODO Инициализация объекта StorageCloud
+		return {};
+	}
 }
 
 }

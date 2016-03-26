@@ -2,13 +2,12 @@
 #include <Poco/DirectoryIterator.h>
 
 #include <DB/Databases/DatabaseOrdinary.h>
+#include <DB/Databases/DatabasesCommon.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Parsers/ASTCreateQuery.h>
-#include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
-#include <DB/Storages/StorageFactory.h>
-#include <DB/Interpreters/InterpreterCreateQuery.h>
+#include <DB/Interpreters/Context.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/copyData.h>
@@ -31,46 +30,6 @@ static constexpr size_t PRINT_MESSAGE_EACH_N_TABLES = 256;
 static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 static constexpr size_t TABLES_PARALLEL_LOAD_BUNCH_SIZE = 100;
-
-
-static void executeCreateQuery(
-	const String & query,
-	Context & context,
-	DatabaseOrdinary & database,
-	const String & database_name,
-	const String & database_data_path,
-	const String & table_metadata_path)
-{
-	ParserCreateQuery parser;
-	ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + table_metadata_path);
-
-	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
-	ast_create_query.attach = true;
-	ast_create_query.database = database_name;
-
-	/// Не используем напрямую InterpreterCreateQuery::execute, так как:
-	/// - база данных ещё не создана;
-	/// - код проще, так как запрос уже приведён к подходящему виду.
-
-	InterpreterCreateQuery::ColumnsInfo columns_info = InterpreterCreateQuery::getColumnsInfo(ast_create_query.columns, context);
-
-	String storage_name;
-
-	if (ast_create_query.is_view)
-		storage_name = "View";
-	else if (ast_create_query.is_materialized_view)
-		storage_name = "MaterializedView";
-	else
-		storage_name = typeid_cast<ASTFunction &>(*ast_create_query.storage).name;
-
-	StoragePtr res = StorageFactory::instance().get(
-		storage_name, database_data_path, ast_create_query.table, database_name, context,
-		context.getGlobalContext(), ast, columns_info.columns,
-		columns_info.materialized_columns, columns_info.alias_columns, columns_info.column_defaults,
-		true);
-
-	database.attachTable(ast_create_query.table, res);
-}
 
 
 static void loadTable(
@@ -105,7 +64,11 @@ static void loadTable(
 
 	try
 	{
-		executeCreateQuery(s, context, database, database_name, database_data_path, table_metadata_path);
+		String table_name;
+		StoragePtr table;
+		std::tie(table_name, table) = createTableFromDefinition(
+			s, database_name, database_data_path, context, "in file " + table_metadata_path);
+		database.attachTable(table_name, table);
 	}
 	catch (const Exception & e)
 	{
@@ -306,10 +269,8 @@ void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr &
 	  * - переименование .sql.tmp в .sql.
 	  */
 
-	/// NOTE Возможен race condition, если таблицу с одним именем одновременно создают с помощью CREATE и с помощью ATTACH.
-
-	ASTPtr query_clone = query->clone();
-	ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_clone.get());
+	/// Был бы возможен race condition, если таблицу с одним именем одновременно создают с помощью CREATE и с помощью ATTACH.
+	/// Но от него есть защита - см. использование DDLGuard в InterpreterCreateQuery.
 
 	{
 		std::lock_guard<std::mutex> lock(mutex);
@@ -323,22 +284,7 @@ void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr &
 	String statement;
 
 	{
-		/// Удаляем из запроса всё, что не нужно для ATTACH.
-		create.attach = true;
-		create.database.clear();
-		create.as_database.clear();
-		create.as_table.clear();
-		create.if_not_exists = false;
-		create.is_populate = false;
-
-		/// Для engine VIEW необходимо сохранить сам селект запрос, для остальных - наоборот
-		if (engine != "View" && engine != "MaterializedView")
-			create.select = nullptr;
-
-		std::ostringstream statement_stream;
-		formatAST(create, statement_stream, 0, false);
-		statement_stream << '\n';
-		statement = statement_stream.str();
+		statement = getTableDefinitionFromCreateQuery(query);
 
 		/// Гарантирует, что таблица не создаётся прямо сейчас.
 		WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
