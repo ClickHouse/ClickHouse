@@ -10,6 +10,9 @@
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/HexWriteBuffer.h>
+#include <DB/Parsers/ASTCreateQuery.h>
+#include <DB/Parsers/parseQuery.h>
+#include <DB/Parsers/ParserCreateQuery.h>
 
 
 namespace DB
@@ -138,6 +141,8 @@ struct TableDescription
 {
 	/// Хэш от структуры таблицы. Сама структура хранится отдельно.
 	Hash definition_hash;
+	/// Имя локальной таблицы для хранения данных. Может быть пустым, если в таблицу ещё ничего не записывали.
+	String local_table_name;
 	/// Список хостов, на которых расположены данные таблицы. Может быть пустым, если в таблицу ещё ничего не записывали.
 	std::vector<String> hosts;
 
@@ -317,9 +322,166 @@ StoragePtr DatabaseCloud::tryGetTable(const String & table_name)
 			zookeeper_path + "/tables/" + name + "/" + getNameOfNodeWithTables(table_name)));
 
 		const TableDescription & description = tables_info.at(table_name);
+		String definition = getTableDefinitionFromHash(description.definition_hash);
 
 		/// TODO Инициализация объекта StorageCloud
 		return {};
+	}
+}
+
+
+/// Список таблиц может быть неконсистентным, так как он получается неатомарно, а по кускам, по мере итерации.
+class DatabaseCloudIterator : public IDatabaseIterator
+{
+private:
+	DatabasePtr owned_database;
+	zkutil::ZooKeeperPtr zookeeper;
+	const String & zookeeper_path;
+
+	bool first = true;
+	const Strings nodes;
+	Strings::const_iterator nodes_iterator;
+
+	TableSet table_set;
+	TableSet::Container::iterator table_set_iterator;
+
+	DatabaseCloud & parent()
+	{
+		return static_cast<DatabaseCloud &>(*owned_database);
+	}
+
+	bool fetchNextTableSet()
+	{
+		do
+		{
+			if (first)
+				first = false;
+			else
+				++nodes_iterator;
+
+			if (nodes_iterator == nodes.end())
+				return false;
+
+			table_set = TableSet(zookeeper->get(zookeeper_path + "/" + *nodes_iterator));
+			table_set_iterator = table_set.map.begin();
+		}
+		while (!table_set.map.empty());		/// Пропускаем пустые table set-ы.
+
+		return true;
+	}
+
+public:
+	DatabaseCloudIterator(DatabasePtr database)
+		: owned_database(database),
+		zookeeper(parent().context.getZooKeeper()),
+		zookeeper_path(parent().zookeeper_path + "/tables/" + parent().name),
+		nodes(zookeeper->getChildren(zookeeper_path)),
+		nodes_iterator(nodes.begin())
+	{
+		fetchNextTableSet();
+	}
+
+	void next() override
+	{
+		++table_set_iterator;
+		if (table_set_iterator == table_set.end())
+			fetchNextTableSet();
+	}
+
+	bool isValid() const override
+	{
+		return nodes_iterator != nodes.end();
+	}
+
+	const String & name() const override
+	{
+		return table_set_iterator->first;
+	}
+
+	StoragePtr & table() const
+	{
+		String definition = parent().getTableDefinitionFromHash(table_set_iterator->second.definition_hash);
+
+		/// TODO Инициализация объекта StorageCloud
+		return {};
+	}
+};
+
+
+DatabaseIteratorPtr DatabaseCloud::getIterator()
+{
+	return std::make_unique<DatabaseCloudIterator>(shared_from_this());
+}
+
+
+bool DatabaseCloud::empty() const
+{
+	/// Есть хотя бы один непустой узел среди списков таблиц.
+
+	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
+	Strings nodes = zookeeper->getChildren(zookeeper_path + "/tables/" + name);
+	if (nodes.empty())
+		return true;
+
+	for (const auto & node : nodes)
+		if (!zookeeper->get(zookeeper_path + "/tables/" + name + "/" + node).empty())
+			return false;
+
+	return true;
+}
+
+
+ASTPtr DatabaseCloud::getCreateQuery(const String & table_name) const
+{
+	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
+	String definition;
+
+	String table_name_escaped = escapeForFileName(table_name);
+	if (Poco::File(data_path + table_name_escaped).exists())
+	{
+		LocalTableSet local_tables_info(zookeeper->get(
+			zookeeper_path + "/local_tables/" + name + "/" + getNameOfNodeWithTables(table_name)));
+
+		Hash table_hash = getTableHash(table_name);
+		definition = getTableDefinitionFromHash(local_tables_info.map.at(table_hash));
+	}
+	else
+	{
+		const TableSet tables_info(zookeeper->get(
+			zookeeper_path + "/tables/" + name + "/" + getNameOfNodeWithTables(table_name)));
+
+		const TableDescription & description = tables_info.at(table_name);
+		definition = getTableDefinitionFromHash(description.definition_hash);
+	}
+
+	ParserCreateQuery parser;
+	ASTPtr ast = parseQuery(parser, definition.data(), definition.data() + definition.size(),
+		"in zookeeper node " + zookeeper_path + "/table_definitions/" + hashToHex(description.definition_hash));
+
+	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
+	ast_create_query.attach = false;
+	ast_create_query.database = name;
+
+	return ast;
+}
+
+
+void DatabaseCloud::shutdown()
+{
+	/// Нельзя удерживать блокировку во время shutdown.
+	/// Потому что таблицы могут внутри функции shutdown работать с БД, а mutex не рекурсивный.
+	Tables local_tables_snapshot;
+	{
+		std::lock_guard<std::mutex> lock(local_tables_mutex);
+		local_tables_snapshot = local_tables_cache;
+	}
+
+	for (auto & name_table : local_tables_snapshot)
+		name_table.second->shutdown();
+
+	{
+		std::lock_guard<std::mutex> lock(local_tables_mutex);
+		local_tables_cache.clear();
 	}
 }
 

@@ -71,6 +71,8 @@ private:
 	Tables local_tables_cache;
 	mutable std::mutex local_tables_mutex;
 
+	friend class DatabaseCloudIterator;
+
 public:
 	DatabaseCloud(
 		bool attach,

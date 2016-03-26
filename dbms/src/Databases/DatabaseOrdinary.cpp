@@ -420,6 +420,9 @@ ASTPtr DatabaseOrdinary::getCreateQuery(const String & table_name) const
 
 void DatabaseOrdinary::shutdown()
 {
+	/// Нельзя удерживать блокировку во время shutdown.
+	/// Потому что таблицы могут внутри функции shutdown работать с БД, а mutex не рекурсивный.
+
 	for (auto iterator = getIterator(); iterator->isValid(); iterator->next())
 		iterator->table()->shutdown();
 
