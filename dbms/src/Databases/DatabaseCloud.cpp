@@ -55,9 +55,10 @@ void DatabaseCloud::createZookeeperNodes()
 	else
 		throw zkutil::KeeperException(code);
 
-	zookeeper->createIfNotExists(zookeeper_path + "/tables/" + name);
-	zookeeper->createIfNotExists(zookeeper_path + "/local_tables/" + name);
-	zookeeper->createIfNotExists(zookeeper_path + "/nodes/" + hostname);
+	zookeeper->createIfNotExists(zookeeper_path + "/tables/" + name, "");
+	zookeeper->createIfNotExists(zookeeper_path + "/local_tables/" + name, "");
+	zookeeper->createIfNotExists(zookeeper_path + "/nodes/" + hostname, "");
+	zookeeper->createIfNotExists(zookeeper_path + "/nodes/" + hostname + "/datacenter", datacenter_name);
 }
 
 
@@ -434,7 +435,7 @@ bool DatabaseCloud::empty() const
 ASTPtr DatabaseCloud::getCreateQuery(const String & table_name) const
 {
 	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
-	String definition;
+	Hash definition_hash;
 
 	String table_name_escaped = escapeForFileName(table_name);
 	if (Poco::File(data_path + table_name_escaped).exists())
@@ -443,7 +444,7 @@ ASTPtr DatabaseCloud::getCreateQuery(const String & table_name) const
 			zookeeper_path + "/local_tables/" + name + "/" + getNameOfNodeWithTables(table_name)));
 
 		Hash table_hash = getTableHash(table_name);
-		definition = getTableDefinitionFromHash(local_tables_info.map.at(table_hash));
+		definition_hash = local_tables_info.map.at(table_hash);
 	}
 	else
 	{
@@ -451,12 +452,14 @@ ASTPtr DatabaseCloud::getCreateQuery(const String & table_name) const
 			zookeeper_path + "/tables/" + name + "/" + getNameOfNodeWithTables(table_name)));
 
 		const TableDescription & description = tables_info.at(table_name);
-		definition = getTableDefinitionFromHash(description.definition_hash);
+		definition_hash = description.definition_hash;
 	}
+
+	String definition = getTableDefinitionFromHash(definition_hash);
 
 	ParserCreateQuery parser;
 	ASTPtr ast = parseQuery(parser, definition.data(), definition.data() + definition.size(),
-		"in zookeeper node " + zookeeper_path + "/table_definitions/" + hashToHex(description.definition_hash));
+		"in zookeeper node " + zookeeper_path + "/table_definitions/" + hashToHex(definition_hash));
 
 	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 	ast_create_query.attach = false;

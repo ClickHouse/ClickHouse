@@ -332,7 +332,7 @@ StoragePtr DatabaseOrdinary::detachTable(const String & table_name)
 }
 
 
-StoragePtr DatabaseOrdinary::removeTable(const String & table_name)
+void DatabaseOrdinary::removeTable(const String & table_name)
 {
 	StoragePtr res = detachTable(table_name);
 
@@ -348,8 +348,6 @@ StoragePtr DatabaseOrdinary::removeTable(const String & table_name)
 		attachTable(table_name, res);
 		throw;
 	}
-
-	return res;
 }
 
 

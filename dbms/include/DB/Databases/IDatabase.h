@@ -57,7 +57,7 @@ public:
 	virtual void createTable(const String & name, const StoragePtr & table, const ASTPtr & query, const String & engine) = 0;
 
 	/// Удалить таблицу из базы данных и вернуть её. Удалить метаданные.
-	virtual StoragePtr removeTable(const String & name) = 0;
+	virtual void removeTable(const String & name) = 0;
 
 	/// Добавить таблицу в базу данных, но не прописывать её в метаданных. БД может не поддерживать этот метод.
 	virtual void attachTable(const String & name, const StoragePtr & table) = 0;
