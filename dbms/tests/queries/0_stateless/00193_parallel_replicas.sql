@@ -1,4 +1,5 @@
 DROP TABLE IF EXISTS test.parallel_replicas;
+DROP TABLE IF EXISTS test.parallel_replicas_backup;
 
 CREATE TABLE test.parallel_replicas (d Date DEFAULT today(), x UInt32, u UInt64, s String) ENGINE = MergeTree(d, cityHash64(u, s), (x, d, cityHash64(u, s)), 8192);
 INSERT INTO test.parallel_replicas (x, u, s) VALUES (1, 2, 'A'),(3, 4, 'B'),(5, 6, 'C'),(7, 8, 'D'),(9,10,'E');
@@ -16,7 +17,6 @@ INSERT INTO test.parallel_replicas (x, u, s) VALUES (51, 52, 'Z');
 
 /* Две реплики */
 
-DROP TABLE IF EXISTS test.parallel_replicas_backup;
 CREATE TABLE test.parallel_replicas_backup(d Date DEFAULT today(), x UInt32, u UInt64, s String) ENGINE = Memory;
 
 SET parallel_replicas_count = 2;
@@ -32,7 +32,7 @@ SELECT count() > 0 FROM test.parallel_replicas;
 SET parallel_replicas_count = 0;
 SELECT x, u, s FROM test.parallel_replicas_backup ORDER BY x, u, s ASC;
 
-DROP TABLE IF EXISTS test.parallel_replicas_backup;
+DROP TABLE test.parallel_replicas_backup;
 CREATE TABLE test.parallel_replicas_backup(d Date DEFAULT today(), x UInt32, u UInt64, s String) ENGINE = Memory;
 
 /* Три реплики */
@@ -53,3 +53,6 @@ SELECT count() > 0 FROM test.parallel_replicas;
 
 SET parallel_replicas_count = 0;
 SELECT x, u, s FROM test.parallel_replicas_backup ORDER BY x, u, s ASC;
+
+DROP TABLE test.parallel_replicas;
+DROP TABLE test.parallel_replicas_backup;

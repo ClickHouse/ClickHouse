@@ -484,14 +484,7 @@ static bool forAnyParallelogram(
 		return callback(parallelogram);
 	}
 
-	/// [x1]       x [y1 .. +inf)
-
-	if (left_bounded)
-	{
-		parallelogram[prefix_size] = Range(key_left[prefix_size]);
-		if (forAnyParallelogram(key_size, key_left, key_right, true, false, parallelogram, prefix_size + 1, callback))
-			return true;
-	}
+	/// Порядок следующих случаев важен, чтобы не пришлось стирать суффиксные элементы parallelogram.
 
 	/// (x1 .. x2) x (-inf .. +inf)
 
@@ -504,6 +497,15 @@ static bool forAnyParallelogram(
 
 	if (callback(parallelogram))
 		return true;
+
+	/// [x1]       x [y1 .. +inf)
+
+	if (left_bounded)
+	{
+		parallelogram[prefix_size] = Range(key_left[prefix_size]);
+		if (forAnyParallelogram(key_size, key_left, key_right, true, false, parallelogram, prefix_size + 1, callback))
+			return true;
+	}
 
 	/// [x2]       x (-inf .. y2]
 
