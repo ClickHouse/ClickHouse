@@ -37,11 +37,17 @@ public:
 	Range() {}
 
 	/// Одна точка.
-	Range(const Field & point) : left(point), right(point), left_bounded(true), right_bounded(true), left_included(true), right_included(true) {}
+	Range(const Field & point)
+		: left(point), right(point), left_bounded(true), right_bounded(true), left_included(true), right_included(true) {}
 
 	/// Ограниченный с двух сторон диапазон.
 	Range(const Field & left_, bool left_included_, const Field & right_, bool right_included_)
-		: left(left_), right(right_), left_bounded(true), right_bounded(true), left_included(left_included_), right_included(right_included_) {}
+		: left(left_), right(right_),
+		left_bounded(true), right_bounded(true),
+		left_included(left_included_), right_included(right_included_)
+	{
+		shrinkToIncludedIfPossible();
+	}
 
 	static Range createRightBounded(const Field & right_point, bool right_included)
 	{
@@ -49,6 +55,7 @@ public:
 		r.right = right_point;
 		r.right_bounded = true;
 		r.right_included = right_included;
+		r.shrinkToIncludedIfPossible();
 		return r;
 	}
 
@@ -58,23 +65,49 @@ public:
 		r.left = left_point;
 		r.left_bounded = true;
 		r.left_included = left_included;
+		r.shrinkToIncludedIfPossible();
 		return r;
 	}
 
-	/// Установить левую границу.
-	void setLeft(const Field & point, bool included)
+	/** Оптимизировать диапазон. Если у него есть открытая граница и тип Field "неплотный"
+	  * - то преобразовать её в закрытую, сузив на единицу.
+	  * То есть, например, превратить (0,2) в [1].
+	  */
+	void shrinkToIncludedIfPossible()
 	{
-		left = point;
-		left_bounded = true;
-		left_included = included;
+		if (left_bounded && !left_included)
+		{
+			if (left.getType() == Field::Types::UInt64 && left.get<UInt64>() != std::numeric_limits<UInt64>::max())
+			{
+				++left.get<UInt64 &>();
+				left_included = true;
+			}
+			if (left.getType() == Field::Types::Int64 && left.get<Int64>() != std::numeric_limits<Int64>::max())
+			{
+				++left.get<Int64 &>();
+				left_included = true;
+			}
+		}
+		if (right_bounded && !right_included)
+		{
+			if (right.getType() == Field::Types::UInt64 && right.get<UInt64>() != std::numeric_limits<UInt64>::min())
+			{
+				--right.get<UInt64 &>();
+				right_included = true;
+			}
+			if (right.getType() == Field::Types::Int64 && right.get<Int64>() != std::numeric_limits<Int64>::min())
+			{
+				--right.get<Int64 &>();
+				right_included = true;
+			}
+		}
 	}
 
-	/// Установить правую границу.
-	void setRight(const Field & point, bool included)
+	bool empty() const
 	{
-		right = point;
-		right_bounded = true;
-		right_included = included;
+		return left_bounded && right_bounded
+			&& (less(right, left)
+				|| ((!left_included || !right_included) && !less(left, right)));
 	}
 
 	/// x входит в range
