@@ -207,7 +207,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			Field left = static_cast<UInt64>(part->left_date);
 			Field right = static_cast<UInt64>(part->right_date);
 
-			if (!date_condition.mayBeTrueInRange(&left, &right, data_types_date))
+			if (!date_condition.mayBeTrueInRange(1, &left, &right, data_types_date))
 				continue;
 
 			if (max_block_number_to_read && part->right > max_block_number_to_read)
@@ -493,6 +493,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	if (parts_with_ranges.empty())
 		return {};
+
+	ProfileEvents::increment(ProfileEvents::SelectedParts, parts_with_ranges.size());
+	ProfileEvents::increment(ProfileEvents::SelectedRanges, sum_ranges);
+	ProfileEvents::increment(ProfileEvents::SelectedMarks, sum_marks);
 
 	BlockInputStreams res;
 
@@ -827,6 +831,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	return res;
 }
 
+
 void MergeTreeDataSelectExecutor::createPositiveSignCondition(
 	ExpressionActionsPtr & out_expression, String & out_column, const Context & context) const
 {
@@ -858,6 +863,7 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
 	out_column = function->getColumnName();
 }
 
+
 /// Получает набор диапазонов засечек, вне которых не могут находиться ключи из заданного диапазона.
 MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 	const MergeTreeData::DataPart::Index & index, const PKCondition & key_condition, const Settings & settings) const
@@ -866,7 +872,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
 	MarkRanges res;
 
-	size_t key_size = data.getSortDescription().size();
+	size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
 	size_t marks_count = index.at(0).get()->size();
 
 	/// Если индекс не используется.
@@ -881,12 +887,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 			* Если подходит, разбиваем его на более мелкие и кладем их в стек. Если нет - выбрасываем его.
 			* Если отрезок уже длиной в одну засечку, добавляем его в ответ и выбрасываем.
 			*/
-		std::vector<MarkRange> ranges_stack;
-		ranges_stack.push_back(MarkRange(0, marks_count));
+		std::vector<MarkRange> ranges_stack{ {0, marks_count} };
 
 		/// NOTE Лишнее копирование объектов типа Field для передачи в PKCondition.
-		Row index_left(key_size);
-		Row index_right(key_size);
+		Row index_left(used_key_size);
+		Row index_right(used_key_size);
 
 		while (!ranges_stack.empty())
 		{
@@ -896,22 +901,24 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 			bool may_be_true;
 			if (range.end == marks_count)
 			{
-				for (size_t i = 0; i < key_size; ++i)
+				for (size_t i = 0; i < used_key_size; ++i)
 				{
 					index_left[i] = (*index[i].get())[range.begin];
 				}
 
-				may_be_true = key_condition.mayBeTrueAfter(&index_left[0], data.primary_key_data_types);
+				may_be_true = key_condition.mayBeTrueAfter(
+					used_key_size, &index_left[0], data.primary_key_data_types);
 			}
 			else
 			{
-				for (size_t i = 0; i < key_size; ++i)
+				for (size_t i = 0; i < used_key_size; ++i)
 				{
 					index_left[i] = (*index[i].get())[range.begin];
 					index_right[i] = (*index[i].get())[range.end];
 				}
 
-				may_be_true = key_condition.mayBeTrueInRange(&index_left[0], &index_right[0], data.primary_key_data_types);
+				may_be_true = key_condition.mayBeTrueInRange(
+					used_key_size, &index_left[0], &index_right[0], data.primary_key_data_types);
 			}
 
 			if (!may_be_true)

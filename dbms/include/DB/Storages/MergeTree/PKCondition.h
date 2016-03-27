@@ -168,6 +168,7 @@ public:
 	}
 };
 
+
 class ASTSet;
 
 
@@ -194,14 +195,17 @@ public:
 	/// Выполнимо ли условие в диапазоне ключей.
 	/// left_pk и right_pk должны содержать все поля из sort_descr в соответствующем порядке.
 	/// data_types - типы столбцов первичного ключа.
-	bool mayBeTrueInRange(const Field * left_pk, const Field * right_pk, const DataTypes & data_types) const;
+	bool mayBeTrueInRange(size_t used_key_size, const Field * left_pk, const Field * right_pk, const DataTypes & data_types) const;
 
 	/// Выполнимо ли условие в полубесконечном (не ограниченном справа) диапазоне ключей.
 	/// left_pk должен содержать все поля из sort_descr в соответствующем порядке.
-	bool mayBeTrueAfter(const Field * left_pk, const DataTypes & data_types) const;
+	bool mayBeTrueAfter(size_t used_key_size, const Field * left_pk, const DataTypes & data_types) const;
 
 	/// Проверяет, что индекс не может быть использован.
 	bool alwaysUnknownOrTrue() const;
+
+	/// Получить максимальный номер используемого в условии элемента первичного ключа.
+	size_t getMaxKeyColumn() const;
 
 	/// Наложить дополнительное условие: значение в столбце column должно быть в диапазоне range.
 	/// Возвращает, есть ли такой столбец в первичном ключе.
@@ -262,7 +266,14 @@ private:
 	typedef std::vector<RPNElement> RPN;
 	typedef std::map<String, size_t> ColumnIndices;
 
-	bool mayBeTrueInRange(const Field * left_pk, const Field * right_pk, const DataTypes & data_types, bool right_bounded) const;
+	bool mayBeTrueInRange(
+		size_t used_key_size,
+		const Field * left_pk,
+		const Field * right_pk,
+		const DataTypes & data_types,
+		bool right_bounded) const;
+
+	bool mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, const DataTypes & data_types) const;
 
 	void traverseAST(ASTPtr & node, const Context & context, Block & block_with_constants);
 	bool atomFromAST(ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);

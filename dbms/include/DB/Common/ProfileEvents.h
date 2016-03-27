@@ -84,6 +84,10 @@
 	M(ReplicaPartialShutdown) \
 	M(ReplicaPermanentlyReadonly) \
 	\
+	M(SelectedParts) \
+	M(SelectedRanges) \
+	M(SelectedMarks) \
+	\
 	M(END)
 
 namespace ProfileEvents

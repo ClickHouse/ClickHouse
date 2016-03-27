@@ -402,31 +402,138 @@ static void applyFunction(
 }
 
 
-bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk, const DataTypes & data_types, bool right_bounded) const
+/** Индекс представляет собой значение первичного ключа каждые index_granularity строк.
+  * Такое значение называется "засечкой" (mark). То есть, индекс состоит из засечек.
+  *
+  * Первичный ключ - это кортеж.
+  * Данные отсортированы по первичному ключу в смысле лексикографического порядка над кортежами.
+  *
+  * Пара засечек задаёт отрезок в отношении порядка над кортежами.
+  * Обозначим его так: [ x1 y1 z1 .. x2 y2 z2 ],
+  *  где x1 y1 z1 - кортеж - значение первичного ключа в левой границе отрезка;
+  *      x2 y2 z2 - кортеж - значение первичного ключа в правой границе отрезка.
+  * В этом отрезке лежат данные, находящиеся между этими засечками.
+  *
+  * Или, последняя засечка задаёт открытый справа диапазон: [ a b c .. +inf )
+  *
+  * Множество всех возможных кортежей можно рассматривать как n-мерное пространство, где n - размер кортежа.
+  * Диапазон кортежей задаёт какое-то подмножество этого пространства.
+  *
+  * Паралелограммами (также можно встретить термин "брус")
+  *  будем называть поднможества n-мерного пространства, являющиеся прямым произведением одномерных диапазонов.
+  * При этом, одномерным диапазоном может быть: точка, отрезок, интервал, полуинтервал, неограниченный слева, неограниченный справа...
+  *
+  * Диапазон кортежей всегда можно представить в виде объединения параллелограммов.
+  * Например, диапазон [ x1 y1 .. x2 y2 ] при x1 != x2 равен объединению следующих трёх параллелограммов:
+  * [x1]       x [y1 .. +inf)
+  * (x1 .. x2) x (-inf .. +inf)
+  * [x2]       x (-inf .. y2]
+  *
+  * Или, например, диапазон [ x1 y1 .. +inf ] равен объединению следующих двух параллелограммов:
+  * [x1]         x [y1 .. +inf)
+  * (x1 .. +inf) x (-inf .. +inf)
+  * Легко заметить, что это является частным случаем варианта выше.
+  *
+  * Это важно, потому что нам легко проверять выполнимость условия над параллелограммом,
+  *  и поэтому, выполнимость условия над диапазоном кортежей будем проверять через выполнимость условия
+  *  над хотя бы одним параллелограммом, из которого этот диапазон состоит.
+  */
+
+template <typename F>
+static bool forAnyParallelogram(
+	size_t key_size,
+	const Field * key_left,
+	const Field * key_right,
+	bool left_bounded,
+	bool right_bounded,
+	std::vector<Range> & parallelogram,
+	size_t prefix_size,
+	F && callback)
 {
-	/// Найдем диапазоны элементов ключа.
-	std::vector<Range> key_ranges(sort_descr.size(), Range());
+	if (!left_bounded && !right_bounded)
+		return callback(parallelogram);
+
+	if (left_bounded && right_bounded)
+	{
+		/// Пройдём по совпадающим элементам ключа.
+		while (prefix_size < key_size)
+		{
+			if (key_left[prefix_size] == key_right[prefix_size])
+			{
+				/// Точечные диапазоны.
+				parallelogram[prefix_size] = Range(key_left[prefix_size]);
+				++prefix_size;
+			}
+			else
+				break;
+		}
+	}
+
+	if (prefix_size == key_size)
+		return callback(parallelogram);
+
+	if (prefix_size + 1 == key_size)
+	{
+		if (left_bounded && right_bounded)
+			parallelogram[prefix_size] = Range(key_left[prefix_size], true, key_right[prefix_size], true);
+		else if (left_bounded)
+			parallelogram[prefix_size] = Range::createLeftBounded(key_left[prefix_size], true);
+		else if (right_bounded)
+			parallelogram[prefix_size] = Range::createRightBounded(key_right[prefix_size], true);
+
+		return callback(parallelogram);
+	}
+
+	/// [x1]       x [y1 .. +inf)
+
+	if (left_bounded)
+	{
+		parallelogram[prefix_size] = Range(key_left[prefix_size]);
+		if (forAnyParallelogram(key_size, key_left, key_right, true, false, parallelogram, prefix_size + 1, callback))
+			return true;
+	}
+
+	/// (x1 .. x2) x (-inf .. +inf)
+
+	if (left_bounded && right_bounded)
+		parallelogram[prefix_size] = Range(key_left[prefix_size], false, key_right[prefix_size], false);
+	else if (left_bounded)
+		parallelogram[prefix_size] = Range::createLeftBounded(key_left[prefix_size], false);
+	else if (right_bounded)
+		parallelogram[prefix_size] = Range::createRightBounded(key_right[prefix_size], false);
+
+	if (callback(parallelogram))
+		return true;
+
+	/// [x2]       x (-inf .. y2]
 
 	if (right_bounded)
 	{
-		for (size_t i = 0; i < sort_descr.size(); ++i)
-		{
-			if (left_pk[i] == right_pk[i])
-			{
-				key_ranges[i] = Range(left_pk[i]);
-			}
-			else
-			{
-				key_ranges[i] = Range(left_pk[i], true, right_pk[i], true);
-				break;
-			}
-		}
-	}
-	else
-	{
-		key_ranges[0] = Range::createLeftBounded(left_pk[0], true);
+		parallelogram[prefix_size] = Range(key_right[prefix_size]);
+		if (forAnyParallelogram(key_size, key_left, key_right, false, true, parallelogram, prefix_size + 1, callback))
+			return true;
 	}
 
+	return false;
+}
+
+
+bool PKCondition::mayBeTrueInRange(
+	size_t used_key_size,
+	const Field * left_pk,
+	const Field * right_pk,
+	const DataTypes & data_types,
+	bool right_bounded) const
+{
+	std::vector<Range> key_ranges(used_key_size, Range());
+
+	return forAnyParallelogram(used_key_size, left_pk, right_pk, true, right_bounded, key_ranges, 0,
+		[&] (const std::vector<Range> & key_ranges) { return mayBeTrueInRangeImpl(key_ranges, data_types); });
+}
+
+
+bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, const DataTypes & data_types) const
+{
 	std::vector<BoolMask> rpn_stack;
 	for (size_t i = 0; i < rpn.size(); ++i)
 	{
@@ -558,15 +665,19 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 	return rpn_stack[0].can_be_true;
 }
 
-bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk, const DataTypes & data_types) const
+
+bool PKCondition::mayBeTrueInRange(
+	size_t used_key_size, const Field * left_pk, const Field * right_pk, const DataTypes & data_types) const
 {
-	return mayBeTrueInRange(left_pk, right_pk, data_types, true);
+	return mayBeTrueInRange(used_key_size, left_pk, right_pk, data_types, true);
 }
 
-bool PKCondition::mayBeTrueAfter(const Field * left_pk, const DataTypes & data_types) const
+bool PKCondition::mayBeTrueAfter(
+	size_t used_key_size, const Field * left_pk, const DataTypes & data_types) const
 {
-	return mayBeTrueInRange(left_pk, nullptr, data_types, false);
+	return mayBeTrueInRange(used_key_size, left_pk, nullptr, data_types, false);
 }
+
 
 static const ASTSet & inFunctionToSet(const ASTPtr & in_function)
 {
@@ -632,10 +743,8 @@ bool PKCondition::alwaysUnknownOrTrue() const
 {
 	std::vector<UInt8> rpn_stack;
 
-	for (size_t i = 0; i < rpn.size(); ++i)
+	for (const auto & element : rpn)
 	{
-		const auto & element = rpn[i];
-
 		if (element.function == RPNElement::FUNCTION_UNKNOWN
 			|| element.function == RPNElement::ALWAYS_TRUE)
 		{
@@ -671,6 +780,24 @@ bool PKCondition::alwaysUnknownOrTrue() const
 	}
 
 	return rpn_stack[0];
+}
+
+
+size_t PKCondition::getMaxKeyColumn() const
+{
+	size_t res = 0;
+	for (const auto & element : rpn)
+	{
+		if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE
+			|| element.function == RPNElement::FUNCTION_IN_RANGE
+			|| element.function == RPNElement::FUNCTION_IN_SET
+			|| element.function == RPNElement::FUNCTION_NOT_IN_SET)
+		{
+			if (element.key_column > res)
+				res = element.key_column;
+		}
+	}
+	return res;
 }
 
 
