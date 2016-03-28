@@ -659,9 +659,7 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
 				hardCleanup();
 			}
 			else if (ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED)
-			{
-				/// nothing here
-			}
+				unfreezeSourcePartition();
 			else if (ex.code() == ErrorCodes::RESHARDING_DISTRIBUTED_JOB_ON_HOLD)
 			{
 				/// The current distributed job is on hold and one or more required nodes

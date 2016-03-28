@@ -8,10 +8,15 @@
 
 #include <common/logger_useful.h>
 
+/// This type specifies the possible behaviors of an object pool allocator.
 enum class PoolMode
 {
+	/// Get exactly one object from a given pool.
 	GET_ONE = 0,
+	/// Get a number of objects from a given pool, this number being
+	/// read from a configuration parameter.
 	GET_MANY,
+	/// Get all the objects from a given pool.
 	GET_ALL
 };
 

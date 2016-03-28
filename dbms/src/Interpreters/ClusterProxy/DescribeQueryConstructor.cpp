@@ -9,16 +9,20 @@ namespace DB
 
 namespace
 {
-	BlockExtraInfo toBlockExtraInfo(const Cluster::Address & address)
-	{
-		BlockExtraInfo block_extra_info;
-		block_extra_info.host = address.host_name;
-		block_extra_info.resolved_address = address.resolved_address.toString();
-		block_extra_info.port = address.port;
-		block_extra_info.user = address.user;
-		block_extra_info.is_valid = true;
-		return block_extra_info;
-	}
+
+constexpr PoolMode pool_mode = PoolMode::GET_ALL;
+
+BlockExtraInfo toBlockExtraInfo(const Cluster::Address & address)
+{
+	BlockExtraInfo block_extra_info;
+	block_extra_info.host = address.host_name;
+	block_extra_info.resolved_address = address.resolved_address.toString();
+	block_extra_info.port = address.port;
+	block_extra_info.user = address.user;
+	block_extra_info.is_valid = true;
+	return block_extra_info;
+}
+
 }
 
 namespace ClusterProxy
@@ -42,7 +46,7 @@ BlockInputStreamPtr DescribeQueryConstructor::createRemote(IConnectionPool * poo
 	const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
 	auto stream = new RemoteBlockInputStream{pool, query, &settings, throttler};
-	stream->setPoolMode(PoolMode::GET_ALL);
+	stream->setPoolMode(pool_mode);
 	stream->appendExtraInfo();
 	return stream;
 }
@@ -51,15 +55,16 @@ BlockInputStreamPtr DescribeQueryConstructor::createRemote(ConnectionPoolsPtr & 
 	const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
 	auto stream =  new RemoteBlockInputStream{pools, query, &settings, throttler};
-	stream->setPoolMode(PoolMode::GET_ALL);
+	stream->setPoolMode(pool_mode);
 	stream->appendExtraInfo();
 	return stream;
 }
 
-bool DescribeQueryConstructor::localAndRemote() const
+PoolMode DescribeQueryConstructor::getPoolMode() const
 {
-	return true;
+	return pool_mode;
 }
+
 
 }
 

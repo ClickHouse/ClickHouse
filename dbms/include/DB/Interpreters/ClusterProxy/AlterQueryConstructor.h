@@ -18,7 +18,7 @@ public:
 		const Settings & settings, ThrottlerPtr throttler, const Context & context) override;
 	BlockInputStreamPtr createRemote(ConnectionPoolsPtr & pools, const std::string & query,
 		const Settings & settings, ThrottlerPtr throttler, const Context & context) override;
-	bool localAndRemote() const override;
+	PoolMode getPoolMode() const override;
 };
 
 }

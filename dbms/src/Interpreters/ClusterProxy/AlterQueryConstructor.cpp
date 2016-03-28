@@ -5,6 +5,13 @@
 namespace DB
 {
 
+namespace
+{
+
+constexpr PoolMode pool_mode = PoolMode::GET_ONE;
+
+}
+
 namespace ClusterProxy
 {
 
@@ -18,7 +25,7 @@ BlockInputStreamPtr AlterQueryConstructor::createRemote(IConnectionPool * pool, 
 	const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
 	auto stream = new RemoteBlockInputStream{pool, query, &settings, throttler};
-	stream->setPoolMode(PoolMode::GET_ONE);
+	stream->setPoolMode(pool_mode);
 	return stream;
 }
 
@@ -26,13 +33,13 @@ BlockInputStreamPtr AlterQueryConstructor::createRemote(ConnectionPoolsPtr & poo
 	const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
 	auto stream = new RemoteBlockInputStream{pools, query, &settings, throttler};
-	stream->setPoolMode(PoolMode::GET_ONE);
+	stream->setPoolMode(pool_mode);
 	return stream;
 }
 
-bool AlterQueryConstructor::localAndRemote() const
+PoolMode AlterQueryConstructor::getPoolMode() const
 {
-	return false;
+	return pool_mode;
 }
 
 }

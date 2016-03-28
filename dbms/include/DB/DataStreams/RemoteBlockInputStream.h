@@ -42,6 +42,7 @@ public:
 
 	~RemoteBlockInputStream() override;
 
+	/// Specify how we allocate connections on a shard.
 	void setPoolMode(PoolMode pool_mode_);
 
 	/// Кроме блоков, получить информацию о блоках.
