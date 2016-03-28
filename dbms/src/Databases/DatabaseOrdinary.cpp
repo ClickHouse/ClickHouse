@@ -428,4 +428,10 @@ void DatabaseOrdinary::shutdown()
 	tables.clear();
 }
 
+
+void DatabaseOrdinary::drop()
+{
+	/// Дополнительных действий по удалению не требуется.
+}
+
 }

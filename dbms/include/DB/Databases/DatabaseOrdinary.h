@@ -44,6 +44,7 @@ public:
 	ASTPtr getCreateQuery(const String & table_name) const override;
 
 	void shutdown() override;
+	void drop() override;
 };
 
 }

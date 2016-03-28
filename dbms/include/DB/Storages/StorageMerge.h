@@ -1,16 +1,11 @@
 #pragma once
 
 #include <DB/Common/OptimizedRegularExpression.h>
-
-#include <DB/Interpreters/Context.h>
 #include <DB/Storages/IStorage.h>
 
 
 namespace DB
 {
-
-class StorageMerge;
-typedef Poco::SharedPtr<StorageMerge> StorageMergePtr;
 
 /** Таблица, представляющая собой объединение произвольного количества других таблиц.
   * У всех таблиц должна быть одинаковая структура.

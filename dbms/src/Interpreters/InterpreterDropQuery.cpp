@@ -126,7 +126,10 @@ BlockIO InterpreterDropQuery::execute()
 			throw Exception("New table appeared in database being dropped. Try dropping it again.", ErrorCodes::DATABASE_NOT_EMPTY);
 
 		/// Удаляем информацию о БД из оперативки
-		context.detachDatabase(database_name);
+		auto database = context.detachDatabase(database_name);
+
+		/// Удаляем БД.
+		database->drop();
 
 		Poco::File(data_path).remove(false);
 		Poco::File(metadata_path).remove(false);

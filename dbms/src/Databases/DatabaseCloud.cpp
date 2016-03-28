@@ -109,9 +109,10 @@ String DatabaseCloud::getNameOfNodeWithTables(const String & table_name) const
 {
 	Hash hash = getTableHash(table_name);
 	String res;
-	WriteBufferFromString out(res);
-	writeText(hash.first % TABLE_TO_NODE_DIVISOR, out);
-	out.next();
+	{
+		WriteBufferFromString out(res);
+		writeText(hash.first % TABLE_TO_NODE_DIVISOR, out);
+	}
 	return res;
 }
 
@@ -119,11 +120,11 @@ String DatabaseCloud::getNameOfNodeWithTables(const String & table_name) const
 static String hashToHex(Hash hash)
 {
 	String res;
-	WriteBufferFromString str_out(res);
-	HexWriteBuffer hex_out(str_out);
-	writePODBinary(hash, hex_out);
-	hex_out.next();
-	str_out.next();
+	{
+		WriteBufferFromString str_out(res);
+		HexWriteBuffer hex_out(str_out);
+		writePODBinary(hash, hex_out);
+	}
 	return res;
 }
 
@@ -177,6 +178,16 @@ struct TableSet
 		read(in);
 	}
 
+	String toString() const
+	{
+		String res;
+		{
+			WriteBufferFromString out(res);
+			write(out);
+		}
+		return res;
+	}
+
 	void write(WriteBuffer & buf) const
 	{
 		writeCString("Version 1\n", buf);
@@ -219,6 +230,16 @@ struct LocalTableSet
 	{
 		ReadBufferFromString in(data);
 		read(in);
+	}
+
+	String toString() const
+	{
+		String res;
+		{
+			WriteBufferFromString out(res);
+			write(out);
+		}
+		return res;
 	}
 
 	void write(WriteBuffer & buf) const
@@ -469,6 +490,101 @@ ASTPtr DatabaseCloud::getCreateQuery(const String & table_name) const
 }
 
 
+void DatabaseCloud::attachTable(const String & table_name, const StoragePtr & table)
+{
+	throw Exception("Attaching tables to cloud database is not supported", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+StoragePtr DatabaseCloud::detachTable(const String & table_name)
+{
+	throw Exception("Detaching tables from cloud database is not supported", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+
+void DatabaseCloud::removeTable(const String & table_name)
+{
+	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
+
+	/// Ищем локальную таблицу.
+	/// Если не нашли - ищем облачную таблицу в ZooKeeper.
+
+	String table_name_escaped = escapeForFileName(table_name);
+	if (Poco::File(data_path + table_name_escaped).exists())
+	{
+		/// Удаляем информация о локальной таблице из ZK.
+		while (true)
+		{
+			zkutil::Stat stat;
+			String local_tables_node_path = zookeeper_path + "/local_tables/" + name + "/" + getNameOfNodeWithTables(table_name);
+			String old_local_tables_value = zookeeper->get(local_tables_node_path, &stat);
+
+			LocalTableSet local_tables_info(old_local_tables_value);
+			Hash table_hash = getTableHash(table_name);
+
+			auto it = local_tables_info.map.find(table_hash);
+			if (it == local_tables_info.map.end())
+				break;		/// Таблицу уже удалили.
+
+			local_tables_info.map.erase(it);
+
+			String new_local_tables_value = local_tables_info.toString();
+
+			auto code = zookeeper->trySet(local_tables_node_path, new_local_tables_value, stat.version);
+
+			if (code == ZOK)
+				break;
+			else if (code == ZBADVERSION)
+				continue;	/// Узел успели поменять - попробуем ещё раз.
+			else
+				throw zkutil::KeeperException(code, local_tables_node_path);
+		}
+
+		/// Удаляем локальную таблицу из кэша.
+		{
+			std::lock_guard<std::mutex> lock(local_tables_mutex);
+			local_tables_cache.erase(table_name);
+		}
+	}
+	else
+	{
+		/// Удаляем таблицу из ZK, а также запоминаем список серверов, на которых расположены локальные таблицы.
+		TableDescription description;
+
+		while (true)
+		{
+			zkutil::Stat stat;
+			String tables_node_path = zookeeper_path + "/tables/" + name + "/" + getNameOfNodeWithTables(table_name);
+			String old_tables_value = zookeeper->get(tables_node_path, &stat);
+
+			TableSet tables_info(old_tables_value);
+
+			auto it = tables_info.map.find(table_name);
+			if (it == tables_info.map.end())
+				break;		/// Таблицу уже удалили.
+
+			description = it->second;
+			tables_info.map.erase(it);
+
+			String new_tables_value = tables_info.toString();
+
+			auto code = zookeeper->trySet(tables_node_path, new_tables_value, stat.version);
+
+			if (code == ZOK)
+				break;
+			else if (code == ZBADVERSION)
+				continue;	/// Узел успели поменять - попробуем ещё раз.
+			else
+				throw zkutil::KeeperException(code, tables_node_path);
+		}
+
+		if (!description.local_table_name.empty() && !description.hosts.empty())
+		{
+			/// Удаление локальных таблиц.
+		}
+	}
+}
+
+
 void DatabaseCloud::shutdown()
 {
 	/// Нельзя удерживать блокировку во время shutdown.
@@ -486,6 +602,12 @@ void DatabaseCloud::shutdown()
 		std::lock_guard<std::mutex> lock(local_tables_mutex);
 		local_tables_cache.clear();
 	}
+}
+
+
+void DatabaseCloud::drop()
+{
+
 }
 
 }
