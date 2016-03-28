@@ -143,7 +143,7 @@ try
 	if (options.count("help"))
 	{
 		std::cout << "Reads uncompressed wikistat data from stdin and writes transformed data in tsv format." << std::endl;
-		std::cout << "Usage: " << argv[0] << " --time='YYYY-MM-DD hh:00:00'" << std::endl;
+		std::cout << "Usage: " << argv[0] << " --time='YYYY-MM-DD hh:00:00' < in > out" << std::endl;
 		std::cout << desc << std::endl;
 		return 1;
 	}
