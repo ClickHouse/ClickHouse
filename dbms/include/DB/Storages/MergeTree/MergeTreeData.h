@@ -403,10 +403,6 @@ public:
 	  */
 	size_t getPartitionSize(const std::string & partition_name) const;
 
-	/** Возвращает хэш от партиции.
-	  */
-	std::string computePartitionHash(const std::string & partition_name) const;
-
 	size_t getColumnSize(const std::string & name) const
 	{
 		std::lock_guard<std::mutex> lock{data_parts_mutex};

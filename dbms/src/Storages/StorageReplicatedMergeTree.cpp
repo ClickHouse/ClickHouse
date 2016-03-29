@@ -3625,8 +3625,8 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 			resharding_worker.addPartitions(coordinator_id, partition_list);
 			resharding_worker.waitForCheckCompletion(coordinator_id);
 
-			/// At this point, all the participating nodes know exactly the number
-			/// of partitions that are to be processed.
+			/// At this point, all the performers know exactly the number of partitions
+			/// that are to be processed.
 
 			auto count = resharding_worker.getPartitionCount(coordinator_id);
 			if (count == 0)
@@ -3640,8 +3640,8 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 
 			resharding_worker.waitForOptOutCompletion(coordinator_id, old_node_count);
 
-			/// At this point, all the participating nodes that actually have some
-			/// partitions are in a coherent state.
+			/// At this point, all the performers that actually have some partitions
+			/// are in a coherent state.
 
 			if (partition_list.empty())
 				return;

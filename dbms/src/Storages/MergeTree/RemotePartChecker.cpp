@@ -1,9 +1,9 @@
 #include <DB/Storages/MergeTree/RemotePartChecker.h>
+#include <DB/Storages/MergeTree/ReshardingWorker.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/IO/ReadBufferFromHTTP.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
-#include <DB/Common/SHA512Utils.h>
 
 namespace DB
 {
@@ -45,7 +45,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 			status = Status::NOT_FOUND;
 		else
 		{
-			auto computed_hash = SHA512Utils::computeHashFromFolder(part_path);
+			auto computed_hash = ReshardingWorker::computeHashFromPart(part_path);
 			if (computed_hash != hash)
 				status = Status::INCONSISTENT;
 		}

@@ -394,7 +394,6 @@ add_library (dbms
 	include/DB/Common/getNumberOfPhysicalCPUCores.h
 	include/DB/Common/BitHelpers.h
 	include/DB/Common/BlockFilterCreator.h
-	include/DB/Common/SHA512Utils.h
 	include/DB/IO/CompressedStream.h
 	include/DB/IO/ReadBufferFromFileDescriptor.h
 	include/DB/IO/CompressedWriteBuffer.h
@@ -563,7 +562,6 @@ add_library (dbms
 	src/Common/Exception.cpp
 	src/Common/ShellCommand.cpp
 	src/Common/getNumberOfPhysicalCPUCores.cpp
-	src/Common/SHA512Utils.cpp
 
 	src/Core/Field.cpp
 	src/Core/FieldVisitors.cpp
