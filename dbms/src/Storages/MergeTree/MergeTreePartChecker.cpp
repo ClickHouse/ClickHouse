@@ -60,7 +60,7 @@ struct Stream
 
 	size_t read(size_t rows)
 	{
-		if (dynamic_cast<const DataTypeString *>(&*type))
+		if (typeid_cast<const DataTypeString *>(type.get()))
 		{
 			for (size_t i = 0; i < rows; ++i)
 			{
@@ -80,23 +80,23 @@ struct Stream
 		else
 		{
 			size_t length;
-			if(		dynamic_cast<const DataTypeUInt8 *>(&*type) ||
-					dynamic_cast<const DataTypeInt8 *>(&*type))
+			if(		typeid_cast<const DataTypeUInt8 *>(type.get()) ||
+					typeid_cast<const DataTypeInt8 *>(type.get()))
 				length = sizeof(UInt8);
-			else if(dynamic_cast<const DataTypeUInt16 *>(&*type) ||
-					dynamic_cast<const DataTypeInt16 *>(&*type) ||
-					dynamic_cast<const DataTypeDate *>(&*type))
+			else if(typeid_cast<const DataTypeUInt16 *>(type.get()) ||
+					typeid_cast<const DataTypeInt16 *>(type.get()) ||
+					typeid_cast<const DataTypeDate *>(type.get()))
 				length = sizeof(UInt16);
-			else if(dynamic_cast<const DataTypeUInt32 *>(&*type) ||
-					dynamic_cast<const DataTypeInt32 *>(&*type) ||
-					dynamic_cast<const DataTypeFloat32 *>(&*type) ||
-					dynamic_cast<const DataTypeDateTime *>(&*type))
+			else if(typeid_cast<const DataTypeUInt32 *>(type.get()) ||
+					typeid_cast<const DataTypeInt32 *>(type.get()) ||
+					typeid_cast<const DataTypeFloat32 *>(type.get()) ||
+					typeid_cast<const DataTypeDateTime *>(type.get()))
 				length = sizeof(UInt32);
-			else if(dynamic_cast<const DataTypeUInt64 *>(&*type) ||
-					dynamic_cast<const DataTypeInt64 *>(&*type) ||
-					dynamic_cast<const DataTypeFloat64 *>(&*type))
+			else if(typeid_cast<const DataTypeUInt64 *>(type.get()) ||
+					typeid_cast<const DataTypeInt64 *>(type.get()) ||
+					typeid_cast<const DataTypeFloat64 *>(type.get()))
 				length = sizeof(UInt64);
-			else if (auto string = dynamic_cast<const DataTypeFixedString *>(&*type))
+			else if (auto string = typeid_cast<const DataTypeFixedString *>(type.get()))
 				length = string->getN();
 			else
 				throw Exception("Unexpected data type: " + type->getName() + " of column " + name, ErrorCodes::UNKNOWN_TYPE);
@@ -182,7 +182,7 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 
 	try
 	{
-		if (auto array = dynamic_cast<const DataTypeArray *>(&*type))
+		if (auto array = typeid_cast<const DataTypeArray *>(type.get()))
 		{
 			String sizes_name = DataTypeNested::extractNestedTableName(name);
 			Stream sizes_stream(path, escapeForFileName(sizes_name) + ".size0", new DataTypeUInt64);
@@ -220,7 +220,7 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 
 			return rows;
 		}
-		else if (dynamic_cast<const DataTypeAggregateFunction *>(&*type))
+		else if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))
 		{
 			Stream data_stream(path, escapeForFileName(name), type);
 			data_stream.ignore();
