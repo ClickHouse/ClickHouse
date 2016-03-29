@@ -22,11 +22,9 @@ class Context;
 class Cluster;
 class StorageReplicatedMergeTree;
 
-/** Исполнитель задач перешардирования.
-  * Рабоает в фоновом режиме внутри одного потока.
-  * Следит за появлением задач и назначает их на выполнение.
-  * Задачи выполняются последовательно.
-  */
+/// Performer of resharding jobs. It works as a background task within a thread.
+/// Its main duties are to keep track of newly submitted resharding jobs and
+/// to execute them sequentially.
 class ReshardingWorker final
 {
 	friend class AnomalyMonitor;
@@ -34,13 +32,13 @@ class ReshardingWorker final
 public:
 	using PartitionList = std::vector<std::string>;
 
-	/// Possible status values of a coordinator or a node that
+	/// Possible status values of a coordinator or a performer that
 	/// has subscribed to a coordinator.
 	enum StatusCode
 	{
 		STATUS_OK = 0,
-		STATUS_ERROR,	/// Произошла ошибка на одном исполнителе.
-		STATUS_ON_HOLD	/// Задача приостановлена.
+		STATUS_ERROR,	/// An error occurred on a performer.
+		STATUS_ON_HOLD	/// Job is stopped.
 	};
 
 public:
@@ -52,29 +50,29 @@ public:
 
 	~ReshardingWorker();
 
-	/// Start the thread which performs resharding jobs.
+	/// Start the job tracker thread.
 	void start();
 
-	/// Stop the thread which performs resharding jobs.
-	/// If any job is in progress, put it on hold for further execution.
+	/// Stop the job tracker thread. If any job is in progress, put it on hold
+	/// for future execution.
 	void shutdown();
 
-	/// Прислать запрос на перешардирование.
+	/// Send a request for resharding on the current performer.
 	void submitJob(const ReshardingJob & job);
 
-	/// Был ли поток запущен?
+	/// Is the job tracker thread started?
 	bool isStarted() const;
 
-	/// Создать новый координатор распределённой задачи. Вызывается с инициатора.
+	/// Create a new coordinator for a distributed job. Called from the initiator.
 	std::string createCoordinator(const Cluster & cluster);
 	/// Register a query into a coordinator.
 	void registerQuery(const std::string & coordinator_id, const std::string & query);
-	/// Удалить координатор.
+	/// Clear all the information related to a given coordinator.
 	void deleteCoordinator(const std::string & coordinator_id);
 
-	/// Подписаться к заданному координатору. Вызывается с исполнителя.
+	/// Subscribe the performer, from which this method is called, to a given coordinator.
 	UInt64 subscribe(const std::string & coordinator_id, const std::string & query);
-	/// Отменить подпись к заданному координатору. Вызывается с исполнителя.
+	/// Cancel the aforementionned subscription.
 	void unsubscribe(const std::string & coordinator_id);
 	/// Увеличить количество партиций входящих в одну распределённую задачу. Вызывается с исполнителя.
 	void addPartitions(const std::string & coordinator_id, const PartitionList & partition_list);
@@ -82,13 +80,14 @@ public:
 	/// Returns an iterator to the beginning of the list of uncoordinated jobs.
 	ReshardingWorker::PartitionList::iterator categorizePartitions(const std::string & coordinator_id,
 		ReshardingWorker::PartitionList & partition_list);
-	/// Получить количество партиций входящих в одну распределённую задачу. Вызывается с исполнителя.
+	/// Get the number of partitions of a distributed job. Called from performers.
 	size_t getPartitionCount(const std::string & coordinator_id);
-	/// Получить количество учавствующих узлов.
+	/// Get the number of performers.
 	size_t getNodeCount(const std::string & coordinator_id);
-	/// Ждать завершение проверок на всех исполнителях. Вызывается с исполнителя.
+	/// Wait for all the preliminary sanity checks to be completed on all the performers.
+	/// Called from performers.
 	void waitForCheckCompletion(const std::string & coordinator_id);
-	/// Ждать завершение всех необходмых отмен подписей.
+	/// Wait for all the required unsubscribe operations to be completed.
 	void waitForOptOutCompletion(const std::string & coordinator_id, size_t count);
 
 	/// Set the shard-independent status of a given coordinator.
@@ -99,11 +98,13 @@ public:
 
 	zkutil::RWLock createDeletionLock(const std::string & coordinator_id);
 
-	/// Dump the status messages of the coordinator and all the participating nodes.
+	/// Dump the status messages of the coordinator and all the performers.
 	std::string dumpCoordinatorState(const std::string & coordinator_id);
 
+	static std::string computeHashFromPart(const std::string & path);
+
 private:
-	/// Anomalies that may be detected by the local node.
+	/// Anomalies that may be detected by the current performer.
 	enum AnomalyType
 	{
 		ANOMALY_NONE = 0,
@@ -179,19 +180,21 @@ private:
 	};
 
 private:
-	/// Следить за появлением новых задач. Выполнить их последовательно.
-	void pollAndExecute();
+	/// Keep track of newly submitted jobs. Perform them sequentially.
+	void trackAndPerform();
 
-	/// Подтолкнуть планировщик задач.
-	void jabScheduler();
+	/// Wake up the tracker thread if it was ever sleeping.
+	void wakeUpTrackerThread();
 
-	/// Выполнить задачи, которые были в очереди выполнения при запуске узла.
+	/// Perform all the jobs that were already pending when the ClickHouse instance
+	/// on this node was starting.
 	void performPendingJobs();
 
-	/// Выполнить задачи, которые заданы по путям в БД ZooKeeper.
+	/// Sequentially perform jobs which are specified by their corresponding
+	/// znodes in ZooKeeper.
 	void perform(const Strings & job_nodes);
 
-	/// Выполнить одну задачу.
+	/// Perform one job.
 	void perform(const std::string & job_descriptor, const std::string & job_name);
 
 	/// Разбить куски входящие в партицию на несколько, согласно ключу шардирования.
@@ -199,13 +202,12 @@ private:
 	/// При завершении этого процесса создаётся новая партиция для каждого шарда.
 	void createShardedPartitions();
 
-	/// Копировать все партиции полученные путём перешардирования на каждую реплику
-	/// соответствующих шардов.
+	/// Upload all the partitions resulting from source partition resharding to their
+	/// respective target shards.
 	void publishShardedPartitions();
 
-	/// Для каждого шарда добавить данные из новой партиции этого шарда в таблицу на всех
-	/// репликах входящих в этот же шард. На локальном узле, который выполняет задачу
-	/// перешардирования, удалить данные из первоначальной партиции.
+	/// On each target shard attach its corresponding new sharded partition.
+	/// Locally drop the source partition.
 	void commit();
 
 	void repairLogRecord(LogRecord & log_record);
@@ -214,14 +216,18 @@ private:
 	void executeAttach(LogRecord & log_record);
 	bool checkAttachLogRecord(LogRecord & log_record);
 
-	/// Удалить временные данные с локального узла и ZooKeeper'а.
+	/// Delete temporary data from the local node and ZooKeeper.
 	void softCleanup();
 	void hardCleanup();
 
-	/// Принудительно завершить поток, если выполнено условие.
-	void abortPollingIfRequested();
+	/// Forcibly abort the job tracker thread if requested.
+	void abortTrackingIfRequested();
+	/// Forcibly abort the distributed job coordinated by the given coordinator
+	/// if requested.
 	void abortCoordinatorIfRequested(const std::string & coordinator_id);
+	/// Forcibly abort the recovery of the current distributed job if requested.
 	void abortRecoveryIfRequested();
+	/// Forcibly abort the current job if requested.
 	void abortJobIfRequested();
 
 	/// Get the current job-independent status of the coordinator.
@@ -229,22 +235,25 @@ private:
 	/// Get the status of the current distributed job.
 	StatusCode getStatus();
 
-	/// Зарегистрировать задачу в соответствующий координатор.
-	void attachJob();
-	/// Снять задачу с координатора.
-	void detachJob();
-	/// Ждать завершение загрузок на всех исполнителях.
+	/// Prepare the current job for execution.
+	void initializeJob();
+	/// Remove the current job's data from its coordinator.
+	/// If there is no job left, also delete the coordinator.
+	void finalizeJob();
+	/// Wait for all the necesssary sharded partitions uploads to their respective
+	/// target shards to be completed.
 	void waitForUploadCompletion();
-	///
+	/// Wait for all the performers to be checked in for leader election.
 	void waitForElectionCompletion();
-	/// Wait for all the partition operations to be completed on all the participating nodes.
+	/// Wait for all the changes required by the current distributed resharding job
+	/// to be applied by all the performers on all the target shards.
 	void waitForCommitCompletion();
 
 	size_t getPartitionCountUnlocked(const std::string & coordinator_id);
 
-	/// Detect offline nodes under a given coordinator.
+	/// Detect offline performers under a given coordinator.
 	bool detectOfflineNodes(const std::string & coordinator_id);
-	/// Detect offline nodes under the current job.
+	/// Detect offline performers under the current job.
 	bool detectOfflineNodes();
 
 	bool isPublished();
@@ -256,28 +265,34 @@ private:
 	bool isCommitted();
 	void markAsCommitted();
 
-	///
-	void storeTargetShards();
-	///
-	ShardList getTargetShards(const std::string & hostname, const std::string & job_name);
+	/// Store onto ZooKeeper information about the target shards. It is used
+	/// in order to create the log of operations that apply changes all the
+	/// changes required by the resharding operation.
+	void storeTargetShardsInfo();
 
-	///
+	/// Retrieve from ZooKeeper the aforementioned information about the target shards.
+	ShardList getTargetShardsInfo(const std::string & hostname, const std::string & job_name);
+
+	/// Create the log of operations.
 	void createLog();
 
 	void electLeader();
 	bool isLeader();
 
-	/// Функции, которые создают необходимые объекты для синхронизации
-	/// распределённых задач.
-	zkutil::RWLock createLock();
-	zkutil::RWLock createCoordinatorLock(const std::string & coordinator_id,
+	/// Access the global lock handler.
+	zkutil::RWLock getGlobalLock();
+	/// Acccess the given coordinator lock handler.
+	zkutil::RWLock getCoordinatorLock(const std::string & coordinator_id,
 		bool usable_in_emergency = false);
-	zkutil::SingleBarrier createCheckBarrier(const std::string & coordinator_id);
-	zkutil::SingleBarrier createOptOutBarrier(const std::string & coordinator_id, size_t count);
-	zkutil::SingleBarrier createRecoveryBarrier(const ReshardingJob & job);
-	zkutil::SingleBarrier createUploadBarrier(const ReshardingJob & job);
-	zkutil::SingleBarrier createElectionBarrier(const ReshardingJob & job);
-	zkutil::SingleBarrier createCommitBarrier(const ReshardingJob & job);
+
+	/// The following functions are to design access barrier handlers we use
+	/// to synchronize the progression of distributed jobs.
+	zkutil::SingleBarrier getCheckBarrier(const std::string & coordinator_id);
+	zkutil::SingleBarrier getOptOutBarrier(const std::string & coordinator_id, size_t count);
+	zkutil::SingleBarrier getRecoveryBarrier();
+	zkutil::SingleBarrier getUploadBarrier();
+	zkutil::SingleBarrier getElectionBarrier();
+	zkutil::SingleBarrier getCommitBarrier();
 
 	/// Prevent merging jobs from being performed on the partition that we
 	/// want to reshard on the current host. This operation is persistent:
@@ -292,9 +307,9 @@ private:
 	/// Get the ZooKeeper path of a given coordinator.
 	std::string getCoordinatorPath(const std::string & coordinator_id) const;
 	/// Get the ZooKeeper path of a given job partition.
-	std::string getPartitionPath(const ReshardingJob & job) const;
-	///
-	std::string getLocalJobPath(const ReshardingJob & job) const;
+	std::string getPartitionPath() const;
+	/// Get the ZooKeeper path of the job currently running on this performer.
+	std::string getLocalJobPath() const;
 
 	/// Common code for softCleanup() and hardCleanup().
 	void deleteTemporaryData();
@@ -370,7 +385,7 @@ private:
 
 private:
 	ReshardingJob current_job;
-	std::thread polling_thread;
+	std::thread job_tracker;
 	AnomalyMonitor anomaly_monitor{*this};
 
 	std::string task_queue_path;

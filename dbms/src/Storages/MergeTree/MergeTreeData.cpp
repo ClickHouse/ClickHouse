@@ -17,7 +17,6 @@
 #include <DB/Functions/FunctionFactory.h>
 #include <Poco/DirectoryIterator.h>
 #include <DB/Common/Increment.h>
-#include <DB/Common/SHA512Utils.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -1250,44 +1249,6 @@ size_t MergeTreeData::getPartitionSize(const std::string & partition_name) const
 	}
 
 	return size;
-}
-
-std::string MergeTreeData::computePartitionHash(const std::string & partition_name) const
-{
-	unsigned char hash[SHA512_DIGEST_LENGTH];
-
-	SHA512_CTX ctx;
-	SHA512_Init(&ctx);
-
-	Poco::DirectoryIterator end;
-	Poco::DirectoryIterator end2;
-
-	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
-	{
-		const auto filename = it.name();
-		if (!ActiveDataPartSet::isPartDirectory(filename))
-			continue;
-		if (0 != filename.compare(0, partition_name.size(), partition_name))
-			continue;
-
-		const auto part_path = it.path().absolute().toString();
-		for (Poco::DirectoryIterator it2(part_path); it2 != end2; ++it2)
-		{
-			const auto part_file_path = it2.path().absolute().toString();
-			SHA512Utils::updateHash(ctx, part_file_path);
-		}
-	}
-
-	SHA512_Final(hash, &ctx);
-
-	std::string out;
-	{
-		WriteBufferFromString buf(out);
-		HexWriteBuffer hex_buf(buf);
-		hex_buf.write(reinterpret_cast<const char *>(hash), sizeof(hash));
-	}
-
-	return out;
 }
 
 static std::pair<String, DayNum_t> getMonthNameAndDayNum(const Field & partition)
