@@ -294,16 +294,6 @@ private:
 	zkutil::SingleBarrier getElectionBarrier();
 	zkutil::SingleBarrier getCommitBarrier();
 
-	/// Prevent merging jobs from being performed on the partition that we
-	/// want to reshard on the current host. This operation is persistent:
-	/// even if a node failure occurred, a partition remains frozen as long
-	/// as it is not unfrozen explicitely. So use it with care as regards
-	/// exceptions.
-	void freezeSourcePartition();
-
-	/// Make the partition that we want to reshard available for merging jobs.
-	void unfreezeSourcePartition();
-
 	/// Get the ZooKeeper path of a given coordinator.
 	std::string getCoordinatorPath(const std::string & coordinator_id) const;
 	/// Get the ZooKeeper path of a given job partition.

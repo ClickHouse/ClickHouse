@@ -293,11 +293,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
 	queue.pullLogsToQueue(current_zookeeper, nullptr);
 
-	/// Замораживаем партиции, которые прежне были в этом состоянии.
-	auto frozen_partitions = current_zookeeper->getChildren(replica_path + "/frozen_partitions");
-	for (const auto & partition : frozen_partitions)
-		merger.freezePartition(partition);
-
 	/// В этом потоке реплика будет активирована.
 	restarting_thread.reset(new ReplicatedMergeTreeRestartingThread(*this));
 }
@@ -315,9 +310,6 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
 	/// Отслеживание отставания реплик.
 	zookeeper->createIfNotExists(replica_path + "/min_unprocessed_insert_time", "");
 	zookeeper->createIfNotExists(replica_path + "/max_processed_insert_time", "");
-
-	/// Партиции, для которых временно не проводятся слияния.
-	zookeeper->createIfNotExists(replica_path + "/frozen_partitions", "");
 }
 
 

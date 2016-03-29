@@ -593,9 +593,6 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
 	auto & storage = typeid_cast<StorageReplicatedMergeTree &>(*(generic_storage.get()));
 	current_job.storage = &storage;
 
-	/// Protect the source partition from merging jobs.
-	freezeSourcePartition();
-
 	std::string dumped_coordinator_state;
 
 	auto handle_exception = [&](const std::string & cancel_msg, const std::string & error_msg)
@@ -623,7 +620,6 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
 					dumped_coordinator_state = dumpCoordinatorState(current_job.coordinator_id);
 				}
 				deletion_lock.release();
-				unfreezeSourcePartition();
 				hardCleanup();
 			}
 		}
@@ -715,11 +711,11 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
 			{
 				dumped_coordinator_state = dumpCoordinatorState(current_job.coordinator_id);
 				deletion_lock.release();
-				unfreezeSourcePartition();
 				hardCleanup();
 			}
 			else if (ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED)
-				unfreezeSourcePartition();
+			{
+			}
 			else if (ex.code() == ErrorCodes::RESHARDING_DISTRIBUTED_JOB_ON_HOLD)
 			{
 				/// The current distributed job is on hold and one or more required performers
@@ -757,9 +753,6 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
 	}
 
 	deletion_lock.release();
-	/// Although the source partition has been dropped, the following function
-	/// must be called in order to delete all the data that makes freezing fail-safe.
-	unfreezeSourcePartition();
 	hardCleanup();
 
 	LOG_DEBUG(log, "Resharding job successfully completed.");
@@ -2503,25 +2496,6 @@ zkutil::SingleBarrier ReshardingWorker::getCommitBarrier()
 	commit_barrier.setCancellationHook(hook);
 
 	return commit_barrier;
-}
-
-void ReshardingWorker::freezeSourcePartition()
-{
-	auto zookeeper = context.getZooKeeper();
-	auto & storage = *(current_job.storage);
-
-	zookeeper->createIfNotExists(storage.replica_path + "/frozen_partitions/"
-		+ current_job.partition, "");
-	storage.merger.freezePartition(current_job.partition);
-}
-
-void ReshardingWorker::unfreezeSourcePartition()
-{
-	auto zookeeper = context.getZooKeeper();
-	auto & storage = *(current_job.storage);
-
-	zookeeper->remove(storage.replica_path + "/frozen_partitions/" + current_job.partition);
-	storage.merger.unfreezePartition(current_job.partition);
 }
 
 std::string ReshardingWorker::getCoordinatorPath(const std::string & coordinator_id) const
