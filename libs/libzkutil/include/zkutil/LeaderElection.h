@@ -19,12 +19,35 @@ public:
 	  */
 	LeaderElection(const std::string & path_, ZooKeeper & zookeeper_, LeadershipHandler handler_, const std::string & identifier_ = "")
 		: path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_),
-		shutdown(false), state(WAITING_LEADERSHIP), log(&Logger::get("LeaderElection"))
+		log(&Logger::get("LeaderElection"))
 	{
 		node = EphemeralNodeHolder::createSequential(path + "/leader_election-", zookeeper, identifier);
 
 		std::string node_path = node->getPath();
 		node_name = node_path.substr(node_path.find_last_of('/') + 1);
+
+		/** Если есть ноды с таким же ephemeralOwner, то удалим их.
+		  * Такие ноды могли остаться после неуспешного удаления, если сессия при этом не истекла.
+		  */
+		zkutil::Stat node_stat;
+		zookeeper.get(node_path, &node_stat);
+
+		Strings brothers = zookeeper.getChildren(path);
+		for (const auto & brother : brothers)
+		{
+			if (brother == node_name)
+				continue;
+
+			zkutil::Stat brother_stat;
+			std::string brother_path = path + "/" + brother;
+			zookeeper.get(brother_path, &brother_stat);
+
+			if (brother_stat.ephemeralOwner == node_stat.ephemeralOwner)
+			{
+				LOG_WARNING(log, "Found obsolete ephemeral node from same session, removing: " + brother_path);
+				zookeeper.tryRemoveWithRetries(brother_path);
+			}
+		}
 
 		thread = std::thread(&LeaderElection::threadFunction, this);
 	}
@@ -78,10 +101,10 @@ private:
 	std::string node_name;
 
 	std::thread thread;
-	volatile bool shutdown;
+	volatile bool shutdown = false;
 	zkutil::EventPtr event = new Poco::Event();
 
-	State state;
+	State state = WAITING_LEADERSHIP;
 
 	Logger * log;
 
@@ -111,24 +134,9 @@ private:
 
 				success = true;
 			}
-			catch (const DB::Exception & e)
-			{
-				LOG_ERROR(log, "Exception in LeaderElection: Code: " << e.code() << ". " << e.displayText() << std::endl
-					<< std::endl
-					<< "Stack trace:" << std::endl
-					<< e.getStackTrace().toString());
-			}
-			catch (const Poco::Exception & e)
-			{
-				LOG_ERROR(log, "Poco::Exception in LeaderElection: " << e.code() << ". " << e.displayText());
-			}
-			catch (const std::exception & e)
-			{
-				LOG_ERROR(log, "std::exception in LeaderElection: " << e.what());
-			}
 			catch (...)
 			{
-				LOG_ERROR(log, "Unknown exception in LeaderElection");
+				DB::tryLogCurrentException("LeaderElection");
 			}
 
 			if (!success)

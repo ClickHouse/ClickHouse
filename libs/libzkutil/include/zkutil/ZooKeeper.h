@@ -395,16 +395,38 @@ public:
 	{
 		try
 		{
-			/** Важно, что в случае недоступности ZooKeeper, делаются повторные попытки удалить ноду, пока не истечёт сессия.
+			/** Важно, что в случае недоступности ZooKeeper, делаются повторные попытки удалить ноду.
 			  * Иначе возможна ситуация, когда объект EphemeralNodeHolder уничтожен,
 			  *  но сессия восстановится в течние session timeout, и эфемерная нода в ZooKeeper останется ещё надолго.
-			  * А это может сломать механизм leader election и блокировок.
+			  * Но см. ниже - на самом деле, такая ситуация всё-равно возможна.
 			  */
 			zookeeper.tryRemoveWithRetries(path);
 		}
 		catch (const KeeperException & e)
 		{
 			LOG_ERROR(zookeeper.log, "~EphemeralNodeHolder(): " << e.displayText());
+
+			/** На самом деле, сессия может ещё жить после этой ошибки.
+			  * Поэтому не стоит рассчитывать, что эфемерная нода действительно будет удалена.
+
+			  Ridiculously Long Delay to Expire
+			  When disconnects do happen, the common case should be a very* quick
+			  reconnect to another server, but an extended network outage may
+			  introduce a long delay before a client can reconnect to the ZooKeep‐
+			  er service. Some developers wonder why the ZooKeeper client li‐
+			  brary doesn’t simply decide at some point (perhaps twice the session
+			  timeout) that enough is enough and kill the session itself.
+			  There are two answers to this. First, ZooKeeper leaves this kind of
+			  policy decision up to the developer. Developers can easily implement
+			  such a policy by closing the handle themselves. Second, when a Zoo‐
+			  Keeper ensemble goes down, time freezes. Thus, when the ensemble is
+			  brought back up, session timeouts are restarted. If processes using
+			  ZooKeeper hang in there, they may find out that the long timeout was
+			  due to an extended ensemble failure that has recovered and pick right
+			  up where they left off without any additional startup delay.
+
+			  ZooKeeper: Distributed Process Coordination p118
+			  */
 		}
 	}
 
