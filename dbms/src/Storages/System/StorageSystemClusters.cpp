@@ -21,6 +21,7 @@ StorageSystemClusters::StorageSystemClusters(const std::string & name_, Context 
 		{ "host_name",    new DataTypeString },
 		{ "host_address", new DataTypeString },
 		{ "port",         new DataTypeUInt16 },
+		{ "is_local",     new DataTypeUInt8 },
 		{ "user",         new DataTypeString }
 	}
 	, context(context_)
@@ -51,6 +52,7 @@ BlockInputStreams StorageSystemClusters::read(
 	ColumnPtr host_name_column = new ColumnString;
 	ColumnPtr host_address_column = new ColumnString;
 	ColumnPtr port_column = new ColumnUInt16;
+	ColumnPtr is_local_column = new ColumnUInt8;
 	ColumnPtr user_column = new ColumnString;
 
 	auto updateColumns = [&](const std::string & cluster_name, const Cluster::ShardInfo & shard_info,
@@ -64,6 +66,7 @@ BlockInputStreams StorageSystemClusters::read(
 		host_name_column->insert(address.host_name);
 		host_address_column->insert(address.resolved_address.host().toString());
 		port_column->insert(static_cast<UInt64>(address.port));
+		is_local_column->insert(static_cast<UInt64>(shard_info.isLocal()));
 		user_column->insert(address.user);
 	};
 
@@ -120,6 +123,7 @@ BlockInputStreams StorageSystemClusters::read(
 	block.insert(ColumnWithTypeAndName(host_name_column, new DataTypeString, "host_name"));
 	block.insert(ColumnWithTypeAndName(host_address_column, new DataTypeString, "host_address"));
 	block.insert(ColumnWithTypeAndName(port_column, new DataTypeUInt16, "port"));
+	block.insert(ColumnWithTypeAndName(is_local_column, new DataTypeUInt8, "is_local"));
 	block.insert(ColumnWithTypeAndName(user_column, new DataTypeString, "user"));
 
 	return BlockInputStreams{ 1, new OneBlockInputStream(block) };
