@@ -561,6 +561,7 @@ add_library (dbms
 	src/Common/ConfigProcessor.cpp
 	src/Common/Exception.cpp
 	src/Common/ShellCommand.cpp
+	src/Common/isLocalAddress.cpp
 	src/Common/getNumberOfPhysicalCPUCores.cpp
 
 	src/Core/Field.cpp

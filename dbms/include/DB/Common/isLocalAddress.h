@@ -1,27 +1,25 @@
 #pragma once
 
-#include <DB/Core/Types.h>
-#include <Poco/Util/Application.h>
-#include <Poco/Net/NetworkInterface.h>
-#include <Poco/Net/SocketAddress.h>
+
+namespace Poco
+{
+	namespace Net
+	{
+		class SocketAddress;
+	}
+}
 
 namespace DB
 {
 
-inline bool isLocalAddress(const Poco::Net::SocketAddress & address)
-{
-	const UInt16 clickhouse_port = Poco::Util::Application::instance().config().getInt("tcp_port", 0);
-	static auto interfaces = Poco::Net::NetworkInterface::list();
-
-	if (clickhouse_port == address.port())
-	{
-		return interfaces.end() != std::find_if(interfaces.begin(), interfaces.end(),
-			[&] (const Poco::Net::NetworkInterface & interface) {
-				return interface.address() == address.host();
-			});
-	}
-
-	return false;
-}
+	/** Позволяет проверить, похож ли адрес на localhost.
+	 * Цель этой проверки обычно состоит в том, чтобы сделать предположение,
+	 *  что при хождении на этот адрес через интернет, мы попадём на себя.
+	 * Следует иметь ввиду, что эта проверка делается неточно:
+	 * - адрес просто сравнивается с адресами сетевых интерфейсов;
+	 * - для каждого сетевого интерфейса берётся только первый адрес;
+	 * - не проверяются правила маршрутизации, которые влияют, через какой сетевой интерфейс мы пойдём на заданный адрес.
+	 */
+	bool isLocalAddress(const Poco::Net::SocketAddress & address);
 
 }
