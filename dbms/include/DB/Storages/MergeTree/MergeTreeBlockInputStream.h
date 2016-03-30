@@ -38,75 +38,90 @@ public:
 		min_bytes_to_use_direct_io(min_bytes_to_use_direct_io_), max_read_buffer_size(max_read_buffer_size_),
 		save_marks_in_cache(save_marks_in_cache_)
 	{
-		/** @note можно было бы просто поменять местами reverse в if и else ветках MergeTreeDataSelectExecutor,
-		 *	а этот reverse убрать. */
-		std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
-
-		/// inject columns required for defaults evaluation
-		const auto injected_columns = injectRequiredColumns(column_names);
-		should_reorder = !injected_columns.empty();
-
-		Names pre_column_names;
-
-		if (prewhere_actions)
+		try
 		{
-			pre_column_names = prewhere_actions->getRequiredColumns();
+			/** @note можно было бы просто поменять местами reverse в if и else ветках MergeTreeDataSelectExecutor,
+			*	а этот reverse убрать. */
+			std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
 
-			if (pre_column_names.empty())
-				pre_column_names.push_back(column_names[0]);
+			/// inject columns required for defaults evaluation
+			const auto injected_columns = injectRequiredColumns(column_names);
+			should_reorder = !injected_columns.empty();
 
-			const auto injected_pre_columns = injectRequiredColumns(pre_column_names);
-			if (!injected_pre_columns.empty())
-				should_reorder = true;
+			Names pre_column_names;
 
-			const NameSet pre_name_set(pre_column_names.begin(), pre_column_names.end());
-			/// Если выражение в PREWHERE - не столбец таблицы, не нужно отдавать наружу столбец с ним
-			///  (от storage ожидают получить только столбцы таблицы).
-			remove_prewhere_column = !pre_name_set.count(prewhere_column);
+			if (prewhere_actions)
+			{
+				pre_column_names = prewhere_actions->getRequiredColumns();
 
-			Names post_column_names;
-			for (const auto & name : column_names)
-				if (!pre_name_set.count(name))
-					post_column_names.push_back(name);
+				if (pre_column_names.empty())
+					pre_column_names.push_back(column_names[0]);
 
-			column_names = post_column_names;
+				const auto injected_pre_columns = injectRequiredColumns(pre_column_names);
+				if (!injected_pre_columns.empty())
+					should_reorder = true;
+
+				const NameSet pre_name_set(pre_column_names.begin(), pre_column_names.end());
+				/// Если выражение в PREWHERE - не столбец таблицы, не нужно отдавать наружу столбец с ним
+				///  (от storage ожидают получить только столбцы таблицы).
+				remove_prewhere_column = !pre_name_set.count(prewhere_column);
+
+				Names post_column_names;
+				for (const auto & name : column_names)
+					if (!pre_name_set.count(name))
+						post_column_names.push_back(name);
+
+				column_names = post_column_names;
+			}
+
+			/// will be used to distinguish between PREWHERE and WHERE columns when applying filter
+			column_name_set = NameSet{column_names.begin(), column_names.end()};
+
+			if (check_columns)
+			{
+				/// Под owned_data_part->columns_lock проверим, что все запрошенные столбцы в куске того же типа, что в таблице.
+				/// Это может быть не так во время ALTER MODIFY.
+				if (!pre_column_names.empty())
+					storage.check(owned_data_part->columns, pre_column_names);
+				if (!column_names.empty())
+					storage.check(owned_data_part->columns, column_names);
+
+				pre_columns = storage.getColumnsList().addTypes(pre_column_names);
+				columns = storage.getColumnsList().addTypes(column_names);
+			}
+			else
+			{
+				pre_columns = owned_data_part->columns.addTypes(pre_column_names);
+				columns = owned_data_part->columns.addTypes(column_names);
+			}
+
+			/// Оценим общее количество строк - для прогресс-бара.
+			size_t total_rows = 0;
+			for (const auto & range : all_mark_ranges)
+				total_rows += range.end - range.begin;
+			total_rows *= storage.index_granularity;
+
+			LOG_TRACE(log, "Reading " << all_mark_ranges.size() << " ranges from part " << owned_data_part->name
+				<< ", approx. " << total_rows
+				<< (all_mark_ranges.size() > 1
+					? ", up to " + toString((all_mark_ranges.back().end - all_mark_ranges.front().begin) * storage.index_granularity)
+					: "")
+				<< " rows starting from " << all_mark_ranges.front().begin * storage.index_granularity);
+
+			setTotalRowsApprox(total_rows);
 		}
-
-		/// will be used to distinguish between PREWHERE and WHERE columns when applying filter
-		column_name_set = NameSet{column_names.begin(), column_names.end()};
-
-		if (check_columns)
+		catch (const Exception & e)
 		{
-			/// Под owned_data_part->columns_lock проверим, что все запрошенные столбцы в куске того же типа, что в таблице.
-			/// Это может быть не так во время ALTER MODIFY.
-			if (!pre_column_names.empty())
-				storage.check(owned_data_part->columns, pre_column_names);
-			if (!column_names.empty())
-				storage.check(owned_data_part->columns, column_names);
-
-			pre_columns = storage.getColumnsList().addTypes(pre_column_names);
-			columns = storage.getColumnsList().addTypes(column_names);
+			/// Подозрение на битый кусок. Кусок добавляется в очередь для проверки.
+			if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+				storage.reportBrokenPart(owned_data_part->name);
+			throw;
 		}
-		else
+		catch (...)
 		{
-			pre_columns = owned_data_part->columns.addTypes(pre_column_names);
-			columns = owned_data_part->columns.addTypes(column_names);
+			storage.reportBrokenPart(owned_data_part->name);
+			throw;
 		}
-
-		/// Оценим общее количество строк - для прогресс-бара.
-		size_t total_rows = 0;
-		for (const auto & range : all_mark_ranges)
-			total_rows += range.end - range.begin;
-		total_rows *= storage.index_granularity;
-
-		LOG_TRACE(log, "Reading " << all_mark_ranges.size() << " ranges from part " << owned_data_part->name
-			<< ", approx. " << total_rows
-			<< (all_mark_ranges.size() > 1
-				? ", up to " + toString((all_mark_ranges.back().end - all_mark_ranges.front().begin) * storage.index_granularity)
-				: "")
-			<< " rows starting from " << all_mark_ranges.front().begin * storage.index_granularity);
-
-		setTotalRowsApprox(total_rows);
 	}
 
 	String getName() const override { return "MergeTree"; }
