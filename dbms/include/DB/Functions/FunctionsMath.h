@@ -3,20 +3,10 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Functions/IFunction.h>
 
-#if defined(__x86_64__)
-	#if __clang__
-		#pragma clang diagnostic push
-		#pragma clang diagnostic ignored "-Wshift-negative-value"
-	#endif
-
-	#include <vectorf128.h>
-	#include <vectormath_exp.h>
-	#include <vectormath_trig.h>
-
-	#if __clang__
-		#pragma clang diagnostic pop
-	#endif
-#endif
+/** Более эффективные реализации математических функций возможны при подключении отдельной библиотеки.
+  * Отключено по-умолчанию из соображения совместимости лицензий.
+  */
+#define USE_VECTORIZED_FUNCTIONS 0
 
 
 namespace DB
@@ -182,7 +172,7 @@ struct UnaryFunctionPlain
 	}
 };
 
-#if defined(__x86_64__)
+#if USE_VECTORIZED_FUNCTIONS
 
 template <typename Name, Vec2d(&Function)(const Vec2d &)>
 struct UnaryFunctionVectorized
@@ -457,7 +447,7 @@ struct BinaryFunctionPlain
 	}
 };
 
-#if defined(__x86_64__)
+#if USE_VECTORIZED_FUNCTIONS
 
 template <typename Name, Vec2d(&Function)(const Vec2d &, const Vec2d &)>
 struct BinaryFunctionVectorized
@@ -523,7 +513,7 @@ using FunctionLog10 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Log10Name
 using FunctionSqrt = FunctionMathUnaryFloat64<UnaryFunctionVectorized<SqrtName, sqrt>>;
 
 using FunctionCbrt = FunctionMathUnaryFloat64<UnaryFunctionVectorized<CbrtName,
-#if defined(__x86_64__)
+#if USE_VECTORIZED_FUNCTIONS
 	Power_rational<1, 3>::pow
 #else
 	cbrt
