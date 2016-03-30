@@ -481,7 +481,6 @@ add_library (dbms
 	include/DB/Storages/System/StorageSystemMerges.h
 	include/DB/Storages/VirtualColumnFactory.h
 	include/DB/Storages/StorageReplicatedMergeTree.h
-	include/DB/Storages/StorageChunkRef.h
 	include/DB/Storages/StorageFactory.h
 	include/DB/Storages/MarkCache.h
 	include/DB/Storages/System/StorageSystemReplicas.h
@@ -493,7 +492,6 @@ add_library (dbms
 	include/DB/Storages/ColumnDefault.h
 	include/DB/Storages/ITableDeclaration.h
 	include/DB/Storages/StorageView.h
-	include/DB/Storages/StorageChunks.h
 	include/DB/Storages/System/StorageSystemColumns.h
 	include/DB/Storages/StorageMergeTree.h
 	include/DB/Storages/StorageMaterializedView.h
@@ -621,8 +619,6 @@ add_library (dbms
 	src/Storages/StorageMerge.cpp
 	src/Storages/StorageMergeTree.cpp
 	src/Storages/StorageReplicatedMergeTree.cpp
-	src/Storages/StorageChunks.cpp
-	src/Storages/StorageChunkRef.cpp
 	src/Storages/StorageSet.cpp
 	src/Storages/StorageJoin.cpp
 	src/Storages/VirtualColumnFactory.cpp

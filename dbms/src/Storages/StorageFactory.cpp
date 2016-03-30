@@ -24,8 +24,6 @@
 #include <DB/Storages/StorageFactory.h>
 #include <DB/Storages/StorageView.h>
 #include <DB/Storages/StorageMaterializedView.h>
-#include <DB/Storages/StorageChunks.h>
-#include <DB/Storages/StorageChunkRef.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/StorageSet.h>
 #include <DB/Storages/StorageJoin.h>
@@ -123,17 +121,6 @@ StoragePtr StorageFactory::get(
 			materialized_columns, alias_columns, column_defaults,
 			context.getSettings().max_compress_block_size);
 	}
-	else if (name == "Chunks")
-	{
-		return StorageChunks::create(
-			data_path, table_name, database_name, columns,
-			materialized_columns, alias_columns, column_defaults,
-			context, attach);
-	}
-	else if (name == "ChunkRef")
-	{
-		throw Exception("Table with storage ChunkRef must not be created manually.", ErrorCodes::TABLE_MUST_NOT_BE_CREATED_MANUALLY);
-	}
 	else if (name == "View")
 	{
 		return StorageView::create(
@@ -146,35 +133,6 @@ StoragePtr StorageFactory::get(
 			table_name, database_name, context, query, columns,
 			materialized_columns, alias_columns, column_defaults,
 			attach);
-	}
-	else if (name == "ChunkMerger")
-	{
-		/// ChunkMerger устарел. Вместо него создаём таблицу типа Merge. TODO Через некоторое время, вовсе удалить эту ветку.
-
-		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
-
-		do
-		{
-			if (args_func.size() != 1)
-				break;
-
-			ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
-
-			if (args.size() < 3 || args.size() > 4)
-				break;
-
-			String source_database = reinterpretAsIdentifier(args[0], local_context).name;
-			String table_name_regexp = safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[1]).value);
-
-			return StorageMerge::create(
-				table_name, columns,
-				materialized_columns, alias_columns, column_defaults,
-				source_database, table_name_regexp, context);
-		} while (false);
-
-		throw Exception("Storage ChunkMerger requires from 3 to 4 parameters:"
-			" source database, regexp for source table names, number of chunks to merge, [destination tables name prefix].",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 	}
 	else if (name == "TinyLog")
 	{
