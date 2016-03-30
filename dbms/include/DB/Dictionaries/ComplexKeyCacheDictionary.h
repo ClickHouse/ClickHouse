@@ -614,9 +614,6 @@ private:
 		const std::vector<std::size_t> & in_requested_rows, PresentKeyHandler && on_cell_updated,
 		AbsentKeyHandler && on_key_not_found) const
 	{
-		auto stream = source_ptr->loadKeys(in_key_columns, in_requested_rows);
-		stream->readPrefix();
-
 		MapType<bool> remaining_keys{in_requested_rows.size()};
 		for (const auto row : in_requested_rows)
 			remaining_keys.insert({ in_keys[row], false });
@@ -627,6 +624,9 @@ private:
 		};
 
 		const Poco::ScopedWriteRWLock write_lock{rw_lock};
+
+		auto stream = source_ptr->loadKeys(in_key_columns, in_requested_rows);
+		stream->readPrefix();
 
 		const auto keys_size = dict_struct.key.value().size();
 		StringRefs keys(keys_size);

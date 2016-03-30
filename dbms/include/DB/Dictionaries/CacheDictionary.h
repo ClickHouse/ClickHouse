@@ -577,9 +577,6 @@ private:
 		const std::vector<id_t> & requested_ids, PresentIdHandler && on_cell_updated,
 		AbsentIdHandler && on_id_not_found) const
 	{
-		auto stream = source_ptr->loadIds(requested_ids);
-		stream->readPrefix();
-
 		MapType<UInt8> remaining_ids{requested_ids.size()};
 		for (const auto id : requested_ids)
 			remaining_ids.insert({ id, 0 });
@@ -590,6 +587,9 @@ private:
 		};
 
 		const Poco::ScopedWriteRWLock write_lock{rw_lock};
+
+		auto stream = source_ptr->loadIds(requested_ids);
+		stream->readPrefix();
 
 		while (const auto block = stream->read())
 		{
