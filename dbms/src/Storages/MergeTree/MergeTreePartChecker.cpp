@@ -27,11 +27,15 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+
 struct Stream
 {
 	static const size_t UNKNOWN = std::numeric_limits<size_t>::max();
 
-	DataTypePtr type;
+	bool data_type_is_string = false;
+	size_t data_type_fixed_length = 0;
 	String path;
 	String name;
 
@@ -43,9 +47,36 @@ struct Stream
 	ReadBufferFromFile mrk_file_buf;
 	HashingReadBuffer mrk_hashing_buf;
 
-	Stream(const String & path_, const String & name_, DataTypePtr type_) : type(type_), path(path_), name(name_),
+	Stream(const String & path_, const String & name_, DataTypePtr type) : path(path_), name(name_),
 		file_buf(path + name + ".bin"), compressed_hashing_buf(file_buf), uncompressing_buf(compressed_hashing_buf),
-		uncompressed_hashing_buf(uncompressing_buf), mrk_file_buf(path + name + ".mrk"), mrk_hashing_buf(mrk_file_buf) {}
+		uncompressed_hashing_buf(uncompressing_buf), mrk_file_buf(path + name + ".mrk"), mrk_hashing_buf(mrk_file_buf)
+	{
+		data_type_is_string = typeid_cast<const DataTypeString *>(type.get());
+
+		if (!data_type_is_string)
+		{
+			if (typeid_cast<const DataTypeUInt8 *>(type.get())
+				|| typeid_cast<const DataTypeInt8 *>(type.get()))
+				data_type_fixed_length = sizeof(UInt8);
+			else if (typeid_cast<const DataTypeUInt16 *>(type.get())
+				|| typeid_cast<const DataTypeInt16 *>(type.get())
+				|| typeid_cast<const DataTypeDate *>(type.get()))
+				data_type_fixed_length = sizeof(UInt16);
+			else if (typeid_cast<const DataTypeUInt32 *>(type.get())
+				|| typeid_cast<const DataTypeInt32 *>(type.get())
+				|| typeid_cast<const DataTypeFloat32 *>(type.get())
+				|| typeid_cast<const DataTypeDateTime *>(type.get()))
+				data_type_fixed_length = sizeof(UInt32);
+			else if (typeid_cast<const DataTypeUInt64 *>(type.get())
+				|| typeid_cast<const DataTypeInt64 *>(type.get())
+				|| typeid_cast<const DataTypeFloat64 *>(type.get()))
+				data_type_fixed_length = sizeof(UInt64);
+			else if (auto string = typeid_cast<const DataTypeFixedString *>(type.get()))
+				data_type_fixed_length = string->getN();
+			else
+				throw Exception("Unexpected data type: " + type->getName() + " of column " + name, ErrorCodes::UNKNOWN_TYPE);
+		}
+	}
 
 	bool marksEOF()
 	{
@@ -60,7 +91,7 @@ struct Stream
 
 	size_t read(size_t rows)
 	{
-		if (typeid_cast<const DataTypeString *>(type.get()))
+		if (data_type_is_string)
 		{
 			for (size_t i = 0; i < rows; ++i)
 			{
@@ -79,33 +110,11 @@ struct Stream
 		}
 		else
 		{
-			size_t length;
-			if(		typeid_cast<const DataTypeUInt8 *>(type.get()) ||
-					typeid_cast<const DataTypeInt8 *>(type.get()))
-				length = sizeof(UInt8);
-			else if(typeid_cast<const DataTypeUInt16 *>(type.get()) ||
-					typeid_cast<const DataTypeInt16 *>(type.get()) ||
-					typeid_cast<const DataTypeDate *>(type.get()))
-				length = sizeof(UInt16);
-			else if(typeid_cast<const DataTypeUInt32 *>(type.get()) ||
-					typeid_cast<const DataTypeInt32 *>(type.get()) ||
-					typeid_cast<const DataTypeFloat32 *>(type.get()) ||
-					typeid_cast<const DataTypeDateTime *>(type.get()))
-				length = sizeof(UInt32);
-			else if(typeid_cast<const DataTypeUInt64 *>(type.get()) ||
-					typeid_cast<const DataTypeInt64 *>(type.get()) ||
-					typeid_cast<const DataTypeFloat64 *>(type.get()))
-				length = sizeof(UInt64);
-			else if (auto string = typeid_cast<const DataTypeFixedString *>(type.get()))
-				length = string->getN();
-			else
-				throw Exception("Unexpected data type: " + type->getName() + " of column " + name, ErrorCodes::UNKNOWN_TYPE);
-
-			size_t size = uncompressed_hashing_buf.tryIgnore(length * rows);
-			if (size % length)
-				throw Exception("Read " + toString(size) + " bytes, which is not divisible by " + toString(length),
+			size_t size = uncompressed_hashing_buf.tryIgnore(data_type_fixed_length * rows);
+			if (size % data_type_fixed_length)
+				throw Exception("Read " + toString(size) + " bytes, which is not divisible by " + toString(data_type_fixed_length),
 								ErrorCodes::CORRUPTED_DATA);
-			return size / length;
+			return size / data_type_fixed_length;
 		}
 	}
 
@@ -175,8 +184,13 @@ struct Stream
 };
 
 /// Возвращает количество строк. Добавляет в checksums чексуммы всех файлов столбца.
-static size_t checkColumn(const String & path, const String & name, DataTypePtr type, const MergeTreePartChecker::Settings & settings,
-						  MergeTreeData::DataPart::Checksums & checksums)
+static size_t checkColumn(
+	const String & path,
+	const String & name,
+	DataTypePtr type,
+	const MergeTreePartChecker::Settings & settings,
+	MergeTreeData::DataPart::Checksums & checksums,
+	volatile bool * is_cancelled)
 {
 	size_t rows = 0;
 
@@ -191,6 +205,9 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 			ColumnUInt64::Container_t sizes;
 			while (true)
 			{
+				if (is_cancelled && *is_cancelled)
+					return 0;
+
 				if (sizes_stream.marksEOF())
 					break;
 
@@ -233,6 +250,9 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 			size_t rows = 0;
 			while (true)
 			{
+				if (is_cancelled && *is_cancelled)
+					return 0;
+
 				if (data_stream.marksEOF())
 					break;
 
@@ -260,11 +280,15 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 	}
 }
 
+}
+
+
 void MergeTreePartChecker::checkDataPart(
 	String path,
 	const Settings & settings,
 	const DataTypes & primary_key_data_types,
-	MergeTreeData::DataPart::Checksums * out_checksums)
+	MergeTreeData::DataPart::Checksums * out_checksums,
+	volatile bool * is_cancelled)
 {
 	CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedChecks};
 
@@ -307,6 +331,9 @@ void MergeTreePartChecker::checkDataPart(
 
 			while (!hashing_buf.eof())
 			{
+				if (is_cancelled && *is_cancelled)
+					return;
+
 				++marks_in_primary_key;
 				for (size_t j = 0; j < key_size; ++j)
 					primary_key_data_types[j].get()->deserializeBinary(*tmp_columns[j].get(), hashing_buf);
@@ -321,6 +348,9 @@ void MergeTreePartChecker::checkDataPart(
 
 		checksums_data.files["primary.idx"] = MergeTreeData::DataPart::Checksums::Checksum(primary_idx_size, hashing_buf.getHash());
 	}
+
+	if (is_cancelled && *is_cancelled)
+		return;
 
 	String any_column_name;
 	size_t rows = Stream::UNKNOWN;
@@ -344,7 +374,11 @@ void MergeTreePartChecker::checkDataPart(
 				continue;
 			}
 
-			size_t cur_rows = checkColumn(path, column.name, column.type, settings, checksums_data);
+			size_t cur_rows = checkColumn(path, column.name, column.type, settings, checksums_data, is_cancelled);
+
+			if (is_cancelled && *is_cancelled)
+				return;
+
 			if (cur_rows != Stream::UNKNOWN)
 			{
 				if (rows == Stream::UNKNOWN)

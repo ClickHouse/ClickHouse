@@ -2100,8 +2100,15 @@ void StorageReplicatedMergeTree::checkPart(const String & part_name)
 				settings.setIndexGranularity(data.index_granularity);
 				settings.setRequireChecksums(true);
 				settings.setRequireColumnFiles(true);
+
 				MergeTreePartChecker::checkDataPart(
-					data.getFullPath() + part_name, settings, data.primary_key_data_types);
+					data.getFullPath() + part_name, settings, data.primary_key_data_types, nullptr, &shutdown_called);
+
+				if (shutdown_called)
+				{
+					LOG_INFO(log, "Checking part was cancelled.");
+					return;
+				}
 
 				LOG_INFO(log, "Checker: Part " << part_name << " looks good.");
 			}
@@ -2130,6 +2137,11 @@ void StorageReplicatedMergeTree::checkPart(const String & part_name)
 		}
 		else
 		{
+			/// TODO Надо сделать так, чтобы кусок всё-таки проверился через некоторое время.
+			/// Иначе возможна ситуация, что кусок не добавился в ZK,
+			///  но остался в файловой системе и в множестве активных кусков.
+			/// И тогда в течение долгого времени (до перезапуска), данные на репликах будут разными.
+
 			LOG_TRACE(log, "Checker: Young part " << part_name
 				<< " with age " << (time(0) - part->modification_time)
 				<< " seconds hasn't been added to ZooKeeper yet. It's ok.");
@@ -2177,6 +2189,9 @@ void StorageReplicatedMergeTree::partCheckThread()
 			}
 
 			checkPart(part_name);
+
+			if (shutdown_called)
+				break;
 
 			/// Удалим кусок из очереди проверок.
 			{
