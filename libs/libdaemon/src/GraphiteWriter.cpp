@@ -34,7 +34,7 @@ GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::strin
 	bool use_fqdn = config.getBool(config_name + ".use_fqdn", false);
 
 	std::string hostname_in_path = use_fqdn
-		? Poco::Net::DNS::thisHost().name()	/// То же, что uname -f
+		? Poco::Net::DNS::thisHost().name()	/// То же, что hostname -f
 		: Poco::Net::DNS::hostName();		/// То же, что uname -n
 
 	/// Заменяем точки на подчёркивания, чтобы Graphite не интерпретировал их, как разделители пути.
