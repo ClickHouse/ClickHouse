@@ -484,8 +484,6 @@ static bool forAnyParallelogram(
 		return callback(parallelogram);
 	}
 
-	/// Порядок следующих случаев важен, чтобы не пришлось стирать суффиксные элементы parallelogram.
-
 	/// (x1 .. x2) x (-inf .. +inf)
 
 	if (left_bounded && right_bounded)
@@ -494,6 +492,9 @@ static bool forAnyParallelogram(
 		parallelogram[prefix_size] = Range::createLeftBounded(key_left[prefix_size], false);
 	else if (right_bounded)
 		parallelogram[prefix_size] = Range::createRightBounded(key_right[prefix_size], false);
+
+	for (size_t i = prefix_size + 1; i < key_size; ++i)
+		parallelogram[i] = Range();
 
 	if (callback(parallelogram))
 		return true;
@@ -529,8 +530,32 @@ bool PKCondition::mayBeTrueInRange(
 {
 	std::vector<Range> key_ranges(used_key_size, Range());
 
+/*	std::cerr << "Checking for: [";
+	for (size_t i = 0; i != used_key_size; ++i)
+		std::cerr << (i != 0 ? ", " : "") << apply_visitor(FieldVisitorToString(), left_pk[i]);
+	std::cerr << " ... ";
+
+	if (right_bounded)
+	{
+		for (size_t i = 0; i != used_key_size; ++i)
+			std::cerr << (i != 0 ? ", " : "") << apply_visitor(FieldVisitorToString(), right_pk[i]);
+		std::cerr << "]\n";
+	}
+	else
+		std::cerr << "+inf)\n";*/
+
 	return forAnyParallelogram(used_key_size, left_pk, right_pk, true, right_bounded, key_ranges, 0,
-		[&] (const std::vector<Range> & key_ranges) { return mayBeTrueInRangeImpl(key_ranges, data_types); });
+		[&] (const std::vector<Range> & key_ranges)
+	{
+		auto res = mayBeTrueInRangeImpl(key_ranges, data_types);
+
+/*		std::cerr << "Parallelogram: ";
+		for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
+			std::cerr << (i != 0 ? " x " : "") << key_ranges[i].toString();
+		std::cerr << ": " << res << "\n";*/
+
+		return res;
+	});
 }
 
 
