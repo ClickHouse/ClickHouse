@@ -339,6 +339,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 	MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeList::Entry & merge_entry,
 	size_t aio_threshold, DiskSpaceMonitor::Reservation * disk_reservation)
 {
+	if (isCancelled())
+		throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
+
 	merge_entry->num_parts = parts.size();
 
 	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name << " into " << merged_name);
