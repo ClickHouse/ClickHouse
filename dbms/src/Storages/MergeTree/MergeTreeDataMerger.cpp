@@ -313,6 +313,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 	return found;
 }
 
+
 MergeTreeData::DataPartsVector MergeTreeDataMerger::selectAllPartsFromPartition(DayNum_t partition)
 {
 	MergeTreeData::DataPartsVector parts_from_partition;
@@ -332,11 +333,11 @@ MergeTreeData::DataPartsVector MergeTreeDataMerger::selectAllPartsFromPartition(
 	return parts_from_partition;
 }
 
+
 /// parts должны быть отсортированы.
-MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
+MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart(
 	MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeList::Entry & merge_entry,
-	size_t aio_threshold, MergeTreeData::Transaction * out_transaction,
-	DiskSpaceMonitor::Reservation * disk_reservation)
+	size_t aio_threshold, DiskSpaceMonitor::Reservation * disk_reservation)
 {
 	merge_entry->num_parts = parts.size();
 
@@ -486,6 +487,16 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(new_part_tmp_path);
 	new_data_part->is_sharded = false;
 
+	return new_data_part;
+}
+
+
+MergeTreeData::DataPartPtr MergeTreeDataMerger::renameMergedTemporaryPart(
+	MergeTreeData::DataPartsVector & parts,
+	MergeTreeData::MutableDataPartPtr & new_data_part,
+	const String & merged_name,
+	MergeTreeData::Transaction * out_transaction)
+{
 	/// Переименовываем новый кусок, добавляем в набор и убираем исходные куски.
 	auto replaced_parts = data.renameTempPartAndReplace(new_data_part, nullptr, out_transaction);
 
@@ -522,9 +533,9 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	}
 
 	LOG_TRACE(log, "Merged " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
-
 	return new_data_part;
 }
+
 
 MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 	const ReshardingJob & job, DiskSpaceMonitor::Reservation * disk_reservation)

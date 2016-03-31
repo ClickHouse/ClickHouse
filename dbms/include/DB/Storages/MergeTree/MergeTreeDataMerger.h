@@ -48,11 +48,19 @@ public:
 	/** Сливает куски.
 	  * Если reservation != nullptr, то и дело уменьшает размер зарезервированного места
 	  *  приблизительно пропорционально количеству уже выписанных данных.
+	  *
+	  * Создаёт и возвращает временный кусок.
+	  * Чтобы закончить мердж, вызовите функцию renameTemporaryMergedPart.
 	  */
-	MergeTreeData::DataPartPtr mergeParts(
+	MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
 		MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeListEntry & merge_entry,
-		size_t aio_threshold, MergeTreeData::Transaction * out_transaction = nullptr,
-		DiskSpaceMonitor::Reservation * disk_reservation = nullptr);
+		size_t aio_threshold, DiskSpaceMonitor::Reservation * disk_reservation = nullptr);
+
+	MergeTreeData::DataPartPtr renameMergedTemporaryPart(
+		MergeTreeData::DataPartsVector & parts,
+		MergeTreeData::MutableDataPartPtr & new_data_part,
+		const String & merged_name,
+		MergeTreeData::Transaction * out_transaction = nullptr);
 
 	/** Перешардирует заданную партицию.
 	  */

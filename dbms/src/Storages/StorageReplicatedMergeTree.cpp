@@ -83,6 +83,8 @@ namespace ErrorCodes
 	extern const int RESHARDING_INVALID_QUERY;
 	extern const int RWLOCK_NO_SUCH_LOCK;
 	extern const int NO_SUCH_BARRIER;
+	extern const int CHECKSUM_DOESNT_MATCH;
+	extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
 }
 
 
@@ -817,7 +819,8 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 }
 
 
-void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String part_name)
+void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(
+	const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String part_name)
 {
 	auto zookeeper = getZooKeeper();
 
@@ -1036,28 +1039,55 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			MergeTreeData::Transaction transaction;
 			size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
 
-			MergeTreeData::DataPartPtr part = merger.mergeParts(
-				parts, entry.new_part_name, *merge_entry, aio_threshold, &transaction, reserved_space);
+			auto part = merger.mergePartsToTemporaryPart(
+				parts, entry.new_part_name, *merge_entry, aio_threshold, reserved_space);
 
 			zkutil::Ops ops;
-			checkPartAndAddToZooKeeper(part, ops);
 
-			/** TODO: Переименование нового куска лучше делать здесь, а не пятью строчками выше,
-			  *  чтобы оно было как можно ближе к zookeeper->multi.
-			  */
+			try
+			{
+				/// Здесь проверяются чексуммы и заполняется ops. Реально кусок добавляется в ZK чуть ниже, при выполнении multi.
+				checkPartAndAddToZooKeeper(part, ops, entry.new_part_name);
+			}
+			catch (const Exception & e)
+			{
+				if (e.code() == ErrorCodes::CHECKSUM_DOESNT_MATCH
+					|| e.code() == ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART)
+				{
+					do_fetch = true;
+					part->remove();
 
-			zookeeper->multi(ops);
+					LOG_ERROR(log, getCurrentExceptionMessage(false) << ". "
+						"Data after merge is not byte-identical to data on another replicas. "
+						"There could be several reasons: "
+						"1. Using newer version of compression library after server update. "
+						"2. Using another compression method. "
+						"3. Non-deterministic compression algorithm (highly unlikely). "
+						"4. Non-deterministic merge algorithm due to logical error in code. "
+						"5. Data corruption in memory due to bug in code. "
+						"6. Data corruption in memory due to hardware issue. "
+						"7. Manual modification of source data after server starup. "
+						"8. Manual modification of checksums stored in ZooKeeper. "
+						"We will download merged part from replica to force byte-identical result.");
+				}
+			}
 
-			/** Удаление старых кусков из ZK и с диска делается отложенно - см. ReplicatedMergeTreeCleanupThread, clearOldParts.
-			  */
+			if (!do_fetch)
+			{
+				merger.renameMergedTemporaryPart(parts, part, entry.new_part_name, &transaction);
+				zookeeper->multi(ops);
 
-			/** При ZCONNECTIONLOSS или ZOPERATIONTIMEOUT можем зря откатить локальные изменения кусков.
-			  * Это не проблема, потому что в таком случае слияние останется в очереди, и мы попробуем снова.
-			  */
-			transaction.commit();
-			merge_selecting_event.set();
+				/** Удаление старых кусков из ZK и с диска делается отложенно - см. ReplicatedMergeTreeCleanupThread, clearOldParts.
+				  */
 
-			ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
+				/** При ZCONNECTIONLOSS или ZOPERATIONTIMEOUT можем зря откатить локальные изменения кусков.
+				  * Это не проблема, потому что в таком случае слияние останется в очереди, и мы попробуем снова.
+				  */
+				transaction.commit();
+				merge_selecting_event.set();
+
+				ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
+			}
 		}
 	}
 	else
@@ -2601,7 +2631,11 @@ bool StorageReplicatedMergeTree::optimize(const Settings & settings)
 		return false;
 
 	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
-	unreplicated_merger->mergeParts(parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io);
+
+	auto new_part = unreplicated_merger->mergePartsToTemporaryPart(
+		parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io);
+
+	unreplicated_merger->renameMergedTemporaryPart(parts, new_part, merged_name, nullptr);
 
 	return true;
 }
