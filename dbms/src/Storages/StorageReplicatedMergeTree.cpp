@@ -1291,7 +1291,8 @@ void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 		removePartFromZooKeeper(part->name, ops);
 		auto code = zookeeper->tryMulti(ops);
 
-		/// Если кусок уже удалён (например, потому что он старый и только что удалился в cleanupThread), то всё Ок.
+		/// Если кусок уже удалён (например, потому что он так и не был добавлен в ZK из-за сбоя,
+		///  см. ReplicatedMergeTreeBlockOutputStream), то всё Ок.
 		if (code != ZOK && code != ZNONODE)
 			throw zkutil::KeeperException(code);
 
