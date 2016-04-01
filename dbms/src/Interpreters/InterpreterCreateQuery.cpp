@@ -487,12 +487,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
 		if (!create.is_temporary)
 		{
-			guard = context.getDDLGuard(database_name, table_name,
-				"Table " + database_name + "." + table_name + " is creating or attaching right now");
-
 			context.assertDatabaseExists(database_name);
 
-			if (context.isTableExist(database_name, table_name))
+			/** Если таблица уже существует, и в запросе указано IF NOT EXISTS,
+			  *  то мы разрешаем конкуррентные запросы CREATE (которые ничего не делают).
+			  * Иначе конкуррентные запросы на создание таблицы, если таблицы не существует,
+			  *  могут кидать исключение, даже если указано IF NOT EXISTS.
+			  */
+			guard = context.getDDLGuardIfTableDoesntExist(database_name, table_name,
+				"Table " + database_name + "." + table_name + " is creating or attaching right now");
+
+			if (!guard)
 			{
 				if (create.if_not_exists)
 					return {};

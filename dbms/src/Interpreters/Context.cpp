@@ -127,6 +127,7 @@ struct ContextShared
 	/// В случае, если элемент уже есть - кидается исключение. См. class DDLGuard ниже.
 	using DDLGuards = std::unordered_map<String, std::unordered_map<String, String>>;
 	DDLGuards ddl_guards;
+	/// Если вы захватываете mutex и ddl_guards_mutex, то захватывать их нужно строго в этом порядке.
 	mutable std::mutex ddl_guards_mutex;
 
 
@@ -563,6 +564,18 @@ std::unique_ptr<DDLGuard> Context::getDDLGuard(const String & database, const St
 {
 	std::unique_lock<std::mutex> lock(shared->ddl_guards_mutex);
 	return std::make_unique<DDLGuard>(shared->ddl_guards[database], shared->ddl_guards_mutex, std::move(lock), table, message);
+}
+
+
+std::unique_ptr<DDLGuard> Context::getDDLGuardIfTableDoesntExist(const String & database, const String & table, const String & message) const
+{
+	auto lock = getLock();
+
+	Databases::const_iterator it = shared->databases.find(database);
+	if (shared->databases.end() != it && it->second->isTableExist(table))
+		return {};
+
+	return getDDLGuard(database, table, message);
 }
 
 

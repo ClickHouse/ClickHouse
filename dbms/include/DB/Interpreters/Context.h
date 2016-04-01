@@ -165,6 +165,8 @@ public:
 	/// Получить объект, который защищает таблицу от одновременного выполнения нескольких DDL операций.
 	/// Если такой объект уже есть - кидается исключение.
 	std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table, const String & message) const;
+	/// Если таблица уже есть - возвращается nullptr, иначе создаётся guard.
+	std::unique_ptr<DDLGuard> getDDLGuardIfTableDoesntExist(const String & database, const String & table, const String & message) const;
 
 	String getCurrentDatabase() const;
 	String getCurrentQueryId() const;
