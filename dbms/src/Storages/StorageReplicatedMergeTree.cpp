@@ -3342,7 +3342,7 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
 		out_absolute_delay = current_time - min_unprocessed_insert_time;
 
 	/** Относительная задержка - максимальная разница абсолютной задержки от какой-либо другой реплики,
-	  *  (если эта реплика отстаёт от какой-либо другой реплики, или ноль, иначе).
+	  *  (если эта реплика отстаёт от какой-либо другой живой реплики, или ноль, иначе).
 	  * Вычисляется только если абсолютная задержка достаточно большая.
 	  */
 
@@ -3361,6 +3361,10 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
 		if (replica == replica_name)
 			continue;
 
+		/// Пропускаем неживые реплики.
+		if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+			continue;
+
 		String value;
 		if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/min_unprocessed_insert_time", value))
 			continue;
@@ -3369,6 +3373,14 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
 
 		if (replica_time == 0)
 		{
+			/** Замечание:
+			  * Вывод о том, что реплика не отстаёт, может быть неверен,
+			  *  потому что информация о min_unprocessed_insert_time берётся
+			  *  только из той части лога, которая перенесена в очередь.
+			  * Если у реплики почему-то не работает queueUpdatingThread,
+			  *  то и min_unprocessed_insert_time будет неправильным.
+			  */
+
 			have_replica_with_nothing_unprocessed = true;
 			break;
 		}
