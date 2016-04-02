@@ -219,7 +219,7 @@ class PKCondition
 
 public:
 	/// Словарь, содержащий действия к соответствующим функциям по превращению их в RPNElement
-	using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const Field & value, ASTPtr & node)>;
+	using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, ASTPtr & node)>;
 	static const AtomMap atom_map;
 
 	/// Не учитывает секцию SAMPLE. all_columns - набор всех столбцов таблицы.
