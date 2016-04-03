@@ -233,6 +233,90 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 	return true;
 }
 
+bool ParserBetweenExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+{
+	/// Для выражения (subject BETWEEN left AND right)
+	///  создаём AST такое же, как для (subject >= left AND subject <= right).
+
+	ParserWhiteSpaceOrComments ws;
+	ParserString s_between("BETWEEN", true, true);
+	ParserString s_and("AND", true, true);
+
+	ASTPtr subject;
+	ASTPtr left;
+	ASTPtr right;
+
+	Pos begin = pos;
+
+	if (!elem_parser.parse(pos, end, subject, max_parsed_pos, expected))
+		return false;
+
+	ws.ignore(pos, end);
+
+	if (!s_between.ignore(pos, end, max_parsed_pos, expected))
+		node = subject;
+	else
+	{
+		ws.ignore(pos, end);
+
+		if (!elem_parser.parse(pos, end, left, max_parsed_pos, expected))
+			return false;
+
+		ws.ignore(pos, end);
+
+		if (!s_and.ignore(pos, end, max_parsed_pos, expected))
+			return false;
+
+		ws.ignore(pos, end);
+
+		if (!elem_parser.parse(pos, end, right, max_parsed_pos, expected))
+			return false;
+
+		/// функция AND
+		std::unique_ptr<ASTFunction> f_and = std::make_unique<ASTFunction>();
+		std::unique_ptr<ASTExpressionList> args_and = std::make_unique<ASTExpressionList>();
+
+		/// >=
+		std::unique_ptr<ASTFunction> f_ge = std::make_unique<ASTFunction>();
+		std::unique_ptr<ASTExpressionList> args_ge = std::make_unique<ASTExpressionList>();
+
+		/// <=
+		std::unique_ptr<ASTFunction> f_le = std::make_unique<ASTFunction>();
+		std::unique_ptr<ASTExpressionList> args_le = std::make_unique<ASTExpressionList>();
+
+		args_ge->children.emplace_back(subject);
+		args_ge->children.emplace_back(left);
+
+		args_le->children.emplace_back(subject);
+		args_le->children.emplace_back(right);
+
+		f_ge->range.first = begin;
+		f_ge->range.second = pos;
+		f_ge->name = "greaterOrEquals";
+		f_ge->arguments = args_ge.release();
+		f_ge->children.emplace_back(f_ge->arguments);
+
+		f_le->range.first = begin;
+		f_le->range.second = pos;
+		f_le->name = "lessOrEquals";
+		f_le->arguments = args_le.release();
+		f_le->children.emplace_back(f_le->arguments);
+
+		args_and->children.emplace_back(f_ge.release());
+		args_and->children.emplace_back(f_le.release());
+
+		f_and->range.first = begin;
+		f_and->range.second = pos;
+		f_and->name = "and";
+		f_and->arguments = args_and.release();
+		f_and->children.emplace_back(f_and->arguments);
+
+		node = f_and.release();
+	}
+
+	return true;
+}
+
 bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;

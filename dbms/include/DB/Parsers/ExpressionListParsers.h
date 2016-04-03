@@ -180,11 +180,23 @@ protected:
 };
 
 
+class ParserBetweenExpression : public IParserBase
+{
+private:
+	ParserAdditiveExpression elem_parser;
+
+protected:
+	const char * getName() const { return "BETWEEN expression"; }
+
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+};
+
+
 class ParserComparisonExpression : public IParserBase
 {
 private:
 	static const char * operators[];
-	ParserLeftAssociativeBinaryOperatorList operator_parser {operators, ParserPtr(new ParserAdditiveExpression)};
+	ParserLeftAssociativeBinaryOperatorList operator_parser {operators, ParserPtr(new ParserBetweenExpression)};
 
 protected:
 	const char * getName() const { return "comparison expression"; }
