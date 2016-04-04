@@ -111,6 +111,8 @@ private:
 	void createZookeeperNodes();
 	String getNameOfNodeWithTables(const String & table_name) const;
 	Hash getTableHash(const String & table_name) const;
+
+	Hash getHashForTableDefinition(const String & definition) const;
 	String getTableDefinitionFromHash(Hash hash) const;
 };
 

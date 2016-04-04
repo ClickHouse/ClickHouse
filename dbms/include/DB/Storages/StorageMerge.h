@@ -33,7 +33,7 @@ public:
 	std::string getName() const override { return "Merge"; }
 	std::string getTableName() const override { return name; }
 
-	/// Проверка откладывается до метода read. Там проверяется поддержка PREWHERE у использующихся таблиц.
+	/// Проверка откладывается до метода read. Там проверяется поддержка у использующихся таблиц.
 	bool supportsSampling() const override { return true; }
 	bool supportsPrewhere() const override { return true; }
 	bool supportsFinal() const override { return true; }

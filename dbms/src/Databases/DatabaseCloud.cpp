@@ -21,6 +21,8 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int LOGICAL_ERROR;
+	extern const int TABLE_ALREADY_EXISTS;
+	extern const int UNKNOWN_TABLE;
 }
 
 namespace
@@ -270,6 +272,79 @@ struct LocalTableSet
 };
 
 
+/** Модифицировать TableSet или LocalTableSet, сериализованный в ZooKeeper, как единое целое.
+  * Делается compare-and-swap. Функция transform может вызываться много раз.
+  * Если transform возвращает false, то считается, что модифицировать нечего и результат не сохраняется в ZK.
+  */
+template <typename TableSet, typename F>
+static void modifyTableSet(zkutil::ZooKeeperPtr & zookeeper, const String & path, F && transform)
+{
+	while (true)
+	{
+		zkutil::Stat stat;
+		String old_value = zookeeper->get(path, &stat);
+
+		TableSet tables_info(old_value);
+		if (!transform(tables_info))
+			break;
+
+		String new_value = tables_info.toString();
+
+		auto code = zookeeper->trySet(path, new_value, stat.version);
+
+		if (code == ZOK)
+			break;
+		else if (code == ZBADVERSION)
+			continue;	/// Узел успели поменять - попробуем ещё раз.
+			else
+				throw zkutil::KeeperException(code, path);
+	}
+}
+
+
+template <typename TableSet, typename F>
+static void modifyTwoTableSets(zkutil::ZooKeeperPtr & zookeeper, const String & path1, const String & path2, F && transform)
+{
+	if (path1 == path2)
+	{
+		modifyTableSet<TableSet>(zookeeper, path1, [&] (TableSet & set) { return transform(set, set); });
+		return;
+	}
+
+	while (true)
+	{
+		zkutil::Stat stat1;
+		zkutil::Stat stat2;
+
+		String old_value1 = zookeeper->get(path1, &stat1);
+		String old_value2 = zookeeper->get(path2, &stat2);
+
+		TableSet tables_info1(old_value1);
+		TableSet tables_info2(old_value2);
+
+		if (!transform(tables_info1, tables_info2))
+			break;
+
+		String new_value1 = tables_info1.toString();
+		String new_value2 = tables_info2.toString();
+
+		zkutil::Ops ops;
+
+		ops.push_back(new zkutil::Op::SetData(path1, new_value1, stat1.version));
+		ops.push_back(new zkutil::Op::SetData(path2, new_value2, stat2.version));
+
+		auto code = zookeeper->tryMulti(ops);
+
+		if (code == ZOK)
+			break;
+		else if (code == ZBADVERSION)
+			continue;	/// Узел успели поменять - попробуем ещё раз.
+		else
+			throw zkutil::KeeperException(code, path1 + ", " + path2);
+	}
+}
+
+
 bool DatabaseCloud::isTableExist(const String & table_name) const
 {
 	/// Ищем локальную таблицу в кэше локальных таблиц или в файловой системе в path.
@@ -501,6 +576,87 @@ StoragePtr DatabaseCloud::detachTable(const String & table_name)
 }
 
 
+Hash DatabaseCloud::getHashForTableDefinition(const String & definition) const
+{
+	Hash res;
+	SipHash hash;
+	hash.update(definition);
+	hash.get128(reinterpret_cast<char *>(&res));
+
+	return res;
+}
+
+
+void DatabaseCloud::createTable(const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine)
+{
+	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
+
+	/// Добавляем в ZK информацию о структуре таблицы.
+	String definition = getTableDefinitionFromCreateQuery(query);
+	Hash definition_hash = getHashForTableDefinition(definition);
+	String zookeeper_definition_path = zookeeper_path + "/table_definitions/" + hashToHex(definition_hash);
+
+	String value;
+	if (zookeeper->tryGet(zookeeper_definition_path, &value))
+	{
+		if (value != definition)
+			throw Exception("Logical error: different table definition with same hash", ErrorCodes::LOGICAL_ERROR);
+	}
+	else
+	{
+		/// Более редкая ветка, так как уникальных определений таблиц немного.
+		/// Есть race condition, при котором узел уже существует, но проверка на логическую ошибку (см. выше) не будет осуществлена.
+		/// Это не имеет значения.
+		/// Кстати, узлы в table_definitions никогда не удаляются.
+		zookeeper->tryCreate(zookeeper_definition_path, definition, zkutil::CreateMode::Persistent);
+	}
+
+	if (engine != "Cloud")
+	{
+		/// Если локальная таблица.
+		String table_name_escaped = escapeForFileName(table_name);
+		Poco::File(data_path + table_name_escaped).createDirectory();
+		Hash table_hash = getTableHash(table_name);
+
+		/// Добавляем информация о локальной таблице в ZK.
+		modifyTableSet<LocalTableSet>(
+			zookeeper,
+			zookeeper_path + "/local_tables/" + name + "/" + getNameOfNodeWithTables(table_name),
+			[&] (LocalTableSet & set)
+			{
+				if (!set.map.emplace(table_hash, definition_hash).second)
+					throw Exception("Table " + table_name + " already exists", ErrorCodes::TABLE_ALREADY_EXISTS);
+				return true;
+			});
+
+		/// Добавляем локальную таблицу в кэш.
+		{
+			std::lock_guard<std::mutex> lock(local_tables_mutex);
+			if (!local_tables_cache.emplace(table_name, table).second)
+				throw Exception("Table " + table_name + " already exists", ErrorCodes::TABLE_ALREADY_EXISTS);
+		}
+	}
+	else
+	{
+		/// При создании пустой облачной таблицы, локальные таблицы не создаются и серверы для них не определяются.
+		/// Всё делается при первой записи в таблицу.
+
+		TableDescription description;
+		description.definition_hash = definition_hash;
+
+		modifyTableSet<TableSet>(
+			zookeeper,
+			zookeeper_path + "/tables/" + name + "/" + getNameOfNodeWithTables(table_name),
+			[&] (TableSet & set)
+			{
+				if (!set.map.emplace(table_name, description).second)
+					throw Exception("Table " + table_name + " already exists", ErrorCodes::TABLE_ALREADY_EXISTS);
+				return true;
+			});
+	}
+}
+
+
 void DatabaseCloud::removeTable(const String & table_name)
 {
 	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
@@ -511,33 +667,21 @@ void DatabaseCloud::removeTable(const String & table_name)
 	String table_name_escaped = escapeForFileName(table_name);
 	if (Poco::File(data_path + table_name_escaped).exists())
 	{
+		Hash table_hash = getTableHash(table_name);
+
 		/// Удаляем информация о локальной таблице из ZK.
-		while (true)
-		{
-			zkutil::Stat stat;
-			String local_tables_node_path = zookeeper_path + "/local_tables/" + name + "/" + getNameOfNodeWithTables(table_name);
-			String old_local_tables_value = zookeeper->get(local_tables_node_path, &stat);
+		modifyTableSet<LocalTableSet>(
+			zookeeper,
+			zookeeper_path + "/local_tables/" + name + "/" + getNameOfNodeWithTables(table_name),
+			[&] (LocalTableSet & set)
+			{
+				auto it = set.map.find(table_hash);
+				if (it == set.map.end())
+					return false;		/// Таблицу уже удалили.
 
-			LocalTableSet local_tables_info(old_local_tables_value);
-			Hash table_hash = getTableHash(table_name);
-
-			auto it = local_tables_info.map.find(table_hash);
-			if (it == local_tables_info.map.end())
-				break;		/// Таблицу уже удалили.
-
-			local_tables_info.map.erase(it);
-
-			String new_local_tables_value = local_tables_info.toString();
-
-			auto code = zookeeper->trySet(local_tables_node_path, new_local_tables_value, stat.version);
-
-			if (code == ZOK)
-				break;
-			else if (code == ZBADVERSION)
-				continue;	/// Узел успели поменять - попробуем ещё раз.
-			else
-				throw zkutil::KeeperException(code, local_tables_node_path);
-		}
+				set.map.erase(it);
+				return true;
+			});
 
 		/// Удаляем локальную таблицу из кэша.
 		{
@@ -550,38 +694,59 @@ void DatabaseCloud::removeTable(const String & table_name)
 		/// Удаляем таблицу из ZK, а также запоминаем список серверов, на которых расположены локальные таблицы.
 		TableDescription description;
 
-		while (true)
-		{
-			zkutil::Stat stat;
-			String tables_node_path = zookeeper_path + "/tables/" + name + "/" + getNameOfNodeWithTables(table_name);
-			String old_tables_value = zookeeper->get(tables_node_path, &stat);
+		modifyTableSet<TableSet>(
+			zookeeper,
+			zookeeper_path + "/tables/" + name + "/" + getNameOfNodeWithTables(table_name),
+			[&] (TableSet & set) mutable
+			{
+				auto it = set.map.find(table_name);
+				if (it == set.map.end())
+					return false;		/// Таблицу уже удалили.
 
-			TableSet tables_info(old_tables_value);
-
-			auto it = tables_info.map.find(table_name);
-			if (it == tables_info.map.end())
-				break;		/// Таблицу уже удалили.
-
-			description = it->second;
-			tables_info.map.erase(it);
-
-			String new_tables_value = tables_info.toString();
-
-			auto code = zookeeper->trySet(tables_node_path, new_tables_value, stat.version);
-
-			if (code == ZOK)
-				break;
-			else if (code == ZBADVERSION)
-				continue;	/// Узел успели поменять - попробуем ещё раз.
-			else
-				throw zkutil::KeeperException(code, tables_node_path);
-		}
+				description = it->second;
+				set.map.erase(it);
+				return true;
+			});
 
 		if (!description.local_table_name.empty() && !description.hosts.empty())
 		{
-			/// Удаление локальных таблиц.
+			/// Удаление локальных таблиц. TODO То ли сразу здесь, то ли в отдельном фоновом потоке.
 		}
 	}
+}
+
+
+void DatabaseCloud::renameTable(const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name)
+{
+	/// Переименовывать можно только облачные таблицы.
+	/// Перенос между БД не поддерживается.
+
+	if (&to_database != this)
+		throw Exception("Moving of tables in Cloud database between databases is not supported", ErrorCodes::NOT_IMPLEMENTED);
+
+	const String node_from = getNameOfNodeWithTables(table_name);
+	const String node_to = getNameOfNodeWithTables(to_table_name);
+
+	const String table_set_path_from = zookeeper_path + "/tables/" + name + "/" + node_from;
+	const String table_set_path_to = zookeeper_path + "/tables/" + name + "/" + node_to;
+
+	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
+
+	modifyTwoTableSets<TableSet>(
+		zookeeper, table_set_path_from, table_set_path_to, [&] (TableSet & set_from, TableSet & set_to)
+		{
+			auto it = set_from.map.find(table_name);
+			if (it == set_from.map.end())
+				throw Exception("Table " + table_name + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
+
+			TableDescription description = it->second;
+			set_from.map.erase(it);
+
+			if (!set_to.map.emplace(to_table_name, description).second)
+				throw Exception("Table " + to_table_name + " already exists", ErrorCodes::TABLE_ALREADY_EXISTS);
+
+			return true;
+		});
 }
 
 
