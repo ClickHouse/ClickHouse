@@ -15,6 +15,7 @@
 #include <Poco/File.h>
 #include <Poco/RWLock.h>
 #include <memory>
+#include <experimental/optional>
 
 
 namespace DB
@@ -80,13 +81,16 @@ public:
 
 		StoragePtr storage;
 		/// Порядок важен.
-		Poco::SharedPtr<Poco::ScopedReadRWLock> data_lock;
-		Poco::SharedPtr<Poco::ScopedReadRWLock> structure_lock;
+		std::experimental::optional<Poco::ScopedReadRWLock> data_lock;
+		std::experimental::optional<Poco::ScopedReadRWLock> structure_lock;
 
-		TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data)
-		:	storage(storage_),
-			data_lock(lock_data      		? new Poco::ScopedReadRWLock(storage->     data_lock) : nullptr),
-			structure_lock(lock_structure 	? new Poco::ScopedReadRWLock(storage->structure_lock) : nullptr) {}
+		TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data) : storage(storage_)
+		{
+			if (lock_data)
+				data_lock.emplace(storage->data_lock);
+			if (lock_structure)
+				structure_lock.emplace(storage->structure_lock);
+		}
 	};
 
 	typedef Poco::SharedPtr<TableStructureReadLock> TableStructureReadLockPtr;
