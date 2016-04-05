@@ -1,4 +1,4 @@
-ClickHouse is free column-oriented DBMS for big data.
+ClickHouse is free analytical DBMS for big data.
 
 ClickHouse powers Yandex.Metrica - second largest web analytics system in the world.
 In Yandex.Metrica, all incoming data is ingested into ClickHouse in realtime (about 20 billion events each day).
@@ -27,10 +27,13 @@ We have installations with more than two trillion rows per single node, and anot
 
 Efficient use of hardware
 
+ClickHouse is column-oriented DBMS. It works 2-3 orders of magnitude faster on typical analytical queries with same available IO throughput, comparable to traditional row-oriented systems. Due to columnar format, more hot data fits in RAM, that leads to even faster response times.
 ClickHouse is space and time efficient. All data is stored compressed. Compression works surprisingly good, thanks to column store.
+
 ClickHouse constantly maintains data locality for loaded data. It minimizes number of seeks for range queries, so ClickHouse works fine on cheap rotational drives.
-ClickHouse is also CPU efficient, 
-ClickHouse is using IO throughput in 
+ClickHouse is also CPU efficient due to vectorized query execution, runtime code generation and top notch implementations of core algorithms.
+
+For most types of queries, ClickHouse doesn't require fast network, because it minimizes data transfers. Distributed queries will work even in multi-datacenter environment.
 
 
 Fast
@@ -48,8 +51,14 @@ Feature rich
 
 Simple and handy
 
+ClickHouse works not only on hundred node clusters. It could be installed on single server or even virtual machine, and that installation is practical. You could test ClickHouse even on Linux laptop. At Yandex, there are many cases, when analysts with no development experience have installed ClickHouse and create data viewers on top of it.
+Many people start using ClickHouse, because it is simple and works out of the box.
 
-Stable
+
+High reliable
+
+Reliability never comes for free. It is always consequence of long term production usage.
+At Yandex, ClickHouse is used in production since 2012 with no significant issues.
 
 
 Opens new possibilities
@@ -67,11 +76,15 @@ Online query processing
 Cross-datacenter replication
 High availability
 SQL support
+Local and distributed JOINs
+Pluggable external dimension tables
+Arrays and nested data types
 Support for approximate query processing
 Sketching data structures
 Full support of IPv6
 Features for web analytics
 State-of-the-art algorithms
+Detailed documentation
 Clean documented code
 
 
