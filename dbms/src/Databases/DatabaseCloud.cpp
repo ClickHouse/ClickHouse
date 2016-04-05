@@ -46,7 +46,7 @@ void DatabaseCloud::createZookeeperNodes()
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/table_definitions", "", acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/tables", "", acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/local_tables", "", acl, zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/ordered_locality_keys", "", acl, zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/locality_keys", "", acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/nodes", "", acl, zkutil::CreateMode::Persistent));
 
 	auto code = zookeeper->tryMulti(ops);
@@ -767,6 +767,11 @@ void DatabaseCloud::shutdown()
 		std::lock_guard<std::mutex> lock(local_tables_mutex);
 		local_tables_cache.clear();
 	}
+}
+
+
+std::vector<String> DatabaseCloud::selectHostsForTable(const String & locality_key) const
+{
 }
 
 
