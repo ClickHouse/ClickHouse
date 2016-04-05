@@ -569,7 +569,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 	bool force_update_metadata;
 	createConvertExpression(part, part->columns, new_columns, expression, transaction->rename_map, force_update_metadata);
 
-	if (!skip_sanity_checks && transaction->rename_map.size() > 5)
+	if (!skip_sanity_checks && transaction->rename_map.size() > settings.max_files_to_modify_in_alter_columns)
 	{
 		transaction->clear();
 

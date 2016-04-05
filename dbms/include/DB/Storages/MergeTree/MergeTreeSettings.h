@@ -68,6 +68,9 @@ struct MergeTreeSettings
 	/// Настройки минимального количества битых данных, при котором отказываться автоматически их удалять.
 	size_t max_suspicious_broken_parts = 10;
 
+	/// Не выполнять ALTER, если количество файлов для модификации (удаления, добавления) больше указанного.
+	size_t max_files_to_modify_in_alter_columns = 5;
+
 	/// Максимальное количество ошибок при загрузке кусков, при котором ReplicatedMergeTree соглашается запускаться.
 	size_t replicated_max_unexpected_parts = 3;
 	size_t replicated_max_unexpectedly_merged_parts = 2;
@@ -115,6 +118,7 @@ struct MergeTreeSettings
 		SET_SIZE_T(replicated_deduplication_window);
 		SET_SIZE_T(replicated_logs_to_keep);
 		SET_SIZE_T(max_suspicious_broken_parts);
+		SET_SIZE_T(max_files_to_modify_in_alter_columns);
 		SET_SIZE_T(replicated_max_unexpected_parts);
 		SET_SIZE_T(replicated_max_unexpectedly_merged_parts);
 		SET_SIZE_T(replicated_max_missing_obsolete_parts);
