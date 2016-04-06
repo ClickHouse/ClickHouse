@@ -182,14 +182,26 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	data.check(real_column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	PKCondition key_condition(query, context, available_real_and_virtual_columns, data.getSortDescription());
-	PKCondition date_condition(query, context, available_real_and_virtual_columns, SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
+	SortDescription sort_descr = data.getSortDescription();
+
+	PKCondition key_condition(query, context, available_real_and_virtual_columns, sort_descr);
+	PKCondition date_condition(query, context, available_real_and_virtual_columns,
+		SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
 
 	if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
-		throw Exception("Primary key is not used and setting 'force_primary_key' is set.", ErrorCodes::INDEX_NOT_USED);
+	{
+		std::stringstream exception_message;
+		exception_message << "Primary key (";
+		for (size_t i = 0, size = sort_descr.size(); i < size; ++i)
+			exception_message << (i == 0 ? "" : ", ") << sort_descr[i].column_name;
+		exception_message << ") is not used and setting 'force_primary_key' is set.";
+
+		throw Exception(exception_message.str(), ErrorCodes::INDEX_NOT_USED);
+	}
 
 	if (settings.force_index_by_date && date_condition.alwaysUnknownOrTrue())
-		throw Exception("Index by date is not used and setting 'force_index_by_date' is set.", ErrorCodes::INDEX_NOT_USED);
+		throw Exception("Index by date (" + data.date_column_name + ") is not used and setting 'force_index_by_date' is set.",
+			ErrorCodes::INDEX_NOT_USED);
 
 	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition, и которые подходят под условие на _part,
 	///  а также max_block_number_to_read.
