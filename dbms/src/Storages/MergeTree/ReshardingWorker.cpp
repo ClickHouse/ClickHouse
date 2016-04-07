@@ -180,7 +180,7 @@ std::string computeHashFromPartition(const std::string & data_path, const std::s
 		{
 			const auto & filename = it2.name();
 			if (filename == "checksums.txt")
-				files.push_back(it.path().absolute().toString());
+				files.push_back(it2.path().absolute().toString());
 		}
 	}
 
