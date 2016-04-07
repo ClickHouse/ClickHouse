@@ -151,7 +151,7 @@ public:
 	bool supportsIndexForIn() const override { return true; }
 
 	/// Добавить кусок в очередь кусков, чьи данные нужно проверить в фоновом потоке.
-	void enqueuePartForCheck(const String & name);
+	void enqueuePartForCheck(const String & name, time_t min_check_time = 0);
 
 	MergeTreeData & getData() { return data; }
 	MergeTreeData * getUnreplicatedData() { return unreplicated_data.get(); }
@@ -200,7 +200,8 @@ private:
 	using LogEntryPtr = LogEntry::Ptr;
 
 	using StringSet = std::set<String>;
-	using StringList = std::list<String>;
+	using PartToCheck = std::pair<String, time_t>;	/// Имя куска и минимальное время для проверки (или ноль, если не важно).
+	using PartsToCheckQueue = std::list<PartToCheck>;
 
 	Context & context;
 
@@ -219,7 +220,7 @@ private:
 	  *  - Если куска у нас нет, проверить, есть ли он (или покрывающий его кусок) хоть у кого-то.
 	  */
 	StringSet parts_to_check_set;
-	StringList parts_to_check_queue;
+	PartsToCheckQueue parts_to_check_queue;
 	std::mutex parts_to_check_mutex;
 	Poco::Event parts_to_check_event;
 
@@ -502,5 +503,8 @@ private:
 	std::mutex mutex_partition_to_merge_lock;
 	PartitionToMergeLock partition_to_merge_lock;
 };
+
+
+extern const int MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER;
 
 }
