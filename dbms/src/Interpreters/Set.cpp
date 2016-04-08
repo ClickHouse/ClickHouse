@@ -487,7 +487,7 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 BoolMask Set::mayBeTrueInRange(const Range & range) const
 {
 	if (!ordered_set_elements)
-		throw DB::Exception("Ordered set in not created.");
+		throw Exception("Ordered set in not created.");
 
 	if (ordered_set_elements->empty())
 		return BoolMask(false, true);
