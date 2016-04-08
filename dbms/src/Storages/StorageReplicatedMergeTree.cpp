@@ -88,8 +88,10 @@ namespace ErrorCodes
 }
 
 
-const auto ERROR_SLEEP_MS = 1000;
-const auto MERGE_SELECTING_SLEEP_MS = 5 * 1000;
+const auto QUEUE_UPDATE_ERROR_SLEEP_MS 	= 1 * 1000;
+const auto PART_CHECK_ERROR_SLEEP_MS 	= 5 * 1000;
+const auto ALTER_ERROR_SLEEP_MS 		= 10 * 1000;
+const auto MERGE_SELECTING_SLEEP_MS 	= 5 * 1000;
 
 /** Добавляемым блокам данных присваиваются некоторые номера - целые числа.
   * Для добавляемых обычным способом (INSERT) блоков, номера выделяются по возрастанию.
@@ -149,7 +151,7 @@ const Int64 RESERVED_BLOCK_NUMBERS = 200;
   * PS. Возможно, было бы лучше добавить в DataPart флаг о том, что кусок вставлен в ZK.
   * Но здесь уже слишком легко запутаться с консистентностью этого флага.
   */
-const auto MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER = 5 * 60;
+extern const int MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER = 5 * 60;
 
 
 void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
@@ -197,11 +199,11 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	zookeeper_path(context.getMacros().expand(zookeeper_path_)),
 	replica_name(context.getMacros().expand(replica_name_)),
 	data(full_path, columns_,
-		 materialized_columns_, alias_columns_, column_defaults_,
-		 context_, primary_expr_ast_, date_column_name_,
-		 sampling_expression_, index_granularity_, mode_, sign_column_, columns_to_sum_,
-		 settings_, database_name_ + "." + table_name, true,
-		 std::bind(&StorageReplicatedMergeTree::enqueuePartForCheck, this, std::placeholders::_1)),
+		materialized_columns_, alias_columns_, column_defaults_,
+		context_, primary_expr_ast_, date_column_name_,
+		sampling_expression_, index_granularity_, mode_, sign_column_, columns_to_sum_,
+		settings_, database_name_ + "." + table_name, true,
+		[this] (const std::string & name) { enqueuePartForCheck(name); }),
 	reader(data), writer(data), merger(data), fetcher(data), sharded_partition_uploader_client(*this),
 	shutdown_event(false), log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
@@ -1399,12 +1401,12 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 				restarting_thread->wakeup();
 
 			tryLogCurrentException(__PRETTY_FUNCTION__);
-			queue_updating_event->tryWait(ERROR_SLEEP_MS);
+			queue_updating_event->tryWait(QUEUE_UPDATE_ERROR_SLEEP_MS);
 		}
 		catch (...)
 		{
 			tryLogCurrentException(__PRETTY_FUNCTION__);
-			queue_updating_event->tryWait(ERROR_SLEEP_MS);
+			queue_updating_event->tryWait(QUEUE_UPDATE_ERROR_SLEEP_MS);
 		}
 	}
 
@@ -1896,7 +1898,7 @@ void StorageReplicatedMergeTree::alterThread()
 
 			force_recheck_parts = true;
 
-			alter_thread_event->tryWait(ERROR_SLEEP_MS);
+			alter_thread_event->tryWait(ALTER_ERROR_SLEEP_MS);
 		}
 	}
 
@@ -1941,13 +1943,14 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 }
 
 
-void StorageReplicatedMergeTree::enqueuePartForCheck(const String & name)
+void StorageReplicatedMergeTree::enqueuePartForCheck(const String & name, time_t min_check_time)
 {
 	std::lock_guard<std::mutex> lock(parts_to_check_mutex);
 
 	if (parts_to_check_set.count(name))
 		return;
-	parts_to_check_queue.push_back(name);
+
+	parts_to_check_queue.emplace_back(name, min_check_time);
 	parts_to_check_set.insert(name);
 	parts_to_check_event.set();
 }
@@ -2195,10 +2198,15 @@ void StorageReplicatedMergeTree::partCheckThread()
 	{
 		try
 		{
+			time_t current_time = time(0);
+
 			/// Достанем из очереди кусок для проверки.
-			String part_name;
+			PartsToCheckQueue::iterator selected = parts_to_check_queue.end();	/// end у std::list не инвалидируется
+			time_t min_check_time = std::numeric_limits<time_t>::max();
+
 			{
 				std::lock_guard<std::mutex> lock(parts_to_check_mutex);
+
 				if (parts_to_check_queue.empty())
 				{
 					if (!parts_to_check_set.empty())
@@ -2209,17 +2217,34 @@ void StorageReplicatedMergeTree::partCheckThread()
 				}
 				else
 				{
-					part_name = parts_to_check_queue.front();
+					for (auto it = parts_to_check_queue.begin(); it != parts_to_check_queue.end(); ++it)
+					{
+						if (it->second <= current_time)
+						{
+							selected = it;
+							break;
+						}
+
+						if (it->second < min_check_time)
+							min_check_time = it->second;
+					}
 				}
 			}
 
-			if (part_name.empty())
+			if (selected == parts_to_check_queue.end())
 			{
-				parts_to_check_event.wait();
+				/// Poco::Event срабатывает сразу, если signal был до вызова wait.
+				/// Можем подождать чуть больше, чем нужно из-за использования старого current_time.
+
+				if (min_check_time > current_time)
+					parts_to_check_event.tryWait(1000 * (min_check_time - current_time));
+				else
+					parts_to_check_event.wait();
+
 				continue;
 			}
 
-			checkPart(part_name);
+			checkPart(selected->first);
 
 			if (shutdown_called)
 				break;
@@ -2227,21 +2252,22 @@ void StorageReplicatedMergeTree::partCheckThread()
 			/// Удалим кусок из очереди проверок.
 			{
 				std::lock_guard<std::mutex> lock(parts_to_check_mutex);
-				if (parts_to_check_queue.empty() || parts_to_check_queue.front() != part_name)
+
+				if (parts_to_check_queue.empty())
 				{
-					LOG_ERROR(log, "Checker: Someone changed parts_to_check_queue.front(). This is a bug.");
+					LOG_ERROR(log, "Checker: Someone erased cheking part from parts_to_check_queue. This is a bug.");
 				}
 				else
 				{
-					parts_to_check_queue.pop_front();
-					parts_to_check_set.erase(part_name);
+					parts_to_check_queue.erase(selected);
+					parts_to_check_set.erase(selected->first);
 				}
 			}
 		}
 		catch (...)
 		{
 			tryLogCurrentException(__PRETTY_FUNCTION__);
-			parts_to_check_event.tryWait(ERROR_SLEEP_MS);
+			parts_to_check_event.tryWait(PART_CHECK_ERROR_SLEEP_MS);
 		}
 	}
 }
