@@ -215,7 +215,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 
 	if (create_ordered_set)
 		for (size_t i = 0; i < rows; ++i)
-			ordered_set_elements->push_back((*key_columns[0])[i]); /// ordered_set для индекса работает только если IN одному ключу.
+			ordered_set_elements->push_back((*key_columns[0])[i]); /// ordered_set для индекса работает только если IN по одному ключу, а не кортажам
 
 	if (!checkSetSizeLimits())
 	{
@@ -313,7 +313,10 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, const Context & context,
 	insertFromBlock(block, create_ordered_set);
 
 	if (create_ordered_set)
+	{
 		std::sort(ordered_set_elements->begin(), ordered_set_elements->end());
+		ordered_set_elements->erase(std::unique(ordered_set_elements->begin(), ordered_set_elements->end()), ordered_set_elements->end());
+	}
 }
 
 
@@ -484,75 +487,87 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 }
 
 
+/// Возвращаем BoolMask.
+/// Первый элемент - может ли в диапазоне range быть элемент множества.
+/// Второй элемент - может ли в диапазоне range быть элемент не из множества.
 BoolMask Set::mayBeTrueInRange(const Range & range) const
 {
 	if (!ordered_set_elements)
 		throw DB::Exception("Ordered set in not created.");
 
 	if (ordered_set_elements->empty())
-		return BoolMask(false, true);
+		return {false, true};
+
+	/// Диапазон (-inf; +inf)
+	if (!range.left_bounded && !range.right_bounded)
+		return {true, true};
 
 	const Field & left = range.left;
 	const Field & right = range.right;
 
-	bool can_be_true;
-	bool can_be_false = true;
+	/// Диапазон (-inf; right|
+	if (!range.left_bounded)
+	{
+		if (range.right_included)
+			return {ordered_set_elements->front() <= right, true};
+		else
+			return {ordered_set_elements->front() < right, true};
+	}
 
-	/// Если во всем диапазоне одинаковый ключ и он есть в Set, то выбираем блок для in и не выбираем для notIn
-	if (range.left_bounded && range.right_bounded && range.right_included && range.left_included && left == right)
+	/// Диапазон |left; +inf)
+	if (!range.right_bounded)
+	{
+		if (range.left_included)
+			return {ordered_set_elements->back() >= left, true};
+		else
+			return {ordered_set_elements->back() > left, true};
+	}
+
+	/// Диапазон из одного значения [left].
+	if (range.left_included && range.right_included && left == right)
 	{
 		if (std::binary_search(ordered_set_elements->begin(), ordered_set_elements->end(), left))
-		{
-			can_be_false = false;
-			can_be_true = true;
-		}
+			return {true, false};
 		else
-		{
-			can_be_true = false;
-			can_be_false = true;
-		}
+			return {false, true};
 	}
-	else
+
+	/// Первый элемент множества, который больше или равен left.
+	auto left_it = std::lower_bound(ordered_set_elements->begin(), ordered_set_elements->end(), left);
+
+	/// Если left не входит в диапазон (открытый диапазон), то возьмём следующий по порядку элемент множества.
+	if (!range.left_included && left_it != ordered_set_elements->end() && *left_it == left)
+		++left_it;
+
+	/// если весь диапазон правее множества: { set } | range |
+	if (left_it == ordered_set_elements->end())
+		return {false, true};
+
+	/// Первый элемент множества, который строго больше right.
+	auto right_it = std::upper_bound(ordered_set_elements->begin(), ordered_set_elements->end(), right);
+
+	/// весь диапазон левее множества: | range | { set }
+	if (right_it == ordered_set_elements->begin())
+		return {false, true};
+
+	/// Последний элемент множества, который меньше или равен right.
+	--right_it;
+
+	/// Если right не входит в диапазон (открытый диапазон), то возьмём предыдущий по порядку элемент множества.
+	if (!range.right_included && *right_it == right)
 	{
-		auto left_it = range.left_bounded
-			? std::lower_bound(ordered_set_elements->begin(), ordered_set_elements->end(), left)
-			: ordered_set_elements->begin();
+		/// весь диапазон левее множества, хотя открытый диапазон касается множества: | range ){ set }
+		if (right_it == ordered_set_elements->begin())
+			return {false, true};
 
-		if (range.left_bounded && !range.left_included && left_it != ordered_set_elements->end() && *left_it == left)
-			++left_it;
-
-		/// если весь диапазон, правее in
-		if (left_it == ordered_set_elements->end())
-		{
-			can_be_true = false;
-		}
-		else
-		{
-			auto right_it = range.right_bounded
-				? std::upper_bound(ordered_set_elements->begin(), ordered_set_elements->end(), right)
-				: ordered_set_elements->end();
-
-			if (range.right_bounded && !range.right_included && right_it != ordered_set_elements->begin() && *(right_it--) == right)
-				--right_it;
-
-			/// весь диапазон, левее in
-			if (right_it == ordered_set_elements->begin())
-			{
-				can_be_true = false;
-			}
-			else
-			{
-				--right_it;
-				/// в диапазон не попадает ни одного ключа из in
-				if (*right_it < *left_it)
-					can_be_true = false;
-				else
-					can_be_true = true;
-			}
-		}
+		--right_it;
 	}
 
-	return BoolMask(can_be_true, can_be_false);
+	/// В диапазон не попадает ни одного ключа из множества, хотя он расположен где-то посередине относительно его элементов: * * * * [ ] * * * *
+	if (right_it < left_it)
+		return {false, true};
+
+	return {true, true};
 }
 
 
