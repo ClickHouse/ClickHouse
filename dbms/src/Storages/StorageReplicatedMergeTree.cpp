@@ -86,6 +86,7 @@ namespace ErrorCodes
 	extern const int CHECKSUM_DOESNT_MATCH;
 	extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
 	extern const int UNFINISHED;
+	extern const int METADATA_MISMATCH;
 }
 
 
@@ -398,6 +399,114 @@ static String formattedAST(const ASTPtr & ast)
 }
 
 
+namespace
+{
+	/** Основные параметры движка таблицы для сохранения в ZooKeeper.
+	  * Позволяет проверить, что они совпадают с локальными.
+	  */
+	struct TableMetadata
+	{
+		const MergeTreeData & data;
+
+		TableMetadata(const MergeTreeData & data_)
+			: data(data_) {}
+
+		void write(WriteBuffer & out) const
+		{
+			out << "metadata format version: 1" << "\n"
+				<< "date column: " << data.date_column_name << "\n"
+				<< "sampling expression: " << formattedAST(data.sampling_expression) << "\n"
+				<< "index granularity: " << data.index_granularity << "\n"
+				<< "mode: " << static_cast<int>(data.mode) << "\n"
+				<< "sign column: " << data.sign_column << "\n"
+				<< "primary key: " << formattedAST(data.primary_expr_ast) << "\n";
+		}
+
+		String toString() const
+		{
+			String res;
+			WriteBufferFromString out(res);
+			write(out);
+			return res;
+		}
+
+		void check(ReadBuffer & in) const
+		{
+			/// TODO Можно сделать менее громоздко.
+
+			in >> "metadata format version: 1";
+
+			in >> "\ndate column: ";
+			String read_date_column_name;
+			in >> read_date_column_name;
+
+			if (read_date_column_name != data.date_column_name)
+				throw Exception("Existing table metadata in ZooKeeper differs in date index column."
+					" Stored in ZooKeeper: " + read_date_column_name + ", local: " + data.date_column_name,
+					ErrorCodes::METADATA_MISMATCH);
+
+			in >> "\nsampling expression: ";
+			String read_sample_expression;
+			String local_sample_expression = formattedAST(data.sampling_expression);
+			in >> read_sample_expression;
+
+			if (read_sample_expression != local_sample_expression)
+				throw Exception("Existing table metadata in ZooKeeper differs in sample expression."
+					" Stored in ZooKeeper: " + read_sample_expression + ", local: " + local_sample_expression,
+					ErrorCodes::METADATA_MISMATCH);
+
+			in >> "\nindex granularity: ";
+			size_t read_index_granularity = 0;
+			in >> read_index_granularity;
+
+			if (read_index_granularity != data.index_granularity)
+				throw Exception("Existing table metadata in ZooKeeper differs in index granularity."
+					" Stored in ZooKeeper: " + DB::toString(read_index_granularity) + ", local: " + DB::toString(data.index_granularity),
+					ErrorCodes::METADATA_MISMATCH);
+
+			in >> "\nmode: ";
+			int read_mode = 0;
+			in >> read_mode;
+
+			if (read_mode != static_cast<int>(data.mode))
+				throw Exception("Existing table metadata in ZooKeeper differs in mode of merge operation."
+					" Stored in ZooKeeper: " + DB::toString(read_mode) + ", local: " + DB::toString(static_cast<int>(data.mode)),
+					ErrorCodes::METADATA_MISMATCH);
+
+			in >> "\nsign column: ";
+			String read_sign_column;
+			in >> read_sign_column;
+
+			if (read_sign_column != data.sign_column)
+				throw Exception("Existing table metadata in ZooKeeper differs in sign column."
+					" Stored in ZooKeeper: " + read_sign_column + ", local: " + data.sign_column,
+					ErrorCodes::METADATA_MISMATCH);
+
+			in >> "\nprimary key: ";
+			String read_primary_key;
+			String local_primary_key = formattedAST(data.primary_expr_ast);
+			in >> read_primary_key;
+
+			/// NOTE: Можно сделать менее строгую проверку совпадения выражений, чтобы таблицы не ломались от небольших изменений
+			///       в коде formatAST.
+			if (read_primary_key != local_primary_key)
+				throw Exception("Existing table metadata in ZooKeeper differs in primary key."
+					" Stored in ZooKeeper: " + read_primary_key + ", local: " + local_primary_key,
+					ErrorCodes::METADATA_MISMATCH);
+
+			in >> "\n";
+			assertEOF(in);
+		}
+
+		void check(const String & s) const
+		{
+			ReadBufferFromString in(s);
+			check(in);
+		}
+	};
+}
+
+
 void StorageReplicatedMergeTree::createTableIfNotExists()
 {
 	auto zookeeper = getZooKeeper();
@@ -410,17 +519,7 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
 	zookeeper->createAncestors(zookeeper_path);
 
 	/// Запишем метаданные таблицы, чтобы реплики могли сверять с ними параметры таблицы.
-	std::string metadata;
-	{
-		WriteBufferFromString out(metadata);
-		out << "metadata format version: 1" << "\n"
-			<< "date column: " << data.date_column_name << "\n"
-			<< "sampling expression: " << formattedAST(data.sampling_expression) << "\n"
-			<< "index granularity: " << data.index_granularity << "\n"
-			<< "mode: " << static_cast<int>(data.mode) << "\n"
-			<< "sign column: " << data.sign_column << "\n"
-			<< "primary key: " << formattedAST(data.primary_expr_ast) << "\n";
-	}
+	String metadata = TableMetadata(data).toString();
 
 	auto acl = zookeeper->getDefaultACL();
 
@@ -462,24 +561,7 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
 	auto zookeeper = getZooKeeper();
 
 	String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
-	ReadBufferFromString buf(metadata_str);
-	assertString("metadata format version: 1", buf);
-	assertString("\ndate column: ", buf);
-	assertString(data.date_column_name, buf);
-	assertString("\nsampling expression: ", buf);
-	assertString(formattedAST(data.sampling_expression), buf);
-	assertString("\nindex granularity: ", buf);
-	assertString(toString(data.index_granularity), buf);
-	assertString("\nmode: ", buf);
-	assertString(toString(static_cast<int>(data.mode)), buf);
-	assertString("\nsign column: ", buf);
-	assertString(data.sign_column, buf);
-	assertString("\nprimary key: ", buf);
-	/// NOTE: Можно сделать менее строгую проверку совпадения выражений, чтобы таблицы не ломались от небольших изменений
-	///       в коде formatAST.
-	assertString(formattedAST(data.primary_expr_ast), buf);
-	assertString("\n", buf);
-	assertEOF(buf);
+	TableMetadata(data).check(metadata_str);
 
 	zkutil::Stat stat;
 	auto columns_desc = ColumnsDescription<true>::parse(zookeeper->get(zookeeper_path + "/columns", &stat));

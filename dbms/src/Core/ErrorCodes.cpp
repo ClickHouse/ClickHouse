@@ -345,6 +345,7 @@ namespace ErrorCodes
 	extern const int RESHARDING_ILL_FORMED_LOG = 339;
 	extern const int NO_ZOOKEEPER_ACCESSOR = 340;
 	extern const int UNFINISHED = 341;
+	extern const int METADATA_MISMATCH = 342;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;

@@ -187,11 +187,11 @@ public:
 	/// Режим работы. См. выше.
 	enum Mode
 	{
-		Ordinary,
-		Collapsing,
-		Summing,
-		Aggregating,
-		Unsorted,
+		Ordinary 	= 0,	/// Числа сохраняются - не меняйте.
+		Collapsing 	= 1,
+		Summing 	= 2,
+		Aggregating = 3,
+		Unsorted 	= 4,
 	};
 
 	static void doNothing(const String & name) {}
