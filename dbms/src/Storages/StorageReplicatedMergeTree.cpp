@@ -89,7 +89,6 @@ namespace ErrorCodes
 
 
 const auto QUEUE_UPDATE_ERROR_SLEEP_MS 	= 1 * 1000;
-const auto PART_CHECK_ERROR_SLEEP_MS 	= 5 * 1000;
 const auto ALTER_ERROR_SLEEP_MS 		= 10 * 1000;
 const auto MERGE_SELECTING_SLEEP_MS 	= 5 * 1000;
 
@@ -114,7 +113,7 @@ const auto MERGE_SELECTING_SLEEP_MS 	= 5 * 1000;
   * А значит, что при вставке в таблицу всех кусков из другой таблицы, 200 номеров наверняка достаточно.
   * В свою очередь, это число выбрано почти наугад.
   */
-const Int64 RESERVED_BLOCK_NUMBERS = 200;
+extern const Int64 RESERVED_BLOCK_NUMBERS = 200;
 
 
 /** Для каждого куска есть сразу три места, где он должен быть:
@@ -205,7 +204,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		settings_, database_name_ + "." + table_name, true,
 		[this] (const std::string & name) { enqueuePartForCheck(name); }),
 	reader(data), writer(data), merger(data), fetcher(data), sharded_partition_uploader_client(*this),
-	shutdown_event(false), log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
+	shutdown_event(false), part_check_thread(*this),
+	log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
 	if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
 		zookeeper_path.resize(zookeeper_path.size() - 1);
@@ -1943,336 +1943,6 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 }
 
 
-void StorageReplicatedMergeTree::enqueuePartForCheck(const String & name, time_t min_check_time)
-{
-	std::lock_guard<std::mutex> lock(parts_to_check_mutex);
-
-	if (parts_to_check_set.count(name))
-		return;
-
-	parts_to_check_queue.emplace_back(name, min_check_time);
-	parts_to_check_set.insert(name);
-	parts_to_check_event.set();
-}
-
-
-void StorageReplicatedMergeTree::searchForMissingPart(const String & part_name)
-{
-	auto zookeeper = getZooKeeper();
-	String part_path = replica_path + "/parts/" + part_name;
-
-	/// Если кусок есть в ZooKeeper, удалим его оттуда и добавим в очередь задание скачать его.
-	if (zookeeper->exists(part_path))
-	{
-		LOG_WARNING(log, "Checker: Part " << part_name << " exists in ZooKeeper but not locally. "
-			"Removing from ZooKeeper and queueing a fetch.");
-		ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
-
-		removePartAndEnqueueFetch(part_name);
-		return;
-	}
-
-	/// Если куска нет в ZooKeeper, проверим есть ли он хоть у кого-то.
-	ActiveDataPartSet::Part part_info;
-	ActiveDataPartSet::parsePartName(part_name, part_info);
-
-	/** Логика такая:
-		* - если у какой-то живой или неактивной реплики есть такой кусок, или покрывающий его кусок
-		*   - всё Ок, ничего делать не нужно, он скачается затем при обработке очереди, когда реплика оживёт;
-		*   - или, если реплика никогда не оживёт, то администратор удалит или создаст новую реплику с тем же адресом и см. всё сначала;
-		* - если ни у кого нет такого или покрывающего его куска, то
-		*   - если у кого-то есть все составляющие куски, то ничего делать не будем - это просто значит, что другие реплики ещё недоделали мердж
-		*   - если ни у кого нет всех составляющих кусков, то признаем кусок навечно потерянным,
-		*     и удалим запись из очереди репликации.
-		*/
-
-	LOG_WARNING(log, "Checker: Checking if anyone has part covering " << part_name << ".");
-
-	bool found = false;
-
-	size_t part_length_in_blocks = part_info.right + 1 - part_info.left;
-	std::vector<char> found_blocks(part_length_in_blocks);
-
-	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
-	for (const String & replica : replicas)
-	{
-		Strings parts = zookeeper->getChildren(zookeeper_path + "/replicas/" + replica + "/parts");
-		for (const String & part_on_replica : parts)
-		{
-			if (part_on_replica == part_name || ActiveDataPartSet::contains(part_on_replica, part_name))
-			{
-				found = true;
-				LOG_WARNING(log, "Checker: Found part " << part_on_replica << " on " << replica);
-				break;
-			}
-
-			if (ActiveDataPartSet::contains(part_name, part_on_replica))
-			{
-				ActiveDataPartSet::Part part_on_replica_info;
-				ActiveDataPartSet::parsePartName(part_on_replica, part_on_replica_info);
-
-				for (auto block_num = part_on_replica_info.left; block_num <= part_on_replica_info.right; ++block_num)
-					found_blocks.at(block_num - part_info.left) = 1;
-			}
-		}
-		if (found)
-			break;
-	}
-
-	if (found)
-	{
-		/// На какой-то живой или мёртвой реплике есть нужный кусок или покрывающий его.
-		return;
-	}
-
-	size_t num_found_blocks = 0;
-	for (auto found_block : found_blocks)
-		num_found_blocks += (found_block == 1);
-
-	if (num_found_blocks == part_length_in_blocks)
-	{
-		/// На совокупности живых или мёртвых реплик есть все куски, из которых можно составить нужный кусок. Ничего делать не будем.
-		LOG_WARNING(log, "Checker: Found all blocks for missing part. Will wait for them to be merged.");
-		return;
-	}
-
-	/// Ни у кого нет такого куска.
-	LOG_ERROR(log, "Checker: No replica has part covering " << part_name);
-
-	if (num_found_blocks != 0)
-		LOG_WARNING(log, "When looking for smaller parts, that is covered by " << part_name
-			<< ", we found just " << num_found_blocks << " of " << part_length_in_blocks << " blocks.");
-
-	ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
-
-	/// Есть ли он в очереди репликации? Если есть - удалим, так как задачу невозможно обработать.
-	if (!queue.remove(zookeeper, part_name))
-	{
-		/// Куска не было в нашей очереди. С чего бы это?
-		LOG_ERROR(log, "Checker: Missing part " << part_name << " is not in our queue.");
-		return;
-	}
-
-	/** Такая ситуация возможна, если на всех репликах, где был кусок, он испортился.
-		* Например, у реплики, которая только что его записала, отключили питание, и данные не записались из кеша на диск.
-		*/
-	LOG_ERROR(log, "Checker: Part " << part_name << " is lost forever.");
-	ProfileEvents::increment(ProfileEvents::ReplicatedDataLoss);
-
-	/** Нужно добавить отсутствующий кусок в block_numbers, чтобы он не мешал слияниям.
-		* Вот только в сам block_numbers мы его добавить не можем - если так сделать,
-		*  ZooKeeper зачем-то пропустит один номер для автоинкремента,
-		*  и в номерах блоков все равно останется дырка.
-		* Специально из-за этого приходится отдельно иметь nonincrement_block_numbers.
-		*
-		* Кстати, если мы здесь сдохнем, то слияния не будут делаться сквозь эти отсутствующие куски.
-		*
-		* А ещё, не будем добавлять, если:
-		* - потребовалось бы создать слишком много (больше 1000) узлов;
-		* - кусок является первым в партиции или был при-ATTACH-ен.
-		* NOTE Возможно, добавить также условие, если запись в очереди очень старая.
-		*/
-
-	if (part_length_in_blocks > 1000)
-	{
-		LOG_ERROR(log, "Won't add nonincrement_block_numbers because part spans too much blocks (" << part_length_in_blocks << ")");
-		return;
-	}
-
-	if (part_info.left <= RESERVED_BLOCK_NUMBERS)
-	{
-		LOG_ERROR(log, "Won't add nonincrement_block_numbers because part is one of first in partition");
-		return;
-	}
-
-	const auto partition_str = part_name.substr(0, 6);
-	for (auto i = part_info.left; i <= part_info.right; ++i)
-	{
-		zookeeper->createIfNotExists(zookeeper_path + "/nonincrement_block_numbers/" + partition_str, "");
-		AbandonableLockInZooKeeper::createAbandonedIfNotExists(
-			zookeeper_path + "/nonincrement_block_numbers/" + partition_str + "/block-" + padIndex(i),
-			*zookeeper);
-	}
-}
-
-
-void StorageReplicatedMergeTree::checkPart(const String & part_name)
-{
-	LOG_WARNING(log, "Checker: Checking part " << part_name);
-	ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
-
-	auto part = data.getActiveContainingPart(part_name);
-
-	/// Этого или покрывающего куска у нас нет.
-	if (!part)
-	{
-		searchForMissingPart(part_name);
-	}
-	/// У нас есть этот кусок, и он активен. Будем проверять, нужен ли нам этот кусок и правильные ли у него данные.
-	else if (part->name == part_name)
-	{
-		auto zookeeper = getZooKeeper();
-		auto table_lock = lockStructure(false);
-
-		/// Если кусок есть в ZooKeeper, сверим его данные с его чексуммами, а их с ZooKeeper.
-		if (zookeeper->exists(replica_path + "/parts/" + part_name))
-		{
-			LOG_WARNING(log, "Checker: Checking data of part " << part_name << ".");
-
-			try
-			{
-				auto zk_checksums = MergeTreeData::DataPart::Checksums::parse(
-					zookeeper->get(replica_path + "/parts/" + part_name + "/checksums"));
-				zk_checksums.checkEqual(part->checksums, true);
-
-				auto zk_columns = NamesAndTypesList::parse(
-					zookeeper->get(replica_path + "/parts/" + part_name + "/columns"));
-				if (part->columns != zk_columns)
-					throw Exception("Columns of local part " + part_name + " are different from ZooKeeper");
-
-				MergeTreePartChecker::Settings settings;
-				settings.setIndexGranularity(data.index_granularity);
-				settings.setRequireChecksums(true);
-				settings.setRequireColumnFiles(true);
-
-				MergeTreePartChecker::checkDataPart(
-					data.getFullPath() + part_name, settings, data.primary_key_data_types, nullptr, &shutdown_called);
-
-				if (shutdown_called)
-				{
-					LOG_INFO(log, "Checking part was cancelled.");
-					return;
-				}
-
-				LOG_INFO(log, "Checker: Part " << part_name << " looks good.");
-			}
-			catch (...)
-			{
-				tryLogCurrentException(__PRETTY_FUNCTION__);
-
-				LOG_ERROR(log, "Checker: Part " << part_name << " looks broken. Removing it and queueing a fetch.");
-				ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
-
-				removePartAndEnqueueFetch(part_name);
-
-				/// Удалим кусок локально.
-				data.renameAndDetachPart(part, "broken_");
-			}
-		}
-		else if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(0))
-		{
-			/// Если куска нет в ZooKeeper, удалим его локально.
-			/// Возможно, кусок кто-то только что записал, и еще не успел добавить в ZK.
-			/// Поэтому удаляем только если кусок старый (не очень надежно).
-			ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
-
-			LOG_ERROR(log, "Checker: Unexpected part " << part_name << " in filesystem. Removing.");
-			data.renameAndDetachPart(part, "unexpected_");
-		}
-		else
-		{
-			/// TODO Надо сделать так, чтобы кусок всё-таки проверился через некоторое время.
-			/// Иначе возможна ситуация, что кусок не добавился в ZK,
-			///  но остался в файловой системе и в множестве активных кусков.
-			/// И тогда в течение долгого времени (до перезапуска), данные на репликах будут разными.
-
-			LOG_TRACE(log, "Checker: Young part " << part_name
-				<< " with age " << (time(0) - part->modification_time)
-				<< " seconds hasn't been added to ZooKeeper yet. It's ok.");
-		}
-	}
-	else
-	{
-		/// Если у нас есть покрывающий кусок, игнорируем все проблемы с этим куском.
-		/// В худшем случае в лог еще old_parts_lifetime секунд будут валиться ошибки, пока кусок не удалится как старый.
-		LOG_WARNING(log, "Checker: We have part " << part->name << " covering part " << part_name);
-	}
-}
-
-
-void StorageReplicatedMergeTree::partCheckThread()
-{
-	setThreadName("ReplMTPartCheck");
-
-	while (!shutdown_called)
-	{
-		try
-		{
-			time_t current_time = time(0);
-
-			/// Достанем из очереди кусок для проверки.
-			PartsToCheckQueue::iterator selected = parts_to_check_queue.end();	/// end у std::list не инвалидируется
-			time_t min_check_time = std::numeric_limits<time_t>::max();
-
-			{
-				std::lock_guard<std::mutex> lock(parts_to_check_mutex);
-
-				if (parts_to_check_queue.empty())
-				{
-					if (!parts_to_check_set.empty())
-					{
-						LOG_ERROR(log, "Checker: Non-empty parts_to_check_set with empty parts_to_check_queue. This is a bug.");
-						parts_to_check_set.clear();
-					}
-				}
-				else
-				{
-					for (auto it = parts_to_check_queue.begin(); it != parts_to_check_queue.end(); ++it)
-					{
-						if (it->second <= current_time)
-						{
-							selected = it;
-							break;
-						}
-
-						if (it->second < min_check_time)
-							min_check_time = it->second;
-					}
-				}
-			}
-
-			if (selected == parts_to_check_queue.end())
-			{
-				/// Poco::Event срабатывает сразу, если signal был до вызова wait.
-				/// Можем подождать чуть больше, чем нужно из-за использования старого current_time.
-
-				if (min_check_time > current_time)
-					parts_to_check_event.tryWait(1000 * (min_check_time - current_time));
-				else
-					parts_to_check_event.wait();
-
-				continue;
-			}
-
-			checkPart(selected->first);
-
-			if (shutdown_called)
-				break;
-
-			/// Удалим кусок из очереди проверок.
-			{
-				std::lock_guard<std::mutex> lock(parts_to_check_mutex);
-
-				if (parts_to_check_queue.empty())
-				{
-					LOG_ERROR(log, "Checker: Someone erased cheking part from parts_to_check_queue. This is a bug.");
-				}
-				else
-				{
-					parts_to_check_set.erase(selected->first);
-					parts_to_check_queue.erase(selected);
-				}
-			}
-		}
-		catch (...)
-		{
-			tryLogCurrentException(__PRETTY_FUNCTION__);
-			parts_to_check_event.tryWait(PART_CHECK_ERROR_SLEEP_MS);
-		}
-	}
-}
-
-
 void StorageReplicatedMergeTree::becomeLeader()
 {
 	LOG_INFO(log, "Became leader");
@@ -3296,11 +2966,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 	res.is_session_expired = !zookeeper || zookeeper->expired();
 
 	res.queue = queue.getStatus();
-
-	{
-		std::lock_guard<std::mutex> lock(parts_to_check_mutex);
-		res.parts_to_check = parts_to_check_set.size();
-	}
+	res.parts_to_check = part_check_thread.size();
 
 	res.zookeeper_path = zookeeper_path;
 	res.replica_name = replica_name;

@@ -295,7 +295,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 				e.code == ZCONNECTIONLOSS)
 			{
 				transaction.commit();
-				storage.enqueuePartForCheck(part->name, time(0) + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
+				storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
 
 				/// Мы не знаем, были или не были вставлены данные.
 				throw Exception("Unknown status, client must retry. Reason: " + e.displayText(), ErrorCodes::UNKNOWN_STATUS_OF_INSERT);

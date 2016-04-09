@@ -9,6 +9,7 @@
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
+#include <DB/Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <DB/Storages/MergeTree/AbandonableLockInZooKeeper.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 #include <DB/Storages/MergeTree/DataPartsExchange.h>
@@ -150,9 +151,6 @@ public:
 
 	bool supportsIndexForIn() const override { return true; }
 
-	/// Добавить кусок в очередь кусков, чьи данные нужно проверить в фоновом потоке.
-	void enqueuePartForCheck(const String & name, time_t min_check_time = 0);
-
 	MergeTreeData & getData() { return data; }
 	MergeTreeData * getUnreplicatedData() { return unreplicated_data.get(); }
 
@@ -183,11 +181,18 @@ public:
 
 	void getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay);
 
+	/// Добавить кусок в очередь кусков, чьи данные нужно проверить в фоновом потоке.
+	void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0)
+	{
+		part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
+	}
+
 private:
 	void dropUnreplicatedPartition(const Field & partition, bool detach, const Settings & settings);
 
 	friend class ReplicatedMergeTreeBlockOutputStream;
 	friend class ReplicatedMergeTreeRestartingThread;
+	friend class ReplicatedMergeTreePartCheckThread;
 	friend class ReplicatedMergeTreeCleanupThread;
 	friend struct ReplicatedMergeTreeLogEntry;
 	friend class ScopedPartitionMergeLock;
@@ -198,10 +203,6 @@ private:
 
 	using LogEntry = ReplicatedMergeTreeLogEntry;
 	using LogEntryPtr = LogEntry::Ptr;
-
-	using StringSet = std::set<String>;
-	using PartToCheck = std::pair<String, time_t>;	/// Имя куска и минимальное время для проверки (или ноль, если не важно).
-	using PartsToCheckQueue = std::list<PartToCheck>;
 
 	Context & context;
 
@@ -214,15 +215,6 @@ private:
 
 	/// Если true, таблица в офлайновом режиме, и в нее нельзя писать.
 	bool is_readonly = false;
-
-	/** Куски, для которых нужно проверить одно из двух:
-	  *  - Если кусок у нас есть, сверить, его данные с его контрольными суммами, а их с ZooKeeper.
-	  *  - Если куска у нас нет, проверить, есть ли он (или покрывающий его кусок) хоть у кого-то.
-	  */
-	StringSet parts_to_check_set;
-	PartsToCheckQueue parts_to_check_queue;
-	std::mutex parts_to_check_mutex;
-	Poco::Event parts_to_check_event;
 
 	String database_name;
 	String table_name;
@@ -303,8 +295,8 @@ private:
 	std::thread alter_thread;
 	zkutil::EventPtr alter_thread_event = zkutil::EventPtr(new Poco::Event);
 
-	/// Поток, проверяющий данные кусков.
-	std::thread part_check_thread;
+	/// Поток, проверяющий данные кусков, а также очередь кусков для проверки.
+	ReplicatedMergeTreePartCheckThread part_check_thread;
 
 	/// Событие, пробуждающее метод alter от ожидания завершения запроса ALTER.
 	zkutil::EventPtr alter_query_event = zkutil::EventPtr(new Poco::Event);
@@ -411,13 +403,6 @@ private:
 	  */
 	void alterThread();
 
-	/** Проверяет целостность кусков.
-	  * Находит отсутствующие куски.
-	  */
-	void partCheckThread();
-	void checkPart(const String & part_name);
-	void searchForMissingPart(const String & part_name);
-
 	/// Обмен кусками.
 
 	/** Возвращает пустую строку, если куска ни у кого нет.
@@ -505,6 +490,7 @@ private:
 };
 
 
+extern const Int64 RESERVED_BLOCK_NUMBERS;
 extern const int MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER;
 
 }

@@ -207,9 +207,9 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 		storage.shutdown_event.reset();
 
 		storage.queue_updating_thread = std::thread(&StorageReplicatedMergeTree::queueUpdatingThread, &storage);
-		storage.cleanup_thread.reset(new ReplicatedMergeTreeCleanupThread(storage));
 		storage.alter_thread = std::thread(&StorageReplicatedMergeTree::alterThread, &storage);
-		storage.part_check_thread = std::thread(&StorageReplicatedMergeTree::partCheckThread, &storage);
+		storage.cleanup_thread.reset(new ReplicatedMergeTreeCleanupThread(storage));
+		storage.part_check_thread.start();
 		storage.queue_task_handle = storage.context.getBackgroundPool().addTask(
 			std::bind(&StorageReplicatedMergeTree::queueTask, &storage, std::placeholders::_1));
 		storage.queue_task_handle->wake();
@@ -364,7 +364,6 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 	storage.queue_updating_event->set();
 	storage.alter_thread_event->set();
 	storage.alter_query_event->set();
-	storage.parts_to_check_event.set();
 	storage.replica_is_active_node = nullptr;
 
 	storage.merger.cancel();
@@ -382,14 +381,14 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 		storage.queue_updating_thread.join();
 
 	storage.cleanup_thread.reset();
+	storage.part_check_thread.stop();
 
 	if (storage.alter_thread.joinable())
 		storage.alter_thread.join();
-	if (storage.part_check_thread.joinable())
-		storage.part_check_thread.join();
 	if (storage.queue_task_handle)
 		storage.context.getBackgroundPool().removeTask(storage.queue_task_handle);
 	storage.queue_task_handle.reset();
+
 	LOG_TRACE(log, "Threads finished");
 }
 
