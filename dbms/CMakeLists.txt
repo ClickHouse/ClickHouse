@@ -505,6 +505,7 @@ add_library (dbms
 	include/DB/Storages/MergeTree/MergedBlockOutputStream.h
 	include/DB/Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h
 	include/DB/Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h
+	include/DB/Storages/MergeTree/ReplicatedMergeTreeAlterThread.h
 	include/DB/Storages/MergeTree/BoolMask.h
 	include/DB/Storages/MergeTree/BackgroundProcessingPool.h
 	include/DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h
@@ -641,6 +642,7 @@ add_library (dbms
 	src/Storages/MergeTree/ReplicatedMergeTreeRestartingThread.cpp
 	src/Storages/MergeTree/ReplicatedMergeTreePartCheckThread.cpp
 	src/Storages/MergeTree/ReplicatedMergeTreeCleanupThread.cpp
+	src/Storages/MergeTree/ReplicatedMergeTreeAlterThread.cpp
 	src/Storages/MergeTree/ReshardingJob.cpp
 	src/Storages/MergeTree/ReshardingWorker.cpp
 	src/Storages/MergeTree/MergeTreeSharder.cpp

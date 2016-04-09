@@ -4,11 +4,11 @@
 #include <DB/Common/setThreadName.h>
 
 
-const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
-
-
 namespace DB
 {
+
+static const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
+
 
 ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageReplicatedMergeTree & storage_)
 	: storage(storage_),
@@ -368,6 +368,8 @@ void ReplicatedMergeTreePartCheckThread::run()
 			wakeup_event.tryWait(PART_CHECK_ERROR_SLEEP_MS);
 		}
 	}
+
+	LOG_DEBUG(log, "Part check thread finished");
 }
 
 }

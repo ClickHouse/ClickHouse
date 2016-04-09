@@ -10,6 +10,7 @@
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
+#include <DB/Storages/MergeTree/ReplicatedMergeTreeAlterThread.h>
 #include <DB/Storages/MergeTree/AbandonableLockInZooKeeper.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 #include <DB/Storages/MergeTree/DataPartsExchange.h>
@@ -194,6 +195,7 @@ private:
 	friend class ReplicatedMergeTreeRestartingThread;
 	friend class ReplicatedMergeTreePartCheckThread;
 	friend class ReplicatedMergeTreeCleanupThread;
+	friend class ReplicatedMergeTreeAlterThread;
 	friend struct ReplicatedMergeTreeLogEntry;
 	friend class ScopedPartitionMergeLock;
 
@@ -292,8 +294,7 @@ private:
 	std::unique_ptr<ReplicatedMergeTreeRestartingThread> restarting_thread;
 
 	/// Поток, следящий за изменениями списка столбцов в ZooKeeper и обновляющий куски в соответствии с этими изменениями.
-	std::thread alter_thread;
-	zkutil::EventPtr alter_thread_event = zkutil::EventPtr(new Poco::Event);
+	std::unique_ptr<ReplicatedMergeTreeAlterThread> alter_thread;
 
 	/// Поток, проверяющий данные кусков, а также очередь кусков для проверки.
 	ReplicatedMergeTreePartCheckThread part_check_thread;
@@ -398,10 +399,6 @@ private:
 	/** Выбирает куски для слияния и записывает в лог.
 	  */
 	void mergeSelectingThread();
-
-	/** Делает локальный ALTER, когда список столбцов в ZooKeeper меняется.
-	  */
-	void alterThread();
 
 	/// Обмен кусками.
 
