@@ -26,29 +26,6 @@ public:
 		std::string node_path = node->getPath();
 		node_name = node_path.substr(node_path.find_last_of('/') + 1);
 
-		/** Если есть ноды с таким же ephemeralOwner, то удалим их.
-		  * Такие ноды могли остаться после неуспешного удаления, если сессия при этом не истекла.
-		  */
-		zkutil::Stat node_stat;
-		zookeeper.get(node_path, &node_stat);
-
-		Strings brothers = zookeeper.getChildren(path);
-		for (const auto & brother : brothers)
-		{
-			if (brother == node_name)
-				continue;
-
-			zkutil::Stat brother_stat;
-			std::string brother_path = path + "/" + brother;
-			zookeeper.get(brother_path, &brother_stat);
-
-			if (brother_stat.ephemeralOwner == node_stat.ephemeralOwner)
-			{
-				LOG_WARNING(log, "Found obsolete ephemeral node from same session, removing: " + brother_path);
-				zookeeper.tryRemoveWithRetries(brother_path);
-			}
-		}
-
 		thread = std::thread(&LeaderElection::threadFunction, this);
 	}
 

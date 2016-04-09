@@ -197,7 +197,7 @@ int32_t ZooKeeper::tryGetChildren(const std::string & path, Strings & res,
 	return code;
 }
 
-int32_t ZooKeeper::createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated)
+int32_t ZooKeeper::createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created)
 {
 	int code;
 	/// имя ноды может быть больше переданного пути, если создается sequential нода.
@@ -210,7 +210,7 @@ int32_t ZooKeeper::createImpl(const std::string & path, const std::string & data
 
 	if (code == ZOK)
 	{
-		pathCreated = std::string(name_buffer);
+		path_created = std::string(name_buffer);
 	}
 
 	delete[] name_buffer;
@@ -220,14 +220,14 @@ int32_t ZooKeeper::createImpl(const std::string & path, const std::string & data
 
 std::string ZooKeeper::create(const std::string & path, const std::string & data, int32_t type)
 {
-	std::string  pathCreated;
-	check(tryCreate(path, data, type, pathCreated), path);
-	return pathCreated;
+	std::string path_created;
+	check(tryCreate(path, data, type, path_created), path);
+	return path_created;
 }
 
-int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated)
+int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & path_created)
 {
-	int code = createImpl(path, data, mode, pathCreated);
+	int code = createImpl(path, data, mode, path_created);
 
 	if (!(	code == ZOK ||
 			code == ZNONODE ||
@@ -240,20 +240,20 @@ int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data,
 
 int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data, int32_t mode)
 {
-	std::string pathCreated;
-	return tryCreate(path, data, mode, pathCreated);
+	std::string path_created;
+	return tryCreate(path, data, mode, path_created);
 }
 
-int32_t ZooKeeper::tryCreateWithRetries(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated, size_t* attempt)
+int32_t ZooKeeper::tryCreateWithRetries(const std::string & path, const std::string & data, int32_t mode, std::string & path_created, size_t* attempt)
 {
-	return retry([&path, &data, mode, &pathCreated, this] { return tryCreate(path, data, mode, pathCreated); }, attempt);
+	return retry([&path, &data, mode, &path_created, this] { return tryCreate(path, data, mode, path_created); }, attempt);
 }
 
 
 void ZooKeeper::createIfNotExists(const std::string & path, const std::string & data)
 {
-	std::string pathCreated;
-	int32_t code = retry(std::bind(&ZooKeeper::createImpl, this, std::ref(path), std::ref(data), zkutil::CreateMode::Persistent, std::ref(pathCreated)));
+	std::string path_created;
+	int32_t code = retry(std::bind(&ZooKeeper::createImpl, this, std::ref(path), std::ref(data), zkutil::CreateMode::Persistent, std::ref(path_created)));
 
 	if (code == ZOK || code == ZNODEEXISTS)
 		return;
@@ -314,8 +314,27 @@ int32_t ZooKeeper::tryRemoveWithRetries(const std::string & path, int32_t versio
 			code == ZNONODE ||
 			code == ZBADVERSION ||
 			code == ZNOTEMPTY))
+	{
 		throw KeeperException(code, path);
+	}
+
 	return code;
+}
+
+int32_t ZooKeeper::tryRemoveEphemeralNodeWithRetries(const std::string & path, int32_t version, size_t * attempt)
+{
+	try
+	{
+		return tryRemoveWithRetries(path, version, attempt);
+	}
+	catch (const KeeperException &)
+	{
+		// Установим флажок, который говорит о том, что сессию лучше воспринимать так же как истёкшую,
+		///  чтобы кто-нибудь её пересоздал, и, в случае эфемерной ноды, нода всё-таки была удалена.
+		is_dirty = true;
+
+		throw;
+	}
 }
 
 int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, EventPtr watch)
@@ -625,14 +644,9 @@ std::string ZooKeeper::error2string(int32_t code)
 	return zerror(code);
 }
 
-int ZooKeeper::state()
-{
-	return zoo_state(impl);
-}
-
 bool ZooKeeper::expired()
 {
-	return state() == ZOO_EXPIRED_SESSION_STATE;
+	return is_dirty || zoo_state(impl) == ZOO_EXPIRED_SESSION_STATE;
 }
 
 int64_t ZooKeeper::getClientID()

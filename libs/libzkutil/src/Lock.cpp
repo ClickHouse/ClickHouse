@@ -55,7 +55,7 @@ void Lock::unlock()
 			if (tryCheck() == Status::LOCKED_BY_ME)
 			{
 				size_t attempt;
-				int32_t code = zookeeper->tryRemoveWithRetries(lock_path, -1, &attempt);
+				int32_t code = zookeeper->tryRemoveEphemeralNodeWithRetries(lock_path, -1, &attempt);
 				if (attempt)
 				{
 					if (code != ZOK)
@@ -84,7 +84,7 @@ void Lock::unlock()
 Lock::Status Lock::tryCheck() const
 {
 	auto zookeeper = zookeeper_holder->getZooKeeper();
-	
+
 	Status lock_status;
 	Stat stat;
 	std::string dummy;

@@ -17,9 +17,9 @@ namespace zkutil
 const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
 const UInt32 MEDIUM_SESSION_TIMEOUT = 120000;
 const UInt32 BIG_SESSION_TIMEOUT = 600000;
-const UInt32 DEFAULT_RETRY_NUM = 3;
 
 struct WatchWithEvent;
+
 
 /** Сессия в ZooKeeper. Интерфейс существенно отличается от обычного API ZooKeeper.
   * Вместо callback-ов для watch-ей используются Poco::Event. Для указанного события вызывается set() только при первом вызове watch.
@@ -31,7 +31,7 @@ struct WatchWithEvent;
 class ZooKeeper
 {
 public:
-	typedef std::shared_ptr<ZooKeeper> Ptr;
+	using Ptr = std::shared_ptr<ZooKeeper>;
 
 	ZooKeeper(const std::string & hosts, int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT);
 
@@ -57,13 +57,11 @@ public:
 	  */
 	Ptr startNewSession() const;
 
-	int state();
-
 	/** Возвращает true, если сессия навсегда завершена.
 	  * Это возможно только если соединение было установлено, потом разорвалось, потом снова восстановилось, но слишком поздно.
-	  * Это достаточно редкая ситуация.
 	  * С другой стороны, если, например, указан неправильный сервер или порт, попытки соединения будут продолжаться бесконечно,
 	  *  expired() будет возвращать false, и все вызовы будут выбрасывать исключение ConnectionLoss.
+	  * Также возвращает true, если выставлен флаг is_dirty - просьба побыстрее завершить сессию.
 	  */
 	bool expired();
 
@@ -82,10 +80,10 @@ public:
 	  *  - Такая нода уже есть.
 	  * При остальных ошибках бросает исключение.
 	  */
-	int32_t tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated);
+	int32_t tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
 	int32_t tryCreate(const std::string & path, const std::string & data, int32_t mode);
 	int32_t tryCreateWithRetries(const std::string & path, const std::string & data, int32_t mode,
-								 std::string & pathCreated, size_t * attempt = nullptr);
+								 std::string & path_created, size_t * attempt = nullptr);
 
 	/** создает Persistent ноду.
 	 *  Игнорирует, если нода уже создана.
@@ -114,6 +112,31 @@ public:
 	int32_t tryRemove(const std::string & path, int32_t version = -1);
 	/// Если есть проблемы с сетью может сам удалить ноду и вернуть ZNONODE
 	int32_t tryRemoveWithRetries(const std::string & path, int32_t version = -1, size_t * attempt = nullptr);
+
+	/** То же самое, но также выставляет флаг is_dirty, если все попытки удалить были неуспешными.
+	  * Это делается, потому что сессия может ещё жить после всех попыток, даже если прошло больше session_timeout времени.
+	  * Поэтому не стоит рассчитывать, что эфемерная нода действительно будет удалена.
+	  * Но флаг is_dirty позволит побыстрее завершить сессию.
+
+			Ridiculously Long Delay to Expire
+			When disconnects do happen, the common case should be a very* quick
+			reconnect to another server, but an extended network outage may
+			introduce a long delay before a client can reconnect to the ZooKeep‐
+			er service. Some developers wonder why the ZooKeeper client li‐
+			brary doesn’t simply decide at some point (perhaps twice the session
+			timeout) that enough is enough and kill the session itself.
+			There are two answers to this. First, ZooKeeper leaves this kind of
+			policy decision up to the developer. Developers can easily implement
+			such a policy by closing the handle themselves. Second, when a Zoo‐
+			Keeper ensemble goes down, time freezes. Thus, when the ensemble is
+			brought back up, session timeouts are restarted. If processes using
+			ZooKeeper hang in there, they may find out that the long timeout was
+			due to an extended ensemble failure that has recovered and pick right
+			up where they left off without any additional startup delay.
+
+			ZooKeeper: Distributed Process Coordination p118
+	  */
+	int32_t tryRemoveEphemeralNodeWithRetries(const std::string & path, int32_t version = -1, size_t * attempt = nullptr);
 
 	bool exists(const std::string & path, Stat * stat = nullptr, EventPtr watch = nullptr);
 
@@ -329,7 +352,7 @@ private:
 	}
 
 	/// методы не бросают исключений, а возвращают коды ошибок
-	int32_t createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated);
+	int32_t createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
 	int32_t removeImpl(const std::string & path, int32_t version = -1);
 	int32_t getImpl(const std::string & path, std::string & res, Stat * stat = nullptr, EventPtr watch = nullptr);
 	int32_t setImpl(const std::string & path, const std::string & data,
@@ -350,11 +373,17 @@ private:
 	std::unordered_set<WatchWithEvent *> watch_store;
 
 	/// Количество попыток повторить операцию чтения при OperationTimeout, ConnectionLoss
-	size_t retry_num = 3;
+	static constexpr size_t retry_num = 3;
 	Logger * log = nullptr;
+
+	/** При работе с сессией были неудачные попытки удалить эфемерные ноды,
+	  *  после которых лучше завершить сессию (чтобы эфемерные ноды всё-таки удалились)
+	  *  вместо того, чтобы продолжить пользоваться восстановившейся сессией.
+	  */
+	bool is_dirty = false;
 };
 
-typedef ZooKeeper::Ptr ZooKeeperPtr;
+using ZooKeeperPtr = ZooKeeper::Ptr;
 
 
 /** В конструкторе создает эфемерную ноду, в деструкторе - удаляет.
@@ -362,7 +391,7 @@ typedef ZooKeeper::Ptr ZooKeeperPtr;
 class EphemeralNodeHolder
 {
 public:
-	typedef Poco::SharedPtr<EphemeralNodeHolder> Ptr;
+	using Ptr = std::shared_ptr<EphemeralNodeHolder>;
 
 	EphemeralNodeHolder(const std::string & path_, ZooKeeper & zookeeper_, bool create, bool sequential, const std::string & data)
 		: path(path_), zookeeper(zookeeper_)
@@ -378,17 +407,17 @@ public:
 
 	static Ptr create(const std::string & path, ZooKeeper & zookeeper, const std::string & data = "")
 	{
-		return new EphemeralNodeHolder(path, zookeeper, true, false, data);
+		return std::make_shared<EphemeralNodeHolder>(path, zookeeper, true, false, data);
 	}
 
 	static Ptr createSequential(const std::string & path, ZooKeeper & zookeeper, const std::string & data = "")
 	{
-		return new EphemeralNodeHolder(path, zookeeper, true, true, data);
+		return std::make_shared<EphemeralNodeHolder>(path, zookeeper, true, true, data);
 	}
 
 	static Ptr existing(const std::string & path, ZooKeeper & zookeeper)
 	{
-		return new EphemeralNodeHolder(path, zookeeper, false, false, "");
+		return std::make_shared<EphemeralNodeHolder>(path, zookeeper, false, false, "");
 	}
 
 	~EphemeralNodeHolder()
@@ -398,35 +427,12 @@ public:
 			/** Важно, что в случае недоступности ZooKeeper, делаются повторные попытки удалить ноду.
 			  * Иначе возможна ситуация, когда объект EphemeralNodeHolder уничтожен,
 			  *  но сессия восстановится в течние session timeout, и эфемерная нода в ZooKeeper останется ещё надолго.
-			  * Но см. ниже - на самом деле, такая ситуация всё-равно возможна.
 			  */
-			zookeeper.tryRemoveWithRetries(path);
+			zookeeper.tryRemoveEphemeralNodeWithRetries(path);
 		}
 		catch (const KeeperException & e)
 		{
 			LOG_ERROR(zookeeper.log, "~EphemeralNodeHolder(): " << e.displayText());
-
-			/** На самом деле, сессия может ещё жить после этой ошибки.
-			  * Поэтому не стоит рассчитывать, что эфемерная нода действительно будет удалена.
-
-			  Ridiculously Long Delay to Expire
-			  When disconnects do happen, the common case should be a very* quick
-			  reconnect to another server, but an extended network outage may
-			  introduce a long delay before a client can reconnect to the ZooKeep‐
-			  er service. Some developers wonder why the ZooKeeper client li‐
-			  brary doesn’t simply decide at some point (perhaps twice the session
-			  timeout) that enough is enough and kill the session itself.
-			  There are two answers to this. First, ZooKeeper leaves this kind of
-			  policy decision up to the developer. Developers can easily implement
-			  such a policy by closing the handle themselves. Second, when a Zoo‐
-			  Keeper ensemble goes down, time freezes. Thus, when the ensemble is
-			  brought back up, session timeouts are restarted. If processes using
-			  ZooKeeper hang in there, they may find out that the long timeout was
-			  due to an extended ensemble failure that has recovered and pick right
-			  up where they left off without any additional startup delay.
-
-			  ZooKeeper: Distributed Process Coordination p118
-			  */
 		}
 	}
 
@@ -435,6 +441,6 @@ private:
 	ZooKeeper & zookeeper;
 };
 
-typedef EphemeralNodeHolder::Ptr EphemeralNodeHolderPtr;
+using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;
 
 }

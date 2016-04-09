@@ -102,7 +102,7 @@ void RWLock::release()
 	if (key.empty())
 		throw DB::Exception{"RWLock: no lock is held", DB::ErrorCodes::LOGICAL_ERROR};
 
-	get_zookeeper()->remove(path + "/" + key);
+	get_zookeeper()->tryRemoveEphemeralNodeWithRetries(path + "/" + key);
 	key.clear();
 	owns_lock = false;
 }
@@ -189,7 +189,7 @@ void RWLock::acquireImpl(Mode mode)
 
 			if (mode == NonBlocking)
 			{
-				int32_t code = zookeeper->tryRemove(path + "/" + key);
+				int32_t code = zookeeper->tryRemoveEphemeralNodeWithRetries(path + "/" + key);
 				if (code == ZNONODE)
 					throw DB::Exception{"No such lock", DB::ErrorCodes::RWLOCK_NO_SUCH_LOCK};
 				else if (code != ZOK)
@@ -217,7 +217,7 @@ void RWLock::acquireImpl(Mode mode)
 		try
 		{
 			if (!key.empty())
-				get_zookeeper()->remove(path + "/" + key);
+				get_zookeeper()->tryRemoveEphemeralNodeWithRetries(path + "/" + key);
 		}
 		catch (...)
 		{

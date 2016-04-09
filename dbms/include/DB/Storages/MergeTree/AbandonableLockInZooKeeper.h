@@ -83,7 +83,7 @@ public:
 
 		try
 		{
-			zookeeper.tryRemove(holder_path);
+			zookeeper.tryRemoveEphemeralNodeWithRetries(holder_path);
 			zookeeper.trySet(path, ""); /// Это не обязательно.
 		}
 		catch (...)

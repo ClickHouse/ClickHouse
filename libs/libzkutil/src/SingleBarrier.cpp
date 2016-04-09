@@ -128,7 +128,7 @@ void SingleBarrier::enter(uint64_t timeout)
 						break;
 					}
 
-					(void) zookeeper->tryRemove(path + "/tokens/" + cur_token);
+					(void) zookeeper->tryRemoveEphemeralNodeWithRetries(path + "/tokens/" + cur_token);
 					--token_count;
 				}
 			}
@@ -186,7 +186,7 @@ void SingleBarrier::abortIfRequested()
 			{
 				/// We have received a cancellation request while trying
 				/// to cross the barrier. Therefore we delete our token.
-				(void) get_zookeeper()->tryRemove(path + "/tokens/" + token);
+				(void) get_zookeeper()->tryRemoveEphemeralNodeWithRetries(path + "/tokens/" + token);
 			}
 			catch (...)
 			{
