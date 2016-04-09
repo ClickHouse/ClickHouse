@@ -2259,8 +2259,8 @@ void StorageReplicatedMergeTree::partCheckThread()
 				}
 				else
 				{
-					parts_to_check_queue.erase(selected);
 					parts_to_check_set.erase(selected->first);
+					parts_to_check_queue.erase(selected);
 				}
 			}
 		}
