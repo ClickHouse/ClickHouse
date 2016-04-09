@@ -199,6 +199,10 @@ struct Settings
 	M(SettingBool, enable_http_compression, 0) \
 	/** Уровень сжатия - используется, если клиент по HTTP сказал, что он понимает данные, сжатые методом gzip или deflate */ \
 	M(SettingInt64, http_zlib_compression_level, 3) \
+	\
+	/** При разжатии данных POST от клиента, сжатых родным форматом, не проверять чексуммы */ \
+	M(SettingBool, http_native_compression_disable_checksumming_on_decompress, 0) \
+	\
 	/** Таймаут в секундах */ \
 	M(SettingUInt64, resharding_barrier_timeout, 300) \
 

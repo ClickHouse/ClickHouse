@@ -142,9 +142,13 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 	/// Также данные могут быть сжаты несовместимым алгоритмом для внутреннего использования - это определяется параметром query_string.
 	SharedPtr<ReadBuffer> in_post_maybe_compressed;
+	bool in_post_compressed = false;
 
 	if (parse<bool>(params.get("decompress", "0")))
+	{
 		in_post_maybe_compressed = new CompressedReadBuffer(*in_post);
+		in_post_compressed = true;
+	}
 	else
 		in_post_maybe_compressed = in_post;
 
@@ -230,6 +234,10 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	used_output.out->setCompression(client_supports_http_compression && context.getSettingsRef().enable_http_compression);
 	if (client_supports_http_compression)
 		used_output.out->setCompressionLevel(context.getSettingsRef().http_zlib_compression_level);
+
+	/// Возможно, что выставлена настройка - не проверять чексуммы при разжатии данных от клиента, сжатых родным форматом.
+	if (in_post_compressed && context.getSettingsRef().http_native_compression_disable_checksumming_on_decompress)
+		static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
 	context.setInterface(Context::Interface::HTTP);
 

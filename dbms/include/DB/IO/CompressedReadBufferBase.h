@@ -47,6 +47,10 @@ protected:
 	void * fixed_size_padding = nullptr;
 #endif
 
+	/// Не проверять чексуммы.
+	bool disable_checksum = false;
+
+
 	/// Прочитать сжатые данные в compressed_buffer. Достать из их заголовка размер разжатых данных. Проверить чексумму.
 	/// Возвращает количество прочитанных байт.
 	size_t readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum)
@@ -101,7 +105,7 @@ protected:
 			compressed_in->readStrict(&compressed_buffer[COMPRESSED_BLOCK_HEADER_SIZE], size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
 		}
 
-		if (checksum != CityHash128(&compressed_buffer[0], size_compressed))
+		if (!disable_checksum && checksum != CityHash128(&compressed_buffer[0], size_compressed))
 			throw Exception("Checksum doesn't match: corrupted data.", ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
 		return size_compressed + sizeof(checksum);
@@ -156,6 +160,15 @@ public:
 		if (qlz_state)
 			delete qlz_state;
 	#endif
+	}
+
+	/** Не проверять чексуммы.
+	  * Может использоваться, например, в тех случаях, когда сжатые данные пишет клиент,
+	  *  который не умеет вычислять чексуммы, и вместо этого заполняет их нулями или чем угодно.
+	  */
+	void disableChecksumming()
+	{
+		disable_checksum = true;
 	}
 };
 
