@@ -11,6 +11,7 @@
 
 #include <DB/Common/Macros.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Common/Stopwatch.h>
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
@@ -129,6 +130,8 @@ struct ContextShared
 	DDLGuards ddl_guards;
 	/// Если вы захватываете mutex и ddl_guards_mutex, то захватывать их нужно строго в этом порядке.
 	mutable std::mutex ddl_guards_mutex;
+
+	Stopwatch uptime_watch;
 
 
 	~ContextShared()
@@ -1018,6 +1021,13 @@ BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & bu
 BlockOutputStreamPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
 {
 	return shared->format_factory.getOutput(name, buf, sample, *this);
+}
+
+
+time_t Context::getUptimeSeconds() const
+{
+	auto lock = getLock();
+	return shared->uptime_watch.elapsedSeconds();
 }
 
 

@@ -981,7 +981,7 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		static const std::string version = getVersion();
-		block.getByPosition(result).column = new ColumnConstString(version.length(), version);
+		block.getByPosition(result).column = new ColumnConstString(block.rowsInFirstColumn(), version);
 	}
 
 private:
@@ -991,6 +991,33 @@ private:
 		os << DBMS_VERSION_MAJOR << "." << DBMS_VERSION_MINOR << "." << ClickHouseRevision::get();
 		return os.str();
 	}
+};
+
+
+class FunctionUptime : public IFunction
+{
+public:
+	static constexpr auto name = "uptime";
+	static IFunction * create(const Context & context) { return new FunctionUptime(context.getUptimeSeconds()); }
+
+	FunctionUptime(time_t uptime_) : uptime(uptime_) {}
+
+	String getName() const override { return name; }
+
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (!arguments.empty())
+			throw Exception("Function " + getName() + " must be called without arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		return new DataTypeUInt32;
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		block.getByPosition(result).column = new ColumnConstUInt32(block.rowsInFirstColumn(), uptime);
+	}
+
+private:
+	time_t uptime;
 };
 
 

@@ -287,6 +287,9 @@ public:
 	/// Позволяет выбрать метод сжатия по условиям, описанным в конфигурационном файле.
 	CompressionMethod chooseCompressionMethod(size_t part_size, double part_size_ratio) const;
 
+	/// Получить аптайм сервера в секундах.
+	time_t getUptimeSeconds() const;
+
 	void shutdown();
 
 private:
