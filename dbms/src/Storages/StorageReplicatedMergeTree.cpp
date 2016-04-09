@@ -85,6 +85,7 @@ namespace ErrorCodes
 	extern const int NO_SUCH_BARRIER;
 	extern const int CHECKSUM_DOESNT_MATCH;
 	extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
+	extern const int UNFINISHED;
 }
 
 
@@ -2189,12 +2190,28 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	}
 
 	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+
+	std::set<String> inactive_replicas;
+	std::set<String> timed_out_replicas;
+
+	time_t replication_alter_columns_timeout = context.getSettingsRef().replication_alter_columns_timeout;
+
 	for (const String & replica : replicas)
 	{
 		LOG_DEBUG(log, "Waiting for " << replica << " to apply changes");
 
 		while (!shutdown_called)
 		{
+			/// Реплика может быть неактивной.
+			if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+			{
+				LOG_WARNING(log, "Replica " << replica << " is not active during ALTER query."
+					" ALTER will be done asynchronously when replica becomes active.");
+
+				inactive_replicas.emplace(replica);
+				break;
+			}
+
 			String replica_columns_str;
 
 			/// Реплику могли успеть удалить.
@@ -2228,11 +2245,58 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 			if (stat.version != replica_columns_version)
 				continue;
 
-			alter_query_event->wait();
+			if (!replication_alter_columns_timeout)
+			{
+				alter_query_event->wait();
+				/// Всё Ок.
+			}
+			else if (alter_query_event->tryWait(replication_alter_columns_timeout * 1000))
+			{
+				/// Всё Ок.
+			}
+			else
+			{
+				LOG_WARNING(log, "Timeout when waiting for replica " << replica << " to apply ALTER."
+					" ALTER will be done asynchronously.");
+
+				timed_out_replicas.emplace(replica);
+			}
 		}
 
 		if (shutdown_called)
-			break;
+			throw Exception("Alter is not finished because table shutdown was called. Alter will be done after table restart.",
+				ErrorCodes::UNFINISHED);
+
+		if (!inactive_replicas.empty() || !timed_out_replicas.empty())
+		{
+			std::stringstream exception_message;
+			exception_message << "Alter is not finished because";
+
+			if (!inactive_replicas.empty())
+			{
+				exception_message << " some replicas are inactive right now";
+
+				for (auto it = inactive_replicas.begin(); it != inactive_replicas.end(); ++it)
+					exception_message << (it == inactive_replicas.begin() ? ": " : ", ") << *it;
+			}
+
+			if (!timed_out_replicas.empty() && !inactive_replicas.empty())
+				exception_message << " and";
+
+			if (!timed_out_replicas.empty())
+			{
+				exception_message << " timeout when waiting for some replicas";
+
+				for (auto it = timed_out_replicas.begin(); it != timed_out_replicas.end(); ++it)
+					exception_message << (it == timed_out_replicas.begin() ? ": " : ", ") << *it;
+
+				exception_message << " (replication_alter_columns_timeout = " << replication_alter_columns_timeout << ")";
+			}
+
+			exception_message << ". Alter will be done asynchronously.";
+
+			throw Exception(exception_message.str(), ErrorCodes::UNFINISHED);
+		}
 	}
 
 	LOG_DEBUG(log, "ALTER finished");
@@ -3033,6 +3097,7 @@ void StorageReplicatedMergeTree::freezePartition(const Field & partition, const 
 	if (unreplicated_data)
 		unreplicated_data->freezePartition(prefix);
 }
+
 
 void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & database_name,
 	const Field & first_partition, const Field & last_partition,
