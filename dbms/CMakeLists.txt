@@ -280,6 +280,7 @@ add_library (dbms
 	include/DB/Dictionaries/Embedded/RegionsNames.h
 	include/DB/Dictionaries/Embedded/TechDataHierarchy.h
 	include/DB/Dictionaries/ExternalResultDescription.h
+	include/DB/Dictionaries/ExternalQueryBuilder.h
 	include/DB/Interpreters/InterpreterAlterQuery.h
 	include/DB/Interpreters/AggregationCommon.h
 	include/DB/Interpreters/ProcessList.h
