@@ -64,9 +64,9 @@ public:
 
 			std::stringstream error_message;
 			error_message
+				<< "HTTP status code: " << status << std::endl
 				<< "Received error:" << std::endl
-				<< in->rdbuf() << std::endl
-				<< "HTTP status code: " << status << ".";
+				<< in->rdbuf() << std::endl;
 
 			throw std::runtime_error(error_message.str());
 		}

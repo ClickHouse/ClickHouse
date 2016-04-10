@@ -124,19 +124,22 @@ impl_SQLGetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attribute,
 {
 	LOG(__FUNCTION__);
 
-	return doWith<Connection>(connection_handle, [&](Connection & connection)
+	return doWith<Connection>(connection_handle, [&](Connection & connection) -> RETCODE
 	{
 		LOG("attr: " << attribute);
 
+		const char * name = nullptr;
+
 		switch (attribute)
 		{
-			case SQL_ATTR_CONNECTION_TIMEOUT:
-			case SQL_ATTR_LOGIN_TIMEOUT:
+			CASE_NUM(SQL_ATTR_CONNECTION_DEAD, SQLUINTEGER, SQL_CD_FALSE);
+			CASE_FALLTHROUGH(SQL_ATTR_CONNECTION_TIMEOUT)
+			CASE_NUM(SQL_ATTR_LOGIN_TIMEOUT, SQLUSMALLINT, connection.session.getTimeout().seconds())
+
 			case SQL_ATTR_ACCESS_MODE:
 			case SQL_ATTR_ASYNC_ENABLE:
 			case SQL_ATTR_AUTO_IPD:
 			case SQL_ATTR_AUTOCOMMIT:
-			case SQL_ATTR_CONNECTION_DEAD:
 			case SQL_ATTR_CURRENT_CATALOG:
 			case SQL_ATTR_METADATA_ID:
 			case SQL_ATTR_ODBC_CURSORS:
