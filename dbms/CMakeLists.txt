@@ -895,6 +895,7 @@ target_link_libraries(dbms
 	dl
 	mongoclient
 	PocoData
+	PocoDataODBC
 	libboost_regex.a)
 
 add_dependencies (dbms
