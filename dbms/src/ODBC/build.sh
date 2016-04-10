@@ -1,5 +1,7 @@
 #!/bin/sh
 
+# First, compile and install Poco library with static libraries and -fPIC option enabled.
+
 g++ \
     -std=c++11 \
     -Wall -Werror \
