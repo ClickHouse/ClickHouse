@@ -8,9 +8,10 @@
 #include <DB/Dictionaries/MongoDBDictionarySource.h>
 #include <DB/Dictionaries/ODBCDictionarySource.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/Core/FieldVisitors.h>
 #include <common/singleton.h>
 #include <memory>
-#include <DB/Core/FieldVisitors.h>
+#include <Poco/Data/ODBC/Connector.h>
 
 
 namespace DB
@@ -68,6 +69,11 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 class DictionarySourceFactory : public Singleton<DictionarySourceFactory>
 {
 public:
+    DictionarySourceFactory()
+	{
+		Poco::Data::ODBC::Connector::registerConnector();
+	}
+
 	DictionarySourcePtr create(
 		const std::string & name, Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
 		const DictionaryStructure & dict_struct, Context & context) const
