@@ -12,7 +12,7 @@ void check(UInt64 left, UInt64 right, bool can_be_true)
 {
 	Field fleft = left;
 	Field fright = right;
-	if (cond->mayBeTrueInRange(&fleft, &fright, {}) != can_be_true)
+	if (cond->mayBeTrueInRange(1, &fleft, &fright, {}) != can_be_true)
 	{
 		std::cout << "failed range [" << left << ", " << right << "]" << std::endl;
 		exit(2);

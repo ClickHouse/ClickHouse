@@ -5,6 +5,8 @@
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/parseQuery.h>
 
+#include <DB/Databases/DatabaseOrdinary.h>
+
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 
 
@@ -79,7 +81,8 @@ int main(int argc, char ** argv)
 		Context context;
 
 		context.setPath("./");
-		context.addDatabase("test");
+		context.addDatabase("test", std::make_shared<DatabaseOrdinary>(
+			"test", "./metadata/test/", context, nullptr));
 		context.setCurrentDatabase("test");
 
 		InterpreterCreateQuery interpreter(ast, context);
