@@ -1,3 +1,17 @@
 #!/bin/sh
 
-g++ -std=c++11 -Wall -Werror -g -static-libstdc++ -static-libgcc -shared -fPIC -Wl,-rpath=/usr/local/lib:/usr/local/lib64 -lPocoFoundation -lPocoNet -o odbc.so *.cpp
+g++ \
+    -std=c++11 \
+    -Wall -Werror \
+    -O2 \
+    -g \
+    -fPIC \
+    -fvisibility-inlines-hidden \
+    -shared \
+    -Wl,-Bstatic,--whole-archive \
+        *.cpp \
+        -lPocoFoundation -lPocoNet \
+        -static-libgcc -static-libstdc++ \
+    -Wl,--no-whole-archive \
+    -Wl,--version-script=linker_script \
+    -o odbc.so

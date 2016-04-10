@@ -5,7 +5,7 @@ Install unixodbc.
 ~/.odbc.ini:
 
 [ClickHouse]
-Driver = /home/milovidov/work/metrika-core/metrica/src/dbms/src/ODBC/odbc.so
+Driver = /home/milovidov/work/ClickHouse/dbms/src/ODBC/odbc.so
 Description = ClickHouse driver
 DATABASE = default
 HOST = localhost
