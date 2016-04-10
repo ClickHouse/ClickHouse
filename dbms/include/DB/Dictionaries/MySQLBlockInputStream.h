@@ -7,7 +7,7 @@
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/Columns/ColumnString.h>
-#include <DB/Dictionaries/ExternalDatabaseHelper.h>
+#include <DB/Dictionaries/ExternalResultDescription.h>
 #include <ext/range.hpp>
 #include <mysqlxx/Query.h>
 #include <mysqlxx/PoolWithFailover.h>
@@ -38,7 +38,7 @@ public:
 					toString(sample_block.columns()) + " expected",
 				ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
 
-		helper.init(sample_block);
+		description.init(sample_block);
 	}
 
 	String getName() const override { return "MySQL"; }
@@ -49,7 +49,7 @@ public:
 	}
 
 private:
-	using value_type_t = ExternalDatabaseHelper::value_type_t;
+	using value_type_t = ExternalResultDescription::value_type_t;
 
 	Block readImpl() override
 	{
@@ -57,7 +57,7 @@ private:
 		if (!row)
 			return {};
 
-		auto block = helper.sample_block.cloneEmpty();
+		auto block = description.sample_block.cloneEmpty();
 
 		/// cache pointers returned by the calls to getByPosition
 		std::vector<IColumn *> columns(block.columns());
@@ -71,9 +71,9 @@ private:
 			{
 				const auto value = row[idx];
 				if (!value.isNull())
-					insertValue(columns[idx], helper.types[idx], value);
+					insertValue(columns[idx], description.types[idx], value);
 				else
-					insertDefaultValue(columns[idx], *helper.sample_columns[idx]);
+					insertDefaultValue(columns[idx], *description.sample_columns[idx]);
 			}
 
 			++num_rows;
@@ -115,7 +115,7 @@ private:
 	mysqlxx::Query query;
 	mysqlxx::UseQueryResult result;
 	const std::size_t max_block_size;
-	ExternalDatabaseHelper helper;
+	ExternalResultDescription description;
 };
 
 }

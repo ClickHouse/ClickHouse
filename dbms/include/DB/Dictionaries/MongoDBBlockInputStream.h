@@ -8,7 +8,7 @@
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/Columns/ColumnString.h>
-#include <DB/Dictionaries/ExternalDatabaseHelper.h>
+#include <DB/Dictionaries/ExternalResultDescription.h>
 #include <ext/range.hpp>
 #include <mongo/client/dbclient.h>
 #include <vector>
@@ -31,7 +31,7 @@ public:
 		if (!cursor->more())
 			return;
 
-		helper.init(sample_block);
+		description.init(sample_block);
 	}
 
 	String getName() const override { return "MongoDB"; }
@@ -43,7 +43,7 @@ public:
 	}
 
 private:
-	using value_type_t = ExternalDatabaseHelper::value_type_t;
+	using value_type_t = ExternalResultDescription::value_type_t;
 
 	Block readImpl() override
 	{
@@ -51,7 +51,7 @@ private:
 		if (!cursor->more())
 			return {};
 
-		auto block = helper.sample_block.cloneEmpty();
+		auto block = description.sample_block.cloneEmpty();
 
 		/// cache pointers returned by the calls to getByPosition
 		std::vector<IColumn *> columns(block.columns());
@@ -67,12 +67,12 @@ private:
 
 			for (const auto idx : ext::range(0, size))
 			{
-				const auto & name = helper.names[idx];
+				const auto & name = description.names[idx];
 				const auto value = row[name];
 				if (value.ok())
-					insertValue(columns[idx], helper.types[idx], value, name);
+					insertValue(columns[idx], description.types[idx], value, name);
 				else
-					insertDefaultValue(columns[idx], *helper.sample_columns[idx]);
+					insertDefaultValue(columns[idx], *description.sample_columns[idx]);
 			}
 
 			++num_rows;
@@ -230,7 +230,7 @@ private:
 
 	std::unique_ptr<mongo::DBClientCursor> cursor;
 	const std::size_t max_block_size;
-	ExternalDatabaseHelper helper;
+	ExternalResultDescription description;
 };
 
 }
