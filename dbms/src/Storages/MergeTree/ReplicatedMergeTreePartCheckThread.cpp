@@ -334,7 +334,7 @@ void ReplicatedMergeTreePartCheckThread::run()
 				/// Poco::Event срабатывает сразу, если signal был до вызова wait.
 				/// Можем подождать чуть больше, чем нужно из-за использования старого current_time.
 
-				if (min_check_time > current_time)
+				if (min_check_time != std::numeric_limits<time_t>::max() && min_check_time > current_time)
 					wakeup_event.tryWait(1000 * (min_check_time - current_time));
 				else
 					wakeup_event.wait();
