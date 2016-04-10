@@ -22,6 +22,8 @@
 /** Функции из ODBC интерфейса не могут напрямую вызывать другие функции.
   * Потому что будет вызвана не функция из этой библиотеки, а обёртка из driver manager-а,
   *  которая может неправильно работать, будучи вызванной изнутри другой функции.
+  * Неправильно - потому что driver manager оборачивает все handle в свои другие,
+  *  которые имеют уже другие адреса.
   */
 
 extern "C"
@@ -274,58 +276,8 @@ SQLDescribeCol(HSTMT statement_handle,
 }
 
 
-RETCODE
-impl_SQLFetch(HSTMT statement_handle)
-{
-	LOG(__FUNCTION__);
-
-	return doWith<Statement>(statement_handle, [&](Statement & statement) -> RETCODE
-	{
-		if (!statement.fetchRow())
-			return SQL_NO_DATA;
-
-		auto res = SQL_SUCCESS;
-
-		for (auto & col_num_binding : statement.bindings)
-		{
-			auto code = SQLGetData(statement_handle, col_num_binding.first, col_num_binding.second.target_type,
-				col_num_binding.second.out_value, col_num_binding.second.out_value_max_size, col_num_binding.second.out_value_size_or_indicator);
-
-			if (code == SQL_SUCCESS_WITH_INFO)
-				res = code;
-			else if (code != SQL_SUCCESS)
-				return code;
-		}
-
-		return res;
-	});
-}
-
-
 RETCODE SQL_API
-SQLFetch(HSTMT statement_handle)
-{
-	return impl_SQLFetch(statement_handle);
-}
-
-
-RETCODE SQL_API
-SQLFetchScroll(HSTMT statement_handle, SQLSMALLINT orientation, SQLLEN offset)
-{
-	LOG(__FUNCTION__);
-
-	return doWith<Statement>(statement_handle, [&](Statement & statement) -> RETCODE
-	{
-		if (orientation != SQL_FETCH_NEXT)
-			throw std::runtime_error("Fetch type out of range");	/// TODO sqlstate = HY106
-
-		return impl_SQLFetch(statement_handle);
-	});
-}
-
-
-RETCODE SQL_API
-SQLGetData(HSTMT statement_handle,
+impl_SQLGetData(HSTMT statement_handle,
 		   SQLUSMALLINT column_or_param_number, SQLSMALLINT target_type,
 		   PTR out_value, SQLLEN out_value_max_size,
 		   SQLLEN * out_value_size_or_indicator)
@@ -411,6 +363,69 @@ SQLGetData(HSTMT statement_handle,
 				throw std::runtime_error("Unknown type requested.");
 		}
 	});
+}
+
+
+RETCODE
+impl_SQLFetch(HSTMT statement_handle)
+{
+	LOG(__FUNCTION__);
+
+	return doWith<Statement>(statement_handle, [&](Statement & statement) -> RETCODE
+	{
+		if (!statement.fetchRow())
+			return SQL_NO_DATA;
+
+		auto res = SQL_SUCCESS;
+
+		for (auto & col_num_binding : statement.bindings)
+		{
+			auto code = impl_SQLGetData(statement_handle, col_num_binding.first, col_num_binding.second.target_type,
+				col_num_binding.second.out_value, col_num_binding.second.out_value_max_size, col_num_binding.second.out_value_size_or_indicator);
+
+			if (code == SQL_SUCCESS_WITH_INFO)
+				res = code;
+			else if (code != SQL_SUCCESS)
+				return code;
+		}
+
+		return res;
+	});
+}
+
+
+RETCODE SQL_API
+SQLFetch(HSTMT statement_handle)
+{
+	return impl_SQLFetch(statement_handle);
+}
+
+
+RETCODE SQL_API
+SQLFetchScroll(HSTMT statement_handle, SQLSMALLINT orientation, SQLLEN offset)
+{
+	LOG(__FUNCTION__);
+
+	return doWith<Statement>(statement_handle, [&](Statement & statement) -> RETCODE
+	{
+		if (orientation != SQL_FETCH_NEXT)
+			throw std::runtime_error("Fetch type out of range");	/// TODO sqlstate = HY106
+
+		return impl_SQLFetch(statement_handle);
+	});
+}
+
+
+RETCODE SQL_API
+SQLGetData(HSTMT statement_handle,
+		   SQLUSMALLINT column_or_param_number, SQLSMALLINT target_type,
+		   PTR out_value, SQLLEN out_value_max_size,
+		   SQLLEN * out_value_size_or_indicator)
+{
+	return impl_SQLGetData(statement_handle,
+		column_or_param_number, target_type,
+		out_value, out_value_max_size,
+		out_value_size_or_indicator);
 }
 
 
