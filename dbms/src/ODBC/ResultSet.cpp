@@ -60,7 +60,7 @@ bool ResultSet::readNextBlock()
 		Row row(num_columns);
 
 		for (size_t j = 0; j < num_columns; ++j)
-				readString(row.data[j].data, in());
+			readString(row.data[j].data, in());
 
 		current_block.data.emplace_back(std::move(row));
 	}
