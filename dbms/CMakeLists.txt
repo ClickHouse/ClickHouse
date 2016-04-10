@@ -264,6 +264,8 @@ add_library (dbms
 	include/DB/Dictionaries/MySQLDictionarySource.h
 	include/DB/Dictionaries/MongoDBBlockInputStream.h
 	include/DB/Dictionaries/MongoDBDictionarySource.h
+	include/DB/Dictionaries/ODBCBlockInputStream.h
+	include/DB/Dictionaries/ODBCDictionarySource.h
 	include/DB/Dictionaries/TypeCheckingBlockInputStream.h
 	include/DB/Dictionaries/HashedDictionary.h
 	include/DB/Dictionaries/FlatDictionary.h
@@ -892,6 +894,7 @@ target_link_libraries(dbms
 	librt.a
 	dl
 	mongoclient
+	PocoData
 	libboost_regex.a)
 
 add_dependencies (dbms

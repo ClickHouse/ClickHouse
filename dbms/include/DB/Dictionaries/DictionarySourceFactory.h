@@ -6,6 +6,7 @@
 #include <DB/Dictionaries/MySQLDictionarySource.h>
 #include <DB/Dictionaries/ClickHouseDictionarySource.h>
 #include <DB/Dictionaries/MongoDBDictionarySource.h>
+#include <DB/Dictionaries/ODBCDictionarySource.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <common/singleton.h>
 #include <memory>
@@ -106,14 +107,16 @@ public:
 		}
 		else if ("mongodb" == source_type)
 		{
-			return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb",
-				sample_block, context);
+			return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
+		}
+		else if ("odbc" == source_type)
+		{
+			return std::make_unique<ODBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block);
 		}
 
 		throw Exception{
 			name + ": unknown dictionary source type: " + source_type,
-			ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG
-		};
+			ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
 	}
 };
 

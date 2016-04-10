@@ -66,7 +66,7 @@ public:
 	{
 		/// Здесь не логгируем и не обновляем время модификации, так как запрос может быть большим, и часто задаваться.
 
-		const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows);
+		const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
 		return new MySQLBlockInputStream{pool.Get(), query, sample_block, max_block_size};
 	}
 

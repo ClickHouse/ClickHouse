@@ -198,9 +198,22 @@ struct ExternalQueryBuilder
 		return query;
 	}
 
-	/** Получить запрос на загрузку данных по множеству сложных ключей. */
+
+	/** Получить запрос на загрузку данных по множеству сложных ключей.
+	  * Есть два метода их указания в секции WHERE:
+	  * 1. (x = c11 AND y = c12) OR (x = c21 AND y = c22) ...
+	  * 2. (x, y) IN ((c11, c12), (c21, c22), ...)
+	  */
+	enum LoadKeysMethod
+	{
+		AND_OR_CHAIN,
+		IN_WITH_TUPLES,
+	};
+
 	std::string composeLoadKeysQuery(
-		const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows)
+		const ConstColumnPlainPtrs & key_columns,
+		const std::vector<std::size_t> & requested_rows,
+		LoadKeysMethod method)
 	{
 		if (!dict_struct.key)
 			throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
@@ -240,18 +253,44 @@ struct ExternalQueryBuilder
 
 			if (!where.empty())
 			{
+				writeString("(", out);
 				writeString(where, out);
-				writeString(" AND ", out);
+				writeString(") AND (", out);
 			}
 
-			first = true;
-			for (const auto row : requested_rows)
+			if (method == AND_OR_CHAIN)
 			{
-				if (!first)
-					writeString(" OR ", out);
+				first = true;
+				for (const auto row : requested_rows)
+				{
+					if (!first)
+						writeString(" OR ", out);
 
-				first = false;
-				composeKeyCondition(key_columns, row, out);
+					first = false;
+					composeKeyCondition(key_columns, row, out);
+				}
+			}
+			else if (method == IN_WITH_TUPLES)
+			{
+				writeString(composeKeyTupleDefinition(), out);
+				writeString(" IN (", out);
+
+				first = true;
+				for (const auto row : requested_rows)
+				{
+					if (!first)
+						writeString(", ", out);
+
+					first = false;
+					composeKeyTuple(key_columns, row, out);
+				}
+
+				writeString(")", out);
+			}
+
+			if (!where.empty())
+			{
+				writeString(")", out);
 			}
 
 			writeString(";", out);
@@ -260,7 +299,9 @@ struct ExternalQueryBuilder
 		return query;
 	}
 
+
 private:
+	/// Выражение вида (x = c1 AND y = c2 ...)
 	void composeKeyCondition(const ConstColumnPlainPtrs & key_columns, const std::size_t row, WriteBuffer & out) const
 	{
 		writeString("(", out);
@@ -280,6 +321,48 @@ private:
 			writeString(key_description.name, out);
 			writeString("=", out);
 			key_description.type->serializeTextQuoted(*key_columns[i], row, out);
+		}
+
+		writeString(")", out);
+	}
+
+	/// Выражение вида (x, y, ...)
+	std::string composeKeyTupleDefinition() const
+	{
+		if (!dict_struct.key)
+			throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
+
+		std::string result{"("};
+
+		auto first = true;
+		for (const auto & key : *dict_struct.key)
+		{
+			if (!first)
+				result += ", ";
+
+			first = false;
+			result += key.name;
+		}
+
+		result += ")";
+
+		return result;
+	}
+
+	/// Выражение вида (c1, c2, ...)
+	void composeKeyTuple(const ConstColumnPlainPtrs & key_columns, const std::size_t row, WriteBuffer & out) const
+	{
+		writeString("(", out);
+
+		const auto keys_size = key_columns.size();
+		auto first = true;
+		for (const auto i : ext::range(0, keys_size))
+		{
+			if (!first)
+				writeString(", ", out);
+
+			first = false;
+			(*dict_struct.key)[i].type->serializeTextQuoted(*key_columns[i], row, out);
 		}
 
 		writeString(")", out);

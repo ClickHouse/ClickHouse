@@ -29,9 +29,9 @@ class MongoDBDictionarySource final : public IDictionarySource
 		const DictionaryStructure & dict_struct, const std::string & host, const std::string & port,
 		const std::string & user, const std::string & password,
 		const std::string & db, const std::string & collection,
-		const Block & sample_block, Context & context)
+		const Block & sample_block)
 		: dict_struct{dict_struct}, host{host}, port{port}, user{user}, password{password},
-		  db{db}, collection{collection}, sample_block{sample_block}, context(context),
+		  db{db}, collection{collection}, sample_block{sample_block},
 		  connection{true}
 	{
 		init();
@@ -76,7 +76,7 @@ class MongoDBDictionarySource final : public IDictionarySource
 public:
 	MongoDBDictionarySource(
 		const DictionaryStructure & dict_struct, const Poco::Util::AbstractConfiguration & config,
-		const std::string & config_prefix, Block & sample_block, Context & context)
+		const std::string & config_prefix, Block & sample_block)
 		: MongoDBDictionarySource{
 			dict_struct,
 			config.getString(config_prefix + ".host"),
@@ -85,7 +85,7 @@ public:
 			config.getString(config_prefix + ".password", ""),
 			config.getString(config_prefix + ".db", ""),
 			config.getString(config_prefix + ".collection"),
-			sample_block, context
+			sample_block
 		}
 	{
 	}
@@ -93,8 +93,7 @@ public:
 	MongoDBDictionarySource(const MongoDBDictionarySource & other)
 		: MongoDBDictionarySource{
 			other.dict_struct, other.host, other.port, other.user, other.password,
-			other.db, other.collection, other.sample_block, other.context
-		}
+			other.db, other.collection, other.sample_block}
 	{
 	}
 
@@ -188,7 +187,6 @@ private:
 	const std::string db;
 	const std::string collection;
 	Block sample_block;
-	Context & context;
 
 	mongo::DBClientConnection connection;
 	mongo::BSONObj fields_to_query;
