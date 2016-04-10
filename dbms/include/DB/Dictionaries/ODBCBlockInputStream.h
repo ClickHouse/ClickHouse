@@ -36,7 +36,7 @@ public:
 		const std::size_t max_block_size)
 		:
 		session{session},
-		statement{this->session << query_str},
+		statement{(this->session << query_str, Poco::Data::Keywords::now)},
 		result{statement},
 		iterator{result.begin()},
 		max_block_size{max_block_size}
