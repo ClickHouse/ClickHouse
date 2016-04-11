@@ -892,11 +892,11 @@ target_link_libraries(dbms
 	libboost_thread.a
 	libboost_system.a
 	librt.a
-	dl
 	mongoclient
+	libboost_regex.a
 	PocoData
 	PocoDataODBC
-	libboost_regex.a)
+	dl ltdl)
 
 add_dependencies (dbms
 	common
