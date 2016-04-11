@@ -896,7 +896,7 @@ target_link_libraries(dbms
 	libboost_regex.a
 	PocoData
 	PocoDataODBC
-	dl ltdl)
+	dl libltdl.a)
 
 add_dependencies (dbms
 	common
