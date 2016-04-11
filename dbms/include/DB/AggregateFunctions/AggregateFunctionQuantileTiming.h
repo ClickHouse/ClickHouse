@@ -451,7 +451,11 @@ namespace detail
 				it.next();
 			}
 
-
+			while (index != indices_end)
+			{
+				result[*index] = BIG_THRESHOLD;
+				++index;
+			}
 		}
 
 		/// То же самое, но в случае пустого состояния возвращается NaN.
