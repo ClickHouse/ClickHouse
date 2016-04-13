@@ -82,7 +82,7 @@ public:
 	static ExpressionAction applyFunction(
 		const FunctionPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
 
-	static ExpressionAction addColumn(ColumnWithTypeAndName added_column_)
+	static ExpressionAction addColumn(const ColumnWithTypeAndName & added_column_)
 	{
 		ExpressionAction a;
 		a.type = ADD_COLUMN;
