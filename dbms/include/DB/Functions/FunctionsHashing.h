@@ -15,6 +15,7 @@
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeEnum.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnFixedString.h>
@@ -555,6 +556,8 @@ private:
 		else if (typeid_cast<const DataTypeInt16 *		>(from_type)) executeIntType<Int16,		first>(icolumn, vec_to);
 		else if (typeid_cast<const DataTypeInt32 *		>(from_type)) executeIntType<Int32,		first>(icolumn, vec_to);
 		else if (typeid_cast<const DataTypeInt64 *		>(from_type)) executeIntType<Int64,		first>(icolumn, vec_to);
+		else if (typeid_cast<const DataTypeEnum8 *		>(from_type)) executeIntType<Int8,		first>(icolumn, vec_to);
+		else if (typeid_cast<const DataTypeEnum16 *		>(from_type)) executeIntType<Int16,		first>(icolumn, vec_to);
 		else if (typeid_cast<const DataTypeDate *		>(from_type)) executeIntType<UInt16,	first>(icolumn, vec_to);
 		else if (typeid_cast<const DataTypeDateTime *	>(from_type)) executeIntType<UInt32,	first>(icolumn, vec_to);
 		else if (typeid_cast<const DataTypeFloat32 *	>(from_type)) executeIntType<Float32,	first>(icolumn, vec_to);
