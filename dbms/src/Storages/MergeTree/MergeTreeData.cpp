@@ -82,7 +82,7 @@ MergeTreeData::MergeTreeData(
 		if (sign_column.empty())
 			throw Exception("Logical error: Sign column for storage CollapsingMergeTree is empty", ErrorCodes::LOGICAL_ERROR);
 
-		for (const auto & column : columns)
+		for (const auto & column : *columns)
 		{
 			if (column.name == sign_column)
 			{
