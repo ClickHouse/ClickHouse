@@ -34,7 +34,7 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 			if (shared_block_ptr.get())
 				continue;
 
-			shared_block_ptr = children[i]->read();
+			shared_block_ptr = new detail::SharedBlock(children[i]->read());
 
 			if (shared_block_ptr->rowsInFirstColumn() == 0)
 				continue;
@@ -276,7 +276,7 @@ void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, 
 	{
 		if (&cursors[i] == current.impl)
 		{
-			source_blocks[i] = children[i]->read();
+			source_blocks[i] = new detail::SharedBlock(children[i]->read());
 			if (*source_blocks[i])
 			{
 				cursors[i].reset(*source_blocks[i]);

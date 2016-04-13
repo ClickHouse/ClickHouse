@@ -1,6 +1,7 @@
 #pragma once
 
 #include <queue>
+#include <boost/intrusive_ptr.hpp>
 
 #include <common/logger_useful.h>
 
@@ -16,6 +17,37 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int CORRUPTED_DATA;
+}
+
+
+/// Позволяет ссылаться на строку в блоке и удерживать владение блоком,
+///  и таким образом избежать создания временного объекта-строки.
+/// Не используется std::shared_ptr, так как не нужно место для weak_count и deleter;
+///  не используется Poco::SharedPtr, так как нужно выделять блок и refcount одним куском;
+///  не используется Poco::AutoPtr, так как у него нет move конструктора и есть лишние проверки на nullptr;
+/// Счётчик ссылок неатомарный, так как используется из одного потока.
+namespace detail
+{
+	struct SharedBlock : Block
+	{
+		int refcount = 0;
+
+		SharedBlock(Block && value_)
+			: Block(std::move(value_)) {};
+	};
+}
+
+using SharedBlockPtr = boost::intrusive_ptr<detail::SharedBlock>;
+
+inline void intrusive_ptr_add_ref(detail::SharedBlock * ptr)
+{
+	++ptr->refcount;
+}
+
+inline void intrusive_ptr_release(detail::SharedBlock * ptr)
+{
+	if (0 == --ptr->refcount)
+		delete ptr;
 }
 
 
@@ -57,115 +89,6 @@ public:
 	}
 
 protected:
-	/// Позволяет ссылаться на строку в блоке и удерживать владение блоком,
-	///  и таким образом избежать создания временного объекта-строки.
-	/// Не используется std::shared_ptr, так как не нужно место для weak_count и deleter;
-	///  не используется Poco::SharedPtr, так как нужно выделять блок и refcount одним куском;
-	///  не используется Poco::AutoPtr, так как у него нет move конструктора и есть лишние проверси на nullptr;
-	///  всё таки можно было бы использовать boost::intrusive_ptr.
-	/// Счётчик ссылок неатомарный, так как используется из одного потока.
-
-	class SharedBlockPtr
-	{
-	private:
-		struct SharedBlock
-		{
-			Block value;
-			int refcount = 1;
-
-			SharedBlock(Block && value_)
-				: value(std::move(value_)) {};
-		};
-
-		SharedBlock * ptr = nullptr;
-
-	public:
-		SharedBlockPtr() {}
-
-		SharedBlockPtr & operator= (Block && value_)
-		{
-			if (ptr)
-				release();
-
-			ptr = new SharedBlock(std::move(value_));
-			return *this;
-		}
-
-		SharedBlockPtr(Block && value_)
-		{
-			*this = std::move(value_);
-		}
-
-		SharedBlockPtr & operator= (const SharedBlockPtr & other)
-		{
-			if (this == &other)
-				return *this;
-
-			if (ptr)
-				release();
-
-			ptr = const_cast<SharedBlockPtr &>(other).ptr;
-
-			if (ptr)
-				++ptr->refcount;
-
-			return *this;
-		}
-
-		SharedBlockPtr(const SharedBlockPtr & other)
-		{
-			*this = other;
-		}
-
-		SharedBlockPtr & operator= (SharedBlockPtr && other)
-		{
-			if (ptr)
-				release();
-
-			ptr = other.ptr;
-			other.ptr = nullptr;
-
-			return *this;
-		}
-
-		void swap(SharedBlockPtr & other)
-		{
-			std::swap(ptr, other.ptr);
-		}
-
-		~SharedBlockPtr()
-		{
-			if (ptr)
-				release();
-		}
-
-		bool operator==(const SharedBlockPtr & other) const
-		{
-			return ptr == other.ptr;
-		}
-
-		bool operator!=(const SharedBlockPtr & other) const
-		{
-			return ptr != other.ptr;
-		}
-
-		Block * get() { return &ptr->value; }
-		const Block * get() const { return &ptr->value; }
-
-		Block * operator->() { return get(); }
-		const Block * operator->() const { return get(); }
-
-		Block & operator*() { return *get(); }
-		const Block & operator*() const { return *get(); }
-
-	private:
-		void release()
-		{
-			if (--ptr->refcount == 0)
-				delete ptr;
-		}
-	};
-
 	struct RowRef
 	{
 		ConstColumnPlainPtrs columns;
