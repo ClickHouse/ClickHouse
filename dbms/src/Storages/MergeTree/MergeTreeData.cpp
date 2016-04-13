@@ -76,6 +76,24 @@ MergeTreeData::MergeTreeData(
 			"Date column (" + date_column_name + ") does not exist in table declaration.",
 			ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
+	/// Проверяем, что столбец sign_column, если нужен, существует, и имеет тип Int8.
+	if (mode == Collapsing)
+	{
+		if (sign_column.empty())
+			throw Exception("Logical error: Sign column for storage CollapsingMergeTree is empty", ErrorCodes::LOGICAL_ERROR);
+
+		for (const auto & column : columns)
+		{
+			if (column.name == sign_column)
+			{
+				if (!typeid_cast<const DataTypeInt8 *>(column.type.get()))
+					throw Exception("Sign column (" + sign_column + ") for storage CollapsingMergeTree must have type Int8."
+						" Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
+				break;
+			}
+		}
+	}
+
 	/// Если заданы columns_to_sum, проверяем, что такие столбцы существуют.
 	if (!columns_to_sum.empty())
 	{
