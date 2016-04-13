@@ -1,5 +1,6 @@
 #include <DB/Core/FieldVisitors.h>
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
+#include <DB/Columns/ColumnsNumber.h>
 
 /// Максимальное количество сообщений о некорректных данных в логе.
 #define MAX_ERROR_MESSAGES 10
@@ -25,7 +26,7 @@ void CollapsingSortedBlockInputStream::reportIncorrectData()
 	{
 		if (i != 0)
 			s << ", ";
-		s << apply_visitor(FieldVisitorToString(), current_key[i]);
+		s << apply_visitor(FieldVisitorToString(), (*current_key.columns[i])[current_key.row_num]);
 	}
 
 	s << ").";
@@ -50,10 +51,10 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 				LOG_INFO(log, "All rows collapsed");
 				++merged_rows;
 				for (size_t i = 0; i < num_columns; ++i)
-					merged_columns[i]->insert(last_positive[i]);
+					merged_columns[i]->insertFrom(*last_positive.columns[i], last_positive.row_num);
 				++merged_rows;
 				for (size_t i = 0; i < num_columns; ++i)
-					merged_columns[i]->insert(last_negative[i]);
+					merged_columns[i]->insertFrom(*last_negative.columns[i], last_negative.row_num);
 			}
 			return;
 		}
@@ -62,14 +63,14 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 		{
 			++merged_rows;
 			for (size_t i = 0; i < num_columns; ++i)
-				merged_columns[i]->insert(first_negative[i]);
+				merged_columns[i]->insertFrom(*first_negative.columns[i], first_negative.row_num);
 		}
 
 		if (count_positive >= count_negative)
 		{
 			++merged_rows;
 			for (size_t i = 0; i < num_columns; ++i)
-				merged_columns[i]->insert(last_positive[i]);
+				merged_columns[i]->insertFrom(*last_positive.columns[i], last_positive.row_num);
 		}
 
 		if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
@@ -100,11 +101,9 @@ Block CollapsingSortedBlockInputStream::readImpl()
 	/// Дополнительная инициализация.
 	if (first_negative.empty())
 	{
-		first_negative.resize(num_columns);
-		last_negative.resize(num_columns);
-		last_positive.resize(num_columns);
-		current_key.resize(description.size());
-		next_key.resize(description.size());
+		first_negative.columns.resize(num_columns);
+		last_negative.columns.resize(num_columns);
+		last_positive.columns.resize(num_columns);
 
 		sign_column_number = merged_block.getPositionByName(sign_column);
 	}
@@ -117,6 +116,7 @@ Block CollapsingSortedBlockInputStream::readImpl()
 	return merged_block;
 }
 
+
 template<class TSortCursor>
 void CollapsingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
@@ -127,8 +127,16 @@ void CollapsingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, s
 	{
 		TSortCursor current = queue.top();
 
-		Int8 sign = get<Int64>((*current->all_columns[sign_column_number])[current->pos]);
-		setPrimaryKey(next_key, current);
+		if (current_key.empty())
+		{
+			current_key.columns.resize(description.size());
+			next_key.columns.resize(description.size());
+
+			setPrimaryKeyRef(current_key, current);
+		}
+
+		Int8 sign = static_cast<const ColumnInt8 &>(*current->all_columns[sign_column_number]).getData()[current->pos];
+		setPrimaryKeyRef(next_key, current);
 
 		bool key_differs = next_key != current_key;
 
@@ -146,8 +154,7 @@ void CollapsingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, s
 			/// Запишем данные для предыдущего визита.
 			insertRows(merged_columns, merged_rows);
 
-			current_key = std::move(next_key);
-			next_key.resize(description.size());
+			current_key.swap(next_key);
 
 			count_negative = 0;
 			count_positive = 0;
@@ -158,14 +165,14 @@ void CollapsingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, s
 			++count_positive;
 			last_is_positive = true;
 
-			setRow(last_positive, current);
+			setRowRef(last_positive, current);
 		}
 		else if (sign == -1)
 		{
 			if (!count_negative)
-				setRow(first_negative, current);
+				setRowRef(first_negative, current);
 			if (!blocks_written && !merged_rows)
-				setRow(last_negative, current);
+				setRowRef(last_negative, current);
 
 			++count_negative;
 			last_is_positive = false;

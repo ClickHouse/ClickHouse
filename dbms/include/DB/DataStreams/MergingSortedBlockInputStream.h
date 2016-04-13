@@ -57,6 +57,148 @@ public:
 	}
 
 protected:
+	/// Позволяет ссылаться на строку в блоке и удерживать владение блоком,
+	///  и таким образом избежать создания временного объекта-строки.
+	/// Не используется std::shared_ptr, так как не нужно место для weak_count и deleter;
+	///  не используется Poco::SharedPtr, так как нужно выделять блок и refcount одним куском;
+	///  не используется Poco::AutoPtr, так как у него нет move конструктора и есть лишние проверси на nullptr;
+	///  всё таки можно было бы использовать boost::intrusive_ptr.
+	/// Счётчик ссылок неатомарный, так как используется из одного потока.
+
+	class SharedBlockPtr
+	{
+	private:
+		struct SharedBlock
+		{
+			Block value;
+			int refcount = 1;
+
+			SharedBlock(Block && value_)
+				: value(std::move(value_)) {};
+		};
+
+		SharedBlock * ptr = nullptr;
+
+	public:
+		SharedBlockPtr() {}
+
+		SharedBlockPtr & operator= (Block && value_)
+		{
+			if (ptr)
+				release();
+
+			ptr = new SharedBlock(std::move(value_));
+			return *this;
+		}
+
+		SharedBlockPtr(Block && value_)
+		{
+			*this = std::move(value_);
+		}
+
+		SharedBlockPtr & operator= (const SharedBlockPtr & other)
+		{
+			if (this == &other)
+				return *this;
+
+			if (ptr)
+				release();
+
+			ptr = const_cast<SharedBlockPtr &>(other).ptr;
+
+			if (ptr)
+				++ptr->refcount;
+
+			return *this;
+		}
+
+		SharedBlockPtr(const SharedBlockPtr & other)
+		{
+			*this = other;
+		}
+
+		SharedBlockPtr & operator= (SharedBlockPtr && other)
+		{
+			if (ptr)
+				release();
+
+			ptr = other.ptr;
+			other.ptr = nullptr;
+
+			return *this;
+		}
+
+		void swap(SharedBlockPtr & other)
+		{
+			std::swap(ptr, other.ptr);
+		}
+
+		~SharedBlockPtr()
+		{
+			if (ptr)
+				release();
+		}
+
+		bool operator==(const SharedBlockPtr & other) const
+		{
+			return ptr == other.ptr;
+		}
+
+		bool operator!=(const SharedBlockPtr & other) const
+		{
+			return ptr != other.ptr;
+		}
+
+		Block * get() { return &ptr->value; }
+		const Block * get() const { return &ptr->value; }
+
+		Block * operator->() { return get(); }
+		const Block * operator->() const { return get(); }
+
+		Block & operator*() { return *get(); }
+		const Block & operator*() const { return *get(); }
+
+	private:
+		void release()
+		{
+			if (--ptr->refcount == 0)
+				delete ptr;
+		}
+	};
+
+	struct RowRef
+	{
+		ConstColumnPlainPtrs columns;
+		size_t row_num;
+		SharedBlockPtr shared_block;
+
+		void swap(RowRef & other)
+		{
+			std::swap(columns, other.columns);
+			std::swap(row_num, other.row_num);
+			std::swap(shared_block, other.shared_block);
+		}
+
+		/// Количество и типы столбцов обязаны соответствовать.
+		bool operator==(const RowRef & other) const
+		{
+			size_t size = columns.size();
+			for (size_t i = 0; i < size; ++i)
+				if (0 != columns[i]->compareAt(row_num, other.row_num, *other.columns[i], 1))
+					return false;
+			return true;
+		}
+
+		bool operator!=(const RowRef & other) const
+		{
+			return !(*this == other);
+		}
+
+		bool empty() const { return columns.empty(); }
+		size_t size() const { return columns.size(); }
+	};
+
+
 	Block readImpl() override;
 	void readSuffixImpl() override;
 
@@ -78,7 +220,7 @@ protected:
 
 	/// Текущие сливаемые блоки.
 	size_t num_columns = 0;
-	Blocks source_blocks;
+	std::vector<SharedBlockPtr> source_blocks;
 
 	typedef std::vector<SortCursorImpl> CursorImpls;
 	CursorImpls cursors;
@@ -93,7 +235,7 @@ protected:
 	/// Эти методы используются в Collapsing/Summing/Aggregating SortedBlockInputStream-ах.
 
 	/// Сохранить строчку, на которую указывает cursor, в row.
-	template<class TSortCursor>
+	template <class TSortCursor>
 	void setRow(Row & row, TSortCursor & cursor)
 	{
 		for (size_t i = 0; i < num_columns; ++i)
@@ -109,16 +251,16 @@ protected:
 				/// Узнаем имя столбца и бросим исключение поинформативней.
 
 				String column_name;
-				for (const Block & block : source_blocks)
+				for (const auto & block : source_blocks)
 				{
-					if (i < block.columns())
+					if (i < block->columns())
 					{
-						column_name = block.getByPosition(i).name;
+						column_name = block->getByPosition(i).name;
 						break;
 					}
 				}
 
-				throw DB::Exception("MergingSortedBlockInputStream failed to read row " + toString(cursor->pos)
+				throw Exception("MergingSortedBlockInputStream failed to read row " + toString(cursor->pos)
 					+ " of column " + toString(i) + (column_name.empty() ? "" : " (" + column_name + ")"),
 					ErrorCodes::CORRUPTED_DATA);
 			}
@@ -126,11 +268,31 @@ protected:
 	}
 
 	/// Сохранить первичный ключ, на который указывает cursor в row.
-	template<class TSortCursor>
+	template <class TSortCursor>
 	void setPrimaryKey(Row & row, TSortCursor & cursor)
 	{
 		for (size_t i = 0; i < cursor->sort_columns_size; ++i)
 			cursor->sort_columns[i]->get(cursor->pos, row[i]);
+	}
+
+	template <class TSortCursor>
+	void setRowRef(RowRef & row_ref, TSortCursor & cursor)
+	{
+		row_ref.row_num = cursor.impl->pos;
+		row_ref.shared_block = source_blocks[cursor.impl->order];
+
+		for (size_t i = 0; i < num_columns; ++i)
+			row_ref.columns[i] = cursor->all_columns[i];
+	}
+
+	template <class TSortCursor>
+	void setPrimaryKeyRef(RowRef & row_ref, TSortCursor & cursor)
+	{
+		row_ref.row_num = cursor.impl->pos;
+		row_ref.shared_block = source_blocks[cursor.impl->order];
+
+		for (size_t i = 0; i < cursor->sort_columns_size; ++i)
+			row_ref.columns[i] = cursor->sort_columns[i];
 	}
 
 private:

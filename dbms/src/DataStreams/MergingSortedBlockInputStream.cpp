@@ -27,20 +27,22 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 			child->readPrefix();
 
 		size_t i = 0;
-		for (Blocks::iterator it = source_blocks.begin(); it != source_blocks.end(); ++it, ++i)
+		for (auto it = source_blocks.begin(); it != source_blocks.end(); ++it, ++i)
 		{
-			if (*it)
+			SharedBlockPtr & shared_block_ptr = *it;
+
+			if (shared_block_ptr.get())
 				continue;
 
-			*it = children[i]->read();
+			shared_block_ptr = children[i]->read();
 
-			if (it->rowsInFirstColumn() == 0)
+			if (shared_block_ptr->rowsInFirstColumn() == 0)
 				continue;
 
 			if (!num_columns)
-				num_columns = it->columns();
+				num_columns = shared_block_ptr->columns();
 
-			cursors[i] = SortCursorImpl(*it, description, i);
+			cursors[i] = SortCursorImpl(*shared_block_ptr, description, i);
 			has_collation |= cursors[i].has_collation;
 		}
 
@@ -54,37 +56,41 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 
 	/// Клонируем структуру первого непустого блока источников.
 	{
-		Blocks::const_iterator it = source_blocks.begin();
-		for (; it != source_blocks.end(); ++it)
+		auto it = source_blocks.cbegin();
+		for (; it != source_blocks.cend(); ++it)
 		{
-			if (*it)
+			const SharedBlockPtr & shared_block_ptr = *it;
+
+			if (*shared_block_ptr)
 			{
-				merged_block = it->cloneEmpty();
+				merged_block = shared_block_ptr->cloneEmpty();
 				break;
 			}
 		}
 
 		/// Если все входные блоки пустые.
-		if (it == source_blocks.end())
+		if (it == source_blocks.cend())
 			return;
 	}
 
 	/// Проверим, что у всех блоков-источников одинаковая структура.
-	for (Blocks::const_iterator it = source_blocks.begin(); it != source_blocks.end(); ++it)
+	for (auto it = source_blocks.cbegin(); it != source_blocks.cend(); ++it)
 	{
-		if (!*it)
+		const SharedBlockPtr & shared_block_ptr = *it;
+
+		if (!*shared_block_ptr)
 			continue;
 
-		size_t src_columns = it->columns();
+		size_t src_columns = shared_block_ptr->columns();
 		size_t dst_columns = merged_block.columns();
 
 		if (src_columns != dst_columns)
 			throw Exception("Merging blocks has different number of columns", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
 
 		for (size_t i = 0; i < src_columns; ++i)
-			if (it->getByPosition(i).name != merged_block.getByPosition(i).name
-				|| it->getByPosition(i).type->getName() != merged_block.getByPosition(i).type->getName()
-				|| it->getByPosition(i).column->getName() != merged_block.getByPosition(i).column->getName())
+			if (shared_block_ptr->getByPosition(i).name != merged_block.getByPosition(i).name
+				|| shared_block_ptr->getByPosition(i).type->getName() != merged_block.getByPosition(i).type->getName()
+				|| shared_block_ptr->getByPosition(i).column->getName() != merged_block.getByPosition(i).column->getName())
 				throw Exception("Merging blocks has different names or types of columns", ErrorCodes::BLOCKS_HAS_DIFFERENT_STRUCTURE);
 	}
 
@@ -187,7 +193,7 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 					throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
 
 				for (size_t i = 0; i < num_columns; ++i)
-					merged_block.unsafeGetByPosition(i).column = source_blocks[source_num].unsafeGetByPosition(i).column;
+					merged_block.unsafeGetByPosition(i).column = source_blocks[source_num]->unsafeGetByPosition(i).column;
 
 	//			std::cerr << "copied columns\n";
 
@@ -271,9 +277,9 @@ void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, 
 		if (&cursors[i] == current.impl)
 		{
 			source_blocks[i] = children[i]->read();
-			if (source_blocks[i])
+			if (*source_blocks[i])
 			{
-				cursors[i].reset(source_blocks[i]);
+				cursors[i].reset(*source_blocks[i]);
 				queue.push(TSortCursor(&cursors[i]));
 			}
 
