@@ -6,7 +6,7 @@ function create {
 	clickhouse-client --query="DROP TABLE IF EXISTS test.aggregating"
 	
 	clickhouse-client --query="CREATE TABLE test.summing (d Date DEFAULT today(), x UInt64, s UInt64 DEFAULT 1) ENGINE = SummingMergeTree(d, x, 8192)"
-	clickhouse-client --query="CREATE TABLE test.collapsing (d Date DEFAULT today(), x UInt64, s UInt64 DEFAULT 1) ENGINE = CollapsingMergeTree(d, x, 8192, s)"
+	clickhouse-client --query="CREATE TABLE test.collapsing (d Date DEFAULT today(), x UInt64, s Int8 DEFAULT 1) ENGINE = CollapsingMergeTree(d, x, 8192, s)"
 	clickhouse-client --query="CREATE TABLE test.aggregating (d Date DEFAULT today(), x UInt64, s AggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree(d, x, 8192)"
 }
 
