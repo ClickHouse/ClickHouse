@@ -79,13 +79,13 @@ private:
 	/// Найденные вложенные Map таблицы
 	std::vector<map_description> maps_to_sum;
 
-	Row current_key;		/// Текущий первичный ключ.
-	Row next_key;			/// Первичный ключ следующей строки.
+	RowRef current_key;		/// Текущий первичный ключ.
+	RowRef next_key;		/// Первичный ключ следующей строки.
 
 	Row current_row;
-	bool current_row_is_zero = false;	/// Текущая строчка просуммировалась в ноль, и её следует удалить.
+	bool current_row_is_zero = true;	/// Текущая строчка просуммировалась в ноль, и её следует удалить.
 
-	bool output_is_non_empty = false; /// Отдали ли мы наружу хоть одну строку.
+	bool output_is_non_empty = false;	/// Отдали ли мы наружу хоть одну строку.
 
 	/** Делаем поддержку двух разных курсоров - с Collation и без.
 	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.

@@ -70,8 +70,6 @@ Block SummingSortedBlockInputStream::readImpl()
 	if (current_row.empty())
 	{
 		current_row.resize(num_columns);
-		current_key.resize(description.size());
-		next_key.resize(description.size());
 
 		std::unordered_map<std::string, std::vector<std::size_t>> discovered_maps;
 		/** Заполним номера столбцов, которые должны быть просуммированы.
@@ -178,7 +176,15 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 	{
 		TSortCursor current = queue.top();
 
-		setPrimaryKey(next_key, current);
+		if (current_key.empty())
+		{
+			current_key.columns.resize(description.size());
+			next_key.columns.resize(description.size());
+
+			setPrimaryKeyRef(current_key, current);
+		}
+
+		setPrimaryKeyRef(next_key, current);
 
 		bool key_differs = next_key != current_key;
 
@@ -191,15 +197,14 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 		if (key_differs)
 		{
 			/// Запишем данные для предыдущей группы.
-			if (!current_key[0].isNull() && !current_row_is_zero)
+			if (!current_row_is_zero)
 			{
 				++merged_rows;
 				output_is_non_empty = true;
 				insertCurrentRow(merged_columns);
 			}
 
-			current_key = std::move(next_key);
-			next_key.resize(description.size());
+			current_key.swap(next_key);
 
 			setRow(current_row, current);
 			current_row_is_zero = false;

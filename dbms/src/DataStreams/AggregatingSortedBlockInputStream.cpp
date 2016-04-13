@@ -8,7 +8,7 @@ namespace DB
 void AggregatingSortedBlockInputStream::insertCurrentRow(ColumnPlainPtrs & merged_columns)
 {
 	for (size_t i = 0; i < num_columns; ++i)
-		merged_columns[i]->insert(current_row[i]);
+		merged_columns[i]->insertFrom(*current_row.columns[i], current_row.row_num);
 }
 
 
@@ -30,9 +30,7 @@ Block AggregatingSortedBlockInputStream::readImpl()
 	/// Дополнительная инициализация.
 	if (current_row.empty())
 	{
-		current_row.resize(num_columns);
-		current_key.resize(description.size());
-		next_key.resize(description.size());
+		current_row.columns.resize(num_columns);
 
 		/// Заполним номера столбцов, которые нужно доагрегировать.
 		for (size_t i = 0; i < num_columns; ++i)
@@ -79,7 +77,15 @@ void AggregatingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, 
 	{
 		TSortCursor current = queue.top();
 
-		setPrimaryKey(next_key, current);
+		if (current_key.empty())
+		{
+			current_key.columns.resize(description.size());
+			next_key.columns.resize(description.size());
+
+			setPrimaryKeyRef(current_key, current);
+		}
+
+		setPrimaryKeyRef(next_key, current);
 
 		bool key_differs = next_key != current_key;
 
@@ -91,11 +97,10 @@ void AggregatingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, 
 
 		if (key_differs)
 		{
-			current_key = std::move(next_key);
-			next_key.resize(description.size());
+			current_key.swap(next_key);
 
 			/// Запишем данные для очередной группы.
-			setRow(current_row, current);
+			setRowRef(current_row, current);
 			insertCurrentRow(merged_columns);
 			++merged_rows;
 		}

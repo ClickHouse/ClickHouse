@@ -59,15 +59,15 @@ private:
 	ColumnNumbers column_numbers_to_aggregate;
 	std::vector<ColumnAggregateFunction *> columns_to_aggregate;
 
-	Row current_key;		/// Текущий первичный ключ.
-	Row next_key;			/// Первичный ключ следующей строки.
+	RowRef current_key;		/// Текущий первичный ключ.
+	RowRef next_key;			/// Первичный ключ следующей строки.
 
-	Row current_row;
+	RowRef current_row;
 
 	/** Делаем поддержку двух разных курсоров - с Collation и без.
 	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
 	 */
-	template<class TSortCursor>
+	template <class TSortCursor>
 	void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
 	/// Вставить в результат первую строку для текущей группы.
@@ -75,7 +75,7 @@ private:
 
 	/** Извлечь все состояния аггрегатных функций и объединить с текущей группой.
 	  */
-	template<class TSortCursor>
+	template <class TSortCursor>
 	void addRow(TSortCursor & cursor)
 	{
 		for (size_t i = 0, size = column_numbers_to_aggregate.size(); i < size; ++i)

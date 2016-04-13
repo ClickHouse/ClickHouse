@@ -190,14 +190,6 @@ protected:
 		}
 	}
 
-	/// Сохранить первичный ключ, на который указывает cursor в row.
-	template <class TSortCursor>
-	void setPrimaryKey(Row & row, TSortCursor & cursor)
-	{
-		for (size_t i = 0; i < cursor->sort_columns_size; ++i)
-			cursor->sort_columns[i]->get(cursor->pos, row[i]);
-	}
-
 	template <class TSortCursor>
 	void setRowRef(RowRef & row_ref, TSortCursor & cursor)
 	{
