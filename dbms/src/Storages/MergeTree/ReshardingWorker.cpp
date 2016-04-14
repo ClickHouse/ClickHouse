@@ -697,13 +697,16 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
 			}
 			else if (ex.code() == ErrorCodes::RESHARDING_REMOTE_NODE_UNAVAILABLE)
 			{
-				/// A remote performer has gone offline.
+				/// A remote performer has gone offline or we are experiencing network problems.
 				/// Put the current distributed job on hold. Also jab the job scheduler
 				/// so that it will come accross this distributed job even if no new jobs
 				/// are submitted.
-				setStatus(current_job.coordinator_id, getFQDNOrHostName(), STATUS_ON_HOLD,
-					ex.message());
-				dumped_coordinator_state = dumpCoordinatorState(current_job.coordinator_id);
+				if (current_job.isCoordinated())
+				{
+					setStatus(current_job.coordinator_id, getFQDNOrHostName(), STATUS_ON_HOLD,
+						ex.message());
+					dumped_coordinator_state = dumpCoordinatorState(current_job.coordinator_id);
+				}
 				softCleanup();
 				wakeUpTrackerThread();
 			}
@@ -956,6 +959,20 @@ void ReshardingWorker::publishShardedPartitions()
 			pool.schedule([j, &tasks]{ tasks[j](); });
 		}
 	}
+	catch (const Poco::TimeoutException & ex)
+	{
+		try
+		{
+			pool.wait();
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+
+		throw Exception{"Sharded partition upload operation timed out",
+			ErrorCodes::RESHARDING_REMOTE_NODE_UNAVAILABLE};
+	}
 	catch (...)
 	{
 		try
@@ -1094,6 +1111,20 @@ void ReshardingWorker::commit()
 				--operation_count;
 			}
 		}
+	}
+	catch (const Poco::TimeoutException & ex)
+	{
+		try
+		{
+			pool.wait();
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+
+		throw Exception{"A remote operation timed out while committing",
+			ErrorCodes::RESHARDING_REMOTE_NODE_UNAVAILABLE};
 	}
 	catch (...)
 	{
@@ -1259,6 +1290,21 @@ bool ReshardingWorker::checkAttachLogRecord(LogRecord & log_record)
 				&storage.remote_part_checker_client, part, hash, to_location)};
 			pool.schedule([i, &tasks]{ tasks[i](); });
 		}
+	}
+	catch (const Poco::TimeoutException & ex)
+	{
+		try
+		{
+			pool.wait();
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+
+		throw Exception{"Part checking on remote node timed out while attempting "
+			"to fix a failed ATTACH operation",
+			ErrorCodes::RESHARDING_REMOTE_NODE_UNAVAILABLE};
 	}
 	catch (...)
 	{
