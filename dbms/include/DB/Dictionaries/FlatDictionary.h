@@ -328,7 +328,7 @@ private:
 	void addAttributeSize(const attribute_t & attribute)
 	{
 		const auto & array_ref = std::get<ContainerPtrType<T>>(attribute.arrays);
-		bytes_allocated += sizeof(PODArray<T>) + array_ref->storage_size();
+		bytes_allocated += sizeof(PODArray<T>) + array_ref->allocated_size();
 		bucket_count = array_ref->capacity();
 	}
 

@@ -28,18 +28,23 @@ namespace DB
   * Поддерживается только часть интерфейса std::vector.
   *
   * Конструктор по-умолчанию создаёт пустой объект, который не выделяет память.
-  * Затем выделяется память минимум под INITIAL_SIZE элементов.
+  * Затем выделяется память минимум в INITIAL_SIZE байт.
   *
   * Если вставлять элементы push_back-ом, не делая reserve, то PODArray примерно в 2.5 раза быстрее std::vector.
+  *
+  * Шаблонный параметр pad_right - всегда выделять в конце массива столько неиспользуемых байт.
+  * Может использоваться для того, чтобы делать оптимистичное чтение, запись, копирование невыровненными SIMD-инструкциями.
   */
-
-template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>>
+template <typename T, size_t pad_right_ = 0, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>>
 class PODArray : private boost::noncopyable, private TAllocator	/// empty base optimization
 {
 private:
-	char * c_start;
-	char * c_end;
-	char * c_end_of_storage;
+	/// Округление padding-а вверх до целого количества элементов, чтобы упростить арифметику.
+	static constexpr size_t pad_right = (pad_right_ + sizeof(T) - 1) / sizeof(T) * sizeof(T);
+
+	char * c_start 			= nullptr;
+	char * c_end 			= nullptr;
+	char * c_end_of_storage = nullptr;	/// Не включает в себя pad_right.
 
 	T * t_start() 						{ return reinterpret_cast<T *>(c_start); }
 	T * t_end() 						{ return reinterpret_cast<T *>(c_end); }
@@ -49,7 +54,11 @@ private:
 	const T * t_end() const 			{ return reinterpret_cast<const T *>(c_end); }
 	const T * t_end_of_storage() const 	{ return reinterpret_cast<const T *>(c_end_of_storage); }
 
-	static size_t byte_size(size_t n) { return n * sizeof(T); }
+	/// Количество памяти, занимаемое num_elements элементов.
+	static size_t byte_size(size_t num_elements) { return num_elements * sizeof(T); }
+
+	/// Минимальное количество памяти, которое нужно выделить для num_elements элементов, включая padding.
+	static size_t minimum_memory_for_elements(size_t num_elements) { return byte_size(num_elements) + pad_right; }
 
 	static size_t round_up_to_power_of_two(size_t n)
 	{
@@ -65,20 +74,15 @@ private:
 		return n;
 	}
 
-	static size_t to_size(size_t n) { return byte_size(round_up_to_power_of_two(n)); }
-
-	void alloc(size_t n)
+	void alloc_for_num_elements(size_t num_elements)
 	{
-		if (n == 0)
-		{
-			c_start = c_end = c_end_of_storage = nullptr;
-			return;
-		}
+		alloc(round_up_to_power_of_two(minimum_memory_for_elements(num_elements)));
+	}
 
-		size_t bytes_to_alloc = to_size(n);
-
-		c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes_to_alloc));
-		c_end_of_storage = c_start + bytes_to_alloc;
+	void alloc(size_t bytes)
+	{
+		c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes));
+		c_end_of_storage = c_start + bytes - pad_right;
 	}
 
 	void dealloc()
@@ -86,30 +90,29 @@ private:
 		if (c_start == nullptr)
 			return;
 
-		TAllocator::free(c_start, storage_size());
+		TAllocator::free(c_start, allocated_size());
 	}
 
-	void realloc(size_t n)
+	void realloc(size_t bytes)
 	{
 		if (c_start == nullptr)
 		{
-			alloc(n);
+			alloc(bytes);
 			return;
 		}
 
 		ptrdiff_t end_diff = c_end - c_start;
-		size_t bytes_to_alloc = to_size(n);
 
-		c_start = reinterpret_cast<char *>(TAllocator::realloc(c_start, storage_size(), bytes_to_alloc));
+		c_start = reinterpret_cast<char *>(TAllocator::realloc(c_start, allocated_size(), bytes));
 
 		c_end = c_start + end_diff;
-		c_end_of_storage = c_start + bytes_to_alloc;
+		c_end_of_storage = c_start + bytes - pad_right;
 	}
 
 public:
 	typedef T value_type;
 
-	size_t storage_size() const { return c_end_of_storage - c_start; }
+	size_t allocated_size() const { return c_end_of_storage - c_start + pad_right; }
 
 	/// Просто typedef нельзя, так как возникает неоднозначность для конструкторов и функций assign.
 	struct iterator : public boost::iterator_adaptor<iterator, T*>
@@ -125,11 +128,30 @@ public:
 	};
 
 
-	PODArray() { alloc(0); }
-    PODArray(size_t n) { alloc(n); c_end += byte_size(n); }
-    PODArray(size_t n, const T & x) { alloc(n); assign(n, x); }
-    PODArray(const_iterator from_begin, const_iterator from_end) { alloc(from_end - from_begin); insert(from_begin, from_end); }
-    ~PODArray() { dealloc(); }
+	PODArray() {}
+
+    PODArray(size_t n)
+	{
+		alloc_for_num_elements(n);
+		c_end += byte_size(n);
+	}
+
+    PODArray(size_t n, const T & x)
+	{
+		alloc_for_num_elements(n);
+		assign(n, x);
+	}
+
+    PODArray(const_iterator from_begin, const_iterator from_end)
+	{
+		alloc_for_num_elements(from_end - from_begin);
+		insert(from_begin, from_end);
+	}
+
+    ~PODArray()
+	{
+		dealloc();
+	}
 
 	PODArray(PODArray && other)
 	{
@@ -176,15 +198,15 @@ public:
 	void reserve(size_t n)
 	{
 		if (n > capacity())
-			realloc(n);
+			realloc(round_up_to_power_of_two(minimum_memory_for_elements(n)));
 	}
 
 	void reserve()
 	{
 		if (size() == 0)
-			realloc(INITIAL_SIZE);
+			realloc(std::max(INITIAL_SIZE, minimum_memory_for_elements(1)));
 		else
-			realloc(size() * 2);
+			realloc(allocated_size() * 2);
 	}
 
 	void resize(size_t n)
@@ -343,5 +365,9 @@ public:
 	}
 };
 
+
+/** Для столбцов. Padding-а хватает, чтобы читать и писать xmm-регистр по адресу последнего элемента. */
+template <typename T>
+using PaddedPODArray = PODArray<T, 15>;
 
 }
