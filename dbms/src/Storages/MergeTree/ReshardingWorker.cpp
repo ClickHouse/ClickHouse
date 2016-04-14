@@ -777,7 +777,7 @@ void ReshardingWorker::createShardedPartitions()
 
 void ReshardingWorker::storeTargetShardsInfo()
 {
-	LOG_DEBUG(log, "### Storing target shards info");
+	LOG_DEBUG(log, "Storing info on target shards");
 
 	auto & storage = *(current_job.storage);
 	MergeTreeData::PerShardDataParts & per_shard_data_parts = storage.data.per_shard_data_parts;
@@ -819,8 +819,6 @@ void ReshardingWorker::storeTargetShardsInfo()
 
 	(void) zookeeper->create(getLocalJobPath() + "/shards", out,
 		zkutil::CreateMode::Persistent);
-
-	LOG_DEBUG(log, "### Stored target shards info");
 }
 
 ReshardingWorker::ShardList ReshardingWorker::getTargetShardsInfo(const std::string & hostname,
