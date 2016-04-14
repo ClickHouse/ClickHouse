@@ -734,21 +734,24 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
 			tryLogCurrentException(__PRETTY_FUNCTION__);
 		}
 
-		LOG_ERROR(log, dumped_coordinator_state);
+		if (current_job.isCoordinated())
+			LOG_ERROR(log, dumped_coordinator_state);
 		throw;
 	}
 	catch (const std::exception & ex)
 	{
 		/// An error has occurred on this performer.
 		handle_exception("Resharding job cancelled", ex.what());
-		LOG_ERROR(log, dumped_coordinator_state);
+		if (current_job.isCoordinated())
+			LOG_ERROR(log, dumped_coordinator_state);
 		throw;
 	}
 	catch (...)
 	{
 		/// An error has occurred on this performer.
 		handle_exception("Resharding job cancelled", "An unspecified error has occurred");
-		LOG_ERROR(log, dumped_coordinator_state);
+		if (current_job.isCoordinated())
+			LOG_ERROR(log, dumped_coordinator_state);
 		throw;
 	}
 
