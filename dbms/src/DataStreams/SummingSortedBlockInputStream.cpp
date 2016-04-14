@@ -70,6 +70,7 @@ Block SummingSortedBlockInputStream::readImpl()
 	if (current_row.empty())
 	{
 		current_row.resize(num_columns);
+		next_key.columns.resize(description.size());
 
 		std::unordered_map<std::string, std::vector<std::size_t>> discovered_maps;
 		/** Заполним номера столбцов, которые должны быть просуммированы.
@@ -183,8 +184,6 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 		if (current_key.empty())	/// Первый встретившийся ключ.
 		{
 			current_key.columns.resize(description.size());
-			next_key.columns.resize(description.size());
-
 			setPrimaryKeyRef(current_key, current);
 			key_differs = true;
 		}

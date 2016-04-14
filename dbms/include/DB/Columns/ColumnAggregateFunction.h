@@ -200,7 +200,12 @@ public:
 
 	void insertDefault() override
 	{
-		throw Exception("Method insertDefault is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
+		IAggregateFunction * function = holder.get()->func;
+
+		Arena & arena = createOrGetArena();
+
+		getData().push_back(arena.alloc(function->sizeOfData()));
+		function->create(getData().back());
 	}
 
 	StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override

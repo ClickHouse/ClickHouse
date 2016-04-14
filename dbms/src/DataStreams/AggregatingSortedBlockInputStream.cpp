@@ -5,13 +5,6 @@ namespace DB
 {
 
 
-void AggregatingSortedBlockInputStream::insertCurrentRow(ColumnPlainPtrs & merged_columns)
-{
-	for (size_t i = 0; i < num_columns; ++i)
-		merged_columns[i]->insertFrom(*current_row.columns[i], current_row.row_num);
-}
-
-
 Block AggregatingSortedBlockInputStream::readImpl()
 {
 	if (finished)
@@ -28,9 +21,9 @@ Block AggregatingSortedBlockInputStream::readImpl()
 		return Block();
 
 	/// Дополнительная инициализация.
-	if (current_row.empty())
+	if (next_key.empty())
 	{
-		current_row.columns.resize(num_columns);
+		next_key.columns.resize(description.size());
 
 		/// Заполним номера столбцов, которые нужно доагрегировать.
 		for (size_t i = 0; i < num_columns; ++i)
@@ -39,7 +32,10 @@ Block AggregatingSortedBlockInputStream::readImpl()
 
 			/// Оставляем только состояния аггрегатных функций.
 			if (strncmp(column.type->getName().data(), "AggregateFunction", strlen("AggregateFunction")) != 0)
+			{
+				column_numbers_not_to_aggregate.push_back(i);
 				continue;
+			}
 
 			/// Входят ли в PK?
 			SortDescription::const_iterator it = description.begin();
@@ -48,7 +44,10 @@ Block AggregatingSortedBlockInputStream::readImpl()
 					break;
 
 			if (it != description.end())
+			{
+				column_numbers_not_to_aggregate.push_back(i);
 				continue;
+			}
 
 			column_numbers_to_aggregate.push_back(i);
 		}
@@ -84,8 +83,6 @@ void AggregatingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, 
 		if (current_key.empty())	/// Первый встретившийся ключ.
 		{
 			current_key.columns.resize(description.size());
-			next_key.columns.resize(description.size());
-
 			setPrimaryKeyRef(current_key, current);
 			key_differs = true;
 		}
@@ -102,15 +99,21 @@ void AggregatingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, 
 		{
 			current_key.swap(next_key);
 
-			/// Запишем данные для очередной группы.
-			setRowRef(current_row, current);
-			insertCurrentRow(merged_columns);
+			/// Запишем данные для очередной группы. Копируем значения обычных столбцов.
+			for (size_t i = 0, size = column_numbers_not_to_aggregate.size(); i < size; ++i)
+			{
+				size_t j = column_numbers_not_to_aggregate[i];
+				merged_columns[j]->insertFrom(*current->all_columns[j], current->pos);
+			}
+
+			/// Добавляем в агрегатные столбцы пустое состояние агрегации. Состояние будет обновлено в функции addRow.
+			for (auto & column_to_aggregate : columns_to_aggregate)
+				column_to_aggregate->insertDefault();
+
 			++merged_rows;
 		}
-		else
-		{
-			addRow(current);
-		}
+
+		addRow(current);
 
 		if (!current->isLast())
 		{
@@ -125,6 +128,17 @@ void AggregatingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, 
 	}
 
 	finished = true;
+}
+
+
+template <class TSortCursor>
+void AggregatingSortedBlockInputStream::addRow(TSortCursor & cursor)
+{
+	for (size_t i = 0, size = column_numbers_to_aggregate.size(); i < size; ++i)
+	{
+		size_t j = column_numbers_to_aggregate[i];
+		columns_to_aggregate[i]->insertMergeFrom(*cursor->all_columns[j], cursor->pos);
+	}
 }
 
 }
