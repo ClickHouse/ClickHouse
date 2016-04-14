@@ -1019,9 +1019,9 @@ size_t MergeTreeData::getMaxPartsCountForMonth() const
 
 std::pair<Int64, bool> MergeTreeData::getMinBlockNumberForMonth(DayNum_t month) const
 {
-	std::lock_guard<std::mutex> lock(data_parts_mutex);
+	std::lock_guard<std::mutex> lock(all_data_parts_mutex);
 
-	for (const auto & part : data_parts)	/// Поиск можно сделать лучше.
+	for (const auto & part : all_data_parts)	/// Поиск можно сделать лучше.
 		if (part->month == month)
 			return { part->left, true };	/// Блоки в data_parts упорядочены по month и left.
 
