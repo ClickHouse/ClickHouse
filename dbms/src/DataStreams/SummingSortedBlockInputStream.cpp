@@ -176,17 +176,20 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 	{
 		TSortCursor current = queue.top();
 
-		if (current_key.empty())
+		setPrimaryKeyRef(next_key, current);
+
+		bool key_differs;
+
+		if (current_key.empty())	/// Первый встретившийся ключ.
 		{
 			current_key.columns.resize(description.size());
 			next_key.columns.resize(description.size());
 
 			setPrimaryKeyRef(current_key, current);
+			key_differs = true;
 		}
-
-		setPrimaryKeyRef(next_key, current);
-
-		bool key_differs = next_key != current_key;
+		else
+			key_differs = next_key != current_key;
 
 		/// если накопилось достаточно строк и последняя посчитана полностью
 		if (key_differs && merged_rows >= max_block_size)
