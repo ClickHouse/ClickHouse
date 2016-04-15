@@ -3413,13 +3413,15 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 				/// For any reason the coordinator has disappeared. So obviously
 				/// we don't have any means to notify other nodes of an error.
 			}
-
 			else if (ex.code() == ErrorCodes::RESHARDING_COORDINATOR_DELETED)
 			{
 				/// nothing here
 			}
 			else
+			{
 				handle_exception(ex.message());
+				LOG_ERROR(log, dumped_coordinator_state);
+			}
 		}
 
 		throw;
