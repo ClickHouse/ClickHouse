@@ -518,8 +518,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		std::vector<String> add_columns = data.getPrimaryExpression()->getRequiredColumns();
 		column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
 
-		if (!data.sign_column.empty())
-			column_names_to_read.push_back(data.sign_column);
+		if (!data.merging_params.sign_column.empty())
+			column_names_to_read.push_back(data.merging_params.sign_column);
 
 		std::sort(column_names_to_read.begin(), column_names_to_read.end());
 		column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
@@ -799,7 +799,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	BlockInputStreams res;
 	if (to_merge.size() == 1)
 	{
-		if (!data.sign_column.empty())
+		if (!data.merging_params.sign_column.empty())
 		{
 			ExpressionActionsPtr sign_filter_expression;
 			String sign_filter_column;
@@ -822,15 +822,20 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 				break;
 
 			case MergeTreeData::Collapsing:
-				merged = new CollapsingFinalBlockInputStream(to_merge, data.getSortDescription(), data.sign_column);
+				merged = new CollapsingFinalBlockInputStream(to_merge, data.getSortDescription(), data.merging_params.sign_column);
 				break;
 
 			case MergeTreeData::Summing:
-				merged = new SummingSortedBlockInputStream(to_merge, data.getSortDescription(), data.columns_to_sum, max_block_size);
+				merged = new SummingSortedBlockInputStream(to_merge,
+					data.getSortDescription(), data.merging_params.columns_to_sum, max_block_size);
 				break;
 
 			case MergeTreeData::Aggregating:
 				merged = new AggregatingSortedBlockInputStream(to_merge, data.getSortDescription(), max_block_size);
+				break;
+
+			case MergeTreeData::Replacing:	/// TODO
+				merged = new MergingSortedBlockInputStream(to_merge, data.getSortDescription(), max_block_size);
 				break;
 
 			case MergeTreeData::Unsorted:
@@ -866,7 +871,7 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
 	arguments->children.push_back(sign_ptr);
 	arguments->children.push_back(one_ptr);
 
-	sign->name = data.sign_column;
+	sign->name = data.merging_params.sign_column;
 	sign->kind = ASTIdentifier::Column;
 
 	one->value = Field(static_cast<Int64>(1));

@@ -41,8 +41,7 @@ public:
 		const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 		size_t index_granularity_,
 		MergeTreeData::Mode mode_,
-		const String & sign_column_,			/// Для Collapsing режима.
-		const Names & columns_to_sum_,			/// Для Summing режима.
+		const MergeTreeData::MergingParams & merging_params_,
 		const MergeTreeSettings & settings_);
 
 	void shutdown() override;
@@ -185,8 +184,7 @@ private:
 		const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 		size_t index_granularity_,
 		MergeTreeData::Mode mode_,
-		const String & sign_column_,
-		const Names & columns_to_sum_,
+		const MergeTreeData::MergingParams & merging_params_,
 		const MergeTreeSettings & settings_);
 
 	/** Определяет, какие куски нужно объединять, и объединяет их.

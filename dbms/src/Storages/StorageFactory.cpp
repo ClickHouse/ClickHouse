@@ -544,11 +544,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 		ASTPtr sampling_expression;
 		UInt64 index_granularity;
 
-		/// Для Collapsing.
-		String sign_column_name;
-
-		/// Для Summing.
-		Names columns_to_sum;
+		MergeTreeData::MergingParams merging_params;
 
 		if (replicated)
 		{
@@ -573,7 +569,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 		if (mode == MergeTreeData::Collapsing)
 		{
 			if (auto ast = typeid_cast<ASTIdentifier *>(&*args.back()))
-				sign_column_name = ast->name;
+				merging_params.sign_column = ast->name;
 			else
 				throw Exception(String("Sign column name must be an unquoted string") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
 
@@ -584,7 +580,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 			/// Если последний элемент - не index granularity (литерал), то это - список суммируемых столбцов.
 			if (!typeid_cast<const ASTLiteral *>(&*args.back()))
 			{
-				columns_to_sum = extractColumnNames(args.back());
+				merging_params.columns_to_sum = extractColumnNames(args.back());
 				args.pop_back();
 			}
 		}
@@ -617,14 +613,14 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				zookeeper_path, replica_name, attach, data_path, database_name, table_name,
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
-				sampling_expression, index_granularity, mode, sign_column_name, columns_to_sum,
+				sampling_expression, index_granularity, mode, merging_params,
 				context.getMergeTreeSettings());
 		else
 			return StorageMergeTree::create(
 				data_path, database_name, table_name,
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
-				sampling_expression, index_granularity, mode, sign_column_name, columns_to_sum,
+				sampling_expression, index_granularity, mode, merging_params,
 				context.getMergeTreeSettings());
 	}
 	else

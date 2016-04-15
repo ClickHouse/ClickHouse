@@ -33,8 +33,7 @@ StorageMergeTree::StorageMergeTree(
 	const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 	size_t index_granularity_,
 	MergeTreeData::Mode mode_,
-	const String & sign_column_,
-	const Names & columns_to_sum_,
+	const MergeTreeData::MergingParams & merging_params_,
 	const MergeTreeSettings & settings_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
@@ -42,7 +41,7 @@ StorageMergeTree::StorageMergeTree(
 	data(full_path, columns_,
 		 materialized_columns_, alias_columns_, column_defaults_,
 		 context_, primary_expr_ast_, date_column_name_,
-		 sampling_expression_, index_granularity_,mode_, sign_column_, columns_to_sum_,
+		 sampling_expression_, index_granularity_,mode_, merging_params_,
 		 settings_, database_name_ + "." + table_name, false),
 	reader(data), writer(data), merger(data),
 	increment(0),
@@ -86,15 +85,14 @@ StoragePtr StorageMergeTree::create(
 	const ASTPtr & sampling_expression_,
 	size_t index_granularity_,
 	MergeTreeData::Mode mode_,
-	const String & sign_column_,
-	const Names & columns_to_sum_,
+	const MergeTreeData::MergingParams & merging_params_,
 	const MergeTreeSettings & settings_)
 {
 	auto res = new StorageMergeTree{
 		path_, database_name_, table_name_,
 		columns_, materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
-		sampling_expression_, index_granularity_, mode_, sign_column_, columns_to_sum_, settings_
+		sampling_expression_, index_granularity_, mode_, merging_params_, settings_
 	};
 	StoragePtr res_ptr = res->thisPtr();
 

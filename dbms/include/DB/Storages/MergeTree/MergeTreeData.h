@@ -64,6 +64,8 @@ namespace ErrorCodes
   * - Collapsing - при склейке кусков "схлопывать"
   *   пары записей с разными значениями sign_column для одного значения первичного ключа.
   *   (см. CollapsingSortedBlockInputStream.h)
+  * - Replacing - при склейке кусков, при совпадении PK, оставлять только одну строчку
+  *             - последнюю, либо, если задан столбец "версия" - последнюю среди строчек с максимальной версией.
   * - Summing - при склейке кусков, при совпадении PK суммировать все числовые столбцы, не входящие в PK.
   * - Aggregating - при склейке кусков, при совпадении PK, делается слияние состояний столбцов-агрегатных функций.
   * - Unsorted - при склейке кусков, данные не упорядочиваются, а всего лишь конкатенируются;
@@ -192,6 +194,20 @@ public:
 		Summing 	= 2,
 		Aggregating = 3,
 		Unsorted 	= 4,
+		Replacing	= 5,
+	};
+
+	/// Настройки для разных режимов работы.
+	struct MergingParams
+	{
+		/// Для Collapsing режима.
+		String sign_column;
+
+		/// Для Summing режима. Если пустое - то выбирается автоматически.
+		Names columns_to_sum;
+
+		/// Для Replacing режима. Может быть пустым.
+		String version_column;
 	};
 
 	static void doNothing(const String & name) {}
@@ -215,8 +231,7 @@ public:
 					const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 					size_t index_granularity_,
 					Mode mode_,
-					const String & sign_column_,			/// Для Collapsing режима.
-					const Names & columns_to_sum_,			/// Для Summing режима. Если пустое - то выбирается автоматически.
+					const MergingParams & merging_params_,
 					const MergeTreeSettings & settings_,
 					const String & log_name_,
 					bool require_part_metadata_,
@@ -433,10 +448,7 @@ public:
 
 	/// Режим работы - какие дополнительные действия делать при мердже.
 	const Mode mode;
-	/// Для схлопывания записей об изменениях, если используется Collapsing режим работы.
-	const String sign_column;
-	/// Для суммирования, если используется Summing режим работы.
-	const Names columns_to_sum;
+	const MergingParams merging_params;
 
 	const MergeTreeSettings settings;
 

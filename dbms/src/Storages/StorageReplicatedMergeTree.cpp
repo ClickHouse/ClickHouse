@@ -190,8 +190,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	const ASTPtr & sampling_expression_,
 	size_t index_granularity_,
 	MergeTreeData::Mode mode_,
-	const String & sign_column_,
-	const Names & columns_to_sum_,
+	const MergeTreeData::MergingParams & merging_params_,
 	const MergeTreeSettings & settings_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
 	current_zookeeper(context.getZooKeeper()), database_name(database_name_),
@@ -201,7 +200,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	data(full_path, columns_,
 		materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
-		sampling_expression_, index_granularity_, mode_, sign_column_, columns_to_sum_,
+		sampling_expression_, index_granularity_, mode_, merging_params_,
 		settings_, database_name_ + "." + table_name, true,
 		[this] (const std::string & name) { enqueuePartForCheck(name); }),
 	reader(data), writer(data), merger(data), fetcher(data), sharded_partition_uploader_client(*this),
@@ -274,7 +273,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		unreplicated_data.reset(new MergeTreeData(unreplicated_path, columns_,
 			materialized_columns_, alias_columns_, column_defaults_,
 			context_, primary_expr_ast_,
-			date_column_name_, sampling_expression_, index_granularity_, mode_, sign_column_, columns_to_sum_, settings_,
+			date_column_name_, sampling_expression_, index_granularity_, mode_, merging_params_, settings_,
 			database_name_ + "." + table_name + "[unreplicated]", false));
 
 		unreplicated_data->loadDataParts(skip_sanity_checks);
@@ -333,8 +332,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 	const ASTPtr & sampling_expression_,
 	size_t index_granularity_,
 	MergeTreeData::Mode mode_,
-	const String & sign_column_,
-	const Names & columns_to_sum_,
+	const MergeTreeData::MergingParams & merging_params_,
 	const MergeTreeSettings & settings_)
 {
 	auto res = new StorageReplicatedMergeTree{
@@ -343,7 +341,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 		columns_, materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_, mode_,
-		sign_column_, columns_to_sum_, settings_};
+		merging_params_, settings_};
 
 	StoragePtr res_ptr = res->thisPtr();
 
@@ -418,7 +416,7 @@ namespace
 				<< "sampling expression: " << formattedAST(data.sampling_expression) << "\n"
 				<< "index granularity: " << data.index_granularity << "\n"
 				<< "mode: " << static_cast<int>(data.mode) << "\n"
-				<< "sign column: " << data.sign_column << "\n"
+				<< "sign column: " << data.merging_params.sign_column << "\n"
 				<< "primary key: " << formattedAST(data.primary_expr_ast) << "\n";
 		}
 
@@ -477,9 +475,9 @@ namespace
 			String read_sign_column;
 			in >> read_sign_column;
 
-			if (read_sign_column != data.sign_column)
+			if (read_sign_column != data.merging_params.sign_column)
 				throw Exception("Existing table metadata in ZooKeeper differs in sign column."
-					" Stored in ZooKeeper: " + read_sign_column + ", local: " + data.sign_column,
+					" Stored in ZooKeeper: " + read_sign_column + ", local: " + data.merging_params.sign_column,
 					ErrorCodes::METADATA_MISMATCH);
 
 			in >> "\nprimary key: ";

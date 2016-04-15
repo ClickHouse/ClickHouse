@@ -425,16 +425,21 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
 		case MergeTreeData::Collapsing:
 			merged_stream = std::make_unique<CollapsingSortedBlockInputStream>(
-				src_streams, data.getSortDescription(), data.sign_column, DEFAULT_MERGE_BLOCK_SIZE);
+				src_streams, data.getSortDescription(), data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Summing:
 			merged_stream = std::make_unique<SummingSortedBlockInputStream>(
-				src_streams, data.getSortDescription(), data.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
+				src_streams, data.getSortDescription(), data.merging_params.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Aggregating:
 			merged_stream = std::make_unique<AggregatingSortedBlockInputStream>(
+				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+			break;
+
+		case MergeTreeData::Replacing:	/// TODO
+			merged_stream = std::make_unique<MergingSortedBlockInputStream>(
 				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
@@ -680,16 +685,21 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
 		case MergeTreeData::Collapsing:
 			merged_stream = std::make_unique<CollapsingSortedBlockInputStream>(
-				src_streams, data.getSortDescription(), data.sign_column, DEFAULT_MERGE_BLOCK_SIZE);
+				src_streams, data.getSortDescription(), data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Summing:
 			merged_stream = std::make_unique<SummingSortedBlockInputStream>(
-				src_streams, data.getSortDescription(), data.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
+				src_streams, data.getSortDescription(), data.merging_params.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Aggregating:
 			merged_stream = std::make_unique<AggregatingSortedBlockInputStream>(
+				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+			break;
+
+		case MergeTreeData::Replacing: 	/// TODO
+			merged_stream = std::make_unique<MergingSortedBlockInputStream>(
 				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
