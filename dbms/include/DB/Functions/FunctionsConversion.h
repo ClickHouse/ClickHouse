@@ -117,7 +117,8 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 
 /// Реализация функции toDate.
 
-namespace details {
+namespace details
+{
 
 template<typename FromType, typename ToType, template <typename, typename> class Transformation>
 class Transformer
@@ -1284,7 +1285,7 @@ public:
 				if (len > n)
 					throw Exception("String too long for type FixedString(" + toString(n) + ")",
 						ErrorCodes::TOO_LARGE_STRING_SIZE);
-				memcpySmallAllowReadWriteOverflow15(&out_chars[i * n], &in_chars[off], len);
+				memcpy(&out_chars[i * n], &in_chars[off], len);
 			}
 
 			block.getByPosition(result).column = result_ptr;
@@ -1307,7 +1308,7 @@ public:
 			out_chars.resize_fill(size * n);
 
 			for (const auto i : ext::range(0, size))
-				memcpySmallAllowReadWriteOverflow15(&out_chars[i * n], &in_chars[i * src_n], src_n);
+				memcpy(&out_chars[i * n], &in_chars[i * src_n], src_n);
 		}
 		else
 			throw Exception("Unexpected column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
