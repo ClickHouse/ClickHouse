@@ -170,9 +170,7 @@ public:
 		size_t size = src.sizeAt(n);
 		size_t offset = src.offsetAt(n);
 
-		for (size_t i = 0; i < size; ++i)
-			data->insertFrom(src.getData(), offset + i);
-
+		data->insertRangeFrom(src.getData(), offset, size);
 		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
 	}
 
