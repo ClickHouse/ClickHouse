@@ -311,7 +311,7 @@ public:
 		/// Заканчиваем запись и достаем чексуммы.
 		MergeTreeData::DataPart::Checksums checksums;
 
-		if (storage.mode != MergeTreeData::Unsorted)
+		if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 		{
 			index_stream->next();
 			checksums.files["primary.idx"].file_size = index_stream->count();
@@ -366,7 +366,7 @@ private:
 	{
 		Poco::File(part_path).createDirectories();
 
-		if (storage.mode != MergeTreeData::Unsorted)
+		if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 		{
 			index_file_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
 			index_stream = new HashingWriteBuffer(*index_file_stream);
@@ -444,7 +444,7 @@ private:
 		/// Пишем индекс. Индекс содержит значение Primary Key для каждой index_granularity строки.
 		for (size_t i = index_offset; i < rows; i += storage.index_granularity)
 		{
-			if (storage.mode != MergeTreeData::Unsorted)
+			if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 			{
 				for (size_t j = 0, size = primary_columns.size(); j < size; ++j)
 				{

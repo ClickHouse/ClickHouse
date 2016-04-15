@@ -155,7 +155,7 @@ protected:
 	QueueWithCollation queue_with_collation;
 
 
-	/// Эти методы используются в Collapsing/Summing/Aggregating SortedBlockInputStream-ах.
+	/// Эти методы используются в Collapsing/Summing/Aggregating... SortedBlockInputStream-ах.
 
 	/// Сохранить строчку, на которую указывает cursor, в row.
 	template <class TSortCursor>

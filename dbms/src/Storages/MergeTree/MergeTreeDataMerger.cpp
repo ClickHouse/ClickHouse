@@ -402,7 +402,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 				__sync_add_and_fetch(&merge_entry->bytes_read_uncompressed, value.bytes);
 			});
 
-		if (data.mode != MergeTreeData::Unsorted)
+		if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 			src_streams.push_back(new MaterializingBlockInputStream{
 				new ExpressionBlockInputStream(input.release(), data.getPrimaryExpression())});
 		else
@@ -416,39 +416,39 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 	///  то есть (примерного) возрастания времени вставки.
 	std::unique_ptr<IProfilingBlockInputStream> merged_stream;
 
-	switch (data.mode)
+	switch (data.merging_params.mode)
 	{
-		case MergeTreeData::Ordinary:
+		case MergeTreeData::MergingParams::Ordinary:
 			merged_stream = std::make_unique<MergingSortedBlockInputStream>(
 				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
-		case MergeTreeData::Collapsing:
+		case MergeTreeData::MergingParams::Collapsing:
 			merged_stream = std::make_unique<CollapsingSortedBlockInputStream>(
 				src_streams, data.getSortDescription(), data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
-		case MergeTreeData::Summing:
+		case MergeTreeData::MergingParams::Summing:
 			merged_stream = std::make_unique<SummingSortedBlockInputStream>(
 				src_streams, data.getSortDescription(), data.merging_params.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
-		case MergeTreeData::Aggregating:
+		case MergeTreeData::MergingParams::Aggregating:
 			merged_stream = std::make_unique<AggregatingSortedBlockInputStream>(
 				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
-		case MergeTreeData::Replacing:	/// TODO
+		case MergeTreeData::MergingParams::Replacing:	/// TODO
 			merged_stream = std::make_unique<MergingSortedBlockInputStream>(
 				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
-		case MergeTreeData::Unsorted:
+		case MergeTreeData::MergingParams::Unsorted:
 			merged_stream = std::make_unique<ConcatBlockInputStream>(src_streams);
 			break;
 
 		default:
-			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(data.mode), ErrorCodes::LOGICAL_ERROR);
+			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(data.merging_params.mode), ErrorCodes::LOGICAL_ERROR);
 	}
 
 	String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
@@ -612,7 +612,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 				__sync_add_and_fetch(&merge_entry->bytes_read_uncompressed, value.bytes);
 			});
 
-		if (data.mode != MergeTreeData::Unsorted)
+		if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 			src_streams.push_back(new MaterializingBlockInputStream{
 				new ExpressionBlockInputStream(input.release(), data.getPrimaryExpression())});
 		else
@@ -676,39 +676,39 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 	///  то есть (примерного) возрастания времени вставки.
 	std::unique_ptr<IProfilingBlockInputStream> merged_stream;
 
-	switch (data.mode)
+	switch (data.merging_params.mode)
 	{
-		case MergeTreeData::Ordinary:
+		case MergeTreeData::MergingParams::Ordinary:
 			merged_stream = std::make_unique<MergingSortedBlockInputStream>(
 				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
-		case MergeTreeData::Collapsing:
+		case MergeTreeData::MergingParams::Collapsing:
 			merged_stream = std::make_unique<CollapsingSortedBlockInputStream>(
 				src_streams, data.getSortDescription(), data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
-		case MergeTreeData::Summing:
+		case MergeTreeData::MergingParams::Summing:
 			merged_stream = std::make_unique<SummingSortedBlockInputStream>(
 				src_streams, data.getSortDescription(), data.merging_params.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
-		case MergeTreeData::Aggregating:
+		case MergeTreeData::MergingParams::Aggregating:
 			merged_stream = std::make_unique<AggregatingSortedBlockInputStream>(
 				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
-		case MergeTreeData::Replacing: 	/// TODO
+		case MergeTreeData::MergingParams::Replacing: 	/// TODO
 			merged_stream = std::make_unique<MergingSortedBlockInputStream>(
 				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
-		case MergeTreeData::Unsorted:
+		case MergeTreeData::MergingParams::Unsorted:
 			merged_stream = std::make_unique<ConcatBlockInputStream>(src_streams);
 			break;
 
 		default:
-			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(data.mode), ErrorCodes::LOGICAL_ERROR);
+			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(data.merging_params.mode), ErrorCodes::LOGICAL_ERROR);
 	}
 
 	merged_stream->readPrefix();

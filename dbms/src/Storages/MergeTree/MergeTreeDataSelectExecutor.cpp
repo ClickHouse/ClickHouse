@@ -485,7 +485,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	{
 		RangesInDataPart ranges(part, (*inout_part_index)++);
 
-		if (data.mode != MergeTreeData::Unsorted)
+		if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 			ranges.ranges = markRangesFromPKRange(part->index, key_condition, settings);
 		else
 			ranges.ranges = MarkRanges{MarkRange{0, part->size}};
@@ -815,30 +815,30 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	{
 		BlockInputStreamPtr merged;
 
-		switch (data.mode)
+		switch (data.merging_params.mode)
 		{
-			case MergeTreeData::Ordinary:
+			case MergeTreeData::MergingParams::Ordinary:
 				merged = new MergingSortedBlockInputStream(to_merge, data.getSortDescription(), max_block_size);
 				break;
 
-			case MergeTreeData::Collapsing:
+			case MergeTreeData::MergingParams::Collapsing:
 				merged = new CollapsingFinalBlockInputStream(to_merge, data.getSortDescription(), data.merging_params.sign_column);
 				break;
 
-			case MergeTreeData::Summing:
+			case MergeTreeData::MergingParams::Summing:
 				merged = new SummingSortedBlockInputStream(to_merge,
 					data.getSortDescription(), data.merging_params.columns_to_sum, max_block_size);
 				break;
 
-			case MergeTreeData::Aggregating:
+			case MergeTreeData::MergingParams::Aggregating:
 				merged = new AggregatingSortedBlockInputStream(to_merge, data.getSortDescription(), max_block_size);
 				break;
 
-			case MergeTreeData::Replacing:	/// TODO
+			case MergeTreeData::MergingParams::Replacing:	/// TODO
 				merged = new MergingSortedBlockInputStream(to_merge, data.getSortDescription(), max_block_size);
 				break;
 
-			case MergeTreeData::Unsorted:
+			case MergeTreeData::MergingParams::Unsorted:
 				throw Exception("UnsortedMergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
 		}
 

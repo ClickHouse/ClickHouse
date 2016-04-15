@@ -36,7 +36,6 @@ MergeTreeData::MergeTreeData(
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_, const ASTPtr & sampling_expression_,
 	size_t index_granularity_,
-	Mode mode_,
 	const MergingParams & merging_params_,
 	const MergeTreeSettings & settings_,
 	const String & log_name_,
@@ -45,7 +44,7 @@ MergeTreeData::MergeTreeData(
     : ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
 	date_column_name(date_column_name_), sampling_expression(sampling_expression_),
 	index_granularity(index_granularity_),
-	mode(mode_), merging_params(merging_params_),
+	merging_params(merging_params_),
 	settings(settings_), primary_expr_ast(primary_expr_ast_ ? primary_expr_ast_->clone() : nullptr),
 	require_part_metadata(require_part_metadata_),
 	full_path(full_path_), columns(columns_),
@@ -75,36 +74,7 @@ MergeTreeData::MergeTreeData(
 			"Date column (" + date_column_name + ") does not exist in table declaration.",
 			ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
-	/// Проверяем, что столбец sign_column, если нужен, существует, и имеет тип Int8.
-	if (mode == Collapsing)
-	{
-		if (merging_params.sign_column.empty())
-			throw Exception("Logical error: Sign column for storage CollapsingMergeTree is empty", ErrorCodes::LOGICAL_ERROR);
-
-		for (const auto & column : *columns)
-		{
-			if (column.name == merging_params.sign_column)
-			{
-				if (!typeid_cast<const DataTypeInt8 *>(column.type.get()))
-					throw Exception("Sign column (" + merging_params.sign_column + ")"
-						" for storage CollapsingMergeTree must have type Int8."
-						" Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
-				break;
-			}
-		}
-	}
-
-	/// Если заданы columns_to_sum, проверяем, что такие столбцы существуют.
-	if (!merging_params.columns_to_sum.empty())
-	{
-		if (mode != Summing)
-			throw Exception("List of columns to sum for MergeTree cannot be specified in all modes except Summing.", ErrorCodes::LOGICAL_ERROR);
-
-		for (const auto & column_to_sum : merging_params.columns_to_sum)
-			if (columns->end() == std::find_if(columns->begin(), columns->end(),
-				[&](const NameAndTypePair & name_and_type) { return column_to_sum == name_and_type.name; }))
-				throw Exception("Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
-	}
+	merging_params.check(*columns);
 
 	/// создаём директорию, если её нет
 	Poco::File(full_path).createDirectories();
@@ -130,9 +100,71 @@ MergeTreeData::MergeTreeData(
 		for (size_t i = 0; i < primary_key_size; ++i)
 			primary_key_data_types[i] = primary_key_sample.unsafeGetByPosition(i).type;
 	}
-	else if (mode != Unsorted)
+	else if (merging_params.mode != MergingParams::Unsorted)
 		throw Exception("Primary key could be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
 }
+
+
+void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) const
+{
+	/// Проверяем, что столбец sign_column, если нужен, существует, и имеет тип Int8.
+	if (mode == MergingParams::Collapsing)
+	{
+		if (sign_column.empty())
+			throw Exception("Logical error: Sign column for storage CollapsingMergeTree is empty", ErrorCodes::LOGICAL_ERROR);
+
+		for (const auto & column : columns)
+		{
+			if (column.name == sign_column)
+			{
+				if (!typeid_cast<const DataTypeInt8 *>(column.type.get()))
+					throw Exception("Sign column (" + sign_column + ")"
+						" for storage CollapsingMergeTree must have type Int8."
+						" Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
+				break;
+			}
+		}
+	}
+	else if (!sign_column.empty())
+		throw Exception("Sign column for MergeTree cannot be specified in all modes except Collapsing.", ErrorCodes::LOGICAL_ERROR);
+
+	/// Если заданы columns_to_sum, проверяем, что такие столбцы существуют.
+	if (!columns_to_sum.empty())
+	{
+		if (mode != MergingParams::Summing)
+			throw Exception("List of columns to sum for MergeTree cannot be specified in all modes except Summing.",
+				ErrorCodes::LOGICAL_ERROR);
+
+		for (const auto & column_to_sum : columns_to_sum)
+			if (columns.end() == std::find_if(columns.begin(), columns.end(),
+				[&](const NameAndTypePair & name_and_type) { return column_to_sum == name_and_type.name; }))
+				throw Exception("Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
+	}
+
+	/// Проверяем, что столбец version_column, если допустим, имеет тип целого беззнакового числа.
+	if (!version_column.empty())
+	{
+		if (mode != MergingParams::Replacing)
+			throw Exception("Version column for MergeTree cannot be specified in all modes except Replacing.",
+				ErrorCodes::LOGICAL_ERROR);
+
+		for (const auto & column : columns)
+		{
+			if (column.name == version_column)
+			{
+				if (!typeid_cast<const DataTypeUInt8 *>(column.type.get())
+					&& !typeid_cast<const DataTypeUInt16 *>(column.type.get())
+					&& !typeid_cast<const DataTypeUInt32 *>(column.type.get())
+					&& !typeid_cast<const DataTypeUInt64 *>(column.type.get()))
+					throw Exception("Version column (" + version_column + ")"
+						" for storage ReplacingMergeTree must have type of UInt family."
+						" Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
+				break;
+			}
+		}
+	}
+}
+
 
 Int64 MergeTreeData::getMaxDataPartIndex()
 {
@@ -147,16 +179,17 @@ Int64 MergeTreeData::getMaxDataPartIndex()
 
 std::string MergeTreeData::getModePrefix() const
 {
-	switch (mode)
+	switch (merging_params.mode)
 	{
-		case Ordinary: 		return "";
-		case Collapsing: 	return "Collapsing";
-		case Summing: 		return "Summing";
-		case Aggregating: 	return "Aggregating";
-		case Unsorted: 		return "Unsorted";
+		case MergingParams::Ordinary: 		return "";
+		case MergingParams::Collapsing: 	return "Collapsing";
+		case MergingParams::Summing: 		return "Summing";
+		case MergingParams::Aggregating: 	return "Aggregating";
+		case MergingParams::Unsorted: 		return "Unsorted";
+		case MergingParams::Replacing: 		return "Replacing";
 
 		default:
-			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(mode), ErrorCodes::LOGICAL_ERROR);
+			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(merging_params.mode), ErrorCodes::LOGICAL_ERROR);
 	}
 }
 

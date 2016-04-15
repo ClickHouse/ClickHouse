@@ -40,7 +40,6 @@ public:
 		const String & date_column_name_,
 		const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 		size_t index_granularity_,
-		MergeTreeData::Mode mode_,
 		const MergeTreeData::MergingParams & merging_params_,
 		const MergeTreeSettings & settings_);
 
@@ -183,7 +182,6 @@ private:
 		const String & date_column_name_,
 		const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 		size_t index_granularity_,
-		MergeTreeData::Mode mode_,
 		const MergeTreeData::MergingParams & merging_params_,
 		const MergeTreeSettings & settings_);
 

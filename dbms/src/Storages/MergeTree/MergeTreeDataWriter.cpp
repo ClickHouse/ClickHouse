@@ -99,7 +99,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	new_data_part->is_temp = true;
 
 	/// Если для сортировки надо вычислить некоторые столбцы - делаем это.
-	if (data.mode != MergeTreeData::Unsorted)
+	if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 		data.getPrimaryExpression()->execute(block);
 
 	SortDescription sort_descr = data.getSortDescription();
@@ -107,7 +107,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	/// Сортируем.
 	IColumn::Permutation * perm_ptr = nullptr;
 	IColumn::Permutation perm;
-	if (data.mode != MergeTreeData::Unsorted)
+	if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 	{
 		if (!isAlreadySorted(block, sort_descr))
 		{

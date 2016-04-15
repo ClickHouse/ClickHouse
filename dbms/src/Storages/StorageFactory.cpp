@@ -352,12 +352,13 @@ StoragePtr StorageFactory::get(
 	}
 	else if (endsWith(name, "MergeTree"))
 	{
-		/** Движки [Replicated][|Summing|Collapsing|Aggregating|Unsorted]MergeTree (2 * 5 комбинаций)
+		/** Движки [Replicated][|Summing|Collapsing|Aggregating|Unsorted|Replacing]MergeTree (2 * 6 комбинаций)
 		  * В качестве аргумента для движка должно быть указано:
 		  *  - (для Replicated) Путь к таблице в ZooKeeper
 		  *  - (для Replicated) Имя реплики в ZooKeeper
 		  *  - имя столбца с датой;
-		  *  - (не обязательно) выражение для семплирования (запрос с SAMPLE x будет выбирать строки, у которых в этом столбце значение меньше, чем x*UINT32_MAX);
+		  *  - (не обязательно) выражение для семплирования
+		  *     (запрос с SAMPLE x будет выбирать строки, у которых в этом столбце значение меньше, чем x * UINT32_MAX);
 		  *  - выражение для сортировки (либо скалярное выражение, либо tuple из нескольких);
 		  *  - index_granularity;
 		  *  - (для Collapsing) имя столбца, содержащего тип строчки с изменением "визита" (принимающего значения 1 и -1).
@@ -440,16 +441,17 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 		if (replicated)
 			name_part = name_part.substr(strlen("Replicated"));
 
-		MergeTreeData::Mode mode = MergeTreeData::Ordinary;
+		MergeTreeData::MergingParams merging_params;
+		merging_params.mode = MergeTreeData::MergingParams::Ordinary;
 
 		if (name_part == "Collapsing")
-			mode = MergeTreeData::Collapsing;
+			merging_params.mode = MergeTreeData::MergingParams::Collapsing;
 		else if (name_part == "Summing")
-			mode = MergeTreeData::Summing;
+			merging_params.mode = MergeTreeData::MergingParams::Summing;
 		else if (name_part == "Aggregating")
-			mode = MergeTreeData::Aggregating;
+			merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 		else if (name_part == "Unsorted")
-			mode = MergeTreeData::Unsorted;
+			merging_params.mode = MergeTreeData::MergingParams::Unsorted;
 		else if (!name_part.empty())
 			throw Exception("Unknown storage " + name + verbose_help, ErrorCodes::UNKNOWN_STORAGE);
 
@@ -461,9 +463,9 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 			args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
 		/// NOTE Слегка запутанно.
-		size_t num_additional_params = (replicated ? 2 : 0) + (mode == MergeTreeData::Collapsing);
+		size_t num_additional_params = (replicated ? 2 : 0) + (merging_params.mode == MergeTreeData::MergingParams::Collapsing);
 
-		if (mode == MergeTreeData::Unsorted
+		if (merging_params.mode == MergeTreeData::MergingParams::Unsorted
 			&& args.size() != num_additional_params + 2)
 		{
 			String params;
@@ -482,7 +484,8 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
 
-		if (mode != MergeTreeData::Summing && mode != MergeTreeData::Unsorted
+		if (merging_params.mode != MergeTreeData::MergingParams::Summing
+			&& merging_params.mode != MergeTreeData::MergingParams::Unsorted
 			&& args.size() != num_additional_params + 3
 			&& args.size() != num_additional_params + 4)
 		{
@@ -499,7 +502,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				"\nprimary key expression,"
 				"\nindex granularity\n";
 
-			if (mode == MergeTreeData::Collapsing)
+			if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
 				params += ", sign column";
 
 			throw Exception("Storage " + name + " requires "
@@ -508,7 +511,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
 
-		if (mode == MergeTreeData::Summing
+		if (merging_params.mode == MergeTreeData::MergingParams::Summing
 			&& args.size() != num_additional_params + 3
 			&& args.size() != num_additional_params + 4
 			&& args.size() != num_additional_params + 5)
@@ -544,8 +547,6 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 		ASTPtr sampling_expression;
 		UInt64 index_granularity;
 
-		MergeTreeData::MergingParams merging_params;
-
 		if (replicated)
 		{
 			auto ast = typeid_cast<ASTLiteral *>(&*args[0]);
@@ -566,7 +567,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 			args.erase(args.begin(), args.begin() + 2);
 		}
 
-		if (mode == MergeTreeData::Collapsing)
+		if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
 		{
 			if (auto ast = typeid_cast<ASTIdentifier *>(&*args.back()))
 				merging_params.sign_column = ast->name;
@@ -575,7 +576,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 
 			args.pop_back();
 		}
-		else if (mode == MergeTreeData::Summing)
+		else if (merging_params.mode == MergeTreeData::MergingParams::Summing)
 		{
 			/// Если последний элемент - не index granularity (литерал), то это - список суммируемых столбцов.
 			if (!typeid_cast<const ASTLiteral *>(&*args.back()))
@@ -599,7 +600,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 		else
 			throw Exception(String("Date column name must be an unquoted string") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
 
-		if (mode != MergeTreeData::Unsorted)
+		if (merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 			primary_expr_list = extractPrimaryKey(args[1]);
 
 		auto ast = typeid_cast<ASTLiteral *>(&*args.back());
@@ -613,14 +614,14 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				zookeeper_path, replica_name, attach, data_path, database_name, table_name,
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
-				sampling_expression, index_granularity, mode, merging_params,
+				sampling_expression, index_granularity, merging_params,
 				context.getMergeTreeSettings());
 		else
 			return StorageMergeTree::create(
 				data_path, database_name, table_name,
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
-				sampling_expression, index_granularity, mode, merging_params,
+				sampling_expression, index_granularity, merging_params,
 				context.getMergeTreeSettings());
 	}
 	else

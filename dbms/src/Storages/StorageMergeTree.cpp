@@ -32,7 +32,6 @@ StorageMergeTree::StorageMergeTree(
 	const String & date_column_name_,
 	const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 	size_t index_granularity_,
-	MergeTreeData::Mode mode_,
 	const MergeTreeData::MergingParams & merging_params_,
 	const MergeTreeSettings & settings_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
@@ -41,7 +40,7 @@ StorageMergeTree::StorageMergeTree(
 	data(full_path, columns_,
 		 materialized_columns_, alias_columns_, column_defaults_,
 		 context_, primary_expr_ast_, date_column_name_,
-		 sampling_expression_, index_granularity_,mode_, merging_params_,
+		 sampling_expression_, index_granularity_, merging_params_,
 		 settings_, database_name_ + "." + table_name, false),
 	reader(data), writer(data), merger(data),
 	increment(0),
@@ -84,7 +83,6 @@ StoragePtr StorageMergeTree::create(
 	const String & date_column_name_,
 	const ASTPtr & sampling_expression_,
 	size_t index_granularity_,
-	MergeTreeData::Mode mode_,
 	const MergeTreeData::MergingParams & merging_params_,
 	const MergeTreeSettings & settings_)
 {
@@ -92,7 +90,7 @@ StoragePtr StorageMergeTree::create(
 		path_, database_name_, table_name_,
 		columns_, materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
-		sampling_expression_, index_granularity_, mode_, merging_params_, settings_
+		sampling_expression_, index_granularity_, merging_params_, settings_
 	};
 	StoragePtr res_ptr = res->thisPtr();
 

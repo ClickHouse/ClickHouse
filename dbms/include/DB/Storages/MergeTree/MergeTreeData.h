@@ -186,20 +186,23 @@ public:
 
 	using AlterDataPartTransactionPtr = std::unique_ptr<AlterDataPartTransaction>;
 
-	/// Режим работы. См. выше.
-	enum Mode
-	{
-		Ordinary 	= 0,	/// Числа сохраняются - не меняйте.
-		Collapsing 	= 1,
-		Summing 	= 2,
-		Aggregating = 3,
-		Unsorted 	= 4,
-		Replacing	= 5,
-	};
 
 	/// Настройки для разных режимов работы.
 	struct MergingParams
 	{
+		/// Режим работы. См. выше.
+		enum Mode
+		{
+			Ordinary 	= 0,	/// Числа сохраняются - не меняйте.
+			Collapsing 	= 1,
+			Summing 	= 2,
+			Aggregating = 3,
+			Unsorted 	= 4,
+			Replacing	= 5,
+		};
+
+		Mode mode;
+
 		/// Для Collapsing режима.
 		String sign_column;
 
@@ -208,7 +211,11 @@ public:
 
 		/// Для Replacing режима. Может быть пустым.
 		String version_column;
+
+		/// Проверить наличие и корректность типов столбцов.
+		void check(const NamesAndTypesList & columns) const;
 	};
+
 
 	static void doNothing(const String & name) {}
 
@@ -230,7 +237,6 @@ public:
 					const String & date_column_name_,
 					const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 					size_t index_granularity_,
-					Mode mode_,
 					const MergingParams & merging_params_,
 					const MergeTreeSettings & settings_,
 					const String & log_name_,
@@ -247,9 +253,10 @@ public:
 
 	bool supportsFinal() const
 	{
-		return mode == Mode::Collapsing
-			|| mode == Mode::Summing
-			|| mode == Mode::Aggregating;
+		return merging_params.mode == MergingParams::Collapsing
+			|| merging_params.mode == MergingParams::Summing
+			|| merging_params.mode == MergingParams::Aggregating
+			|| merging_params.mode == MergingParams::Replacing;
 	}
 
 	Int64 getMaxDataPartIndex();
@@ -447,7 +454,6 @@ public:
 	const size_t index_granularity;
 
 	/// Режим работы - какие дополнительные действия делать при мердже.
-	const Mode mode;
 	const MergingParams merging_params;
 
 	const MergeTreeSettings settings;
