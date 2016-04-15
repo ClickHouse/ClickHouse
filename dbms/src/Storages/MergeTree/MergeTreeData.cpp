@@ -11,6 +11,7 @@
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/HexWriteBuffer.h>
 #include <DB/DataTypes/DataTypeDate.h>
+#include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeEnum.h>
 #include <DB/Common/localBackup.h>
@@ -155,9 +156,11 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
 				if (!typeid_cast<const DataTypeUInt8 *>(column.type.get())
 					&& !typeid_cast<const DataTypeUInt16 *>(column.type.get())
 					&& !typeid_cast<const DataTypeUInt32 *>(column.type.get())
-					&& !typeid_cast<const DataTypeUInt64 *>(column.type.get()))
+					&& !typeid_cast<const DataTypeUInt64 *>(column.type.get())
+					&& !typeid_cast<const DataTypeDate *>(column.type.get())
+					&& !typeid_cast<const DataTypeDateTime *>(column.type.get()))
 					throw Exception("Version column (" + version_column + ")"
-						" for storage ReplacingMergeTree must have type of UInt family."
+						" for storage ReplacingMergeTree must have type of UInt family or Date or DateTime."
 						" Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
 				break;
 			}
