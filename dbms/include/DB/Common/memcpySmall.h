@@ -28,14 +28,28 @@
   * Это работает медленее, когда размер, на самом деле, большой.
   */
 
+namespace detail
+{
+	inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const char * __restrict src, ssize_t n)
+	{
+		while (n > 0)
+		{
+			_mm_storeu_si128(reinterpret_cast<__m128i *>(dst),
+				_mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
+
+			dst += 16;
+			src += 16;
+			n -= 16;
+		}
+	}
+}
+
 /** Исходит из допущения, что можно читать до 15 лишних байт после конца массива src,
   *  и записывать любой мусор до 15 байт после конца массива dst.
   */
 inline void memcpySmallAllowReadWriteOverflow15(void * __restrict dst, const void * __restrict src, size_t n)
 {
-	for (size_t i = 0; i < n; i += 16)
-		_mm_storeu_si128(reinterpret_cast<__m128i *>(reinterpret_cast<char *>(dst) + i),
-			_mm_loadu_si128(reinterpret_cast<const __m128i *>(reinterpret_cast<const char *>(src) + i)));
+	detail::memcpySmallAllowReadWriteOverflow15Impl(reinterpret_cast<char *>(dst), reinterpret_cast<const char *>(src), n);
 }
 
 /** Исходит из допущения, что можно записывать любой мусор до 15 байт после конца массива dst.
