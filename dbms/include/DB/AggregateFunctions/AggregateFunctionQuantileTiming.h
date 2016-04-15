@@ -141,7 +141,7 @@ namespace detail
 	struct QuantileTimingMedium
 	{
 		/// sizeof - 24 байта.
-		using Array = PODArray<UInt16, 64>;
+		using Array = PODArray<UInt16, 128>;
 		mutable Array elems;	/// mutable потому что сортировка массива не считается изменением состояния.
 
 		QuantileTimingMedium() {}
