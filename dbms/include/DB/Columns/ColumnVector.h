@@ -127,7 +127,7 @@ private:
 	typedef ColumnVector<T> Self;
 public:
 	typedef T value_type;
-	typedef PODArray<value_type> Container_t;
+	typedef PaddedPODArray<value_type> Container_t;
 
 	ColumnVector() {}
 	ColumnVector(const size_t n) : data{n} {}

@@ -271,9 +271,9 @@ struct ArrayElementNumImpl
 	  */
 	template <bool negative>
 	static void vectorConst(
-		const PODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+		const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
 		const ColumnArray::Offset_t index,
-		PODArray<T> & result)
+		PaddedPODArray<T> & result)
 	{
 		size_t size = offsets.size();
 		result.resize(size);
@@ -297,9 +297,9 @@ struct ArrayElementNumImpl
 	  */
 	template <typename index_type>
 	static void vector(
-		const PODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+		const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
 		const ColumnVector<index_type> & index,
-		PODArray<T> & result)
+		PaddedPODArray<T> & result)
 	{
 		size_t size = offsets.size();
 		result.resize(size);
@@ -368,7 +368,7 @@ struct ArrayElementStringImpl
 				ColumnArray::Offset_t string_size = string_offsets[current_offset + adjusted_index] - string_pos;
 
 				result_data.resize(current_result_offset + string_size);
-				memcpy(&result_data[current_result_offset], &data[string_pos], string_size);
+				memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], &data[string_pos], string_size);
 				current_result_offset += string_size;
 				result_offsets[i] = current_result_offset;
 			}
@@ -435,7 +435,7 @@ struct ArrayElementStringImpl
 				ColumnArray::Offset_t string_size = string_offsets[current_offset + adjusted_index] - string_pos;
 
 				result_data.resize(current_result_offset + string_size);
-				memcpy(&result_data[current_result_offset], &data[string_pos], string_size);
+				memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], &data[string_pos], string_size);
 				current_result_offset += string_size;
 				result_offsets[i] = current_result_offset;
 			}
@@ -820,7 +820,7 @@ struct ArrayIndexNumImpl
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
 	/// compares `lhs` against `i`-th element of `rhs`
-	static bool compare(const T & lhs, const PODArray<U> & rhs, const std::size_t i ) { return lhs == rhs[i]; }
+	static bool compare(const T & lhs, const PaddedPODArray<U> & rhs, const std::size_t i ) { return lhs == rhs[i]; }
 	/// compares `lhs against `rhs`, third argument unused
 	static bool compare(const T & lhs, const U & rhs, std::size_t) { return lhs == rhs; }
 
@@ -828,9 +828,9 @@ struct ArrayIndexNumImpl
 
 	template <typename ScalarOrVector>
 	static void vector(
-		const PODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+		const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
 		const ScalarOrVector & value,
-		PODArray<typename IndexConv::ResultType> & result)
+		PaddedPODArray<typename IndexConv::ResultType> & result)
 	{
 		size_t size = offsets.size();
 		result.resize(size);
@@ -862,7 +862,7 @@ struct ArrayIndexStringImpl
 	static void vector_const(
 		const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
 		const String & value,
-		PODArray<typename IndexConv::ResultType> & result)
+		PaddedPODArray<typename IndexConv::ResultType> & result)
 	{
 		const auto size = offsets.size();
 		const auto value_size = value.size();
@@ -897,7 +897,7 @@ struct ArrayIndexStringImpl
 	static void vector_vector(
 		const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
 		const ColumnString::Chars_t & item_values, const ColumnString::Offsets_t & item_offsets,
-		PODArray<typename IndexConv::ResultType> & result)
+		PaddedPODArray<typename IndexConv::ResultType> & result)
 	{
 		const auto size = offsets.size();
 		result.resize(size);
@@ -1962,8 +1962,8 @@ private:
 	{
 		if (const ColumnVector<T> * src_data_concrete = typeid_cast<const ColumnVector<T> *>(&src_data))
 		{
-			const PODArray<T> & src_data = src_data_concrete->getData();
-			PODArray<T> & res_data = typeid_cast<ColumnVector<T> &>(res_data_col).getData();
+			const PaddedPODArray<T> & src_data = src_data_concrete->getData();
+			PaddedPODArray<T> & res_data = typeid_cast<ColumnVector<T> &>(res_data_col).getData();
 			size_t size = src_offsets.size();
 			res_offsets.resize(size);
 			res_data.reserve(src_data.size());
@@ -2213,8 +2213,8 @@ private:
 	{
 		if (const ColumnVector<T> * src_data_concrete = typeid_cast<const ColumnVector<T> *>(&src_data))
 		{
-			const PODArray<T> & src_data = src_data_concrete->getData();
-			PODArray<T> & res_data = typeid_cast<ColumnVector<T> &>(res_data_col).getData();
+			const PaddedPODArray<T> & src_data = src_data_concrete->getData();
+			PaddedPODArray<T> & res_data = typeid_cast<ColumnVector<T> &>(res_data_col).getData();
 			size_t size = src_offsets.size();
 			res_data.resize(src_data.size());
 
@@ -2272,7 +2272,7 @@ private:
 
 				while (src < src_end)
 				{
-					memcpy(dst, src, n);
+					memcpySmallAllowReadWriteOverflow15(dst, src, n);
 					src += n;
 					dst -= n;
 				}
@@ -2318,7 +2318,7 @@ private:
 						auto src_pos = src_array_prev_offset + j_reversed == 0 ? 0 : src_string_offsets[src_array_prev_offset + j_reversed - 1];
 						size_t string_size = src_string_offsets[src_array_prev_offset + j_reversed] - src_pos;
 
-						memcpy(&res_data[res_string_prev_offset], &src_data[src_pos], string_size);
+						memcpySmallAllowReadWriteOverflow15(&res_data[res_string_prev_offset], &src_data[src_pos], string_size);
 
 						res_string_prev_offset += string_size;
 						res_string_offsets[src_array_prev_offset + j] = res_string_prev_offset;

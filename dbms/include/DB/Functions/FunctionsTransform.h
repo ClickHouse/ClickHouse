@@ -472,7 +472,7 @@ private:
 
 
 	template <typename T, typename U>
-	void executeImplNumToNumWithConstDefault(const PODArray<T> & src, PODArray<U> & dst, U dst_default)
+	void executeImplNumToNumWithConstDefault(const PaddedPODArray<T> & src, PaddedPODArray<U> & dst, U dst_default)
 	{
 		const auto & table = *table_num_to_num;
 		size_t size = src.size();
@@ -488,7 +488,7 @@ private:
 	}
 
 	template <typename T, typename U, typename V>
-	void executeImplNumToNumWithNonConstDefault(const PODArray<T> & src, PODArray<U> & dst, const PODArray<V> & dst_default)
+	void executeImplNumToNumWithNonConstDefault(const PaddedPODArray<T> & src, PaddedPODArray<U> & dst, const PaddedPODArray<V> & dst_default)
 	{
 		const auto & table = *table_num_to_num;
 		size_t size = src.size();
@@ -504,7 +504,7 @@ private:
 	}
 
 	template <typename T>
-	void executeImplNumToNum(const PODArray<T> & src, PODArray<T> & dst)
+	void executeImplNumToNum(const PaddedPODArray<T> & src, PaddedPODArray<T> & dst)
 	{
 		const auto & table = *table_num_to_num;
 		size_t size = src.size();
@@ -520,7 +520,7 @@ private:
 	}
 
 	template <typename T>
-	void executeImplNumToStringWithConstDefault(const PODArray<T> & src,
+	void executeImplNumToStringWithConstDefault(const PaddedPODArray<T> & src,
 		ColumnString::Chars_t & dst_data, ColumnString::Offsets_t & dst_offsets, StringRef dst_default)
 	{
 		const auto & table = *table_num_to_string;
@@ -539,7 +539,7 @@ private:
 	}
 
 	template <typename T>
-	void executeImplNumToStringWithNonConstDefault(const PODArray<T> & src,
+	void executeImplNumToStringWithNonConstDefault(const PaddedPODArray<T> & src,
 		ColumnString::Chars_t & dst_data, ColumnString::Offsets_t & dst_offsets,
 		const ColumnString::Chars_t & dst_default_data, const ColumnString::Offsets_t & dst_default_offsets)
 	{
@@ -572,7 +572,7 @@ private:
 	template <typename U>
 	void executeImplStringToNumWithConstDefault(
 		const ColumnString::Chars_t & src_data, const ColumnString::Offsets_t & src_offsets,
-		PODArray<U> & dst, U dst_default)
+		PaddedPODArray<U> & dst, U dst_default)
 	{
 		const auto & table = *table_string_to_num;
 		size_t size = src_offsets.size();
@@ -593,7 +593,7 @@ private:
 	template <typename U, typename V>
 	void executeImplStringToNumWithNonConstDefault(
 		const ColumnString::Chars_t & src_data, const ColumnString::Offsets_t & src_offsets,
-		PODArray<U> & dst, const PODArray<V> & dst_default)
+		PaddedPODArray<U> & dst, const PaddedPODArray<V> & dst_default)
 	{
 		const auto & table = *table_string_to_num;
 		size_t size = src_offsets.size();

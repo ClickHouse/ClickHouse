@@ -110,7 +110,7 @@ public:
 #define DECLARE(TYPE)\
 	void get##TYPE(\
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
-		PODArray<TYPE> & out) const\
+		PaddedPODArray<TYPE> & out) const\
 	{\
 		dict_struct.validateKeyTypes(key_types);\
 		\
@@ -157,7 +157,7 @@ public:
 #define DECLARE(TYPE)\
 	void get##TYPE(\
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
-		const PODArray<TYPE> & def, PODArray<TYPE> & out) const\
+		const PaddedPODArray<TYPE> & def, PaddedPODArray<TYPE> & out) const\
 	{\
 		dict_struct.validateKeyTypes(key_types);\
 		\
@@ -200,7 +200,7 @@ public:
 #define DECLARE(TYPE)\
 	void get##TYPE(\
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
-		const TYPE def, PODArray<TYPE> & out) const\
+		const TYPE def, PaddedPODArray<TYPE> & out) const\
 	{\
 		dict_struct.validateKeyTypes(key_types);\
 		\
@@ -240,7 +240,7 @@ public:
 		getItems(attribute, key_columns, out, [&] (const std::size_t) { return StringRef{def}; });
 	}
 
-	void has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PODArray<UInt8> & out) const
+	void has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const
 	{
 		dict_struct.validateKeyTypes(key_types);
 
@@ -430,7 +430,7 @@ private:
 
 	template <typename T, typename DefaultGetter>
 	void getItems(
-		attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, PODArray<T> & out,
+		attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, PaddedPODArray<T> & out,
 		DefaultGetter && get_default) const
 	{
 		/// Mapping: <key> -> { all indices `i` of `key_columns` such that `key_columns[i]` = <key> }

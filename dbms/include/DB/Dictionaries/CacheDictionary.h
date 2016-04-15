@@ -100,7 +100,7 @@ public:
 
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
-	void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const override
+	void toParent(const PaddedPODArray<id_t> & ids, PaddedPODArray<id_t> & out) const override
 	{
 		const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
 
@@ -108,7 +108,7 @@ public:
 	}
 
 #define DECLARE(TYPE)\
-	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const\
+	void get##TYPE(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, PaddedPODArray<TYPE> & out) const\
 	{\
 		auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -132,7 +132,7 @@ public:
 	DECLARE(Float32)
 	DECLARE(Float64)
 #undef DECLARE
-	void getString(const std::string & attribute_name, const PODArray<id_t> & ids, ColumnString * out) const
+	void getString(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, ColumnString * out) const
 	{
 		auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
@@ -148,8 +148,8 @@ public:
 
 #define DECLARE(TYPE)\
 	void get##TYPE(\
-		const std::string & attribute_name, const PODArray<id_t> & ids, const PODArray<TYPE> & def,\
-		PODArray<TYPE> & out) const\
+		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const PaddedPODArray<TYPE> & def,\
+		PaddedPODArray<TYPE> & out) const\
 	{\
 		auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -172,7 +172,7 @@ public:
 	DECLARE(Float64)
 #undef DECLARE
 	void getString(
-		const std::string & attribute_name, const PODArray<id_t> & ids, const ColumnString * const def,
+		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const ColumnString * const def,
 		ColumnString * const out) const
 	{
 		auto & attribute = getAttribute(attribute_name);
@@ -187,7 +187,7 @@ public:
 
 #define DECLARE(TYPE)\
 	void get##TYPE(\
-		const std::string & attribute_name, const PODArray<id_t> & ids, const TYPE def, PODArray<TYPE> & out) const\
+		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const TYPE def, PaddedPODArray<TYPE> & out) const\
 	{\
 		auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -210,7 +210,7 @@ public:
 	DECLARE(Float64)
 #undef DECLARE
 	void getString(
-		const std::string & attribute_name, const PODArray<id_t> & ids, const String & def,
+		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const String & def,
 		ColumnString * const out) const
 	{
 		auto & attribute = getAttribute(attribute_name);
@@ -223,7 +223,7 @@ public:
 		getItems(attribute, ids, out, [&] (const std::size_t) { return StringRef{def}; });
 	}
 
-	void has(const PODArray<id_t> & ids, PODArray<UInt8> & out) const override
+	void has(const PaddedPODArray<id_t> & ids, PaddedPODArray<UInt8> & out) const override
 	{
 		/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
 		MapType<std::vector<std::size_t>> outdated_ids;
@@ -408,7 +408,7 @@ private:
 
 	template <typename T, typename DefaultGetter>
 	void getItems(
-		attribute_t & attribute, const PODArray<id_t> & ids, PODArray<T> & out, DefaultGetter && get_default) const
+		attribute_t & attribute, const PaddedPODArray<id_t> & ids, PaddedPODArray<T> & out, DefaultGetter && get_default) const
 	{
 		/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
 		MapType<std::vector<std::size_t>> outdated_ids;
@@ -461,7 +461,7 @@ private:
 
 	template <typename DefaultGetter>
 	void getItems(
-		attribute_t & attribute, const PODArray<id_t> & ids, ColumnString * out, DefaultGetter && get_default) const
+		attribute_t & attribute, const PaddedPODArray<id_t> & ids, ColumnString * out, DefaultGetter && get_default) const
 	{
 		const auto rows = ext::size(ids);
 

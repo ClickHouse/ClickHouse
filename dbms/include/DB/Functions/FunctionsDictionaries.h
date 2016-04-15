@@ -849,8 +849,8 @@ private:
 		}
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
-			const PODArray<UInt64> ids(1, id_col->getData());
-			PODArray<UInt8> out(1);
+			const PaddedPODArray<UInt64> ids(1, id_col->getData());
+			PaddedPODArray<UInt8> out(1);
 
 			dict->has(ids, out);
 
@@ -1018,7 +1018,7 @@ private:
 		}
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
-			const PODArray<UInt64> ids(1, id_col->getData());
+			const PaddedPODArray<UInt64> ids(1, id_col->getData());
 			auto out = std::make_unique<ColumnString>();
 			dict->getString(attr_name, ids, out.get());
 
@@ -1135,7 +1135,7 @@ private:
 			auto out = new ColumnString;
 			block.getByPosition(result).column = out;
 
-			const PODArray<UInt16> dates(id_col->size(), date_col->getData());
+			const PaddedPODArray<UInt16> dates(id_col->size(), date_col->getData());
 			dictionary->getString(attr_name, id_col->getData(), dates, out);
 		}
 		else
@@ -1156,13 +1156,13 @@ private:
 			const auto out = new ColumnString;
 			block.getByPosition(result).column = out;
 
-			const PODArray<UInt64> ids(date_col->size(), id_col->getData());
+			const PaddedPODArray<UInt64> ids(date_col->size(), id_col->getData());
 			dictionary->getString(attr_name, ids, date_col->getData(), out);
 		}
 		else if (const auto date_col = typeid_cast<const ColumnConst<UInt16> *>(date_col_untyped))
 		{
-			const PODArray<UInt64> ids(1, id_col->getData());
-			const PODArray<UInt16> dates(1, date_col->getData());
+			const PaddedPODArray<UInt64> ids(1, id_col->getData());
+			const PaddedPODArray<UInt16> dates(1, date_col->getData());
 
 			auto out = std::make_unique<ColumnString>();
 			dictionary->getString(attr_name, ids, dates, out.get());
@@ -1337,7 +1337,7 @@ private:
 		{
 			/// const ids, vector defaults
 			/// @todo avoid materialization
-			const PODArray<UInt64> ids(id_col->size(), id_col->getData());
+			const PaddedPODArray<UInt64> ids(id_col->size(), id_col->getData());
 			const auto out = new ColumnString;
 			block.getByPosition(result).column = out;
 
@@ -1346,7 +1346,7 @@ private:
 		else if (const auto default_col = typeid_cast<const ColumnConst<String> *>(default_col_untyped))
 		{
 			/// const ids, const defaults
-			const PODArray<UInt64> ids(1, id_col->getData());
+			const PaddedPODArray<UInt64> ids(1, id_col->getData());
 			auto out = std::make_unique<ColumnString>();
 
 			const auto & def = default_col->getData();
@@ -1426,36 +1426,36 @@ template <> struct DictGetTraits<DATA_TYPE>\
 {\
 	template <typename DictionaryType>\
 	static void get(\
-		const DictionaryType * const dict, const std::string & name, const PODArray<UInt64> & ids,\
-		PODArray<TYPE> & out)\
+		const DictionaryType * const dict, const std::string & name, const PaddedPODArray<UInt64> & ids,\
+		PaddedPODArray<TYPE> & out)\
 	{\
 		dict->get##TYPE(name, ids, out);\
 	}\
 	template <typename DictionaryType>\
 	static void get(\
 		const DictionaryType * const dict, const std::string & name, const ConstColumnPlainPtrs & key_columns,\
-		const DataTypes & key_types, PODArray<TYPE> & out)\
+		const DataTypes & key_types, PaddedPODArray<TYPE> & out)\
 	{\
 		dict->get##TYPE(name, key_columns, key_types, out);\
 	}\
 	template <typename DictionaryType>\
 	static void get(\
-		const DictionaryType * const dict, const std::string & name, const PODArray<UInt64> & ids,\
-		const PODArray<UInt16> & dates, PODArray<TYPE> & out)\
+		const DictionaryType * const dict, const std::string & name, const PaddedPODArray<UInt64> & ids,\
+		const PaddedPODArray<UInt16> & dates, PaddedPODArray<TYPE> & out)\
 	{\
 		dict->get##TYPE(name, ids, dates, out);\
 	}\
 	template <typename DictionaryType, typename DefaultsType>\
 	static void getOrDefault(\
-		const DictionaryType * const dict, const std::string & name, const PODArray<UInt64> & ids,\
-		const DefaultsType & def, PODArray<TYPE> & out)\
+		const DictionaryType * const dict, const std::string & name, const PaddedPODArray<UInt64> & ids,\
+		const DefaultsType & def, PaddedPODArray<TYPE> & out)\
 	{\
 		dict->get##TYPE(name, ids, def, out);\
 	}\
 	template <typename DictionaryType, typename DefaultsType>\
 	static void getOrDefault(\
 		const DictionaryType * const dict, const std::string & name, const ConstColumnPlainPtrs & key_columns,\
-		const DataTypes & key_types, const DefaultsType & def, PODArray<TYPE> & out)\
+		const DataTypes & key_types, const DefaultsType & def, PaddedPODArray<TYPE> & out)\
 	{\
 		dict->get##TYPE(name, key_columns, key_types, def, out);\
 	}\
@@ -1593,8 +1593,8 @@ private:
 		}
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
-			const PODArray<UInt64> ids(1, id_col->getData());
-			PODArray<Type> data(1);
+			const PaddedPODArray<UInt64> ids(1, id_col->getData());
+			PaddedPODArray<Type> data(1);
 			DictGetTraits<DataType>::get(dict, attr_name, ids, data);
 
 			block.getByPosition(result).column = new ColumnConst<Type>{id_col->size(), data.front()};
@@ -1715,7 +1715,7 @@ private:
 		{
 			const auto size = id_col->size();
 			const auto & ids = id_col->getData();
-			const PODArray<UInt16> dates(size, date_col->getData());
+			const PaddedPODArray<UInt16> dates(size, date_col->getData());
 
 			const auto out = new ColumnVector<Type>{size};
 			block.getByPosition(result).column = out;
@@ -1739,7 +1739,7 @@ private:
 		if (const auto date_col = typeid_cast<const ColumnVector<UInt16> *>(date_col_untyped))
 		{
 			const auto size = date_col->size();
-			const PODArray<UInt64> ids(size, id_col->getData());
+			const PaddedPODArray<UInt64> ids(size, id_col->getData());
 			const auto & dates = date_col->getData();
 
 			const auto out = new ColumnVector<Type>{size};
@@ -1750,9 +1750,9 @@ private:
 		}
 		else if (const auto date_col = typeid_cast<const ColumnConst<UInt16> *>(date_col_untyped))
 		{
-			const PODArray<UInt64> ids(1, id_col->getData());
-			const PODArray<UInt16> dates(1, date_col->getData());
-			PODArray<Type> data(1);
+			const PaddedPODArray<UInt64> ids(1, id_col->getData());
+			const PaddedPODArray<UInt16> dates(1, date_col->getData());
+			PaddedPODArray<Type> data(1);
 			DictGetTraits<DataType>::get(dictionary, attr_name, ids, dates, data);
 
 			block.getByPosition(result).column = new ColumnConst<Type>{id_col->size(), data.front()};
@@ -1952,7 +1952,7 @@ private:
 		{
 			/// const ids, vector defaults
 			/// @todo avoid materialization
-			const PODArray<UInt64> ids(id_col->size(), id_col->getData());
+			const PaddedPODArray<UInt64> ids(id_col->size(), id_col->getData());
 
 			const auto out = new ColumnVector<Type>(id_col->size());
 			block.getByPosition(result).column = out;
@@ -1965,8 +1965,8 @@ private:
 		else if (const auto default_col = typeid_cast<const ColumnConst<Type> *>(default_col_untyped))
 		{
 			/// const ids, const defaults
-			const PODArray<UInt64> ids(1, id_col->getData());
-			PODArray<Type> data(1);
+			const PaddedPODArray<UInt64> ids(1, id_col->getData());
+			PaddedPODArray<Type> data(1);
 			const auto & def = default_col->getData();
 
 			DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, def, data);
@@ -2134,13 +2134,13 @@ private:
 				"Dictionary does not have a hierarchy",
 				ErrorCodes::UNSUPPORTED_METHOD};
 
-		const auto get_hierarchies = [&] (const PODArray<UInt64> & in, PODArray<UInt64> & out, PODArray<UInt64> & offsets) {
+		const auto get_hierarchies = [&] (const PaddedPODArray<UInt64> & in, PaddedPODArray<UInt64> & out, PaddedPODArray<UInt64> & offsets) {
 			const auto size = in.size();
 
 			/// copy of `in` array
-			auto in_array = std::make_unique<PODArray<UInt64>>(std::begin(in), std::end(in));
+			auto in_array = std::make_unique<PaddedPODArray<UInt64>>(std::begin(in), std::end(in));
 			/// used for storing and handling result of ::toParent call
-			auto out_array = std::make_unique<PODArray<UInt64>>(size);
+			auto out_array = std::make_unique<PaddedPODArray<UInt64>>(size);
 			/// resulting hierarchies
 			std::vector<std::vector<IDictionary::id_t>> hierarchies(size);
 
@@ -2198,7 +2198,7 @@ private:
 		}
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
-			const PODArray<UInt64> in(1, id_col->getData());
+			const PaddedPODArray<UInt64> in(1, id_col->getData());
 			const auto backend = new ColumnVector<UInt64>;
 			const auto array = new ColumnArray{backend};
 

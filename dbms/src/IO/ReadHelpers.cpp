@@ -77,9 +77,9 @@ static void appendToStringOrVector(T & s, const char * begin, const char * end)
 }
 
 template <>
-inline void appendToStringOrVector(PODArray<UInt8> & s, const char * begin, const char * end)
+inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, const char * begin, const char * end)
 {
-	s.insert(begin, end);
+	s.insert(begin, end);	/// TODO memcpySmall
 }
 
 
@@ -107,7 +107,7 @@ void readString(String & s, ReadBuffer & buf)
 	readStringInto(s, buf);
 }
 
-template void readStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf);
+template void readStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
 
 template <typename Vector>
@@ -131,7 +131,7 @@ void readStringUntilEOF(String & s, ReadBuffer & buf)
 	readStringUntilEOFInto(s, buf);
 }
 
-template void readStringUntilEOFInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf);
+template void readStringUntilEOFInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
 
 /** Распарсить escape-последовательность, которая может быть простой (один символ после бэкслеша) или более сложной (несколько символов).
@@ -299,7 +299,7 @@ void readEscapedString(String & s, ReadBuffer & buf)
 	readEscapedStringInto(s, buf);
 }
 
-template void readEscapedStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf);
+template void readEscapedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readEscapedStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
 
 
@@ -360,7 +360,7 @@ void readQuotedString(String & s, ReadBuffer & buf)
 	readQuotedStringInto(s, buf);
 }
 
-template void readQuotedStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf);
+template void readQuotedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf)
 {
@@ -368,7 +368,7 @@ void readDoubleQuotedString(String & s, ReadBuffer & buf)
 	readDoubleQuotedStringInto(s, buf);
 }
 
-template void readDoubleQuotedStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf);
+template void readDoubleQuotedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
 void readBackQuotedString(String & s, ReadBuffer & buf)
 {
@@ -376,7 +376,7 @@ void readBackQuotedString(String & s, ReadBuffer & buf)
 	readBackQuotedStringInto(s, buf);
 }
 
-template void readBackQuotedStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf);
+template void readBackQuotedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
 
 template <typename Vector>
@@ -461,7 +461,7 @@ void readCSVString(String & s, ReadBuffer & buf, const char delimiter)
 	readCSVStringInto(s, buf, delimiter);
 }
 
-template void readCSVStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf, const char delimiter);
+template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const char delimiter);
 
 
 template <typename Vector>
@@ -502,7 +502,7 @@ void readJSONString(String & s, ReadBuffer & buf)
 	readJSONStringInto(s, buf);
 }
 
-template void readJSONStringInto<PODArray<UInt8>>(PODArray<UInt8> & s, ReadBuffer & buf);
+template void readJSONStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
 
 void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf)

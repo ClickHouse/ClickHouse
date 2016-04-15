@@ -66,7 +66,7 @@ ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hin
 	ColumnArray * res = new ColumnArray(data->cloneEmpty());
 	ColumnPtr res_ = res;
 
-	PODArray<T> & res_elems = static_cast<ColumnVector<T> &>(res->getData()).getData();
+	auto & res_elems = static_cast<ColumnVector<T> &>(res->getData()).getData();
 	Offsets_t & res_offsets = res->getOffsets();
 
 	filterArraysImpl<T>(static_cast<const ColumnVector<T> &>(*data).getData(), getOffsets(), res_elems, res_offsets, filt, result_size_hint);
@@ -386,7 +386,8 @@ ColumnPtr ColumnArray::replicateString(const Offsets_t & replicate_offsets) cons
 
 				/// Копирование символов одной строки.
 				res_chars.resize(res_chars.size() + chars_size);
-				memcpy(&res_chars[res_chars.size() - chars_size], &src_chars[prev_src_string_offset_local], chars_size);
+				memcpySmallAllowReadWriteOverflow15(
+					&res_chars[res_chars.size() - chars_size], &src_chars[prev_src_string_offset_local], chars_size);
 
 				sum_chars_size += chars_size;
 				prev_src_string_offset_local += chars_size;

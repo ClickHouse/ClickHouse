@@ -75,7 +75,7 @@ struct RandImpl
 {
 	typedef UInt32 ReturnType;
 
-	static void execute(PODArray<ReturnType> & res)
+	static void execute(PaddedPODArray<ReturnType> & res)
 	{
 		detail::LinearCongruentialGenerator generator0;
 		detail::LinearCongruentialGenerator generator1;
@@ -113,7 +113,7 @@ struct Rand64Impl
 {
 	typedef UInt64 ReturnType;
 
-	static void execute(PODArray<ReturnType> & res)
+	static void execute(PaddedPODArray<ReturnType> & res)
 	{
 		detail::LinearCongruentialGenerator generator0;
 		detail::LinearCongruentialGenerator generator1;

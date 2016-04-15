@@ -93,7 +93,7 @@ public:
 
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
-	void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const override
+	void toParent(const PaddedPODArray<id_t> & ids, PaddedPODArray<id_t> & out) const override
 	{
 		const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
 
@@ -103,7 +103,7 @@ public:
 	}
 
 #define DECLARE(TYPE)\
-	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const\
+	void get##TYPE(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, PaddedPODArray<TYPE> & out) const\
 	{\
 		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -129,7 +129,7 @@ public:
 	DECLARE(Float32)
 	DECLARE(Float64)
 #undef DECLARE
-	void getString(const std::string & attribute_name, const PODArray<id_t> & ids, ColumnString * out) const
+	void getString(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, ColumnString * out) const
 	{
 		const auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
@@ -147,8 +147,8 @@ public:
 
 #define DECLARE(TYPE)\
 	void get##TYPE(\
-		const std::string & attribute_name, const PODArray<id_t> & ids, const PODArray<TYPE> & def,\
-		PODArray<TYPE> & out) const\
+		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const PaddedPODArray<TYPE> & def,\
+		PaddedPODArray<TYPE> & out) const\
 	{\
 		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -173,7 +173,7 @@ public:
 	DECLARE(Float64)
 #undef DECLARE
 	void getString(
-		const std::string & attribute_name, const PODArray<id_t> & ids, const ColumnString * const def,
+		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const ColumnString * const def,
 		ColumnString * const out) const
 	{
 		const auto & attribute = getAttribute(attribute_name);
@@ -190,8 +190,8 @@ public:
 
 #define DECLARE(TYPE)\
 	void get##TYPE(\
-		const std::string & attribute_name, const PODArray<id_t> & ids, const TYPE def,\
-		PODArray<TYPE> & out) const\
+		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const TYPE def,\
+		PaddedPODArray<TYPE> & out) const\
 	{\
 		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -216,7 +216,7 @@ public:
 	DECLARE(Float64)
 #undef DECLARE
 	void getString(
-		const std::string & attribute_name, const PODArray<id_t> & ids, const String & def,
+		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const String & def,
 		ColumnString * const out) const
 	{
 		const auto & attribute = getAttribute(attribute_name);
@@ -231,7 +231,7 @@ public:
 			[&] (const std::size_t) { return StringRef{def}; });
 	}
 
-	void has(const PODArray<id_t> & ids, PODArray<UInt8> & out) const override
+	void has(const PaddedPODArray<id_t> & ids, PaddedPODArray<UInt8> & out) const override
 	{
 		const auto & attribute = attributes.front();
 
@@ -252,7 +252,7 @@ public:
 	}
 
 private:
-	template <typename Value> using ContainerType = PODArray<Value>;
+	template <typename Value> using ContainerType = PaddedPODArray<Value>;
 	template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
 
 	struct attribute_t final
@@ -328,7 +328,7 @@ private:
 	void addAttributeSize(const attribute_t & attribute)
 	{
 		const auto & array_ref = std::get<ContainerPtrType<T>>(attribute.arrays);
-		bytes_allocated += sizeof(PODArray<T>) + array_ref->allocated_size();
+		bytes_allocated += sizeof(PaddedPODArray<T>) + array_ref->allocated_size();
 		bucket_count = array_ref->capacity();
 	}
 
@@ -401,7 +401,7 @@ private:
 
 	template <typename T, typename ValueSetter, typename DefaultGetter>
 	void getItems(
-		const attribute_t & attribute, const PODArray<id_t> & ids, ValueSetter && set_value,
+		const attribute_t & attribute, const PaddedPODArray<id_t> & ids, ValueSetter && set_value,
 		DefaultGetter && get_default) const
 	{
 		const auto & attr = *std::get<ContainerPtrType<T>>(attribute.arrays);
@@ -473,7 +473,7 @@ private:
 	}
 
 	template <typename T>
-	void has(const attribute_t & attribute, const PODArray<id_t> & ids, PODArray<UInt8> & out) const
+	void has(const attribute_t & attribute, const PaddedPODArray<id_t> & ids, PaddedPODArray<UInt8> & out) const
 	{
 		using stored_type = std::conditional_t<std::is_same<T, String>::value, StringRef, T>;
 		const auto & attr = *std::get<ContainerPtrType<stored_type>>(attribute.arrays);

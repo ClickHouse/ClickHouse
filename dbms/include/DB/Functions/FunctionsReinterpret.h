@@ -164,7 +164,8 @@ public:
 			for (size_t i = 0; i < size; ++i)
 			{
 				ToFieldType value = 0;
-				memcpy(&value, &data_from[offset], std::min(sizeof(ToFieldType), offsets_from[i] - offset - 1));
+				memcpySmallAllowReadWriteOverflow15(
+					&value, &data_from[offset], std::min(sizeof(ToFieldType), offsets_from[i] - offset - 1));
 				vec_res[i] = value;
 				offset = offsets_from[i];
 			}
@@ -185,7 +186,7 @@ public:
 			for (size_t i = 0; i < size; ++i)
 			{
 				ToFieldType value = 0;
-				memcpy(&value, &data_from[offset], copy_size);
+				memcpySmallAllowReadWriteOverflow15(&value, &data_from[offset], copy_size);
 				vec_res[i] = value;
 				offset += step;
 			}

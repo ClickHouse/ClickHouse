@@ -288,7 +288,7 @@ struct ExtractParamImpl
 	/// Предполагается, что res нужного размера и инициализирован нулями.
 	static void vector_constant(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		std::string needle,
-		PODArray<ResultType> & res)
+		PaddedPODArray<ResultType> & res)
 	{
 		/// Ищем параметр просто как подстроку вида "name":
 		needle = "\"" + needle + "\":";
@@ -341,7 +341,7 @@ struct ExtractParamImpl
 	static void vector_vector(
 		const ColumnString::Chars_t & haystack_data, const ColumnString::Offsets_t & haystack_offsets,
 		const ColumnString::Chars_t & needle_data, const ColumnString::Offsets_t & needle_offsets,
-		PODArray<ResultType> & res)
+		PaddedPODArray<ResultType> & res)
 	{
 		throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -349,7 +349,7 @@ struct ExtractParamImpl
 	static void constant_vector(
 		const String & haystack,
 		const ColumnString::Chars_t & needle_data, const ColumnString::Offsets_t & needle_offsets,
-		PODArray<ResultType> & res)
+		PaddedPODArray<ResultType> & res)
 	{
 		throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
 	}

@@ -181,7 +181,7 @@ struct PositionImpl
 	/// Поиск одной подстроки во многих строках.
 	static void vector_constant(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		const std::string & needle,
-		PODArray<UInt64> & res)
+		PaddedPODArray<UInt64> & res)
 	{
 		const UInt8 * begin = &data[0];
 		const UInt8 * pos = begin;
@@ -237,7 +237,7 @@ struct PositionImpl
 	static void vector_vector(
 		const ColumnString::Chars_t & haystack_data, const ColumnString::Offsets_t & haystack_offsets,
 		const ColumnString::Chars_t & needle_data, const ColumnString::Offsets_t & needle_offsets,
-		PODArray<UInt64> & res)
+		PaddedPODArray<UInt64> & res)
 	{
 		ColumnString::Offset_t prev_haystack_offset = 0;
 		ColumnString::Offset_t prev_needle_offset = 0;
@@ -284,7 +284,7 @@ struct PositionImpl
 	static void constant_vector(
 		const String & haystack,
 		const ColumnString::Chars_t & needle_data, const ColumnString::Offsets_t & needle_offsets,
-		PODArray<UInt64> & res)
+		PaddedPODArray<UInt64> & res)
 	{
 		// NOTE Можно было бы использовать индексацию haystack. Но это - редкий случай.
 
@@ -514,7 +514,7 @@ struct MatchImpl
 
 	static void vector_constant(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		const std::string & pattern,
-		PODArray<UInt8> & res)
+		PaddedPODArray<UInt8> & res)
 	{
 		String strstr_pattern;
 		/// Простой случай, когда выражение LIKE сводится к поиску подстроки в строке
@@ -655,7 +655,7 @@ struct MatchImpl
 	static void vector_vector(
 		const ColumnString::Chars_t & haystack_data, const ColumnString::Offsets_t & haystack_offsets,
 		const ColumnString::Chars_t & needle_data, const ColumnString::Offsets_t & needle_offsets,
-		PODArray<UInt8> & res)
+		PaddedPODArray<UInt8> & res)
 	{
 		throw Exception("Functions 'like' and 'match' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -664,7 +664,7 @@ struct MatchImpl
 	static void constant_vector(
 		const String & haystack,
 		const ColumnString::Chars_t & needle_data, const ColumnString::Offsets_t & needle_offsets,
-		PODArray<UInt8> & res)
+		PaddedPODArray<UInt8> & res)
 	{
 		throw Exception("Functions 'like' and 'match' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -697,7 +697,7 @@ struct ExtractImpl
 			{
 				const auto & match = matches[capture];
 				res_data.resize(res_offset + match.length + 1);
-				memcpy(&res_data[res_offset], &data[prev_offset + match.offset], match.length);
+				memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &data[prev_offset + match.offset], match.length);
 				res_offset += match.length;
 			}
 			else
@@ -782,7 +782,7 @@ struct ReplaceRegexpImpl
 		/// Искать вхождение сразу во всех сроках нельзя, будем двигаться вдоль каждой независимо
 		for (size_t id = 0; id < size; ++id)
 		{
-			int from = id > 0 ? offsets[id-1] : 0;
+			int from = id > 0 ? offsets[id - 1] : 0;
 			int start_pos = 0;
 			re2::StringPiece input(reinterpret_cast<const char*>(&data[0] + from), offsets[id] - from - 1);
 
@@ -798,7 +798,7 @@ struct ReplaceRegexpImpl
 
 					/// Копируем данные без изменения
 					res_data.resize(res_data.size() + char_to_copy);
-					memcpy(&res_data[res_offset], input.data() + start_pos, char_to_copy);
+					memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + start_pos, char_to_copy);
 					res_offset += char_to_copy;
 					start_pos += char_to_copy + match.length();
 
@@ -808,13 +808,15 @@ struct ReplaceRegexpImpl
 						if (it.first >= 0)
 						{
 							res_data.resize(res_data.size() + matches[it.first].length());
-							memcpy(&res_data[res_offset], matches[it.first].data(), matches[it.first].length());
+							memcpySmallAllowReadWriteOverflow15(
+								&res_data[res_offset], matches[it.first].data(), matches[it.first].length());
 							res_offset += matches[it.first].length();
 						}
 						else
 						{
 							res_data.resize(res_data.size() + it.second.size());
-							memcpy(&res_data[res_offset], it.second.data(), it.second.size());
+							memcpySmallAllowReadWriteOverflow15(
+								&res_data[res_offset], it.second.data(), it.second.size());
 							res_offset += it.second.size();
 						}
 					}
@@ -827,7 +829,8 @@ struct ReplaceRegexpImpl
 				if (can_finish_current_string)
 				{
 					res_data.resize(res_data.size() + input.length() - start_pos);
-					memcpy(&res_data[res_offset], input.data() + start_pos, input.length() - start_pos);
+					memcpySmallAllowReadWriteOverflow15(
+						&res_data[res_offset], input.data() + start_pos, input.length() - start_pos);
 					res_offset += input.length() - start_pos;
 					res_offsets[id] = res_offset;
 					start_pos = input.length();
@@ -880,7 +883,7 @@ struct ReplaceRegexpImpl
 
 					/// Копируем данные без изменения
 					res_data.resize(res_data.size() + char_to_copy);
-					memcpy(&res_data[res_offset], input.data() + start_pos, char_to_copy);
+					memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + start_pos, char_to_copy);
 					res_offset += char_to_copy;
 					start_pos += char_to_copy + match.length();
 
@@ -890,13 +893,15 @@ struct ReplaceRegexpImpl
 						if (it.first >= 0)
 						{
 							res_data.resize(res_data.size() + matches[it.first].length());
-							memcpy(&res_data[res_offset], matches[it.first].data(), matches[it.first].length());
+							memcpySmallAllowReadWriteOverflow15(
+								&res_data[res_offset], matches[it.first].data(), matches[it.first].length());
 							res_offset += matches[it.first].length();
 						}
 						else
 						{
 							res_data.resize(res_data.size() + it.second.size());
-							memcpy(&res_data[res_offset], it.second.data(), it.second.size());
+							memcpySmallAllowReadWriteOverflow15(
+								&res_data[res_offset], it.second.data(), it.second.size());
 							res_offset += it.second.size();
 						}
 					}
@@ -909,7 +914,8 @@ struct ReplaceRegexpImpl
 				if (can_finish_current_string)
 				{
 					res_data.resize(res_data.size() + input.length() - start_pos);
-					memcpy(&res_data[res_offset], input.data() + start_pos, input.length() - start_pos);
+					memcpySmallAllowReadWriteOverflow15(
+						&res_data[res_offset], input.data() + start_pos, input.length() - start_pos);
 					res_offset += input.length() - start_pos;
 					res_offsets[id] = res_offset;
 					start_pos = input.length();

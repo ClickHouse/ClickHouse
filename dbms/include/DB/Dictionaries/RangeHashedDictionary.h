@@ -81,8 +81,8 @@ public:
 
 #define DECLARE_MULTIPLE_GETTER(TYPE)\
 	void get##TYPE(\
-		const std::string & attribute_name, const PODArray<id_t> & ids, const PODArray<UInt16> & dates,\
-		PODArray<TYPE> & out) const\
+		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const PaddedPODArray<UInt16> & dates,\
+		PaddedPODArray<TYPE> & out) const\
 	{\
 		const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::TYPE);\
 		getItems<TYPE>(attribute, ids, dates, out);\
@@ -100,7 +100,7 @@ public:
 #undef DECLARE_MULTIPLE_GETTER
 
 	void getString(
-		const std::string & attribute_name, const PODArray<id_t> & ids, const PODArray<UInt16> & dates,
+		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const PaddedPODArray<UInt16> & dates,
 		ColumnString * out) const
 	{
 		const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::String);
@@ -301,8 +301,8 @@ private:
 
 	template <typename T>
 	void getItems(
-		const attribute_t & attribute, const PODArray<id_t> & ids, const PODArray<UInt16> & dates,
-		PODArray<T> & out) const
+		const attribute_t & attribute, const PaddedPODArray<id_t> & ids, const PaddedPODArray<UInt16> & dates,
+		PaddedPODArray<T> & out) const
 	{
 		const auto & attr = *std::get<ptr_t<T>>(attribute.maps);
 		const auto null_value = std::get<T>(attribute.null_values);

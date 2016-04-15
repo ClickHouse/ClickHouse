@@ -35,7 +35,7 @@ namespace DB
   * Шаблонный параметр pad_right - всегда выделять в конце массива столько неиспользуемых байт.
   * Может использоваться для того, чтобы делать оптимистичное чтение, запись, копирование невыровненными SIMD-инструкциями.
   */
-template <typename T, size_t pad_right_ = 0, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>>
+template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>, size_t pad_right_ = 0>
 class PODArray : private boost::noncopyable, private TAllocator	/// empty base optimization
 {
 private:
@@ -367,7 +367,7 @@ public:
 
 
 /** Для столбцов. Padding-а хватает, чтобы читать и писать xmm-регистр по адресу последнего элемента. */
-template <typename T>
-using PaddedPODArray = PODArray<T, 15>;
+template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>>
+using PaddedPODArray = PODArray<T, INITIAL_SIZE, TAllocator, 15>;
 
 }

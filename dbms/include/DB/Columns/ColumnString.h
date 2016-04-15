@@ -9,6 +9,7 @@
 #include <DB/Common/Collator.h>
 #include <DB/Common/PODArray.h>
 #include <DB/Common/Arena.h>
+#include <DB/Common/memcpySmall.h>
 
 
 namespace DB
@@ -26,8 +27,7 @@ namespace ErrorCodes
 class ColumnString final : public IColumn
 {
 public:
-	//typedef std::vector<UInt8> Chars_t;
-	typedef PODArray<UInt8> Chars_t;
+	typedef PaddedPODArray<UInt8> Chars_t;
 
 private:
 	/// По индексу i находится смещение до начала i + 1 -го элемента.
@@ -101,7 +101,7 @@ public:
 		size_t offset = src.offsetAt(n);
 
 		chars.resize(old_size + size_to_append);
-		memcpy(&chars[old_size], &src.chars[offset], size_to_append);
+		memcpySmallAllowReadWriteOverflow15(&chars[old_size], &src.chars[offset], size_to_append);
 		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + size_to_append);
 	}
 
@@ -248,7 +248,7 @@ public:
 			size_t string_offset = j == 0 ? 0 : offsets[j - 1];
 			size_t string_size = offsets[j] - string_offset;
 
-			memcpy(&res_chars[current_new_offset], &chars[string_offset], string_size);
+			memcpySmallAllowReadWriteOverflow15(&res_chars[current_new_offset], &chars[string_offset], string_size);
 
 			current_new_offset += string_size;
 			res_offsets[i] = current_new_offset;
@@ -404,7 +404,8 @@ public:
 				res_offsets.push_back(current_new_offset);
 
 				res_chars.resize(res_chars.size() + string_size);
-				memcpy(&res_chars[res_chars.size() - string_size], &chars[prev_string_offset], string_size);
+				memcpySmallAllowReadWriteOverflow15(
+					&res_chars[res_chars.size() - string_size], &chars[prev_string_offset], string_size);
 			}
 
 			prev_replicate_offset = replicate_offsets[i];

@@ -38,28 +38,9 @@ static inline T ALWAYS_INLINE packFixed(
 	size_t offset = 0;
 	for (size_t j = 0; j < keys_size; ++j)
 	{
-		switch (key_sizes[j])
-		{
-			case 1:
-				memcpy(bytes + offset, &static_cast<const ColumnUInt8 *>(key_columns[j])->getData()[i], 1);
-				offset += 1;
-				break;
-			case 2:
-				memcpy(bytes + offset, &static_cast<const ColumnUInt16 *>(key_columns[j])->getData()[i], 2);
-				offset += 2;
-				break;
-			case 4:
-				memcpy(bytes + offset, &static_cast<const ColumnUInt32 *>(key_columns[j])->getData()[i], 4);
-				offset += 4;
-				break;
-			case 8:
-				memcpy(bytes + offset, &static_cast<const ColumnUInt64 *>(key_columns[j])->getData()[i], 8);
-				offset += 8;
-				break;
-			default:
-				memcpy(bytes + offset, &static_cast<const ColumnFixedString *>(key_columns[j])->getChars()[i * key_sizes[j]], key_sizes[j]);
-				offset += key_sizes[j];
-		}
+		memcpySmallAllowReadWriteOverflow15(
+			bytes + offset, &static_cast<const ColumnFixedString *>(key_columns[j])->getChars()[i * key_sizes[j]], key_sizes[j]);
+		offset += key_sizes[j];
 	}
 
 	return key;
@@ -113,7 +94,7 @@ static inline StringRef * ALWAYS_INLINE placeKeysInPool(
 	for (size_t j = 0; j < keys_size; ++j)
 	{
 		char * place = pool.alloc(keys[j].size);
-		memcpy(place, keys[j].data, keys[j].size);
+		memcpy(place, keys[j].data, keys[j].size);		/// TODO padding в Arena и memcpySmall
 		keys[j].data = place;
 	}
 

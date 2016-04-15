@@ -1,5 +1,12 @@
-#include <emmintrin.h>
+#pragma once
+
 #include <string.h>
+#include <DB/Core/Defines.h>
+
+
+#if defined(__x86_64__)
+
+#include <emmintrin.h>
 
 
 /** Функция memcpy может работать неоптимально при выполнении одновременно следующих условий:
@@ -20,17 +27,38 @@
   * Допущение о том, что размер небольшой, позволяет нам не разворачивать цикл.
   * Это работает медленее, когда размер, на самом деле, большой.
   */
-inline void memcpySmallAllowReadWriteOverflow15(char * __restrict dst, const char * __restrict src, size_t n)
+
+/** Исходит из допущения, что можно читать до 15 лишних байт после конца массива src,
+  *  и записывать любой мусор до 15 байт после конца массива dst.
+  */
+inline void memcpySmallAllowReadWriteOverflow15(void * __restrict dst, const void * __restrict src, size_t n)
 {
 	for (size_t i = 0; i < n; i += 16)
-		_mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i), _mm_loadu_si128(src + i));
+		_mm_storeu_si128(reinterpret_cast<__m128i *>(reinterpret_cast<char *>(dst) + i),
+			_mm_loadu_si128(reinterpret_cast<const __m128i *>(reinterpret_cast<const char *>(src) + i)));
 }
 
-
-inline void memcpySmallAllowWriteOverflow15(char * __restrict dst, const char * __restrict src, size_t n)
+/** Исходит из допущения, что можно записывать любой мусор до 15 байт после конца массива dst.
+  */
+inline void memcpySmallAllowWriteOverflow15(void * __restrict dst, const void * __restrict src, size_t n)
 {
 	if (reinterpret_cast<intptr_t>(src) % 4096 <= 4096 - 16)
 		memcpySmallAllowReadWriteOverflow15(dst, src, n);
 	else
 		memcpy(dst, src, n);
 }
+
+
+#else	/// Реализации для других платформ.
+
+inline void memcpySmallAllowReadWriteOverflow15(void * __restrict dst, const void * __restrict src, size_t n)
+{
+	memcpy(dst, src, n);
+}
+
+inline void memcpySmallAllowWriteOverflow15(void * __restrict dst, const void * __restrict src, size_t n)
+{
+	memcpy(dst, src, n);
+}
+
+#endif

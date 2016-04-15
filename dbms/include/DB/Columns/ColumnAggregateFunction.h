@@ -50,7 +50,7 @@ namespace ErrorCodes
 class ColumnAggregateFunction final : public IColumn
 {
 public:
-	using Container_t = PODArray<AggregateDataPtr>;
+	using Container_t = PaddedPODArray<AggregateDataPtr>;
 
 private:
 	Arenas arenas;			/// Пулы, в которых выделены состояния агрегатных функций.

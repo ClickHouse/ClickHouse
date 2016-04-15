@@ -193,14 +193,14 @@ public:
 	  *  если 0, то не делать reserve,
 	  *  иначе сделать reserve по размеру исходного столбца.
 	  */
-	typedef PODArray<UInt8> Filter;
+	typedef PaddedPODArray<UInt8> Filter;
 	virtual SharedPtr<IColumn> filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
 	/** Переставить значения местами, используя указанную перестановку.
 	  * Используется при сортировке.
 	  * limit - если не равно 0 - положить в результат только первые limit значений.
 	  */
-	typedef PODArray<size_t> Permutation;
+	typedef PaddedPODArray<size_t> Permutation;
 	virtual SharedPtr<IColumn> permute(const Permutation & perm, size_t limit) const = 0;
 
 	/** Сравнить (*this)[n] и rhs[m].
@@ -230,7 +230,7 @@ public:
 	  * Необходимо для реализации операции ARRAY JOIN.
 	  */
 	typedef UInt64 Offset_t;
-	typedef PODArray<Offset_t> Offsets_t;
+	typedef PaddedPODArray<Offset_t> Offsets_t;
 	virtual SharedPtr<IColumn> replicate(const Offsets_t & offsets) const = 0;
 
 	/** Посчитать минимум и максимум по столбцу.

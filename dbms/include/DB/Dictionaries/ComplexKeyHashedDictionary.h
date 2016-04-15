@@ -93,7 +93,7 @@ public:
 #define DECLARE(TYPE)\
 	void get##TYPE(\
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
-		PODArray<TYPE> & out) const\
+		PaddedPODArray<TYPE> & out) const\
 	{\
 		dict_struct.validateKeyTypes(key_types);\
 		\
@@ -144,7 +144,7 @@ public:
 #define DECLARE(TYPE)\
 	void get##TYPE(\
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
-		const PODArray<TYPE> & def, PODArray<TYPE> & out) const\
+		const PaddedPODArray<TYPE> & def, PaddedPODArray<TYPE> & out) const\
 	{\
  		dict_struct.validateKeyTypes(key_types);\
  		\
@@ -191,7 +191,7 @@ public:
 #define DECLARE(TYPE)\
 	void get##TYPE(\
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
-		const TYPE def, PODArray<TYPE> & out) const\
+		const TYPE def, PaddedPODArray<TYPE> & out) const\
 	{\
  		dict_struct.validateKeyTypes(key_types);\
  		\
@@ -235,7 +235,7 @@ public:
 			[&] (const std::size_t) { return StringRef{def}; });
 	}
 
-	void has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PODArray<UInt8> & out) const
+	void has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const
 	{
 		dict_struct.validateKeyTypes(key_types);
 
@@ -525,7 +525,7 @@ private:
 	}
 
 	template <typename T>
-	void has(const attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, PODArray<UInt8> & out) const
+	void has(const attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, PaddedPODArray<UInt8> & out) const
 	{
 		const auto & attr = *std::get<ContainerPtrType<T>>(attribute.maps);
 		const auto keys_size = key_columns.size();

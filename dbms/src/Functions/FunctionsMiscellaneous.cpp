@@ -12,7 +12,7 @@ namespace DB
 
 
 template <typename T>
-static void numWidthVector(const PODArray<T> & a, PODArray<UInt64> & c)
+static void numWidthVector(const PaddedPODArray<T> & a, PaddedPODArray<UInt64> & c)
 {
 	size_t size = a.size();
 	for (size_t i = 0; i < size; ++i)
@@ -62,7 +62,7 @@ inline UInt64 floatWidth(const float x)
 }
 
 template <typename T>
-static void floatWidthVector(const PODArray<T> & a, PODArray<UInt64> & c)
+static void floatWidthVector(const PaddedPODArray<T> & a, PaddedPODArray<UInt64> & c)
 {
 	size_t size = a.size();
 	for (size_t i = 0; i < size; ++i)
@@ -75,13 +75,13 @@ static void floatWidthConstant(T a, UInt64 & c)
 	c = floatWidth(a);
 }
 
-template <> inline void numWidthVector<Float64>(const PODArray<Float64> & a, PODArray<UInt64> & c) { floatWidthVector(a, c); }
-template <> inline void numWidthVector<Float32>(const PODArray<Float32> & a, PODArray<UInt64> & c) { floatWidthVector(a, c); }
+template <> inline void numWidthVector<Float64>(const PaddedPODArray<Float64> & a, PaddedPODArray<UInt64> & c) { floatWidthVector(a, c); }
+template <> inline void numWidthVector<Float32>(const PaddedPODArray<Float32> & a, PaddedPODArray<UInt64> & c) { floatWidthVector(a, c); }
 template <> inline void numWidthConstant<Float64>(Float64 a, UInt64 & c) { floatWidthConstant(a, c); }
 template <> inline void numWidthConstant<Float32>(Float32 a, UInt64 & c) { floatWidthConstant(a, c); }
 
 
-static inline void stringWidthVector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets, PODArray<UInt64> & res)
+static inline void stringWidthVector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res)
 {
 	size_t size = offsets.size();
 
@@ -93,7 +93,7 @@ static inline void stringWidthVector(const ColumnString::Chars_t & data, const C
 	}
 }
 
-static inline void stringWidthFixedVector(const ColumnString::Chars_t & data, size_t n, PODArray<UInt64> & res)
+static inline void stringWidthFixedVector(const ColumnString::Chars_t & data, size_t n, PaddedPODArray<UInt64> & res)
 {
 	size_t size = data.size() / n;
 	for (size_t i = 0; i < size; ++i)

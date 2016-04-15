@@ -59,15 +59,15 @@ struct IDictionary : IDictionaryBase
 {
 	virtual bool hasHierarchy() const = 0;
 
-	virtual void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const = 0;
+	virtual void toParent(const PaddedPODArray<id_t> & ids, PaddedPODArray<id_t> & out) const = 0;
 
-	virtual void has(const PODArray<id_t> & ids, PODArray<UInt8> & out) const = 0;
+	virtual void has(const PaddedPODArray<id_t> & ids, PaddedPODArray<UInt8> & out) const = 0;
 
 	/// do not call unless you ensure that hasHierarchy() returns true
 	id_t toParent(id_t id) const
 	{
-		const PODArray<UInt64> ids(1, id);
-		PODArray<UInt64> out(1);
+		const PaddedPODArray<UInt64> ids(1, id);
+		PaddedPODArray<UInt64> out(1);
 
 		toParent(ids, out);
 

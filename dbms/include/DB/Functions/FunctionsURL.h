@@ -438,7 +438,7 @@ struct ExtractURLParameterImpl
 					end = pos + strlen(pos);
 
 				res_data.resize(res_offset + (end - pos) + 1);
-				memcpy(&res_data[res_offset], pos, end - pos);
+				memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], pos, end - pos);
 				res_offset += end - pos;
 			}
 			else
@@ -514,8 +514,8 @@ struct CutURLParameterImpl
 
 			size_t cut_length = (url_end - url_begin) - (end_pos - begin_pos);
 			res_data.resize(res_offset + cut_length + 1);
-			memcpy(&res_data[res_offset], url_begin, begin_pos - url_begin);
-			memcpy(&res_data[res_offset] + (begin_pos - url_begin), end_pos, url_end - end_pos);
+			memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], url_begin, begin_pos - url_begin);
+			memcpySmallAllowReadWriteOverflow15(&res_data[res_offset] + (begin_pos - url_begin), end_pos, url_end - end_pos);
 			res_offset += cut_length + 1;
 			res_data[res_offset - 1] = 0;
 			res_offsets[i] = res_offset;
@@ -911,7 +911,7 @@ struct ExtractSubstringImpl
 			Extractor::execute(reinterpret_cast<const char *>(&data[prev_offset]), offsets[i] - prev_offset - 1, start, length);
 
 			res_data.resize(res_data.size() + length + 1);
-			memcpy(&res_data[res_offset], start, length);
+			memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
 			res_offset += length + 1;
 			res_data[res_offset - 1] = 0;
 
@@ -963,8 +963,10 @@ struct CutSubstringImpl
 			size_t start_index = start - reinterpret_cast<const char *>(&data[0]);
 
 			res_data.resize(res_data.size() + offsets[i] - prev_offset - length);
-			memcpy(&res_data[res_offset], current, start - current);
-			memcpy(&res_data[res_offset + start - current], start + length, offsets[i] - start_index - length);
+			memcpySmallAllowReadWriteOverflow15(
+				&res_data[res_offset], current, start - current);
+			memcpySmallAllowReadWriteOverflow15(
+				&res_data[res_offset + start - current], start + length, offsets[i] - start_index - length);
 			res_offset += offsets[i] - prev_offset - length;
 
 			res_offsets[i] = res_offset;

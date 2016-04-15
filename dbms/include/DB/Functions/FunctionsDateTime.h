@@ -409,8 +409,8 @@ struct ToRelativeSecondNumImpl
 template<typename FromType, typename ToType, typename Transform>
 struct Transformer
 {
-	static void vector_vector(const PODArray<FromType> & vec_from, const ColumnString::Chars_t & data,
-							  const ColumnString::Offsets_t & offsets, PODArray<ToType> & vec_to)
+	static void vector_vector(const PaddedPODArray<FromType> & vec_from, const ColumnString::Chars_t & data,
+							  const ColumnString::Offsets_t & offsets, PaddedPODArray<ToType> & vec_to)
 	{
 		const auto & local_date_lut = DateLUT::instance();
 		ColumnString::Offset_t prev_offset = 0;
@@ -425,8 +425,8 @@ struct Transformer
 		}
 	}
 
-	static void vector_constant(const PODArray<FromType> & vec_from, const std::string & data,
-								PODArray<ToType> & vec_to)
+	static void vector_constant(const PaddedPODArray<FromType> & vec_from, const std::string & data,
+								PaddedPODArray<ToType> & vec_to)
 	{
 		const auto & local_date_lut = DateLUT::instance();
 		const auto & remote_date_lut = DateLUT::instance(data);
@@ -434,7 +434,7 @@ struct Transformer
 			vec_to[i] = Transform::execute(vec_from[i], remote_date_lut, local_date_lut);
 	}
 
-	static void vector_constant(const PODArray<FromType> & vec_from, PODArray<ToType> & vec_to)
+	static void vector_constant(const PaddedPODArray<FromType> & vec_from, PaddedPODArray<ToType> & vec_to)
 	{
 		const auto & local_date_lut = DateLUT::instance();
 		for (size_t i = 0; i < vec_from.size(); ++i)
@@ -442,7 +442,7 @@ struct Transformer
 	}
 
 	static void constant_vector(const FromType & from, const ColumnString::Chars_t & data,
-								const ColumnString::Offsets_t & offsets, PODArray<ToType> & vec_to)
+								const ColumnString::Offsets_t & offsets, PaddedPODArray<ToType> & vec_to)
 	{
 		const auto & local_date_lut = DateLUT::instance();
 		ColumnString::Offset_t prev_offset = 0;
@@ -825,8 +825,8 @@ template <typename DurationType>
 struct TimeSlotsImpl
 {
 	static void vector_vector(
-		const PODArray<UInt32> & starts, const PODArray<DurationType> & durations,
-		PODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+		const PaddedPODArray<UInt32> & starts, const PaddedPODArray<DurationType> & durations,
+		PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
 	{
 		size_t size = starts.size();
 
@@ -847,8 +847,8 @@ struct TimeSlotsImpl
 	}
 
 	static void vector_constant(
-		const PODArray<UInt32> & starts, DurationType duration,
-		PODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+		const PaddedPODArray<UInt32> & starts, DurationType duration,
+		PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
 	{
 		size_t size = starts.size();
 
@@ -869,8 +869,8 @@ struct TimeSlotsImpl
 	}
 
 	static void constant_vector(
-		UInt32 start, const PODArray<DurationType> & durations,
-		PODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+		UInt32 start, const PaddedPODArray<DurationType> & durations,
+		PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
 	{
 		size_t size = durations.size();
 

@@ -26,7 +26,7 @@ template <typename A, typename B, typename ResultType>
 struct NumIfImpl
 {
 private:
-	static PODArray<ResultType> & result_vector(Block & block, size_t result, size_t size)
+	static PaddedPODArray<ResultType> & result_vector(Block & block, size_t result, size_t size)
 	{
 		ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
 		block.getByPosition(result).column = col_res;
@@ -38,49 +38,49 @@ private:
 	}
 public:
 	static void vector_vector(
-		const PODArray<UInt8> & cond,
-		const PODArray<A> & a, const PODArray<B> & b,
+		const PaddedPODArray<UInt8> & cond,
+		const PaddedPODArray<A> & a, const PaddedPODArray<B> & b,
 		Block & block,
 		size_t result)
 	{
 		size_t size = cond.size();
-		PODArray<ResultType> & res = result_vector(block, result, size);
+		PaddedPODArray<ResultType> & res = result_vector(block, result, size);
 		for (size_t i = 0; i < size; ++i)
 			res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
 	}
 
 	static void vector_constant(
-		const PODArray<UInt8> & cond,
-		const PODArray<A> & a, B b,
+		const PaddedPODArray<UInt8> & cond,
+		const PaddedPODArray<A> & a, B b,
 		Block & block,
 		size_t result)
 	{
 		size_t size = cond.size();
-		PODArray<ResultType> & res = result_vector(block, result, size);
+		PaddedPODArray<ResultType> & res = result_vector(block, result, size);
 		for (size_t i = 0; i < size; ++i)
 			res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
 	}
 
 	static void constant_vector(
-		const PODArray<UInt8> & cond,
-		A a, const PODArray<B> & b,
+		const PaddedPODArray<UInt8> & cond,
+		A a, const PaddedPODArray<B> & b,
 		Block & block,
 		size_t result)
 	{
 		size_t size = cond.size();
-		PODArray<ResultType> & res = result_vector(block, result, size);
+		PaddedPODArray<ResultType> & res = result_vector(block, result, size);
 		for (size_t i = 0; i < size; ++i)
 			res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
 	}
 
 	static void constant_constant(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		A a, B b,
 		Block & block,
 		size_t result)
 	{
 		size_t size = cond.size();
-		PODArray<ResultType> & res = result_vector(block, result, size);
+		PaddedPODArray<ResultType> & res = result_vector(block, result, size);
 		for (size_t i = 0; i < size; ++i)
 			res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
 	}
@@ -96,8 +96,8 @@ private:
 	}
 public:
 	static void vector_vector(
-		const PODArray<UInt8> & cond,
-		const PODArray<A> & a, const PODArray<B> & b,
+		const PaddedPODArray<UInt8> & cond,
+		const PaddedPODArray<A> & a, const PaddedPODArray<B> & b,
 		Block & block,
 		size_t result)
 	{
@@ -105,8 +105,8 @@ public:
 	}
 
 	static void vector_constant(
-		const PODArray<UInt8> & cond,
-		const PODArray<A> & a, B b,
+		const PaddedPODArray<UInt8> & cond,
+		const PaddedPODArray<A> & a, B b,
 		Block & block,
 		size_t result)
 	{
@@ -114,8 +114,8 @@ public:
 	}
 
 	static void constant_vector(
-		const PODArray<UInt8> & cond,
-		A a, const PODArray<B> & b,
+		const PaddedPODArray<UInt8> & cond,
+		A a, const PaddedPODArray<B> & b,
 		Block & block,
 		size_t result)
 	{
@@ -123,7 +123,7 @@ public:
 	}
 
 	static void constant_constant(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		A a, B b,
 		Block & block,
 		size_t result)
@@ -136,7 +136,7 @@ public:
 struct StringIfImpl
 {
 	static void vector_vector(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
@@ -155,7 +155,7 @@ struct StringIfImpl
 			{
 				size_t size_to_write = a_offsets[i] - a_prev_offset;
 				c_data.resize(c_data.size() + size_to_write);
-				memcpy(&c_data[c_prev_offset], &a_data[a_prev_offset], size_to_write);
+				memcpySmallAllowReadWriteOverflow15(&c_data[c_prev_offset], &a_data[a_prev_offset], size_to_write);
 				c_prev_offset += size_to_write;
 				c_offsets[i] = c_prev_offset;
 			}
@@ -163,7 +163,7 @@ struct StringIfImpl
 			{
 				size_t size_to_write = b_offsets[i] - b_prev_offset;
 				c_data.resize(c_data.size() + size_to_write);
-				memcpy(&c_data[c_prev_offset], &b_data[b_prev_offset], size_to_write);
+				memcpySmallAllowReadWriteOverflow15(&c_data[c_prev_offset], &b_data[b_prev_offset], size_to_write);
 				c_prev_offset += size_to_write;
 				c_offsets[i] = c_prev_offset;
 			}
@@ -174,7 +174,7 @@ struct StringIfImpl
 	}
 
 	static void vector_fixed_vector_fixed(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const ColumnFixedString::Chars_t & a_data,
 		const ColumnFixedString::Chars_t & b_data,
 		const size_t N,
@@ -186,15 +186,15 @@ struct StringIfImpl
 		for (size_t i = 0; i < size; ++i)
 		{
 			if (cond[i])
-				memcpy(&c_data[i * N], &a_data[i * N], N);
+				memcpySmallAllowReadWriteOverflow15(&c_data[i * N], &a_data[i * N], N);
 			else
-				memcpy(&c_data[i * N], &b_data[i * N], N);
+				memcpySmallAllowReadWriteOverflow15(&c_data[i * N], &b_data[i * N], N);
 		}
 	}
 
 	template <bool negative>
 	static void vector_vector_fixed_impl(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const ColumnFixedString::Chars_t & b_data, const size_t b_N,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
@@ -212,7 +212,7 @@ struct StringIfImpl
 			{
 				size_t size_to_write = a_offsets[i] - a_prev_offset;
 				c_data.resize(c_data.size() + size_to_write);
-				memcpy(&c_data[c_prev_offset], &a_data[a_prev_offset], size_to_write);
+				memcpySmallAllowReadWriteOverflow15(&c_data[c_prev_offset], &a_data[a_prev_offset], size_to_write);
 				c_prev_offset += size_to_write;
 				c_offsets[i] = c_prev_offset;
 			}
@@ -220,7 +220,7 @@ struct StringIfImpl
 			{
 				size_t size_to_write = b_N;
 				c_data.resize(c_data.size() + size_to_write + 1);
-				memcpy(&c_data[c_prev_offset], &b_data[i * b_N], size_to_write);
+				memcpySmallAllowReadWriteOverflow15(&c_data[c_prev_offset], &b_data[i * b_N], size_to_write);
 				c_data.back() = 0;
 				c_prev_offset += size_to_write + 1;
 				c_offsets[i] = c_prev_offset;
@@ -231,7 +231,7 @@ struct StringIfImpl
 	}
 
 	static void vector_vector_fixed(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const ColumnFixedString::Chars_t & b_data, const size_t b_N,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
@@ -240,7 +240,7 @@ struct StringIfImpl
 	}
 
 	static void vector_fixed_vector(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const ColumnFixedString::Chars_t & a_data, const size_t a_N,
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
@@ -250,7 +250,7 @@ struct StringIfImpl
 
 	template <bool negative>
 	static void vector_constant_impl(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const String & b,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
@@ -268,7 +268,7 @@ struct StringIfImpl
 			{
 				size_t size_to_write = a_offsets[i] - a_prev_offset;
 				c_data.resize(c_data.size() + size_to_write);
-				memcpy(&c_data[c_prev_offset], &a_data[a_prev_offset], size_to_write);
+				memcpySmallAllowReadWriteOverflow15(&c_data[c_prev_offset], &a_data[a_prev_offset], size_to_write);
 				c_prev_offset += size_to_write;
 				c_offsets[i] = c_prev_offset;
 			}
@@ -286,7 +286,7 @@ struct StringIfImpl
 	}
 
 	static void vector_constant(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const String & b,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
@@ -295,7 +295,7 @@ struct StringIfImpl
 	}
 
 	static void constant_vector(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const String & a,
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
@@ -305,7 +305,7 @@ struct StringIfImpl
 
 	template <bool negative>
 	static void vector_fixed_constant_impl(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const ColumnFixedString::Chars_t & a_data, const size_t a_N,
 		const String & b,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
@@ -322,7 +322,7 @@ struct StringIfImpl
 			{
 				size_t size_to_write = a_N;
 				c_data.resize(c_data.size() + size_to_write + 1);
-				memcpy(&c_data[c_prev_offset], &a_data[i * a_N], size_to_write);
+				memcpySmallAllowReadWriteOverflow15(&c_data[c_prev_offset], &a_data[i * a_N], size_to_write);
 				c_data.back() = 0;
 				c_prev_offset += size_to_write + 1;
 				c_offsets[i] = c_prev_offset;
@@ -339,7 +339,7 @@ struct StringIfImpl
 	}
 
 	static void vector_fixed_constant(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const ColumnFixedString::Chars_t & a_data, const size_t N,
 		const String & b,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
@@ -348,7 +348,7 @@ struct StringIfImpl
 	}
 
 	static void constant_vector_fixed(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const String & a,
 		const ColumnFixedString::Chars_t & b_data, const size_t N,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
@@ -357,7 +357,7 @@ struct StringIfImpl
 	}
 
 	static void constant_constant(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const String & a, const String & b,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
 	{
@@ -396,8 +396,8 @@ struct NumArrayIfImpl
 	template <typename FromT>
 	static ALWAYS_INLINE void copy_from_vector(
 		size_t i,
-		const PODArray<FromT> & from_data, const ColumnArray::Offsets_t & from_offsets, ColumnArray::Offset_t from_prev_offset,
-		PODArray<ResultType> & to_data, ColumnArray::Offsets_t & to_offsets, ColumnArray::Offset_t & to_prev_offset)
+		const PaddedPODArray<FromT> & from_data, const ColumnArray::Offsets_t & from_offsets, ColumnArray::Offset_t from_prev_offset,
+		PaddedPODArray<ResultType> & to_data, ColumnArray::Offsets_t & to_offsets, ColumnArray::Offset_t & to_prev_offset)
 	{
 		size_t size_to_write = from_offsets[i] - from_prev_offset;
 		to_data.resize(to_data.size() + size_to_write);
@@ -411,8 +411,8 @@ struct NumArrayIfImpl
 
 	static ALWAYS_INLINE void copy_from_constant(
 		size_t i,
-		const PODArray<ResultType> & from_data,
-		PODArray<ResultType> & to_data, ColumnArray::Offsets_t & to_offsets, ColumnArray::Offset_t & to_prev_offset)
+		const PaddedPODArray<ResultType> & from_data,
+		PaddedPODArray<ResultType> & to_data, ColumnArray::Offsets_t & to_offsets, ColumnArray::Offset_t & to_prev_offset)
 	{
 		size_t size_to_write = from_data.size();
 		to_data.resize(to_data.size() + size_to_write);
@@ -423,7 +423,7 @@ struct NumArrayIfImpl
 
 	static void create_result_column(
 		Block & block, size_t result,
-		PODArray<ResultType> ** c_data, ColumnArray::Offsets_t ** c_offsets)
+		PaddedPODArray<ResultType> ** c_data, ColumnArray::Offsets_t ** c_offsets)
 	{
 		ColumnVector<ResultType> * col_res_vec = new ColumnVector<ResultType>;
 		ColumnArray * col_res_array = new ColumnArray(col_res_vec);
@@ -435,12 +435,12 @@ struct NumArrayIfImpl
 
 
 	static void vector_vector(
-		const PODArray<UInt8> & cond,
-		const PODArray<A> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const PODArray<B> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		const PaddedPODArray<UInt8> & cond,
+		const PaddedPODArray<A> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const PaddedPODArray<B> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		Block & block, size_t result)
 	{
-		PODArray<ResultType> * c_data = nullptr;
+		PaddedPODArray<ResultType> * c_data = nullptr;
 		ColumnArray::Offsets_t * c_offsets = nullptr;
 		create_result_column(block, result, &c_data, &c_offsets);
 
@@ -465,16 +465,16 @@ struct NumArrayIfImpl
 	}
 
 	static void vector_constant(
-		const PODArray<UInt8> & cond,
-		const PODArray<A> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const PaddedPODArray<UInt8> & cond,
+		const PaddedPODArray<A> & a_data, const ColumnArray::Offsets_t & a_offsets,
 		const Array & b,
 		Block & block, size_t result)
 	{
-		PODArray<ResultType> * c_data = nullptr;
+		PaddedPODArray<ResultType> * c_data = nullptr;
 		ColumnArray::Offsets_t * c_offsets = nullptr;
 		create_result_column(block, result, &c_data, &c_offsets);
 
-		PODArray<ResultType> b_converted(b.size());
+		PaddedPODArray<ResultType> b_converted(b.size());
 		for (size_t i = 0, size = b.size(); i < size; ++i)
 			b_converted[i] = b[i].get<typename NearestFieldType<B>::Type>();
 
@@ -497,16 +497,16 @@ struct NumArrayIfImpl
 	}
 
 	static void constant_vector(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const Array & a,
-		const PODArray<B> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		const PaddedPODArray<B> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		Block & block, size_t result)
 	{
-		PODArray<ResultType> * c_data = nullptr;
+		PaddedPODArray<ResultType> * c_data = nullptr;
 		ColumnArray::Offsets_t * c_offsets = nullptr;
 		create_result_column(block, result, &c_data, &c_offsets);
 
-		PODArray<ResultType> a_converted(a.size());
+		PaddedPODArray<ResultType> a_converted(a.size());
 		for (size_t i = 0, size = a.size(); i < size; ++i)
 			a_converted[i] = a[i].get<typename NearestFieldType<A>::Type>();
 
@@ -529,19 +529,19 @@ struct NumArrayIfImpl
 	}
 
 	static void constant_constant(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const Array & a, const Array & b,
 		Block & block, size_t result)
 	{
-		PODArray<ResultType> * c_data = nullptr;
+		PaddedPODArray<ResultType> * c_data = nullptr;
 		ColumnArray::Offsets_t * c_offsets = nullptr;
 		create_result_column(block, result, &c_data, &c_offsets);
 
-		PODArray<ResultType> a_converted(a.size());
+		PaddedPODArray<ResultType> a_converted(a.size());
 		for (size_t i = 0, size = a.size(); i < size; ++i)
 			a_converted[i] = a[i].get<typename NearestFieldType<A>::Type>();
 
-		PODArray<ResultType> b_converted(b.size());
+		PaddedPODArray<ResultType> b_converted(b.size());
 		for (size_t i = 0, size = b.size(); i < size; ++i)
 			b_converted[i] = b[i].get<typename NearestFieldType<B>::Type>();
 
@@ -571,17 +571,17 @@ private:
 	}
 public:
 	static void vector_vector(
-		const PODArray<UInt8> & cond,
-		const PODArray<A> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const PODArray<B> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		const PaddedPODArray<UInt8> & cond,
+		const PaddedPODArray<A> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const PaddedPODArray<B> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		Block & block, size_t result)
 	{
 		throw_error();
 	}
 
 	static void vector_constant(
-		const PODArray<UInt8> & cond,
-		const PODArray<A> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const PaddedPODArray<UInt8> & cond,
+		const PaddedPODArray<A> & a_data, const ColumnArray::Offsets_t & a_offsets,
 		const Array & b,
 		Block & block, size_t result)
 	{
@@ -589,16 +589,16 @@ public:
 	}
 
 	static void constant_vector(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const Array & a,
-		const PODArray<B> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		const PaddedPODArray<B> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		Block & block, size_t result)
 	{
 		throw_error();
 	}
 
 	static void constant_constant(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const Array & a, const Array & b,
 		Block & block, size_t result)
 	{
@@ -678,7 +678,7 @@ struct StringArrayIfImpl
 
 
 	static void vector_vector(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_string_offsets, const ColumnArray::Offsets_t & a_array_offsets,
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_string_offsets, const ColumnArray::Offsets_t & b_array_offsets,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_string_offsets, ColumnArray::Offsets_t & c_array_offsets)
@@ -720,7 +720,7 @@ struct StringArrayIfImpl
 
 	template <bool reverse>
 	static void vector_constant_impl(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_string_offsets, const ColumnArray::Offsets_t & a_array_offsets,
 		const Array & b,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_string_offsets, ColumnArray::Offsets_t & c_array_offsets)
@@ -755,7 +755,7 @@ struct StringArrayIfImpl
 	}
 
 	static void vector_constant(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_string_offsets, const ColumnArray::Offsets_t & a_array_offsets,
 		const Array & b,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_string_offsets, ColumnArray::Offsets_t & c_array_offsets)
@@ -764,7 +764,7 @@ struct StringArrayIfImpl
 	}
 
 	static void constant_vector(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const Array & a,
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_string_offsets, const ColumnArray::Offsets_t & b_array_offsets,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_string_offsets, ColumnArray::Offsets_t & c_array_offsets)
@@ -773,7 +773,7 @@ struct StringArrayIfImpl
 	}
 
 	static void constant_constant(
-		const PODArray<UInt8> & cond,
+		const PaddedPODArray<UInt8> & cond,
 		const Array & a,
 		const Array & b,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_string_offsets, ColumnArray::Offsets_t & c_array_offsets)

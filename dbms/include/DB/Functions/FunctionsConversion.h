@@ -126,8 +126,8 @@ private:
 	using Op = Transformation<FromType, ToType>;
 
 public:
-	static void vector_vector(const PODArray<FromType> & vec_from, const ColumnString::Chars_t & data,
-							  const ColumnString::Offsets_t & offsets, PODArray<ToType> & vec_to)
+	static void vector_vector(const PaddedPODArray<FromType> & vec_from, const ColumnString::Chars_t & data,
+							  const ColumnString::Offsets_t & offsets, PaddedPODArray<ToType> & vec_to)
 	{
 		ColumnString::Offset_t prev_offset = 0;
 
@@ -141,15 +141,15 @@ public:
 		}
 	}
 
-	static void vector_constant(const PODArray<FromType> & vec_from, const std::string & data,
-								PODArray<ToType> & vec_to)
+	static void vector_constant(const PaddedPODArray<FromType> & vec_from, const std::string & data,
+								PaddedPODArray<ToType> & vec_to)
 	{
 		const auto & remote_date_lut = DateLUT::instance(data);
 		for (size_t i = 0; i < vec_from.size(); ++i)
 			vec_to[i] = Op::execute(vec_from[i], remote_date_lut);
 	}
 
-	static void vector_constant(const PODArray<FromType> & vec_from, PODArray<ToType> & vec_to)
+	static void vector_constant(const PaddedPODArray<FromType> & vec_from, PaddedPODArray<ToType> & vec_to)
 	{
 		const auto & local_date_lut = DateLUT::instance();
 		for (size_t i = 0; i < vec_from.size(); ++i)
@@ -157,7 +157,7 @@ public:
 	}
 
 	static void constant_vector(const FromType & from, const ColumnString::Chars_t & data,
-								const ColumnString::Offsets_t & offsets, PODArray<ToType> & vec_to)
+								const ColumnString::Offsets_t & offsets, PaddedPODArray<ToType> & vec_to)
 	{
 		ColumnString::Offset_t prev_offset = 0;
 
@@ -435,7 +435,7 @@ struct DateTimeToStringConverter
 {
 	using FromFieldType = typename DataTypeDateTime::FieldType;
 
-	static void vector_vector(const PODArray<FromFieldType> & vec_from, const ColumnString::Chars_t & data,
+	static void vector_vector(const PaddedPODArray<FromFieldType> & vec_from, const ColumnString::Chars_t & data,
 							  const ColumnString::Offsets_t & offsets, ColumnString & vec_to)
 	{
 		const auto & local_date_lut = DateLUT::instance();
@@ -466,7 +466,7 @@ struct DateTimeToStringConverter
 		data_to.resize(write_buffer.count());
 	}
 
-	static void vector_constant(const PODArray<FromFieldType> & vec_from, const std::string & data,
+	static void vector_constant(const PaddedPODArray<FromFieldType> & vec_from, const std::string & data,
 								ColumnString & vec_to)
 	{
 		const auto & local_date_lut = DateLUT::instance();
@@ -490,7 +490,7 @@ struct DateTimeToStringConverter
 		data_to.resize(write_buffer.count());
 	}
 
-	static void vector_constant(const PODArray<FromFieldType> & vec_from, ColumnString & vec_to)
+	static void vector_constant(const PaddedPODArray<FromFieldType> & vec_from, ColumnString & vec_to)
 	{
 		ColumnString::Chars_t & data_to = vec_to.getChars();
 		ColumnString::Offsets_t & offsets_to = vec_to.getOffsets();
@@ -725,7 +725,7 @@ struct StringToTimestampConverter
 	using ToFieldType = typename DataTypeInt32::FieldType;
 
 	static void vector_vector(const ColumnString::Chars_t & vec_from, const ColumnString::Chars_t & data,
-							  const ColumnString::Offsets_t & offsets, PODArray<ToFieldType> & vec_to)
+							  const ColumnString::Offsets_t & offsets, PaddedPODArray<ToFieldType> & vec_to)
 	{
 		const auto & local_date_lut = DateLUT::instance();
 		ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(&vec_from[0])), vec_from.size(), 0);
@@ -754,7 +754,7 @@ struct StringToTimestampConverter
 	}
 
 	static void vector_constant(const ColumnString::Chars_t & vec_from, const std::string & data,
-								PODArray<ToFieldType> & vec_to)
+								PaddedPODArray<ToFieldType> & vec_to)
 	{
 		const auto & local_date_lut = DateLUT::instance();
 		const auto & remote_date_lut = DateLUT::instance(data);
@@ -775,7 +775,7 @@ struct StringToTimestampConverter
 		}
 	}
 
-	static void vector_constant(const ColumnString::Chars_t & vec_from, PODArray<ToFieldType> & vec_to)
+	static void vector_constant(const ColumnString::Chars_t & vec_from, PaddedPODArray<ToFieldType> & vec_to)
 	{
 		ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(&vec_from[0])), vec_from.size(), 0);
 
@@ -792,7 +792,7 @@ struct StringToTimestampConverter
 	}
 
 	static void constant_vector(const std::string & from, const ColumnString::Chars_t & data,
-								const ColumnString::Offsets_t & offsets, PODArray<ToFieldType> & vec_to)
+								const ColumnString::Offsets_t & offsets, PaddedPODArray<ToFieldType> & vec_to)
 	{
 		const auto & local_date_lut = DateLUT::instance();
 
@@ -1284,7 +1284,7 @@ public:
 				if (len > n)
 					throw Exception("String too long for type FixedString(" + toString(n) + ")",
 						ErrorCodes::TOO_LARGE_STRING_SIZE);
-				memcpy(&out_chars[i * n], &in_chars[off], len);
+				memcpySmallAllowReadWriteOverflow15(&out_chars[i * n], &in_chars[off], len);
 			}
 
 			block.getByPosition(result).column = result_ptr;
@@ -1307,7 +1307,7 @@ public:
 			out_chars.resize_fill(size * n);
 
 			for (const auto i : ext::range(0, size))
-				memcpy(&out_chars[i * n], &in_chars[i * src_n], src_n);
+				memcpySmallAllowReadWriteOverflow15(&out_chars[i * n], &in_chars[i * src_n], src_n);
 		}
 		else
 			throw Exception("Unexpected column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);

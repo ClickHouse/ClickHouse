@@ -4,6 +4,7 @@
 
 #include <DB/Common/PODArray.h>
 #include <DB/Common/Arena.h>
+#include <DB/Common/memcpySmall.h>
 #include <DB/Columns/IColumn.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
@@ -26,7 +27,7 @@ namespace ErrorCodes
 class ColumnFixedString final : public IColumn
 {
 public:
-	typedef PODArray<UInt8> Chars_t;
+	typedef PaddedPODArray<UInt8> Chars_t;
 
 private:
 	/// Байты строк, уложенные подряд. Строки хранятся без завершающего нулевого байта.
@@ -104,7 +105,7 @@ public:
 
 		size_t old_size = chars.size();
 		chars.resize(old_size + n);
-		memcpy(&chars[old_size], &src.chars[n * index], n);
+		memcpySmallAllowReadWriteOverflow15(&chars[old_size], &src.chars[n * index], n);
 	}
 
 	void insertData(const char * pos, size_t length) override
@@ -221,7 +222,7 @@ public:
 			if (filt[i])
 			{
 				res_->chars.resize(res_->chars.size() + n);
-				memcpy(&res_->chars[res_->chars.size() - n], &chars[offset], n);
+				memcpySmallAllowReadWriteOverflow15(&res_->chars[res_->chars.size() - n], &chars[offset], n);
 			}
 		}
 
@@ -252,7 +253,7 @@ public:
 
 		size_t offset = 0;
 		for (size_t i = 0; i < limit; ++i, offset += n)
-			memcpy(&res_chars[offset], &chars[perm[i] * n], n);
+			memcpySmallAllowReadWriteOverflow15(&res_chars[offset], &chars[perm[i] * n], n);
 
 		return res;
 	}

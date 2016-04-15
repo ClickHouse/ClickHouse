@@ -57,7 +57,7 @@ template <typename A, typename B> struct GreaterOrEqualsOp 	{ static UInt8 apply
 template<typename A, typename B, typename Op>
 struct NumComparisonImpl
 {
-	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
+	static void vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<UInt8> & c)
 	{
 		/** GCC 4.8.2 векторизует цикл только если его записать в такой форме.
 		  * В данном случае, если сделать цикл по индексу массива (код будет выглядеть проще),
@@ -79,7 +79,7 @@ struct NumComparisonImpl
 		}
 	}
 
-	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
+	static void vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<UInt8> & c)
 	{
 		size_t size = a.size();
 		const A * a_pos = &a[0];
@@ -94,7 +94,7 @@ struct NumComparisonImpl
 		}
 	}
 
-	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
+	static void constant_vector(A a, const PaddedPODArray<B> & b, PaddedPODArray<UInt8> & c)
 	{
 		size_t size = b.size();
 		const B * b_pos = &b[0];
@@ -122,7 +122,7 @@ struct StringComparisonImpl
 	static void string_vector_string_vector(
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		PaddedPODArray<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -143,7 +143,7 @@ struct StringComparisonImpl
 	static void string_vector_fixed_string_vector(
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
+		PaddedPODArray<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -165,7 +165,7 @@ struct StringComparisonImpl
 	static void string_vector_constant(
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const std::string & b,
-		PODArray<UInt8> & c)
+		PaddedPODArray<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		ColumnString::Offset_t b_n = b.size();
@@ -187,7 +187,7 @@ struct StringComparisonImpl
 	static void fixed_string_vector_string_vector(
 		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		PaddedPODArray<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -209,7 +209,7 @@ struct StringComparisonImpl
 	static void fixed_string_vector_fixed_string_vector(
 		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
 		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
+		PaddedPODArray<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
@@ -222,7 +222,7 @@ struct StringComparisonImpl
 	static void fixed_string_vector_constant(
 		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
 		const std::string & b,
-		PODArray<UInt8> & c)
+		PaddedPODArray<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
@@ -237,7 +237,7 @@ struct StringComparisonImpl
 	static void constant_string_vector(
 		const std::string & a,
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		PaddedPODArray<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
 		ColumnString::Offset_t a_n = a.size();
@@ -259,7 +259,7 @@ struct StringComparisonImpl
 	static void constant_fixed_string_vector(
 		const std::string & a,
 		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
+		PaddedPODArray<UInt8> & c)
 	{
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
@@ -288,7 +288,7 @@ struct StringEqualsImpl
 	static void string_vector_string_vector(
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		PaddedPODArray<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -301,7 +301,7 @@ struct StringEqualsImpl
 	static void string_vector_fixed_string_vector(
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
+		PaddedPODArray<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -314,7 +314,7 @@ struct StringEqualsImpl
 	static void string_vector_constant(
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const std::string & b,
-		PODArray<UInt8> & c)
+		PaddedPODArray<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		ColumnString::Offset_t b_n = b.size();
@@ -329,7 +329,7 @@ struct StringEqualsImpl
 	static void fixed_string_vector_fixed_string_vector(
 		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
 		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
+		PaddedPODArray<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
@@ -339,7 +339,7 @@ struct StringEqualsImpl
 	static void fixed_string_vector_constant(
 		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
 		const std::string & b,
-		PODArray<UInt8> & c)
+		PaddedPODArray<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
@@ -359,7 +359,7 @@ struct StringEqualsImpl
 	static void fixed_string_vector_string_vector(
 		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		PaddedPODArray<UInt8> & c)
 	{
 		string_vector_fixed_string_vector(b_data, b_offsets, a_data, a_n, c);
 	}
@@ -367,7 +367,7 @@ struct StringEqualsImpl
 	static void constant_string_vector(
 		const std::string & a,
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		PaddedPODArray<UInt8> & c)
 	{
 		string_vector_constant(b_data, b_offsets, a, c);
 	}
@@ -375,7 +375,7 @@ struct StringEqualsImpl
 	static void constant_fixed_string_vector(
 		const std::string & a,
 		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
+		PaddedPODArray<UInt8> & c)
 	{
 		fixed_string_vector_constant(b_data, b_n, a, c);
 	}

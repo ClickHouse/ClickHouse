@@ -625,7 +625,7 @@ namespace DB
 		using Op = IntegerRoundingComputation<T, rounding_mode, scale_mode>;
 
 	public:
-		static inline void apply(const PODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
+		static inline void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
 		{
 			auto divisor = Op::prepare(scale);
 
@@ -659,7 +659,7 @@ namespace DB
 		using Scale = typename Op::Scale;
 
 	public:
-		static inline void apply(const PODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
+		static inline void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
 		{
 			Scale mm_scale;
 			Op::prepare(scale, mm_scale);
@@ -734,7 +734,7 @@ namespace DB
 		typename std::enable_if<scale_mode == NullScale>::type>
 	{
 	public:
-		static inline void apply(const PODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
+		static inline void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
 		{
 			::memset(reinterpret_cast<T *>(&out[0]), 0, in.size() * sizeof(T));
 		}

@@ -378,7 +378,7 @@ public:
 					size_t token_size = token_end - token_begin;
 
 					res_strings_chars.resize(res_strings_chars.size() + token_size + 1);
-					memcpy(&res_strings_chars[current_dst_strings_offset], token_begin, token_size);
+					memcpySmallAllowReadWriteOverflow15(&res_strings_chars[current_dst_strings_offset], token_begin, token_size);
 					res_strings_chars[current_dst_strings_offset + token_size] = 0;
 
 					current_dst_strings_offset += token_size + 1;
@@ -455,7 +455,8 @@ private:
 			{
 				size_t bytes_to_copy = src_string_offsets[current_src_array_offset] - current_src_string_offset - 1;
 
-				memcpy(&dst_chars[current_dst_string_offset], &src_chars[current_src_string_offset], bytes_to_copy);
+				memcpySmallAllowReadWriteOverflow15(
+					&dst_chars[current_dst_string_offset], &src_chars[current_src_string_offset], bytes_to_copy);
 
 				current_src_string_offset = src_string_offsets[current_src_array_offset];
 				current_dst_string_offset += bytes_to_copy;

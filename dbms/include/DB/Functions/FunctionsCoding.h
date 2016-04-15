@@ -1526,7 +1526,7 @@ public:
 			for (size_t i = 0; i < size; ++i)
 			{
 				size_t current_size = strlen(pos_in);
-				memcpy(pos, pos_in, current_size);
+				memcpySmallAllowReadWriteOverflow15(pos, pos_in, current_size);
 				pos += current_size;
 				*pos = '\0';
 				out_offsets[i] = ++pos - begin;
@@ -1580,7 +1580,7 @@ public:
 			for (size_t i = 0; i < size; ++i)
 			{
 				size_t current_size = strnlen(pos_in, n);
-				memcpy(pos, pos_in, current_size);
+				memcpySmallAllowReadWriteOverflow15(pos, pos_in, current_size);
 				pos += current_size;
 				*pos = '\0';
 				out_offsets[i] = ++pos - begin;
@@ -1953,9 +1953,9 @@ private:
 	}
 
 	template <typename ValueType>
-	PODArray<ValueType> createMask(const std::size_t size, const Block & block, const ColumnNumbers & arguments)
+	PaddedPODArray<ValueType> createMask(const std::size_t size, const Block & block, const ColumnNumbers & arguments)
 	{
-		PODArray<ValueType> mask(size, ValueType{});
+		PaddedPODArray<ValueType> mask(size, ValueType{});
 
 		for (const auto i : ext::range(1, arguments.size()))
 		{
@@ -1973,7 +1973,7 @@ private:
 	}
 
 	template <typename PosType, typename ValueType>
-	bool addToMaskImpl(PODArray<ValueType> & mask, const IColumn * const pos_col_untyped)
+	bool addToMaskImpl(PaddedPODArray<ValueType> & mask, const IColumn * const pos_col_untyped)
 	{
 		if (const auto pos_col = typeid_cast<const ColumnVector<PosType> *>(pos_col_untyped))
 		{

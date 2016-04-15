@@ -55,7 +55,7 @@ template <bool negative = false>
 struct EmptyImpl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-		PODArray<UInt8> & res)
+		PaddedPODArray<UInt8> & res)
 	{
 		size_t size = offsets.size();
 		ColumnString::Offset_t prev_offset = 1;
@@ -73,7 +73,7 @@ struct EmptyImpl
 	}
 
 	static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n,
-		PODArray<UInt8> & res)
+		PaddedPODArray<UInt8> & res)
 	{
 	}
 
@@ -82,7 +82,7 @@ struct EmptyImpl
 		res = negative ^ (data.empty());
 	}
 
-	static void array(const ColumnString::Offsets_t & offsets, PODArray<UInt8> & res)
+	static void array(const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt8> & res)
 	{
 		size_t size = offsets.size();
 		ColumnString::Offset_t prev_offset = 0;
@@ -105,7 +105,7 @@ struct EmptyImpl
 struct LengthImpl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-		PODArray<UInt64> & res)
+		PaddedPODArray<UInt64> & res)
 	{
 		size_t size = offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -121,7 +121,7 @@ struct LengthImpl
 	}
 
 	static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n,
-		PODArray<UInt64> & res)
+		PaddedPODArray<UInt64> & res)
 	{
 	}
 
@@ -130,7 +130,7 @@ struct LengthImpl
 		res = data.size();
 	}
 
-	static void array(const ColumnString::Offsets_t & offsets, PODArray<UInt64> & res)
+	static void array(const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res)
 	{
 		size_t size = offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -153,7 +153,7 @@ struct LengthImpl
 struct LengthUTF8Impl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-		PODArray<UInt64> & res)
+		PaddedPODArray<UInt64> & res)
 	{
 		size_t size = offsets.size();
 
@@ -174,7 +174,7 @@ struct LengthUTF8Impl
 	}
 
 	static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n,
-		PODArray<UInt64> & res)
+		PaddedPODArray<UInt64> & res)
 	{
 		size_t size = data.size() / n;
 
@@ -195,7 +195,7 @@ struct LengthUTF8Impl
 				++res;
 	}
 
-	static void array(const ColumnString::Offsets_t & offsets, PODArray<UInt64> & res)
+	static void array(const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res)
 	{
 		throw Exception("Cannot apply function lengthUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -619,7 +619,7 @@ struct SubstringImpl
 			{
 				size_t bytes_to_copy = std::min(offsets[i] - prev_offset - start, length);
 				res_data.resize(res_data.size() + bytes_to_copy + 1);
-				memcpy(&res_data[res_offset], &data[prev_offset + start - 1], bytes_to_copy);
+				memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &data[prev_offset + start - 1], bytes_to_copy);
 				res_offset += bytes_to_copy + 1;
 				res_data[res_offset - 1] = 0;
 			}
@@ -642,7 +642,7 @@ struct SubstringImpl
 		ColumnString::Offset_t res_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			memcpy(&res_data[res_offset], &data[i * n + start - 1], length);
+			memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &data[i * n + start - 1], length);
 			res_offset += length;
 			res_data[res_offset] = 0;
 			++res_offset;
@@ -715,7 +715,7 @@ struct SubstringUTF8Impl
 			{
 				size_t bytes_to_copy = std::min(offsets[i] - prev_offset - bytes_start, bytes_length);
 				res_data.resize(res_data.size() + bytes_to_copy + 1);
-				memcpy(&res_data[res_offset], &data[prev_offset + bytes_start - 1], bytes_to_copy);
+				memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &data[prev_offset + bytes_start - 1], bytes_to_copy);
 				res_offset += bytes_to_copy + 1;
 				res_data[res_offset - 1] = 0;
 			}
@@ -1220,7 +1220,7 @@ private:
 						const auto offset = col->getOffsets()[row];
 						const auto length = offset - in_offset - 1;
 
-						memcpy(&out_data[out_offset], &col->getChars()[in_offset], length);
+						memcpySmallAllowReadWriteOverflow15(&out_data[out_offset], &col->getChars()[in_offset], length);
 						out_offset += length;
 						in_offset = offset;
 					}
@@ -1230,7 +1230,7 @@ private:
 						const auto col = static_cast<const ColumnFixedString *>(instr.second.first);
 						const auto length = col->getN();
 
-						memcpy(&out_data[out_offset], &col->getChars()[in_offset], length);
+						memcpySmallAllowReadWriteOverflow15(&out_data[out_offset], &col->getChars()[in_offset], length);
 						out_offset += length;
 						in_offset += length;
 					}
@@ -1267,9 +1267,9 @@ private:
 		ColumnString::Offset_t b_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
+			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
 			offset += a_offsets[i] - a_offset - 1;
-			memcpy(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
+			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
 			offset += b_offsets[i] - b_offset;
 
 			a_offset = a_offsets[i];
@@ -1293,9 +1293,9 @@ private:
 		ColumnString::Offset_t b_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
+			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
 			offset += a_offsets[i] - a_offset - 1;
-			memcpy(&c_data[offset], &b_data[b_offset], b_n);
+			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[b_offset], b_n);
 			offset += b_n;
 			c_data[offset] = 0;
 			offset += 1;
@@ -1323,7 +1323,7 @@ private:
 		ColumnString::Offset_t a_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
+			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
 			offset += a_offsets[i] - a_offset - 1;
 			memcpy(&c_data[offset], b.data(), b.size() + 1);
 			offset += b.size() + 1;
@@ -1346,9 +1346,9 @@ private:
 		ColumnString::Offset_t b_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			memcpy(&c_data[offset], &a_data[a_offset], a_n);
+			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[a_offset], a_n);
 			offset += a_n;
-			memcpy(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
+			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
 			offset += b_offsets[i] - b_offset;
 
 			a_offset = a_n;
@@ -1370,9 +1370,9 @@ private:
 		ColumnString::Offset_t offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			memcpy(&c_data[offset], &a_data[i * a_n], a_n);
+			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[i * a_n], a_n);
 			offset += a_n;
-			memcpy(&c_data[offset], &b_data[i * b_n], b_n);
+			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[i * b_n], b_n);
 			offset += b_n;
 			c_data[offset] = 0;
 			++offset;
@@ -1394,7 +1394,7 @@ private:
 		ColumnString::Offset_t offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			memcpy(&c_data[offset], &a_data[i * a_n], a_n);
+			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[i * a_n], a_n);
 			offset += a_n;
 			memcpy(&c_data[offset], b.data(), b_n);
 			offset += b_n;
@@ -1423,7 +1423,7 @@ private:
 		{
 			memcpy(&c_data[offset], a.data(), a.size());
 			offset += a.size();
-			memcpy(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
+			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
 			offset += b_offsets[i] - b_offset;
 
 			b_offset = b_offsets[i];
@@ -1445,7 +1445,7 @@ private:
 		{
 			memcpy(&c_data[offset], a.data(), a_n);
 			offset += a_n;
-			memcpy(&c_data[offset], &b_data[i * b_n], b_n);
+			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[i * b_n], b_n);
 			offset += b_n;
 			c_data[offset] = 0;
 			++offset;
@@ -1622,7 +1622,7 @@ private:
 			for (const auto i : ext::range(0, size))
 			{
 				const auto src_length = src_offsets[i] - src_offset;
-				memcpy(&dst_data[dst_offset], &src_data[src_offset], src_length);
+				memcpySmallAllowReadWriteOverflow15(&dst_data[dst_offset], &src_data[src_offset], src_length);
 				src_offset = src_offsets[i];
 				dst_offset += src_length;
 

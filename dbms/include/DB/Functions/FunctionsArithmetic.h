@@ -27,21 +27,21 @@ struct BinaryOperationImplBase
 {
 	typedef ResultType_ ResultType;
 
-	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<ResultType> & c)
+	static void vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = Op::template apply<ResultType>(a[i], b[i]);
 	}
 
-	static void vector_constant(const PODArray<A> & a, B b, PODArray<ResultType> & c)
+	static void vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = Op::template apply<ResultType>(a[i], b);
 	}
 
-	static void constant_vector(A a, const PODArray<B> & b, PODArray<ResultType> & c)
+	static void constant_vector(A a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
@@ -65,7 +65,7 @@ struct UnaryOperationImpl
 {
 	typedef typename Op::ResultType ResultType;
 
-	static void vector(const PODArray<A> & a, PODArray<ResultType> & c)
+	static void vector(const PaddedPODArray<A> & a, PaddedPODArray<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
@@ -926,7 +926,7 @@ struct DivideIntegralByConstantImpl
 {
 	typedef typename DivideIntegralImpl<A, B>::ResultType ResultType;
 
-	static void vector_constant(const PODArray<A> & a, B b, PODArray<ResultType> & c)
+	static void vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
 	{
 		if (unlikely(b == 0))
 			throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
@@ -980,7 +980,7 @@ struct ModuloByConstantImpl
 {
 	typedef typename ModuloImpl<A, B>::ResultType ResultType;
 
-	static void vector_constant(const PODArray<A> & a, B b, PODArray<ResultType> & c)
+	static void vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
 	{
 		if (unlikely(b == 0))
 			throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
