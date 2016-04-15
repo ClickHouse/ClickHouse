@@ -384,6 +384,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 	factory.registerFunction<FunctionSleep>();
 	factory.registerFunction<FunctionMaterialize>();
 	factory.registerFunction<FunctionIgnore>();
+	factory.registerFunction<FunctionIndexHint>();
 	factory.registerFunction<FunctionIdentity>();
 	factory.registerFunction<FunctionArrayJoin>();
 	factory.registerFunction<FunctionReplicate>();

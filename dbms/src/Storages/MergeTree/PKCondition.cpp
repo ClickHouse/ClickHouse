@@ -435,6 +435,9 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 bool PKCondition::operatorFromAST(const ASTFunction * func, RPNElement & out)
 {
 	/// Функции AND, OR, NOT.
+	/** Также особая функция indexHint - работает так, как будто вместо вызова функции стоят просто скобки
+	  * (или, то же самое - вызов функции and из одного аргумента).
+	  */
 	const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
 
 	if (func->name == "not")
@@ -446,7 +449,7 @@ bool PKCondition::operatorFromAST(const ASTFunction * func, RPNElement & out)
 	}
 	else
 	{
-		if (func->name == "and")
+		if (func->name == "and" || func->name == "indexHint")
 			out.function = RPNElement::FUNCTION_AND;
 		else if (func->name == "or")
 			out.function = RPNElement::FUNCTION_OR;

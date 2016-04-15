@@ -1613,6 +1613,15 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				}
 			}
 
+			/// Особая функция indexHint. Всё, что внутри неё не вычисляется
+			/// (а используется только для анализа индекса, см. PKCondition).
+			if (node->name == "indexHint")
+			{
+				actions_stack.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
+					new ColumnConstUInt8(1, 1), new DataTypeUInt8, node->getColumnName())));
+				return;
+			}
+
 			const FunctionPtr & function = FunctionFactory::instance().get(node->name, context);
 
 			Names argument_names;
@@ -2472,6 +2481,11 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast,
 
 			return;
 		}
+
+		/// Особая функция indexHint. Всё, что внутри неё не вычисляется
+		/// (а используется только для анализа индекса, см. PKCondition).
+		if (node->name == "indexHint")
+			return;
 	}
 
 	ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(ast.get());

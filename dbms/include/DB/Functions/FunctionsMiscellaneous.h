@@ -552,22 +552,42 @@ public:
 	static constexpr auto name = "ignore";
 	static IFunction * create(const Context & context) { return new FunctionIgnore; }
 
-	/// Получить имя функции.
-	String getName() const override
-	{
-		return name;
-	}
-
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		return new DataTypeUInt8;
-	}
+	String getName() const override { return name; }
+	DataTypePtr getReturnType(const DataTypes & arguments) const override { return new DataTypeUInt8; }
 
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.getByPosition(result).column = new ColumnConstUInt8(block.rowsInFirstColumn(), 0);
+	}
+};
+
+
+/** Функция indexHint принимает любое количество любых аргументов и всегда возвращает единицу.
+  *
+  * Эта функция имеет особый смысл (см. ExpressionAnalyzer, PKCondition):
+  * - расположенные внутри неё выражения не вычисляются;
+  * - но при анализе индекса (выбора диапазонов для чтения), эта функция воспринимается так же,
+  *   как если бы вместо её применения было бы само выражение.
+  *
+  * Пример: WHERE something AND indexHint(CounterID = 34)
+  * - не читать и не вычислять CounterID = 34, но выбрать диапазоны, в которых выражение CounterID = 34 может быть истинным.
+  *
+  * Функция может использоваться в отладочных целях, а также для (скрытых от пользователя) преобразований запроса.
+  */
+class FunctionIndexHint : public IFunction
+{
+public:
+	static constexpr auto name = "indexHint";
+	static IFunction * create(const Context & context) { return new FunctionIndexHint; }
+
+	String getName() const override	{ return name; }
+	DataTypePtr getReturnType(const DataTypes & arguments) const override { return new DataTypeUInt8; }
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		block.getByPosition(result).column = new ColumnConstUInt8(block.rowsInFirstColumn(), 1);
 	}
 };
 

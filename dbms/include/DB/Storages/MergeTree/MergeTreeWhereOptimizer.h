@@ -381,6 +381,10 @@ private:
 			if (global_in_function_name == function_ptr->name
 				|| global_not_in_function_name == function_ptr->name)
 				return true;
+
+			/// indexHint - особая функция, которую не имеет смысла переносить в PREWHERE
+			if ("indexHint" == function_ptr->name)
+				return true;
 		}
 		else if (const auto identifier_ptr = typeid_cast<const ASTIdentifier *>(ptr))
 		{
