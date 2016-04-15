@@ -361,15 +361,17 @@ StoragePtr StorageFactory::get(
 		  *     (запрос с SAMPLE x будет выбирать строки, у которых в этом столбце значение меньше, чем x * UINT32_MAX);
 		  *  - выражение для сортировки (либо скалярное выражение, либо tuple из нескольких);
 		  *  - index_granularity;
-		  *  - (для Collapsing) имя столбца, содержащего тип строчки с изменением "визита" (принимающего значения 1 и -1).
+		  *  - (для Collapsing) имя столбца типа Int8, содержащего тип строчки с изменением "визита" (принимающего значения 1 и -1).
 		  * Например: ENGINE = ReplicatedCollapsingMergeTree('/tables/mytable', 'rep02', EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign).
 		  *  - (для Summing, не обязательно) кортеж столбцов, которых следует суммировать. Если не задано - используются все числовые столбцы, не входящие в первичный ключ.
+		  *  - (для Replacing, не обязательно) имя столбца одного из UInt типов, обозначающего "версию"
 		  * Например: ENGINE = ReplicatedCollapsingMergeTree('/tables/mytable', 'rep02', EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign).
 		  *
 		  * MergeTree(date, [sample_key], primary_key, index_granularity)
 		  * CollapsingMergeTree(date, [sample_key], primary_key, index_granularity, sign)
 		  * SummingMergeTree(date, [sample_key], primary_key, index_granularity, [columns_to_sum])
 		  * AggregatingMergeTree(date, [sample_key], primary_key, index_granularity)
+		  * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column])
 		  * UnsortedMergeTree(date, index_granularity)	TODO Добавить описание ниже.
 		  */
 
@@ -381,9 +383,9 @@ MergeTrees is different in two ways:
 - it may be replicated and non-replicated;
 - it may do different actions on merge: nothing; sign collapse; sum; apply aggregete functions.
 
-So we have 8 combinations:
-    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree,
-    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree.
+So we have 12 combinations:
+    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, UnsortedMergeTree
+    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedUnsortedMergeTree
 
 In most of cases, you need MergeTree or ReplicatedMergeTree.
 
@@ -415,6 +417,8 @@ For Collapsing mode, last parameter is name of sign column - special column that
 
 For Summing mode, last parameter is optional list of columns to sum while merge. List is passed in round brackets, like (PageViews, Cost).
 If this parameter is omitted, storage will sum all numeric columns except columns participated in primary key.
+
+For Replacing mode, last parameter is optional name of 'version' column. While merging, for all rows with same primary key, only one row is selected: last row, if version column was not specified, or last row with maximum version value, if specified.
 
 
 Examples:
@@ -452,6 +456,8 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 			merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 		else if (name_part == "Unsorted")
 			merging_params.mode = MergeTreeData::MergingParams::Unsorted;
+		else if (name_part == "Replacing")
+			merging_params.mode = MergeTreeData::MergingParams::Replacing;
 		else if (!name_part.empty())
 			throw Exception("Unknown storage " + name + verbose_help, ErrorCodes::UNKNOWN_STORAGE);
 
@@ -485,6 +491,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 		}
 
 		if (merging_params.mode != MergeTreeData::MergingParams::Summing
+			&& merging_params.mode != MergeTreeData::MergingParams::Replacing
 			&& merging_params.mode != MergeTreeData::MergingParams::Unsorted
 			&& args.size() != num_additional_params + 3
 			&& args.size() != num_additional_params + 4)
@@ -511,7 +518,8 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
 
-		if (merging_params.mode == MergeTreeData::MergingParams::Summing
+		if ((merging_params.mode == MergeTreeData::MergingParams::Summing
+				|| merging_params.mode == MergeTreeData::MergingParams::Replacing)
 			&& args.size() != num_additional_params + 3
 			&& args.size() != num_additional_params + 4
 			&& args.size() != num_additional_params + 5)
@@ -527,8 +535,12 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				"\nname of column with date,"
 				"\n[sampling element of primary key],"
 				"\nprimary key expression,"
-				"\nindex granularity,"
-				"\n[list of columns to sum]\n";
+				"\nindex granularity,";
+
+			if (merging_params.mode == MergeTreeData::MergingParams::Summing)
+				params += "\n[list of columns to sum]\n";
+			else
+				params += "\n[version]\n";
 
 			throw Exception("Storage " + name + " requires "
 				+ toString(num_additional_params + 3) + " or "
@@ -575,6 +587,19 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				throw Exception(String("Sign column name must be an unquoted string") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
 
 			args.pop_back();
+		}
+		else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
+		{
+			/// Если последний элемент - не index granularity (литерал), то это - имя столбца-версии.
+			if (!typeid_cast<const ASTLiteral *>(&*args.back()))
+			{
+				if (auto ast = typeid_cast<ASTIdentifier *>(&*args.back()))
+					merging_params.version_column = ast->name;
+				else
+					throw Exception(String("Version column name must be an unquoted string") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+
+				args.pop_back();
+			}
 		}
 		else if (merging_params.mode == MergeTreeData::MergingParams::Summing)
 		{

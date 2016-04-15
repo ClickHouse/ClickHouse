@@ -83,7 +83,7 @@ private:
 	template<class TSortCursor>
 	void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
-	/// Вставить в результат строки для текущего идентификатора "визита".
+	/// Вставить в результат строки для текущего первичного ключа.
 	void insertRows(ColumnPlainPtrs & merged_columns, size_t & merged_rows, bool last_in_stream = false);
 
 	void reportIncorrectData();

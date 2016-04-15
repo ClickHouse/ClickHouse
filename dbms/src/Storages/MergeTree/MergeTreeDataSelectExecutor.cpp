@@ -29,6 +29,7 @@
 #include <DB/DataStreams/CreatingSetsBlockInputStream.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
 #include <DB/DataStreams/SummingSortedBlockInputStream.h>
+#include <DB/DataStreams/ReplacingSortedBlockInputStream.h>
 #include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeDate.h>
@@ -834,8 +835,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 				merged = new AggregatingSortedBlockInputStream(to_merge, data.getSortDescription(), max_block_size);
 				break;
 
-			case MergeTreeData::MergingParams::Replacing:	/// TODO
-				merged = new MergingSortedBlockInputStream(to_merge, data.getSortDescription(), max_block_size);
+			case MergeTreeData::MergingParams::Replacing:	/// TODO Сделать ReplacingFinalBlockInputStream
+				merged = new ReplacingSortedBlockInputStream(to_merge,
+					data.getSortDescription(), data.merging_params.version_column, max_block_size);
 				break;
 
 			case MergeTreeData::MergingParams::Unsorted:

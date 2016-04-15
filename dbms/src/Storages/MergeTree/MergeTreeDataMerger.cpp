@@ -9,6 +9,7 @@
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
 #include <DB/DataStreams/SummingSortedBlockInputStream.h>
+#include <DB/DataStreams/ReplacingSortedBlockInputStream.h>
 #include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
@@ -438,9 +439,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
-		case MergeTreeData::MergingParams::Replacing:	/// TODO
-			merged_stream = std::make_unique<MergingSortedBlockInputStream>(
-				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+		case MergeTreeData::MergingParams::Replacing:
+			merged_stream = std::make_unique<ReplacingSortedBlockInputStream>(
+				src_streams, data.getSortDescription(), data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::MergingParams::Unsorted:
@@ -698,9 +699,9 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
-		case MergeTreeData::MergingParams::Replacing: 	/// TODO
-			merged_stream = std::make_unique<MergingSortedBlockInputStream>(
-				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+		case MergeTreeData::MergingParams::Replacing:
+			merged_stream = std::make_unique<ReplacingSortedBlockInputStream>(
+				src_streams, data.getSortDescription(), data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::MergingParams::Unsorted:

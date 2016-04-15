@@ -151,7 +151,7 @@ void CollapsingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, s
 
 		if (key_differs)
 		{
-			/// Запишем данные для предыдущего визита.
+			/// Запишем данные для предыдущего первичного ключа.
 			insertRows(merged_columns, merged_rows);
 
 			current_key.swap(next_key);
@@ -193,7 +193,7 @@ void CollapsingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, s
 		}
 	}
 
-	/// Запишем данные для последнего визита.
+	/// Запишем данные для последнего первичного ключа.
 	insertRows(merged_columns, merged_rows, true);
 
 	finished = true;
