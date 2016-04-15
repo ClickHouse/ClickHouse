@@ -74,7 +74,7 @@ public:
 	  *
 	  * При попытке чтения после конца, следует кидать исключение.
 	  */
-	bool eof()
+	bool ALWAYS_INLINE eof()
 	{
 		return !hasPendingData() && !next();
 	}

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/Core/Defines.h>
 #include <algorithm>
 
 
@@ -53,7 +54,7 @@ public:
 
 	/** Конструктор принимает диапазон памяти, который следует использовать под буфер.
 	  * offset - начальное место курсора. ReadBuffer должен установить его в конец диапазона, а WriteBuffer - в начало.
-	  */ 
+	  */
 	BufferBase(Position ptr, size_t size, size_t offset)
 		: internal_buffer(ptr, ptr + size), working_buffer(ptr, ptr + size), pos(ptr + offset),	bytes(0) {}
 
@@ -69,7 +70,7 @@ public:
 
 	/// получить часть буфера, из которого можно читать / в который можно писать данные
 	inline Buffer & buffer() { return working_buffer; }
-	
+
 	/// получить (для чтения и изменения) позицию в буфере
 	inline Position & position() { return pos; };
 
@@ -83,7 +84,7 @@ public:
 	}
 
 	/** Проверить, есть ли данные в буфере. */
-	bool hasPendingData() const
+	bool ALWAYS_INLINE hasPendingData() const
 	{
 		return pos != working_buffer.end();
 	}
@@ -104,7 +105,7 @@ protected:
 
 	/** Сколько байт было прочитано/записано, не считая тех, что сейчас в буфере.
 	  * (считая те, что были уже использованы и "удалены" из буфера)
-	  */ 
+	  */
 	size_t bytes;
 };
 

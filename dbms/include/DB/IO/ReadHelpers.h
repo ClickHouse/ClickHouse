@@ -73,7 +73,18 @@ inline char unhex(char c)
 
 /// Эти функции находятся в VarInt.h
 /// inline void throwReadAfterEOF()
-/// inline void readChar(char & x, ReadBuffer & buf)
+
+
+inline void readChar(char & x, ReadBuffer & buf)
+{
+	if (!buf.eof())
+	{
+		x = *buf.position();
+		++buf.position();
+	}
+	else
+		throwReadAfterEOF();
+}
 
 
 /// Чтение POD-типа в native формате

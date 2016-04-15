@@ -189,15 +189,21 @@ inline void throwReadAfterEOF()
 	throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 }
 
-inline void readChar(char & x, ReadBuffer & buf)
+inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 {
-	if (!buf.eof())
+	x = 0;
+	for (size_t i = 0; i < 9; ++i)
 	{
-		x = *buf.position();
-		++buf.position();
+		if (istr.eof())
+			throwReadAfterEOF();
+
+		int byte = *istr.position();
+		++istr.position();
+		x |= (static_cast<uint64_t>(byte) & 0x7F) << (7 * i);
+
+		if (!(byte & 0x80))
+			return;
 	}
-	else
-		throwReadAfterEOF();
 }
 
 
@@ -327,55 +333,6 @@ inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
 	{
 		buf[0] &= 0x7F;
 		ostr.write(buf, 1);
-	}
-}
-
-
-inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
-{
-	char byte;
-
-	readChar(byte, istr);
-	x = static_cast<UInt64>(byte) & 0x7F;
-	if (byte & 0x80)
-	{
-		readChar(byte, istr);
-		x |= (static_cast<UInt64>(byte) & 0x7F) << 7;
-		if (byte & 0x80)
-		{
-			readChar(byte, istr);
-			x |= (static_cast<UInt64>(byte) & 0x7F) << 14;
-			if (byte & 0x80)
-			{
-				readChar(byte, istr);
-				x |= (static_cast<UInt64>(byte) & 0x7F) << 21;
-				if (byte & 0x80)
-				{
-					readChar(byte, istr);
-					x |= (static_cast<UInt64>(byte) & 0x7F) << 28;
-					if (byte & 0x80)
-					{
-						readChar(byte, istr);
-						x |= (static_cast<UInt64>(byte) & 0x7F) << 35;
-						if (byte & 0x80)
-						{
-							readChar(byte, istr);
-							x |= (static_cast<UInt64>(byte) & 0x7F) << 42;
-							if (byte & 0x80)
-							{
-								readChar(byte, istr);
-								x |= (static_cast<UInt64>(byte) & 0x7F) << 49;
-								if (byte & 0x80)
-								{
-									readChar(byte, istr);
-									x |= static_cast<UInt64>(byte) << 56;
-								}
-							}
-						}
-					}
-				}
-			}
-		}
 	}
 }
 
