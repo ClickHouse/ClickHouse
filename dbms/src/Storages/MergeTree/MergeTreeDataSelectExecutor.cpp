@@ -729,8 +729,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 {
 	const size_t max_marks_to_use_cache =
 		(settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
-	const size_t min_marks_for_read_task =
-		(settings.merge_tree_min_rows_for_concurrent_read + data.index_granularity - 1) / data.index_granularity;
 
 	size_t sum_marks = 0;
 	for (size_t i = 0; i < parts.size(); ++i)
