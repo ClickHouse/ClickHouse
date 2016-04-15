@@ -521,6 +521,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 		if (!data.merging_params.sign_column.empty())
 			column_names_to_read.push_back(data.merging_params.sign_column);
+		if (!data.merging_params.version_column.empty())
+			column_names_to_read.push_back(data.merging_params.version_column);
 
 		std::sort(column_names_to_read.begin(), column_names_to_read.end());
 		column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
