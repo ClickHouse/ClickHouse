@@ -28,6 +28,14 @@ add_library (dbms
 	include/DB/Functions/FunctionsString.h
 	include/DB/Functions/FunctionsRound.h
 	include/DB/Functions/FunctionsTransform.h
+	include/DB/Functions/Conditional/common.h
+	include/DB/Functions/Conditional/ArgsInfo.h
+	include/DB/Functions/Conditional/CondSource.h
+	include/DB/Functions/Conditional/NumericPerformer.h
+	include/DB/Functions/Conditional/NumericEvaluator.h
+	include/DB/Functions/Conditional/StringEvaluator.h
+	include/DB/Functions/Conditional/ArrayEvaluator.h
+	include/DB/Functions/Conditional/StringArrayEvaluator.h
 	include/DB/Functions/FunctionsConditional.h
 	include/DB/Functions/FunctionsArithmetic.h
 	include/DB/Functions/FunctionsConversion.h
@@ -43,6 +51,7 @@ add_library (dbms
 	include/DB/Functions/IFunction.h
 	include/DB/Functions/FunctionsFormatting.h
 	include/DB/Functions/NumberTraits.h
+	include/DB/Functions/DataTypeFromFieldTypeOrError.h
 	include/DB/TableFunctions/TableFunctionRemote.h
 	include/DB/TableFunctions/TableFunctionFactory.h
 	include/DB/TableFunctions/TableFunctionMerge.h
@@ -816,6 +825,11 @@ add_library (dbms
 	src/Functions/FunctionsMath.cpp
 	src/Functions/FunctionsMiscellaneous.cpp
 	src/Functions/FunctionsTransform.cpp
+	src/Functions/Conditional/ArgsInfo.cpp
+	src/Functions/Conditional/CondSource.cpp
+	src/Functions/Conditional/NumericPerformer.cpp
+	src/Functions/Conditional/StringEvaluator.cpp
+	src/Functions/Conditional/StringArrayEvaluator.cpp
 
 	src/AggregateFunctions/UniqCombinedBiasData.cpp
 	src/AggregateFunctions/AggregateFunctionFactory.cpp

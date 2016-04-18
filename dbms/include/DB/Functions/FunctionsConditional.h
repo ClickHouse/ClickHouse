@@ -11,7 +11,14 @@
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/NumberTraits.h>
+#include <DB/Functions/DataTypeFromFieldTypeOrError.h>
 
+/// The following includes are needed for the function multiIf.
+#include <DB/Functions/Conditional/common.h>
+#include <DB/Functions/Conditional/ArgsInfo.h>
+#include <DB/Functions/Conditional/NumericPerformer.h>
+#include <DB/Functions/Conditional/StringEvaluator.h>
+#include <DB/Functions/Conditional/StringArrayEvaluator.h>
 
 namespace DB
 {
@@ -809,26 +816,6 @@ struct StringArrayIfImpl
 	}
 };
 
-
-template <typename T>
-struct DataTypeFromFieldTypeOrError
-{
-	static DataTypePtr getDataType()
-	{
-		return new typename DataTypeFromFieldType<T>::Type;
-	}
-};
-
-template <>
-struct DataTypeFromFieldTypeOrError<NumberTraits::Error>
-{
-	static DataTypePtr getDataType()
-	{
-		return nullptr;
-	}
-};
-
-
 class FunctionIf : public IFunction
 {
 public:
@@ -1391,6 +1378,158 @@ public:
 			throw Exception("Illegal column " + cond_col->getName() + " of first argument of function " + getName()
 				+ ". Must be ColumnUInt8 or ColumnConstUInt8.",
 				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+
+/// Function multiIf, which generalizes the function if.
+///
+/// Syntax: multiIf(cond_1, then_1, ..., cond_N, then_N, else)
+/// where N >= 1.
+///
+/// For all 1 <= i <= N, "cond_i" has type UInt8.
+/// Types of all the branches "then_i" and "else" are either of the following:
+///    - numeric types for which there exists a common type;
+///    - dates;
+///    - dates with time;
+///    - strings;
+///    - arrays of such types.
+class FunctionMultiIf final : public IFunction
+{
+public:
+	static constexpr auto name = "multiIf";
+	static IFunction * create(const Context & context) { return new FunctionMultiIf; }
+
+private:
+	bool performTrivialCase(Block & block, const ColumnNumbers & args, size_t result)
+	{
+		size_t else_arg = Conditional::elseArg(args);
+		auto first_type_name = block.getByPosition(args[Conditional::firstThen()]).type->getName();
+
+		for (size_t i = Conditional::secondThen(); i < else_arg; i = Conditional::nextThen(i))
+		{
+			if (block.getByPosition(args[i]).type->getName() != first_type_name)
+				return false;
+		}
+
+		if (block.getByPosition(args.back()).type->getName() != first_type_name)
+			return false;
+
+		auto & res_col = block.getByPosition(result).column;
+
+		for (size_t i = Conditional::firstCond(); i < else_arg; i = Conditional::nextCond(i))
+		{
+			auto cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(&*block.getByPosition(args[i]).column);
+			if (!cond_const_col)
+				return false;
+
+			bool has_triggered_cond = cond_const_col->getData();
+			if (has_triggered_cond)
+			{
+				res_col = block.getByPosition(args[Conditional::thenFromCond(i)]).column;
+				return true;
+			}
+		}
+
+		res_col = block.getByPosition(args[else_arg]).column;
+		return true;
+	}
+
+public:
+	String getName() const override
+	{
+		return name;
+	}
+
+	DataTypePtr getReturnType(const DataTypes & args) const override
+	{
+		if (!Conditional::hasValidArgCount(args))
+			throw Exception{"Invalid number of arguments for function " + getName(),
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
+		/// Check conditions types.
+		for (size_t i = Conditional::firstCond(); i < Conditional::elseArg(args); i = Conditional::nextCond(i))
+		{
+			if (!typeid_cast<const DataTypeUInt8 *>(&*args[i]))
+				throw Exception{"Illegal type of argument " + toString(i) + " (condition) "
+					"of function " + getName() + ". Must be UInt8.",
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+		}
+
+		if (Conditional::hasArithmeticBranches(args))
+			return Conditional::getReturnTypeForArithmeticArgs(args);
+		else if (Conditional::hasArrayBranches(args))
+		{
+			/// NOTE Сообщения об ошибках будут относится к типам элементов массивов, что немного некорректно.
+			DataTypes new_args;
+			new_args.reserve(args.size());
+
+			auto push_branch_arg = [&args, &new_args](size_t i)
+			{
+				const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(args[i].get());
+				if (type_arr == nullptr)
+					throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+				new_args.push_back(type_arr->getNestedType());
+			};
+
+			for (size_t i = 0; i < Conditional::elseArg(args); ++i)
+			{
+				if (Conditional::isCond(i))
+					new_args.push_back(args[i]);
+				else
+					push_branch_arg(i);
+			}
+
+			push_branch_arg(Conditional::elseArg(args));
+
+			return new DataTypeArray{getReturnType(new_args)};
+		}
+		else if (!Conditional::hasIdenticalTypes(args))
+		{
+			if (Conditional::hasFixedStrings(args))
+			{
+				if (!Conditional::hasFixedStringsOfIdenticalLength(args))
+					throw Exception{"Branch (then, else) arguments of function " + getName() +
+						" have FixedString type and different sizes",
+						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+				const IDataType * data = args[Conditional::firstThen()].get();
+				const auto * fixed_str = typeid_cast<const DataTypeFixedString *>(data);
+
+				if (fixed_str == nullptr)
+					throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+
+				return new DataTypeFixedString{fixed_str->getN()};
+			}
+			else if (Conditional::hasStrings(args))
+				return new DataTypeString;
+			else
+				throw Exception{
+					"Incompatible branch (then, else) arguments for function " + getName(),
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+				};
+		}
+		else
+			return args[Conditional::firstThen()];
+	}
+
+	void execute(Block & block, const ColumnNumbers & args, size_t result) override
+	{
+		if (performTrivialCase(block, args, result))
+			return;
+
+		if (Conditional::NumericPerformer::perform(block, args, result))
+			return;
+
+		if (Conditional::StringEvaluator::perform(block, args, result))
+			return;
+
+		if (Conditional::StringArrayEvaluator::perform(block, args, result))
+			return;
+
+		throw Exception{"One or more branch (then, else) columns of function have"
+			" illegal or incompatible types " + getName(),
+			ErrorCodes::ILLEGAL_COLUMN};
 	}
 };
 
