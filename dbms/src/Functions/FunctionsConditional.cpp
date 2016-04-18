@@ -7,6 +7,7 @@ namespace DB
 void registerFunctionsConditional(FunctionFactory & factory)
 {
 	factory.registerFunction<FunctionIf>();
+	factory.registerFunction<FunctionMultiIf>();
 }
 
 }
