@@ -894,7 +894,7 @@ target_link_libraries(dbms
 	libboost_thread.a
 	libboost_system.a
 	librt.a
-	mongoclient
+	libmongoclient.a
 	libboost_regex.a
 	PocoData
 	PocoDataODBC
