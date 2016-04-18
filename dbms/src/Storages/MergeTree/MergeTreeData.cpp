@@ -371,6 +371,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
 void MergeTreeData::clearOldTemporaryDirectories()
 {
+	/// Если метод уже вызван из другого потока, то можно ничего не делать.
+	std::unique_lock<std::mutex> lock(clear_old_temporary_directories_mutex, std::defer_lock);
+	if (!lock.try_lock())
+		return;
+
 	/// Удаляем временные директории старше суток.
 	Poco::DirectoryIterator end;
 	for (Poco::DirectoryIterator it{full_path}; it != end; ++it)
@@ -379,10 +384,17 @@ void MergeTreeData::clearOldTemporaryDirectories()
 		{
 			Poco::File tmp_dir(full_path + it.name());
 
-			if (tmp_dir.isDirectory() && tmp_dir.getLastModified().epochTime() + 86400 < time(0))
+			try
 			{
-				LOG_WARNING(log, "Removing temporary directory " << full_path << it.name());
-				Poco::File(full_path + it.name()).remove(true);
+				if (tmp_dir.isDirectory() && tmp_dir.getLastModified().epochTime() + 86400 < time(0))
+				{
+					LOG_WARNING(log, "Removing temporary directory " << full_path << it.name());
+					Poco::File(full_path + it.name()).remove(true);
+				}
+			}
+			catch (const Poco::FileNotFoundException &)
+			{
+				/// Ничего не делаем, если файл уже удалён.
 			}
 		}
 	}

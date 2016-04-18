@@ -494,6 +494,8 @@ private:
 
 	/// Используется, чтобы не выполнять одновременно функцию grabOldParts.
 	std::mutex grab_old_parts_mutex;
+	/// То же самое для clearOldTemporaryDirectories.
+	std::mutex clear_old_temporary_directories_mutex;
 
 	/** Для каждого шарда множество шардированных кусков.
 	  */
