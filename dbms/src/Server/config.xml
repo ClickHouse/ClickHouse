@@ -37,7 +37,7 @@
 	<keep_alive_timeout>3</keep_alive_timeout>
 
 	<!-- Максимальное количество одновременно выполняющихся запросов. -->
-	<max_concurrent_queries>500</max_concurrent_queries>
+	<max_concurrent_queries>100</max_concurrent_queries>
 
 	<!-- Размер кэша разжатых блоков, используемого в движках семейства MergeTree.
 		 Задаётся в байтах. Кэш один общий на весь сервер. Память выделяется и используется по мере необходимости.
