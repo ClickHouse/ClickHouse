@@ -129,7 +129,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, Column
 		{
 #if defined(__x86_64__)
 			/// Оптимистичная ветка, в которой возможно более эффективное копирование.
-			if (offset + 16 * UNROLL_TIMES <= data.capacity() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
+			if (offset + 16 * UNROLL_TIMES <= data.allocated_size() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
 			{
 				const __m128i * sse_src_pos = reinterpret_cast<const __m128i *>(istr.position());
 				const __m128i * sse_src_end = sse_src_pos + (size + (16 * UNROLL_TIMES - 1)) / 16 / UNROLL_TIMES * UNROLL_TIMES;
