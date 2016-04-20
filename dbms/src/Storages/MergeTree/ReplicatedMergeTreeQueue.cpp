@@ -263,8 +263,8 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 		/// ZK содержит ограничение на количество или суммарный размер операций в multi-запросе.
 		/// При превышении ограничения просто разрывается соединение.
 		/// Константа выбрана с запасом. Ограничение по-умолчанию в ZK - 1 МБ данных суммарно.
-		/// Средний размер значения узла в данном случае, меньше килобайта.
-		static constexpr auto MAX_MULTI_OPS = 1000;
+		/// Средний размер значения узла в данном случае, меньше десяти килобайт.
+		static constexpr auto MAX_MULTI_OPS = 100;
 
 		for (size_t i = 0, size = log_entries.size(); i < size; i += MAX_MULTI_OPS)
 		{
