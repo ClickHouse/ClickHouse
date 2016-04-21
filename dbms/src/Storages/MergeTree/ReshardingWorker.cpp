@@ -525,6 +525,11 @@ void ReshardingWorker::perform(const Strings & job_nodes)
 		{
 			perform(job_descriptor, child);
 		}
+		catch (const zkutil::KeeperException & ex)
+		{
+			/// We shall try again to perform this job.
+			throw;
+		}
 		catch (const Exception & ex)
 		{
 			/// If the job has been cancelled, either locally or remotely, we keep it
@@ -677,6 +682,24 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
 			waitForCommitCompletion();
 		}
 	}
+	catch (const zkutil::KeeperException & ex)
+	{
+		/// We are experiencing problems with ZooKeeper. Since we don't have any
+		/// means to communicate with other nodes, we merely perform retries until
+		/// ZooKeeper has come back online.
+		try
+		{
+			softCleanup();
+			/// Wake up the tracker thread.
+			event->set();
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+
+		throw;
+	}
 	catch (const Exception & ex)
 	{
 		try
@@ -698,7 +721,7 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
 			else if (ex.code() == ErrorCodes::RESHARDING_REMOTE_NODE_UNAVAILABLE)
 			{
 				/// A remote performer has gone offline or we are experiencing network problems.
-				/// Put the current distributed job on hold. Also jab the job scheduler
+				/// Put the current distributed job on hold. Also wake up the tracker thread
 				/// so that it will come accross this distributed job even if no new jobs
 				/// are submitted.
 				if (current_job.isCoordinated())
@@ -722,7 +745,7 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
 			else if (ex.code() == ErrorCodes::RESHARDING_DISTRIBUTED_JOB_ON_HOLD)
 			{
 				/// The current distributed job is on hold and one or more required performers
-				/// have not gone online yet. Jab the job scheduler so that it will come
+				/// have not gone online yet. Wake up the tracker thread so that it will come
 				/// accross this distributed job even if no new jobs are submitted.
 				setStatus(current_job.coordinator_id, getFQDNOrHostName(), STATUS_ON_HOLD,
 					ex.message());
