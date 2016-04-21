@@ -204,7 +204,7 @@ public:
 		: data{data_}, offsets{offsets_}
 	{
 		offsets.resize(offsets_size_);
-		data.resize(data_size_);
+		data.reserve(data_size_);
 	}
 
 	ArraySink(const ArraySink &) = delete;
