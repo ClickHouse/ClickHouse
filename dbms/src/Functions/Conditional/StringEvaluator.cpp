@@ -26,11 +26,11 @@ namespace Conditional
 namespace
 {
 
-enum class StringType : UInt8
+struct StringType
 {
-	VARIABLE = 0,
-	FIXED,
-	CONSTANT
+	static constexpr UInt64 VARIABLE = UINT64_C(1) << 0;
+	static constexpr UInt64 FIXED = UINT64_C(1) << 1;
+	static constexpr UInt64 CONSTANT = UINT64_C(1) << 2;
 };
 
 struct StringChunk
@@ -38,7 +38,7 @@ struct StringChunk
 	using value_type = unsigned char;
 	const value_type * pos_begin;
 	const value_type * pos_end;
-	StringType type;
+	UInt64 type;
 };
 
 /// This class provides access to the values of a string branch
@@ -47,22 +47,23 @@ class StringSource
 {
 public:
 	virtual ~StringSource() {}
-	virtual StringType getType() const = 0;
+	virtual UInt64 getType() const = 0;
 	virtual void next() = 0;
 	virtual StringChunk get() const = 0;
+	virtual size_t getSize() const { throw Exception{"Unsupported method", ErrorCodes::LOGICAL_ERROR}; }
 	virtual size_t getDataSize() const = 0;
 };
 
 using StringSourcePtr = std::unique_ptr<StringSource>;
 using StringSources = std::vector<StringSourcePtr>;
 
-
 /// Implementation of StringSource specific to constant strings.
 class ConstStringSource final : public StringSource
 {
 public:
-	ConstStringSource(const std::string & str_)
-		: str{str_}
+	ConstStringSource(const std::string & str_, size_t size_)
+		: str{str_}, size{size_},
+		type{static_cast<UInt64>(StringType::CONSTANT | ((size > 0) ? StringType::FIXED : 0))}
 	{
 	}
 
@@ -72,9 +73,9 @@ public:
 	ConstStringSource(ConstStringSource &&) = default;
 	ConstStringSource & operator=(ConstStringSource &&) = default;
 
-	StringType getType() const override
+	UInt64 getType() const override
 	{
-		return StringType::CONSTANT;
+		return type;
 	}
 
 	void next() override
@@ -86,8 +87,13 @@ public:
 		StringChunk chunk;
 		chunk.pos_begin = reinterpret_cast<const unsigned char *>(str.data());
 		chunk.pos_end = chunk.pos_begin + str.size();
-		chunk.type = StringType::CONSTANT;
+		chunk.type = type;
 		return chunk;
+	}
+
+	inline size_t getSize() const override
+	{
+		return size;
 	}
 
 	inline size_t getDataSize() const override
@@ -97,6 +103,8 @@ public:
 
 private:
 	const std::string & str;
+	size_t size;
+	UInt64 type;
 };
 
 /// Implementation of StringSource specific to fixed strings.
@@ -114,7 +122,7 @@ public:
 	FixedStringSource(FixedStringSource &&) = default;
 	FixedStringSource & operator=(FixedStringSource &&) = default;
 
-	StringType getType() const override
+	UInt64 getType() const override
 	{
 		return StringType::FIXED;
 	}
@@ -166,7 +174,7 @@ public:
 	VarStringSource(VarStringSource &&) = default;
 	VarStringSource & operator=(VarStringSource &&) = default;
 
-	StringType getType() const override
+	UInt64 getType() const override
 	{
 		return StringType::VARIABLE;
 	}
@@ -217,7 +225,7 @@ public:
 	FixedStringSink(ColumnFixedString::Chars_t & data_, size_t size_, size_t data_size_)
 		: data{data_}, size{size_}
 	{
-		data.resize(data_size_);
+		data.reserve(data_size_);
 	}
 
 	FixedStringSink(const FixedStringSink &) = delete;
@@ -228,10 +236,11 @@ public:
 
 	void store(const StringChunk & chunk) override
 	{
-		if (chunk.type != StringType::FIXED)
+		if (!(chunk.type & StringType::FIXED))
 			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 
 		size_t size_to_write = chunk.pos_end - chunk.pos_begin;
+		data.resize(data.size() + size_to_write);
 		memcpySmallAllowReadWriteOverflow15(&data[i * size], chunk.pos_begin,
 			size_to_write * sizeof(StringChunk::value_type));
 		++i;
@@ -264,7 +273,7 @@ public:
 
 	void store(const StringChunk & chunk) override
 	{
-		if (chunk.type == StringType::VARIABLE)
+		if (chunk.type & StringType::VARIABLE)
 		{
 			size_t size_to_write = chunk.pos_end - chunk.pos_begin;
 			data.resize(data.size() + size_to_write);
@@ -272,7 +281,15 @@ public:
 				size_to_write * sizeof(StringChunk::value_type));
 			prev_offset += size_to_write;
 		}
-		else if (chunk.type == StringType::FIXED)
+		else if (chunk.type & StringType::CONSTANT)
+		{
+			size_t size_to_write = chunk.pos_end - chunk.pos_begin + 1;
+			data.resize(data.size() + size_to_write);
+			memcpySmallAllowReadWriteOverflow15(&data[prev_offset], chunk.pos_begin,
+				size_to_write * sizeof(StringChunk::value_type));
+			prev_offset += size_to_write;
+		}
+		else if (chunk.type & StringType::FIXED)
 		{
 			size_t size_to_write = chunk.pos_end - chunk.pos_begin;
 			data.resize(data.size() + size_to_write + 1);
@@ -280,14 +297,6 @@ public:
 				size_to_write * sizeof(StringChunk::value_type));
 			data.back() = 0;
 			prev_offset += size_to_write + 1;
-		}
-		else if (chunk.type == StringType::CONSTANT)
-		{
-			size_t size_to_write = chunk.pos_end - chunk.pos_begin + 1;
-			data.resize(data.size() + size_to_write);
-			memcpySmallAllowReadWriteOverflow15(&data[prev_offset], chunk.pos_begin,
-				size_to_write * sizeof(StringChunk::value_type));
-			prev_offset += size_to_write;
 		}
 		else
 			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
@@ -334,7 +343,19 @@ bool createStringSources(StringSources & sources, const Block & block,
 			source = std::make_unique<FixedStringSource>(fixed_col->getChars(),
 				fixed_col->getN());
 		else if (const_col != nullptr)
-			source = std::make_unique<ConstStringSource>(const_col->getData());
+		{
+			/// If we actually have a fixed string, get its capacity.
+			size_t size = 0;
+			const IDataType * data_type = const_col->getDataType().get();
+			if (data_type != nullptr)
+			{
+				const DataTypeFixedString * fixed = typeid_cast<const DataTypeFixedString *>(data_type);
+				if (fixed != nullptr)
+					size = fixed->getN();
+			}
+
+			source = std::make_unique<ConstStringSource>(const_col->getData(), size);
+		}
 		else
 			return false;
 
@@ -360,11 +381,11 @@ size_t computeResultSize(const StringSources & sources, size_t row_count)
 
 	for (const auto & source : sources)
 	{
-		if (source->getType() == StringType::VARIABLE)
+		if (source->getType() & StringType::VARIABLE)
 			max_var = std::max(max_var, source->getDataSize());
-		else if (source->getType() == StringType::FIXED)
+		else if (source->getType() & StringType::FIXED)
 			max_fixed = std::max(max_fixed, source->getDataSize());
-		else if (source->getType() == StringType::CONSTANT)
+		else if (source->getType() & StringType::CONSTANT)
 			max_const = std::max(max_const, source->getDataSize());
 		else
 			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
@@ -438,16 +459,15 @@ private:
 	static FixedStringSink createSink(Block & block, const StringSources & sources,
 		size_t result, size_t row_count)
 	{
-		size_t first_size = static_cast<const FixedStringSource &>(*sources[0]).getSize();
+		size_t first_size = sources[0]->getSize();
 		for (size_t i = 1; i < sources.size(); ++i)
 		{
-			auto & fixed_source = static_cast<const FixedStringSource &>(*sources[i]);
-			if (fixed_source.getSize() != first_size)
+			if (sources[i]->getSize() != first_size)
 				throw Exception{"All the columns have FixedString type but one or"
 					" more columns have various sizes.", ErrorCodes::ILLEGAL_COLUMN};
 		}
 
-		size_t first_data_size = static_cast<const FixedStringSource &>(*sources[0]).getDataSize();
+		size_t first_data_size = sources[0]->getDataSize();
 
 		ColumnFixedString * col_res = new ColumnFixedString{first_size};
 		block.getByPosition(result).column = col_res;
@@ -496,7 +516,7 @@ bool StringEvaluator::perform(Block & block, const ColumnNumbers & args, size_t 
 	bool has_only_fixed_sources = true;
 	for (const auto & source : sources)
 	{
-		if (source->getType() != StringType::FIXED)
+		if (!(source->getType() & StringType::FIXED))
 		{
 			has_only_fixed_sources = false;
 			break;
