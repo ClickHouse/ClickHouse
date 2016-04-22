@@ -36,6 +36,17 @@ public:
 		fill_count.set();
 	}
 
+	template <class ... Args>
+	void emplace(Args && ... args)
+	{
+		empty_count.wait();
+		{
+			Poco::ScopedLock<Poco::Mutex> lock(mutex);
+			queue.emplace(std::forward<Args>(args)...);
+		}
+		fill_count.set();
+	}
+
 	void pop(T & x)
 	{
 		fill_count.wait();
