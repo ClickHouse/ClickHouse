@@ -28,6 +28,11 @@ public:
 		return data_array[row];
 	}
 
+	inline UInt8 getSize() const
+	{
+		return data_array.size();
+	}
+
 private:
 	static const ColumnPtr initMaterializedCol(const Block & block, const ColumnNumbers & args, size_t i);
 

@@ -385,16 +385,6 @@ size_t computeResultSize(const StringSources & sources, size_t row_count)
 		throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 }
 
-size_t getRowCount(const Block & block, const ColumnNumbers & args)
-{
-	const IColumn * col = &*block.getByPosition(args[0]).column;
-	const auto * cond_col = typeid_cast<const ColumnVector<UInt8> *>(col);
-	if (cond_col == nullptr)
-		throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-	const PaddedPODArray<UInt8> & cond_data = cond_col->getData();
-	return cond_data.size();
-}
-
 /// Updates a fixed or variable string sink.
 template <typename SinkType>
 class SinkUpdater
@@ -500,8 +490,8 @@ bool StringEvaluator::perform(Block & block, const ColumnNumbers & args, size_t 
 	if (!createStringSources(sources, block, args))
 		return false;
 
-	size_t row_count = getRowCount(block, args);
 	const CondSources conds = createConds(block, args);
+	size_t row_count = conds[0].getSize();
 
 	bool has_only_fixed_sources = true;
 	for (const auto & source : sources)

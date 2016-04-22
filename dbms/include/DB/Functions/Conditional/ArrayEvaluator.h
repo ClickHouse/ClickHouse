@@ -288,8 +288,8 @@ class ArrayEvaluator final
 public:
 	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result)
 	{
-		size_t row_count = getRowCount(block, args);
 		const CondSources conds = createConds(block, args);
+		size_t row_count = conds[0].getSize();
 		IArraySources<TResult> sources = createSources(block, args, branches);
 		ArraySink<TResult> sink = createSink(block, sources, result, row_count);
 
@@ -383,16 +383,6 @@ private:
 
 		return ArraySink<TResult>{col_res_vec->getData(), col_res_array->getOffsets(),
 			data_size, offsets_size};
-	}
-
-	static size_t getRowCount(const Block & block, const ColumnNumbers & args)
-	{
-		const IColumn * col = &*block.getByPosition(args[0]).column;
-		const auto * cond_col = typeid_cast<const ColumnVector<UInt8> *>(col);
-		if (cond_col == nullptr)
-			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-		const PaddedPODArray<UInt8> & cond_data = cond_col->getData();
-		return cond_data.size();
 	}
 };
 

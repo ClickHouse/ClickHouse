@@ -366,16 +366,6 @@ VarStringArraySink createSink(Block & block, const StringArraySources & sources,
 		var_col_res->getOffsets(), data_size, offsets_size, row_count};
 }
 
-size_t getRowCount(const Block & block, const ColumnNumbers & args)
-{
-	const IColumn * col = &*block.getByPosition(args[0]).column;
-	const auto * cond_col = typeid_cast<const ColumnVector<UInt8> *>(col);
-	if (cond_col == nullptr)
-		throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-	const PaddedPODArray<UInt8> & cond_data = cond_col->getData();
-	return cond_data.size();
-}
-
 }
 
 /// Process a multiIf.
@@ -385,8 +375,8 @@ bool StringArrayEvaluator::perform(Block & block, const ColumnNumbers & args, si
 	if (!createStringArraySources(sources, block, args))
 		return false;
 
-	size_t row_count = getRowCount(block, args);
 	const CondSources conds = createConds(block, args);
+	size_t row_count = conds[0].getSize();
 	VarStringArraySink sink = createSink(block, sources, result, row_count);
 
 	for (size_t cur_row = 0; cur_row < row_count; ++cur_row)

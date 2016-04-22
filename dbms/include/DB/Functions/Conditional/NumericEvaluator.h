@@ -137,7 +137,7 @@ public:
 	{
 		const CondSources conds = createConds(block, args);
 		const NumericSources<TResult> sources = createNumericSources(block, args, branches);
-		size_t row_count = getRowCount(block, args);
+		size_t row_count = conds[0].getSize();
 		PaddedPODArray<TResult> & res = createSink(block, result, row_count);
 
 		for (size_t cur_row = 0; cur_row < row_count; ++cur_row)
@@ -208,16 +208,6 @@ private:
 		}
 
 		return sources;
-	}
-
-	static size_t getRowCount(const Block & block, const ColumnNumbers & args)
-	{
-		const IColumn * col = &*block.getByPosition(args[0]).column;
-		const auto * cond_col = typeid_cast<const ColumnVector<UInt8> *>(col);
-		if (cond_col == nullptr)
-			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-		const PaddedPODArray<UInt8> & cond_data = cond_col->getData();
-		return cond_data.size();
 	}
 };
 
