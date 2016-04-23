@@ -88,6 +88,15 @@
 	M(SelectedRanges) \
 	M(SelectedMarks) \
 	\
+	M(MergedRows) \
+	M(MergedUncompressedBytes) \
+	\
+	M(MergeTreeDataWriterRows) \
+	M(MergeTreeDataWriterUncompressedBytes) \
+	M(MergeTreeDataWriterCompressedBytes) \
+	M(MergeTreeDataWriterBlocks) \
+	M(MergeTreeDataWriterBlocksAlreadySorted) \
+	\
 	M(END)
 
 namespace ProfileEvents

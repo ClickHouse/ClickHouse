@@ -104,6 +104,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 
 	SortDescription sort_descr = data.getSortDescription();
 
+	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocks);
+
 	/// Сортируем.
 	IColumn::Permutation * perm_ptr = nullptr;
 	IColumn::Permutation perm;
@@ -114,6 +116,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 			stableGetPermutation(block, sort_descr, perm);
 			perm_ptr = &perm;
 		}
+		else
+			ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
 	}
 
 	NamesAndTypesList columns = data.getColumnsList().filter(block.getColumnsList().getNames());
@@ -135,6 +139,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	new_data_part->checksums = checksums;
 	new_data_part->index.swap(out.getIndex());
 	new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(part_tmp_path);
+
+	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rowsInFirstColumn());
+	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
+	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->size_in_bytes);
 
 	return new_data_part;
 }

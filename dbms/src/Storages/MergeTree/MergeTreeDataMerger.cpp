@@ -397,11 +397,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 			parts[i], ranges, false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
 
 		input->setProgressCallback([&merge_entry, rows_total] (const Progress & value)
-			{
-				const auto new_rows_read = __sync_add_and_fetch(&merge_entry->rows_read, value.rows);
-				merge_entry->progress = static_cast<Float64>(new_rows_read) / rows_total;
-				__sync_add_and_fetch(&merge_entry->bytes_read_uncompressed, value.bytes);
-			});
+		{
+			const auto new_rows_read = __sync_add_and_fetch(&merge_entry->rows_read, value.rows);
+			merge_entry->progress = static_cast<Float64>(new_rows_read) / rows_total;
+			__sync_add_and_fetch(&merge_entry->bytes_read_uncompressed, value.bytes);
+
+			ProfileEvents::increment(ProfileEvents::MergedRows, value.rows);
+			ProfileEvents::increment(ProfileEvents::MergedUncompressedBytes, value.bytes);
+		});
 
 		if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 			src_streams.push_back(new MaterializingBlockInputStream{
