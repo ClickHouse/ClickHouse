@@ -47,7 +47,7 @@ int main(int argc, char ** argv)
 			"./", "default", "test",
 			names_and_types, {}, {}, ColumnDefaults{},
 			context, primary_expr, "d",
-			nullptr, 101, MergeTreeData::Ordinary, {}, {}, {});
+			nullptr, 101, MergeTreeData::MergingParams::Ordinary, {});
 
 		/// пишем в неё
 		{
