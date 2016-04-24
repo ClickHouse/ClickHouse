@@ -24,8 +24,10 @@ UInt32 GraphiteRollupSortedBlockInputStream::selectPrecision(const Graphite::Ret
 {
 	/// Рассчитываем на то, что time_t - знаковый тип.
 	for (const auto & retention : retentions)
-		if (current_time - time >= static_cast<time_t>(retention.age))
+	{
+		if (time_of_merge - time >= static_cast<time_t>(retention.age))
 			return retention.precision;
+	}
 
 	/// Без огрубления.
 	return 1;
@@ -37,7 +39,7 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
 	if (finished)
 		return Block();
 
-	if (children.size() == 1)
+	if (children.size() == 1)	/// TODO Возможность прореживать даже один источник без слияния.
 		return children[0]->read();
 
 	Block merged_block;
@@ -88,8 +90,8 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 	{
 		TSortCursor current = queue.top();
 
-		next_path = current->sort_columns[path_column_num]->getDataAt(current->pos);
-		next_time = current->sort_columns[time_column_num]->get64(current->pos);
+		next_path = current->all_columns[path_column_num]->getDataAt(current->pos);
+		next_time = current->all_columns[time_column_num]->get64(current->pos);
 
 		bool is_new_key;
 		bool was_first = is_first;
@@ -162,7 +164,7 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 		}
 
 		accumulateRow(current);
-		current_max_version = std::max(current_max_version, current->sort_columns[version_column_num]->get64(current->pos));
+		current_max_version = std::max(current_max_version, current->all_columns[version_column_num]->get64(current->pos));
 
 		if (!current->isLast())
 		{

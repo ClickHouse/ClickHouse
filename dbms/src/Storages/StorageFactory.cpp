@@ -184,6 +184,10 @@ static void setGraphitePatternsFromConfig(const Context & context,
 {
 	const Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 
+	if (!config.has(config_element))
+		throw Exception("No '" + config_element + "' element in configuration file",
+			ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
 	params.path_column_name = config.getString(config_element + ".path_column_name", "Path");
 	params.time_column_name = config.getString(config_element + ".time_column_name", "Time");
 	params.value_column_name = config.getString(config_element + ".value_column_name", "Value");
@@ -571,6 +575,8 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 			merging_params.mode = MergeTreeData::MergingParams::Unsorted;
 		else if (name_part == "Replacing")
 			merging_params.mode = MergeTreeData::MergingParams::Replacing;
+		else if (name_part == "Graphite")
+			merging_params.mode = MergeTreeData::MergingParams::Graphite;
 		else if (!name_part.empty())
 			throw Exception("Unknown storage " + name + verbose_help, ErrorCodes::UNKNOWN_STORAGE);
 
@@ -584,7 +590,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 		/// NOTE Слегка запутанно.
 		size_t num_additional_params = (replicated ? 2 : 0)
 			+ (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
-			+ (merging_params.mode == MergeTreeData::MergingParams::Graphite) * 4;
+			+ (merging_params.mode == MergeTreeData::MergingParams::Graphite);
 
 		if (merging_params.mode == MergeTreeData::MergingParams::Unsorted
 			&& args.size() != num_additional_params + 2)
@@ -734,6 +740,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 			else
 				throw Exception(String("Last parameter of GraphiteMergeTree must be name (in single quotes) of element in configuration file with Graphite options") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
 
+			args.pop_back();
 			setGraphitePatternsFromConfig(context, graphite_config_name, merging_params.graphite_params);
 		}
 
