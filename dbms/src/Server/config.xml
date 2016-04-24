@@ -186,4 +186,35 @@
 		<max_suspicious_broken_parts>5</max_suspicious_broken_parts>
 	</merge_tree>
 	-->
+
+	<!-- Пример параметров для движка GraphiteMergeTree -->
+	<graphite_rollup_example>
+		<pattern>
+			<regexp>click_cost</regexp>
+			<function>any</function>
+			<retention>
+				<age>0</age>
+				<precision>3600</precision>
+			</retention>
+			<retention>
+				<age>86400</age>
+				<precision>60</precision>
+			</retention>
+		</pattern>
+		<default>
+			<function>max</function>
+			<retention>
+				<age>0</age>
+				<precision>60</precision>
+			</retention>
+			<retention>
+				<age>3600</age>
+				<precision>300</precision>
+			</retention>
+			<retention>
+				<age>86400</age>
+				<precision>3600</precision>
+			</retention>
+		</default>
+	</graphite_rollup_example>
 </yandex>
