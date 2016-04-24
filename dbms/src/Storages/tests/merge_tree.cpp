@@ -43,11 +43,14 @@ int main(int argc, char ** argv)
 		if (!parser.parse(begin, end, primary_expr, max_parsed_pos, expected))
 			throw Poco::Exception("Cannot parse " + primary_expr_str);
 
+		MergeTreeData::MergingParams params;
+		params.mode = MergeTreeData::MergingParams::Ordinary;
+
 		StoragePtr table = StorageMergeTree::create(
 			"./", "default", "test",
 			names_and_types, {}, {}, ColumnDefaults{},
 			context, primary_expr, "d",
-			nullptr, 101, MergeTreeData::MergingParams::Ordinary, {});
+			nullptr, 101, params, {});
 
 		/// пишем в неё
 		{
