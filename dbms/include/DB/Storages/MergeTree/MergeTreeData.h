@@ -11,6 +11,7 @@
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergeTreeDataPart.h>
 
 
@@ -70,6 +71,7 @@ namespace ErrorCodes
   * - Aggregating - при склейке кусков, при совпадении PK, делается слияние состояний столбцов-агрегатных функций.
   * - Unsorted - при склейке кусков, данные не упорядочиваются, а всего лишь конкатенируются;
   *            - это позволяет читать данные ровно такими пачками, какими они были записаны.
+  * - Graphite - выполняет загрубление исторических данных для таблицы Графита - системы количественного мониторинга.
   */
 
 /** Этот класс хранит список кусков и параметры структуры данных.
@@ -199,6 +201,7 @@ public:
 			Aggregating = 3,
 			Unsorted 	= 4,
 			Replacing	= 5,
+			Graphite	= 6,
 		};
 
 		Mode mode;
@@ -212,8 +215,13 @@ public:
 		/// Для Replacing режима. Может быть пустым.
 		String version_column;
 
+		/// Для Graphite режима.
+		Graphite::Params graphite_params;
+
 		/// Проверить наличие и корректность типов столбцов.
 		void check(const NamesAndTypesList & columns) const;
+
+		String getModeName() const;
 	};
 
 
@@ -245,8 +253,6 @@ public:
 
 	/// Загрузить множество кусков с данными с диска. Вызывается один раз - сразу после создания объекта.
 	void loadDataParts(bool skip_sanity_checks);
-
-	std::string getModePrefix() const;
 
 	bool supportsSampling() const { return !!sampling_expression; }
 	bool supportsPrewhere() const { return true; }

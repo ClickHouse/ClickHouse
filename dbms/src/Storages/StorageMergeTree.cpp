@@ -255,7 +255,7 @@ bool StorageMergeTree::merge(size_t aio_threshold, bool aggressive, BackgroundPr
 	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
 
 	auto new_part = merger.mergePartsToTemporaryPart(
-		merging_tagger->parts, merged_name, *merge_entry, aio_threshold, &*merging_tagger->reserved_space);
+		merging_tagger->parts, merged_name, *merge_entry, aio_threshold, time(0), &*merging_tagger->reserved_space);
 
 	merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
 

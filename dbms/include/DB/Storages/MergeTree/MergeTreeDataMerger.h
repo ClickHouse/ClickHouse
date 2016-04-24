@@ -51,10 +51,13 @@ public:
 	  *
 	  * Создаёт и возвращает временный кусок.
 	  * Чтобы закончить мердж, вызовите функцию renameTemporaryMergedPart.
+	  *
+	  * time_of_merge - время, когда мердж был назначен.
+	  * Важно при использовании ReplicatedGraphiteMergeTree для обеспечения одинакового мерджа на репликах.
 	  */
 	MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
 		MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeListEntry & merge_entry,
-		size_t aio_threshold, DiskSpaceMonitor::Reservation * disk_reservation = nullptr);
+		size_t aio_threshold, time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation = nullptr);
 
 	MergeTreeData::DataPartPtr renameMergedTemporaryPart(
 		MergeTreeData::DataPartsVector & parts,

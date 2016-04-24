@@ -94,7 +94,7 @@ public:
 
 	std::string getName() const override
 	{
-		return "Replicated" + data.getModePrefix() + "MergeTree";
+		return "Replicated" + data.merging_params.getModeName() + "MergeTree";
 	}
 
 	std::string getTableName() const override { return table_name; }

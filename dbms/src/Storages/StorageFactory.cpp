@@ -27,6 +27,7 @@
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/StorageSet.h>
 #include <DB/Storages/StorageJoin.h>
+#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
 
 namespace DB
@@ -39,6 +40,8 @@ namespace ErrorCodes
 	extern const int BAD_ARGUMENTS;
 	extern const int UNKNOWN_STORAGE;
 	extern const int NO_REPLICA_NAME_GIVEN;
+	extern const int NO_ELEMENTS_IN_CONFIG;
+	extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
 
@@ -97,6 +100,114 @@ static Names extractColumnNames(const ASTPtr & node)
 	{
 		return { typeid_cast<const ASTIdentifier &>(*node).name };
 	}
+}
+
+
+/** Прочитать настройки прореживания старых данных Графита из конфига.
+  * Пример:
+  *
+  * <graphite_rollup>
+  * 	<path_column_name>Path</path_column_name>
+  * 	<pattern>
+  * 		<regexp>click_cost</regexp>
+  * 		<function>any</function>
+  * 		<retention>
+  * 			<age>0</age>
+  * 			<precision>3600</precision>
+  * 		</retention>
+  * 		<retention>
+  * 			<age>86400</age>
+  * 			<precision>60</precision>
+  * 		</retention>
+  * 	</pattern>
+  * 	<default>
+  * 		<function>max</function>
+  * 		<retention>
+  * 			<age>0</age>
+  * 			<precision>60</precision>
+  * 		</retention>
+  * 		<retention>
+  * 			<age>3600</age>
+  * 			<precision>300</precision>
+  * 		</retention>
+  * 		<retention>
+  * 			<age>86400</age>
+  * 			<precision>3600</precision>
+  * 		</retention>
+  * 	</default>
+  * </graphite_rollup>
+  */
+static void appendGraphitePattern(const Context & context,
+	const Poco::Util::AbstractConfiguration & config, const String & config_element, Graphite::Patterns & patterns)
+{
+	Graphite::Pattern pattern;
+
+	Poco::Util::AbstractConfiguration::Keys keys;
+	config.keys(config_element, keys);
+
+	for (const auto & key : keys)
+	{
+		if (key == "regexp")
+		{
+			pattern.regexp = std::make_shared<OptimizedRegularExpression>(config.getString(config_element + ".regexp"));
+		}
+		else if (key == "function")
+		{
+			/// TODO Не только Float64
+			pattern.function = context.getAggregateFunctionFactory().get(
+				config.getString(config_element + ".function"), { new DataTypeFloat64 });
+		}
+		else if (startsWith(key, "retention"))
+		{
+			pattern.retentions.emplace_back(
+				Graphite::Retention{
+					.age 		= config.getUInt(config_element + "." + key + ".age"),
+					.precision 	= config.getUInt(config_element + "." + key + ".precision")});
+		}
+		else
+			throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+	}
+
+	if (!pattern.function)
+		throw Exception("Aggregate function is mandatory for retention patterns in GraphiteMergeTree",
+			ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+	/// retention-ы должны идти по убыванию возраста.
+	std::sort(pattern.retentions.begin(), pattern.retentions.end(),
+		[] (const Graphite::Retention & a, const Graphite::Retention & b) { return a.age > b.age; });
+
+	patterns.emplace_back(pattern);
+}
+
+static void setGraphitePatternsFromConfig(const Context & context,
+	const String & config_element, Graphite::Params & params)
+{
+	const Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
+
+	params.path_column_name = config.getString(config_element + ".path_column_name", "Path");
+	params.time_column_name = config.getString(config_element + ".time_column_name", "Time");
+	params.value_column_name = config.getString(config_element + ".value_column_name", "Value");
+	params.version_column_name = config.getString(config_element + ".version_column_name", "Timestamp");
+
+	Poco::Util::AbstractConfiguration::Keys keys;
+	config.keys(config_element, keys);
+
+	for (const auto & key : keys)
+	{
+		if (startsWith(key, "pattern"))
+		{
+			appendGraphitePattern(context, config, config_element + "." + key, params.patterns);
+		}
+		else if (key == "default")
+		{
+			/// Ниже.
+		}
+		else
+			throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+	}
+
+	if (config.has(config_element + ".default"))
+		appendGraphitePattern(context, config, config_element + "." + ".default", params.patterns);
 }
 
 
@@ -352,7 +463,7 @@ StoragePtr StorageFactory::get(
 	}
 	else if (endsWith(name, "MergeTree"))
 	{
-		/** Движки [Replicated][|Summing|Collapsing|Aggregating|Unsorted|Replacing]MergeTree (2 * 6 комбинаций)
+		/** Движки [Replicated][|Summing|Collapsing|Aggregating|Unsorted|Replacing|Graphite]MergeTree (2 * 7 комбинаций)
 		  * В качестве аргумента для движка должно быть указано:
 		  *  - (для Replicated) Путь к таблице в ZooKeeper
 		  *  - (для Replicated) Имя реплики в ZooKeeper
@@ -366,12 +477,14 @@ StoragePtr StorageFactory::get(
 		  *  - (для Summing, не обязательно) кортеж столбцов, которых следует суммировать. Если не задано - используются все числовые столбцы, не входящие в первичный ключ.
 		  *  - (для Replacing, не обязательно) имя столбца одного из UInt типов, обозначающего "версию"
 		  * Например: ENGINE = ReplicatedCollapsingMergeTree('/tables/mytable', 'rep02', EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign).
+		  *  - (для Graphite) имена столбцов Path, Time, Value, Version, имеющих специальное значение.
 		  *
 		  * MergeTree(date, [sample_key], primary_key, index_granularity)
 		  * CollapsingMergeTree(date, [sample_key], primary_key, index_granularity, sign)
 		  * SummingMergeTree(date, [sample_key], primary_key, index_granularity, [columns_to_sum])
 		  * AggregatingMergeTree(date, [sample_key], primary_key, index_granularity)
 		  * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column])
+		  * GraphiteMergeTree(date, [sample_key], primary_key, index_granularity, Path, Time, Value, Version)
 		  * UnsortedMergeTree(date, index_granularity)	TODO Добавить описание ниже.
 		  */
 
@@ -383,9 +496,9 @@ MergeTrees is different in two ways:
 - it may be replicated and non-replicated;
 - it may do different actions on merge: nothing; sign collapse; sum; apply aggregete functions.
 
-So we have 12 combinations:
-    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, UnsortedMergeTree
-    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedUnsortedMergeTree
+So we have 14 combinations:
+    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, UnsortedMergeTree, GraphiteMergeTree
+    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedUnsortedMergeTree, ReplicatedGraphiteMergeTree
 
 In most of cases, you need MergeTree or ReplicatedMergeTree.
 
@@ -469,7 +582,9 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 			args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
 		/// NOTE Слегка запутанно.
-		size_t num_additional_params = (replicated ? 2 : 0) + (merging_params.mode == MergeTreeData::MergingParams::Collapsing);
+		size_t num_additional_params = (replicated ? 2 : 0)
+			+ (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
+			+ (merging_params.mode == MergeTreeData::MergingParams::Graphite) * 4;
 
 		if (merging_params.mode == MergeTreeData::MergingParams::Unsorted
 			&& args.size() != num_additional_params + 2)
@@ -609,6 +724,17 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				merging_params.columns_to_sum = extractColumnNames(args.back());
 				args.pop_back();
 			}
+		}
+		else if (merging_params.mode == MergeTreeData::MergingParams::Graphite)
+		{
+			String graphite_config_name;
+
+			if (auto ast = typeid_cast<ASTLiteral *>(&*args.back()))
+				graphite_config_name = ast->value.get<String>();
+			else
+				throw Exception(String("Last parameter of GraphiteMergeTree must be name (in single quotes) of element in configuration file with Graphite options") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+
+			setGraphitePatternsFromConfig(context, graphite_config_name, merging_params.graphite_params);
 		}
 
 		/// Если присутствует выражение для сэмплирования. MergeTree(date, [sample_key], primary_key, index_granularity)

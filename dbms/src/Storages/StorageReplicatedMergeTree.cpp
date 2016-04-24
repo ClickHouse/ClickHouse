@@ -1121,7 +1121,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
 
 			auto part = merger.mergePartsToTemporaryPart(
-				parts, entry.new_part_name, *merge_entry, aio_threshold, reserved_space);
+				parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space);
 
 			zkutil::Ops ops;
 
@@ -2200,7 +2200,7 @@ bool StorageReplicatedMergeTree::optimize(const Settings & settings)
 	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
 
 	auto new_part = unreplicated_merger->mergePartsToTemporaryPart(
-		parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io);
+		parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io, time(0));
 
 	unreplicated_merger->renameMergedTemporaryPart(parts, new_part, merged_name, nullptr);
 

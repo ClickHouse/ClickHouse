@@ -811,6 +811,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 
 			case MergeTreeData::MergingParams::Unsorted:
 				throw Exception("UnsortedMergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
+
+			case MergeTreeData::MergingParams::Graphite:
+				throw Exception("GraphiteMergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
 		}
 
 		res.emplace_back(merged);

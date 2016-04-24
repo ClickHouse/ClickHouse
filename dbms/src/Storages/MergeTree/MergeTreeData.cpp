@@ -166,6 +166,26 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
 			}
 		}
 	}
+
+	/// TODO Проверки для Graphite
+}
+
+
+String MergeTreeData::MergingParams::getModeName() const
+{
+	switch (mode)
+	{
+		case Ordinary: 		return "";
+		case Collapsing: 	return "Collapsing";
+		case Summing: 		return "Summing";
+		case Aggregating: 	return "Aggregating";
+		case Unsorted: 		return "Unsorted";
+		case Replacing: 	return "Replacing";
+		case Graphite: 		return "Graphite";
+
+		default:
+			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(mode), ErrorCodes::LOGICAL_ERROR);
+	}
 }
 
 
@@ -178,22 +198,6 @@ Int64 MergeTreeData::getMaxDataPartIndex()
 		max_part_id = std::max(max_part_id, part->right);
 
 	return max_part_id;
-}
-
-std::string MergeTreeData::getModePrefix() const
-{
-	switch (merging_params.mode)
-	{
-		case MergingParams::Ordinary: 		return "";
-		case MergingParams::Collapsing: 	return "Collapsing";
-		case MergingParams::Summing: 		return "Summing";
-		case MergingParams::Aggregating: 	return "Aggregating";
-		case MergingParams::Unsorted: 		return "Unsorted";
-		case MergingParams::Replacing: 		return "Replacing";
-
-		default:
-			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(merging_params.mode), ErrorCodes::LOGICAL_ERROR);
-	}
 }
 
 

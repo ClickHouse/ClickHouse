@@ -10,6 +10,7 @@
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
 #include <DB/DataStreams/SummingSortedBlockInputStream.h>
 #include <DB/DataStreams/ReplacingSortedBlockInputStream.h>
+#include <DB/DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
@@ -338,7 +339,7 @@ MergeTreeData::DataPartsVector MergeTreeDataMerger::selectAllPartsFromPartition(
 /// parts должны быть отсортированы.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart(
 	MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeList::Entry & merge_entry,
-	size_t aio_threshold, DiskSpaceMonitor::Reservation * disk_reservation)
+	size_t aio_threshold, time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation)
 {
 	if (isCancelled())
 		throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
@@ -445,6 +446,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 		case MergeTreeData::MergingParams::Replacing:
 			merged_stream = std::make_unique<ReplacingSortedBlockInputStream>(
 				src_streams, data.getSortDescription(), data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE);
+			break;
+
+		case MergeTreeData::MergingParams::Graphite:
+			merged_stream = std::make_unique<GraphiteRollupSortedBlockInputStream>(
+				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE,
+				data.merging_params.graphite_params, time_of_merge);
 			break;
 
 		case MergeTreeData::MergingParams::Unsorted:
@@ -705,6 +712,12 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 		case MergeTreeData::MergingParams::Replacing:
 			merged_stream = std::make_unique<ReplacingSortedBlockInputStream>(
 				src_streams, data.getSortDescription(), data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE);
+			break;
+
+		case MergeTreeData::MergingParams::Graphite:
+			merged_stream = std::make_unique<GraphiteRollupSortedBlockInputStream>(
+				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE,
+				data.merging_params.graphite_params, time(0));
 			break;
 
 		case MergeTreeData::MergingParams::Unsorted:

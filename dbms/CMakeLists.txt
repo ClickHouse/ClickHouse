@@ -203,6 +203,7 @@ add_library (dbms
 	include/DB/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h
 	include/DB/DataStreams/SummingSortedBlockInputStream.h
 	include/DB/DataStreams/ReplacingSortedBlockInputStream.h
+	include/DB/DataStreams/GraphiteRollupSortedBlockInputStream.h
 	include/DB/DataStreams/AddingConstColumnBlockInputStream.h
 	include/DB/DataStreams/DistinctBlockInputStream.h
 	include/DB/DataStreams/BlockOutputStreamFromRowOutputStream.h
@@ -716,6 +717,7 @@ add_library (dbms
 	src/DataStreams/CSVRowInputStream.cpp
 	src/DataStreams/SummingSortedBlockInputStream.cpp
 	src/DataStreams/ReplacingSortedBlockInputStream.cpp
+	src/DataStreams/GraphiteRollupSortedBlockInputStream.cpp
 	src/DataStreams/TotalsHavingBlockInputStream.cpp
 	src/DataStreams/CreatingSetsBlockInputStream.cpp
 	src/DataStreams/DistinctBlockInputStream.cpp
