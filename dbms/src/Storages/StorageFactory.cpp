@@ -481,7 +481,7 @@ StoragePtr StorageFactory::get(
 		  *  - (для Summing, не обязательно) кортеж столбцов, которых следует суммировать. Если не задано - используются все числовые столбцы, не входящие в первичный ключ.
 		  *  - (для Replacing, не обязательно) имя столбца одного из UInt типов, обозначающего "версию"
 		  * Например: ENGINE = ReplicatedCollapsingMergeTree('/tables/mytable', 'rep02', EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign).
-		  *  - (для Graphite) имена столбцов Path, Time, Value, Version, имеющих специальное значение.
+		  *  - (для Graphite) имя параметра в конфиге с настройками правил прореживания.
 		  *
 		  * MergeTree(date, [sample_key], primary_key, index_granularity)
 		  * CollapsingMergeTree(date, [sample_key], primary_key, index_granularity, sign)

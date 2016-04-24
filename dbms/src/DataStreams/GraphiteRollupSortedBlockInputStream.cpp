@@ -1,4 +1,5 @@
 #include <DB/DataStreams/GraphiteRollupSortedBlockInputStream.h>
+#include <type_traits>
 
 
 namespace DB
@@ -22,7 +23,8 @@ const Graphite::Pattern * GraphiteRollupSortedBlockInputStream::selectPatternFor
 
 UInt32 GraphiteRollupSortedBlockInputStream::selectPrecision(const Graphite::Retentions & retentions, time_t time) const
 {
-	/// Рассчитываем на то, что time_t - знаковый тип.
+	static_assert(std::is_signed<time_t>::value, "time_t must be signed type");
+
 	for (const auto & retention : retentions)
 	{
 		if (time_of_merge - time >= static_cast<time_t>(retention.age))
@@ -31,6 +33,32 @@ UInt32 GraphiteRollupSortedBlockInputStream::selectPrecision(const Graphite::Ret
 
 	/// Без огрубления.
 	return 1;
+}
+
+
+/** Округлить unix timestamp до precision секунд.
+  * При этом, дата не должна измениться. Дата исчисляется с помощью локального часового пояса.
+  *
+  * Если величина округления не больше часа,
+  *  то, исходя из допущения, что часовые пояса, отличающиеся от UTC на нецелое количество часов не поддерживаются,
+  *  достаточно просто округлить unix timestamp вниз до числа, кратного 3600.
+  * А если величина округления больше,
+  *  то будем подвергать округлению число секунд от начала суток в локальном часовом поясе.
+  *
+  * Округление более чем до суток не поддерживается.
+  */
+static time_t roundTimeToPrecision(const DateLUTImpl & date_lut, time_t time, UInt32 precision)
+{
+	if (precision <= 3600)
+	{
+		return time / precision * precision;
+	}
+	else
+	{
+		time_t date = date_lut.toDate(time);
+		time_t remainder = time - date;
+		return date + remainder / precision * precision;
+	}
 }
 
 
@@ -83,6 +111,8 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
 template <typename TSortCursor>
 void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
+	const DateLUTImpl & date_lut = DateLUT::instance();
+
 	size_t merged_rows = 0;
 
 	/// Вынимаем строки в нужном порядке и кладём в merged_block, пока строк не больше max_block_size
@@ -93,56 +123,29 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 		next_path = current->all_columns[path_column_num]->getDataAt(current->pos);
 		next_time = current->all_columns[time_column_num]->get64(current->pos);
 
-		bool is_new_key;
-		bool was_first = is_first;
 		auto prev_pattern = current_pattern;
+		bool path_differs = is_first || next_path != current_path;
 
-		if (is_first)	/// Первый встретившийся ключ.
-		{
-			is_first = false;
+		if (path_differs)
 			current_pattern = selectPatternForPath(next_path);
 
-			if (current_pattern)
-			{
-				current_pattern->function->create(place_for_aggregate_state.data());
-				UInt32 precision = selectPrecision(current_pattern->retentions, next_time);
-				next_time = next_time / precision * precision;
-			}
-
-			current_path = next_path;
-			current_time = next_time;
-
-			is_new_key = true;
-		}
-		else
+		if (current_pattern)
 		{
-			bool path_differs = next_path != current_path;
-
-			if (path_differs)
-				current_pattern = selectPatternForPath(next_path);
-
-			if (current_pattern)
-			{
-				UInt32 precision = selectPrecision(current_pattern->retentions, next_time);
-				next_time = next_time / precision * precision;
-			}
-
-			is_new_key = path_differs || next_time != current_time;
-
-			if (is_new_key)
-			{
-				if (prev_pattern)
-					prev_pattern->function->destroy(place_for_aggregate_state.data());
-				if (current_pattern)
-					current_pattern->function->create(place_for_aggregate_state.data());
-			}
+			UInt32 precision = selectPrecision(current_pattern->retentions, next_time);
+			next_time = roundTimeToPrecision(date_lut, next_time, precision);
 		}
+		/// А если ни один шаблон не сработал - то это понимается как отсутствие необходимости выполнять округление.
+
+		bool is_new_key = path_differs || next_time != current_time;
 
 		/// если накопилось достаточно строк и последняя посчитана полностью
 		if (is_new_key && merged_rows >= max_block_size)
 			return;
 
 		queue.pop();
+
+		bool was_first = is_first;
+		is_first = false;
 
 		if (is_new_key)
 		{
@@ -151,8 +154,9 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 
 			startNextRow(merged_columns, current);
 
-			std::swap(current_path, next_path);
-			std::swap(current_time, next_time);
+			owned_current_block = source_blocks[current.impl->order];
+			current_path = next_path;
+			current_time = next_time;
 			current_max_version = 0;
 
 			if (prev_pattern)

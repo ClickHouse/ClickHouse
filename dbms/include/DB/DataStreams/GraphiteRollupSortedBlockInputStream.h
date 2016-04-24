@@ -96,7 +96,7 @@ namespace Graphite
 	{
 		std::shared_ptr<OptimizedRegularExpression> regexp;
 		AggregateFunctionPtr function;
-		Retentions retentions;	/// Упорядочены по убыванию age.
+		Retentions retentions;	/// Должны быть упорядочены по убыванию age.
 	};
 
 	using Patterns = std::vector<Pattern>;
@@ -178,6 +178,9 @@ private:
 
 	/// Прочитали до конца.
 	bool finished = false;
+
+	/// Владеет столбцом, пока на него ссылается current_path.
+	SharedBlockPtr owned_current_block;
 
 	bool is_first = true;
 	StringRef current_path;
