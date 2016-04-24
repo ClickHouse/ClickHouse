@@ -40,7 +40,7 @@ namespace
 		return s.size() >= suffix.size() && 0 == strncmp(s.data() + s.size() - suffix.size(), suffix.data(), suffix.size());
 	}
 
-	bool isInPrimaryKey(const SortDescription & description, const std::string & name, const std::size_t number)
+	bool isInPrimaryKey(const SortDescription & description, const std::string & name, const size_t number)
 	{
 		for (auto & desc : description)
 			if (desc.column_name == name || (desc.column_name.empty() && desc.column_number == number))
@@ -72,7 +72,9 @@ Block SummingSortedBlockInputStream::readImpl()
 		current_row.resize(num_columns);
 		next_key.columns.resize(description.size());
 
-		std::unordered_map<std::string, std::vector<std::size_t>> discovered_maps;
+		/// Имя вложенной структуры -> номера столбцов, которые к ней относятся.
+		std::unordered_map<std::string, std::vector<size_t>> discovered_maps;
+
 		/** Заполним номера столбцов, которые должны быть просуммированы.
 		  * Это могут быть только числовые столбцы, не входящие в ключ сортировки.
 		  * Если задан непустой список column_names_to_sum, то берём только эти столбцы.
@@ -119,42 +121,48 @@ Block SummingSortedBlockInputStream::readImpl()
 			if (map.second.size() < 2)
 				continue;
 
-			/// check type of key
-			const auto key_num = map.second.front();
-			auto & key_col = merged_block.getByPosition(key_num);
-			/// skip maps, whose members are part of primary key
-			if (isInPrimaryKey(description, key_col.name, key_num))
+			/// no elements of map could be in primary key
+			auto column_num_it = map.second.begin();
+			for (; column_num_it != map.second.end(); ++column_num_it)
+				if (isInPrimaryKey(description, merged_block.getByPosition(*column_num_it).name, *column_num_it))
+					break;
+			if (column_num_it != map.second.end())
 				continue;
 
-			auto & key_nested_type = static_cast<const DataTypeArray *>(key_col.type.get())->getNestedType();
-			/// key can only be integral
-			if (!key_nested_type->isNumeric() || key_nested_type->getName() == "Float32" || key_nested_type->getName() == "Float64")
-				continue;
+			/// collect key and value columns
+			MapDescription map_description;
 
-			/// check each value type (skip the first column number which is for key)
-			auto correct_types = true;
-			for (auto & value_num : boost::make_iterator_range(std::next(map.second.begin()), map.second.end()))
+			column_num_it = map.second.begin();
+			for (; column_num_it != map.second.end(); ++column_num_it)
 			{
-				auto & value_col = merged_block.getByPosition(value_num);
-				/// skip maps, whose members are part of primary key
-				if (isInPrimaryKey(description, value_col.name, value_num))
-				{
-					correct_types = false;
-					break;
-				}
+				const ColumnWithTypeAndName & key_col = merged_block.getByPosition(*column_num_it);
+				const String & name = key_col.name;
+				const IDataType & nested_type = *static_cast<const DataTypeArray *>(key_col.type.get())->getNestedType();
 
-				auto & value_nested_type = static_cast<const DataTypeArray *>(value_col.type.get())->getNestedType();
-				/// value can be any arithmetic type except date and datetime
-				if (!value_nested_type->isNumeric() || value_nested_type->getName() == "Date" ||
-													   value_nested_type->getName() == "DateTime")
+				if (column_num_it == map.second.begin()
+					|| endsWith(name, "ID")
+					|| endsWith(name, "Key")
+					|| endsWith(name, "Type"))
 				{
-					correct_types = false;
-					break;
+					if (!nested_type.isNumeric()
+						|| nested_type.getName() == "Float32"
+						|| nested_type.getName() == "Float64")
+						break;
+
+					map_description.key_col_nums.emplace_back(*column_num_it);
+				}
+				else
+				{
+					if (!nested_type.behavesAsNumber())
+						break;
+
+					map_description.val_col_nums.emplace_back(*column_num_it);
 				}
 			}
+			if (column_num_it != map.second.end())
+				continue;
 
-			if (correct_types)
-				maps_to_sum.push_back({ key_num, { std::next(map.second.begin()), map.second.end() } });
+			maps_to_sum.emplace_back(std::move(map_description));
 		}
 	}
 
@@ -263,138 +271,98 @@ public:
 template <class TSortCursor>
 bool SummingSortedBlockInputStream::mergeMaps(Row & row, TSortCursor & cursor)
 {
-	auto non_empty_map_present = false;
+	bool non_empty_map_present = false;
 
 	/// merge nested maps
 	for (const auto & map : maps_to_sum)
-	{
-		const size_t val_count = map.val_col_nums.size();
-
-		/// fetch key array reference from accumulator-row
-		auto & key_array_lhs = row[map.key_col_num].get<Array>();
-		/// returns a Field for pos-th item of val_index-th value
-		const auto val_getter_lhs = [&] (const auto val_index, const auto pos) -> decltype(auto)
-		{
-			return row[map.val_col_nums[val_index]].template get<Array>()[pos];
-		};
-
-		/// we will be sorting key positions, not the entire rows, to minimize actions
-		std::vector<std::size_t> key_pos_lhs(ext::range_iterator<std::size_t>{0},
-			ext::range_iterator<std::size_t>{key_array_lhs.size()});
-		std::sort(std::begin(key_pos_lhs), std::end(key_pos_lhs), [&] (const auto pos1, const auto pos2)
-		{
-			return key_array_lhs[pos1] < key_array_lhs[pos2];
-		});
-
-		/// copy key field from current row under cursor
-		const auto key_field_rhs = (*cursor->all_columns[map.key_col_num])[cursor->pos];
-		/// for each element of `map.val_col_nums` copy corresponding array under cursor into vector
-		const auto val_fields_rhs = ext::map<std::vector>(map.val_col_nums,
-			[&] (const auto col_num) -> decltype(auto) {
-				return (*cursor->all_columns[col_num])[cursor->pos];
-			});
-
-		/// fetch key array reference from row under cursor
-		const auto & key_array_rhs = key_field_rhs.template get<Array>();
-		/// returns a Field for pos-th item of val_index-th value
-		const auto val_getter_rhs = [&] (const auto val_index, const auto pos) -> decltype(auto)
-		{
-			return val_fields_rhs[val_index].template get<Array>()[pos];
-		};
-
-		std::vector<std::size_t> key_pos_rhs(ext::range_iterator<std::size_t>{0},
-			ext::range_iterator<std::size_t>{key_array_rhs.size()});
-		std::sort(std::begin(key_pos_rhs), std::end(key_pos_rhs), [&] (const auto pos1, const auto pos2)
-		{
-			return key_array_rhs[pos1] < key_array_rhs[pos2];
-		});
-
-		/// max size after merge estimation
-		const auto max_size = key_pos_lhs.size() + key_pos_rhs.size();
-
-		/// create arrays with a single element (it will be overwritten on first iteration)
-		Array key_array_result(1);
-		key_array_result.reserve(max_size);
-		std::vector<Array> val_arrays_result(val_count, Array(1));
-		for (auto & val_array_result : val_arrays_result)
-			val_array_result.reserve(max_size);
-
-		/// discard first element
-		bool discard_prev = true;
-
-		/// either insert or merge new element
-		const auto insert_or_sum = [val_count, &discard_prev, &key_array_result, &val_arrays_result]
-			(std::size_t & index, const std::vector<std::size_t> & key_pos, const auto & key_array, auto && val_getter)
-		{
-			const auto pos = key_pos[index++];
-			const auto & key = key_array[pos];
-
-			if (discard_prev)
-			{
-				discard_prev = false;
-
-				key_array_result.back() = key;
-				for (const auto val_index : ext::range(0, val_count))
-					val_arrays_result[val_index].back() = val_getter(val_index, pos);
-			}
-			else if (key_array_result.back() == key)
-			{
-				/// merge with same key
-				auto should_discard = true;
-
-				for (const auto val_index : ext::range(0, val_count))
-					if (apply_visitor(FieldVisitorSum(val_getter(val_index, pos)),
-						val_arrays_result[val_index].back()))
-						should_discard = false;
-
-				discard_prev = should_discard;
-			}
-			else
-			{
-				/// append new key
-				key_array_result.emplace_back(key);
-				for (const auto val_index : ext::range(0, val_count))
-					val_arrays_result[val_index].emplace_back(val_getter(val_index, pos));
-			}
-		};
-
-		std::size_t index_lhs = 0;
-		std::size_t index_rhs = 0;
-
-		/// perform 2-way merge
-		while (true)
-			if (index_lhs < key_pos_lhs.size() && index_rhs == key_pos_rhs.size())
-				insert_or_sum(index_lhs, key_pos_lhs, key_array_lhs, val_getter_lhs);
-			else if (index_lhs == key_pos_lhs.size() && index_rhs < key_pos_rhs.size())
-				insert_or_sum(index_rhs, key_pos_rhs, key_array_rhs, val_getter_rhs);
-			else if (index_lhs < key_pos_lhs.size() && index_rhs < key_pos_rhs.size())
-				if (key_array_lhs[key_pos_lhs[index_lhs]] < key_array_rhs[key_pos_rhs[index_rhs]])
-					insert_or_sum(index_lhs, key_pos_lhs, key_array_lhs, val_getter_lhs);
-				else
-					insert_or_sum(index_rhs, key_pos_rhs, key_array_rhs, val_getter_rhs);
-			else
-				break;
-
-		/// discard last row if necessary
-		if (discard_prev)
-			key_array_result.pop_back();
-
-		/// store results into accumulator-row
-		key_array_lhs = std::move(key_array_result);
-		for (const auto val_col_index : ext::range(0, val_count))
-		{
-			/// discard last row if necessary
-			if (discard_prev)
-				val_arrays_result[val_col_index].pop_back();
-
-			row[map.val_col_nums[val_col_index]].get<Array>() = std::move(val_arrays_result[val_col_index]);
-		}
-
-		if (!key_array_lhs.empty())
+		if (mergeMap(map, row, cursor))
 			non_empty_map_present = true;
-	}
 
 	return non_empty_map_present;
+}
+
+
+template <class TSortCursor>
+bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & row, TSortCursor & cursor)
+{
+	/// Сильно неоптимально.
+
+	Row & left = row;
+	Row right(left.size());
+
+	for (size_t col_num : desc.key_col_nums)
+		right[col_num] = (*cursor->all_columns[col_num])[cursor->pos].get<Array>();
+
+	for (size_t col_num : desc.val_col_nums)
+		right[col_num] = (*cursor->all_columns[col_num])[cursor->pos].get<Array>();
+
+	auto at_ith_column_jth_row = [&](const Row & matrix, size_t i, size_t j) -> const Field &
+	{
+		return matrix[i].get<Array>()[j];
+	};
+
+	auto tuple_of_nth_columns_at_jth_row = [&](const Row & matrix, const ColumnNumbers & col_nums, size_t j) -> Array
+	{
+		size_t size = col_nums.size();
+		Array res(size);
+		for (size_t col_num_index = 0; col_num_index < size; ++col_num_index)
+			res[col_num_index] = at_ith_column_jth_row(matrix, col_nums[col_num_index], j);
+		return res;
+	};
+
+	std::map<Array, Array> merged;
+
+	auto accumulate = [](Array & dst, const Array & src)
+	{
+		bool has_non_zero = false;
+		size_t size = dst.size();
+		for (size_t i = 0; i < size; ++i)
+			if (apply_visitor(FieldVisitorSum(src[i]), dst[i]))
+				has_non_zero = true;
+		return has_non_zero;
+	};
+
+	auto merge = [&](const Row & matrix)
+	{
+		size_t rows = matrix[desc.key_col_nums[0]].get<Array>().size();
+
+		for (size_t j = 0; j < rows; ++j)
+		{
+			Array key = tuple_of_nth_columns_at_jth_row(matrix, desc.key_col_nums, j);
+			Array value = tuple_of_nth_columns_at_jth_row(matrix, desc.val_col_nums, j);
+
+			auto it = merged.find(key);
+			if (merged.end() == it)
+				merged.emplace(std::move(key), std::move(value));
+			else
+			{
+				if (!accumulate(it->second, value))
+					merged.erase(it);
+			}
+		}
+	};
+
+	merge(left);
+	merge(right);
+
+	for (size_t col_num : desc.key_col_nums)
+		row[col_num] = Array(merged.size());
+	for (size_t col_num : desc.val_col_nums)
+		row[col_num] = Array(merged.size());
+
+	size_t row_num = 0;
+	for (const auto & key_value : merged)
+	{
+		for (size_t col_num_index = 0, size = desc.key_col_nums.size(); col_num_index < size; ++col_num_index)
+			row[desc.key_col_nums[col_num_index]].get<Array>()[row_num] = key_value.first[col_num_index];
+
+		for (size_t col_num_index = 0, size = desc.val_col_nums.size(); col_num_index < size; ++col_num_index)
+			row[desc.val_col_nums[col_num_index]].get<Array>()[row_num] = key_value.second[col_num_index];
+
+		++row_num;
+	}
+
+	return row_num != 0;
 }
 
 
