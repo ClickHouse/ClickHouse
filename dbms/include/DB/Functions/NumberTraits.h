@@ -29,6 +29,7 @@ namespace NumberTraits
 	typedef boost::mpl::false_ 	Integer;
 	typedef boost::mpl::true_ 	Floating;
 
+	typedef boost::mpl::int_<0> 	Bits0;
 	typedef boost::mpl::int_<8> 	Bits8;
 	typedef boost::mpl::int_<16> 	Bits16;
 	typedef boost::mpl::int_<32> 	Bits32;
@@ -39,7 +40,8 @@ namespace NumberTraits
 
 	template <typename T> struct Next;
 
-	template <> struct Next<Bits8>		{ typedef Bits16 Type; };
+	template <> struct Next<Bits0>	{ typedef Bits0 Type; };
+	template <> struct Next<Bits8>	{ typedef Bits16 Type; };
 	template <> struct Next<Bits16>	{ typedef Bits32 Type; };
 	template <> struct Next<Bits32>	{ typedef Bits64 Type; };
 	template <> struct Next<Bits64>	{ typedef Bits64 Type; };
@@ -49,6 +51,7 @@ namespace NumberTraits
 
 	template <typename T> struct Traits;
 
+	template <> struct Traits<void>		{ typedef Unsigned Sign;	typedef Integer Floatness;	typedef Bits0 Bits; };
 	template <> struct Traits<UInt8> 	{ typedef Unsigned Sign;	typedef Integer Floatness;	typedef Bits8 Bits; };
 	template <> struct Traits<UInt16> 	{ typedef Unsigned Sign;	typedef Integer Floatness;	typedef Bits16 Bits; };
 	template <> struct Traits<UInt32> 	{ typedef Unsigned Sign;	typedef Integer Floatness;	typedef Bits32 Bits; };
@@ -62,6 +65,10 @@ namespace NumberTraits
 
 	template <typename Sign, typename Floatness, typename Bits> struct Construct;
 
+	template <> struct Construct<Unsigned, Integer, Bits0>	{ typedef void		Type; };
+	template <> struct Construct<Unsigned, Floating, Bits0>	{ typedef void		Type; };
+	template <> struct Construct<Signed, Integer, Bits0>	{ typedef void		Type; };
+	template <> struct Construct<Signed, Floating, Bits0>	{ typedef void		Type; };
 	template <> struct Construct<Unsigned, Integer, Bits8> 	{ typedef UInt8 	Type; };
 	template <> struct Construct<Unsigned, Integer, Bits16> 	{ typedef UInt16 	Type; };
 	template <> struct Construct<Unsigned, Integer, Bits32> 	{ typedef UInt32 	Type; };
@@ -186,19 +193,27 @@ namespace NumberTraits
 	};
 	
 	/** Приведение типов для функции if:
-	  * 1)  UInt<x>,   UInt<y> ->  UInt<max(x,y)>
-	  * 2)   Int<x>,    Int<y> ->   Int<max(x,y)>
-	  * 3) Float<x>,  Float<y> -> Float<max(x, y)>
-	  * 4)  UInt<x>,    Int<y> ->   Int<max(x*2, y)>
-	  * 5) Float<x>, [U]Int<y> -> Float<max(x, y*2)>
-	  * 6)  UInt64 ,    Int<x> -> Error
-	  * 7) Float<x>, [U]Int64  -> Error
+	  * 1)     void,      Type ->  Type
+	  * 2)  UInt<x>,   UInt<y> ->  UInt<max(x,y)>
+	  * 3)   Int<x>,    Int<y> ->   Int<max(x,y)>
+	  * 4) Float<x>,  Float<y> -> Float<max(x, y)>
+	  * 5)  UInt<x>,    Int<y> ->   Int<max(x*2, y)>
+	  * 6) Float<x>, [U]Int<y> -> Float<max(x, y*2)>
+	  * 7)  UInt64 ,    Int<x> -> Error
+	  * 8) Float<x>, [U]Int64  -> Error
 	  */
 	template <typename A, typename B>
 	struct ResultOfIf
 	{
-		typedef 
-			/// 3) и 5)
+		typedef
+			/// 1)
+			typename boost::mpl::if_<
+				typename boost::mpl::equal_to<typename Traits<A>::Bits, Bits0>::type,
+				B,
+			typename boost::mpl::if_<
+				typename boost::mpl::equal_to<typename Traits<B>::Bits, Bits0>::type,
+				A,
+			/// 4) и 6)
 			typename boost::mpl::if_<
 				typename boost::mpl::or_<
 					typename Traits<A>::Floatness,
@@ -217,7 +232,7 @@ namespace NumberTraits
 								typename Traits<B>::Bits,
 								typename ExactNext<typename Traits<B>::Bits>::Type>::type>::type,
 						Bits32>::type>::Type,
-			/// 1) и 2)
+			/// 2) и 3)
 			typename boost::mpl::if_<
 				typename boost::mpl::equal_to<
 					typename Traits<A>::Sign,
@@ -228,7 +243,7 @@ namespace NumberTraits
 						typename Traits<B>::Bits>::type,
 					B,
 					A>::type,
-			/// 4)
+			/// 5)
 			typename Construct<
 				Signed,
 				Integer,
@@ -240,7 +255,7 @@ namespace NumberTraits
 					typename boost::mpl::if_<
 						typename Traits<B>::Sign,
 						typename Traits<B>::Bits,
-						typename ExactNext<typename Traits<B>::Bits>::Type>::type>::type>::Type>::type>::type Type;
+						typename ExactNext<typename Traits<B>::Bits>::Type>::type>::type>::Type>::type>::type>::type>::type Type;
 	};
 	
 	/** Перед применением оператора % и побитовых операций, операнды приводятся к целым числам. */

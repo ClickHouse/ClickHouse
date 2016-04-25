@@ -49,18 +49,102 @@ std::string dumpArgTypes(const DataTypes & args)
 	return out;
 }
 
-template <typename TResult, typename TType>
-struct ResultTypeChecker;
-
 template <typename TType>
-struct ResultTypeCheckerImpl final
+struct ExtendedDataType
 {
-	template <typename U>
-	using ConcreteChecker = ResultTypeChecker<typename DataTypeFromFieldType<TType>::Type, U>;
+	using FieldType = typename TType::FieldType;
+};
 
+template <>
+struct ExtendedDataType<void>
+{
+	using FieldType = void;
+};
+
+/// Forward declarations.
+template <typename TFloat, typename TUInt, typename TInt, typename TType>
+struct ResultDataTypeDeducer;
+
+template <typename TFloat, typename TUInt, typename TInt>
+struct ResultDataTypeDeducerImpl;
+
+template <typename TFloat, typename TUInt, typename TInt>
+struct TypeComposer;
+
+template <typename TType, typename TInt>
+struct TypeComposerImpl;
+
+/// Analyze the type of each branch (then, else) of a multiIf function.
+/// Determine the returned type if all branches are numeric.
+class FirstResultDataTypeDeducer final
+{
+private:
+	template <typename U>
+	using ConcreteDataTypeDeducer = ResultDataTypeDeducer<void, void, void, U>;
+
+public:
+	static void execute(const DataTypes & args, DataTypePtr & type_res)
+	{
+		size_t i = firstThen();
+
+		if (!DataTypeDispatcher<ConcreteDataTypeDeducer>::apply(args, i, type_res))
+			throw Exception{"Illegal type of column " + toString(i) +
+				" of function multiIf", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+	}
+};
+
+/// Analyze the type of the branch currently being processed of a multiIf function.
+/// Subsequently perform the same analysis for the remaining branches.
+/// Determine the returned type if all the processed branches are numeric.
+template <typename TFloat, typename TUInt, typename TInt, typename TType>
+class ResultDataTypeDeducer final
+{
+private:
+	using TCombinedFloat = typename std::conditional<
+		std::is_floating_point<typename ExtendedDataType<TType>::FieldType>::value,
+		typename NumberTraits::ResultOfIf<
+			typename ExtendedDataType<TFloat>::FieldType,
+			typename ExtendedDataType<TType>::FieldType
+		>::Type,
+		typename ExtendedDataType<TFloat>::FieldType
+	>::type;
+
+	using TCombinedUInt = typename std::conditional<
+		std::is_unsigned<typename ExtendedDataType<TType>::FieldType>::value,
+		typename NumberTraits::ResultOfIf<
+			typename ExtendedDataType<TUInt>::FieldType,
+			typename ExtendedDataType<TType>::FieldType
+		>::Type,
+		typename ExtendedDataType<TUInt>::FieldType
+	>::type;
+
+	using TCombinedInt = typename std::conditional<
+		std::is_signed<typename ExtendedDataType<TType>::FieldType>::value,
+		typename NumberTraits::ResultOfIf<
+			typename ExtendedDataType<TInt>::FieldType,
+			typename ExtendedDataType<TType>::FieldType
+		>::Type,
+		typename ExtendedDataType<TInt>::FieldType
+	>::type;
+
+	using ConcreteComposer = TypeComposer<TCombinedFloat, TCombinedUInt, TCombinedInt>;
+	using DataTypeDeducerImpl = ResultDataTypeDeducerImpl<TCombinedFloat, TCombinedUInt, TCombinedInt>;
+
+public:
 	static bool execute(const DataTypes & args, size_t i, DataTypePtr & type_res)
 	{
-		if (DataTypeDispatcher<ConcreteChecker>::apply(args, i, type_res))
+		if (typeid_cast<const TType *>(&*args[i]) == nullptr)
+			return false;
+
+		if (i == elseArg(args))
+		{
+			ConcreteComposer::execute(args, i, type_res);
+			return true;
+		}
+
+		i = std::min(nextThen(i), elseArg(args));
+
+		if (DataTypeDeducerImpl::execute(args, i, type_res))
 			return true;
 		else
 			throw Exception{"Illegal type of column " + toString(i) +
@@ -68,9 +152,56 @@ struct ResultTypeCheckerImpl final
 	}
 };
 
-template <>
-struct ResultTypeCheckerImpl<typename NumberTraits::Error>
+/// Internal class used by ResultDataTypeDeducer. From the deduced triplet
+/// of numeric types (float, unsigned int, signed int), determine the
+/// associated triplet of extended data types, then call ResultDataTypeDeducer
+/// for the next branch to being processed.
+template <typename TFloat, typename TUInt, typename TInt>
+class ResultDataTypeDeducerImpl final
 {
+private:
+	using ExtendedDataTypeFloat = typename std::conditional<
+		std::is_void<TFloat>::value,
+		void,
+		typename DataTypeFromFieldType<TFloat>::Type
+	>::type;
+
+	using ExtendedDataTypeUInt = typename std::conditional<
+		std::is_void<TUInt>::value,
+		void,
+		typename DataTypeFromFieldType<TUInt>::Type
+	>::type;
+
+	using ExtendedDataTypeInt = typename std::conditional<
+		std::is_void<TInt>::value,
+		void,
+		typename DataTypeFromFieldType<TInt>::Type
+	>::type;
+
+	template <typename U>
+	using ConcreteDataTypeDeducer = ResultDataTypeDeducer<
+		ExtendedDataTypeFloat,
+		ExtendedDataTypeUInt,
+		ExtendedDataTypeInt,
+		U
+	>;
+
+public:
+	static bool execute(const DataTypes & args, size_t i, DataTypePtr & type_res)
+	{
+		if (DataTypeDispatcher<ConcreteDataTypeDeducer>::apply(args, i, type_res))
+			return true;
+		else
+			throw Exception{"Illegal type of column " + toString(i) +
+				" of function multiIf", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+	}
+};
+
+/// Specialization for type deduction error.
+template <typename TFloat, typename TUInt>
+class ResultDataTypeDeducerImpl<TFloat, TUInt, typename NumberTraits::Error> final
+{
+public:
 	static bool execute(const DataTypes & args, size_t i, DataTypePtr & type_res)
 	{
 		std::string dump = dumpArgTypes(args);
@@ -80,62 +211,105 @@ struct ResultTypeCheckerImpl<typename NumberTraits::Error>
 	}
 };
 
-/// Analyze the type of each branch (then, else) of a multiIf function.
-/// Determine the returned type if all branches are numeric.
-template <typename TResult, typename TType>
-struct ResultTypeChecker final
+/// Specialization for type deduction error.
+template <typename TFloat, typename TInt>
+class ResultDataTypeDeducerImpl<TFloat, typename NumberTraits::Error, TInt> final
 {
-	using TCombinedResult = typename NumberTraits::ResultOfIf<typename TResult::FieldType,
-		typename TType::FieldType>::Type;
-	using CheckerImpl = ResultTypeCheckerImpl<TCombinedResult>;
-
+public:
 	static bool execute(const DataTypes & args, size_t i, DataTypePtr & type_res)
 	{
-		if (typeid_cast<const TType *>(&*args[i]) == nullptr)
-			return false;
-
-		DataTypePtr res = DataTypeFromFieldTypeOrError<TCombinedResult>::getDataType();
-		if (!res)
-			throw Exception{"Illegal type of column " + toString(i) +
-				" of function multiIf", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-		if (i == elseArg(args))
-		{
-			type_res = res;
-			return true;
-		}
-
-		i = std::min(nextThen(i), elseArg(args));
-
-		if (CheckerImpl::execute(args, i, type_res))
-			return true;
-		else
-			throw Exception{"Illegal type of column " + toString(i) +
-				" of function multiIf", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+		std::string dump = dumpArgTypes(args);
+		throw Exception{"Arguments of function multiIf are not upscalable to a "
+			"common type without loss of precision: " + dump,
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 	}
 };
 
-/// Process the first Then.
-template <typename TType>
-struct FirstResultTypeChecker final
+/// Specialization for type deduction error.
+template <typename TUInt, typename TInt>
+class ResultDataTypeDeducerImpl<typename NumberTraits::Error, TUInt, TInt> final
 {
-	template <typename U>
-	using ConcreteChecker = ResultTypeChecker<TType, U>;
-
-	static bool execute(const DataTypes & args, DataTypePtr & type_res)
+public:
+	static bool execute(const DataTypes & args, size_t i, DataTypePtr & type_res)
 	{
-		size_t i = firstThen();
+		std::string dump = dumpArgTypes(args);
+		throw Exception{"Arguments of function multiIf are not upscalable to a "
+			"common type without loss of precision: " + dump,
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+	}
+};
 
-		if (typeid_cast<const TType *>(&*args[i]) == nullptr)
-			return false;
+/// Compose a float type, an unsigned int type, and a signed int type.
+/// Return the deduced type.
+template <typename TFloat, typename TUInt, typename TInt>
+class TypeComposer final
+{
+private:
+	using TCombined = typename NumberTraits::ResultOfIf<TFloat, TUInt>::Type;
 
-		i = std::min(nextThen(i), elseArg(args));
+public:
+	static void execute(const DataTypes & args, size_t i, DataTypePtr & type_res)
+	{
+		TypeComposerImpl<TCombined, TInt>::execute(args, i, type_res);
+	}
+};
 
-		if (DataTypeDispatcher<ConcreteChecker>::apply(args, i, type_res))
-			return true;
-		else
+template <typename TType, typename TInt>
+class TypeComposerImpl final
+{
+private:
+	using TCombined = typename NumberTraits::ResultOfIf<TType, TInt>::Type;
+
+public:
+	static void execute(const DataTypes & args, size_t i, DataTypePtr & type_res)
+	{
+		DataTypePtr res = DataTypeFromFieldTypeOrError<TCombined>::getDataType();
+		if (!res)
 			throw Exception{"Illegal type of column " + toString(i) +
 				" of function multiIf", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+		type_res = res;
+	}
+};
+
+/// Specialization for type composition error.
+template <typename TInt>
+class TypeComposerImpl<typename NumberTraits::Error, TInt> final
+{
+public:
+	static void execute(const DataTypes & args, size_t i, DataTypePtr & type_res)
+	{
+		std::string dump = dumpArgTypes(args);
+		throw Exception{"Arguments of function multiIf are not upscalable to a "
+			"common type without loss of precision: " + dump,
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+	}
+};
+
+/// Specialization for type composition error.
+template <typename TType>
+class TypeComposerImpl<TType, typename NumberTraits::Error> final
+{
+public:
+	static void execute(const DataTypes & args, size_t i, DataTypePtr & type_res)
+	{
+		std::string dump = dumpArgTypes(args);
+		throw Exception{"Arguments of function multiIf are not upscalable to a "
+			"common type without loss of precision: " + dump,
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+	}
+};
+
+/// Specialization for type composition error.
+template <>
+class TypeComposerImpl<typename NumberTraits::Error, typename NumberTraits::Error> final
+{
+public:
+	static void execute(const DataTypes & args, size_t i, DataTypePtr & type_res)
+	{
+		std::string dump = dumpArgTypes(args);
+		throw Exception{"Arguments of function multiIf are not upscalable to a "
+			"common type without loss of precision: " + dump,
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 	}
 };
 
@@ -144,9 +318,7 @@ struct FirstResultTypeChecker final
 DataTypePtr getReturnTypeForArithmeticArgs(const DataTypes & args)
 {
 	DataTypePtr type_res;
-	if (!DataTypeDispatcher<FirstResultTypeChecker>::apply(args, type_res))
-		throw Exception{"Illegal type of column 1 of function multiIf",
-			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+	FirstResultDataTypeDeducer::execute(args, type_res);
 	return type_res;
 }
 
