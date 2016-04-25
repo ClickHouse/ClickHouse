@@ -42,6 +42,7 @@ std::string dumpArgTypes(const DataTypes & args)
 		writeString(args[i]->getName(), buf);
 	}
 
+	writeString("; ", buf);
 	writeString(args[else_arg]->getName(), buf);
 
 	buf.next();
