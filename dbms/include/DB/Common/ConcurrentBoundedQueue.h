@@ -52,7 +52,7 @@ public:
 		fill_count.wait();
 		{
 			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-			x = queue.front();
+			x = std::move(queue.front());
 			queue.pop();
 		}
 		empty_count.set();
@@ -72,13 +72,28 @@ public:
 		return false;
 	}
 
+	template <class ... Args>
+	bool tryEmplace(Args && ... args, DB::UInt64 milliseconds = 0)
+	{
+		if (empty_count.tryWait(milliseconds))
+		{
+			{
+				Poco::ScopedLock<Poco::Mutex> lock(mutex);
+				queue.emplace(std::forward<Args>(args)...);
+			}
+			fill_count.set();
+			return true;
+		}
+		return false;
+	}
+
 	bool tryPop(T & x, DB::UInt64 milliseconds = 0)
 	{
 		if (fill_count.tryWait(milliseconds))
 		{
 			{
 				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-				x = queue.front();
+				x = std::move(queue.front());
 				queue.pop();
 			}
 			empty_count.set();
