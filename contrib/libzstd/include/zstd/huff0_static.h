@@ -85,7 +85,7 @@ HUF_compress() does the following:
 1. count symbol occurrence from source[] into table count[] using FSE_count()
 2. build Huffman table from count using HUF_buildCTable()
 3. save Huffman table to memory buffer using HUF_writeCTable()
-4. encode the data stream using HUF_compress_usingCTable()
+4. encode the data stream using HUF_compress4X_usingCTable()
 
 The following API allows targeting specific sub-functions for advanced tasks.
 For example, it's possible to compress several blocks using the same 'CTable',
@@ -95,7 +95,7 @@ or to save and regenerate 'CTable' using external methods.
 typedef struct HUF_CElt_s HUF_CElt;   /* incomplete type */
 size_t HUF_buildCTable (HUF_CElt* CTable, const unsigned* count, unsigned maxSymbolValue, unsigned maxNbBits);
 size_t HUF_writeCTable (void* dst, size_t maxDstSize, const HUF_CElt* CTable, unsigned maxSymbolValue, unsigned huffLog);
-size_t HUF_compress4X_into4Segments(void* dst, size_t dstSize, const void* src, size_t srcSize, const HUF_CElt* CTable);
+size_t HUF_compress4X_usingCTable(void* dst, size_t dstSize, const void* src, size_t srcSize, const HUF_CElt* CTable);
 
 
 /*!

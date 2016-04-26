@@ -28,7 +28,7 @@
    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
    You can contact the author at :
-   - Source repository : https://github.com/Cyan4973/zstd
+   - Homepage : http://www.zstd.net
 ****************************************************************** */
 #ifndef ERROR_PUBLIC_H_MODULE
 #define ERROR_PUBLIC_H_MODULE
@@ -47,6 +47,7 @@ typedef enum {
   ZSTD_error_prefix_unknown,
   ZSTD_error_frameParameter_unsupported,
   ZSTD_error_frameParameter_unsupportedBy32bits,
+  ZSTD_error_compressionParameter_unsupported,
   ZSTD_error_init_missing,
   ZSTD_error_memory_allocation,
   ZSTD_error_stage_wrong,
@@ -60,8 +61,7 @@ typedef enum {
   ZSTD_error_maxCode
 } ZSTD_ErrorCode;
 
-/* note : functions provide error codes in reverse negative order,
-          so compare with (size_t)(0-enum) */
+/* note : compare with size_t function results using ZSTD_getError() */
 
 
 #if defined (__cplusplus)

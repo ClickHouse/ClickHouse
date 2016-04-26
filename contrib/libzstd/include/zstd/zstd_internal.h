@@ -27,7 +27,7 @@
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
     You can contact the author at :
-    - zstd source repository : https://github.com/Cyan4973/zstd
+    - zstd homepage : https://www.zstd.net
 */
 #ifndef ZSTD_CCOMMON_H_MODULE
 #define ZSTD_CCOMMON_H_MODULE
@@ -50,17 +50,28 @@
 /*-*************************************
 *  Common constants
 ***************************************/
-#define ZSTD_DICT_MAGIC  0xEC30A435
+#define ZSTD_OPT_DEBUG 0     // 3 = compression stats;  5 = check encoded sequences;  9 = full logs
+#include <stdio.h>
+#if defined(ZSTD_OPT_DEBUG) && ZSTD_OPT_DEBUG>=9
+    #define ZSTD_LOG_PARSER(...) printf(__VA_ARGS__)
+    #define ZSTD_LOG_ENCODE(...) printf(__VA_ARGS__)
+    #define ZSTD_LOG_BLOCK(...) printf(__VA_ARGS__)
+#else
+    #define ZSTD_LOG_PARSER(...)
+    #define ZSTD_LOG_ENCODE(...)
+    #define ZSTD_LOG_BLOCK(...)
+#endif
+
+#define ZSTD_OPT_NUM    (1<<12)
+#define ZSTD_DICT_MAGIC  0xEC30A436
+
+#define ZSTD_REP_NUM    3
+#define ZSTD_REP_INIT   ZSTD_REP_NUM
+#define ZSTD_REP_MOVE   (ZSTD_REP_NUM-1)
 
 #define KB *(1 <<10)
 #define MB *(1 <<20)
 #define GB *(1U<<30)
-
-#define BLOCKSIZE (128 KB)                 /* define, for static allocation */
-
-static const size_t ZSTD_blockHeaderSize = 3;
-static const size_t ZSTD_frameHeaderSize_min = 5;
-#define ZSTD_frameHeaderSize_max 5         /* define, for static allocation */
 
 #define BIT7 128
 #define BIT6  64
@@ -69,52 +80,76 @@ static const size_t ZSTD_frameHeaderSize_min = 5;
 #define BIT1   2
 #define BIT0   1
 
+#define ZSTD_WINDOWLOG_ABSOLUTEMIN 12
+static const size_t ZSTD_fcs_fieldSize[4] = { 0, 1, 2, 8 };
+
+#define ZSTD_BLOCKHEADERSIZE 3   /* because C standard does not allow a static const value to be defined using another static const value .... :( */
+static const size_t ZSTD_blockHeaderSize = ZSTD_BLOCKHEADERSIZE;
+typedef enum { bt_compressed, bt_raw, bt_rle, bt_end } blockType_t;
+
+#define MIN_SEQUENCES_SIZE 1 /* nbSeq==0 */
+#define MIN_CBLOCK_SIZE (1 /*litCSize*/ + 1 /* RLE or RAW */ + MIN_SEQUENCES_SIZE /* nbSeq==0 */)   /* for a non-null block */
+
+#define HufLog 12
+
 #define IS_HUF 0
 #define IS_PCH 1
 #define IS_RAW 2
 #define IS_RLE 3
 
-#define MINMATCH 4
+#define LONGNBSEQ 0x7F00
+
+#define MINMATCH 3
+#define EQUAL_READ32 4
 #define REPCODE_STARTVALUE 1
 
 #define Litbits  8
-#define MLbits   7
-#define LLbits   6
-#define Offbits  5
 #define MaxLit ((1<<Litbits) - 1)
-#define MaxML  ((1<<MLbits) - 1)
-#define MaxLL  ((1<<LLbits) - 1)
-#define MaxOff ((1<<Offbits)- 1)
-#define MLFSELog   10
-#define LLFSELog   10
-#define OffFSELog   9
-#define MaxSeq MAX(MaxLL, MaxML)
+#define MaxML  52
+#define MaxLL  35
+#define MaxOff 28
+#define MaxSeq MAX(MaxLL, MaxML)   /* Assumption : MaxOff < MaxLL,MaxML */
+#define MLFSELog    9
+#define LLFSELog    9
+#define OffFSELog   8
 
 #define FSE_ENCODING_RAW     0
 #define FSE_ENCODING_RLE     1
 #define FSE_ENCODING_STATIC  2
 #define FSE_ENCODING_DYNAMIC 3
 
+static const U32 LL_bits[MaxLL+1] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                      1, 1, 1, 1, 2, 2, 3, 3, 4, 6, 7, 8, 9,10,11,12,
+                                     13,14,15,16 };
+static const S16 LL_defaultNorm[MaxLL+1] = { 4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1,
+                                             2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1,
+                                            -1,-1,-1,-1 };
+static const U32 LL_defaultNormLog = 6;
 
-#define HufLog 12
+static const U32 ML_bits[MaxML+1] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                      1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 7, 8, 9,10,11,
+                                     12,13,14,15,16 };
+static const S16 ML_defaultNorm[MaxML+1] = { 1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1,
+                                             1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                                             1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,-1,-1,
+                                            -1,-1,-1,-1,-1 };
+static const U32 ML_defaultNormLog = 6;
 
-#define MIN_SEQUENCES_SIZE 1 /* nbSeq==0 */
-#define MIN_CBLOCK_SIZE (1 /*litCSize*/ + 1 /* RLE or RAW */ + MIN_SEQUENCES_SIZE /* nbSeq==0 */)   /* for a non-null block */
-
-#define WILDCOPY_OVERLENGTH 8
-
-typedef enum { bt_compressed, bt_raw, bt_rle, bt_end } blockType_t;
+static const S16 OF_defaultNorm[MaxOff+1] = { 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1,
+                                              1, 1, 1, 1, 1, 1, 1, 1,-1,-1,-1,-1,-1 };
+static const U32 OF_defaultNormLog = 5;
 
 
 /*-*******************************************
 *  Shared functions to include for inlining
 *********************************************/
 static void ZSTD_copy8(void* dst, const void* src) { memcpy(dst, src, 8); }
-
 #define COPY8(d,s) { ZSTD_copy8(d,s); d+=8; s+=8; }
 
 /*! ZSTD_wildcopy() :
 *   custom version of memcpy(), can copy up to 7 bytes too many (8 bytes if length==0) */
+#define WILDCOPY_OVERLENGTH 8
 MEM_STATIC void ZSTD_wildcopy(void* dst, const void* src, size_t length)
 {
     const BYTE* ip = (const BYTE*)src;
@@ -152,31 +187,67 @@ MEM_STATIC unsigned ZSTD_highbit(U32 val)
 *  Private interfaces
 *********************************************/
 typedef struct {
+    U32 off;
+    U32 len;
+} ZSTD_match_t;
+
+typedef struct {
+    U32 price;
+    U32 off;
+    U32 mlen;
+    U32 litlen;
+    U32 rep[ZSTD_REP_INIT];
+} ZSTD_optimal_t;
+
+#if ZSTD_OPT_DEBUG == 3
+    #include ".debug/zstd_stats.h"
+#else
+    typedef struct { U32  unused; } ZSTD_stats_t;
+    MEM_STATIC void ZSTD_statsPrint(ZSTD_stats_t* stats, U32 searchLength) { (void)stats; (void)searchLength; };
+    MEM_STATIC void ZSTD_statsInit(ZSTD_stats_t* stats) { (void)stats; };
+    MEM_STATIC void ZSTD_statsResetFreqs(ZSTD_stats_t* stats) { (void)stats; };
+    MEM_STATIC void ZSTD_statsUpdatePrices(ZSTD_stats_t* stats, size_t litLength, const BYTE* literals, size_t offset, size_t matchLength) { (void)stats; (void)litLength; (void)literals; (void)offset; (void)matchLength; };
+#endif
+
+typedef struct {
     void* buffer;
     U32*  offsetStart;
     U32*  offset;
     BYTE* offCodeStart;
-    BYTE* offCode;
     BYTE* litStart;
     BYTE* lit;
-    BYTE* litLengthStart;
-    BYTE* litLength;
-    BYTE* matchLengthStart;
-    BYTE* matchLength;
-    BYTE* dumpsStart;
-    BYTE* dumps;
+    U16*  litLengthStart;
+    U16*  litLength;
+    BYTE* llCodeStart;
+    U16*  matchLengthStart;
+    U16*  matchLength;
+    BYTE* mlCodeStart;
+    U32   longLengthID;   /* 0 == no longLength; 1 == Lit.longLength; 2 == Match.longLength; */
+    U32   longLengthPos;
     /* opt */
+    ZSTD_optimal_t* priceTable;
+    ZSTD_match_t* matchTable;
     U32* matchLengthFreq;
     U32* litLengthFreq;
     U32* litFreq;
     U32* offCodeFreq;
     U32  matchLengthSum;
+    U32  matchSum;
     U32  litLengthSum;
     U32  litSum;
     U32  offCodeSum;
+    U32  log2matchLengthSum;
+    U32  log2matchSum;
+    U32  log2litLengthSum;
+    U32  log2litSum;
+    U32  log2offCodeSum;
+    U32  factor;
+    ZSTD_stats_t stats;
 } seqStore_t;
 
-seqStore_t ZSTD_copySeqStore(const ZSTD_CCtx* ctx);
+const seqStore_t* ZSTD_getSeqStore(const ZSTD_CCtx* ctx);
+void ZSTD_seqToCodes(const seqStore_t* seqStorePtr, size_t const nbSeq);
+size_t ZSTD_compressBegin_targetSrcSize(ZSTD_CCtx* zc, const void* dict, size_t dictSize, size_t targetSrcSize, int compressionLevel);
 
 
 #endif   /* ZSTD_CCOMMON_H_MODULE */

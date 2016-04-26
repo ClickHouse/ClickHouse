@@ -187,7 +187,6 @@ MEM_STATIC void MEM_write64(void* memPtr, U64 value)
 
 #endif /* MEM_FORCE_MEMORY_ACCESS */
 
-
 MEM_STATIC U16 MEM_readLE16(const void* memPtr)
 {
     if (MEM_isLittleEndian())
@@ -274,6 +273,20 @@ MEM_STATIC void MEM_writeLEST(void* memPtr, size_t val)
         MEM_writeLE32(memPtr, (U32)val);
     else
         MEM_writeLE64(memPtr, (U64)val);
+}
+
+ /* function safe only for comparisons */
+MEM_STATIC U32 MEM_readMINMATCH(const void* memPtr, U32 length)
+{
+    switch (length)
+    {
+    default :
+    case 4 : return MEM_read32(memPtr);
+    case 3 : if (MEM_isLittleEndian())
+                return MEM_read32(memPtr)<<8;
+             else
+                return MEM_read32(memPtr)>>8;
+    }
 }
 
 #if defined (__cplusplus)

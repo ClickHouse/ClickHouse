@@ -267,7 +267,7 @@ MEM_STATIC void FSE_flushCState(BIT_CStream_t* bitC, const FSE_CState_t* statePt
     BIT_flushBits(bitC);
 }
 
-/* decompression */
+/*<=====    Decompression    =====>*/
 
 typedef struct {
     U16 tableLog;
@@ -290,34 +290,39 @@ MEM_STATIC void FSE_initDState(FSE_DState_t* DStatePtr, BIT_DStream_t* bitD, con
     DStatePtr->table = dt + 1;
 }
 
-MEM_STATIC size_t FSE_getStateValue(FSE_DState_t* DStatePtr)
+MEM_STATIC BYTE FSE_peekSymbol(const FSE_DState_t* DStatePtr)
 {
-    return DStatePtr->state;
+    FSE_decode_t const DInfo = ((const FSE_decode_t*)(DStatePtr->table))[DStatePtr->state];
+    return DInfo.symbol;
 }
 
-MEM_STATIC BYTE FSE_peakSymbol(FSE_DState_t* DStatePtr)
+MEM_STATIC void FSE_updateState(FSE_DState_t* DStatePtr, BIT_DStream_t* bitD)
 {
-    const FSE_decode_t DInfo = ((const FSE_decode_t*)(DStatePtr->table))[DStatePtr->state];
-    return DInfo.symbol;
+    FSE_decode_t const DInfo = ((const FSE_decode_t*)(DStatePtr->table))[DStatePtr->state];
+    U32 const nbBits = DInfo.nbBits;
+    size_t const lowBits = BIT_readBits(bitD, nbBits);
+    DStatePtr->state = DInfo.newState + lowBits;
 }
 
 MEM_STATIC BYTE FSE_decodeSymbol(FSE_DState_t* DStatePtr, BIT_DStream_t* bitD)
 {
-    const FSE_decode_t DInfo = ((const FSE_decode_t*)(DStatePtr->table))[DStatePtr->state];
-    const U32  nbBits = DInfo.nbBits;
-    BYTE symbol = DInfo.symbol;
-    size_t lowBits = BIT_readBits(bitD, nbBits);
+    FSE_decode_t const DInfo = ((const FSE_decode_t*)(DStatePtr->table))[DStatePtr->state];
+    U32 const nbBits = DInfo.nbBits;
+    BYTE const symbol = DInfo.symbol;
+    size_t const lowBits = BIT_readBits(bitD, nbBits);
 
     DStatePtr->state = DInfo.newState + lowBits;
     return symbol;
 }
 
+/*! FSE_decodeSymbolFast() :
+    unsafe, only works if no symbol has a probability > 50% */
 MEM_STATIC BYTE FSE_decodeSymbolFast(FSE_DState_t* DStatePtr, BIT_DStream_t* bitD)
 {
-    const FSE_decode_t DInfo = ((const FSE_decode_t*)(DStatePtr->table))[DStatePtr->state];
-    const U32 nbBits = DInfo.nbBits;
-    BYTE symbol = DInfo.symbol;
-    size_t lowBits = BIT_readBitsFast(bitD, nbBits);
+    FSE_decode_t const DInfo = ((const FSE_decode_t*)(DStatePtr->table))[DStatePtr->state];
+    U32 const nbBits = DInfo.nbBits;
+    BYTE const symbol = DInfo.symbol;
+    size_t const lowBits = BIT_readBitsFast(bitD, nbBits);
 
     DStatePtr->state = DInfo.newState + lowBits;
     return symbol;
