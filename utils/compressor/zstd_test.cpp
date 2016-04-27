@@ -12,11 +12,18 @@ int main(int argc, char ** argv)
 	std::vector<char> src_buf(size);
 	std::vector<char> dst_buf;
 
-	ssize_t read_res = read(STDIN_FILENO, &src_buf[0], size);
-	if (read_res <= 0)
-		throw std::runtime_error("Cannot read from stdin");
+	size_t pos = 0;
+	while (true)
+	{
+		ssize_t read_res = read(STDIN_FILENO, &src_buf[pos], size - pos);
+		if (read_res < 0)
+			throw std::runtime_error("Cannot read from stdin");
+		if (read_res == 0)
+			break;
+		pos += read_res;
+	}
 
-	src_buf.resize(read_res);
+	src_buf.resize(pos);
 
 	size_t zstd_res;
 
@@ -47,9 +54,14 @@ int main(int argc, char ** argv)
 
 	dst_buf.resize(zstd_res);
 
-	ssize_t write_res = write(STDOUT_FILENO, &dst_buf[0], dst_buf.size());
-	if (write_res != static_cast<ssize_t>(dst_buf.size()))
-		throw std::runtime_error("Cannot write to stdout");
+	pos = 0;
+	while (pos < dst_buf.size())
+	{
+		ssize_t write_res = write(STDOUT_FILENO, &dst_buf[pos], dst_buf.size());
+		if (write_res <= 0)
+			throw std::runtime_error("Cannot write to stdout");
+		pos += write_res;
+	}
 
 	return 0;
 }
