@@ -122,6 +122,7 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 
 		auto prev_pattern = current_pattern;
 		bool path_differs = is_first || next_path != current_path;
+		is_first = false;
 
 		if (path_differs)
 			current_pattern = selectPatternForPath(next_path);
@@ -135,22 +136,16 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 
 		bool is_new_key = path_differs || next_time != current_time;
 
-		/// если накопилось достаточно строк и последняя посчитана полностью
-		if (is_new_key && merged_rows >= max_block_size)
-		{
-			finishCurrentRow(merged_columns);
-			return;
-		}
-
-		queue.pop();
-
-		bool was_first = is_first;
-		is_first = false;
-
 		if (is_new_key)
 		{
-			if (!was_first)
+			if (merged_rows)
+			{
 				finishCurrentRow(merged_columns);
+
+				/// если накопилось достаточно строк
+				if (merged_rows >= max_block_size)
+					return;
+			}
 
 			startNextRow(merged_columns, current);
 
@@ -169,6 +164,8 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 
 		accumulateRow(current);
 		current_max_version = std::max(current_max_version, current->all_columns[version_column_num]->get64(current->pos));
+
+		queue.pop();
 
 		if (!current->isLast())
 		{
