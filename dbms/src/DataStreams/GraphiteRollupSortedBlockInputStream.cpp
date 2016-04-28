@@ -67,9 +67,6 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
 	if (finished)
 		return Block();
 
-	if (children.size() == 1)	/// TODO Возможность прореживать даже один источник без слияния.
-		return children[0]->read();
-
 	Block merged_block;
 	ColumnPlainPtrs merged_columns;
 
@@ -140,7 +137,10 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 
 		/// если накопилось достаточно строк и последняя посчитана полностью
 		if (is_new_key && merged_rows >= max_block_size)
+		{
+			finishCurrentRow(merged_columns);
 			return;
+		}
 
 		queue.pop();
 
