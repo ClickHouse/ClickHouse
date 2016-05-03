@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/Functions/Conditional/CondException.h>
 #include <DB/Functions/Conditional/common.h>
 #include <DB/Functions/Conditional/CondSource.h>
 #include <DB/Functions/NumberTraits.h>
@@ -162,10 +163,6 @@ public:
 	}
 
 private:
-	template <typename TType>
-	using ConcreteNumericSourceCreator = NumericSourceCreator<TResult, TType>;
-
-private:
 	/// Create the result column.
 	static PaddedPODArray<TResult> & createSink(Block & block, size_t result, size_t size)
 	{
@@ -200,9 +197,17 @@ private:
 		{
 			NumericSourcePtr<TResult> source;
 
-			if (!NumericTypeDispatcher<ConcreteNumericSourceCreator>::apply(source, block, args, br))
-				throw Exception{"Illegal type of argument " + toString(br.index) + " of function multiIf",
-					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+			if (! (NumericSourceCreator<TResult, UInt8>::execute(source, block, args, br)
+				|| NumericSourceCreator<TResult, UInt16>::execute(source, block, args, br)
+				|| NumericSourceCreator<TResult, UInt32>::execute(source, block, args, br)
+				|| NumericSourceCreator<TResult, UInt64>::execute(source, block, args, br)
+				|| NumericSourceCreator<TResult, Int8>::execute(source, block, args, br)
+				|| NumericSourceCreator<TResult, Int16>::execute(source, block, args, br)
+				|| NumericSourceCreator<TResult, Int32>::execute(source, block, args, br)
+				|| NumericSourceCreator<TResult, Int64>::execute(source, block, args, br)
+				|| NumericSourceCreator<TResult, Float32>::execute(source, block, args, br)
+				|| NumericSourceCreator<TResult, Float64>::execute(source, block, args, br)))
+				throw CondException{CondErrorCodes::NUMERIC_EVALUATOR_ILLEGAL_ARGUMENT, toString(br.index)};
 
 			sources.push_back(std::move(source));
 		}

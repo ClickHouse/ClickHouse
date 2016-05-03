@@ -28,7 +28,9 @@ add_library (dbms
 	include/DB/Functions/FunctionsString.h
 	include/DB/Functions/FunctionsRound.h
 	include/DB/Functions/FunctionsTransform.h
+	include/DB/Functions/Conditional/CondException.h
 	include/DB/Functions/Conditional/common.h
+	include/DB/Functions/Conditional/getArrayType.h
 	include/DB/Functions/Conditional/ArgsInfo.h
 	include/DB/Functions/Conditional/CondSource.h
 	include/DB/Functions/Conditional/NumericPerformer.h
@@ -51,7 +53,8 @@ add_library (dbms
 	include/DB/Functions/IFunction.h
 	include/DB/Functions/FunctionsFormatting.h
 	include/DB/Functions/NumberTraits.h
-	include/DB/Functions/DataTypeFromFieldTypeOrError.h
+	include/DB/Functions/DataTypeTraits.h
+	include/DB/Functions/EnrichedDataTypePtr.h
 	include/DB/TableFunctions/TableFunctionRemote.h
 	include/DB/TableFunctions/TableFunctionFactory.h
 	include/DB/TableFunctions/TableFunctionMerge.h
@@ -114,6 +117,7 @@ add_library (dbms
 	include/DB/Parsers/IParser.h
 	include/DB/Parsers/ASTSampleRatio.h
 	include/DB/Parsers/ParserSampleRatio.h
+	include/DB/Parsers/ParserCase.h
 	include/DB/AggregateFunctions/AggregateFunctionMerge.h
 	include/DB/AggregateFunctions/AggregateFunctionUniqUpTo.h
 	include/DB/AggregateFunctions/AggregateFunctionIf.h
@@ -761,6 +765,7 @@ add_library (dbms
 	src/Parsers/ParserAlterQuery.cpp
 	src/Parsers/ParserCheckQuery.cpp
 	src/Parsers/ParserSampleRatio.cpp
+	src/Parsers/ParserCase.cpp
 	src/Parsers/formatAST.cpp
 	src/Parsers/parseQuery.cpp
 	src/Parsers/queryToString.cpp
@@ -827,6 +832,7 @@ add_library (dbms
 	src/Functions/FunctionsMath.cpp
 	src/Functions/FunctionsMiscellaneous.cpp
 	src/Functions/FunctionsTransform.cpp
+	src/Functions/Conditional/getArrayType.cpp
 	src/Functions/Conditional/ArgsInfo.cpp
 	src/Functions/Conditional/CondSource.cpp
 	src/Functions/Conditional/NumericPerformer.cpp

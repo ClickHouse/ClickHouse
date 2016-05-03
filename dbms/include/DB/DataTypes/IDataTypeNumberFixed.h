@@ -83,5 +83,19 @@ public:
 	}
 };
 
+template <>
+class IDataTypeNumberFixed<void, void> : public IDataTypeNumber<void>
+{
+public:
+	void serializeBinary(const Field & field, WriteBuffer & ostr) const override {}
+	void deserializeBinary(Field & field, ReadBuffer & istr) const override {}
+	void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
+	void deserializeBinary(IColumn & column, ReadBuffer & istr) const override {}
+	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override {}
+	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override {}
+	ColumnPtr createColumn() const override { return {}; }
+	ColumnPtr createConstColumn(size_t size, const Field & field) const override { return {}; }
+};
+
 
 }

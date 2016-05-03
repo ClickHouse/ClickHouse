@@ -108,6 +108,27 @@ public:
 	}
 };
 
+template <>
+class IDataTypeNumber<void> : public IDataType
+{
+public:
+	using FieldType = void;
+
+	bool isNumeric() const override { return true; }
+	bool behavesAsNumber() const override { return true; }
+	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
+	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
+	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override {}
+	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
+	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override {}
+	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
+	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override {}
+	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
+	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override {}
+	size_t getSizeOfField() const override { return 0; }
+	Field getDefault() const override { return {}; }
+};
+
 template <typename FType> inline void IDataTypeNumber<FType>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	serializeText(column, row_num, ostr);

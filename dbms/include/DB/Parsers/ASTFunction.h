@@ -34,57 +34,32 @@ public:
 
 	FunctionKind kind{UNKNOWN};
 
+	enum class Genus
+	{
+		ORDINARY = 0,
+		CASE_WITH_EXPR,
+		CASE_WITHOUT_EXPR,
+		CASE_ARRAY
+	};
+
+	Genus genus{Genus::ORDINARY};
+
+public:
 	ASTFunction() = default;
 	ASTFunction(const StringRange range_) : ASTWithAlias(range_) {}
 
-	String getColumnName() const override
-	{
-		String res;
-		WriteBufferFromString wb(res);
-		writeString(name, wb);
-
-		if (parameters)
-		{
-			writeChar('(', wb);
-			for (ASTs::const_iterator it = parameters->children.begin(); it != parameters->children.end(); ++it)
-			{
-				if (it != parameters->children.begin())
-					writeCString(", ", wb);
-				writeString((*it)->getColumnName(), wb);
-			}
-			writeChar(')', wb);
-		}
-
-		writeChar('(', wb);
-		for (ASTs::const_iterator it = arguments->children.begin(); it != arguments->children.end(); ++it)
-		{
-			if (it != arguments->children.begin())
-				writeCString(", ", wb);
-			writeString((*it)->getColumnName(), wb);
-		}
-		writeChar(')', wb);
-
-		return res;
-	}
+	String getColumnName() const override;
 
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const override { return "Function_" + name; }
+	String getID() const override;
 
-	ASTPtr clone() const override
-	{
-		ASTFunction * res = new ASTFunction(*this);
-		ASTPtr ptr{res};
-
-		res->children.clear();
-
-		if (arguments) 	{ res->arguments = arguments->clone();		res->children.push_back(res->arguments); }
-		if (parameters) { res->parameters = parameters->clone(); 	res->children.push_back(res->parameters); }
-
-		return ptr;
-	}
+	ASTPtr clone() const override;
 
 protected:
 	void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+
+private:
+	void formatCase(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
 };
 
 

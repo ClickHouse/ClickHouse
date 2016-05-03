@@ -1367,7 +1367,8 @@ SELECT multiIf((number % 2) = 0, [toFloat64(1), toFloat64(2)], (number % 3) = 0,
 
 /* String branches */
 
-CREATE TABLE IF NOT EXISTS test.multi_if_check(col1 UInt64, col2 String, col3 String, col4 String) ENGINE=TinyLog;
+DROP TABLE IF EXISTS test.multi_if_check;
+CREATE TABLE test.multi_if_check(col1 UInt64, col2 String, col3 String, col4 String) ENGINE=TinyLog;
 INSERT INTO test.multi_if_check(col1, col2, col3, col4) VALUES(1, 'A', 'AB', 'ABC');
 INSERT INTO test.multi_if_check(col1, col2, col3, col4) VALUES(2, 'B', 'BC', 'BCD');
 INSERT INTO test.multi_if_check(col1, col2, col3, col4) VALUES(3, 'C', 'CD', 'CDE');
@@ -1636,11 +1637,11 @@ SELECT multiIf(1, 'foo', 1, 'bar', toFixedString(col4, 16)) FROM test.multi_if_c
 SELECT multiIf(1, 'foo', 1, 'bar', toFixedString('baz', 16)) FROM test.multi_if_check;
 SELECT multiIf(1, 'foo', 1, 'bar', 'baz') FROM test.multi_if_check;
 
-DROP TABLE test.multi_if_check;
+DROP TABLE IF EXISTS test.multi_if_check;
 
 /* String array branches */
 
-CREATE TABLE IF NOT EXISTS test.multi_if_check(col1 UInt64, col2 String, col3 String, col4 String, col5 String, col6 String, col7 String) ENGINE=TinyLog;
+CREATE TABLE test.multi_if_check(col1 UInt64, col2 String, col3 String, col4 String, col5 String, col6 String, col7 String) ENGINE=TinyLog;
 INSERT INTO test.multi_if_check(col1, col2, col3, col4, col5, col6, col7) VALUES(1, 'A', 'AB', 'ABC', 'ABCD', 'ABCDE', 'ABCDEF');
 INSERT INTO test.multi_if_check(col1, col2, col3, col4, col5, col6, col7) VALUES(2, 'B', 'BC', 'BCD', 'BCDE', 'BCDEF', 'BCDEFG');
 INSERT INTO test.multi_if_check(col1, col2, col3, col4, col5, col6, col7) VALUES(3, 'C', 'CD', 'CDE', 'CDEF', 'CDEFG', 'CDEFGH');
@@ -1909,4 +1910,4 @@ SELECT multiIf(1, ['foo', 'bar'], 1, ['foo', 'bar'], [col6, 'bar']) FROM test.mu
 SELECT multiIf(1, ['foo', 'bar'], 1, ['foo', 'bar'], ['foo', col7]) FROM test.multi_if_check;
 SELECT multiIf(1, ['foo', 'bar'], 1, ['foo', 'bar'], ['foo', 'bar']) FROM test.multi_if_check;
 
-DROP TABLE test.multi_if_check;
+DROP TABLE IF EXISTS test.multi_if_check;

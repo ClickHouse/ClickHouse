@@ -17,6 +17,7 @@
 #include <DB/Parsers/CommonParsers.h>
 #include <DB/Parsers/ExpressionListParsers.h>
 #include <DB/Parsers/ParserSelectQuery.h>
+#include <DB/Parsers/ParserCase.h>
 
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ParserCreateQuery.h>
@@ -296,8 +297,10 @@ bool ParserCastExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 
 	const auto & id = typeid_cast<const ASTIdentifier &>(*identifier).name;
 	if (id.length() != strlen(name) || 0 != strcasecmp(id.c_str(), name))
-		/// Parse as a simple ASTFunction
-		return ParserFunction{}.parse(pos = begin, end, node, max_parsed_pos, expected);
+	{
+		/// Parse as a CASE expression.
+		return ParserCase{}.parse(pos = begin, end, node, max_parsed_pos, expected);
+	}
 
 	/// Parse as CAST(expression AS type)
 	ParserString open("("), close(")"), comma(",");

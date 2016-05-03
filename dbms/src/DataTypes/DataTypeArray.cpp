@@ -18,11 +18,17 @@ namespace ErrorCodes
 }
 
 
-DataTypeArray::DataTypeArray(DataTypePtr nested_) : nested(nested_)
+DataTypeArray::DataTypeArray(DataTypePtr nested_)
+	: enriched_nested(std::make_pair(nested_, new DataTypeVoid)), nested{nested_}
 {
 	offsets = new DataTypeFromFieldType<ColumnArray::Offset_t>::Type;
 }
 
+DataTypeArray::DataTypeArray(DataTypeTraits::EnrichedDataTypePtr enriched_nested_)
+	: enriched_nested{enriched_nested_}, nested{enriched_nested.first}
+{
+	offsets = new DataTypeFromFieldType<ColumnArray::Offset_t>::Type;
+}
 
 void DataTypeArray::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {

@@ -40,9 +40,18 @@ DEFINE_DATA_TYPE_NUMBER_FIXED(Float64);
 
 /// The following type is not a real column data type. It is used in the multiIf
 /// function implementation for argument type checking.
+
+class DataTypeVoid : public IDataTypeNumberFixed<void, void>
+{
+public:
+	DataTypeVoid() = default;
+	std::string getName() const override { return "void"; }
+	DataTypePtr clone() const override { return new DataTypeVoid; }
+};
+
 template <> struct DataTypeFromFieldType<void>
 {
-	typedef void Type;
+	typedef DataTypeVoid Type;
 };
 
 }

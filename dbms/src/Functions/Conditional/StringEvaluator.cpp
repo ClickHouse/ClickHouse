@@ -7,6 +7,7 @@
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
+#include <DB/Columns/ColumnConst.h>
 #include <DB/Core/Types.h>
 
 namespace DB

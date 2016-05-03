@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/DataTypes/IDataType.h>
+#include <DB/Functions/EnrichedDataTypePtr.h>
 
 
 namespace DB
@@ -12,6 +13,8 @@ using Poco::SharedPtr;
 class DataTypeArray final : public IDataType
 {
 private:
+	/// Расширенный тип элементов массивов.
+	DataTypeTraits::EnrichedDataTypePtr enriched_nested;
 	/// Тип элементов массивов.
 	DataTypePtr nested;
 	/// Тип смещений.
@@ -19,6 +22,7 @@ private:
 
 public:
 	DataTypeArray(DataTypePtr nested_);
+	DataTypeArray(DataTypeTraits::EnrichedDataTypePtr enriched_nested_);
 
 	std::string getName() const override
 	{
@@ -27,7 +31,7 @@ public:
 
 	DataTypePtr clone() const override
 	{
-		return new DataTypeArray(nested);
+		return new DataTypeArray(enriched_nested);
 	}
 
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
@@ -82,6 +86,7 @@ public:
 	}
 
 	const DataTypePtr & getNestedType() const { return nested; }
+	const DataTypeTraits::EnrichedDataTypePtr & getEnrichedNestedType() const { return enriched_nested; }
 	const DataTypePtr & getOffsetsType() const { return offsets; }
 };
 

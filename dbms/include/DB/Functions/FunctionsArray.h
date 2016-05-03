@@ -16,8 +16,8 @@
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Common/HashTable/ClearableHashMap.h>
 #include <DB/Interpreters/AggregationCommon.h>
-#include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/FunctionsConditional.h>
+#include <DB/Functions/Conditional/getArrayType.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/Parsers/ExpressionListParsers.h>
@@ -76,45 +76,7 @@ private:
 	/// Получить имя функции.
 	String getName() const override
 	{
-		return name;
-	}
-
-	template <typename T0, typename T1>
-	bool checkRightType(DataTypePtr left, DataTypePtr right, DataTypePtr & type_res) const
-	{
-		if (typeid_cast<const T1 *>(&*right))
-		{
-			typedef typename NumberTraits::ResultOfIf<typename T0::FieldType, typename T1::FieldType>::Type ResultType;
-			type_res = DataTypeFromFieldTypeOrError<ResultType>::getDataType();
-			if (!type_res)
-				throw Exception("Arguments of function " + getName() + " are not upscalable to a common type without loss of precision.",
-								ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-			return true;
-		}
-		return false;
-	}
-
-	template <typename T0>
-	bool checkLeftType(DataTypePtr left, DataTypePtr right, DataTypePtr & type_res) const
-	{
-		if (typeid_cast<const T0 *>(&*left))
-		{
-			if (	checkRightType<T0, DataTypeUInt8>(left, right, type_res)
-				||	checkRightType<T0, DataTypeUInt16>(left, right, type_res)
-				||	checkRightType<T0, DataTypeUInt32>(left, right, type_res)
-				||	checkRightType<T0, DataTypeUInt64>(left, right, type_res)
-				||	checkRightType<T0, DataTypeInt8>(left, right, type_res)
-				||	checkRightType<T0, DataTypeInt16>(left, right, type_res)
-				||	checkRightType<T0, DataTypeInt32>(left, right, type_res)
-				||	checkRightType<T0, DataTypeInt64>(left, right, type_res)
-				||	checkRightType<T0, DataTypeFloat32>(left, right, type_res)
-				||	checkRightType<T0, DataTypeFloat64>(left, right, type_res))
-				return true;
-			else
-				throw Exception("Illegal type " + right->getName() + " as argument of function " + getName(),
-								ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		}
-		return false;
+		return is_case_mode ? "CASE" : name;
 	}
 
 	template <typename T0, typename T1>
@@ -143,26 +105,14 @@ private:
 			||	tryAddField<DataTypeFloat64, DataTypeFloat64>(type_res, f, arr) )
 			return true;
 		else
-			throw Exception("Illegal result type " + type_res->getName() + " of function " + getName(),
-							ErrorCodes::LOGICAL_ERROR);
-	}
-
-	DataTypePtr getLeastCommonType(DataTypePtr left, DataTypePtr right) const
-	{
-		DataTypePtr type_res;
-		if (!(	checkLeftType<DataTypeUInt8>(left, right, type_res)
-			||	checkLeftType<DataTypeUInt16>(left, right, type_res)
-			||	checkLeftType<DataTypeUInt32>(left, right, type_res)
-			||	checkLeftType<DataTypeUInt64>(left, right, type_res)
-			||	checkLeftType<DataTypeInt8>(left, right, type_res)
-			||	checkLeftType<DataTypeInt16>(left, right, type_res)
-			||	checkLeftType<DataTypeInt32>(left, right, type_res)
-			||	checkLeftType<DataTypeInt64>(left, right, type_res)
-			||	checkLeftType<DataTypeFloat32>(left, right, type_res)
-			||	checkLeftType<DataTypeFloat64>(left, right, type_res)))
-			throw Exception("Internal error: unexpected type " + left->getName() + " as argument of function " + getName(),
-							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		return type_res;
+		{
+			if (is_case_mode)
+				throw Exception{"Illegal type encountered while processing the CASE construction.",
+					ErrorCodes::LOGICAL_ERROR};
+			else
+				throw Exception{"Illegal result type " + type_res->getName() + " of function " + getName(),
+								ErrorCodes::LOGICAL_ERROR};
+		}
 	}
 
 	static const DataTypePtr & getScalarType(const DataTypePtr & type)
@@ -175,30 +125,92 @@ private:
 		return getScalarType(array->getNestedType());
 	}
 
+	DataTypeTraits::EnrichedDataTypePtr getLeastCommonType(const DataTypes & arguments) const
+	{
+		DataTypeTraits::EnrichedDataTypePtr result_type;
+
+		try
+		{
+			result_type = Conditional::getArrayType(arguments);
+		}
+		catch (const Conditional::CondException & ex)
+		{
+			/// Translate a context-free error into a contextual error.
+			if (is_case_mode)
+			{
+				if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE)
+					throw Exception{"Illegal type of column " + ex.getMsg1() +
+						" in CASE construction", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+				else if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_UPSCALING_ERROR)
+					throw Exception{"THEN/ELSE clause parameters in CASE construction are not upscalable to a "
+						"common type without loss of precision: " + ex.getMsg1(),
+						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+				else
+					throw Exception{"An unexpected error has occurred in CASE expression",
+						ErrorCodes::LOGICAL_ERROR};
+			}
+			else
+			{
+				if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE)
+					throw Exception{"Illegal type of column " + ex.getMsg1() +
+						" in array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+				else if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_UPSCALING_ERROR)
+					throw Exception("Arguments of function " + getName() + " are not upscalable "
+						"to a common type without loss of precision.",
+						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+				else
+					throw Exception{"An unexpected error has occurred in function " + getName(),
+						ErrorCodes::LOGICAL_ERROR};
+			}
+		}
+
+		return result_type;
+	}
+
 public:
+	void setCaseMode()
+	{
+		is_case_mode = true;
+	}
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.empty())
-			throw Exception("Function array requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		{
+			if (is_case_mode)
+				throw Exception{"Either WHEN clauses or THEN clauses are missing "
+					"in the CASE construction.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+			else
+				throw Exception{"Function array requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+		}
 
 		DataTypePtr result_type = arguments[0];
 
 		if (result_type->behavesAsNumber())
 		{
 			/// Если тип числовой, пробуем выделить наименьший общий тип
-			for (size_t i = 1, size = arguments.size(); i < size; ++i)
-				result_type = getLeastCommonType(result_type, arguments[i]);
+			auto enriched_result_type = getLeastCommonType(arguments);
+			return new DataTypeArray{enriched_result_type};
 		}
 		else
 		{
 			/// Иначе все аргументы должны быть одинаковыми
 			for (size_t i = 1, size = arguments.size(); i < size; ++i)
+			{
 				if (arguments[i]->getName() != arguments[0]->getName())
-					throw Exception("Arguments for function array must have same type or behave as number.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		}
+				{
+					if (is_case_mode)
+						throw Exception{"Found type discrepancy in either WHEN "
+							"clauses or THEN clauses of the CASE construction",
+							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+					else
+						throw Exception{"Arguments for function array must have same type or behave as number.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+				}
+			}
 
-		return new DataTypeArray(result_type);
+			return new DataTypeArray{result_type};
+		}
 	}
 
 	/// Выполнить функцию над блоком.
@@ -214,11 +226,18 @@ public:
 
 		const auto first_arg = block.getByPosition(arguments[0]);
 		DataTypePtr result_type = first_arg.type;
+		DataTypeTraits::EnrichedDataTypePtr enriched_result_type;
 		if (result_type->behavesAsNumber())
 		{
 			/// Если тип числовой, вычисляем наименьший общий тип
-			for (size_t i = 1, size = arguments.size(); i < size; ++i)
-				result_type = getLeastCommonType(result_type, block.getByPosition(arguments[i]).type);
+			DataTypes types;
+			types.reserve(arguments.size());
+
+			for (const auto & argument : arguments)
+				types.push_back(block.getByPosition(argument).type);
+
+			enriched_result_type = getLeastCommonType(types);
+			result_type = enriched_result_type.first;
 		}
 
 		if (is_const)
@@ -259,6 +278,9 @@ public:
 			block.getByPosition(result).column = out_ptr;
 		}
 	}
+
+private:
+	bool is_case_mode = false;
 };
 
 

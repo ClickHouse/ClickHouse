@@ -1,4 +1,5 @@
 #include <DB/Functions/Conditional/CondSource.h>
+#include <DB/Functions/Conditional/CondException.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnConst.h>
 
@@ -50,9 +51,8 @@ const PaddedPODArray<UInt8> & CondSource::initDataArray(const Block & block, con
 	const auto * vec_col = typeid_cast<const ColumnVector<UInt8> *>(source_col);
 
 	if (vec_col == nullptr)
-		throw Exception{"Illegal column " + source_col->getName() + " of argument "
-			+ toString(i) + " of function multiIf."
-			"Must be ColumnUInt8 or ColumnConstUInt8.", ErrorCodes::ILLEGAL_COLUMN};
+		throw CondException{CondErrorCodes::COND_SOURCE_ILLEGAL_COLUMN,
+			source_col->getName(), toString(i)};
 
 	return vec_col->getData();
 }

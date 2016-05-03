@@ -1,86 +1,10 @@
 #pragma once
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
-
 namespace DB
 {
 
 namespace Conditional
 {
-
-/// Execute a given parametrized predicate for each type from a given list of
-/// types until it returns true for one of these types.
-template <template <typename> class Predicate, typename TType, typename... RTypeList>
-struct Disjunction final
-{
-	template <typename... Args>
-	static bool apply(Args &&... args)
-	{
-		return Predicate<TType>::execute(std::forward<Args>(args)...)
-			|| Disjunction<Predicate, RTypeList...>::apply(std::forward<Args>(args)...);
-	}
-};
-
-template <template <typename> class Predicate, typename TType>
-struct Disjunction<Predicate, TType>
-{
-	template <typename... Args>
-	static bool apply(Args &&... args)
-	{
-		return Predicate<TType>::execute(std::forward<Args>(args)...);
-	}
-};
-
-/// Common code for NumericTypeDispatcher and DataTypeDispatcher.
-/// See comments below.
-template <template <typename> class Predicate, bool isNumeric>
-struct TypeDispatcher final
-{
-private:
-	template <typename TType, bool isNumeric2>
-	struct ActualType;
-
-	template <typename TType>
-	struct ActualType<TType, true>
-	{
-		using Type = TType;
-	};
-
-	template <typename TType>
-	struct ActualType<TType, false>
-	{
-		using Type = typename DataTypeFromFieldType<TType>::Type;
-	};
-
-public:
-	template <typename... Args>
-	static bool apply(Args&&... args)
-	{
-		return Disjunction<
-			Predicate,
-			typename ActualType<UInt8, isNumeric>::Type,
-			typename ActualType<UInt16, isNumeric>::Type,
-			typename ActualType<UInt32, isNumeric>::Type,
-			typename ActualType<UInt64, isNumeric>::Type,
-			typename ActualType<Int8, isNumeric>::Type,
-			typename ActualType<Int16, isNumeric>::Type,
-			typename ActualType<Int32, isNumeric>::Type,
-			typename ActualType<Int64, isNumeric>::Type,
-			typename ActualType<Float32, isNumeric>::Type,
-			typename ActualType<Float64, isNumeric>::Type
-		>::apply(std::forward<Args>(args)...);
-	}
-};
-
-/// Execute a given parametrized predicate for each numeric type
-/// until it returns true for such a numeric type.
-template <template <typename> class Predicate>
-using NumericTypeDispatcher = TypeDispatcher<Predicate, true>;
-
-/// Execute a given parametrized predicate for each data type
-/// until it returns true for such a data type.
-template <template <typename> class Predicate>
-using DataTypeDispatcher = TypeDispatcher<Predicate, false>;
 
 /// When performing a multiIf for numeric arguments, the following
 /// structure is used to collect all the information needed on

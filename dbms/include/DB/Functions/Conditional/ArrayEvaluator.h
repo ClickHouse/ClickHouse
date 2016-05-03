@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/Functions/Conditional/CondException.h>
 #include <DB/Functions/Conditional/common.h>
 #include <DB/Functions/Conditional/CondSource.h>
 #include <DB/DataTypes/DataTypeArray.h>
@@ -13,7 +14,6 @@ namespace ErrorCodes
 {
 
 extern const int LOGICAL_ERROR;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 
 }
 
@@ -318,10 +318,6 @@ public:
 	}
 
 private:
-	template <typename TType>
-	using ConcreteArraySourceCreator = ArraySourceCreator<TResult, TType>;
-
-private:
 	/// Create accessors for condition values.
 	static CondSources createConds(const Block & block, const ColumnNumbers & args)
 	{
@@ -342,7 +338,16 @@ private:
 
 		for (const auto & br : branches)
 		{
-			if (!NumericTypeDispatcher<ConcreteArraySourceCreator>::apply(sources, block, args, br))
+			if (! (ArraySourceCreator<TResult, UInt8>::execute(sources, block, args, br)
+				|| ArraySourceCreator<TResult, UInt16>::execute(sources, block, args, br)
+				|| ArraySourceCreator<TResult, UInt32>::execute(sources, block, args, br)
+				|| ArraySourceCreator<TResult, UInt64>::execute(sources, block, args, br)
+				|| ArraySourceCreator<TResult, Int8>::execute(sources, block, args, br)
+				|| ArraySourceCreator<TResult, Int16>::execute(sources, block, args, br)
+				|| ArraySourceCreator<TResult, Int32>::execute(sources, block, args, br)
+				|| ArraySourceCreator<TResult, Int64>::execute(sources, block, args, br)
+				|| ArraySourceCreator<TResult, Float32>::execute(sources, block, args, br)
+				|| ArraySourceCreator<TResult, Float64>::execute(sources, block, args, br)))
 				throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 		}
 
@@ -393,8 +398,7 @@ class ArrayEvaluator<NumberTraits::Error>
 public:
 	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result)
 	{
-		throw Exception{"Internal logic error: one or more arguments of function "
-			"multiIf have invalid types", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+		throw CondException{CondErrorCodes::ARRAY_EVALUATOR_INVALID_TYPES};
 	}
 };
 
