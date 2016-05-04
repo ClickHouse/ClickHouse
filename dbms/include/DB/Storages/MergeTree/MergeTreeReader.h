@@ -109,20 +109,29 @@ public:
 				else if (!append)
 					column.column = column.type->createColumn();
 
-				readData(column.name, *column.type, *column.column, from_mark, max_rows_to_read, 0, read_offsets);
+				try
+				{
+					readData(column.name, *column.type, *column.column, from_mark, max_rows_to_read, 0, read_offsets);
+				}
+				catch (Exception & e)
+				{
+					/// Более хорошая диагностика.
+					e.addMessage("(while reading column " + column.name + ")");
+					throw;
+				}
 
 				if (!append && column.column->size())
 					res.insert(column);
 			}
 		}
-		catch (const Exception & e)
+		catch (Exception & e)
 		{
 			if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
 				storage.reportBrokenPart(data_part->name);
 
 			/// Более хорошая диагностика.
-			throw Exception(e.message() +  "\n(while reading from part " + path + " from mark " + toString(from_mark) + " to "
-				+ toString(to_mark) + ")", e.code());
+			e.addMessage("(while reading from part " + path + " from mark " + toString(from_mark) + " to " + toString(to_mark) + ")");
+			throw;
 		}
 		catch (...)
 		{
@@ -276,16 +285,16 @@ private:
 				if (non_cached_buffer)
 					non_cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
 			}
-			catch (const Exception & e)
+			catch (Exception & e)
 			{
 				/// Более хорошая диагностика.
 				if (e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND)
-					throw Exception(e.message() + " (while seeking to mark " + toString(index)
+					e.addMessage("(while seeking to mark " + toString(index)
 						+ " of column " + path_prefix + "; offsets are: "
 						+ toString(mark.offset_in_compressed_file) + " "
-						+ toString(mark.offset_in_decompressed_block) + ")", e.code());
-				else
-					throw;
+						+ toString(mark.offset_in_decompressed_block) + ")");
+
+				throw;
 			}
 		}
 	};
@@ -512,11 +521,10 @@ private:
 				std::swap(res, ordered_block);
 			}
 		}
-		catch (const Exception & e)
+		catch (Exception & e)
 		{
 			/// Более хорошая диагностика.
-			throw Exception(e.message() + '\n' + e.getStackTrace().toString()
-				+ "\n(while reading from part " + path + ")", e.code());
+			e.addMessage("(while reading from part " + path + ")");
 		}
 	}
 };
