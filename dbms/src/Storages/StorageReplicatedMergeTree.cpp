@@ -7,7 +7,6 @@
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
-#include <DB/Storages/MergeTree/MergeTreePartChecker.h>
 #include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
