@@ -10,6 +10,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+
+extern const int NOT_IMPLEMENTED;
+
+}
 
 /** Реализует часть интерфейса IDataType, общую для всяких чисел фиксированной ширины
   * - ввод и вывод в текстовом и бинарном виде.
@@ -83,19 +89,50 @@ public:
 	}
 };
 
+/// Dummy data type which serves as the base of the DataTypeVoid implementation.
 template <>
 class IDataTypeNumberFixed<void, void> : public IDataTypeNumber<void>
 {
 public:
-	void serializeBinary(const Field & field, WriteBuffer & ostr) const override {}
-	void deserializeBinary(Field & field, ReadBuffer & istr) const override {}
-	void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
-	void deserializeBinary(IColumn & column, ReadBuffer & istr) const override {}
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override {}
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override {}
-	ColumnPtr createColumn() const override { return {}; }
-	ColumnPtr createConstColumn(size_t size, const Field & field) const override { return {}; }
-};
+	void serializeBinary(const Field & field, WriteBuffer & ostr) const override
+	{
+		throw Exception{"Method serializeBinary is not supported for DataTypeVoid", ErrorCodes::NOT_IMPLEMENTED};
+	}
 
+	void deserializeBinary(Field & field, ReadBuffer & istr) const override
+	{
+		throw Exception{"Method deserializeBinary is not supported for DataTypeVoid", ErrorCodes::NOT_IMPLEMENTED};
+	}
+
+	void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
+	{
+		throw Exception{"Method serializeBinary is not supported for DataTypeVoid", ErrorCodes::NOT_IMPLEMENTED};
+	}
+
+	void deserializeBinary(IColumn & column, ReadBuffer & istr) const override
+	{
+		throw Exception{"Method deserializeBinary is not supported for DataTypeVoid", ErrorCodes::NOT_IMPLEMENTED};
+	}
+
+	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override
+	{
+		throw Exception{"Method serializeBinary is not supported for DataTypeVoid", ErrorCodes::NOT_IMPLEMENTED};
+	}
+
+	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override
+	{
+		throw Exception{"Method deserializeBinary is not supported for DataTypeVoid", ErrorCodes::NOT_IMPLEMENTED};
+	}
+
+	ColumnPtr createColumn() const override
+	{
+		throw Exception{"Method createColumn is not supported for DataTypeVoid", ErrorCodes::NOT_IMPLEMENTED};
+	}
+
+	ColumnPtr createConstColumn(size_t size, const Field & field) const override
+	{
+		throw Exception{"Method createConstColumn is not supported for DataTypeVoid", ErrorCodes::NOT_IMPLEMENTED};
+	}
+};
 
 }

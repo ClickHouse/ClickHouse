@@ -273,7 +273,7 @@ template <typename A> struct ToInteger
 
 /// Notes on type composition.
 ///
-/// 0. Problem statement.
+/// I. Problem statement.
 ///
 /// Type composition with ResultOfIf is not associative. Example:
 /// (Int8 x UInt32) x Float32 = Int64 x Float32 = Error;
@@ -281,21 +281,21 @@ template <typename A> struct ToInteger
 /// In order to sort out this issue, we design a slightly improved version
 /// of ResultOfIf.
 ///
-/// I. A more rigorous approach to ResultOfIf.
+/// II. A more rigorous approach to ResultOfIf.
 ///
-/// First we organize the set of types:
+/// First we represent the set of types:
 /// T = {Void,Int8,Int16,Int32,Int64,UInt8,UInt16,UInt32,UInt64,Float32,Float64}
-/// as a POSET P with the partial order being such that for any t1,t2 ∈ T,
+/// as a poset P with the partial order being such that for any t1,t2 ∈ T,
 /// t1 < t2 if and only if the domain of values of t1 is included in the domain
-/// of values of T2.
+/// of values of t2.
 ///
 /// For each type t ∈ T, we define C(t) as the set of chains of the poset P whose
 /// unique minimal element is T.
 ///
-/// Now for any two types t1,t2 ∈ T, we define the POSET C(t1,t2) as the intersection
+/// Now for any two types t1,t2 ∈ T, we define the poset C(t1,t2) as the intersection
 /// C(t1) ∩ C(t2).
 ///
-/// Denote K(t1,t2) as the unique antichain of C(t1,t2) whose each element minimally
+/// Denote K(t1,t2) as the unique antichain of C(t1,t2) in which each element minimally
 /// represents both t1 and t2. It is important to keep in mind that t1 and t2 are
 /// *not* comparable.
 ///
@@ -308,7 +308,7 @@ template <typename A> struct ToInteger
 /// law ResultOfIf are not powerful enough to represent all the combinations of
 /// elements of T. That is the reason why ResultOfIf is not associative.
 ///
-/// II. Extending ResultOfIf.
+/// III. Extending ResultOfIf.
 ///
 /// Let's embed T into a larger set E of "enriched types" such that:
 /// 1. E ⊂ TxT;
@@ -327,27 +327,28 @@ template <typename A> struct ToInteger
 /// T x T ----> A
 ///   |         |
 ///   | ψ       | φ
-///   ↓    K'   ↓
+///   ↓    L    ↓
 /// E x E ----> E
 ///
-/// K' is exactly the same map as K, the sole difference being that K' takes as
+/// L is exactly the same map as K, the sole difference being that L takes as
 /// parameters extended types that map to ordinary ones.
 ///
-/// Finally we extend the map K' by taking into account the new types (Int32,Float32)
-/// and (Int32,Float32). This extended map is called TypeProduct in the implementation.
-/// TypeProduct is both commutative and associative.
+/// Finally we extend the map L. To this end, we complete the type composition table
+/// with the new types (Int32,Float32) and (Int64,Float64) appearing on either
+/// the left-hand side or the right-hand side. This extended map is called
+/// TypeProduct in the implementation. TypeProduct is both commutative and associative.
 ///
-/// III. Usage.
+/// IV. Usage.
 ///
 /// When we need to compose ordinary types, the following is to be performed:
 /// 1. embed each type into its counterpart in E with EmbedType;
 /// 2. compose the resulting enriched types with TypeProduct;
-/// 3. return the first component of the result, which means that, given an extended
-/// type e = (p,q) ∈ E, we return the ordinary type p ∈ T.
+/// 3. return the first component of the result with ToOrdinaryType, which means
+/// that, given an extended type e = (p,q) ∈ E, we return the ordinary type p ∈ T.
 ///
 /// The result is the type we are looking for.
 ///
-/// IV. Example.
+/// V. Example.
 ///
 /// Suppose we need to compose, as in the problem statement, the types Int8,
 /// UInt32, and Float32. The corresponding embedded types are:
