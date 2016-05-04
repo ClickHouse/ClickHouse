@@ -23,7 +23,6 @@ namespace ErrorCodes
 	extern const int CORRUPTED_DATA;
 	extern const int INCORRECT_MARK;
 	extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-	extern const int UNKNOWN_TYPE;
 }
 
 
@@ -32,12 +31,9 @@ namespace
 
 struct Stream
 {
-	static const size_t UNKNOWN = std::numeric_limits<size_t>::max();
-
-	bool data_type_is_string = false;
-	size_t data_type_fixed_length = 0;
 	String path;
 	String name;
+	DataTypePtr type;
 
 	ReadBufferFromFile file_buf;
 	HashingReadBuffer compressed_hashing_buf;
@@ -47,35 +43,13 @@ struct Stream
 	ReadBufferFromFile mrk_file_buf;
 	HashingReadBuffer mrk_hashing_buf;
 
-	Stream(const String & path_, const String & name_, DataTypePtr type) : path(path_), name(name_),
+	Stream(const String & path, const String & name, const DataTypePtr & type) : path(path), name(name), type(type),
 		file_buf(path + name + ".bin"), compressed_hashing_buf(file_buf), uncompressing_buf(compressed_hashing_buf),
 		uncompressed_hashing_buf(uncompressing_buf), mrk_file_buf(path + name + ".mrk"), mrk_hashing_buf(mrk_file_buf)
 	{
-		data_type_is_string = typeid_cast<const DataTypeString *>(type.get());
-
-		if (!data_type_is_string)
-		{
-			if (typeid_cast<const DataTypeUInt8 *>(type.get())
-				|| typeid_cast<const DataTypeInt8 *>(type.get()))
-				data_type_fixed_length = sizeof(UInt8);
-			else if (typeid_cast<const DataTypeUInt16 *>(type.get())
-				|| typeid_cast<const DataTypeInt16 *>(type.get())
-				|| typeid_cast<const DataTypeDate *>(type.get()))
-				data_type_fixed_length = sizeof(UInt16);
-			else if (typeid_cast<const DataTypeUInt32 *>(type.get())
-				|| typeid_cast<const DataTypeInt32 *>(type.get())
-				|| typeid_cast<const DataTypeFloat32 *>(type.get())
-				|| typeid_cast<const DataTypeDateTime *>(type.get()))
-				data_type_fixed_length = sizeof(UInt32);
-			else if (typeid_cast<const DataTypeUInt64 *>(type.get())
-				|| typeid_cast<const DataTypeInt64 *>(type.get())
-				|| typeid_cast<const DataTypeFloat64 *>(type.get()))
-				data_type_fixed_length = sizeof(UInt64);
-			else if (auto string = typeid_cast<const DataTypeFixedString *>(type.get()))
-				data_type_fixed_length = string->getN();
-			else
-				throw Exception("Unexpected data type: " + type->getName() + " of column " + name, ErrorCodes::UNKNOWN_TYPE);
-		}
+		/// Stream создаётся для типа - внутренностей массива. Случай, когда внутренность массива - массив - не поддерживается.
+		if (typeid_cast<const DataTypeArray *>(type.get()))
+			throw Exception("Multidimensional arrays are not supported", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	bool marksEOF()
@@ -91,31 +65,9 @@ struct Stream
 
 	size_t read(size_t rows)
 	{
-		if (data_type_is_string)
-		{
-			for (size_t i = 0; i < rows; ++i)
-			{
-				if (uncompressed_hashing_buf.eof())
-					return i;
-
-				UInt64 size;
-				readVarUInt(size, uncompressed_hashing_buf);
-
-				if (size > (1ul << 31))
-					throw Exception("A string of length " + toString(size) + " is too long.", ErrorCodes::CORRUPTED_DATA);
-
-				uncompressed_hashing_buf.ignore(size);
-			}
-			return rows;
-		}
-		else
-		{
-			size_t size = uncompressed_hashing_buf.tryIgnore(data_type_fixed_length * rows);
-			if (size % data_type_fixed_length)
-				throw Exception("Read " + toString(size) + " bytes, which is not divisible by " + toString(data_type_fixed_length),
-								ErrorCodes::CORRUPTED_DATA);
-			return size / data_type_fixed_length;
-		}
+		ColumnPtr column = type->createColumn();
+		type->deserializeBinary(*column, uncompressed_hashing_buf, rows, 0);
+		return column->size();
 	}
 
 	size_t readUInt64(size_t rows, ColumnUInt64::Container_t & data)
@@ -125,7 +77,7 @@ struct Stream
 		size_t size = uncompressed_hashing_buf.readBig(reinterpret_cast<char *>(&data[0]), sizeof(UInt64) * rows);
 		if (size % sizeof(UInt64))
 			throw Exception("Read " + toString(size) + " bytes, which is not divisible by " + toString(sizeof(UInt64)),
-							ErrorCodes::CORRUPTED_DATA);
+				ErrorCodes::CORRUPTED_DATA);
 		return size / sizeof(UInt64);
 	}
 
@@ -183,6 +135,7 @@ struct Stream
 	}
 };
 
+
 /// Возвращает количество строк. Добавляет в checksums чексуммы всех файлов столбца.
 static size_t checkColumn(
 	const String & path,
@@ -237,12 +190,6 @@ static size_t checkColumn(
 
 			return rows;
 		}
-		else if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))
-		{
-			Stream data_stream(path, escapeForFileName(name), type);
-			data_stream.ignore();
-			return Stream::UNKNOWN;
-		}
 		else
 		{
 			Stream data_stream(path, escapeForFileName(name), type);
@@ -260,10 +207,7 @@ static size_t checkColumn(
 
 				size_t cur_rows = data_stream.read(settings.index_granularity);
 
-				if (cur_rows == Stream::UNKNOWN)
-					rows = Stream::UNKNOWN;
-				else
-					rows += cur_rows;
+				rows += cur_rows;
 				if (cur_rows < settings.index_granularity)
 					break;
 			}
@@ -273,7 +217,7 @@ static size_t checkColumn(
 			return rows;
 		}
 	}
-	catch (DB::Exception & e)
+	catch (Exception & e)
 	{
 		e.addMessage(" (column: " + path + name + ", last mark at " + toString(rows) + " rows)");
 		throw;
@@ -353,7 +297,10 @@ void MergeTreePartChecker::checkDataPart(
 		return;
 
 	String any_column_name;
-	size_t rows = Stream::UNKNOWN;
+
+	static constexpr size_t UNKNOWN = std::numeric_limits<size_t>::max();
+
+	size_t rows = UNKNOWN;
 	std::exception_ptr first_exception;
 
 	for (const NameAndTypePair & column : columns)
@@ -379,18 +326,15 @@ void MergeTreePartChecker::checkDataPart(
 			if (is_cancelled && *is_cancelled)
 				return;
 
-			if (cur_rows != Stream::UNKNOWN)
+			if (rows == UNKNOWN)
 			{
-				if (rows == Stream::UNKNOWN)
-				{
-					rows = cur_rows;
-					any_column_name = column.name;
-				}
-				else if (rows != cur_rows)
-				{
-					throw Exception("Different number of rows in columns " + any_column_name + " and " + column.name,
-									ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-				}
+				rows = cur_rows;
+				any_column_name = column.name;
+			}
+			else if (rows != cur_rows)
+			{
+				throw Exception("Different number of rows in columns " + any_column_name + " and " + column.name,
+								ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 			}
 
 			ok = true;
@@ -411,7 +355,7 @@ void MergeTreePartChecker::checkDataPart(
 			std::cerr << " ok" << std::endl;
 	}
 
-	if (rows == Stream::UNKNOWN)
+	if (rows == UNKNOWN)
 		throw Exception("No columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
 	if (!primary_key_data_types.empty())
