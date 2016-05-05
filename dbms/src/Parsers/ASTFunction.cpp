@@ -307,6 +307,7 @@ void ASTFunction::formatCase(const FormatSettings & settings, FormatState & stat
 			settings.ostr << s_ws;
 
 			settings.ostr << (settings.hilite ? hilite_keyword : "") << s_then << s_ws;
+			settings.ostr << hilite_none;
 			dst_expr_list->children[i]->formatImpl(settings, state, frame);
 			settings.ostr << settings.nl_or_ws;
 		}
@@ -327,6 +328,7 @@ void ASTFunction::formatCase(const FormatSettings & settings, FormatState & stat
 			else
 			{
 				settings.ostr << (settings.hilite ? hilite_keyword : "") << s_then << s_ws;
+				settings.ostr << hilite_none;
 				args[i]->formatImpl(settings, state, frame);
 				settings.ostr << settings.nl_or_ws;
 			}
@@ -337,6 +339,7 @@ void ASTFunction::formatCase(const FormatSettings & settings, FormatState & stat
 
 	settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str2
 		<< s_else << s_ws;
+	settings.ostr << hilite_none;
 	args.back()->formatImpl(settings, state, frame);
 	settings.ostr << settings.nl_or_ws;
 
