@@ -105,6 +105,11 @@ void ASTAlterQuery::formatImpl(const FormatSettings & settings, FormatState & st
 			settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (settings.hilite ? hilite_none : "");
 			p.col_decl->formatImpl(settings, state, frame);
 		}
+		else if (p.type == ASTAlterQuery::MODIFY_PRIMARY_KEY)
+		{
+			settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY PRIMARY KEY " << (settings.hilite ? hilite_none : "");
+			p.primary_key->formatImpl(settings, state, frame);
+		}
 		else if (p.type == ASTAlterQuery::DROP_PARTITION)
 		{
 			settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << (p.detach ? "DETACH" : "DROP") << " PARTITION "

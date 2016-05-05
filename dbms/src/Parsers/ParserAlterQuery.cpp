@@ -14,33 +14,35 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 {
 	Pos begin = pos;
 
-	ParserWhiteSpaceOrComments ws;
-	ParserString s_alter("ALTER", true, true);
-	ParserString s_table("TABLE", true, true);
-	ParserString s_dot(".");
-
-	ParserString s_add("ADD", true, true);
-	ParserString s_column("COLUMN", true, true);
-	ParserString s_after("AFTER", true, true);
-	ParserString s_modify("MODIFY", true, true);
-	ParserString s_reshard("RESHARD", true, true);
-	ParserString s_drop("DROP", true, true);
-	ParserString s_detach("DETACH", true, true);
-	ParserString s_attach("ATTACH", true, true);
-	ParserString s_fetch("FETCH", true, true);
-	ParserString s_freeze("FREEZE", true, true);
+	ParserString s_alter(		"ALTER", true, true);
+	ParserString s_table(		"TABLE", true, true);
+	ParserString s_add(			"ADD", true, true);
+	ParserString s_column(		"COLUMN", true, true);
+	ParserString s_after(		"AFTER", true, true);
+	ParserString s_modify(		"MODIFY", true, true);
+	ParserString s_primary(		"PRIMARY", true, true);
+	ParserString s_key(			"KEY", true, true);
+	ParserString s_reshard(		"RESHARD", true, true);
+	ParserString s_drop(		"DROP", true, true);
+	ParserString s_detach(		"DETACH", true, true);
+	ParserString s_attach(		"ATTACH", true, true);
+	ParserString s_fetch(		"FETCH", true, true);
+	ParserString s_freeze(		"FREEZE", true, true);
 	ParserString s_unreplicated("UNREPLICATED", true, true);
-	ParserString s_part("PART", true, true);
-	ParserString s_partition("PARTITION", true, true);
-	ParserString s_from("FROM", true, true);
-	ParserString s_copy("COPY", true, true);
-	ParserString s_to("TO", true, true);
-	ParserString s_using("USING", true, true);
-	ParserString s_key("KEY", true, true);
-	ParserString s_coordinate("COORDINATE", true, true);
-	ParserString s_with("WITH", true, true);
+	ParserString s_part(		"PART", true, true);
+	ParserString s_partition(	"PARTITION", true, true);
+	ParserString s_from(		"FROM", true, true);
+	ParserString s_copy(		"COPY", true, true);
+	ParserString s_to(			"TO", true, true);
+	ParserString s_using(		"USING", true, true);
+	ParserString s_coordinate(	"COORDINATE", true, true);
+	ParserString s_with(		"WITH", true, true);
+
+	ParserString s_dot(".");
 	ParserString s_comma(",");
 	ParserString s_doubledot("..");
+
+	ParserWhiteSpaceOrComments ws;
 
 	ParserIdentifier table_parser;
 	ParserCompoundIdentifier parser_name;
@@ -244,16 +246,37 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 		else if (s_modify.ignore(pos, end, max_parsed_pos, expected))
 		{
 			ws.ignore(pos, end);
-			if (!s_column.ignore(pos, end, max_parsed_pos, expected))
+
+			if (s_column.ignore(pos, end, max_parsed_pos, expected))
+			{
+				ws.ignore(pos, end);
+
+				if (!parser_col_decl.parse(pos, end, params.col_decl, max_parsed_pos, expected))
+					return false;
+
+				ws.ignore(pos, end);
+
+				params.type = ASTAlterQuery::MODIFY_COLUMN;
+			}
+			else if (s_primary.ignore(pos, end, max_parsed_pos, expected))
+			{
+				ws.ignore(pos, end);
+
+				if (!s_key.ignore(pos, end, max_parsed_pos, expected))
+					return false;
+
+				ws.ignore(pos, end);
+
+				ParserParenthesisExpression parser_tuple;
+				if (!parser_tuple.parse(pos, end, params.primary_key, max_parsed_pos, expected))
+					return false;
+
+				ws.ignore(pos, end);
+
+				params.type = ASTAlterQuery::MODIFY_PRIMARY_KEY;
+			}
+			else
 				return false;
-			ws.ignore(pos, end);
-
-			if (!parser_col_decl.parse(pos, end, params.col_decl, max_parsed_pos, expected))
-				return false;
-
-			ws.ignore(pos, end);
-
-			params.type = ASTAlterQuery::MODIFY_COLUMN;
 		}
 		else if (s_reshard.ignore(pos, end, max_parsed_pos, expected))
 		{

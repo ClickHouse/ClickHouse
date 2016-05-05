@@ -15,9 +15,10 @@ struct AlterCommand
 {
 	enum Type
 	{
-		ADD,
-		DROP,
-		MODIFY
+		ADD_COLUMN,
+		DROP_COLUMN,
+		MODIFY_COLUMN,
+		MODIFY_PRIMARY_KEY,
 	};
 
 	Type type;
@@ -33,6 +34,8 @@ struct AlterCommand
 	/// Для ADD - после какого столбца добавить новый. Если пустая строка, добавить в конец. Добавить в начало сейчас нельзя.
 	String after_column;
 
+	/// Для MODIFY_PRIMARY_KEY
+	ASTPtr primary_key;
 
 	/// одинаковыми считаются имена, если они совпадают целиком или name_without_dot совпадает с частью имени до точки
 	static bool namesEqual(const String & name_without_dot, const DB::NameAndTypePair & name_type)

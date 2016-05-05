@@ -98,7 +98,7 @@ void InterpreterAlterQuery::parseAlter(
 		if (params.type == ASTAlterQuery::ADD_COLUMN)
 		{
 			AlterCommand command;
-			command.type = AlterCommand::ADD;
+			command.type = AlterCommand::ADD_COLUMN;
 
 			const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*params.col_decl);
 
@@ -118,20 +118,20 @@ void InterpreterAlterQuery::parseAlter(
 			if (params.column)
 				command.after_column = typeid_cast<const ASTIdentifier &>(*params.column).name;
 
-			out_alter_commands.push_back(command);
+			out_alter_commands.emplace_back(std::move(command));
 		}
 		else if (params.type == ASTAlterQuery::DROP_COLUMN)
 		{
 			AlterCommand command;
-			command.type = AlterCommand::DROP;
+			command.type = AlterCommand::DROP_COLUMN;
 			command.column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
 
-			out_alter_commands.push_back(command);
+			out_alter_commands.emplace_back(std::move(command));
 		}
 		else if (params.type == ASTAlterQuery::MODIFY_COLUMN)
 		{
 			AlterCommand command;
-			command.type = AlterCommand::MODIFY;
+			command.type = AlterCommand::MODIFY_COLUMN;
 
 			const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*params.col_decl);
 
@@ -149,27 +149,34 @@ void InterpreterAlterQuery::parseAlter(
 				command.default_expression = ast_col_decl.default_expression;
 			}
 
-			out_alter_commands.push_back(command);
+			out_alter_commands.emplace_back(std::move(command));
+		}
+		else if (params.type == ASTAlterQuery::MODIFY_PRIMARY_KEY)
+		{
+			AlterCommand command;
+			command.type = AlterCommand::MODIFY_PRIMARY_KEY;
+			command.primary_key = params.primary_key;
+			out_alter_commands.emplace_back(std::move(command));
 		}
 		else if (params.type == ASTAlterQuery::DROP_PARTITION)
 		{
 			const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-			out_partition_commands.push_back(PartitionCommand::dropPartition(partition, params.detach, params.unreplicated));
+			out_partition_commands.emplace_back(PartitionCommand::dropPartition(partition, params.detach, params.unreplicated));
 		}
 		else if (params.type == ASTAlterQuery::ATTACH_PARTITION)
 		{
 			const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-			out_partition_commands.push_back(PartitionCommand::attachPartition(partition, params.unreplicated, params.part));
+			out_partition_commands.emplace_back(PartitionCommand::attachPartition(partition, params.unreplicated, params.part));
 		}
 		else if (params.type == ASTAlterQuery::FETCH_PARTITION)
 		{
 			const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-			out_partition_commands.push_back(PartitionCommand::fetchPartition(partition, params.from));
+			out_partition_commands.emplace_back(PartitionCommand::fetchPartition(partition, params.from));
 		}
 		else if (params.type == ASTAlterQuery::FREEZE_PARTITION)
 		{
 			const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-			out_partition_commands.push_back(PartitionCommand::freezePartition(partition));
+			out_partition_commands.emplace_back(PartitionCommand::freezePartition(partition));
 		}
 		else if (params.type == ASTAlterQuery::RESHARD_PARTITION)
 		{
@@ -196,7 +203,7 @@ void InterpreterAlterQuery::parseAlter(
 			if (params.coordinator)
 				coordinator = dynamic_cast<const ASTLiteral &>(*params.coordinator).value;
 
-			out_partition_commands.push_back(PartitionCommand::reshardPartitions(
+			out_partition_commands.emplace_back(PartitionCommand::reshardPartitions(
 				first_partition, last_partition, weighted_zookeeper_paths, params.sharding_key_expr,
 				params.do_copy, coordinator));
 		}

@@ -22,7 +22,7 @@ void AlterCommand::apply(
 	NamesAndTypesList & columns, NamesAndTypesList & materialized_columns, NamesAndTypesList & alias_columns,
 	ColumnDefaults & column_defaults) const
 {
-	if (type == ADD)
+	if (type == ADD_COLUMN)
 	{
 		const auto exists_in = [this] (const NamesAndTypesList & columns) {
 			return columns.end() != std::find_if(columns.begin(), columns.end(),
@@ -79,7 +79,7 @@ void AlterCommand::apply(
 		/// Медленно, так как каждый раз копируется список
 		columns = *DataTypeNested::expandNestedColumns(columns);
 	}
-	else if (type == DROP)
+	else if (type == DROP_COLUMN)
 	{
 		/// look for a column in list and remove it if present, also removing corresponding entry from column_defaults
 		const auto remove_column = [&column_defaults, this] (NamesAndTypesList & columns) {
@@ -105,7 +105,7 @@ void AlterCommand::apply(
 							DB::ErrorCodes::ILLEGAL_COLUMN);
 		}
 	}
-	else if (type == MODIFY)
+	else if (type == MODIFY_COLUMN)
 	{
 		const auto default_it = column_defaults.find(column_name);
 		const auto had_default_expr = default_it != std::end(column_defaults);
@@ -158,9 +158,15 @@ void AlterCommand::apply(
 			/// both old and new columns have default expression, update it
 			column_defaults[column_name].expression = default_expression;
 	}
+	else if (type == MODIFY_PRIMARY_KEY)
+	{
+		/// Это никак не относится к изменению списка столбцов.
+		/// TODO Проверять, что все столбцы существуют, что добавляются только столбцы с константными default-ами.
+	}
 	else
 		throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
+
 
 void AlterCommands::apply(NamesAndTypesList & columns,
 			NamesAndTypesList & materialized_columns,
@@ -194,13 +200,13 @@ void AlterCommands::validate(IStorage * table, const Context & context)
 
 	for (AlterCommand & command : *this)
 	{
-		if (command.type == AlterCommand::ADD || command.type == AlterCommand::MODIFY)
+		if (command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::MODIFY_COLUMN)
 		{
 			const auto & column_name = command.column_name;
 			const auto column_it = std::find_if(std::begin(columns), std::end(columns),
 				std::bind(AlterCommand::namesEqual, std::cref(command.column_name), std::placeholders::_1));
 
-			if (command.type == AlterCommand::ADD)
+			if (command.type == AlterCommand::ADD_COLUMN)
 			{
 				if (std::end(columns) != column_it)
 					throw Exception{
@@ -208,7 +214,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
 						DB::ErrorCodes::ILLEGAL_COLUMN
 					};
 			}
-			else if (command.type == AlterCommand::MODIFY)
+			else if (command.type == AlterCommand::MODIFY_COLUMN)
 			{
 
 				if (std::end(columns) == column_it)
@@ -251,7 +257,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
 				}
 			}
 		}
-		else if (command.type == AlterCommand::DROP)
+		else if (command.type == AlterCommand::DROP_COLUMN)
 		{
 			auto found = false;
 			for (auto it = std::begin(columns); it != std::end(columns);)
@@ -325,7 +331,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
 				{
 					/// add a new alter command to modify existing column
 					this->emplace_back(AlterCommand{
-						AlterCommand::MODIFY, column_name, explicit_type,
+						AlterCommand::MODIFY_COLUMN, column_name, explicit_type,
 						default_it->second.type, default_it->second.expression
 					});
 

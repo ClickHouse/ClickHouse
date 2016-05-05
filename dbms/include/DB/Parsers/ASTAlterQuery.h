@@ -31,12 +31,15 @@ public:
 		ADD_COLUMN,
 		DROP_COLUMN,
 		MODIFY_COLUMN,
+		MODIFY_PRIMARY_KEY,
+
 		DROP_PARTITION,
 		ATTACH_PARTITION,
 		FETCH_PARTITION,
 		FREEZE_PARTITION,
 		RESHARD_PARTITION,
-		NO_TYPE
+
+		NO_TYPE,
 	};
 
 	struct Parameters
@@ -55,6 +58,10 @@ public:
 		  * В запросе DROP здесь хранится имя столбца для удаления
 		  */
 		ASTPtr column;
+
+		/** Для MODIFY PRIMARY KEY
+		  */
+		ASTPtr primary_key;
 
 		/** В запросах DROP PARTITION и RESHARD PARTITION здесь хранится имя partition'а.
 		  */
