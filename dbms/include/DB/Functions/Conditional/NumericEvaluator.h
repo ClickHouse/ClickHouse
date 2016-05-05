@@ -42,27 +42,22 @@ template <typename TResult>
 using NumericSources = std::vector<NumericSourcePtr<TResult> >;
 
 /// Column type-specific implementation of NumericSource.
+template <typename TResult, typename TType, bool IsConst>
+class NumericSourceImpl;
+
 template <typename TResult, typename TType>
-class NumericSourceImpl final : public NumericSource<TResult>
+class NumericSourceImpl<TResult, TType, true> final : public NumericSource<TResult>
 {
 public:
 	NumericSourceImpl(const Block & block, const ColumnNumbers & args, const Branch & br)
-		: data_array{initDataArray(block, args, br)}
 	{
 		size_t index = br.index;
-		bool is_const = br.is_const;
 
-		if (is_const)
-		{
-			const ColumnPtr & col = block.getByPosition(args[index]).column;
-			const auto * const_col = typeid_cast<const ColumnConst<TType> *>(&*col);
-			if (const_col == nullptr)
-				throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-			TType data = const_col->getData();
-			accessor = [data](size_t i) { return static_cast<TResult>(data); };
-		}
-		else
-			accessor = [&](size_t i) { return static_cast<TResult>(data_array[i]); };
+		const ColumnPtr & col = block.getByPosition(args[index]).column;
+		const auto * const_col = typeid_cast<const ColumnConst<TType> *>(&*col);
+		if (const_col == nullptr)
+			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+		data = const_col->getData();
 	}
 
 	NumericSourceImpl(const NumericSourceImpl &) = delete;
@@ -73,39 +68,48 @@ public:
 
 	TResult get(size_t i) const override
 	{
-		return accessor(i);
+		return static_cast<TResult>(data);
+	};
+
+private:
+	TType data;
+};
+
+template <typename TResult, typename TType>
+class NumericSourceImpl<TResult, TType, false> final : public NumericSource<TResult>
+{
+public:
+	NumericSourceImpl(const Block & block, const ColumnNumbers & args, const Branch & br)
+		: data_array{initDataArray(block, args, br)}
+	{
+	}
+
+	NumericSourceImpl(const NumericSourceImpl &) = delete;
+	NumericSourceImpl & operator=(const NumericSourceImpl &) = delete;
+
+	NumericSourceImpl(NumericSourceImpl &&) = default;
+	NumericSourceImpl & operator=(NumericSourceImpl &&) = default;
+
+	TResult get(size_t i) const override
+	{
+		return static_cast<TResult>(data_array[i]);
 	};
 
 private:
 	static const PaddedPODArray<TType> & initDataArray(const Block & block,
 		const ColumnNumbers & args, const Branch & br)
 	{
-		bool is_const = br.is_const;
-
-		if (is_const)
-			return null_array;
-		else
-		{
-			size_t index = br.index;
-			const ColumnPtr & col = block.getByPosition(args[index]).column;
-			const auto * vec_col = typeid_cast<const ColumnVector<TType> *>(&*col);
-			if (vec_col == nullptr)
-				throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-			return vec_col->getData();
-		}
+		size_t index = br.index;
+		const ColumnPtr & col = block.getByPosition(args[index]).column;
+		const auto * vec_col = typeid_cast<const ColumnVector<TType> *>(&*col);
+		if (vec_col == nullptr)
+			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+		return vec_col->getData();
 	}
 
 private:
-	static const PaddedPODArray<TType> null_array;
-
 	const PaddedPODArray<TType> & data_array;
-
-	using Accessor = std::function<TResult(size_t)>;
-	Accessor accessor;
 };
-
-template <typename TResult, typename TType>
-const PaddedPODArray<TType> NumericSourceImpl<TResult, TType>::null_array{};
 
 /// Create a numeric column accessor if TType is the type registered
 /// in the specified branch info.
@@ -119,7 +123,10 @@ public:
 		auto type_name = br.type->getName();
 		if (TypeName<TType>::get() == type_name)
 		{
-			source = std::make_unique<NumericSourceImpl<TResult, TType> >(block, args, br);
+			if (br.is_const)
+				source = std::make_unique<NumericSourceImpl<TResult, TType, true> >(block, args, br);
+			else
+				source = std::make_unique<NumericSourceImpl<TResult, TType, false> >(block, args, br);
 			return true;
 		}
 		else
