@@ -28,7 +28,7 @@ public:
 		return data_array[row];
 	}
 
-	inline UInt8 getSize() const
+	inline size_t getSize() const
 	{
 		return data_array.size();
 	}

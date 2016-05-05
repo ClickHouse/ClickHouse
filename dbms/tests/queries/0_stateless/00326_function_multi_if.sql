@@ -1911,3 +1911,27 @@ SELECT multiIf(1, ['foo', 'bar'], 1, ['foo', 'bar'], ['foo', col7]) FROM test.mu
 SELECT multiIf(1, ['foo', 'bar'], 1, ['foo', 'bar'], ['foo', 'bar']) FROM test.multi_if_check;
 
 DROP TABLE IF EXISTS test.multi_if_check;
+
+/* Miscellaneous */
+
+CREATE TABLE test.multi_if_check(col1 UInt64) ENGINE=TinyLog;
+INSERT INTO test.multi_if_check(col1) VALUES (11225),(20273),(213),(240),(12),(187),(29252);
+INSERT INTO test.multi_if_check(col1) VALUES (1),(65),(208),(9),(154),(20),(191),(2),(66),(970),(56),(144),(49),(10317),(145),(21623),(225);
+INSERT INTO test.multi_if_check(col1) VALUES (10658),(11182),(11036),(194),(16),(54),(23),(172),(10748),(52),(63),(11282),(237),(55),(190);
+INSERT INTO test.multi_if_check(col1) VALUES (11162),(197),(4),(64),(17),(59),(51),(1091),(14),(13),(10645),(73),(157),(169),(43),(47),(11111);
+INSERT INTO test.multi_if_check(col1) VALUES (11002),(99),(42),(142),(40),(20259),(15),(976),(11220),(193),(21),(3),(973),(35),(148),(10277),(10253);
+INSERT INTO test.multi_if_check(col1) VALUES (155),(972),(159),(959),(39),(50),(236),(969),(114678),(143),(37),(20167),(20086),(10536),(28948),(10355);
+INSERT INTO test.multi_if_check(col1) VALUES (7),(192),(11119),(67),(6),(8),(10841),(141),(10951),(222),(10752),(10363),(10842),(24881),(11287),(198);
+INSERT INTO test.multi_if_check(col1) VALUES (11453),(26),(147),(44),(19),(76),(29349),(10987),(28896),(75),(11168),(11084),(62),(46),(10747),(24);
+INSERT INTO test.multi_if_check(col1) VALUES (10664),(966),(11256),(53),(10945),(10871),(158),(20544),(20540),(163),(10262),(11080),(0),(11159),(239);
+INSERT INTO test.multi_if_check(col1) VALUES (10995),(11),(11143),(11212),(24893),(10318),(68),(21949),(28),(971),(153),(10689),(38),(11474),(11029);
+INSERT INTO test.multi_if_check(col1) VALUES (11067),(21636),(965),(10761),(10324),(164),(977),(45),(10),(10944),(964),(20224),(20536),(102880),(33);
+INSERT INTO test.multi_if_check(col1) VALUES (11232),(10315),(78),(11217),(10373),(11514),(10343),(48),(22),(20197),(10367),(36),(11116),(195),(10274);
+INSERT INTO test.multi_if_check(col1) VALUES (115),(11069),(30),(11266),(10891),(11235),(112529),(206),(10393),(10712),(10649),(11164),(10511),(10295);
+INSERT INTO test.multi_if_check(col1) VALUES (11139),(10347),(146),(11079),(961),(11231),(10358),(10653),(11358),(165),(11115),(1095),(960),(10992),(20221);
+INSERT INTO test.multi_if_check(col1) VALUES (5),(10716),(102),(974),(10691),(102444),(11391),(10897),(10306),(10298),(10896),(21609),(118),(11148),(11451);
+INSERT INTO test.multi_if_check(col1) VALUES (10398),(221),(975),(80),(162),(28051),(10838),(10765),(1058),(11464),(74),(21134),(21422),(10313),(28401),(20539);
+INSERT INTO test.multi_if_check(col1) VALUES (10418),(235),(25),(179),(26030),(28381),(11091),(27398),(11108),(968),(10300),(11469),(35393),(10733),(11283),(11202);
+
+SELECT DISTINCT col1, multiIf(col1 != 213, 'Москва', 'Мир') AS k FROM test.multi_if_check LIMIT 10;
+DROP TABLE IF EXISTS test.multi_if_check;
