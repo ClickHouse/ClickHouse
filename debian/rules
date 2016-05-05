@@ -117,7 +117,7 @@ install: build
 	done
 
 
-	# В случае сборки clickhouse-server, добавим в пакет бинарник clang-а и заголовочные файлы - для динамической компиляции.
+	# В случае сборки clickhouse-server, добавим в пакет бинарник clang-а, ld и заголовочные файлы - для динамической компиляции.
 	if [ -e debian/tmp/etc/init.d/clickhouse-server ]; then \
 		mkdir -p debian/tmp/usr/share/clickhouse/bin debian/tmp/usr/share/clickhouse/headers; \
 		debian/copy_clang_binaries.sh debian/tmp/usr/share/clickhouse/bin/; \

@@ -178,6 +178,7 @@ void Compiler::compile(
 	command <<
 		"LD_LIBRARY_PATH=/usr/share/clickhouse/bin/"
 		" /usr/share/clickhouse/bin/clang"
+		" -B /usr/share/clickhouse/bin/"
 		" -x c++ -std=gnu++1y -O3 -g -Wall -Werror -Wnon-virtual-dtor -march=native -D NDEBUG"
 		" -shared -fPIC -fvisibility=hidden -fno-implement-inlines"
 		" -isystem /usr/share/clickhouse/headers/usr/local/include/"
