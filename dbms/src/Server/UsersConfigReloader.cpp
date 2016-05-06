@@ -85,7 +85,7 @@ void UsersConfigReloader::reloadIfNewer(bool force)
 
 	try
 	{
-		config = ConfigProcessor(!force).loadConfig(path);
+		config = ConfigProcessor().loadConfig(path);
 	}
 	catch (Poco::Exception & e)
 	{
