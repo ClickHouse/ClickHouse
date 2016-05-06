@@ -21,5 +21,5 @@ struct D                                                        \
     bool operator==(const D & rhs) const { return t == rhs.t; } \
     bool operator<(const D & rhs) const { return t < rhs.t; }   \
     T & toUnderType() { return t; }                             \
-    const T & toUnderType() { return t; }                       \
+    const T & toUnderType() const { return t; }                       \
 };
