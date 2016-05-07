@@ -1150,6 +1150,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 						"8. Manual modification of checksums stored in ZooKeeper. "
 						"We will download merged part from replica to force byte-identical result.");
 				}
+				else
+					throw;
 			}
 
 			if (!do_fetch)
