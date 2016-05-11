@@ -3455,10 +3455,7 @@ void StorageReplicatedMergeTree::enforceShardsConsistency(const WeightedZooKeepe
 		auto columns_str = zookeeper->get(weighted_path.first + "/columns");
 		auto columns_desc = ColumnsDescription<true>::parse(columns_str);
 
-		if (!std::equal(columns.begin(), columns.end(), columns_desc.columns.begin()) ||
-			!std::equal(materialized_columns.begin(), materialized_columns.end(), columns_desc.materialized.begin()) ||
-			!std::equal(alias_columns.begin(), alias_columns.end(), columns_desc.alias.begin()) ||
-			!std::equal(column_defaults.begin(), column_defaults.end(), columns_desc.defaults.begin()))
+		if (!std::equal(columns.begin(), columns.end(), columns_desc.columns.begin()))
 			throw Exception{"Table is inconsistent accross shards", ErrorCodes::INCONSISTENT_TABLE_ACCROSS_SHARDS};
 	}
 }
