@@ -118,6 +118,7 @@ start()
 	EXIT_STATUS=0
 
 	echo -n "Start $PROGRAM service: "
+	ulimit -n 262144
 
 	if all_runs; then
 		echo -n "already running "
