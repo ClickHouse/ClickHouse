@@ -159,6 +159,9 @@ protected:
 	/// Получен ли сигнал на завершение? Этот флаг устанавливается в BaseDaemonApplication.
 	bool is_cancelled = false;
 
+	/// Флаг устанавливается по сообщению из Task (при аварийном завершении).
+	bool task_failed = false;
+
 	bool log_to_console = false;
 
 	/// Событие, чтобы проснуться во время ожидания
