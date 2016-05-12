@@ -1,49 +1,39 @@
-ClickHouse is free analytical DBMS for big data.
+ClickHouse is free analytic DBMS for big data.
 
 
-Big Data
-
-ClickHouse powers Yandex.Metrica - second largest web analytics system in the world.
-In Yandex.Metrica, all incoming data is ingested into ClickHouse in realtime (about 20 billion events each day).
-Currently, Yandex.Metrica has more than 13 trillion records in ClickHouse powered database.
-It is used for fully customizable reports, that are generated on-the-fly, directly from non-aggregated data.
-Yandex.Metrica allows customers to slice and dice data in every detail, even for huge traffic sites, with instant results.
-
-ClickHouse is the only open-source system, that is capable of doing such kind of things.
+ClickHouse is capable of serving extremely large volumes of data in a stable and sustainable manner. It currently powers Yandex.Metrica, world’s second largest web analytics platform, with over 13 trillion database records and over 20 billion events a day, generating customized reports on-the-fly, directly from non-aggregated data.
 
 
 Linearly scalable
 
-ClickHouse allows to add servers to cluster when necessary.
-For example, in Yandex.Metrica, main cluster has grown from 60 to 394 servers in two years.
-Servers are placed in six different geographically distributed datacenters.
-
-ClickHouse is using maximum of available hardware to process queries as fast as possible.
-We achieve peak performance of more than 2 terabytes per second for single query (data after decompression, only used columns).
+ClickHouse allows companies to add servers to their clusters when necessary without investing time or money into additional DBMS modification. The system continued to successfully serve Yandex.Metrica, whose servers, located in six geographically distributed datacenters, have grown from 60 to 394 in its main cluster in two years.
 
 ClickHouse scales well both vertically and horizontally.
 We have installations with more than two trillion rows per single node, and another installations with 100 TB of storage per single node.
 
+ClickHouse is easily adaptable to perform both on hundreds of node clusters, and on a single server or even virtual machine.
 
-Efficient use of hardware
 
-ClickHouse is column-oriented DBMS. It works 2-3 orders of magnitude faster on typical analytical queries with same available IO throughput, comparable to traditional row-oriented systems. Due to columnar format, more hot data fits in RAM, that leads to even faster response times.
+Hardware-efficient
+
+ClickHouse works 2-3 orders of magnitude faster on typical analytical queries with same available IO throughput, comparable to traditional row-oriented systems. Due to columnar format, more hot data fits in RAM, that leads to even faster response times.
 ClickHouse is space and time efficient. All data is stored compressed. Compression works surprisingly good, thanks to column store.
 
-ClickHouse constantly maintains data locality for loaded data. It minimizes number of seeks for range queries, so ClickHouse works fine on cheap rotational drives.
-ClickHouse is also CPU efficient due to vectorized query execution, runtime code generation and top notch implementations of core algorithms.
+ClickHouse maintains locality of reference for stored data continually, which minimizes number of seeks for range queries and increases efficiency of using rotational drives.
+
+Due to vectorized query execution, runtime code generation and top-notch implementation of its core algorithms, ClickHouse is CPU efficient.
 
 For most types of queries, ClickHouse doesn't require fast network, because it minimizes data transfers. Distributed queries will work even in multi-datacenter environment.
 
 
 Fast
 
-We proud of high performance of ClickHouse. Throughput of query processing per single server is usually from hundreds millions to more than billion rows per second and to more than tens of gigabytes per second. It's hard to believe that is possible to process data in such high rates. But you don't need to beleive, because ClickHouse is actually do that.
+ClickHouse’s capacity has been proven to process hundreds of millions to more than a billion rows and tens of gigabytes of data per single server per second. On our performance testing, ClickHouse works few times faster than best of available commercial column-oriented DBMS.
 
-On our performance testing, ClickHouse works few times faster than best of available commercial column-oriented DBMS.
+ClickHouse uses all available hardware to its full potential to process each query as fast as possible. The peak processing performance for a single query (after decompression, only used columns) stands at more than 2 terabytes per second.
 
 
-Fault tolerance
+Fault-tolerant
 
 ClickHouse supports multi-master asynchronous replication. It could span through multiple datacenters.
 Single nodes and even datacenter downtime doesn't affect the availability of system for reads and writes.
@@ -51,54 +41,52 @@ Distributed reads are automatically balanced to alive replicas without increase 
 After nodes downtime, replicated data is synchronized automatically or semi-automatically.
 
 
-High reliable
-
-Reliability never comes for free. It is always consequence of long term production usage.
-At Yandex, ClickHouse is used in production since 2012 with no significant issues.
-
-ClickHouse is purely distributed system with no single point of failure. Nodes are mostly independent.
-When using replication, it (optionally) relies on ZooKeeper for coordination. Even in case of ZooKeeper failure, system is available for read requests. Even if all metadata in ZooKeeper is corrupted, you don't lose your data.
-
-In case of software or hardware failures, or misconfuguration, ClickHouse never deletes "broken" data. Instead, it will move broken data to safe place or ask you what to do before node startup. It is rather difficult to accidentially corrupt or lose your data. All data is checksummed every time read or write to disk or network. By default, you have no simple ways to delete whole data by wrong action.
-
-ClickHouse offers many settings for limits on query complexity and resource usage, that could be tuned by user basis. It is possible to simultaneously serve many high priority low-latency requests and also some long-running queries with lowered priority.
-
-
 Feature rich
 
-ClickHouse has many builtin features especially useful for web-analytics and other domain-specific applications. It has sketching data structures for fast and memory-efficient calculation of cardinalities and quantiles. It offers highly optimized functions for URL and IP-address processing (both IPv4 and IPv6); rich possibilities for date and time processing, including time zones support. Arrays, nested data structures and ARRAY JOINs are well suited for some kinds of denormalized data.
+ClickHouse has many builtin features especially useful for web-analytics. It has probablistic data structures for fast and memory-efficient calculation of cardinalities and quantiles. It offers highly optimized functions for URL and IP-address processing (both IPv4 and IPv6) as well as providing rich possibilities for date and time processing, including time zones. Data management methods, such as arrays, nested data structures and ARRAY JOINs, available in ClickHouse can be used for management of denormalized data.
 
-ClickHouse has support of both local and distributed JOINs. Local JOINs are optimal when joined data is co-located on same nodes.
+ClickHouse supports both local and distributed JOINs. Local JOINs are optimal when joined data is co-located on same nodes.
 ClickHouse has natural support for (optional) approximate query processing - you could get the result of query as fast as you want.
 
-Some features (conditional aggregate functions, calculation of totals and extremes) allow you to get result with single query when otherwise you have to run multiple queries.
+Using ClickHouse’s conditional aggregate functions, calculation of totals and extremes, you can get results with a single query instead of having to run a number of those.
 
 One of unusually powerful features of ClickHouse are external dictionaries - dimension tables that is loaded from external source and is used in queries for seamless JOINs in most optimal way.
 
 
 Simple and handy
 
-ClickHouse works not only on hundred node clusters. It could be installed on single server or even virtual machine, and that installation is proved to be practical. You could test ClickHouse even on Linux laptop. At Yandex, there are many cases, when analysts with no development experience have installed ClickHouse and create data viewers on top of it.
+ClickHouse is simple and works out-of-the-box. As well as performing on hundreds of node clusters, this system can be easily installed on a single server or even a virtual machine. At Yandex, there are many cases, when analysts with no development experience have installed ClickHouse and create data viewers on top of it.
 
-Many people start using ClickHouse, because it is simple and works out of the box.
+
+High reliable
+
+At Yandex, Russia’s leading search provider, ClickHouse is used in production since 2012 across a range of products and services with a large number of high load data points, including Metrica, Market, Mail and Ads.
+
+ClickHouse is purely distributed system located on independent nodes with no single point of failure.
+When using replication, it (optionally) relies on ZooKeeper for coordination. Even in case of ZooKeeper failure, system is available for read requests. Even if all metadata in ZooKeeper is corrupted, you don't lose your data.
+
+In case of software or hardware failures, or misconfuguration, ClickHouse never deletes "broken" data. Instead, it will move broken data to safe place or ask you what to do before node startup. It is rather difficult to accidentially corrupt or lose your data. All data is checksummed before every read or write to disk or network. It is virtually impossible to delete the whole data by accident.
+
+ClickHouse offers flexible limits on query complexity and resource usage, which can be fine-tuned using settings. It is possible to simultaneously serve both a number of high priority low-latency requests and some long-running queries with lowered priority.
 
 
 Opens new possibilities
 
-When using ClickHouse, you don't need to pre-aggregate your data. You just ingest all incoming data (in clean and well-structured form) into ClickHouse, and it is instantly available for reports. It greatly simplifies all your data processing pipeline.
-
-ClickHouse is column-oriented DBMS. If you add more columns to table, queries will run as fast as before, because only used columns are read. So, it becomes reasonable to write all useful data in "big flat table" with hundreds of columns. When you have more properties and dimensions to slice and dice data, just add more columns to table: ALTERs are free.
+ClickHouse simplifies all your data processing. All you have to do is ingest all your structured data into the system without any pre-aggregation, and it is instantly available for reports. New columns for new properties and dimensions can be easily added to the system at any time without slowing it down.
 
 ClickHouse works two-three orders of magnitude faster than traditional map-reduce based approaches. It is not just quantitative improvement. When using traditional approaches, you have "data lake" with all data available for any queries, but very slowly and not handy: even simple queries run for minutes or hours. By contrast, in ClickHouse, you get instant results in subsecond to few seconds time in usual cases: data is processed faster than you write the query. And you quickly come with possibility to run more analytical queries, to test more hypothesis, to further slice and dice data, to look at data from more dimensions: it is like as you just started to think faster.
 
+
+
+Key Features
 
 True column-oriented
 Vectorized query execution
 Data compression
 Parallel and distributed query execution
 Realtime data ingestion
-On-disk data locality
-Online query processing
+On-disk locality of reference
+Realtime query processing
 Cross-datacenter replication
 High availability
 SQL support
@@ -114,6 +102,8 @@ Detailed documentation
 Clean documented code
 
 
+Domain areas
+
 Web and application analytics
 Advertisement networks and RTB
 Telecommunications analytics
@@ -123,19 +113,3 @@ Monitoring and telemetry
 Business intelligence
 Analytics for online games
 Analytics for Internet of Things
-
-
-
-Яндекс открывает исходный код СУБД ClickHouse
-
-
-ClickHouse - распределённая аналитическая СУБД для обработки больших объёмов данных.
-
-"ClickHouse - единственная система, которая позволяет выполнять аналитические запросы в интерактивном режиме по данным, обновляемым в реальном времени, способная при этом масштабироваться до десятков триллионов записей и петабайт хранимых данных. Использование ClickHouse открывает возможности, которые было трудно представить раньше: вы можете сохранять весь поток данных без предварительной агрегации и быстро получать отчёты в любых разрезах."
-
-ClickHouse разработана в Яндексе для задач Яндекс.Метрики - второй по величине системе веб-аналитики в мире.
-Сегодня ClickHouse также применяется в Маркете, Почте, Директе, Вебмастере, Авто.ру, ADFOX, в бизнес аналитике и в мониторинге инфраструктуры.
-
-"В нише систем для обработки транзакций существуют открытые технологии, такие как PostgreSQL и MySQL. Совсем по-другому обстоят дела в области аналитических СУБД - открытых технологий подходящего качества до сих пор не существовало. Мы решили изменить эту ситуацию и сделать ClickHouse доступным для каждого."
-
-ClickHouse может быть использован для широкого круга задач: веб-аналитики, аналитики приложений и игр; для телекоммуникационных систем; рекламных сетей и RTB-систем; онлайн торговли; для обработки данных мониторинга и телеметрии; для задач информационной безопасности.
