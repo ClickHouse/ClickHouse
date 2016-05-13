@@ -345,11 +345,11 @@ void Cluster::initMisc()
 		}
 	}
 
-	assignName();
+	calculateHashOfAddresses();
 }
 
 
-void Cluster::assignName()
+void Cluster::calculateHashOfAddresses()
 {
 	std::vector<std::string> elements;
 
@@ -382,10 +382,27 @@ void Cluster::assignName()
 	SHA512_Final(hash, &ctx);
 
 	{
-		WriteBufferFromString buf(name);
+		WriteBufferFromString buf(hash_of_addresses);
 		HexWriteBuffer hex_buf(buf);
 		hex_buf.write(reinterpret_cast<const char *>(hash), sizeof(hash));
 	}
+}
+
+
+std::unique_ptr<Cluster> Cluster::getClusterWithSingleShard(size_t index) const
+{
+	return std::unique_ptr<Cluster>{ new Cluster(*this, index) };
+}
+
+Cluster::Cluster(const Cluster & from, size_t index)
+	: shards_info{from.shards_info[index]}
+{
+	if (!from.addresses.empty())
+		addresses.emplace_back(from.addresses[index]);
+	if (!from.addresses_with_failover.empty())
+		addresses_with_failover.emplace_back(from.addresses_with_failover[index]);
+
+	initMisc();
 }
 
 }

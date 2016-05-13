@@ -1643,7 +1643,7 @@ void ReshardingWorker::deleteTemporaryData()
 
 std::string ReshardingWorker::createCoordinator(const Cluster & cluster)
 {
-	const std::string cluster_name = cluster.getName();
+	const std::string cluster_name = cluster.getHashOfAddresses();
 	auto zookeeper = context.getZooKeeper();
 
 	auto lock = getGlobalLock();

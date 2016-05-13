@@ -9,6 +9,7 @@
 
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/reinterpretAsIdentifier.h>
+#include <DB/Interpreters/getClusterName.h>
 
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/StorageTinyLog.h>
@@ -385,32 +386,7 @@ StoragePtr StorageFactory::get(
 		if (args.size() != 3 && args.size() != 4)
 			throw Exception(params_error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		/** Имя кластера - это имя тега в xml-конфигурации.
-		  * Обычно оно парсится как идентификатор. То есть, оно может содержать подчёркивания, но не может содержать дефисы,
-		  *  при условии, что идентификатор не находится в обратных кавычках.
-		  * Но в xml в качестве имени тега более привычно использовать дефисы.
-		  * Такое имя будет парситься как выражение с оператором минус - совсем не то, что нужно.
-		  * Поэтому, рассмотрим такой случай отдельно.
-		  */
-		String cluster_name;
-
-		if (const ASTIdentifier * ast_id = typeid_cast<const ASTIdentifier *>(args[0].get()))
-		{
-			cluster_name = ast_id->name;
-		}
-		else if (const ASTLiteral * ast_lit = typeid_cast<const ASTLiteral *>(args[0].get()))
-		{
-			cluster_name = ast_lit->value.safeGet<String>();
-		}
-		else if (const ASTFunction * ast_func = typeid_cast<const ASTFunction *>(args[0].get()))
-		{
-			if (!ast_func->range.first || !ast_func->range.second)
-				throw Exception("Illegal expression instead of cluster name.", ErrorCodes::BAD_ARGUMENTS);
-
-			cluster_name = String(ast_func->range.first, ast_func->range.second);
-		}
-		else
-			throw Exception("Illegal expression instead of cluster name.", ErrorCodes::BAD_ARGUMENTS);
+		String cluster_name = getClusterName(*args[0]);
 
 		String remote_database 	= reinterpretAsIdentifier(args[1], local_context).name;
 		String remote_table 	= typeid_cast<ASTIdentifier &>(*args[2]).name;
