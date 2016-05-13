@@ -742,7 +742,7 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
 				}
 				else
 				{
-					throw DB::Exception("Set for IN is not created yet!", ErrorCodes::LOGICAL_ERROR);
+					throw Exception("Set for IN is not created yet!", ErrorCodes::LOGICAL_ERROR);
 				}
 			}
 		}
