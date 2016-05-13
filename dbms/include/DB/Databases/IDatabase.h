@@ -68,6 +68,19 @@ public:
 	/// Переименовать таблицу и, возможно, переместить таблицу в другую БД.
 	virtual void renameTable(const Context & context, const String & name, IDatabase & to_database, const String & to_name) = 0;
 
+	using ASTModifier = std::function<void(ASTPtr &)>;
+
+	/// Изменить структуру таблицы в метаданных.
+	/// Нужно вызывать под TableStructureLock соответствующей таблицы. Если engine_modifier пустой, то engine не изменяется.
+	virtual void alterTable(
+		const Context & context,
+		const String & name,
+		const NamesAndTypesList & columns,
+		const NamesAndTypesList & materialized_columns,
+		const NamesAndTypesList & alias_columns,
+		const ColumnDefaults & column_defaults,
+		const ASTModifier & engine_modifier);
+
 	/// Получить запрос CREATE TABLE для таблицы. Может выдавать информацию и для detached таблиц, для которых есть метаданные.
 	virtual ASTPtr getCreateQuery(const String & name) const = 0;
 

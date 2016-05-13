@@ -230,8 +230,10 @@ void StorageMerge::alter(const AlterCommands & params, const String & database_n
 
 	auto lock = lockStructureForAlter();
 	params.apply(*columns, materialized_columns, alias_columns, column_defaults);
-	InterpreterAlterQuery::updateMetadata(database_name, table_name, *columns,
-		materialized_columns, alias_columns, column_defaults, context);
+
+	context.getDatabase(database_name)->alterTable(
+		context, table_name,
+		*columns, materialized_columns, alias_columns, column_defaults, {});
 }
 
 }

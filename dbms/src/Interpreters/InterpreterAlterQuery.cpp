@@ -212,47 +212,4 @@ void InterpreterAlterQuery::parseAlter(
 	}
 }
 
-void InterpreterAlterQuery::updateMetadata(
-	const String & database_name,
-	const String & table_name,
-	const NamesAndTypesList & columns,
-	const NamesAndTypesList & materialized_columns,
-	const NamesAndTypesList & alias_columns,
-	const ColumnDefaults & column_defaults,
-	const Context & context)
-{
-	String path = context.getPath();
-
-	String database_name_escaped = escapeForFileName(database_name);
-	String table_name_escaped = escapeForFileName(table_name);
-
-	String metadata_path = path + "metadata/" + database_name_escaped + "/" + table_name_escaped + ".sql";
-	String metadata_temp_path = metadata_path + ".tmp";
-
-	StringPtr query = new String();
-	{
-		ReadBufferFromFile in(metadata_path);
-		WriteBufferFromString out(*query);
-		copyData(in, out);
-	}
-
-	ParserCreateQuery parser;
-	ASTPtr ast = parseQuery(parser, query->data(), query->data() + query->size(), "in file " + metadata_path);
-
-	ast->query_string = query;
-
-	ASTCreateQuery & attach = typeid_cast<ASTCreateQuery &>(*ast);
-
-	ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns, materialized_columns, alias_columns, column_defaults);
-	*std::find(attach.children.begin(), attach.children.end(), attach.columns) = new_columns;
-	attach.columns = new_columns;
-
-	{
-		Poco::FileOutputStream ostr(metadata_temp_path);
-		formatAST(attach, ostr, 0, false);
-	}
-
-	Poco::File(metadata_temp_path).renameTo(metadata_path);
-}
-
 }

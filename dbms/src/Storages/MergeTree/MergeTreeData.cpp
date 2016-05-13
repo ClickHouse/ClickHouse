@@ -515,7 +515,8 @@ void MergeTreeData::checkAlter(const AlterCommands & params)
 	if (primary_expr)
 		keys = primary_expr->getRequiredColumns();
 
-	keys.push_back(merging_params.sign_column);
+	if (!merging_params.sign_column.empty())
+		keys.push_back(merging_params.sign_column);
 
 	std::sort(keys.begin(), keys.end());
 
@@ -533,7 +534,10 @@ void MergeTreeData::checkAlter(const AlterCommands & params)
 	/// augment plain columns with materialized columns for convert expression creation
 	new_columns.insert(std::end(new_columns),
 		std::begin(new_materialized_columns), std::end(new_materialized_columns));
+
 	createConvertExpression(nullptr, getColumnsList(), new_columns, unused_expression, unused_map, unused_bool);
+
+	
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
@@ -632,7 +636,10 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 }
 
 MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
-	const DataPartPtr & part, const NamesAndTypesList & new_columns, bool skip_sanity_checks)
+	const DataPartPtr & part,
+	const NamesAndTypesList & new_columns,
+	const NamesAndTypesList & new_primary_key,
+	bool skip_sanity_checks)
 {
 	ExpressionActionsPtr expression;
 	AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Блокирует изменение куска.
@@ -643,8 +650,8 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 	{
 		transaction->clear();
 
-		throw Exception("Suspiciously many (" + toString(transaction->rename_map.size()) + ") files need to be modified in part " + part->name
-						+ ". Aborting just in case");
+		throw Exception("Suspiciously many (" + toString(transaction->rename_map.size())
+			+ ") files need to be modified in part " + part->name + ". Aborting just in case");
 	}
 
 	if (transaction->rename_map.empty() && !force_update_metadata)

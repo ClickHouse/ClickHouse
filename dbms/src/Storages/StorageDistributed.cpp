@@ -2,12 +2,16 @@
 #include <DB/DataStreams/BlockExtraInfoInputStream.h>
 #include <DB/DataStreams/UnionBlockInputStream.h>
 
+#include <DB/Databases/IDatabase.h>
+
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Storages/VirtualColumnFactory.h>
 #include <DB/Storages/Distributed/DistributedBlockOutputStream.h>
 #include <DB/Storages/Distributed/DirectoryMonitor.h>
 #include <DB/Storages/MergeTree/ReshardingWorker.h>
+
 #include <DB/Common/escapeForFileName.h>
+
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -222,8 +226,10 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
 
 	auto lock = lockStructureForAlter();
 	params.apply(*columns, materialized_columns, alias_columns, column_defaults);
-	InterpreterAlterQuery::updateMetadata(database_name, table_name,
-		*columns, materialized_columns, alias_columns, column_defaults, context);
+
+	context.getDatabase(database_name)->alterTable(
+		context, table_name,
+		*columns, materialized_columns, alias_columns, column_defaults, {});
 }
 
 void StorageDistributed::shutdown()

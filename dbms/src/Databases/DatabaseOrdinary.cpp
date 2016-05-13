@@ -8,6 +8,7 @@
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/copyData.h>
@@ -23,6 +24,7 @@ namespace ErrorCodes
 	extern const int TABLE_METADATA_DOESNT_EXIST;
 	extern const int CANNOT_CREATE_TABLE_FROM_METADATA;
 	extern const int INCORRECT_FILE_NAME;
+	extern const int LOGICAL_ERROR;
 }
 
 
@@ -432,6 +434,66 @@ void DatabaseOrdinary::shutdown()
 void DatabaseOrdinary::drop()
 {
 	/// Дополнительных действий по удалению не требуется.
+}
+
+
+void DatabaseOrdinary::alterTable(
+	const Context & context,
+	const String & name,
+	const NamesAndTypesList & columns,
+	const NamesAndTypesList & materialized_columns,
+	const NamesAndTypesList & alias_columns,
+	const ColumnDefaults & column_defaults,
+	const ASTModifier & engine_modifier)
+{
+	/// Считываем определение таблицы и заменяем в нём нужные части на новые.
+
+	String table_name_escaped = escapeForFileName(name);
+	String table_metadata_tmp_path = path + "/" + table_name_escaped + ".sql.tmp";
+	String table_metadata_path = path + "/" + table_name_escaped + ".sql";
+	String statement;
+
+	{
+		char in_buf[METADATA_FILE_BUFFER_SIZE];
+		ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
+		WriteBufferFromString out(statement);
+		copyData(in, out);
+	}
+
+	ParserCreateQuery parser;
+	ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path);
+
+	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
+
+	ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns, materialized_columns, alias_columns, column_defaults);
+	auto it = std::find(ast_create_query.children.begin(), ast_create_query.children.end(), ast_create_query.columns);
+	if (it == ast_create_query.children.end())
+		throw Exception("Logical error: cannot find columns child in ASTCreateQuery", ErrorCodes::LOGICAL_ERROR);
+	*it = new_columns;
+
+	if (engine_modifier)
+		engine_modifier(ast_create_query.storage);
+
+	statement = getTableDefinitionFromCreateQuery(ast_create_query);
+
+	{
+		WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
+		writeString(statement, out);
+		out.next();
+		out.sync();
+		out.close();
+	}
+
+	try
+	{
+		/// rename атомарно заменяет старый файл новым.
+		Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
+	}
+	catch (...)
+	{
+		Poco::File(table_metadata_tmp_path).remove();
+		throw;
+	}
 }
 
 }

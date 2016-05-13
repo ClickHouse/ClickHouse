@@ -4,6 +4,7 @@
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
 #include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
+#include <DB/Databases/IDatabase.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <Poco/DirectoryIterator.h>
@@ -180,16 +181,16 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 
 	MergeTreeData::DataParts parts = data.getDataParts();
 	std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
+
 	for (const MergeTreeData::DataPartPtr & part : parts)
-	{
-		if (auto transaction = data.alterDataPart(part, columns_for_parts))
+		if (auto transaction = data.alterDataPart(part, columns_for_parts, false))
 			transactions.push_back(std::move(transaction));
-	}
 
 	auto table_hard_lock = lockStructureForAlter();
 
-	InterpreterAlterQuery::updateMetadata(database_name, table_name, new_columns,
-		new_materialized_columns, new_alias_columns, new_column_defaults, context);
+	context.getDatabase(database_name)->alterTable(
+		context, table_name,
+		new_columns, new_materialized_columns, new_alias_columns, new_column_defaults, {});
 
 	materialized_columns = new_materialized_columns;
 	alias_columns = new_alias_columns;
@@ -201,9 +202,7 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 	data.column_defaults = std::move(new_column_defaults);
 
 	for (auto & transaction : transactions)
-	{
 		transaction->commit();
-	}
 }
 
 bool StorageMergeTree::merge(size_t aio_threshold, bool aggressive, BackgroundProcessingPool::Context * pool_context)

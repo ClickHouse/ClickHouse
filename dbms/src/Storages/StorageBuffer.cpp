@@ -2,6 +2,7 @@
 #include <DB/Interpreters/InterpreterInsertQuery.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/Databases/IDatabase.h>
 #include <DB/Storages/StorageBuffer.h>
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -508,8 +509,10 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
 	optimize(context.getSettings());
 
 	params.apply(*columns, materialized_columns, alias_columns, column_defaults);
-	InterpreterAlterQuery::updateMetadata(database_name, table_name,
-		*columns, materialized_columns, alias_columns, column_defaults, context);
+
+	context.getDatabase(database_name)->alterTable(
+		context, table_name,
+		*columns, materialized_columns, alias_columns, column_defaults, {});
 }
 
 }

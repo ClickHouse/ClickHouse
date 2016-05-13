@@ -12,6 +12,8 @@
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <DB/Storages/MergeTree/ReshardingWorker.h>
 
+#include <DB/Databases/IDatabase.h>
+
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/ASTInsertQuery.h>
 
@@ -581,8 +583,10 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
 			LOG_WARNING(log, "Table structure in ZooKeeper is a little different from local table structure. Assuming ALTER.");
 
 			/// Без всяких блокировок, потому что таблица еще не создана.
-			InterpreterAlterQuery::updateMetadata(database_name, table_name, columns,
-				materialized_columns, alias_columns, column_defaults, context);
+			context.getDatabase(database_name)->alterTable(
+				context, table_name,
+				columns, materialized_columns, alias_columns, column_defaults, {});
+
 			data.setColumnsList(columns);
 			data.materialized_columns = std::move(materialized_columns);
 			data.alias_columns = std::move(alias_columns);

@@ -405,7 +405,11 @@ public:
 	  * Если измененных столбцов подозрительно много, и !skip_sanity_checks, бросает исключение.
 	  * Если никаких действий над данными не требуется, возвращает nullptr.
 	  */
-	AlterDataPartTransactionPtr alterDataPart(const DataPartPtr & part, const NamesAndTypesList & new_columns, bool skip_sanity_checks = false);
+	AlterDataPartTransactionPtr alterDataPart(
+		const DataPartPtr & part,
+		const NamesAndTypesList & new_columns,
+		const NamesAndTypesList & new_primary_key,
+		bool skip_sanity_checks);
 
 	/// Нужно вызывать под залоченным lockStructureForAlter().
 	void setColumnsList(const NamesAndTypesList & new_columns) { columns = new NamesAndTypesList(new_columns); }
