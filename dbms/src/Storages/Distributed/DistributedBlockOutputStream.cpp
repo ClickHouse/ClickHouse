@@ -25,7 +25,7 @@ namespace
 template <typename T>
 std::vector<IColumn::Filter> createFiltersImpl(const size_t num_rows, const IColumn * column, const Cluster & cluster)
 {
-	return BlockFilterCreator<T>::perform(num_rows, column, cluster.getShardsInfo().size(), cluster.slot_to_shard);
+	return BlockFilterCreator<T>::perform(num_rows, column, cluster.getShardsInfo().size(), cluster.getSlotToShard());
 }
 
 }
