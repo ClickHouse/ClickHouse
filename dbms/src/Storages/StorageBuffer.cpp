@@ -295,7 +295,7 @@ void StorageBuffer::shutdown()
 
 	try
 	{
-		optimize(context.getSettings());
+		optimize({}, {}, context.getSettings());
 	}
 	catch (...)
 	{
@@ -304,10 +304,15 @@ void StorageBuffer::shutdown()
 }
 
 
-bool StorageBuffer::optimize(const Settings & settings)
+bool StorageBuffer::optimize(const String & partition, bool final, const Settings & settings)
 {
-	flushAllBuffers(false);
+	if (!partition.empty())
+		throw Exception("Partition cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
 
+	if (final)
+		throw Exception("FINAL cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
+
+	flushAllBuffers(false);
 	return true;
 }
 
@@ -506,7 +511,7 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
 	auto lock = lockStructureForAlter();
 
 	/// Чтобы не осталось блоков старой структуры.
-	optimize(context.getSettings());
+	optimize({}, {}, context.getSettings());
 
 	params.apply(*columns, materialized_columns, alias_columns, column_defaults);
 

@@ -205,7 +205,12 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 		transaction->commit();
 }
 
-bool StorageMergeTree::merge(size_t aio_threshold, bool aggressive, BackgroundProcessingPool::Context * pool_context)
+bool StorageMergeTree::merge(
+	size_t aio_threshold,
+	bool aggressive,
+	BackgroundProcessingPool::Context * pool_context,
+	const String & partition,
+	bool final)
 {
 	/// Удаляем старые куски.
 	data.clearOldParts();
@@ -229,11 +234,21 @@ bool StorageMergeTree::merge(size_t aio_threshold, bool aggressive, BackgroundPr
 		size_t big_merges = background_pool.getCounter("big merges");
 		bool only_small = pool_context && big_merges * 2 >= background_pool.getNumberOfThreads();
 
-		if (!merger.selectPartsToMerge(parts, merged_name, disk_space, false, aggressive, only_small, can_merge) &&
-			!merger.selectPartsToMerge(parts, merged_name, disk_space,  true, aggressive, only_small, can_merge))
+		bool selected = false;
+
+		if (partition.empty())
 		{
-			return false;
+			selected = merger.selectPartsToMerge(parts, merged_name, disk_space, false, aggressive, only_small, can_merge)
+				|| merger.selectPartsToMerge(parts, merged_name, disk_space,  true, aggressive, only_small, can_merge);
 		}
+		else
+		{
+			DayNum_t month = MergeTreeData::getMonthFromName(partition);
+			selected = merger.selectAllPartsToMergeWithinPartition(parts, merged_name, disk_space, can_merge, month, final);
+		}
+
+		if (!selected)
+			return false;
 
 		merging_tagger = new CurrentlyMergingPartsTagger(parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(parts), *this);
 
@@ -269,7 +284,7 @@ bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & background_
 	try
 	{
 		size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
-		return merge(aio_threshold, false, &background_processing_pool_context);
+		return merge(aio_threshold, false, &background_processing_pool_context, {}, {});
 	}
 	catch (Exception & e)
 	{

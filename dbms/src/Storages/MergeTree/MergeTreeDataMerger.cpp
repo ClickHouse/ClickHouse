@@ -80,8 +80,14 @@ void MergeTreeDataMerger::setCancellationHook(CancellationHook cancellation_hook
 /// 4) Если в одном из потоков идет мердж крупных кусков, то во втором сливать только маленькие кусочки.
 /// 5) С ростом логарифма суммарного размера кусочков в мердже увеличиваем требование сбалансированности.
 
-bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & parts, String & merged_name, size_t available_disk_space,
-	bool merge_anything_for_old_months, bool aggressive, bool only_small, const AllowedMergingPredicate & can_merge_callback)
+bool MergeTreeDataMerger::selectPartsToMerge(
+	MergeTreeData::DataPartsVector & parts,
+	String & merged_name,
+	size_t available_disk_space,
+	bool merge_anything_for_old_months,
+	bool aggressive,
+	bool only_small,
+	const AllowedMergingPredicate & can_merge_callback)
 {
 	MergeTreeData::DataParts data_parts = data.getDataParts();
 
@@ -175,7 +181,8 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 		MergeTreeData::DataParts::iterator jt = it;
 		while (cur_len < static_cast<int>(data.settings.max_parts_to_merge_at_once)
 			|| (cur_len < static_cast<int>(data.settings.max_parts_to_merge_at_once_if_small)
-				&& cur_sum < data.settings.merge_more_parts_if_sum_bytes_is_less_than))
+				&& cur_sum < data.settings.merge_more_parts_if_sum_bytes_is_less_than)
+			|| aggressive)
 		{
 			const MergeTreeData::DataPartPtr & prev_part = *jt;
 			++jt;
@@ -200,7 +207,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			/// Кусок правее предыдущего.
 			if (last_part->left < cur_id)
 			{
-				LOG_WARNING(log, "Part " << last_part->name << " intersects previous part");
+				LOG_ERROR(log, "Part " << last_part->name << " intersects previous part");
 				break;
 			}
 
@@ -219,7 +226,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			int cur_age_in_sec = time(0) - newest_modification_time;
 
 			/// Если куски больше 1 Gb и образовались меньше 6 часов назад, то мерджить не меньше чем по 3.
-			if (cur_max > 1024 * 1024 * 1024 && cur_age_in_sec < 6 * 3600)
+			if (cur_max > 1024 * 1024 * 1024 && cur_age_in_sec < 6 * 3600 && !aggressive)
 				min_len = 3;
 
 			/// Размер кусков после текущих, делить на максимальный из текущих кусков. Чем меньше, тем новее текущие куски.
@@ -313,6 +320,74 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 	}
 
 	return found;
+}
+
+
+bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
+	MergeTreeData::DataPartsVector & what,
+	String & merged_name,
+	size_t available_disk_space,
+	const AllowedMergingPredicate & can_merge,
+	DayNum_t partition,
+	bool final)
+{
+	MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition);
+
+	if (parts.empty())
+		return false;
+
+	if (!final && parts.size() == 1)
+		return false;
+
+	MergeTreeData::DataPartsVector::const_iterator it = parts.begin();
+	MergeTreeData::DataPartsVector::const_iterator prev_it = it;
+
+	size_t sum_bytes = 0;
+	DayNum_t left_date = DayNum_t(std::numeric_limits<UInt16>::max());
+	DayNum_t right_date = DayNum_t(std::numeric_limits<UInt16>::min());
+	UInt32 level = 0;
+
+	while (it != parts.end())
+	{
+		if ((it != parts.begin() || parts.size() == 1)	/// Для случая одного куска, проверяем, что его можно мерджить "самого с собой".
+			&& !can_merge(*prev_it, *it))
+			return false;
+
+		level = std::max(level, (*it)->level);
+		left_date = std::min(left_date, (*it)->left_date);
+		right_date = std::max(right_date, (*it)->right_date);
+
+		sum_bytes += (*it)->size_in_bytes;
+
+		prev_it = it;
+		++it;
+	}
+
+	/// Достаточно места на диске, чтобы покрыть новый мердж с запасом.
+	if (available_disk_space <= sum_bytes * DISK_USAGE_COEFFICIENT_TO_SELECT)
+	{
+		time_t now = time(0);
+		if (now - disk_space_warning_time > 3600)
+		{
+			disk_space_warning_time = now;
+			LOG_WARNING(log, "Won't merge parts from " << parts.front()->name << " to " << (*prev_it)->name
+				<< " because not enough free space: "
+				<< formatReadableSizeWithBinarySuffix(available_disk_space) << " free and unreserved "
+				<< "(" << formatReadableSizeWithBinarySuffix(DiskSpaceMonitor::getReservedSpace()) << " reserved in "
+				<< DiskSpaceMonitor::getReservationCount() << " chunks), "
+				<< formatReadableSizeWithBinarySuffix(sum_bytes)
+				<< " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
+				<< "% on overhead); suppressing similar warnings for the next hour");
+		}
+		return false;
+	}
+
+	what = parts;
+	merged_name = ActiveDataPartSet::getPartName(
+		left_date, right_date, parts.front()->left, parts.back()->right, level + 1);
+
+	LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
+	return true;
 }
 
 
