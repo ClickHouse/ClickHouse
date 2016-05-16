@@ -32,7 +32,6 @@ public:
 	bool supportsFinal() const override 			{ return getInnerTable()->supportsFinal(); }
 	bool supportsParallelReplicas() const override 	{ return getInnerTable()->supportsParallelReplicas(); }
 	bool supportsIndexForIn() const override 		{ return getInnerTable()->supportsIndexForIn(); }
-	Block getIndexSampleBlock() const override		{ return getInnerTable()->getIndexSampleBlock(); }
 
 	BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
 	void drop() override;
