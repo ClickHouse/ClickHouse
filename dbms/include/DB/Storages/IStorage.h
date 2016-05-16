@@ -257,7 +257,7 @@ public:
 	/** Выполнить какую-либо фоновую работу. Например, объединение кусков в таблице типа MergeTree.
 	  * Возвращает - была ли выполнена какая-либо работа.
 	  */
-	virtual bool optimize(const Settings & settings)
+	virtual bool optimize(const String & partition, bool final, const Settings & settings)
 	{
 		throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
@@ -285,7 +285,7 @@ public:
 	bool is_dropped{false};
 
 	/// Поддерживается ли индекс в секции IN
-	virtual bool supportsIndexForIn() const { return false; };
+	virtual bool supportsIndexForIn() const { return false; }
 
 	/// проверяет валидность данных
 	virtual bool checkData() const { throw DB::Exception("Check query is not supported for " + getName() + " storage"); }

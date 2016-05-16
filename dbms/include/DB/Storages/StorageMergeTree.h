@@ -82,9 +82,9 @@ public:
 
 	/** Выполнить очередной шаг объединения кусков.
 	  */
-	bool optimize(const Settings & settings) override
+	bool optimize(const String & partition, bool final, const Settings & settings) override
 	{
-		return merge(settings.min_bytes_to_use_direct_io, true);
+		return merge(settings.min_bytes_to_use_direct_io, true, nullptr, partition, final);
 	}
 
 	void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
@@ -189,7 +189,7 @@ private:
 	  * Если aggressive - выбрать куски, не обращая внимание на соотношение размеров и их новизну (для запроса OPTIMIZE).
 	  * Возвращает, получилось ли что-нибудь объединить.
 	  */
-	bool merge(size_t aio_threshold, bool aggressive = false, BackgroundProcessingPool::Context * context = nullptr);
+	bool merge(size_t aio_threshold, bool aggressive, BackgroundProcessingPool::Context * context, const String & partition, bool final);
 
 	bool mergeTask(BackgroundProcessingPool::Context & context);
 

@@ -345,7 +345,8 @@ public:
 	/** То же, что renameTempPartAndAdd, но кусок может покрывать существующие куски.
 	  * Удаляет и возвращает все куски, покрытые добавляемым (в возрастающем порядке).
 	  */
-	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
+	DataPartsVector renameTempPartAndReplace(
+		MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
 	/** Убирает из рабочего набора куски remove и добавляет куски add. add должны уже быть в all_data_parts.
 	  * Если clear_without_timeout, данные будут удалены сразу, либо при следующем clearOldParts, игнорируя old_parts_lifetime.

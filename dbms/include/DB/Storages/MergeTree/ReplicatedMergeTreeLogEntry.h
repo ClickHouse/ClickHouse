@@ -51,6 +51,10 @@ struct ReplicatedMergeTreeLogEntryData
 		}
 	}
 
+	void writeText(WriteBuffer & out) const;
+	void readText(ReadBuffer & in);
+	String toString() const;
+
 	String znode_name;
 
 	Type type = EMPTY;
@@ -96,10 +100,6 @@ struct ReplicatedMergeTreeLogEntry : ReplicatedMergeTreeLogEntryData
 
 	std::condition_variable execution_complete; /// Пробуждается когда currently_executing становится false.
 
-	void writeText(WriteBuffer & out) const;
-	void readText(ReadBuffer & in);
-
-	String toString() const;
 	static Ptr parse(const String & s, const Stat & stat);
 };
 

@@ -24,7 +24,7 @@ public:
 				break;
 
 			ProfileEvents::increment(ProfileEvents::SynchronousMergeOnInsert);
-			storage.merge(0);
+			storage.merge(0, {}, {}, {}, {});
 		}
 	}
 

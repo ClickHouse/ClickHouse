@@ -132,9 +132,9 @@ void StorageMaterializedView::drop()
 	}
 }
 
-bool StorageMaterializedView::optimize(const Settings & settings)
+bool StorageMaterializedView::optimize(const String & partition, bool final, const Settings & settings)
 {
-	return getInnerTable()->optimize(settings);
+	return getInnerTable()->optimize(partition, final, settings);
 }
 
 

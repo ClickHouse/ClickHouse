@@ -45,6 +45,17 @@ public:
 		bool only_small,
 		const AllowedMergingPredicate & can_merge);
 
+	/** Выбрать для слияния все куски в заданной партиции, если возможно.
+	  * final - выбирать для слияния даже единственный кусок - то есть, позволять мерджить один кусок "сам с собой".
+	  */
+	bool selectAllPartsToMergeWithinPartition(
+		MergeTreeData::DataPartsVector & what,
+		String & merged_name,
+		size_t available_disk_space,
+		const AllowedMergingPredicate & can_merge,
+		DayNum_t partition,
+		bool final);
+
 	/** Сливает куски.
 	  * Если reservation != nullptr, то и дело уменьшает размер зарезервированного места
 	  *  приблизительно пропорционально количеству уже выписанных данных.

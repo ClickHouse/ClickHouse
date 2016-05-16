@@ -39,6 +39,9 @@ public:
 			if (right != rhs.right)
 				return right < rhs.right;
 
+			if (level != rhs.level)
+				return level < rhs.level;
+
 			return false;
 		}
 
@@ -49,7 +52,8 @@ public:
 				&& left_date <= rhs.left_date
 				&& right_date >= rhs.right_date
 				&& left <= rhs.left
-				&& right >= rhs.right;
+				&& right >= rhs.right
+				&& level >= rhs.level;
 		}
 	};
 
