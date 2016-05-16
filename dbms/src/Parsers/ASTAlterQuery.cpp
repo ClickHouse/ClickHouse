@@ -40,6 +40,8 @@ void ASTAlterQuery::addParameters(const Parameters & params)
 		children.push_back(params.sharding_key_expr);
 	if (params.coordinator)
 		children.push_back(params.coordinator);
+	if (params.primary_key)
+		children.push_back(params.primary_key);
 }
 
 ASTAlterQuery::ASTAlterQuery(StringRange range_) : IAST(range_)
