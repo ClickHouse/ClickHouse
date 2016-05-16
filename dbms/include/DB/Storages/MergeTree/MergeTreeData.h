@@ -409,7 +409,7 @@ public:
 	AlterDataPartTransactionPtr alterDataPart(
 		const DataPartPtr & part,
 		const NamesAndTypesList & new_columns,
-		const NamesAndTypesList & new_primary_key,
+		const ASTPtr & new_primary_key,
 		bool skip_sanity_checks);
 
 	/// Нужно вызывать под залоченным lockStructureForAlter().
@@ -469,12 +469,13 @@ public:
 
 	const MergeTreeSettings settings;
 
-	const ASTPtr primary_expr_ast;
+	ASTPtr primary_expr_ast;
 	Block primary_key_sample;
 	DataTypes primary_key_data_types;
 
 private:
 	friend struct MergeTreeDataPart;
+	friend class StorageMergeTree;
 
 	bool require_part_metadata;
 
@@ -511,6 +512,8 @@ private:
 	/** Для каждого шарда множество шардированных кусков.
 	  */
 	PerShardDataParts per_shard_data_parts;
+
+	void initPrimaryKey();
 
 	/** Выражение, преобразующее типы столбцов.
 	  * Если преобразований типов нет, out_expression=nullptr.

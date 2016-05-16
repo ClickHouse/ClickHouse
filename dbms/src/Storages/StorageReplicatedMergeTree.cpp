@@ -2302,6 +2302,10 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
 		data.checkAlter(params);
 
+		for (const AlterCommand & param : params)
+			if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
+				throw Exception("Modification of primary key is not supported for replicated tables", ErrorCodes::NOT_IMPLEMENTED);
+
 		new_columns = data.getColumnsListNonMaterialized();
 		new_materialized_columns = data.materialized_columns;
 		new_alias_columns = data.alias_columns;

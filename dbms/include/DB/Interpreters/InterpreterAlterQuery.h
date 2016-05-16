@@ -78,7 +78,7 @@ private:
 		}
 	};
 
-	typedef std::vector<PartitionCommand> PartitionCommands;
+	using PartitionCommands = std::vector<PartitionCommand>;
 
 	ASTPtr query_ptr;
 

@@ -7,6 +7,7 @@
 #include <DB/Databases/IDatabase.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <Poco/DirectoryIterator.h>
 
 
@@ -159,7 +160,11 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 	/// TODO: Можно обновить названия логгеров у this, data, reader, writer, merger.
 }
 
-void StorageMergeTree::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
+void StorageMergeTree::alter(
+	const AlterCommands & params,
+	const String & database_name,
+	const String & table_name,
+	const Context & context)
 {
 	/// NOTE: Здесь так же как в ReplicatedMergeTree можно сделать ALTER, не блокирующий запись данных надолго.
 	const MergeTreeMergeBlocker merge_blocker{merger};
@@ -182,15 +187,31 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 	MergeTreeData::DataParts parts = data.getDataParts();
 	std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
 
+	bool primary_key_is_modified = false;
+	ASTPtr new_primary_key_ast = data.primary_expr_ast;
+
+	for (const AlterCommand & param : params)
+	{
+		if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
+		{
+			primary_key_is_modified = true;
+			new_primary_key_ast = param.primary_key;
+		}
+	}
+
+	if (primary_key_is_modified && data.merging_params.mode == MergeTreeData::MergingParams::Unsorted)
+		throw Exception("UnsortedMergeTree cannot have primary key", ErrorCodes::BAD_ARGUMENTS);
+
 	for (const MergeTreeData::DataPartPtr & part : parts)
-		if (auto transaction = data.alterDataPart(part, columns_for_parts, false))
+		if (auto transaction = data.alterDataPart(part, columns_for_parts, new_primary_key_ast, false))
 			transactions.push_back(std::move(transaction));
 
 	auto table_hard_lock = lockStructureForAlter();
 
 	context.getDatabase(database_name)->alterTable(
 		context, table_name,
-		new_columns, new_materialized_columns, new_alias_columns, new_column_defaults, {});
+		new_columns, new_materialized_columns, new_alias_columns, new_column_defaults,
+		[&new_primary_key_ast] (ASTPtr & primary_key_ast) { primary_key_ast = new_primary_key_ast; });
 
 	materialized_columns = new_materialized_columns;
 	alias_columns = new_alias_columns;
@@ -201,8 +222,17 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 	data.alias_columns = std::move(new_alias_columns);
 	data.column_defaults = std::move(new_column_defaults);
 
+	if (primary_key_is_modified)
+	{
+		data.primary_expr_ast = new_primary_key_ast;
+		data.initPrimaryKey();
+	}
+
 	for (auto & transaction : transactions)
 		transaction->commit();
+
+	if (primary_key_is_modified)
+		data.loadDataParts(false);
 }
 
 bool StorageMergeTree::merge(

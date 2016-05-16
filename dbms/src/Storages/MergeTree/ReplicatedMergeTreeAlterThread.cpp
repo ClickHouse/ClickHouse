@@ -159,7 +159,8 @@ void ReplicatedMergeTreeAlterThread::run()
 						/// Обновим кусок и запишем результат во временные файлы.
 						/// TODO: Можно пропускать проверку на слишком большие изменения, если в ZooKeeper есть, например,
 						///  нода /flags/force_alter.
-						auto transaction = storage.data.alterDataPart(part, columns_plus_materialized, false);
+						auto transaction = storage.data.alterDataPart(
+							part, columns_plus_materialized, storage.data.primary_expr_ast, false);
 
 						if (!transaction)
 							continue;
@@ -197,7 +198,8 @@ void ReplicatedMergeTreeAlterThread::run()
 
 						for (const MergeTreeData::DataPartPtr & part : parts)
 						{
-							auto transaction = storage.unreplicated_data->alterDataPart(part, columns_plus_materialized, false);
+							auto transaction = storage.unreplicated_data->alterDataPart(
+								part, columns_plus_materialized, storage.data.primary_expr_ast, false);
 
 							if (!transaction)
 								continue;

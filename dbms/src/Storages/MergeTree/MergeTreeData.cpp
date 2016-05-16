@@ -82,27 +82,32 @@ MergeTreeData::MergeTreeData(
 	Poco::File(full_path + "detached").createDirectory();
 
 	if (primary_expr_ast)
-	{
-		/// инициализируем описание сортировки
-		sort_descr.reserve(primary_expr_ast->children.size());
-		for (const ASTPtr & ast : primary_expr_ast->children)
-		{
-			String name = ast->getColumnName();
-			sort_descr.push_back(SortColumnDescription(name, 1));
-		}
-
-		primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(false);
-
-		ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(true);
-		primary_key_sample = projected_expr->getSampleBlock();
-
-		size_t primary_key_size = primary_key_sample.columns();
-		primary_key_data_types.resize(primary_key_size);
-		for (size_t i = 0; i < primary_key_size; ++i)
-			primary_key_data_types[i] = primary_key_sample.unsafeGetByPosition(i).type;
-	}
+		initPrimaryKey();
 	else if (merging_params.mode != MergingParams::Unsorted)
 		throw Exception("Primary key could be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
+}
+
+
+void MergeTreeData::initPrimaryKey()
+{
+	/// инициализируем описание сортировки
+	sort_descr.clear();
+	sort_descr.reserve(primary_expr_ast->children.size());
+	for (const ASTPtr & ast : primary_expr_ast->children)
+	{
+		String name = ast->getColumnName();
+		sort_descr.emplace_back(name, 1);
+	}
+
+	primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(false);
+
+	ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(true);
+	primary_key_sample = projected_expr->getSampleBlock();
+
+	size_t primary_key_size = primary_key_sample.columns();
+	primary_key_data_types.resize(primary_key_size);
+	for (size_t i = 0; i < primary_key_size; ++i)
+		primary_key_data_types[i] = primary_key_sample.unsafeGetByPosition(i).type;
 }
 
 
@@ -209,6 +214,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 	std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
 
 	data_parts.clear();
+	all_data_parts.clear();
 
 	Strings part_file_names;
 	Poco::DirectoryIterator end;
@@ -537,7 +543,7 @@ void MergeTreeData::checkAlter(const AlterCommands & params)
 
 	createConvertExpression(nullptr, getColumnsList(), new_columns, unused_expression, unused_map, unused_bool);
 
-	
+
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
@@ -638,13 +644,60 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 	const DataPartPtr & part,
 	const NamesAndTypesList & new_columns,
-	const NamesAndTypesList & new_primary_key,
+	const ASTPtr & new_primary_key,
 	bool skip_sanity_checks)
 {
 	ExpressionActionsPtr expression;
 	AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Блокирует изменение куска.
 	bool force_update_metadata;
 	createConvertExpression(part, part->columns, new_columns, expression, transaction->rename_map, force_update_metadata);
+
+	/// Обновление первичного ключа, если нужно.
+	if (new_primary_key.get() != primary_expr_ast.get())
+	{
+		ExpressionActionsPtr new_primary_expr = ExpressionAnalyzer(new_primary_key, context, nullptr, getColumnsList()).getActions(true);
+		Block new_primary_key_sample = new_primary_expr->getSampleBlock();
+		size_t new_key_size = new_primary_key_sample.columns();
+
+		Columns new_index(new_key_size);
+
+		/// Копируем существующие столбцы первичного ключа. Новые заполняем значениями по-умолчанию.
+		/// NOTE Не поддерживаются вычислимые значения по-умолчанию.
+
+		ssize_t prev_position_of_existing_column = -1;
+		for (size_t i = 0; i < new_key_size; ++i)
+		{
+			const String & column_name = new_primary_key_sample.getByPosition(i).name;
+
+			if (primary_key_sample.has(column_name))
+			{
+				ssize_t position_of_existing_column = primary_key_sample.getPositionByName(column_name);
+
+				if (position_of_existing_column < prev_position_of_existing_column)
+					throw Exception("Permuting of columns of primary key is not supported", ErrorCodes::BAD_ARGUMENTS);
+
+				new_index[i] = part->index.at(position_of_existing_column);
+				prev_position_of_existing_column = position_of_existing_column;
+			}
+			else
+			{
+				const IDataType & type = *new_primary_key_sample.getByPosition(i).type;
+				new_index[i] = type.createConstColumn(part->size, type.getDefault());
+			}
+		}
+
+		if (prev_position_of_existing_column == -1)
+			throw Exception("No common columns while modifying primary key", ErrorCodes::BAD_ARGUMENTS);
+
+		String index_tmp_path = full_path + part->name + "/primary.idx.tmp";
+		WriteBufferFromFile index_file(index_tmp_path);
+
+		for (size_t i = 0, size = part->size; i < size; ++i)
+			for (size_t j = 0; j < new_key_size; ++j)
+				new_primary_key_sample.unsafeGetByPosition(j).type.get()->serializeBinary(*new_index[j].get(), index_file);
+
+		transaction->rename_map["primary.idx.tmp"] = "primary.idx";
+	}
 
 	if (!skip_sanity_checks && transaction->rename_map.size() > settings.max_files_to_modify_in_alter_columns)
 	{

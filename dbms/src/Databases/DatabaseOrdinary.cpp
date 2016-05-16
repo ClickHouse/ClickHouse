@@ -474,7 +474,7 @@ void DatabaseOrdinary::alterTable(
 	if (engine_modifier)
 		engine_modifier(ast_create_query.storage);
 
-	statement = getTableDefinitionFromCreateQuery(ast_create_query);
+	statement = getTableDefinitionFromCreateQuery(ast);
 
 	{
 		WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
