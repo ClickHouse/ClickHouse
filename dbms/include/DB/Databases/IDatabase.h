@@ -79,7 +79,7 @@ public:
 		const NamesAndTypesList & materialized_columns,
 		const NamesAndTypesList & alias_columns,
 		const ColumnDefaults & column_defaults,
-		const ASTModifier & engine_modifier);
+		const ASTModifier & engine_modifier) = 0;
 
 	/// Получить запрос CREATE TABLE для таблицы. Может выдавать информацию и для detached таблиц, для которых есть метаданные.
 	virtual ASTPtr getCreateQuery(const String & name) const = 0;

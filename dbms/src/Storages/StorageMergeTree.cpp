@@ -8,6 +8,7 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <Poco/DirectoryIterator.h>
 
 
@@ -211,7 +212,16 @@ void StorageMergeTree::alter(
 	context.getDatabase(database_name)->alterTable(
 		context, table_name,
 		new_columns, new_materialized_columns, new_alias_columns, new_column_defaults,
-		[&new_primary_key_ast] (ASTPtr & primary_key_ast) { primary_key_ast = new_primary_key_ast; });
+		[&new_primary_key_ast] (ASTPtr & engine_ast)
+		{
+			ASTFunction * tuple = new ASTFunction(new_primary_key_ast->range);
+			tuple->name = "tuple";
+			tuple->arguments = new_primary_key_ast;
+			tuple->children.push_back(tuple->arguments);
+
+			/// Первичный ключ находится на втором месте в описании движка таблицы и может быть представлен в виде кортежа.
+			typeid_cast<ASTExpressionList &>(*typeid_cast<ASTFunction &>(*engine_ast).arguments).children.at(1) = tuple;
+		});
 
 	materialized_columns = new_materialized_columns;
 	alias_columns = new_alias_columns;
