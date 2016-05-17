@@ -73,7 +73,7 @@ public:
 	}
 
 	template <class ... Args>
-	bool tryEmplace(Args && ... args, DB::UInt64 milliseconds = 0)
+	bool tryEmplace(DB::UInt64 milliseconds, Args && ... args)
 	{
 		if (empty_count.tryWait(milliseconds))
 		{

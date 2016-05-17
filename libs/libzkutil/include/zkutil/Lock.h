@@ -31,6 +31,7 @@ namespace zkutil
 		}
 
 		Lock(const Lock &) = delete;
+		Lock(Lock && lock) = default;
 		Lock & operator=(const Lock &) = delete;
 
 		~Lock()
