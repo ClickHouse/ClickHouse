@@ -6,10 +6,14 @@ find_library(LIBEDIT_LIB
 
 if(READLINE_LIB)
 	add_definitions(-D USE_READLINE)
-	set(LINE_EDITING_LIBS ${READLINE_LIB} libcurses.a libtermcap.a)
+	set(LINE_EDITING_LIBS ${READLINE_LIB} libtermcap.a)
+	message(STATUS "Using line editing libraries: ${LINE_EDITING_LIBS}")
 elseif(LIBEDIT_LIB)
 	add_definitions(-D USE_LIBEDIT)
 	set(LINE_EDITING_LIBS ${LIBEDIT_LIB} libcurses.a libtermcap.a)
+	message(STATUS "Using line editing libraries: ${LINE_EDITING_LIBS}")
+else()
+	message(STATUS "Not using any library for line editing.")
 endif()
 
 add_executable(clickhouse-client Client.cpp)
