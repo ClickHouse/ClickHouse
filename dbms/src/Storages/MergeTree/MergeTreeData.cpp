@@ -668,7 +668,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
 	if (new_primary_key.get() != primary_expr_ast.get())
 	{
-		ExpressionActionsPtr new_primary_expr = ExpressionAnalyzer(new_primary_key, context, nullptr, getColumnsList()).getActions(true);
+		ExpressionActionsPtr new_primary_expr = ExpressionAnalyzer(new_primary_key, context, nullptr, new_columns).getActions(true);
 		Block new_primary_key_sample = new_primary_expr->getSampleBlock();
 		size_t new_key_size = new_primary_key_sample.columns();
 

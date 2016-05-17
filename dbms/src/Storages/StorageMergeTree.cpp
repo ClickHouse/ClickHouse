@@ -185,7 +185,6 @@ void StorageMergeTree::alter(
 	columns_for_parts.insert(std::end(columns_for_parts),
 		std::begin(new_materialized_columns), std::end(new_materialized_columns));
 
-	MergeTreeData::DataParts parts = data.getDataParts();
 	std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
 
 	bool primary_key_is_modified = false;
@@ -203,6 +202,7 @@ void StorageMergeTree::alter(
 	if (primary_key_is_modified && data.merging_params.mode == MergeTreeData::MergingParams::Unsorted)
 		throw Exception("UnsortedMergeTree cannot have primary key", ErrorCodes::BAD_ARGUMENTS);
 
+	MergeTreeData::DataParts parts = data.getAllDataParts();
 	for (const MergeTreeData::DataPartPtr & part : parts)
 		if (auto transaction = data.alterDataPart(part, columns_for_parts, new_primary_key_ast, false))
 			transactions.push_back(std::move(transaction));
