@@ -3,9 +3,6 @@
 #include <fcntl.h>
 #include <signal.h>
 
-#include <readline/readline.h>
-#include <readline/history.h>
-
 #include <iostream>
 #include <fstream>
 #include <iomanip>
@@ -61,6 +58,30 @@
 #include <DB/Columns/ColumnString.h>
 
 #include <DB/Common/NetException.h>
+
+
+/// Могут использоваться разные библиотеки для редактирования строк в зависимости от окружения.
+#ifdef USE_READLINE
+	#include <readline/readline.h>
+	#include <readline/history.h>
+#elif USE_LIBEDIT
+	#include <editline/readline.h>
+	#include <editline/history.h>
+#else
+	char * readline(const char * prompt)
+	{
+		std::string s;
+		std::cout << prompt;
+		std::getline(std::cin, s);
+
+		if (!std::cin.good())
+			return nullptr;
+		return strdup(s.data());
+	}
+	#define add_history(...) do {} while (0);
+	#define rl_bind_key(...) do {} while (0);
+#endif
+
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 #define SAVE_CURSOR_POSITION "\033[s"
@@ -323,9 +344,11 @@ private:
 			{
 				if (Poco::File(history_file).exists())
 				{
+#ifdef USE_READLINE
 					int res = read_history(history_file.c_str());
 					if (res)
 						throwFromErrno("Cannot read history from file " + history_file, ErrorCodes::CANNOT_READ_HISTORY);
+#endif
 				}
 				else	/// Создаём файл с историей.
 					Poco::File(history_file).createFile();
@@ -451,8 +474,10 @@ private:
 					std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
 					add_history(logged_query.c_str());
 
+#ifdef USE_READLINE
 					if (!history_file.empty() && append_history(1, history_file.c_str()))
 						throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
+#endif
 
 					prev_query = query;
 				}
