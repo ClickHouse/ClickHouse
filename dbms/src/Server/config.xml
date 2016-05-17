@@ -91,11 +91,12 @@
 	<macros incl="macros" optional="true" />
 
 
-	<!-- Отправка данных о работе сервера в Graphite для мониторинга. -->
-	<use_graphite>false</use_graphite>
-
 	<!-- Интервал обновления встроенных справочников, в секундах. По-умолчанию - 3600. -->
 	<builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
+
+
+	<!-- Отправка данных о работе сервера в Graphite для мониторинга. -->
+	<use_graphite>false</use_graphite>
 
 	<!-- Раскомментируйте, если включено use_graphite.
 	<graphite>
