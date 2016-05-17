@@ -267,8 +267,17 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 
 				ws.ignore(pos, end);
 
-				ParserParenthesisExpression parser_tuple;
-				if (!parser_tuple.parse(pos, end, params.primary_key, max_parsed_pos, expected))
+				if (!ParserString("(").ignore(pos, end, max_parsed_pos, expected))
+					return false;
+
+				ws.ignore(pos, end);
+
+				if (!ParserNotEmptyExpressionList(false).parse(pos, end, params.primary_key, max_parsed_pos, expected))
+					return false;
+
+				ws.ignore(pos, end);
+
+				if (!ParserString(")").ignore(pos, end, max_parsed_pos, expected))
 					return false;
 
 				ws.ignore(pos, end);

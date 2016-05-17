@@ -652,7 +652,20 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 	bool force_update_metadata;
 	createConvertExpression(part, part->columns, new_columns, expression, transaction->rename_map, force_update_metadata);
 
+	if (!skip_sanity_checks && transaction->rename_map.size() > settings.max_files_to_modify_in_alter_columns)
+	{
+		transaction->clear();
+
+		throw Exception("Suspiciously many (" + toString(transaction->rename_map.size())
+		+ ") files need to be modified in part " + part->name + ". Aborting just in case");
+	}
+
+	DataPart::Checksums add_checksums;
+
 	/// Обновление первичного ключа, если нужно.
+	size_t new_primary_key_file_size{};
+	uint128 new_primary_key_hash{};
+
 	if (new_primary_key.get() != primary_expr_ast.get())
 	{
 		ExpressionActionsPtr new_primary_expr = ExpressionAnalyzer(new_primary_key, context, nullptr, getColumnsList()).getActions(true);
@@ -682,7 +695,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 			else
 			{
 				const IDataType & type = *new_primary_key_sample.getByPosition(i).type;
-				new_index[i] = type.createConstColumn(part->size, type.getDefault());
+				new_index[i] = type.createConstColumn(part->size, type.getDefault())->convertToFullColumnIfConst();
 			}
 		}
 
@@ -691,20 +704,17 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
 		String index_tmp_path = full_path + part->name + "/primary.idx.tmp";
 		WriteBufferFromFile index_file(index_tmp_path);
+		HashingWriteBuffer index_stream(index_file);
 
 		for (size_t i = 0, size = part->size; i < size; ++i)
 			for (size_t j = 0; j < new_key_size; ++j)
-				new_primary_key_sample.unsafeGetByPosition(j).type.get()->serializeBinary(*new_index[j].get(), index_file);
+				new_primary_key_sample.unsafeGetByPosition(j).type.get()->serializeBinary(*new_index[j].get(), i, index_stream);
 
 		transaction->rename_map["primary.idx.tmp"] = "primary.idx";
-	}
 
-	if (!skip_sanity_checks && transaction->rename_map.size() > settings.max_files_to_modify_in_alter_columns)
-	{
-		transaction->clear();
-
-		throw Exception("Suspiciously many (" + toString(transaction->rename_map.size())
-			+ ") files need to be modified in part " + part->name + ". Aborting just in case");
+		index_stream.next();
+		new_primary_key_file_size = index_stream.count();
+		new_primary_key_hash = index_stream.getHash();
 	}
 
 	if (transaction->rename_map.empty() && !force_update_metadata)
@@ -712,8 +722,6 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 		transaction->clear();
 		return nullptr;
 	}
-
-	DataPart::Checksums add_checksums;
 
 	/// Применим выражение и запишем результат во временные файлы.
 	if (expression)
@@ -740,13 +748,15 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 	for (auto it : transaction->rename_map)
 	{
 		if (it.second == "")
-		{
 			new_checksums.files.erase(it.first);
-		}
 		else
-		{
 			new_checksums.files[it.second] = add_checksums.files[it.first];
-		}
+	}
+
+	if (new_primary_key_file_size)
+	{
+		new_checksums.files["primary.idx"].file_size = new_primary_key_file_size;
+		new_checksums.files["primary.idx"].file_hash = new_primary_key_hash;
 	}
 
 	/// Запишем обновленные контрольные суммы во временный файл

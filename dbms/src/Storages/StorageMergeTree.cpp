@@ -209,10 +209,9 @@ void StorageMergeTree::alter(
 
 	auto table_hard_lock = lockStructureForAlter();
 
-	context.getDatabase(database_name)->alterTable(
-		context, table_name,
-		new_columns, new_materialized_columns, new_alias_columns, new_column_defaults,
-		[&new_primary_key_ast] (ASTPtr & engine_ast)
+	IDatabase::ASTModifier engine_modifier;
+	if (primary_key_is_modified)
+		engine_modifier = [&new_primary_key_ast] (ASTPtr & engine_ast)
 		{
 			ASTFunction * tuple = new ASTFunction(new_primary_key_ast->range);
 			tuple->name = "tuple";
@@ -220,8 +219,14 @@ void StorageMergeTree::alter(
 			tuple->children.push_back(tuple->arguments);
 
 			/// Первичный ключ находится на втором месте в описании движка таблицы и может быть представлен в виде кортежа.
+			/// TODO: Не всегда на втором месте. Если есть ключ сэмплирования, то на третьем. Исправить.
 			typeid_cast<ASTExpressionList &>(*typeid_cast<ASTFunction &>(*engine_ast).arguments).children.at(1) = tuple;
-		});
+		};
+
+	context.getDatabase(database_name)->alterTable(
+		context, table_name,
+		new_columns, new_materialized_columns, new_alias_columns, new_column_defaults,
+		engine_modifier);
 
 	materialized_columns = new_materialized_columns;
 	alias_columns = new_alias_columns;
