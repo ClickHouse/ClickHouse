@@ -110,7 +110,9 @@ void ASTAlterQuery::formatImpl(const FormatSettings & settings, FormatState & st
 		else if (p.type == ASTAlterQuery::MODIFY_PRIMARY_KEY)
 		{
 			settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY PRIMARY KEY " << (settings.hilite ? hilite_none : "");
+			settings.ostr << "(";
 			p.primary_key->formatImpl(settings, state, frame);
+			settings.ostr << ")";
 		}
 		else if (p.type == ASTAlterQuery::DROP_PARTITION)
 		{

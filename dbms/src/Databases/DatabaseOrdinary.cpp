@@ -470,6 +470,7 @@ void DatabaseOrdinary::alterTable(
 	if (it == ast_create_query.children.end())
 		throw Exception("Logical error: cannot find columns child in ASTCreateQuery", ErrorCodes::LOGICAL_ERROR);
 	*it = new_columns;
+	ast_create_query.columns = new_columns;
 
 	if (engine_modifier)
 		engine_modifier(ast_create_query.storage);
