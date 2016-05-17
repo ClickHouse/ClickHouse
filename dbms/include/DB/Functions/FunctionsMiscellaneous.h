@@ -288,6 +288,42 @@ public:
 };
 
 
+/** Инкрементальный номер блока среди вызовов этой функции. */
+class FunctionBlockNumber : public IFunction
+{
+private:
+	std::atomic<size_t> block_number {0};
+
+public:
+	static constexpr auto name = "blockNumber";
+	static IFunction * create(const Context & context) { return new FunctionBlockNumber; }
+
+	/// Получить имя функции.
+	String getName() const override
+	{
+		return name;
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (!arguments.empty())
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 0.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new DataTypeUInt64;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		size_t current_block_number = block_number++;
+		block.getByPosition(result).column = ColumnConstUInt64(block.rowsInFirstColumn(), current_block_number).convertToFullColumn();
+	}
+};
+
+
 class FunctionSleep : public IFunction
 {
 public:

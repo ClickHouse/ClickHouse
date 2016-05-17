@@ -381,6 +381,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 	factory.registerFunction<FunctionToTypeName>();
 	factory.registerFunction<FunctionBlockSize>();
 	factory.registerFunction<FunctionRowNumberInBlock>();
+	factory.registerFunction<FunctionBlockNumber>();
 	factory.registerFunction<FunctionSleep>();
 	factory.registerFunction<FunctionMaterialize>();
 	factory.registerFunction<FunctionIgnore>();
