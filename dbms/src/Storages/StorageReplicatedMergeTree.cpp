@@ -1778,7 +1778,8 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
 	for (const auto & part : parts)
 		entry.parts_to_merge.push_back(part->name);
 
-	zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
+	String path_created = zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
+	entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
 
 	String month_name = parts[0]->name.substr(0, 6);
 	for (size_t i = 0; i + 1 < parts.size(); ++i)
@@ -1956,7 +1957,8 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
 	ReplicatedMergeTreeAddress address(zookeeper->get(replica_path + "/host"));
 
-	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(part_name, replica_path, address.host, address.replication_port, to_detached);
+	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(
+		part_name, replica_path, address.host, address.replication_port, to_detached);
 
 	if (!to_detached)
 	{
