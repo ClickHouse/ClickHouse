@@ -1963,6 +1963,12 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	if (!to_detached)
 	{
 		zkutil::Ops ops;
+
+		/** NOTE
+		  * Здесь возникает эксепшен, если произошёл ALTER с изменением типа столбца или удалением столбца,
+		  *  а кусок на удалённом сервере ещё не модифицирован.
+		  * Через некоторое время одна из следующих попыток сделать fetchPart будет успешной.
+		  */
 		checkPartAndAddToZooKeeper(part, ops, part_name);
 
 		MergeTreeData::Transaction transaction;
