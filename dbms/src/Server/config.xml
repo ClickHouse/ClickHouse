@@ -152,17 +152,6 @@
 	<dictionaries_config>*_dictionary.xml</dictionaries_config>
 
 
-	<!-- Настройки режима совместимости с OLAPServer.
-	  -->
-	<!--
-	<olap_compatibility>
-		<port>8248</port>
-		<table_for_all_counters>default.visits_all</table_for_all_counters>
-		<table_for_single_counter>default.visits_layer</table_for_single_counter>
-		<profile>olap_compatibility</profile>
-	</olap_compatibility>
-	-->
-
 	<!-- Раскомментируйте, если хотите сделать так, чтобы ваши данные сжимались на 30-50% лучше.
 	     Не нужно этого делать, если вы только начинаете использовать ClickHouse.
 	  -->
