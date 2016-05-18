@@ -6144,7 +6144,7 @@ https://███████████.yandex-team.ru/raw/Metrika/ClickHouse_
 
 <p>A flat array is used for storing in RAM. For this reason, IDs shouldn&#39;t be more than a million.</p>
 
-<p>Dictionaries can be updated when the server restarts. However, the set of available dictionaries is not updated. For updates, the file modification times are checked. If a file has changed, the dictionary is updated.
+<p>Dictionaries can be updated without the server restart. However, the set of available dictionaries is not updated. For updates, the file modification times are checked. If a file has changed, the dictionary is updated.
 The interval to check for changes is configured in the &#39;builtin_dictionaries_reload_interval&#39; parameter.
 Dictionary updates (other than loading at first use) do not block queries. During updates, queries use the old versions of dictionaries. If an error occurs during an update, the error is written to the server log, while queries continue using the old version of dictionaries.</p>
 
