@@ -1,5 +1,5 @@
 /* ******************************************************************
-   Huff0 : Huffman coder, part of New Generation Entropy library
+   Huffman coder, part of New Generation Entropy library
    header file
    Copyright (C) 2013-2016, Yann Collet.
 
@@ -31,8 +31,8 @@
    You can contact the author at :
    - Source repository : https://github.com/Cyan4973/FiniteStateEntropy
 ****************************************************************** */
-#ifndef HUFF0_H
-#define HUFF0_H
+#ifndef HUF_H
+#define HUF_H
 
 #if defined (__cplusplus)
 extern "C" {
@@ -46,7 +46,7 @@ extern "C" {
 
 
 /* ****************************************
-*  Huff0 simple functions
+*  HUF simple functions
 ******************************************/
 size_t HUF_compress(void* dst, size_t dstCapacity,
               const void* src, size_t srcSize);
@@ -63,7 +63,7 @@ HUF_compress() :
                      if HUF_isError(return), compression failed (more details using HUF_getErrorName())
 
 HUF_decompress() :
-    Decompress Huff0 data from buffer 'cSrc', of size 'cSrcSize',
+    Decompress HUF data from buffer 'cSrc', of size 'cSrcSize',
     into already allocated destination buffer 'dst', of size 'dstSize'.
     `dstSize` : must be the **exact** size of original (uncompressed) data.
     Note : in contrast with FSE, HUF_decompress can regenerate
@@ -94,4 +94,4 @@ size_t HUF_compress2 (void* dst, size_t dstSize, const void* src, size_t srcSize
 }
 #endif
 
-#endif   /* HUFF0_H */
+#endif   /* HUF_H */
