@@ -21,8 +21,6 @@ public:
 	using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)>;
 
 public:
-	static const size_t NO_LIMIT = std::numeric_limits<size_t>::max();
-
 	MergeTreeDataMerger(MergeTreeData & data_);
 
 	void setCancellationHook(CancellationHook cancellation_hook_);

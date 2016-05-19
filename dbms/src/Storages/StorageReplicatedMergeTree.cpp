@@ -1647,6 +1647,7 @@ bool StorageReplicatedMergeTree::canMergeParts(
 void StorageReplicatedMergeTree::mergeSelectingThread()
 {
 	setThreadName("ReplMTMergeSel");
+	LOG_DEBUG(log, "Merge selecting thread started");
 
 	bool need_pull = true;
 
