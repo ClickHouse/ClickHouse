@@ -1712,20 +1712,21 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				LOG_TRACE(log, "Number of queued merges (" << merges_queued
 					<< ") is greater than max_replicated_merges_in_queue ("
 					<< data.settings.max_replicated_merges_in_queue << "), so won't select new parts to merge.");
-				break;
 			}
-
-			MergeTreeData::DataPartsVector parts;
-			String merged_name;
-
-			size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
-
-			if ((		merger.selectPartsToMerge(parts, merged_name, disk_space, false, false, only_small, can_merge)
-					|| 	merger.selectPartsToMerge(parts, merged_name, disk_space, true, false, only_small, can_merge))
-				&& createLogEntryToMergeParts(parts, merged_name))
+			else
 			{
-				success = true;
-				need_pull = true;
+				MergeTreeData::DataPartsVector parts;
+				String merged_name;
+
+				size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
+
+				if ((		merger.selectPartsToMerge(parts, merged_name, disk_space, false, false, only_small, can_merge)
+						|| 	merger.selectPartsToMerge(parts, merged_name, disk_space, true, false, only_small, can_merge))
+					&& createLogEntryToMergeParts(parts, merged_name))
+				{
+					success = true;
+					need_pull = true;
+				}
 			}
 		}
 		catch (...)
