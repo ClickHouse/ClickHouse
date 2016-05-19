@@ -46,10 +46,9 @@ bool Lock::tryLock()
 
 void Lock::unlock()
 {
-	auto zookeeper = zookeeper_holder->getZooKeeper();
-
 	if (locked)
 	{
+		auto zookeeper = zookeeper_holder->getZooKeeper();
 		try
 		{
 			if (tryCheck() == Status::LOCKED_BY_ME)
