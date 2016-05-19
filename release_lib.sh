@@ -43,8 +43,8 @@ function make_control {
 		case "$DAEMON_PKG" in
 		'clickhouse-server' )
 			add_daemon_impl clickhouse-server-base '' 'clickhouse-server binary'
-			[ -n "$BUILD_PACKAGE_FOR_METRIKA" ] && add_daemon_impl clickhouse-server-metrika "clickhouse-server-base(=0.0.$REVISION)" 'Configuration files specific for Metrika project for clickhouse-server-base package'
-			add_daemon_impl clickhouse-server-common "clickhouse-server-base(=0.0.$REVISION)" 'Common configuration files for clickhouse-server-base package'
+			[ -n "$BUILD_PACKAGE_FOR_METRIKA" ] && add_daemon_impl clickhouse-server-metrika "clickhouse-server-base(=1.1.$REVISION)" 'Configuration files specific for Metrika project for clickhouse-server-base package'
+			add_daemon_impl clickhouse-server-common "clickhouse-server-base(=1.1.$REVISION)" 'Common configuration files for clickhouse-server-base package'
 		;;
 		'clickhouse-client' )
 			add_daemon_impl clickhouse-client
@@ -150,13 +150,13 @@ function upload_debs {
 	cat src/debian/dupload.conf.in | sed -e "s/[@]AUTHOR[@]/$(whoami)/g" > $DUPLOAD_CONF
 
 
-	dupload metrika-yandex_0.0."$REVISION"_amd64.changes -t $REPO -c --nomail
+	dupload metrika-yandex_1.1."$REVISION"_amd64.changes -t $REPO -c --nomail
 
 	# Загрузка в репозиторий баннерной крутилки (только ClickHouse).
 	if [[ -z "$(echo $DAEMONS | tr ' ' '\n' | grep -v clickhouse)" ]];
 	then
 		echo -e "\n\e[0;32mUploading daemons "$DAEMONS" to Banner System \e[0;0m\n "
-		dupload metrika-yandex_0.0."$REVISION"_amd64.changes -t $REPO_YABS -c --nomail
+		dupload metrika-yandex_1.1."$REVISION"_amd64.changes -t $REPO_YABS -c --nomail
 	else
 		echo -e "\n\e[0;31mWill not upload daemons to Banner System \e[0;0m\n "
 	fi
