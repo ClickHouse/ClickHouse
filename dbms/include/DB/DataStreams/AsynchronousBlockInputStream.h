@@ -124,18 +124,18 @@ protected:
 	/// Вычисления, которые могут выполняться в отдельном потоке
 	void calculate(MemoryTracker * memory_tracker)
 	{
-		if (first)
-		{
-			first = false;
-			setThreadName("AsyncBlockInput");
-			current_memory_tracker = memory_tracker;
-			children.back()->readPrefix();
-		}
-
 		CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
 		try
 		{
+			if (first)
+			{
+				first = false;
+				setThreadName("AsyncBlockInput");
+				current_memory_tracker = memory_tracker;
+				children.back()->readPrefix();
+			}
+
 			block = children.back()->read();
 		}
 		catch (...)
