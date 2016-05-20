@@ -36,8 +36,10 @@ public:
 		return res.str();
 	}
 
-	void readPrefixImpl() override
+	void readPrefix() override
 	{
+		/// Не будем вызывать readPrefix у ребёнка, чтобы соответствующие действия совершались в отдельном потоке.
+
 		next();
 		started = true;
 	}
@@ -80,6 +82,7 @@ protected:
 	boost::threadpool::pool pool{1};
 	Poco::Event ready;
 	bool started = false;
+	bool first = true;
 
 	Block block;
 	std::exception_ptr exception;
@@ -121,8 +124,14 @@ protected:
 	/// Вычисления, которые могут выполняться в отдельном потоке
 	void calculate(MemoryTracker * memory_tracker)
 	{
-		setThreadName("AsyncBlockInput");
-		current_memory_tracker = memory_tracker;
+		if (first)
+		{
+			first = false;
+			setThreadName("AsyncBlockInput");
+			current_memory_tracker = memory_tracker;
+			children.back()->readPrefix();
+		}
+
 		CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
 		try

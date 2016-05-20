@@ -72,6 +72,11 @@ public:
 	}
 
 protected:
+	/// Ничего не делаем, чтобы подготовка к выполнению запроса делалась параллельно, в ParallelInputsProcessor.
+	void readPrefix() override
+	{
+	}
+
 	Block readImpl() override
 	{
 		if (!executed)

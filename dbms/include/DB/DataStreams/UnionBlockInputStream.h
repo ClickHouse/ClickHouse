@@ -183,6 +183,11 @@ protected:
 			std::rethrow_exception(exception);
 	}
 
+	/// Ничего не делаем, чтобы подготовка к выполнению запроса делалась параллельно, в ParallelInputsProcessor.
+	void readPrefix() override
+	{
+	}
+
 	/** Возможны следующие варианты:
 	  * 1. Функция readImpl вызывается до тех пор, пока она не вернёт пустой блок.
 	  *  Затем вызывается функция readSuffix и затем деструктор.
