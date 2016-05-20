@@ -26,10 +26,6 @@ class IProfilingBlockInputStream : public IBlockInputStream
 public:
 	Block read() override final;
 
-	/** Реализация по-умолчанию вызывает readPrefix() у всех детей рекурсивно, а затем readPrefixImpl() у себя.
-	  */
-	void readPrefix() override;
-
 	/** Реализация по-умолчанию вызывает рекурсивно readSuffix() у всех детей, а затем readSuffixImpl() у себя.
 	  * Если этот поток вызывает у детей read() в отдельном потоке, этот поведение обычно неверно:
 	  * readSuffix() у ребенка нельзя вызывать в момент, когда read() того же ребенка выполняется в другом потоке.
@@ -185,9 +181,6 @@ protected:
 
 	/// Наследники должны реализовать эту функцию.
 	virtual Block readImpl() = 0;
-
-	/// Здесь можно делать предварительную инициализацию.
-	virtual void readPrefixImpl() {}
 
 	/// Здесь необходимо делать финализацию, которая может привести к исключению.
 	virtual void readSuffixImpl() {}

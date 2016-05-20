@@ -96,15 +96,6 @@ Block IProfilingBlockInputStream::read()
 }
 
 
-void IProfilingBlockInputStream::readPrefix()
-{
-	for (auto & child : children)
-		child->readPrefix();
-
-	readPrefixImpl();
-}
-
-
 void IProfilingBlockInputStream::readSuffix()
 {
 	for (auto & child : children)

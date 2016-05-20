@@ -36,8 +36,9 @@ public:
 		return res.str();
 	}
 
-	void readPrefixImpl() override
+	void readPrefix() override
 	{
+		children.back()->readPrefix();
 		next();
 		started = true;
 	}
