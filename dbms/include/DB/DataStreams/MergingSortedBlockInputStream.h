@@ -123,6 +123,7 @@ protected:
 
 
 	Block readImpl() override;
+
 	void readSuffixImpl() override;
 
 	/// Инициализирует очередь и следующий блок результата.
