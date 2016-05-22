@@ -68,22 +68,6 @@ cd boost_1_60_0
 sudo ./b2 install --toolset=gcc-5 -j $THREADS
 cd ..
 
-# Install tcmalloc. Patch is important.
-
-wget https://googledrive.com/host/0B6NtGsLhIcf7MWxMMF9JdTN3UVk/gperftools-2.4.tar.gz
-tar -xf gperftools-2.4.tar.gz
-cd gperftools-2.4
-patch src/static_vars.cc <<END
-103c103
-<       TCMallocGetenvSafe("TCMALLOC_AGGRESSIVE_DECOMMIT"), true);
----
->       TCMallocGetenvSafe("TCMALLOC_AGGRESSIVE_DECOMMIT"), false);
-END
-./configure --enable-minimal
-make -j $THREADS
-sudo make install
-cd ..
-
 # Install mongoclient. This library is needed only for 'external dictionaries' with MongoDB source. This is rarely used but enabled by default.
 
 sudo apt-get install scons
