@@ -11,7 +11,7 @@ endif()
 
 if (${DISABLE_MONGODB})
 	add_definitions(-D DISABLE_MONGODB)
-else
+else()
 	set (LINK_MONGOCLIENT libmongoclient.a)
 endif()
 
