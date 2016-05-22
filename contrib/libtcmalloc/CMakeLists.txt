@@ -6,7 +6,7 @@ add_definitions(
     -fno-builtin-memalign -fno-builtin-posix_memalign -fno-builtin-valloc -fno-builtin-pvalloc
 )
 
-include_directories (include)
+include_directories (include src)
 
 add_library (tcmalloc_minimal
 ./include/malloc_hook.cc
@@ -38,4 +38,9 @@ add_library (tcmalloc_minimal
 ./include/debugallocation.cc
 ./include/stacktrace.cc
 ./include/stack_trace_table.cc
+./include/heap-checker.cc
+./include/heap-checker-bcad.cc
+./include/heap-profile-table.cc
+./include/raw_printer.cc
+./include/memory_region_map.cc
 )

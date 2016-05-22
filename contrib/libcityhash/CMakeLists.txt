@@ -1,6 +1,8 @@
+include_directories (include)
+
 add_library(cityhash
 	city.cc
 
-	citycrc.h
-	city.h
+	include/citycrc.h
+	include/city.h
 	config.h)
