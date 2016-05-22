@@ -641,7 +641,7 @@ By default, access is allowed from everywhere for the default user without a pas
 
 <h3>Installing from sources</h3>
 
-<p>Build following the instructions in <a href='https://███████████.yandex-team.ru/raw/Metrika/ClickHouse/master/doc/drafts/build.txt'>build.txt</a></p>
+<p>Build following the instructions in <a href='https://███████████.yandex-team.ru/raw/Metrika/ClickHouse/master/doc/build.txt'>build.txt</a></p>
 
 <p>You can compile packages and install them. You can also use programs without installing packages.</p>
 
@@ -970,7 +970,7 @@ Connected to ClickHouse server version 0.0.26176.
 :) SELECT 1
 </pre>
 
-<p>The &quot;clickhouse-client&quot; program accepts the following parameters, which are all required:</p>
+<p>The &quot;clickhouse-client&quot; program accepts the following parameters, which are all optional:</p>
 
 <p>--host, -h - server name, by default - &#39;localhost&#39;.
 You can use either the name or the IPv4 or IPv6 address.</p>
@@ -988,7 +988,7 @@ Note that the HTTP interface and the native interface use different ports.</p>
 
 <p>--multiline, -m - If specified, allow multiline queries (do not send request on Enter).</p>
 
-<p>--multiquery, -n - If specified, allow processing multiple queries separated by commas.
+<p>--multiquery, -n - If specified, allow processing multiple queries separated by semicolons.
 Only works in non-interactive mode.</p>
 
 <p>--format, -f - Use the specified default format to output the result.</p>
@@ -1028,7 +1028,7 @@ Only a single query is run, so everything after the semicolon is ignored.</p>
 
 <p>You can specify <span class='inline-example'>\G</span> instead of or after the semicolon. This indicates using Vertical format. In this format, each value is printed on a separate line, which is convenient for wide tables. This unusual feature was added for compatibility with the MySQL CLI.</p>
 
-<p>The command line is based on &#39;readline&#39; (and &#39;history&#39;). In other words, it uses the familiar keyboard shortcuts and keeps a history. The history is written to /.clickhouse-client-history.</p>
+<p>The command line is based on &#39;readline&#39; (and &#39;history&#39;) (or &#39;libedit&#39;, or even nothing, depending on build). In other words, it uses the familiar keyboard shortcuts and keeps a history. The history is written to /.clickhouse-client-history.</p>
 
 <p>By default, the format used is PrettyCompact. You can change the format in the FORMAT clause of the query, or by specifying &#39;\G&#39; at the end of the query, using the &#39;--format&#39; or &#39;--vertical&#39; argument in the command line, or using the client configuration file.</p>
 
