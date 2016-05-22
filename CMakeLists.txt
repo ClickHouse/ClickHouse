@@ -101,10 +101,7 @@ include_directories (${METRICA_SOURCE_DIR}/libs/libpocoext/include/)
 include_directories (${METRICA_SOURCE_DIR}/libs/libmysqlxx/include/)
 include_directories (${METRICA_SOURCE_DIR}/libs/libzkutil/include/)
 
-include_directories (${METRICA_SOURCE_DIR}/tools/)
 include_directories (${METRICA_SOURCE_DIR}/dbms/include)
-include_directories (${METRICA_SOURCE_DIR})
-include_directories (${METRICA_BINARY_DIR})
 
 include_directories (/usr/local/include/glib-2.0/)
 include_directories (/usr/local/lib/glib-2.0/include/)
