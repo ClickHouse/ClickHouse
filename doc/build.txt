@@ -1,8 +1,9 @@
 # How to build ClickHouse
 #
-# Build should work on Linux Ubuntu 14.04 or newer.
+# Build should work on Linux Ubuntu 12.04, 14.04 or newer.
 # With appropriate changes, build should work on any other Linux distribution.
 # Build is not intended to work on Mac OS X.
+# Only x86_64 is supported. Support for AArch64 is experimental.
 
 sudo apt-get install git cmake
 
@@ -68,7 +69,10 @@ cd boost_1_60_0
 sudo ./b2 install --toolset=gcc-5 -j $THREADS
 cd ..
 
-# Install mongoclient. This library is needed only for 'external dictionaries' with MongoDB source. This is rarely used but enabled by default.
+# Install mongoclient. This library is needed only for 'external dictionaries' with MongoDB source.
+# This is rarely used but enabled by default.
+# If you don't need it, you could set variable and skip installation step:
+# export DISABLE_MONGODB=1
 
 sudo apt-get install scons
 git clone -b legacy https://github.com/mongodb/mongo-cxx-driver.git
@@ -87,7 +91,7 @@ cd ClickHouse
 # Install prerequisites to build debian packages.
 sudo apt-get install devscripts dupload fakeroot debhelper
 
-# Install recent version of clang. Clang is embedded into ClickHouse package and used at runtime.
+# Install recent version of clang. Clang is embedded into ClickHouse package and used at runtime. It is optional.
 
 cd ..
 sudo apt-get install subversion

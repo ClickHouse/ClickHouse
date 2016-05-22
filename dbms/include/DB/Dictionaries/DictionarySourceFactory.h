@@ -5,7 +5,11 @@
 #include <DB/Dictionaries/FileDictionarySource.h>
 #include <DB/Dictionaries/MySQLDictionarySource.h>
 #include <DB/Dictionaries/ClickHouseDictionarySource.h>
+
+#ifndef DISABLE_MONGODB
 #include <DB/Dictionaries/MongoDBDictionarySource.h>
+#endif
+
 #include <DB/Dictionaries/ODBCDictionarySource.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Core/FieldVisitors.h>
@@ -22,6 +26,7 @@ namespace ErrorCodes
 	extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 	extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 	extern const int LOGICAL_ERROR;
+	extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -95,8 +100,7 @@ public:
 			if (dict_struct.has_expressions)
 				throw Exception{
 					"Dictionary source of type `file` does not support attribute expressions",
-					ErrorCodes::LOGICAL_ERROR
-				};
+					ErrorCodes::LOGICAL_ERROR};
 
 			const auto filename = config.getString(config_prefix + ".file.path");
 			const auto format = config.getString(config_prefix + ".file.format");
@@ -113,7 +117,12 @@ public:
 		}
 		else if ("mongodb" == source_type)
 		{
+		#ifndef DISABLE_MONGODB
 			return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
+		#else
+			throw Exception{
+				"MongoDB dictionary source was disabled at build time", ErrorCodes::SUPPORT_IS_DISABLED};
+		#endif
 		}
 		else if ("odbc" == source_type)
 		{

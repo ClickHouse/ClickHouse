@@ -3,6 +3,10 @@ include_directories(/usr/include/mysql)
 
 add_subdirectory (src)
 
+if ($ENV{DISABLE_MONGODB})
+	add_definitions(-D DISABLE_MONGODB)
+endif()
+
 add_library (dbms
 	src/Server/OLAPAttributesMetadata.h
 	src/Server/InterserverIOHTTPHandler.h
