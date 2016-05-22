@@ -3,7 +3,11 @@ include_directories(/usr/include/mysql)
 
 add_subdirectory (src)
 
+set (DISABLE_MONGODB FALSE CACHE BOOL "Set to TRUE to disable mongodb")
 if ($ENV{DISABLE_MONGODB})
+	set (DISABLE_MONGODB TRUE)
+endif()
+if (${DISABLE_MONGODB})
 	add_definitions(-D DISABLE_MONGODB)
 endif()
 
