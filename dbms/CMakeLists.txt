@@ -3,12 +3,16 @@ include_directories(/usr/include/mysql)
 
 add_subdirectory (src)
 
-set (DISABLE_MONGODB FALSE CACHE BOOL "Set to TRUE to disable mongodb")
+set (DISABLE_MONGODB FALSE CACHE BOOL "Set to TRUE to disable MongoDB support as source for external dictionaries")
+
 if ($ENV{DISABLE_MONGODB})
 	set (DISABLE_MONGODB TRUE)
 endif()
+
 if (${DISABLE_MONGODB})
 	add_definitions(-D DISABLE_MONGODB)
+else
+	set (LINK_MONGOCLIENT libmongoclient.a)
 endif()
 
 add_library (dbms
@@ -932,7 +936,7 @@ target_link_libraries(dbms
 	libboost_thread.a
 	libboost_system.a
 	librt.a
-	libmongoclient.a
+	${LINK_MONGOCLIENT}
 	libboost_regex.a
 	PocoData
 	PocoDataODBC
