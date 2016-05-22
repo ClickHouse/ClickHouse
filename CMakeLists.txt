@@ -1,7 +1,4 @@
-SET(CMAKE_C_COMPILER "gcc-5")
-SET(CMAKE_CXX_COMPILER "g++-5")
-
-project (METRICA)
+project (ClickHouse)
 cmake_minimum_required(VERSION 2.6)
 
 # отключаем варнинг о том, что в каждой директории должен быть CMakeLists.txt
