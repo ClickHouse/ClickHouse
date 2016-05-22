@@ -55,12 +55,12 @@ ELSE($ENV{DISABLE_LIBTCMALLOC})
 	IF($ENV{DEBUG_LIBTCMALLOC})
 		message(STATUS "Link libtcmalloc_minimal_debug for testing")
 		target_link_libraries (common pocoext
-			libtcmalloc_minimal_debug.a
+			tcmalloc_minimal_debug
 			pthread libglib-2.0.a libicui18n.a libicuuc.a libicudata.a librt.a)
 	ELSE($ENV{DEBUG_LIBTCMALLOC})
 		message(STATUS "Link libtcmalloc_minimal")
 		target_link_libraries (common pocoext
-			libtcmalloc_minimal.a
+			tcmalloc_minimal
 			pthread libglib-2.0.a libicui18n.a libicuuc.a libicudata.a librt.a)
 	ENDIF($ENV{DEBUG_LIBTCMALLOC})
 ENDIF($ENV{DISABLE_LIBTCMALLOC})

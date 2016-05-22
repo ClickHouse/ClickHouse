@@ -58,7 +58,7 @@ SET(CMAKE_INSTALL_PREFIX /usr)
 # Директория для файлов, специфичных для Яндекса
 SET(CLICKHOUSE_PRIVATE_DIR ${METRICA_SOURCE_DIR}/private/)
 
-include_directories (${METRICA_SOURCE_DIR}/contrib/libcityhash/)
+include_directories (${METRICA_SOURCE_DIR}/contrib/libcityhash/include/)
 include_directories (${METRICA_SOURCE_DIR}/contrib/liblz4/include/)
 include_directories (${METRICA_SOURCE_DIR}/contrib/libdivide/)
 include_directories (${METRICA_SOURCE_DIR}/contrib/libdouble-conversion/)
@@ -98,6 +98,7 @@ include_directories (${METRICA_BINARY_DIR})
 include_directories (/usr/local/include/glib-2.0/)
 include_directories (/usr/local/lib/glib-2.0/include/)
 include_directories (/usr/include/glib-2.0/)
+include_directories (/usr/lib64/glib-2.0/include/)
 
 IF (AARCH64)
     include_directories (/usr/lib/aarch64-linux-gnu/glib-2.0/include/)
