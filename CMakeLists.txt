@@ -1,6 +1,20 @@
 project (ClickHouse)
 cmake_minimum_required(VERSION 2.6)
 
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+    # require at least gcc 5
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5)
+        message(FATAL_ERROR "GCC version must be at least 5!")
+    endif()
+elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+    # require at least clang 3.8
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.8)
+        message(FATAL_ERROR "Clang version must be at least 3.8!")
+    endif()
+else()
+    message(WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 3.8+ and GCC 5+.")
+endif()
+
 # отключаем варнинг о том, что в каждой директории должен быть CMakeLists.txt
 CMAKE_POLICY(SET CMP0014 OLD)
 
