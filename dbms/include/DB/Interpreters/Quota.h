@@ -1,8 +1,9 @@
 #pragma once
 
-#include <string.h>
+#include <cstring>
 #include <unordered_map>
 #include <memory>
+#include <random>
 
 #include <Poco/Timespan.h>
 

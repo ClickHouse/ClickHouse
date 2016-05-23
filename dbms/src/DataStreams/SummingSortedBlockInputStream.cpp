@@ -291,10 +291,10 @@ bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & 
 	Row right(left.size());
 
 	for (size_t col_num : desc.key_col_nums)
-		right[col_num] = (*cursor->all_columns[col_num])[cursor->pos].get<Array>();
+		right[col_num] = (*cursor->all_columns[col_num])[cursor->pos].template get<Array>();
 
 	for (size_t col_num : desc.val_col_nums)
-		right[col_num] = (*cursor->all_columns[col_num])[cursor->pos].get<Array>();
+		right[col_num] = (*cursor->all_columns[col_num])[cursor->pos].template get<Array>();
 
 	auto at_ith_column_jth_row = [&](const Row & matrix, size_t i, size_t j) -> const Field &
 	{

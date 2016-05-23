@@ -343,7 +343,7 @@ int main(int argc, char ** argv)
 									data.begin() + (data.size() * i) / num_threads,
 									data.begin() + (data.size() * (i + 1)) / num_threads));
 
-			pool.wait();
+		pool.wait();
 
 		watch.stop();
 		double time_aggregated = watch.elapsedSeconds();
@@ -367,7 +367,8 @@ int main(int argc, char ** argv)
 			for (auto it = maps[i].begin(); it != maps[i].end(); ++it)
 				maps[0][it->first] += it->second;
 
-			watch.stop();
+		watch.stop();
+
 		double time_merged = watch.elapsedSeconds();
 		std::cerr
 		<< "Merged in " << time_merged
@@ -531,7 +532,7 @@ int main(int argc, char ** argv)
 									data.begin() + (data.size() * i) / num_threads,
 									data.begin() + (data.size() * (i + 1)) / num_threads));
 
-			pool.wait();
+		pool.wait();
 
 		watch.stop();
 		double time_aggregated = watch.elapsedSeconds();
@@ -555,7 +556,7 @@ int main(int argc, char ** argv)
 			pool.schedule(std::bind(merge2,
 									&maps[0], num_threads, i));
 
-			pool.wait();
+		pool.wait();
 
 		watch.stop();
 		double time_merged = watch.elapsedSeconds();

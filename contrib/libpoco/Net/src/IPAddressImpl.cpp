@@ -22,6 +22,9 @@
 #include "Poco/String.h"
 #include "Poco/Types.h"
 
+#if __GNUC__ > 5
+#pragma GCC diagnostic ignored "-Wmisleading-indentation"
+#endif
 
 using Poco::RefCountedObject;
 using Poco::NumberFormatter;

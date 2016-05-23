@@ -28,6 +28,7 @@
 #include <ext/range.hpp>
 
 #include <unordered_map>
+#include <numeric>
 
 
 namespace DB

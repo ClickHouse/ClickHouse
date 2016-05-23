@@ -5,6 +5,7 @@
 #include <common/logger_useful.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 
+#include <random>
 
 namespace DB
 {

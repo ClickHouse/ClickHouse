@@ -544,9 +544,9 @@ public:
 			+ toString(arguments.size()) + ", should be 1.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-			if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
-				throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
 	void init(Block & block, const ColumnNumbers & arguments) {}
@@ -632,9 +632,9 @@ public:
 			+ toString(arguments.size()) + ", should be 1.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-			if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
-				throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
 	/// Возвращает позицию аргумента, являющегося столбцом строк
@@ -712,9 +712,9 @@ public:
 			+ toString(arguments.size()) + ", should be 1.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-			if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
-				throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
 	void init(Block & block, const ColumnNumbers & arguments) {}
@@ -811,9 +811,9 @@ public:
 			+ toString(arguments.size()) + ", should be 1.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-			if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
-				throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
 	void init(Block & block, const ColumnNumbers & arguments) {}
