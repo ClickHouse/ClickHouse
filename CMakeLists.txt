@@ -116,21 +116,6 @@ ENDIF()
 
 include_directories (/usr/local/include/)
 
-link_directories (${METRICA_SOURCE_DIR}/contrib/libcityhash)
-link_directories (${METRICA_SOURCE_DIR}/contrib/liblz4)
-link_directories (${METRICA_SOURCE_DIR}/contrib/libdouble-conversion)
-link_directories (${METRICA_SOURCE_DIR}/contrib/libcpuid)
-link_directories (${METRICA_SOURCE_DIR}/contrib/libzstd)
-link_directories (${METRICA_SOURCE_DIR}/contrib/libre2)
-link_directories (${METRICA_SOURCE_DIR}/contrib/libtcmalloc)
-link_directories (${METRICA_SOURCE_DIR}/contrib/libpoco/lib)
-
-link_directories (${METRICA_BINARY_DIR}/libs/libcommon)
-link_directories (${METRICA_BINARY_DIR}/libs/libdaemon)
-link_directories (${METRICA_BINARY_DIR}/libs/libpocoext)
-link_directories (${METRICA_BINARY_DIR}/libs/libmysqlxx)
-
-link_directories (${METRICA_BINARY_DIR}/dbms)
 link_directories (/usr/local/lib)
 
 add_subdirectory (contrib)
