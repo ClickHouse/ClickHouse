@@ -8,13 +8,6 @@
 
 
 @font-face {
-	font-family:'textbook';
-	src:local('textbook');
-	src:url(https://yastatic.net/metrika/1.59.743/bower_components/islands-romochka/desktop.blocks/i-font/_face/i-font_face_textbook.woff),
-		url(https://yastatic.net/metrika/1.59.743/bower_components/islands-romochka/desktop.blocks/i-font/_face/i-font_face_textbook.ttf);
-}
-
-@font-face {
 	font-family:'Yandex Sans Text Web';
 	src:url(https://yastatic.net/adv-www/_/yy5JveR58JFkc97waf-xp0i6_jM.eot);
 	src:url(https://yastatic.net/adv-www/_/yy5JveR58JFkc97waf-xp0i6_jM.eot?#iefix) format('embedded-opentype'),
@@ -176,36 +169,6 @@ a:hover, a:active {
 	font-size: 10pt;
 }
 
-form table {
-	width: 600px;
-	border: 1px solid #AAA;
-	background-color: #EEE;
-	padding: 16px;
-}
-
-input {
-	padding-left: 10px;
-	border: 1px solid #AAA;
-	width: 380px;
-}
-
-textarea {
-	border: 1px solid #AAA;
-	width: 556px;
-	height: 300px;
-}
-
-.field_required {
-	color: red;
-}
-
-button {
-	border: 1px solid #AAA;
-	padding: 5px;
-	font-size: 14pt;
-	background-color: #ffdb4d;
-}
-
 .feedback_form {
 	position: absolute;
 }
@@ -249,6 +212,7 @@ ul.dashed > li:before {
 .warranty {
 	font-size: 10pt;
 	color: #888;
+	line-height: 150%;
 }
 
 .nomarkerlist {
@@ -270,30 +234,7 @@ ul.dashed > li:before {
 	<h2>Feedback</h2>
 	<p>Ask any questions on <a href='https://stackoverflow.com/'>Stackoverflow</a> with 'clickhouse' tag.</p>
 	<p>Use <a href='https://groups.google.com/group/clickhouse'>Google Group</a> for discussion.</p>
-	<p>Or send private message to developers:</p>
-	<form enctype='multipart/form-data' method='POST'>
-		<table>
-			<tbody>
-				<tr>
-					<td width='30%'><span class='field_required'>*</span> Your name</td>
-					<td width='70%'><input type='text' name='name' /></td>
-				</tr>
-				<tr>
-					<td><span class='field_required'>*</span> Your email</td>
-					<td><input type='text' name='email' /></td>
-				</tr>
-				<tr>
-					<td colspan='2'><span class='field_required'>*</span> Message</td>
-				</tr>
-				<tr>
-					<td colspan='2'><textarea name='message'></textarea></td>
-				</tr>
-				<tr>
-					<td colspan='2' align='right'><button type="submit">Send</button></td>
-				</tr>
-			</tbody>
-		</table>
-	</form>
+	<p>Or send private message to developers: <a href='mailto:clickhouse-feedback@yandex-team.com'>clickhouse-feedback@yandex-team.com</a>.</p>
 	<p class='warranty'>Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,<br /> either express or implied.</p>
 </div>
 
