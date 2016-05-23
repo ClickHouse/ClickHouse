@@ -32,7 +32,7 @@ public:
 			throw Exception(std::string("Cannot dlopen: ") + dlerror());
 	}
 
-	~SharedLibrary()
+	~SharedLibrary() noexcept(false)
 	{
 		if (handle && dlclose(handle))
 			throw Exception("Cannot dlclose");

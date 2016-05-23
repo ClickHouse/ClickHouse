@@ -12,6 +12,11 @@
   * В gcc 4.9 и clang 3.6 всё Ок.
   */
 
+/// В этом тесте намеренно ссылаемся за пределы массива.
+#ifdef __GNUC__
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
+
 typedef unsigned long size_t;
 
 class BufferBase

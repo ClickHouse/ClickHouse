@@ -476,9 +476,9 @@ void ExpressionActions::checkLimits(Block & block) const
 				if (!block.getByPosition(i).column->isConst())
 					list_of_non_const_columns << "\n" << block.getByPosition(i).name;
 
-				throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
-					+ ". Maximum: " + toString(limits.max_temporary_non_const_columns),
-					ErrorCodes::TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS);
+			throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
+				+ ". Maximum: " + toString(limits.max_temporary_non_const_columns),
+				ErrorCodes::TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS);
 		}
 	}
 }

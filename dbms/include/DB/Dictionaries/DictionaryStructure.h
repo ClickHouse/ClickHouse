@@ -6,6 +6,7 @@
 #include <DB/IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <ext/range.hpp>
+#include <numeric>
 #include <vector>
 #include <string>
 #include <map>

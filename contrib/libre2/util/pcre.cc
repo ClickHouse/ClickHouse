@@ -11,6 +11,10 @@
 #include "util/flags.h"
 #include "util/pcre.h"
 
+#if __GNUC__ > 5
+#pragma GCC diagnostic ignored "-Wmisleading-indentation"
+#endif
+
 #define PCREPORT(level) LOG(level)
 
 // Default PCRE limits.
