@@ -32,10 +32,10 @@ public:
 			throw Exception(std::string("Cannot dlopen: ") + dlerror());
 	}
 
-	~SharedLibrary() noexcept(false)
+	~SharedLibrary()
 	{
 		if (handle && dlclose(handle))
-			throw Exception("Cannot dlclose");
+			std::terminate();
 	}
 
 	template <typename Func>
