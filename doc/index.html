@@ -84,7 +84,7 @@ body {
     font-family: 'Yandex Sans Text Web', Arial, sans-serif;
     font-size: 12pt;
     font-weight: 300;
-    line-height: 150%;
+    line-height: 200%;
 }
 
 .page {
@@ -100,6 +100,7 @@ h1 {
 }
 
 h2 {
+  margin-top: 50px;
     font-family: 'Yandex Sans Display Web', Arial, sans-serif;
     font-size: 24pt;
     font-weight: 400;
@@ -116,13 +117,13 @@ a:hover, a:active {
 }
 
 .menu {
-	margin-top: -20px;
+	margin-top: 0px;
 	margin-bottom: 50px;
 	font-weight: 400;
 }
 
 .menu_item, .menu_item:visited {
-	margin-left: 8px;
+	/*margin-left: 8px;*/
 	margin-right: 8px;
 
 	padding: 5px;
@@ -139,6 +140,7 @@ a:hover, a:active {
 .short_description, .call_to_action {
 	font-size: 18pt;
 	font-family: 'Yandex Sans Display Web', Arial, sans-serif;
+  line-height: 150%;
 	/*font-weight: 300;*/
 }
 
@@ -154,7 +156,7 @@ a:hover, a:active {
 
 .download, .download:visited {
 	background-color: #ffdb4d;
-	font-size: 36pt;
+	font-size: 24pt;
 	font-family: 'Yandex Sans Display Web', Arial, sans-serif;
 	font-weight: 400;
 	padding: 10px;
@@ -224,6 +226,21 @@ code {
 	color: #CCC;
 }
 
+ul {
+  margin: 0;
+  padding-left: 0;
+}
+ul.dashed {
+  list-style-type: none;
+}
+ul.dashed > li {
+  text-indent: 5px;
+}
+ul.dashed > li:before {
+  content: "— ";
+  text-indent: 5px;
+}
+
 .choose_distributive {
 	color: red;
 	font-style: italic;
@@ -234,21 +251,20 @@ code {
 	color: #888;
 }
 
+.nomarkerlist {
+  list-style-type: none;
+}
+
 </style>
 
 </head>
 <body>
 <div class="page">
 
-<h1>ClickHouse</h1>
-
-<div class="menu">
-	<a class="menu_item" href='reference_en.html'>Documentation</a>
-	<a class="menu_item" href='#' id='download_menu_item'>Download</a>
-	<a class="menu_item" href='https://github.com/yandex/ClickHouse'>Source</a>
-	<a class="menu_item" href='benchmark.html'>Benchmark</a>
-	<a class="menu_item" href='#' id='feedback'>Feedback</a>
-</div>
+<h1 style="
+    margin-top: 150px;
+    margin-bottom: 70px;
+">ClickHouse</h1>
 
 <div class='feedback_form'>
 	<h2>Feedback</h2>
@@ -281,13 +297,22 @@ code {
 	<p class='warranty'>Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,<br /> either express or implied.</p>
 </div>
 
-<p class="short_description"><b>ClickHouse</b> is an open-source column-oriented database management system that allows generating analytical data reports in real time.</p>
+<p class="short_description">ClickHouse is an open-source column-oriented database management system that allows generating analytical data reports in real time.</p>
+
+<div class="menu">
+	<a class="menu_item" href='reference_en.html'>Documentation</a>
+	<a class="menu_item" href='#' id='download_menu_item'>Download</a>
+	<a class="menu_item" href='https://github.com/yandex/ClickHouse'>Source</a>
+	<a class="menu_item" href='benchmark.html'>Benchmark</a>
+	<a class="menu_item" href='#' id='feedback'>Feedback</a>
+</div>
+
 
 <p>ClickHouse manages extremely large volumes of data in a stable and sustainable manner. It&nbsp;currently powers <a href='https://metrica.yandex.com/'>Yandex.Metrica</a>, world’s <a href='http://w3techs.com/technologies/overview/traffic_analysis/all'>second largest</a> web analytics platform, with over 13 trillion database records and over 20 billion events a day, generating customized reports on-the-fly, directly from non-aggregated data. This system was successfully implemented at <a href='https://www.yandex.com/company/press_center/press_releases/2012/2012-04-10/'>CERN’s LHCb experiment</a> to store and process metadata on 10bn events with over 1000 attributes per event registered in 2011.</p>
 
-<p class="call_to_action">ClickHouse. Just makes you think faster.</p>
+<h2>ClickHouse. Just makes you think faster.</h2>
 
-<ul>
+<ul class="dashed">
 <li>Run more queries in the same amount of time</li>
 <li>Test more hypotheses</li>
 <li>Slice and dice your data in many more new ways</li>
@@ -367,7 +392,7 @@ code {
 <td valign="top">
 <h2>Key Features</h2>
 
-<ul>
+<ul class="dashed">
 <li>True column-oriented</li>
 <li>Vectorized query execution</li>
 <li>Data compression</li>
@@ -394,7 +419,7 @@ code {
 <td valign="top">
 <h2>Applications</h2>
 
-<ul>
+<ul class="dashed">
 <li>Web and App analytics</li>
 <li>Advertising networks and RTB</li>
 <li>Telecommunications</li>
