@@ -594,7 +594,7 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
 		}
 		else
 		{
-			throw Exception("Table structure in ZooKeeper is too different from local table structure.",
+			throw Exception("Table structure in ZooKeeper is too much different from local table structure.",
 							ErrorCodes::INCOMPATIBLE_COLUMNS);
 		}
 	}
@@ -643,7 +643,7 @@ void StorageReplicatedMergeTree::createReplica()
 	catch (const zkutil::KeeperException & e)
 	{
 		if (e.code == ZNODEEXISTS)
-			throw Exception("Replica " + replica_path + " is already exist.", ErrorCodes::REPLICA_IS_ALREADY_EXIST);
+			throw Exception("Replica " + replica_path + " already exists.", ErrorCodes::REPLICA_IS_ALREADY_EXIST);
 
 		throw;
 	}
@@ -1218,7 +1218,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 						throw Exception("Logical error: log entry with quorum but type is not GET_PART", ErrorCodes::LOGICAL_ERROR);
 
 					if (entry.block_id.empty())
-						throw Exception("Logical error: log entry with quorum have empty block_id", ErrorCodes::LOGICAL_ERROR);
+						throw Exception("Logical error: log entry with quorum has empty block_id", ErrorCodes::LOGICAL_ERROR);
 
 					LOG_DEBUG(log, "No active replica has part " << entry.new_part_name << " which needs to be written with quorum."
 						" Will try to mark that quorum as failed.");
@@ -2582,7 +2582,7 @@ void StorageReplicatedMergeTree::dropPartition(
 
 	/// Такого никогда не должно происходить.
 	if (right == 0)
-		throw Exception("Logical error: just allocated block number is zero", ErrorCodes::LOGICAL_ERROR);
+		throw Exception("Logical error: newly allocated block number is zero", ErrorCodes::LOGICAL_ERROR);
 	--right;
 
 	String fake_part_name = getFakePartNameForDrop(month_name, left, right);
@@ -2744,7 +2744,7 @@ void StorageReplicatedMergeTree::drop()
 	shutdown();
 
 	if (zookeeper->expired())
-		throw Exception("Table was not dropped because ZooKeeper session has been expired.", ErrorCodes::TABLE_WAS_NOT_DROPPED);
+		throw Exception("Table was not dropped because ZooKeeper session has expired.", ErrorCodes::TABLE_WAS_NOT_DROPPED);
 
 	LOG_INFO(log, "Removing replica " << replica_path);
 	replica_is_active_node = nullptr;
@@ -3120,7 +3120,7 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const S
 	Poco::DirectoryIterator dir_end;
 	for (Poco::DirectoryIterator dir_it{data.getFullPath() + "detached/"}; dir_it != dir_end; ++dir_it)
 		if (0 == dir_it.name().compare(0, partition_str.size(), partition_str))
-			throw Exception("Detached partition " + partition_str + " is already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
+			throw Exception("Detached partition " + partition_str + " already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
 
 	/// Список реплик шарда-источника.
 	zkutil::Strings replicas = zookeeper->getChildren(from + "/replicas");
