@@ -39,9 +39,11 @@ public:
 	void readPrefix() override
 	{
 		/// Не будем вызывать readPrefix у ребёнка, чтобы соответствующие действия совершались в отдельном потоке.
-
-		next();
-		started = true;
+		if (!started)
+		{
+			next();
+			started = true;
+		}
 	}
 
 	void readSuffix() override
