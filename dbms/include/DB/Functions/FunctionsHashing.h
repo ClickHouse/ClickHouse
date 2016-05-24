@@ -383,20 +383,10 @@ static UInt64 toInteger(T x)
 }
 
 template <>
-UInt64 toInteger<Float32>(Float32 x)
-{
-	UInt32 res;
-	memcpy(&res, &x, sizeof(x));
-	return res;
-}
+UInt64 toInteger<Float32>(Float32 x);
 
 template <>
-UInt64 toInteger<Float64>(Float64 x)
-{
-	UInt64 res;
-	memcpy(&res, &x, sizeof(x));
-	return res;
-}
+UInt64 toInteger<Float64>(Float64 x);
 
 
 /** Используются хэш-функции под названием CityHash, FarmHash, MetroHash.
