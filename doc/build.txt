@@ -82,7 +82,9 @@ cd ..
 
 # Checkout ClickHouse sources.
 
-git clone git@███████████.yandex-team.ru:Metrika/ClickHouse.git # TODO Change path.
+git clone git@github.com:yandex/ClickHouse.git
+# or: git clone https://github.com/yandex/ClickHouse.git
+
 cd ClickHouse
 
 # There are two variants of build.

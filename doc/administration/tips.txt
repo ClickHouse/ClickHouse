@@ -3,7 +3,7 @@ ClickHouse administration tips.
 
 CPU
 
-SSE 4.2 instruction set support is required. Most recent (since 2008) CPUs has this instruction set.
+SSE 4.2 instruction set support is required. Most recent (since 2008) CPUs have this instruction set.
 
 When choosing between CPU with more cores and slightly less frequency and CPU with less cores and more frequency, choose first.
 For example, 16 cores with 2600 MHz is better than 8 cores with 3600 MHz.
