@@ -110,7 +110,7 @@ public:
 
 	Int64 add(Int64 delta, bool create_if_need = false)
 	{
-		return add(delta, &CounterInFile::doNothing, create_if_need);
+		return add(delta, [](UInt64){}, create_if_need);
 	}
 
 	const std::string & getPath() const
@@ -178,8 +178,6 @@ public:
 private:
 	std::string path;
 	Poco::FastMutex mutex;
-
-	static void doNothing(UInt64 a) {}
 };
 
 

@@ -31,6 +31,7 @@ namespace ErrorCodes
 	extern const int DIRECTORY_ALREADY_EXISTS;
 	extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
 	extern const int NO_SUCH_COLUMN_IN_TABLE;
+	extern const int TABLE_DIFFERS_TOO_MUCH;
 }
 
 /** Структура данных для *MergeTree движков.
@@ -225,8 +226,6 @@ public:
 	};
 
 
-	static void doNothing(const String & name) {}
-
 	/** Подцепить таблицу с соответствующим именем, по соответствующему пути (с / на конце),
 	  *  (корректность имён и путей не проверяется)
 	  *  состоящую из указанных столбцов.
@@ -249,7 +248,7 @@ public:
 					const MergeTreeSettings & settings_,
 					const String & log_name_,
 					bool require_part_metadata_,
-					BrokenPartCallback broken_part_callback_ = &MergeTreeData::doNothing);
+					BrokenPartCallback broken_part_callback_ = [](const String &){});
 
 	/// Загрузить множество кусков с данными с диска. Вызывается один раз - сразу после создания объекта.
 	void loadDataParts(bool skip_sanity_checks);

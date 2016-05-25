@@ -656,8 +656,23 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 	{
 		transaction->clear();
 
-		throw Exception("Suspiciously many (" + toString(transaction->rename_map.size())
-		+ ") files need to be modified in part " + part->name + ". Aborting just in case");
+		std::stringstream exception_message;
+		exception_message << "Suspiciously many (" << transaction->rename_map.size()
+			<< ") files (";
+
+		bool first = true;
+		for (const auto & from_to : transaction->rename_map)
+		{
+			if (!first)
+					exception_message << ", ";
+			exception_message << "from '" << from_to.first << "' to '" << from_to.second << "'";
+			first = false;
+		}
+
+		exception_message << ") need to be modified in part " << part->name << " of table at " << full_path << ". Aborting just in case. "
+			<< " If it is not an error, you could increase merge_tree/max_files_to_modify_in_alter_columns parameter in configuration file.";
+
+		throw Exception(exception_message.str(), ErrorCodes::TABLE_DIFFERS_TOO_MUCH);
 	}
 
 	DataPart::Checksums add_checksums;
