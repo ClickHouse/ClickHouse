@@ -6911,7 +6911,12 @@ In contrast to query complexity restrictions, quotas:
 
 <p>Quotas can use the &quot;quota key&quot; feature in order to report on resources for multiple keys independently. Here is an example of this:</p>
 
-<pre class='text-example'> &lt;!-- For the global report builder. --> &lt;web_global> &lt;!-- keyed - the quota_key &quot;key&quot; is passed in the query parameter, and the quota is tracked separately for each key value. For example, you can pass a Metrica username as the key, so the quota will be counted separately for each username. Using keys makes sense only if quota_key is transmitted by the program, not by a user. You can also write &lt;keyed_by_ip /> so the IP address is used as the quota key. (But keep in mind that users can change the IPv6 address fairly easily.) --> &lt;keyed /> </pre>
+<pre class='text-example'>
+&lt;!-- For the global report builder. -->
+&lt;web_global>
+	&lt;!-- keyed - the quota_key &quot;key&quot; is passed in the query parameter, and the quota is tracked separately for each key value. For example, you can pass a Metrica username as the key, so the quota will be counted separately for each username. Using keys makes sense only if quota_key is transmitted by the program, not by a user. You can also write &lt;keyed_by_ip /> so the IP address is used as the quota key. (But keep in mind that users can change the IPv6 address fairly easily.) -->
+	&lt;keyed />
+</pre>
 
 <p>The quota is assigned to users in the &#39;users&#39; section of the config. See the section &quot;Access rights&quot;.</p>
 

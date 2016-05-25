@@ -100,7 +100,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 	Poco::DirectoryIterator dir_end;
 	for (Poco::DirectoryIterator dir_it(path); dir_it != dir_end; ++dir_it)
 	{
-		/// Для директории .svn
+		/// Для директории .svn и файла .gitignore
 		if (dir_it.name().at(0) == '.')
 			continue;
 
