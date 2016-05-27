@@ -16,7 +16,9 @@ else()
 endif()
 
 # отключаем варнинг о том, что в каждой директории должен быть CMakeLists.txt
-CMAKE_POLICY(SET CMP0014 OLD)
+cmake_policy(SET CMP0014 OLD)
+
+cmake_policy(SET CMP0012 NEW) # Don't dereference TRUE and FALSE
 
 IF(NOT CMAKE_BUILD_TYPE)
 	message(STATUS "CMAKE_BUILD_TYPE is not set, set to default = RELWITHDEBINFO")
