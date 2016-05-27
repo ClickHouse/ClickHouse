@@ -3,6 +3,8 @@
 # Provides:          @DAEMON@
 # Default-Start:     2
 # Default-Stop:      1
+# Required-Start:
+# Required-Stop:
 # Short-Description: Yandex daemon
 ### END INIT INFO
 
