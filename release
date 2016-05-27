@@ -25,6 +25,6 @@ make_control "$CONTROL" "$DAEMONS"
 gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" "$CHLOG" "$DAEMONS"
 
 # Сборка (только бинарных пакетов).
-debuild -e DAEMONS="${DAEMONS}" -b
+debuild -e DAEMONS="${DAEMONS}" -e DISABLE_MONGODB -e CC -e CXX -b
 
 upload_debs "$REVISION" "$DAEMONS"

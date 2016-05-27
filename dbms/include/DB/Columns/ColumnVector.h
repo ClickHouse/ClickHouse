@@ -1,6 +1,7 @@
 #pragma once
 
-#include <string.h>
+#include <cstring>
+#include <cmath>
 
 #include <DB/Common/Exception.h>
 #include <DB/Common/Arena.h>
@@ -53,22 +54,22 @@ struct FloatCompareHelper
 {
 	static bool less(T a, T b)
 	{
-		if (unlikely(isnan(b)))
-			return !isnan(a);
+		if (unlikely(std::isnan(b)))
+			return !std::isnan(a);
 		return a < b;
 	}
 
 	static bool greater(T a, T b)
 	{
-		if (unlikely(isnan(b)))
-			return !isnan(a);
+		if (unlikely(std::isnan(b)))
+			return !std::isnan(a);
 		return a > b;
 	}
 
 	static int compare(T a, T b, int nan_direction_hint)
 	{
-		bool isnan_a = isnan(a);
-		bool isnan_b = isnan(b);
+		bool isnan_a = std::isnan(a);
+		bool isnan_b = std::isnan(b);
 		if (unlikely(isnan_a || isnan_b))
 		{
 			if (isnan_a && isnan_b)
