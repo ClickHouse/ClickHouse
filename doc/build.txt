@@ -60,6 +60,9 @@ export CXX=g++-5
 sudo apt-get install libicu-dev libglib2.0-dev libreadline-dev libzookeeper-mt-dev libmysqlclient-dev libssl-dev unixodbc-dev
 
 # Install recent version of boost. Version 1.57 or newer will be Ok.
+sudo apt-get install libboost-dev libboost-thread-dev libboost-program-options-dev libboost-system-dev libboost-regex-dev
+
+OR
 
 wget http://downloads.sourceforge.net/project/boost/boost/1.60.0/boost_1_60_0.tar.bz2
 tar xf boost_1_60_0.tar.bz2
@@ -94,6 +97,9 @@ cd ClickHouse
 sudo apt-get install devscripts dupload fakeroot debhelper
 
 # Install recent version of clang. Clang is embedded into ClickHouse package and used at runtime. It is optional.
+sudo apt-get install clang
+
+OR
 
 cd ..
 sudo apt-get install subversion
