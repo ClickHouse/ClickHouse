@@ -49,11 +49,11 @@ public:
 		}
 	}
 
-	std::string getName() const override { return "ColumnArray(" + data.get()->getName() + ")"; }
+	std::string getName() const override { return "ColumnArray(" + getData().getName() + ")"; }
 
 	ColumnPtr cloneEmpty() const override
 	{
-		return new ColumnArray(data.get()->cloneEmpty());
+		return new ColumnArray(getData().cloneEmpty());
 	}
 
 	size_t size() const override
@@ -68,7 +68,7 @@ public:
 		Array res(size);
 
 		for (size_t i = 0; i < size; ++i)
-			res[i] = (*data)[offset + i];
+			res[i] = getData()[offset + i];
 
 		return res;
 	}
@@ -81,7 +81,7 @@ public:
 		Array & res_arr = DB::get<Array &>(res);
 
 		for (size_t i = 0; i < size; ++i)
-			data.get()->get(offset + i, res_arr[i]);
+			getData().get(offset + i, res_arr[i]);
 	}
 
 	StringRef getDataAt(size_t n) const override
@@ -97,10 +97,10 @@ public:
 			return StringRef();
 
 		size_t offset_of_first_elem = offsetAt(n);
-		StringRef first = data.get()->getDataAtWithTerminatingZero(offset_of_first_elem);
+		StringRef first = getData().getDataAtWithTerminatingZero(offset_of_first_elem);
 
 		size_t offset_of_last_elem = getOffsets()[n] - 1;
-		StringRef last = data.get()->getDataAtWithTerminatingZero(offset_of_last_elem);
+		StringRef last = getData().getDataAtWithTerminatingZero(offset_of_last_elem);
 
 		return StringRef(first.data, last.data + last.size - first.data);
 	}
@@ -136,7 +136,7 @@ public:
 
 		size_t values_size = 0;
 		for (size_t i = 0; i < array_size; ++i)
-			values_size += data.get()->serializeValueIntoArena(offset + i, arena, begin).size;
+			values_size += getData().serializeValueIntoArena(offset + i, arena, begin).size;
 
 		return StringRef(begin, sizeof(array_size) + values_size);
 	}
@@ -147,7 +147,7 @@ public:
 		pos += sizeof(array_size);
 
 		for (size_t i = 0; i < array_size; ++i)
-			pos = data.get()->deserializeAndInsertFromArena(pos);
+			pos = getData().deserializeAndInsertFromArena(pos);
 
 		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + array_size);
 		return pos;
@@ -160,7 +160,7 @@ public:
 		const Array & array = DB::get<const Array &>(x);
 		size_t size = array.size();
 		for (size_t i = 0; i < size; ++i)
-			data.get()->insert(array[i]);
+			getData().insert(array[i]);
 		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
 	}
 
@@ -170,7 +170,7 @@ public:
 		size_t size = src.sizeAt(n);
 		size_t offset = src.offsetAt(n);
 
-		data.get()->insertRangeFrom(src.getData(), offset, size);
+		getData().insertRangeFrom(src.getData(), offset, size);
 		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
 	}
 
@@ -200,7 +200,7 @@ public:
 		size_t rhs_size = rhs.sizeAt(m);
 		size_t min_size = std::min(lhs_size, rhs_size);
 		for (size_t i = 0; i < min_size; ++i)
-			if (int res = data.get()->compareAt(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data.get(), nan_direction_hint))
+			if (int res = getData().compareAt(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data.get(), nan_direction_hint))
 				return res;
 
 		return lhs_size < rhs_size
@@ -236,7 +236,7 @@ public:
 
 	size_t byteSize() const override
 	{
-		return data.get()->byteSize() + getOffsets().size() * sizeof(getOffsets()[0]);
+		return getData().byteSize() + getOffsets().size() * sizeof(getOffsets()[0]);
 	}
 
 	void getExtremes(Field & min, Field & max) const override
@@ -256,8 +256,8 @@ public:
 	}
 
 	/** Более эффективные методы манипуляции */
-	IColumn & getData() { return *data; }
-	const IColumn & getData() const { return *data; }
+	IColumn & getData() { return *data.get(); }
+	const IColumn & getData() const { return *data.get(); }
 
 	ColumnPtr & getDataPtr() { return data; }
 	const ColumnPtr & getDataPtr() const { return data; }
@@ -284,7 +284,7 @@ public:
 		ColumnPtr new_data;
 		ColumnPtr new_offsets;
 
-		if (auto full_column = data.get()->convertToFullColumnIfConst())
+		if (auto full_column = getData().convertToFullColumnIfConst())
 			new_data = full_column;
 		else
 			new_data = data;
