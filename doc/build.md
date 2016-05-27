@@ -1,11 +1,8 @@
 # How to build ClickHouse
 
 Build should work on Linux Ubuntu 12.04, 14.04 or newer.
-
 With appropriate changes, build should work on any other Linux distribution.
-
 Build is not intended to work on Mac OS X.
-
 Only x86_64 is supported. Support for AArch64 is experimental.
 
 ## Install Git and CMake
@@ -62,17 +59,11 @@ sudo ln -s /usr/local/bin/c++ /usr/local/bin/g++-5
 ```
 
 Note that these ways of installation differs.
-
 When installing from PPA, by default, "old C++ ABI" is used,
-
  and when installing from sources, "new C++ ABI" is used.
-
 When using different C++ ABI, you need to recompile all C++ libraries,
-
  otherwise libraries will not link.
-
 ClickHouse works with both old and new C++ ABI,
-
  but production releases is built with old C++ ABI.
 
 ## Use GCC 5 for builds
@@ -114,7 +105,6 @@ sudo apt-get install libboost-dev libboost-thread-dev libboost-program-options-d
 ## Install mongoclient (optional)
 
 This library is needed only for 'external dictionaries' with MongoDB source.
-
 This is rarely used but enabled by default.
 
 If you don't need it, you could set variable and skip installation step:
@@ -141,7 +131,6 @@ cd ClickHouse
 ```
 
 Note that master branch is not stable.
-
 For stable version, switch to some release branch.
 
 # Build ClickHouse
@@ -197,17 +186,13 @@ rm -f ../clickhouse*.deb
 ```
 
 debsign and dupload will not work by default.
-
 It's Ok. You will find built packages in parent directory.
-
 ```
 ls -l ../clickhouse*.deb
 ```
 
 Note that usage of debian packages is not required.
-
 ClickHouse has no runtime dependencies except libc,
-
  so it could work on almost any Linux.
 
 ### Installing just built packages on development server.
