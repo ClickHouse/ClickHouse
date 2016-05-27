@@ -147,10 +147,10 @@ sudo apt-get install devscripts dupload fakeroot debhelper
 
 ### Install recent version of clang.
 
-Clang is embedded into ClickHouse package and used at runtime. It is optional.
+Clang is embedded into ClickHouse package and used at runtime. Minimal version is 3.8.0. It is optional.
 
 There are two variants:
-#### Build clang from sources.
+#### 1. Build clang from sources.
 ```
 cd ..
 sudo apt-get install subversion
@@ -171,7 +171,7 @@ sudo make install
 hash clang
 ```
 
-#### Install from packages.
+#### 2. Install from packages.
 
 On Ubuntu 16.04 or newer:
 ```
