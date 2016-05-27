@@ -75,7 +75,9 @@ export CXX=g++-5
 
 ## Install required libraries from packages
 
+```
 sudo apt-get install libicu-dev libglib2.0-dev libreadline-dev libzookeeper-mt-dev libmysqlclient-dev libssl-dev unixodbc-dev
+```
 
 ## Install recent version of boost
 
