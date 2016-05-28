@@ -645,7 +645,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 		normalizeTreeImpl(ast, finished_asts, current_asts, current_alias);
 		current_asts.erase(initial_ast.get());
 		current_asts.erase(ast.get());
-		finished_asts[initial_ast] = ast.get();
+		finished_asts[initial_ast] = ast;
 		return;
 	}
 
@@ -861,7 +861,7 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 		{
 			for (auto & child : ast->children)
 			{
-				if (child.get() != func->arguments)
+				if (child != func->arguments)
 					executeScalarSubqueriesImpl(child);
 				else
 					for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i)

@@ -196,7 +196,7 @@ static ColumnsAndDefaults parseColumns(
 
 				default_expr_list->children.emplace_back(setAlias(
 					makeASTFunction("CAST", std::make_shared<ASTIdentifier>(StringRange(), tmp_column_name),
-						std::make_shared<ASTLiteral>(StringRange(), Field(data_type_ptr->getName())), final_column_name)));
+						std::make_shared<ASTLiteral>(StringRange(), Field(data_type_ptr->getName()))), final_column_name));
 				default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
 			}
 			else

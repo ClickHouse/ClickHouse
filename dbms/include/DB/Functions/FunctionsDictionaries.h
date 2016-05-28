@@ -542,7 +542,7 @@ struct FunctionRegionToCity :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -551,7 +551,7 @@ struct FunctionRegionToArea :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -560,7 +560,7 @@ struct FunctionRegionToDistrict :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -569,7 +569,7 @@ struct FunctionRegionToCountry :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -578,7 +578,7 @@ struct FunctionRegionToContinent :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -587,7 +587,7 @@ struct FunctionRegionToTopContinent :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -596,7 +596,7 @@ struct FunctionRegionToPopulation :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -605,7 +605,7 @@ struct FunctionOSToRoot :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -614,7 +614,7 @@ struct FunctionSEToRoot :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -623,7 +623,7 @@ struct FunctionRegionIn :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -632,7 +632,7 @@ struct FunctionOSIn :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -641,7 +641,7 @@ struct FunctionSEIn :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -650,7 +650,7 @@ struct FunctionRegionHierarchy :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -659,7 +659,7 @@ struct FunctionOSHierarchy :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -668,7 +668,7 @@ struct FunctionSEHierarchy :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
 	}
 };
 

@@ -1517,7 +1517,7 @@ class FunctionCast final : public IFunction
 	{
 		using FunctionType = typename FunctionTo<DataType>::Type;
 
-		std::shared_ptr<FunctionType> function{static_cast<FunctionType *>(FunctionType::create(context))};
+		auto function = FunctionType::create(context);
 
 		/// Check conversion using underlying function
 		(void) function->getReturnType({ from_type });
