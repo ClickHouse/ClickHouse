@@ -246,7 +246,7 @@ public:
 		if (has_consts)
 		{
 			vec_res.assign(n, const_val);
-			in.push_back(col_res);
+			in.push_back(col_res.get());
 		}
 		else
 		{
@@ -336,7 +336,7 @@ int main(int argc, char ** argv)
 		{
 			for (size_t i = 0; i < columns; ++i)
 			{
-				ColumnUInt8 column = std::make_shared<ColumnUInt8>(block_size);
+				auto column = std::make_shared<ColumnUInt8>(block_size);
 				blocks[b].insert(ColumnWithTypeAndName(column, new DataTypeUInt8, "v" + toString(i)));
 
 				ColumnUInt8::Container_t & vec = column->getData();
@@ -350,7 +350,7 @@ int main(int argc, char ** argv)
 		}
 		for (size_t b = 0; b < block_count; ++b)
 		{
-			ColumnUInt8 result_column = std::make_shared<ColumnUInt8>();
+			auto result_column = std::make_shared<ColumnUInt8>();
 			blocks[b].insert(ColumnWithTypeAndName(result_column, new DataTypeUInt8, "x"));
 			result_column->getData().resize(block_size);
 		}
