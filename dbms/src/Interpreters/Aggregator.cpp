@@ -154,7 +154,7 @@ void Aggregator::initialize(const Block & block)
 			for (size_t j = 0; j < arguments_size; ++j)
 				argument_types[j] = block.getByPosition(params.aggregates[i].arguments[j]).type;
 
-			col.type = new DataTypeAggregateFunction(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
+			col.type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
 			col.column = col.type->createColumn();
 
 			sample.insert(col);

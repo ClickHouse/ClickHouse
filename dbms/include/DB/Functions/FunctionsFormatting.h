@@ -50,7 +50,7 @@ public:
 			!typeid_cast<const DataTypeInt64 *>(type))
 			throw Exception("Cannot format " + type->getName() + " as bitmask string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -156,7 +156,7 @@ public:
 		if (!type.behavesAsNumber())
 			throw Exception("Cannot format " + type.getName() + " as size in bytes", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	/// Выполнить функцию над блоком.

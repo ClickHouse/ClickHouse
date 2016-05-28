@@ -697,12 +697,12 @@ private:
 			tmp_block.insert(y->getData().getByPosition(i));
 
 			/// Сравнение элементов.
-			tmp_block.insert({ nullptr, new DataTypeUInt8, "" });
+			tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 			func_compare.execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2);
 		}
 
 		/// Логическая свёртка.
-		tmp_block.insert({ nullptr, new DataTypeUInt8, "" });
+		tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 
 		ColumnNumbers convolution_args(tuple_size);
 		for (size_t i = 0; i < tuple_size; ++i)
@@ -729,13 +729,13 @@ private:
 			tmp_block.insert(x->getData().getByPosition(i));
 			tmp_block.insert(y->getData().getByPosition(i));
 
-			tmp_block.insert({ nullptr, new DataTypeUInt8, "" });
+			tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 
 			if (i + 1 != tuple_size)
 			{
 				func_compare_head.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2);
 
-				tmp_block.insert({ nullptr, new DataTypeUInt8, "" });
+				tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 				func_equals.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 3);
 
 			}
@@ -747,9 +747,9 @@ private:
 		size_t i = tuple_size - 1;
 		while (i > 0)
 		{
-			tmp_block.insert({ nullptr, new DataTypeUInt8, "" });
+			tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 			func_and.execute(tmp_block, { tmp_block.columns() - 2, (i - 1) * 4 + 3 },  tmp_block.columns() - 1);
-			tmp_block.insert({ nullptr, new DataTypeUInt8, "" });
+			tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 			func_or.execute(tmp_block, { tmp_block.columns() - 2, (i - 1) * 4 + 2 },  tmp_block.columns() - 1);
 			--i;
 		}
@@ -836,7 +836,7 @@ public:
 				getReturnType({ left_tuple->getElements()[i], right_tuple->getElements()[i] });
 		}
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	/// Выполнить функцию над блоком.

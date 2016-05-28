@@ -3,8 +3,6 @@
 #include <iostream>
 #include <fstream>
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/IO/ReadBufferFromIStream.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 
@@ -24,62 +22,54 @@
 #include <DB/Storages/StorageLog.h>
 
 
-using Poco::SharedPtr;
 using namespace DB;
 
 
 int main(int argc, char ** argv)
+try
 {
-	try
+	NamesAndTypesList names_and_types_list
 	{
-		NamesAndTypesListPtr names_and_types_list = new NamesAndTypesList
-		{
-			{"WatchID",				new DataTypeUInt64},
-			{"ClientIP",			new DataTypeUInt32},
-			{"Referer",				new DataTypeString},
-			{"URL",					new DataTypeString},
-			{"IsLink",				new DataTypeUInt8},
-			{"OriginalUserAgent",	new DataTypeString},
-			{"EventTime",			new DataTypeDateTime},
-		};
+		{"WatchID",				std::make_shared<DataTypeUInt64>()},
+		{"ClientIP",			std::make_shared<DataTypeUInt32>()},
+		{"Referer",				std::make_shared<DataTypeString>()},
+		{"URL",					std::make_shared<DataTypeString>()},
+		{"IsLink",				std::make_shared<DataTypeUInt8>()},
+		{"OriginalUserAgent",	std::make_shared<DataTypeString>()},
+		{"EventTime",			std::make_shared<DataTypeDateTime>()},
+	};
 
-		SharedPtr<DataTypes> data_types = new DataTypes;
-
-		for (NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
-			data_types->push_back(it->type);
-
-		Block sample;
-		for (NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
-		{
-			ColumnWithTypeAndName elem;
-			elem.name = it->name;
-			elem.type = it->type;
-			elem.column = elem.type->createColumn();
-			sample.insert(elem);
-		}
-
-		{
-			std::ifstream istr("json_test.in");
-			std::ofstream ostr("json_test.out");
-
-			ReadBufferFromIStream in_buf(istr);
-			WriteBufferFromOStream out_buf(ostr);
-
-			//TabSeparatedRowInputStream row_input(in_buf, sample, true, true);
-			//JSONRowOutputStream row_output(out_buf, sample);
-			//JSONCompactRowOutputStream row_output(out_buf, sample);
-			//copyData(row_input, row_output);
-
-			BlockInputStreamFromRowInputStream in(new TabSeparatedRowInputStream (in_buf, sample, true, true), sample);
-			BlockOutputStreamFromRowOutputStream out(new JSONRowOutputStream(out_buf, sample));
-			copyData(in, out);
-		}
+	Block sample;
+	for (const auto & name_type : names_and_types_list)
+	{
+		ColumnWithTypeAndName elem;
+		elem.name = name_type.name;
+		elem.type = name_type.type;
+		elem.column = elem.type->createColumn();
+		sample.insert(elem);
 	}
-	catch (const Exception & e)
+
 	{
-		std::cerr << e.what() << ", " << e.displayText() << std::endl;
-		return 1;
+		std::ifstream istr("json_test.in");
+		std::ofstream ostr("json_test.out");
+
+		ReadBufferFromIStream in_buf(istr);
+		WriteBufferFromOStream out_buf(ostr);
+
+		//TabSeparatedRowInputStream row_input(in_buf, sample, true, true);
+		//JSONRowOutputStream row_output(out_buf, sample);
+		//JSONCompactRowOutputStream row_output(out_buf, sample);
+		//copyData(row_input, row_output);
+
+		BlockInputStreamFromRowInputStream in(new TabSeparatedRowInputStream (in_buf, sample, true, true), sample);
+		BlockOutputStreamFromRowOutputStream out(new JSONRowOutputStream(out_buf, sample));
+		copyData(in, out);
 	}
 
 	return 0;
+}
+catch (const Exception & e)
+{
+	std::cerr << e.what() << ", " << e.displayText() << std::endl;
+	throw;
 }

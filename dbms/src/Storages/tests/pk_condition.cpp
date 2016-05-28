@@ -27,7 +27,7 @@ int main(int argc, const char ** argv)
 	ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
 
 	Context context;
-	NamesAndTypesList columns{{"key", new DataTypeUInt64}};
+	NamesAndTypesList columns{{"key", std::make_shared<DataTypeUInt64>()}};
 	SortDescription sort_descr;
 	sort_descr.push_back(SortColumnDescription("key", 1));
 

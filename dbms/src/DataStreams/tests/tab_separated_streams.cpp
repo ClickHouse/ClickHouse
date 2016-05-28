@@ -25,12 +25,12 @@ try
 	Block sample;
 	{
 		ColumnWithTypeAndName col;
-		col.type = new DataTypeUInt64;
+		col.type = std::make_shared<DataTypeUInt64>();
 		sample.insert(col);
 	}
 	{
 		ColumnWithTypeAndName col;
-		col.type = new DataTypeString;
+		col.type = std::make_shared<DataTypeString>();
 		sample.insert(col);
 	}
 

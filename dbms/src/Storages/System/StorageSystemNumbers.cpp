@@ -29,7 +29,7 @@ protected:
 		ColumnWithTypeAndName column_with_name_and_type;
 
 		column_with_name_and_type.name = "number";
-		column_with_name_and_type.type = new DataTypeUInt64();
+		column_with_name_and_type.type = std::make_shared<DataTypeUInt64>();
 		auto column = std::make_shared<ColumnUInt64>(block_size);
 		ColumnUInt64::Container_t & vec = column->getData();
 		column_with_name_and_type.column = column;
@@ -53,7 +53,7 @@ private:
 
 
 StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multithreaded_)
-	: name(name_), columns{{"number", new DataTypeUInt64}}, multithreaded(multithreaded_)
+	: name(name_), columns{{"number", std::make_shared<DataTypeUInt64>()}}, multithreaded(multithreaded_)
 {
 }
 

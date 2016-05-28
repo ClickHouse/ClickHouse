@@ -41,19 +41,19 @@ namespace ErrorCodes
 DataTypeFactory::DataTypeFactory()
 	: non_parametric_data_types
 	{
-		{"UInt8",				new DataTypeUInt8},
-		{"UInt16",				new DataTypeUInt16},
-		{"UInt32",				new DataTypeUInt32},
-		{"UInt64",				new DataTypeUInt64},
-		{"Int8",				new DataTypeInt8},
-		{"Int16",				new DataTypeInt16},
-		{"Int32",				new DataTypeInt32},
-		{"Int64",				new DataTypeInt64},
-		{"Float32",				new DataTypeFloat32},
-		{"Float64",				new DataTypeFloat64},
-		{"Date",				new DataTypeDate},
-		{"DateTime",			new DataTypeDateTime},
-		{"String",				new DataTypeString},
+		{"UInt8",				std::make_shared<DataTypeUInt8>()},
+		{"UInt16",				std::make_shared<DataTypeUInt16>()},
+		{"UInt32",				std::make_shared<DataTypeUInt32>()},
+		{"UInt64",				std::make_shared<DataTypeUInt64>()},
+		{"Int8",				std::make_shared<DataTypeInt8>()},
+		{"Int16",				std::make_shared<DataTypeInt16>()},
+		{"Int32",				std::make_shared<DataTypeInt32>()},
+		{"Int64",				std::make_shared<DataTypeInt64>()},
+		{"Float32",				std::make_shared<DataTypeFloat32>()},
+		{"Float64",				std::make_shared<DataTypeFloat64>()},
+		{"Date",				std::make_shared<DataTypeDate>()},
+		{"DateTime",			std::make_shared<DataTypeDateTime>()},
+		{"String",				std::make_shared<DataTypeString>()},
 	}
 {
 }
@@ -85,7 +85,7 @@ inline DataTypePtr parseEnum(const String & name, const String & base_name, cons
 		values.emplace_back(e.name, value);
 	}
 
-	return new DataTypeEnum{values};
+	return std::make_shared<DataTypeEnum>(values);
 }
 
 
@@ -97,7 +97,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 
 	Poco::RegularExpression::MatchVec matches;
 	if (fixed_string_regexp.match(name, 0, matches) && matches.size() == 2)
-		return new DataTypeFixedString(parse<size_t>(name.data() + matches[1].offset, matches[1].length));
+		return std::make_shared<DataTypeFixedString>(parse<size_t>(name.data() + matches[1].offset, matches[1].length));
 
 	if (nested_regexp.match(name, 0, matches) && matches.size() == 3)
 	{
@@ -105,7 +105,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 		String parameters(name.data() + matches[2].offset, matches[2].length);
 
 		if (base_name == "Array")
-			return new DataTypeArray(get(parameters));
+			return std::make_shared<DataTypeArray>(get(parameters));
 
 		if (base_name == "AggregateFunction")
 		{
@@ -154,7 +154,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			if (!params_row.empty())
 				function->setParameters(params_row);
 			function->setArguments(argument_types);
-			return new DataTypeAggregateFunction(function, argument_types, params_row);
+			return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row);
 		}
 
 		if (base_name == "Nested")
@@ -177,7 +177,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 					type));
 			}
 
-			return new DataTypeNested(columns);
+			return std::make_shared<DataTypeNested>(columns);
 		}
 
 		if (base_name == "Tuple")
@@ -190,7 +190,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 				return get(String(elem_ast->range.first, elem_ast->range.second));
 			});
 
-			return new DataTypeTuple(elems);
+			return std::make_shared<DataTypeTuple>(elems);
 		}
 
 		if (base_name == "Enum8")

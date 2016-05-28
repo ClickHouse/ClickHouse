@@ -101,7 +101,7 @@ DataTypeEnum<Type>::DataTypeEnum(const DataTypeEnum & other) : values{other.valu
 template <typename Type>
 DataTypePtr DataTypeEnum<Type>::clone() const
 {
-	return new DataTypeEnum(*this);
+	return std::make_shared<DataTypeEnum>(*this);
 }
 
 

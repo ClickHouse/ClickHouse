@@ -14,15 +14,15 @@ namespace DB
 StorageSystemClusters::StorageSystemClusters(const std::string & name_, Context & context_)
 	: name(name_)
 	, columns{
-		{ "cluster",      new DataTypeString },
-		{ "shard_num",    new DataTypeUInt32 },
-		{ "shard_weight", new DataTypeUInt32 },
-		{ "replica_num",  new DataTypeUInt32 },
-		{ "host_name",    new DataTypeString },
-		{ "host_address", new DataTypeString },
-		{ "port",         new DataTypeUInt16 },
-		{ "is_local",     new DataTypeUInt8 },
-		{ "user",         new DataTypeString }
+		{ "cluster",      std::make_shared<DataTypeString>() },
+		{ "shard_num",    std::make_shared<DataTypeUInt32>() },
+		{ "shard_weight", std::make_shared<DataTypeUInt32>() },
+		{ "replica_num",  std::make_shared<DataTypeUInt32>() },
+		{ "host_name",    std::make_shared<DataTypeString>() },
+		{ "host_address", std::make_shared<DataTypeString>() },
+		{ "port",         std::make_shared<DataTypeUInt16>() },
+		{ "is_local",     std::make_shared<DataTypeUInt8>() },
+		{ "user",         std::make_shared<DataTypeString>() }
 	}
 	, context(context_)
 {
@@ -116,15 +116,15 @@ BlockInputStreams StorageSystemClusters::read(
 
 	Block block;
 
-	block.insert(ColumnWithTypeAndName(cluster_column, new DataTypeString, "cluster"));
-	block.insert(ColumnWithTypeAndName(shard_num_column, new DataTypeUInt32, "shard_num"));
-	block.insert(ColumnWithTypeAndName(shard_weight_column, new DataTypeUInt32, "shard_weight"));
-	block.insert(ColumnWithTypeAndName(replica_num_column, new DataTypeUInt32, "replica_num"));
-	block.insert(ColumnWithTypeAndName(host_name_column, new DataTypeString, "host_name"));
-	block.insert(ColumnWithTypeAndName(host_address_column, new DataTypeString, "host_address"));
-	block.insert(ColumnWithTypeAndName(port_column, new DataTypeUInt16, "port"));
-	block.insert(ColumnWithTypeAndName(is_local_column, new DataTypeUInt8, "is_local"));
-	block.insert(ColumnWithTypeAndName(user_column, new DataTypeString, "user"));
+	block.insert(ColumnWithTypeAndName(cluster_column, std::make_shared<DataTypeString>(), "cluster"));
+	block.insert(ColumnWithTypeAndName(shard_num_column, std::make_shared<DataTypeUInt32>(), "shard_num"));
+	block.insert(ColumnWithTypeAndName(shard_weight_column, std::make_shared<DataTypeUInt32>(), "shard_weight"));
+	block.insert(ColumnWithTypeAndName(replica_num_column, std::make_shared<DataTypeUInt32>(), "replica_num"));
+	block.insert(ColumnWithTypeAndName(host_name_column, std::make_shared<DataTypeString>(), "host_name"));
+	block.insert(ColumnWithTypeAndName(host_address_column, std::make_shared<DataTypeString>(), "host_address"));
+	block.insert(ColumnWithTypeAndName(port_column, std::make_shared<DataTypeUInt16>(), "port"));
+	block.insert(ColumnWithTypeAndName(is_local_column, std::make_shared<DataTypeUInt8>(), "is_local"));
+	block.insert(ColumnWithTypeAndName(user_column, std::make_shared<DataTypeString>(), "user"));
 
 	return BlockInputStreams{ 1, new OneBlockInputStream(block) };
 }

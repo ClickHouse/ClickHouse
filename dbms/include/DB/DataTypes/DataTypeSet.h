@@ -13,7 +13,7 @@ class DataTypeSet final : public IDataTypeDummy
 {
 public:
 	std::string getName() const override { return "Set"; }
-	SharedPtr<IDataType> clone() const override { return new DataTypeSet(); }
+	DataTypePtr clone() const override { return std::make_shared<DataTypeSet>(); }
 };
 
 }

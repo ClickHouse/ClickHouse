@@ -1639,7 +1639,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						/// Не будем выполнять подзапросы и составлять множества. Вставим произвольный столбец правильного типа.
 						ColumnWithTypeAndName fake_column;
 						fake_column.name = node->getColumnName();
-						fake_column.type = new DataTypeUInt8;
+						fake_column.type = std::make_shared<DataTypeUInt8>();
 						actions_stack.addAction(ExpressionAction::addColumn(fake_column));
 						getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack);
 					}
@@ -1652,7 +1652,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 			if (node->name == "indexHint")
 			{
 				actions_stack.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
-					std::make_shared<ColumnConstUInt8>(1, 1), new DataTypeUInt8, node->getColumnName())));
+					std::make_shared<ColumnConstUInt8>(1, 1), std::make_shared<DataTypeUInt8>(), node->getColumnName())));
 				return;
 			}
 
@@ -1681,14 +1681,14 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
 
 					has_lambda_arguments = true;
-					argument_types.emplace_back(new DataTypeExpression(DataTypes(lambda_args_tuple->arguments->children.size())));
+					argument_types.emplace_back(std::make_shared<DataTypeExpression>(DataTypes(lambda_args_tuple->arguments->children.size())));
 					/// Выберем название в следующем цикле.
 					argument_names.emplace_back();
 				}
 				else if (set)
 				{
 					ColumnWithTypeAndName column;
-					column.type = new DataTypeSet;
+					column.type = std::make_shared<DataTypeSet>();
 
 					/// Если аргумент - множество, заданное перечислением значений, дадим ему уникальное имя,
 					///  чтобы множества с одинаковой записью не склеивались (у них может быть разный тип).
@@ -1771,7 +1771,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						String result_name = lambda->arguments->children.at(1)->getColumnName();
 						lambda_actions->finalize(Names(1, result_name));
 						DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
-						argument_types[i] = new DataTypeExpression(lambda_type->getArgumentTypes(), result_type);
+						argument_types[i] = std::make_shared<DataTypeExpression>(lambda_type->getArgumentTypes(), result_type);
 
 						Names captured = lambda_actions->getRequiredColumns();
 						for (size_t j = 0; j < captured.size(); ++j)

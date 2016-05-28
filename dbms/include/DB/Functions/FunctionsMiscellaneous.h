@@ -113,7 +113,7 @@ public:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -145,7 +145,7 @@ public:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	/** Выполнить функцию над блоком. convertToFullColumn вызывается для того, чтобы в случае
@@ -179,7 +179,7 @@ public:
 				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeUInt64;
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -207,7 +207,7 @@ public:
 				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -238,7 +238,7 @@ public:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeUInt64;
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -270,7 +270,7 @@ public:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeUInt64;
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -311,7 +311,7 @@ public:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeUInt64;
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -352,7 +352,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected Float64",
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -453,7 +453,7 @@ public:
 				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -498,7 +498,7 @@ public:
 		if (arguments.size() < 1)
 			throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeTuple(arguments);
+		return std::make_shared<DataTypeTuple>(arguments);
 	}
 
 	/// Выполнить функцию над блоком.
@@ -588,7 +588,7 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionIgnore; }
 
 	String getName() const override { return name; }
-	DataTypePtr getReturnType(const DataTypes & arguments) const override { return new DataTypeUInt8; }
+	DataTypePtr getReturnType(const DataTypes & arguments) const override { return std::make_shared<DataTypeUInt8>(); }
 
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -617,7 +617,7 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionIndexHint; }
 
 	String getName() const override	{ return name; }
-	DataTypePtr getReturnType(const DataTypes & arguments) const override { return new DataTypeUInt8; }
+	DataTypePtr getReturnType(const DataTypes & arguments) const override { return std::make_shared<DataTypeUInt8>(); }
 
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -718,7 +718,7 @@ public:
 		if (!array_type)
 			throw Exception("Second argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeArray(arguments[0]->clone());
+		return std::make_shared<DataTypeArray>(arguments[0]->clone());
 	}
 
 	/// Выполнить функцию над блоком.
@@ -769,7 +769,7 @@ public:
 			|| (arguments.size() == 4 && !arguments[3]->isNumeric()))
 			throw Exception("All arguments for function " + getName() + " must be numeric.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -940,7 +940,7 @@ public:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -1029,7 +1029,7 @@ public:
 	{
 		if (!arguments.empty())
 			throw Exception("Function " + getName() + " must be called without arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -1062,7 +1062,7 @@ public:
 	{
 		if (!arguments.empty())
 			throw Exception("Function " + getName() + " must be called without arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		return new DataTypeUInt32;
+		return std::make_shared<DataTypeUInt32>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override

@@ -609,7 +609,7 @@ public:
 				+ toString(arguments.size()) + ", should be 1 or 2",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new ToDataType;
+		return std::make_shared<ToDataType>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -685,7 +685,7 @@ public:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeDateTime;
+		return std::make_shared<DataTypeDateTime>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -718,7 +718,7 @@ public:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeDate;
+		return std::make_shared<DataTypeDate>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -751,7 +751,7 @@ public:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeDate;
+		return std::make_shared<DataTypeDate>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -788,7 +788,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeDateTime;
+		return std::make_shared<DataTypeDateTime>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -928,7 +928,7 @@ public:
 			throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be UInt32.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeArray(new DataTypeDateTime);
+		return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>());
 	}
 
 	/// Выполнить функцию над блоком.
@@ -963,7 +963,7 @@ public:
 		{
 			Array const_res;
 			TimeSlotsImpl<UInt32>::constant_constant(const_starts->getData(), const_durations->getData(), const_res);
-			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(block.rowsInFirstColumn(), const_res, new DataTypeArray(new DataTypeDateTime));
+			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(block.rowsInFirstColumn(), const_res, std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()));
 		}
 		else
 			throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()

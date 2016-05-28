@@ -191,7 +191,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeUInt64;
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -252,7 +252,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeFixedString{Impl::length};
+		return std::make_shared<DataTypeFixedString>(Impl::length);
 	}
 
 	/// Выполнить функцию над блоком.
@@ -285,7 +285,7 @@ public:
 			block.getByPosition(result).column = std::make_shared<ColumnConstString>(
 				col_from->size(),
 				hash,
-				new DataTypeFixedString{Impl::length});
+				std::make_shared<DataTypeFixedString>(Impl::length));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -350,7 +350,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new typename DataTypeFromFieldType<typename Impl::ReturnType>::Type;
+		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ReturnType>::Type>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -592,7 +592,7 @@ public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
-		return new DataTypeUInt64;
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -737,7 +737,7 @@ public:
 				};
 		}
 
-		return new DataTypeUInt64;
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override

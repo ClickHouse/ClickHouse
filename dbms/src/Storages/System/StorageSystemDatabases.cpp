@@ -13,8 +13,8 @@ StorageSystemDatabases::StorageSystemDatabases(const std::string & name_)
 	: name(name_),
 	columns
 	{
-		{"name", 	new DataTypeString},
-		{"engine", 	new DataTypeString},
+		{"name", 	std::make_shared<DataTypeString>()},
+		{"engine", 	std::make_shared<DataTypeString>()},
 	}
 {
 }
@@ -39,10 +39,10 @@ BlockInputStreams StorageSystemDatabases::read(
 
 	Block block;
 
-	ColumnWithTypeAndName col_name{std::make_shared<ColumnString>(), new DataTypeString, "name"};
+	ColumnWithTypeAndName col_name{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "name"};
 	block.insert(col_name);
 
-	ColumnWithTypeAndName col_engine{std::make_shared<ColumnString>(), new DataTypeString, "engine"};
+	ColumnWithTypeAndName col_engine{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "engine"};
 	block.insert(col_engine);
 
 	auto databases = context.getDatabases();

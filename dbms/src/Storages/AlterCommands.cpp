@@ -228,7 +228,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
 			}
 
 			/// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
-			columns.emplace_back(column_name, command.data_type ? command.data_type : new DataTypeUInt8);
+			columns.emplace_back(column_name, command.data_type ? command.data_type : std::make_shared<DataTypeUInt8>());
 
 			if (command.default_expression)
 			{

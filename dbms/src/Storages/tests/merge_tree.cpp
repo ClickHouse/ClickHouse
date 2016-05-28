@@ -30,8 +30,8 @@ int main(int argc, char ** argv)
 		/// создаём таблицу с парой столбцов
 
 		NamesAndTypesListPtr names_and_types = new NamesAndTypesList;
-		names_and_types->push_back(NameAndTypePair("d", new DataTypeDate));
-		names_and_types->push_back(NameAndTypePair("a", new DataTypeArray(new DataTypeUInt32)));
+		names_and_types->push_back(NameAndTypePair("d", std::make_shared<DataTypeDate>()));
+		names_and_types->push_back(NameAndTypePair("a", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>())));
 
 		ASTPtr primary_expr;
 		Expected expected = "";

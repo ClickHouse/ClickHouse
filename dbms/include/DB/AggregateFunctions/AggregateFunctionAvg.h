@@ -31,7 +31,7 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeFloat64;
+		return std::make_shared<DataTypeFloat64>();
 	}
 
 	void setArgument(const DataTypePtr & argument)

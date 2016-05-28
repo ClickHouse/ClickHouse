@@ -327,7 +327,7 @@ private:
 				{
 					block.insert(ColumnWithTypeAndName{
 						ColumnConst<String>{rows, task->data_part->name}.convertToFullColumn(),
-						new DataTypeString,
+						std::make_shared<DataTypeString>(),
 						virt_column_name
 					});
 				}
@@ -335,7 +335,7 @@ private:
 				{
 					block.insert(ColumnWithTypeAndName{
 						ColumnConst<UInt64>{rows, task->part_index_in_query}.convertToFullColumn(),
-						new DataTypeUInt64,
+						std::make_shared<DataTypeUInt64>(),
 						virt_column_name
 					});
 				}

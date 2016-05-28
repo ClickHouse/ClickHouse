@@ -207,7 +207,7 @@ public:
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -337,7 +337,7 @@ int main(int argc, char ** argv)
 			for (size_t i = 0; i < columns; ++i)
 			{
 				auto column = std::make_shared<ColumnUInt8>(block_size);
-				blocks[b].insert(ColumnWithTypeAndName(column, new DataTypeUInt8, "v" + toString(i)));
+				blocks[b].insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeUInt8>(), "v" + toString(i)));
 
 				ColumnUInt8::Container_t & vec = column->getData();
 				vec.resize(block_size);
@@ -351,14 +351,14 @@ int main(int argc, char ** argv)
 		for (size_t b = 0; b < block_count; ++b)
 		{
 			auto result_column = std::make_shared<ColumnUInt8>();
-			blocks[b].insert(ColumnWithTypeAndName(result_column, new DataTypeUInt8, "x"));
+			blocks[b].insert(ColumnWithTypeAndName(result_column, std::make_shared<DataTypeUInt8>(), "x"));
 			result_column->getData().resize(block_size);
 		}
 
 		for (size_t arity = 2; arity <= columns; ++arity)
 		{
 			FunctionPtr function = new FunctionAnd;
-			function->getReturnType(DataTypes(arity, DataTypePtr(new DataTypeUInt8)));
+			function->getReturnType(DataTypes(arity, DataTypePtr(std::make_shared<DataTypeUInt8>())));
 
 			ColumnNumbers arguments(arity);
 			for (size_t i = 0; i < arity; ++i)

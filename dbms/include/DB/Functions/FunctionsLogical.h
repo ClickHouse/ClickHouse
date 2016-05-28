@@ -264,7 +264,7 @@ public:
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -415,7 +415,7 @@ public:
 				+ ") of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	/// Выполнить функцию над блоком.

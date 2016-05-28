@@ -189,7 +189,7 @@ public:
 							", expected FixedString(" + toString(ipv6_bytes_length) + ")",
 							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -285,7 +285,7 @@ public:
 							" of argument 3 of function " + getName(),
 							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -438,7 +438,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeFixedString{ipv6_bytes_length};
+		return std::make_shared<DataTypeFixedString>(ipv6_bytes_length);
 	}
 
 
@@ -626,7 +626,7 @@ public:
 			block.getByPosition(result).column = std::make_shared<ColumnConst<String>>(
 				col_in->size(),
 				out,
-				new DataTypeFixedString{ipv6_bytes_length});
+				std::make_shared<DataTypeFixedString>(ipv6_bytes_length));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -658,7 +658,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt32",
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	static void formatIP(UInt32 ip, char *& out)
@@ -763,7 +763,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeUInt32;
+		return std::make_shared<DataTypeUInt32>();
 	}
 
 	static bool isDigit(char c)
@@ -854,7 +854,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt32",
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	static void formatIP(UInt32 ip, char *& out)
@@ -957,7 +957,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() +
 							" of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeFixedString{16};
+		return std::make_shared<DataTypeFixedString>(16);
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -986,7 +986,7 @@ public:
 
 			auto col_res = std::make_shared<ColumnConstString>(
 				ipv6_bytes_length, buf,
-				new DataTypeFixedString{ipv6_bytes_length});
+				std::make_shared<DataTypeFixedString>(ipv6_bytes_length));
 			block.getByPosition(result).column = col_res;
 		}
 		else
@@ -1034,7 +1034,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	template <typename T>
@@ -1275,7 +1275,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	UInt8 undigitUnsafe(char c)
@@ -1390,7 +1390,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeArray(arguments[0]);
+		return std::make_shared<DataTypeArray>(arguments[0]);
 	}
 
 	template <typename T>
@@ -1440,7 +1440,7 @@ public:
 			}
 
 			out_column = std::make_shared<ColumnConstArray>(
-				col_from->size(), res, new DataTypeArray(new typename DataTypeFromFieldType<T>::Type));
+				col_from->size(), res, std::make_shared<DataTypeArray>(std::make_shared<typename DataTypeFromFieldType<T>::Type>()));
 
 			return true;
 		}
@@ -1497,7 +1497,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 
@@ -1662,7 +1662,7 @@ public:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -1841,7 +1841,7 @@ public:
 				};
 		}
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override

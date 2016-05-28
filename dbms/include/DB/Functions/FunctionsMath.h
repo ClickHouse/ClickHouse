@@ -31,7 +31,7 @@ private:
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
 			};
 
-		return new DataTypeFloat64;
+		return std::make_shared<DataTypeFloat64>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -83,7 +83,7 @@ private:
 
 		check_argument_type(arguments.front().get());
 
-		return new DataTypeFloat64;
+		return std::make_shared<DataTypeFloat64>();
 	}
 
 	template <typename FieldType>
@@ -235,7 +235,7 @@ private:
 		check_argument_type(arguments.front().get());
 		check_argument_type(arguments.back().get());
 
-		return new DataTypeFloat64;
+		return std::make_shared<DataTypeFloat64>();
 	}
 
 	template <typename LeftType, typename RightType>

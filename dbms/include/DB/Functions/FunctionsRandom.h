@@ -170,7 +170,7 @@ public:
 				+ toString(arguments.size()) + ", should be 0 or 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new typename DataTypeFromFieldType<typename Impl::ReturnType>::Type;
+		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ReturnType>::Type>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -216,7 +216,7 @@ public:
 				+ toString(arguments.size()) + ", should be 0 or 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new typename DataTypeFromFieldType<typename Impl::ReturnType>::Type;
+		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ReturnType>::Type>();
 	}
 
 	/// Выполнить функцию над блоком.

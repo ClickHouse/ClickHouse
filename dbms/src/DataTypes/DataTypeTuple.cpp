@@ -245,7 +245,7 @@ ColumnPtr DataTypeTuple::createColumn() const
 
 ColumnPtr DataTypeTuple::createConstColumn(size_t size, const Field & field) const
 {
-	return std::make_shared<ColumnConstTuple>(size, get<const Tuple &>(field), new DataTypeTuple(elems));
+	return std::make_shared<ColumnConstTuple>(size, get<const Tuple &>(field), std::make_shared<DataTypeTuple>(elems));
 }
 
 Field DataTypeTuple::getDefault() const

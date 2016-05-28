@@ -46,7 +46,7 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeArray(new typename DataTypeFromFieldType<T>::Type);
+		return std::make_shared<DataTypeArray>(std::make_shared<typename DataTypeFromFieldType<T>::Type>());
 	}
 
 	void setArgument(const DataTypePtr & argument)

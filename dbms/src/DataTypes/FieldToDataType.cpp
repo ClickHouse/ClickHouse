@@ -115,7 +115,7 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 		throw Exception("Type inference of array of tuples is not supported", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 	if (has_string)
-		return new DataTypeArray(new DataTypeString);
+		return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
 
 	if (has_float && max_bits == 64)
 		throw Exception("Incompatible types Float64 and UInt64/Int64 of elements of array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -123,7 +123,7 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 	if (has_float)
 	{
 		convertArrayToCommonType<Float64>(x);
-		return new DataTypeArray(new DataTypeFloat64);
+		return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
 	}
 
 	if (max_signed_bits == 64 && max_unsigned_bits == 64)
@@ -132,25 +132,25 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 	if (max_signed_bits && !max_unsigned_bits)
 	{
 		if (max_signed_bits == 8)
-			return new DataTypeArray(new DataTypeInt8);
+			return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt8>());
 		if (max_signed_bits == 16)
-			return new DataTypeArray(new DataTypeInt16);
+			return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt16>());
 		if (max_signed_bits == 32)
-			return new DataTypeArray(new DataTypeInt32);
+			return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>());
 		if (max_signed_bits == 64)
-			return new DataTypeArray(new DataTypeInt64);
+			return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
 	}
 
 	if (!max_signed_bits && max_unsigned_bits)
 	{
 		if (max_unsigned_bits == 8)
-			return new DataTypeArray(new DataTypeUInt8);
+			return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>());
 		if (max_unsigned_bits == 16)
-			return new DataTypeArray(new DataTypeUInt16);
+			return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt16>());
 		if (max_unsigned_bits == 32)
-			return new DataTypeArray(new DataTypeUInt32);
+			return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
 		if (max_unsigned_bits == 64)
-			return new DataTypeArray(new DataTypeUInt64);
+			return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
 	}
 
 	if (max_signed_bits && max_unsigned_bits)
@@ -161,11 +161,11 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 		{
 			/// Беззнаковый тип не помещается в знаковый. Надо увеличить количество бит.
 			if (max_bits == 8)
-				return new DataTypeArray(new DataTypeInt16);
+				return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt16>());
 			if (max_bits == 16)
-				return new DataTypeArray(new DataTypeInt32);
+				return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>());
 			if (max_bits == 32)
-				return new DataTypeArray(new DataTypeInt64);
+				return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
 			else
 				throw Exception("Incompatible types UInt64 and signed integer of elements of array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
@@ -173,13 +173,13 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 		{
 			/// Беззнаковый тип помещается в знаковый.
 			if (max_bits == 8)
-				return new DataTypeArray(new DataTypeInt8);
+				return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt8>());
 			if (max_bits == 16)
-				return new DataTypeArray(new DataTypeInt16);
+				return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt16>());
 			if (max_bits == 32)
-				return new DataTypeArray(new DataTypeInt32);
+				return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>());
 			if (max_bits == 64)
-				return new DataTypeArray(new DataTypeInt64);
+				return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
 		}
 	}
 
@@ -199,7 +199,7 @@ DataTypePtr FieldToDataType::operator() (Tuple & x) const
 	for (auto & element : tuple)
 		element_types.push_back(apply_visitor(FieldToDataType{}, element));
 
-	return new DataTypeTuple{element_types};
+	return std::make_shared<DataTypeTuple>(element_types);
 }
 
 

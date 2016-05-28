@@ -798,7 +798,7 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeFloat32;
+		return std::make_shared<DataTypeFloat32>();
 	}
 
 	void setArgument(const DataTypePtr & argument)
@@ -857,7 +857,7 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeFloat32;
+		return std::make_shared<DataTypeFloat32>();
 	}
 
 	void setArgumentsImpl(const DataTypes & arguments)
@@ -916,7 +916,7 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeArray(new DataTypeFloat32);
+		return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
 	}
 
 	void setArgument(const DataTypePtr & argument)
@@ -978,7 +978,7 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeArray(new DataTypeFloat32);
+		return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
 	}
 
 	void setArgumentsImpl(const DataTypes & arguments)

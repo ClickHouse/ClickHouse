@@ -261,8 +261,8 @@ Block LogBlockInputStream::readImpl()
 			rows = res.rows();
 		if (rows > 0)
 		{
-			ColumnPtr column_ptr = ColumnConst<String>(rows, current_table.first, new DataTypeString).convertToFullColumn();
-			ColumnWithTypeAndName column(column_ptr, new DataTypeString, storage._table_column_name);
+			ColumnPtr column_ptr = ColumnConst<String>(rows, current_table.first, std::make_shared<DataTypeString>()).convertToFullColumn();
+			ColumnWithTypeAndName column(column_ptr, std::make_shared<DataTypeString>(), storage._table_column_name);
 			res.insert(column);
 		}
 	}

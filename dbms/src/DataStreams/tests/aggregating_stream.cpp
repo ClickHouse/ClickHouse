@@ -33,7 +33,7 @@ int main(int argc, char ** argv)
 
 		ColumnWithTypeAndName column_x;
 		column_x.name = "x";
-		column_x.type = new DataTypeInt16;
+		column_x.type = std::make_shared<DataTypeInt16>();
 		auto x = std::make_shared<ColumnInt16>();
 		column_x.column = x;
 		auto & vec_x = x->getData();
@@ -48,7 +48,7 @@ int main(int argc, char ** argv)
 
 		ColumnWithTypeAndName column_s1;
 		column_s1.name = "s1";
-		column_s1.type = new DataTypeString;
+		column_s1.type = std::make_shared<DataTypeString>();
 		column_s1.column = std::make_shared<ColumnString>();
 
 		for (size_t i = 0; i < n; ++i)
@@ -58,7 +58,7 @@ int main(int argc, char ** argv)
 
 		ColumnWithTypeAndName column_s2;
 		column_s2.name = "s2";
-		column_s2.type = new DataTypeString;
+		column_s2.type = std::make_shared<DataTypeString>();
 		column_s2.column = std::make_shared<ColumnString>();
 
 		for (size_t i = 0; i < n; ++i)
@@ -76,15 +76,15 @@ int main(int argc, char ** argv)
 		DataTypes empty_list_of_types;
 		aggregate_descriptions[0].function = factory.get("count", empty_list_of_types);
 
-		Poco::SharedPtr<DataTypes> result_types = new DataTypes
+		DataTypes result_types
 		{
-			new DataTypeInt16,
-		//	new DataTypeString,
-			new DataTypeUInt64,
+			std::make_shared<DataTypeInt16>(),
+		//	std::make_shared<DataTypeString>(),
+			std::make_shared<DataTypeUInt64>(),
 		};
 
 		Block sample;
-		for (DataTypes::const_iterator it = result_types->begin(); it != result_types->end(); ++it)
+		for (DataTypes::const_iterator it = result_types.begin(); it != result_types.end(); ++it)
 		{
 			ColumnWithTypeAndName col;
 			col.type = *it;

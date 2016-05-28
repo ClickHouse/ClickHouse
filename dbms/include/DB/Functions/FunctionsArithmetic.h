@@ -485,7 +485,7 @@ private:
 			  typename std::enable_if<!std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
 	bool checkRightTypeImpl(DataTypePtr & type_res) const
 	{
-		type_res = new ResultDataType;
+		type_res = std::make_shared<ResultDataType>();
 		return true;
 	}
 
@@ -737,8 +737,8 @@ private:
 	{
 		if (typeid_cast<const T0 *>(&*arguments[0]))
 		{
-			result = new typename DataTypeFromFieldType<
-				typename Op<typename T0::FieldType>::ResultType>::Type;
+			result = std::make_shared<typename DataTypeFromFieldType<
+				typename Op<typename T0::FieldType>::ResultType>::Type>();
 			return true;
 		}
 		return false;

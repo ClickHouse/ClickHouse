@@ -12,9 +12,9 @@ namespace DB
 StorageSystemSettings::StorageSystemSettings(const std::string & name_)
 	: name(name_)
 	, columns{
-		{ "name", 			new DataTypeString	},
-		{ "value",			new DataTypeString	},
-		{ "changed", 		new DataTypeUInt8	},
+		{ "name", 			std::make_shared<DataTypeString>()	},
+		{ "value",			std::make_shared<DataTypeString>()	},
+		{ "changed", 		std::make_shared<DataTypeUInt8>()	},
 	}
 {
 }
@@ -37,9 +37,9 @@ BlockInputStreams StorageSystemSettings::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	ColumnWithTypeAndName col_name{std::make_shared<ColumnString>(), new DataTypeString, "name"};
-	ColumnWithTypeAndName col_value{std::make_shared<ColumnString>(), new DataTypeString, "value"};
-	ColumnWithTypeAndName col_changed{std::make_shared<ColumnUInt8>(), new DataTypeUInt8, "changed"};
+	ColumnWithTypeAndName col_name{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "name"};
+	ColumnWithTypeAndName col_value{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "value"};
+	ColumnWithTypeAndName col_changed{std::make_shared<ColumnUInt8>(), std::make_shared<DataTypeUInt8>(), "changed"};
 
 #define ADD_SETTING(TYPE, NAME, DEFAULT) \
 	col_name.column->insert(String(#NAME)); \

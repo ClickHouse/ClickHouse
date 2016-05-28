@@ -1189,7 +1189,7 @@ public:
 			throw Exception("Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1272,7 +1272,7 @@ public:
 			throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new typename DataTypeFromFieldType<typename Impl::ResultType>::Type;
+		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ResultType>::Type>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1357,7 +1357,7 @@ public:
 			throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	/// Выполнить функцию над блоком.

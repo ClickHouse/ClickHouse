@@ -39,7 +39,7 @@ private:
 	{
 		ColumnWithTypeAndName col;
 		col.name = "result";
-		col.type = new DataTypeUInt8;
+		col.type = std::make_shared<DataTypeUInt8>();
 		col.column = col.type->createColumn();
 
 		Block block;
@@ -56,7 +56,7 @@ private:
 
 		ColumnWithTypeAndName col;
 		col.name = "result";
-		col.type = new DataTypeUInt8;
+		col.type = std::make_shared<DataTypeUInt8>();
 		col.column = std::make_shared<ColumnConstUInt8>(1, res);
 
 		Block block;

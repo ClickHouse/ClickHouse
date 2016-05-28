@@ -15,14 +15,14 @@ try
 
 	ColumnWithTypeAndName descr1;
 	auto col1 = std::make_shared<ColumnUInt8>();
-	descr1.type = new DataTypeUInt8;
+	descr1.type = std::make_shared<DataTypeUInt8>();
 	descr1.column = col1;
 	descr1.name = "x";
 	col1->getData().resize(n);
 
 	ColumnWithTypeAndName descr2;
 	auto col2 = std::make_shared<ColumnInt16>();
-	descr2.type = new DataTypeInt16;
+	descr2.type = std::make_shared<DataTypeInt16>();
 	descr2.column = col2;
 	descr2.name = "x";
 

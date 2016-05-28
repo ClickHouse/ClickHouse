@@ -56,7 +56,7 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
 static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts)
 {
 	Block res;
-	ColumnWithTypeAndName _part(std::make_shared<ColumnString>(), new DataTypeString, "_part");
+	ColumnWithTypeAndName _part(std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "_part");
 
 	for (const auto & part : parts)
 		_part.column->insert(part->name);
@@ -207,7 +207,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition, и которые подходят под условие на _part,
 	///  а также max_block_number_to_read.
 	{
-		const DataTypes data_types_date { new DataTypeDate };
+		const DataTypes data_types_date { std::make_shared<DataTypeDate>() };
 
 		auto prev_parts = parts;
 		parts.clear();
@@ -561,7 +561,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	if (sample_factor_column_queried)
 		for (auto & stream : res)
 			stream = new AddingConstColumnBlockInputStream<Float64>(
-				stream, new DataTypeFloat64, used_sample_factor, "_sample_factor");
+				stream, std::make_shared<DataTypeFloat64>(), used_sample_factor, "_sample_factor");
 
 	return res;
 }
@@ -702,10 +702,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 				{
 					if (virt_column == "_part")
 						res.back() = new AddingConstColumnBlockInputStream<String>(
-							res.back(), new DataTypeString, part.data_part->name, "_part");
+							res.back(), std::make_shared<DataTypeString>(), part.data_part->name, "_part");
 					else if (virt_column == "_part_index")
 						res.back() = new AddingConstColumnBlockInputStream<UInt64>(
-							res.back(), new DataTypeUInt64, part.part_index_in_query, "_part_index");
+							res.back(), std::make_shared<DataTypeUInt64>(), part.part_index_in_query, "_part_index");
 				}
 			}
 		}
@@ -757,10 +757,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 		{
 			if (virt_column == "_part")
 				source_stream = new AddingConstColumnBlockInputStream<String>(
-					source_stream, new DataTypeString, part.data_part->name, "_part");
+					source_stream, std::make_shared<DataTypeString>(), part.data_part->name, "_part");
 			else if (virt_column == "_part_index")
 				source_stream = new AddingConstColumnBlockInputStream<UInt64>(
-					source_stream, new DataTypeUInt64, part.part_index_in_query, "_part_index");
+					source_stream, std::make_shared<DataTypeUInt64>(), part.part_index_in_query, "_part_index");
 		}
 
 		to_merge.emplace_back(new ExpressionBlockInputStream(source_stream, data.getPrimaryExpression()));

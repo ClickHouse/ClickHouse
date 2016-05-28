@@ -192,7 +192,7 @@ public:
 		{
 			/// Если тип числовой, пробуем выделить наименьший общий тип
 			auto enriched_result_type = getLeastCommonType(arguments);
-			return new DataTypeArray{enriched_result_type};
+			return std::make_shared<DataTypeArray>(enriched_result_type);
 		}
 		else
 		{
@@ -210,7 +210,7 @@ public:
 				}
 			}
 
-			return new DataTypeArray{result_type};
+			return std::make_shared<DataTypeArray>(result_type);
 		}
 	}
 
@@ -253,7 +253,7 @@ public:
 					addField(result_type, (*block.getByPosition(arg_num).column)[0], arr);
 
 			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(
-				first_arg.column->size(), arr, new DataTypeArray{result_type});
+				first_arg.column->size(), arr, std::make_shared<DataTypeArray>(result_type));
 		}
 		else
 		{
@@ -723,7 +723,7 @@ private:
 		{
 			ColumnWithTypeAndName array_of_tuple_section;
 			array_of_tuple_section.column = std::make_shared<ColumnArray>(tuple_block.getByPosition(i).column, col_array->getOffsetsColumn());
-			array_of_tuple_section.type = new DataTypeArray(tuple_block.getByPosition(i).type);
+			array_of_tuple_section.type = std::make_shared<DataTypeArray>(tuple_block.getByPosition(i).type);
 			block_of_temporary_results.insert(array_of_tuple_section);
 
 			ColumnWithTypeAndName array_elements_of_tuple_section;
@@ -1132,7 +1132,7 @@ public:
 			throw Exception("Type of array elements and second argument for function " + getName() + " must be same."
 				" Passed: " + arguments[0]->getName() + " and " + arguments[1]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new typename DataTypeFromFieldType<typename IndexConv::ResultType>::Type;
+		return std::make_shared<typename DataTypeFromFieldType<typename IndexConv::ResultType>::Type>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1182,7 +1182,7 @@ public:
 		if (!array_type)
 			throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeArray(new DataTypeUInt32);
+		return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1219,7 +1219,7 @@ public:
 				res_values[i] = i + 1;
 			}
 
-			auto res_array = std::make_shared<ColumnConstArray>(array->size(), res_values, new DataTypeArray(new DataTypeUInt32));
+			auto res_array = std::make_shared<ColumnConstArray>(array->size(), res_values, std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()));
 			block.getByPosition(result).column = res_array;
 		}
 		else
@@ -1262,7 +1262,7 @@ public:
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
 
-		return new DataTypeUInt32;
+		return std::make_shared<DataTypeUInt32>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1492,7 +1492,7 @@ public:
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
 
-		return new DataTypeArray(new DataTypeUInt32);
+		return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1632,7 +1632,7 @@ private:
 			res_values[i] = static_cast<UInt64>(++indices[values[i]]);
 		}
 
-		auto res_array = std::make_shared<ColumnConstArray>(array->size(), res_values, new DataTypeArray(new DataTypeUInt32));
+		auto res_array = std::make_shared<ColumnConstArray>(array->size(), res_values, std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()));
 		block.getByPosition(result).column = res_array;
 
 		return true;
@@ -1728,7 +1728,7 @@ private:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeArray{new DataType{}};
+		return std::make_shared<DataTypeArray>(std::make_shared<DataType>());
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -1779,7 +1779,7 @@ private:
 			};
 		}
 
-		return new DataTypeArray{arg->clone()};
+		return std::make_shared<DataTypeArray>(arg->clone());
 	}
 
 	template <typename T>

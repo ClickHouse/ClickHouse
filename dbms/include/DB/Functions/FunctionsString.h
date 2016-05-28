@@ -796,7 +796,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new typename DataTypeFromFieldType<ResultType>::Type;
+		return std::make_shared<typename DataTypeFromFieldType<ResultType>::Type>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1025,7 +1025,7 @@ public:
 				};
 		}
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -1493,7 +1493,7 @@ public:
 			throw Exception("Illegal type " + (arguments[1]->isNumeric() ? arguments[2]->getName() : arguments[1]->getName()) + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1579,7 +1579,7 @@ private:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override

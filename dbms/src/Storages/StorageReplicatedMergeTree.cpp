@@ -2098,7 +2098,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 	ColumnPtr column_ptr = column;
 	column->getData()[0] = 0;
 	column->getData()[1] = 1;
-	virtual_columns_block.insert(ColumnWithTypeAndName(column_ptr, new DataTypeUInt8, "_replicated"));
+	virtual_columns_block.insert(ColumnWithTypeAndName(column_ptr, std::make_shared<DataTypeUInt8>(), "_replicated"));
 
 	/// Если запрошен столбец _replicated, пробуем индексировать.
 	if (!virt_column_names.empty())
@@ -2127,7 +2127,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 			if (virtual_column == "_replicated")
 			{
 				for (auto & stream : res)
-					stream = new AddingConstColumnBlockInputStream<UInt8>(stream, new DataTypeUInt8, 0, "_replicated");
+					stream = new AddingConstColumnBlockInputStream<UInt8>(stream, std::make_shared<DataTypeUInt8>(), 0, "_replicated");
 			}
 		}
 	}
@@ -2179,7 +2179,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 			if (virtual_column == "_replicated")
 			{
 				for (auto & stream : res2)
-					stream = new AddingConstColumnBlockInputStream<UInt8>(stream, new DataTypeUInt8, 1, "_replicated");
+					stream = new AddingConstColumnBlockInputStream<UInt8>(stream, std::make_shared<DataTypeUInt8>(), 1, "_replicated");
 			}
 		}
 

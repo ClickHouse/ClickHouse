@@ -1128,7 +1128,7 @@ private:
 				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new ToDataType;
+		return std::make_shared<ToDataType>();
 	}
 
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
@@ -1155,7 +1155,7 @@ private:
 			};
 		}
 
-		return new ToDataType2;
+		return std::make_shared<ToDataType2>();
 	}
 
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
@@ -1182,7 +1182,7 @@ private:
 			};
 		}
 
-		return new ToDataType2;
+		return std::make_shared<ToDataType2>();
 	}
 
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
@@ -1202,7 +1202,7 @@ private:
 			};
 		}
 
-		return new ToDataType2;
+		return std::make_shared<ToDataType2>();
 	}
 };
 
@@ -1241,7 +1241,7 @@ public:
 
 		const size_t n = getSize(arguments[1]);
 
-		out_return_type = new DataTypeFixedString(n);
+		out_return_type = std::make_shared<DataTypeFixedString>(n);
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1265,7 +1265,7 @@ public:
 			resized_string.resize(n);
 
 			block.getByPosition(result).column = std::make_shared<ColumnConst<String>>(
-				column_const->size(), std::move(resized_string), new DataTypeFixedString(n));
+				column_const->size(), std::move(resized_string), std::make_shared<DataTypeFixedString>(n));
 		}
 		else if (const auto column_string = typeid_cast<const ColumnString *>(&*column))
 		{
@@ -1660,7 +1660,7 @@ class FunctionCast final : public IFunction
 			const auto converted_tuple_pos = element_block.columns();
 
 			/// insert column for converted tuple
-			element_block.insert({ nullptr, new DataTypeTuple{to_element_types}, "" });
+			element_block.insert({ nullptr, std::make_shared<DataTypeTuple>(to_element_types), "" });
 
 			const auto converted_element_offset = from_element_types.size();
 

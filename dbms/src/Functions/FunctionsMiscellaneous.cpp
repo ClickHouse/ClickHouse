@@ -240,7 +240,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 		nested_block.insert(nested_values);
 
 		ColumnWithTypeAndName nested_result;
-		nested_result.type = new DataTypeUInt64;
+		nested_result.type = std::make_shared<DataTypeUInt64>();
 		nested_block.insert(nested_result);
 
 		ColumnNumbers nested_argument_numbers(1, 0);
@@ -299,7 +299,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 			  */
 
 			ColumnWithTypeAndName nested_result;
-			nested_result.type = new DataTypeUInt64;
+			nested_result.type = std::make_shared<DataTypeUInt64>();
 			nested_block.insert(nested_result);
 
 			ColumnNumbers nested_argument_numbers(1, i);
@@ -308,7 +308,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 			if (i != 0)
 			{
 				ColumnWithTypeAndName plus_result;
-				plus_result.type = new DataTypeUInt64;
+				plus_result.type = std::make_shared<DataTypeUInt64>();
 				nested_block.insert(plus_result);
 
 				ColumnNumbers plus_argument_numbers(2);

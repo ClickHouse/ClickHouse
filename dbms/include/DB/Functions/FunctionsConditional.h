@@ -1301,7 +1301,7 @@ public:
 		else if (type_arr1 && type_arr2)
 		{
 			/// NOTE Сообщения об ошибках будут относится к типам элементов массивов, что немного некорректно.
-			return new DataTypeArray(getReturnType({arguments[0], type_arr1->getNestedType(), type_arr2->getNestedType()}));
+			return std::make_shared<DataTypeArray>(getReturnType({arguments[0], type_arr1->getNestedType(), type_arr2->getNestedType()}));
 		}
 		else if (arguments[1]->getName() != arguments[2]->getName())
 		{
@@ -1316,11 +1316,11 @@ public:
 					throw Exception("FixedString types as 'then' and 'else' arguments of function 'if' has different sizes",
 						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-				return new DataTypeFixedString(type_fixed_string1->getN());
+				return std::make_shared<DataTypeFixedString>(type_fixed_string1->getN());
 			}
 			else if ((type_string1 || type_fixed_string1) && (type_string2 || type_fixed_string2))
 			{
-				return new DataTypeString;
+				return std::make_shared<DataTypeString>();
 			}
 
 			throw Exception{
@@ -1512,7 +1512,7 @@ private:
 
 			push_branch_arg(Conditional::elseArg(args));
 
-			return new DataTypeArray{getReturnType(new_args)};
+			return std::make_shared<DataTypeArray>(getReturnType(new_args));
 		}
 		else if (!Conditional::hasIdenticalTypes(args))
 		{
@@ -1536,10 +1536,10 @@ private:
 				if (fixed_str == nullptr)
 					throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 
-				return new DataTypeFixedString{fixed_str->getN()};
+				return std::make_shared<DataTypeFixedString>(fixed_str->getN());
 			}
 			else if (Conditional::hasStrings(args))
-				return new DataTypeString;
+				return std::make_shared<DataTypeString>();
 			else
 			{
 				if (is_case_mode)

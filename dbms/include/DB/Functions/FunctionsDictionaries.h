@@ -317,7 +317,7 @@ public:
 				+ " (must be " + TypeName<String>::get() + ")",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -445,7 +445,7 @@ public:
 				+ " (must be " + TypeName<String>::get() + ")",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeArray(arguments[0]);
+		return std::make_shared<DataTypeArray>(arguments[0]);
 	}
 
 	/// Выполнить функцию над блоком.
@@ -505,7 +505,10 @@ public:
 				cur = Transform::toParent(cur, dict);
 			}
 
-			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(col_from->size(), res, new DataTypeArray(new typename DataTypeFromFieldType<T>::Type));
+			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(
+				col_from->size(),
+				res,
+				std::make_shared<DataTypeArray>(std::make_shared<typename DataTypeFromFieldType<T>::Type>()));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -715,7 +718,7 @@ public:
 				+ " (must be " + TypeName<String>::get() + ")",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -800,7 +803,7 @@ private:
 					+ ", must be UInt64 or tuple(...).",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -963,7 +966,7 @@ private:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 		}
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -1232,7 +1235,7 @@ private:
 					", must be String.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -1531,7 +1534,7 @@ private:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 		}
 
-		return new DataType;
+		return std::make_shared<DataType>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -1843,7 +1846,7 @@ private:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 		}
 
-		return new DataType;
+		return std::make_shared<DataType>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -2097,7 +2100,7 @@ private:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 		}
 
-		return new DataTypeArray{new DataTypeUInt64};
+		return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -2205,7 +2208,7 @@ private:
 			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(
 				id_col->size(),
 				(*array)[0].get<Array>(),
-				new DataTypeArray{new DataTypeUInt64});
+				std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()));
 		}
 		else
 		{
@@ -2268,7 +2271,7 @@ private:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 		}
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override

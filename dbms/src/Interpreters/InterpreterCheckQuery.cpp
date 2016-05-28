@@ -96,37 +96,37 @@ Block InterpreterCheckQuery::getSampleBlock() const
 	ColumnWithTypeAndName col;
 
 	col.name = "status";
-	col.type = new DataTypeUInt8;
+	col.type = std::make_shared<DataTypeUInt8>();
 	col.column = col.type->createColumn();
 	block.insert(col);
 
 	col.name = "host_name";
-	col.type = new DataTypeString;
+	col.type = std::make_shared<DataTypeString>();
 	col.column = col.type->createColumn();
 	block.insert(col);
 
 	col.name = "host_address";
-	col.type = new DataTypeString;
+	col.type = std::make_shared<DataTypeString>();
 	col.column = col.type->createColumn();
 	block.insert(col);
 
 	col.name = "port";
-	col.type = new DataTypeUInt16;
+	col.type = std::make_shared<DataTypeUInt16>();
 	col.column = col.type->createColumn();
 	block.insert(col);
 
 	col.name = "user";
-	col.type = new DataTypeString;
+	col.type = std::make_shared<DataTypeString>();
 	col.column = col.type->createColumn();
 	block.insert(col);
 
 	col.name = "structure_class";
-	col.type = new DataTypeUInt32;
+	col.type = std::make_shared<DataTypeUInt32>();
 	col.column = col.type->createColumn();
 	block.insert(col);
 
 	col.name = "structure";
-	col.type = new DataTypeString;
+	col.type = std::make_shared<DataTypeString>();
 	col.column = col.type->createColumn();
 	block.insert(col);
 
@@ -231,13 +231,13 @@ BlockIO InterpreterCheckQuery::execute()
 
 		Block block;
 
-		block.insert(ColumnWithTypeAndName(status_column, new DataTypeUInt8, "status"));
-		block.insert(ColumnWithTypeAndName(host_name_column, new DataTypeString, "host_name"));
-		block.insert(ColumnWithTypeAndName(host_address_column, new DataTypeString, "host_address"));
-		block.insert(ColumnWithTypeAndName(port_column, new DataTypeUInt16, "port"));
-		block.insert(ColumnWithTypeAndName(user_column, new DataTypeString, "user"));
-		block.insert(ColumnWithTypeAndName(structure_class_column, new DataTypeUInt32, "structure_class"));
-		block.insert(ColumnWithTypeAndName(structure_column, new DataTypeString, "structure"));
+		block.insert(ColumnWithTypeAndName(status_column, std::make_shared<DataTypeUInt8>(), "status"));
+		block.insert(ColumnWithTypeAndName(host_name_column, std::make_shared<DataTypeString>(), "host_name"));
+		block.insert(ColumnWithTypeAndName(host_address_column, std::make_shared<DataTypeString>(), "host_address"));
+		block.insert(ColumnWithTypeAndName(port_column, std::make_shared<DataTypeUInt16>(), "port"));
+		block.insert(ColumnWithTypeAndName(user_column, std::make_shared<DataTypeString>(), "user"));
+		block.insert(ColumnWithTypeAndName(structure_class_column, std::make_shared<DataTypeUInt32>(), "structure_class"));
+		block.insert(ColumnWithTypeAndName(structure_column, std::make_shared<DataTypeString>(), "structure"));
 
 		BlockIO res;
 		res.in = new OneBlockInputStream(block);
@@ -247,7 +247,7 @@ BlockIO InterpreterCheckQuery::execute()
 	}
 	else
 	{
-		result = Block{{ std::make_shared<ColumnUInt8>(), new DataTypeUInt8, "result" }};
+		result = Block{{ std::make_shared<ColumnUInt8>(), std::make_shared<DataTypeUInt8>(), "result" }};
 		result.getByPosition(0).column->insert(Field(UInt64(table->checkData())));
 
 		BlockIO res;

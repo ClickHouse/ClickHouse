@@ -80,7 +80,7 @@ NamesAndTypesListPtr DataTypeNested::expandNestedColumns(const NamesAndTypesList
 			for (NamesAndTypesList::const_iterator jt = nested.begin(); jt != nested.end(); ++jt)
 			{
 				String nested_name = DataTypeNested::concatenateNestedName(it->name, jt->name);
-				columns->push_back(NameAndTypePair(nested_name, new DataTypeArray(jt->type)));
+				columns->push_back(NameAndTypePair(nested_name, std::make_shared<DataTypeArray>(jt->type)));
 			}
 		}
 		else

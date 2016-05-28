@@ -107,7 +107,7 @@ public:
 
 	NameAndTypePair getColumn(const String & column_name) const override
 	{
-		if (column_name == "_replicated") return NameAndTypePair("_replicated", new DataTypeUInt8);
+		if (column_name == "_replicated") return NameAndTypePair("_replicated", std::make_shared<DataTypeUInt8>());
 		return data.getColumn(column_name);
 	}
 

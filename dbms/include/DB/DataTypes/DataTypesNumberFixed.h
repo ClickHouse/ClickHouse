@@ -17,7 +17,7 @@ struct DataTypeFromFieldType;
 	{																				\
 	public:																			\
 		std::string getName() const override { return #TYPE; }						\
-		DataTypePtr clone() const override { return new DataType ## TYPE; }			\
+		DataTypePtr clone() const override { return std::make_shared<DataType ## TYPE>(); } \
 	};																				\
 																					\
 	template <> struct DataTypeFromFieldType<TYPE>									\
@@ -45,7 +45,7 @@ class DataTypeVoid : public IDataTypeNumberFixed<void, void>
 public:
 	DataTypeVoid() = default;
 	std::string getName() const override { return "void"; }
-	DataTypePtr clone() const override { return new DataTypeVoid; }
+	DataTypePtr clone() const override { return std::make_shared<DataTypeVoid>(); }
 };
 
 template <> struct DataTypeFromFieldType<void>

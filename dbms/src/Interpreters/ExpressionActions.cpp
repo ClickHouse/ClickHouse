@@ -548,7 +548,7 @@ void ExpressionActions::prependArrayJoin(const ExpressionAction & action, const 
 		if (array_join_set.count(it.name))
 		{
 			array_join_set.erase(it.name);
-			it.type = new DataTypeArray(it.type);
+			it.type = std::make_shared<DataTypeArray>(it.type);
 		}
 	}
 	for (const std::string & name : array_join_set)
@@ -575,7 +575,7 @@ bool ExpressionActions::popUnusedArrayJoin(const Names & required_columns, Expre
 	for (const std::string & name : actions.back().array_joined_columns)
 	{
 		DataTypePtr & type = sample_block.getByName(name).type;
-		type = new DataTypeArray(type);
+		type = std::make_shared<DataTypeArray>(type);
 	}
 	out_action = actions.back();
 	actions.pop_back();

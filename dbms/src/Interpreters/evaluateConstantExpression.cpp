@@ -21,10 +21,10 @@ namespace ErrorCodes
 Field evaluateConstantExpression(ASTPtr & node, const Context & context)
 {
 	ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(
-		node, context, nullptr, NamesAndTypesList{{ "_dummy", new DataTypeUInt8 }}).getConstActions();
+		node, context, nullptr, NamesAndTypesList{{ "_dummy", std::make_shared<DataTypeUInt8>() }}).getConstActions();
 
 	/// В блоке должен быть хотя бы один столбец, чтобы у него было известно число строк.
-	Block block_with_constants{{ std::make_shared<ColumnConstUInt8>(1, 0), new DataTypeUInt8, "_dummy" }};
+	Block block_with_constants{{ std::make_shared<ColumnConstUInt8>(1, 0), std::make_shared<DataTypeUInt8>(), "_dummy" }};
 
 	expr_for_constant_folding->execute(block_with_constants);
 

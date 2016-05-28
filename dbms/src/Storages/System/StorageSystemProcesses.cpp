@@ -13,15 +13,15 @@ namespace DB
 StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
 	: name(name_)
 	, columns{
-		{ "user", 			new DataTypeString	},
-		{ "address",		new DataTypeString	},
-		{ "elapsed", 		new DataTypeFloat64	},
-		{ "rows_read", 		new DataTypeUInt64	},
-		{ "bytes_read",		new DataTypeUInt64	},
-		{ "total_rows_approx", new DataTypeUInt64 },
-		{ "memory_usage",	new DataTypeUInt64	},
-		{ "query", 			new DataTypeString	},
-		{ "query_id", 		new DataTypeString	}
+		{ "user", 			std::make_shared<DataTypeString>()	},
+		{ "address",		std::make_shared<DataTypeString>()	},
+		{ "elapsed", 		std::make_shared<DataTypeFloat64>()	},
+		{ "rows_read", 		std::make_shared<DataTypeUInt64>()	},
+		{ "bytes_read",		std::make_shared<DataTypeUInt64>()	},
+		{ "total_rows_approx", std::make_shared<DataTypeUInt64>() },
+		{ "memory_usage",	std::make_shared<DataTypeUInt64>()	},
+		{ "query", 			std::make_shared<DataTypeString>()	},
+		{ "query_id", 		std::make_shared<DataTypeString>()	}
 	}
 {
 }
@@ -44,15 +44,15 @@ BlockInputStreams StorageSystemProcesses::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	ColumnWithTypeAndName col_user{std::make_shared<ColumnString>(), new DataTypeString, "user"};
-	ColumnWithTypeAndName col_address{std::make_shared<ColumnString>(), new DataTypeString, "address"};
-	ColumnWithTypeAndName col_elapsed{std::make_shared<ColumnFloat64>(), new DataTypeFloat64, "elapsed"};
-	ColumnWithTypeAndName col_rows_read{std::make_shared<ColumnUInt64>(), new DataTypeUInt64, "rows_read"};
-	ColumnWithTypeAndName col_bytes_read{std::make_shared<ColumnUInt64>(), new DataTypeUInt64, "bytes_read"};
-	ColumnWithTypeAndName col_total_rows_approx{std::make_shared<ColumnUInt64>(), new DataTypeUInt64, "total_rows_approx"};
-	ColumnWithTypeAndName col_memory_usage{std::make_shared<ColumnUInt64>(), new DataTypeUInt64, "memory_usage"};
-	ColumnWithTypeAndName col_query{std::make_shared<ColumnString>(), new DataTypeString, "query"};
-	ColumnWithTypeAndName col_query_id{std::make_shared<ColumnString>(), new DataTypeString, "query_id"};
+	ColumnWithTypeAndName col_user{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "user"};
+	ColumnWithTypeAndName col_address{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "address"};
+	ColumnWithTypeAndName col_elapsed{std::make_shared<ColumnFloat64>(), std::make_shared<DataTypeFloat64>(), "elapsed"};
+	ColumnWithTypeAndName col_rows_read{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "rows_read"};
+	ColumnWithTypeAndName col_bytes_read{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "bytes_read"};
+	ColumnWithTypeAndName col_total_rows_approx{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "total_rows_approx"};
+	ColumnWithTypeAndName col_memory_usage{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "memory_usage"};
+	ColumnWithTypeAndName col_query{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "query"};
+	ColumnWithTypeAndName col_query_id{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "query_id"};
 
 	ProcessList::Info info = context.getProcessList().getInfo();
 

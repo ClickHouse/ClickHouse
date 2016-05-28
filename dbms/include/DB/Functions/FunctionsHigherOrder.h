@@ -41,7 +41,7 @@ struct ArrayMapImpl
 
 	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
 	{
-		return new DataTypeArray(expression_return);
+		return std::make_shared<DataTypeArray>(expression_return);
 	}
 
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
@@ -60,7 +60,7 @@ struct ArrayFilterImpl
 
 	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
 	{
-		return new DataTypeArray(array_element);
+		return std::make_shared<DataTypeArray>(array_element);
 	}
 
 	/// Если массивов несколько, сюда передается первый.
@@ -115,7 +115,7 @@ struct ArrayCountImpl
 
 	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
 	{
-		return new DataTypeUInt32;
+		return std::make_shared<DataTypeUInt32>();
 	}
 
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
@@ -177,7 +177,7 @@ struct ArrayExistsImpl
 
 	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
 	{
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
@@ -243,7 +243,7 @@ struct ArrayAllImpl
 
 	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
 	{
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
@@ -313,17 +313,17 @@ struct ArraySumImpl
 			typeid_cast<const DataTypeUInt16 *>(&*expression_return) ||
 			typeid_cast<const DataTypeUInt32 *>(&*expression_return) ||
 			typeid_cast<const DataTypeUInt64 *>(&*expression_return))
-			return new DataTypeUInt64;
+			return std::make_shared<DataTypeUInt64>();
 
 		if (typeid_cast<const DataTypeInt8 *>(&*expression_return) ||
 			typeid_cast<const DataTypeInt16 *>(&*expression_return) ||
 			typeid_cast<const DataTypeInt32 *>(&*expression_return) ||
 			typeid_cast<const DataTypeInt64 *>(&*expression_return))
-			return new DataTypeInt64;
+			return std::make_shared<DataTypeInt64>();
 
 		if (typeid_cast<const DataTypeFloat32 *>(&*expression_return) ||
 			typeid_cast<const DataTypeFloat64 *>(&*expression_return))
-			return new DataTypeFloat64;
+			return std::make_shared<DataTypeFloat64>();
 
 		throw Exception("arraySum cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -481,7 +481,7 @@ struct ArrayFirstIndexImpl
 
 	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
 	{
-		return new DataTypeUInt32;
+		return std::make_shared<DataTypeUInt32>();
 	}
 
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
@@ -582,7 +582,7 @@ public:
 							+ toString(nested_types.size()) + " arguments. Found "
 							+ arguments[0]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		arguments[0] = new DataTypeExpression(nested_types);
+		arguments[0] = std::make_shared<DataTypeExpression>(nested_types);
 	}
 
 	void getReturnTypeAndPrerequisites(const ColumnsWithTypeAndName & arguments,

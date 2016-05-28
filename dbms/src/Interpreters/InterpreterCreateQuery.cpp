@@ -178,7 +178,7 @@ static ColumnsAndDefaults parseColumns(
 		}
 		else
 			/// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
-			columns.emplace_back(col_decl.name, new DataTypeUInt8);
+			columns.emplace_back(col_decl.name, std::make_shared<DataTypeUInt8>());
 
 		/// add column to postprocessing if there is a default_expression specified
 		if (col_decl.default_expression)

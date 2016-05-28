@@ -106,27 +106,27 @@ void test2()
 		ColumnWithTypeAndName col;
 
 		col.name = "number";
-		col.type = new DataTypeUInt64;
+		col.type = std::make_shared<DataTypeUInt64>();
 		col.column = col.type->createColumn();
 		block.insert(col);
 
 		col.name = "host_name";
-		col.type = new DataTypeString;
+		col.type = std::make_shared<DataTypeString>();
 		col.column = col.type->createColumn();
 		block.insert(col);
 
 		col.name = "host_address";
-		col.type = new DataTypeString;
+		col.type = std::make_shared<DataTypeString>();
 		col.column = col.type->createColumn();
 		block.insert(col);
 
 		col.name = "port";
-		col.type = new DataTypeUInt16;
+		col.type = std::make_shared<DataTypeUInt16>();
 		col.column = col.type->createColumn();
 		block.insert(col);
 
 		col.name = "user";
-		col.type = new DataTypeString;
+		col.type = std::make_shared<DataTypeString>();
 		col.column = col.type->createColumn();
 		block.insert(col);
 
@@ -158,10 +158,10 @@ void test2()
 
 		Block out_block;
 		out_block.insert(ColumnWithTypeAndName(col.column->clone(), col.type, col.name));
-		out_block.insert(ColumnWithTypeAndName(host_name_column, new DataTypeString, "host_name"));
-		out_block.insert(ColumnWithTypeAndName(host_address_column, new DataTypeString, "host_address"));
-		out_block.insert(ColumnWithTypeAndName(port_column, new DataTypeUInt16, "port"));
-		out_block.insert(ColumnWithTypeAndName(user_column, new DataTypeString, "user"));
+		out_block.insert(ColumnWithTypeAndName(host_name_column, std::make_shared<DataTypeString>(), "host_name"));
+		out_block.insert(ColumnWithTypeAndName(host_address_column, std::make_shared<DataTypeString>(), "host_address"));
+		out_block.insert(ColumnWithTypeAndName(port_column, std::make_shared<DataTypeUInt16>(), "port"));
+		out_block.insert(ColumnWithTypeAndName(user_column, std::make_shared<DataTypeString>(), "user"));
 
 		out->write(out_block);
 		wb.next();

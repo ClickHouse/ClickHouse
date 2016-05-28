@@ -156,7 +156,7 @@ static void appendGraphitePattern(const Context & context,
 		{
 			/// TODO Не только Float64
 			pattern.function = context.getAggregateFunctionFactory().get(
-				config.getString(config_element + ".function"), { new DataTypeFloat64 });
+				config.getString(config_element + ".function"), { std::make_shared<DataTypeFloat64>() });
 		}
 		else if (startsWith(key, "retention"))
 		{
