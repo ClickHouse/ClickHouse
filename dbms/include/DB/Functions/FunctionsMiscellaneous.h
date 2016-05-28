@@ -98,7 +98,7 @@ class FunctionCurrentDatabase : public IFunction
 
 public:
 	static constexpr auto name = "currentDatabase";
-	static IFunction * create(const Context & context) { return new FunctionCurrentDatabase{context.getCurrentDatabase()}; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionCurrentDatabase>(context.getCurrentDatabase()); }
 
 	explicit FunctionCurrentDatabase(const String & db_name) : db_name{db_name} {}
 
@@ -129,7 +129,7 @@ class FunctionHostName : public IFunction
 {
 public:
 	static constexpr auto name = "hostName";
-	static IFunction * create(const Context & context) { return new FunctionHostName; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionHostName>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -163,7 +163,7 @@ class FunctionVisibleWidth : public IFunction
 {
 public:
 	static constexpr auto name = "visibleWidth";
-	static IFunction * create(const Context & context) { return new FunctionVisibleWidth; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionVisibleWidth>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -191,7 +191,7 @@ class FunctionToTypeName : public IFunction
 {
 public:
 	static constexpr auto name = "toTypeName";
-	static IFunction * create(const Context & context) { return new FunctionToTypeName; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToTypeName>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -222,7 +222,7 @@ class FunctionBlockSize : public IFunction
 {
 public:
 	static constexpr auto name = "blockSize";
-	static IFunction * create(const Context & context) { return new FunctionBlockSize; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBlockSize>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -254,7 +254,7 @@ class FunctionRowNumberInBlock : public IFunction
 {
 public:
 	static constexpr auto name = "rowNumberInBlock";
-	static IFunction * create(const Context & context) { return new FunctionRowNumberInBlock; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRowNumberInBlock>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -295,7 +295,7 @@ private:
 
 public:
 	static constexpr auto name = "blockNumber";
-	static IFunction * create(const Context & context) { return new FunctionBlockNumber; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBlockNumber>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -327,7 +327,7 @@ class FunctionSleep : public IFunction
 {
 public:
 	static constexpr auto name = "sleep";
-	static IFunction * create(const Context & context) { return new FunctionSleep; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionSleep>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -396,7 +396,7 @@ class FunctionMaterialize : public IFunction
 {
 public:
 	static constexpr auto name = "materialize";
-	static IFunction * create(const Context & context) { return new FunctionMaterialize; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMaterialize>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -437,7 +437,7 @@ class FunctionIn : public IFunction
 {
 public:
 	static constexpr auto name = FunctionInName<negative, global>::name;
-	static IFunction * create(const Context & context) { return new FunctionIn; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIn>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -484,7 +484,7 @@ class FunctionTuple : public IFunction
 {
 public:
 	static constexpr auto name = "tuple";
-	static IFunction * create(const Context & context) { return new FunctionTuple; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTuple>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -518,7 +518,7 @@ class FunctionTupleElement : public IFunction
 {
 public:
 	static constexpr auto name = "tupleElement";
-	static IFunction * create(const Context & context) { return new FunctionTupleElement; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTupleElement>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -585,7 +585,7 @@ class FunctionIgnore : public IFunction
 {
 public:
 	static constexpr auto name = "ignore";
-	static IFunction * create(const Context & context) { return new FunctionIgnore; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIgnore>(); }
 
 	String getName() const override { return name; }
 	DataTypePtr getReturnType(const DataTypes & arguments) const override { return std::make_shared<DataTypeUInt8>(); }
@@ -614,7 +614,7 @@ class FunctionIndexHint : public IFunction
 {
 public:
 	static constexpr auto name = "indexHint";
-	static IFunction * create(const Context & context) { return new FunctionIndexHint; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIndexHint>(); }
 
 	String getName() const override	{ return name; }
 	DataTypePtr getReturnType(const DataTypes & arguments) const override { return std::make_shared<DataTypeUInt8>(); }
@@ -631,7 +631,7 @@ class FunctionIdentity : public IFunction
 {
 public:
 	static constexpr auto name = "identity";
-	static IFunction * create(const Context & context) { return new FunctionIdentity; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIdentity>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -661,7 +661,7 @@ class FunctionArrayJoin : public IFunction
 {
 public:
 	static constexpr auto name = "arrayJoin";
-	static IFunction * create(const Context & context) { return new FunctionArrayJoin; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayJoin>(); }
 
 
 	/// Получить имя функции.
@@ -698,7 +698,7 @@ class FunctionReplicate : public IFunction
 {
 public:
 	static constexpr auto name = "replicate";
-	static IFunction * create(const Context & context) { return new FunctionReplicate; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionReplicate>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -749,7 +749,7 @@ class FunctionBar : public IFunction
 {
 public:
 	static constexpr auto name = "bar";
-	static IFunction * create(const Context & context) { return new FunctionBar; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBar>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -910,7 +910,7 @@ class FunctionNumericPredicate : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
-	static IFunction * create(const Context &) { return new FunctionNumericPredicate; }
+	static FunctionPtr create(const Context &) { return std::make_shared<FunctionNumericPredicate>(); }
 
 	String getName() const override { return name; }
 
@@ -1021,7 +1021,7 @@ class FunctionVersion : public IFunction
 {
 public:
 	static constexpr auto name = "version";
-	static IFunction * create(const Context & context) { return new FunctionVersion; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionVersion>(); }
 
 	String getName() const override { return name; }
 
@@ -1052,7 +1052,7 @@ class FunctionUptime : public IFunction
 {
 public:
 	static constexpr auto name = "uptime";
-	static IFunction * create(const Context & context) { return new FunctionUptime(context.getUptimeSeconds()); }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionUptime>(context.getUptimeSeconds()); }
 
 	FunctionUptime(time_t uptime_) : uptime(uptime_) {}
 
@@ -1085,7 +1085,7 @@ class FunctionRunningAccumulate : public IFunction
 {
 public:
 	static constexpr auto name = "runningAccumulate";
-	static IFunction * create(const Context & context) { return new FunctionRunningAccumulate; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRunningAccumulate>(); }
 
 	String getName() const override { return name; }
 
@@ -1139,7 +1139,7 @@ class FunctionFinalizeAggregation : public IFunction
 {
 public:
 	static constexpr auto name = "finalizeAggregation";
-	static IFunction * create(const Context & context) { return new FunctionFinalizeAggregation; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionFinalizeAggregation>(); }
 
 	String getName() const override { return name; }
 

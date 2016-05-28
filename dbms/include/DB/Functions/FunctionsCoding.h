@@ -171,7 +171,7 @@ class FunctionIPv6NumToString : public IFunction
 {
 public:
 	static constexpr auto name = "IPv6NumToString";
-	static IFunction * create(const Context & context) { return new FunctionIPv6NumToString; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv6NumToString>(); }
 
 	String getName() const override { return name; }
 
@@ -257,7 +257,7 @@ class FunctionCutIPv6 : public IFunction
 {
 public:
 	static constexpr auto name = "cutIPv6";
-	static IFunction * create(const Context & context) { return new FunctionCutIPv6; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionCutIPv6>(); }
 
 	String getName() const override { return name; }
 
@@ -423,7 +423,7 @@ class FunctionIPv6StringToNum : public IFunction
 {
 public:
 	static constexpr auto name = "IPv6StringToNum";
-	static IFunction * create(const Context & context) { return new FunctionIPv6StringToNum; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv6StringToNum>(); }
 
 	String getName() const override { return name; }
 
@@ -638,7 +638,7 @@ class FunctionIPv4NumToString : public IFunction
 {
 public:
 	static constexpr auto name = "IPv4NumToString";
-	static IFunction * create(const Context & context) { return new FunctionIPv4NumToString; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv4NumToString>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -743,7 +743,7 @@ class FunctionIPv4StringToNum : public IFunction
 {
 public:
 	static constexpr auto name = "IPv4StringToNum";
-	static IFunction * create(const Context & context) { return new FunctionIPv4StringToNum; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv4StringToNum>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -834,7 +834,7 @@ class FunctionIPv4NumToStringClassC : public IFunction
 {
 public:
 	static constexpr auto name = "IPv4NumToStringClassC";
-	static IFunction * create(const Context & context) { return new FunctionIPv4NumToStringClassC; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv4NumToStringClassC>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -942,7 +942,7 @@ class FunctionIPv4ToIPv6 : public IFunction
 {
 public:
  	static constexpr auto name = "IPv4ToIPv6";
-	static IFunction * create(const Context & context) { return new FunctionIPv4ToIPv6; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv4ToIPv6>(); }
 
 	String getName() const override { return name; }
 
@@ -1007,7 +1007,7 @@ class FunctionHex : public IFunction
 {
 public:
 	static constexpr auto name = "hex";
-	static IFunction * create(const Context & context) { return new FunctionHex; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionHex>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1255,7 +1255,7 @@ class FunctionUnhex : public IFunction
 {
 public:
 	static constexpr auto name = "unhex";
-	static IFunction * create(const Context & context) { return new FunctionUnhex; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionUnhex>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1363,7 +1363,7 @@ class FunctionBitmaskToArray : public IFunction
 {
 public:
 	static constexpr auto name = "bitmaskToArray";
-	static IFunction * create(const Context & context) { return new FunctionBitmaskToArray; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBitmaskToArray>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1476,7 +1476,7 @@ class FunctionToStringCutToZero : public IFunction
 {
 public:
 	static constexpr auto name = "toStringCutToZero";
-	static IFunction * create(const Context & context) { return new FunctionToStringCutToZero; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToStringCutToZero>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1624,7 +1624,7 @@ class FunctionBitTest : public IFunction
 {
 public:
 	static constexpr auto name = "bitTest";
-	static IFunction * create(const Context &) { return new FunctionBitTest; }
+	static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitTest>(); }
 
 	String getName() const override { return name; }
 
@@ -1805,7 +1805,7 @@ struct FunctionBitTestMany : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
-	static IFunction * create(const Context &) { return new FunctionBitTestMany; }
+	static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitTestMany>(); }
 
 	String getName() const override { return name; }
 

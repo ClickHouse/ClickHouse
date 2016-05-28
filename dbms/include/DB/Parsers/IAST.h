@@ -4,9 +4,8 @@
 #include <set>
 #include <sstream>
 #include <iostream>
+#include <memory>
 #include <set>
-
-#include <Poco/SharedPtr.h>
 
 #include <common/Common.h>
 
@@ -28,8 +27,11 @@ namespace ErrorCodes
 	extern const int UNKNOWN_ELEMENT_IN_AST;
 }
 
-using Poco::SharedPtr;
 using IdentifierNameSet = std::set<String>;
+
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
+using ASTs = std::vector<ASTPtr>;
 
 
 /** Элемент синтаксического дерева (в дальнейшем - направленного ациклического графа с элементами семантики)
@@ -37,7 +39,6 @@ using IdentifierNameSet = std::set<String>;
 class IAST
 {
 public:
-	using ASTs = std::vector<SharedPtr<IAST>>;
 	ASTs children;
 	StringRange range;
 
@@ -98,7 +99,7 @@ public:
 	virtual String getID() const = 0;
 
 	/** Получить глубокую копию дерева. */
-	virtual SharedPtr<IAST> clone() const = 0;
+	virtual ASTPtr clone() const = 0;
 
 	/// Рекурсивно установить атрибуты в поддереве, корнем которого является текущий узел.
 	void setAttributes(Attributes attributes_)
@@ -135,8 +136,8 @@ public:
 	{
 		String indent_str(indent, '-');
 		ostr << indent_str << getID() << ", " << this << std::endl;
-		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
-			(*it)->dumpTree(ostr, indent + 1);
+		for (const auto & child : children)
+			child->dumpTree(ostr, indent + 1);
 	}
 
 	/** Проверить глубину дерева.
@@ -153,8 +154,8 @@ public:
 	size_t checkSize(size_t max_size) const
 	{
 		size_t res = 1;
-		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
-			res += (*it)->checkSize(max_size);
+		for (const auto & child : children)
+			res += child->checkSize(max_size);
 
 		if (res > max_size)
 			throw Exception("AST is too big. Maximum: " + toString(max_size), ErrorCodes::TOO_BIG_AST);
@@ -166,8 +167,8 @@ public:
 	 */
 	virtual void collectIdentifierNames(IdentifierNameSet & set) const
 	{
-		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
-			(*it)->collectIdentifierNames(set);
+		for (const auto & child : children)
+			child->collectIdentifierNames(set);
 	}
 
 
@@ -236,20 +237,16 @@ private:
 	size_t checkDepthImpl(size_t max_depth, size_t level) const
 	{
 		size_t res = level + 1;
-		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+		for (const auto & child : children)
 		{
 			if (level >= max_depth)
 				throw Exception("AST is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_AST);
-			res = std::max(res, (*it)->checkDepthImpl(max_depth, level + 1));
+			res = std::max(res, child->checkDepthImpl(max_depth, level + 1));
 		}
 
 		return res;
 	}
 };
-
-
-using ASTPtr = SharedPtr<IAST>;
-using ASTs = std::vector<ASTPtr>;
 
 
 /// Квотировать идентификатор обратными кавычками, если это требуется.

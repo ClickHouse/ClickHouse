@@ -50,15 +50,13 @@ String ASTFunction::getID() const
 
 ASTPtr ASTFunction::clone() const
 {
-	ASTFunction * res = new ASTFunction(*this);
-	ASTPtr ptr{res};
-
+	auto res = std::make_shared<ASTFunction>(*this);
 	res->children.clear();
 
 	if (arguments) 	{ res->arguments = arguments->clone();		res->children.push_back(res->arguments); }
 	if (parameters) { res->parameters = parameters->clone(); 	res->children.push_back(res->parameters); }
 
-	return ptr;
+	return res;
 }
 
 void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

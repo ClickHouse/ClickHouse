@@ -27,8 +27,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 	ASTPtr like;
 	ASTPtr database;
 
-	ASTShowTablesQuery * query = new ASTShowTablesQuery;
-	ASTPtr query_ptr = query;
+	auto query = std::make_shared<ASTShowTablesQuery>();
 
 	ws.ignore(pos, end);
 
@@ -90,7 +89,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 	if (query->format)
 		query->children.push_back(query->format);
 
-	node = query_ptr;
+	node = query;
 
 	return true;
 }

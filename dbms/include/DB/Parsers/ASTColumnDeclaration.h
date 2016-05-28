@@ -23,7 +23,7 @@ public:
 
 	ASTPtr clone() const override
 	{
-		const auto res = new ASTColumnDeclaration{*this};
+		const auto res = std::make_shared<ASTColumnDeclaration>(*this);
 		ASTPtr ptr{res};
 
 		res->children.clear();

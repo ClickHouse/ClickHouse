@@ -271,8 +271,8 @@ private:
 
 			if (sub_select_query.database.isNull())
 			{
-				sub_select_query.database = new ASTIdentifier{{}, distributed_storage.getRemoteDatabaseName(),
-					ASTIdentifier::Database};
+				sub_select_query.database = std::make_shared<ASTIdentifier>({}, distributed_storage.getRemoteDatabaseName(),
+					ASTIdentifier::Database);
 
 				/// Поскольку был создан новый узел для БД, необходимо его вставить в список
 				/// потомков этого подзапроса. См. ParserSelectQuery для структуры потомков.

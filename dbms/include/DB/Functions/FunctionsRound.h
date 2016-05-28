@@ -1034,7 +1034,7 @@ namespace
 	{
 	public:
 		static constexpr auto name = Name::name;
-		static IFunction * create(const Context & context) { return new FunctionRounding; }
+		static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRounding>(); }
 
 	private:
 		template<typename T>

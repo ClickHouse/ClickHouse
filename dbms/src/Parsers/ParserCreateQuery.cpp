@@ -42,11 +42,11 @@ bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	if (!close.ignore(pos, end))
 		return false;
 
-	ASTFunction * func = new ASTFunction(StringRange(begin, pos));
-	node = func;
+	auto func = std::make_shared<ASTFunction>(StringRange(begin, pos));
 	func->name = typeid_cast<ASTIdentifier &>(*name).name;
 	func->arguments = columns;
 	func->children.push_back(columns);
+	node = func;
 
 	return true;
 }
@@ -79,9 +79,9 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPt
 	ASTPtr ident;
 	if (non_parametric.parse(pos, end, ident, max_parsed_pos, expected))
 	{
-		ASTFunction * func = new ASTFunction(StringRange(begin, pos));
-		node = func;
+		auto func = std::make_shared<ASTFunction>(StringRange(begin, pos));
 		func->name = typeid_cast<ASTIdentifier &>(*ident).name;
+		node = func;
 		return true;
 	}
 
@@ -93,9 +93,7 @@ bool ParserTypeInCastExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
 	if (ParserIdentifierWithOptionalParameters::parseImpl(pos, end, node, max_parsed_pos, expected))
 	{
 		const auto & id_with_params = typeid_cast<const ASTFunction &>(*node);
-
-		node = new ASTIdentifier{id_with_params.range, { id_with_params.range.first, id_with_params.range.second }};
-
+		node = std::make_shared<ASTIdentifier>(id_with_params.range, { id_with_params.range.first, id_with_params.range.second });
 		return true;
 	}
 
@@ -389,7 +387,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
 	ws.ignore(pos, end);
 
-	ASTCreateQuery * query = new ASTCreateQuery(StringRange(begin, pos));
+	auto query = std::make_shared<ASTCreateQuery>(StringRange(begin, pos));
 	node = query;
 
 	query->attach = attach;

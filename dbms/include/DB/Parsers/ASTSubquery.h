@@ -22,7 +22,7 @@ public:
 
 	ASTPtr clone() const override
 	{
-		const auto res = new ASTSubquery{*this};
+		const auto res = std::make_shared<ASTSubquery>(*this);
 		ASTPtr ptr{res};
 
 		res->children.clear();

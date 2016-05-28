@@ -314,7 +314,7 @@ class FunctionTokens : public IFunction
 {
 public:
 	static constexpr auto name = Generator::name;
-	static IFunction * create(const Context & context) { return new FunctionTokens; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTokens>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -479,7 +479,7 @@ private:
 
 public:
 	static constexpr auto name = "arrayStringConcat";
-	static IFunction * create(const Context & context) { return new FunctionArrayStringConcat; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayStringConcat>(); }
 
 	/// Получить имя функции.
 	String getName() const override

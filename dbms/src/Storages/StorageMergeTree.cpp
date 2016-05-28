@@ -213,7 +213,7 @@ void StorageMergeTree::alter(
 	if (primary_key_is_modified)
 		engine_modifier = [&new_primary_key_ast] (ASTPtr & engine_ast)
 		{
-			ASTFunction * tuple = new ASTFunction(new_primary_key_ast->range);
+			auto tuple = std::make_shared<ASTFunction>(new_primary_key_ast->range);
 			tuple->name = "tuple";
 			tuple->arguments = new_primary_key_ast;
 			tuple->children.push_back(tuple->arguments);

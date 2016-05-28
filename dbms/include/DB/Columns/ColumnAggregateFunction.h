@@ -12,6 +12,8 @@
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteHelpers.h>
 
+#include <Poco/SharedPtr.h>
+
 
 namespace DB
 {
@@ -57,7 +59,7 @@ private:
 
 	struct Holder
 	{
-		using Ptr = SharedPtr<Holder>;
+		using Ptr = Poco::SharedPtr<Holder>;
 
 		AggregateFunctionPtr func;	/// Используется для уничтожения состояний и для финализации значений.
 		const Ptr src;		/// Источник. Используется, если данный столбец создан из другого и использует все или часть его значений.
@@ -68,11 +70,9 @@ private:
 
 		~Holder()
 		{
-			IAggregateFunction * function = func;
-
-			if (!function->hasTrivialDestructor() && src.isNull())
+			if (!func->hasTrivialDestructor() && src.isNull())
 				for (auto val : data)
-					function->destroy(val);
+					func->destroy(val);
 		}
 
 		void popBack(size_t n)
@@ -188,7 +188,7 @@ public:
 
 	void insert(const Field & x) override
 	{
-		IAggregateFunction * function = holder.get()->func;
+		IAggregateFunction * function = holder.get()->func.get();
 
 		Arena & arena = createOrGetArena();
 
@@ -200,7 +200,7 @@ public:
 
 	void insertDefault() override
 	{
-		IAggregateFunction * function = holder.get()->func;
+		IAggregateFunction * function = holder.get()->func.get();
 
 		Arena & arena = createOrGetArena();
 

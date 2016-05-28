@@ -36,11 +36,10 @@ protected:
 		if (!value_parser.parse(pos, end, value, max_parsed_pos, expected))
 			return false;
 
-		node = new ASTEnumElement{
+		node = std::make_shared<ASTEnumElement>(
 			{ begin, pos },
 			static_cast<const ASTLiteral &>(*name).value.get<String>(),
-			static_cast<const ASTLiteral &>(*value).value
-		};
+			static_cast<const ASTLiteral &>(*value).value);
 
 		return true;
 	}

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
+#include <memory>
 #include <DB/Core/Field.h>
 
 
@@ -14,6 +14,6 @@ class Context;
   * Используется в редких случаях - для элемента множества в IN, для данных для INSERT.
   * Весьма неоптимально.
   */
-Field evaluateConstantExpression(Poco::SharedPtr<IAST> & node, const Context & context);
+Field evaluateConstantExpression(std::shared_ptr<IAST> & node, const Context & context);
 
 }

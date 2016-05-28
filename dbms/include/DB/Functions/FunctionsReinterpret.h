@@ -24,7 +24,7 @@ class FunctionReinterpretAsStringImpl : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionReinterpretAsStringImpl; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionReinterpretAsStringImpl>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -120,7 +120,7 @@ class FunctionReinterpretStringAs : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionReinterpretStringAs; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionReinterpretStringAs>(); };
 
 	using ToFieldType = typename ToDataType::FieldType;
 

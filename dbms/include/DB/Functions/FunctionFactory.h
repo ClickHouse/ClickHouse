@@ -19,7 +19,7 @@ class FunctionFactory : public Singleton<FunctionFactory>
 	friend class StorageSystemFunctions;
 
 private:
-	typedef IFunction* (*Creator)(const Context & context);	/// Не std::function, так как меньше indirection и размер объекта.
+	typedef FunctionPtr (*Creator)(const Context & context);	/// Не std::function, так как меньше indirection и размер объекта.
 	std::unordered_map<String, Creator> functions;
 
 public:

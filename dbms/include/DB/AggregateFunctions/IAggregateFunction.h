@@ -2,8 +2,6 @@
 
 #include <memory>
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/Core/Row.h>
 #include <DB/DataTypes/IDataType.h>
 #include <DB/Common/typeid_cast.h>
@@ -149,8 +147,6 @@ public:
 };
 
 
-using Poco::SharedPtr;
-
-using AggregateFunctionPtr = SharedPtr<IAggregateFunction>;
+using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 
 }

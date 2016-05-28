@@ -72,7 +72,7 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 	if (!create.storage)
 	{
 		database_engine_name = "Ordinary";	/// Движок баз данных по-умолчанию.
-		ASTFunction * func = new ASTFunction();
+		auto func = std::make_shared<ASTFunction>();
 		func->name = database_engine_name;
 		create.storage = func;
 	}
@@ -161,7 +161,7 @@ static ColumnsAndDefaults parseColumns(
 
 	/** all default_expressions as a single expression list,
 	 *  mixed with conversion-columns for each explicitly specified type */
-	ASTPtr default_expr_list{new ASTExpressionList};
+	ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
 	default_expr_list->children.reserve(column_list_ast.children.size());
 
 	const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
@@ -195,8 +195,8 @@ static ColumnsAndDefaults parseColumns(
 				const auto data_type_ptr = columns.back().type.get();
 
 				default_expr_list->children.emplace_back(setAlias(
-					makeASTFunction("CAST", ASTPtr{new ASTIdentifier{{}, tmp_column_name}},
-						ASTPtr{new ASTLiteral{{}, data_type_ptr->getName()}}), final_column_name));
+					makeASTFunction("CAST", std::make_shared<ASTIdentifier>({}, tmp_column_name),
+						std::make_shared<ASTLiteral>({}, data_type_ptr->getName()), final_column_name));
 				default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
 			}
 			else
@@ -229,7 +229,7 @@ static ColumnsAndDefaults parseColumns(
 				if (explicit_type->getName() != deduced_type->getName())
 				{
 					col_decl_ptr->default_expression = makeASTFunction("CAST", col_decl_ptr->default_expression,
-						new ASTLiteral{{}, explicit_type->getName()});
+						std::make_shared<ASTLiteral>({}, explicit_type->getName()));
 
 					col_decl_ptr->children.clear();
 					col_decl_ptr->children.push_back(col_decl_ptr->type);
@@ -277,12 +277,11 @@ static NamesAndTypesList removeAndReturnColumns(
 
 ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 {
-	ASTPtr columns_list_ptr{new ASTExpressionList};
-	ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*columns_list_ptr);
+	auto columns_list = std::make_shared<ASTExpressionList>;
 
 	for (const auto & column : columns)
 	{
-		const auto column_declaration = new ASTColumnDeclaration;
+		const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
 		ASTPtr column_declaration_ptr{column_declaration};
 
 		column_declaration->name = column.name;
@@ -294,10 +293,10 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 		ParserIdentifierWithOptionalParameters storage_p;
 		column_declaration->type = parseQuery(storage_p, pos, end, "data type");
 		column_declaration->type->query_string = type_name;
-		columns_list.children.push_back(column_declaration_ptr);
+		columns_list->children.push_back(column_declaration_ptr);
 	}
 
-	return columns_list_ptr;
+	return columns_list;
 }
 
 ASTPtr InterpreterCreateQuery::formatColumns(NamesAndTypesList columns,
@@ -308,12 +307,11 @@ ASTPtr InterpreterCreateQuery::formatColumns(NamesAndTypesList columns,
 	columns.insert(std::end(columns), std::begin(materialized_columns), std::end(materialized_columns));
 	columns.insert(std::end(columns), std::begin(alias_columns), std::end(alias_columns));
 
-	ASTPtr columns_list_ptr{new ASTExpressionList};
-	ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*columns_list_ptr);
+	auto columns_list = std::make_shared<ASTExpressionList>();
 
 	for (const auto & column : columns)
 	{
-		const auto column_declaration = new ASTColumnDeclaration;
+		const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
 		ASTPtr column_declaration_ptr{column_declaration};
 
 		column_declaration->name = column.name;
@@ -333,10 +331,10 @@ ASTPtr InterpreterCreateQuery::formatColumns(NamesAndTypesList columns,
 			column_declaration->default_expression = it->second.expression->clone();
 		}
 
-		columns_list.children.push_back(column_declaration_ptr);
+		columns_list->children.push_back(column_declaration_ptr);
 	}
 
-	return columns_list_ptr;
+	return columns_list;
 }
 
 
@@ -409,7 +407,7 @@ String InterpreterCreateQuery::setEngine(
 	auto set_engine = [&](const char * engine)
 	{
 		storage_name = engine;
-		ASTFunction * func = new ASTFunction();
+		auto func = std::make_shared<ASTFunction>();
 		func->name = engine;
 		create.storage = func;
 	};

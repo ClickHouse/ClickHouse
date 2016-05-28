@@ -13,7 +13,7 @@ AggregateFunctionPtr createAggregateFunctionQuantileExactWeighted(const std::str
 	if (argument_types.size() != 2)
 		throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-	AggregateFunctionPtr res = createWithTwoNumericTypes<AggregateFunctionQuantileExactWeighted>(*argument_types[0], *argument_types[1]);
+	AggregateFunctionPtr res(createWithTwoNumericTypes<AggregateFunctionQuantileExactWeighted>(*argument_types[0], *argument_types[1]));
 
 	if (!res)
 		throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
@@ -27,7 +27,7 @@ AggregateFunctionPtr createAggregateFunctionQuantilesExactWeighted(const std::st
 	if (argument_types.size() != 2)
 		throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-	AggregateFunctionPtr res = createWithTwoNumericTypes<AggregateFunctionQuantilesExactWeighted>(*argument_types[0], *argument_types[1]);
+	AggregateFunctionPtr res(createWithTwoNumericTypes<AggregateFunctionQuantilesExactWeighted>(*argument_types[0], *argument_types[1]));
 
 	if (!res)
 		throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()

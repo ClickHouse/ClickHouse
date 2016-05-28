@@ -1161,7 +1161,7 @@ class FunctionStringReplace : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionStringReplace; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringReplace>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1248,7 +1248,7 @@ class FunctionsStringSearch : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionsStringSearch; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionsStringSearch>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1333,7 +1333,7 @@ class FunctionsStringSearchToString : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionsStringSearchToString; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionsStringSearchToString>(); }
 
 	/// Получить имя функции.
 	String getName() const override

@@ -154,7 +154,7 @@ private:
 
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionRandom; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRandom>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -200,7 +200,7 @@ private:
 
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionRandomConstant; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRandomConstant>(); }
 
 	/// Получить имя функции.
 	String getName() const override

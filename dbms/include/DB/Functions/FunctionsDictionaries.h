@@ -540,7 +540,7 @@ struct NameSEHierarchy				{ static constexpr auto name = "SEHierarchy"; };
 struct FunctionRegionToCity :
 	public FunctionTransformWithDictionary<UInt32, RegionToCityImpl,	RegionsHierarchyGetter,	NameRegionToCity>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
 		return new base_type{context.getDictionaries().getRegionsHierarchies()};
 	}
@@ -549,7 +549,7 @@ struct FunctionRegionToCity :
 struct FunctionRegionToArea :
 	public FunctionTransformWithDictionary<UInt32, RegionToAreaImpl,	RegionsHierarchyGetter,	NameRegionToArea>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
 		return new base_type{context.getDictionaries().getRegionsHierarchies()};
 	}
@@ -558,7 +558,7 @@ struct FunctionRegionToArea :
 struct FunctionRegionToDistrict :
 	public FunctionTransformWithDictionary<UInt32, RegionToDistrictImpl, RegionsHierarchyGetter, NameRegionToDistrict>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
 		return new base_type{context.getDictionaries().getRegionsHierarchies()};
 	}
@@ -567,7 +567,7 @@ struct FunctionRegionToDistrict :
 struct FunctionRegionToCountry :
 	public FunctionTransformWithDictionary<UInt32, RegionToCountryImpl, RegionsHierarchyGetter, NameRegionToCountry>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
 		return new base_type{context.getDictionaries().getRegionsHierarchies()};
 	}
@@ -576,7 +576,7 @@ struct FunctionRegionToCountry :
 struct FunctionRegionToContinent :
 	public FunctionTransformWithDictionary<UInt32, RegionToContinentImpl, RegionsHierarchyGetter, NameRegionToContinent>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
 		return new base_type{context.getDictionaries().getRegionsHierarchies()};
 	}
@@ -585,7 +585,7 @@ struct FunctionRegionToContinent :
 struct FunctionRegionToTopContinent :
 	public FunctionTransformWithDictionary<UInt32, RegionToTopContinentImpl, RegionsHierarchyGetter, NameRegionToTopContinent>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
 		return new base_type{context.getDictionaries().getRegionsHierarchies()};
 	}
@@ -594,7 +594,7 @@ struct FunctionRegionToTopContinent :
 struct FunctionRegionToPopulation :
 	public FunctionTransformWithDictionary<UInt32, RegionToPopulationImpl, RegionsHierarchyGetter, NameRegionToPopulation>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
 		return new base_type{context.getDictionaries().getRegionsHierarchies()};
 	}
@@ -603,7 +603,7 @@ struct FunctionRegionToPopulation :
 struct FunctionOSToRoot :
 	public FunctionTransformWithDictionary<UInt8, OSToRootImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSToRoot>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
 		return new base_type{context.getDictionaries().getTechDataHierarchy()};
 	}
@@ -612,7 +612,7 @@ struct FunctionOSToRoot :
 struct FunctionSEToRoot :
 	public FunctionTransformWithDictionary<UInt8, SEToRootImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEToRoot>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
 		return new base_type{context.getDictionaries().getTechDataHierarchy()};
 	}
@@ -621,7 +621,7 @@ struct FunctionSEToRoot :
 struct FunctionRegionIn :
 	public FunctionIsInWithDictionary<UInt32, RegionInImpl, RegionsHierarchyGetter,	NameRegionIn>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
 		return new base_type{context.getDictionaries().getRegionsHierarchies()};
 	}
@@ -630,7 +630,7 @@ struct FunctionRegionIn :
 struct FunctionOSIn :
 	public FunctionIsInWithDictionary<UInt8,	OSInImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSIn>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
 		return new base_type{context.getDictionaries().getTechDataHierarchy()};
 	}
@@ -639,7 +639,7 @@ struct FunctionOSIn :
 struct FunctionSEIn :
 	public FunctionIsInWithDictionary<UInt8,	SEInImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEIn>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
 		return new base_type{context.getDictionaries().getTechDataHierarchy()};
 	}
@@ -648,7 +648,7 @@ struct FunctionSEIn :
 struct FunctionRegionHierarchy :
 	public FunctionHierarchyWithDictionary<UInt32, RegionHierarchyImpl, RegionsHierarchyGetter, NameRegionHierarchy>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
 		return new base_type{context.getDictionaries().getRegionsHierarchies()};
 	}
@@ -657,7 +657,7 @@ struct FunctionRegionHierarchy :
 struct FunctionOSHierarchy :
 	public FunctionHierarchyWithDictionary<UInt8, OSHierarchyImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSHierarchy>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
 		return new base_type{context.getDictionaries().getTechDataHierarchy()};
 	}
@@ -666,7 +666,7 @@ struct FunctionOSHierarchy :
 struct FunctionSEHierarchy :
 	public FunctionHierarchyWithDictionary<UInt8, SEHierarchyImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEHierarchy>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
 		return new base_type{context.getDictionaries().getTechDataHierarchy()};
 	}
@@ -678,9 +678,9 @@ class FunctionRegionToName : public IFunction
 {
 public:
 	static constexpr auto name = "regionToName";
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new FunctionRegionToName(context.getDictionaries().getRegionsNames());
+		return std::make_shared<FunctionRegionToName>(context.getDictionaries().getRegionsNames());
 	}
 
 private:
@@ -772,9 +772,9 @@ class FunctionDictHas final : public IFunction
 public:
 	static constexpr auto name = "dictHas";
 
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new FunctionDictHas{context.getExternalDictionaries()};
+		return std::make_shared<FunctionDictHas>(context.getExternalDictionaries());
 	}
 
 	FunctionDictHas(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
@@ -915,9 +915,9 @@ class FunctionDictGetString final : public IFunction
 public:
 	static constexpr auto name = "dictGetString";
 
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new FunctionDictGetString{context.getExternalDictionaries()};
+		return std::make_shared<FunctionDictGetString>(context.getExternalDictionaries());
 	}
 
 	FunctionDictGetString(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
@@ -1190,9 +1190,9 @@ class FunctionDictGetStringOrDefault final : public IFunction
 public:
 	static constexpr auto name = "dictGetStringOrDefault";
 
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new FunctionDictGetStringOrDefault{context.getExternalDictionaries()};
+		return std::make_shared<FunctionDictGetStringOrDefault>(context.getExternalDictionaries());
 	}
 
 	FunctionDictGetStringOrDefault(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
@@ -1483,9 +1483,9 @@ class FunctionDictGet final : public IFunction
 public:
 	static const std::string name;
 
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new FunctionDictGet{context.getExternalDictionaries()};
+		return std::make_shared<FunctionDictGet>(context.getExternalDictionaries());
 	}
 
 	FunctionDictGet(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
@@ -1795,9 +1795,9 @@ class FunctionDictGetOrDefault final : public IFunction
 public:
 	static const std::string name;
 
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new FunctionDictGetOrDefault{context.getExternalDictionaries()};
+		return std::make_shared<FunctionDictGetOrDefault>(context.getExternalDictionaries());
 	}
 
 	FunctionDictGetOrDefault(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
@@ -2066,9 +2066,9 @@ class FunctionDictGetHierarchy final : public IFunction
 public:
 	static constexpr auto name = "dictGetHierarchy";
 
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new FunctionDictGetHierarchy{context.getExternalDictionaries()};
+		return std::make_shared<FunctionDictGetHierarchy>(context.getExternalDictionaries());
 	}
 
 	FunctionDictGetHierarchy(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
@@ -2229,9 +2229,9 @@ class FunctionDictIsIn final : public IFunction
 public:
 	static constexpr auto name = "dictIsIn";
 
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new FunctionDictIsIn{context.getExternalDictionaries()};
+		return std::make_shared<FunctionDictIsIn>(context.getExternalDictionaries());
 	}
 
 	FunctionDictIsIn(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}

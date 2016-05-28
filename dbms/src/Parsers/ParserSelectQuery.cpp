@@ -24,7 +24,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 {
 	Pos begin = pos;
 
-	ASTSelectQuery * select_query = new ASTSelectQuery;
+	auto select_query = std::make_shared<ASTSelectQuery>();
 	node = select_query;
 
 	ParserString s_select("SELECT", true, true);

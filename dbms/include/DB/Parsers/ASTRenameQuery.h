@@ -33,7 +33,7 @@ public:
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "Rename"; };
 
-	ASTPtr clone() const override { return new ASTRenameQuery(*this); }
+	ASTPtr clone() const override { return std::make_shared<ASTRenameQuery>(*this); }
 
 protected:
 	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

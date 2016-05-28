@@ -28,18 +28,18 @@ AggregateFunctionPtr createAggregateFunctionQuantileDeterministic(const std::str
 
 	const IDataType & argument_type = *argument_types[0];
 
-			if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<UInt8>;
-	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<UInt16>;
-	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<UInt32>;
-	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<UInt64>;
-	else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Int8>;
-	else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Int16>;
-	else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Int32>;
-	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Int64>;
-	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Float32>;
-	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Float64>;
-	else if (typeid_cast<const DataTypeDate 	*>(&argument_type)) return new AggregateFunctionQuantileDeterministic<DataTypeDate::FieldType, false>;
-	else if (typeid_cast<const DataTypeDateTime*>(&argument_type)) return new AggregateFunctionQuantileDeterministic<DataTypeDateTime::FieldType, false>;
+			if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantileDeterministic<UInt8>>();
+	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantileDeterministic<UInt16>>();
+	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantileDeterministic<UInt32>>();
+	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantileDeterministic<UInt64>>();
+	else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantileDeterministic<Int8>>();
+	else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantileDeterministic<Int16>>();
+	else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantileDeterministic<Int32>>();
+	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantileDeterministic<Int64>>();
+	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return std::make_shared<AggregateFunctionQuantileDeterministic<Float32>>();
+	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return std::make_shared<AggregateFunctionQuantileDeterministic<Float64>>();
+	else if (typeid_cast<const DataTypeDate 	*>(&argument_type)) return std::make_shared<AggregateFunctionQuantileDeterministic<DataTypeDate::FieldType, false>>();
+	else if (typeid_cast<const DataTypeDateTime*>(&argument_type)) return std::make_shared<AggregateFunctionQuantileDeterministic<DataTypeDateTime::FieldType, false>>();
 	else
 		throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
@@ -65,18 +65,18 @@ AggregateFunctionPtr createAggregateFunctionQuantilesDeterministic(const std::st
 
 	const IDataType & argument_type = *argument_types[0];
 
-			if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<UInt8>;
-	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<UInt16>;
-	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<UInt32>;
-	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<UInt64>;
-	else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Int8>;
-	else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Int16>;
-	else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Int32>;
-	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Int64>;
-	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Float32>;
-	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Float64>;
-	else if (typeid_cast<const DataTypeDate 	*>(&argument_type)) return new AggregateFunctionQuantilesDeterministic<DataTypeDate::FieldType, false>;
-	else if (typeid_cast<const DataTypeDateTime*>(&argument_type)) return new AggregateFunctionQuantilesDeterministic<DataTypeDateTime::FieldType, false>;
+			if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantilesDeterministic<UInt8>>();
+	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantilesDeterministic<UInt16>>();
+	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantilesDeterministic<UInt32>>();
+	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantilesDeterministic<UInt64>>();
+	else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantilesDeterministic<Int8>>();
+	else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantilesDeterministic<Int16>>();
+	else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantilesDeterministic<Int32>>();
+	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantilesDeterministic<Int64>>();
+	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return std::make_shared<AggregateFunctionQuantilesDeterministic<Float32>>();
+	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return std::make_shared<AggregateFunctionQuantilesDeterministic<Float64>>();
+	else if (typeid_cast<const DataTypeDate 	*>(&argument_type)) return std::make_shared<AggregateFunctionQuantilesDeterministic<DataTypeDate::FieldType, false>>();
+	else if (typeid_cast<const DataTypeDateTime*>(&argument_type)) return std::make_shared<AggregateFunctionQuantilesDeterministic<DataTypeDateTime::FieldType, false>>();
 	else
 		throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }

@@ -14,7 +14,7 @@ struct ASTCheckQuery : public ASTQueryWithOutput
 
 	ASTPtr clone() const override
 	{
-		return new ASTCheckQuery(*this);
+		return std::make_shared<ASTCheckQuery>(*this);
 	}
 
 	std::string database;

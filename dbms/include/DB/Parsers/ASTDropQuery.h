@@ -23,7 +23,7 @@ public:
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return (detach ? "DetachQuery_" : "DropQuery_") + database + "_" + table; };
 
-	ASTPtr clone() const override { return new ASTDropQuery(*this); }
+	ASTPtr clone() const override { return std::make_shared<ASTDropQuery>(*this); }
 
 protected:
 	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

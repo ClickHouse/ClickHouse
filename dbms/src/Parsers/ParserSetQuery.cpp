@@ -86,7 +86,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 			return false;
 	}
 
-	ASTSetQuery * query = new ASTSetQuery(StringRange(begin, pos));
+	auto query = std::make_shared<ASTSetQuery>(StringRange(begin, pos));
 	node = query;
 
 	query->changes = changes;

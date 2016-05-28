@@ -545,7 +545,7 @@ class FunctionArrayMapped : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionArrayMapped; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayMapped>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -640,7 +640,7 @@ public:
 				Names replicate_arguments;
 				replicate_arguments.push_back(required_columns[i]);
 				replicate_arguments.push_back(arguments[1].name);
-				out_prerequisites.push_back(ExpressionAction::applyFunction(new FunctionReplicate, replicate_arguments));
+				out_prerequisites.push_back(ExpressionAction::applyFunction(std::make_shared<FunctionReplicate>(), replicate_arguments));
 			}
 
 			DataTypePtr return_type = column_expression->getReturnType();

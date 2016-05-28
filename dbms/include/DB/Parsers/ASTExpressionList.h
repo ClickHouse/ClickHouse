@@ -19,7 +19,7 @@ public:
 
 	ASTPtr clone() const override
 	{
-		const auto res = new ASTExpressionList(*this);
+		const auto res = std::make_shared<ASTExpressionList>(*this);
 		ASTPtr ptr{res};
 		res->children.clear();
 

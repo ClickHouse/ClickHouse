@@ -22,7 +22,7 @@ class FunctionBitmaskToList : public IFunction
 {
 public:
 	static constexpr auto name = "bitmaskToList";
-	static IFunction * create(const Context & context) { return new FunctionBitmaskToList; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBitmaskToList>(); }
 
 	/// Получить основное имя функции.
 	virtual String getName() const override
@@ -135,7 +135,7 @@ class FunctionFormatReadableSize : public IFunction
 {
 public:
 	static constexpr auto name = "formatReadableSize";
-	static IFunction * create(const Context & context) { return new FunctionFormatReadableSize; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionFormatReadableSize>(); }
 
 	/// Получить основное имя функции.
 	virtual String getName() const override

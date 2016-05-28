@@ -66,7 +66,7 @@ void ASTSelectQuery::renameColumns(const ASTSelectQuery & source)
 
 void ASTSelectQuery::rewriteSelectExpressionList(const Names & column_names)
 {
-	ASTPtr result = new ASTExpressionList;
+	ASTPtr result = std::make_shared<ASTExpressionList>();
 	ASTs asts = select_expression_list->children;
 
 	/// Создать отображение.
@@ -175,9 +175,7 @@ ASTPtr ASTSelectQuery::cloneFirstSelect() const
 
 ASTPtr ASTSelectQuery::cloneImpl(bool traverse_union_all) const
 {
-	ASTSelectQuery * res = new ASTSelectQuery(*this);
-	ASTPtr ptr{res};
-
+	auto res = std::make_shared<ASTSelectQuery>(*this);
 	res->children.clear();
 
 #define CLONE(member) if (member) { res->member = member->clone(); res->children.push_back(res->member); }
@@ -222,7 +220,7 @@ ASTPtr ASTSelectQuery::cloneImpl(bool traverse_union_all) const
 	else
 		res->next_union_all = nullptr;
 
-	return ptr;
+	return res;
 }
 
 const IAST * ASTSelectQuery::getFormat() const

@@ -12,7 +12,7 @@ AggregateFunctionPtr createAggregateFunctionSequenceCount(const std::string & na
 	if (!AggregateFunctionSequenceCount::sufficientArgs(argument_types.size()))
 		throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-	return new AggregateFunctionSequenceCount;
+	return std::make_shared<AggregateFunctionSequenceCount>();
 }
 
 AggregateFunctionPtr createAggregateFunctionSequenceMatch(const std::string & name, const DataTypes & argument_types)
@@ -20,7 +20,7 @@ AggregateFunctionPtr createAggregateFunctionSequenceMatch(const std::string & na
 	if (!AggregateFunctionSequenceMatch::sufficientArgs(argument_types.size()))
 		throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-	return new AggregateFunctionSequenceMatch;
+	return std::make_shared<AggregateFunctionSequenceMatch>();
 }
 
 }

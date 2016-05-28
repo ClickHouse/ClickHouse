@@ -24,8 +24,7 @@ protected:
 		ParserString s_show("SHOW", true, true);
 		ParserString s_processlist("PROCESSLIST", true, true);
 
-		ASTShowProcesslistQuery * query = new ASTShowProcesslistQuery;
-		ASTPtr query_ptr = query;
+		auto query = std::make_shared<ASTShowProcesslistQuery>();
 
 		ws.ignore(pos, end);
 
@@ -44,7 +43,7 @@ protected:
 			return false;
 
 		query->range = StringRange(begin, pos);
-		node = query_ptr;
+		node = query;
 
 		return true;
 	}

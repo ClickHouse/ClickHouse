@@ -55,8 +55,8 @@ namespace
 		auto modified_query_ast = query->clone();
 
 		auto & actual_query = typeid_cast<ASTSelectQuery &>(*modified_query_ast);
-		actual_query.database = new ASTIdentifier{{}, database, ASTIdentifier::Database};
-		actual_query.table = new ASTIdentifier{{}, table, ASTIdentifier::Table};
+		actual_query.database = std::make_shared<ASTIdentifier>({}, database, ASTIdentifier::Database);
+		actual_query.table = std::make_shared<ASTIdentifier>({}, table, ASTIdentifier::Table);
 
 		return modified_query_ast;
 	}
@@ -276,7 +276,7 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 	{
 		/// Создать запрос ALTER TABLE ... RESHARD [COPY] PARTITION ... COORDINATE WITH ...
 
-		ASTPtr alter_query_ptr = new ASTAlterQuery;
+		ASTPtr alter_query_ptr = std::make_shared<ASTAlterQuery>();
 		auto & alter_query = static_cast<ASTAlterQuery &>(*alter_query_ptr);
 
 		alter_query.database = remote_database;
@@ -287,14 +287,14 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 
 		parameters.type = ASTAlterQuery::RESHARD_PARTITION;
 		if (!first_partition.isNull())
-			parameters.partition = new ASTLiteral{{}, first_partition};
+			parameters.partition = std::make_shared<ASTLiteral>({}, first_partition);
 		if (!last_partition.isNull())
-			parameters.last_partition = new ASTLiteral{{}, last_partition};
+			parameters.last_partition = std::make_shared<ASTLiteral>({}, last_partition);
 
-		ASTPtr expr_list = new ASTExpressionList;
+		ASTPtr expr_list = std::make_shared<ASTExpressionList>();
 		for (const auto & entry : weighted_zookeeper_paths)
 		{
-			ASTPtr weighted_path_ptr = new ASTWeightedZooKeeperPath;
+			ASTPtr weighted_path_ptr = std::make_shared<ASTWeightedZooKeeperPath>();
 			auto & weighted_path = static_cast<ASTWeightedZooKeeperPath &>(*weighted_path_ptr);
 			weighted_path.path = entry.first;
 			weighted_path.weight = entry.second;
@@ -304,7 +304,7 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 		parameters.weighted_zookeeper_paths = expr_list;
 		parameters.sharding_key_expr = sharding_key_expr;
 		parameters.do_copy = do_copy;
-		parameters.coordinator = new ASTLiteral{{}, coordinator_id};
+		parameters.coordinator = std::make_shared<ASTLiteral>({}, coordinator_id);
 
 		resharding_worker.registerQuery(coordinator_id, queryToString(alter_query_ptr));
 
@@ -379,7 +379,7 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 {
 	/// Создать запрос DESCRIBE TABLE.
 
-	ASTPtr describe_query_ptr = new ASTDescribeQuery;
+	ASTPtr describe_query_ptr = std::make_shared<ASTDescribeQuery>();
 	auto & describe_query = static_cast<ASTDescribeQuery &>(*describe_query_ptr);
 
 	describe_query.database = remote_database;

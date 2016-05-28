@@ -121,7 +121,7 @@ bool ParserSampleRatio::parseImpl(IParser::Pos & pos, IParser::Pos end, ASTPtr &
 
 	ws.ignore(pos, end);
 
-	node = new ASTSampleRatio(StringRange(begin, pos), res);
+	node = std::make_shared<ASTSampleRatio>(StringRange(begin, pos), res);
 	return true;
 }
 

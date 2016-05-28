@@ -16,7 +16,7 @@ namespace
 	{
 		/// for string literal return its value
 		if (const auto literal = typeid_cast<const ASTLiteral *>(expr.get()))
-			return new ASTIdentifier{{}, safeGet<const String &>(literal->value)};
+			return std::make_shared<ASTIdentifier>({}, safeGet<const String &>(literal->value));
 
 		/// otherwise evaluate the expression
 		Block block{};
@@ -33,7 +33,7 @@ namespace
 		if (!typeid_cast<const DataTypeString *>(column_name_type.type.get()))
 			throw Exception{"Expression must evaluate to a String"};
 
-		return new ASTIdentifier{{}, column_name_type.column->getDataAt(0).toString()};
+		return std::make_shared<ASTIdentifier>({}, column_name_type.column->getDataAt(0).toString());
 	}
 }
 

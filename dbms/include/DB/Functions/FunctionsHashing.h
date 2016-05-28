@@ -171,7 +171,7 @@ class FunctionStringHash64 : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionStringHash64; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringHash64>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -232,7 +232,7 @@ class FunctionStringHashFixedString : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
-	static IFunction * create(const Context & context) { return new FunctionStringHashFixedString; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringHashFixedString>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -300,7 +300,7 @@ class FunctionIntHash : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionIntHash; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIntHash>(); };
 
 private:
 	using ToType = typename Impl::ReturnType;
@@ -396,7 +396,7 @@ class FunctionNeighbourhoodHash64 : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
-	static IFunction * create(const Context & context) { return new FunctionNeighbourhoodHash64; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNeighbourhoodHash64>(); };
 
 private:
 	template <typename FromType, bool first>
@@ -699,7 +699,7 @@ class FunctionURLHash : public IFunction
 {
 public:
 	static constexpr auto name = "URLHash";
-	static IFunction * create(const Context &) { return new FunctionURLHash; }
+	static FunctionPtr create(const Context &) { return std::make_shared<FunctionURLHash>(); }
 
 	String getName() const override { return name; }
 

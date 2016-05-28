@@ -775,7 +775,7 @@ class FunctionStringOrArrayToT : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionStringOrArrayToT; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringOrArrayToT>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -871,7 +871,7 @@ class FunctionStringToString : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionStringToString; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringToString>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -932,7 +932,7 @@ class FunctionReverse : public IFunction
 {
 public:
 	static constexpr auto name = "reverse";
-	static IFunction * create(const Context & context) { return new FunctionReverse; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionReverse>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -998,7 +998,7 @@ class ConcatImpl : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new ConcatImpl; }
+	static FunctionPtr create(const Context & context) { return new ConcatImpl; }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1469,7 +1469,7 @@ class FunctionStringNumNumToString : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionStringNumNumToString; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringNumNumToString>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1550,7 +1550,7 @@ class FunctionAppendTrailingCharIfAbsent : public IFunction
 {
 public:
 	static constexpr auto name = "appendTrailingCharIfAbsent";
-	static IFunction * create(const Context & context) { return new FunctionAppendTrailingCharIfAbsent; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionAppendTrailingCharIfAbsent>(); }
 
 	String getName() const override
 	{

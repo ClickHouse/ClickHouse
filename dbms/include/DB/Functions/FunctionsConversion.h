@@ -1066,7 +1066,7 @@ public:
 	using Monotonic = MonotonicityImpl;
 
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionConvert; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionConvert>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1213,7 +1213,7 @@ class FunctionToFixedString : public IFunction
 {
 public:
 	static constexpr auto name = "toFixedString";
-	static IFunction * create(const Context & context) { return new FunctionToFixedString; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToFixedString>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1870,7 +1870,7 @@ class FunctionCast final : public IFunction
 
 public:
 	static constexpr auto name = "CAST";
-	static IFunction * create(const Context & context) { return new FunctionCast{context}; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionCast>(context); }
 
 	String getName() const override { return name; }
 

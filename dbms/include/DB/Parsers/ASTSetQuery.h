@@ -31,7 +31,7 @@ public:
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "Set"; };
 
-	ASTPtr clone() const override { return new ASTSetQuery(*this); }
+	ASTPtr clone() const override { return std::make_shared<ASTSetQuery>(*this); }
 
 protected:
 	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

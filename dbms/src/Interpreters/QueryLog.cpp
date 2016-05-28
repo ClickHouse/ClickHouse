@@ -49,8 +49,7 @@ QueryLog::QueryLog(Context & context_, const String & database_name_, const Stri
 				while (context.isTableExist(database_name, table_name + "_" + toString(suffix)))
 					++suffix;
 
-				ASTRenameQuery * rename = new ASTRenameQuery;
-				ASTPtr holder = rename;
+				auto rename = std::make_shared<ASTRenameQuery>();
 
 				ASTRenameQuery::Table from;
 				from.database = database_name;
@@ -69,7 +68,7 @@ QueryLog::QueryLog(Context & context_, const String & database_name_, const Stri
 				LOG_DEBUG(log, "Existing table " << description << " for query log has obsolete or different structure."
 					" Renaming it to " << backQuoteIfNeed(to.table));
 
-				InterpreterRenameQuery(holder, context).execute();
+				InterpreterRenameQuery(rename, context).execute();
 
 				/// Нужная таблица будет создана.
 				table = nullptr;
@@ -83,8 +82,7 @@ QueryLog::QueryLog(Context & context_, const String & database_name_, const Stri
 			/// Создаём таблицу.
 			LOG_DEBUG(log, "Creating new table " << description << " for query log.");
 
-			ASTCreateQuery * create = new ASTCreateQuery;
-			ASTPtr holder = create;
+			auto create = std::make_shared<ASTCreateQuery>();
 
 			create->database = database_name;
 			create->table = table_name;
@@ -97,7 +95,7 @@ QueryLog::QueryLog(Context & context_, const String & database_name_, const Stri
 
 			create->storage = parseQuery(engine_parser, engine.data(), engine.data() + engine.size(), "ENGINE to create table for query log");
 
-			InterpreterCreateQuery(holder, context).execute();
+			InterpreterCreateQuery(create, context).execute();
 
 			table = context.getTable(database_name, table_name);
 		}

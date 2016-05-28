@@ -17,7 +17,7 @@ class FunctionMathNullaryConstFloat64 : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
-	static IFunction * create(const Context &) { return new FunctionMathNullaryConstFloat64; }
+	static FunctionPtr create(const Context &) { return std::make_shared<FunctionMathNullaryConstFloat64>(); }
 
 private:
 	String getName() const override { return name; }
@@ -47,7 +47,7 @@ template <typename Impl> class FunctionMathUnaryFloat64 : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
-	static IFunction * create(const Context &) { return new FunctionMathUnaryFloat64; }
+	static FunctionPtr create(const Context &) { return std::make_shared<FunctionMathUnaryFloat64>(); }
 	static_assert(Impl::rows_per_iteration > 0, "Impl must process at least one row per iteration");
 
 private:
@@ -198,7 +198,7 @@ template <typename Impl> class FunctionMathBinaryFloat64 : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
-	static IFunction * create(const Context &) { return new FunctionMathBinaryFloat64; }
+	static FunctionPtr create(const Context &) { return std::make_shared<FunctionMathBinaryFloat64>(); }
 	static_assert(Impl::rows_per_iteration > 0, "Impl must process at least one row per iteration");
 
 private:

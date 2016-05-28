@@ -232,8 +232,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	/// Семплирование.
 	Names column_names_to_read = real_column_names;
-	using ASTFunctionPtr = Poco::SharedPtr<ASTFunction>;
-	ASTFunctionPtr filter_function;
+	std::shared_ptr<ASTFunction> filter_function;
 	ExpressionActionsPtr filter_expression;
 
 	RelativeSize relative_sample_size = 0;
@@ -391,19 +390,19 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		{
 			/// Добавим условия, чтобы отсечь еще что-нибудь при повторном просмотре индекса и при обработке запроса.
 
-			ASTFunctionPtr lower_function;
-			ASTFunctionPtr upper_function;
+			std::shared_ptr<ASTFunction> lower_function;
+			std::shared_ptr<ASTFunction> upper_function;
 
 			if (has_lower_limit)
 			{
 				if (!key_condition.addCondition(data.sampling_expression->getColumnName(), Range::createLeftBounded(lower, true)))
 					throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
-				ASTPtr args = new ASTExpressionList;
+				ASTPtr args = std::make_shared<ASTExpressionList>();
 				args->children.push_back(data.sampling_expression);
-				args->children.push_back(new ASTLiteral(StringRange(), lower));
+				args->children.push_back(std::make_shared<ASTLiteral>(StringRange(), lower));
 
-				lower_function = new ASTFunction;
+				lower_function = std::make_shared<ASTFunction>();
 				lower_function->name = "greaterOrEquals";
 				lower_function->arguments = args;
 				lower_function->children.push_back(lower_function->arguments);
@@ -416,11 +415,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 				if (!key_condition.addCondition(data.sampling_expression->getColumnName(), Range::createRightBounded(upper, false)))
 					throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
-				ASTPtr args = new ASTExpressionList;
+				ASTPtr args = std::make_shared<ASTExpressionList>();
 				args->children.push_back(data.sampling_expression);
-				args->children.push_back(new ASTLiteral(StringRange(), upper));
+				args->children.push_back(std::make_shared<ASTLiteral>(StringRange(), upper));
 
-				upper_function = new ASTFunction;
+				upper_function = std::make_shared<ASTFunction>();
 				upper_function->name = "less";
 				upper_function->arguments = args;
 				upper_function->children.push_back(upper_function->arguments);
@@ -430,11 +429,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 			if (has_lower_limit && has_upper_limit)
 			{
-				ASTPtr args = new ASTExpressionList;
+				ASTPtr args = std::make_shared<ASTExpressionList>();
 				args->children.push_back(lower_function);
 				args->children.push_back(upper_function);
 
-				filter_function = new ASTFunction;
+				filter_function = std::make_shared<ASTFunction>();
 				filter_function->name = "and";
 				filter_function->arguments = args;
 				filter_function->children.push_back(filter_function->arguments);
@@ -825,31 +824,24 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 void MergeTreeDataSelectExecutor::createPositiveSignCondition(
 	ExpressionActionsPtr & out_expression, String & out_column, const Context & context) const
 {
-	ASTFunction * function = new ASTFunction;
-	ASTPtr function_ptr = function;
-
-	ASTExpressionList * arguments = new ASTExpressionList;
-	ASTPtr arguments_ptr = arguments;
-
-	ASTIdentifier * sign = new ASTIdentifier;
-	ASTPtr sign_ptr = sign;
-
-	ASTLiteral * one = new ASTLiteral;
-	ASTPtr one_ptr = one;
+	auto function = std::make_shared<ASTFunction>();
+	auto arguments = std::make_shared<ASTExpressionList>();
+	auto sign = std::make_shared<ASTIdentifier>();
+	auto one = std::make_shared<ASTLiteral>();
 
 	function->name = "equals";
-	function->arguments = arguments_ptr;
-	function->children.push_back(arguments_ptr);
+	function->arguments = arguments;
+	function->children.push_back(arguments);
 
-	arguments->children.push_back(sign_ptr);
-	arguments->children.push_back(one_ptr);
+	arguments->children.push_back(sign);
+	arguments->children.push_back(one);
 
 	sign->name = data.merging_params.sign_column;
 	sign->kind = ASTIdentifier::Column;
 
 	one->value = Field(static_cast<Int64>(1));
 
-	out_expression = ExpressionAnalyzer(function_ptr, context, {}, data.getColumnsList()).getActions(false);
+	out_expression = ExpressionAnalyzer(function, context, {}, data.getColumnsList()).getActions(false);
 	out_column = function->getColumnName();
 }
 

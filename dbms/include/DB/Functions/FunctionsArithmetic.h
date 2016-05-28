@@ -469,7 +469,7 @@ class FunctionBinaryArithmetic : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionBinaryArithmetic; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBinaryArithmetic>(); }
 
 private:
 	/// Overload for InvalidType
@@ -729,7 +729,7 @@ class FunctionUnaryArithmetic : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionUnaryArithmetic; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionUnaryArithmetic>(); }
 
 private:
 	template <typename T0>

@@ -571,7 +571,7 @@ class FunctionDateOrDateTimeToSomething : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionDateOrDateTimeToSomething; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -669,7 +669,7 @@ class FunctionNow : public IFunction
 {
 public:
 	static constexpr auto name = "now";
-	static IFunction * create(const Context & context) { return new FunctionNow; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNow>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -702,7 +702,7 @@ class FunctionToday : public IFunction
 {
 public:
 	static constexpr auto name = "today";
-	static IFunction * create(const Context & context) { return new FunctionToday; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToday>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -735,7 +735,7 @@ class FunctionYesterday : public IFunction
 {
 public:
 	static constexpr auto name = "yesterday";
-	static IFunction * create(const Context & context) { return new FunctionYesterday; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionYesterday>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -768,7 +768,7 @@ class FunctionTimeSlot : public IFunction
 {
 public:
 	static constexpr auto name = "timeSlot";
-	static IFunction * create(const Context & context) { return new FunctionTimeSlot; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTimeSlot>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -904,7 +904,7 @@ class FunctionTimeSlots : public IFunction
 {
 public:
 	static constexpr auto name = "timeSlots";
-	static IFunction * create(const Context & context) { return new FunctionTimeSlots; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTimeSlots>(); };
 
 	/// Получить имя функции.
 	String getName() const override

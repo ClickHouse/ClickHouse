@@ -25,7 +25,7 @@ public:
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "OrderByElement"; }
 
-	ASTPtr clone() const override { return new ASTOrderByElement(*this); }
+	ASTPtr clone() const override { return std::make_shared<ASTOrderByElement>(*this); }
 
 protected:
 	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

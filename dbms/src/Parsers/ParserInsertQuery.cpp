@@ -149,7 +149,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		return false;
 	}
 
-	ASTInsertQuery * query = new ASTInsertQuery(StringRange(begin, data ? data : pos));
+	auto query = std::make_shared<ASTInsertQuery>(StringRange(begin, data ? data : pos));
 	node = query;
 
 	if (database)

@@ -821,7 +821,7 @@ class FunctionIf : public IFunction
 {
 public:
 	static constexpr auto name = "if";
-	static IFunction * create(const Context & context) { return new FunctionIf; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIf>(); }
 
 private:
 	template <typename T0, typename T1>
@@ -1399,7 +1399,7 @@ class FunctionMultiIf final : public IFunction
 {
 public:
 	static constexpr auto name = "multiIf";
-	static IFunction * create(const Context & context) { return new FunctionMultiIf; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMultiIf>(); }
 
 public:
 	String getName() const override

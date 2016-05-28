@@ -18,7 +18,7 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 {
 	Pos begin = pos;
 
-	ASTJoin * join = new ASTJoin(StringRange(begin, pos));
+	auto join = std::make_shared<ASTJoin>(StringRange(begin, pos));
 	node = join;
 
 	ParserWhiteSpaceOrComments ws;

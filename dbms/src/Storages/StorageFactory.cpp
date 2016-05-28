@@ -72,10 +72,9 @@ static ASTPtr extractPrimaryKey(const ASTPtr & node)
 	else
 	{
 		/// Первичный ключ состоит из одного столбца.
-		ASTExpressionList * res = new ASTExpressionList;
-		ASTPtr res_ptr = res;
+		auto res = std::make_shared<ASTExpressionList>();
 		res->children.push_back(node);
-		return res_ptr;
+		return res;
 	}
 }
 

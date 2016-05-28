@@ -57,8 +57,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 	ASTPtr col_after;
 	ASTPtr col_drop;
 
-	ASTAlterQuery * query = new ASTAlterQuery();
-	ASTPtr query_ptr = query;
+	auto query = std::make_shared<ASTAlterQuery>();
 
 	ws.ignore(pos, end);
 	if (!s_alter.ignore(pos, end, max_parsed_pos, expected))
@@ -373,7 +372,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 	while (!parsing_finished);
 
 	query->range = StringRange(begin, end);
-	node = query_ptr;
+	node = query;
 
 	return true;
 }

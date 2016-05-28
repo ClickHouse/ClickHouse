@@ -71,7 +71,7 @@ class FunctionArray : public IFunction
 {
 public:
 	static constexpr auto name = "array";
-	static IFunction * create(const Context & context) { return new FunctionArray; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArray>(); }
 
 private:
 	/// Получить имя функции.
@@ -479,7 +479,7 @@ class FunctionArrayElement : public IFunction
 {
 public:
 	static constexpr auto name = "arrayElement";
-	static IFunction * create(const Context & context) { return new FunctionArrayElement; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayElement>(); }
 
 private:
 	template <typename T>
@@ -958,7 +958,7 @@ class FunctionArrayIndex : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionArrayIndex; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayIndex>(); }
 
 private:
 	using ResultColumnType = ColumnVector<typename IndexConv::ResultType>;
@@ -1162,7 +1162,7 @@ class FunctionArrayEnumerate : public IFunction
 {
 public:
 	static constexpr auto name = "arrayEnumerate";
-	static IFunction * create (const Context & context) { return new FunctionArrayEnumerate; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayEnumerate>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1238,7 +1238,7 @@ class FunctionArrayUniq : public IFunction
 {
 public:
 	static constexpr auto name = "arrayUniq";
-	static IFunction * create(const Context & context) { return new FunctionArrayUniq; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayUniq>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1468,7 +1468,7 @@ class FunctionArrayEnumerateUniq : public IFunction
 {
 public:
 	static constexpr auto name = "arrayEnumerateUniq";
-	static IFunction * create(const Context & context) { return new FunctionArrayEnumerateUniq; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayEnumerateUniq>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1713,7 +1713,7 @@ struct FunctionEmptyArray : public IFunction
 {
 	static constexpr auto base_name = "emptyArray";
 	static const String name;
-	static IFunction * create(const Context & context) { return new FunctionEmptyArray; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionEmptyArray>(); }
 
 private:
 	String getName() const override
@@ -1749,7 +1749,7 @@ class FunctionRange : public IFunction
 public:
 	static constexpr auto max_elements = 100000000;
 	static constexpr auto name = "range";
-	static IFunction * create(const Context &) { return new FunctionRange; }
+	static FunctionPtr create(const Context &) { return std::make_shared<FunctionRange>(); }
 
 private:
 	String getName() const override
@@ -1888,7 +1888,7 @@ class FunctionEmptyArrayToSingle : public IFunction
 {
 public:
 	static constexpr auto name = "emptyArrayToSingle";
-	static IFunction * create(const Context & context) { return new FunctionEmptyArrayToSingle; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionEmptyArrayToSingle>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -2138,7 +2138,7 @@ class FunctionArrayReverse : public IFunction
 {
 public:
 	static constexpr auto name = "reverse";
-	static IFunction * create(const Context & context) { return new FunctionArrayReverse; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayReverse>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -2360,7 +2360,7 @@ class FunctionArrayReduce : public IFunction
 {
 public:
 	static constexpr auto name = "arrayReduce";
-	static IFunction * create(const Context & context) { return new FunctionArrayReduce; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayReduce>(); }
 
 	/// Получить имя функции.
 	String getName() const override
