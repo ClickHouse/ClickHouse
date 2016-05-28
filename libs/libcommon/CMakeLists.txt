@@ -55,7 +55,7 @@ ELSE($ENV{DISABLE_LIBTCMALLOC})
 		SET(MALLOC_LIBRARIES libtcmalloc_minimal_debug.a)
 	ELSE($ENV{DEBUG_LIBTCMALLOC})
 		message(STATUS "Link libtcmalloc_minimal")
-		SET(MALLOC_LIBRARIES libtcmalloc_minimal.a)
+		SET(MALLOC_LIBRARIES tcmalloc_minimal_internal)
 	ENDIF($ENV{DEBUG_LIBTCMALLOC})
 ENDIF($ENV{DISABLE_LIBTCMALLOC})
 
