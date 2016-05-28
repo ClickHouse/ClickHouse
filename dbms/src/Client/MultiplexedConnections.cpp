@@ -168,7 +168,7 @@ Connection::Packet MultiplexedConnections::receivePacket()
 		else
 			block_extra_info->is_valid = false;
 	}
-	return packet;
+	return std::move(packet);
 }
 
 BlockExtraInfo MultiplexedConnections::getBlockExtraInfo() const
@@ -240,7 +240,7 @@ Connection::Packet MultiplexedConnections::drain()
 			case Protocol::Server::Exception:
 			default:
 				/// Если мы получили исключение или неизвестный пакет, сохраняем его.
-				res = packet;
+				res = std::move(packet);
 				break;
 		}
 	}

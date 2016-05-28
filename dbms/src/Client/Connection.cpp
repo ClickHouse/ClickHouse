@@ -527,7 +527,7 @@ std::unique_ptr<Exception> Connection::receiveException()
 
 	Exception e;
 	readException(e, *in, "Received from " + getDescription());
-	return { e.clone() };
+	return std::unique_ptr<Exception>{ e.clone() };
 }
 
 
