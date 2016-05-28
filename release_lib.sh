@@ -61,43 +61,48 @@ function gen_revision_author {
 	IS_IT_GITHUB=$( git config --get remote.origin.url | grep 'github')
 
 	REVISION=$( git tag | tag_filter | tail -1 )
-	MAX_REVISION=$(($REVISION + 10))	# Максимальное количество попыток отправить тег в Git.
+	REVISION_FULL_NAME=$REVISION
 
-	# Создадим номер ревизии и попытаемся залить на сервер.
-	succeeded=0
-	attempts=0
-	max_attempts=5
-	while [ $succeeded -eq 0 ] && [ $attempts -le $max_attempts ]
-	do
-		REVISION=$(($REVISION + 1))
-		attempts=$(($attempts + 1))
+	if [[ $STANDALONE != 'yes' ]]
+	then
+		MAX_REVISION=$(($REVISION + 10))	# Максимальное количество попыток отправить тег в Git.
 
-		[ "$REVISION" -ge "$MAX_REVISION" ] && exit 1
+		# Создадим номер ревизии и попытаемся залить на сервер.
+		succeeded=0
+		attempts=0
+		max_attempts=5
+		while [ $succeeded -eq 0 ] && [ $attempts -le $max_attempts ]
+		do
+			REVISION=$(($REVISION + 1))
+			attempts=$(($attempts + 1))
 
-		REVISION_FULL_NAME=$REVISION
+			[ "$REVISION" -ge "$MAX_REVISION" ] && exit 1
 
-		if [[ "$IS_IT_GITHUB" = "" ]]
-		then
-			REVISION_FULL_NAME=$REVISION_FULL_NAME-mobmet
-		fi
+			REVISION_FULL_NAME=$REVISION
 
-		echo -e "\nTrying to create revision:" $REVISION_FULL_NAME
-		if git tag $REVISION_FULL_NAME
-		then
-			echo -e "\nTrying to push revision to origin:" $REVISION_FULL_NAME
-				git push origin $REVISION_FULL_NAME
-			if [ $? -ne 0 ];
+			if [[ "$IS_IT_GITHUB" = "" ]]
 			then
-				git tag -d $REVISION_FULL_NAME
-			else
-				succeeded=1
+				REVISION_FULL_NAME=$REVISION_FULL_NAME-mobmet
 			fi
-		fi
-	done
 
-	if [ $succeeded -eq 0 ]; then
-		echo "Fail to create tag"
-		exit 1
+			echo -e "\nTrying to create revision:" $REVISION_FULL_NAME
+			if git tag $REVISION_FULL_NAME
+			then
+				echo -e "\nTrying to push revision to origin:" $REVISION_FULL_NAME
+					git push origin $REVISION_FULL_NAME
+				if [ $? -ne 0 ];
+				then
+					git tag -d $REVISION_FULL_NAME
+				else
+					succeeded=1
+				fi
+			fi
+		done
+
+		if [ $succeeded -eq 0 ]; then
+			echo "Fail to create tag"
+			exit 1
+		fi
 	fi
 
 	AUTHOR=$(git config --get user.name)
