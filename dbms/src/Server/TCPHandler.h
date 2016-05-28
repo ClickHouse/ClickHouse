@@ -28,11 +28,11 @@ struct QueryState
 	Protocol::Compression::Enum compression = Protocol::Compression::Disable;
 
 	/// Откуда читать данные для INSERT-а.
-	shared_ptr<ReadBuffer> maybe_compressed_in;
+	std::shared_ptr<ReadBuffer> maybe_compressed_in;
 	BlockInputStreamPtr block_in;
 
 	/// Куда писать возвращаемые данные.
-	shared_ptr<WriteBuffer> maybe_compressed_out;
+	std::shared_ptr<WriteBuffer> maybe_compressed_out;
 	BlockOutputStreamPtr block_out;
 
 	/// Текст запроса.

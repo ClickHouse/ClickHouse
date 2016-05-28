@@ -397,7 +397,7 @@ int Server::main(const std::vector<std::string> & args)
 			Poco::Net::ServerSocket interserver_io_http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("interserver_http_port")));
 			interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
 			interserver_io_http_socket.setSendTimeout(settings.send_timeout);
-			interserver_io_http_server.reset(
+			interserver_io_http_server.emplace(
 				new HTTPRequestHandlerFactory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
 				server_pool,
 				interserver_io_http_socket,
@@ -409,13 +409,13 @@ int Server::main(const std::vector<std::string> & args)
 		bool use_olap_server = config().has("olap_compatibility.port");
 		if (use_olap_server)
 		{
-			olap_parser.reset(new OLAP::QueryParser());
-			olap_converter.reset(new OLAP::QueryConverter(config()));
+			olap_parser = std::make_unique<OLAP::QueryParser>();
+			olap_converter = std::make_unique<OLAP::QueryConverter>(config());
 
 			Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("olap_compatibility.port")));
 			olap_http_socket.setReceiveTimeout(settings.receive_timeout);
 			olap_http_socket.setSendTimeout(settings.send_timeout);
-			olap_http_server.reset(
+			olap_http_server.emplace(
 				new HTTPRequestHandlerFactory<OLAPHTTPHandler>(*this, "OLAPHTTPHandler-factory"),
 				server_pool,
 				olap_http_socket,
