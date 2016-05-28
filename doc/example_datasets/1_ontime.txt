@@ -255,6 +255,6 @@ SELECT DestCityName, uniqExact(OriginCityName) AS u FROM ontime GROUP BY DestCit
 
 SELECT OriginCityName, DestCityName, count() AS c FROM ontime GROUP BY OriginCityName, DestCityName ORDER BY c DESC LIMIT 10;
 
-SELECT OriginCityName count() AS c FROM ontime GROUP BY OriginCityName ORDER BY c DESC LIMIT 10;
+SELECT OriginCityName, count() AS c FROM ontime GROUP BY OriginCityName ORDER BY c DESC LIMIT 10;
 
 
