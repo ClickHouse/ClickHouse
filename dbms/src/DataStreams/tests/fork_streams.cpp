@@ -102,7 +102,7 @@ try
 
 	return 0;
 }
-catch (const Exception & e)
+catch (const DB::Exception & e)
 {
 	std::cerr << e.what() << ", " << e.displayText() << std::endl;
 	throw;

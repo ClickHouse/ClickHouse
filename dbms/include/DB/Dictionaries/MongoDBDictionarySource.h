@@ -23,7 +23,7 @@ namespace ErrorCodes
 /// Allows loading dictionaries from a MongoDB collection
 class MongoDBDictionarySource final : public IDictionarySource
 {
-	static const size_t max_block_size = 8192;
+	enum { max_block_size = 8192 };
 
 	MongoDBDictionarySource(
 		const DictionaryStructure & dict_struct, const std::string & host, const std::string & port,
