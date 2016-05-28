@@ -36,6 +36,12 @@ public:
 		set(value);
 	}
 
+	/// Захватить владение первой версией.
+	MultiVersion(T * value)
+	{
+		set(value);
+	}
+
 	MultiVersion(Version && value)
 	{
 		set(std::move(value));
@@ -56,6 +62,7 @@ public:
 		current_version = value;
 	}
 
+	/// Обновить объект новой версией и захватить владение.
 	void set(T * value)
 	{
 		set(Version(value));
