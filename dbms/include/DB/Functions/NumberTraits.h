@@ -52,17 +52,17 @@ template <> struct ExactNext<Bits64>	{ using Type = BitsTooMany; };
 
 template <typename T> struct Traits;
 
-template <> struct Traits<void>		{ using Bits = Unsigned Sign;	typedef Integer Floatness;	typedef Bits0; };
-template <> struct Traits<UInt8> 	{ using Bits = Unsigned Sign;	typedef Integer Floatness;	typedef Bits8; };
-template <> struct Traits<UInt16> 	{ using Bits = Unsigned Sign;	typedef Integer Floatness;	typedef Bits16; };
-template <> struct Traits<UInt32> 	{ using Bits = Unsigned Sign;	typedef Integer Floatness;	typedef Bits32; };
-template <> struct Traits<UInt64> 	{ using Bits = Unsigned Sign;	typedef Integer Floatness;	typedef Bits64; };
-template <> struct Traits<Int8> 	{ using Bits = Signed Sign;		typedef Integer Floatness;	typedef Bits8; };
-template <> struct Traits<Int16> 	{ using Bits = Signed Sign;		typedef Integer Floatness;	typedef Bits16; };
-template <> struct Traits<Int32> 	{ using Bits = Signed Sign;		typedef Integer Floatness;	typedef Bits32; };
-template <> struct Traits<Int64> 	{ using Bits = Signed Sign;		typedef Integer Floatness;	typedef Bits64; };
-template <> struct Traits<Float32>	{ using Bits = Signed Sign;		typedef Floating Floatness;	typedef Bits32; };
-template <> struct Traits<Float64>	{ using Bits = Signed Sign;		typedef Floating Floatness;	typedef Bits64; };
+template <> struct Traits<void>        { typedef Unsigned Sign;        typedef Integer Floatness;      typedef Bits0 Bits; };
+template <> struct Traits<UInt8>       { typedef Unsigned Sign;        typedef Integer Floatness;      typedef Bits8 Bits; };
+template <> struct Traits<UInt16>      { typedef Unsigned Sign;        typedef Integer Floatness;      typedef Bits16 Bits; };
+template <> struct Traits<UInt32>      { typedef Unsigned Sign;        typedef Integer Floatness;      typedef Bits32 Bits; };
+template <> struct Traits<UInt64>      { typedef Unsigned Sign;        typedef Integer Floatness;      typedef Bits64 Bits; };
+template <> struct Traits<Int8>        { typedef Signed Sign;          typedef Integer Floatness;      typedef Bits8 Bits; };
+template <> struct Traits<Int16>       { typedef Signed Sign;          typedef Integer Floatness;      typedef Bits16 Bits; };
+template <> struct Traits<Int32>       { typedef Signed Sign;          typedef Integer Floatness;      typedef Bits32 Bits; };
+template <> struct Traits<Int64>       { typedef Signed Sign;          typedef Integer Floatness;      typedef Bits64 Bits; };
+template <> struct Traits<Float32>     { typedef Signed Sign;          typedef Floating Floatness;     typedef Bits32 Bits; };
+template <> struct Traits<Float64>     { typedef Signed Sign;          typedef Floating Floatness;     typedef Bits64 Bits; };
 
 template <typename Sign, typename Floatness, typename Bits> struct Construct;
 
