@@ -3269,7 +3269,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 	if (!resharding_worker.isStarted())
 		throw Exception{"Resharding background thread is not running", ErrorCodes::RESHARDING_NO_WORKER};
 
-	bool has_coordinator = coordinator != nullptr;
+	bool has_coordinator = !coordinator.isNull();
 	std::string coordinator_id;
 	UInt64 block_number = 0;
 
