@@ -1,5 +1,5 @@
 #pragma once
-#include <Poco/Mutex.h>
+#include <mutex>
 #include <Poco/RegularExpression.h>
 #include <common/DateLUT.h>
 #include <DB/Core/Types.h>
@@ -79,7 +79,7 @@ public:
 private:
 	typedef std::set<Part> Parts;
 
-	mutable Poco::Mutex mutex;
+	mutable std::mutex mutex;
 	Parts parts;
 
 	void addImpl(const String & name);

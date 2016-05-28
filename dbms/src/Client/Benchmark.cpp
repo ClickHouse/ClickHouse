@@ -136,7 +136,7 @@ private:
 	Stats info_per_interval;
 	Stats info_total;
 
-	Poco::FastMutex mutex;
+	std::mutex mutex;
 
 	boost::threadpool::pool pool;
 
@@ -202,7 +202,7 @@ private:
 			{
 				auto total_queries = 0;
 				{
-					Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+					std::lock_guard<std::mutex> lock(mutex);
 					total_queries = info_total.queries;
 				}
 				printNumberOfQueriesExecuted(total_queries);
@@ -303,7 +303,7 @@ private:
 
 		double seconds = watch.elapsedSeconds();
 
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 		info_per_interval.add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
 		info_total.add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
 	}
@@ -311,7 +311,7 @@ private:
 
 	void report(Stats & info)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 
 		double seconds = info.watch.elapsedSeconds();
 

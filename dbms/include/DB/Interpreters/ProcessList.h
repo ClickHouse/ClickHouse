@@ -3,7 +3,7 @@
 #include <map>
 #include <list>
 #include <memory>
-#include <Poco/Mutex.h>
+#include <mutex>
 #include <Poco/Condition.h>
 #include <Poco/Net/IPAddress.h>
 #include <DB/Common/Stopwatch.h>
@@ -162,7 +162,7 @@ public:
 	using UserToQueries = std::unordered_map<String, ProcessListForUser>;
 
 private:
-	mutable Poco::FastMutex mutex;
+	mutable std::mutex mutex;
 	mutable Poco::Condition have_space;		/// Количество одновременно выполняющихся запросов стало меньше максимального.
 
 	Container cont;
@@ -192,7 +192,7 @@ public:
 	/// Получить текущее состояние списка запросов.
 	Info getInfo() const
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 
 		Info res;
 		res.reserve(cur_size);
@@ -204,7 +204,7 @@ public:
 
 	void setMaxSize(size_t max_size_)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 		max_size = max_size_;
 	}
 

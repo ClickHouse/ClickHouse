@@ -5,6 +5,6 @@ namespace DB
 
 size_t DiskSpaceMonitor::reserved_bytes;
 size_t DiskSpaceMonitor::reservation_count;
-Poco::FastMutex DiskSpaceMonitor::mutex;
+std::mutex DiskSpaceMonitor::mutex;
 
 }

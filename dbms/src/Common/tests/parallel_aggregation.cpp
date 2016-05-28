@@ -50,7 +50,7 @@ struct __attribute__((__aligned__(64))) AlignedSmallLock : public SmallLock
 };
 
 
-typedef Poco::FastMutex Mutex;
+typedef std::mutex Mutex;
 
 
 /*typedef HashTableWithSmallLocks<

@@ -136,15 +136,15 @@ private:
 	{
 		const auto pool_factory = [this, &name] (const std::string & host, const UInt16 port,
 												 const std::string & user, const std::string & password) {
-			return new ConnectionPool{
+			return std::make_shared<ConnectionPool>(
 				1, host, port, "",
 				user, password,
-				storage.getName() + '_' + name};
+				storage.getName() + '_' + name);
 		};
 
 		auto pools = createPoolsForAddresses(name, pool_factory);
 
-		return pools.size() == 1 ? pools.front() : new ConnectionPoolWithFailover(pools, LoadBalancing::RANDOM);
+		return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM);
 	}
 
 	bool findFiles()

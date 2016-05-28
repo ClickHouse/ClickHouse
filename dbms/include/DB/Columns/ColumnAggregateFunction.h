@@ -136,7 +136,7 @@ public:
 
 	ColumnPtr cloneEmpty() const override
 	{
-		return std::make_shared<ColumnAggregateFunction>(holder->func, Arenas(1, new Arena));
+		return std::make_shared<ColumnAggregateFunction>(holder->func, Arenas(1, std::make_shared<Arena>()));
 	};
 
 	Field operator[](size_t n) const override
@@ -182,7 +182,7 @@ public:
 	Arena & createOrGetArena()
 	{
 		if (unlikely(arenas.empty()))
-			arenas.emplace_back(new Arena);
+			arenas.emplace_back(std::make_shared<Arena>());
 		return *arenas.back().get();
 	}
 

@@ -160,7 +160,7 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 
 	ArenaPtr arena;
 	if (init)
-		arena = new Arena;
+		arena = std::make_shared<Arena>();
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{

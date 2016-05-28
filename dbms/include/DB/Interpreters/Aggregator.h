@@ -609,7 +609,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 	};
 	Type type = Type::EMPTY;
 
-	AggregatedDataVariants() : aggregates_pools(1, new Arena), aggregates_pool(aggregates_pools.back().get()) {}
+	AggregatedDataVariants() : aggregates_pools(1, std::make_shared<Arena>()), aggregates_pool(aggregates_pools.back().get()) {}
 	bool empty() const { return type == Type::EMPTY; }
 	void invalidate() { type = Type::EMPTY; }
 

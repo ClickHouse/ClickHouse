@@ -15,11 +15,11 @@ using Poco::SharedPtr;
 using namespace DB;
 
 
-void inputThread(BlockInputStreamPtr in, BlockOutputStreamPtr out, WriteBuffer & wb, Poco::FastMutex & mutex)
+void inputThread(BlockInputStreamPtr in, BlockOutputStreamPtr out, WriteBuffer & wb, std::mutex & mutex)
 {
 	while (Block block = in->read())
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 
 		out->write(block);
 		wb.next();
@@ -79,7 +79,7 @@ int main(int argc, char ** argv)
 
 		std::cerr << forks.size() << std::endl;
 
-		Poco::FastMutex mutex;
+		std::mutex mutex;
 
 		boost::threadpool::pool pool(inputs.size() + forks.size());
 

@@ -346,7 +346,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 
 	auto get_endpoint_holder = [&res](InterserverIOEndpointPtr endpoint)
 	{
-		return new InterserverIOEndpointHolder(
+		return std::make_shared<InterserverIOEndpointHolder>(
 			endpoint->getId(res->replica_path),
 			endpoint,
 			res->context.getInterserverIOHandler());
@@ -355,29 +355,29 @@ StoragePtr StorageReplicatedMergeTree::create(
 	if (res->tryGetZooKeeper())
 	{
 		{
-			InterserverIOEndpointPtr endpoint = new DataPartsExchange::Service(res->data, res_ptr);
+			InterserverIOEndpointPtr endpoint = std::make_shared<DataPartsExchange::Service>(res->data, res_ptr);
 			res->endpoint_holder = get_endpoint_holder(endpoint);
 		}
 
 		/// Сервисы для перешардирования.
 
 		{
-			InterserverIOEndpointPtr endpoint = new RemoteDiskSpaceMonitor::Service(res->context);
+			InterserverIOEndpointPtr endpoint = std::make_shared<RemoteDiskSpaceMonitor::Service>(res->context);
 			res->disk_space_monitor_endpoint_holder = get_endpoint_holder(endpoint);
 		}
 
 		{
-			InterserverIOEndpointPtr endpoint = new ShardedPartitionUploader::Service(res_ptr);
+			InterserverIOEndpointPtr endpoint = std::make_shared<ShardedPartitionUploader::Service>(res_ptr);
 			res->sharded_partition_uploader_endpoint_holder = get_endpoint_holder(endpoint);
 		}
 
 		{
-			InterserverIOEndpointPtr endpoint = new RemoteQueryExecutor::Service(res->context);
+			InterserverIOEndpointPtr endpoint = std::make_shared<RemoteQueryExecutor::Service>(res->context);
 			res->remote_query_executor_endpoint_holder = get_endpoint_holder(endpoint);
 		}
 
 		{
-			InterserverIOEndpointPtr endpoint = new RemotePartChecker::Service(res_ptr);
+			InterserverIOEndpointPtr endpoint = std::make_shared<RemotePartChecker::Service>(res_ptr);
 			res->remote_part_checker_endpoint_holder = get_endpoint_holder(endpoint);
 		}
 	}
@@ -1124,7 +1124,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
 
 			auto part = merger.mergePartsToTemporaryPart(
-				parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space);
+				parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space.get());
 
 			zkutil::Ops ops;
 
@@ -1817,7 +1817,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
 	String part_path = replica_path + "/parts/" + part_name;
 
-	LogEntryPtr log_entry = new LogEntry;
+	LogEntryPtr log_entry = std::make_shared<LogEntry>();
 	log_entry->type = LogEntry::GET_PART;
 	log_entry->create_time = tryGetPartCreateTime(zookeeper, replica_path, part_name);
 	log_entry->source_replica = "";

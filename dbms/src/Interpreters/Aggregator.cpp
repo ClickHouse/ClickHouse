@@ -812,7 +812,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
 
 	/// NOTE Вместо освобождения памяти и создания новых хэш-таблиц и арены, можно переиспользовать старые.
 	data_variants.init(data_variants.type);
-	data_variants.aggregates_pools = Arenas(1, new Arena);
+	data_variants.aggregates_pools = Arenas(1, std::make_shared<Arena>());
 	data_variants.aggregates_pool = data_variants.aggregates_pools.back().get();
 
 	block_out.flush();
@@ -1987,7 +1987,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 			if (bucket == -1)
 				continue;
 
-			result.aggregates_pools.push_back(new Arena);
+			result.aggregates_pools.push_back(std::make_shared<Arena>());
 			Arena * aggregates_pool = result.aggregates_pools.back().get();
 
 			tasks[bucket] = std::packaged_task<void()>(std::bind(merge_bucket, bucket, aggregates_pool, current_memory_tracker));

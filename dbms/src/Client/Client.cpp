@@ -139,7 +139,7 @@ private:
 
 	winsize terminal_size {};			/// Размер терминала - для вывода прогресс-бара.
 
-	SharedPtr<Connection> connection;	/// Соединение с БД.
+	std::unique_ptr<Connection> connection;	/// Соединение с БД.
 	String query;						/// Текущий запрос.
 
 	String format;						/// Формат вывода результата в консоль.
@@ -394,7 +394,7 @@ private:
 				<< (!user.empty() ? " as user " + user : "")
 				<< "." << std::endl;
 
-		connection = new Connection(host, port, default_database, user, password, "client", compression,
+		connection = std::make_unique<Connection>(host, port, default_database, user, password, "client", compression,
 			Poco::Timespan(config().getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
 			Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
 			Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));

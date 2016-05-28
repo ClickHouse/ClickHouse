@@ -240,7 +240,7 @@ void RemoteBlockInputStream::createMultiplexedConnections()
 	else if (pool != nullptr)
 		multiplexed_connections = std::make_unique<MultiplexedConnections>(pool, multiplexed_connections_settings, throttler,
 			append_extra_info, pool_mode);
-	else if (!pools.isNull())
+	else if (pools != nullptr)
 		multiplexed_connections = std::make_unique<MultiplexedConnections>(*pools, multiplexed_connections_settings, throttler,
 			append_extra_info, pool_mode);
 	else
@@ -260,14 +260,7 @@ void RemoteBlockInputStream::init(const Settings * settings_)
 
 void RemoteBlockInputStream::sendQuery()
 {
-	try
-	{
-		createMultiplexedConnections();
-	}
-	catch (...)
-	{
-		throw;
-	}
+	createMultiplexedConnections();
 
 	if (settings.skip_unavailable_shards && 0 == multiplexed_connections->size())
 		return;

@@ -171,7 +171,7 @@ struct Quota
 	/// Максимальные и накопленные значения для разных ключей.
 	/// Для всех ключей максимальные значения одинаковы и взяты из max.
 	Container quota_for_keys;
-	Poco::FastMutex mutex;
+	std::mutex mutex;
 
 	bool is_keyed;
 	bool keyed_by_ip;

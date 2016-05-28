@@ -8,7 +8,7 @@
 
 #include <Poco/File.h>
 #include <Poco/Exception.h>
-#include <Poco/Mutex.h>
+#include <mutex>
 #include <Poco/ScopedLock.h>
 
 #include <DB/Common/Exception.h>
@@ -44,7 +44,7 @@ public:
 	template <typename Callback>
 	Int64 add(Int64 delta, Callback && locked_callback, bool create_if_need = false)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 
 		Int64 res = -1;
 
@@ -177,7 +177,7 @@ public:
 
 private:
 	std::string path;
-	Poco::FastMutex mutex;
+	std::mutex mutex;
 };
 
 

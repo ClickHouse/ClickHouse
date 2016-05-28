@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Poco/Mutex.h>
+#include <mutex>
 
 #include <DB/Common/OptimizedRegularExpression.h>
 #include <memory>

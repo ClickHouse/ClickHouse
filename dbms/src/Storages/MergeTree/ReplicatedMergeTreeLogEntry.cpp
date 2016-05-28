@@ -140,7 +140,7 @@ String ReplicatedMergeTreeLogEntryData::toString() const
 ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String & s, const zkutil::Stat & stat)
 {
 	ReadBufferFromString in(s);
-	Ptr res = new ReplicatedMergeTreeLogEntry;
+	Ptr res = std::make_shared<ReplicatedMergeTreeLogEntry>();
 	res->readText(in);
 	assertEOF(in);
 

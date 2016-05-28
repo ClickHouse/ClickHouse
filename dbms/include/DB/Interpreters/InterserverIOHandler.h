@@ -74,7 +74,7 @@ protected:
 	std::atomic<bool> is_cancelled {false};
 };
 
-typedef Poco::SharedPtr<InterserverIOEndpoint> InterserverIOEndpointPtr;
+using InterserverIOEndpointPtr = std::shared_ptr<InterserverIOEndpoint>;
 
 
 /** Сюда можно зарегистрировать сервис, обрататывающий запросы от других серверов.
@@ -85,7 +85,7 @@ class InterserverIOHandler
 public:
 	void addEndpoint(const String & name, InterserverIOEndpointPtr endpoint)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 		if (endpoint_map.count(name))
 			throw Exception("Duplicate interserver IO endpoint: " + name, ErrorCodes::DUPLICATE_INTERSERVER_IO_ENDPOINT);
 		endpoint_map[name] = endpoint;
@@ -93,7 +93,7 @@ public:
 
 	void removeEndpoint(const String & name)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 		if (!endpoint_map.count(name))
 			throw Exception("No interserver IO endpoint named " + name, ErrorCodes::NO_SUCH_INTERSERVER_IO_ENDPOINT);
 		endpoint_map.erase(name);
@@ -101,7 +101,7 @@ public:
 
 	InterserverIOEndpointPtr getEndpoint(const String & name)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 		if (!endpoint_map.count(name))
 			throw Exception("No interserver IO endpoint named " + name, ErrorCodes::NO_SUCH_INTERSERVER_IO_ENDPOINT);
 		return endpoint_map[name];
@@ -111,7 +111,7 @@ private:
 	typedef std::map<String, InterserverIOEndpointPtr> EndpointMap;
 
 	EndpointMap endpoint_map;
-	Poco::FastMutex mutex;
+	std::mutex mutex;
 };
 
 /// В конструкторе вызывает addEndpoint, в деструкторе - removeEndpoint.
@@ -151,6 +151,6 @@ private:
 	InterserverIOHandler & handler;
 };
 
-typedef Poco::SharedPtr<InterserverIOEndpointHolder> InterserverIOEndpointHolderPtr;
+using InterserverIOEndpointHolderPtr = std::shared_ptr<InterserverIOEndpointHolder>;
 
 }

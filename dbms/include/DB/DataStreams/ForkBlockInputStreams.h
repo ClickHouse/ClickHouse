@@ -6,12 +6,10 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 
 /** Позволяет из одного источника сделать несколько.
   * Используется для однопроходного выполнения сразу нескольких запросов.
-  * 
+  *
   * Несколько полученных источников должны читаться из разных потоков!
   * Расходует O(1) оперативки (не буферизует все данные).
   * Для этого, чтения из разных полученных источников синхронизируются:
@@ -25,7 +23,7 @@ public:
 	/// Создать источник. Вызывайте функцию столько раз, сколько размноженных источников вам нужно.
 	BlockInputStreamPtr createInput()
 	{
-		destinations.push_back(new QueueBlockIOStream(1));
+		destinations.emplace_back(new QueueBlockIOStream(1));
 		return destinations.back();
 	}
 
@@ -65,12 +63,12 @@ private:
 	  * Сделаны на основе очереди небольшой длины.
 	  * Блок из source кладётся в каждую очередь.
 	  */
-	typedef SharedPtr<QueueBlockIOStream> Destination;
-	typedef std::list<Destination> Destinations;
+	using Destination = Poco::SharedPtr<QueueBlockIOStream>;
+	using Destinations = std::list<Destination>;
 	Destinations destinations;
 };
 
-typedef SharedPtr<ForkBlockInputStreams> ForkPtr;
-typedef std::vector<ForkPtr> Forks;
+using ForkPtr = std::shared_ptr<ForkBlockInputStreams>;
+using Forks = std::vector<ForkPtr>;
 
 }

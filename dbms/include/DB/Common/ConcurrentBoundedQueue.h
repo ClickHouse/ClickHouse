@@ -18,7 +18,7 @@ class ConcurrentBoundedQueue
 private:
 	size_t max_fill;
 	std::queue<T> queue;
-	Poco::Mutex mutex;
+	Poco::FastMutex mutex;
 	Poco::Semaphore fill_count;
 	Poco::Semaphore empty_count;
 
@@ -30,7 +30,7 @@ public:
 	{
 		empty_count.wait();
 		{
-			Poco::ScopedLock<Poco::Mutex> lock(mutex);
+			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 			queue.push(x);
 		}
 		fill_count.set();
@@ -40,7 +40,7 @@ public:
 	{
 		fill_count.wait();
 		{
-			Poco::ScopedLock<Poco::Mutex> lock(mutex);
+			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 			x = queue.front();
 			queue.pop();
 		}
@@ -52,7 +52,7 @@ public:
 		if (empty_count.tryWait(milliseconds))
 		{
 			{
-				Poco::ScopedLock<Poco::Mutex> lock(mutex);
+				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 				queue.push(x);
 			}
 			fill_count.set();
@@ -66,7 +66,7 @@ public:
 		if (fill_count.tryWait(milliseconds))
 		{
 			{
-				Poco::ScopedLock<Poco::Mutex> lock(mutex);
+				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 				x = queue.front();
 				queue.pop();
 			}
@@ -78,7 +78,7 @@ public:
 
 	size_t size()
 	{
-		Poco::ScopedLock<Poco::Mutex> lock(mutex);
+		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 		return queue.size();
 	}
 
@@ -87,7 +87,7 @@ public:
 		while (fill_count.tryWait(0))
 		{
 			{
-				Poco::ScopedLock<Poco::Mutex> lock(mutex);
+				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 				queue.pop();
 			}
 			empty_count.set();

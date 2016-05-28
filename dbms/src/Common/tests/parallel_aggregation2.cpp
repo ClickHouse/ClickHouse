@@ -255,7 +255,7 @@ struct Work
 
 typedef HashMap<Key, Value, HashCRC32<Key>> Map;
 typedef TwoLevelHashMap<Key, Value, HashCRC32<Key>> MapTwoLevel;
-typedef Poco::FastMutex Mutex;
+typedef std::mutex Mutex;
 
 
 struct Creator

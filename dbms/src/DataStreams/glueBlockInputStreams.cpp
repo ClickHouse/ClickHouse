@@ -29,7 +29,7 @@ static void glue(BlockInputStreamPtr & node, IDsMap & ids_map, ForksMap & forks_
 		/// Вставить "вилку" или использовать уже готовую.
 		if (forks_map.end() == forks_map.find(id))
 		{
-			forks_map[id] = new ForkBlockInputStreams(node);
+			forks_map[id] = std::make_shared<ForkBlockInputStreams>(node);
 			std::cerr << "Forking at " << id << std::endl;
 		}
 

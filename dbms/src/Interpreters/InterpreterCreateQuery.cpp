@@ -287,7 +287,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 
 		column_declaration->name = column.name;
 
-		StringPtr type_name{new String(column.type->getName())};
+		StringPtr type_name = std::make_shared<String>(column.type->getName());
 		auto pos = type_name->data();
 		const auto end = pos + type_name->size();
 
@@ -318,7 +318,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(NamesAndTypesList columns,
 
 		column_declaration->name = column.name;
 
-		StringPtr type_name{new String(column.type->getName())};
+		StringPtr type_name = std::make_shared<String>(column.type->getName());
 		auto pos = type_name->data();
 		const auto end = pos + type_name->size();
 

@@ -4,7 +4,6 @@
 #include <memory>
 #include <vector>
 #include <boost/noncopyable.hpp>
-#include <Poco/SharedPtr.h>
 #include <common/likely.h>
 #include <DB/Core/Defines.h>
 #include <DB/Common/ProfileEvents.h>
@@ -164,8 +163,8 @@ public:
 	}
 };
 
-typedef Poco::SharedPtr<Arena> ArenaPtr;
-typedef std::vector<ArenaPtr> Arenas;
+using ArenaPtr = std::shared_ptr<Arena>;
+using Arenas = std::vector<ArenaPtr>;
 
 
 }

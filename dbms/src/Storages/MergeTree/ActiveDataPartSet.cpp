@@ -21,7 +21,7 @@ ActiveDataPartSet::ActiveDataPartSet(const Strings & names)
 
 void ActiveDataPartSet::add(const String & name)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(mutex);
+	std::lock_guard<std::mutex> lock(mutex);
 	addImpl(name);
 }
 
@@ -62,7 +62,7 @@ void ActiveDataPartSet::addImpl(const String & name)
 
 String ActiveDataPartSet::getContainingPart(const String & part_name) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(mutex);
+	std::lock_guard<std::mutex> lock(mutex);
 
 	Part part;
 	parsePartName(part_name, part);
@@ -91,7 +91,7 @@ String ActiveDataPartSet::getContainingPart(const String & part_name) const
 
 Strings ActiveDataPartSet::getParts() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(mutex);
+	std::lock_guard<std::mutex> lock(mutex);
 
 	Strings res;
 	res.reserve(parts.size());
@@ -104,7 +104,7 @@ Strings ActiveDataPartSet::getParts() const
 
 size_t ActiveDataPartSet::size() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(mutex);
+	std::lock_guard<std::mutex> lock(mutex);
 	return parts.size();
 }
 

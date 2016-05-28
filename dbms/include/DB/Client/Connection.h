@@ -24,12 +24,15 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 /// Поток блоков читающих из таблицы и ее имя
-typedef std::pair<BlockInputStreamPtr, std::string> ExternalTableData;
+using ExternalTableData = std::pair<BlockInputStreamPtr, std::string>;
 /// Вектор пар, описывающих таблицы
-typedef std::vector<ExternalTableData> ExternalTablesData;
+using ExternalTablesData = std::vector<ExternalTableData>;
+
+class Connection;
+
+using ConnectionPtr = std::shared_ptr<Connection>;
+using Connections = std::vector<ConnectionPtr>;
 
 
 /** Соединение с сервером БД для использования в клиенте.
@@ -269,9 +272,5 @@ private:
 
 	void initBlockInput();
 };
-
-
-typedef SharedPtr<Connection> ConnectionPtr;
-typedef std::vector<ConnectionPtr> Connections;
 
 }

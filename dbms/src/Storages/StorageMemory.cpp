@@ -69,7 +69,7 @@ public:
 	void write(const Block & block)
 	{
 		storage.check(block, true);
-		Poco::ScopedLock<Poco::FastMutex> lock(storage.mutex);
+		std::lock_guard<std::mutex> lock(storage.mutex);
 		storage.data.push_back(block);
 	}
 private:
@@ -132,7 +132,7 @@ BlockInputStreams StorageMemory::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+	std::lock_guard<std::mutex> lock(mutex);
 
 	size_t size = data.size();
 
@@ -165,7 +165,7 @@ BlockOutputStreamPtr StorageMemory::write(
 
 void StorageMemory::drop()
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+	std::lock_guard<std::mutex> lock(mutex);
 	data.clear();
 }
 
