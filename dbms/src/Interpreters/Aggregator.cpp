@@ -2217,7 +2217,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
 			dst.insert({src_col.column->filter(filter, size_hint), src_col.type, src_col.name});
 
 			/** Вставленные в блок столбцы типа ColumnAggregateFunction будут владеть состояниями агрегатных функций
-			  *  путём удержания SharedPtr-а на исходный столбец. См. ColumnAggregateFunction.h
+			  *  путём удержания shared_ptr-а на исходный столбец. См. ColumnAggregateFunction.h
 			  */
 		}
 	}

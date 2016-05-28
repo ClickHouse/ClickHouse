@@ -2,6 +2,7 @@
 
 #include <zkutil/ZooKeeper.h>
 #include <functional>
+#include <memory>
 #include <common/logger_useful.h>
 
 
@@ -79,7 +80,7 @@ private:
 
 	std::thread thread;
 	volatile bool shutdown = false;
-	zkutil::EventPtr event = new Poco::Event();
+	zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
 	State state = WAITING_LEADERSHIP;
 
@@ -122,6 +123,6 @@ private:
 	}
 };
 
-using LeaderElectionPtr = Poco::SharedPtr<LeaderElection>;
+using LeaderElectionPtr = std::shared_ptr<LeaderElection>;
 
 }

@@ -10,7 +10,6 @@
 #include <Poco/NumberParser.h>
 #include <Poco/NumberFormatter.h>
 #include <Poco/Exception.h>
-#include <Poco/SharedPtr.h>
 
 #include <DB/Common/Exception.h>
 

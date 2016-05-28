@@ -697,7 +697,7 @@ void StorageReplicatedMergeTree::createReplica()
 		{
 			LOG_INFO(log, "Waiting for replica " << source_path << " to be fully created");
 
-			zkutil::EventPtr event = new Poco::Event;
+			zkutil::EventPtr event = std::make_shared<Poco::Event>();
 			if (zookeeper->exists(source_path + "/columns", nullptr, event))
 			{
 				LOG_WARNING(log, "Oops, a watch has leaked");
@@ -2875,7 +2875,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 		/// Дождемся, пока запись попадет в очередь реплики.
 		while (true)
 		{
-			zkutil::EventPtr event = new Poco::Event;
+			zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
 			String log_pointer = zookeeper->get(zookeeper_path + "/replicas/" + replica + "/log_pointer", nullptr, event);
 			if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
@@ -2920,7 +2920,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 			/// Дождемся, пока запись попадет в очередь реплики.
 			while (true)
 			{
-				zkutil::EventPtr event = new Poco::Event;
+				zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
 				String log_pointer = zookeeper->get(zookeeper_path + "/replicas/" + replica + "/log_pointer", nullptr, event);
 				if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)

@@ -7,7 +7,7 @@ namespace DB
 
 ColumnPtr ColumnAggregateFunction::convertToValues() const
 {
-	const IAggregateFunction * function = holder->func.get();
+	const IAggregateFunction * function = func.get();
 	ColumnPtr res = function->getReturnType()->createColumn();
 
 	/** Если агрегатная функция возвращает нефинализированное состояние,

@@ -64,7 +64,7 @@ namespace mysqlxx
 	class PoolWithFailover final
 	{
 	private:
-		using PoolPtr = Poco::SharedPtr<Pool>;
+		using PoolPtr = std::shared_ptr<Pool>;
 
 		struct Replica
 		{
@@ -86,7 +86,7 @@ namespace mysqlxx
 		/// Количество попыток подключения.
 		size_t max_tries;
 		/// Mutex для доступа к списку реплик.
-		Poco::FastMutex mutex;
+		std::mutex mutex;
 
 	public:
 		using Entry = Pool::Entry;

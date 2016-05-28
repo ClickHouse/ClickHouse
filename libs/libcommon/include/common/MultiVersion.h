@@ -24,7 +24,7 @@ template <typename T, typename Ptr = std::shared_ptr<T>>
 class MultiVersion
 {
 public:
-	/// Конкретная версия объекта для использования. SharedPtr определяет время жизни версии.
+	/// Конкретная версия объекта для использования. shared_ptr определяет время жизни версии.
 	using Version = Ptr;
 
 	/// Инициализация по-умолчанию (NULL-ом).
@@ -47,10 +47,10 @@ public:
 		set(std::move(value));
 	}
 
-	/// Получить текущую версию для использования. Возвращает SharedPtr, который определяет время жизни версии.
+	/// Получить текущую версию для использования. Возвращает shared_ptr, который определяет время жизни версии.
 	const Version get() const
 	{
-		/// TODO: можно ли заменять SharedPtr lock-free? (Можно, если сделать свою реализацию с использованием cmpxchg16b.)
+		/// TODO: можно ли заменять shared_ptr lock-free? (Можно, если сделать свою реализацию с использованием cmpxchg16b.)
 		std::lock_guard<std::mutex> lock(mutex);
 		return current_version;
 	}

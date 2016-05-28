@@ -193,7 +193,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 		activateReplica();
 		updateQuorumIfWeHavePart();
 
-		storage.leader_election = new zkutil::LeaderElection(
+		storage.leader_election = std::make_shared<zkutil::LeaderElection>(
 			storage.zookeeper_path + "/leader_election",
 			*storage.current_zookeeper,		/// current_zookeeper живёт в течение времени жизни leader_election,
 											///  так как до изменения current_zookeeper, объект leader_election уничтожается в методе partialShutdown.

@@ -313,7 +313,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 			{
 				while (true)
 				{
-					zkutil::EventPtr event = new Poco::Event;
+					zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
 					std::string value;
 					/// get вместо exists, чтобы не утек watch, если ноды уже нет.

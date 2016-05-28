@@ -17,7 +17,7 @@ int main()
 		std::cout << "create path" << std::endl;
 		zk.create("/test", "old", zkutil::CreateMode::Persistent);
 		zkutil::Stat stat;
-		zkutil::EventPtr watch = new Poco::Event;
+		zkutil::EventPtr watch = std::make_shared<Poco::Event>();
 
 		std::cout << "get path" << std::endl;
 		zk.get("/test", &stat, watch);

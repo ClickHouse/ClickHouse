@@ -10,7 +10,6 @@
 #include <Poco/NumberFormatter.h>
 #include <Poco/Mutex.h>
 #include <Poco/Exception.h>
-#include <Poco/SharedPtr.h>
 
 #include <common/logger_useful.h>
 #include <mysqlxx/Connection.h>

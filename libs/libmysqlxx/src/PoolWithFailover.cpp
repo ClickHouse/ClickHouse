@@ -16,7 +16,7 @@ PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & cfg
 			if (*it == "replica")	/// На том же уровне могут быть другие параметры.
 			{
 				std::string replica_name = config_name + "." + *it;
-				Replica replica(new Pool(cfg, replica_name, default_connections, max_connections, config_name.c_str()),
+				Replica replica(std::make_shared<Pool>(cfg, replica_name, default_connections, max_connections, config_name.c_str()),
 								cfg.getInt(replica_name + ".priority", 0));
 				replicas_by_priority[replica.priority].push_back(replica);
 			}
@@ -24,7 +24,7 @@ PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & cfg
 	}
 	else
 	{
-		replicas_by_priority[0].push_back(Replica(new Pool(cfg, config_name, default_connections, max_connections), 0));
+		replicas_by_priority[0].push_back(Replica(std::make_shared<Pool>(cfg, config_name, default_connections, max_connections), 0));
 	}
 }
 
@@ -44,14 +44,14 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
 		Replicas replicas;
 		replicas.reserve(replica_with_priority.second.size());
 		for (const auto & replica : replica_with_priority.second)
-			replicas.emplace_back(new Pool{*replica.pool}, replica.priority);
+			replicas.emplace_back(std::make_shared<Pool>(*replica.pool), replica.priority);
 		replicas_by_priority.emplace(replica_with_priority.first, std::move(replicas));
 	}
 }
 
 PoolWithFailover::Entry PoolWithFailover::Get()
 {
-	Poco::ScopedLock<Poco::FastMutex> locker(mutex);
+	std::lock_guard<std::mutex> locker(mutex);
 	Poco::Util::Application & app = Poco::Util::Application::instance();
 
 	/// Если к какой-то реплике не подключились, потому что исчерпан лимит соединений, можно подождать и подключиться к ней.

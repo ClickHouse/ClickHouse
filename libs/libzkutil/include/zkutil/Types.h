@@ -2,10 +2,10 @@
 #include <common/Common.h>
 #include <boost/function.hpp>
 #include <future>
+#include <memory>
 #include <boost/noncopyable.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <zookeeper/zookeeper.h>
-#include <Poco/SharedPtr.h>
 #include <Poco/Event.h>
 
 namespace zkutil
@@ -97,6 +97,6 @@ namespace CreateMode
 	extern const int PersistentSequential;
 }
 
-using EventPtr = Poco::SharedPtr<Poco::Event>;
+using EventPtr = std::shared_ptr<Poco::Event>;
 
 }
