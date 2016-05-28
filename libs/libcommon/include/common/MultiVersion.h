@@ -56,6 +56,11 @@ public:
 		current_version = value;
 	}
 
+	void set(T * value)
+	{
+		set(Version(value));
+	}
+
 private:
 	Version current_version;
 	mutable std::mutex mutex;
