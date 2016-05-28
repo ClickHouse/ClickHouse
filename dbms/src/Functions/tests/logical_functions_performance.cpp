@@ -273,14 +273,14 @@ public:
 
 			convertToUInt8(other_in.back(), vec_res);
 			other_in.pop_back();
-			uint8_in.push_back(col_res);
+			uint8_in.push_back(col_res.get());
 		}
 
 		/// Эффективно скомбинируем все столбцы правильного типа.
 		while (uint8_in.size() > 1)
 		{
 			AssociativeOperationImpl<Impl<UInt8>, 10>::execute(uint8_in, vec_res);
-			uint8_in.push_back(col_res);
+			uint8_in.push_back(col_res.get());
 		}
 
 		/// По одному добавим все столбцы неправильного типа.
@@ -288,11 +288,11 @@ public:
 		{
 			executeUInt8Other(uint8_in[0]->getData(), other_in.back(), vec_res);
 			other_in.pop_back();
-			uint8_in[0] = col_res;
+			uint8_in[0] = col_res.get();
 		}
 
 		/// Такое возможно, если среди аргументов ровно один неконстантный, и он имеет тип UInt8.
-		if (uint8_in[0] != col_res)
+		if (uint8_in[0] != col_res.get())
 		{
 			vec_res.assign(uint8_in[0]->getData());
 		}
