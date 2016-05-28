@@ -267,7 +267,7 @@ StoragePtr TableFunctionRemote::execute(ASTPtr ast_function, Context & context) 
 
 	return StorageDistributed::create(
 		getName(),
-		new NamesAndTypesList(getStructureOfRemoteTable(*cluster, remote_database, remote_table, context)),
+		std::make_shared<NamesAndTypesList>(getStructureOfRemoteTable(*cluster, remote_database, remote_table, context)),
 		remote_database,
 		remote_table,
 		cluster,

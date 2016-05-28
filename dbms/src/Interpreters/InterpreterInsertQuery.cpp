@@ -76,7 +76,7 @@ BlockIO InterpreterInsertQuery::execute()
 
 	auto table_lock = table->lockStructure(true);
 
-	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getColumnsList());
+	NamesAndTypesListPtr required_columns = std::make_shared<NamesAndTypesList>(table->getColumnsList());
 
 	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
 	BlockOutputStreamPtr out{

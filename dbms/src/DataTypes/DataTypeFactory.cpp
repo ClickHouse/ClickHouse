@@ -162,7 +162,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			ParserNameTypePairList columns_p;
 			ASTPtr columns_ast = parseQuery(columns_p, parameters.data(), parameters.data() + parameters.size(), "parameters for data type " + name);
 
-			NamesAndTypesListPtr columns = new NamesAndTypesList;
+			NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>();
 
 			ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*columns_ast);
 			for (ASTs::iterator it = columns_list.children.begin(); it != columns_list.children.end(); ++it)

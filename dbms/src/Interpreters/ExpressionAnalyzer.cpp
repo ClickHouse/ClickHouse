@@ -391,7 +391,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth, {});
 
 	Block sample = interpreter->getSampleBlock();
-	NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
+	NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(sample.getColumnsList());
 
 	StoragePtr external_storage = StorageMemory::create(external_table_name, columns);
 

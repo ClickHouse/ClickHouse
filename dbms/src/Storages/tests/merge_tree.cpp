@@ -29,7 +29,7 @@ int main(int argc, char ** argv)
 
 		/// создаём таблицу с парой столбцов
 
-		NamesAndTypesListPtr names_and_types = new NamesAndTypesList;
+		NamesAndTypesListPtr names_and_types = std::make_shared<NamesAndTypesList>();
 		names_and_types->push_back(NameAndTypePair("d", std::make_shared<DataTypeDate>()));
 		names_and_types->push_back(NameAndTypePair("a", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>())));
 

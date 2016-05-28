@@ -67,7 +67,7 @@ StoragePtr TableFunctionShardByHash::execute(ASTPtr ast_function, Context & cont
 
 	return StorageDistributed::create(
 		getName(),
-		new NamesAndTypesList(getStructureOfRemoteTable(*shard, remote_database, remote_table, context)),
+		std::make_shared<NamesAndTypesList>(getStructureOfRemoteTable(*shard, remote_database, remote_table, context)),
 		remote_database,
 		remote_table,
 		shard,

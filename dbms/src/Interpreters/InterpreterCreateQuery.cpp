@@ -348,7 +348,7 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::getColumnsInfo(
 	auto && columns_and_defaults = parseColumns(columns, context);
 	res.materialized_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Materialized);
 	res.alias_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Alias);
-	res.columns = new NamesAndTypesList{std::move(columns_and_defaults.first)};
+	res.columns = std::make_shared<NamesAndTypesList>(std::move(columns_and_defaults.first));
 	res.column_defaults = std::move(columns_and_defaults.second);
 
 	if (res.columns->size() + res.materialized_columns.size() == 0)
@@ -369,14 +369,14 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
 	}
 	else if (!create.as_table.empty())
 	{
-		res.columns = new NamesAndTypesList(as_storage->getColumnsListNonMaterialized());
+		res.columns = std::make_shared<NamesAndTypesList>(as_storage->getColumnsListNonMaterialized());
 		res.materialized_columns = as_storage->materialized_columns;
 		res.alias_columns = as_storage->alias_columns;
 		res.column_defaults = as_storage->column_defaults;
 	}
 	else if (create.select)
 	{
-		res.columns = new NamesAndTypesList;
+		res.columns = std::make_shared<NamesAndTypesList>();
 		for (size_t i = 0; i < as_select_sample.columns(); ++i)
 			res.columns->push_back(NameAndTypePair(as_select_sample.getByPosition(i).name, as_select_sample.getByPosition(i).type));
 	}

@@ -588,7 +588,7 @@ bool TCPHandler::receiveData()
 			/// Если такой таблицы не существовало, создаем ее.
 			if (!(storage = query_context.tryGetExternalTable(external_table_name)))
 			{
-				NamesAndTypesListPtr columns = new NamesAndTypesList(block.getColumnsList());
+				NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(block.getColumnsList());
 				storage = StorageMemory::create(external_table_name, columns);
 				query_context.addExternalTable(external_table_name, storage);
 			}
