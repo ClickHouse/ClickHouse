@@ -160,7 +160,7 @@ void MultiplexedConnections::sendQuery(const String & query, const String & quer
 Connection::Packet MultiplexedConnections::receivePacket()
 {
 	std::lock_guard<std::mutex> lock(cancel_mutex);
-	const auto & packet = receivePacketUnlocked();
+	Connection::Packet packet = receivePacketUnlocked();
 	if (block_extra_info)
 	{
 		if (packet.type == Protocol::Server::Data)
@@ -168,7 +168,7 @@ Connection::Packet MultiplexedConnections::receivePacket()
 		else
 			block_extra_info->is_valid = false;
 	}
-	return std::move(packet);
+	return packet;
 }
 
 BlockExtraInfo MultiplexedConnections::getBlockExtraInfo() const
