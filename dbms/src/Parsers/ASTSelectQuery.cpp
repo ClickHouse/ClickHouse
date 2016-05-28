@@ -155,7 +155,7 @@ ASTPtr ASTSelectQuery::clone() const
 	ASTPtr current = ptr;
 	static_cast<ASTSelectQuery *>(&*current)->prev_union_all = nullptr;
 	ASTPtr next = static_cast<ASTSelectQuery *>(&*current)->next_union_all;
-	while (!next.isNull())
+	while (next != nullptr)
 	{
 		ASTSelectQuery * next_select_query = static_cast<ASTSelectQuery *>(&*next);
 		next_select_query->prev_union_all = current.get();
@@ -226,7 +226,7 @@ ASTPtr ASTSelectQuery::cloneImpl(bool traverse_union_all) const
 const IAST * ASTSelectQuery::getFormat() const
 {
 	const ASTSelectQuery * query = this;
-	while (!query->next_union_all.isNull())
+	while (query->next_union_all != nullptr)
 		query = static_cast<const ASTSelectQuery *>(query->next_union_all.get());
 	return query->format.get();
 }

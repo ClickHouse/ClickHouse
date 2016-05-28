@@ -358,11 +358,11 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 
 			/// Если узел OR был корнем выражения WHERE, PREWHERE или HAVING, то следует обновить этот корень.
 			/// Из-за того, что имеем дело с направленным ациклическим графом, надо проверить все случаи.
-			if (!select_query->where_expression.isNull() && (or_function == &*(select_query->where_expression)))
+			if (select_query->where_expression && (or_function == &*(select_query->where_expression)))
 				select_query->where_expression = operands[0];
-			if (!select_query->prewhere_expression.isNull() && (or_function == &*(select_query->prewhere_expression)))
+			if (select_query->prewhere_expression && (or_function == &*(select_query->prewhere_expression)))
 				select_query->prewhere_expression = operands[0];
-			if (!select_query->having_expression.isNull() && (or_function == &*(select_query->having_expression)))
+			if (select_query->having_expression && (or_function == &*(select_query->having_expression)))
 				select_query->having_expression = operands[0];
 		}
 	}

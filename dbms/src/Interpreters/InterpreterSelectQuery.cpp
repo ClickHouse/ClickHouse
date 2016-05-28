@@ -71,7 +71,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 		InterpreterSelectQuery * interpreter = this;
 		ASTPtr tail = query.next_union_all;
 
-		while (!tail.isNull())
+		while (tail)
 		{
 			ASTPtr head = tail;
 

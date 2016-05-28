@@ -305,7 +305,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
 		if (s_all.ignore(pos, end, max_parsed_pos, expected))
 		{
-			if (!select_query->format.isNull())
+			if (select_query->format)
 			{
 				/// FORMAT может быть задан только в последнем запросе цепочки UNION ALL.
 				expected = "FORMAT only in the last SELECT of the UNION ALL chain";
