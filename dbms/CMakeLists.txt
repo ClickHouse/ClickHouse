@@ -935,7 +935,6 @@ target_link_libraries(dbms
 	libcrypto.a
 	libboost_thread.a
 	libboost_system.a
-	librt.a
 	${LINK_MONGOCLIENT}
 	libboost_regex.a
 	PocoData
