@@ -352,7 +352,9 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 			for (auto & parent : parents)
 			{
 				parent->children.push_back(operands[0]);
-				auto first_erased = std::remove(parent->children.begin(), parent->children.end(), or_function);
+				auto first_erased = std::remove_if(parent->children.begin(), parent->children.end(),
+					[or_function](const ASTPtr & ptr) { return ptr.get() == or_function; });
+
 				parent->children.erase(first_erased, parent->children.end());
 			}
 

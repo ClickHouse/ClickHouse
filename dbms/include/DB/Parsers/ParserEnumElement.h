@@ -37,7 +37,7 @@ protected:
 			return false;
 
 		node = std::make_shared<ASTEnumElement>(
-			{ begin, pos },
+			StringRange{ begin, pos },
 			static_cast<const ASTLiteral &>(*name).value.get<String>(),
 			static_cast<const ASTLiteral &>(*value).value);
 

@@ -183,7 +183,7 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 
 		if (init)
 		{
-			function = column->getAggregateFunction();
+			function = column->getAggregateFunction().get();
 			auto target = std::make_shared<ColumnAggregateFunction>(column->getAggregateFunction(), Arenas(1, arena));
 			totals.insert(ColumnWithTypeAndName(target, current.type, current.name));
 
@@ -197,7 +197,7 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 			if (!target)
 				throw Exception("Unexpected type of column: " + totals.getByPosition(i).column->getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
-			function = target->getAggregateFunction();
+			function = target->getAggregateFunction().get();
 			data = target->getData()[0];
 		}
 

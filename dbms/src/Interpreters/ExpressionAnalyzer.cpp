@@ -553,7 +553,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 	}
 
 	ASTPtr initial_ast = ast;
-	current_asts.insert(initial_ast);
+	current_asts.insert(initial_ast.get());
 
 	String my_alias = ast->tryGetAlias();
 	if (!my_alias.empty())
@@ -573,7 +573,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 		if (columns.end() != it)
 		{
 			ast = std::make_shared<ASTIdentifier>(func_node->range, function_string);
-			current_asts.insert(ast);
+			current_asts.insert(ast.get());
 			replaced = true;
 		}
 
@@ -598,7 +598,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 			if (jt != aliases.end() && current_alias != node->name)
 			{
 				/// Заменим его на соответствующий узел дерева.
-				if (current_asts.count(jt->second))
+				if (current_asts.count(jt->second.get()))
 					throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
 				if (!my_alias.empty() && my_alias != jt->second->getAliasOrColumnName())
 				{
@@ -643,9 +643,9 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 	if (replaced)
 	{
 		normalizeTreeImpl(ast, finished_asts, current_asts, current_alias);
-		current_asts.erase(initial_ast);
-		current_asts.erase(ast);
-		finished_asts[initial_ast] = ast;
+		current_asts.erase(initial_ast.get());
+		current_asts.erase(ast.get());
+		finished_asts[initial_ast] = ast.get();
 		return;
 	}
 
@@ -717,8 +717,8 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 				", and '" + node->name + "' is not an aggregate function.", ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS);
 	}
 
-	current_asts.erase(initial_ast);
-	current_asts.erase(ast);
+	current_asts.erase(initial_ast.get());
+	current_asts.erase(ast.get());
 	finished_asts[initial_ast] = ast;
 }
 
@@ -827,7 +827,7 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 		{
 			auto lit = std::make_shared<ASTLiteral>(ast->range, (*block.getByPosition(0).column)[0]);
 			lit->alias = subquery->alias;
-			ast = addTypeConversion(lit, block.getByPosition(0).type->getName());
+			ast = addTypeConversion(lit.get(), block.getByPosition(0).type->getName());
 		}
 		else
 		{
@@ -844,7 +844,7 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 			for (size_t i = 0; i < columns; ++i)
 			{
 				exp_list->children[i] = addTypeConversion(
-					std::make_shared<ASTLiteral>(ast->range, (*block.getByPosition(i).column)[0]),
+					std::make_unique<ASTLiteral>(ast->range, (*block.getByPosition(i).column)[0]).get(),
 					block.getByPosition(i).type->getName());
 			}
 		}

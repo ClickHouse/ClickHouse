@@ -196,7 +196,7 @@ static ColumnsAndDefaults parseColumns(
 
 				default_expr_list->children.emplace_back(setAlias(
 					makeASTFunction("CAST", std::make_shared<ASTIdentifier>(StringRange(), tmp_column_name),
-						std::make_shared<ASTLiteral>(StringRange(), data_type_ptr->getName()), final_column_name));
+						std::make_shared<ASTLiteral>(StringRange(), Field(data_type_ptr->getName())), final_column_name)));
 				default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
 			}
 			else
@@ -282,8 +282,6 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 	for (const auto & column : columns)
 	{
 		const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
-		ASTPtr column_declaration_ptr{column_declaration};
-
 		column_declaration->name = column.name;
 
 		StringPtr type_name = std::make_shared<String>(column.type->getName());
@@ -293,7 +291,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 		ParserIdentifierWithOptionalParameters storage_p;
 		column_declaration->type = parseQuery(storage_p, pos, end, "data type");
 		column_declaration->type->query_string = type_name;
-		columns_list->children.push_back(column_declaration_ptr);
+		columns_list->children.emplace_back(column_declaration);
 	}
 
 	return columns_list;

@@ -93,7 +93,7 @@ bool ParserTypeInCastExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
 	if (ParserIdentifierWithOptionalParameters::parseImpl(pos, end, node, max_parsed_pos, expected))
 	{
 		const auto & id_with_params = typeid_cast<const ASTFunction &>(*node);
-		node = std::make_shared<ASTIdentifier>(id_with_params.range, { id_with_params.range.first, id_with_params.range.second });
+		node = std::make_shared<ASTIdentifier>(id_with_params.range, String{ id_with_params.range.first, id_with_params.range.second });
 		return true;
 	}
 
