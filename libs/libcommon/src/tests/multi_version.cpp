@@ -3,6 +3,7 @@
 #include <threadpool.hpp>
 #include <functional>
 #include <common/MultiVersion.h>
+#include <Poco/Exception.h>
 
 
 using T = std::string;
