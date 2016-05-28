@@ -18,6 +18,7 @@ export THREADS=$(grep -c ^processor /proc/cpuinfo)
 
 ## Install GCC 5.
 
+(GCC 6 is fine too)
 There are several ways to do it.
 
 ### 1. If you run on Ubuntu 15.10 or newer, just do
@@ -184,11 +185,10 @@ For production releases, GCC is used.
 ### Run release script.
 ```
 rm -f ../clickhouse*.deb
-./release
+./release --standalone
 ```
 
-debsign and dupload will not work by default.
-It's Ok. You will find built packages in parent directory.
+You will find built packages in parent directory.
 ```
 ls -l ../clickhouse*.deb
 ```
