@@ -50,7 +50,7 @@ AggregateFunctionPtr createAggregateFunctionQuantiles(const std::string & name, 
 	else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantiles<Int32>>();
 	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return std::make_shared<AggregateFunctionQuantiles<Int64>>();
 	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return std::make_shared<AggregateFunctionQuantiles<Float32>>();
-	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return std::make_shared<AggregateFunctionQuantiles<Float64>v;
+	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return std::make_shared<AggregateFunctionQuantiles<Float64>>();
 	else if (typeid_cast<const DataTypeDate 	*>(&argument_type))
 		return std::make_shared<AggregateFunctionQuantiles<DataTypeDate::FieldType, false>>();
 	else if (typeid_cast<const DataTypeDateTime*>(&argument_type))

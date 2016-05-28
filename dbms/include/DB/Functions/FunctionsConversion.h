@@ -1511,7 +1511,9 @@ class FunctionCast final : public IFunction
 	WrapperType wrapper_function;
 	std::function<Monotonicity(const IDataType &, const Field &, const Field &)> monotonicity_for_range;
 
+public:
 	FunctionCast(const Context & context) : context(context) {}
+private:
 
 	template <typename DataType> auto createWrapper(const DataTypePtr & from_type, const DataType * const)
 	{
@@ -1637,7 +1639,7 @@ class FunctionCast final : public IFunction
 		for (const auto & idx_type : ext::enumerate(from_type->getElements()))
 			element_wrappers.push_back(prepare(idx_type.second, to_element_types[idx_type.first].get()));
 
-		std::shared_ptr<FunctionTuple> function_tuple{static_cast<FunctionTuple *>(FunctionTuple::create(context))};
+		auto function_tuple = FunctionTuple::create(context);
 		return [element_wrappers, function_tuple, from_element_types, to_element_types]
 			(Block & block, const ColumnNumbers & arguments, const size_t result)
 		{
@@ -1696,7 +1698,7 @@ class FunctionCast final : public IFunction
 			return createStringToEnumWrapper<ColumnFixedString, EnumType>();
 		else if (from_type->behavesAsNumber())
 		{
-			std::shared_ptr<Function> function{static_cast<Function *>(Function::create(context))};
+			auto function = Function::create(context);
 
 			/// Check conversion using underlying function
 			(void) function->getReturnType({ from_type });
