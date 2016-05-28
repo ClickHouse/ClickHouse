@@ -98,11 +98,11 @@ public:
 
 	/** Создать пустой столбец соответствующего типа.
 	  */
-	virtual SharedPtr<IColumn> createColumn() const = 0;
+	virtual ColumnPtr createColumn() const = 0;
 
 	/** Создать столбец соответствующего типа, содержащий константу со значением Field, длины size.
 	  */
-	virtual SharedPtr<IColumn> createConstColumn(size_t size, const Field & field) const = 0;
+	virtual ColumnPtr createConstColumn(size_t size, const Field & field) const = 0;
 
 	/** Получить значение "по-умолчанию".
 	  */

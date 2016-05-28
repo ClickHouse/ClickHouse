@@ -36,7 +36,7 @@ public:
 
 	std::string getName() const override { return "Tuple"; }
 
-	SharedPtr<IColumn> cloneEmpty() const override
+	ColumnPtr cloneEmpty() const override
 	{
 		return new ColumnTuple(data.cloneEmpty());
 	}
