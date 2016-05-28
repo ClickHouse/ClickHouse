@@ -110,9 +110,9 @@ int main(int argc, char ** argv)
 	{							\
 		value.resize(3);		\
 								\
-		value[0] = func_count;	\
-		value[1] = func_avg;	\
-		value[2] = func_uniq;	\
+		value[0] = func_count.get();\
+		value[1] = func_avg.get();	\
+		value[2] = func_uniq.get();	\
 	}
 
 	INIT;
