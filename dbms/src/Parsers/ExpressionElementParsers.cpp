@@ -338,7 +338,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 		expr_list_args = std::make_shared<ASTExpressionList>(StringRange{contents_begin, end});
 		first_argument->setAlias({});
 		expr_list_args->children.push_back(first_argument);
-		expr_list_args->children.emplace_back(std::make_shared<ASTLiteral>({}, type));
+		expr_list_args->children.emplace_back(std::make_shared<ASTLiteral>(StringRange(), type));
 	}
 	else
 	{

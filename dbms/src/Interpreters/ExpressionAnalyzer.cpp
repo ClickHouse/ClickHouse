@@ -437,7 +437,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 
 		Names column_names = external_storage->getColumnNamesList();
 		for (const auto & name : column_names)
-			exp_list->children.push_back(std::make_shared<ASTIdentifier>({}, name));
+			exp_list->children.push_back(std::make_shared<ASTIdentifier>(StringRange(), name));
 
 		auto table_func = std::make_shared<ASTFunction>();
 		select->table = table_func;
@@ -448,13 +448,13 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 		table_func->arguments = args;
 		table_func->children.push_back(table_func->arguments);
 
-		auto address_lit = std::make_shared<ASTLiteral>({}, host_port);
+		auto address_lit = std::make_shared<ASTLiteral>(StringRange(), host_port);
 		args->children.push_back(address_lit);
 
-		auto database_lit = std::make_shared<ASTLiteral>({}, database);
+		auto database_lit = std::make_shared<ASTLiteral>(StringRange(), database);
 		args->children.push_back(database_lit);
 
-		auto table_lit = std::make_shared<ASTLiteral>({}, external_table_name);
+		auto table_lit = std::make_shared<ASTLiteral>(StringRange(), external_table_name);
 		args->children.push_back(table_lit);
 	}
 	else
@@ -768,7 +768,7 @@ static ASTPtr addTypeConversion(ASTLiteral * ast_, const String & type_name)
 	func->arguments = exp_list;
 	func->children.push_back(func->arguments);
 	exp_list->children.emplace_back(ast.release());
-	exp_list->children.emplace_back(std::make_shared<ASTLiteral>({}, type_name));
+	exp_list->children.emplace_back(std::make_shared<ASTLiteral>(StringRange(), type_name));
 	return res;
 }
 

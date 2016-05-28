@@ -21,7 +21,7 @@ public:
 
 	ASTPtr clone() const override
 	{
-		return std::make_shared<ASTEnumElement>({}, name, value);
+		return std::make_shared<ASTEnumElement>(StringRange(), name, value);
 	}
 
 protected:

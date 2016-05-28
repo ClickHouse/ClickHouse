@@ -195,8 +195,8 @@ static ColumnsAndDefaults parseColumns(
 				const auto data_type_ptr = columns.back().type.get();
 
 				default_expr_list->children.emplace_back(setAlias(
-					makeASTFunction("CAST", std::make_shared<ASTIdentifier>({}, tmp_column_name),
-						std::make_shared<ASTLiteral>({}, data_type_ptr->getName()), final_column_name));
+					makeASTFunction("CAST", std::make_shared<ASTIdentifier>(StringRange(), tmp_column_name),
+						std::make_shared<ASTLiteral>(StringRange(), data_type_ptr->getName()), final_column_name));
 				default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
 			}
 			else
@@ -229,7 +229,7 @@ static ColumnsAndDefaults parseColumns(
 				if (explicit_type->getName() != deduced_type->getName())
 				{
 					col_decl_ptr->default_expression = makeASTFunction("CAST", col_decl_ptr->default_expression,
-						std::make_shared<ASTLiteral>({}, explicit_type->getName()));
+						std::make_shared<ASTLiteral>(StringRange(), explicit_type->getName()));
 
 					col_decl_ptr->children.clear();
 					col_decl_ptr->children.push_back(col_decl_ptr->type);

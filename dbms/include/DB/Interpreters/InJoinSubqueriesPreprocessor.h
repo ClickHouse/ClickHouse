@@ -271,7 +271,7 @@ private:
 
 			if (!sub_select_query.database)
 			{
-				sub_select_query.database = std::make_shared<ASTIdentifier>({}, distributed_storage.getRemoteDatabaseName(),
+				sub_select_query.database = std::make_shared<ASTIdentifier>(StringRange(), distributed_storage.getRemoteDatabaseName(),
 					ASTIdentifier::Database);
 
 				/// Поскольку был создан новый узел для БД, необходимо его вставить в список
