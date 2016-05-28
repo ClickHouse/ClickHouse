@@ -246,7 +246,7 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 	if (!resharding_worker.isStarted())
 		throw Exception{"Resharding background thread is not running", ErrorCodes::RESHARDING_NO_WORKER};
 
-	if (coordinator)
+	if (!coordinator.isNull())
 		throw Exception{"Use of COORDINATE WITH is forbidden in ALTER TABLE ... RESHARD"
 			" queries for distributed tables",
 			ErrorCodes::RESHARDING_INVALID_PARAMETERS};
@@ -286,9 +286,9 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 		ASTAlterQuery::Parameters & parameters = alter_query.parameters.back();
 
 		parameters.type = ASTAlterQuery::RESHARD_PARTITION;
-		if (first_partition)
+		if (!first_partition.isNull())
 			parameters.partition = std::make_shared<ASTLiteral>({}, first_partition);
-		if (last_partition)
+		if (!last_partition.isNull())
 			parameters.last_partition = std::make_shared<ASTLiteral>({}, last_partition);
 
 		ASTPtr expr_list = std::make_shared<ASTExpressionList>();

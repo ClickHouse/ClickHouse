@@ -122,7 +122,7 @@ void StorageMaterializedView::drop()
 	if (context.tryGetTable(database_name, inner_table_name))
 	{
 		/// Состваляем и выполняем запрос drop для внутреннего хранилища.
-		ASTDropQuery *drop_query = std::make_shared<ASTDropQuery>();
+		auto drop_query = std::make_shared<ASTDropQuery>();
 		drop_query->database = database_name;
 		drop_query->table = inner_table_name;
 		ASTPtr ast_drop_query = drop_query;
