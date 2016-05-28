@@ -2,8 +2,6 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/Core/Block.h>
 #include <DB/Core/Row.h>
 #include <DB/Storages/IStorage.h>
@@ -32,7 +30,7 @@ public:
 	/** Сбросить имеющиеся буферы для записи.
 	  */
 	virtual void flush() {}
-	
+
 	/** Методы для установки дополнительной информации для вывода в поддерживающих её форматах.
 	  */
 	virtual void setRowsBeforeLimit(size_t rows_before_limit) {}
@@ -48,9 +46,11 @@ public:
 	/** Не давать изменить таблицу, пока жив поток блоков.
 	  */
 	void addTableLock(const IStorage::TableStructureReadLockPtr & lock) { table_locks.push_back(lock); }
-	
+
 protected:
 	IStorage::TableStructureReadLocks table_locks;
 };
+
+using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 
 }

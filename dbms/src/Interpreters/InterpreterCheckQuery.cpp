@@ -152,7 +152,8 @@ BlockIO InterpreterCheckQuery::execute()
 		const auto settings = context.getSettings();
 
 		BlockInputStreams streams = distributed_table->describe(context, settings);
-		streams[0] = new UnionBlockInputStream<StreamUnionMode::ExtraInfo>(streams, nullptr, settings.max_distributed_connections);
+		streams[0] = std::make_shared<UnionBlockInputStream<StreamUnionMode::ExtraInfo>>(
+			streams, nullptr, settings.max_distributed_connections);
 		streams.resize(1);
 
 		auto stream_ptr = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]);
@@ -169,7 +170,7 @@ BlockIO InterpreterCheckQuery::execute()
 			if (stream.isCancelled())
 			{
 				BlockIO res;
-				res.in = new OneBlockInputStream(result);
+				res.in = std::make_shared<OneBlockInputStream>(result);
 				return res;
 			}
 
@@ -240,7 +241,7 @@ BlockIO InterpreterCheckQuery::execute()
 		block.insert(ColumnWithTypeAndName(structure_column, std::make_shared<DataTypeString>(), "structure"));
 
 		BlockIO res;
-		res.in = new OneBlockInputStream(block);
+		res.in = std::make_shared<OneBlockInputStream>(block);
 		res.in_sample = getSampleBlock();
 
 		return res;
@@ -251,7 +252,7 @@ BlockIO InterpreterCheckQuery::execute()
 		result.getByPosition(0).column->insert(Field(UInt64(table->checkData())));
 
 		BlockIO res;
-		res.in = new OneBlockInputStream(result);
+		res.in = std::make_shared<OneBlockInputStream>(result);
 		res.in_sample = result.cloneEmpty();
 
 		return res;

@@ -116,7 +116,7 @@ int main(int argc, char ** argv)
 
 			WriteBufferFromFileDescriptor out_buf(STDOUT_FILENO);
 
-			RowOutputStreamPtr output_ = new TabSeparatedRowOutputStream(out_buf, sample);
+			RowOutputStreamPtr output_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
 			BlockOutputStreamFromRowOutputStream output(output_);
 
 			copyData(*in, output);

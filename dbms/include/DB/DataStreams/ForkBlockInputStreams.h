@@ -23,7 +23,7 @@ public:
 	/// Создать источник. Вызывайте функцию столько раз, сколько размноженных источников вам нужно.
 	BlockInputStreamPtr createInput()
 	{
-		destinations.emplace_back(new QueueBlockIOStream(1));
+		destinations.emplace_back(std::make_shared<QueueBlockIOStream>(1));
 		return destinations.back();
 	}
 
@@ -63,7 +63,7 @@ private:
 	  * Сделаны на основе очереди небольшой длины.
 	  * Блок из source кладётся в каждую очередь.
 	  */
-	using Destination = Poco::SharedPtr<QueueBlockIOStream>;
+	using Destination = std::shared_ptr<QueueBlockIOStream>;
 	using Destinations = std::list<Destination>;
 	Destinations destinations;
 };

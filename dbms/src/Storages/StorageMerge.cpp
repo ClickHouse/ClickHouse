@@ -177,7 +177,8 @@ BlockInputStreams StorageMerge::read(
 			if (virtual_column == "_table")
 			{
 				for (auto & stream : source_streams)
-					stream = new AddingConstColumnBlockInputStream<String>(stream, std::make_shared<DataTypeString>(), table->getTableName(), "_table");
+					stream = std::make_shared<AddingConstColumnBlockInputStream<String>>(
+						stream, std::make_shared<DataTypeString>(), table->getTableName(), "_table");
 			}
 		}
 

@@ -34,8 +34,8 @@ try
 	ReadBufferFromFile in_buf("test_in");
 	WriteBufferFromFile out_buf("test_out");
 
-	RowInputStreamPtr row_input = new TabSeparatedRowInputStream(in_buf, sample);
-	RowOutputStreamPtr row_output = new TabSeparatedRowOutputStream(out_buf, sample);
+	RowInputStreamPtr row_input = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample);
+	RowOutputStreamPtr row_output = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
 
 	BlockInputStreamFromRowInputStream block_input(row_input, sample);
 	BlockOutputStreamFromRowOutputStream block_output(row_output);

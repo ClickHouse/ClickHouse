@@ -144,12 +144,12 @@ try
 	QueryProcessingStage::Enum stage;
 
 	Poco::SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Context{}, Settings(), stage, argc == 2 ? atoi(argv[1]) : 1048576)[0];
-	in = new PartialSortingBlockInputStream(in, sort_columns);
-	in = new MergeSortingBlockInputStream(in, sort_columns, DEFAULT_BLOCK_SIZE, 0, 0, "");
-	//in = new LimitBlockInputStream(in, 10, 0);
+	in = std::make_shared<PartialSortingBlockInputStream>(in, sort_columns);
+	in = std::make_shared<MergeSortingBlockInputStream>(in, sort_columns, DEFAULT_BLOCK_SIZE, 0, 0, "");
+	//in = std::make_shared<LimitBlockInputStream>(in, 10, 0);
 
 	WriteBufferFromOStream ob(std::cout);
-	RowOutputStreamPtr out_ = new TabSeparatedRowOutputStream(ob, sample);
+	RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(ob, sample);
 	BlockOutputStreamFromRowOutputStream out(out_);
 
 	copyData(*in, out);

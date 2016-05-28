@@ -46,7 +46,7 @@ private:
 
 	Poco::Net::HTTPClientSession session;
 	std::ostream * ostr;	/// этим владеет session
-	Poco::SharedPtr<WriteBuffer> impl;
+	std::unique_ptr<WriteBuffer> impl;
 
 	/// Отправили все данные и переименовали файл
 	bool finalized = false;

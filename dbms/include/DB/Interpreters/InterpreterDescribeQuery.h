@@ -100,9 +100,8 @@ private:
 			}
 		}
 
-		return new OneBlockInputStream{
-			{name_column, type_column, default_type_column, default_expression_column}
-		};
+		return std::make_shared<OneBlockInputStream>(
+			Block{name_column, type_column, default_type_column, default_expression_column});
 	}
 };
 

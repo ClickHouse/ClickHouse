@@ -30,8 +30,8 @@ class Context;
 class IBlockInputStream;
 class IBlockOutputStream;
 
-using BlockOutputStreamPtr = SharedPtr<IBlockOutputStream>;
-using BlockInputStreamPtr = SharedPtr<IBlockInputStream>;
+using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
+using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 using BlockInputStreams = std::vector<BlockInputStreamPtr>;
 
 

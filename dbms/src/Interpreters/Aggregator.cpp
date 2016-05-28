@@ -1684,7 +1684,7 @@ std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
 			non_empty_data.push_back(data);
 
 	if (non_empty_data.empty())
-		return std::unique_ptr<IBlockInputStream>(new NullBlockInputStream);
+		return std::make_unique<NullBlockInputStream>();
 
 	if (non_empty_data.size() > 1)
 	{
@@ -1728,7 +1728,7 @@ std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
 			non_empty_data[i]->aggregates_pools.begin(), non_empty_data[i]->aggregates_pools.end());
 	}
 
-	return std::unique_ptr<IBlockInputStream>(new MergingAndConvertingBlockInputStream(*this, non_empty_data, final, max_threads));
+	return std::make_unique<MergingAndConvertingBlockInputStream>(*this, non_empty_data, final, max_threads);
 }
 
 

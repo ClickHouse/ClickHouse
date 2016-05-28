@@ -186,7 +186,7 @@ BlockInputStreams StorageSystemReplicationQueue::read(
 		col_last_postpone_time,
 	};
 
-	return BlockInputStreams(1, new OneBlockInputStream(block));
+	return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
 }
 
 

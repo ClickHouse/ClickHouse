@@ -40,7 +40,7 @@ BlockInputStreams StorageSystemOne::read(
 	col.column = ColumnConstUInt8(1, 0).convertToFullColumn();
 	block.insert(col);
 
-	return BlockInputStreams(1, new OneBlockInputStream(block));
+	return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
 }
 
 

@@ -784,7 +784,7 @@ private:
 		BlockInputStreamPtr block_input = context.getInputFormat(
 			current_format, buf, sample, insert_format_max_block_size);
 
-		BlockInputStreamPtr async_block_input = new AsynchronousBlockInputStream(block_input);
+		BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
 
 		async_block_input->readPrefix();
 

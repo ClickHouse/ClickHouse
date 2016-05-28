@@ -44,7 +44,7 @@ Block AggregatingBlockInputStream::readImpl()
 			BlockInputStreams input_streams;
 			for (const auto & file : files.files)
 			{
-				temporary_inputs.emplace_back(new TemporaryFileStream(file->path()));
+				temporary_inputs.emplace_back(std::make_unique<TemporaryFileStream>(file->path()));
 				input_streams.emplace_back(temporary_inputs.back()->block_in);
 			}
 
@@ -52,7 +52,7 @@ Block AggregatingBlockInputStream::readImpl()
 				<< (files.sum_size_compressed / 1048576.0) << " MiB compressed, "
 				<< (files.sum_size_uncompressed / 1048576.0) << " MiB uncompressed.");
 
-			impl.reset(new MergingAggregatedMemoryEfficientBlockInputStream(input_streams, params, final, 1, 1));
+			impl = std::make_unique<MergingAggregatedMemoryEfficientBlockInputStream>(input_streams, params, final, 1, 1);
 		}
 	}
 

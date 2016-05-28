@@ -101,7 +101,7 @@ try
 		ReadBufferFromIStream in_buf(std::cin);
 		WriteBufferFromOStream out_buf(std::cout);
 
-		RowInputStreamPtr row_in = new TabSeparatedRowInputStream(in_buf, sample);
+		RowInputStreamPtr row_in = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample);
 		BlockInputStreamFromRowInputStream in(row_in, sample);
 		TabSeparatedBlockOutputStream out(out_buf);
 		copyData(in, out);

@@ -80,7 +80,7 @@ BlockInputStreams StorageSystemNumbers::read(
 
 	BlockInputStreams res(threads);
 	for (size_t i = 0; i < threads; ++i)
-		res[i] = new NumbersBlockInputStream(max_block_size, i * max_block_size, threads * max_block_size);
+		res[i] = std::make_shared<NumbersBlockInputStream>(max_block_size, i * max_block_size, threads * max_block_size);
 
 	return res;
 }

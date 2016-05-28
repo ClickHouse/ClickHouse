@@ -69,8 +69,8 @@ int main(int argc, char ** argv)
 		}
 
 		BlockInputStreams inputs;
-		inputs.push_back(new OneBlockInputStream(block1));
-		inputs.push_back(new OneBlockInputStream(block2));
+		inputs.push_back(std::make_shared<OneBlockInputStream>(block1));
+		inputs.push_back(std::make_shared<OneBlockInputStream>(block2));
 
 		SortDescription descr;
 		SortColumnDescription col_descr("CounterID", 1);

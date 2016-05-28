@@ -363,7 +363,7 @@ void ExpressionAnalyzer::findExternalTables(ASTPtr & ast)
 }
 
 
-static SharedPtr<InterpreterSelectQuery> interpretSubquery(
+static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
 	ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_columns);
 
 
@@ -388,7 +388,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 		external_table_name = "_data" + toString(external_table_id);
 	}
 
-	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth, {});
+	auto interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth, {});
 
 	Block sample = interpreter->getSampleBlock();
 	NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(sample.getColumnsList());
@@ -1047,7 +1047,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(ASTPtr & node, const Block & sampl
 }
 
 
-static SharedPtr<InterpreterSelectQuery> interpretSubquery(
+static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
 	ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_columns)
 {
 	/// Подзапрос или имя таблицы. Имя таблицы аналогично подзапросу SELECT * FROM t.
@@ -1138,9 +1138,11 @@ static SharedPtr<InterpreterSelectQuery> interpretSubquery(
 	}
 
 	if (required_columns.empty())
-		return new InterpreterSelectQuery(query, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
+		return std::make_shared<InterpreterSelectQuery>(
+			query, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
 	else
-		return new InterpreterSelectQuery(query, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+		return std::make_shared<InterpreterSelectQuery>(
+			query, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
 }
 
 
@@ -1206,7 +1208,8 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		if (!subquery_for_set.source)
 		{
 			auto interpreter = interpretSubquery(arg, context, subquery_depth, {});
-			subquery_for_set.source = new LazyBlockInputStream([interpreter]() mutable { return interpreter->execute().in; });
+			subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
+				[interpreter]() mutable { return interpreter->execute().in; });
 			subquery_for_set.source_sample = interpreter->getSampleBlock();
 
 			/** Зачем используется LazyBlockInputStream?
@@ -2040,7 +2043,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		if (!subquery_for_set.source)
 		{
 			auto interpreter = interpretSubquery(ast_join.table, context, subquery_depth, required_joined_columns);
-			subquery_for_set.source = new LazyBlockInputStream([interpreter]() mutable { return interpreter->execute().in; });
+			subquery_for_set.source = std::make_shared<LazyBlockInputStream>([interpreter]() mutable { return interpreter->execute().in; });
 			subquery_for_set.source_sample = interpreter->getSampleBlock();
 		}
 

@@ -126,7 +126,7 @@ BlockInputStreams StorageSystemClusters::read(
 	block.insert(ColumnWithTypeAndName(is_local_column, std::make_shared<DataTypeUInt8>(), "is_local"));
 	block.insert(ColumnWithTypeAndName(user_column, std::make_shared<DataTypeString>(), "user"));
 
-	return BlockInputStreams{ 1, new OneBlockInputStream(block) };
+	return BlockInputStreams{ 1, std::make_shared<OneBlockInputStream>(block) };
 }
 
 }

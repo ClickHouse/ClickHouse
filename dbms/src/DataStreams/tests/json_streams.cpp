@@ -61,8 +61,8 @@ try
 		//JSONCompactRowOutputStream row_output(out_buf, sample);
 		//copyData(row_input, row_output);
 
-		BlockInputStreamFromRowInputStream in(new TabSeparatedRowInputStream (in_buf, sample, true, true), sample);
-		BlockOutputStreamFromRowOutputStream out(new JSONRowOutputStream(out_buf, sample));
+		BlockInputStreamFromRowInputStream in(std::make_shared<TabSeparatedRowInputStream>(in_buf, sample, true, true), sample);
+		BlockOutputStreamFromRowOutputStream out(std::make_shared<JSONRowOutputStream>(out_buf, sample));
 		copyData(in, out);
 	}
 

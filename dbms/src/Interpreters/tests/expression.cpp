@@ -111,10 +111,10 @@ int main(int argc, char ** argv)
 				<< std::endl;
 		}
 
-		OneBlockInputStream * is = new OneBlockInputStream(block);
+		OneBlockInputStream * is = std::make_shared<OneBlockInputStream>(block);
 		LimitBlockInputStream lis(is, 20, std::max(0, static_cast<int>(n) - 20));
 		WriteBufferFromOStream out_buf(std::cout);
-		RowOutputStreamPtr os_ = new TabSeparatedRowOutputStream(out_buf, block);
+		RowOutputStreamPtr os_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, block);
 		BlockOutputStreamFromRowOutputStream os(os_);
 
 		copyData(lis, os);

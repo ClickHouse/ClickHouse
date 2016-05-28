@@ -44,9 +44,9 @@ try
 	ReadBufferFromIStream in_buf(istr);
 	WriteBufferFromOStream out_buf(ostr);
 
-	RowInputStreamPtr row_input = new TabSeparatedRowInputStream(in_buf, sample);
+	RowInputStreamPtr row_input = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample);
 	BlockInputStreamFromRowInputStream block_input(row_input, sample);
-	RowOutputStreamPtr row_output = new TabSeparatedRowOutputStream(out_buf, sample);
+	RowOutputStreamPtr row_output = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
 	BlockOutputStreamFromRowOutputStream block_output(row_output);
 
 	copyData(block_input, block_output);

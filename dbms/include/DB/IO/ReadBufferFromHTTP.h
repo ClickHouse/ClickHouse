@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Poco/URI.h>
-#include <Poco/SharedPtr.h>
+#include <memory>
+
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -34,7 +35,7 @@ private:
 
 	Poco::Net::HTTPClientSession session;
 	std::istream * istr;	/// этим владеет session
-	Poco::SharedPtr<ReadBufferFromIStream> impl;
+	std::unique_ptr<ReadBufferFromIStream> impl;
 
 public:
 	using Params = std::vector<std::pair<String, String> >;
@@ -89,7 +90,7 @@ public:
 			throw Exception(error_message.str(), ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
 		}
 
-		impl = new ReadBufferFromIStream(*istr, buffer_size_);
+		impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size_);
 	}
 
 	bool nextImpl()

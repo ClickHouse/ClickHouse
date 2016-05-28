@@ -91,12 +91,12 @@ int main(int argc, char ** argv)
 
 		Aggregator::Params params(key_column_names, aggregate_descriptions, false);
 
-		BlockInputStreamPtr stream = new OneBlockInputStream(block);
-		stream = new AggregatingBlockInputStream(stream, params, true);
+		BlockInputStreamPtr stream = std::make_shared<OneBlockInputStream>(block);
+		stream = std::make_shared<AggregatingBlockInputStream>(stream, params, true);
 
 		WriteBufferFromOStream ob(std::cout);
-		RowOutputStreamPtr row_out = new TabSeparatedRowOutputStream(ob, sample);
-		BlockOutputStreamPtr out = new BlockOutputStreamFromRowOutputStream(row_out);
+		RowOutputStreamPtr row_out = std::make_shared<TabSeparatedRowOutputStream>(ob, sample);
+		BlockOutputStreamPtr out = std::make_shared<BlockOutputStreamFromRowOutputStream>(row_out);
 
 		{
 			Stopwatch stopwatch;

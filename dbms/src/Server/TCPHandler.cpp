@@ -613,7 +613,7 @@ void TCPHandler::initBlockInput()
 		else
 			state.maybe_compressed_in = in;
 
-		state.block_in = new NativeBlockInputStream(
+		state.block_in = std::make_shared<NativeBlockInputStream>(
 			*state.maybe_compressed_in,
 			client_revision);
 	}
@@ -629,7 +629,7 @@ void TCPHandler::initBlockOutput()
 		else
 			state.maybe_compressed_out = out;
 
-		state.block_out = new NativeBlockOutputStream(
+		state.block_out = std::make_shared<NativeBlockOutputStream>(
 			*state.maybe_compressed_out,
 			client_revision);
 	}

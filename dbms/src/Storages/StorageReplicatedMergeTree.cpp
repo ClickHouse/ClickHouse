@@ -2127,7 +2127,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 			if (virtual_column == "_replicated")
 			{
 				for (auto & stream : res)
-					stream = new AddingConstColumnBlockInputStream<UInt8>(stream, std::make_shared<DataTypeUInt8>(), 0, "_replicated");
+					stream = std::make_shared<AddingConstColumnBlockInputStream<UInt8>>(stream, std::make_shared<DataTypeUInt8>(), 0, "_replicated");
 			}
 		}
 	}
@@ -2179,7 +2179,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 			if (virtual_column == "_replicated")
 			{
 				for (auto & stream : res2)
-					stream = new AddingConstColumnBlockInputStream<UInt8>(stream, std::make_shared<DataTypeUInt8>(), 1, "_replicated");
+					stream = std::make_shared<AddingConstColumnBlockInputStream<UInt8>>(stream, std::make_shared<DataTypeUInt8>(), 1, "_replicated");
 			}
 		}
 
@@ -2206,7 +2206,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query, const Setti
 		if (ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*query))
 			insert_id = insert->insert_id;
 
-	return new ReplicatedMergeTreeBlockOutputStream(*this, insert_id,
+	return std::make_shared<ReplicatedMergeTreeBlockOutputStream>(*this, insert_id,
 		settings.insert_quorum, settings.insert_quorum_timeout.totalMilliseconds());
 }
 

@@ -31,13 +31,13 @@ BlockInputStreamPtr SelectQueryConstructor::createLocal(ASTPtr query_ast, const 
 	* Если этого не делать, то в разных потоках будут получаться разные типы (Const и не-Const) столбцов,
 	* а это не разрешено, так как весь код исходит из допущения, что в потоке блоков все типы одинаковые.
 	*/
-	return new MaterializingBlockInputStream{stream};
+	return std::make_shared<MaterializingBlockInputStream>(stream);
 }
 
 BlockInputStreamPtr SelectQueryConstructor::createRemote(IConnectionPool * pool, const std::string & query,
 	const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
-	auto stream = new RemoteBlockInputStream{pool, query, &settings, throttler, external_tables, processed_stage, context};
+	auto stream = std::make_shared<RemoteBlockInputStream>(pool, query, &settings, throttler, external_tables, processed_stage, context);
 	stream->setPoolMode(pool_mode);
 	return stream;
 }
@@ -45,7 +45,7 @@ BlockInputStreamPtr SelectQueryConstructor::createRemote(IConnectionPool * pool,
 BlockInputStreamPtr SelectQueryConstructor::createRemote(ConnectionPoolsPtr & pools, const std::string & query,
 	const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
-	auto stream = new RemoteBlockInputStream{pools, query, &settings, throttler, external_tables, processed_stage, context};
+	auto stream = std::make_shared<RemoteBlockInputStream>(pools, query, &settings, throttler, external_tables, processed_stage, context);
 	stream->setPoolMode(pool_mode);
 	return stream;
 }

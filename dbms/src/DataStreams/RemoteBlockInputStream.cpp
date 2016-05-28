@@ -116,7 +116,7 @@ void RemoteBlockInputStream::sendExternalTables()
 				DB::BlockInputStreams input = cur->read(cur->getColumnNamesList(), ASTPtr(), context, settings,
 					stage, DEFAULT_BLOCK_SIZE, 1);
 				if (input.size() == 0)
-					res.push_back(std::make_pair(new OneBlockInputStream(cur->getSampleBlock()), table.first));
+					res.push_back(std::make_pair(std::make_shared<OneBlockInputStream>(cur->getSampleBlock()), table.first));
 				else
 					res.push_back(std::make_pair(input[0], table.first));
 			}

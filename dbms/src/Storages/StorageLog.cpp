@@ -683,7 +683,7 @@ BlockInputStreams StorageLog::read(
 
 	if (read_all_data_in_one_thread)
 	{
-		res.push_back(new LogBlockInputStream(
+		res.push_back(std::make_shared<LogBlockInputStream>(
 			max_block_size,
 			column_names,
 			*this,
@@ -706,7 +706,7 @@ BlockInputStreams StorageLog::read(
 
 		for (size_t thread = 0; thread < threads; ++thread)
 		{
-			res.push_back(new LogBlockInputStream(
+			res.push_back(std::make_shared<LogBlockInputStream>(
 				max_block_size,
 				column_names,
 				*this,
@@ -742,7 +742,7 @@ BlockOutputStreamPtr StorageLog::write(
 	ASTPtr query, const Settings & settings)
 {
 	loadMarks();
-	return new LogBlockOutputStream(*this);
+	return std::make_shared<LogBlockOutputStream>(*this);
 }
 
 bool StorageLog::checkData() const

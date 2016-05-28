@@ -38,10 +38,10 @@ try
 	BlockInputStreams streams = table->read(column_names, nullptr, context, settings, stage, settings.max_block_size, settings.max_threads);
 
 	for (size_t i = 0, size = streams.size(); i < size; ++i)
-		streams[i] = new AsynchronousBlockInputStream(streams[i]);
+		streams[i] = std::make_shared<AsynchronousBlockInputStream>(streams[i]);
 
-	BlockInputStreamPtr stream = new UnionBlockInputStream<>(streams, nullptr, settings.max_threads);
-	stream = new LimitBlockInputStream(stream, 10, 0);
+	BlockInputStreamPtr stream = std::make_shared<UnionBlockInputStream<>>(streams, nullptr, settings.max_threads);
+	stream = std::make_shared<LimitBlockInputStream>(stream, 10, 0);
 
 	WriteBufferFromFileDescriptor wb(STDERR_FILENO);
 	Block sample = table->getSampleBlock();

@@ -110,26 +110,26 @@ protected:
 			String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
 				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
-			column_streams[size_name].reset(new ColumnStream(
+			column_streams[size_name] = std::make_unique<ColumnStream>(
 				escaped_size_name,
 				path + escaped_size_name + ".bin",
 				path + escaped_size_name + ".mrk",
 				max_compress_block_size,
 				compression_method,
 				estimated_size,
-				aio_threshold));
+				aio_threshold);
 
 			addStream(path, name, *type_arr->getNestedType(), estimated_size, level + 1);
 		}
 		else
-			column_streams[name].reset(new ColumnStream(
+			column_streams[name] = std::make_unique<ColumnStream>(
 				escaped_column_name,
 				path + escaped_column_name + ".bin",
 				path + escaped_column_name + ".mrk",
 				max_compress_block_size,
 				compression_method,
 				estimated_size,
-				aio_threshold));
+				aio_threshold);
 	}
 
 

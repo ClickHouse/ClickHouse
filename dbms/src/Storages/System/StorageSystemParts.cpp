@@ -264,7 +264,7 @@ BlockInputStreams StorageSystemParts::read(
 	block.insert(ColumnWithTypeAndName(table_column, 				std::make_shared<DataTypeString>(), 	"table"));
 	block.insert(ColumnWithTypeAndName(engine_column, 				std::make_shared<DataTypeString>(), 	"engine"));
 
-	return BlockInputStreams(1, new OneBlockInputStream(block));
+	return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
 }
 
 

@@ -59,7 +59,7 @@ int main(int argc, char ** argv)
 
 		block.insert(column_s2);
 
-		BlockInputStreamPtr stream = new OneBlockInputStream(block);
+		BlockInputStreamPtr stream = std::make_shared<OneBlockInputStream>(block);
 		AggregatedDataVariants aggregated_data_variants;
 
 		Names key_column_names;

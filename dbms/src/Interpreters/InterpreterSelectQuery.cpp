@@ -1,3 +1,5 @@
+#include <experimental/optional>
+
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
 #include <DB/DataStreams/LimitBlockInputStream.h>
@@ -327,7 +329,7 @@ BlockIO InterpreterSelectQuery::execute()
 	if (hasNoData())
 	{
 		BlockIO res;
-		res.in = new NullBlockInputStream;
+		res.in = std::make_shared<NullBlockInputStream>();
 		res.in_sample = getSampleBlock();
 		return res;
 	}
@@ -372,7 +374,7 @@ const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
 
 		transformStreams([&](auto & stream)
 		{
-			stream = new MaterializingBlockInputStream(stream);
+			stream = std::make_shared<MaterializingBlockInputStream>(stream);
 		});
 	}
 	else
@@ -522,7 +524,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 		{
 			if (has_join)
 				for (auto & stream : streams)	/// Применяем ко всем источникам кроме stream_with_non_joined_data.
-					stream = new ExpressionBlockInputStream(stream, before_join);
+					stream = std::make_shared<ExpressionBlockInputStream>(stream, before_join);
 
 			if (has_where)
 				executeWhere(before_where);
@@ -654,7 +656,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 		return QueryProcessingStage::FetchColumns;
 
 	/// Интерпретатор подзапроса, если подзапрос
-	SharedPtr<InterpreterSelectQuery> interpreter_subquery;
+	std::experimental::optional<InterpreterSelectQuery> interpreter_subquery;
 
 	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
 	Names required_columns = query_analyzer->getRequiredColumns();
@@ -709,7 +711,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 		subquery_settings.extremes = 0;
 		subquery_context.setSettings(subquery_settings);
 
-		interpreter_subquery = new InterpreterSelectQuery(
+		interpreter_subquery.emplace(
 			query.table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
 
 		/// Если во внешнем запросе есть аггрегация, то WITH TOTALS игнорируется в подзапросе.
@@ -804,7 +806,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 			/// Обернем каждый поток, возвращенный из таблицы, с целью вычисления и добавления ALIAS столбцов
 			transformStreams([&] (auto & stream)
 			{
-				stream = new ExpressionBlockInputStream{stream, alias_actions};
+				stream = std::make_shared<ExpressionBlockInputStream>(stream, alias_actions);
 			});
 
 		transformStreams([&](auto & stream)
@@ -854,7 +856,7 @@ void InterpreterSelectQuery::executeWhere(ExpressionActionsPtr expression)
 {
 	transformStreams([&](auto & stream)
 	{
-		stream = new FilterBlockInputStream(stream, expression, query.where_expression->getColumnName());
+		stream = std::make_shared<FilterBlockInputStream>(stream, expression, query.where_expression->getColumnName());
 	});
 }
 
@@ -863,7 +865,7 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 {
 	transformStreams([&](auto & stream)
 	{
-		stream = new ExpressionBlockInputStream(stream, expression);
+		stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
 	});
 
 	Names key_names;
@@ -886,7 +888,7 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
 	{
-		streams[0] = new ParallelAggregatingBlockInputStream(
+		streams[0] = std::make_shared<ParallelAggregatingBlockInputStream>(
 			streams, stream_with_non_joined_data, params, final,
 			settings.max_threads,
 			settings.aggregation_memory_efficient_merge_threads
@@ -907,7 +909,7 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 		if (stream_with_non_joined_data)
 			inputs.push_back(stream_with_non_joined_data);
 
-		streams[0] = new AggregatingBlockInputStream(new ConcatBlockInputStream(inputs), params, final);
+		streams[0] = std::make_shared<AggregatingBlockInputStream>(std::make_shared<ConcatBlockInputStream>(inputs), params, final);
 
 		stream_with_non_joined_data = nullptr;
 	}
@@ -943,11 +945,11 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
 		executeUnion();
 
 		/// Теперь объединим агрегированные блоки
-		streams[0] = new MergingAggregatedBlockInputStream(streams[0], params, final, original_max_threads);
+		streams[0] = std::make_shared<MergingAggregatedBlockInputStream>(streams[0], params, final, original_max_threads);
 	}
 	else
 	{
-		streams[0] = new MergingAggregatedMemoryEfficientBlockInputStream(streams, params, final,
+		streams[0] = std::make_shared<MergingAggregatedMemoryEfficientBlockInputStream>(streams, params, final,
 			settings.max_threads,
 			settings.aggregation_memory_efficient_merge_threads
 				? size_t(settings.aggregation_memory_efficient_merge_threads)
@@ -962,7 +964,7 @@ void InterpreterSelectQuery::executeHaving(ExpressionActionsPtr expression)
 {
 	transformStreams([&](auto & stream)
 	{
-		stream = new FilterBlockInputStream(stream, expression, query.having_expression->getColumnName());
+		stream = std::make_shared<FilterBlockInputStream>(stream, expression, query.having_expression->getColumnName());
 	});
 }
 
@@ -971,7 +973,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(bool has_having, ExpressionA
 {
 	executeUnion();
 
-	streams[0] = new TotalsHavingBlockInputStream(
+	streams[0] = std::make_shared<TotalsHavingBlockInputStream>(
 		streams[0], overflow_row, expression,
 		has_having ? query.having_expression->getColumnName() : "", settings.totals_mode, settings.totals_auto_threshold);
 }
@@ -981,7 +983,7 @@ void InterpreterSelectQuery::executeExpression(ExpressionActionsPtr expression)
 {
 	transformStreams([&](auto & stream)
 	{
-		stream = new ExpressionBlockInputStream(stream, expression);
+		stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
 	});
 }
 
@@ -1024,7 +1026,7 @@ void InterpreterSelectQuery::executeOrder()
 
 	transformStreams([&](auto & stream)
 	{
-		IProfilingBlockInputStream * sorting_stream = new PartialSortingBlockInputStream(stream, order_descr, limit);
+		auto sorting_stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
 
 		/// Ограничения на сортировку
 		IProfilingBlockInputStream::LocalLimits limits;
@@ -1041,7 +1043,7 @@ void InterpreterSelectQuery::executeOrder()
 	executeUnion();
 
 	/// Сливаем сортированные блоки.
-	streams[0] = new MergeSortingBlockInputStream(
+	streams[0] = std::make_shared<MergeSortingBlockInputStream>(
 		streams[0], order_descr, settings.max_block_size, limit,
 		settings.limits.max_bytes_before_external_sort, context.getTemporaryPath());
 }
@@ -1060,11 +1062,11 @@ void InterpreterSelectQuery::executeMergeSorted()
 		  */
 		transformStreams([&](auto & stream)
 		{
-			stream = new AsynchronousBlockInputStream(stream);
+			stream = std::make_shared<AsynchronousBlockInputStream>(stream);
 		});
 
 		/// Сливаем сортированные источники в один сортированный источник.
-		streams[0] = new MergingSortedBlockInputStream(streams, order_descr, settings.max_block_size, limit);
+		streams[0] = std::make_shared<MergingSortedBlockInputStream>(streams, order_descr, settings.max_block_size, limit);
 		streams.resize(1);
 	}
 }
@@ -1074,7 +1076,7 @@ void InterpreterSelectQuery::executeProjection(ExpressionActionsPtr expression)
 {
 	transformStreams([&](auto & stream)
 	{
-		stream = new ExpressionBlockInputStream(stream, expression);
+		stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
 	});
 }
 
@@ -1095,7 +1097,7 @@ void InterpreterSelectQuery::executeDistinct(bool before_order, Names columns)
 
 		transformStreams([&](auto & stream)
 		{
-			stream = new DistinctBlockInputStream(stream, settings.limits, limit_for_distinct, columns);
+			stream = std::make_shared<DistinctBlockInputStream>(stream, settings.limits, limit_for_distinct, columns);
 		});
 
 		if (hasMoreThanOneStream())
@@ -1109,7 +1111,7 @@ void InterpreterSelectQuery::executeUnion()
 	/// Если до сих пор есть несколько потоков, то объединяем их в один
 	if (hasMoreThanOneStream())
 	{
-		streams[0] = new UnionBlockInputStream<>(streams, stream_with_non_joined_data, settings.max_threads);
+		streams[0] = std::make_shared<UnionBlockInputStream<>>(streams, stream_with_non_joined_data, settings.max_threads);
 		stream_with_non_joined_data = nullptr;
 		streams.resize(1);
 		union_within_single_query = false;
@@ -1135,7 +1137,7 @@ void InterpreterSelectQuery::executePreLimit()
 	{
 		transformStreams([&](auto & stream)
 		{
-			stream = new LimitBlockInputStream(stream, limit_length + limit_offset, 0);
+			stream = std::make_shared<LimitBlockInputStream>(stream, limit_length + limit_offset, 0);
 		});
 
 		if (hasMoreThanOneStream())
@@ -1194,7 +1196,7 @@ void InterpreterSelectQuery::executeLimit()
 
 		transformStreams([&](auto & stream)
 		{
-			stream = new LimitBlockInputStream(stream, limit_length, limit_offset, always_read_till_end);
+			stream = std::make_shared<LimitBlockInputStream>(stream, limit_length, limit_offset, always_read_till_end);
 		});
 	}
 }
@@ -1208,7 +1210,7 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(SubqueriesForSets &
 			elem.second.table.reset();
 
 	executeUnion();
-	streams[0] = new CreatingSetsBlockInputStream(streams[0], subqueries_for_sets, settings.limits);
+	streams[0] = std::make_shared<CreatingSetsBlockInputStream>(streams[0], subqueries_for_sets, settings.limits);
 }
 
 

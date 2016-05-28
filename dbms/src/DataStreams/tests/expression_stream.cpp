@@ -54,11 +54,11 @@ int main(int argc, char ** argv)
 
 		Poco::SharedPtr<IBlockInputStream> in;
 		in = table->read(column_names, 0, context, Settings(), stage)[0];
-		in = new ExpressionBlockInputStream(in, expression);
-		in = new LimitBlockInputStream(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
+		in = std::make_shared<ExpressionBlockInputStream>(in, expression);
+		in = std::make_shared<LimitBlockInputStream>(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
 
 		WriteBufferFromOStream out1(std::cout);
-		RowOutputStreamPtr out2 = new TabSeparatedRowOutputStream(out1, expression->getSampleBlock());
+		RowOutputStreamPtr out2 = std::make_shared<TabSeparatedRowOutputStream>(out1, expression->getSampleBlock());
 		BlockOutputStreamFromRowOutputStream out(out2);
 
 		{

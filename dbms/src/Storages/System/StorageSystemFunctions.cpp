@@ -56,7 +56,7 @@ BlockInputStreams StorageSystemFunctions::read(
 		}
 	}
 
-	return BlockInputStreams{ 1, new OneBlockInputStream{{ column_name, column_is_aggregate }} };
+	return BlockInputStreams{ std::make_shared<OneBlockInputStream>(Block{ column_name, column_is_aggregate }) };
 }
 
 }

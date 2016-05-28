@@ -57,7 +57,7 @@ InterserverWriteBuffer::InterserverWriteBuffer(const std::string & host_, int po
 	request.setChunkedTransferEncoding(true);
 
 	ostr = &session.sendRequest(request);
-	impl = new WriteBufferFromOStream(*ostr, buffer_size_);
+	impl = std::make_unique<WriteBufferFromOStream>(*ostr, buffer_size_);
 	set(impl->buffer().begin(), impl->buffer().size());
 }
 

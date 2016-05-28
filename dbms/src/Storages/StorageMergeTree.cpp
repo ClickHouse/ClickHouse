@@ -139,7 +139,7 @@ BlockInputStreams StorageMergeTree::read(
 
 BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query, const Settings & settings)
 {
-	return new MergeTreeBlockOutputStream(*this);
+	return std::make_shared<MergeTreeBlockOutputStream>(*this);
 }
 
 void StorageMergeTree::drop()

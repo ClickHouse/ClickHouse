@@ -479,10 +479,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 		});
 
 		if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
-			src_streams.push_back(new MaterializingBlockInputStream{
-				new ExpressionBlockInputStream(input.release(), data.getPrimaryExpression())});
+			src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(
+				std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.getPrimaryExpression())));
 		else
-			src_streams.push_back(input.release());
+			src_streams.emplace_back(std::move(input));
 
 		sum_rows_approx += parts[i]->size * data.index_granularity;
 	}
@@ -692,10 +692,10 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 			});
 
 		if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
-			src_streams.push_back(new MaterializingBlockInputStream{
-				new ExpressionBlockInputStream(input.release(), data.getPrimaryExpression())});
+			src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(
+				std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.getPrimaryExpression())));
 		else
-			src_streams.push_back(input.release());
+			src_streams.emplace_back(std::move(input));
 
 		sum_rows_approx += parts[i]->size * data.index_granularity;
 	}

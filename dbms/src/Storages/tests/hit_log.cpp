@@ -117,7 +117,7 @@ try
 	{
 		ReadBufferFromIStream in_buf(std::cin);
 
-		RowInputStreamPtr in_ = new TabSeparatedRowInputStream(in_buf, sample);
+		RowInputStreamPtr in_ = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample);
 		BlockInputStreamFromRowInputStream in(in_, sample);
 		BlockOutputStreamPtr out = table->write({}, {});
 		copyData(in, *out);
@@ -131,7 +131,7 @@ try
 		QueryProcessingStage::Enum stage;
 
 		BlockInputStreamPtr in = table->read(column_names, 0, Context{}, Settings(), stage)[0];
-		RowOutputStreamPtr out_ = new TabSeparatedRowOutputStream(out_buf, sample);
+		RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
 		BlockOutputStreamFromRowOutputStream out(out_);
 		copyData(*in, out);
 	}

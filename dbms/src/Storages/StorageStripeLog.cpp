@@ -249,7 +249,7 @@ BlockInputStreams StorageStripeLog::read(
 	NameSet column_names_set(column_names.begin(), column_names.end());
 
 	if (!Poco::File(full_path() + "index.mrk").exists())
-		return { new NullBlockInputStream };
+		return { std::make_shared<NullBlockInputStream>() };
 
 	CompressedReadBufferFromFile index_in(full_path() + "index.mrk", 0, 0, INDEX_BUFFER_SIZE);
 	std::shared_ptr<const IndexForNativeFormat> index{std::make_shared<IndexForNativeFormat>(index_in, column_names_set)};
@@ -268,7 +268,7 @@ BlockInputStreams StorageStripeLog::read(
 		std::advance(begin, thread * size / threads);
 		std::advance(end, (thread + 1) * size / threads);
 
-		res.emplace_back(new StripeLogBlockInputStream(column_names_set, *this, settings.max_read_buffer_size, index, begin, end));
+		res.emplace_back(std::make_shared<StripeLogBlockInputStream>(column_names_set, *this, settings.max_read_buffer_size, index, begin, end));
 	}
 
 	/// Непосредственно во время чтения не держим read lock, потому что мы читаем диапазоны данных, которые не меняются.
@@ -280,7 +280,7 @@ BlockInputStreams StorageStripeLog::read(
 BlockOutputStreamPtr StorageStripeLog::write(
 	ASTPtr query, const Settings & settings)
 {
-	return new StripeLogBlockOutputStream(*this);
+	return std::make_shared<StripeLogBlockOutputStream>(*this);
 }
 
 

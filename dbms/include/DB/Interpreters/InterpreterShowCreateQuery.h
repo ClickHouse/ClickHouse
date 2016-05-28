@@ -66,7 +66,7 @@ private:
 		Block block;
 		block.insert(col);
 
-		return new OneBlockInputStream(block);
+		return std::make_shared<OneBlockInputStream>(block);
 	}
 };
 

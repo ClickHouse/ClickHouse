@@ -59,7 +59,7 @@ public:
 	{
 		initReadBuffer();
 		initSampleBlock(context);
-		ExternalTableData res = std::make_pair(new AsynchronousBlockInputStream(context.getInputFormat(
+		ExternalTableData res = std::make_pair(std::make_shared<AsynchronousBlockInputStream>(context.getInputFormat(
 			format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE)), name);
 		return res;
 	}
@@ -169,7 +169,7 @@ public:
 	void handlePart(const Poco::Net::MessageHeader & header, std::istream & stream)
 	{
 		/// Буфер инициализируется здесь, а не в виртуальной функции initReadBuffer
-		read_buffer.reset(new ReadBufferFromIStream(stream));
+		read_buffer = std::make_unique<ReadBufferFromIStream>(stream);
 
 		/// Извлекаем коллекцию параметров из MessageHeader
 		Poco::Net::NameValueCollection content;

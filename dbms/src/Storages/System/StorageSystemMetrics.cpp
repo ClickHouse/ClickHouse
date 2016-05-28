@@ -60,7 +60,7 @@ BlockInputStreams StorageSystemMetrics::read(
 		col_value.column->insert(value);
 	}
 
-	return BlockInputStreams(1, new OneBlockInputStream(block));
+	return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
 }
 
 

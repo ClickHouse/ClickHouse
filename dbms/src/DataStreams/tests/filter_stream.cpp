@@ -59,11 +59,11 @@ int main(int argc, char ** argv)
 		QueryProcessingStage::Enum stage;
 
 		Poco::SharedPtr<IBlockInputStream> in = table->read(column_names, 0, context, Settings(), stage)[0];
-		in = new FilterBlockInputStream(in, expression, 1);
-		in = new LimitBlockInputStream(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
+		in = std::make_shared<FilterBlockInputStream>(in, expression, 1);
+		in = std::make_shared<LimitBlockInputStream>(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
 
 		WriteBufferFromOStream ob(std::cout);
-		RowOutputStreamPtr out_ = new TabSeparatedRowOutputStream(ob, expression->getSampleBlock());
+		RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(ob, expression->getSampleBlock());
 		BlockOutputStreamFromRowOutputStream out(out_);
 
 

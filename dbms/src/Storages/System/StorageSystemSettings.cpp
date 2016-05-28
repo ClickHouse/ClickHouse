@@ -63,7 +63,7 @@ BlockInputStreams StorageSystemSettings::read(
 		col_changed,
 	};
 
-	return BlockInputStreams(1, new OneBlockInputStream(block));
+	return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
 }
 
 

@@ -138,7 +138,7 @@ BlockInputStreams StorageBuffer::read(
 	BlockInputStreams streams_from_buffers;
 	streams_from_buffers.reserve(num_shards);
 	for (auto & buf : buffers)
-		streams_from_buffers.push_back(new BufferBlockInputStream(column_names, buf));
+		streams_from_buffers.push_back(std::make_shared<BufferBlockInputStream>(column_names, buf));
 
 	/** Если источники из таблицы были обработаны до какой-то не начальной стадии выполнения запроса,
 	  * то тогда источники из буферов надо тоже обернуть в конвейер обработки до той же стадии.
@@ -282,7 +282,7 @@ private:
 
 BlockOutputStreamPtr StorageBuffer::write(ASTPtr query, const Settings & settings)
 {
-	return new BufferBlockOutputStream(*this);
+	return std::make_shared<BufferBlockOutputStream>(*this);
 }
 
 

@@ -1082,7 +1082,7 @@ private:
 
 BlockInputStreamPtr Join::createStreamWithNonJoinedRows(Block & left_sample_block, size_t max_block_size) const
 {
-	return new NonJoinedBlockInputStream(*this, left_sample_block, max_block_size);
+	return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block, max_block_size);
 }
 
 

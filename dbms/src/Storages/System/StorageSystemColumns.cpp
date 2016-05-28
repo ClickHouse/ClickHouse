@@ -193,7 +193,7 @@ BlockInputStreams StorageSystemColumns::read(
 	block.insert(ColumnWithTypeAndName(default_expression_column, std::make_shared<DataTypeString>(), "default_expression"));
 	block.insert(ColumnWithTypeAndName(bytes_column, std::make_shared<DataTypeUInt64>(), "bytes"));
 
-	return BlockInputStreams{ 1, new OneBlockInputStream(block) };
+	return BlockInputStreams{ 1, std::make_shared<OneBlockInputStream>(block) };
 }
 
 }

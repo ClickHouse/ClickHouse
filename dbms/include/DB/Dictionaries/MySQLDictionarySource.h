@@ -50,7 +50,7 @@ public:
 		last_modification = getLastModification();
 
 		LOG_TRACE(log, load_all_query);
-		return new MySQLBlockInputStream{pool.Get(), load_all_query, sample_block, max_block_size};
+		return std::make_shared<MySQLBlockInputStream>(pool.Get(), load_all_query, sample_block, max_block_size);
 	}
 
 	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
@@ -58,7 +58,7 @@ public:
 		/// Здесь не логгируем и не обновляем время модификации, так как запрос может быть большим, и часто задаваться.
 
 		const auto query = query_builder.composeLoadIdsQuery(ids);
-		return new MySQLBlockInputStream{pool.Get(), query, sample_block, max_block_size};
+		return std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size);
 	}
 
 	BlockInputStreamPtr loadKeys(
@@ -67,7 +67,7 @@ public:
 		/// Здесь не логгируем и не обновляем время модификации, так как запрос может быть большим, и часто задаваться.
 
 		const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-		return new MySQLBlockInputStream{pool.Get(), query, sample_block, max_block_size};
+		return std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size);
 	}
 
 	bool isModified() const override

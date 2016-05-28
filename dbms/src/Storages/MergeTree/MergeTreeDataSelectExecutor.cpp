@@ -474,7 +474,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		  * Они делаются до начала выполнения конвейера; их нельзя прервать; во время вычислений не отправляются пакеты прогресса.
 		  */
 		if (!prewhere_subqueries.empty())
-			CreatingSetsBlockInputStream(new NullBlockInputStream, prewhere_subqueries, settings.limits).read();
+			CreatingSetsBlockInputStream(std::make_shared<NullBlockInputStream>(), prewhere_subqueries, settings.limits).read();
 	}
 
 	RangesInDataParts parts_with_ranges;
@@ -555,12 +555,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	if (use_sampling)
 		for (auto & stream : res)
-			stream = new FilterBlockInputStream(stream, filter_expression, filter_function->getColumnName());
+			stream = std::make_shared<FilterBlockInputStream>(stream, filter_expression, filter_function->getColumnName());
 
 	/// Кстати, если делается распределённый запрос или запрос к Merge-таблице, то в столбце _sample_factor могут быть разные значения.
 	if (sample_factor_column_queried)
 		for (auto & stream : res)
-			stream = new AddingConstColumnBlockInputStream<Float64>(
+			stream = std::make_shared<AddingConstColumnBlockInputStream<Float64>>(
 				stream, std::make_shared<DataTypeFloat64>(), used_sample_factor, "_sample_factor");
 
 	return res;
@@ -618,11 +618,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 
 		for (std::size_t i = 0; i < threads; ++i)
 		{
-			res.emplace_back(new MergeTreeThreadBlockInputStream{
+			res.emplace_back(std::make_shared<MergeTreeThreadBlockInputStream>(
 				i, pool, min_marks_for_concurrent_read, max_block_size, data, use_uncompressed_cache,
 				prewhere_actions,
-				prewhere_column, settings, virt_columns
-			});
+				prewhere_column, settings, virt_columns));
 
 			if (i == 0)
 			{
@@ -691,7 +690,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 					}
 				}
 
-				BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(
+				BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
 					data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
 					part.data_part, ranges_to_get_from_part, use_uncompressed_cache,
 					prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true);
@@ -701,10 +700,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 				for (const String & virt_column : virt_columns)
 				{
 					if (virt_column == "_part")
-						res.back() = new AddingConstColumnBlockInputStream<String>(
+						res.back() = std::make_shared<AddingConstColumnBlockInputStream<String>>(
 							res.back(), std::make_shared<DataTypeString>(), part.data_part->name, "_part");
 					else if (virt_column == "_part_index")
-						res.back() = new AddingConstColumnBlockInputStream<UInt64>(
+						res.back() = std::make_shared<AddingConstColumnBlockInputStream<UInt64>>(
 							res.back(), std::make_shared<DataTypeUInt64>(), part.part_index_in_query, "_part_index");
 				}
 			}
@@ -748,7 +747,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	{
 		RangesInDataPart & part = parts[part_index];
 
-		BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(
+		BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
 			data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
 			part.data_part, part.ranges, use_uncompressed_cache,
 			prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true);
@@ -756,14 +755,14 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 		for (const String & virt_column : virt_columns)
 		{
 			if (virt_column == "_part")
-				source_stream = new AddingConstColumnBlockInputStream<String>(
+				source_stream = std::make_shared<AddingConstColumnBlockInputStream<String>>(
 					source_stream, std::make_shared<DataTypeString>(), part.data_part->name, "_part");
 			else if (virt_column == "_part_index")
-				source_stream = new AddingConstColumnBlockInputStream<UInt64>(
+				source_stream = std::make_shared<AddingConstColumnBlockInputStream<UInt64>>(
 					source_stream, std::make_shared<DataTypeUInt64>(), part.part_index_in_query, "_part_index");
 		}
 
-		to_merge.emplace_back(new ExpressionBlockInputStream(source_stream, data.getPrimaryExpression()));
+		to_merge.emplace_back(std::make_shared<ExpressionBlockInputStream>(source_stream, data.getPrimaryExpression()));
 	}
 
 	BlockInputStreams res;
@@ -776,7 +775,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 
 			createPositiveSignCondition(sign_filter_expression, sign_filter_column, context);
 
-			res.emplace_back(new FilterBlockInputStream(to_merge[0], sign_filter_expression, sign_filter_column));
+			res.emplace_back(std::make_shared<FilterBlockInputStream>(to_merge[0], sign_filter_expression, sign_filter_column));
 		}
 		else
 			res = to_merge;
@@ -788,24 +787,24 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 		switch (data.merging_params.mode)
 		{
 			case MergeTreeData::MergingParams::Ordinary:
-				merged = new MergingSortedBlockInputStream(to_merge, data.getSortDescription(), max_block_size);
+				merged = std::make_shared<MergingSortedBlockInputStream>(to_merge, data.getSortDescription(), max_block_size);
 				break;
 
 			case MergeTreeData::MergingParams::Collapsing:
-				merged = new CollapsingFinalBlockInputStream(to_merge, data.getSortDescription(), data.merging_params.sign_column);
+				merged = std::make_shared<CollapsingFinalBlockInputStream>(to_merge, data.getSortDescription(), data.merging_params.sign_column);
 				break;
 
 			case MergeTreeData::MergingParams::Summing:
-				merged = new SummingSortedBlockInputStream(to_merge,
+				merged = std::make_shared<SummingSortedBlockInputStream>(to_merge,
 					data.getSortDescription(), data.merging_params.columns_to_sum, max_block_size);
 				break;
 
 			case MergeTreeData::MergingParams::Aggregating:
-				merged = new AggregatingSortedBlockInputStream(to_merge, data.getSortDescription(), max_block_size);
+				merged = std::make_shared<AggregatingSortedBlockInputStream>(to_merge, data.getSortDescription(), max_block_size);
 				break;
 
 			case MergeTreeData::MergingParams::Replacing:	/// TODO Сделать ReplacingFinalBlockInputStream
-				merged = new ReplacingSortedBlockInputStream(to_merge,
+				merged = std::make_shared<ReplacingSortedBlockInputStream>(to_merge,
 					data.getSortDescription(), data.merging_params.version_column, max_block_size);
 				break;
 

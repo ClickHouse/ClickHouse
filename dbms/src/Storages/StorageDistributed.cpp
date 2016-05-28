@@ -212,10 +212,9 @@ BlockOutputStreamPtr StorageDistributed::write(ASTPtr query, const Settings & se
 			ErrorCodes::STORAGE_REQUIRES_PARAMETER
 		};
 
-	return new DistributedBlockOutputStream{
+	return std::make_shared<DistributedBlockOutputStream>(
 		*this,
-		rewriteInsertQuery(query, remote_database, remote_table)
-	};
+		rewriteInsertQuery(query, remote_database, remote_table));
 }
 
 void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
@@ -339,8 +338,8 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 			}
 		};
 
-		streams[0] = new UnionBlockInputStream<>{streams, nullptr, settings.max_distributed_connections,
-			exception_callback};
+		streams[0] = std::make_shared<UnionBlockInputStream<>>(
+			streams, nullptr, settings.max_distributed_connections, exception_callback);
 		streams.resize(1);
 
 		auto stream_ptr = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]);

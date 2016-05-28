@@ -49,20 +49,20 @@ public:
 	BlockInputStreamPtr loadAll() override
 	{
 		LOG_TRACE(log, load_all_query);
-		return new ODBCBlockInputStream{pool->get(), load_all_query, sample_block, max_block_size};
+		return std::make_shared<ODBCBlockInputStream>(pool->get(), load_all_query, sample_block, max_block_size);
 	}
 
 	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
 	{
 		const auto query = query_builder.composeLoadIdsQuery(ids);
-		return new ODBCBlockInputStream{pool->get(), query, sample_block, max_block_size};
+		return std::make_shared<ODBCBlockInputStream>(pool->get(), query, sample_block, max_block_size);
 	}
 
 	BlockInputStreamPtr loadKeys(
 		const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows) override
 	{
 		const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-		return new ODBCBlockInputStream{pool->get(), query, sample_block, max_block_size};
+		return std::make_shared<ODBCBlockInputStream>(pool->get(), query, sample_block, max_block_size);
 	}
 
 	bool isModified() const override

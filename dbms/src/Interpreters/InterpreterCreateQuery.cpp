@@ -523,26 +523,21 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 		auto table_lock = res->lockStructure(true);
 
 		/// Также см. InterpreterInsertQuery.
-		BlockOutputStreamPtr out{
-			new ProhibitColumnsBlockOutputStream{
-				new AddingDefaultBlockOutputStream{
-					new MaterializingBlockOutputStream{
-						new PushingToViewsBlockOutputStream{
+		BlockOutputStreamPtr out =
+			std::make_shared<ProhibitColumnsBlockOutputStream>(
+				std::make_shared<AddingDefaultBlockOutputStream>(
+					std::make_shared<MaterializingBlockOutputStream>(
+						std::make_shared<PushingToViewsBlockOutputStream>(
 							create.database, create.table,
 							create.is_temporary ? context.getSessionContext() : context,
-							query_ptr
-						}
-					},
+							query_ptr)),
 					/// @note shouldn't these two contexts be session contexts in case of temporary table?
-					columns.columns, columns.column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults)
-				},
-				columns.materialized_columns
-			}
-		};
+					columns.columns, columns.column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults)),
+				columns.materialized_columns);
 
 		BlockIO io;
 		io.in_sample = as_select_sample;
-		io.in = new NullAndDoCopyBlockInputStream(interpreter_select->execute().in, out);
+		io.in = std::make_shared<NullAndDoCopyBlockInputStream>(interpreter_select->execute().in, out);
 
 		return io;
 	}

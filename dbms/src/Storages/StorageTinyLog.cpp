@@ -450,14 +450,14 @@ BlockInputStreams StorageTinyLog::read(
 {
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
-	return BlockInputStreams(1, new TinyLogBlockInputStream(max_block_size, column_names, *this, settings.max_read_buffer_size));
+	return BlockInputStreams(1, std::make_shared<TinyLogBlockInputStream>(max_block_size, column_names, *this, settings.max_read_buffer_size));
 }
 
 
 BlockOutputStreamPtr StorageTinyLog::write(
 	ASTPtr query, const Settings & settings)
 {
-	return new TinyLogBlockOutputStream(*this);
+	return std::make_shared<TinyLogBlockOutputStream>(*this);
 }
 
 
