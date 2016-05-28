@@ -7,8 +7,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 
 class DataTypeArray final : public IDataType
 {

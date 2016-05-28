@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <algorithm>
 #include <type_traits>
 #include <functional>
 
@@ -26,8 +27,6 @@ using Array = std::vector<Field>; /// Значение типа "массив"
 using TupleBackend = std::vector<Field>;
 STRONG_TYPEDEF(TupleBackend, Tuple); /// Значение типа "кортеж"
 
-
-using Poco::SharedPtr;
 
 /** 32 хватает с запасом (достаточно 28), но выбрано круглое число,
   * чтобы арифметика при использовании массивов из Field была проще (не содержала умножения).

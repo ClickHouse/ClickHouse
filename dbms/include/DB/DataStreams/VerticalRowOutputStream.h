@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/Core/Block.h>
 #include <DB/Core/Names.h>
 #include <DB/IO/WriteBuffer.h>
@@ -10,9 +8,6 @@
 
 namespace DB
 {
-
-using Poco::SharedPtr;
-
 
 /** Поток для вывода данных в формате "каждое значение на своей строке".
   */

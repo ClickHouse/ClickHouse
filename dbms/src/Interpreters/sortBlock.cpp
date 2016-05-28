@@ -15,7 +15,7 @@ using ColumnsWithSortDescriptions = std::vector<std::pair<const IColumn *, SortC
 
 static inline bool needCollation(const IColumn * column, const SortColumnDescription & description)
 {
-	if (description.collator.isNull())
+	if (!description.collator)
 		return false;
 
 	if (column->getName() != "ColumnString")

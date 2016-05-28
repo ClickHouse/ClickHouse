@@ -150,7 +150,7 @@ StoragePtr StorageDistributed::create(
 	NamesAndTypesListPtr columns_,
 	const String & remote_database_,
 	const String & remote_table_,
-	SharedPtr<Cluster> & owned_cluster_,
+	std::shared_ptr<Cluster> & owned_cluster_,
 	Context & context_)
 {
 	auto res = new StorageDistributed{

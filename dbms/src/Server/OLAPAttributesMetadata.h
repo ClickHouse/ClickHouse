@@ -617,7 +617,7 @@ using SocialSourceNetworkID = AttributeUIntBase;
 
 
 /** Информация о типах атрибутов */
-using AttributeMetadatas = std::map<std::string, Poco::SharedPtr<IAttributeMetadata> >;
+using AttributeMetadatas = std::map<std::string, Poco::SharedPtr<IAttributeMetadata>>;
 
 inline AttributeMetadatas GetOLAPAttributeMetadata()
 {

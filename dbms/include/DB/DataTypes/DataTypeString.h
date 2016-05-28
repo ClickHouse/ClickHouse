@@ -2,16 +2,11 @@
 
 #include <ostream>
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/DataTypes/IDataType.h>
 
 
 namespace DB
 {
-
-using Poco::SharedPtr;
-
 
 class DataTypeString final : public IDataType
 {

@@ -1,5 +1,3 @@
-#include <Poco/SharedPtr.h>
-
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteHelpers.h>
 
@@ -16,8 +14,6 @@
 
 namespace DB
 {
-
-using Poco::SharedPtr;
 
 namespace ErrorCodes
 {

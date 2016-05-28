@@ -6,9 +6,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
-
 TabSeparatedRowOutputStream::TabSeparatedRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_, bool with_types_)
 	: ostr(ostr_), sample(sample_), with_names(with_names_), with_types(with_types_)
 {

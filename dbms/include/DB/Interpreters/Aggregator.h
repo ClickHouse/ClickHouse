@@ -752,7 +752,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 			M(serialized_two_level)
 };
 
-using AggregatedDataVariantsPtr = SharedPtr<AggregatedDataVariants>;
+using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
 using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
 
 /** Как считаются "тотальные" значения при наличии WITH TOTALS?

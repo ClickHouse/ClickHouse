@@ -3,7 +3,6 @@
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/HashingWriteBuffer.h>
 
-#include <Poco/SharedPtr.h>
 #include <Poco/Net/HTTPClientSession.h>
 
 namespace DB

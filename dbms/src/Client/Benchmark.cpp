@@ -10,7 +10,6 @@
 #include <random>
 
 #include <Poco/File.h>
-#include <Poco/SharedPtr.h>
 #include <Poco/Util/Application.h>
 
 #include <DB/Common/Stopwatch.h>

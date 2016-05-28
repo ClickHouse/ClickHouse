@@ -84,7 +84,7 @@ public:
 		Object & operator*() &				{ return *data->data.object; }
 		const Object & operator*() const &	{ return *data->data.object; }
 
-		bool isNull() const { return data.isNull(); }
+		bool isNull() const { return data == nullptr; }
 
 	private:
 		std::shared_ptr<PoolEntryHelper> data;

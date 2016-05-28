@@ -13,7 +13,6 @@
 #include <boost/program_options.hpp>
 
 #include <Poco/File.h>
-#include <Poco/SharedPtr.h>
 #include <Poco/Util/Application.h>
 
 #include <common/ClickHouseRevision.h>
@@ -114,8 +113,6 @@ namespace ErrorCodes
 	extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
 }
 
-using Poco::SharedPtr;
-
 
 class Client : public Poco::Util::Application
 {
@@ -172,7 +169,7 @@ private:
 	ASTPtr parsed_query;
 
 	/// Последнее полученное от сервера исключение. Для кода возврата в неинтерактивном режиме.
-	Poco::SharedPtr<DB::Exception> last_exception;
+	std::unique_ptr<Exception> last_exception;
 
 	/// Было ли в последнем запросе исключение.
 	bool got_exception = false;
@@ -881,7 +878,7 @@ private:
 
 			case Protocol::Server::Exception:
 				onException(*packet.exception);
-				last_exception = packet.exception;
+				last_exception = std::move(packet.exception);
 				return false;
 
 			case Protocol::Server::EndOfStream:
@@ -908,7 +905,7 @@ private:
 
 			case Protocol::Server::Exception:
 				onException(*packet.exception);
-				last_exception = packet.exception;
+				last_exception = std::move(packet.exception);
 				return false;
 
 			default:

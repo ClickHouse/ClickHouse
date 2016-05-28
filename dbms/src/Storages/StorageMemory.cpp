@@ -10,9 +10,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
-
 class MemoryBlockInputStream : public IProfilingBlockInputStream
 {
 public:

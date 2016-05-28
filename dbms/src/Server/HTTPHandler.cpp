@@ -74,13 +74,14 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 		}
 	}
 
-	used_output.out = new WriteBufferFromHTTPServerResponse(response, client_supports_http_compression, http_response_compression_method);
+	used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
+		response, client_supports_http_compression, http_response_compression_method);
 
 	/** Клиент может указать compress в query string.
 	  * В этом случае, результат сжимается несовместимым алгоритмом для внутреннего использования и этот факт не отражается в HTTP заголовках.
 	  */
 	if (parse<bool>(params.get("compress", "0")))
-		used_output.out_maybe_compressed = new CompressedWriteBuffer(*used_output.out);
+		used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
 	else
 		used_output.out_maybe_compressed = used_output.out;
 

@@ -12,7 +12,7 @@ Block AggregatingBlockInputStream::readImpl()
 	if (!executed)
 	{
 		executed = true;
-		AggregatedDataVariantsPtr data_variants = new AggregatedDataVariants;
+		AggregatedDataVariantsPtr data_variants = std::make_shared<AggregatedDataVariants>();
 
 		Aggregator::CancellationHook hook = [&]() { return this->isCancelled(); };
 		aggregator.setCancellationHook(hook);

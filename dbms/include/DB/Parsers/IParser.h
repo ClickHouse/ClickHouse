@@ -11,8 +11,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 using Expected = const char *;
 
 

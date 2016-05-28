@@ -12,9 +12,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
-
 std::string DataTypeAggregateFunction::getName() const
 {
 	std::stringstream stream;

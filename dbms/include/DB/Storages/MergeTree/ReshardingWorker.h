@@ -8,7 +8,6 @@
 #include <zkutil/SingleBarrier.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
-#include <Poco/SharedPtr.h>
 
 #include <string>
 #include <thread>

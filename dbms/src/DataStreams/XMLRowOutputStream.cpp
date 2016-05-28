@@ -6,9 +6,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
-
 XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
 	: dst_ostr(ostr_)
 {

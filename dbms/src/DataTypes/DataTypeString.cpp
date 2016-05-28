@@ -1,5 +1,3 @@
-#include <Poco/SharedPtr.h>
-
 #include <DB/Core/Defines.h>
 
 #include <DB/Columns/ColumnString.h>

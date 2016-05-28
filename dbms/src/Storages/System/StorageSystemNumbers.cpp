@@ -1,5 +1,3 @@
-#include <Poco/SharedPtr.h>
-
 #include <DB/Common/Exception.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
@@ -9,8 +7,6 @@
 
 namespace DB
 {
-
-using Poco::SharedPtr;
 
 class NumbersBlockInputStream : public IProfilingBlockInputStream
 {

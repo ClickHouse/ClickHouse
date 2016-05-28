@@ -777,7 +777,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 
 	ws.ignore(pos, end);
 
-	Poco::SharedPtr<Collator> collator = nullptr;
+	std::shared_ptr<Collator> collator;
 	if (collate.ignore(pos, end))
 	{
 		ws.ignore(pos, end);
@@ -787,7 +787,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 			return false;
 
 		const String & locale = typeid_cast<const ASTLiteral &>(*locale_node).value.safeGet<String>();
-		collator = new Collator(locale);
+		collator = std::make_shared<Collator>(locale);
 	}
 
 	node = new ASTOrderByElement(StringRange(begin, pos), direction, collator);

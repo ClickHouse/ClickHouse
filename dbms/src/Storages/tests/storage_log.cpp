@@ -54,7 +54,7 @@ try
 
 		block.insert(column2);
 
-		SharedPtr<IBlockOutputStream> out = table->write({}, {});
+		BlockOutputStreamPtr out = table->write({}, {});
 		out->write(block);
 	}
 
@@ -66,7 +66,7 @@ try
 
 		QueryProcessingStage::Enum stage;
 
-		SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Context{}, Settings(), stage)[0];
+		BlockInputStreamPtr in = table->read(column_names, 0, Context{}, Settings(), stage)[0];
 
 		Block sample;
 		{

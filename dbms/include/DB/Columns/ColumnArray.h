@@ -2,8 +2,6 @@
 
 #include <string.h> // memcpy
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/Common/Exception.h>
 #include <DB/Common/Arena.h>
 
@@ -21,8 +19,6 @@ namespace ErrorCodes
 	extern const int NOT_IMPLEMENTED;
 	extern const int BAD_ARGUMENTS;
 }
-
-using Poco::SharedPtr;
 
 /** Cтолбeц значений типа массив.
   * В памяти он представлен, как один столбец вложенного типа, размер которого равен сумме размеров всех массивов,

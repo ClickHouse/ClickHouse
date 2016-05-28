@@ -6,8 +6,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 
 /** Объединяет несколько источников в один.
   * В отличие от UnionBlockInputStream, делает это последовательно.

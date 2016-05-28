@@ -8,9 +8,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
-
 /** Интерфейс для пулов соединений.
   *
   * Использование (на примере обычного ConnectionPool):

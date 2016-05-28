@@ -368,8 +368,9 @@ private:
 
 		if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 		{
-			index_file_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
-			index_stream = new HashingWriteBuffer(*index_file_stream);
+			index_file_stream = std::make_unique<WriteBufferFromFile>(
+				part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+			index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
 		}
 	}
 
@@ -467,12 +468,11 @@ private:
 
 	size_t marks_count = 0;
 
-	SharedPtr<WriteBufferFromFile> index_file_stream;
-	SharedPtr<HashingWriteBuffer> index_stream;
+	std::unique_ptr<WriteBufferFromFile> index_file_stream;
+	std::unique_ptr<HashingWriteBuffer> index_stream;
 	MergeTreeData::DataPart::Index index_columns;
 };
 
-using MergedBlockOutputStreamPtr = Poco::SharedPtr<MergedBlockOutputStream>;
 
 /// Записывает только те, столбцы, что лежат в block
 class MergedColumnOnlyOutputStream : public IMergedBlockOutputStream

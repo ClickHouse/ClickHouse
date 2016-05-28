@@ -8,7 +8,6 @@
 #include <mutex>
 #include <Poco/RWLock.h>
 #include <Poco/Event.h>
-#include <Poco/SharedPtr.h>
 #include <DB/Core/Types.h>
 
 namespace DB

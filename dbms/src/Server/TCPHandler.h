@@ -28,11 +28,11 @@ struct QueryState
 	Protocol::Compression::Enum compression = Protocol::Compression::Disable;
 
 	/// Откуда читать данные для INSERT-а.
-	SharedPtr<ReadBuffer> maybe_compressed_in;
+	shared_ptr<ReadBuffer> maybe_compressed_in;
 	BlockInputStreamPtr block_in;
 
 	/// Куда писать возвращаемые данные.
-	SharedPtr<WriteBuffer> maybe_compressed_out;
+	shared_ptr<WriteBuffer> maybe_compressed_out;
 	BlockOutputStreamPtr block_out;
 
 	/// Текст запроса.
@@ -87,8 +87,8 @@ private:
 	Context query_context;
 
 	/// Потоки для чтения/записи из/в сокет соединения с клиентом.
-	SharedPtr<ReadBuffer> in;
-	SharedPtr<WriteBuffer> out;
+	std::shared_ptr<ReadBuffer> in;
+	std::shared_ptr<WriteBuffer> out;
 
 	/// Время после последней проверки остановки запроса и отправки прогресса.
 	Stopwatch after_check_cancelled;

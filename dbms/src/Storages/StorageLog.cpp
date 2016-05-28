@@ -32,8 +32,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 namespace ErrorCodes
 {
 	extern const int LOGICAL_ERROR;

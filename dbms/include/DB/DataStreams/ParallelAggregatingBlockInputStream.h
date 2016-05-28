@@ -14,8 +14,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 
 /** Агрегирует несколько источников параллельно.
   * Производит агрегацию блоков из разных источников независимо в разных потоках, затем объединяет результаты.
@@ -264,7 +262,7 @@ private:
 		Stopwatch watch;
 
 		for (auto & elem : many_data)
-			elem = new AggregatedDataVariants;
+			elem = std::make_shared<AggregatedDataVariants>();
 
 		processor.process();
 		processor.wait();

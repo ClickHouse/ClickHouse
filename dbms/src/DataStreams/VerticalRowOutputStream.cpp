@@ -7,9 +7,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
-
 VerticalRowOutputStream::VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
 	: ostr(ostr_), sample(sample_), field_number(0), row_number(0)
 {

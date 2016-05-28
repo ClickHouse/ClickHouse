@@ -2,7 +2,6 @@
 #include <set>
 #include <chrono>
 
-#include <Poco/SharedPtr.h>
 #include <Poco/Mutex.h>
 #include <Poco/File.h>
 #include <Poco/UUIDGenerator.h>
@@ -66,8 +65,6 @@ namespace ErrorCodes
 
 class TableFunctionFactory;
 
-using Poco::SharedPtr;
-
 
 /** Набор известных объектов, которые могут быть использованы в запросе.
   * Разделяемая часть. Порядок членов (порядок их уничтожения) очень важен.
@@ -94,8 +91,8 @@ struct ContextShared
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
 	FormatFactory format_factory;							/// Форматы.
-	mutable SharedPtr<Dictionaries> dictionaries;			/// Словари Метрики. Инициализируются лениво.
-	mutable SharedPtr<ExternalDictionaries> external_dictionaries;
+	mutable std::shared_ptr<Dictionaries> dictionaries;		/// Словари Метрики. Инициализируются лениво.
+	mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
 	Users users;											/// Известные пользователи.
 	Quotas quotas;											/// Известные квоты на использование ресурсов.
 	mutable UncompressedCachePtr uncompressed_cache;		/// Кэш разжатых блоков.
@@ -116,7 +113,7 @@ struct ContextShared
 
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
-	mutable Poco::SharedPtr<Clusters> clusters;
+	mutable std::shared_ptr<Clusters> clusters;
 
 	Poco::UUIDGenerator uuid_generator;
 
@@ -747,7 +744,7 @@ const Dictionaries & Context::getDictionariesImpl(const bool throw_on_error) con
 	auto lock = getLock();
 
 	if (!shared->dictionaries)
-		shared->dictionaries = new Dictionaries{throw_on_error};
+		shared->dictionaries = std::make_shared<Dictionaries>(throw_on_error);
 
 	return *shared->dictionaries;
 }
@@ -761,7 +758,7 @@ const ExternalDictionaries & Context::getExternalDictionariesImpl(const bool thr
 	{
 		if (!this->global_context)
 			throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
-		shared->external_dictionaries = new ExternalDictionaries{*this->global_context, throw_on_error};
+		shared->external_dictionaries = std::make_shared<ExternalDictionaries>(*this->global_context, throw_on_error);
 	}
 
 	return *shared->external_dictionaries;
@@ -921,7 +918,7 @@ const Cluster & Context::getCluster(const std::string & cluster_name) const
 	{
 		auto lock = getLock();
 		if (!shared->clusters)
-			shared->clusters = new Clusters(settings);
+			shared->clusters = std::make_shared<Clusters>(settings);
 	}
 
 	Clusters::Impl::iterator it = shared->clusters->impl.find(cluster_name);
@@ -931,12 +928,12 @@ const Cluster & Context::getCluster(const std::string & cluster_name) const
 		throw Poco::Exception("Failed to find cluster with name = " + cluster_name);
 }
 
-Poco::SharedPtr<Clusters> Context::getClusters() const
+std::shared_ptr<Clusters> Context::getClusters() const
 {
 	{
 		auto lock = getLock();
 		if (!shared->clusters)
-			shared->clusters = new Clusters(settings);
+			shared->clusters = std::make_shared<Clusters>(settings);
 	}
 
 	return shared->clusters;
@@ -947,7 +944,7 @@ Compiler & Context::getCompiler()
 	auto lock = getLock();
 
 	if (!shared->compiler)
-		shared->compiler.reset(new Compiler{ shared->path + "build/", 1 });
+		shared->compiler = std::make_unique<Compiler>(shared->path + "build/", 1);
 
 	return *shared->compiler;
 }
