@@ -57,7 +57,7 @@ private:
 		ColumnWithTypeAndName col;
 		col.name = "result";
 		col.type = new DataTypeUInt8;
-		col.column = new ColumnConstUInt8(1, res);
+		col.column = std::make_shared<ColumnConstUInt8>(1, res);
 
 		Block block;
 		block.insert(col);

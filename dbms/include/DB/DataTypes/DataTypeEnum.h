@@ -92,7 +92,7 @@ public:
 
 	size_t getSizeOfField() const override { return sizeof(FieldType); }
 
-	ColumnPtr createColumn() const override { return new ColumnType; }
+	ColumnPtr createColumn() const override { return std::make_shared<ColumnType>(); }
 	ColumnPtr createConstColumn(const size_t size, const Field & field) const override;
 
 	Field getDefault() const override;

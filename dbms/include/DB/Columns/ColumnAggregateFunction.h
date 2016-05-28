@@ -90,13 +90,13 @@ private:
 
 	Holder::Ptr holder;		/// NOTE Вместо этого можно было бы унаследовать IColumn от enable_shared_from_this.
 
+public:
 	/// Создать столбец на основе другого.
 	ColumnAggregateFunction(const ColumnAggregateFunction & src)
 		: arenas(src.arenas), holder(new Holder(src.holder))
 	{
 	}
 
-public:
 	ColumnAggregateFunction(const AggregateFunctionPtr & func_)
 		: holder(new Holder(func_))
 	{
@@ -136,7 +136,7 @@ public:
 
 	ColumnPtr cloneEmpty() const override
 	{
-		return new ColumnAggregateFunction(holder->func, Arenas(1, new Arena));
+		return std::make_shared<ColumnAggregateFunction>(holder->func, Arenas(1, new Arena));
 	};
 
 	Field operator[](size_t n) const override
@@ -256,13 +256,12 @@ public:
 		if (size != filter.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		ColumnAggregateFunction * res_ = new ColumnAggregateFunction(*this);
-		ColumnPtr res = res_;
+		std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
 
 		if (size == 0)
 			return res;
 
-		auto & res_data = res_->getData();
+		auto & res_data = res->getData();
 
 		if (result_size_hint)
 			res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
@@ -290,12 +289,11 @@ public:
 		if (perm.size() < limit)
 			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		ColumnAggregateFunction * res_ = new ColumnAggregateFunction(*this);
-		ColumnPtr res = res_;
+		std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
 
-		res_->getData().resize(limit);
+		res->getData().resize(limit);
 		for (size_t i = 0; i < limit; ++i)
-			res_->getData()[i] = getData()[perm[i]];
+			res->getData()[i] = getData()[perm[i]];
 
 		return res;
 	}

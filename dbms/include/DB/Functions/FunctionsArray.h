@@ -252,14 +252,12 @@ public:
 					/// Иначе необходимо привести его к типу результата
 					addField(result_type, (*block.getByPosition(arg_num).column)[0], arr);
 
-			block.getByPosition(result).column = new ColumnConstArray{
-				first_arg.column->size(), arr, new DataTypeArray{result_type}
-			};
+			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(
+				first_arg.column->size(), arr, new DataTypeArray{result_type});
 		}
 		else
 		{
-			auto out = new ColumnArray{result_type->createColumn()};
-			ColumnPtr out_ptr{out};
+			auto out = std::make_shared<ColumnArray>(result_type->createColumn());
 
 			for (const auto row_num : ext::range(0, first_arg.column->size()))
 			{
@@ -276,7 +274,7 @@ public:
 				out->insert(arr);
 			}
 
-			block.getByPosition(result).column = out_ptr;
+			block.getByPosition(result).column = out;
 		}
 	}
 
@@ -497,7 +495,7 @@ private:
 		if (!col_nested)
 			return false;
 
-		ColumnVector<T> * col_res = new ColumnVector<T>;
+		auto col_res = std::make_shared<ColumnVector<T>>();
 		block.getByPosition(result).column = col_res;
 
 		if (index.getType() == Field::Types::UInt64)
@@ -523,7 +521,7 @@ private:
 		if (!col_nested)
 			return false;
 
-		ColumnVector<data_type> * col_res = new ColumnVector<data_type>;
+		auto col_res = std::make_shared<ColumnVector<data_type>>();
 		block.getByPosition(result).column = col_res;
 
 		ArrayElementNumImpl<data_type>::template vector<index_type>(col_nested->getData(), col_array->getOffsets(), index, col_res->getData());
@@ -543,7 +541,7 @@ private:
 		if (!col_nested)
 			return false;
 
-		ColumnString * col_res = new ColumnString;
+		std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 		block.getByPosition(result).column = col_res;
 
 		if (index.getType() == Field::Types::UInt64)
@@ -581,7 +579,7 @@ private:
 		if (!col_nested)
 			return false;
 
-		ColumnString * col_res = new ColumnString;
+		std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 		block.getByPosition(result).column = col_res;
 
 		ArrayElementStringImpl::vector<index_type>(
@@ -724,7 +722,7 @@ private:
 		for (size_t i = 0; i < tuple_size; ++i)
 		{
 			ColumnWithTypeAndName array_of_tuple_section;
-			array_of_tuple_section.column = new ColumnArray(tuple_block.getByPosition(i).column, col_array->getOffsetsColumn());
+			array_of_tuple_section.column = std::make_shared<ColumnArray>(tuple_block.getByPosition(i).column, col_array->getOffsetsColumn());
 			array_of_tuple_section.type = new DataTypeArray(tuple_block.getByPosition(i).type);
 			block_of_temporary_results.insert(array_of_tuple_section);
 
@@ -736,7 +734,7 @@ private:
 			result_tuple_block.insert(block_of_temporary_results.getByPosition(i * 2 + 2));
 		}
 
-		ColumnTuple * col_res = new ColumnTuple(result_tuple_block);
+		auto col_res = std::make_shared<ColumnTuple>(result_tuple_block);
 		block.getByPosition(result).column = col_res;
 
 		return true;
@@ -997,7 +995,7 @@ private:
 
 		if (const auto item_arg_const = typeid_cast<const ColumnConst<U> *>(item_arg))
 		{
-			const auto col_res = new ResultColumnType;
+			const auto col_res = std::make_shared<ResultColumnType>();
 			ColumnPtr col_ptr{col_res};
 			block.getByPosition(result).column = col_ptr;
 
@@ -1006,7 +1004,7 @@ private:
 		}
 		else if (const auto item_arg_vector = typeid_cast<const ColumnVector<U> *>(item_arg))
 		{
-			const auto col_res = new ResultColumnType;
+			const auto col_res = std::make_shared<ResultColumnType>();
 			ColumnPtr col_ptr{col_res};
 			block.getByPosition(result).column = col_ptr;
 
@@ -1035,7 +1033,7 @@ private:
 
 		if (const auto item_arg_const = typeid_cast<const ColumnConst<String> *>(item_arg))
 		{
-			const auto col_res = new ResultColumnType;
+			const auto col_res = std::make_shared<ResultColumnType>();
 			ColumnPtr col_ptr{col_res};
 			block.getByPosition(result).column = col_ptr;
 
@@ -1044,7 +1042,7 @@ private:
 		}
 		else if (const auto item_arg_vector = typeid_cast<const ColumnString *>(item_arg))
 		{
-			const auto col_res = new ResultColumnType;
+			const auto col_res = std::make_shared<ResultColumnType>();
 			ColumnPtr col_ptr{col_res};
 			block.getByPosition(result).column = col_ptr;
 
@@ -1087,9 +1085,8 @@ private:
 		else
 		{
 			const auto size = item_arg->size();
-			const auto col_res = new ResultColumnType{size, {}};
-			ColumnPtr col_ptr{col_res};
-			block.getByPosition(result).column = col_ptr;
+			const auto col_res = std::make_shared<ResultColumnType>(size);
+			block.getByPosition(result).column = col_res;
 
 			auto & data = col_res->getData();
 
@@ -1195,8 +1192,8 @@ public:
 		{
 			const ColumnArray::Offsets_t & offsets = array->getOffsets();
 
-			ColumnUInt32 * res_nested = new ColumnUInt32;
-			ColumnArray * res_array = new ColumnArray(res_nested, array->getOffsetsColumn());
+			auto res_nested = std::make_shared<ColumnUInt32>();
+			auto res_array = std::make_shared<ColumnArray>(res_nested, array->getOffsetsColumn());
 			block.getByPosition(result).column = res_array;
 
 			ColumnUInt32::Container_t & res_values = res_nested->getData();
@@ -1222,7 +1219,7 @@ public:
 				res_values[i] = i + 1;
 			}
 
-			ColumnConstArray * res_array = new ColumnConstArray(array->size(), res_values, new DataTypeArray(new DataTypeUInt32));
+			auto res_array = std::make_shared<ColumnConstArray>(array->size(), res_values, new DataTypeArray(new DataTypeUInt32));
 			block.getByPosition(result).column = res_array;
 		}
 		else
@@ -1303,7 +1300,7 @@ public:
 		}
 
 		const ColumnArray * first_array = typeid_cast<const ColumnArray *>(&*array_columns[0]);
-		ColumnUInt32 * res = new ColumnUInt32;
+		auto res = std::make_shared<ColumnUInt32>();
 		block.getByPosition(result).column = res;
 
 		ColumnUInt32::Container_t & res_values = res->getData();
@@ -1400,7 +1397,7 @@ private:
 		for (size_t i = 0; i < values.size(); ++i)
 			set.insert(values[i]);
 
-		block.getByPosition(result).column = new ColumnConstUInt32(array->size(), set.size());
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt32>(array->size(), set.size());
 		return true;
 	}
 
@@ -1533,8 +1530,8 @@ public:
 		}
 
 		const ColumnArray * first_array = typeid_cast<const ColumnArray *>(&*array_columns[0]);
-		ColumnUInt32 * res_nested = new ColumnUInt32;
-		ColumnArray * res_array = new ColumnArray(res_nested, first_array->getOffsetsColumn());
+		auto res_nested = std::make_shared<ColumnUInt32>();
+		auto res_array = std::make_shared<ColumnArray>(res_nested, first_array->getOffsetsColumn());
 		block.getByPosition(result).column = res_array;
 
 		ColumnUInt32::Container_t & res_values = res_nested->getData();
@@ -1635,7 +1632,7 @@ private:
 			res_values[i] = static_cast<UInt64>(++indices[values[i]]);
 		}
 
-		ColumnConstArray * res_array = new ColumnConstArray(array->size(), res_values, new DataTypeArray(new DataTypeUInt32));
+		auto res_array = std::make_shared<ColumnConstArray>(array->size(), res_values, new DataTypeArray(new DataTypeUInt32));
 		block.getByPosition(result).column = res_array;
 
 		return true;
@@ -1738,10 +1735,9 @@ private:
 	{
 		using UnderlyingColumnType = typename TypeToColumnType<typename DataType::FieldType>::ColumnType;
 
-		block.getByPosition(result).column = new ColumnArray{
-			new UnderlyingColumnType,
-			new ColumnArray::ColumnOffsets_t{block.rowsInFirstColumn(), 0}
-		};
+		block.getByPosition(result).column = std::make_shared<ColumnArray>(
+			std::make_shared<UnderlyingColumnType>(),
+			std::make_shared<ColumnArray::ColumnOffsets_t>(block.rowsInFirstColumn(), 0));
 	}
 };
 
@@ -1811,11 +1807,10 @@ private:
 					ErrorCodes::ARGUMENT_OUT_OF_BOUND
 				};
 
-			const auto data_col = new ColumnVector<T>{total_values};
-			const auto out = new ColumnArray{
+			const auto data_col = std::make_shared<ColumnVector<T>>(total_values);
+			const auto out = std::make_shared<ColumnArray>(
 				data_col,
-				new ColumnArray::ColumnOffsets_t{in->size()}
-			};
+				std::make_shared<ColumnArray::ColumnOffsets_t>(in->size()));
 			block.getByPosition(result).column = out;
 
 			auto & out_data = data_col->getData();
@@ -1848,11 +1843,10 @@ private:
 					ErrorCodes::ARGUMENT_OUT_OF_BOUND
 				};
 
-			const auto data_col = new ColumnVector<T>{total_values};
-			const auto out = new ColumnArray{
+			const auto data_col = std::make_shared<ColumnVector<T>>(total_values);
+			const auto out = std::make_shared<ColumnArray>(
 				data_col,
-				new ColumnArray::ColumnOffsets_t{in->size()}
-			};
+				std::make_shared<ColumnArray::ColumnOffsets_t>(in->size()));
 			block.getByPosition(result).column = out;
 
 			auto & out_data = data_col->getData();
@@ -1964,9 +1958,9 @@ private:
 			{
 				auto nested_type = typeid_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType();
 
-				block.getByPosition(result).column = new ColumnConstArray(
+				block.getByPosition(result).column = std::make_shared<ColumnConstArray>(
 					block.rowsInFirstColumn(),
-					{nested_type->getDefault()},
+					Array{nested_type->getDefault()},
 					nested_type->clone());
 			}
 			else
@@ -2218,7 +2212,7 @@ private:
 			for (size_t i = 0; i < size; ++i)
 				res[i] = arr[size - i - 1];
 
-			block.getByPosition(result).column = new ColumnConstArray(
+			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(
 				block.rowsInFirstColumn(),
 				res,
 				block.getByPosition(arguments[0]).type->clone());

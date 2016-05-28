@@ -91,7 +91,7 @@ private:
 	{
 		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnString * col_to = new ColumnString;
+			auto col_to = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
@@ -119,7 +119,7 @@ private:
 				writeBitmask<T>(col_from->getData(), buf);
 			}
 
-			block.getByPosition(result).column = new ColumnConstString(col_from->size(), res);
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), res);
 		}
 		else
 		{
@@ -183,7 +183,7 @@ private:
 	{
 		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnString * col_to = new ColumnString;
+			auto col_to = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
@@ -205,7 +205,7 @@ private:
 		}
 		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConstString(col_from->size(), formatReadableSizeWithBinarySuffix(col_from->getData()));
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), formatReadableSizeWithBinarySuffix(col_from->getData()));
 		}
 		else
 		{

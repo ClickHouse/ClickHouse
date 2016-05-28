@@ -2094,7 +2094,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 			MergeTreeWhereOptimizer{query, context, data, real_column_names, log};
 
 	Block virtual_columns_block;
-	ColumnUInt8 * column = new ColumnUInt8(2);
+	auto column = std::make_shared<ColumnUInt8>(2);
 	ColumnPtr column_ptr = column;
 	column->getData()[0] = 0;
 	column->getData()[1] = 1;

@@ -1214,7 +1214,7 @@ public:
 
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column_src))
 		{
-			ColumnString * col_res = new ColumnString;
+			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 			Impl::vector(col->getChars(), col->getOffsets(),
 				needle, replacement,
@@ -1222,7 +1222,7 @@ public:
 		}
 		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column_src))
 		{
-			ColumnString * col_res = new ColumnString;
+			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 			Impl::vector_fixed(col->getChars(), col->getN(),
 				needle, replacement,
@@ -1232,7 +1232,7 @@ public:
 		{
 			String res;
 			Impl::constant(col->getData(), needle, replacement, res);
-			ColumnConstString * col_res = new ColumnConstString(col->size(), res);
+			auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
 			block.getByPosition(result).column = col_res;
 		}
 		else
@@ -1290,12 +1290,11 @@ public:
 		{
 			ResultType res{};
 			Impl::constant_constant(col_haystack_const->getData(), col_needle_const->getData(), res);
-			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col_haystack_const->size(), res);
-			block.getByPosition(result).column = col_res;
+			block.getByPosition(result).column = std::make_shared<ColumnConst<ResultType>>(col_haystack_const->size(), res);
 			return;
 		}
 
-		ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+		auto col_res = std::make_shared<ColumnVector<ResultType>>();
 		block.getByPosition(result).column = col_res;
 
 		typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
@@ -1373,7 +1372,7 @@ public:
 
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
 		{
-			ColumnString * col_res = new ColumnString;
+			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 
 			ColumnString::Chars_t & vec_res = col_res->getChars();
@@ -1396,8 +1395,7 @@ public:
 			if (!res_offsets.empty())
 				res.assign(&res_vdata[0], &res_vdata[res_vdata.size() - 1]);
 
-			ColumnConstString * col_res = new ColumnConstString(col->size(), res);
-			block.getByPosition(result).column = col_res;
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col->size(), res);
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()

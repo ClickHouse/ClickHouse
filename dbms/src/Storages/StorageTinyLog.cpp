@@ -195,11 +195,11 @@ Block TinyLogBlockInputStream::readImpl()
 			String name = DataTypeNested::extractNestedTableName(column.name);
 
 			if (offset_columns.count(name) == 0)
-				offset_columns[name] = new ColumnArray::ColumnOffsets_t;
+				offset_columns[name] = std::make_shared<ColumnArray::ColumnOffsets_t>();
 			else
 				read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
 
-			column.column = new ColumnArray(type_arr->getNestedType()->createColumn(), offset_columns[name]);
+			column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[name]);
 		}
 		else
 			column.column = column.type->createColumn();

@@ -54,7 +54,7 @@ public:
 	{
 		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnString * col_to = new ColumnString;
+			auto col_to = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
@@ -86,7 +86,7 @@ public:
 			while (!res.empty() && res[res.length() - 1] == '\0')
 				res.erase(res.end() - 1);
 
-			block.getByPosition(result).column = new ColumnConstString(col_from->size(), res);
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), res);
 		}
 		else
 		{
@@ -151,7 +151,7 @@ public:
 	{
 		if (ColumnString * col_from = typeid_cast<ColumnString *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<ToFieldType> * col_res = new ColumnVector<ToFieldType>;
+			auto col_res = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_res;
 
 			ColumnString::Chars_t & data_from = col_from->getChars();
@@ -172,7 +172,7 @@ public:
 		}
 		else if (ColumnFixedString * col_from = typeid_cast<ColumnFixedString *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<ToFieldType> * col_res = new ColumnVector<ToFieldType>;
+			auto col_res = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_res;
 
 			ColumnString::Chars_t & data_from = col_from->getChars();
@@ -196,7 +196,7 @@ public:
 			ToFieldType value = 0;
 			const String & str = col->getData();
 			memcpy(&value, str.data(), std::min(sizeof(ToFieldType), str.length()));
-			ColumnConst<ToFieldType> * col_res = new ColumnConst<ToFieldType>(col->size(), value);
+			auto col_res = std::make_shared<ColumnConst<ToFieldType>>(col->size(), value);
 			block.getByPosition(result).column = col_res;
 		}
 		else

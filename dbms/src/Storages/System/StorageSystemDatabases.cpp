@@ -39,10 +39,10 @@ BlockInputStreams StorageSystemDatabases::read(
 
 	Block block;
 
-	ColumnWithTypeAndName col_name{new ColumnString, new DataTypeString, "name"};
+	ColumnWithTypeAndName col_name{std::make_shared<ColumnString>(), new DataTypeString, "name"};
 	block.insert(col_name);
 
-	ColumnWithTypeAndName col_engine{new ColumnString, new DataTypeString, "engine"};
+	ColumnWithTypeAndName col_engine{std::make_shared<ColumnString>(), new DataTypeString, "engine"};
 	block.insert(col_engine);
 
 	auto databases = context.getDatabases();

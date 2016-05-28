@@ -486,7 +486,7 @@ struct DateTimeTransformImpl
 		{
 			if (sources)
 			{
-				auto * col_to = new ColumnVector<ToType>;
+				auto col_to = std::make_shared<ColumnVector<ToType>>();
 				block.getByPosition(result).column = col_to;
 
 				auto & vec_from = sources->getData();
@@ -500,7 +500,7 @@ struct DateTimeTransformImpl
 			{
 				ToType res;
 				Op::constant_constant(const_source->getData(), res);
-				block.getByPosition(result).column = new ColumnConst<ToType>(const_source->size(), res);
+				block.getByPosition(result).column = std::make_shared<ColumnConst<ToType>>(const_source->size(), res);
 			}
 			else
 			{
@@ -517,7 +517,7 @@ struct DateTimeTransformImpl
 
 			if (sources)
 			{
-				auto * col_to = new ColumnVector<ToType>;
+				auto col_to = std::make_shared<ColumnVector<ToType>>();
 				block.getByPosition(result).column = col_to;
 
 				auto & vec_from = sources->getData();
@@ -537,7 +537,7 @@ struct DateTimeTransformImpl
 			{
 				if (time_zones)
 				{
-					auto * col_to = new ColumnVector<ToType>;
+					auto col_to = std::make_shared<ColumnVector<ToType>>();
 					block.getByPosition(result).column = col_to;
 
 					auto & vec_to = col_to->getData();
@@ -549,7 +549,7 @@ struct DateTimeTransformImpl
 				{
 					ToType res;
 					Op::constant_constant(const_source->getData(), const_time_zone->getData(), res);
-					block.getByPosition(result).column = new ColumnConst<ToType>(const_source->size(), res);
+					block.getByPosition(result).column = std::make_shared<ColumnConst<ToType>>(const_source->size(), res);
 				}
 				else
 					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -691,7 +691,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConstUInt32(
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt32>(
 			block.rowsInFirstColumn(),
 			time(0));
 	}
@@ -724,7 +724,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConstUInt16(
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt16>(
 			block.rowsInFirstColumn(),
 			DateLUT::instance().toDayNum(time(0)));
 	}
@@ -757,7 +757,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConstUInt16(
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt16>(
 			block.rowsInFirstColumn(),
 			DateLUT::instance().toDayNum(time(0)) - 1);
 	}
@@ -796,7 +796,7 @@ public:
 	{
 		if (const ColumnUInt32 * times = typeid_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnUInt32 * res = new ColumnUInt32;
+			auto res = std::make_shared<ColumnUInt32>();
 			ColumnPtr res_holder = res;
 			ColumnUInt32::Container_t & res_vec = res->getData();
 			const ColumnUInt32::Container_t & vec = times->getData();
@@ -811,7 +811,7 @@ public:
 		}
 		else if (const ColumnConstUInt32 * const_times = typeid_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConstUInt32(block.rowsInFirstColumn(), const_times->getData() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
+			block.getByPosition(result).column = std::make_shared<ColumnConstUInt32>(block.rowsInFirstColumn(), const_times->getData() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -940,7 +940,7 @@ public:
 		const ColumnUInt32 * durations = typeid_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[1]).column);
 		const ColumnConstUInt32 * const_durations = typeid_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[1]).column);
 
-		ColumnArray * res = new ColumnArray(new ColumnUInt32);
+		auto res = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt32>());
 		ColumnPtr res_holder = res;
 		ColumnUInt32::Container_t & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
 
@@ -963,7 +963,7 @@ public:
 		{
 			Array const_res;
 			TimeSlotsImpl<UInt32>::constant_constant(const_starts->getData(), const_durations->getData(), const_res);
-			block.getByPosition(result).column = new ColumnConstArray(block.rowsInFirstColumn(), const_res, new DataTypeArray(new DataTypeDateTime));
+			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(block.rowsInFirstColumn(), const_res, new DataTypeArray(new DataTypeDateTime));
 		}
 		else
 			throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()

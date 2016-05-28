@@ -84,9 +84,9 @@ BlockInputStreams StorageSystemReplicas::read(
 		}
 	}
 
-	ColumnWithTypeAndName col_database			{ new ColumnString,	new DataTypeString,	"database"};
-	ColumnWithTypeAndName col_table				{ new ColumnString,	new DataTypeString,	"table"};
-	ColumnWithTypeAndName col_engine			{ new ColumnString,	new DataTypeString,	"engine"};
+	ColumnWithTypeAndName col_database			{ std::make_shared<ColumnString>(),	new DataTypeString,	"database"};
+	ColumnWithTypeAndName col_table				{ std::make_shared<ColumnString>(),	new DataTypeString,	"table"};
+	ColumnWithTypeAndName col_engine			{ std::make_shared<ColumnString>(),	new DataTypeString,	"engine"};
 
 	for (auto & db : replicated_tables)
 	{
@@ -112,28 +112,28 @@ BlockInputStreams StorageSystemReplicas::read(
 		col_engine 		= filtered_block.getByName("engine");
 	}
 
-	ColumnWithTypeAndName col_is_leader			{ new ColumnUInt8,	new DataTypeUInt8,	"is_leader"};
-	ColumnWithTypeAndName col_is_readonly		{ new ColumnUInt8,	new DataTypeUInt8,	"is_readonly"};
-	ColumnWithTypeAndName col_is_session_expired{ new ColumnUInt8,	new DataTypeUInt8,	"is_session_expired"};
-	ColumnWithTypeAndName col_future_parts		{ new ColumnUInt32,	new DataTypeUInt32,	"future_parts"};
-	ColumnWithTypeAndName col_parts_to_check	{ new ColumnUInt32,	new DataTypeUInt32,	"parts_to_check"};
-	ColumnWithTypeAndName col_zookeeper_path	{ new ColumnString,	new DataTypeString,	"zookeeper_path"};
-	ColumnWithTypeAndName col_replica_name		{ new ColumnString,	new DataTypeString,	"replica_name"};
-	ColumnWithTypeAndName col_replica_path		{ new ColumnString,	new DataTypeString,	"replica_path"};
-	ColumnWithTypeAndName col_columns_version	{ new ColumnInt32,	new DataTypeInt32,	"columns_version"};
-	ColumnWithTypeAndName col_queue_size		{ new ColumnUInt32,	new DataTypeUInt32,	"queue_size"};
-	ColumnWithTypeAndName col_inserts_in_queue	{ new ColumnUInt32,	new DataTypeUInt32,	"inserts_in_queue"};
-	ColumnWithTypeAndName col_merges_in_queue	{ new ColumnUInt32,	new DataTypeUInt32,	"merges_in_queue"};
-	ColumnWithTypeAndName col_queue_oldest_time	{ new ColumnUInt32,	new DataTypeDateTime, "queue_oldest_time"};
-	ColumnWithTypeAndName col_inserts_oldest_time{ new ColumnUInt32,new DataTypeDateTime, "inserts_oldest_time"};
-	ColumnWithTypeAndName col_merges_oldest_time{ new ColumnUInt32,	new DataTypeDateTime, "merges_oldest_time"};
-	ColumnWithTypeAndName col_oldest_part_to_get{ new ColumnString,	new DataTypeString, "oldest_part_to_get"};
-	ColumnWithTypeAndName col_oldest_part_to_merge_to{ new ColumnString, new DataTypeString, "oldest_part_to_merge_to"};
-	ColumnWithTypeAndName col_log_max_index		{ new ColumnUInt64,	new DataTypeUInt64,	"log_max_index"};
-	ColumnWithTypeAndName col_log_pointer		{ new ColumnUInt64,	new DataTypeUInt64,	"log_pointer"};
-	ColumnWithTypeAndName col_last_queue_update	{ new ColumnUInt32,	new DataTypeDateTime, "last_queue_update"};
-	ColumnWithTypeAndName col_total_replicas	{ new ColumnUInt8,	new DataTypeUInt8,	"total_replicas"};
-	ColumnWithTypeAndName col_active_replicas	{ new ColumnUInt8,	new DataTypeUInt8,	"active_replicas"};
+	ColumnWithTypeAndName col_is_leader			{ std::make_shared<ColumnUInt8>(),	new DataTypeUInt8,	"is_leader"};
+	ColumnWithTypeAndName col_is_readonly		{ std::make_shared<ColumnUInt8>(),	new DataTypeUInt8,	"is_readonly"};
+	ColumnWithTypeAndName col_is_session_expired{ std::make_shared<ColumnUInt8>(),	new DataTypeUInt8,	"is_session_expired"};
+	ColumnWithTypeAndName col_future_parts		{ std::make_shared<ColumnUInt32>(),	new DataTypeUInt32,	"future_parts"};
+	ColumnWithTypeAndName col_parts_to_check	{ std::make_shared<ColumnUInt32>(),	new DataTypeUInt32,	"parts_to_check"};
+	ColumnWithTypeAndName col_zookeeper_path	{ std::make_shared<ColumnString>(),	new DataTypeString,	"zookeeper_path"};
+	ColumnWithTypeAndName col_replica_name		{ std::make_shared<ColumnString>(),	new DataTypeString,	"replica_name"};
+	ColumnWithTypeAndName col_replica_path		{ std::make_shared<ColumnString>(),	new DataTypeString,	"replica_path"};
+	ColumnWithTypeAndName col_columns_version	{ std::make_shared<ColumnInt32>(),	new DataTypeInt32,	"columns_version"};
+	ColumnWithTypeAndName col_queue_size		{ std::make_shared<ColumnUInt32>(),	new DataTypeUInt32,	"queue_size"};
+	ColumnWithTypeAndName col_inserts_in_queue	{ std::make_shared<ColumnUInt32>(),	new DataTypeUInt32,	"inserts_in_queue"};
+	ColumnWithTypeAndName col_merges_in_queue	{ std::make_shared<ColumnUInt32>(),	new DataTypeUInt32,	"merges_in_queue"};
+	ColumnWithTypeAndName col_queue_oldest_time	{ std::make_shared<ColumnUInt32>(),	new DataTypeDateTime, "queue_oldest_time"};
+	ColumnWithTypeAndName col_inserts_oldest_time{ std::make_shared<ColumnUInt32>(),new DataTypeDateTime, "inserts_oldest_time"};
+	ColumnWithTypeAndName col_merges_oldest_time{ std::make_shared<ColumnUInt32>(),	new DataTypeDateTime, "merges_oldest_time"};
+	ColumnWithTypeAndName col_oldest_part_to_get{ std::make_shared<ColumnString>(),	new DataTypeString, "oldest_part_to_get"};
+	ColumnWithTypeAndName col_oldest_part_to_merge_to{ std::make_shared<ColumnString>(), new DataTypeString, "oldest_part_to_merge_to"};
+	ColumnWithTypeAndName col_log_max_index		{ std::make_shared<ColumnUInt64>(),	new DataTypeUInt64,	"log_max_index"};
+	ColumnWithTypeAndName col_log_pointer		{ std::make_shared<ColumnUInt64>(),	new DataTypeUInt64,	"log_pointer"};
+	ColumnWithTypeAndName col_last_queue_update	{ std::make_shared<ColumnUInt32>(),	new DataTypeDateTime, "last_queue_update"};
+	ColumnWithTypeAndName col_total_replicas	{ std::make_shared<ColumnUInt8>(),	new DataTypeUInt8,	"total_replicas"};
+	ColumnWithTypeAndName col_active_replicas	{ std::make_shared<ColumnUInt8>(),	new DataTypeUInt8,	"active_replicas"};
 
 	for (size_t i = 0, size = col_database.column->size(); i < size; ++i)
 	{

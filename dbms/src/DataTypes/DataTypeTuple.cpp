@@ -240,12 +240,12 @@ ColumnPtr DataTypeTuple::createColumn() const
 		col.type = elems[i]->clone();
 		tuple_block.insert(col);
 	}
-	return new ColumnTuple(tuple_block);
+	return std::make_shared<ColumnTuple>(tuple_block);
 }
 
 ColumnPtr DataTypeTuple::createConstColumn(size_t size, const Field & field) const
 {
-	return new ColumnConstTuple(size, get<const Tuple &>(field), new DataTypeTuple(elems));
+	return std::make_shared<ColumnConstTuple>(size, get<const Tuple &>(field), new DataTypeTuple(elems));
 }
 
 Field DataTypeTuple::getDefault() const

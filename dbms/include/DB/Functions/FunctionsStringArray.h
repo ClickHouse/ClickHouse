@@ -341,7 +341,7 @@ public:
 		const ColumnConstString * col_const_str =
 				typeid_cast<const ColumnConstString *>(&*block.getByPosition(arrayArgumentPosition).column);
 
-		ColumnArray * col_res = new ColumnArray(new ColumnString);
+		auto col_res = std::make_shared<ColumnArray>(std::make_shared<ColumnString>());
 		ColumnPtr col_res_holder = col_res;
 		ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
 		ColumnArray::Offsets_t & res_offsets = col_res->getOffsets();
@@ -404,7 +404,7 @@ public:
 			while (generator.get(token_begin, token_end))
 				dst.push_back(String(token_begin, token_end - token_begin));
 
-			block.getByPosition(result).column = new ColumnConstArray(col_const_str->size(), dst, new DataTypeArray(new DataTypeString));
+			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(col_const_str->size(), dst, new DataTypeArray(new DataTypeString));
 		}
 		else
 			throw Exception("Illegal columns " + block.getByPosition(arrayArgumentPosition).column->getName()
@@ -521,7 +521,7 @@ public:
 
 		if (const ColumnConstArray * col_const_arr = typeid_cast<const ColumnConstArray *>(block.getByPosition(arguments[0]).column.get()))
 		{
-			ColumnConstString * col_res = new ColumnConstString(col_const_arr->size(), "");
+			auto col_res = std::make_shared<ColumnConstString>(col_const_arr->size(), "");
 			block.getByPosition(result).column = col_res;
 
 			const Array & src_arr = col_const_arr->getData();
@@ -538,7 +538,7 @@ public:
 			const ColumnArray & col_arr = static_cast<const ColumnArray &>(*block.getByPosition(arguments[0]).column);
 			const ColumnString & col_string = static_cast<const ColumnString &>(col_arr.getData());
 
-			ColumnString * col_res = new ColumnString;
+			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 
 			executeImpl(

@@ -568,7 +568,7 @@ private:
 	{
 		if (auto col_right = typeid_cast<const ColumnVector<T1> *>(block.getByPosition(arguments[1]).column.get()))
 		{
-			auto col_res = new ColumnVector<ResultType>;
+			auto col_res = std::make_shared<ColumnVector<ResultType>>();
 			block.getByPosition(result).column = col_res;
 
 			auto & vec_res = col_res->getData();
@@ -579,7 +579,7 @@ private:
 		}
 		else if (auto col_right = typeid_cast<const ColumnConst<T1> *>(block.getByPosition(arguments[1]).column.get()))
 		{
-			auto col_res = new ColumnVector<ResultType>;
+			auto col_res = std::make_shared<ColumnVector<ResultType>>();
 			block.getByPosition(result).column = col_res;
 
 			auto & vec_res = col_res->getData();
@@ -598,7 +598,7 @@ private:
 	{
 		if (auto col_right = typeid_cast<const ColumnVector<T1> *>(block.getByPosition(arguments[1]).column.get()))
 		{
-			auto col_res = new ColumnVector<ResultType>;
+			auto col_res = std::make_shared<ColumnVector<ResultType>>();
 			block.getByPosition(result).column = col_res;
 
 			auto & vec_res = col_res->getData();
@@ -612,7 +612,7 @@ private:
 			ResultType res = 0;
 			BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_constant(col_left->getData(), col_right->getData(), res);
 
-			auto col_res = new ColumnConst<ResultType>(col_left->size(), res);
+			auto col_res = std::make_shared<ColumnConst<ResultType>>(col_left->size(), res);
 			block.getByPosition(result).column = col_res;
 
 			return true;
@@ -751,7 +751,7 @@ private:
 		{
 			typedef typename Op<T0>::ResultType ResultType;
 
-			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+			std::shared_ptr<ColumnVector<ResultType>> col_res = std::make_shared<ColumnVector<ResultType>>();
 			block.getByPosition(result).column = col_res;
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
@@ -767,7 +767,7 @@ private:
 			ResultType res = 0;
 			UnaryOperationImpl<T0, Op<T0> >::constant(col->getData(), res);
 
-			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col->size(), res);
+			std::shared_ptr<ColumnConst<ResultType>> col_res = std::make_shared<ColumnConst<ResultType>>(col->size(), res);
 			block.getByPosition(result).column = col_res;
 
 			return true;

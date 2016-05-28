@@ -59,7 +59,7 @@ public:
 
 	ColumnPtr cloneEmpty() const override
 	{
-		return new ColumnString;
+		return std::make_shared<ColumnString>();
 	}
 
 	Field operator[](size_t n) const override
@@ -195,16 +195,15 @@ public:
 	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
 	{
 		if (offsets.size() == 0)
-			return new ColumnString;
+			return std::make_shared<ColumnString>();
 
-		auto res = new ColumnString;
-		ColumnPtr res_{res};
+		auto res = std::make_shared<ColumnString>();
 
 		Chars_t & res_chars = res->chars;
 		Offsets_t & res_offsets = res->offsets;
 
 		filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
-		return res_;
+		return res;
 	}
 
 	ColumnPtr permute(const Permutation & perm, size_t limit) const override
@@ -220,13 +219,12 @@ public:
 			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		if (limit == 0)
-			return new ColumnString;
+			return std::make_shared<ColumnString>();
 
-		ColumnString * res_ = new ColumnString;
-		ColumnPtr res = res_;
+		std::shared_ptr<ColumnString> res = std::make_shared<ColumnString>();
 
-		Chars_t & res_chars = res_->chars;
-		Offsets_t & res_offsets = res_->offsets;
+		Chars_t & res_chars = res->chars;
+		Offsets_t & res_offsets = res->offsets;
 
 		if (limit == size)
 			res_chars.resize(chars.size());
@@ -378,14 +376,13 @@ public:
 		if (col_size != replicate_offsets.size())
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		ColumnString * res_ = new ColumnString;
-		ColumnPtr res = res_;
+		std::shared_ptr<ColumnString> res = std::make_shared<ColumnString>();
 
 		if (0 == col_size)
 			return res;
 
-		Chars_t & res_chars = res_->chars;
-		Offsets_t & res_offsets = res_->offsets;
+		Chars_t & res_chars = res->chars;
+		Offsets_t & res_offsets = res->offsets;
 		res_chars.reserve(chars.size() / col_size * replicate_offsets.back());
 		res_offsets.reserve(replicate_offsets.back());
 

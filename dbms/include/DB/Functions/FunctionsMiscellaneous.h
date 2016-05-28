@@ -118,9 +118,8 @@ public:
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConstString{
-			block.rowsInFirstColumn(), db_name
-		};
+		block.getByPosition(result).column = std::make_shared<ColumnConstString>(
+			block.rowsInFirstColumn(), db_name);
 	}
 };
 
@@ -214,7 +213,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConstString(block.rowsInFirstColumn(), block.getByPosition(arguments[0]).type->getName());
+		block.getByPosition(result).column = std::make_shared<ColumnConstString>(block.rowsInFirstColumn(), block.getByPosition(arguments[0]).type->getName());
 	}
 };
 
@@ -278,7 +277,7 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t size = block.rowsInFirstColumn();
-		auto column = new ColumnUInt64;
+		auto column = std::make_shared<ColumnUInt64>();
 		block.getByPosition(result).column = column;
 		auto & data = column->getData();
 		data.resize(size);
@@ -510,7 +509,7 @@ public:
 		for (ColumnNumbers::const_iterator it = arguments.begin(); it != arguments.end(); ++it)
 			tuple_block.insert(block.getByPosition(*it));
 
-		block.getByPosition(result).column = new ColumnTuple(tuple_block);
+		block.getByPosition(result).column = std::make_shared<ColumnTuple>(tuple_block);
 	}
 };
 
@@ -594,7 +593,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConstUInt8(block.rowsInFirstColumn(), 0);
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rowsInFirstColumn(), 0);
 	}
 };
 
@@ -623,7 +622,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConstUInt8(block.rowsInFirstColumn(), 1);
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rowsInFirstColumn(), 1);
 	}
 };
 
@@ -739,7 +738,7 @@ public:
 			array_column = typeid_cast<ColumnArray *>(&*temp_column);
 		}
 
-		block.getByPosition(result).column = new ColumnArray(
+		block.getByPosition(result).column = std::make_shared<ColumnArray>(
 			first_column->replicate(array_column->getOffsets()),
 			array_column->getOffsetsColumn());
 	}
@@ -794,7 +793,7 @@ public:
 
 		if (src.isConst())
 		{
-			auto res_column = new ColumnConstString(block.rowsInFirstColumn(), "");
+			auto res_column = std::make_shared<ColumnConstString>(block.rowsInFirstColumn(), "");
 			block.getByPosition(result).column = res_column;
 
 			if (   executeConstNumber<UInt8>	(src, *res_column, min, max, max_width)
@@ -816,7 +815,7 @@ public:
 		}
 		else
 		{
-			auto res_column = new ColumnString;
+			auto res_column = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = res_column;
 
 			if (   executeNumber<UInt8>		(src, *res_column, min, max, max_width)
@@ -971,7 +970,7 @@ public:
 		{
 			const auto size = in->size();
 
-			const auto out = new ColumnVector<UInt8>{size};
+			const auto out = std::make_shared<ColumnUInt8>(size);
 			block.getByPosition(result).column = out;
 
 			const auto & in_data = in->getData();
@@ -984,10 +983,9 @@ public:
 		}
 		else if (const auto in = typeid_cast<const ColumnConst<T> *>(in_untyped))
 		{
-			block.getByPosition(result).column = new ColumnConstUInt8{
+			block.getByPosition(result).column = std::make_shared<ColumnConstUInt8>(
 				in->size(),
-				Impl::execute(in->getData())
-			};
+				Impl::execute(in->getData()));
 
 			return true;
 		}
@@ -1037,7 +1035,7 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		static const std::string version = getVersion();
-		block.getByPosition(result).column = new ColumnConstString(block.rowsInFirstColumn(), version);
+		block.getByPosition(result).column = std::make_shared<ColumnConstString>(block.rowsInFirstColumn(), version);
 	}
 
 private:
@@ -1069,7 +1067,7 @@ public:
 
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConstUInt32(block.rowsInFirstColumn(), uptime);
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt32>(block.rowsInFirstColumn(), uptime);
 	}
 
 private:

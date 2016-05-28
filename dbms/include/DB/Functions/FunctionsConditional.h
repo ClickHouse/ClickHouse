@@ -36,7 +36,7 @@ struct NumIfImpl
 private:
 	static PaddedPODArray<ResultType> & result_vector(Block & block, size_t result, size_t size)
 	{
-		ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+		auto col_res = std::make_shared<ColumnVector<ResultType>>();
 		block.getByPosition(result).column = col_res;
 
 		typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
@@ -433,8 +433,8 @@ struct NumArrayIfImpl
 		Block & block, size_t result,
 		PaddedPODArray<ResultType> ** c_data, ColumnArray::Offsets_t ** c_offsets)
 	{
-		ColumnVector<ResultType> * col_res_vec = new ColumnVector<ResultType>;
-		ColumnArray * col_res_array = new ColumnArray(col_res_vec);
+		auto col_res_vec = std::make_shared<ColumnVector<ResultType>>();
+		auto col_res_array = std::make_shared<ColumnArray>(col_res_vec);
 		block.getByPosition(result).column = col_res_array;
 
 		*c_data = &col_res_vec->getData();
@@ -864,7 +864,7 @@ private:
 
 	template <typename T0, typename T1>
 	bool executeRightType(
-		const ColumnVector<UInt8> * cond_col,
+		const ColumnUInt8 * cond_col,
 		Block & block,
 		const ColumnNumbers & arguments,
 		size_t result,
@@ -888,7 +888,7 @@ private:
 
 	template <typename T0, typename T1>
 	bool executeConstRightType(
-		const ColumnVector<UInt8> * cond_col,
+		const ColumnUInt8 * cond_col,
 		Block & block,
 		const ColumnNumbers & arguments,
 		size_t result,
@@ -912,7 +912,7 @@ private:
 
 	template <typename T0, typename T1>
 	bool executeRightTypeArray(
-		const ColumnVector<UInt8> * cond_col,
+		const ColumnUInt8 * cond_col,
 		Block & block,
 		const ColumnNumbers & arguments,
 		size_t result,
@@ -960,7 +960,7 @@ private:
 
 	template <typename T0, typename T1>
 	bool executeConstRightTypeArray(
-		const ColumnVector<UInt8> * cond_col,
+		const ColumnUInt8 * cond_col,
 		Block & block,
 		const ColumnNumbers & arguments,
 		size_t result,
@@ -1006,7 +1006,7 @@ private:
 	}
 
 	template <typename T0>
-	bool executeLeftType(const ColumnVector<UInt8> * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+	bool executeLeftType(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		const IColumn * col_left_untyped = block.getByPosition(arguments[1]).column.get();
 
@@ -1109,7 +1109,7 @@ private:
 		return false;
 	}
 
-	bool executeString(const ColumnVector<UInt8> * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+	bool executeString(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		const IColumn * col_then_untyped = block.getByPosition(arguments[1]).column.get();
 		const IColumn * col_else_untyped = block.getByPosition(arguments[2]).column.get();
@@ -1132,7 +1132,7 @@ private:
 
 				size_t N = col_then_fixed->getN();
 
-				ColumnFixedString * col_res = new ColumnFixedString(N);
+				auto col_res = std::make_shared<ColumnFixedString>(N);
 				block.getByPosition(result).column = col_res;
 
 				ColumnFixedString::Chars_t & res_vec = col_res->getChars();
@@ -1147,7 +1147,7 @@ private:
 			else
 			{
 				/// Результат - String.
-				ColumnString * col_res = new ColumnString;
+				std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 				block.getByPosition(result).column = col_res;
 
 				ColumnString::Chars_t & res_vec = col_res->getChars();
@@ -1218,8 +1218,8 @@ private:
 		if (((col_arr_then && col_then_elements) || col_arr_then_const)
 			&& ((col_arr_else && col_else_elements) || col_arr_else_const))
 		{
-			ColumnString * col_res_elements = new ColumnString;
-			ColumnArray * col_res = new ColumnArray(col_res_elements);
+			auto col_res_elements = std::make_shared<ColumnString>();
+			auto col_res = std::make_shared<ColumnArray>(col_res_elements);
 			block.getByPosition(result).column = col_res;
 
 			ColumnString::Chars_t & res_chars = col_res_elements->getChars();
@@ -1336,7 +1336,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const ColumnVector<UInt8> * cond_col = typeid_cast<const ColumnVector<UInt8> *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(&*block.getByPosition(arguments[0]).column);
 		const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(&*block.getByPosition(arguments[0]).column);
 		ColumnPtr materialized_cond_col;
 
@@ -1353,7 +1353,7 @@ public:
 			else
 			{
 				materialized_cond_col = cond_const_col->convertToFullColumn();
-				cond_col = typeid_cast<const ColumnVector<UInt8> *>(&*materialized_cond_col);
+				cond_col = typeid_cast<const ColumnUInt8 *>(&*materialized_cond_col);
 			}
 		}
 

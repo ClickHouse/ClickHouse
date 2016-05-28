@@ -80,12 +80,12 @@ public:
 
 	ColumnPtr createColumn() const override
 	{
-		return new ColumnType;
+		return std::make_shared<ColumnType>();
 	}
 
 	ColumnPtr createConstColumn(size_t size, const Field & field) const override
 	{
-		return new ColumnConst<FieldType>(size, get<typename NearestFieldType<FieldType>::Type>(field));
+		return std::make_shared<ColumnConst<FieldType>>(size, get<typename NearestFieldType<FieldType>::Type>(field));
 	}
 };
 

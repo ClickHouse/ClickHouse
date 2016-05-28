@@ -974,7 +974,7 @@ namespace
 
 		static inline void apply(Block & block, ColumnVector<T> * col, const ColumnNumbers & arguments, size_t result, size_t scale)
 		{
-			ColumnVector<T> * col_res = new ColumnVector<T>;
+			auto col_res = std::make_shared<ColumnVector<T>>();
 			block.getByPosition(result).column = col_res;
 
 			typename ColumnVector<T>::Container_t & vec_res = col_res->getData();
@@ -989,7 +989,7 @@ namespace
 		static inline void apply(Block & block, ColumnConst<T> * col, const ColumnNumbers & arguments, size_t result, size_t scale)
 		{
 			T res = Op::apply(col->getData(), scale);
-			ColumnConst<T> * col_res = new ColumnConst<T>(col->size(), res);
+			auto col_res = std::make_shared<ColumnConst<T>>(col->size(), res);
 			block.getByPosition(result).column = col_res;
 		}
 	};

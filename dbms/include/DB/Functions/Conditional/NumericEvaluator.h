@@ -173,7 +173,7 @@ private:
 	/// Create the result column.
 	static PaddedPODArray<TResult> & createSink(Block & block, size_t result, size_t size)
 	{
-		ColumnVector<TResult> * col_res = new ColumnVector<TResult>;
+		std::shared_ptr<ColumnVector<TResult>> col_res = std::make_shared<ColumnVector<TResult>>();
 		block.getByPosition(result).column = col_res;
 
 		typename ColumnVector<TResult>::Container_t & vec_res = col_res->getData();

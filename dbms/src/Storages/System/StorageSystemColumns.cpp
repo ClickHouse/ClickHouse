@@ -52,7 +52,7 @@ BlockInputStreams StorageSystemColumns::read(
 		Databases databases = context.getDatabases();
 
 		/// Добавляем столбец database.
-		ColumnPtr database_column = new ColumnString;
+		ColumnPtr database_column = std::make_shared<ColumnString>();
 		for (const auto & database : databases)
 			database_column->insert(database.first);
 		block.insert(ColumnWithTypeAndName(database_column, new DataTypeString, "database"));
@@ -67,7 +67,7 @@ BlockInputStreams StorageSystemColumns::read(
 		size_t rows = database_column->size();
 
 		/// Добавляем столбец table.
-		ColumnPtr table_column = new ColumnString;
+		ColumnPtr table_column = std::make_shared<ColumnString>();
 		IColumn::Offsets_t offsets(rows);
 		for (size_t i = 0; i < rows; ++i)
 		{
@@ -105,13 +105,13 @@ BlockInputStreams StorageSystemColumns::read(
 	ColumnPtr filtered_table_column = block.getByName("table").column;
 
 	/// Составляем результат.
-	ColumnPtr database_column = new ColumnString;
-	ColumnPtr table_column = new ColumnString;
-	ColumnPtr name_column = new ColumnString;
-	ColumnPtr type_column = new ColumnString;
-	ColumnPtr default_type_column = new ColumnString;
-	ColumnPtr default_expression_column = new ColumnString;
-	ColumnPtr bytes_column = new ColumnUInt64;
+	ColumnPtr database_column = std::make_shared<ColumnString>();
+	ColumnPtr table_column = std::make_shared<ColumnString>();
+	ColumnPtr name_column = std::make_shared<ColumnString>();
+	ColumnPtr type_column = std::make_shared<ColumnString>();
+	ColumnPtr default_type_column = std::make_shared<ColumnString>();
+	ColumnPtr default_expression_column = std::make_shared<ColumnString>();
+	ColumnPtr bytes_column = std::make_shared<ColumnUInt64>();
 
 	size_t rows = filtered_database_column->size();
 	for (size_t i = 0; i < rows; ++i)

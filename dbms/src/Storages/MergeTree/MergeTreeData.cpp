@@ -621,7 +621,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 				/// @todo invent the name more safely
 				const auto new_type_name_column = '#' + new_type_name + "_column";
 				out_expression->add(ExpressionAction::addColumn(
-					{ new ColumnConstString{1, new_type_name}, new DataTypeString, new_type_name_column }));
+					{ std::make_shared<ColumnConstString>(1, new_type_name), new DataTypeString, new_type_name_column }));
 
 				const FunctionPtr & function = FunctionFactory::instance().get("CAST", context);
 				out_expression->add(ExpressionAction::applyFunction(function, Names{

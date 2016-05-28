@@ -360,7 +360,7 @@ protected:
 
 					/// Заменим столбец со значением условия из PREWHERE на константу.
 					if (!remove_prewhere_column)
-						res.getByName(prewhere_column).column = new ColumnConstUInt8(rows, 1);
+						res.getByName(prewhere_column).column = std::make_shared<ColumnConstUInt8>(rows, 1);
 				}
 				else
 					throw Exception("Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);

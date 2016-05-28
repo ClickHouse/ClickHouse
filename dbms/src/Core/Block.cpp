@@ -74,7 +74,7 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
 				*nested_type->createConstColumn(
 					nested_rows, nested_type->getDefault())).convertToFullColumn();
 
-			column_to_add.column = new ColumnArray(nested_column, offsets_column);
+			column_to_add.column = std::make_shared<ColumnArray>(nested_column, offsets_column);
 		}
 		else
 		{
@@ -279,10 +279,8 @@ size_t Block::rowsInFirstColumn() const
 	if (data.empty())
 		return 0;
 	for (const auto & elem : data)
-	{
-		if (!elem.column.isNull())
+		if (elem.column)
 			return elem.column->size();
-	}
 
 	return 0;
 }

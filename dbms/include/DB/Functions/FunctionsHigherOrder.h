@@ -47,8 +47,8 @@ struct ArrayMapImpl
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
 		return mapped->isConst()
-			? new ColumnArray(dynamic_cast<const IColumnConst &>(*mapped).convertToFullColumn(), array->getOffsetsColumn())
-			: new ColumnArray(mapped, array->getOffsetsColumn());
+			? std::make_shared<ColumnArray>(dynamic_cast<const IColumnConst &>(*mapped).convertToFullColumn(), array->getOffsetsColumn())
+			: std::make_shared<ColumnArray>(mapped, array->getOffsetsColumn());
 	}
 };
 
@@ -66,7 +66,7 @@ struct ArrayFilterImpl
 	/// Если массивов несколько, сюда передается первый.
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
-		const ColumnVector<UInt8> * column_filter = typeid_cast<const ColumnVector<UInt8> *>(&*mapped);
+		const ColumnUInt8 * column_filter = typeid_cast<const ColumnUInt8 *>(&*mapped);
 
 		if (!column_filter)
 		{
@@ -78,14 +78,16 @@ struct ArrayFilterImpl
 			if (column_filter_const->getData())
 				return array->clone();
 			else
-				return new ColumnArray(array->getDataPtr()->cloneEmpty(), new ColumnArray::ColumnOffsets_t(array->size(), 0));
+				return std::make_shared<ColumnArray>(
+					array->getDataPtr()->cloneEmpty(),
+					std::make_shared<ColumnArray::ColumnOffsets_t>(array->size(), 0));
 		}
 
 		const IColumn::Filter & filter = column_filter->getData();
 		ColumnPtr filtered = array->getData().filter(filter, -1);
 
 		const IColumn::Offsets_t & in_offsets = array->getOffsets();
-		ColumnArray::ColumnOffsets_t * column_offsets = new ColumnArray::ColumnOffsets_t(in_offsets.size());
+		auto column_offsets = std::make_shared<ColumnArray::ColumnOffsets_t>(in_offsets.size());
 		ColumnPtr column_offsets_ptr = column_offsets;
 		IColumn::Offsets_t & out_offsets = column_offsets->getData();
 
@@ -101,7 +103,7 @@ struct ArrayFilterImpl
 			out_offsets[i] = out_pos;
 		}
 
-		return new ColumnArray(filtered, column_offsets_ptr);
+		return std::make_shared<ColumnArray>(filtered, column_offsets_ptr);
 	}
 };
 
@@ -118,7 +120,7 @@ struct ArrayCountImpl
 
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
-		const ColumnVector<UInt8> * column_filter = typeid_cast<const ColumnVector<UInt8> *>(&*mapped);
+		const ColumnUInt8 * column_filter = typeid_cast<const ColumnUInt8 *>(&*mapped);
 
 		if (!column_filter)
 		{
@@ -130,9 +132,8 @@ struct ArrayCountImpl
 			if (column_filter_const->getData())
 			{
 				const IColumn::Offsets_t & offsets = array->getOffsets();
-				ColumnVector<UInt32> * out_column = new ColumnVector<UInt32>(offsets.size());
-				ColumnPtr out_column_ptr = out_column;
-				ColumnVector<UInt32>::Container_t & out_counts = out_column->getData();
+				auto out_column = std::make_shared<ColumnUInt32>(offsets.size());
+				ColumnUInt32::Container_t & out_counts = out_column->getData();
 
 				size_t pos = 0;
 				for (size_t i = 0; i < offsets.size(); ++i)
@@ -141,17 +142,16 @@ struct ArrayCountImpl
 					pos = offsets[i];
 				}
 
-				return out_column_ptr;
+				return out_column;
 			}
 			else
-				return new ColumnConstUInt32(array->size(), 0);
+				return std::make_shared<ColumnConstUInt32>(array->size(), 0);
 		}
 
 		const IColumn::Filter & filter = column_filter->getData();
 		const IColumn::Offsets_t & offsets = array->getOffsets();
-		ColumnVector<UInt32> * out_column = new ColumnVector<UInt32>(offsets.size());
-		ColumnPtr out_column_ptr = out_column;
-		ColumnVector<UInt32>::Container_t & out_counts = out_column->getData();
+		auto out_column = std::make_shared<ColumnUInt32>(offsets.size());
+		ColumnUInt32::Container_t & out_counts = out_column->getData();
 
 		size_t pos = 0;
 		for (size_t i = 0; i < offsets.size(); ++i)
@@ -165,7 +165,7 @@ struct ArrayCountImpl
 			out_counts[i] = count;
 		}
 
-		return out_column_ptr;
+		return out_column;
 	}
 };
 
@@ -182,7 +182,7 @@ struct ArrayExistsImpl
 
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
-		const ColumnVector<UInt8> * column_filter = typeid_cast<const ColumnVector<UInt8> *>(&*mapped);
+		const ColumnUInt8 * column_filter = typeid_cast<const ColumnUInt8 *>(&*mapped);
 
 		if (!column_filter)
 		{
@@ -194,9 +194,8 @@ struct ArrayExistsImpl
 			if (column_filter_const->getData())
 			{
 				const IColumn::Offsets_t & offsets = array->getOffsets();
-				ColumnVector<UInt8> * out_column = new ColumnVector<UInt8>(offsets.size());
-				ColumnPtr out_column_ptr = out_column;
-				ColumnVector<UInt8>::Container_t & out_exists = out_column->getData();
+				auto out_column = std::make_shared<ColumnUInt8>(offsets.size());
+				ColumnUInt8::Container_t & out_exists = out_column->getData();
 
 				size_t pos = 0;
 				for (size_t i = 0; i < offsets.size(); ++i)
@@ -205,17 +204,16 @@ struct ArrayExistsImpl
 					pos = offsets[i];
 				}
 
-				return out_column_ptr;
+				return out_column;
 			}
 			else
-				return new ColumnConstUInt8(array->size(), 0);
+				return std::make_shared<ColumnConstUInt8>(array->size(), 0);
 		}
 
 		const IColumn::Filter & filter = column_filter->getData();
 		const IColumn::Offsets_t & offsets = array->getOffsets();
-		ColumnVector<UInt8> * out_column = new ColumnVector<UInt8>(offsets.size());
-		ColumnPtr out_column_ptr = out_column;
-		ColumnVector<UInt8>::Container_t & out_exists = out_column->getData();
+		auto out_column = std::make_shared<ColumnUInt8>(offsets.size());
+		ColumnUInt8::Container_t & out_exists = out_column->getData();
 
 		size_t pos = 0;
 		for (size_t i = 0; i < offsets.size(); ++i)
@@ -233,7 +231,7 @@ struct ArrayExistsImpl
 			out_exists[i] = exists;
 		}
 
-		return out_column_ptr;
+		return out_column;
 	}
 };
 
@@ -250,7 +248,7 @@ struct ArrayAllImpl
 
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
-		const ColumnVector<UInt8> * column_filter = typeid_cast<const ColumnVector<UInt8> *>(&*mapped);
+		const ColumnUInt8 * column_filter = typeid_cast<const ColumnUInt8 *>(&*mapped);
 
 		if (!column_filter)
 		{
@@ -260,13 +258,12 @@ struct ArrayAllImpl
 				throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
 			if (column_filter_const->getData())
-				return new ColumnConstUInt8(array->size(), 1);
+				return std::make_shared<ColumnConstUInt8>(array->size(), 1);
 			else
 			{
 				const IColumn::Offsets_t & offsets = array->getOffsets();
-				ColumnVector<UInt8> * out_column = new ColumnVector<UInt8>(offsets.size());
-				ColumnPtr out_column_ptr = out_column;
-				ColumnVector<UInt8>::Container_t & out_all = out_column->getData();
+				auto out_column = std::make_shared<ColumnUInt8>(offsets.size());
+				ColumnUInt8::Container_t & out_all = out_column->getData();
 
 				size_t pos = 0;
 				for (size_t i = 0; i < offsets.size(); ++i)
@@ -275,15 +272,14 @@ struct ArrayAllImpl
 					pos = offsets[i];
 				}
 
-				return out_column_ptr;
+				return out_column;
 			}
 		}
 
 		const IColumn::Filter & filter = column_filter->getData();
 		const IColumn::Offsets_t & offsets = array->getOffsets();
-		ColumnVector<UInt8> * out_column = new ColumnVector<UInt8>(offsets.size());
-		ColumnPtr out_column_ptr = out_column;
-		ColumnVector<UInt8>::Container_t & out_all = out_column->getData();
+		auto out_column = std::make_shared<ColumnUInt8>(offsets.size());
+		ColumnUInt8::Container_t & out_all = out_column->getData();
 
 		size_t pos = 0;
 		for (size_t i = 0; i < offsets.size(); ++i)
@@ -301,7 +297,7 @@ struct ArrayAllImpl
 			out_all[i] = all;
 		}
 
-		return out_column_ptr;
+		return out_column;
 	}
 };
 
@@ -346,7 +342,7 @@ struct ArraySumImpl
 
 			const Element x = column_const->getData();
 
-			ColumnVector<Result> * res_column = new ColumnVector<Result>(offsets.size());
+			auto res_column = std::make_shared<ColumnVector<Result>>(offsets.size());
 			res_ptr = res_column;
 			typename ColumnVector<Result>::Container_t & res = res_column->getData();
 
@@ -361,7 +357,7 @@ struct ArraySumImpl
 		}
 
 		const typename ColumnVector<Element>::Container_t & data = column->getData();
-		ColumnVector<Result> * res_column = new ColumnVector<Result>(offsets.size());
+		auto res_column = std::make_shared<ColumnVector<Result>>(offsets.size());
 		res_ptr = res_column;
 		typename ColumnVector<Result>::Container_t & res = res_column->getData();
 
@@ -413,7 +409,7 @@ struct ArrayFirstImpl
 
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
-		auto column_filter = typeid_cast<const ColumnVector<UInt8> *>(&*mapped);
+		auto column_filter = typeid_cast<const ColumnUInt8 *>(&*mapped);
 
 		if (!column_filter)
 		{
@@ -490,7 +486,7 @@ struct ArrayFirstIndexImpl
 
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
-		auto column_filter = typeid_cast<const ColumnVector<UInt8> *>(&*mapped);
+		auto column_filter = typeid_cast<const ColumnUInt8 *>(&*mapped);
 
 		if (!column_filter)
 		{
@@ -502,8 +498,7 @@ struct ArrayFirstIndexImpl
 			if (column_filter_const->getData())
 			{
 				const auto & offsets = array->getOffsets();
-				auto out_column = new ColumnVector<UInt32>{offsets.size()};
-				ColumnPtr out_column_ptr{out_column};
+				auto out_column = std::make_shared<ColumnUInt32>(offsets.size());
 				auto & out_index = out_column->getData();
 
 				size_t pos{};
@@ -513,16 +508,15 @@ struct ArrayFirstIndexImpl
 					pos = offsets[i];
 				}
 
-				return out_column_ptr;
+				return out_column;
 			}
 			else
-				return new ColumnConstUInt32(array->size(), 0);
+				return std::make_shared<ColumnConstUInt32>(array->size(), 0);
 		}
 
 		const auto & filter = column_filter->getData();
 		const auto & offsets = array->getOffsets();
-		auto out_column = new ColumnVector<UInt32>{offsets.size()};
-		ColumnPtr out_column_ptr{out_column};
+		auto out_column = std::make_shared<ColumnUInt32>(offsets.size());
 		auto & out_index = out_column->getData();
 
 		size_t pos{};
@@ -542,7 +536,7 @@ struct ArrayFirstIndexImpl
 			out_index[i] = index;
 		}
 
-		return out_column_ptr;
+		return out_column;
 	}
 };
 

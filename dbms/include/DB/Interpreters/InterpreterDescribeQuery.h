@@ -77,10 +77,10 @@ private:
 			column_defaults = table->column_defaults;
 		}
 
-		ColumnWithTypeAndName name_column{new ColumnString, new DataTypeString, "name"};
-		ColumnWithTypeAndName type_column{new ColumnString, new DataTypeString, "type" };
-		ColumnWithTypeAndName default_type_column{new ColumnString, new DataTypeString, "default_type" };
-		ColumnWithTypeAndName default_expression_column{new ColumnString, new DataTypeString, "default_expression" };;
+		ColumnWithTypeAndName name_column{std::make_shared<ColumnString>(), new DataTypeString, "name"};
+		ColumnWithTypeAndName type_column{std::make_shared<ColumnString>(), new DataTypeString, "type" };
+		ColumnWithTypeAndName default_type_column{std::make_shared<ColumnString>(), new DataTypeString, "default_type" };
+		ColumnWithTypeAndName default_expression_column{std::make_shared<ColumnString>(), new DataTypeString, "default_expression" };;
 
 		for (const auto column : columns)
 		{

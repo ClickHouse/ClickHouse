@@ -245,7 +245,7 @@ public:
 
 		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<T> * col_to = new ColumnVector<T>;
+			auto col_to = std::make_shared<ColumnVector<T>>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
@@ -258,7 +258,8 @@ public:
 		}
 		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConst<T>(col_from->size(), Transform::apply(col_from->getData(), dict));
+			block.getByPosition(result).column = std::make_shared<ColumnConst<T>>(
+				col_from->size(), Transform::apply(col_from->getData(), dict));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -347,12 +348,12 @@ public:
 
 		if (col_vec1 && col_vec2)
 		{
-			ColumnVector<UInt8> * col_to = new ColumnVector<UInt8>;
+			auto col_to = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
 			const typename ColumnVector<T>::Container_t & vec_from2 = col_vec2->getData();
-			typename ColumnVector<UInt8>::Container_t & vec_to = col_to->getData();
+			typename ColumnUInt8::Container_t & vec_to = col_to->getData();
 			size_t size = vec_from1.size();
 			vec_to.resize(size);
 
@@ -361,12 +362,12 @@ public:
 		}
 		else if (col_vec1 && col_const2)
 		{
-			ColumnVector<UInt8> * col_to = new ColumnVector<UInt8>;
+			auto col_to = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
 			const T const_from2 = col_const2->getData();
-			typename ColumnVector<UInt8>::Container_t & vec_to = col_to->getData();
+			typename ColumnUInt8::Container_t & vec_to = col_to->getData();
 			size_t size = vec_from1.size();
 			vec_to.resize(size);
 
@@ -375,12 +376,12 @@ public:
 		}
 		else if (col_const1 && col_vec2)
 		{
-			ColumnVector<UInt8> * col_to = new ColumnVector<UInt8>;
+			auto col_to = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = col_to;
 
 			const T const_from1 = col_const1->getData();
 			const typename ColumnVector<T>::Container_t & vec_from2 = col_vec2->getData();
-			typename ColumnVector<UInt8>::Container_t & vec_to = col_to->getData();
+			typename ColumnUInt8::Container_t & vec_to = col_to->getData();
 			size_t size = vec_from2.size();
 			vec_to.resize(size);
 
@@ -389,7 +390,7 @@ public:
 		}
 		else if (col_const1 && col_const2)
 		{
-			block.getByPosition(result).column = new ColumnConst<UInt8>(col_const1->size(),
+			block.getByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(col_const1->size(),
 				Transform::apply(col_const1->getData(), col_const2->getData(), dict));
 		}
 		else
@@ -470,8 +471,8 @@ public:
 
 		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<T> * col_values = new ColumnVector<T>;
-			ColumnArray * col_array = new ColumnArray(col_values);
+			auto col_values = std::make_shared<ColumnVector<T>>();
+			auto col_array = std::make_shared<ColumnArray>(col_values);
 			block.getByPosition(result).column = col_array;
 
 			ColumnArray::Offsets_t & res_offsets = col_array->getOffsets();
@@ -504,7 +505,7 @@ public:
 				cur = Transform::toParent(cur, dict);
 			}
 
-			block.getByPosition(result).column = new ColumnConstArray(col_from->size(), res, new DataTypeArray(new typename DataTypeFromFieldType<T>::Type));
+			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(col_from->size(), res, new DataTypeArray(new typename DataTypeFromFieldType<T>::Type));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -735,12 +736,12 @@ public:
 
 		const RegionsNames & dict = *owned_dict;
 
-		if (const ColumnVector<UInt32> * col_from = typeid_cast<const ColumnVector<UInt32> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnUInt32 * col_from = typeid_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnString * col_to = new ColumnString;
+			auto col_to = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_to;
 
-			const ColumnVector<UInt32>::Container_t & region_ids = col_from->getData();
+			const ColumnUInt32::Container_t & region_ids = col_from->getData();
 
 			for (size_t i = 0; i < region_ids.size(); ++i)
 			{
@@ -753,7 +754,7 @@ public:
 			UInt32 region_id = col_from->getData();
 			const StringRef & name_ref = dict.getRegionName(region_id, language);
 
-			block.getByPosition(result).column = new ColumnConstString(col_from->size(), name_ref.toString());
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), name_ref.toString());
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -838,11 +839,11 @@ private:
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 		const auto id_col_untyped = block.getByPosition(arguments[1]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 		{
 			const auto & ids = id_col->getData();
 
-			const auto out = new ColumnVector<UInt8>(ext::size(ids));
+			const auto out = std::make_shared<ColumnUInt8>(ext::size(ids));
 			block.getByPosition(result).column = out;
 
 			dict->has(ids, out->getData());
@@ -854,7 +855,7 @@ private:
 
 			dict->has(ids, out);
 
-			block.getByPosition(result).column = new ColumnConst<UInt8>{id_col->size(), out.front()};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(id_col->size(), out.front());
 		}
 		else
 			throw Exception{
@@ -889,7 +890,7 @@ private:
 
 			const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-			const auto out = new ColumnVector<UInt8>(key_col->size());
+			const auto out = std::make_shared<ColumnUInt8>(key_col->size());
 			block.getByPosition(result).column = out;
 
 			dict->has(key_columns, key_types, out->getData());
@@ -1010,11 +1011,11 @@ private:
 		const auto & attr_name = attr_name_col->getData();
 
 		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 		{
-			const auto out = new ColumnString;
+			const auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
-			dict->getString(attr_name, id_col->getData(), out);
+			dict->getString(attr_name, id_col->getData(), out.get());
 		}
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
@@ -1022,9 +1023,8 @@ private:
 			auto out = std::make_unique<ColumnString>();
 			dict->getString(attr_name, ids, out.get());
 
-			block.getByPosition(result).column = new ColumnConst<String>{
-				id_col->size(), out->getDataAt(0).toString()
-			};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<String>>(
+				id_col->size(), out->getDataAt(0).toString());
 		}
 		else
 		{
@@ -1068,10 +1068,10 @@ private:
 
 			const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-			const auto out = new ColumnString;
+			const auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
 
-			dict->getString(attr_name, key_columns, key_types, out);
+			dict->getString(attr_name, key_columns, key_types, out.get());
 		}
 		else
 			throw Exception{
@@ -1105,7 +1105,7 @@ private:
 
 		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
 		const auto date_col_untyped = block.getByPosition(arguments[3]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 			executeRange(block, result, dict, attr_name, id_col, date_col_untyped);
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 			executeRange(block, result, dict, attr_name, id_col, date_col_untyped);
@@ -1122,21 +1122,21 @@ private:
 	template <typename DictionaryType>
 	void executeRange(
 		Block & block, const size_t result, const DictionaryType * const dictionary, const std::string & attr_name,
-		const ColumnVector<UInt64> * const id_col, const IColumn * const date_col_untyped)
+		const ColumnUInt64 * const id_col, const IColumn * const date_col_untyped)
 	{
-		if (const auto date_col = typeid_cast<const ColumnVector<UInt16> *>(date_col_untyped))
+		if (const auto date_col = typeid_cast<const ColumnUInt16 *>(date_col_untyped))
 		{
-			const auto out = new ColumnString;
+			const auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
-			dictionary->getString(attr_name, id_col->getData(), date_col->getData(), out);
+			dictionary->getString(attr_name, id_col->getData(), date_col->getData(), out.get());
 		}
 		else if (const auto date_col = typeid_cast<const ColumnConst<UInt16> *>(date_col_untyped))
 		{
-			auto out = new ColumnString;
+			auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
 
 			const PaddedPODArray<UInt16> dates(id_col->size(), date_col->getData());
-			dictionary->getString(attr_name, id_col->getData(), dates, out);
+			dictionary->getString(attr_name, id_col->getData(), dates, out.get());
 		}
 		else
 		{
@@ -1151,13 +1151,13 @@ private:
 		Block & block, const size_t result, const DictionaryType * const dictionary, const std::string & attr_name,
 		const ColumnConst<UInt64> * const id_col, const IColumn * const date_col_untyped)
 	{
-		if (const auto date_col = typeid_cast<const ColumnVector<UInt16> *>(date_col_untyped))
+		if (const auto date_col = typeid_cast<const ColumnUInt16 *>(date_col_untyped))
 		{
-			const auto out = new ColumnString;
+			const auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
 
 			const PaddedPODArray<UInt64> ids(date_col->size(), id_col->getData());
-			dictionary->getString(attr_name, ids, date_col->getData(), out);
+			dictionary->getString(attr_name, ids, date_col->getData(), out.get());
 		}
 		else if (const auto date_col = typeid_cast<const ColumnConst<UInt16> *>(date_col_untyped))
 		{
@@ -1167,9 +1167,8 @@ private:
 			auto out = std::make_unique<ColumnString>();
 			dictionary->getString(attr_name, ids, dates, out.get());
 
-			block.getByPosition(result).column = new ColumnConst<String>{
-				id_col->size(), out->getDataAt(0).toString()
-			};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<String>>(
+				id_col->size(), out->getDataAt(0).toString());
 		}
 		else
 		{
@@ -1280,7 +1279,7 @@ private:
 		const auto & attr_name = attr_name_col->getData();
 
 		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 			executeDispatch(block, arguments, result, dict, attr_name, id_col);
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 			executeDispatch(block, arguments, result, dict, attr_name, id_col);
@@ -1295,30 +1294,30 @@ private:
 	template <typename DictionaryType>
 	void executeDispatch(
 		Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * const dictionary,
-		const std::string & attr_name, const ColumnVector<UInt64> * const id_col)
+		const std::string & attr_name, const ColumnUInt64 * const id_col)
 	{
 		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
 		if (const auto default_col = typeid_cast<const ColumnString *>(default_col_untyped))
 		{
 			/// vector ids, vector defaults
-			const auto out = new ColumnString;
+			const auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
 
 			const auto & ids = id_col->getData();
 
-			dictionary->getString(attr_name, ids, default_col, out);
+			dictionary->getString(attr_name, ids, default_col, out.get());
 		}
 		else if (const auto default_col = typeid_cast<const ColumnConst<String> *>(default_col_untyped))
 		{
 			/// vector ids, const defaults
-			const auto out = new ColumnString;
+			const auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
 
 			const auto & ids = id_col->getData();
 			const auto & def = default_col->getData();
 
-			dictionary->getString(attr_name, ids, def, out);
+			dictionary->getString(attr_name, ids, def, out.get());
 		}
 		else
 			throw Exception{
@@ -1338,10 +1337,10 @@ private:
 			/// const ids, vector defaults
 			/// @todo avoid materialization
 			const PaddedPODArray<UInt64> ids(id_col->size(), id_col->getData());
-			const auto out = new ColumnString;
+			const auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
 
-			dictionary->getString(attr_name, ids, default_col, out);
+			dictionary->getString(attr_name, ids, default_col, out.get());
 		}
 		else if (const auto default_col = typeid_cast<const ColumnConst<String> *>(default_col_untyped))
 		{
@@ -1353,9 +1352,8 @@ private:
 
 			dictionary->getString(attr_name, ids, def, out.get());
 
-			block.getByPosition(result).column = new ColumnConst<String>{
-				id_col->size(), out->getDataAt(0).toString()
-			};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<String>>(
+				id_col->size(), out->getDataAt(0).toString());
 		}
 		else
 			throw Exception{
@@ -1395,18 +1393,18 @@ private:
 
 		const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-		const auto out = new ColumnString;
+		const auto out = std::make_shared<ColumnString>();
 		block.getByPosition(result).column = out;
 
 		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 		if (const auto default_col = typeid_cast<const ColumnString *>(default_col_untyped))
 		{
-			dict->getString(attr_name, key_columns, key_types, default_col, out);
+			dict->getString(attr_name, key_columns, key_types, default_col, out.get());
 		}
 		else if (const auto default_col = typeid_cast<const ColumnConst<String> *>(default_col_untyped))
 		{
 			const auto & def = default_col->getData();
-			dict->getString(attr_name, key_columns, key_types, def, out);
+			dict->getString(attr_name, key_columns, key_types, def, out.get());
 		}
 		else
 			throw Exception{
@@ -1581,9 +1579,9 @@ private:
 		const auto & attr_name = attr_name_col->getData();
 
 		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 		{
-			const auto out = new ColumnVector<Type>(id_col->size());
+			const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
 			block.getByPosition(result).column = out;
 
 			const auto & ids = id_col->getData();
@@ -1597,7 +1595,7 @@ private:
 			PaddedPODArray<Type> data(1);
 			DictGetTraits<DataType>::get(dict, attr_name, ids, data);
 
-			block.getByPosition(result).column = new ColumnConst<Type>{id_col->size(), data.front()};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<Type>>(id_col->size(), data.front());
 		}
 		else
 		{
@@ -1641,7 +1639,7 @@ private:
 
 			const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-			const auto out = new ColumnVector<Type>(key_columns.front()->size());
+			const auto out = std::make_shared<ColumnVector<Type>>(key_columns.front()->size());
 			block.getByPosition(result).column = out;
 
 			auto & data = out->getData();
@@ -1680,7 +1678,7 @@ private:
 
 		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
 		const auto date_col_untyped = block.getByPosition(arguments[3]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 			executeRange(block, result, dict, attr_name, id_col, date_col_untyped);
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 			executeRange(block, result, dict, attr_name, id_col, date_col_untyped);
@@ -1697,15 +1695,15 @@ private:
 	template <typename DictionaryType>
 	void executeRange(
 		Block & block, const size_t result, const DictionaryType * const dictionary, const std::string & attr_name,
-		const ColumnVector<UInt64> * const id_col, const IColumn * const date_col_untyped)
+		const ColumnUInt64 * const id_col, const IColumn * const date_col_untyped)
 	{
-		if (const auto date_col = typeid_cast<const ColumnVector<UInt16> *>(date_col_untyped))
+		if (const auto date_col = typeid_cast<const ColumnUInt16 *>(date_col_untyped))
 		{
 			const auto size = id_col->size();
 			const auto & ids = id_col->getData();
 			const auto & dates = date_col->getData();
 
-			const auto out = new ColumnVector<Type>{size};
+			const auto out = std::make_shared<ColumnVector<Type>>(size);
 			block.getByPosition(result).column = out;
 
 			auto & data = out->getData();
@@ -1717,7 +1715,7 @@ private:
 			const auto & ids = id_col->getData();
 			const PaddedPODArray<UInt16> dates(size, date_col->getData());
 
-			const auto out = new ColumnVector<Type>{size};
+			const auto out = std::make_shared<ColumnVector<Type>>(size);
 			block.getByPosition(result).column = out;
 
 			auto & data = out->getData();
@@ -1736,13 +1734,13 @@ private:
 		Block & block, const size_t result, const DictionaryType * const dictionary, const std::string & attr_name,
 		const ColumnConst<UInt64> * const id_col, const IColumn * const date_col_untyped)
 	{
-		if (const auto date_col = typeid_cast<const ColumnVector<UInt16> *>(date_col_untyped))
+		if (const auto date_col = typeid_cast<const ColumnUInt16 *>(date_col_untyped))
 		{
 			const auto size = date_col->size();
 			const PaddedPODArray<UInt64> ids(size, id_col->getData());
 			const auto & dates = date_col->getData();
 
-			const auto out = new ColumnVector<Type>{size};
+			const auto out = std::make_shared<ColumnVector<Type>>(size);
 			block.getByPosition(result).column = out;
 
 			auto & data = out->getData();
@@ -1755,7 +1753,7 @@ private:
 			PaddedPODArray<Type> data(1);
 			DictGetTraits<DataType>::get(dictionary, attr_name, ids, dates, data);
 
-			block.getByPosition(result).column = new ColumnConst<Type>{id_col->size(), data.front()};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<Type>>(id_col->size(), data.front());
 		}
 		else
 		{
@@ -1892,7 +1890,7 @@ private:
 		const auto & attr_name = attr_name_col->getData();
 
 		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 			executeDispatch(block, arguments, result, dict, attr_name, id_col);
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 			executeDispatch(block, arguments, result, dict, attr_name, id_col);
@@ -1907,14 +1905,14 @@ private:
 	template <typename DictionaryType>
 	void executeDispatch(
 		Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * const dictionary,
-		const std::string & attr_name, const ColumnVector<UInt64> * const id_col)
+		const std::string & attr_name, const ColumnUInt64 * const id_col)
 	{
 		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
 		if (const auto default_col = typeid_cast<const ColumnVector<Type> *>(default_col_untyped))
 		{
 			/// vector ids, vector defaults
-			const auto out = new ColumnVector<Type>(id_col->size());
+			const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
 			block.getByPosition(result).column = out;
 
 			const auto & ids = id_col->getData();
@@ -1926,7 +1924,7 @@ private:
 		else if (const auto default_col =  typeid_cast<const ColumnConst<Type> *>(default_col_untyped))
 		{
 			/// vector ids, const defaults
-			const auto out = new ColumnVector<Type>(id_col->size());
+			const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
 			block.getByPosition(result).column = out;
 
 			const auto & ids = id_col->getData();
@@ -1954,7 +1952,7 @@ private:
 			/// @todo avoid materialization
 			const PaddedPODArray<UInt64> ids(id_col->size(), id_col->getData());
 
-			const auto out = new ColumnVector<Type>(id_col->size());
+			const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
 			block.getByPosition(result).column = out;
 
 			auto & data = out->getData();
@@ -1971,7 +1969,7 @@ private:
 
 			DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, def, data);
 
-			block.getByPosition(result).column = new ColumnConst<Type>{id_col->size(), data.front()};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<Type>>(id_col->size(), data.front());
 		}
 		else
 			throw Exception{
@@ -2013,7 +2011,7 @@ private:
 
 		/// @todo detect when all key columns are constant
 		const auto rows = key_col.size();
-		const auto out = new ColumnVector<Type>(rows);
+		const auto out = std::make_shared<ColumnVector<Type>>(rows);
 		block.getByPosition(result).column = out;
 		auto & data = out->getData();
 
@@ -2187,11 +2185,11 @@ private:
 		};
 
 		const auto id_col_untyped = block.getByPosition(arguments[1]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 		{
 			const auto & in = id_col->getData();
-			const auto backend = new ColumnVector<UInt64>;
-			const auto array = new ColumnArray{backend};
+			const auto backend = std::make_shared<ColumnUInt64>();
+			const auto array = std::make_shared<ColumnArray>(backend);
 			block.getByPosition(result).column = array;
 
 			get_hierarchies(in, backend->getData(), array->getOffsets());
@@ -2199,16 +2197,15 @@ private:
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
 			const PaddedPODArray<UInt64> in(1, id_col->getData());
-			const auto backend = new ColumnVector<UInt64>;
-			const auto array = new ColumnArray{backend};
+			const auto backend = std::make_shared<ColumnUInt64>();
+			const auto array = std::make_shared<ColumnArray>(backend);
 
 			get_hierarchies(in, backend->getData(), array->getOffsets());
 
-			block.getByPosition(result).column = new ColumnConstArray{
+			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(
 				id_col->size(),
 				(*array)[0].get<Array>(),
-				new DataTypeArray{new DataTypeUInt64}
-			};
+				new DataTypeArray{new DataTypeUInt64});
 		}
 		else
 		{
@@ -2309,7 +2306,7 @@ private:
 		const auto child_id_col_untyped = block.getByPosition(arguments[1]).column.get();
 		const auto ancestor_id_col_untyped = block.getByPosition(arguments[2]).column.get();
 
-		if (const auto child_id_col = typeid_cast<const ColumnVector<UInt64> *>(child_id_col_untyped))
+		if (const auto child_id_col = typeid_cast<const ColumnUInt64 *>(child_id_col_untyped))
 			execute(block, result, dict, child_id_col, ancestor_id_col_untyped);
 		else if (const auto child_id_col = typeid_cast<const ColumnConst<UInt64> *>(child_id_col_untyped))
 			execute(block, result, dict, child_id_col, ancestor_id_col_untyped);
@@ -2324,11 +2321,11 @@ private:
 
 	template <typename DictionaryType>
 	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
-		const ColumnVector<UInt64> * const child_id_col, const IColumn * const ancestor_id_col_untyped)
+		const ColumnUInt64 * const child_id_col, const IColumn * const ancestor_id_col_untyped)
 	{
-		if (const auto ancestor_id_col = typeid_cast<const ColumnVector<UInt64> *>(ancestor_id_col_untyped))
+		if (const auto ancestor_id_col = typeid_cast<const ColumnUInt64 *>(ancestor_id_col_untyped))
 		{
-			const auto out = new ColumnVector<UInt8>;
+			const auto out = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = out;
 
 			const auto & child_ids = child_id_col->getData();
@@ -2342,7 +2339,7 @@ private:
 		}
 		else if (const auto ancestor_id_col = typeid_cast<const ColumnConst<UInt64> *>(ancestor_id_col_untyped))
 		{
-			const auto out = new ColumnVector<UInt8>;
+			const auto out = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = out;
 
 			const auto & child_ids = child_id_col->getData();
@@ -2369,9 +2366,9 @@ private:
 	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
 		const ColumnConst<UInt64> * const child_id_col, const IColumn * const ancestor_id_col_untyped)
 	{
-		if (const auto ancestor_id_col = typeid_cast<const ColumnVector<UInt64> *>(ancestor_id_col_untyped))
+		if (const auto ancestor_id_col = typeid_cast<const ColumnUInt64 *>(ancestor_id_col_untyped))
 		{
-			const auto out = new ColumnVector<UInt8>;
+			const auto out = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = out;
 
 			const auto child_id = child_id_col->getData();
@@ -2385,10 +2382,9 @@ private:
 		}
 		else if (const auto ancestor_id_col = typeid_cast<const ColumnConst<UInt64> *>(ancestor_id_col_untyped))
 		{
-			block.getByPosition(result).column = new ColumnConst<UInt8>{
+			block.getByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(
 				child_id_col->size(),
-				dictionary->in(child_id_col->getData(), ancestor_id_col->getData())
-			};
+				dictionary->in(child_id_col->getData(), ancestor_id_col->getData()));
 		}
 		else
 		{

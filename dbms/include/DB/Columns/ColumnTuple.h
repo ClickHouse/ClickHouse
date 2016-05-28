@@ -38,7 +38,7 @@ public:
 
 	ColumnPtr cloneEmpty() const override
 	{
-		return new ColumnTuple(data.cloneEmpty());
+		return std::make_shared<ColumnTuple>(data.cloneEmpty());
 	}
 
 	size_t size() const override
@@ -139,7 +139,7 @@ public:
 		for (size_t i = 0; i < columns.size(); ++i)
 			res_block.unsafeGetByPosition(i).column = data.unsafeGetByPosition(i).column->filter(filt, result_size_hint);
 
-		return new ColumnTuple(res_block);
+		return std::make_shared<ColumnTuple>(res_block);
 	}
 
 	ColumnPtr permute(const Permutation & perm, size_t limit) const override
@@ -149,7 +149,7 @@ public:
 		for (size_t i = 0; i < columns.size(); ++i)
 			res_block.unsafeGetByPosition(i).column = data.unsafeGetByPosition(i).column->permute(perm, limit);
 
-		return new ColumnTuple(res_block);
+		return std::make_shared<ColumnTuple>(res_block);
 	}
 
 	ColumnPtr replicate(const Offsets_t & offsets) const override
@@ -159,7 +159,7 @@ public:
 		for (size_t i = 0; i < columns.size(); ++i)
 			res_block.unsafeGetByPosition(i).column = data.unsafeGetByPosition(i).column->replicate(offsets);
 
-		return new ColumnTuple(res_block);
+		return std::make_shared<ColumnTuple>(res_block);
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override
@@ -258,7 +258,7 @@ public:
 			if (auto converted = materialized.unsafeGetByPosition(i).column->convertToFullColumnIfConst())
 				materialized.unsafeGetByPosition(i).column = converted;
 
-		return new ColumnTuple(materialized);
+		return std::make_shared<ColumnTuple>(materialized);
 	}
 
 

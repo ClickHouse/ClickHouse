@@ -36,7 +36,7 @@ int main(int argc, char ** argv)
 			ColumnWithTypeAndName column1;
 			column1.name = "Sign";
 			column1.type = new DataTypeInt8;
-			column1.column = new ColumnInt8;
+			column1.column = std::make_shared<ColumnInt8>();
 			column1.column->insert(DB::Int64(1));
 			column1.column->insert(DB::Int64(-1));
 			block1.insert(column1);
@@ -44,7 +44,7 @@ int main(int argc, char ** argv)
 			ColumnWithTypeAndName column2;
 			column2.name = "CounterID";
 			column2.type = new DataTypeUInt32;
-			column2.column = new ColumnUInt32;
+			column2.column = std::make_shared<ColumnUInt32>();
 			column2.column->insert(DB::UInt64(123));
 			column2.column->insert(DB::UInt64(123));
 			block1.insert(column2);
@@ -56,7 +56,7 @@ int main(int argc, char ** argv)
 			ColumnWithTypeAndName column1;
 			column1.name = "Sign";
 			column1.type = new DataTypeInt8;
-			column1.column = new ColumnInt8;
+			column1.column = std::make_shared<ColumnInt8>();
 			column1.column->insert(DB::Int64(1));
 			column1.column->insert(DB::Int64(1));
 			block2.insert(column1);
@@ -64,7 +64,7 @@ int main(int argc, char ** argv)
 			ColumnWithTypeAndName column2;
 			column2.name = "CounterID";
 			column2.type = new DataTypeUInt32;
-			column2.column = new ColumnUInt32;
+			column2.column = std::make_shared<ColumnUInt32>();
 			column2.column->insert(DB::UInt64(123));
 			column2.column->insert(DB::UInt64(456));
 			block2.insert(column2);

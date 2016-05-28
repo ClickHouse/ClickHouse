@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
+#include <memory>
 
 #include <DB/Common/PODArray.h>
 #include <DB/Common/typeid_cast.h>
@@ -19,11 +19,9 @@ namespace ErrorCodes
 	extern const int NOT_IMPLEMENTED;
 }
 
-using Poco::SharedPtr;
-
 class IColumn;
 
-using ColumnPtr = SharedPtr<IColumn>;
+using ColumnPtr = std::shared_ptr<IColumn>;
 using Columns = std::vector<ColumnPtr>;
 using ColumnPlainPtrs = std::vector<IColumn *>;
 using ConstColumnPlainPtrs = std::vector<const IColumn *>;

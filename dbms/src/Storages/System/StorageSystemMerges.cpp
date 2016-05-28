@@ -46,18 +46,18 @@ BlockInputStreams StorageSystemMerges::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	ColumnWithTypeAndName col_database{new ColumnString, new DataTypeString, "database"};
-	ColumnWithTypeAndName col_table{new ColumnString, new DataTypeString, "table"};
-	ColumnWithTypeAndName col_elapsed{new ColumnFloat64, new DataTypeFloat64, "elapsed"};
-	ColumnWithTypeAndName col_progress{new ColumnFloat64, new DataTypeFloat64, "progress"};
-	ColumnWithTypeAndName col_num_parts{new ColumnUInt64, new DataTypeUInt64, "num_parts"};
-	ColumnWithTypeAndName col_result_part_name{new ColumnString, new DataTypeString, "result_part_name"};
-	ColumnWithTypeAndName col_total_size_bytes_compressed{new ColumnUInt64, new DataTypeUInt64, "total_size_bytes_compressed"};
-	ColumnWithTypeAndName col_total_size_marks{new ColumnUInt64, new DataTypeUInt64, "total_size_marks"};
-	ColumnWithTypeAndName col_bytes_read_uncompressed{new ColumnUInt64, new DataTypeUInt64, "bytes_read_uncompressed"};
-	ColumnWithTypeAndName col_rows_read{new ColumnUInt64, new DataTypeUInt64, "rows_read"};
-	ColumnWithTypeAndName col_bytes_written_uncompressed{new ColumnUInt64, new DataTypeUInt64, "bytes_written_uncompressed"};
-	ColumnWithTypeAndName col_rows_written{new ColumnUInt64, new DataTypeUInt64, "rows_written"};
+	ColumnWithTypeAndName col_database{std::make_shared<ColumnString>(), new DataTypeString, "database"};
+	ColumnWithTypeAndName col_table{std::make_shared<ColumnString>(), new DataTypeString, "table"};
+	ColumnWithTypeAndName col_elapsed{std::make_shared<ColumnFloat64>(), new DataTypeFloat64, "elapsed"};
+	ColumnWithTypeAndName col_progress{std::make_shared<ColumnFloat64>(), new DataTypeFloat64, "progress"};
+	ColumnWithTypeAndName col_num_parts{std::make_shared<ColumnUInt64>(), new DataTypeUInt64, "num_parts"};
+	ColumnWithTypeAndName col_result_part_name{std::make_shared<ColumnString>(), new DataTypeString, "result_part_name"};
+	ColumnWithTypeAndName col_total_size_bytes_compressed{std::make_shared<ColumnUInt64>(), new DataTypeUInt64, "total_size_bytes_compressed"};
+	ColumnWithTypeAndName col_total_size_marks{std::make_shared<ColumnUInt64>(), new DataTypeUInt64, "total_size_marks"};
+	ColumnWithTypeAndName col_bytes_read_uncompressed{std::make_shared<ColumnUInt64>(), new DataTypeUInt64, "bytes_read_uncompressed"};
+	ColumnWithTypeAndName col_rows_read{std::make_shared<ColumnUInt64>(), new DataTypeUInt64, "rows_read"};
+	ColumnWithTypeAndName col_bytes_written_uncompressed{std::make_shared<ColumnUInt64>(), new DataTypeUInt64, "bytes_written_uncompressed"};
+	ColumnWithTypeAndName col_rows_written{std::make_shared<ColumnUInt64>(), new DataTypeUInt64, "rows_written"};
 
 	for (const auto & merge : context.getMergeList().get())
 	{

@@ -30,7 +30,7 @@ protected:
 
 		column_with_name_and_type.name = "number";
 		column_with_name_and_type.type = new DataTypeUInt64();
-		ColumnUInt64 * column = new ColumnUInt64(block_size);
+		auto column = std::make_shared<ColumnUInt64>(block_size);
 		ColumnUInt64::Container_t & vec = column->getData();
 		column_with_name_and_type.column = column;
 

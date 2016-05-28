@@ -37,7 +37,7 @@ static ColumnWithTypeAndName getFilteredDatabases(ASTPtr query, const Context & 
 	ColumnWithTypeAndName column;
 	column.name = "database";
 	column.type = new DataTypeString;
-	column.column = new ColumnString;
+	column.column = std::make_shared<ColumnString>();
 
 	Block block;
 	block.insert(column);
@@ -67,19 +67,19 @@ BlockInputStreams StorageSystemTables::read(
 	ColumnWithTypeAndName col_db;
 	col_db.name = "database";
 	col_db.type = new DataTypeString;
-	col_db.column = new ColumnString;
+	col_db.column = std::make_shared<ColumnString>();
 	block.insert(col_db);
 
 	ColumnWithTypeAndName col_name;
 	col_name.name = "name";
 	col_name.type = new DataTypeString;
-	col_name.column = new ColumnString;
+	col_name.column = std::make_shared<ColumnString>();
 	block.insert(col_name);
 
 	ColumnWithTypeAndName col_engine;
 	col_engine.name = "engine";
 	col_engine.type = new DataTypeString;
-	col_engine.column = new ColumnString;
+	col_engine.column = std::make_shared<ColumnString>();
 	block.insert(col_engine);
 
 	ColumnWithTypeAndName filtered_databases_column = getFilteredDatabases(query, context);

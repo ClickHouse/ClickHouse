@@ -35,8 +35,8 @@ struct XorImpl
 };
 
 
-typedef ColumnVector<UInt8>::Container_t UInt8Container;
-typedef std::vector<const ColumnVector<UInt8> *> UInt8ColumnPtrs;
+typedef ColumnUInt8::Container_t UInt8Container;
+typedef std::vector<const ColumnUInt8 *> UInt8ColumnPtrs;
 
 template <typename Op, size_t N>
 struct AssociativeOperationImpl
@@ -230,7 +230,7 @@ public:
 		{
 			if (!in.empty())
 				const_val = Impl<UInt8>::apply(const_val, 0);
-			ColumnConst<UInt8> * col_res = new ColumnConst<UInt8>(n, const_val);
+			auto col_res = std::make_shared<ColumnConst<UInt8>>(n, const_val);
 			block.getByPosition(result).column = col_res;
 			return;
 		}
@@ -239,7 +239,7 @@ public:
 		if (has_consts && Impl<UInt8>::apply(const_val, 0) == 0 && Impl<UInt8>::apply(const_val, 1) == 1)
 			has_consts = false;
 
-		ColumnVector<UInt8> * col_res = new ColumnVector<UInt8>;
+		auto col_res = std::make_shared<ColumnUInt8>();
 		block.getByPosition(result).column = col_res;
 		UInt8Container & vec_res = col_res->getData();
 
@@ -259,7 +259,7 @@ public:
 		ColumnPlainPtrs other_in;
 		for (IColumn * column : in)
 		{
-			if (auto uint8_column = typeid_cast<const ColumnVector<UInt8> *>(column))
+			if (auto uint8_column = typeid_cast<const ColumnUInt8 *>(column))
 				uint8_in.push_back(uint8_column);
 			else
 				other_in.push_back(column);
@@ -336,10 +336,10 @@ int main(int argc, char ** argv)
 		{
 			for (size_t i = 0; i < columns; ++i)
 			{
-				ColumnVector<UInt8> * column = new ColumnVector<UInt8>(block_size);
+				ColumnUInt8 column = std::make_shared<ColumnUInt8>(block_size);
 				blocks[b].insert(ColumnWithTypeAndName(column, new DataTypeUInt8, "v" + toString(i)));
 
-				ColumnVector<UInt8>::Container_t & vec = column->getData();
+				ColumnUInt8::Container_t & vec = column->getData();
 				vec.resize(block_size);
 
 				for (size_t j = 0; j < block_size; ++j)
@@ -350,7 +350,7 @@ int main(int argc, char ** argv)
 		}
 		for (size_t b = 0; b < block_count; ++b)
 		{
-			ColumnVector<UInt8> * result_column = new ColumnVector<UInt8>;
+			ColumnUInt8 result_column = std::make_shared<ColumnUInt8>();
 			blocks[b].insert(ColumnWithTypeAndName(result_column, new DataTypeUInt8, "x"));
 			result_column->getData().resize(block_size);
 		}

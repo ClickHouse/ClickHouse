@@ -61,7 +61,7 @@ private:
 		ColumnWithTypeAndName col;
 		col.name = "statement";
 		col.type = new DataTypeString;
-		col.column = new ColumnConstString(1, res);
+		col.column = std::make_shared<ColumnConstString>(1, res);
 
 		Block block;
 		block.insert(col);

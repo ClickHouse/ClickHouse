@@ -53,7 +53,7 @@ struct ConvertImpl
 		if (const ColumnVector<FromFieldType> * col_from
 			= typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
+			auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
@@ -66,7 +66,7 @@ struct ConvertImpl
 		}
 		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), col_from->getData());
+			block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(col_from->size(), col_from->getData());
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -91,7 +91,7 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 
 		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
+			auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
@@ -106,7 +106,8 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 		}
 		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), date_lut.fromDayNum(DayNum_t(col_from->getData())));
+			block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(
+				col_from->size(), date_lut.fromDayNum(DayNum_t(col_from->getData())));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -204,7 +205,7 @@ public:
 		{
 			if (sources)
 			{
-				auto * col_to = new ColumnVector<ToFieldType>;
+				auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 				block.getByPosition(result).column = col_to;
 
 				const auto & vec_from = sources->getData();
@@ -218,7 +219,7 @@ public:
 			{
 				ToFieldType res;
 				Op::constant_constant(const_source->getData(), res);
-				block.getByPosition(result).column = new ColumnConst<ToFieldType>(const_source->size(), res);
+				block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(const_source->size(), res);
 			}
 			else
 				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -233,7 +234,7 @@ public:
 
 			if (sources)
 			{
-				auto * col_to = new ColumnVector<ToFieldType>;
+				auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 				block.getByPosition(result).column = col_to;
 
 				auto & vec_from = sources->getData();
@@ -253,7 +254,7 @@ public:
 			{
 				if (time_zones)
 				{
-					auto * col_to = new ColumnVector<ToFieldType>;
+					auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 					block.getByPosition(result).column = col_to;
 
 					auto & vec_to = col_to->getData();
@@ -265,7 +266,7 @@ public:
 				{
 					ToFieldType res;
 					Op::constant_constant(const_source->getData(), const_time_zone->getData(), res);
-					block.getByPosition(result).column = new ColumnConst<ToFieldType>(const_source->size(), res);
+					block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(const_source->size(), res);
 				}
 				else
 					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -376,7 +377,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 
 		if (const auto col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*col_with_name_and_type.column))
 		{
-			ColumnString * col_to = new ColumnString;
+			auto col_to = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
@@ -401,7 +402,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 			std::vector<char> buf;
 			WriteBufferFromVector<std::vector<char> > write_buffer(buf);
 			FormatImpl<FromDataType>::execute(col_from->getData(), write_buffer, type);
-			block.getByPosition(result).column = new ColumnConstString(col_from->size(), std::string(&buf[0], write_buffer.count()));
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), std::string(&buf[0], write_buffer.count()));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -581,7 +582,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
 		{
 			if (sources)
 			{
-				ColumnString * col_to = new ColumnString;
+				auto col_to = std::make_shared<ColumnString>();
 				block.getByPosition(result).column = col_to;
 
 				auto & vec_from = sources->getData();
@@ -593,7 +594,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
 			{
 				std::string res;
 				Op::constant_constant(const_source->getData(), res);
-				block.getByPosition(result).column = new ColumnConstString(const_source->size(), res);
+				block.getByPosition(result).column = std::make_shared<ColumnConstString>(const_source->size(), res);
 			}
 			else
 			{
@@ -610,7 +611,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
 
 			if (sources)
 			{
-				ColumnString * col_to = new ColumnString;
+				auto col_to = std::make_shared<ColumnString>();
 				block.getByPosition(result).column = col_to;
 
 				auto & vec_from = sources->getData();
@@ -629,7 +630,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
 			{
 				if (time_zones)
 				{
-					ColumnString * col_to = new ColumnString;
+					auto col_to = std::make_shared<ColumnString>();
 					block.getByPosition(result).column = col_to;
 					auto & vec_to = *col_to;
 
@@ -639,7 +640,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
 				{
 					std::string res;
 					Op::constant_constant(const_source->getData(), const_time_zone->getData(), res);
-					block.getByPosition(result).column = new ColumnConstString(const_source->size(), res);
+					block.getByPosition(result).column = std::make_shared<ColumnConstString>(const_source->size(), res);
 				}
 				else
 					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -683,7 +684,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 	{
 		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
+			auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_to;
 
 			const ColumnString::Chars_t & data_from = col_from->getChars();
@@ -708,7 +709,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 			ReadBufferFromString read_buffer(s);
 			ToFieldType x = 0;
 			parseImpl<ToDataType>(x, read_buffer);
-			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), x);
+			block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(col_from->size(), x);
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -857,7 +858,7 @@ struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
 		{
 			if (sources)
 			{
-				auto * col_to = new ColumnVector<ToFieldType>;
+				auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 				block.getByPosition(result).column = col_to;
 
 				auto & vec_from = sources->getChars();
@@ -871,7 +872,7 @@ struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
 			{
 				ToFieldType res;
 				Op::constant_constant(const_source->getData(), res);
-				block.getByPosition(result).column = new ColumnConst<ToFieldType>(const_source->size(), res);
+				block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(const_source->size(), res);
 			}
 			else
 			{
@@ -888,7 +889,7 @@ struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
 
 			if (sources)
 			{
-				auto * col_to = new ColumnVector<ToFieldType>;
+				auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 				block.getByPosition(result).column = col_to;
 
 				auto & vec_from = sources->getChars();
@@ -909,7 +910,7 @@ struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
 			{
 				if (time_zones)
 				{
-					auto * col_to = new ColumnVector<ToFieldType>;
+					auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 					block.getByPosition(result).column = col_to;
 
 					auto & vec_to = col_to->getData();
@@ -921,7 +922,7 @@ struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
 				{
 					ToFieldType res;
 					Op::constant_constant(const_source->getData(), const_time_zone->getData(), res);
-					block.getByPosition(result).column = new ColumnConst<ToFieldType>(const_source->size(), res);
+					block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(const_source->size(), res);
 				}
 				else
 					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -962,7 +963,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 	{
 		if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
+			auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_to;
 
 			const ColumnFixedString::Chars_t & data_from = col_from->getChars();
@@ -1009,7 +1010,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 	{
 		if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnString * col_to = new ColumnString;
+			auto col_to = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_to;
 
 			const ColumnFixedString::Chars_t & data_from = col_from->getChars();
@@ -1046,7 +1047,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 			while (bytes_to_copy > 0 && s[bytes_to_copy - 1] == 0)
 				--bytes_to_copy;
 
-			block.getByPosition(result).column = new ColumnConstString(col_from->size(), s.substr(0, bytes_to_copy));
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), s.substr(0, bytes_to_copy));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -1263,13 +1264,12 @@ public:
 			auto resized_string = column_const->getData();
 			resized_string.resize(n);
 
-			block.getByPosition(result).column = new ColumnConst<String>{
-				column_const->size(), std::move(resized_string), new DataTypeFixedString(n)
-			};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<String>>(
+				column_const->size(), std::move(resized_string), new DataTypeFixedString(n));
 		}
 		else if (const auto column_string = typeid_cast<const ColumnString *>(&*column))
 		{
-			const auto column_fixed = new ColumnFixedString(n);
+			const auto column_fixed = std::make_shared<ColumnFixedString>(n);
 			ColumnPtr result_ptr = column_fixed;
 
 			auto & out_chars = column_fixed->getChars();
@@ -1299,7 +1299,7 @@ public:
 					ErrorCodes::TOO_LARGE_STRING_SIZE
 				};
 
-			const auto column_fixed = new ColumnFixedString{n};
+			const auto column_fixed = std::make_shared<ColumnFixedString>(n);
 			block.getByPosition(result).column = column_fixed;
 
 			auto & out_chars = column_fixed->getChars();
@@ -1578,14 +1578,14 @@ class FunctionCast final : public IFunction
 
 			if (auto col_array = typeid_cast<const ColumnArray *>(array_arg.column.get()))
 			{
-				auto res = new ColumnArray{nullptr, col_array->getOffsetsColumn()};
-				block.getByPosition(result).column = res;
+				auto res = new ColumnArray(nullptr, col_array->getOffsetsColumn());
+				block.getByPosition(result).column.reset(res);
 
 				/// get the most nested column
 				while (const auto nested_col_array = typeid_cast<const ColumnArray *>(col_array->getDataPtr().get()))
 				{
 					/// create new level of array, copy offsets
-					res->getDataPtr() = new ColumnArray{nullptr, nested_col_array->getOffsetsColumn()};
+					res->getDataPtr() = std::make_shared<ColumnArray>(nullptr, nested_col_array->getOffsetsColumn());
 
 					res = static_cast<ColumnArray *>(res->getDataPtr().get());
 					col_array = nested_col_array;
@@ -1607,8 +1607,7 @@ class FunctionCast final : public IFunction
 			else
 				throw Exception{
 					"Illegal column " + array_arg.column->getName() + " for function CAST AS Array",
-					ErrorCodes::LOGICAL_ERROR
-				};
+					ErrorCodes::LOGICAL_ERROR};
 		};
 	}
 

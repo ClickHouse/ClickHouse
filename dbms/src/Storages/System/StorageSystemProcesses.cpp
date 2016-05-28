@@ -44,15 +44,15 @@ BlockInputStreams StorageSystemProcesses::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	ColumnWithTypeAndName col_user{new ColumnString, new DataTypeString, "user"};
-	ColumnWithTypeAndName col_address{new ColumnString, new DataTypeString, "address"};
-	ColumnWithTypeAndName col_elapsed{new ColumnFloat64, new DataTypeFloat64, "elapsed"};
-	ColumnWithTypeAndName col_rows_read{new ColumnUInt64, new DataTypeUInt64, "rows_read"};
-	ColumnWithTypeAndName col_bytes_read{new ColumnUInt64, new DataTypeUInt64, "bytes_read"};
-	ColumnWithTypeAndName col_total_rows_approx{new ColumnUInt64, new DataTypeUInt64, "total_rows_approx"};
-	ColumnWithTypeAndName col_memory_usage{new ColumnUInt64, new DataTypeUInt64, "memory_usage"};
-	ColumnWithTypeAndName col_query{new ColumnString, new DataTypeString, "query"};
-	ColumnWithTypeAndName col_query_id{new ColumnString, new DataTypeString, "query_id"};
+	ColumnWithTypeAndName col_user{std::make_shared<ColumnString>(), new DataTypeString, "user"};
+	ColumnWithTypeAndName col_address{std::make_shared<ColumnString>(), new DataTypeString, "address"};
+	ColumnWithTypeAndName col_elapsed{std::make_shared<ColumnFloat64>(), new DataTypeFloat64, "elapsed"};
+	ColumnWithTypeAndName col_rows_read{std::make_shared<ColumnUInt64>(), new DataTypeUInt64, "rows_read"};
+	ColumnWithTypeAndName col_bytes_read{std::make_shared<ColumnUInt64>(), new DataTypeUInt64, "bytes_read"};
+	ColumnWithTypeAndName col_total_rows_approx{std::make_shared<ColumnUInt64>(), new DataTypeUInt64, "total_rows_approx"};
+	ColumnWithTypeAndName col_memory_usage{std::make_shared<ColumnUInt64>(), new DataTypeUInt64, "memory_usage"};
+	ColumnWithTypeAndName col_query{std::make_shared<ColumnString>(), new DataTypeString, "query"};
+	ColumnWithTypeAndName col_query_id{std::make_shared<ColumnString>(), new DataTypeString, "query_id"};
 
 	ProcessList::Info info = context.getProcessList().getInfo();
 

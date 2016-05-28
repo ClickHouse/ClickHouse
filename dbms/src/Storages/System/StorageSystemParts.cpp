@@ -70,7 +70,7 @@ BlockInputStreams StorageSystemParts::read(
 		Databases databases = context.getDatabases();
 
 		/// Добавим столбец database.
-		ColumnPtr database_column = new ColumnString;
+		ColumnPtr database_column = std::make_shared<ColumnString>();
 		for (const auto & database : databases)
 			database_column->insert(database.first);
 		block.insert(ColumnWithTypeAndName(database_column, new DataTypeString, "database"));
@@ -86,10 +86,10 @@ BlockInputStreams StorageSystemParts::read(
 		size_t rows = database_column->size();
 
 		IColumn::Offsets_t offsets(rows);
-		ColumnPtr table_column = new ColumnString;
-		ColumnPtr engine_column = new ColumnString;
-		ColumnPtr replicated_column = new ColumnUInt8;
-		ColumnPtr active_column = new ColumnUInt8;
+		ColumnPtr table_column = std::make_shared<ColumnString>();
+		ColumnPtr engine_column = std::make_shared<ColumnString>();
+		ColumnPtr replicated_column = std::make_shared<ColumnUInt8>();
+		ColumnPtr active_column = std::make_shared<ColumnUInt8>();
 
 		for (size_t i = 0; i < rows; ++i)
 		{
@@ -149,23 +149,23 @@ BlockInputStreams StorageSystemParts::read(
 	ColumnPtr filtered_active_column = block.getByName("active").column;
 
 	/// Наконец составим результат.
-	ColumnPtr database_column = new ColumnString;
-	ColumnPtr table_column = new ColumnString;
-	ColumnPtr engine_column = new ColumnString;
-	ColumnPtr partition_column = new ColumnString;
-	ColumnPtr name_column = new ColumnString;
-	ColumnPtr replicated_column = new ColumnUInt8;
-	ColumnPtr active_column = new ColumnUInt8;
-	ColumnPtr marks_column = new ColumnUInt64;
-	ColumnPtr bytes_column = new ColumnUInt64;
-	ColumnPtr modification_time_column = new ColumnUInt32;
-	ColumnPtr remove_time_column = new ColumnUInt32;
-	ColumnPtr refcount_column = new ColumnUInt32;
-	ColumnPtr min_date_column = new ColumnUInt16;
-	ColumnPtr max_date_column = new ColumnUInt16;
-	ColumnPtr min_block_number_column = new ColumnInt64;
-	ColumnPtr max_block_number_column = new ColumnInt64;
-	ColumnPtr level_column = new ColumnUInt32;
+	ColumnPtr database_column = std::make_shared<ColumnString>();
+	ColumnPtr table_column = std::make_shared<ColumnString>();
+	ColumnPtr engine_column = std::make_shared<ColumnString>();
+	ColumnPtr partition_column = std::make_shared<ColumnString>();
+	ColumnPtr name_column = std::make_shared<ColumnString>();
+	ColumnPtr replicated_column = std::make_shared<ColumnUInt8>();
+	ColumnPtr active_column = std::make_shared<ColumnUInt8>();
+	ColumnPtr marks_column = std::make_shared<ColumnUInt64>();
+	ColumnPtr bytes_column = std::make_shared<ColumnUInt64>();
+	ColumnPtr modification_time_column = std::make_shared<ColumnUInt32>();
+	ColumnPtr remove_time_column = std::make_shared<ColumnUInt32>();
+	ColumnPtr refcount_column = std::make_shared<ColumnUInt32>();
+	ColumnPtr min_date_column = std::make_shared<ColumnUInt16>();
+	ColumnPtr max_date_column = std::make_shared<ColumnUInt16>();
+	ColumnPtr min_block_number_column = std::make_shared<ColumnInt64>();
+	ColumnPtr max_block_number_column = std::make_shared<ColumnInt64>();
+	ColumnPtr level_column = std::make_shared<ColumnUInt32>();
 
 	for (size_t i = 0; i < filtered_database_column->size();)
 	{

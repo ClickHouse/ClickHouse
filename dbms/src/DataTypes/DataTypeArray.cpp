@@ -357,14 +357,14 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
 
 ColumnPtr DataTypeArray::createColumn() const
 {
-	return new ColumnArray(nested->createColumn());
+	return std::make_shared<ColumnArray>(nested->createColumn());
 }
 
 
 ColumnPtr DataTypeArray::createConstColumn(size_t size, const Field & field) const
 {
 	/// Последним аргументом нельзя отдать this.
-	return new ColumnConstArray(size, get<const Array &>(field), new DataTypeArray(nested));
+	return std::make_shared<ColumnConstArray>(size, get<const Array &>(field), new DataTypeArray(nested));
 }
 
 }

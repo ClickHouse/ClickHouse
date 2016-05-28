@@ -29,7 +29,7 @@ int main(int argc, char ** argv)
 		ColumnWithTypeAndName column_x;
 		column_x.name = "x";
 		column_x.type = new DataTypeInt16;
-		ColumnInt16 * x = new ColumnInt16;
+		auto x = std::make_shared<ColumnInt16>();
 		column_x.column = x;
 		auto & vec_x = x->getData();
 
@@ -44,7 +44,7 @@ int main(int argc, char ** argv)
 		ColumnWithTypeAndName column_s1;
 		column_s1.name = "s1";
 		column_s1.type = new DataTypeString;
-		column_s1.column = new ColumnString;
+		column_s1.column = std::make_shared<ColumnString>();
 
 		for (size_t i = 0; i < n; ++i)
 			column_s1.column->insert(std::string(strings[i % 5]));
@@ -54,7 +54,7 @@ int main(int argc, char ** argv)
 		ColumnWithTypeAndName column_s2;
 		column_s2.name = "s2";
 		column_s2.type = new DataTypeString;
-		column_s2.column = new ColumnString;
+		column_s2.column = std::make_shared<ColumnString>();
 
 		for (size_t i = 0; i < n; ++i)
 			column_s2.column->insert(std::string(strings[i % 3]));

@@ -36,10 +36,9 @@ private:
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConst<Float64>{
+		block.getByPosition(result).column = std::make_shared<ColumnConst<Float64>>(
 			block.rowsInFirstColumn(),
-			Impl::value
-		};
+			Impl::value);
 	}
 };
 
@@ -92,7 +91,7 @@ private:
 	{
 		if (const auto col = typeid_cast<const ColumnVector<FieldType> *>(arg))
 		{
-			const auto dst = new ColumnVector<Float64>;
+			const auto dst = std::make_shared<ColumnVector<Float64>>();
 			block.getByPosition(result).column = dst;
 
 			const auto & src_data = col->getData();
@@ -127,7 +126,7 @@ private:
 
 			Impl::execute(src, dst);
 
-			block.getByPosition(result).column = new ColumnConst<Float64>{col->size(), dst[0]};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<Float64>>(col->size(), dst[0]);
 
 			return true;
 		}
@@ -245,7 +244,7 @@ private:
 	{
 		if (const auto right_arg_typed = typeid_cast<const ColumnVector<RightType> *>(right_arg))
 		{
-			const auto dst = new ColumnVector<Float64>;
+			const auto dst = std::make_shared<ColumnVector<Float64>>();
 			block.getByPosition(result).column = dst;
 
 			LeftType left_src_data[Impl::rows_per_iteration];
@@ -283,7 +282,7 @@ private:
 
 			Impl::execute(left_src, right_src, dst);
 
-			block.getByPosition(result).column = new ColumnConst<Float64>{left_arg->size(), dst[0]};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<Float64>>(left_arg->size(), dst[0]);
 
 			return true;
 		}
@@ -297,7 +296,7 @@ private:
 	{
 		if (const auto right_arg_typed = typeid_cast<const ColumnVector<RightType> *>(right_arg))
 		{
-			const auto dst = new ColumnVector<Float64>;
+			const auto dst = std::make_shared<ColumnVector<Float64>>();
 			block.getByPosition(result).column = dst;
 
 			const auto & left_src_data = left_arg->getData();
@@ -331,7 +330,7 @@ private:
 		}
 		else if (const auto right_arg_typed = typeid_cast<const ColumnConst<RightType> *>(right_arg))
 		{
-			const auto dst = new ColumnVector<Float64>;
+			const auto dst = std::make_shared<ColumnVector<Float64>>();
 			block.getByPosition(result).column = dst;
 
 			const auto & left_src_data = left_arg->getData();

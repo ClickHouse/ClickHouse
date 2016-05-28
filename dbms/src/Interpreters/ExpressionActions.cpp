@@ -737,7 +737,7 @@ void ExpressionActions::finalize(const Names & output_columns)
 				if (action.type == ExpressionAction::APPLY_FUNCTION && sample_block.has(out))
 				{
 					auto & result = sample_block.getByName(out);
-					if (!result.column.isNull())
+					if (result.column)
 					{
 						action.type = ExpressionAction::ADD_COLUMN;
 						action.result_type = result.type;

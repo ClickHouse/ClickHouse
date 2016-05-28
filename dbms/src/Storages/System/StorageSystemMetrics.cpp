@@ -43,13 +43,13 @@ BlockInputStreams StorageSystemMetrics::read(
 	ColumnWithTypeAndName col_metric;
 	col_metric.name = "metric";
 	col_metric.type = new DataTypeString;
-	col_metric.column = new ColumnString;
+	col_metric.column = std::make_shared<ColumnString>();
 	block.insert(col_metric);
 
 	ColumnWithTypeAndName col_value;
 	col_value.name = "value";
 	col_value.type = new DataTypeInt64;
-	col_value.column = new ColumnInt64;
+	col_value.column = std::make_shared<ColumnInt64>();
 	block.insert(col_value);
 
 	for (size_t i = 0; i < CurrentMetrics::END; ++i)

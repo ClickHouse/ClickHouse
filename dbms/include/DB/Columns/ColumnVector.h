@@ -246,7 +246,7 @@ public:
 
 	ColumnPtr cloneEmpty() const override
 	{
-		return new ColumnVector<T>;
+		return std::make_shared<ColumnVector<T>>();
 	}
 
 	Field operator[](size_t n) const override
@@ -291,9 +291,8 @@ public:
 		if (size != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		Self * res_ = new Self;
-		ColumnPtr res = res_;
-		typename Self::Container_t & res_data = res_->getData();
+		std::shared_ptr<Self> res = std::make_shared<Self>();
+		typename Self::Container_t & res_data = res->getData();
 
 		if (result_size_hint)
 			res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
@@ -361,9 +360,8 @@ public:
 		if (perm.size() < limit)
 			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		Self * res_ = new Self(limit);
-		ColumnPtr res = res_;
-		typename Self::Container_t & res_data = res_->getData();
+		std::shared_ptr<Self> res = std::make_shared<Self>(limit);
+		typename Self::Container_t & res_data = res->getData();
 		for (size_t i = 0; i < limit; ++i)
 			res_data[i] = data[perm[i]];
 
@@ -377,11 +375,10 @@ public:
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		if (0 == size)
-			return new Self;
+			return std::make_shared<Self>();
 
-		Self * res_ = new Self;
-		ColumnPtr res = res_;
-		typename Self::Container_t & res_data = res_->getData();
+		std::shared_ptr<Self> res = std::make_shared<Self>();
+		typename Self::Container_t & res_data = res->getData();
 		res_data.reserve(offsets.back());
 
 		IColumn::Offset_t prev_offset = 0;

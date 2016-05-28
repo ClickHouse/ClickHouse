@@ -99,12 +99,12 @@ public:
 					String name = DataTypeNested::extractNestedTableName(column.name);
 
 					if (offset_columns.count(name) == 0)
-						offset_columns[name] = append ? nullptr : new ColumnArray::ColumnOffsets_t;
+						offset_columns[name] = append ? nullptr : std::make_shared<ColumnArray::ColumnOffsets_t>();
 					else
 						read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
 
 					if (!append)
-						column.column = new ColumnArray(type_arr->getNestedType()->createColumn(), offset_columns[name]);
+						column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[name]);
 				}
 				else if (!append)
 					column.column = column.type->createColumn();
@@ -490,7 +490,7 @@ private:
 						ColumnPtr nested_column = dynamic_cast<IColumnConst &>(*nested_type->createConstColumn(
 							nested_rows, nested_type->getDefault())).convertToFullColumn();
 
-						column_to_add.column = new ColumnArray(nested_column, offsets_column);
+						column_to_add.column = std::make_shared<ColumnArray>(nested_column, offsets_column);
 					}
 					else
 					{

@@ -209,7 +209,7 @@ public:
 			const auto size = col_in->size();
 			const auto & vec_in = col_in->getChars();
 
-			auto col_res = new ColumnString;
+			auto col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 
 			ColumnString::Chars_t & vec_res = col_res->getChars();
@@ -244,7 +244,7 @@ public:
 			char * dst = buf;
 			IPv6Format::apply(reinterpret_cast<const unsigned char *>(data_in.data()), dst);
 
-			block.getByPosition(result).column = new ColumnConstString{col_in->size(), buf};
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col_in->size(), buf);
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -334,7 +334,7 @@ public:
 			const auto size = col_in->size();
 			const auto & vec_in = col_in->getChars();
 
-			auto col_res = new ColumnString;
+			auto col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 
 			ColumnString::Chars_t & vec_res = col_res->getChars();
@@ -398,7 +398,7 @@ public:
 			UInt8 zeroed_tail_bytes_count = isIPv4Mapped(address) ? ipv4_zeroed_tail_bytes_count : ipv6_zeroed_tail_bytes_count;
 			cutAddress(address, dst, zeroed_tail_bytes_count);
 
-			block.getByPosition(result).column = new ColumnConstString{col_in->size(), buf};
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col_in->size(), buf);
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -600,7 +600,7 @@ public:
 
 		if (const auto col_in = typeid_cast<const ColumnString *>(&*column))
 		{
-		    const auto col_res = new ColumnFixedString{ipv6_bytes_length};
+		    const auto col_res = std::make_shared<ColumnFixedString>(ipv6_bytes_length);
 			block.getByPosition(result).column = col_res;
 
 			auto & vec_res = col_res->getChars();
@@ -623,11 +623,10 @@ public:
 			String out(ipv6_bytes_length, 0);
 			ipv6_scan(col_in->getData().data(), reinterpret_cast<unsigned char *>(&out[0]));
 
-			block.getByPosition(result).column = new ColumnConst<String>{
+			block.getByPosition(result).column = std::make_shared<ColumnConst<String>>(
 				col_in->size(),
 				out,
-				new DataTypeFixedString{ipv6_bytes_length}
-			};
+				new DataTypeFixedString{ipv6_bytes_length});
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -701,11 +700,11 @@ public:
 	{
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 
-		if (const ColumnVector<UInt32> * col = typeid_cast<const ColumnVector<UInt32> *>(&*column))
+		if (const ColumnUInt32 * col = typeid_cast<const ColumnUInt32 *>(&*column))
 		{
-			const ColumnVector<UInt32>::Container_t & vec_in = col->getData();
+			const ColumnUInt32::Container_t & vec_in = col->getData();
 
-			ColumnString * col_res = new ColumnString;
+			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 
 			ColumnString::Chars_t & vec_res = col_res->getChars();
@@ -730,7 +729,7 @@ public:
 			char * pos = buf;
 			formatIP(col->getData(), pos);
 
-			ColumnConstString * col_res = new ColumnConstString(col->size(), buf);
+			auto col_res = std::make_shared<ColumnConstString>(col->size(), buf);
 			block.getByPosition(result).column = col_res;
 		}
 		else
@@ -802,10 +801,10 @@ public:
 
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
 		{
-			ColumnVector<UInt32> * col_res = new ColumnVector<UInt32>;
+			auto col_res = std::make_shared<ColumnUInt32>();
 			block.getByPosition(result).column = col_res;
 
-			ColumnVector<UInt32>::Container_t & vec_res = col_res->getData();
+			ColumnUInt32::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col->size());
 
 			const ColumnString::Chars_t & vec_src = col->getChars();
@@ -820,7 +819,7 @@ public:
 		}
 		else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
 		{
-			ColumnConst<UInt32> * col_res = new ColumnConst<UInt32>(col->size(), parseIPv4(col->getData().c_str()));
+			auto col_res = std::make_shared<ColumnConst<UInt32>>(col->size(), parseIPv4(col->getData().c_str()));
 			block.getByPosition(result).column = col_res;
 		}
 		else
@@ -900,11 +899,11 @@ public:
 	{
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 
-		if (const ColumnVector<UInt32> * col = typeid_cast<const ColumnVector<UInt32> *>(&*column))
+		if (const ColumnUInt32 * col = typeid_cast<const ColumnUInt32 *>(&*column))
 		{
-			const ColumnVector<UInt32>::Container_t & vec_in = col->getData();
+			const ColumnUInt32::Container_t & vec_in = col->getData();
 
-			ColumnString * col_res = new ColumnString;
+			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 
 			ColumnString::Chars_t & vec_res = col_res->getChars();
@@ -929,7 +928,7 @@ public:
 			char * pos = buf;
 			formatIP(col->getData(), pos);
 
-			ColumnConstString * col_res = new ColumnConstString(col->size(), buf);
+			auto col_res = std::make_shared<ColumnConstString>(col->size(), buf);
 			block.getByPosition(result).column = col_res;
 		}
 		else
@@ -966,9 +965,9 @@ public:
 		const auto & col_name_type = block.getByPosition(arguments[0]);
 		const ColumnPtr & column = col_name_type.column;
 
-		if (const auto col_in = typeid_cast<const ColumnVector<UInt32> *>(column.get()))
+		if (const auto col_in = typeid_cast<const ColumnUInt32 *>(column.get()))
 		{
-			const auto col_res = new ColumnFixedString{ipv6_bytes_length};
+			const auto col_res = std::make_shared<ColumnFixedString>(ipv6_bytes_length);
 			block.getByPosition(result).column = col_res;
 
 			auto & vec_res = col_res->getChars();
@@ -985,7 +984,8 @@ public:
 			buf.resize(ipv6_bytes_length);
 			mapIPv4ToIPv6(col_in->getData(), reinterpret_cast<unsigned char *>(&buf[0]));
 
-			ColumnConstString * col_res = new ColumnConstString(ipv6_bytes_length, buf,
+			auto col_res = std::make_shared<ColumnConstString>(
+				ipv6_bytes_length, buf,
 				new DataTypeFixedString{ipv6_bytes_length});
 			block.getByPosition(result).column = col_res;
 		}
@@ -1066,7 +1066,7 @@ public:
 
 		if (col_vec)
 		{
-			ColumnString * col_str = new ColumnString;
+			auto col_str = std::make_shared<ColumnString>();
 			col_res = col_str;
 			ColumnString::Chars_t & out_vec = col_str->getChars();
 			ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
@@ -1102,7 +1102,7 @@ public:
 			char * pos = buf;
 			executeOneUInt<T>(col_const->getData(), pos);
 
-			col_res = new ColumnConstString(col_const->size(), buf);
+			col_res = std::make_shared<ColumnConstString>(col_const->size(), buf);
 
 			return true;
 		}
@@ -1131,7 +1131,7 @@ public:
 
 		if (col_str_in)
 		{
-			ColumnString * col_str = new ColumnString;
+			auto col_str = std::make_shared<ColumnString>();
 			col_res = col_str;
 			ColumnString::Chars_t & out_vec = col_str->getChars();
 			ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
@@ -1172,7 +1172,7 @@ public:
 			/// Запишем ноль в res[res.size()]. Начиная с C++11, это корректно.
 			executeOneString(src_ptr, src_ptr + src.size(), pos);
 
-			col_res = new ColumnConstString(col_const_in->size(), res);
+			col_res = std::make_shared<ColumnConstString>(col_const_in->size(), res);
 
 			return true;
 		}
@@ -1188,7 +1188,7 @@ public:
 
 		if (col_fstr_in)
 		{
-			ColumnString * col_str = new ColumnString;
+			auto col_str = std::make_shared<ColumnString>();
 
 			col_res = col_str;
 
@@ -1309,7 +1309,7 @@ public:
 
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
 		{
-			ColumnString * col_res = new ColumnString;
+			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 
 			ColumnString::Chars_t & out_vec = col_res->getChars();
@@ -1347,7 +1347,7 @@ public:
 			unhexOne(src.c_str(), src.c_str() + src.size(), pos);
 			res = res.substr(0, pos - &res[0] - 1);
 
-			block.getByPosition(result).column = new ColumnConstString(col->size(), res);
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col->size(), res);
 		}
 		else
 		{
@@ -1398,8 +1398,8 @@ public:
 	{
 		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(column))
 		{
-			ColumnVector<T> * col_values = new ColumnVector<T>;
-			ColumnArray * col_array = new ColumnArray(col_values);
+			auto col_values = std::make_shared<ColumnVector<T>>();
+			auto col_array = std::make_shared<ColumnArray>(col_values);
 			out_column = col_array;
 
 			ColumnArray::Offsets_t & res_offsets = col_array->getOffsets();
@@ -1439,7 +1439,8 @@ public:
 				}
 			}
 
-			out_column = new ColumnConstArray(col_from->size(), res, new DataTypeArray(new typename DataTypeFromFieldType<T>::Type));
+			out_column = std::make_shared<ColumnConstArray>(
+				col_from->size(), res, new DataTypeArray(new typename DataTypeFromFieldType<T>::Type));
 
 			return true;
 		}
@@ -1507,7 +1508,7 @@ public:
 
 		if (col_str_in)
 		{
-			ColumnString * col_str = new ColumnString;
+			auto col_str = std::make_shared<ColumnString>();
 			col_res = col_str;
 			ColumnString::Chars_t & out_vec = col_str->getChars();
 			ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
@@ -1542,7 +1543,7 @@ public:
 		else if(col_const_in)
 		{
 			std::string res(col_const_in->getData().c_str());
-			col_res = new ColumnConstString(col_const_in->size(), res);
+			col_res = std::make_shared<ColumnConstString>(col_const_in->size(), res);
 
 			return true;
 		}
@@ -1558,7 +1559,7 @@ public:
 
 		if (col_fstr_in)
 		{
-			ColumnString * col_str = new ColumnString;
+			auto col_str = std::make_shared<ColumnString>();
 			col_res = col_str;
 
 			ColumnString::Chars_t & out_vec = col_str->getChars();
@@ -1735,7 +1736,7 @@ private:
 			const auto & positions = pos_col->getData();
 
 			const auto size = value_col->size();
-			const auto out_col = new ColumnVector<UInt8>(size);
+			const auto out_col = std::make_shared<ColumnUInt8>(size);
 			ColumnPtr out_col_ptr{out_col};
 			block.getByPosition(result).column = out_col_ptr;
 
@@ -1751,7 +1752,7 @@ private:
 			const auto & values = value_col->getData();
 
 			const auto size = value_col->size();
-			const auto out_col = new ColumnVector<UInt8>(size);
+			const auto out_col = std::make_shared<ColumnUInt8>(size);
 			ColumnPtr out_col_ptr{out_col};
 			block.getByPosition(result).column = out_col_ptr;
 
@@ -1775,7 +1776,7 @@ private:
 			const auto & positions = pos_col->getData();
 
 			const auto size = value_col->size();
-			const auto out_col = new ColumnVector<UInt8>(size);
+			const auto out_col = std::make_shared<ColumnUInt8>(size);
 			ColumnPtr out_col_ptr{out_col};
 			block.getByPosition(result).column = out_col_ptr;
 
@@ -1788,10 +1789,9 @@ private:
 		}
 		else if (const auto pos_col = typeid_cast<const ColumnConst<T> *>(pos_col_untyped))
 		{
-			block.getByPosition(result).column = new ColumnConst<UInt8>{
+			block.getByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(
 				value_col->size(),
-				bitTest(value_col->getData(), pos_col->getData())
-			};
+				bitTest(value_col->getData(), pos_col->getData()));
 
 			return true;
 		}
@@ -1874,7 +1874,7 @@ private:
 			const auto mask = createConstMask<T>(size, block, arguments, is_const);
 			const auto & val = value_col->getData();
 
-			const auto out_col = new ColumnVector<UInt8>(size);
+			const auto out_col = std::make_shared<ColumnUInt8>(size);
 			ColumnPtr out_col_ptr{out_col};
 			block.getByPosition(result).column = out_col_ptr;
 
@@ -1904,14 +1904,13 @@ private:
 
 			if (is_const)
 			{
-				block.getByPosition(result).column = new ColumnConst<UInt8>{
-					size, Impl::combine(val, mask)
-				};
+				block.getByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(
+					size, Impl::combine(val, mask));
 			}
 			else
 			{
 				const auto mask = createMask<T>(size, block, arguments);
-				const auto out_col = new ColumnVector<UInt8>(size);
+				const auto out_col = std::make_shared<ColumnUInt8>(size);
 				ColumnPtr out_col_ptr{out_col};
 				block.getByPosition(result).column = out_col_ptr;
 

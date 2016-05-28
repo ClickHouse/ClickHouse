@@ -40,12 +40,12 @@ public:
 	{
 		if (!offsets_column)
 		{
-			offsets = new ColumnOffsets_t;
+			offsets = std::make_shared<ColumnOffsets_t>();
 		}
 		else
 		{
 			if (!typeid_cast<ColumnOffsets_t *>(&*offsets_column))
-				throw Exception("offsets_column must be a ColumnVector<UInt64>", ErrorCodes::ILLEGAL_COLUMN);
+				throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::ILLEGAL_COLUMN);
 		}
 	}
 
@@ -53,7 +53,7 @@ public:
 
 	ColumnPtr cloneEmpty() const override
 	{
-		return new ColumnArray(getData().cloneEmpty());
+		return std::make_shared<ColumnArray>(getData().cloneEmpty());
 	}
 
 	size_t size() const override
@@ -294,7 +294,7 @@ public:
 		else
 			new_offsets = offsets;
 
-		return new ColumnArray(new_data, new_offsets);
+		return std::make_shared<ColumnArray>(new_data, new_offsets);
 	}
 
 private:

@@ -37,9 +37,9 @@ BlockInputStreams StorageSystemSettings::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	ColumnWithTypeAndName col_name{new ColumnString, new DataTypeString, "name"};
-	ColumnWithTypeAndName col_value{new ColumnString, new DataTypeString, "value"};
-	ColumnWithTypeAndName col_changed{new ColumnUInt8, new DataTypeUInt8, "changed"};
+	ColumnWithTypeAndName col_name{std::make_shared<ColumnString>(), new DataTypeString, "name"};
+	ColumnWithTypeAndName col_value{std::make_shared<ColumnString>(), new DataTypeString, "value"};
+	ColumnWithTypeAndName col_changed{std::make_shared<ColumnUInt8>(), new DataTypeUInt8, "changed"};
 
 #define ADD_SETTING(TYPE, NAME, DEFAULT) \
 	col_name.column->insert(String(#NAME)); \

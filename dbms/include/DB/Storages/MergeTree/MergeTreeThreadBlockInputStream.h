@@ -272,7 +272,7 @@ private:
 
 					/// Заменим столбец со значением условия из PREWHERE на константу.
 					if (!task->remove_prewhere_column)
-						res.getByName(prewhere_column).column = new ColumnConstUInt8{rows, 1};
+						res.getByName(prewhere_column).column = std::make_shared<ColumnConstUInt8>(rows, 1);
 				}
 				else
 					throw Exception{

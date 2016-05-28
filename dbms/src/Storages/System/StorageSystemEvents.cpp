@@ -43,13 +43,13 @@ BlockInputStreams StorageSystemEvents::read(
 	ColumnWithTypeAndName col_event;
 	col_event.name = "event";
 	col_event.type = new DataTypeString;
-	col_event.column = new ColumnString;
+	col_event.column = std::make_shared<ColumnString>();
 	block.insert(col_event);
 
 	ColumnWithTypeAndName col_value;
 	col_value.name = "value";
 	col_value.type = new DataTypeUInt64;
-	col_value.column = new ColumnUInt64;
+	col_value.column = std::make_shared<ColumnUInt64>();
 	block.insert(col_value);
 
 	for (size_t i = 0; i < ProfileEvents::END; ++i)

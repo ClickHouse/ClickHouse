@@ -194,7 +194,7 @@ BlockInputStreams StorageMerge::read(
 Block StorageMerge::getBlockWithVirtualColumns(const std::vector<StoragePtr> & selected_tables) const
 {
 	Block res;
-	ColumnWithTypeAndName _table(new ColumnString, new DataTypeString, "_table");
+	ColumnWithTypeAndName _table(std::make_shared<ColumnString>(), new DataTypeString, "_table");
 
 	for (StorageVector::const_iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
 		_table.column->insert((*it)->getTableName());

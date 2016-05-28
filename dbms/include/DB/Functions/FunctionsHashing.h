@@ -199,7 +199,7 @@ public:
 	{
 		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnUInt64 * col_to = new ColumnUInt64;
+			auto col_to = std::make_shared<ColumnUInt64>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnString::Chars_t & data = col_from->getChars();
@@ -215,7 +215,7 @@ public:
 		}
 		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConstUInt64(
+			block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(
 				col_from->size(),
 				Impl::apply(col_from->getData().data(), col_from->getData().size()));
 		}
@@ -260,7 +260,7 @@ public:
 	{
 		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(&*block.getByPosition(arguments[0]).column))
 		{
-			auto col_to = new ColumnFixedString{Impl::length};
+			auto col_to = std::make_shared<ColumnFixedString>(Impl::length);
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnString::Chars_t & data = col_from->getChars();
@@ -282,11 +282,10 @@ public:
 			String hash(Impl::length, 0);
 			Impl::apply(data.data(), data.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
-			block.getByPosition(result).column = new ColumnConst<String>{
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(
 				col_from->size(),
 				hash,
-				new DataTypeFixedString{Impl::length}
-			};
+				new DataTypeFixedString{Impl::length});
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -311,7 +310,7 @@ private:
 	{
 		if (ColumnVector<FromType> * col_from = typeid_cast<ColumnVector<FromType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<ToType> * col_to = new ColumnVector<ToType>;
+			auto col_to = std::make_shared<ColumnVector<ToType>>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<FromType>::Container_t & vec_from = col_from->getData();
@@ -324,7 +323,7 @@ private:
 		}
 		else if (ColumnConst<FromType> * col_from = typeid_cast<ColumnConst<FromType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConst<ToType>(col_from->size(), Impl::apply(col_from->getData()));
+			block.getByPosition(result).column = std::make_shared<ColumnConst<ToType>>(col_from->size(), Impl::apply(col_from->getData()));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -600,7 +599,7 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t rows = block.rowsInFirstColumn();
-		ColumnUInt64 * col_to = new ColumnUInt64(rows);
+		auto col_to = std::make_shared<ColumnUInt64>(rows);
 		block.getByPosition(result).column = col_to;
 
 		ColumnUInt64::Container_t & vec_to = col_to->getData();
@@ -761,7 +760,7 @@ private:
 		if (const auto col_from = typeid_cast<const ColumnString *>(col_untyped))
 		{
 			const auto size = col_from->size();
-			const auto col_to = new ColumnVector<UInt64>{size};
+			const auto col_to = std::make_shared<ColumnUInt64>(size);
 			block.getByPosition(result).column = col_to;
 
 			const auto & chars = col_from->getChars();
@@ -775,17 +774,15 @@ private:
 		}
 		else if (const auto col_from = typeid_cast<const ColumnConstString *>(col_untyped))
 		{
-			block.getByPosition(result).column = new ColumnConstUInt64{
+			block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(
 				col_from->size(),
-				URLHashImpl::apply(col_from->getData().data(), col_from->getData().size())
-			};
+				URLHashImpl::apply(col_from->getData().data(), col_from->getData().size()));
 		}
 		else
 			throw Exception{
 				"Illegal column " + block.getByPosition(arguments[0]).column->getName() +
 				" of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN
-			};
+				ErrorCodes::ILLEGAL_COLUMN};
 	}
 
 	void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const std::size_t result) const
@@ -803,7 +800,7 @@ private:
 		if (const auto col_from = typeid_cast<const ColumnString *>(col_untyped))
 		{
 			const auto size = col_from->size();
-			const auto col_to = new ColumnVector<UInt64>{size};
+			const auto col_to = std::make_shared<ColumnUInt64>(size);
 			block.getByPosition(result).column = col_to;
 
 			const auto & chars = col_from->getChars();
@@ -817,17 +814,15 @@ private:
 		}
 		else if (const auto col_from = typeid_cast<const ColumnConstString *>(col_untyped))
 		{
-			block.getByPosition(result).column = new ColumnConstUInt64{
+			block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(
 				col_from->size(),
-				URLHierarchyHashImpl::apply(level, col_from->getData().data(), col_from->getData().size())
-			};
+				URLHierarchyHashImpl::apply(level, col_from->getData().data(), col_from->getData().size()));
 		}
 		else
 			throw Exception{
 				"Illegal column " + block.getByPosition(arguments[0]).column->getName() +
 				" of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN
-			};
+				ErrorCodes::ILLEGAL_COLUMN};
 	}
 };
 

@@ -56,7 +56,7 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
 static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts)
 {
 	Block res;
-	ColumnWithTypeAndName _part(new ColumnString, new DataTypeString, "_part");
+	ColumnWithTypeAndName _part(std::make_shared<ColumnString>(), new DataTypeString, "_part");
 
 	for (const auto & part : parts)
 		_part.column->insert(part->name);

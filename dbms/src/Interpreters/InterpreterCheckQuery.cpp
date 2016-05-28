@@ -207,13 +207,13 @@ BlockIO InterpreterCheckQuery::execute()
 
 		/// Составить результат.
 
-		ColumnPtr status_column = new ColumnUInt8;
-		ColumnPtr host_name_column = new ColumnString;
-		ColumnPtr host_address_column = new ColumnString;
-		ColumnPtr port_column = new ColumnUInt16;
-		ColumnPtr user_column = new ColumnString;
-		ColumnPtr structure_class_column = new ColumnUInt32;
-		ColumnPtr structure_column = new ColumnString;
+		ColumnPtr status_column = std::make_shared<ColumnUInt8>();
+		ColumnPtr host_name_column = std::make_shared<ColumnString>();
+		ColumnPtr host_address_column = std::make_shared<ColumnString>();
+		ColumnPtr port_column = std::make_shared<ColumnUInt16>();
+		ColumnPtr user_column = std::make_shared<ColumnString>();
+		ColumnPtr structure_class_column = std::make_shared<ColumnUInt32>();
+		ColumnPtr structure_column = std::make_shared<ColumnString>();
 
 		/// Это значение равно 1, если структура нигде не отлчиается, а 0 в противном случае.
 		UInt8 status_value = (structure_class == 0) ? 1 : 0;
@@ -247,7 +247,7 @@ BlockIO InterpreterCheckQuery::execute()
 	}
 	else
 	{
-		result = Block{{ new ColumnUInt8, new DataTypeUInt8, "result" }};
+		result = Block{{ std::make_shared<ColumnUInt8>(), new DataTypeUInt8, "result" }};
 		result.getByPosition(0).column->insert(Field(UInt64(table->checkData())));
 
 		BlockIO res;

@@ -88,7 +88,7 @@ public:
 	bool isNumeric() const override { return IsNumber<T>::value; }
 	bool isFixed() const override { return IsNumber<T>::value; }
 	size_t sizeOfField() const override { return sizeof(T); }
-	ColumnPtr cloneResized(size_t s_) const override { return new Derived(s_, data, data_type); }
+	ColumnPtr cloneResized(size_t s_) const override { return std::make_shared<Derived>(s_, data, data_type); }
 	size_t size() const override { return s; }
 	Field operator[](size_t n) const override { return FieldType(getDataFromHolder()); }
 	void get(size_t n, Field & res) const override { res = FieldType(getDataFromHolder()); }
@@ -145,7 +145,7 @@ public:
 		if (s != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		return new Derived(countBytesInFilter(filt), data, data_type);
+		return std::make_shared<Derived>(countBytesInFilter(filt), data, data_type);
 	}
 
 	ColumnPtr replicate(const Offsets_t & offsets) const override
@@ -154,7 +154,7 @@ public:
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		size_t replicated_size = 0 == s ? 0 : offsets.back();
-		return new Derived(replicated_size, data, data_type);
+		return std::make_shared<Derived>(replicated_size, data, data_type);
 	}
 
 	size_t byteSize() const override { return sizeof(data) + sizeof(s); }
@@ -169,7 +169,7 @@ public:
 		if (perm.size() < limit)
 			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		return new Derived(limit, data, data_type);
+		return std::make_shared<Derived>(limit, data, data_type);
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
@@ -304,9 +304,8 @@ typedef ColumnConst<Tuple> ColumnConstTuple;
 
 template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const
 {
-	ColumnVector<T> * res_ = new ColumnVector<T>;
-	ColumnPtr res = res_;
-	res_->getData().assign(this->s, this->data);
+	std::shared_ptr<ColumnVector<T>> res = std::make_shared<ColumnVector<T>>();
+	res->getData().assign(this->s, this->data);
 	return res;
 }
 

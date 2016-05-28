@@ -183,30 +183,30 @@ Block QueryLog::createBlock()
 {
 	return
 	{
-		{new ColumnUInt8, 	new DataTypeUInt8, 		"type"},
-		{new ColumnUInt16, 	new DataTypeDate, 		"event_date"},
-		{new ColumnUInt32, 	new DataTypeDateTime, 	"event_time"},
-		{new ColumnUInt32, 	new DataTypeDateTime, 	"query_start_time"},
-		{new ColumnUInt64, 	new DataTypeUInt64, 	"query_duration_ms"},
+		{std::make_shared<ColumnUInt8>(), 	new DataTypeUInt8, 		"type"},
+		{std::make_shared<ColumnUInt16>(), 	new DataTypeDate, 		"event_date"},
+		{std::make_shared<ColumnUInt32>(), 	new DataTypeDateTime, 	"event_time"},
+		{std::make_shared<ColumnUInt32>(), 	new DataTypeDateTime, 	"query_start_time"},
+		{std::make_shared<ColumnUInt64>(), 	new DataTypeUInt64, 	"query_duration_ms"},
 
-		{new ColumnUInt64, 	new DataTypeUInt64, 	"read_rows"},
-		{new ColumnUInt64, 	new DataTypeUInt64, 	"read_bytes"},
+		{std::make_shared<ColumnUInt64>(), 	new DataTypeUInt64, 	"read_rows"},
+		{std::make_shared<ColumnUInt64>(), 	new DataTypeUInt64, 	"read_bytes"},
 
-		{new ColumnUInt64, 	new DataTypeUInt64, 	"result_rows"},
-		{new ColumnUInt64, 	new DataTypeUInt64, 	"result_bytes"},
+		{std::make_shared<ColumnUInt64>(), 	new DataTypeUInt64, 	"result_rows"},
+		{std::make_shared<ColumnUInt64>(), 	new DataTypeUInt64, 	"result_bytes"},
 
-		{new ColumnUInt64, 	new DataTypeUInt64, 	"memory_usage"},
+		{std::make_shared<ColumnUInt64>(), 	new DataTypeUInt64, 	"memory_usage"},
 
-		{new ColumnString, 	new DataTypeString, 	"query"},
-		{new ColumnString, 	new DataTypeString, 	"exception"},
-		{new ColumnString, 	new DataTypeString, 	"stack_trace"},
+		{std::make_shared<ColumnString>(), 	new DataTypeString, 	"query"},
+		{std::make_shared<ColumnString>(), 	new DataTypeString, 	"exception"},
+		{std::make_shared<ColumnString>(), 	new DataTypeString, 	"stack_trace"},
 
-		{new ColumnUInt8, 	new DataTypeUInt8, 		"interface"},
-		{new ColumnUInt8, 	new DataTypeUInt8, 		"http_method"},
-		{new ColumnFixedString(16), new DataTypeFixedString(16), "ip_address"},
-		{new ColumnString, 	new DataTypeString, 	"user"},
-		{new ColumnString, 	new DataTypeString, 	"query_id"},
-		{new ColumnUInt32, 	new DataTypeUInt32, 	"revision"},
+		{std::make_shared<ColumnUInt8>(), 	new DataTypeUInt8, 		"interface"},
+		{std::make_shared<ColumnUInt8>(), 	new DataTypeUInt8, 		"http_method"},
+		{std::make_shared<ColumnFixedString>(16), new DataTypeFixedString(16), "ip_address"},
+		{std::make_shared<ColumnString>(), 	new DataTypeString, 	"user"},
+		{std::make_shared<ColumnString>(), 	new DataTypeString, 	"query_id"},
+		{std::make_shared<ColumnUInt32>(), 	new DataTypeUInt32, 	"revision"},
 	};
 }
 

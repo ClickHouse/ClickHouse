@@ -110,7 +110,7 @@ namespace VisibleWidth
 		{
 			UInt64 res = 0;
 			numWidthConstant(col->getData(), res);
-			block.getByPosition(result).column = new ColumnConstUInt64(column->size(), res);
+			block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(column->size(), res);
 			return true;
 		}
 		else
@@ -122,7 +122,7 @@ namespace VisibleWidth
 	{
 		if (const ColumnVector<T> * col = typeid_cast<const ColumnVector<T> *>(&*column))
 		{
-			ColumnUInt64 * res = new ColumnUInt64(column->size());
+			auto res = std::make_shared<ColumnUInt64>(column->size());
 			block.getByPosition(result).column = res;
 			numWidthVector(col->getData(), res->getData());
 			return true;
@@ -138,9 +138,8 @@ namespace VisibleWidth
 		{
 			if (const auto col = typeid_cast<const typename DataTypeEnum::ColumnType *>(column.get()))
 			{
-				const auto res = new ColumnUInt64(col->size());
-				ColumnPtr res_ptr{res};
-				block.getByPosition(result).column = res_ptr;
+				const auto res = std::make_shared<ColumnUInt64>(col->size());
+				block.getByPosition(result).column = res;
 
 				const auto & in = col->getData();
 				auto & out = res->getData();
@@ -159,10 +158,10 @@ namespace VisibleWidth
 			{
 				StringRef name = type->getNameForValue(col->getData());
 
-				block.getByPosition(result).column = new ColumnConstUInt64{
+				block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(
 					col->size(), stringWidth(
 						reinterpret_cast<const UInt8 *>(name.data),
-						reinterpret_cast<const UInt8 *>(name.data) + name.size)};
+						reinterpret_cast<const UInt8 *>(name.data) + name.size));
 
 				return true;
 			}
@@ -181,11 +180,11 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 
 	if (typeid_cast<const DataTypeDate *>(&*type))
 	{
-		block.getByPosition(result).column = new ColumnConstUInt64(rows, strlen("0000-00-00"));
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(rows, strlen("0000-00-00"));
 	}
 	else if (typeid_cast<const DataTypeDateTime *>(&*type))
 	{
-		block.getByPosition(result).column = new ColumnConstUInt64(rows, strlen("0000-00-00 00:00:00"));
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(rows, strlen("0000-00-00 00:00:00"));
 	}
 	else if (VisibleWidth::executeEnum<DataTypeEnum8>(block, type, column, result)
 		|| VisibleWidth::executeEnum<DataTypeEnum16>(block, type, column, result))
@@ -215,20 +214,20 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 	}
 	else if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
 	{
-		ColumnUInt64 * res = new ColumnUInt64(rows);
+		auto res = std::make_shared<ColumnUInt64>(rows);
 		block.getByPosition(result).column = res;
 		stringWidthVector(col->getChars(), col->getOffsets(), res->getData());
 	}
 	else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column))
 	{
-		ColumnUInt64 * res = new ColumnUInt64(rows);
+		auto res = std::make_shared<ColumnUInt64>(rows);
 		block.getByPosition(result).column = res;
 		stringWidthFixedVector(col->getChars(), col->getN(), res->getData());
 	}
 	else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
 	{
 		UInt64 res = 0;
-		block.getByPosition(result).column = new ColumnConstUInt64(rows, res);
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(rows, res);
 		stringWidthConstant(col->getData(), res);
 	}
 	else if (const ColumnArray * col = typeid_cast<const ColumnArray *>(&*column))
@@ -248,7 +247,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 		execute(nested_block, nested_argument_numbers, 1);
 
 		/// Теперь суммируем и кладём в результат.
-		ColumnUInt64 * res = new ColumnUInt64(rows);
+		auto res = std::make_shared<ColumnUInt64>(rows);
 		block.getByPosition(result).column = res;
 		ColumnUInt64::Container_t & vec = res->getData();
 
@@ -358,7 +357,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 			type->serializeTextEscaped(*col->convertToFullColumn(), 0, wb);
 		}
 
-		block.getByPosition(result).column = new ColumnConstUInt64(rows, s.size());
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(rows, s.size());
 	}
 	else
 	   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()

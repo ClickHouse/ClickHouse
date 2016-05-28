@@ -1,6 +1,7 @@
 #include <DB/Functions/Conditional/CondSource.h>
 #include <DB/Functions/Conditional/CondException.h>
 #include <DB/Columns/ColumnVector.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnConst.h>
 
 namespace DB
@@ -41,14 +42,14 @@ const PaddedPODArray<UInt8> & CondSource::initDataArray(const Block & block, con
 	const IColumn * source_col;
 
 	if (materialized_col_)
-		source_col = &*materialized_col_;
+		source_col = materialized_col_.get();
 	else
 	{
 		const ColumnPtr & col = block.getByPosition(args[i]).column;
-		source_col = &*col;
+		source_col = col.get();
 	}
 
-	const auto * vec_col = typeid_cast<const ColumnVector<UInt8> *>(source_col);
+	const auto * vec_col = typeid_cast<const ColumnUInt8 *>(source_col);
 
 	if (vec_col == nullptr)
 		throw CondException{CondErrorCodes::COND_SOURCE_ILLEGAL_COLUMN,
