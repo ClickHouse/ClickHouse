@@ -72,7 +72,7 @@ struct HalfMD5Impl
 struct MD5Impl
 {
 	static constexpr auto name = "MD5";
-	static constexpr auto length = 16;
+	enum { length = 16 };
 
 	static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
 	{
@@ -86,7 +86,7 @@ struct MD5Impl
 struct SHA1Impl
 {
 	static constexpr auto name = "SHA1";
-	static constexpr auto length = 20;
+	enum { length = 20 };
 
 	static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
 	{
@@ -100,7 +100,7 @@ struct SHA1Impl
 struct SHA224Impl
 {
 	static constexpr auto name = "SHA224";
-	static constexpr auto length = 28;
+	enum { length = 28 };
 
 	static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
 	{
@@ -114,7 +114,7 @@ struct SHA224Impl
 struct SHA256Impl
 {
 	static constexpr auto name = "SHA256";
-	static constexpr auto length = 32;
+	enum { length = 32 };
 
 	static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
 	{
@@ -136,7 +136,7 @@ struct SipHash64Impl
 struct SipHash128Impl
 {
 	static constexpr auto name = "sipHash128";
-	static constexpr auto length = 16;
+	enum { length = 16 };
 
 	static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
 	{
