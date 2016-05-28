@@ -51,7 +51,7 @@ try
 		{"NetMajor",			std::make_shared<DataTypeUInt8>()},
 		{"NetMinor",			std::make_shared<DataTypeUInt8>()},
 		{"UserAgentMajor",		std::make_shared<DataTypeUInt16>()},
-		{"UserAgentMinor",		std::make_shared<DataTypeFixedString>()(2)},
+		{"UserAgentMinor",		std::make_shared<DataTypeFixedString>(2)},
 		{"CookieEnable",		std::make_shared<DataTypeUInt8>()},
 		{"JavascriptEnable",	std::make_shared<DataTypeUInt8>()},
 		{"IsMobile",			std::make_shared<DataTypeUInt8>()},
@@ -98,7 +98,7 @@ try
 
 	/// создаём таблицу хит лога
 
-	StoragePtr table = StorageLog::create("./", "HitLog", names_and_types_list);
+	StoragePtr table = StorageLog::create("./", "HitLog", std::make_shared<NamesAndTypesList>(names_and_types_list));
 
 	/// создаём описание, как читать данные из tab separated дампа
 

@@ -104,11 +104,11 @@ int main(int argc, char ** argv)
 
 		/// создаём объект существующей таблицы хит лога
 
-		StoragePtr table = StorageLog::create("./", "HitLog", names_and_types_list);
+		StoragePtr table = StorageLog::create("./", "HitLog", std::make_shared<NamesAndTypesList>(names_and_types_list));
 
 		/// читаем из неё, применяем выражение, фильтруем, и пишем в tsv виде в консоль
 
-		ExpressionAnalyzer analyzer(ast, context, nullptr, *names_and_types_list);
+		ExpressionAnalyzer analyzer(ast, context, nullptr, names_and_types_list);
 		ExpressionActionsChain chain;
 		analyzer.appendSelect(chain, false);
 		analyzer.appendWhere(chain, false);

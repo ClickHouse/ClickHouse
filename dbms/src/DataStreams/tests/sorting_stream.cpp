@@ -107,7 +107,7 @@ try
 
 	/// создаём объект существующей таблицы хит лога
 
-	StoragePtr table = StorageLog::create("./", "HitLog", names_and_types_list);
+	StoragePtr table = StorageLog::create("./", "HitLog", std::make_shared<NamesAndTypesList>(names_and_types_list));
 
 	/// читаем из неё, сортируем, и пишем в tsv виде в консоль
 
