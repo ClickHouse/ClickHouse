@@ -998,7 +998,7 @@ class ConcatImpl : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static FunctionPtr create(const Context & context) { return new ConcatImpl; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<ConcatImpl>(); }
 
 	/// Получить имя функции.
 	String getName() const override

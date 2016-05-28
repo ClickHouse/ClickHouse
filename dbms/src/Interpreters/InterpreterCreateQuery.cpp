@@ -277,7 +277,7 @@ static NamesAndTypesList removeAndReturnColumns(
 
 ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 {
-	auto columns_list = std::make_shared<ASTExpressionList>;
+	auto columns_list = std::make_shared<ASTExpressionList>();
 
 	for (const auto & column : columns)
 	{
