@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Poco/Mutex.h>
-#include <Poco/SharedPtr.h>
+#include <mutex>
+#include <memory>
 
 
 /** Позволяет хранить некоторый объект, использовать его read-only в разных потоках,
@@ -20,7 +20,7 @@
   *
   * Все методы thread-safe.
   */
-template <typename T, typename Ptr = Poco::SharedPtr<T> >
+template <typename T, typename Ptr = std::shared_ptr<T>>
 class MultiVersion
 {
 public:
@@ -45,18 +45,18 @@ public:
 	const Version get() const
 	{
 		/// TODO: можно ли заменять SharedPtr lock-free? (Можно, если сделать свою реализацию с использованием cmpxchg16b.)
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 		return current_version;
 	}
 
 	/// Обновить объект новой версией.
 	void set(Version value)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 		current_version = value;
 	}
-	
+
 private:
 	Version current_version;
-	mutable Poco::FastMutex mutex;
+	mutable std::mutex mutex;
 };
