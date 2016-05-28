@@ -11,13 +11,13 @@
 namespace mysqlxx
 {
 
-typedef Poco::UInt64 UInt64;
-typedef Poco::Int64 Int64;
-typedef Poco::UInt32 UInt32;
-typedef Poco::Int32 Int32;
+using UInt64 = Poco::UInt64;
+using Int64 = Poco::Int64;
+using UInt32 = Poco::UInt32;
+using Int32 = Poco::Int32;
 
-typedef unsigned long MYSQL_LENGTH;
-typedef MYSQL_LENGTH * MYSQL_LENGTHS;
-typedef MYSQL_FIELD * MYSQL_FIELDS;
+using MYSQL_LENGTH = unsigned long;
+using MYSQL_LENGTHS = MYSQL_LENGTH *;
+using MYSQL_FIELDS = MYSQL_FIELD *;
 
 }

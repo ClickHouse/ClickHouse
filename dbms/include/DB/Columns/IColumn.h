@@ -191,14 +191,14 @@ public:
 	  *  если 0, то не делать reserve,
 	  *  иначе сделать reserve по размеру исходного столбца.
 	  */
-	typedef PaddedPODArray<UInt8> Filter;
+	using Filter = PaddedPODArray<UInt8>;
 	virtual ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
 	/** Переставить значения местами, используя указанную перестановку.
 	  * Используется при сортировке.
 	  * limit - если не равно 0 - положить в результат только первые limit значений.
 	  */
-	typedef PaddedPODArray<size_t> Permutation;
+	using Permutation = PaddedPODArray<size_t>;
 	virtual ColumnPtr permute(const Permutation & perm, size_t limit) const = 0;
 
 	/** Сравнить (*this)[n] и rhs[m].
@@ -227,8 +227,8 @@ public:
 	  * (i-е значение размножается в offsets[i] - offsets[i - 1] значений.)
 	  * Необходимо для реализации операции ARRAY JOIN.
 	  */
-	typedef UInt64 Offset_t;
-	typedef PaddedPODArray<Offset_t> Offsets_t;
+	using Offset_t = UInt64;
+	using Offsets_t = PaddedPODArray<Offset_t>;
 	virtual ColumnPtr replicate(const Offsets_t & offsets) const = 0;
 
 	/** Посчитать минимум и максимум по столбцу.

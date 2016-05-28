@@ -8,6 +8,6 @@
 namespace DB
 {
 
-typedef std::vector<ColumnWithTypeAndName> ColumnsWithTypeAndName;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 }

@@ -25,7 +25,7 @@ class MultiVersion
 {
 public:
 	/// Конкретная версия объекта для использования. SharedPtr определяет время жизни версии.
-	typedef Ptr Version;
+	using Version = Ptr;
 
 	/// Инициализация по-умолчанию (NULL-ом).
 	MultiVersion() = default;

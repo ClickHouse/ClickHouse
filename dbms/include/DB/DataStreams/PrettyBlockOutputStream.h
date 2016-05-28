@@ -28,7 +28,7 @@ protected:
 	void writeTotals();
 	void writeExtremes();
 
-	typedef std::vector<size_t> Widths_t;
+	using Widths_t = std::vector<size_t>;
 
 	/// Вычислить видимую (при выводе на консоль с кодировкой UTF-8) ширину значений и имён столбцов.
 	void calculateWidths(Block & block, Widths_t & max_widths, Widths_t & name_widths);

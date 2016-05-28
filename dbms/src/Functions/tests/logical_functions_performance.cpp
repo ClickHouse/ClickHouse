@@ -35,8 +35,8 @@ struct XorImpl
 };
 
 
-typedef ColumnUInt8::Container_t UInt8Container;
-typedef std::vector<const ColumnUInt8 *> UInt8ColumnPtrs;
+using UInt8Container = ColumnUInt8::Container_t;
+using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
 
 template <typename Op, size_t N>
 struct AssociativeOperationImpl
@@ -307,9 +307,9 @@ struct NameAnd	{ static const char * get() { return "and"; } };
 struct NameOr	{ static const char * get() { return "or"; } };
 struct NameXor	{ static const char * get() { return "xor"; } };
 
-typedef FunctionAnyArityLogical	<AndImpl,	NameAnd>	FunctionAnd;
-typedef FunctionAnyArityLogical	<OrImpl,	NameOr>		FunctionOr;
-typedef FunctionAnyArityLogical	<XorImpl,	NameXor>	FunctionXor;
+using FunctionAnd = FunctionAnyArityLogical	<AndImpl,	NameAnd>;
+using FunctionOr = FunctionAnyArityLogical	<OrImpl,	NameOr>	;
+using FunctionXor = FunctionAnyArityLogical	<XorImpl,	NameXor>;
 }
 
 using namespace DB;

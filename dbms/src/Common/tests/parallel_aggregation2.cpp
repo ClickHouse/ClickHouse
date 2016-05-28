@@ -19,9 +19,9 @@
 #include <threadpool.hpp>
 
 
-typedef UInt64 Key;
-typedef UInt64 Value;
-typedef std::vector<Key> Source;
+using Key = UInt64;
+using Value = UInt64;
+using Source = std::vector<Key>;
 
 
 template <typename Map>
@@ -253,9 +253,9 @@ struct Work
 };
 
 
-typedef HashMap<Key, Value, HashCRC32<Key>> Map;
-typedef TwoLevelHashMap<Key, Value, HashCRC32<Key>> MapTwoLevel;
-typedef std::mutex Mutex;
+using Map = HashMap<Key, Value, HashCRC32<Key>>;
+using MapTwoLevel = TwoLevelHashMap<Key, Value, HashCRC32<Key>>;
+using Mutex = std::mutex;
 
 
 struct Creator

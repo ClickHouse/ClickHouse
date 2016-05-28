@@ -27,7 +27,7 @@ namespace ErrorCodes
 class ColumnFixedString final : public IColumn
 {
 public:
-	typedef PaddedPODArray<UInt8> Chars_t;
+	using Chars_t = PaddedPODArray<UInt8>;
 
 private:
 	/// Байты строк, уложенные подряд. Строки хранятся без завершающего нулевого байта.

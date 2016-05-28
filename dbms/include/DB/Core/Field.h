@@ -159,14 +159,14 @@ public:
 
 	template <typename T> T & get()
 	{
-		typedef typename std::remove_reference<T>::type TWithoutRef;
+		using TWithoutRef = typename std::remove_reference<T>::type;
 		TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<TWithoutRef*>(storage);
 		return *ptr;
 	};
 
 	template <typename T> const T & get() const
 	{
-		typedef typename std::remove_reference<T>::type TWithoutRef;
+		using TWithoutRef = typename std::remove_reference<T>::type;
 		const TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<const TWithoutRef*>(storage);
 		return *ptr;
 	};
@@ -356,13 +356,13 @@ template <> struct Field::TypeToEnum<String> 							{ static const Types::Which 
 template <> struct Field::TypeToEnum<Array> 							{ static const Types::Which value = Types::Array; };
 template <> struct Field::TypeToEnum<Tuple> 							{ static const Types::Which value = Types::Tuple; };
 
-template <> struct Field::EnumToType<Field::Types::Null> 				{ typedef Null 						Type; };
-template <> struct Field::EnumToType<Field::Types::UInt64> 				{ typedef UInt64 					Type; };
-template <> struct Field::EnumToType<Field::Types::Int64> 				{ typedef Int64 					Type; };
-template <> struct Field::EnumToType<Field::Types::Float64> 			{ typedef Float64 					Type; };
-template <> struct Field::EnumToType<Field::Types::String> 				{ typedef String 					Type; };
-template <> struct Field::EnumToType<Field::Types::Array> 				{ typedef Array 					Type; };
-template <> struct Field::EnumToType<Field::Types::Tuple> 				{ typedef Tuple 					Type; };
+template <> struct Field::EnumToType<Field::Types::Null> 				{ using Type = Null 					; };
+template <> struct Field::EnumToType<Field::Types::UInt64> 				{ using Type = UInt64 				; };
+template <> struct Field::EnumToType<Field::Types::Int64> 				{ using Type = Int64 				; };
+template <> struct Field::EnumToType<Field::Types::Float64> 			{ using Type = Float64 				; };
+template <> struct Field::EnumToType<Field::Types::String> 				{ using Type = String 				; };
+template <> struct Field::EnumToType<Field::Types::Array> 				{ using Type = Array 				; };
+template <> struct Field::EnumToType<Field::Types::Tuple> 				{ using Type = Tuple 				; };
 
 
 template <typename T>
@@ -396,20 +396,20 @@ template <> struct TypeName<Tuple> { static std::string get() { return "Tuple"; 
 
 template <typename T> struct NearestFieldType;
 
-template <> struct NearestFieldType<UInt8> 		{ typedef UInt64 	Type; };
-template <> struct NearestFieldType<UInt16> 	{ typedef UInt64 	Type; };
-template <> struct NearestFieldType<UInt32> 	{ typedef UInt64 	Type; };
-template <> struct NearestFieldType<UInt64> 	{ typedef UInt64 	Type; };
-template <> struct NearestFieldType<Int8> 		{ typedef Int64 	Type; };
-template <> struct NearestFieldType<Int16> 		{ typedef Int64 	Type; };
-template <> struct NearestFieldType<Int32> 		{ typedef Int64 	Type; };
-template <> struct NearestFieldType<Int64> 		{ typedef Int64 	Type; };
-template <> struct NearestFieldType<Float32> 	{ typedef Float64 	Type; };
-template <> struct NearestFieldType<Float64> 	{ typedef Float64 	Type; };
-template <> struct NearestFieldType<String> 	{ typedef String 	Type; };
-template <> struct NearestFieldType<Array> 		{ typedef Array 	Type; };
-template <> struct NearestFieldType<Tuple> 		{ typedef Tuple		Type; };
-template <> struct NearestFieldType<bool> 		{ typedef UInt64 	Type; };
+template <> struct NearestFieldType<UInt8> 		{ using Type = UInt64 ; };
+template <> struct NearestFieldType<UInt16> 	{ using Type = UInt64 ; };
+template <> struct NearestFieldType<UInt32> 	{ using Type = UInt64 ; };
+template <> struct NearestFieldType<UInt64> 	{ using Type = UInt64 ; };
+template <> struct NearestFieldType<Int8> 		{ using Type = Int64 ; };
+template <> struct NearestFieldType<Int16> 		{ using Type = Int64 ; };
+template <> struct NearestFieldType<Int32> 		{ using Type = Int64 ; };
+template <> struct NearestFieldType<Int64> 		{ using Type = Int64 ; };
+template <> struct NearestFieldType<Float32> 	{ using Type = Float64 ; };
+template <> struct NearestFieldType<Float64> 	{ using Type = Float64 ; };
+template <> struct NearestFieldType<String> 	{ using Type = String ; };
+template <> struct NearestFieldType<Array> 		{ using Type = Array ; };
+template <> struct NearestFieldType<Tuple> 		{ using Type = Tuple	; };
+template <> struct NearestFieldType<bool> 		{ using Type = UInt64 ; };
 
 
 template <typename T>

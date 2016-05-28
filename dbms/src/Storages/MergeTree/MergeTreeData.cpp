@@ -553,7 +553,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 	out_rename_map = {};
 	out_force_update_metadata = false;
 
-	typedef std::map<String, DataTypePtr> NameToType;
+	using NameToType = std::map<String, DataTypePtr>;
 	NameToType new_types;
 	for (const NameAndTypePair & column : new_columns)
 	{

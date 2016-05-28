@@ -110,7 +110,7 @@ private:
 	}
 
 public:
-	typedef T value_type;
+	using value_type = T;
 
 	size_t allocated_size() const { return c_end_of_storage - c_start + pad_right; }
 

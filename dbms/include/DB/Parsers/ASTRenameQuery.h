@@ -24,7 +24,7 @@ public:
 		Table to;
 	};
 
-	typedef std::vector<Element> Elements;
+	using Elements = std::vector<Element>;
 	Elements elements;
 
 	ASTRenameQuery() = default;

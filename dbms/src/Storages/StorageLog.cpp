@@ -92,7 +92,7 @@ private:
 		CompressedReadBuffer compressed;
 	};
 
-	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
+	using FileStreams = std::map<std::string, std::unique_ptr<Stream> >;
 	FileStreams streams;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
@@ -152,12 +152,12 @@ private:
 		}
 	};
 
-	typedef std::vector<std::pair<size_t, Mark> > MarksForColumns;
+	using MarksForColumns = std::vector<std::pair<size_t, Mark> >;
 
-	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
+	using FileStreams = std::map<std::string, std::unique_ptr<Stream> >;
 	FileStreams streams;
 
-	typedef std::set<std::string> OffsetColumns;
+	using OffsetColumns = std::set<std::string>;
 
 	WriteBufferFromFile marks_stream; /// Объявлен ниже lock, чтобы файл открывался при захваченном rwlock.
 
@@ -209,7 +209,7 @@ Block LogBlockInputStream::readImpl()
 	}
 
 	/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
-	typedef std::map<std::string, ColumnPtr> OffsetColumns;
+	using OffsetColumns = std::map<std::string, ColumnPtr>;
 	OffsetColumns offset_columns;
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
@@ -555,7 +555,7 @@ void StorageLog::loadMarks()
 	if (loaded_marks)
 		return;
 
-	typedef std::vector<Files_t::iterator> FilesByIndex;
+	using FilesByIndex = std::vector<Files_t::iterator>;
 	FilesByIndex files_by_index(files.size());
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 	{

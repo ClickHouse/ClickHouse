@@ -39,7 +39,7 @@ template <typename T>
 class AggregateFunctionGroupUniqArray : public IUnaryAggregateFunction<AggregateFunctionGroupUniqArrayData<T>, AggregateFunctionGroupUniqArray<T> >
 {
 private:
-	typedef AggregateFunctionGroupUniqArrayData<T> State;
+	using State = AggregateFunctionGroupUniqArrayData<T>;
 
 public:
 	String getName() const override { return "groupUniqArray"; }

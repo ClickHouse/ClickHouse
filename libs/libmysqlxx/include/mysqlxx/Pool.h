@@ -359,7 +359,7 @@ private:
 	/** Признак того, что мы инициализированы. */
 	bool initialized{false};
 	/** Список соединений. */
-	typedef std::list<Connection *> Connections;
+	using Connections = std::list<Connection *>;
 	/** Список соединений. */
 	Connections connections;
 	/** Замок для доступа к списку соединений. */

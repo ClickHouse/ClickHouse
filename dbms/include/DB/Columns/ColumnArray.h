@@ -32,7 +32,7 @@ class ColumnArray final : public IColumn
 {
 public:
 	/** По индексу i находится смещение до начала i + 1 -го элемента. */
-	typedef ColumnVector<Offset_t> ColumnOffsets_t;
+	using ColumnOffsets_t = ColumnVector<Offset_t>;
 
 	/** Создать пустой столбец массивов, с типом значений, как в столбце nested_column */
 	explicit ColumnArray(ColumnPtr nested_column, ColumnPtr offsets_column = nullptr)

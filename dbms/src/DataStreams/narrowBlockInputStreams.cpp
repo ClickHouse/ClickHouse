@@ -12,7 +12,7 @@ BlockInputStreams narrowBlockInputStreams(BlockInputStreams & inputs, size_t wid
 
 	std::vector<BlockInputStreams> partitions(width);
 
-	typedef std::vector<size_t> Distribution;
+	using Distribution = std::vector<size_t>;
 	Distribution distribution(size);
 
 	for (size_t i = 0; i < size; ++i)

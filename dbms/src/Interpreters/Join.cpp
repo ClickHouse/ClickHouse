@@ -297,7 +297,7 @@ void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainP
 	}
 	else if (type == Type::KEY_64)
 	{
-		typedef typename Maps::MapUInt64 Map;
+		using Map = typename Maps::MapUInt64;
 		Map & res = *maps.key64;
 		const IColumn & column = *key_columns[0];
 
@@ -311,7 +311,7 @@ void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainP
 	}
 	else if (type == Type::KEY_STRING)
 	{
-		typedef typename Maps::MapString Map;
+		using Map = typename Maps::MapString;
 		Map & res = *maps.key_string;
 		const IColumn & column = *key_columns[0];
 
@@ -346,7 +346,7 @@ void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainP
 	}
 	else if (type == Type::HASHED)
 	{
-		typedef typename Maps::MapHashed Map;
+		using Map = typename Maps::MapHashed;
 		Map & res = *maps.hashed;
 
 		/// Для всех строчек
@@ -674,7 +674,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 
 	if (type == Type::KEY_64)
 	{
-		typedef typename Maps::MapUInt64 Map;
+		using Map = typename Maps::MapUInt64;
 		const Map & map = *maps.key64;
 		const IColumn & column = *key_columns[0];
 
@@ -689,7 +689,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	}
 	else if (type == Type::KEY_STRING)
 	{
-		typedef typename Maps::MapString Map;
+		using Map = typename Maps::MapString;
 		const Map & map = *maps.key_string;
 		const IColumn & column = *key_columns[0];
 
@@ -726,7 +726,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	}
 	else if (type == Type::HASHED)
 	{
-		typedef typename Maps::MapHashed Map;
+		using Map = typename Maps::MapHashed;
 		Map & map = *maps.hashed;
 
 		/// Для всех строчек

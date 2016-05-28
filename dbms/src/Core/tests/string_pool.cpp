@@ -24,12 +24,12 @@ int main(int argc, char ** argv)
 	size_t n = atoi(argv[1]);
 	size_t elems_show = 1;
 
-	typedef std::vector<std::string> Vec;
-	typedef std::unordered_map<std::string, int> Set;
-	typedef std::unordered_map<StringRef, int, StringRefHash> RefsSet;
-	typedef google::dense_hash_map<std::string, int> DenseSet;
-	typedef google::dense_hash_map<StringRef, int, StringRefHash> RefsDenseSet;
-	typedef HashMap<StringRef, int, StringRefHash> RefsHashMap;
+	using Vec = std::vector<std::string>;
+	using Set = std::unordered_map<std::string, int>;
+	using RefsSet = std::unordered_map<StringRef, int, StringRefHash>;
+	using DenseSet = google::dense_hash_map<std::string, int>;
+	using RefsDenseSet = google::dense_hash_map<StringRef, int, StringRefHash>;
+	using RefsHashMap = HashMap<StringRef, int, StringRefHash>;
 	Vec vec;
 
 	vec.reserve(n);

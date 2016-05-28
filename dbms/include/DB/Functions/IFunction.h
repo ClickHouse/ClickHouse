@@ -124,7 +124,7 @@ public:
 
 using Poco::SharedPtr;
 
-typedef SharedPtr<IFunction> FunctionPtr;
+using FunctionPtr = SharedPtr<IFunction>;
 
 
 }

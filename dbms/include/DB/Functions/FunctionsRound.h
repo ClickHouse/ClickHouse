@@ -31,7 +31,7 @@ namespace DB
 	template<typename A>
 	struct RoundToExp2Impl
 	{
-		typedef A ResultType;
+		using ResultType = A;
 
 		static inline A apply(A x)
 		{
@@ -42,7 +42,7 @@ namespace DB
 	template<>
 	struct RoundToExp2Impl<Float32>
 	{
-		typedef Float32 ResultType;
+		using ResultType = Float32;
 
 		static inline Float32 apply(Float32 x)
 		{
@@ -53,7 +53,7 @@ namespace DB
 	template<>
 	struct RoundToExp2Impl<Float64>
 	{
-		typedef Float64 ResultType;
+		using ResultType = Float64;
 
 		static inline Float64 apply(Float64 x)
 		{
@@ -64,7 +64,7 @@ namespace DB
 	template<typename A>
 	struct RoundDurationImpl
 	{
-		typedef UInt16 ResultType;
+		using ResultType = UInt16;
 
 		static inline ResultType apply(A x)
 		{
@@ -90,7 +90,7 @@ namespace DB
 	template<typename A>
 	struct RoundAgeImpl
 	{
-		typedef UInt8 ResultType;
+		using ResultType = UInt8;
 
 		static inline ResultType apply(A x)
 		{
@@ -1140,13 +1140,13 @@ namespace
 	struct NameCeil				{ static constexpr auto name = "ceil"; };
 	struct NameFloor			{ static constexpr auto name = "floor"; };
 
-	typedef FunctionUnaryArithmetic<RoundToExp2Impl,	NameRoundToExp2> 	FunctionRoundToExp2;
-	typedef FunctionUnaryArithmetic<RoundDurationImpl,	NameRoundDuration>	FunctionRoundDuration;
-	typedef FunctionUnaryArithmetic<RoundAgeImpl,		NameRoundAge>		FunctionRoundAge;
+	using FunctionRoundToExp2 = FunctionUnaryArithmetic<RoundToExp2Impl,	NameRoundToExp2> ;
+	using FunctionRoundDuration = FunctionUnaryArithmetic<RoundDurationImpl,	NameRoundDuration>;
+	using FunctionRoundAge = FunctionUnaryArithmetic<RoundAgeImpl,		NameRoundAge>	;
 
-	typedef FunctionRounding<NameRound,	_MM_FROUND_NINT>	FunctionRound;
-	typedef FunctionRounding<NameFloor,	_MM_FROUND_FLOOR>	FunctionFloor;
-	typedef FunctionRounding<NameCeil,	_MM_FROUND_CEIL>	FunctionCeil;
+	using FunctionRound = FunctionRounding<NameRound,	_MM_FROUND_NINT>;
+	using FunctionFloor = FunctionRounding<NameFloor,	_MM_FROUND_FLOOR>;
+	using FunctionCeil = FunctionRounding<NameCeil,	_MM_FROUND_CEIL>;
 
 
 	struct PositiveMonotonicity

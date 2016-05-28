@@ -1366,7 +1366,7 @@ struct ExpressionAnalyzer::ScopeStack
 		NameSet new_columns;
 	};
 
-	typedef std::vector<Level> Levels;
+	using Levels = std::vector<Level>;
 
 	Levels stack;
 	Settings settings;

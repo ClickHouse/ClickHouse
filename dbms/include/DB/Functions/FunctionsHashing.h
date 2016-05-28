@@ -146,7 +146,7 @@ struct SipHash128Impl
 
 struct IntHash32Impl
 {
-	typedef UInt32 ReturnType;
+	using ReturnType = UInt32;
 
 	static UInt32 apply(UInt64 x)
 	{
@@ -157,7 +157,7 @@ struct IntHash32Impl
 
 struct IntHash64Impl
 {
-	typedef UInt64 ReturnType;
+	using ReturnType = UInt64;
 
 	static UInt64 apply(UInt64 x)
 	{
@@ -303,7 +303,7 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionIntHash; };
 
 private:
-	typedef typename Impl::ReturnType ToType;
+	using ToType = typename Impl::ReturnType;
 
 	template <typename FromType>
 	void executeType(Block & block, const ColumnNumbers & arguments, size_t result)

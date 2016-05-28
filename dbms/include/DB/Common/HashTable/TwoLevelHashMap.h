@@ -15,9 +15,9 @@ template
 class TwoLevelHashMapTable : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, HashMapTable<Key, Cell, Hash, Grower, Allocator>>
 {
 public:
-	typedef Key key_type;
-	typedef typename Cell::Mapped mapped_type;
-	typedef typename Cell::value_type value_type;
+	using key_type = Key;
+	using mapped_type = typename Cell::Mapped;
+	using value_type = typename Cell::value_type;
 
 	using TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, HashMapTable<Key, Cell, Hash, Grower, Allocator> >::TwoLevelHashTable;
 

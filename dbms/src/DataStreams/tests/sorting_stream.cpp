@@ -92,7 +92,7 @@ try
 		{"WithHash",			std::make_shared<DataTypeUInt8>()},
 	};
 
-	typedef std::map<String, DataTypePtr> NamesAndTypesMap;
+	using NamesAndTypesMap = std::map<String, DataTypePtr>;
 	NamesAndTypesMap names_and_types_map;
 
 	for (const auto & name_type : names_and_types_list)

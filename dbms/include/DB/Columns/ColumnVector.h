@@ -125,10 +125,10 @@ template <typename T>
 class ColumnVector final : public IColumn
 {
 private:
-	typedef ColumnVector<T> Self;
+	using Self = ColumnVector<T>;
 public:
-	typedef T value_type;
-	typedef PaddedPODArray<value_type> Container_t;
+	using value_type = T;
+	using Container_t = PaddedPODArray<value_type>;
 
 	ColumnVector() {}
 	ColumnVector(const size_t n) : data{n} {}

@@ -16,7 +16,7 @@ VerticalRowOutputStream::VerticalRowOutputStream(WriteBuffer & ostr_, const Bloc
 	size_t columns = sample.columns();
 	names.resize(columns);
 
-	typedef std::vector<size_t> Widths_t;
+	using Widths_t = std::vector<size_t>;
 	Widths_t name_widths(columns);
 	size_t max_name_width = 0;
 

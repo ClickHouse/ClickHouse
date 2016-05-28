@@ -19,7 +19,7 @@ using Poco::SharedPtr;
   * Функция принимает количество строк в последнем блоке, количество байт в последнем блоке.
   * Следует иметь ввиду, что колбэк может вызываться из разных потоков.
   */
-typedef std::function<void(const Progress & progress)> ProgressCallback;
+using ProgressCallback = std::function<void(const Progress & progress)>;
 
 
 /** Интерфейс потока для чтения данных по блокам из БД.
@@ -28,8 +28,8 @@ typedef std::function<void(const Progress & progress)> ProgressCallback;
 class IBlockInputStream : private boost::noncopyable
 {
 public:
-	typedef SharedPtr<IBlockInputStream> BlockInputStreamPtr;
-	typedef std::vector<BlockInputStreamPtr> BlockInputStreams;
+	using BlockInputStreamPtr = SharedPtr<IBlockInputStream>;
+	using BlockInputStreams = std::vector<BlockInputStreamPtr>;
 
 	IBlockInputStream() {}
 

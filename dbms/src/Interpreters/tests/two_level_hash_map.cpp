@@ -19,8 +19,8 @@
 #include <DB/Common/HashTable/HashMap.h>
 
 
-typedef UInt64 Key;
-typedef UInt64 Value;
+using Key = UInt64;
+using Value = UInt64;
 
 
 int main(int argc, char ** argv)
@@ -51,7 +51,7 @@ int main(int argc, char ** argv)
 
 		std::cerr << sizeof(HashMapCell<Key, Value, DefaultHash<Key> >) << std::endl;
 
-		typedef TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key> >, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator> Map;
+		using Map = TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key> >, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator>;
 
 		Map map;
 		Map::iterator it;
@@ -86,8 +86,8 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		typedef TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key> >, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator> Map;
-		//typedef HashMap<Key, Value, UniquesHashSetDefaultHash> Map;
+		using Map = TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key> >, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator>;
+		//using Map = HashMap<Key, Value, UniquesHashSetDefaultHash>;
 
 		Map map;
 		Map::iterator it;

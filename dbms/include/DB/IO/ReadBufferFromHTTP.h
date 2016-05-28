@@ -37,7 +37,7 @@ private:
 	Poco::SharedPtr<ReadBufferFromIStream> impl;
 
 public:
-	typedef std::vector<std::pair<String, String> > Params;
+	using Params = std::vector<std::pair<String, String> >;
 
 	ReadBufferFromHTTP(
 		const std::string & host_,

@@ -163,17 +163,17 @@ public:
 	struct MapsTemplate
 	{
 		/// Специализация для случая, когда есть один числовой ключ.
-		typedef HashMap<UInt64, Mapped, HashCRC32<UInt64>> MapUInt64;
+		using MapUInt64 = HashMap<UInt64, Mapped, HashCRC32<UInt64>>;
 
 		/// Специализация для случая, когда есть один строковый ключ.
-		typedef HashMapWithSavedHash<StringRef, Mapped> MapString;
+		using MapString = HashMapWithSavedHash<StringRef, Mapped>;
 
 		/** Сравнивает 128 битные хэши.
 		  * Если все ключи фиксированной длины, влезающие целиком в 128 бит, то укладывает их без изменений в 128 бит.
 		  * Иначе - вычисляет SipHash от набора из всех ключей.
 		  * (При этом, строки, содержащие нули посередине, могут склеиться.)
 		  */
-		typedef HashMap<UInt128, Mapped, UInt128HashCRC32> MapHashed;
+		using MapHashed = HashMap<UInt128, Mapped, UInt128HashCRC32>;
 
 		std::unique_ptr<MapUInt64> key64;
 		std::unique_ptr<MapString> key_string;
@@ -262,8 +262,8 @@ private:
 	void checkTypesOfKeys(const Block & block_left, const Block & block_right) const;
 };
 
-typedef std::shared_ptr<Join> JoinPtr;
-typedef std::vector<JoinPtr> Joins;
+using JoinPtr = std::shared_ptr<Join>;
+using Joins = std::vector<JoinPtr>;
 
 
 }

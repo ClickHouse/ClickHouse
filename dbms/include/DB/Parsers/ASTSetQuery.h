@@ -20,7 +20,7 @@ public:
 		Field value;
 	};
 
-	typedef std::vector<Change> Changes;
+	using Changes = std::vector<Change>;
 	Changes changes;
 
 	bool global;	/// Если запрос SET GLOBAL.

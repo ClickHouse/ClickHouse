@@ -17,6 +17,6 @@ struct AggregateDescription
 	String column_name;		/// Какое имя использовать для столбца со значениями агрегатной функции
 };
 
-typedef std::vector<AggregateDescription> AggregateDescriptions;
+using AggregateDescriptions = std::vector<AggregateDescription>;
 
 }

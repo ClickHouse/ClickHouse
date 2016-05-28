@@ -879,12 +879,12 @@ public:
 };
 
 
-typedef FunctionComparison<EqualsOp, 			NameEquals>				FunctionEquals;
-typedef FunctionComparison<NotEqualsOp, 		NameNotEquals>			FunctionNotEquals;
-typedef FunctionComparison<LessOp, 				NameLess>				FunctionLess;
-typedef FunctionComparison<GreaterOp, 			NameGreater>			FunctionGreater;
-typedef FunctionComparison<LessOrEqualsOp, 		NameLessOrEquals>		FunctionLessOrEquals;
-typedef FunctionComparison<GreaterOrEqualsOp,	NameGreaterOrEquals>	FunctionGreaterOrEquals;
+using FunctionEquals = FunctionComparison<EqualsOp, 			NameEquals>			;
+using FunctionNotEquals = FunctionComparison<NotEqualsOp, 		NameNotEquals>		;
+using FunctionLess = FunctionComparison<LessOp, 				NameLess>			;
+using FunctionGreater = FunctionComparison<GreaterOp, 			NameGreater>		;
+using FunctionLessOrEquals = FunctionComparison<LessOrEqualsOp, 		NameLessOrEquals>	;
+using FunctionGreaterOrEquals = FunctionComparison<GreaterOrEqualsOp,	NameGreaterOrEquals>;
 
 
 template <>

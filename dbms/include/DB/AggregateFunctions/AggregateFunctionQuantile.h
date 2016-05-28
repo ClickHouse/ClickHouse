@@ -21,7 +21,7 @@ namespace DB
 template <typename ArgumentFieldType>
 struct AggregateFunctionQuantileData
 {
-	typedef ReservoirSampler<ArgumentFieldType, ReservoirSamplerOnEmpty::RETURN_NAN_OR_ZERO> Sample;
+	using Sample = ReservoirSampler<ArgumentFieldType, ReservoirSamplerOnEmpty::RETURN_NAN_OR_ZERO>;
 	Sample sample;	/// TODO Добавить MemoryTracker
 };
 

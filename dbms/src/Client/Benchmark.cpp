@@ -83,15 +83,15 @@ public:
 	}
 
 private:
-	typedef std::string Query;
+	using Query = std::string;
 
 	unsigned concurrency;
 	double delay;
 
-	typedef std::vector<Query> Queries;
+	using Queries = std::vector<Query>;
 	Queries queries;
 
-	typedef ConcurrentBoundedQueue<Query> Queue;
+	using Queue = ConcurrentBoundedQueue<Query>;
 	Queue queue;
 
 	ConnectionPool connections;
@@ -108,7 +108,7 @@ private:
 		size_t result_rows = 0;
 		size_t result_bytes = 0;
 
-		typedef ReservoirSampler<double> Sampler;
+		using Sampler = ReservoirSampler<double>;
 		Sampler sampler {1 << 16};
 
 		void add(double seconds, size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc)

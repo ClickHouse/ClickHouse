@@ -21,7 +21,7 @@ public:
 	String expand(const String & s, size_t level = 0) const;
 
 private:
-	typedef std::map<String, String> MacroMap;
+	using MacroMap = std::map<String, String>;
 
 	MacroMap macros;
 };

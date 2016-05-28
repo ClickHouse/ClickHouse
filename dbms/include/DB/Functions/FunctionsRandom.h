@@ -73,7 +73,7 @@ namespace detail
 
 struct RandImpl
 {
-	typedef UInt32 ReturnType;
+	using ReturnType = UInt32;
 
 	static void execute(PaddedPODArray<ReturnType> & res)
 	{
@@ -111,7 +111,7 @@ struct RandImpl
 
 struct Rand64Impl
 {
-	typedef UInt64 ReturnType;
+	using ReturnType = UInt64;
 
 	static void execute(PaddedPODArray<ReturnType> & res)
 	{
@@ -150,7 +150,7 @@ template <typename Impl, typename Name>
 class FunctionRandom : public IFunction
 {
 private:
-	typedef typename Impl::ReturnType ToType;
+	using ToType = typename Impl::ReturnType;
 
 public:
 	static constexpr auto name = Name::name;
@@ -192,7 +192,7 @@ template <typename Impl, typename Name>
 class FunctionRandomConstant : public IFunction
 {
 private:
-	typedef typename Impl::ReturnType ToType;
+	using ToType = typename Impl::ReturnType;
 
 	/// Значение одно для разных блоков.
 	bool is_initialized = false;
@@ -239,9 +239,9 @@ struct NameRand 		{ static constexpr auto name = "rand"; };
 struct NameRand64 		{ static constexpr auto name = "rand64"; };
 struct NameRandConstant { static constexpr auto name = "randConstant"; };
 
-typedef FunctionRandom<RandImpl,	NameRand> 	FunctionRand;
-typedef FunctionRandom<Rand64Impl,	NameRand64> FunctionRand64;
-typedef FunctionRandomConstant<RandImpl, NameRandConstant> FunctionRandConstant;
+using FunctionRand = FunctionRandom<RandImpl,	NameRand> ;
+using FunctionRand64 = FunctionRandom<Rand64Impl,	NameRand64>;
+using FunctionRandConstant = FunctionRandomConstant<RandImpl, NameRandConstant>;
 
 
 }

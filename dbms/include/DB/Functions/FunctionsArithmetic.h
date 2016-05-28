@@ -25,7 +25,7 @@ namespace ErrorCodes
 template<typename A, typename B, typename Op, typename ResultType_ = typename Op::ResultType>
 struct BinaryOperationImplBase
 {
-	typedef ResultType_ ResultType;
+	using ResultType = ResultType_;
 
 	static void vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
 	{
@@ -63,7 +63,7 @@ struct BinaryOperationImpl : BinaryOperationImplBase<A, B, Op, ResultType>
 template<typename A, typename Op>
 struct UnaryOperationImpl
 {
-	typedef typename Op::ResultType ResultType;
+	using ResultType = typename Op::ResultType;
 
 	static void vector(const PaddedPODArray<A> & a, PaddedPODArray<ResultType> & c)
 	{
@@ -82,7 +82,7 @@ struct UnaryOperationImpl
 template<typename A, typename B>
 struct PlusImpl
 {
-	typedef typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -96,7 +96,7 @@ struct PlusImpl
 template<typename A, typename B>
 struct MultiplyImpl
 {
-	typedef typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -108,7 +108,7 @@ struct MultiplyImpl
 template<typename A, typename B>
 struct MinusImpl
 {
-	typedef typename NumberTraits::ResultOfSubtraction<A, B>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfSubtraction<A, B>::Type;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -120,7 +120,7 @@ struct MinusImpl
 template<typename A, typename B>
 struct DivideFloatingImpl
 {
-	typedef typename NumberTraits::ResultOfFloatingPointDivision<A, B>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfFloatingPointDivision<A, B>::Type;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -168,7 +168,7 @@ inline bool divisionLeadsToFPE(A a, B b)
 template<typename A, typename B>
 struct DivideIntegralImpl
 {
-	typedef typename NumberTraits::ResultOfIntegerDivision<A, B>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -181,7 +181,7 @@ struct DivideIntegralImpl
 template<typename A, typename B>
 struct DivideIntegralOrZeroImpl
 {
-	typedef typename NumberTraits::ResultOfIntegerDivision<A, B>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -193,7 +193,7 @@ struct DivideIntegralOrZeroImpl
 template<typename A, typename B>
 struct ModuloImpl
 {
-	typedef typename NumberTraits::ResultOfModulo<A, B>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -207,7 +207,7 @@ struct ModuloImpl
 template<typename A, typename B>
 struct BitAndImpl
 {
-	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -220,7 +220,7 @@ struct BitAndImpl
 template<typename A, typename B>
 struct BitOrImpl
 {
-	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -233,7 +233,7 @@ struct BitOrImpl
 template<typename A, typename B>
 struct BitXorImpl
 {
-	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -246,7 +246,7 @@ struct BitXorImpl
 template<typename A, typename B>
 struct BitShiftLeftImpl
 {
-	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -259,7 +259,7 @@ struct BitShiftLeftImpl
 template<typename A, typename B>
 struct BitShiftRightImpl
 {
-	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -273,7 +273,7 @@ struct BitShiftRightImpl
 template<typename A, typename B>
 struct LeastImpl
 {
-	typedef typename NumberTraits::ResultOfIf<A, B>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfIf<A, B>::Type;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -286,7 +286,7 @@ struct LeastImpl
 template<typename A, typename B>
 struct GreatestImpl
 {
-	typedef typename NumberTraits::ResultOfIf<A, B>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfIf<A, B>::Type;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -298,7 +298,7 @@ struct GreatestImpl
 template<typename A>
 struct NegateImpl
 {
-	typedef typename NumberTraits::ResultOfNegate<A>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfNegate<A>::Type;
 
 	static inline ResultType apply(A a)
 	{
@@ -309,7 +309,7 @@ struct NegateImpl
 template<typename A>
 struct BitNotImpl
 {
-	typedef typename NumberTraits::ResultOfBitNot<A>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfBitNot<A>::Type;
 
 	static inline ResultType apply(A a)
 	{
@@ -320,7 +320,7 @@ struct BitNotImpl
 template<typename A>
 struct AbsImpl
 {
-	typedef typename NumberTraits::ResultOfAbs<A>::Type ResultType;
+	using ResultType = typename NumberTraits::ResultOfAbs<A>::Type;
 
 	template<typename T = A>
 	static inline ResultType apply(T a,
@@ -749,7 +749,7 @@ private:
 	{
 		if (const ColumnVector<T0> * col = typeid_cast<const ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			typedef typename Op<T0>::ResultType ResultType;
+			using ResultType = typename Op<T0>::ResultType;
 
 			std::shared_ptr<ColumnVector<ResultType>> col_res = std::make_shared<ColumnVector<ResultType>>();
 			block.getByPosition(result).column = col_res;
@@ -762,7 +762,7 @@ private:
 		}
 		else if (const ColumnConst<T0> * col = typeid_cast<const ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			typedef typename Op<T0>::ResultType ResultType;
+			using ResultType = typename Op<T0>::ResultType;
 
 			ResultType res = 0;
 			UnaryOperationImpl<T0, Op<T0> >::constant(col->getData(), res);
@@ -857,23 +857,23 @@ struct NameBitShiftRight	{ static constexpr auto name = "bitShiftRight"; };
 struct NameLeast			{ static constexpr auto name = "least"; };
 struct NameGreatest			{ static constexpr auto name = "greatest"; };
 
-typedef FunctionBinaryArithmetic<PlusImpl,				NamePlus> 				FunctionPlus;
-typedef FunctionBinaryArithmetic<MinusImpl, 			NameMinus> 				FunctionMinus;
-typedef FunctionBinaryArithmetic<MultiplyImpl,			NameMultiply> 			FunctionMultiply;
-typedef FunctionBinaryArithmetic<DivideFloatingImpl, 	NameDivideFloating>	 	FunctionDivideFloating;
-typedef FunctionBinaryArithmetic<DivideIntegralImpl, 	NameDivideIntegral> 	FunctionDivideIntegral;
-typedef FunctionBinaryArithmetic<DivideIntegralOrZeroImpl, NameDivideIntegralOrZero> FunctionDivideIntegralOrZero;
-typedef FunctionBinaryArithmetic<ModuloImpl, 			NameModulo> 			FunctionModulo;
-typedef FunctionUnaryArithmetic<NegateImpl, 			NameNegate> 			FunctionNegate;
-typedef FunctionUnaryArithmetic<AbsImpl,	 			NameAbs>	 			FunctionAbs;
-typedef FunctionBinaryArithmetic<BitAndImpl,			NameBitAnd> 			FunctionBitAnd;
-typedef FunctionBinaryArithmetic<BitOrImpl,				NameBitOr> 				FunctionBitOr;
-typedef FunctionBinaryArithmetic<BitXorImpl,			NameBitXor> 			FunctionBitXor;
-typedef FunctionUnaryArithmetic<BitNotImpl,				NameBitNot> 			FunctionBitNot;
-typedef FunctionBinaryArithmetic<BitShiftLeftImpl,		NameBitShiftLeft> 		FunctionBitShiftLeft;
-typedef FunctionBinaryArithmetic<BitShiftRightImpl,		NameBitShiftRight> 		FunctionBitShiftRight;
-typedef FunctionBinaryArithmetic<LeastImpl,				NameLeast> 				FunctionLeast;
-typedef FunctionBinaryArithmetic<GreatestImpl,			NameGreatest> 			FunctionGreatest;
+using FunctionPlus = FunctionBinaryArithmetic<PlusImpl,				NamePlus> 			;
+using FunctionMinus = FunctionBinaryArithmetic<MinusImpl, 			NameMinus> 			;
+using FunctionMultiply = FunctionBinaryArithmetic<MultiplyImpl,			NameMultiply> 		;
+using FunctionDivideFloating = FunctionBinaryArithmetic<DivideFloatingImpl, 	NameDivideFloating>	 ;
+using FunctionDivideIntegral = FunctionBinaryArithmetic<DivideIntegralImpl, 	NameDivideIntegral> ;
+using FunctionDivideIntegralOrZero = FunctionBinaryArithmetic<DivideIntegralOrZeroImpl, NameDivideIntegralOrZero>;
+using FunctionModulo = FunctionBinaryArithmetic<ModuloImpl, 			NameModulo> 		;
+using FunctionNegate = FunctionUnaryArithmetic<NegateImpl, 			NameNegate> 		;
+using FunctionAbs = FunctionUnaryArithmetic<AbsImpl,	 			NameAbs>	 		;
+using FunctionBitAnd = FunctionBinaryArithmetic<BitAndImpl,			NameBitAnd> 		;
+using FunctionBitOr = FunctionBinaryArithmetic<BitOrImpl,				NameBitOr> 			;
+using FunctionBitXor = FunctionBinaryArithmetic<BitXorImpl,			NameBitXor> 		;
+using FunctionBitNot = FunctionUnaryArithmetic<BitNotImpl,				NameBitNot> 		;
+using FunctionBitShiftLeft = FunctionBinaryArithmetic<BitShiftLeftImpl,		NameBitShiftLeft> 	;
+using FunctionBitShiftRight = FunctionBinaryArithmetic<BitShiftRightImpl,		NameBitShiftRight> 	;
+using FunctionLeast = FunctionBinaryArithmetic<LeastImpl,				NameLeast> 			;
+using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl,			NameGreatest> 		;
 
 /// Свойства монотонности для некоторых функций.
 
@@ -924,7 +924,7 @@ template <typename A, typename B>
 struct DivideIntegralByConstantImpl
 	: BinaryOperationImplBase<A, B, DivideIntegralImpl<A, B>>
 {
-	typedef typename DivideIntegralImpl<A, B>::ResultType ResultType;
+	using ResultType = typename DivideIntegralImpl<A, B>::ResultType;
 
 	static void vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
 	{
@@ -978,7 +978,7 @@ template <typename A, typename B>
 struct ModuloByConstantImpl
 	: BinaryOperationImplBase<A, B, ModuloImpl<A, B>>
 {
-	typedef typename ModuloImpl<A, B>::ResultType ResultType;
+	using ResultType = typename ModuloImpl<A, B>::ResultType;
 
 	static void vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
 	{

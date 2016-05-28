@@ -122,7 +122,7 @@ public:
 	static constexpr auto name = Name::name;
 	static IFunction * create(const Context & context) { return new FunctionReinterpretStringAs; };
 
-	typedef typename ToDataType::FieldType ToFieldType;
+	using ToFieldType = typename ToDataType::FieldType;
 
 	/// Получить имя функции.
 	String getName() const override
@@ -223,20 +223,20 @@ struct NameReinterpretAsDate		{ static constexpr auto name = "reinterpretAsDate"
 struct NameReinterpretAsDateTime	{ static constexpr auto name = "reinterpretAsDateTime"; };
 struct NameReinterpretAsString		{ static constexpr auto name = "reinterpretAsString"; };
 
-typedef FunctionReinterpretStringAs<DataTypeUInt8,		NameReinterpretAsUInt8>		FunctionReinterpretAsUInt8;
-typedef FunctionReinterpretStringAs<DataTypeUInt16,	NameReinterpretAsUInt16>	FunctionReinterpretAsUInt16;
-typedef FunctionReinterpretStringAs<DataTypeUInt32,	NameReinterpretAsUInt32>	FunctionReinterpretAsUInt32;
-typedef FunctionReinterpretStringAs<DataTypeUInt64,	NameReinterpretAsUInt64>	FunctionReinterpretAsUInt64;
-typedef FunctionReinterpretStringAs<DataTypeInt8,		NameReinterpretAsInt8>		FunctionReinterpretAsInt8;
-typedef FunctionReinterpretStringAs<DataTypeInt16,		NameReinterpretAsInt16>		FunctionReinterpretAsInt16;
-typedef FunctionReinterpretStringAs<DataTypeInt32,		NameReinterpretAsInt32>		FunctionReinterpretAsInt32;
-typedef FunctionReinterpretStringAs<DataTypeInt64,		NameReinterpretAsInt64>		FunctionReinterpretAsInt64;
-typedef FunctionReinterpretStringAs<DataTypeFloat32,	NameReinterpretAsFloat32>	FunctionReinterpretAsFloat32;
-typedef FunctionReinterpretStringAs<DataTypeFloat64,	NameReinterpretAsFloat64>	FunctionReinterpretAsFloat64;
-typedef FunctionReinterpretStringAs<DataTypeDate,		NameReinterpretAsDate>		FunctionReinterpretAsDate;
-typedef FunctionReinterpretStringAs<DataTypeDateTime,	NameReinterpretAsDateTime>	FunctionReinterpretAsDateTime;
+using FunctionReinterpretAsUInt8 = FunctionReinterpretStringAs<DataTypeUInt8,		NameReinterpretAsUInt8>	;
+using FunctionReinterpretAsUInt16 = FunctionReinterpretStringAs<DataTypeUInt16,	NameReinterpretAsUInt16>;
+using FunctionReinterpretAsUInt32 = FunctionReinterpretStringAs<DataTypeUInt32,	NameReinterpretAsUInt32>;
+using FunctionReinterpretAsUInt64 = FunctionReinterpretStringAs<DataTypeUInt64,	NameReinterpretAsUInt64>;
+using FunctionReinterpretAsInt8 = FunctionReinterpretStringAs<DataTypeInt8,		NameReinterpretAsInt8>	;
+using FunctionReinterpretAsInt16 = FunctionReinterpretStringAs<DataTypeInt16,		NameReinterpretAsInt16>	;
+using FunctionReinterpretAsInt32 = FunctionReinterpretStringAs<DataTypeInt32,		NameReinterpretAsInt32>	;
+using FunctionReinterpretAsInt64 = FunctionReinterpretStringAs<DataTypeInt64,		NameReinterpretAsInt64>	;
+using FunctionReinterpretAsFloat32 = FunctionReinterpretStringAs<DataTypeFloat32,	NameReinterpretAsFloat32>;
+using FunctionReinterpretAsFloat64 = FunctionReinterpretStringAs<DataTypeFloat64,	NameReinterpretAsFloat64>;
+using FunctionReinterpretAsDate = FunctionReinterpretStringAs<DataTypeDate,		NameReinterpretAsDate>	;
+using FunctionReinterpretAsDateTime = FunctionReinterpretStringAs<DataTypeDateTime,	NameReinterpretAsDateTime>;
 
-typedef FunctionReinterpretAsStringImpl<NameReinterpretAsString>	FunctionReinterpretAsString;
+using FunctionReinterpretAsString = FunctionReinterpretAsStringImpl<NameReinterpretAsString>;
 
 
 }

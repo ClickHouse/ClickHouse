@@ -13,7 +13,7 @@ namespace zkutil
 class LeaderElection
 {
 public:
-	typedef std::function<void()> LeadershipHandler;
+	using LeadershipHandler = std::function<void()>;
 
 	/** handler вызывается, когда этот экземпляр становится лидером.
 	  */
@@ -122,6 +122,6 @@ private:
 	}
 };
 
-typedef Poco::SharedPtr<LeaderElection> LeaderElectionPtr;
+using LeaderElectionPtr = Poco::SharedPtr<LeaderElection>;
 
 }

@@ -218,7 +218,7 @@ struct IFactory
 	virtual ~IFactory() {}
 };
 
-typedef std::unique_ptr<IFactory> FactoryPtr;
+using FactoryPtr = std::unique_ptr<IFactory>;
 
 
 struct Factory1 : IFactory
@@ -268,7 +268,7 @@ int main(int argc, char ** argv)
 	std::cerr << "f15: " << f15().data << std::endl;
 	std::cerr << "f16: " << f16().data << std::endl;
 
-	typedef std::vector<FactoryPtr> Factories;
+	using Factories = std::vector<FactoryPtr>;
 	Factories factories;
 	factories.push_back(FactoryPtr(new Factory1));
 	factories.push_back(FactoryPtr(new Factory2));

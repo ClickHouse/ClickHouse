@@ -46,6 +46,6 @@ public:
 	virtual ~IRowOutputStream() {}
 };
 
-typedef SharedPtr<IRowOutputStream> RowOutputStreamPtr;
+using RowOutputStreamPtr = SharedPtr<IRowOutputStream>;
 
 }

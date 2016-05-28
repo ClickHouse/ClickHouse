@@ -45,8 +45,8 @@ namespace ErrorCodes
 template <typename FromDataType, typename ToDataType, typename Name>
 struct ConvertImpl
 {
-	typedef typename FromDataType::FieldType FromFieldType;
-	typedef typename ToDataType::FieldType ToFieldType;
+	using FromFieldType = typename FromDataType::FieldType;
+	using ToFieldType = typename ToDataType::FieldType;
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
@@ -81,12 +81,12 @@ struct ConvertImpl
 template <typename Name>
 struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 {
-	typedef DataTypeDate::FieldType FromFieldType;
-	typedef DataTypeDateTime::FieldType ToFieldType;
+	using FromFieldType = DataTypeDate::FieldType;
+	using ToFieldType = DataTypeDateTime::FieldType;
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		typedef DataTypeDate::FieldType FromFieldType;
+		using FromFieldType = DataTypeDate::FieldType;
 		const auto & date_lut = DateLUT::instance();
 
 		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
@@ -368,7 +368,7 @@ struct ConvertImpl<DataTypeEnum<FieldType>, typename DataTypeFromFieldType<Field
 template <typename FromDataType, typename Name>
 struct ConvertImpl<FromDataType, DataTypeString, Name>
 {
-	typedef typename FromDataType::FieldType FromFieldType;
+	using FromFieldType = typename FromDataType::FieldType;
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
@@ -678,7 +678,7 @@ template <> inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType 
 template <typename ToDataType, typename Name>
 struct ConvertImpl<DataTypeString, ToDataType, Name>
 {
-	typedef typename ToDataType::FieldType ToFieldType;
+	using ToFieldType = typename ToDataType::FieldType;
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
@@ -957,7 +957,7 @@ struct ConvertImpl<DataTypeString, DataTypeString, Name>
 template <typename ToDataType, typename Name>
 struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 {
-	typedef typename ToDataType::FieldType ToFieldType;
+	using ToFieldType = typename ToDataType::FieldType;
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
@@ -1468,20 +1468,20 @@ struct NameToFloat64		{ static constexpr auto name = "toFloat64"; };
 struct NameToDateTime		{ static constexpr auto name = "toDateTime"; };
 struct NameToString			{ static constexpr auto name = "toString"; };
 
-typedef FunctionConvert<DataTypeUInt8,		NameToUInt8,	ToIntMonotonicity<UInt8>> 	FunctionToUInt8;
-typedef FunctionConvert<DataTypeUInt16,		NameToUInt16,	ToIntMonotonicity<UInt16>> FunctionToUInt16;
-typedef FunctionConvert<DataTypeUInt32,		NameToUInt32,	ToIntMonotonicity<UInt32>> FunctionToUInt32;
-typedef FunctionConvert<DataTypeUInt64,		NameToUInt64,	ToIntMonotonicity<UInt64>> FunctionToUInt64;
-typedef FunctionConvert<DataTypeInt8,		NameToInt8,		ToIntMonotonicity<Int8>> 	FunctionToInt8;
-typedef FunctionConvert<DataTypeInt16,		NameToInt16,	ToIntMonotonicity<Int16>> 	FunctionToInt16;
-typedef FunctionConvert<DataTypeInt32,		NameToInt32,	ToIntMonotonicity<Int32>> 	FunctionToInt32;
-typedef FunctionConvert<DataTypeInt64,		NameToInt64,	ToIntMonotonicity<Int64>> 	FunctionToInt64;
-typedef FunctionConvert<DataTypeFloat32,	NameToFloat32,	PositiveMonotonicity> 		FunctionToFloat32;
-typedef FunctionConvert<DataTypeFloat64,	NameToFloat64,	PositiveMonotonicity> 		FunctionToFloat64;
-typedef FunctionConvert<DataTypeDate,		NameToDate,		ToIntMonotonicity<UInt16>> FunctionToDate;
-typedef FunctionConvert<DataTypeDateTime,	NameToDateTime,	ToIntMonotonicity<UInt32>> FunctionToDateTime;
-typedef FunctionConvert<DataTypeString,		NameToString, 	ToStringMonotonicity> 		FunctionToString;
-typedef FunctionConvert<DataTypeInt32,		NameToUnixTimestamp, ToIntMonotonicity<UInt32>> FunctionToUnixTimestamp;
+using FunctionToUInt8 = FunctionConvert<DataTypeUInt8,		NameToUInt8,	ToIntMonotonicity<UInt8>> ;
+using FunctionToUInt16 = FunctionConvert<DataTypeUInt16,		NameToUInt16,	ToIntMonotonicity<UInt16>>;
+using FunctionToUInt32 = FunctionConvert<DataTypeUInt32,		NameToUInt32,	ToIntMonotonicity<UInt32>>;
+using FunctionToUInt64 = FunctionConvert<DataTypeUInt64,		NameToUInt64,	ToIntMonotonicity<UInt64>>;
+using FunctionToInt8 = FunctionConvert<DataTypeInt8,		NameToInt8,		ToIntMonotonicity<Int8>> ;
+using FunctionToInt16 = FunctionConvert<DataTypeInt16,		NameToInt16,	ToIntMonotonicity<Int16>> ;
+using FunctionToInt32 = FunctionConvert<DataTypeInt32,		NameToInt32,	ToIntMonotonicity<Int32>> ;
+using FunctionToInt64 = FunctionConvert<DataTypeInt64,		NameToInt64,	ToIntMonotonicity<Int64>> ;
+using FunctionToFloat32 = FunctionConvert<DataTypeFloat32,	NameToFloat32,	PositiveMonotonicity> 	;
+using FunctionToFloat64 = FunctionConvert<DataTypeFloat64,	NameToFloat64,	PositiveMonotonicity> 	;
+using FunctionToDate = FunctionConvert<DataTypeDate,		NameToDate,		ToIntMonotonicity<UInt16>>;
+using FunctionToDateTime = FunctionConvert<DataTypeDateTime,	NameToDateTime,	ToIntMonotonicity<UInt32>>;
+using FunctionToString = FunctionConvert<DataTypeString,		NameToString, 	ToStringMonotonicity> 	;
+using FunctionToUnixTimestamp = FunctionConvert<DataTypeInt32,		NameToUnixTimestamp, ToIntMonotonicity<UInt32>>;
 
 template <typename DataType> struct FunctionTo;
 template <> struct FunctionTo<DataTypeUInt8> { using Type = FunctionToUInt8; };

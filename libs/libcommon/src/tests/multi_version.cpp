@@ -5,9 +5,9 @@
 #include <common/MultiVersion.h>
 
 
-typedef std::string T;
-typedef MultiVersion<T> MV;
-typedef std::vector<T> Results;
+using T = std::string;
+using MV = MultiVersion<T>;
+using Results = std::vector<T>;
 
 
 void thread1(MV & x, T & result)

@@ -51,7 +51,7 @@ private:
 	size_t max_bytes;
 	OverflowMode overflow_mode;
 
-	typedef HashSet<UInt128, UInt128TrivialHash> SetHashed;
+	using SetHashed = HashSet<UInt128, UInt128TrivialHash>;
 	SetHashed set;
 };
 

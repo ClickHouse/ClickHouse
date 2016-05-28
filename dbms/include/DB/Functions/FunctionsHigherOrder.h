@@ -771,13 +771,13 @@ struct NameArraySum			{ static constexpr auto name = "arraySum"; };
 struct NameArrayFirst		{ static constexpr auto name = "arrayFirst"; };
 struct NameArrayFirstIndex	{ static constexpr auto name = "arrayFirstIndex"; };
 
-typedef FunctionArrayMapped<ArrayMapImpl, 		NameArrayMap>		FunctionArrayMap;
-typedef FunctionArrayMapped<ArrayFilterImpl, 	NameArrayFilter>	FunctionArrayFilter;
-typedef FunctionArrayMapped<ArrayCountImpl, 	NameArrayCount>		FunctionArrayCount;
-typedef FunctionArrayMapped<ArrayExistsImpl, 	NameArrayExists>	FunctionArrayExists;
-typedef FunctionArrayMapped<ArrayAllImpl,	 	NameArrayAll>		FunctionArrayAll;
-typedef FunctionArrayMapped<ArraySumImpl,	 	NameArraySum>		FunctionArraySum;
-typedef FunctionArrayMapped<ArrayFirstImpl,	 	NameArrayFirst>		FunctionArrayFirst;
-typedef FunctionArrayMapped<ArrayFirstIndexImpl,	 	NameArrayFirstIndex>		FunctionArrayFirstIndex;
+using FunctionArrayMap = FunctionArrayMapped<ArrayMapImpl, 		NameArrayMap>	;
+using FunctionArrayFilter = FunctionArrayMapped<ArrayFilterImpl, 	NameArrayFilter>;
+using FunctionArrayCount = FunctionArrayMapped<ArrayCountImpl, 	NameArrayCount>	;
+using FunctionArrayExists = FunctionArrayMapped<ArrayExistsImpl, 	NameArrayExists>;
+using FunctionArrayAll = FunctionArrayMapped<ArrayAllImpl,	 	NameArrayAll>	;
+using FunctionArraySum = FunctionArrayMapped<ArraySumImpl,	 	NameArraySum>	;
+using FunctionArrayFirst = FunctionArrayMapped<ArrayFirstImpl,	 	NameArrayFirst>	;
+using FunctionArrayFirstIndex = FunctionArrayMapped<ArrayFirstIndexImpl,	 	NameArrayFirstIndex>	;
 
 }

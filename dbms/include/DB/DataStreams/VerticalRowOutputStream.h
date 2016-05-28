@@ -36,7 +36,7 @@ protected:
 	size_t field_number;
 	size_t row_number;
 
-	typedef std::vector<String> Pads_t;
+	using Pads_t = std::vector<String>;
 	Pads_t pads;
 };
 

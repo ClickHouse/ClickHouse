@@ -28,7 +28,7 @@ struct Mark
 	size_t offset;	/// Смещение до пачки в сжатом файле.
 };
 
-typedef std::vector<Mark> Marks;
+using Marks = std::vector<Mark>;
 
 
 /** Реализует хранилище, подходящее для логов.
@@ -88,7 +88,7 @@ public:
 		Poco::File data_file;
 		Marks marks;
 	};
-	typedef std::map<String, ColumnData> Files_t;
+	using Files_t = std::map<String, ColumnData>;
 
 	bool checkData() const override;
 

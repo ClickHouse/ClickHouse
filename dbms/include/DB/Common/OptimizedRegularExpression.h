@@ -47,7 +47,7 @@ public:
 	};
 
 	using Match = OptimizedRegularExpressionDetails::Match;
-	typedef std::vector<Match> MatchVec;
+	using MatchVec = std::vector<Match>;
 
 	using RegexType = typename std::conditional<thread_safe, re2::RE2, re2_st::RE2>::type;
 	using StringPieceType = typename std::conditional<thread_safe, re2::StringPiece, re2_st::StringPiece>::type;

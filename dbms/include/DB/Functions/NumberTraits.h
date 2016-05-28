@@ -24,69 +24,69 @@ namespace DB
 namespace NumberTraits
 {
 
-typedef boost::mpl::false_ 	Unsigned;
-typedef boost::mpl::true_ 	Signed;
+using Unsigned = boost::mpl::false_ ;
+using Signed = boost::mpl::true_ ;
 
-typedef boost::mpl::false_ 	Integer;
-typedef boost::mpl::true_ 	Floating;
+using Integer = boost::mpl::false_ ;
+using Floating = boost::mpl::true_ ;
 
-typedef boost::mpl::int_<0> 	Bits0;
-typedef boost::mpl::int_<8> 	Bits8;
-typedef boost::mpl::int_<16> 	Bits16;
-typedef boost::mpl::int_<32> 	Bits32;
-typedef boost::mpl::int_<64> 	Bits64;
-typedef boost::mpl::int_<1024> BitsTooMany;
+using Bits0 = boost::mpl::int_<0> ;
+using Bits8 = boost::mpl::int_<8> ;
+using Bits16 = boost::mpl::int_<16> ;
+using Bits32 = boost::mpl::int_<32> ;
+using Bits64 = boost::mpl::int_<64> ;
+using BitsTooMany = boost::mpl::int_<1024>;
 
 struct Error {};
 
 template <typename T> struct Next;
 
-template <> struct Next<Bits0>	{ typedef Bits0 Type; };
-template <> struct Next<Bits8>	{ typedef Bits16 Type; };
-template <> struct Next<Bits16>	{ typedef Bits32 Type; };
-template <> struct Next<Bits32>	{ typedef Bits64 Type; };
-template <> struct Next<Bits64>	{ typedef Bits64 Type; };
+template <> struct Next<Bits0>	{ using Type = Bits0; };
+template <> struct Next<Bits8>	{ using Type = Bits16; };
+template <> struct Next<Bits16>	{ using Type = Bits32; };
+template <> struct Next<Bits32>	{ using Type = Bits64; };
+template <> struct Next<Bits64>	{ using Type = Bits64; };
 
-template <typename T> struct ExactNext { typedef typename Next<T>::Type Type; };
-template <> struct ExactNext<Bits64>	{ typedef BitsTooMany Type; };
+template <typename T> struct ExactNext { using Type = typename Next<T>::Type; };
+template <> struct ExactNext<Bits64>	{ using Type = BitsTooMany; };
 
 template <typename T> struct Traits;
 
-template <> struct Traits<void>		{ typedef Unsigned Sign;	typedef Integer Floatness;	typedef Bits0 Bits; };
-template <> struct Traits<UInt8> 	{ typedef Unsigned Sign;	typedef Integer Floatness;	typedef Bits8 Bits; };
-template <> struct Traits<UInt16> 	{ typedef Unsigned Sign;	typedef Integer Floatness;	typedef Bits16 Bits; };
-template <> struct Traits<UInt32> 	{ typedef Unsigned Sign;	typedef Integer Floatness;	typedef Bits32 Bits; };
-template <> struct Traits<UInt64> 	{ typedef Unsigned Sign;	typedef Integer Floatness;	typedef Bits64 Bits; };
-template <> struct Traits<Int8> 	{ typedef Signed Sign;		typedef Integer Floatness;	typedef Bits8 Bits; };
-template <> struct Traits<Int16> 	{ typedef Signed Sign;		typedef Integer Floatness;	typedef Bits16 Bits; };
-template <> struct Traits<Int32> 	{ typedef Signed Sign;		typedef Integer Floatness;	typedef Bits32 Bits; };
-template <> struct Traits<Int64> 	{ typedef Signed Sign;		typedef Integer Floatness;	typedef Bits64 Bits; };
-template <> struct Traits<Float32>	{ typedef Signed Sign;		typedef Floating Floatness;	typedef Bits32 Bits; };
-template <> struct Traits<Float64>	{ typedef Signed Sign;		typedef Floating Floatness;	typedef Bits64 Bits; };
+template <> struct Traits<void>		{ using Bits = Unsigned Sign;	typedef Integer Floatness;	typedef Bits0; };
+template <> struct Traits<UInt8> 	{ using Bits = Unsigned Sign;	typedef Integer Floatness;	typedef Bits8; };
+template <> struct Traits<UInt16> 	{ using Bits = Unsigned Sign;	typedef Integer Floatness;	typedef Bits16; };
+template <> struct Traits<UInt32> 	{ using Bits = Unsigned Sign;	typedef Integer Floatness;	typedef Bits32; };
+template <> struct Traits<UInt64> 	{ using Bits = Unsigned Sign;	typedef Integer Floatness;	typedef Bits64; };
+template <> struct Traits<Int8> 	{ using Bits = Signed Sign;		typedef Integer Floatness;	typedef Bits8; };
+template <> struct Traits<Int16> 	{ using Bits = Signed Sign;		typedef Integer Floatness;	typedef Bits16; };
+template <> struct Traits<Int32> 	{ using Bits = Signed Sign;		typedef Integer Floatness;	typedef Bits32; };
+template <> struct Traits<Int64> 	{ using Bits = Signed Sign;		typedef Integer Floatness;	typedef Bits64; };
+template <> struct Traits<Float32>	{ using Bits = Signed Sign;		typedef Floating Floatness;	typedef Bits32; };
+template <> struct Traits<Float64>	{ using Bits = Signed Sign;		typedef Floating Floatness;	typedef Bits64; };
 
 template <typename Sign, typename Floatness, typename Bits> struct Construct;
 
-template <> struct Construct<Unsigned, Integer, Bits0>	{ typedef void		Type; };
-template <> struct Construct<Unsigned, Floating, Bits0>	{ typedef void		Type; };
-template <> struct Construct<Signed, Integer, Bits0>	{ typedef void		Type; };
-template <> struct Construct<Signed, Floating, Bits0>	{ typedef void		Type; };
-template <> struct Construct<Unsigned, Integer, Bits8> 	{ typedef UInt8 	Type; };
-template <> struct Construct<Unsigned, Integer, Bits16> 	{ typedef UInt16 	Type; };
-template <> struct Construct<Unsigned, Integer, Bits32> 	{ typedef UInt32 	Type; };
-template <> struct Construct<Unsigned, Integer, Bits64> 	{ typedef UInt64 	Type; };
-template <> struct Construct<Unsigned, Floating, Bits8> 	{ typedef Float32 	Type; };
-template <> struct Construct<Unsigned, Floating, Bits16> 	{ typedef Float32 	Type; };
-template <> struct Construct<Unsigned, Floating, Bits32> 	{ typedef Float32 	Type; };
-template <> struct Construct<Unsigned, Floating, Bits64> 	{ typedef Float64 	Type; };
-template <> struct Construct<Signed, Integer, Bits8> 		{ typedef Int8 		Type; };
-template <> struct Construct<Signed, Integer, Bits16> 		{ typedef Int16 	Type; };
-template <> struct Construct<Signed, Integer, Bits32> 		{ typedef Int32 	Type; };
-template <> struct Construct<Signed, Integer, Bits64> 		{ typedef Int64 	Type; };
-template <> struct Construct<Signed, Floating, Bits8> 		{ typedef Float32 	Type; };
-template <> struct Construct<Signed, Floating, Bits16>		{ typedef Float32 	Type; };
-template <> struct Construct<Signed, Floating, Bits32>		{ typedef Float32 	Type; };
-template <> struct Construct<Signed, Floating, Bits64>		{ typedef Float64 	Type; };
-template <typename Sign, typename Floatness> struct Construct<Sign, Floatness, BitsTooMany> { typedef Error Type; };
+template <> struct Construct<Unsigned, Integer, Bits0>	{ using Type = void	; };
+template <> struct Construct<Unsigned, Floating, Bits0>	{ using Type = void	; };
+template <> struct Construct<Signed, Integer, Bits0>	{ using Type = void	; };
+template <> struct Construct<Signed, Floating, Bits0>	{ using Type = void	; };
+template <> struct Construct<Unsigned, Integer, Bits8> 	{ using Type = UInt8 ; };
+template <> struct Construct<Unsigned, Integer, Bits16> 	{ using Type = UInt16 ; };
+template <> struct Construct<Unsigned, Integer, Bits32> 	{ using Type = UInt32 ; };
+template <> struct Construct<Unsigned, Integer, Bits64> 	{ using Type = UInt64 ; };
+template <> struct Construct<Unsigned, Floating, Bits8> 	{ using Type = Float32 ; };
+template <> struct Construct<Unsigned, Floating, Bits16> 	{ using Type = Float32 ; };
+template <> struct Construct<Unsigned, Floating, Bits32> 	{ using Type = Float32 ; };
+template <> struct Construct<Unsigned, Floating, Bits64> 	{ using Type = Float64 ; };
+template <> struct Construct<Signed, Integer, Bits8> 		{ using Type = Int8 	; };
+template <> struct Construct<Signed, Integer, Bits16> 		{ using Type = Int16 ; };
+template <> struct Construct<Signed, Integer, Bits32> 		{ using Type = Int32 ; };
+template <> struct Construct<Signed, Integer, Bits64> 		{ using Type = Int64 ; };
+template <> struct Construct<Signed, Floating, Bits8> 		{ using Type = Float32 ; };
+template <> struct Construct<Signed, Floating, Bits16>		{ using Type = Float32 ; };
+template <> struct Construct<Signed, Floating, Bits32>		{ using Type = Float32 ; };
+template <> struct Construct<Signed, Floating, Bits64>		{ using Type = Float64 ; };
+template <typename Sign, typename Floatness> struct Construct<Sign, Floatness, BitsTooMany> { using Type = Error; };
 
 template <typename T>
 inline bool isErrorType()
@@ -125,7 +125,7 @@ template <typename A, typename B> struct ResultOfSubtraction
 	*/
 template <typename A, typename B> struct ResultOfFloatingPointDivision
 {
-	typedef Float64 Type;
+	using Type = Float64;
 };
 
 /** При целочисленном делении получается число, битность которого равна делимому.

@@ -108,7 +108,7 @@ public:
 	}
 
 private:
-	typedef std::map<String, InterserverIOEndpointPtr> EndpointMap;
+	using EndpointMap = std::map<String, InterserverIOEndpointPtr>;
 
 	EndpointMap endpoint_map;
 	std::mutex mutex;

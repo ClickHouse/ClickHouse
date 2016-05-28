@@ -83,12 +83,12 @@ int main(int argc, char ** argv)
 {
 	using namespace DB;
 
-	typedef UInt64 Key;
+	using Key = UInt64;
 
 #if USE_AUTO_ARRAY
-	typedef AutoArray<IAggregateFunction*> Value;
+	using Value = AutoArray<IAggregateFunction*>;
 #else
-	typedef std::vector<IAggregateFunction*> Value;
+	using Value = std::vector<IAggregateFunction*>;
 #endif
 
 	size_t n = argc < 2 ? 10000000 : atoi(argv[1]);
@@ -181,7 +181,7 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		typedef HashMap<Key, Value, AlternativeHash> Map;
+		using Map = HashMap<Key, Value, AlternativeHash>;
 		Map map;
 		Map::iterator it;
 		bool inserted;
@@ -212,7 +212,7 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		typedef HashMap<Key, Value, CRC32Hash_> Map;
+		using Map = HashMap<Key, Value, CRC32Hash_>;
 		Map map;
 		Map::iterator it;
 		bool inserted;

@@ -63,7 +63,7 @@ public:
 	{
 		Poco::File data_file;
 	};
-	typedef std::map<String, ColumnData> Files_t;
+	using Files_t = std::map<String, ColumnData>;
 
 	std::string full_path() { return path + escapeForFileName(name) + '/';}
 

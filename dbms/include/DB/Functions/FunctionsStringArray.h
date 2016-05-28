@@ -33,7 +33,7 @@ namespace DB
   */
 
 
-typedef const char * Pos;
+using Pos = const char *;
 
 
 /// Генераторы подстрок. Все они обладают общим интерфейсом.
@@ -550,9 +550,9 @@ public:
 };
 
 
-typedef FunctionTokens<AlphaTokensImpl>		FunctionAlphaTokens;
-typedef FunctionTokens<SplitByCharImpl>		FunctionSplitByChar;
-typedef FunctionTokens<SplitByStringImpl>	FunctionSplitByString;
-typedef FunctionTokens<ExtractAllImpl> 		FunctionExtractAll;
+using FunctionAlphaTokens = FunctionTokens<AlphaTokensImpl>	;
+using FunctionSplitByChar = FunctionTokens<SplitByCharImpl>	;
+using FunctionSplitByString = FunctionTokens<SplitByStringImpl>;
+using FunctionExtractAll = FunctionTokens<ExtractAllImpl> 	;
 
 }

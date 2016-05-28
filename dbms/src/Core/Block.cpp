@@ -370,7 +370,7 @@ NamesAndTypesList Block::getColumnsList() const
 void Block::checkNestedArraysOffsets() const
 {
 	/// Указатели на столбцы-массивы, для проверки равенства столбцов смещений во вложенных структурах данных
-	typedef std::map<String, const ColumnArray *> ArrayColumns;
+	using ArrayColumns = std::map<String, const ColumnArray *>;
 	ArrayColumns array_columns;
 
 	for (const auto & elem : data)
@@ -395,7 +395,7 @@ void Block::checkNestedArraysOffsets() const
 void Block::optimizeNestedArraysOffsets()
 {
 	/// Указатели на столбцы-массивы, для проверки равенства столбцов смещений во вложенных структурах данных
-	typedef std::map<String, ColumnArray *> ArrayColumns;
+	using ArrayColumns = std::map<String, ColumnArray *>;
 	ArrayColumns array_columns;
 
 	for (auto & elem : data)

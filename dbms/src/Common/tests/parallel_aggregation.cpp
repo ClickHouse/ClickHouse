@@ -19,13 +19,13 @@
 #include <threadpool.hpp>
 
 
-typedef UInt64 Key;
-typedef UInt64 Value;
+using Key = UInt64;
+using Value = UInt64;
 
-typedef std::vector<Key> Source;
+using Source = std::vector<Key>;
 
-typedef HashMap<Key, Value> Map;
-typedef TwoLevelHashMap<Key, Value> MapTwoLevel;
+using Map = HashMap<Key, Value>;
+using MapTwoLevel = TwoLevelHashMap<Key, Value>;
 
 
 struct SmallLock
@@ -50,7 +50,7 @@ struct __attribute__((__aligned__(64))) AlignedSmallLock : public SmallLock
 };
 
 
-typedef std::mutex Mutex;
+using Mutex = std::mutex;
 
 
 /*typedef HashTableWithSmallLocks<
@@ -886,7 +886,7 @@ int main(int argc, char ** argv)
 
 		watch.restart();
 
-		typedef std::vector<Map *> Maps;
+		using Maps = std::vector<Map *>;
 		Maps maps_to_merge(num_threads);
 		for (size_t i = 0; i < num_threads; ++i)
 			maps_to_merge[i] = &maps[i];

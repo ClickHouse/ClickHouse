@@ -33,7 +33,7 @@ namespace DB
 
 struct AggregateFunctionUniqUniquesHashSetData
 {
-	typedef UniquesHashSet<DefaultHash<UInt64>> Set;
+	using Set = UniquesHashSet<DefaultHash<UInt64>>;
 	Set set;
 
 	static String getName() { return "uniq"; }
@@ -42,7 +42,7 @@ struct AggregateFunctionUniqUniquesHashSetData
 /// Для функции, принимающей несколько аргументов. Такая функция сама заранее их хэширует, поэтому здесь используется TrivialHash.
 struct AggregateFunctionUniqUniquesHashSetDataForVariadic
 {
-	typedef UniquesHashSet<TrivialHash> Set;
+	using Set = UniquesHashSet<TrivialHash>;
 	Set set;
 
 	static String getName() { return "uniq"; }
@@ -54,7 +54,7 @@ struct AggregateFunctionUniqUniquesHashSetDataForVariadic
 template <typename T>
 struct AggregateFunctionUniqHLL12Data
 {
-	typedef HyperLogLogWithSmallSetOptimization<T, 16, 12> Set;
+	using Set = HyperLogLogWithSmallSetOptimization<T, 16, 12>;
 	Set set;
 
 	static String getName() { return "uniqHLL12"; }
@@ -63,7 +63,7 @@ struct AggregateFunctionUniqHLL12Data
 template <>
 struct AggregateFunctionUniqHLL12Data<String>
 {
-	typedef HyperLogLogWithSmallSetOptimization<UInt64, 16, 12> Set;
+	using Set = HyperLogLogWithSmallSetOptimization<UInt64, 16, 12>;
 	Set set;
 
 	static String getName() { return "uniqHLL12"; }
@@ -71,7 +71,7 @@ struct AggregateFunctionUniqHLL12Data<String>
 
 struct AggregateFunctionUniqHLL12DataForVariadic
 {
-	typedef HyperLogLogWithSmallSetOptimization<UInt64, 16, 12, TrivialHash> Set;
+	using Set = HyperLogLogWithSmallSetOptimization<UInt64, 16, 12, TrivialHash>;
 	Set set;
 
 	static String getName() { return "uniqHLL12"; }
@@ -83,7 +83,7 @@ struct AggregateFunctionUniqHLL12DataForVariadic
 template <typename T>
 struct AggregateFunctionUniqExactData
 {
-	typedef T Key;
+	using Key = T;
 
 	/// При создании, хэш-таблица должна быть небольшой.
 	typedef HashSet<
@@ -102,7 +102,7 @@ struct AggregateFunctionUniqExactData
 template <>
 struct AggregateFunctionUniqExactData<String>
 {
-	typedef UInt128 Key;
+	using Key = UInt128;
 
 	/// При создании, хэш-таблица должна быть небольшой.
 	typedef HashSet<

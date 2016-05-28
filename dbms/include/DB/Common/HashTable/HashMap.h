@@ -29,10 +29,10 @@ struct PairNoInit
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
 struct HashMapCell
 {
-	typedef TMapped Mapped;
-	typedef TState State;
+	using Mapped = TMapped;
+	using State = TState;
 
-	typedef PairNoInit<Key, Mapped> value_type;
+	using value_type = PairNoInit<Key, Mapped>;
 	value_type value;
 
 	HashMapCell() {}
@@ -98,7 +98,7 @@ struct HashMapCell
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
 struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 {
-	typedef HashMapCell<Key, TMapped, Hash, TState> Base;
+	using Base = HashMapCell<Key, TMapped, Hash, TState>;
 
 	size_t saved_hash;
 
@@ -123,9 +123,9 @@ template
 class HashMapTable : public HashTable<Key, Cell, Hash, Grower, Allocator>
 {
 public:
-	typedef Key key_type;
-	typedef typename Cell::Mapped mapped_type;
-	typedef typename Cell::value_type value_type;
+	using key_type = Key;
+	using mapped_type = typename Cell::Mapped;
+	using value_type = typename Cell::value_type;
 
 	using HashTable<Key, Cell, Hash, Grower, Allocator>::HashTable;
 

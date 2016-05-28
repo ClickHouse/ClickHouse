@@ -27,7 +27,7 @@ namespace ErrorCodes
 class ColumnString final : public IColumn
 {
 public:
-	typedef PaddedPODArray<UInt8> Chars_t;
+	using Chars_t = PaddedPODArray<UInt8>;
 
 private:
 	/// По индексу i находится смещение до начала i + 1 -го элемента.

@@ -7,6 +7,6 @@
 namespace DB
 {
 
-typedef std::vector<size_t> ColumnNumbers;
+using ColumnNumbers = std::vector<size_t>;
 
 }

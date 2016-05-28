@@ -814,14 +814,14 @@ public:
 /// Для has.
 struct IndexToOne
 {
-	typedef UInt8 ResultType;
+	using ResultType = UInt8;
 	static bool apply(size_t j, ResultType & current) { current = 1; return false; }
 };
 
 /// Для indexOf.
 struct IndexIdentity
 {
-	typedef UInt64 ResultType;
+	using ResultType = UInt64;
 	/// Индекс возвращается начиная с единицы.
 	static bool apply(size_t j, ResultType & current) { current = j + 1; return false; }
 };
@@ -829,7 +829,7 @@ struct IndexIdentity
 /// Для countEqual.
 struct IndexCount
 {
-	typedef UInt32 ResultType;
+	using ResultType = UInt32;
 	static bool apply(size_t j, ResultType & current) { ++current; return true; }
 };
 
@@ -961,7 +961,7 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionArrayIndex; }
 
 private:
-	typedef ColumnVector<typename IndexConv::ResultType> ResultColumnType;
+	using ResultColumnType = ColumnVector<typename IndexConv::ResultType>;
 
 	template <typename T>
 	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -2534,9 +2534,9 @@ struct NameHas			{ static constexpr auto name = "has"; };
 struct NameIndexOf		{ static constexpr auto name = "indexOf"; };
 struct NameCountEqual	{ static constexpr auto name = "countEqual"; };
 
-typedef FunctionArrayIndex<IndexToOne, 		NameHas>		FunctionHas;
-typedef FunctionArrayIndex<IndexIdentity, 	NameIndexOf>	FunctionIndexOf;
-typedef FunctionArrayIndex<IndexCount, 	NameCountEqual>		FunctionCountEqual;
+using FunctionHas = FunctionArrayIndex<IndexToOne, 		NameHas>	;
+using FunctionIndexOf = FunctionArrayIndex<IndexIdentity, 	NameIndexOf>;
+using FunctionCountEqual = FunctionArrayIndex<IndexCount, 	NameCountEqual>	;
 
 using FunctionEmptyArrayUInt8 = FunctionEmptyArray<DataTypeUInt8>;
 using FunctionEmptyArrayUInt16 = FunctionEmptyArray<DataTypeUInt16>;

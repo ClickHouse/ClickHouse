@@ -149,8 +149,8 @@ struct SEHierarchyImpl
   */
 struct RegionsHierarchyGetter
 {
-	typedef RegionsHierarchies Src;
-	typedef RegionsHierarchy Dst;
+	using Src = RegionsHierarchies;
+	using Dst = RegionsHierarchy;
 
 	static const Dst & get(const Src & src, const std::string & key)
 	{
@@ -163,8 +163,8 @@ struct RegionsHierarchyGetter
 template <typename Dict>
 struct IdentityDictionaryGetter
 {
-	typedef Dict Src;
-	typedef Dict Dst;
+	using Src = Dict;
+	using Dst = Dict;
 
 	static const Dst & get(const Src & src, const std::string & key)
 	{

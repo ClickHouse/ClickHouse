@@ -299,7 +299,7 @@ private:
 		}
 	};
 
-	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
+	using FileStreams = std::map<std::string, std::unique_ptr<Stream> >;
 
 	/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
 	ValueSizeMap avg_value_size_hints;

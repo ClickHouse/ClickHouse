@@ -46,7 +46,7 @@ POCO_DECLARE_EXCEPTION(Foundation_API, JSONException, Poco::Exception);
 class JSON
 {
 private:
-	typedef const char * Pos;
+	using Pos = const char *;
 	Pos ptr_begin;
 	Pos ptr_end;
 	unsigned level;
@@ -138,8 +138,8 @@ public:
 	std::string toString() const PURE;
 
 	/// Класс JSON одновременно является итератором по самому себе.
-	typedef JSON iterator;
-	typedef JSON const_iterator;
+	using iterator = JSON;
+	using const_iterator = JSON;
 	
 	iterator operator* () const PURE { return *this; }
 	const JSON * operator-> () const PURE { return this; }

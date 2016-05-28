@@ -1671,21 +1671,21 @@ struct NameSubstringUTF8	{ static constexpr auto name = "substringUTF8"; };
 struct NameConcat			{ static constexpr auto name = "concat"; };
 struct NameConcatAssumeInjective	{ static constexpr auto name = "concatAssumeInjective"; };
 
-typedef FunctionStringOrArrayToT<EmptyImpl<false>,		NameEmpty,		UInt8> 	FunctionEmpty;
-typedef FunctionStringOrArrayToT<EmptyImpl<true>, 		NameNotEmpty,	UInt8> 	FunctionNotEmpty;
-typedef FunctionStringOrArrayToT<LengthImpl, 			NameLength,		UInt64> FunctionLength;
-typedef FunctionStringOrArrayToT<LengthUTF8Impl, 		NameLengthUTF8,	UInt64> FunctionLengthUTF8;
-typedef FunctionStringToString<LowerUpperImpl<'A', 'Z'>, NameLower>	FunctionLower;
-typedef FunctionStringToString<LowerUpperImpl<'a', 'z'>, NameUpper>	FunctionUpper;
+using FunctionEmpty = FunctionStringOrArrayToT<EmptyImpl<false>,		NameEmpty,		UInt8> ;
+using FunctionNotEmpty = FunctionStringOrArrayToT<EmptyImpl<true>, 		NameNotEmpty,	UInt8> ;
+using FunctionLength = FunctionStringOrArrayToT<LengthImpl, 			NameLength,		UInt64>;
+using FunctionLengthUTF8 = FunctionStringOrArrayToT<LengthUTF8Impl, 		NameLengthUTF8,	UInt64>;
+using FunctionLower = FunctionStringToString<LowerUpperImpl<'A', 'Z'>, NameLower>;
+using FunctionUpper = FunctionStringToString<LowerUpperImpl<'a', 'z'>, NameUpper>;
 typedef FunctionStringToString<
 	LowerUpperUTF8Impl<'A', 'Z', Poco::Unicode::toLower, UTF8CyrillicToCase<true>>,
 	NameLowerUTF8>	FunctionLowerUTF8;
 typedef FunctionStringToString<
 	LowerUpperUTF8Impl<'a', 'z', Poco::Unicode::toUpper, UTF8CyrillicToCase<false>>,
 	NameUpperUTF8>	FunctionUpperUTF8;
-typedef FunctionStringToString<ReverseUTF8Impl,			NameReverseUTF8>		FunctionReverseUTF8;
-typedef FunctionStringNumNumToString<SubstringImpl,		NameSubstring>			FunctionSubstring;
-typedef FunctionStringNumNumToString<SubstringUTF8Impl,	NameSubstringUTF8>		FunctionSubstringUTF8;
+using FunctionReverseUTF8 = FunctionStringToString<ReverseUTF8Impl,			NameReverseUTF8>	;
+using FunctionSubstring = FunctionStringNumNumToString<SubstringImpl,		NameSubstring>		;
+using FunctionSubstringUTF8 = FunctionStringNumNumToString<SubstringUTF8Impl,	NameSubstringUTF8>	;
 using FunctionConcat = ConcatImpl<NameConcat>;
 using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective>;
 

@@ -22,7 +22,7 @@ struct DataTypeFromFieldType;
 																					\
 	template <> struct DataTypeFromFieldType<TYPE>									\
 	{																				\
-		typedef DataType ## TYPE Type;												\
+		using Type = DataType ## TYPE;												\
 	};
 
 DEFINE_DATA_TYPE_NUMBER_FIXED(UInt8);
@@ -50,7 +50,7 @@ public:
 
 template <> struct DataTypeFromFieldType<void>
 {
-	typedef DataTypeVoid Type;
+	using Type = DataTypeVoid;
 };
 
 }

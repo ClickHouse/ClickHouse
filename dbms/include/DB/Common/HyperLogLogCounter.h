@@ -53,10 +53,10 @@ private:
 };
 
 template<UInt8 K> struct MinCounterTypeHelper;
-template<> struct MinCounterTypeHelper<0>	{ typedef UInt8 Type; };
-template<> struct MinCounterTypeHelper<1>	{ typedef UInt16 Type; };
-template<> struct MinCounterTypeHelper<2>	{ typedef UInt32 Type; };
-template<> struct MinCounterTypeHelper<3>	{ typedef UInt64 Type; };
+template<> struct MinCounterTypeHelper<0>	{ using Type = UInt8; };
+template<> struct MinCounterTypeHelper<1>	{ using Type = UInt16; };
+template<> struct MinCounterTypeHelper<2>	{ using Type = UInt32; };
+template<> struct MinCounterTypeHelper<3>	{ using Type = UInt64; };
 
 /// Вспомогательная структура для автоматического определения
 /// минимального размера типа счетчика в зависимости от максимального значения.

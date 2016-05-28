@@ -64,9 +64,9 @@ protected:
 };
 
 /** Имя и тип через пробел. Например, URL String. */
-typedef IParserNameTypePair<ParserIdentifier> ParserNameTypePair;
+using ParserNameTypePair = IParserNameTypePair<ParserIdentifier>;
 /** Имя и тип через пробел. Имя может содержать точку. Например, Hits.URL String. */
-typedef IParserNameTypePair<ParserCompoundIdentifier> ParserCompoundNameTypePair;
+using ParserCompoundNameTypePair = IParserNameTypePair<ParserCompoundIdentifier>;
 
 template <class NameParser>
 bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
@@ -110,8 +110,8 @@ protected:
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
-typedef IParserColumnDeclaration<ParserIdentifier> ParserColumnDeclaration;
-typedef IParserColumnDeclaration<ParserCompoundIdentifier> ParserCompoundColumnDeclaration;
+using ParserColumnDeclaration = IParserColumnDeclaration<ParserIdentifier>;
+using ParserCompoundColumnDeclaration = IParserColumnDeclaration<ParserCompoundIdentifier>;
 
 template <class NameParser>
 bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)

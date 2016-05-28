@@ -472,7 +472,7 @@ private:
 	MergeTreeData::DataPart::Index index_columns;
 };
 
-typedef Poco::SharedPtr<MergedBlockOutputStream> MergedBlockOutputStreamPtr;
+using MergedBlockOutputStreamPtr = Poco::SharedPtr<MergedBlockOutputStream>;
 
 /// Записывает только те, столбцы, что лежат в block
 class MergedColumnOnlyOutputStream : public IMergedBlockOutputStream

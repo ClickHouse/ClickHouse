@@ -1148,7 +1148,7 @@ int main(int argc, char ** argv)
 	
 	try
 	{
-		typedef UInt8 T;
+		using T = UInt8;
 		
 		size_t n = atoi(argv[1]);
 		std::vector<T> data(n);

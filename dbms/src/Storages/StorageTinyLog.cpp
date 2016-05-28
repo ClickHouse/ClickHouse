@@ -73,7 +73,7 @@ private:
 		CompressedReadBuffer compressed;
 	};
 
-	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
+	using FileStreams = std::map<std::string, std::unique_ptr<Stream> >;
 	FileStreams streams;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
@@ -128,10 +128,10 @@ private:
 		}
 	};
 
-	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
+	using FileStreams = std::map<std::string, std::unique_ptr<Stream> >;
 	FileStreams streams;
 
-	typedef std::set<std::string> OffsetColumns;
+	using OffsetColumns = std::set<std::string>;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
 	void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns, size_t level = 0);
@@ -178,7 +178,7 @@ Block TinyLogBlockInputStream::readImpl()
 			addStream(*it, *storage.getDataTypeByName(*it));
 
 	/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
-	typedef std::map<std::string, ColumnPtr> OffsetColumns;
+	using OffsetColumns = std::map<std::string, ColumnPtr>;
 	OffsetColumns offset_columns;
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)

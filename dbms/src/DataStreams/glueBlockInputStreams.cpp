@@ -7,8 +7,8 @@ namespace DB
 {
 
 
-typedef std::map<String, BlockInputStreams> IDsMap;
-typedef std::map<String, ForkPtr> ForksMap;
+using IDsMap = std::map<String, BlockInputStreams>;
+using ForksMap = std::map<String, ForkPtr>;
 
 
 static void createIDsMap(BlockInputStreamPtr & node, IDsMap & ids_map)

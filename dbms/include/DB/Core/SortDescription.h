@@ -38,7 +38,7 @@ struct SortColumnDescription
 };
 
 /// Описание правила сортировки по нескольким столбцам.
-typedef std::vector<SortColumnDescription> SortDescription;
+using SortDescription = std::vector<SortColumnDescription>;
 
 
 /** Курсор, позволяющий сравнивать соответствующие строки в разных блоках.
@@ -59,7 +59,7 @@ struct SortCursorImpl
 	  */
 	size_t order;
 
-	typedef std::vector<UInt8> NeedCollationFlags;
+	using NeedCollationFlags = std::vector<UInt8>;
 
 	/** Нужно ли использовать Collator для сортировки столбца */
 	NeedCollationFlags need_collation;

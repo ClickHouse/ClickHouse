@@ -82,9 +82,9 @@ void set(T & x) { x = 0; }
 template <typename Key, typename Hash, typename TState = HashTableNoState>
 struct HashTableCell
 {
-	typedef TState State;
+	using State = TState;
 
-	typedef Key value_type;
+	using value_type = Key;
 	Key key;
 
 	HashTableCell() {}
@@ -263,9 +263,9 @@ protected:
 	template <typename, typename, typename, typename, typename, typename, size_t>
 	friend class TwoLevelHashTable;
 
-	typedef size_t HashValue;
-	typedef HashTable<Key, Cell, Hash, Grower, Allocator> Self;
-	typedef Cell cell_type;
+	using HashValue = size_t;
+	using Self = HashTable<Key, Cell, Hash, Grower, Allocator>;
+	using cell_type = Cell;
 
 	size_t m_size = 0;		/// Количество элементов
 	Cell * buf;				/// Кусок памяти для всех элементов кроме элемента с ключём 0.
@@ -419,8 +419,8 @@ protected:
 
 
 public:
-	typedef Key key_type;
-	typedef typename Cell::value_type value_type;
+	using key_type = Key;
+	using value_type = typename Cell::value_type;
 
 	size_t hash(const Key & x) const { return Hash::operator()(x); }
 

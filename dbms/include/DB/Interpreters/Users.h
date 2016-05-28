@@ -224,7 +224,7 @@ public:
 class AddressPatterns
 {
 private:
-	typedef std::vector<std::unique_ptr<IAddressPattern>> Container;
+	using Container = std::vector<std::unique_ptr<IAddressPattern>>;
 	Container patterns;
 
 public:
@@ -352,7 +352,7 @@ struct User
 class Users
 {
 private:
-	typedef std::map<String, User> Container;
+	using Container = std::map<String, User>;
 	Container cont;
 
 public:

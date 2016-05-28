@@ -52,12 +52,12 @@ ConfigProcessor::ConfigProcessor(bool throw_on_bad_incl_, bool log_to_console, c
 
 /// Вектор из имени элемента и отсортированного списка имен и значений атрибутов (кроме атрибутов replace и remove).
 /// Взаимно однозначно задает имя элемента и список его атрибутов. Нужен, чтобы сравнивать элементы.
-typedef std::vector<std::string> ElementIdentifier;
+using ElementIdentifier = std::vector<std::string>;
 
-typedef Poco::AutoPtr<Poco::XML::NamedNodeMap> NamedNodeMapPtr;
+using NamedNodeMapPtr = Poco::AutoPtr<Poco::XML::NamedNodeMap>;
 /// NOTE Можно избавиться от использования Node.childNodes() и итерации по полученному списку, потому что
 ///  доступ к i-му элементу этого списка работает за O(i).
-typedef Poco::AutoPtr<Poco::XML::NodeList> NodeListPtr;
+using NodeListPtr = Poco::AutoPtr<Poco::XML::NodeList>;
 
 static ElementIdentifier getElementIdentifier(Node * element)
 {
@@ -107,7 +107,7 @@ static bool allWhitespace(const std::string & s)
 void ConfigProcessor::mergeRecursive(DocumentPtr config, Node * config_root, Node * with_root)
 {
 	NodeListPtr with_nodes = with_root->childNodes();
-	typedef std::multimap<ElementIdentifier, Node *> ElementsByIdentifier;
+	using ElementsByIdentifier = std::multimap<ElementIdentifier, Node *>;
 	ElementsByIdentifier config_element_by_id;
 	for (Node * node = config_root->firstChild(); node;)
 	{

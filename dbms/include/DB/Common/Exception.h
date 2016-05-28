@@ -67,7 +67,7 @@ private:
 };
 
 
-typedef std::vector<std::exception_ptr> Exceptions;
+using Exceptions = std::vector<std::exception_ptr>;
 
 
 void throwFromErrno(const std::string & s, int code = 0, int the_errno = errno);

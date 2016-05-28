@@ -394,7 +394,7 @@ struct CRC32ILPHash
 #endif
 
 
-typedef UInt64 Value;
+using Value = UInt64;
 
 
 template <typename Key, typename Hash>
@@ -402,7 +402,7 @@ void NO_INLINE bench(const std::vector<StringRef> & data, const char * name)
 {
 	Stopwatch watch;
 
-	typedef HashMapWithSavedHash<Key, Value, Hash> Map;
+	using Map = HashMapWithSavedHash<Key, Value, Hash>;
 
 	Map map;
 	typename Map::iterator it;

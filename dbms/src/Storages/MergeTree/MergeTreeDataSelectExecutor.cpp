@@ -232,7 +232,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	/// Семплирование.
 	Names column_names_to_read = real_column_names;
-	typedef Poco::SharedPtr<ASTFunction> ASTFunctionPtr;
+	using ASTFunctionPtr = Poco::SharedPtr<ASTFunction>;
 	ASTFunctionPtr filter_function;
 	ExpressionActionsPtr filter_expression;
 

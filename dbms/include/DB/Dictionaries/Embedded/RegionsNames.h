@@ -63,13 +63,13 @@ private:
 		return language_aliases;
 	}
 
-	typedef int RegionID_t;
+	using RegionID_t = int;
 
-	typedef std::vector<char> Chars_t;
-	typedef std::vector<Chars_t> CharsForLanguageID_t;
-	typedef std::vector<time_t> ModificationTimes_t;
-	typedef std::vector<StringRef> StringRefs_t; /// Lookup table RegionID -> StringRef
-	typedef std::vector<StringRefs_t> StringRefsForLanguageID_t;
+	using Chars_t = std::vector<char>;
+	using CharsForLanguageID_t = std::vector<Chars_t>;
+	using ModificationTimes_t = std::vector<time_t>;
+	using StringRefs_t = std::vector<StringRef>; /// Lookup table RegionID -> StringRef
+	using StringRefsForLanguageID_t = std::vector<StringRefs_t>;
 
 public:
 	static constexpr auto required_key = "path_to_regions_names_files";

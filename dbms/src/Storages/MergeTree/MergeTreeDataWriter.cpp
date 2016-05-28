@@ -44,7 +44,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 	}
 
 	/// Разделяем на блоки по месяцам. Для каждого ещё посчитаем минимальную и максимальную дату.
-	typedef std::map<UInt16, BlockWithDateInterval *> BlocksByMonth;
+	using BlocksByMonth = std::map<UInt16, BlockWithDateInterval *>;
 	BlocksByMonth blocks_by_month;
 
 	for (size_t i = 0; i < rows; ++i)

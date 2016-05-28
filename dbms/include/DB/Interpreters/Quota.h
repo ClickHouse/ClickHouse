@@ -118,7 +118,7 @@ class QuotaForIntervals
 {
 private:
 	/// При проверке, будем обходить интервалы в порядке, обратном величине - от самого большого до самого маленького.
-	typedef std::map<size_t, QuotaForInterval> Container;
+	using Container = std::map<size_t, QuotaForInterval>;
 	Container cont;
 
 	std::string name;
@@ -156,13 +156,13 @@ public:
 	}
 };
 
-typedef std::shared_ptr<QuotaForIntervals> QuotaForIntervalsPtr;
+using QuotaForIntervalsPtr = std::shared_ptr<QuotaForIntervals>;
 
 
 /// Ключ квоты -> квоты за интервалы. Если квота не допускает ключей, то накопленные значения хранятся по ключу 0.
 struct Quota
 {
-	typedef std::unordered_map<UInt64, QuotaForIntervalsPtr> Container;
+	using Container = std::unordered_map<UInt64, QuotaForIntervalsPtr>;
 
 	String name;
 
@@ -187,7 +187,7 @@ class Quotas
 {
 private:
 	/// Имя квоты -> квоты.
-	typedef std::unordered_map<String, std::unique_ptr<Quota>> Container;
+	using Container = std::unordered_map<String, std::unique_ptr<Quota>>;
 	Container cont;
 
 public:

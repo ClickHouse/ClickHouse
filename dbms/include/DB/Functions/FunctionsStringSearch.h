@@ -510,7 +510,7 @@ namespace Regexps
 template <bool like, bool revert = false>
 struct MatchImpl
 {
-	typedef UInt8 ResultType;
+	using ResultType = UInt8;
 
 	static void vector_constant(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		const std::string & pattern,
@@ -724,7 +724,7 @@ struct ReplaceRegexpImpl
 	/// Последовательность инструкций, описывает как получить конечную строку. Каждый элемент
 	/// либо подстановка, тогда первое число в паре ее id,
 	/// либо строка, которую необходимо вставить, записана второй в паре. (id = -1)
-	typedef std::vector< std::pair<int, std::string> > Instructions;
+	using Instructions = std::vector< std::pair<int, std::string> >;
 
 	static void split(const std::string & s, Instructions & instructions)
 	{
@@ -1278,7 +1278,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		typedef typename Impl::ResultType ResultType;
+		using ResultType = typename Impl::ResultType;
 
 		const ColumnPtr & column_haystack = block.getByPosition(arguments[0]).column;
 		const ColumnPtr & column_needle = block.getByPosition(arguments[1]).column;
@@ -1418,18 +1418,18 @@ struct NameReplaceAll					{ static constexpr auto name = "replaceAll"; };
 struct NameReplaceRegexpOne				{ static constexpr auto name = "replaceRegexpOne"; };
 struct NameReplaceRegexpAll				{ static constexpr auto name = "replaceRegexpAll"; };
 
-typedef FunctionsStringSearch<PositionImpl<PositionCaseSensitiveASCII>, NamePosition> 						FunctionPosition;
-typedef FunctionsStringSearch<PositionImpl<PositionCaseSensitiveUTF8>, NamePositionUTF8> 					FunctionPositionUTF8;
-typedef FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveASCII>, NamePositionCaseInsensitive> 		FunctionPositionCaseInsensitive;
-typedef FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveUTF8>, NamePositionCaseInsensitiveUTF8>	FunctionPositionCaseInsensitiveUTF8;
+using FunctionPosition = FunctionsStringSearch<PositionImpl<PositionCaseSensitiveASCII>, NamePosition> 					;
+using FunctionPositionUTF8 = FunctionsStringSearch<PositionImpl<PositionCaseSensitiveUTF8>, NamePositionUTF8> 				;
+using FunctionPositionCaseInsensitive = FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveASCII>, NamePositionCaseInsensitive> 	;
+using FunctionPositionCaseInsensitiveUTF8 = FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveUTF8>, NamePositionCaseInsensitiveUTF8>;
 
-typedef FunctionsStringSearch<MatchImpl<false>, 				NameMatch> 							FunctionMatch;
-typedef FunctionsStringSearch<MatchImpl<true>, 					NameLike> 							FunctionLike;
-typedef FunctionsStringSearch<MatchImpl<true, true>, 			NameNotLike> 						FunctionNotLike;
-typedef FunctionsStringSearchToString<ExtractImpl, 				NameExtract> 						FunctionExtract;
-typedef FunctionStringReplace<ReplaceStringImpl<true>,			NameReplaceOne>						FunctionReplaceOne;
-typedef FunctionStringReplace<ReplaceStringImpl<false>,			NameReplaceAll>						FunctionReplaceAll;
-typedef FunctionStringReplace<ReplaceRegexpImpl<true>,			NameReplaceRegexpOne>				FunctionReplaceRegexpOne;
-typedef FunctionStringReplace<ReplaceRegexpImpl<false>,			NameReplaceRegexpAll>				FunctionReplaceRegexpAll;
+using FunctionMatch = FunctionsStringSearch<MatchImpl<false>, 				NameMatch> 						;
+using FunctionLike = FunctionsStringSearch<MatchImpl<true>, 					NameLike> 						;
+using FunctionNotLike = FunctionsStringSearch<MatchImpl<true, true>, 			NameNotLike> 					;
+using FunctionExtract = FunctionsStringSearchToString<ExtractImpl, 				NameExtract> 					;
+using FunctionReplaceOne = FunctionStringReplace<ReplaceStringImpl<true>,			NameReplaceOne>					;
+using FunctionReplaceAll = FunctionStringReplace<ReplaceStringImpl<false>,			NameReplaceAll>					;
+using FunctionReplaceRegexpOne = FunctionStringReplace<ReplaceRegexpImpl<true>,			NameReplaceRegexpOne>			;
+using FunctionReplaceRegexpAll = FunctionStringReplace<ReplaceRegexpImpl<false>,			NameReplaceRegexpAll>			;
 
 }

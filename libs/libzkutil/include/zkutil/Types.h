@@ -10,8 +10,8 @@
 
 namespace zkutil
 {
-typedef const ACL_vector * ACLPtr;
-typedef Stat Stat;
+using ACLPtr = const ACL_vector *;
+using Stat = Stat;
 
 struct Op
 {
@@ -84,10 +84,10 @@ struct OpResult : public zoo_op_result_t
 	/// Поэтому деструктор не нужен
 };
 
-typedef boost::ptr_vector<Op> Ops;
-typedef std::vector<OpResult> OpResults;
-typedef std::shared_ptr<OpResults> OpResultsPtr;
-typedef std::vector<std::string> Strings;
+using Ops = boost::ptr_vector<Op>;
+using OpResults = std::vector<OpResult>;
+using OpResultsPtr = std::shared_ptr<OpResults>;
+using Strings = std::vector<std::string>;
 
 namespace CreateMode
 {
@@ -97,6 +97,6 @@ namespace CreateMode
 	extern const int PersistentSequential;
 }
 
-typedef Poco::SharedPtr<Poco::Event> EventPtr;
+using EventPtr = Poco::SharedPtr<Poco::Event>;
 
 }

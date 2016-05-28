@@ -829,7 +829,7 @@ private:
 	{
 		if (typeid_cast<const T1 *>(&*arguments[2]))
 		{
-			typedef typename NumberTraits::ResultOfIf<typename T0::FieldType, typename T1::FieldType>::Type ResultType;
+			using ResultType = typename NumberTraits::ResultOfIf<typename T0::FieldType, typename T1::FieldType>::Type;
 			type_res = DataTypeTraits::DataTypeFromFieldTypeOrError<ResultType>::getDataType();
 			if (!type_res)
 				throw Exception("Arguments 2 and 3 of function " + getName() + " are not upscalable to a common type without loss of precision: "
@@ -876,7 +876,7 @@ private:
 		if (!col_right_vec && !col_right_const)
 			return false;
 
-		typedef typename NumberTraits::ResultOfIf<T0, T1>::Type ResultType;
+		using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
 		if (col_right_vec)
 			NumIfImpl<T0, T1, ResultType>::vector_vector(cond_col->getData(), col_left->getData(), col_right_vec->getData(), block, result);
@@ -900,7 +900,7 @@ private:
 		if (!col_right_vec && !col_right_const)
 			return false;
 
-		typedef typename NumberTraits::ResultOfIf<T0, T1>::Type ResultType;
+		using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
 		if (col_right_vec)
 			NumIfImpl<T0, T1, ResultType>::constant_vector(cond_col->getData(), col_left->getData(), col_right_vec->getData(), block, result);
@@ -927,7 +927,7 @@ private:
 		if (!col_right_array && !col_right_const_array)
 			return false;
 
-		typedef typename NumberTraits::ResultOfIf<T0, T1>::Type ResultType;
+		using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
 		if (col_right_array)
 		{
@@ -974,7 +974,7 @@ private:
 		if (!col_right_array && !col_right_const_array)
 			return false;
 
-		typedef typename NumberTraits::ResultOfIf<T0, T1>::Type ResultType;
+		using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
 		if (col_right_array)
 		{

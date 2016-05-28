@@ -112,7 +112,7 @@ struct QueryParseResult
 class QueryParser
 {
 private:
-	typedef std::pair<std::string, unsigned> AttributeWithParameter;
+	using AttributeWithParameter = std::pair<std::string, unsigned>;
 	AttributeWithParameter parseAttributeWithParameter(const std::string & s);
 	time_t getLastDate();
 	

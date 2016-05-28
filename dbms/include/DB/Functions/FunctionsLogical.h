@@ -72,7 +72,7 @@ struct XorImpl
 template<typename A>
 struct NotImpl
 {
-	typedef UInt8 ResultType;
+	using ResultType = UInt8;
 
 	static inline UInt8 apply(A a)
 	{
@@ -81,8 +81,8 @@ struct NotImpl
 };
 
 
-typedef ColumnUInt8::Container_t UInt8Container;
-typedef std::vector<const ColumnUInt8 *> UInt8ColumnPtrs;
+using UInt8Container = ColumnUInt8::Container_t;
+using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
 
 
 template <typename Op, size_t N>
@@ -443,9 +443,9 @@ struct NameOr	{ static constexpr auto name = "or"; };
 struct NameXor	{ static constexpr auto name = "xor"; };
 struct NameNot	{ static constexpr auto name = "not"; };
 
-typedef FunctionAnyArityLogical	<AndImpl,	NameAnd>	FunctionAnd;
-typedef FunctionAnyArityLogical	<OrImpl,	NameOr>		FunctionOr;
-typedef FunctionAnyArityLogical	<XorImpl,	NameXor>	FunctionXor;
-typedef FunctionUnaryLogical	<NotImpl,	NameNot>	FunctionNot;
+using FunctionAnd = FunctionAnyArityLogical	<AndImpl,	NameAnd>;
+using FunctionOr = FunctionAnyArityLogical	<OrImpl,	NameOr>	;
+using FunctionXor = FunctionAnyArityLogical	<XorImpl,	NameXor>;
+using FunctionNot = FunctionUnaryLogical	<NotImpl,	NameNot>;
 
 }

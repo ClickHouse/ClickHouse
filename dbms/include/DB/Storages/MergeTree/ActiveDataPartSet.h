@@ -77,7 +77,7 @@ public:
 	static bool contains(const String & outer_part_name, const String & inner_part_name);
 
 private:
-	typedef std::set<Part> Parts;
+	using Parts = std::set<Part>;
 
 	mutable std::mutex mutex;
 	Parts parts;

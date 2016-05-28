@@ -123,7 +123,7 @@ public:
 	Client() {}
 
 private:
-	typedef std::unordered_set<String> StringSet;
+	using StringSet = std::unordered_set<String>;
 	StringSet exit_strings {
 		"exit", "quit", "logout",
 		"учше", "йгше", "дщпщге",

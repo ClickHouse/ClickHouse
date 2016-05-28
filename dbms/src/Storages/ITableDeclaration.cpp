@@ -133,7 +133,7 @@ static std::string listOfColumns(const NamesAndTypesList & available_columns)
 }
 
 
-typedef google::dense_hash_map<StringRef, const IDataType *, StringRefHash> NamesAndTypesMap;
+using NamesAndTypesMap = google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
 
 static NamesAndTypesMap & getColumnsMapImpl(NamesAndTypesMap & res) { return res; }
 
@@ -168,7 +168,7 @@ void ITableDeclaration::check(const Names & column_names) const
 
 	const auto columns_map = getColumnsMap(available_columns);
 
-	typedef google::dense_hash_set<StringRef, StringRefHash> UniqueStrings;
+	using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
 	UniqueStrings unique_names;
 	unique_names.set_empty_key(StringRef());
 
@@ -191,7 +191,7 @@ void ITableDeclaration::check(const NamesAndTypesList & columns) const
 	const NamesAndTypesList & available_columns = getColumnsList();
 	const auto columns_map = getColumnsMap(available_columns);
 
-	typedef google::dense_hash_set<StringRef, StringRefHash> UniqueStrings;
+	using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
 	UniqueStrings unique_names;
 	unique_names.set_empty_key(StringRef());
 
@@ -224,7 +224,7 @@ void ITableDeclaration::check(const NamesAndTypesList & columns, const Names & c
 		throw Exception("Empty list of columns queried. There are columns: " + listOfColumns(available_columns),
 			ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
 
-	typedef google::dense_hash_set<StringRef, StringRefHash> UniqueStrings;
+	using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
 	UniqueStrings unique_names;
 	unique_names.set_empty_key(StringRef());
 
@@ -256,7 +256,7 @@ void ITableDeclaration::check(const Block & block, bool need_all) const
 	const NamesAndTypesList & available_columns = getColumnsList();
 	const auto columns_map = getColumnsMap(available_columns);
 
-	typedef std::unordered_set<String> NameSet;
+	using NameSet = std::unordered_set<String>;
 	NameSet names_in_block;
 
 	for (size_t i = 0; i < block.columns(); ++i)

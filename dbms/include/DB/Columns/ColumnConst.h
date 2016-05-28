@@ -81,8 +81,8 @@ protected:
 		: s(s_), data(data_), data_type(data_type_) {}
 
 public:
-	typedef T Type;
-	typedef typename NearestFieldType<T>::Type FieldType;
+	using Type = T;
+	using FieldType = typename NearestFieldType<T>::Type;
 
 	std::string getName() const override { return "ColumnConst<" + TypeName<T>::get() + ">"; }
 	bool isNumeric() const override { return IsNumber<T>::value; }
@@ -297,9 +297,9 @@ public:
 };
 
 
-typedef ColumnConst<String> ColumnConstString;
-typedef ColumnConst<Array> ColumnConstArray;
-typedef ColumnConst<Tuple> ColumnConstTuple;
+using ColumnConstString = ColumnConst<String>;
+using ColumnConstArray = ColumnConst<Array>;
+using ColumnConstTuple = ColumnConst<Tuple>;
 
 
 template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const
