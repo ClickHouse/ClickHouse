@@ -1,9 +1,6 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Poco/SharedPtr.h>
-#include <Poco/Stopwatch.h>
-
 #include <DB/IO/WriteBufferFromOStream.h>
 
 #include <DB/Storages/StorageLog.h>
@@ -29,16 +26,13 @@
 #include <DB/Interpreters/ExpressionActions.h>
 
 
-using Poco::SharedPtr;
-
-
 int main(int argc, char ** argv)
 {
 	using namespace DB;
 
 	try
 	{
-		NamesAndTypesListPtr names_and_types_list = new NamesAndTypesList
+		NamesAndTypesList names_and_types_list
 		{
 			{"WatchID",				std::make_shared<DataTypeUInt64>()},
 			{"JavaEnable",			std::make_shared<DataTypeUInt8>()},

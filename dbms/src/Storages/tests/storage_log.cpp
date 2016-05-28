@@ -1,7 +1,5 @@
 #include <iostream>
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/Storages/StorageLog.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
@@ -12,91 +10,89 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Interpreters/Context.h>
 
-using Poco::SharedPtr;
-
 
 int main(int argc, char ** argv)
+try
 {
-	try
+	using namespace DB;
+
+	const size_t rows = 10000000;
+
+	/// создаём таблицу с парой столбцов
+
+	NamesAndTypesListPtr names_and_types = std::make_shared<NamesAndTypesList>();
+	names_and_types->push_back(NameAndTypePair("a", std::make_shared<DataTypeUInt64>()));
+	names_and_types->push_back(NameAndTypePair("b", std::make_shared<DataTypeUInt8>()));
+
+	StoragePtr table = StorageLog::create("./", "test", names_and_types);
+
+	/// пишем в неё
 	{
-		const size_t rows = 10000000;
+		Block block;
 
-		/// создаём таблицу с парой столбцов
+		ColumnWithTypeAndName column1;
+		column1.name = "a";
+		column1.type = table->getDataTypeByName("a");
+		column1.column = column1.type->createColumn();
+		ColumnUInt64::Container_t & vec1 = typeid_cast<ColumnUInt64&>(*column1.column).getData();
 
-		DB::NamesAndTypesListPtr names_and_types = new DB::NamesAndTypesList;
-		names_and_types->push_back(DB::NameAndTypePair("a", new DB::DataTypeUInt64));
-		names_and_types->push_back(DB::NameAndTypePair("b", new DB::DataTypeUInt8));
+		vec1.resize(rows);
+		for (size_t i = 0; i < rows; ++i)
+			vec1[i] = i;
 
-		DB::StoragePtr table = DB::StorageLog::create("./", "test", names_and_types);
+		block.insert(column1);
 
-		/// пишем в неё
-		{
-			DB::Block block;
+		ColumnWithTypeAndName column2;
+		column2.name = "b";
+		column2.type = table->getDataTypeByName("b");
+		column2.column = column2.type->createColumn();
+		ColumnUInt8::Container_t & vec2 = typeid_cast<ColumnUInt8&>(*column2.column).getData();
 
-			DB::ColumnWithTypeAndName column1;
-			column1.name = "a";
-			column1.type = table->getDataTypeByName("a");
-			column1.column = column1.type->createColumn();
-			DB::ColumnUInt64::Container_t & vec1 = typeid_cast<DB::ColumnUInt64&>(*column1.column).getData();
+		vec2.resize(rows);
+		for (size_t i = 0; i < rows; ++i)
+			vec2[i] = i * 2;
 
-			vec1.resize(rows);
-			for (size_t i = 0; i < rows; ++i)
-				vec1[i] = i;
+		block.insert(column2);
 
-			block.insert(column1);
-
-			DB::ColumnWithTypeAndName column2;
-			column2.name = "b";
-			column2.type = table->getDataTypeByName("b");
-			column2.column = column2.type->createColumn();
-			DB::ColumnUInt8::Container_t & vec2 = typeid_cast<DB::ColumnUInt8&>(*column2.column).getData();
-
-			vec2.resize(rows);
-			for (size_t i = 0; i < rows; ++i)
-				vec2[i] = i * 2;
-
-			block.insert(column2);
-
-			SharedPtr<DB::IBlockOutputStream> out = table->write({}, {});
-			out->write(block);
-		}
-
-		/// читаем из неё
-		{
-			DB::Names column_names;
-			column_names.push_back("a");
-			column_names.push_back("b");
-
-			DB::QueryProcessingStage::Enum stage;
-
-			SharedPtr<DB::IBlockInputStream> in = table->read(column_names, 0, DB::Context{}, DB::Settings(), stage)[0];
-
-			DB::Block sample;
-			{
-				DB::ColumnWithTypeAndName col;
-				col.type = new DB::DataTypeUInt64;
-				sample.insert(col);
-			}
-			{
-				DB::ColumnWithTypeAndName col;
-				col.type = new DB::DataTypeUInt8;
-				sample.insert(col);
-			}
-
-			DB::WriteBufferFromOStream out_buf(std::cout);
-
-			DB::LimitBlockInputStream in_limit(in, 10, 0);
-			DB::RowOutputStreamPtr output_ = new DB::TabSeparatedRowOutputStream(out_buf, sample);
-			DB::BlockOutputStreamFromRowOutputStream output(output_);
-
-			DB::copyData(in_limit, output);
-		}
+		SharedPtr<IBlockOutputStream> out = table->write({}, {});
+		out->write(block);
 	}
-	catch (const DB::Exception & e)
+
+	/// читаем из неё
 	{
-		std::cerr << e.what() << ", " << e.displayText() << std::endl;
-		return 1;
+		Names column_names;
+		column_names.push_back("a");
+		column_names.push_back("b");
+
+		QueryProcessingStage::Enum stage;
+
+		SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Context{}, Settings(), stage)[0];
+
+		Block sample;
+		{
+			ColumnWithTypeAndName col;
+			col.type = std::make_shared<DataTypeUInt64>();
+			sample.insert(col);
+		}
+		{
+			ColumnWithTypeAndName col;
+			col.type = std::make_shared<DataTypeUInt8>();
+			sample.insert(col);
+		}
+
+		WriteBufferFromOStream out_buf(std::cout);
+
+		LimitBlockInputStream in_limit(in, 10, 0);
+		RowOutputStreamPtr output_ = new TabSeparatedRowOutputStream(out_buf, sample);
+		BlockOutputStreamFromRowOutputStream output(output_);
+
+		copyData(in_limit, output);
 	}
 
 	return 0;
+}
+catch (const DB::Exception & e)
+{
+	std::cerr << e.what() << ", " << e.displayText() << std::endl;
+	return 1;
 }

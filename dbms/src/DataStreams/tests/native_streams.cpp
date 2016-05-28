@@ -3,8 +3,6 @@
 #include <iostream>
 #include <fstream>
 
-#include <Poco/Stopwatch.h>
-
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/CompressedReadBuffer.h>
@@ -97,7 +95,7 @@ try
 
 	/// создаём объект существующей таблицы хит лога
 
-	StoragePtr table = StorageLog::create("./", "HitLog", names_and_types_list);
+	StoragePtr table = StorageLog::create("./", "HitLog", std::make_shared<NamesAndTypesList>(names_and_types_list));
 
 	/// читаем из неё
 	if (argc == 2 && 0 == strcmp(argv[1], "read"))

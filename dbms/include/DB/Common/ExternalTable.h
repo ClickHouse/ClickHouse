@@ -190,7 +190,7 @@ public:
 		ExternalTableData data = getData(context);
 
 		/// Создаем таблицу
-		NamesAndTypesListPtr columns = new NamesAndTypesList(sample_block.getColumnsList());
+		NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(sample_block.getColumnsList());
 		StoragePtr storage = StorageMemory::create(data.second, columns);
 		context.addExternalTable(data.second, storage);
 		BlockOutputStreamPtr output = storage->write(ASTPtr(), context.getSettingsRef());

@@ -1,9 +1,6 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Poco/SharedPtr.h>
-#include <Poco/Stopwatch.h>
-
 #include <DB/IO/WriteBufferFromOStream.h>
 
 #include <DB/Storages/System/StorageSystemNumbers.h>
@@ -65,15 +62,15 @@ int main(int argc, char ** argv)
 		BlockOutputStreamFromRowOutputStream out(out2);
 
 		{
-			Poco::Stopwatch stopwatch;
+			Stopwatch stopwatch;
 			stopwatch.start();
 
 			copyData(*in, out);
 
 			stopwatch.stop();
 			std::cout << std::fixed << std::setprecision(2)
-				<< "Elapsed " << stopwatch.elapsed() / 1000000.0 << " sec."
-				<< ", " << n * 1000000 / stopwatch.elapsed() << " rows/sec."
+				<< "Elapsed " << stopwatch.elapsedSeconds() << " sec."
+				<< ", " << n / stopwatch.elapsedSeconds() << " rows/sec."
 				<< std::endl;
 		}
 	}

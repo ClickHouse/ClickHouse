@@ -1,8 +1,6 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Poco/Stopwatch.h>
-
 #include <DB/IO/WriteBufferFromOStream.h>
 
 #include <DB/Columns/ColumnString.h>
@@ -101,15 +99,15 @@ int main(int argc, char ** argv)
 		block.insert(column_s2);
 
 		{
-			Poco::Stopwatch stopwatch;
+			Stopwatch stopwatch;
 			stopwatch.start();
 
 			expression->execute(block);
 
 			stopwatch.stop();
 			std::cout << std::fixed << std::setprecision(2)
-				<< "Elapsed " << stopwatch.elapsed() / 1000000.0 << " sec."
-				<< ", " << n * 1000000 / stopwatch.elapsed() << " rows/sec."
+				<< "Elapsed " << stopwatch.elapsedSeconds() << " sec."
+				<< ", " << n / stopwatch.elapsedSeconds() << " rows/sec."
 				<< std::endl;
 		}
 

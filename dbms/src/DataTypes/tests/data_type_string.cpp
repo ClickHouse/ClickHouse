@@ -3,8 +3,7 @@
 #include <iostream>
 #include <fstream>
 
-#include <Poco/Stopwatch.h>
-#include <Poco/SharedPtr.h>
+#include <DB/Common/Stopwatch.h>
 
 #include <DB/IO/ReadBufferFromIStream.h>
 #include <DB/IO/WriteBufferFromOStream.h>
@@ -16,7 +15,7 @@ int main(int argc, char ** argv)
 {
 	try
 	{
-		Poco::Stopwatch stopwatch;
+		Stopwatch stopwatch;
 		size_t n = 50000000;
 		const char * s = "";
 		size_t size = strlen(s) + 1;
@@ -42,7 +41,7 @@ int main(int argc, char ** argv)
 			data_type.serializeBinary(*column, out_buf);
 			stopwatch.stop();
 
-			std::cout << "Writing, elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
+			std::cout << "Writing, elapsed: " << stopwatch.elapsedSeconds() << std::endl;
 		}
 
 		{
@@ -55,7 +54,7 @@ int main(int argc, char ** argv)
 			data_type.deserializeBinary(*column, in_buf, n, 0);
 			stopwatch.stop();
 
-			std::cout << "Reading, elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
+			std::cout << "Reading, elapsed: " << stopwatch.elapsedSeconds() << std::endl;
 
 			std::cout << std::endl
 				<< DB::get<const DB::String &>((*column)[0]) << std::endl

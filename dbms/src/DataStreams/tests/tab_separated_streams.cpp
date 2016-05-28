@@ -3,9 +3,6 @@
 #include <iostream>
 #include <fstream>
 
-#include <Poco/Stopwatch.h>
-#include <Poco/SharedPtr.h>
-
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>

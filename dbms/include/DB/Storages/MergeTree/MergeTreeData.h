@@ -412,7 +412,7 @@ public:
 		bool skip_sanity_checks);
 
 	/// Нужно вызывать под залоченным lockStructureForAlter().
-	void setColumnsList(const NamesAndTypesList & new_columns) { columns = new NamesAndTypesList(new_columns); }
+	void setColumnsList(const NamesAndTypesList & new_columns) { columns = std::make_shared<NamesAndTypesList>(new_columns); }
 
 	/// Нужно вызвать, если есть подозрение, что данные куска испорчены.
 	void reportBrokenPart(const String & name)

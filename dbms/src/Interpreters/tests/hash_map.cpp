@@ -28,9 +28,9 @@
   *
   * В зависимости от USE_AUTO_ARRAY, выбирается одна из структур в качестве значения.
   * USE_AUTO_ARRAY = 0 - используется std::vector (сложно-копируемая структура, sizeof = 24 байта).
-  * USE_AUTO_ARRAY = 1 - используется DB::AutoArray (структура специально разработанная для таких случаев, sizeof = 8 байт).
+  * USE_AUTO_ARRAY = 1 - используется AutoArray (структура специально разработанная для таких случаев, sizeof = 8 байт).
   *
-  * То есть, тест также позволяет сравнить DB::AutoArray и std::vector.
+  * То есть, тест также позволяет сравнить AutoArray и std::vector.
   *
   * Если USE_AUTO_ARRAY = 0, то HashMap уверенно обгоняет всех.
   * Если USE_AUTO_ARRAY = 1, то HashMap чуть менее серьёзно (20%) обгоняет google::dense_hash_map.
@@ -81,28 +81,30 @@ struct CRC32Hash_
 
 int main(int argc, char ** argv)
 {
-	typedef DB::UInt64 Key;
+	using namespace DB;
+
+	typedef UInt64 Key;
 
 #if USE_AUTO_ARRAY
-	typedef DB::AutoArray<DB::IAggregateFunction*> Value;
+	typedef AutoArray<IAggregateFunction*> Value;
 #else
-	typedef std::vector<DB::IAggregateFunction*> Value;
+	typedef std::vector<IAggregateFunction*> Value;
 #endif
 
 	size_t n = argc < 2 ? 10000000 : atoi(argv[1]);
 	//size_t m = atoi(argv[2]);
 
-	DB::AggregateFunctionFactory factory;
-	DB::DataTypes data_types_empty;
-	DB::DataTypes data_types_uint64;
-	data_types_uint64.push_back(new DB::DataTypeUInt64);
+	AggregateFunctionFactory factory;
+	DataTypes data_types_empty;
+	DataTypes data_types_uint64;
+	data_types_uint64.push_back(std::make_shared<DataTypeUInt64>());
 
 	std::vector<Key> data(n);
 	Value value;
 
-	DB::AggregateFunctionPtr func_count = factory.get("count", data_types_empty);
-	DB::AggregateFunctionPtr func_avg = factory.get("avg", data_types_uint64);
-	DB::AggregateFunctionPtr func_uniq = factory.get("uniq", data_types_uint64);
+	AggregateFunctionPtr func_count = factory.get("count", data_types_empty);
+	AggregateFunctionPtr func_avg = factory.get("avg", data_types_uint64);
+	AggregateFunctionPtr func_uniq = factory.get("uniq", data_types_uint64);
 
 	#define INIT				\
 	{							\
@@ -120,8 +122,8 @@ int main(int argc, char ** argv)
 	#define INIT
 #endif
 
-	DB::Row row(1);
-	row[0] = DB::UInt64(0);
+	Row row(1);
+	row[0] = UInt64(0);
 
 	std::cerr << "sizeof(Key) = " << sizeof(Key) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
 
@@ -133,8 +135,8 @@ int main(int argc, char ** argv)
 		for (size_t i = 0; i < n; i += 10)
 			data[i] = 0;*/
 
-		DB::ReadBufferFromFile in1("UniqID.bin");
-		DB::CompressedReadBuffer in2(in1);
+		ReadBufferFromFile in1("UniqID.bin");
+		CompressedReadBuffer in2(in1);
 
 		in2.readStrict(reinterpret_cast<char*>(&data[0]), sizeof(data[0]) * n);
 

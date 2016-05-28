@@ -2,9 +2,6 @@
 #include <iomanip>
 #include <thread>
 
-#include <Poco/SharedPtr.h>
-#include <Poco/Stopwatch.h>
-
 #include <DB/IO/WriteBufferFromOStream.h>
 
 #include <DB/Storages/System/StorageSystemNumbers.h>

@@ -1,8 +1,7 @@
 #include <iostream>
 #include <fstream>
 
-#include <Poco/Stopwatch.h>
-#include <Poco/SharedPtr.h>
+#include <DB/Common/Stopwatch.h>
 
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/Columns/ColumnsNumber.h>
@@ -15,7 +14,7 @@ int main(int argc, char ** argv)
 	DB::ColumnUInt64::Container_t & vec = column->getData();
 	DB::DataTypeUInt64 data_type;
 
-	Poco::Stopwatch stopwatch;
+	Stopwatch stopwatch;
 	size_t n = 10000000;
 
 	vec.resize(n);
@@ -29,7 +28,7 @@ int main(int argc, char ** argv)
 	data_type.serializeBinary(*column, out_buf);
 	stopwatch.stop();
 
-	std::cout << "Elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
+	std::cout << "Elapsed: " << stopwatch.elapsedSeconds() << std::endl;
 
 	return 0;
 }

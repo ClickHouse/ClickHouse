@@ -1,9 +1,6 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Poco/SharedPtr.h>
-#include <Poco/Stopwatch.h>
-
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 
 #include <DB/Storages/System/StorageSystemNumbers.h>

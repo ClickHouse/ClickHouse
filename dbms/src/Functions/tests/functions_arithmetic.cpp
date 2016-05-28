@@ -1,7 +1,7 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Poco/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 #include <DB/Functions/FunctionsArithmetic.h>
 
@@ -55,15 +55,15 @@ try
 	descr_res.name = "z";
 
 	{
-		Poco::Stopwatch stopwatch;
+		Stopwatch stopwatch;
 		stopwatch.start();
 
 		f.execute(block, arg_nums, res_num);
 
 		stopwatch.stop();
 		std::cout << std::fixed << std::setprecision(2)
-			<< "Elapsed " << stopwatch.elapsed() / 1000000.0 << " sec."
-			<< ", " << n * 1000000 / stopwatch.elapsed() << " rows/sec."
+			<< "Elapsed " << stopwatch.elapsedSeconds() << " sec."
+			<< ", " << n / stopwatch.elapsedSeconds() << " rows/sec."
 			<< std::endl;
 	}
 
