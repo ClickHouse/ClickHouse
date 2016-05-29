@@ -6571,7 +6571,7 @@ If &#39;remove&#39; is specified, it deletes the element.</p>
 <p>Here we can see that two users are declared: &#39;default&#39; and &#39;web&#39;. We added the &#39;web&#39; user ourselves.
 The &#39;default&#39; user is chosen in cases when the username is not passed, so this user must be present in the config file. The &#39;default&#39; user is also used for distributed query processing - the system accesses remote servers under this username. So the &#39;default&#39; user must have an empty password and must not have substantial restrictions or quotas - otherwise, distributed queries will fail.</p>
 
-<p>The password is specified in open format directly in the config. In this regard, you should not consider these passwords as providing security against potential malicious attacks. Rather, they are necessary for protection from Yandex employees.</p>
+<p>The password is specified in plain text directly in the config. In this regard, you should not consider these passwords as providing security against potential malicious attacks. Rather, they are necessary for protection from Yandex employees.</p>
 
 <p>A list of networks is specified that access is allowed from. In this example, the list of networks for both users is loaded from a separate file (/etc/metrika.xml) containing the &#39;networks&#39; substitution. Here is a fragment of it:</p>
 
