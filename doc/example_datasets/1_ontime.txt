@@ -143,7 +143,7 @@ Q3. Count of delays per airport for years 2000-2008
 SELECT Origin, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND Year <= 2008 GROUP BY Origin ORDER BY c DESC LIMIT 10
 
 Q4. Count of delays per Carrier for 2007 year
-SELECT carrier, count(*) FROM ontime WHERE DepDelay>10  AND Year = 2007 GROUP BY carrier ORDER BY 2 DESC
+SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10  AND Year = 2007 GROUP BY Carrier ORDER BY 2 DESC
 
 Q5. Percentage of delays for each carrier for 2007 year.
 SELECT Carrier, c, c2, c*1000/c2 as c3
