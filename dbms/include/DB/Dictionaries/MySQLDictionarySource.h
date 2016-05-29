@@ -15,7 +15,7 @@ namespace DB
 /// Allows loading dictionaries from a MySQL database
 class MySQLDictionarySource final : public IDictionarySource
 {
-	static const auto max_block_size = 8192;
+	static constexpr auto max_block_size = 8192;
 
 public:
 	MySQLDictionarySource(const DictionaryStructure & dict_struct_,
