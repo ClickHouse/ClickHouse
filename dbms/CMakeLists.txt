@@ -753,6 +753,9 @@ add_library (dbms
 	src/DataTypes/DataTypeTuple.cpp
 	src/DataTypes/FieldToDataType.cpp
 
+	src/Dictionaries/MySQLDictionarySource.cpp
+	src/Dictionaries/ODBCDictionarySource.cpp
+
 	src/Parsers/ASTSelectQuery.cpp
 	src/Parsers/ASTAlterQuery.cpp
 	src/Parsers/ASTLiteral.cpp
