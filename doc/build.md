@@ -102,7 +102,7 @@ cd ..
 
 On Ubuntu 15.10 or newer.
 ```
-sudo apt-get install libboost-dev libboost-thread-dev libboost-program-options-dev libboost-system-dev libboost-regex-dev
+sudo apt-get install libboost-dev libboost-thread-dev libboost-program-options-dev libboost-system-dev libboost-regex-dev libboost-filesystem-dev
 ```
 
 ## Install mongoclient (optional)
