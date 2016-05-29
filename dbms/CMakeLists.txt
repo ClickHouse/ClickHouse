@@ -755,6 +755,7 @@ add_library (dbms
 
 	src/Dictionaries/MySQLDictionarySource.cpp
 	src/Dictionaries/ODBCDictionarySource.cpp
+	src/Dictionaries/writeParenthesisedString.cpp
 
 	src/Parsers/ASTSelectQuery.cpp
 	src/Parsers/ASTAlterQuery.cpp
