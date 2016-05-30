@@ -447,7 +447,7 @@ void Block::clear()
 	index_by_position.clear();
 }
 
-void Block::swap(Block & other)
+void Block::swap(Block & other) noexcept
 {
 	std::swap(info, other.info);
 	data.swap(other.data);

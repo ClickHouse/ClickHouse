@@ -120,7 +120,7 @@ public:
 	void checkNestedArraysOffsets() const;
 
 	void clear();
-	void swap(Block & other);
+	void swap(Block & other) noexcept;
 };
 
 using Blocks = std::vector<Block>;
@@ -150,7 +150,7 @@ struct BlockExtraInfo
 
 namespace std
 {
-	template<> inline void swap<DB::Block>(DB::Block & one, DB::Block & another)
+	template<> inline void swap<DB::Block>(DB::Block & one, DB::Block & another) noexcept
 	{
 		one.swap(another);
 	}
