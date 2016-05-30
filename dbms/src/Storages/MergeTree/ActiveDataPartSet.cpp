@@ -28,7 +28,7 @@ void ActiveDataPartSet::add(const String & name)
 
 void ActiveDataPartSet::addImpl(const String & name)
 {
-	if (getContainingPart(name) != "")
+	if (getContainingPartImpl(name) != "")
 		return;
 
 	Part part;
@@ -63,7 +63,12 @@ void ActiveDataPartSet::addImpl(const String & name)
 String ActiveDataPartSet::getContainingPart(const String & part_name) const
 {
 	std::lock_guard<std::mutex> lock(mutex);
+	return getContainingPartImpl(part_name);
+}
 
+
+String ActiveDataPartSet::getContainingPartImpl(const String & part_name) const
+{
 	Part part;
 	parsePartName(part_name, part);
 

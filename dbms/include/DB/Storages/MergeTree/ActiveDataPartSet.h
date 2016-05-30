@@ -82,7 +82,9 @@ private:
 	mutable std::mutex mutex;
 	Parts parts;
 
+	/// Не блокируют mutex.
 	void addImpl(const String & name);
+	String getContainingPartImpl(const String & name) const;
 };
 
 }
