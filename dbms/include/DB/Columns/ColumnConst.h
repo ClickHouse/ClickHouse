@@ -238,10 +238,10 @@ private:
 
 public:
 	/// data_type_ должен быть ненулевым.
-	ColumnConst(size_t s_, const Array & data_, DataTypePtr data_type_ = DataTypePtr())
+	ColumnConst(size_t s_, const Array & data_, DataTypePtr data_type_)
 		: ColumnConstBase<Array, std::shared_ptr<Array>, ColumnConst<Array>>(s_, std::make_shared<Array>(data_), data_type_) {}
 
-	ColumnConst(size_t s_, const std::shared_ptr<Array> & data_, DataTypePtr data_type_ = DataTypePtr())
+	ColumnConst(size_t s_, const std::shared_ptr<Array> & data_, DataTypePtr data_type_)
 		: ColumnConstBase<Array, std::shared_ptr<Array>, ColumnConst<Array>>(s_, data_, data_type_) {}
 
 	StringRef getDataAt(size_t n) const override;
@@ -273,10 +273,10 @@ private:
 
 public:
 	/// data_type_ должен быть ненулевым.
-	ColumnConst(size_t s_, const Tuple & data_, DataTypePtr data_type_ = DataTypePtr())
+	ColumnConst(size_t s_, const Tuple & data_, DataTypePtr data_type_)
 		: ColumnConstBase<Tuple, std::shared_ptr<Tuple>, ColumnConst<Tuple>>(s_, std::make_shared<Tuple>(data_), data_type_) {}
 
-	ColumnConst(size_t s_, const std::shared_ptr<Tuple> & data_, DataTypePtr data_type_ = DataTypePtr())
+	ColumnConst(size_t s_, const std::shared_ptr<Tuple> & data_, DataTypePtr data_type_)
 		: ColumnConstBase<Tuple, std::shared_ptr<Tuple>, ColumnConst<Tuple>>(s_, data_, data_type_) {}
 
 	StringRef getDataAt(size_t n) const override;
