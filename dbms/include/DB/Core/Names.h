@@ -9,8 +9,8 @@
 namespace DB
 {
 
-typedef std::vector<std::string> Names;
-typedef std::unordered_set<std::string> NameSet;
-typedef std::unordered_map<std::string, std::string> NameToNameMap;
+using Names = std::vector<std::string>;
+using NameSet = std::unordered_set<std::string>;
+using NameToNameMap = std::unordered_map<std::string, std::string>;
 
 }

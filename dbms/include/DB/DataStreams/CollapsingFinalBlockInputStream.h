@@ -47,7 +47,7 @@ protected:
 
 private:
 	struct MergingBlock;
-	typedef std::vector<MergingBlock*> BlockPlainPtrs;
+	using BlockPlainPtrs = std::vector<MergingBlock*>;
 
 	struct MergingBlock : boost::noncopyable
 	{
@@ -229,7 +229,7 @@ private:
 		}
 	};
 
-	typedef std::priority_queue<Cursor> Queue;
+	using Queue = std::priority_queue<Cursor>;
 
 	const SortDescription description;
 	String sign_column_name;

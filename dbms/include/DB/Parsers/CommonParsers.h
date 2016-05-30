@@ -8,8 +8,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 
 /** Если прямо сейчас не s, то ошибка.
   * Если word_boundary установлен в true, и последний символ строки - словарный (\w),

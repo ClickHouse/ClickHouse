@@ -137,7 +137,7 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeArray(type);
+		return std::make_shared<DataTypeArray>(type);
 	}
 
 	void setArgument(const DataTypePtr & argument)

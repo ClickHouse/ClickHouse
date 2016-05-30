@@ -70,7 +70,7 @@ private:
 
 private:
 	GetZooKeeper get_zookeeper;
-	EventPtr event = new Poco::Event;
+	EventPtr event = std::make_shared<Poco::Event>();
 	CancellationHook cancellation_hook;
 	/// Path to the lock request queue.
 	std::string path;

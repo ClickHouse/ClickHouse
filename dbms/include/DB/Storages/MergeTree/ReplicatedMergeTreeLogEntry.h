@@ -96,7 +96,7 @@ struct ReplicatedMergeTreeLogEntryData
 
 struct ReplicatedMergeTreeLogEntry : ReplicatedMergeTreeLogEntryData
 {
-	typedef Poco::SharedPtr<ReplicatedMergeTreeLogEntry> Ptr;
+	using Ptr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;
 
 	std::condition_variable execution_complete; /// Пробуждается когда currently_executing становится false.
 

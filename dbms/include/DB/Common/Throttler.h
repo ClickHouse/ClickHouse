@@ -81,6 +81,6 @@ private:
 };
 
 
-typedef std::shared_ptr<Throttler> ThrottlerPtr;
+using ThrottlerPtr = std::shared_ptr<Throttler>;
 
 }

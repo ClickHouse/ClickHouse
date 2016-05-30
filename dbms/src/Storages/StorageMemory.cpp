@@ -10,9 +10,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
-
 class MemoryBlockInputStream : public IProfilingBlockInputStream
 {
 public:
@@ -69,7 +66,7 @@ public:
 	void write(const Block & block)
 	{
 		storage.check(block, true);
-		Poco::ScopedLock<Poco::FastMutex> lock(storage.mutex);
+		std::lock_guard<std::mutex> lock(storage.mutex);
 		storage.data.push_back(block);
 	}
 private:
@@ -132,7 +129,7 @@ BlockInputStreams StorageMemory::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+	std::lock_guard<std::mutex> lock(mutex);
 
 	size_t size = data.size();
 
@@ -149,7 +146,7 @@ BlockInputStreams StorageMemory::read(
 		std::advance(begin, thread * size / threads);
 		std::advance(end, (thread + 1) * size / threads);
 
-		res.push_back(new MemoryBlockInputStream(column_names, begin, end));
+		res.push_back(std::make_shared<MemoryBlockInputStream>(column_names, begin, end));
 	}
 
 	return res;
@@ -159,13 +156,13 @@ BlockInputStreams StorageMemory::read(
 BlockOutputStreamPtr StorageMemory::write(
 	ASTPtr query, const Settings & settings)
 {
-	return new MemoryBlockOutputStream(*this);
+	return std::make_shared<MemoryBlockOutputStream>(*this);
 }
 
 
 void StorageMemory::drop()
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+	std::lock_guard<std::mutex> lock(mutex);
 	data.clear();
 }
 

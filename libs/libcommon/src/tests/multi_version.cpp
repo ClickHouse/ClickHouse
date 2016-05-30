@@ -3,11 +3,12 @@
 #include <threadpool.hpp>
 #include <functional>
 #include <common/MultiVersion.h>
+#include <Poco/Exception.h>
 
 
-typedef std::string T;
-typedef MultiVersion<T> MV;
-typedef std::vector<T> Results;
+using T = std::string;
+using MV = MultiVersion<T>;
+using Results = std::vector<T>;
 
 
 void thread1(MV & x, T & result)
@@ -18,7 +19,7 @@ void thread1(MV & x, T & result)
 
 void thread2(MV & x, const char * result)
 {
-	x.set(new T(result));
+	x.set(std::make_shared<T>(result));
 }
 
 
@@ -30,7 +31,7 @@ int main(int argc, char ** argv)
 		const char * s2 = "Goodbye!";
 
 		size_t n = 1000;
-		MV x(new T(s1));
+		MV x(std::make_shared<T>(s1));
 		Results results(n);
 
 		boost::threadpool::pool tp(8);

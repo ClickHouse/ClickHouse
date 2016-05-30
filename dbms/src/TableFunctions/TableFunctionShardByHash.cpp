@@ -63,11 +63,11 @@ StoragePtr TableFunctionShardByHash::execute(ASTPtr ast_function, Context & cont
 	const Cluster & cluster = context.getCluster(cluster_name);
 	size_t shard_index = sipHash64(key) % cluster.getShardCount();
 
-	SharedPtr<Cluster> shard = cluster.getClusterWithSingleShard(shard_index).release();
+	std::shared_ptr<Cluster> shard(cluster.getClusterWithSingleShard(shard_index).release());
 
 	return StorageDistributed::create(
 		getName(),
-		new NamesAndTypesList(getStructureOfRemoteTable(*shard, remote_database, remote_table, context)),
+		std::make_shared<NamesAndTypesList>(getStructureOfRemoteTable(*shard, remote_database, remote_table, context)),
 		remote_database,
 		remote_table,
 		shard,

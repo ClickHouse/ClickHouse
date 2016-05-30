@@ -18,7 +18,7 @@ public:
 	bool behavesAsNumber() const override { return false; }
 
 	std::string getName() const override { return "Date"; }
-	DataTypePtr clone() const override { return new DataTypeDate; }
+	DataTypePtr clone() const override { return std::make_shared<DataTypeDate>(); }
 
 	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{

@@ -56,7 +56,7 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
 static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts)
 {
 	Block res;
-	ColumnWithTypeAndName _part(new ColumnString, new DataTypeString, "_part");
+	ColumnWithTypeAndName _part(std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "_part");
 
 	for (const auto & part : parts)
 		_part.column->insert(part->name);
@@ -207,7 +207,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition, и которые подходят под условие на _part,
 	///  а также max_block_number_to_read.
 	{
-		const DataTypes data_types_date { new DataTypeDate };
+		const DataTypes data_types_date { std::make_shared<DataTypeDate>() };
 
 		auto prev_parts = parts;
 		parts.clear();
@@ -232,8 +232,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	/// Семплирование.
 	Names column_names_to_read = real_column_names;
-	typedef Poco::SharedPtr<ASTFunction> ASTFunctionPtr;
-	ASTFunctionPtr filter_function;
+	std::shared_ptr<ASTFunction> filter_function;
 	ExpressionActionsPtr filter_expression;
 
 	RelativeSize relative_sample_size = 0;
@@ -391,19 +390,19 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		{
 			/// Добавим условия, чтобы отсечь еще что-нибудь при повторном просмотре индекса и при обработке запроса.
 
-			ASTFunctionPtr lower_function;
-			ASTFunctionPtr upper_function;
+			std::shared_ptr<ASTFunction> lower_function;
+			std::shared_ptr<ASTFunction> upper_function;
 
 			if (has_lower_limit)
 			{
 				if (!key_condition.addCondition(data.sampling_expression->getColumnName(), Range::createLeftBounded(lower, true)))
 					throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
-				ASTPtr args = new ASTExpressionList;
+				ASTPtr args = std::make_shared<ASTExpressionList>();
 				args->children.push_back(data.sampling_expression);
-				args->children.push_back(new ASTLiteral(StringRange(), lower));
+				args->children.push_back(std::make_shared<ASTLiteral>(StringRange(), lower));
 
-				lower_function = new ASTFunction;
+				lower_function = std::make_shared<ASTFunction>();
 				lower_function->name = "greaterOrEquals";
 				lower_function->arguments = args;
 				lower_function->children.push_back(lower_function->arguments);
@@ -416,11 +415,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 				if (!key_condition.addCondition(data.sampling_expression->getColumnName(), Range::createRightBounded(upper, false)))
 					throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
-				ASTPtr args = new ASTExpressionList;
+				ASTPtr args = std::make_shared<ASTExpressionList>();
 				args->children.push_back(data.sampling_expression);
-				args->children.push_back(new ASTLiteral(StringRange(), upper));
+				args->children.push_back(std::make_shared<ASTLiteral>(StringRange(), upper));
 
-				upper_function = new ASTFunction;
+				upper_function = std::make_shared<ASTFunction>();
 				upper_function->name = "less";
 				upper_function->arguments = args;
 				upper_function->children.push_back(upper_function->arguments);
@@ -430,11 +429,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 			if (has_lower_limit && has_upper_limit)
 			{
-				ASTPtr args = new ASTExpressionList;
+				ASTPtr args = std::make_shared<ASTExpressionList>();
 				args->children.push_back(lower_function);
 				args->children.push_back(upper_function);
 
-				filter_function = new ASTFunction;
+				filter_function = std::make_shared<ASTFunction>();
 				filter_function->name = "and";
 				filter_function->arguments = args;
 				filter_function->children.push_back(filter_function->arguments);
@@ -474,7 +473,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		  * Они делаются до начала выполнения конвейера; их нельзя прервать; во время вычислений не отправляются пакеты прогресса.
 		  */
 		if (!prewhere_subqueries.empty())
-			CreatingSetsBlockInputStream(new NullBlockInputStream, prewhere_subqueries, settings.limits).read();
+			CreatingSetsBlockInputStream(std::make_shared<NullBlockInputStream>(), prewhere_subqueries, settings.limits).read();
 	}
 
 	RangesInDataParts parts_with_ranges;
@@ -555,13 +554,13 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	if (use_sampling)
 		for (auto & stream : res)
-			stream = new FilterBlockInputStream(stream, filter_expression, filter_function->getColumnName());
+			stream = std::make_shared<FilterBlockInputStream>(stream, filter_expression, filter_function->getColumnName());
 
 	/// Кстати, если делается распределённый запрос или запрос к Merge-таблице, то в столбце _sample_factor могут быть разные значения.
 	if (sample_factor_column_queried)
 		for (auto & stream : res)
-			stream = new AddingConstColumnBlockInputStream<Float64>(
-				stream, new DataTypeFloat64, used_sample_factor, "_sample_factor");
+			stream = std::make_shared<AddingConstColumnBlockInputStream<Float64>>(
+				stream, std::make_shared<DataTypeFloat64>(), used_sample_factor, "_sample_factor");
 
 	return res;
 }
@@ -618,11 +617,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 
 		for (std::size_t i = 0; i < threads; ++i)
 		{
-			res.emplace_back(new MergeTreeThreadBlockInputStream{
+			res.emplace_back(std::make_shared<MergeTreeThreadBlockInputStream>(
 				i, pool, min_marks_for_concurrent_read, max_block_size, data, use_uncompressed_cache,
 				prewhere_actions,
-				prewhere_column, settings, virt_columns
-			});
+				prewhere_column, settings, virt_columns));
 
 			if (i == 0)
 			{
@@ -691,7 +689,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 					}
 				}
 
-				BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(
+				BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
 					data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
 					part.data_part, ranges_to_get_from_part, use_uncompressed_cache,
 					prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true);
@@ -701,11 +699,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 				for (const String & virt_column : virt_columns)
 				{
 					if (virt_column == "_part")
-						res.back() = new AddingConstColumnBlockInputStream<String>(
-							res.back(), new DataTypeString, part.data_part->name, "_part");
+						res.back() = std::make_shared<AddingConstColumnBlockInputStream<String>>(
+							res.back(), std::make_shared<DataTypeString>(), part.data_part->name, "_part");
 					else if (virt_column == "_part_index")
-						res.back() = new AddingConstColumnBlockInputStream<UInt64>(
-							res.back(), new DataTypeUInt64, part.part_index_in_query, "_part_index");
+						res.back() = std::make_shared<AddingConstColumnBlockInputStream<UInt64>>(
+							res.back(), std::make_shared<DataTypeUInt64>(), part.part_index_in_query, "_part_index");
 				}
 			}
 		}
@@ -748,7 +746,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	{
 		RangesInDataPart & part = parts[part_index];
 
-		BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(
+		BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
 			data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
 			part.data_part, part.ranges, use_uncompressed_cache,
 			prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true);
@@ -756,14 +754,14 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 		for (const String & virt_column : virt_columns)
 		{
 			if (virt_column == "_part")
-				source_stream = new AddingConstColumnBlockInputStream<String>(
-					source_stream, new DataTypeString, part.data_part->name, "_part");
+				source_stream = std::make_shared<AddingConstColumnBlockInputStream<String>>(
+					source_stream, std::make_shared<DataTypeString>(), part.data_part->name, "_part");
 			else if (virt_column == "_part_index")
-				source_stream = new AddingConstColumnBlockInputStream<UInt64>(
-					source_stream, new DataTypeUInt64, part.part_index_in_query, "_part_index");
+				source_stream = std::make_shared<AddingConstColumnBlockInputStream<UInt64>>(
+					source_stream, std::make_shared<DataTypeUInt64>(), part.part_index_in_query, "_part_index");
 		}
 
-		to_merge.emplace_back(new ExpressionBlockInputStream(source_stream, data.getPrimaryExpression()));
+		to_merge.emplace_back(std::make_shared<ExpressionBlockInputStream>(source_stream, data.getPrimaryExpression()));
 	}
 
 	BlockInputStreams res;
@@ -776,7 +774,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 
 			createPositiveSignCondition(sign_filter_expression, sign_filter_column, context);
 
-			res.emplace_back(new FilterBlockInputStream(to_merge[0], sign_filter_expression, sign_filter_column));
+			res.emplace_back(std::make_shared<FilterBlockInputStream>(to_merge[0], sign_filter_expression, sign_filter_column));
 		}
 		else
 			res = to_merge;
@@ -788,24 +786,24 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 		switch (data.merging_params.mode)
 		{
 			case MergeTreeData::MergingParams::Ordinary:
-				merged = new MergingSortedBlockInputStream(to_merge, data.getSortDescription(), max_block_size);
+				merged = std::make_shared<MergingSortedBlockInputStream>(to_merge, data.getSortDescription(), max_block_size);
 				break;
 
 			case MergeTreeData::MergingParams::Collapsing:
-				merged = new CollapsingFinalBlockInputStream(to_merge, data.getSortDescription(), data.merging_params.sign_column);
+				merged = std::make_shared<CollapsingFinalBlockInputStream>(to_merge, data.getSortDescription(), data.merging_params.sign_column);
 				break;
 
 			case MergeTreeData::MergingParams::Summing:
-				merged = new SummingSortedBlockInputStream(to_merge,
+				merged = std::make_shared<SummingSortedBlockInputStream>(to_merge,
 					data.getSortDescription(), data.merging_params.columns_to_sum, max_block_size);
 				break;
 
 			case MergeTreeData::MergingParams::Aggregating:
-				merged = new AggregatingSortedBlockInputStream(to_merge, data.getSortDescription(), max_block_size);
+				merged = std::make_shared<AggregatingSortedBlockInputStream>(to_merge, data.getSortDescription(), max_block_size);
 				break;
 
 			case MergeTreeData::MergingParams::Replacing:	/// TODO Сделать ReplacingFinalBlockInputStream
-				merged = new ReplacingSortedBlockInputStream(to_merge,
+				merged = std::make_shared<ReplacingSortedBlockInputStream>(to_merge,
 					data.getSortDescription(), data.merging_params.version_column, max_block_size);
 				break;
 
@@ -826,31 +824,24 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 void MergeTreeDataSelectExecutor::createPositiveSignCondition(
 	ExpressionActionsPtr & out_expression, String & out_column, const Context & context) const
 {
-	ASTFunction * function = new ASTFunction;
-	ASTPtr function_ptr = function;
-
-	ASTExpressionList * arguments = new ASTExpressionList;
-	ASTPtr arguments_ptr = arguments;
-
-	ASTIdentifier * sign = new ASTIdentifier;
-	ASTPtr sign_ptr = sign;
-
-	ASTLiteral * one = new ASTLiteral;
-	ASTPtr one_ptr = one;
+	auto function = std::make_shared<ASTFunction>();
+	auto arguments = std::make_shared<ASTExpressionList>();
+	auto sign = std::make_shared<ASTIdentifier>();
+	auto one = std::make_shared<ASTLiteral>();
 
 	function->name = "equals";
-	function->arguments = arguments_ptr;
-	function->children.push_back(arguments_ptr);
+	function->arguments = arguments;
+	function->children.push_back(arguments);
 
-	arguments->children.push_back(sign_ptr);
-	arguments->children.push_back(one_ptr);
+	arguments->children.push_back(sign);
+	arguments->children.push_back(one);
 
 	sign->name = data.merging_params.sign_column;
 	sign->kind = ASTIdentifier::Column;
 
 	one->value = Field(static_cast<Int64>(1));
 
-	out_expression = ExpressionAnalyzer(function_ptr, context, {}, data.getColumnsList()).getActions(false);
+	out_expression = ExpressionAnalyzer(function, context, {}, data.getColumnsList()).getActions(false);
 	out_column = function->getColumnName();
 }
 

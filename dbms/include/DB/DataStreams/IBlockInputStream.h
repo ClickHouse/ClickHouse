@@ -2,8 +2,6 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/Core/Block.h>
 #include <DB/Core/Progress.h>
 #include <DB/Storages/IStorage.h>
@@ -12,14 +10,19 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
+
+class IBlockInputStream;
+
+using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
+using BlockInputStreams = std::vector<BlockInputStreamPtr>;
+
 
 /** Коллбэк для отслеживания прогресса выполнения запроса.
   * Используется в IProfilingBlockInputStream и Context-е.
   * Функция принимает количество строк в последнем блоке, количество байт в последнем блоке.
   * Следует иметь ввиду, что колбэк может вызываться из разных потоков.
   */
-typedef std::function<void(const Progress & progress)> ProgressCallback;
+using ProgressCallback = std::function<void(const Progress & progress)>;
 
 
 /** Интерфейс потока для чтения данных по блокам из БД.
@@ -28,9 +31,6 @@ typedef std::function<void(const Progress & progress)> ProgressCallback;
 class IBlockInputStream : private boost::noncopyable
 {
 public:
-	typedef SharedPtr<IBlockInputStream> BlockInputStreamPtr;
-	typedef std::vector<BlockInputStreamPtr> BlockInputStreams;
-
 	IBlockInputStream() {}
 
 	/** Прочитать следующий блок.

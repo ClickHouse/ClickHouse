@@ -6,8 +6,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 LimitBlockInputStream::LimitBlockInputStream(BlockInputStreamPtr input_, size_t limit_, size_t offset_, bool always_read_till_end_)
 	: limit(limit_), offset(offset_), always_read_till_end(always_read_till_end_)
 {
@@ -19,7 +17,7 @@ Block LimitBlockInputStream::readImpl()
 {
 	Block res;
 	size_t rows = 0;
-	
+
 	/// pos - сколько строк было прочитано, включая последний прочитанный блок
 
 	if (pos >= offset + limit)

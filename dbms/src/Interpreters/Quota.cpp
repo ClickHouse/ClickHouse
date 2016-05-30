@@ -269,7 +269,7 @@ QuotaForIntervalsPtr Quota::get(const String & quota_key, const String & user_na
 				? quota_key
 				: user_name));
 
-	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+	std::lock_guard<std::mutex> lock(mutex);
 
 	Container::iterator it = quota_for_keys.find(quota_key_hashed);
 	if (quota_for_keys.end() == it)

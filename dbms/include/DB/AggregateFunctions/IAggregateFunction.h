@@ -2,8 +2,6 @@
 
 #include <memory>
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/Core/Row.h>
 #include <DB/DataTypes/IDataType.h>
 #include <DB/Common/typeid_cast.h>
@@ -115,7 +113,7 @@ template <typename T>
 class IAggregateFunctionHelper : public IAggregateFunction
 {
 protected:
-	typedef T Data;
+	using Data = T;
 
 	static Data & data(AggregateDataPtr place) 				{ return *reinterpret_cast<Data*>(place); }
 	static const Data & data(ConstAggregateDataPtr place) 	{ return *reinterpret_cast<const Data*>(place); }
@@ -149,8 +147,6 @@ public:
 };
 
 
-using Poco::SharedPtr;
-
-typedef SharedPtr<IAggregateFunction> AggregateFunctionPtr;
+using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 
 }

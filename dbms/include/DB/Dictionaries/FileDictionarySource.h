@@ -35,7 +35,7 @@ public:
 			format, *in_ptr, sample_block, max_block_size);
 		last_modification = getLastModification();
 
-		return new OwningBufferBlockInputStream{stream, std::move(in_ptr)};
+		return std::make_shared<OwningBufferBlockInputStream>(stream, std::move(in_ptr));
 	}
 
 	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override

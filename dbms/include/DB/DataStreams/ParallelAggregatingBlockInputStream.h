@@ -14,8 +14,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 
 /** Агрегирует несколько источников параллельно.
   * Производит агрегацию блоков из разных источников независимо в разных потоках, затем объединяет результаты.
@@ -107,7 +105,7 @@ protected:
 				BlockInputStreams input_streams;
 				for (const auto & file : files.files)
 				{
-					temporary_inputs.emplace_back(new TemporaryFileStream(file->path()));
+					temporary_inputs.emplace_back(std::make_unique<TemporaryFileStream>(file->path()));
 					input_streams.emplace_back(temporary_inputs.back()->block_in);
 				}
 
@@ -115,8 +113,8 @@ protected:
 					<< (files.sum_size_compressed / 1048576.0) << " MiB compressed, "
 					<< (files.sum_size_uncompressed / 1048576.0) << " MiB uncompressed.");
 
-				impl.reset(new MergingAggregatedMemoryEfficientBlockInputStream(
-					input_streams, params, final, temporary_data_merge_threads, temporary_data_merge_threads));
+				impl = std::make_unique<MergingAggregatedMemoryEfficientBlockInputStream>(
+					input_streams, params, final, temporary_data_merge_threads, temporary_data_merge_threads);
 			}
 
 			executed = true;
@@ -156,7 +154,7 @@ private:
 		BlockInputStreamPtr block_in;
 
 		TemporaryFileStream(const std::string & path)
-			: file_in(path), compressed_in(file_in), block_in(new NativeBlockInputStream(compressed_in, ClickHouseRevision::get())) {}
+			: file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get())) {}
 	};
 	std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
 
@@ -264,7 +262,7 @@ private:
 		Stopwatch watch;
 
 		for (auto & elem : many_data)
-			elem = new AggregatedDataVariants;
+			elem = std::make_shared<AggregatedDataVariants>();
 
 		processor.process();
 		processor.wait();

@@ -61,16 +61,15 @@ template <typename T>
 ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hint) const
 {
 	if (getOffsets().size() == 0)
-		return new ColumnArray(data);
+		return std::make_shared<ColumnArray>(data);
 
-	ColumnArray * res = new ColumnArray(data->cloneEmpty());
-	ColumnPtr res_ = res;
+	auto res = std::make_shared<ColumnArray>(data->cloneEmpty());
 
 	auto & res_elems = static_cast<ColumnVector<T> &>(res->getData()).getData();
 	Offsets_t & res_offsets = res->getOffsets();
 
 	filterArraysImpl<T>(static_cast<const ColumnVector<T> &>(*data).getData(), getOffsets(), res_elems, res_offsets, filt, result_size_hint);
-	return res_;
+	return res;
 }
 
 ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hint) const
@@ -80,10 +79,9 @@ ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hin
 		throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 	if (0 == col_size)
-		return new ColumnArray(data);
+		return std::make_shared<ColumnArray>(data);
 
-	ColumnArray * res = new ColumnArray(data->cloneEmpty());
-	ColumnPtr res_ = res;
+	auto res = std::make_shared<ColumnArray>(data->cloneEmpty());
 
 	const ColumnString & src_string = typeid_cast<const ColumnString &>(*data);
 	const ColumnString::Chars_t & src_chars = src_string.getChars();
@@ -139,7 +137,7 @@ ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hin
 		}
 	}
 
-	return res_;
+	return res;
 }
 
 ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hint) const
@@ -149,7 +147,7 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
 		throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 	if (size == 0)
-		return new ColumnArray(data);
+		return std::make_shared<ColumnArray>(data);
 
 	Filter nested_filt(getOffsets().back());
 	for (size_t i = 0; i < size; ++i)
@@ -160,8 +158,7 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
 			memset(&nested_filt[offsetAt(i)], 0, sizeAt(i));
 	}
 
-	ColumnArray * res_ = new ColumnArray(data);
-	ColumnPtr res = res_;
+	std::shared_ptr<ColumnArray> res = std::make_shared<ColumnArray>(data);
 
 	ssize_t nested_result_size_hint = 0;
 	if (result_size_hint < 0)
@@ -169,9 +166,9 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
 	else if (result_size_hint && result_size_hint < 1000000000 && data->size() < 1000000000)	/// Избегаем переполнения.
 		nested_result_size_hint = result_size_hint * data->size() / size;
 
-	res_->data = data->filter(nested_filt, nested_result_size_hint);
+	res->data = data->filter(nested_filt, nested_result_size_hint);
 
-	Offsets_t & res_offsets = res_->getOffsets();
+	Offsets_t & res_offsets = res->getOffsets();
 	if (result_size_hint)
 		res_offsets.reserve(result_size_hint > 0 ? result_size_hint : size);
 
@@ -202,14 +199,13 @@ ColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) const
 		throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 	if (limit == 0)
-		return new ColumnArray(data);
+		return std::make_shared<ColumnArray>(data);
 
 	Permutation nested_perm(getOffsets().back());
 
-	ColumnArray * res_ = new ColumnArray(data->cloneEmpty());
-	ColumnPtr res = res_;
+	std::shared_ptr<ColumnArray> res = std::make_shared<ColumnArray>(data->cloneEmpty());
 
-	Offsets_t & res_offsets = res_->getOffsets();
+	Offsets_t & res_offsets = res->getOffsets();
 	res_offsets.resize(limit);
 	size_t current_offset = 0;
 
@@ -222,7 +218,7 @@ ColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) const
 	}
 
 	if (current_offset != 0)
-		res_->data = data->permute(nested_perm, current_offset);
+		res->data = data->permute(nested_perm, current_offset);
 
 	return res;
 }
@@ -414,8 +410,7 @@ ColumnPtr ColumnArray::replicateConst(const Offsets_t & replicate_offsets) const
 
 	const Offsets_t & src_offsets = getOffsets();
 
-	ColumnOffsets_t * res_column_offsets = new ColumnOffsets_t;
-	ColumnPtr res_column_offsets_holder = res_column_offsets;
+	auto res_column_offsets = std::make_shared<ColumnOffsets_t>();
 	Offsets_t & res_offsets = res_column_offsets->getData();
 	res_offsets.reserve(replicate_offsets.back());
 
@@ -438,7 +433,7 @@ ColumnPtr ColumnArray::replicateConst(const Offsets_t & replicate_offsets) const
 		prev_data_offset = src_offsets[i];
 	}
 
-	return new ColumnArray(getData().cloneResized(current_new_offset), res_column_offsets_holder);
+	return std::make_shared<ColumnArray>(getData().cloneResized(current_new_offset), res_column_offsets);
 }
 
 

@@ -27,9 +27,7 @@ public:
 
 	ASTPtr clone() const override
 	{
-		ASTShowTablesQuery * res = new ASTShowTablesQuery(*this);
-		ASTPtr ptr{res};
-
+		auto res = std::make_shared<ASTShowTablesQuery>(*this);
 		res->children.clear();
 
 		if (format)
@@ -38,7 +36,7 @@ public:
 			res->children.push_back(res->format);
 		}
 
-		return ptr;
+		return res;
 	}
 
 protected:

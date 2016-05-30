@@ -49,21 +49,24 @@ add_library (common
 # TESTIRT-3687 DISABLE_LIBTCMALLOC - when testing for memory leaks, disable libtcmalloc
 IF($ENV{DISABLE_LIBTCMALLOC})
 	message(STATUS "Disabling libtcmalloc for valgrind better analysis")
-	target_link_libraries (common pocoext
-	    pthread libglib-2.0.a libicui18n.a libicuuc.a libicudata.a librt.a)
 ELSE($ENV{DISABLE_LIBTCMALLOC})
 	IF($ENV{DEBUG_LIBTCMALLOC})
 		message(STATUS "Link libtcmalloc_minimal_debug for testing")
-		target_link_libraries (common pocoext
-			libtcmalloc_minimal_debug.a
-			pthread libglib-2.0.a libicui18n.a libicuuc.a libicudata.a librt.a)
+		SET(MALLOC_LIBRARIES libtcmalloc_minimal_debug.a)
 	ELSE($ENV{DEBUG_LIBTCMALLOC})
 		message(STATUS "Link libtcmalloc_minimal")
-		target_link_libraries (common pocoext
-			tcmalloc_minimal
-			pthread libglib-2.0.a libicui18n.a libicuuc.a libicudata.a librt.a)
+		SET(MALLOC_LIBRARIES tcmalloc_minimal_internal)
 	ENDIF($ENV{DEBUG_LIBTCMALLOC})
 ENDIF($ENV{DISABLE_LIBTCMALLOC})
+
+target_link_libraries (
+	common
+	pocoext
+	${MALLOC_LIBRARIES}
+	pthread
+	libglib-2.0.a
+	libicui18n.a libicuuc.a libicudata.a
+	librt.a)
 
 IF(TESTS)
 	add_subdirectory (src/tests)

@@ -17,7 +17,7 @@ bool ParserCheckQuery::parseImpl(IParser::Pos & pos, IParser::Pos end, ASTPtr & 
 	ASTPtr table;
 	ASTPtr database;
 
-	Poco::SharedPtr<ASTCheckQuery> query = new ASTCheckQuery(StringRange(pos, end));
+	auto query = std::make_shared<ASTCheckQuery>(StringRange(pos, end));
 
 	ws.ignore(pos, end);
 

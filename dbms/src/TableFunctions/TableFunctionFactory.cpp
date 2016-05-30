@@ -22,9 +22,9 @@ TableFunctionPtr TableFunctionFactory::get(
 	if (context.getSettings().limits.readonly == 1)		/** Например, для readonly = 2 - разрешено. */
 		throw Exception("Table functions are forbidden in readonly mode", ErrorCodes::READONLY);
 
-		 if (name == "merge")		return new TableFunctionMerge;
-	else if (name == "remote")		return new TableFunctionRemote;
-	else if (name == "shardByHash")	return new TableFunctionShardByHash;
+		 if (name == "merge")		return std::make_shared<TableFunctionMerge>();
+	else if (name == "remote")		return std::make_shared<TableFunctionRemote>();
+	else if (name == "shardByHash")	return std::make_shared<TableFunctionShardByHash>();
 	else
 		throw Exception("Unknown table function " + name, ErrorCodes::UNKNOWN_FUNCTION);
 }

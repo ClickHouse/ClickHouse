@@ -10,31 +10,31 @@ namespace DB
 
 /** Столбцы чисел. */
 
-typedef ColumnVector<UInt8> ColumnUInt8;
-typedef ColumnVector<UInt16> ColumnUInt16;
-typedef ColumnVector<UInt32> ColumnUInt32;
-typedef ColumnVector<UInt64> ColumnUInt64;
+using ColumnUInt8 = ColumnVector<UInt8>;
+using ColumnUInt16 = ColumnVector<UInt16>;
+using ColumnUInt32 = ColumnVector<UInt32>;
+using ColumnUInt64 = ColumnVector<UInt64>;
 
-typedef ColumnVector<Int8> ColumnInt8;
-typedef ColumnVector<Int16> ColumnInt16;
-typedef ColumnVector<Int32> ColumnInt32;
-typedef ColumnVector<Int64> ColumnInt64;
+using ColumnInt8 = ColumnVector<Int8>;
+using ColumnInt16 = ColumnVector<Int16>;
+using ColumnInt32 = ColumnVector<Int32>;
+using ColumnInt64 = ColumnVector<Int64>;
 
-typedef ColumnVector<Float32> ColumnFloat32;
-typedef ColumnVector<Float64> ColumnFloat64;
+using ColumnFloat32 = ColumnVector<Float32>;
+using ColumnFloat64 = ColumnVector<Float64>;
 
 
-typedef ColumnConst<UInt8> ColumnConstUInt8;
-typedef ColumnConst<UInt16> ColumnConstUInt16;
-typedef ColumnConst<UInt32> ColumnConstUInt32;
-typedef ColumnConst<UInt64> ColumnConstUInt64;
+using ColumnConstUInt8 = ColumnConst<UInt8>;
+using ColumnConstUInt16 = ColumnConst<UInt16>;
+using ColumnConstUInt32 = ColumnConst<UInt32>;
+using ColumnConstUInt64 = ColumnConst<UInt64>;
 
-typedef ColumnConst<Int8> ColumnConstInt8;
-typedef ColumnConst<Int16> ColumnConstInt16;
-typedef ColumnConst<Int32> ColumnConstInt32;
-typedef ColumnConst<Int64> ColumnConstInt64;
+using ColumnConstInt8 = ColumnConst<Int8>;
+using ColumnConstInt16 = ColumnConst<Int16>;
+using ColumnConstInt32 = ColumnConst<Int32>;
+using ColumnConstInt64 = ColumnConst<Int64>;
 
-typedef ColumnConst<Float32> ColumnConstFloat32;
-typedef ColumnConst<Float64> ColumnConstFloat64;
+using ColumnConstFloat32 = ColumnConst<Float32>;
+using ColumnConstFloat64 = ColumnConst<Float64>;
 
 }

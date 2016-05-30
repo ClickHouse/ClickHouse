@@ -13,8 +13,8 @@
 
 int main(int argc, char ** argv)
 {
-	typedef std::vector<std::string> Strings;
-	typedef std::vector<char> Hashes;
+	using Strings = std::vector<std::string>;
+	using Hashes = std::vector<char>;
 	Strings strings;
 	size_t rows = 0;
 	size_t bytes = 0;

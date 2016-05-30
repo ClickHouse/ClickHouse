@@ -56,8 +56,8 @@ void TCPHandler::runImpl()
 	socket().setSendTimeout(global_settings.send_timeout);
 	socket().setNoDelay(true);
 
-	in = new ReadBufferFromPocoSocket(socket());
-	out = new WriteBufferFromPocoSocket(socket());
+	in = std::make_shared<ReadBufferFromPocoSocket>(socket());
+	out = std::make_shared<WriteBufferFromPocoSocket>(socket());
 
 	if (in->eof())
 	{
@@ -128,7 +128,7 @@ void TCPHandler::runImpl()
 		/** Исключение во время выполнения запроса (его надо отдать по сети клиенту).
 		  * Клиент сможет его принять, если оно не произошло во время отправки другого пакета и клиент ещё не разорвал соединение.
 		  */
-		SharedPtr<Exception> exception;
+		std::unique_ptr<Exception> exception;
 
 		try
 		{
@@ -148,8 +148,8 @@ void TCPHandler::runImpl()
 
 			/// Очищаем, так как, получая данные внешних таблиц, мы получили пустой блок.
 			/// А значит, stream помечен как cancelled и читать из него нельзя.
-			state.block_in = nullptr;
-			state.maybe_compressed_in = nullptr;	/// Для более корректного учёта MemoryTracker-ом.
+			state.block_in.reset();
+			state.maybe_compressed_in.reset();	/// Для более корректного учёта MemoryTracker-ом.
 
 			/// Обрабатываем Query
 			state.io = executeQuery(state.query, query_context, false, state.stage);
@@ -173,7 +173,7 @@ void TCPHandler::runImpl()
 		catch (const Exception & e)
 		{
 			state.io.onException();
-			exception = e.clone();
+			exception.reset(e.clone());
 
 			if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
 				throw;
@@ -187,22 +187,22 @@ void TCPHandler::runImpl()
 			  * Будем пытаться отправить эксепшен клиенту в любом случае - см. ниже.
 			  */
 			state.io.onException();
-			exception = new Exception(e.displayText(), ErrorCodes::POCO_EXCEPTION);
+			exception = std::make_unique<Exception>(e.displayText(), ErrorCodes::POCO_EXCEPTION);
 		}
 		catch (const Poco::Exception & e)
 		{
 			state.io.onException();
-			exception = new Exception(e.displayText(), ErrorCodes::POCO_EXCEPTION);
+			exception = std::make_unique<Exception>(e.displayText(), ErrorCodes::POCO_EXCEPTION);
 		}
 		catch (const std::exception & e)
 		{
 			state.io.onException();
-			exception = new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
+			exception = std::make_unique<Exception>(e.what(), ErrorCodes::STD_EXCEPTION);
 		}
 		catch (...)
 		{
 			state.io.onException();
-			exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+			exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
 		}
 
 		bool network_error = false;
@@ -588,7 +588,7 @@ bool TCPHandler::receiveData()
 			/// Если такой таблицы не существовало, создаем ее.
 			if (!(storage = query_context.tryGetExternalTable(external_table_name)))
 			{
-				NamesAndTypesListPtr columns = new NamesAndTypesList(block.getColumnsList());
+				NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(block.getColumnsList());
 				storage = StorageMemory::create(external_table_name, columns);
 				query_context.addExternalTable(external_table_name, storage);
 			}
@@ -609,11 +609,11 @@ void TCPHandler::initBlockInput()
 	if (!state.block_in)
 	{
 		if (state.compression == Protocol::Compression::Enable)
-			state.maybe_compressed_in = new CompressedReadBuffer(*in);
+			state.maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
 		else
 			state.maybe_compressed_in = in;
 
-		state.block_in = new NativeBlockInputStream(
+		state.block_in = std::make_shared<NativeBlockInputStream>(
 			*state.maybe_compressed_in,
 			client_revision);
 	}
@@ -625,11 +625,12 @@ void TCPHandler::initBlockOutput()
 	if (!state.block_out)
 	{
 		if (state.compression == Protocol::Compression::Enable)
-			state.maybe_compressed_out = new CompressedWriteBuffer(*out, query_context.getSettings().network_compression_method);
+			state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
+				*out, query_context.getSettings().network_compression_method);
 		else
 			state.maybe_compressed_out = out;
 
-		state.block_out = new NativeBlockOutputStream(
+		state.block_out = std::make_shared<NativeBlockOutputStream>(
 			*state.maybe_compressed_out,
 			client_revision);
 	}

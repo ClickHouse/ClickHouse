@@ -8,7 +8,7 @@ add_definitions(
 
 include_directories (include src)
 
-add_library (tcmalloc_minimal
+add_library (tcmalloc_minimal_internal
 ./src/malloc_hook.cc
 ./src/base/spinlock_internal.cc
 ./src/base/spinlock.cc

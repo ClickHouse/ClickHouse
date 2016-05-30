@@ -11,15 +11,14 @@
 #include <DB/DataStreams/glueBlockInputStreams.h>
 
 
-using Poco::SharedPtr;
 using namespace DB;
 
 
-void inputThread(BlockInputStreamPtr in, BlockOutputStreamPtr out, WriteBuffer & wb, Poco::FastMutex & mutex)
+void inputThread(BlockInputStreamPtr in, BlockOutputStreamPtr out, WriteBuffer & wb, std::mutex & mutex)
 {
 	while (Block block = in->read())
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 
 		out->write(block);
 		wb.next();
@@ -33,69 +32,66 @@ void forkThread(ForkPtr fork)
 
 
 int main(int argc, char ** argv)
+try
 {
-	try
-	{
-		Context context;
+	Context context;
 
-		context.setGlobalContext(context);
-		context.setPath("./");
+	context.setGlobalContext(context);
+	context.setPath("./");
 
-		loadMetadata(context);
+	loadMetadata(context);
 
-		context.setCurrentDatabase("default");
-		context.setSetting("max_threads", 1UL);
+	context.setCurrentDatabase("default");
+	context.setSetting("max_threads", 1UL);
 
-		BlockIO io1 = executeQuery(
-			"SELECT SearchPhrase, count()"
-				" FROM hits"
-				" WHERE SearchPhrase != ''"
-				" GROUP BY SearchPhrase"
-				" ORDER BY count() DESC"
-				" LIMIT 10",
-			context, QueryProcessingStage::Complete);
+	BlockIO io1 = executeQuery(
+		"SELECT SearchPhrase, count()"
+			" FROM hits"
+			" WHERE SearchPhrase != ''"
+			" GROUP BY SearchPhrase"
+			" ORDER BY count() DESC"
+			" LIMIT 10",
+		context, QueryProcessingStage::Complete);
 
-		BlockIO io2 = executeQuery(
-			"SELECT count()"
-				" FROM hits"
-				" WHERE SearchPhrase != ''",
-			context, QueryProcessingStage::Complete);
+	BlockIO io2 = executeQuery(
+		"SELECT count()"
+			" FROM hits"
+			" WHERE SearchPhrase != ''",
+		context, QueryProcessingStage::Complete);
 
-		WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
+	WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
 
-		BlockOutputStreamPtr out1 = context.getOutputFormat("TabSeparated", wb, io1.in_sample);
-		BlockOutputStreamPtr out2 = context.getOutputFormat("TabSeparated", wb, io2.in_sample);
+	BlockOutputStreamPtr out1 = context.getOutputFormat("TabSeparated", wb, io1.in_sample);
+	BlockOutputStreamPtr out2 = context.getOutputFormat("TabSeparated", wb, io2.in_sample);
 
-		BlockInputStreams inputs;
-		inputs.push_back(io1.in);
-		inputs.push_back(io2.in);
+	BlockInputStreams inputs;
+	inputs.push_back(io1.in);
+	inputs.push_back(io2.in);
 
-		for (size_t i = 0; i < inputs.size(); ++i)
-			std::cerr << inputs[i]->getID() << std::endl;
+	for (size_t i = 0; i < inputs.size(); ++i)
+		std::cerr << inputs[i]->getID() << std::endl;
 
-		Forks forks;
+	Forks forks;
 
-		glueBlockInputStreams(inputs, forks);
+	glueBlockInputStreams(inputs, forks);
 
-		std::cerr << forks.size() << std::endl;
+	std::cerr << forks.size() << std::endl;
 
-		Poco::FastMutex mutex;
+	std::mutex mutex;
 
-		boost::threadpool::pool pool(inputs.size() + forks.size());
+	boost::threadpool::pool pool(inputs.size() + forks.size());
 
-		pool.schedule(std::bind(inputThread, inputs[0], out1, std::ref(wb), std::ref(mutex)));
-		pool.schedule(std::bind(inputThread, inputs[1], out2, std::ref(wb), std::ref(mutex)));
+	pool.schedule(std::bind(inputThread, inputs[0], out1, std::ref(wb), std::ref(mutex)));
+	pool.schedule(std::bind(inputThread, inputs[1], out2, std::ref(wb), std::ref(mutex)));
 
-		for (size_t i = 0; i < forks.size(); ++i)
-			pool.schedule(std::bind(forkThread, forks[i]));
+	for (size_t i = 0; i < forks.size(); ++i)
+		pool.schedule(std::bind(forkThread, forks[i]));
 
-		pool.wait();
-	}
-	catch (const DB::Exception & e)
-	{
-		std::cerr << e.what() << ", " << e.displayText() << std::endl;
-		return 1;
-	}
-
+	pool.wait();
 	return 0;
+}
+catch (const DB::Exception & e)
+{
+	std::cerr << e.what() << ", " << e.displayText() << std::endl;
+	throw;
 }

@@ -71,7 +71,7 @@ std::string DataTypeNested::getName() const
 
 NamesAndTypesListPtr DataTypeNested::expandNestedColumns(const NamesAndTypesList & names_and_types)
 {
-	NamesAndTypesListPtr columns = new NamesAndTypesList;
+	NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>();
 	for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
 	{
 		if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&*it->type))
@@ -80,7 +80,7 @@ NamesAndTypesListPtr DataTypeNested::expandNestedColumns(const NamesAndTypesList
 			for (NamesAndTypesList::const_iterator jt = nested.begin(); jt != nested.end(); ++jt)
 			{
 				String nested_name = DataTypeNested::concatenateNestedName(it->name, jt->name);
-				columns->push_back(NameAndTypePair(nested_name, new DataTypeArray(jt->type)));
+				columns->push_back(NameAndTypePair(nested_name, std::make_shared<DataTypeArray>(jt->type)));
 			}
 		}
 		else

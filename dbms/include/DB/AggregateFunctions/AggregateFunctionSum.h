@@ -29,7 +29,7 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new typename DataTypeFromFieldType<typename NearestFieldType<T>::Type>::Type;
+		return std::make_shared<typename DataTypeFromFieldType<typename NearestFieldType<T>::Type>::Type>();
 	}
 
 	void setArgument(const DataTypePtr & argument)

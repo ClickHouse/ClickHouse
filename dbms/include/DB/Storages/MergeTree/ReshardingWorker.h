@@ -8,7 +8,6 @@
 #include <zkutil/SingleBarrier.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
-#include <Poco/SharedPtr.h>
 
 #include <string>
 #include <thread>
@@ -388,7 +387,7 @@ private:
 	Context & context;
 	Logger * log = &Logger::get("ReshardingWorker");
 
-	zkutil::EventPtr event = new Poco::Event;
+	zkutil::EventPtr event = std::make_shared<Poco::Event>();
 	zkutil::GetZooKeeper get_zookeeper;
 
 	std::atomic<bool> is_started{false};

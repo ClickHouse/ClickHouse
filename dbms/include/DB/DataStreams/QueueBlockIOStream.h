@@ -62,7 +62,7 @@ protected:
 private:
 	size_t queue_size;
 
-	typedef ConcurrentBoundedQueue<Block> Queue;
+	using Queue = ConcurrentBoundedQueue<Block>;
 	Queue queue;
 };
 

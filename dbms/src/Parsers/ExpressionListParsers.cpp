@@ -78,7 +78,7 @@ bool ParserList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 	bool first = true;
 	ParserWhiteSpaceOrComments ws;
 
-	ASTExpressionList * list = new ASTExpressionList;
+	auto list = std::make_shared<ASTExpressionList>();
 	node = list;
 
 	while (1)
@@ -151,30 +151,26 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 			ws.ignore(pos, end);
 
 			/// функция, соответствующая оператору
-			ASTFunction * p_function = new ASTFunction;
-			ASTFunction & function = *p_function;
-			ASTPtr function_node = p_function;
+			auto function = std::make_shared<ASTFunction>();
 
 			/// аргументы функции
-			ASTExpressionList * p_exp_list = new ASTExpressionList;
-			ASTExpressionList & exp_list = *p_exp_list;
-			ASTPtr exp_list_node = p_exp_list;
+			auto exp_list = std::make_shared<ASTExpressionList>();
 
 			ASTPtr elem;
 			if (!(remaining_elem_parser ? remaining_elem_parser : first_elem_parser)->parse(pos, end, elem, max_parsed_pos, expected))
 				return false;
 
 			/// первым аргументом функции будет предыдущий элемент, вторым - следующий
-			function.range.first = begin;
-			function.range.second = pos;
-			function.name = it[1];
-			function.arguments = exp_list_node;
-			function.children.push_back(exp_list_node);
+			function->range.first = begin;
+			function->range.second = pos;
+			function->name = it[1];
+			function->arguments = exp_list;
+			function->children.push_back(exp_list);
 
-			exp_list.children.push_back(node);
-			exp_list.children.push_back(elem);
-			exp_list.range.first = begin;
-			exp_list.range.second = pos;
+			exp_list->children.push_back(node);
+			exp_list->children.push_back(elem);
+			exp_list->range.first = begin;
+			exp_list->range.second = pos;
 
 			/** специальное исключение для оператора доступа к элементу массива x[y], который
 				* содержит инфиксную часть '[' и суффиксную ']' (задаётся в виде '[')
@@ -188,7 +184,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 					return false;
 			}
 
-			node = function_node;
+			node = function;
 		}
 	}
 
@@ -273,16 +269,16 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
 			return false;
 
 		/// функция AND
-		std::unique_ptr<ASTFunction> f_and = std::make_unique<ASTFunction>();
-		std::unique_ptr<ASTExpressionList> args_and = std::make_unique<ASTExpressionList>();
+		auto f_and = std::make_shared<ASTFunction>();
+		auto args_and = std::make_shared<ASTExpressionList>();
 
 		/// >=
-		std::unique_ptr<ASTFunction> f_ge = std::make_unique<ASTFunction>();
-		std::unique_ptr<ASTExpressionList> args_ge = std::make_unique<ASTExpressionList>();
+		auto f_ge = std::make_shared<ASTFunction>();
+		auto args_ge = std::make_shared<ASTExpressionList>();
 
 		/// <=
-		std::unique_ptr<ASTFunction> f_le = std::make_unique<ASTFunction>();
-		std::unique_ptr<ASTExpressionList> args_le = std::make_unique<ASTExpressionList>();
+		auto f_le = std::make_shared<ASTFunction>();
+		auto args_le = std::make_shared<ASTExpressionList>();
 
 		args_ge->children.emplace_back(subject);
 		args_ge->children.emplace_back(left);
@@ -293,25 +289,25 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
 		f_ge->range.first = begin;
 		f_ge->range.second = pos;
 		f_ge->name = "greaterOrEquals";
-		f_ge->arguments = args_ge.release();
+		f_ge->arguments = args_ge;
 		f_ge->children.emplace_back(f_ge->arguments);
 
 		f_le->range.first = begin;
 		f_le->range.second = pos;
 		f_le->name = "lessOrEquals";
-		f_le->arguments = args_le.release();
+		f_le->arguments = args_le;
 		f_le->children.emplace_back(f_le->arguments);
 
-		args_and->children.emplace_back(f_ge.release());
-		args_and->children.emplace_back(f_le.release());
+		args_and->children.emplace_back(f_ge);
+		args_and->children.emplace_back(f_le);
 
 		f_and->range.first = begin;
 		f_and->range.second = pos;
 		f_and->name = "and";
-		f_and->arguments = args_and.release();
+		f_and->arguments = args_and;
 		f_and->children.emplace_back(f_and->arguments);
 
-		node = f_and.release();
+		node = f_and;
 	}
 
 	return true;
@@ -354,28 +350,24 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 			return false;
 
 		/// функция, соответствующая оператору
-		ASTFunction * p_function = new ASTFunction;
-		ASTFunction & function = *p_function;
-		ASTPtr function_node = p_function;
+		auto function = std::make_shared<ASTFunction>();
 
 		/// аргументы функции
-		ASTExpressionList * p_exp_list = new ASTExpressionList;
-		ASTExpressionList & exp_list = *p_exp_list;
-		ASTPtr exp_list_node = p_exp_list;
+		auto exp_list = std::make_shared<ASTExpressionList>();
 
-		function.range.first = begin;
-		function.range.second = pos;
-		function.name = "if";
-		function.arguments = exp_list_node;
-		function.children.push_back(exp_list_node);
+		function->range.first = begin;
+		function->range.second = pos;
+		function->name = "if";
+		function->arguments = exp_list;
+		function->children.push_back(exp_list);
 
-		exp_list.children.push_back(elem_cond);
-		exp_list.children.push_back(elem_then);
-		exp_list.children.push_back(elem_else);
-		exp_list.range.first = begin;
-		exp_list.range.second = pos;
+		exp_list->children.push_back(elem_cond);
+		exp_list->children.push_back(elem_then);
+		exp_list->children.push_back(elem_else);
+		exp_list->range.first = begin;
+		exp_list->range.second = pos;
 
-		node = function_node;
+		node = function;
 	}
 
 	return true;
@@ -424,15 +416,15 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & 
 
 		/// lambda(tuple(inner_arguments), expression)
 
-		ASTFunction * lambda = new ASTFunction;
+		auto lambda = std::make_shared<ASTFunction>();
 		node = lambda;
 		lambda->name = "lambda";
 
-		ASTExpressionList * outer_arguments = new ASTExpressionList;
+		auto outer_arguments = std::make_shared<ASTExpressionList>();
 		lambda->arguments = outer_arguments;
 		lambda->children.push_back(lambda->arguments);
 
-		ASTFunction * tuple = new ASTFunction;
+		auto tuple = std::make_shared<ASTFunction>();
 		outer_arguments->children.push_back(tuple);
 		tuple->name = "tuple";
 		tuple->arguments = inner_arguments;
@@ -505,26 +497,22 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 	else
 	{
 		/// функция, соответствующая оператору
-		ASTFunction * p_function = new ASTFunction;
-		ASTFunction & function = *p_function;
-		ASTPtr function_node = p_function;
+		auto function = std::make_shared<ASTFunction>();
 
 		/// аргументы функции
-		ASTExpressionList * p_exp_list = new ASTExpressionList;
-		ASTExpressionList & exp_list = *p_exp_list;
-		ASTPtr exp_list_node = p_exp_list;
+		auto exp_list = std::make_shared<ASTExpressionList>();
 
-		function.range.first = begin;
-		function.range.second = pos;
-		function.name = it[1];
-		function.arguments = exp_list_node;
-		function.children.push_back(exp_list_node);
+		function->range.first = begin;
+		function->range.second = pos;
+		function->name = it[1];
+		function->arguments = exp_list;
+		function->children.push_back(exp_list);
 
-		exp_list.children.push_back(elem);
-		exp_list.range.first = begin;
-		exp_list.range.second = pos;
+		exp_list->children.push_back(elem);
+		exp_list->range.first = begin;
+		exp_list->range.second = pos;
 
-		node = function_node;
+		node = function;
 	}
 
 	return true;

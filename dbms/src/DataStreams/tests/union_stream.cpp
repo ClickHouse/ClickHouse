@@ -1,9 +1,6 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Poco/SharedPtr.h>
-#include <Poco/Stopwatch.h>
-
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 
 #include <DB/Storages/System/StorageSystemNumbers.h>
@@ -36,9 +33,9 @@ void test1()
 	QueryProcessingStage::Enum stage3;
 
 	BlockInputStreams streams;
-	streams.emplace_back(new LimitBlockInputStream(table->read(column_names, 0, context, Settings(), stage1, 1)[0], 30, 30000));
-	streams.emplace_back(new LimitBlockInputStream(table->read(column_names, 0, context, Settings(), stage2, 1)[0], 30, 2000));
-	streams.emplace_back(new LimitBlockInputStream(table->read(column_names, 0, context, Settings(), stage3, 1)[0], 30, 100));
+	streams.emplace_back(std::make_shared<LimitBlockInputStream>(table->read(column_names, 0, context, Settings(), stage1, 1)[0], 30, 30000));
+	streams.emplace_back(std::make_shared<LimitBlockInputStream>(table->read(column_names, 0, context, Settings(), stage2, 1)[0], 30, 2000));
+	streams.emplace_back(std::make_shared<LimitBlockInputStream>(table->read(column_names, 0, context, Settings(), stage3, 1)[0], 30, 100));
 
 	UnionBlockInputStream<> union_stream(streams, nullptr, 2);
 
@@ -86,16 +83,16 @@ void test2()
 
 	BlockInputStreams streams;
 
-	BlockInputStreamPtr stream1 = new LimitBlockInputStream(table->read(column_names, 0, context, Settings(), stage1, 1)[0], 30, 30000);
-	stream1 = new BlockExtraInfoInputStream(stream1, extra_info1);
+	BlockInputStreamPtr stream1 = std::make_shared<LimitBlockInputStream>(table->read(column_names, 0, context, Settings(), stage1, 1)[0], 30, 30000);
+	stream1 = std::make_shared<BlockExtraInfoInputStream>(stream1, extra_info1);
 	streams.emplace_back(stream1);
 
-	BlockInputStreamPtr stream2 = new LimitBlockInputStream(table->read(column_names, 0, context, Settings(), stage2, 1)[0], 30, 2000);
-	stream2 = new BlockExtraInfoInputStream(stream2, extra_info2);
+	BlockInputStreamPtr stream2 = std::make_shared<LimitBlockInputStream>(table->read(column_names, 0, context, Settings(), stage2, 1)[0], 30, 2000);
+	stream2 = std::make_shared<BlockExtraInfoInputStream>(stream2, extra_info2);
 	streams.emplace_back(stream2);
 
-	BlockInputStreamPtr stream3 = new LimitBlockInputStream(table->read(column_names, 0, context, Settings(), stage3, 1)[0], 30, 100);
-	stream3 = new BlockExtraInfoInputStream(stream3, extra_info3);
+	BlockInputStreamPtr stream3 = std::make_shared<LimitBlockInputStream>(table->read(column_names, 0, context, Settings(), stage3, 1)[0], 30, 100);
+	stream3 = std::make_shared<BlockExtraInfoInputStream>(stream3, extra_info3);
 	streams.emplace_back(stream3);
 
 	UnionBlockInputStream<StreamUnionMode::ExtraInfo> union_stream(streams, nullptr, 2);
@@ -106,27 +103,27 @@ void test2()
 		ColumnWithTypeAndName col;
 
 		col.name = "number";
-		col.type = new DataTypeUInt64;
+		col.type = std::make_shared<DataTypeUInt64>();
 		col.column = col.type->createColumn();
 		block.insert(col);
 
 		col.name = "host_name";
-		col.type = new DataTypeString;
+		col.type = std::make_shared<DataTypeString>();
 		col.column = col.type->createColumn();
 		block.insert(col);
 
 		col.name = "host_address";
-		col.type = new DataTypeString;
+		col.type = std::make_shared<DataTypeString>();
 		col.column = col.type->createColumn();
 		block.insert(col);
 
 		col.name = "port";
-		col.type = new DataTypeUInt16;
+		col.type = std::make_shared<DataTypeUInt16>();
 		col.column = col.type->createColumn();
 		block.insert(col);
 
 		col.name = "user";
-		col.type = new DataTypeString;
+		col.type = std::make_shared<DataTypeString>();
 		col.column = col.type->createColumn();
 		block.insert(col);
 
@@ -142,10 +139,10 @@ void test2()
 		const auto & col = block.getByPosition(0);
 		auto extra_info = union_stream.getBlockExtraInfo();
 
-		ColumnPtr host_name_column = new ColumnString;
-		ColumnPtr host_address_column = new ColumnString;
-		ColumnPtr port_column = new ColumnUInt16;
-		ColumnPtr user_column = new ColumnString;
+		ColumnPtr host_name_column = std::make_shared<ColumnString>();
+		ColumnPtr host_address_column = std::make_shared<ColumnString>();
+		ColumnPtr port_column = std::make_shared<ColumnUInt16>();
+		ColumnPtr user_column = std::make_shared<ColumnString>();
 
 		size_t row_count = block.rows();
 		for (size_t i = 0; i < row_count; ++i)
@@ -158,10 +155,10 @@ void test2()
 
 		Block out_block;
 		out_block.insert(ColumnWithTypeAndName(col.column->clone(), col.type, col.name));
-		out_block.insert(ColumnWithTypeAndName(host_name_column, new DataTypeString, "host_name"));
-		out_block.insert(ColumnWithTypeAndName(host_address_column, new DataTypeString, "host_address"));
-		out_block.insert(ColumnWithTypeAndName(port_column, new DataTypeUInt16, "port"));
-		out_block.insert(ColumnWithTypeAndName(user_column, new DataTypeString, "user"));
+		out_block.insert(ColumnWithTypeAndName(host_name_column, std::make_shared<DataTypeString>(), "host_name"));
+		out_block.insert(ColumnWithTypeAndName(host_address_column, std::make_shared<DataTypeString>(), "host_address"));
+		out_block.insert(ColumnWithTypeAndName(port_column, std::make_shared<DataTypeUInt16>(), "port"));
+		out_block.insert(ColumnWithTypeAndName(user_column, std::make_shared<DataTypeString>(), "user"));
 
 		out->write(out_block);
 		wb.next();

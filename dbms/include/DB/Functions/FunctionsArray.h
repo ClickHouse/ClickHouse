@@ -71,7 +71,7 @@ class FunctionArray : public IFunction
 {
 public:
 	static constexpr auto name = "array";
-	static IFunction * create(const Context & context) { return new FunctionArray; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArray>(); }
 
 private:
 	/// Получить имя функции.
@@ -192,7 +192,7 @@ public:
 		{
 			/// Если тип числовой, пробуем выделить наименьший общий тип
 			auto enriched_result_type = getLeastCommonType(arguments);
-			return new DataTypeArray{enriched_result_type};
+			return std::make_shared<DataTypeArray>(enriched_result_type);
 		}
 		else
 		{
@@ -210,7 +210,7 @@ public:
 				}
 			}
 
-			return new DataTypeArray{result_type};
+			return std::make_shared<DataTypeArray>(result_type);
 		}
 	}
 
@@ -252,14 +252,12 @@ public:
 					/// Иначе необходимо привести его к типу результата
 					addField(result_type, (*block.getByPosition(arg_num).column)[0], arr);
 
-			block.getByPosition(result).column = new ColumnConstArray{
-				first_arg.column->size(), arr, new DataTypeArray{result_type}
-			};
+			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(
+				first_arg.column->size(), arr, std::make_shared<DataTypeArray>(result_type));
 		}
 		else
 		{
-			auto out = new ColumnArray{result_type->createColumn()};
-			ColumnPtr out_ptr{out};
+			auto out = std::make_shared<ColumnArray>(result_type->createColumn());
 
 			for (const auto row_num : ext::range(0, first_arg.column->size()))
 			{
@@ -276,7 +274,7 @@ public:
 				out->insert(arr);
 			}
 
-			block.getByPosition(result).column = out_ptr;
+			block.getByPosition(result).column = out;
 		}
 	}
 
@@ -481,7 +479,7 @@ class FunctionArrayElement : public IFunction
 {
 public:
 	static constexpr auto name = "arrayElement";
-	static IFunction * create(const Context & context) { return new FunctionArrayElement; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayElement>(); }
 
 private:
 	template <typename T>
@@ -497,7 +495,7 @@ private:
 		if (!col_nested)
 			return false;
 
-		ColumnVector<T> * col_res = new ColumnVector<T>;
+		auto col_res = std::make_shared<ColumnVector<T>>();
 		block.getByPosition(result).column = col_res;
 
 		if (index.getType() == Field::Types::UInt64)
@@ -523,7 +521,7 @@ private:
 		if (!col_nested)
 			return false;
 
-		ColumnVector<data_type> * col_res = new ColumnVector<data_type>;
+		auto col_res = std::make_shared<ColumnVector<data_type>>();
 		block.getByPosition(result).column = col_res;
 
 		ArrayElementNumImpl<data_type>::template vector<index_type>(col_nested->getData(), col_array->getOffsets(), index, col_res->getData());
@@ -543,7 +541,7 @@ private:
 		if (!col_nested)
 			return false;
 
-		ColumnString * col_res = new ColumnString;
+		std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 		block.getByPosition(result).column = col_res;
 
 		if (index.getType() == Field::Types::UInt64)
@@ -581,7 +579,7 @@ private:
 		if (!col_nested)
 			return false;
 
-		ColumnString * col_res = new ColumnString;
+		std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 		block.getByPosition(result).column = col_res;
 
 		ArrayElementStringImpl::vector<index_type>(
@@ -724,8 +722,8 @@ private:
 		for (size_t i = 0; i < tuple_size; ++i)
 		{
 			ColumnWithTypeAndName array_of_tuple_section;
-			array_of_tuple_section.column = new ColumnArray(tuple_block.getByPosition(i).column, col_array->getOffsetsColumn());
-			array_of_tuple_section.type = new DataTypeArray(tuple_block.getByPosition(i).type);
+			array_of_tuple_section.column = std::make_shared<ColumnArray>(tuple_block.getByPosition(i).column, col_array->getOffsetsColumn());
+			array_of_tuple_section.type = std::make_shared<DataTypeArray>(tuple_block.getByPosition(i).type);
 			block_of_temporary_results.insert(array_of_tuple_section);
 
 			ColumnWithTypeAndName array_elements_of_tuple_section;
@@ -736,7 +734,7 @@ private:
 			result_tuple_block.insert(block_of_temporary_results.getByPosition(i * 2 + 2));
 		}
 
-		ColumnTuple * col_res = new ColumnTuple(result_tuple_block);
+		auto col_res = std::make_shared<ColumnTuple>(result_tuple_block);
 		block.getByPosition(result).column = col_res;
 
 		return true;
@@ -816,14 +814,14 @@ public:
 /// Для has.
 struct IndexToOne
 {
-	typedef UInt8 ResultType;
+	using ResultType = UInt8;
 	static bool apply(size_t j, ResultType & current) { current = 1; return false; }
 };
 
 /// Для indexOf.
 struct IndexIdentity
 {
-	typedef UInt64 ResultType;
+	using ResultType = UInt64;
 	/// Индекс возвращается начиная с единицы.
 	static bool apply(size_t j, ResultType & current) { current = j + 1; return false; }
 };
@@ -831,7 +829,7 @@ struct IndexIdentity
 /// Для countEqual.
 struct IndexCount
 {
-	typedef UInt32 ResultType;
+	using ResultType = UInt32;
 	static bool apply(size_t j, ResultType & current) { ++current; return true; }
 };
 
@@ -960,10 +958,10 @@ class FunctionArrayIndex : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionArrayIndex; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayIndex>(); }
 
 private:
-	typedef ColumnVector<typename IndexConv::ResultType> ResultColumnType;
+	using ResultColumnType = ColumnVector<typename IndexConv::ResultType>;
 
 	template <typename T>
 	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -997,7 +995,7 @@ private:
 
 		if (const auto item_arg_const = typeid_cast<const ColumnConst<U> *>(item_arg))
 		{
-			const auto col_res = new ResultColumnType;
+			const auto col_res = std::make_shared<ResultColumnType>();
 			ColumnPtr col_ptr{col_res};
 			block.getByPosition(result).column = col_ptr;
 
@@ -1006,7 +1004,7 @@ private:
 		}
 		else if (const auto item_arg_vector = typeid_cast<const ColumnVector<U> *>(item_arg))
 		{
-			const auto col_res = new ResultColumnType;
+			const auto col_res = std::make_shared<ResultColumnType>();
 			ColumnPtr col_ptr{col_res};
 			block.getByPosition(result).column = col_ptr;
 
@@ -1035,7 +1033,7 @@ private:
 
 		if (const auto item_arg_const = typeid_cast<const ColumnConst<String> *>(item_arg))
 		{
-			const auto col_res = new ResultColumnType;
+			const auto col_res = std::make_shared<ResultColumnType>();
 			ColumnPtr col_ptr{col_res};
 			block.getByPosition(result).column = col_ptr;
 
@@ -1044,7 +1042,7 @@ private:
 		}
 		else if (const auto item_arg_vector = typeid_cast<const ColumnString *>(item_arg))
 		{
-			const auto col_res = new ResultColumnType;
+			const auto col_res = std::make_shared<ResultColumnType>();
 			ColumnPtr col_ptr{col_res};
 			block.getByPosition(result).column = col_ptr;
 
@@ -1087,9 +1085,8 @@ private:
 		else
 		{
 			const auto size = item_arg->size();
-			const auto col_res = new ResultColumnType{size, {}};
-			ColumnPtr col_ptr{col_res};
-			block.getByPosition(result).column = col_ptr;
+			const auto col_res = std::make_shared<ResultColumnType>(size);
+			block.getByPosition(result).column = col_res;
 
 			auto & data = col_res->getData();
 
@@ -1135,7 +1132,7 @@ public:
 			throw Exception("Type of array elements and second argument for function " + getName() + " must be same."
 				" Passed: " + arguments[0]->getName() + " and " + arguments[1]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new typename DataTypeFromFieldType<typename IndexConv::ResultType>::Type;
+		return std::make_shared<typename DataTypeFromFieldType<typename IndexConv::ResultType>::Type>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1165,7 +1162,7 @@ class FunctionArrayEnumerate : public IFunction
 {
 public:
 	static constexpr auto name = "arrayEnumerate";
-	static IFunction * create (const Context & context) { return new FunctionArrayEnumerate; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayEnumerate>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1185,7 +1182,7 @@ public:
 		if (!array_type)
 			throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeArray(new DataTypeUInt32);
+		return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1195,8 +1192,8 @@ public:
 		{
 			const ColumnArray::Offsets_t & offsets = array->getOffsets();
 
-			ColumnUInt32 * res_nested = new ColumnUInt32;
-			ColumnArray * res_array = new ColumnArray(res_nested, array->getOffsetsColumn());
+			auto res_nested = std::make_shared<ColumnUInt32>();
+			auto res_array = std::make_shared<ColumnArray>(res_nested, array->getOffsetsColumn());
 			block.getByPosition(result).column = res_array;
 
 			ColumnUInt32::Container_t & res_values = res_nested->getData();
@@ -1222,7 +1219,7 @@ public:
 				res_values[i] = i + 1;
 			}
 
-			ColumnConstArray * res_array = new ColumnConstArray(array->size(), res_values, new DataTypeArray(new DataTypeUInt32));
+			auto res_array = std::make_shared<ColumnConstArray>(array->size(), res_values, std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()));
 			block.getByPosition(result).column = res_array;
 		}
 		else
@@ -1241,7 +1238,7 @@ class FunctionArrayUniq : public IFunction
 {
 public:
 	static constexpr auto name = "arrayUniq";
-	static IFunction * create(const Context & context) { return new FunctionArrayUniq; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayUniq>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1265,7 +1262,7 @@ public:
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
 
-		return new DataTypeUInt32;
+		return std::make_shared<DataTypeUInt32>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1303,7 +1300,7 @@ public:
 		}
 
 		const ColumnArray * first_array = typeid_cast<const ColumnArray *>(&*array_columns[0]);
-		ColumnUInt32 * res = new ColumnUInt32;
+		auto res = std::make_shared<ColumnUInt32>();
 		block.getByPosition(result).column = res;
 
 		ColumnUInt32::Container_t & res_values = res->getData();
@@ -1400,7 +1397,7 @@ private:
 		for (size_t i = 0; i < values.size(); ++i)
 			set.insert(values[i]);
 
-		block.getByPosition(result).column = new ColumnConstUInt32(array->size(), set.size());
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt32>(array->size(), set.size());
 		return true;
 	}
 
@@ -1471,7 +1468,7 @@ class FunctionArrayEnumerateUniq : public IFunction
 {
 public:
 	static constexpr auto name = "arrayEnumerateUniq";
-	static IFunction * create(const Context & context) { return new FunctionArrayEnumerateUniq; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayEnumerateUniq>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1495,7 +1492,7 @@ public:
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
 
-		return new DataTypeArray(new DataTypeUInt32);
+		return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1533,8 +1530,8 @@ public:
 		}
 
 		const ColumnArray * first_array = typeid_cast<const ColumnArray *>(&*array_columns[0]);
-		ColumnUInt32 * res_nested = new ColumnUInt32;
-		ColumnArray * res_array = new ColumnArray(res_nested, first_array->getOffsetsColumn());
+		auto res_nested = std::make_shared<ColumnUInt32>();
+		auto res_array = std::make_shared<ColumnArray>(res_nested, first_array->getOffsetsColumn());
 		block.getByPosition(result).column = res_array;
 
 		ColumnUInt32::Container_t & res_values = res_nested->getData();
@@ -1635,7 +1632,7 @@ private:
 			res_values[i] = static_cast<UInt64>(++indices[values[i]]);
 		}
 
-		ColumnConstArray * res_array = new ColumnConstArray(array->size(), res_values, new DataTypeArray(new DataTypeUInt32));
+		auto res_array = std::make_shared<ColumnConstArray>(array->size(), res_values, std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()));
 		block.getByPosition(result).column = res_array;
 
 		return true;
@@ -1716,7 +1713,7 @@ struct FunctionEmptyArray : public IFunction
 {
 	static constexpr auto base_name = "emptyArray";
 	static const String name;
-	static IFunction * create(const Context & context) { return new FunctionEmptyArray; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionEmptyArray>(); }
 
 private:
 	String getName() const override
@@ -1731,17 +1728,16 @@ private:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeArray{new DataType{}};
+		return std::make_shared<DataTypeArray>(std::make_shared<DataType>());
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		using UnderlyingColumnType = typename TypeToColumnType<typename DataType::FieldType>::ColumnType;
 
-		block.getByPosition(result).column = new ColumnArray{
-			new UnderlyingColumnType,
-			new ColumnArray::ColumnOffsets_t{block.rowsInFirstColumn(), 0}
-		};
+		block.getByPosition(result).column = std::make_shared<ColumnArray>(
+			std::make_shared<UnderlyingColumnType>(),
+			std::make_shared<ColumnArray::ColumnOffsets_t>(block.rowsInFirstColumn(), 0));
 	}
 };
 
@@ -1753,7 +1749,7 @@ class FunctionRange : public IFunction
 public:
 	static constexpr auto max_elements = 100000000;
 	static constexpr auto name = "range";
-	static IFunction * create(const Context &) { return new FunctionRange; }
+	static FunctionPtr create(const Context &) { return std::make_shared<FunctionRange>(); }
 
 private:
 	String getName() const override
@@ -1783,7 +1779,7 @@ private:
 			};
 		}
 
-		return new DataTypeArray{arg->clone()};
+		return std::make_shared<DataTypeArray>(arg->clone());
 	}
 
 	template <typename T>
@@ -1811,11 +1807,10 @@ private:
 					ErrorCodes::ARGUMENT_OUT_OF_BOUND
 				};
 
-			const auto data_col = new ColumnVector<T>{total_values};
-			const auto out = new ColumnArray{
+			const auto data_col = std::make_shared<ColumnVector<T>>(total_values);
+			const auto out = std::make_shared<ColumnArray>(
 				data_col,
-				new ColumnArray::ColumnOffsets_t{in->size()}
-			};
+				std::make_shared<ColumnArray::ColumnOffsets_t>(in->size()));
 			block.getByPosition(result).column = out;
 
 			auto & out_data = data_col->getData();
@@ -1848,11 +1843,10 @@ private:
 					ErrorCodes::ARGUMENT_OUT_OF_BOUND
 				};
 
-			const auto data_col = new ColumnVector<T>{total_values};
-			const auto out = new ColumnArray{
+			const auto data_col = std::make_shared<ColumnVector<T>>(total_values);
+			const auto out = std::make_shared<ColumnArray>(
 				data_col,
-				new ColumnArray::ColumnOffsets_t{in->size()}
-			};
+				std::make_shared<ColumnArray::ColumnOffsets_t>(in->size()));
 			block.getByPosition(result).column = out;
 
 			auto & out_data = data_col->getData();
@@ -1894,7 +1888,7 @@ class FunctionEmptyArrayToSingle : public IFunction
 {
 public:
 	static constexpr auto name = "emptyArrayToSingle";
-	static IFunction * create(const Context & context) { return new FunctionEmptyArrayToSingle; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionEmptyArrayToSingle>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1964,9 +1958,9 @@ private:
 			{
 				auto nested_type = typeid_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType();
 
-				block.getByPosition(result).column = new ColumnConstArray(
+				block.getByPosition(result).column = std::make_shared<ColumnConstArray>(
 					block.rowsInFirstColumn(),
-					{nested_type->getDefault()},
+					Array{nested_type->getDefault()},
 					nested_type->clone());
 			}
 			else
@@ -2144,7 +2138,7 @@ class FunctionArrayReverse : public IFunction
 {
 public:
 	static constexpr auto name = "reverse";
-	static IFunction * create(const Context & context) { return new FunctionArrayReverse; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayReverse>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -2218,7 +2212,7 @@ private:
 			for (size_t i = 0; i < size; ++i)
 				res[i] = arr[size - i - 1];
 
-			block.getByPosition(result).column = new ColumnConstArray(
+			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(
 				block.rowsInFirstColumn(),
 				res,
 				block.getByPosition(arguments[0]).type->clone());
@@ -2366,7 +2360,7 @@ class FunctionArrayReduce : public IFunction
 {
 public:
 	static constexpr auto name = "arrayReduce";
-	static IFunction * create(const Context & context) { return new FunctionArrayReduce; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayReduce>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -2540,9 +2534,9 @@ struct NameHas			{ static constexpr auto name = "has"; };
 struct NameIndexOf		{ static constexpr auto name = "indexOf"; };
 struct NameCountEqual	{ static constexpr auto name = "countEqual"; };
 
-typedef FunctionArrayIndex<IndexToOne, 		NameHas>		FunctionHas;
-typedef FunctionArrayIndex<IndexIdentity, 	NameIndexOf>	FunctionIndexOf;
-typedef FunctionArrayIndex<IndexCount, 	NameCountEqual>		FunctionCountEqual;
+using FunctionHas = FunctionArrayIndex<IndexToOne, 		NameHas>	;
+using FunctionIndexOf = FunctionArrayIndex<IndexIdentity, 	NameIndexOf>;
+using FunctionCountEqual = FunctionArrayIndex<IndexCount, 	NameCountEqual>	;
 
 using FunctionEmptyArrayUInt8 = FunctionEmptyArray<DataTypeUInt8>;
 using FunctionEmptyArrayUInt16 = FunctionEmptyArray<DataTypeUInt16>;

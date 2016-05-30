@@ -72,7 +72,7 @@ struct HalfMD5Impl
 struct MD5Impl
 {
 	static constexpr auto name = "MD5";
-	static constexpr auto length = 16;
+	enum { length = 16 };
 
 	static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
 	{
@@ -86,7 +86,7 @@ struct MD5Impl
 struct SHA1Impl
 {
 	static constexpr auto name = "SHA1";
-	static constexpr auto length = 20;
+	enum { length = 20 };
 
 	static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
 	{
@@ -100,7 +100,7 @@ struct SHA1Impl
 struct SHA224Impl
 {
 	static constexpr auto name = "SHA224";
-	static constexpr auto length = 28;
+	enum { length = 28 };
 
 	static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
 	{
@@ -114,7 +114,7 @@ struct SHA224Impl
 struct SHA256Impl
 {
 	static constexpr auto name = "SHA256";
-	static constexpr auto length = 32;
+	enum { length = 32 };
 
 	static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
 	{
@@ -136,7 +136,7 @@ struct SipHash64Impl
 struct SipHash128Impl
 {
 	static constexpr auto name = "sipHash128";
-	static constexpr auto length = 16;
+	enum { length = 16 };
 
 	static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
 	{
@@ -146,7 +146,7 @@ struct SipHash128Impl
 
 struct IntHash32Impl
 {
-	typedef UInt32 ReturnType;
+	using ReturnType = UInt32;
 
 	static UInt32 apply(UInt64 x)
 	{
@@ -157,7 +157,7 @@ struct IntHash32Impl
 
 struct IntHash64Impl
 {
-	typedef UInt64 ReturnType;
+	using ReturnType = UInt64;
 
 	static UInt64 apply(UInt64 x)
 	{
@@ -171,7 +171,7 @@ class FunctionStringHash64 : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionStringHash64; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringHash64>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -191,7 +191,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeUInt64;
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -199,7 +199,7 @@ public:
 	{
 		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnUInt64 * col_to = new ColumnUInt64;
+			auto col_to = std::make_shared<ColumnUInt64>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnString::Chars_t & data = col_from->getChars();
@@ -215,7 +215,7 @@ public:
 		}
 		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConstUInt64(
+			block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(
 				col_from->size(),
 				Impl::apply(col_from->getData().data(), col_from->getData().size()));
 		}
@@ -232,7 +232,7 @@ class FunctionStringHashFixedString : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
-	static IFunction * create(const Context & context) { return new FunctionStringHashFixedString; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringHashFixedString>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -252,7 +252,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeFixedString{Impl::length};
+		return std::make_shared<DataTypeFixedString>(Impl::length);
 	}
 
 	/// Выполнить функцию над блоком.
@@ -260,7 +260,7 @@ public:
 	{
 		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(&*block.getByPosition(arguments[0]).column))
 		{
-			auto col_to = new ColumnFixedString{Impl::length};
+			auto col_to = std::make_shared<ColumnFixedString>(Impl::length);
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnString::Chars_t & data = col_from->getChars();
@@ -282,11 +282,10 @@ public:
 			String hash(Impl::length, 0);
 			Impl::apply(data.data(), data.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
-			block.getByPosition(result).column = new ColumnConst<String>{
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(
 				col_from->size(),
 				hash,
-				new DataTypeFixedString{Impl::length}
-			};
+				std::make_shared<DataTypeFixedString>(Impl::length));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -301,17 +300,17 @@ class FunctionIntHash : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionIntHash; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIntHash>(); };
 
 private:
-	typedef typename Impl::ReturnType ToType;
+	using ToType = typename Impl::ReturnType;
 
 	template <typename FromType>
 	void executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		if (ColumnVector<FromType> * col_from = typeid_cast<ColumnVector<FromType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<ToType> * col_to = new ColumnVector<ToType>;
+			auto col_to = std::make_shared<ColumnVector<ToType>>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<FromType>::Container_t & vec_from = col_from->getData();
@@ -324,7 +323,7 @@ private:
 		}
 		else if (ColumnConst<FromType> * col_from = typeid_cast<ColumnConst<FromType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConst<ToType>(col_from->size(), Impl::apply(col_from->getData()));
+			block.getByPosition(result).column = std::make_shared<ColumnConst<ToType>>(col_from->size(), Impl::apply(col_from->getData()));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -351,7 +350,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new typename DataTypeFromFieldType<typename Impl::ReturnType>::Type;
+		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ReturnType>::Type>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -397,7 +396,7 @@ class FunctionNeighbourhoodHash64 : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
-	static IFunction * create(const Context & context) { return new FunctionNeighbourhoodHash64; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNeighbourhoodHash64>(); };
 
 private:
 	template <typename FromType, bool first>
@@ -593,14 +592,14 @@ public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
-		return new DataTypeUInt64;
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t rows = block.rowsInFirstColumn();
-		ColumnUInt64 * col_to = new ColumnUInt64(rows);
+		auto col_to = std::make_shared<ColumnUInt64>(rows);
 		block.getByPosition(result).column = col_to;
 
 		ColumnUInt64::Container_t & vec_to = col_to->getData();
@@ -700,7 +699,7 @@ class FunctionURLHash : public IFunction
 {
 public:
 	static constexpr auto name = "URLHash";
-	static IFunction * create(const Context &) { return new FunctionURLHash; }
+	static FunctionPtr create(const Context &) { return std::make_shared<FunctionURLHash>(); }
 
 	String getName() const override { return name; }
 
@@ -738,7 +737,7 @@ public:
 				};
 		}
 
-		return new DataTypeUInt64;
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -761,7 +760,7 @@ private:
 		if (const auto col_from = typeid_cast<const ColumnString *>(col_untyped))
 		{
 			const auto size = col_from->size();
-			const auto col_to = new ColumnVector<UInt64>{size};
+			const auto col_to = std::make_shared<ColumnUInt64>(size);
 			block.getByPosition(result).column = col_to;
 
 			const auto & chars = col_from->getChars();
@@ -775,17 +774,15 @@ private:
 		}
 		else if (const auto col_from = typeid_cast<const ColumnConstString *>(col_untyped))
 		{
-			block.getByPosition(result).column = new ColumnConstUInt64{
+			block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(
 				col_from->size(),
-				URLHashImpl::apply(col_from->getData().data(), col_from->getData().size())
-			};
+				URLHashImpl::apply(col_from->getData().data(), col_from->getData().size()));
 		}
 		else
 			throw Exception{
 				"Illegal column " + block.getByPosition(arguments[0]).column->getName() +
 				" of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN
-			};
+				ErrorCodes::ILLEGAL_COLUMN};
 	}
 
 	void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const std::size_t result) const
@@ -803,7 +800,7 @@ private:
 		if (const auto col_from = typeid_cast<const ColumnString *>(col_untyped))
 		{
 			const auto size = col_from->size();
-			const auto col_to = new ColumnVector<UInt64>{size};
+			const auto col_to = std::make_shared<ColumnUInt64>(size);
 			block.getByPosition(result).column = col_to;
 
 			const auto & chars = col_from->getChars();
@@ -817,17 +814,15 @@ private:
 		}
 		else if (const auto col_from = typeid_cast<const ColumnConstString *>(col_untyped))
 		{
-			block.getByPosition(result).column = new ColumnConstUInt64{
+			block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(
 				col_from->size(),
-				URLHierarchyHashImpl::apply(level, col_from->getData().data(), col_from->getData().size())
-			};
+				URLHierarchyHashImpl::apply(level, col_from->getData().data(), col_from->getData().size()));
 		}
 		else
 			throw Exception{
 				"Illegal column " + block.getByPosition(arguments[0]).column->getName() +
 				" of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN
-			};
+				ErrorCodes::ILLEGAL_COLUMN};
 	}
 };
 

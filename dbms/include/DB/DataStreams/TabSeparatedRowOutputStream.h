@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/Core/Block.h>
 #include <DB/IO/WriteBuffer.h>
 #include <DB/DataStreams/IRowOutputStream.h>

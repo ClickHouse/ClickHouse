@@ -3,8 +3,8 @@
 #include <iostream>
 #include <iomanip>
 
+#include <Poco/Exception.h>
 #include <DB/Common/HashTable/Hash.h>
-
 #include <DB/Common/Stopwatch.h>
 
 #include "AvalancheTest.h"	/// Взято из SMHasher.
@@ -177,7 +177,7 @@ static inline size_t tabulation(UInt64 x)
 
 const size_t BUF_SIZE = 1024;
 
-typedef std::vector<UInt64> Source;
+using Source = std::vector<UInt64>;
 
 
 void report(const char * name, size_t n, double elapsed, UInt64 tsc_diff, size_t res)
@@ -261,7 +261,7 @@ int main(int argc, char ** argv)
 
 	std::cerr << std::fixed << std::setprecision(2);
 
-	typedef std::vector<UInt64> Source;
+	using Source = std::vector<UInt64>;
 	Source data(BUF_SIZE);
 
 	{

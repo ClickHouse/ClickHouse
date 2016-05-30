@@ -71,7 +71,7 @@ void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t mult
 		++indent;
 
 		/// Если поддерево повторяется несколько раз, то будем выводить его один раз с множителем.
-		typedef std::map<String, size_t> Multipliers;
+		using Multipliers = std::map<String, size_t>;
 		Multipliers multipliers;
 
 		for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)

@@ -5,7 +5,7 @@ namespace DB
 
 AggregateFunctionPtr createAggregateFunctionMerge(AggregateFunctionPtr & nested)
 {
-	return new AggregateFunctionMerge(nested);
+	return std::make_shared<AggregateFunctionMerge>(nested);
 }
 
 }

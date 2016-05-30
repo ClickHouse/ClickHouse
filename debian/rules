@@ -4,7 +4,7 @@
 # Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
 ifndef THREADS_COUNT
-    THREADS_COUNT=24
+    THREADS_COUNT=`grep -c ^processor /proc/cpuinfo`
 endif
 
 configure-stamp:

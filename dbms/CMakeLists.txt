@@ -753,6 +753,10 @@ add_library (dbms
 	src/DataTypes/DataTypeTuple.cpp
 	src/DataTypes/FieldToDataType.cpp
 
+	src/Dictionaries/MySQLDictionarySource.cpp
+	src/Dictionaries/ODBCDictionarySource.cpp
+	src/Dictionaries/writeParenthesisedString.cpp
+
 	src/Parsers/ASTSelectQuery.cpp
 	src/Parsers/ASTAlterQuery.cpp
 	src/Parsers/ASTLiteral.cpp
@@ -935,7 +939,6 @@ target_link_libraries(dbms
 	libcrypto.a
 	libboost_thread.a
 	libboost_system.a
-	librt.a
 	${LINK_MONGOCLIENT}
 	libboost_regex.a
 	PocoData

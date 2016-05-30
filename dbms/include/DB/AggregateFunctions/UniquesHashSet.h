@@ -75,9 +75,9 @@ template <typename Hash = UniquesHashSetDefaultHash>
 class UniquesHashSet : private HashTableAllocatorWithStackMemory<(1 << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>
 {
 private:
-	typedef UInt64 Value_t;
-	typedef UInt32 HashValue_t;
-	typedef HashTableAllocatorWithStackMemory<(1 << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)> Allocator;
+	using Value_t = UInt64;
+	using HashValue_t = UInt32;
+	using Allocator = HashTableAllocatorWithStackMemory<(1 << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>;
 
 	UInt32 m_size;			/// Количество элементов
 	UInt8 size_degree;		/// Размер таблицы в виде степени двух

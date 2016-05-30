@@ -1,5 +1,5 @@
 #pragma once
-#include <Poco/Mutex.h>
+#include <mutex>
 #include <Poco/RegularExpression.h>
 #include <common/DateLUT.h>
 #include <DB/Core/Types.h>
@@ -77,12 +77,14 @@ public:
 	static bool contains(const String & outer_part_name, const String & inner_part_name);
 
 private:
-	typedef std::set<Part> Parts;
+	using Parts = std::set<Part>;
 
-	mutable Poco::Mutex mutex;
+	mutable std::mutex mutex;
 	Parts parts;
 
+	/// Не блокируют mutex.
 	void addImpl(const String & name);
+	String getContainingPartImpl(const String & name) const;
 };
 
 }

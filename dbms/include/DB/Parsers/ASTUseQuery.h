@@ -20,7 +20,7 @@ public:
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "UseQuery_" + database; };
 
-	ASTPtr clone() const override { return new ASTUseQuery(*this); }
+	ASTPtr clone() const override { return std::make_shared<ASTUseQuery>(*this); }
 
 protected:
 	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

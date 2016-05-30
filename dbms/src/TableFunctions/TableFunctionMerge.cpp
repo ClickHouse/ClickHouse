@@ -76,7 +76,7 @@ StoragePtr TableFunctionMerge::execute(ASTPtr ast_function, Context & context) c
 
 	return StorageMerge::create(
 		getName(),
-		new NamesAndTypesList(chooseColumns(source_database, table_name_regexp, context)),
+		std::make_shared<NamesAndTypesList>(chooseColumns(source_database, table_name_regexp, context)),
 		source_database,
 		table_name_regexp,
 		context);

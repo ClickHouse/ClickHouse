@@ -23,7 +23,7 @@ namespace ErrorCodes
 /// Allows loading dictionaries from a MongoDB collection
 class MongoDBDictionarySource final : public IDictionarySource
 {
-	static const auto max_block_size = 8192;
+	enum { max_block_size = 8192 };
 
 	MongoDBDictionarySource(
 		const DictionaryStructure & dict_struct, const std::string & host, const std::string & port,
@@ -99,10 +99,9 @@ public:
 
 	BlockInputStreamPtr loadAll() override
 	{
-		return new MongoDBBlockInputStream{
+		return std::make_shared<MongoDBBlockInputStream>(
 			connection.query(db + '.' + collection, {}, 0, 0, &fields_to_query),
-			sample_block, max_block_size
-		};
+			sample_block, max_block_size);
 	}
 
 	bool supportsSelectiveLoad() const override { return true; }
@@ -116,10 +115,9 @@ public:
 		const auto query = BSON(
 			dict_struct.id.value().name << BSON("$in" << ext::collection_cast<std::vector<long long int>>(ids)));
 
-		return new MongoDBBlockInputStream{
+		return std::make_shared<MongoDBBlockInputStream>(
 			connection.query(db + '.' + collection, query, 0, 0, &fields_to_query),
-			sample_block, max_block_size
-		};
+			sample_block, max_block_size);
 	}
 
 	BlockInputStreamPtr loadKeys(
@@ -162,10 +160,9 @@ public:
 			writeString("]}", out);
 		}
 
-		return new MongoDBBlockInputStream{
+		return std::make_shared<MongoDBBlockInputStream>(
 			connection.query(db + '.' + collection, query_string, 0, 0, &fields_to_query),
-			sample_block, max_block_size
-		};
+			sample_block, max_block_size);
 	}
 
 	/// @todo: for MongoDB, modification date can somehow be determined from the `_id` object field

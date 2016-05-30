@@ -11,8 +11,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 
 /** Агрегирует поток блоков, используя заданные столбцы-ключи и агрегатные функции.
   * Столбцы с агрегатными функциями добавляет в конец блока.
@@ -58,7 +56,7 @@ protected:
 		BlockInputStreamPtr block_in;
 
 		TemporaryFileStream(const std::string & path)
-			: file_in(path), compressed_in(file_in), block_in(new NativeBlockInputStream(compressed_in, ClickHouseRevision::get())) {}
+			: file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get())) {}
 	};
 	std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
 

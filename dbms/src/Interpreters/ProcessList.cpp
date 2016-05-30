@@ -17,7 +17,7 @@ ProcessList::EntryPtr ProcessList::insert(
 	EntryPtr res;
 
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 
 		if (max_size && cur_size >= max_size
 			&& (!settings.queue_max_wait_ms.totalMilliseconds() || !have_space.tryWait(mutex, settings.queue_max_wait_ms.totalMilliseconds())))
@@ -84,7 +84,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
 ProcessListEntry::~ProcessListEntry()
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(parent.mutex);
+	std::lock_guard<std::mutex> lock(parent.mutex);
 
 	/// Важен порядок удаления memory_tracker-ов.
 
@@ -131,7 +131,7 @@ ProcessListEntry::~ProcessListEntry()
 
 void ProcessList::addTemporaryTable(ProcessListElement & elem, const String & table_name, StoragePtr storage)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+	std::lock_guard<std::mutex> lock(mutex);
 
 	elem.temporary_tables[table_name] = storage;
 }
@@ -139,7 +139,7 @@ void ProcessList::addTemporaryTable(ProcessListElement & elem, const String & ta
 
 StoragePtr ProcessList::tryGetTemporaryTable(const String & query_id, const String & table_name) const
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+	std::lock_guard<std::mutex> lock(mutex);
 
 	/// NOTE Ищем по всем user-ам. То есть, нет изоляции, и сложность O(users).
 	for (const auto & user_queries : user_to_queries)

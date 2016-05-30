@@ -19,8 +19,7 @@ template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const
 {
 	if (!data_type || typeid_cast<const DataTypeString *>(&*data_type))
 	{
-		ColumnString * res = new ColumnString;
-		ColumnPtr res_ptr = res;
+		auto res = std::make_shared<ColumnString>();
 		ColumnString::Offsets_t & offsets = res->getOffsets();
 		ColumnString::Chars_t & vec = res->getChars();
 
@@ -36,7 +35,7 @@ template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const
 			offsets[i] = offset;
 		}
 
-		return res_ptr;
+		return res;
 	}
 	else if (const DataTypeFixedString * type = typeid_cast<const DataTypeFixedString *>(&*data_type))
 	{
@@ -45,8 +44,7 @@ template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const
 		if (data.size() > n)
 			throw Exception("Too long value for " + type->getName(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
-		ColumnFixedString * res = new ColumnFixedString(n);
-		ColumnPtr res_ptr = res;
+		auto res = std::make_shared<ColumnFixedString>(n);
 		ColumnFixedString::Chars_t & vec = res->getChars();
 
 		vec.resize_fill(n * s);
@@ -58,7 +56,7 @@ template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const
 			offset += n;
 		}
 
-		return res_ptr;
+		return res;
 	}
 	else
 		throw Exception("Invalid data type in ColumnConstString: " + data_type->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -78,7 +76,7 @@ ColumnPtr ColumnConst<Array>::convertToFullColumn() const
 	size_t array_size = array.size();
 	ColumnPtr nested_column = type->getNestedType()->createColumn();
 
-	ColumnArray * res = new ColumnArray(nested_column);
+	auto res = std::make_shared<ColumnArray>(nested_column);
 	ColumnArray::Offsets_t & offsets = res->getOffsets();
 
 	offsets.resize(s);

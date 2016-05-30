@@ -1,9 +1,6 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Poco/SharedPtr.h>
-#include <Poco/Stopwatch.h>
-
 #include <DB/IO/WriteBufferFromOStream.h>
 
 #include <DB/Storages/StorageLog.h>
@@ -29,73 +26,70 @@
 #include <DB/Interpreters/ExpressionActions.h>
 
 
-using Poco::SharedPtr;
-
-
 int main(int argc, char ** argv)
 {
 	using namespace DB;
 
 	try
 	{
-		NamesAndTypesListPtr names_and_types_list = new NamesAndTypesList
+		NamesAndTypesList names_and_types_list
 		{
-			{"WatchID",				new DataTypeUInt64},
-			{"JavaEnable",			new DataTypeUInt8},
-			{"Title",				new DataTypeString},
-			{"EventTime",			new DataTypeDateTime},
-			{"CounterID",			new DataTypeUInt32},
-			{"ClientIP",			new DataTypeUInt32},
-			{"RegionID",			new DataTypeUInt32},
-			{"UniqID",				new DataTypeUInt64},
-			{"CounterClass",		new DataTypeUInt8},
-			{"OS",					new DataTypeUInt8},
-			{"UserAgent",			new DataTypeUInt8},
-			{"URL",					new DataTypeString},
-			{"Referer",				new DataTypeString},
-			{"ResolutionWidth",		new DataTypeUInt16},
-			{"ResolutionHeight",	new DataTypeUInt16},
-			{"ResolutionDepth",		new DataTypeUInt8},
-			{"FlashMajor",			new DataTypeUInt8},
-			{"FlashMinor",			new DataTypeUInt8},
-			{"FlashMinor2",			new DataTypeString},
-			{"NetMajor",			new DataTypeUInt8},
-			{"NetMinor",			new DataTypeUInt8},
-			{"UserAgentMajor",		new DataTypeUInt16},
-			{"UserAgentMinor",		new DataTypeFixedString(2)},
-			{"CookieEnable",		new DataTypeUInt8},
-			{"JavascriptEnable",	new DataTypeUInt8},
-			{"IsMobile",			new DataTypeUInt8},
-			{"MobilePhone",			new DataTypeUInt8},
-			{"MobilePhoneModel",	new DataTypeString},
-			{"Params",				new DataTypeString},
-			{"IPNetworkID",			new DataTypeUInt32},
-			{"TraficSourceID",		new DataTypeInt8},
-			{"SearchEngineID",		new DataTypeUInt16},
-			{"SearchPhrase",		new DataTypeString},
-			{"AdvEngineID",			new DataTypeUInt8},
-			{"IsArtifical",			new DataTypeUInt8},
-			{"WindowClientWidth",	new DataTypeUInt16},
-			{"WindowClientHeight",	new DataTypeUInt16},
-			{"ClientTimeZone",		new DataTypeInt16},
-			{"ClientEventTime",		new DataTypeDateTime},
-			{"SilverlightVersion1",	new DataTypeUInt8},
-			{"SilverlightVersion2",	new DataTypeUInt8},
-			{"SilverlightVersion3",	new DataTypeUInt32},
-			{"SilverlightVersion4",	new DataTypeUInt16},
-			{"PageCharset",			new DataTypeString},
-			{"CodeVersion",			new DataTypeUInt32},
-			{"IsLink",				new DataTypeUInt8},
-			{"IsDownload",			new DataTypeUInt8},
-			{"IsNotBounce",			new DataTypeUInt8},
-			{"FUniqID",				new DataTypeUInt64},
-			{"OriginalURL",			new DataTypeString},
-			{"HID",					new DataTypeUInt32},
-			{"IsOldCounter",		new DataTypeUInt8},
-			{"IsEvent",				new DataTypeUInt8},
-			{"IsParameter",			new DataTypeUInt8},
-			{"DontCountHits",		new DataTypeUInt8},
-			{"WithHash",			new DataTypeUInt8},
+			{"WatchID",				std::make_shared<DataTypeUInt64>()},
+			{"JavaEnable",			std::make_shared<DataTypeUInt8>()},
+			{"Title",				std::make_shared<DataTypeString>()},
+			{"EventTime",			std::make_shared<DataTypeDateTime>()},
+			{"CounterID",			std::make_shared<DataTypeUInt32>()},
+			{"ClientIP",			std::make_shared<DataTypeUInt32>()},
+			{"RegionID",			std::make_shared<DataTypeUInt32>()},
+			{"UniqID",				std::make_shared<DataTypeUInt64>()},
+			{"CounterClass",		std::make_shared<DataTypeUInt8>()},
+			{"OS",					std::make_shared<DataTypeUInt8>()},
+			{"UserAgent",			std::make_shared<DataTypeUInt8>()},
+			{"URL",					std::make_shared<DataTypeString>()},
+			{"Referer",				std::make_shared<DataTypeString>()},
+			{"ResolutionWidth",		std::make_shared<DataTypeUInt16>()},
+			{"ResolutionHeight",	std::make_shared<DataTypeUInt16>()},
+			{"ResolutionDepth",		std::make_shared<DataTypeUInt8>()},
+			{"FlashMajor",			std::make_shared<DataTypeUInt8>()},
+			{"FlashMinor",			std::make_shared<DataTypeUInt8>()},
+			{"FlashMinor2",			std::make_shared<DataTypeString>()},
+			{"NetMajor",			std::make_shared<DataTypeUInt8>()},
+			{"NetMinor",			std::make_shared<DataTypeUInt8>()},
+			{"UserAgentMajor",		std::make_shared<DataTypeUInt16>()},
+			{"UserAgentMinor",		std::make_shared<DataTypeFixedString>(2)},
+			{"CookieEnable",		std::make_shared<DataTypeUInt8>()},
+			{"JavascriptEnable",	std::make_shared<DataTypeUInt8>()},
+			{"IsMobile",			std::make_shared<DataTypeUInt8>()},
+			{"MobilePhone",			std::make_shared<DataTypeUInt8>()},
+			{"MobilePhoneModel",	std::make_shared<DataTypeString>()},
+			{"Params",				std::make_shared<DataTypeString>()},
+			{"IPNetworkID",			std::make_shared<DataTypeUInt32>()},
+			{"TraficSourceID",		std::make_shared<DataTypeInt8>()},
+			{"SearchEngineID",		std::make_shared<DataTypeUInt16>()},
+			{"SearchPhrase",		std::make_shared<DataTypeString>()},
+			{"AdvEngineID",			std::make_shared<DataTypeUInt8>()},
+			{"IsArtifical",			std::make_shared<DataTypeUInt8>()},
+			{"WindowClientWidth",	std::make_shared<DataTypeUInt16>()},
+			{"WindowClientHeight",	std::make_shared<DataTypeUInt16>()},
+			{"ClientTimeZone",		std::make_shared<DataTypeInt16>()},
+			{"ClientEventTime",		std::make_shared<DataTypeDateTime>()},
+			{"SilverlightVersion1",	std::make_shared<DataTypeUInt8>()},
+			{"SilverlightVersion2",	std::make_shared<DataTypeUInt8>()},
+			{"SilverlightVersion3",	std::make_shared<DataTypeUInt32>()},
+			{"SilverlightVersion4",	std::make_shared<DataTypeUInt16>()},
+			{"PageCharset",			std::make_shared<DataTypeString>()},
+			{"CodeVersion",			std::make_shared<DataTypeUInt32>()},
+			{"IsLink",				std::make_shared<DataTypeUInt8>()},
+			{"IsDownload",			std::make_shared<DataTypeUInt8>()},
+			{"IsNotBounce",			std::make_shared<DataTypeUInt8>()},
+			{"FUniqID",				std::make_shared<DataTypeUInt64>()},
+			{"OriginalURL",			std::make_shared<DataTypeString>()},
+			{"HID",					std::make_shared<DataTypeUInt32>()},
+			{"IsOldCounter",		std::make_shared<DataTypeUInt8>()},
+			{"IsEvent",				std::make_shared<DataTypeUInt8>()},
+			{"IsParameter",			std::make_shared<DataTypeUInt8>()},
+			{"DontCountHits",		std::make_shared<DataTypeUInt8>()},
+			{"WithHash",			std::make_shared<DataTypeUInt8>()},
 		};
 
 		Context context;
@@ -110,11 +104,11 @@ int main(int argc, char ** argv)
 
 		/// создаём объект существующей таблицы хит лога
 
-		StoragePtr table = StorageLog::create("./", "HitLog", names_and_types_list);
+		StoragePtr table = StorageLog::create("./", "HitLog", std::make_shared<NamesAndTypesList>(names_and_types_list));
 
 		/// читаем из неё, применяем выражение, фильтруем, и пишем в tsv виде в консоль
 
-		ExpressionAnalyzer analyzer(ast, context, nullptr, *names_and_types_list);
+		ExpressionAnalyzer analyzer(ast, context, nullptr, names_and_types_list);
 		ExpressionActionsChain chain;
 		analyzer.appendSelect(chain, false);
 		analyzer.appendWhere(chain, false);
@@ -131,12 +125,12 @@ int main(int argc, char ** argv)
 
 		QueryProcessingStage::Enum stage;
 
-		Poco::SharedPtr<IBlockInputStream> in = table->read(column_names, 0, context, Settings(), stage)[0];
-		in = new FilterBlockInputStream(in, expression, 4);
-		//in = new LimitBlockInputStream(in, 10, 0);
+		BlockInputStreamPtr in = table->read(column_names, 0, context, Settings(), stage)[0];
+		in = std::make_shared<FilterBlockInputStream>(in, expression, 4);
+		//in = std::make_shared<LimitBlockInputStream>(in, 10, 0);
 
 		WriteBufferFromOStream ob(std::cout);
-		RowOutputStreamPtr out_ = new TabSeparatedRowOutputStream(ob, expression->getSampleBlock());
+		RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(ob, expression->getSampleBlock());
 		BlockOutputStreamFromRowOutputStream out(out_);
 
 		copyData(*in, out);

@@ -214,8 +214,6 @@ bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const Disj
 
 void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain & chain)
 {
-	using ASTFunctionPtr = Poco::SharedPtr<ASTFunction>;
-
 	const auto & or_with_expression = chain.first;
 	const auto & equalities = chain.second;
 	const auto & equality_functions = equalities.functions;
@@ -223,7 +221,7 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 	/// 1. Создать новое выражение IN на основе информации из OR-цепочки.
 
 	/// Построить список литералов x1, ..., xN из цепочки expr = x1 OR ... OR expr = xN
-	ASTPtr value_list = new ASTExpressionList;
+	ASTPtr value_list = std::make_shared<ASTExpressionList>();
 	for (const auto function : equality_functions)
 	{
 		const auto & operands = getFunctionOperands(function);
@@ -247,17 +245,17 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 		equals_expr_lhs = operands[0];
 	}
 
-	ASTFunctionPtr tuple_function = new ASTFunction;
+	auto tuple_function = std::make_shared<ASTFunction>();
 	tuple_function->name = "tuple";
 	tuple_function->arguments = value_list;
 	tuple_function->children.push_back(tuple_function->arguments);
 
-	ASTPtr expression_list = new ASTExpressionList;
+	ASTPtr expression_list = std::make_shared<ASTExpressionList>();
 	expression_list->children.push_back(equals_expr_lhs);
 	expression_list->children.push_back(tuple_function);
 
 	/// Построить выражение expr IN (x1, ..., xN)
-	ASTFunctionPtr in_function = new ASTFunction;
+	auto in_function = std::make_shared<ASTFunction>();
 	in_function->name = "in";
 	in_function->arguments = expression_list;
 	in_function->children.push_back(in_function->arguments);
@@ -354,17 +352,19 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 			for (auto & parent : parents)
 			{
 				parent->children.push_back(operands[0]);
-				auto first_erased = std::remove(parent->children.begin(), parent->children.end(), or_function);
+				auto first_erased = std::remove_if(parent->children.begin(), parent->children.end(),
+					[or_function](const ASTPtr & ptr) { return ptr.get() == or_function; });
+
 				parent->children.erase(first_erased, parent->children.end());
 			}
 
 			/// Если узел OR был корнем выражения WHERE, PREWHERE или HAVING, то следует обновить этот корень.
 			/// Из-за того, что имеем дело с направленным ациклическим графом, надо проверить все случаи.
-			if (!select_query->where_expression.isNull() && (or_function == &*(select_query->where_expression)))
+			if (select_query->where_expression && (or_function == &*(select_query->where_expression)))
 				select_query->where_expression = operands[0];
-			if (!select_query->prewhere_expression.isNull() && (or_function == &*(select_query->prewhere_expression)))
+			if (select_query->prewhere_expression && (or_function == &*(select_query->prewhere_expression)))
 				select_query->prewhere_expression = operands[0];
-			if (!select_query->having_expression.isNull() && (or_function == &*(select_query->having_expression)))
+			if (select_query->having_expression && (or_function == &*(select_query->having_expression)))
 				select_query->having_expression = operands[0];
 		}
 	}

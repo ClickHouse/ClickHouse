@@ -346,7 +346,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 
 	auto get_endpoint_holder = [&res](InterserverIOEndpointPtr endpoint)
 	{
-		return new InterserverIOEndpointHolder(
+		return std::make_shared<InterserverIOEndpointHolder>(
 			endpoint->getId(res->replica_path),
 			endpoint,
 			res->context.getInterserverIOHandler());
@@ -355,29 +355,29 @@ StoragePtr StorageReplicatedMergeTree::create(
 	if (res->tryGetZooKeeper())
 	{
 		{
-			InterserverIOEndpointPtr endpoint = new DataPartsExchange::Service(res->data, res_ptr);
+			InterserverIOEndpointPtr endpoint = std::make_shared<DataPartsExchange::Service>(res->data, res_ptr);
 			res->endpoint_holder = get_endpoint_holder(endpoint);
 		}
 
 		/// Сервисы для перешардирования.
 
 		{
-			InterserverIOEndpointPtr endpoint = new RemoteDiskSpaceMonitor::Service(res->context);
+			InterserverIOEndpointPtr endpoint = std::make_shared<RemoteDiskSpaceMonitor::Service>(res->context);
 			res->disk_space_monitor_endpoint_holder = get_endpoint_holder(endpoint);
 		}
 
 		{
-			InterserverIOEndpointPtr endpoint = new ShardedPartitionUploader::Service(res_ptr);
+			InterserverIOEndpointPtr endpoint = std::make_shared<ShardedPartitionUploader::Service>(res_ptr);
 			res->sharded_partition_uploader_endpoint_holder = get_endpoint_holder(endpoint);
 		}
 
 		{
-			InterserverIOEndpointPtr endpoint = new RemoteQueryExecutor::Service(res->context);
+			InterserverIOEndpointPtr endpoint = std::make_shared<RemoteQueryExecutor::Service>(res->context);
 			res->remote_query_executor_endpoint_holder = get_endpoint_holder(endpoint);
 		}
 
 		{
-			InterserverIOEndpointPtr endpoint = new RemotePartChecker::Service(res_ptr);
+			InterserverIOEndpointPtr endpoint = std::make_shared<RemotePartChecker::Service>(res_ptr);
 			res->remote_part_checker_endpoint_holder = get_endpoint_holder(endpoint);
 		}
 	}
@@ -697,7 +697,7 @@ void StorageReplicatedMergeTree::createReplica()
 		{
 			LOG_INFO(log, "Waiting for replica " << source_path << " to be fully created");
 
-			zkutil::EventPtr event = new Poco::Event;
+			zkutil::EventPtr event = std::make_shared<Poco::Event>();
 			if (zookeeper->exists(source_path + "/columns", nullptr, event))
 			{
 				LOG_WARNING(log, "Oops, a watch has leaked");
@@ -1124,7 +1124,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
 
 			auto part = merger.mergePartsToTemporaryPart(
-				parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space);
+				parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space.get());
 
 			zkutil::Ops ops;
 
@@ -1817,7 +1817,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
 	String part_path = replica_path + "/parts/" + part_name;
 
-	LogEntryPtr log_entry = new LogEntry;
+	LogEntryPtr log_entry = std::make_shared<LogEntry>();
 	log_entry->type = LogEntry::GET_PART;
 	log_entry->create_time = tryGetPartCreateTime(zookeeper, replica_path, part_name);
 	log_entry->source_replica = "";
@@ -2094,11 +2094,11 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 			MergeTreeWhereOptimizer{query, context, data, real_column_names, log};
 
 	Block virtual_columns_block;
-	ColumnUInt8 * column = new ColumnUInt8(2);
+	auto column = std::make_shared<ColumnUInt8>(2);
 	ColumnPtr column_ptr = column;
 	column->getData()[0] = 0;
 	column->getData()[1] = 1;
-	virtual_columns_block.insert(ColumnWithTypeAndName(column_ptr, new DataTypeUInt8, "_replicated"));
+	virtual_columns_block.insert(ColumnWithTypeAndName(column_ptr, std::make_shared<DataTypeUInt8>(), "_replicated"));
 
 	/// Если запрошен столбец _replicated, пробуем индексировать.
 	if (!virt_column_names.empty())
@@ -2127,7 +2127,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 			if (virtual_column == "_replicated")
 			{
 				for (auto & stream : res)
-					stream = new AddingConstColumnBlockInputStream<UInt8>(stream, new DataTypeUInt8, 0, "_replicated");
+					stream = std::make_shared<AddingConstColumnBlockInputStream<UInt8>>(stream, std::make_shared<DataTypeUInt8>(), 0, "_replicated");
 			}
 		}
 	}
@@ -2179,7 +2179,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 			if (virtual_column == "_replicated")
 			{
 				for (auto & stream : res2)
-					stream = new AddingConstColumnBlockInputStream<UInt8>(stream, new DataTypeUInt8, 1, "_replicated");
+					stream = std::make_shared<AddingConstColumnBlockInputStream<UInt8>>(stream, std::make_shared<DataTypeUInt8>(), 1, "_replicated");
 			}
 		}
 
@@ -2206,7 +2206,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query, const Setti
 		if (ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*query))
 			insert_id = insert->insert_id;
 
-	return new ReplicatedMergeTreeBlockOutputStream(*this, insert_id,
+	return std::make_shared<ReplicatedMergeTreeBlockOutputStream>(*this, insert_id,
 		settings.insert_quorum, settings.insert_quorum_timeout.totalMilliseconds());
 }
 
@@ -2875,7 +2875,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 		/// Дождемся, пока запись попадет в очередь реплики.
 		while (true)
 		{
-			zkutil::EventPtr event = new Poco::Event;
+			zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
 			String log_pointer = zookeeper->get(zookeeper_path + "/replicas/" + replica + "/log_pointer", nullptr, event);
 			if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
@@ -2920,7 +2920,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 			/// Дождемся, пока запись попадет в очередь реплики.
 			while (true)
 			{
-				zkutil::EventPtr event = new Poco::Event;
+				zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
 				String log_pointer = zookeeper->get(zookeeper_path + "/replicas/" + replica + "/log_pointer", nullptr, event);
 				if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)

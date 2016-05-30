@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
+#include <memory>
 
 #include <DB/Core/Field.h>
 #include <DB/Columns/IColumn.h>
@@ -9,10 +9,13 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 class ReadBuffer;
 class WriteBuffer;
+
+class IDataType;
+
+using DataTypePtr = std::shared_ptr<IDataType>;
+using DataTypes = std::vector<DataTypePtr>;
 
 
 /** Метаданные типа для хранения (столбца).
@@ -32,7 +35,7 @@ public:
 	virtual bool behavesAsNumber() const { return false; }
 
 	/// Клонировать
-	virtual SharedPtr<IDataType> clone() const = 0;
+	virtual DataTypePtr clone() const = 0;
 
 	/** Бинарная сериализация диапазона значений столбца - для сохранения на диск / в сеть и т. п.
 	  * offset и limit используются, чтобы сериализовать часть столбца.
@@ -98,11 +101,11 @@ public:
 
 	/** Создать пустой столбец соответствующего типа.
 	  */
-	virtual SharedPtr<IColumn> createColumn() const = 0;
+	virtual ColumnPtr createColumn() const = 0;
 
 	/** Создать столбец соответствующего типа, содержащий константу со значением Field, длины size.
 	  */
-	virtual SharedPtr<IColumn> createConstColumn(size_t size, const Field & field) const = 0;
+	virtual ColumnPtr createConstColumn(size_t size, const Field & field) const = 0;
 
 	/** Получить значение "по-умолчанию".
 	  */
@@ -117,9 +120,6 @@ public:
 	virtual ~IDataType() {}
 };
 
-
-typedef Poco::SharedPtr<IDataType> DataTypePtr;
-typedef std::vector<DataTypePtr> DataTypes;
 
 }
 

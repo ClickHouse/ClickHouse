@@ -34,11 +34,10 @@ NamesAndTypesList getStructureOfRemoteTable(
 
 	ConnectionPoolPtr pool = shard_info.pool;
 
-	BlockInputStreamPtr input{
-		new RemoteBlockInputStream{
+	BlockInputStreamPtr input =
+		std::make_shared<RemoteBlockInputStream>(
 			pool.get(), query, &settings, nullptr,
-			Tables(), QueryProcessingStage::Complete, context}
-	};
+			Tables(), QueryProcessingStage::Complete, context);
 	input->readPrefix();
 
 	const DataTypeFactory & data_type_factory = DataTypeFactory::instance();

@@ -9,7 +9,7 @@ namespace
 
 AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, const DataTypes & argument_types)
 {
-	return new AggregateFunctionCount;
+	return std::make_shared<AggregateFunctionCount>();
 }
 
 }

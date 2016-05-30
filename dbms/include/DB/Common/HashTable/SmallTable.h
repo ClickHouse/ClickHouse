@@ -29,8 +29,8 @@ protected:
 	friend class iterator;
 	friend class Reader;
 
-	typedef SmallTable<Key, Cell, capacity> Self;
-	typedef Cell cell_type;
+	using Self = SmallTable<Key, Cell, capacity>;
+	using cell_type = Cell;
 
 	size_t m_size = 0;		/// Количество элементов.
 	Cell buf[capacity];		/// Кусок памяти для всех элементов.
@@ -63,8 +63,8 @@ protected:
 
 
 public:
-	typedef Key key_type;
-	typedef typename Cell::value_type value_type;
+	using key_type = Key;
+	using value_type = typename Cell::value_type;
 
 
 	class Reader final : private Cell::State
@@ -382,9 +382,9 @@ template
 class SmallMapTable : public SmallTable<Key, Cell, capacity>
 {
 public:
-	typedef Key key_type;
-	typedef typename Cell::Mapped mapped_type;
-	typedef typename Cell::value_type value_type;
+	using key_type = Key;
+	using mapped_type = typename Cell::Mapped;
+	using value_type = typename Cell::value_type;
 
 	mapped_type & ALWAYS_INLINE operator[](Key x)
 	{

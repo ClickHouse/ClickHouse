@@ -1,6 +1,8 @@
 #pragma once
-#include <Poco/Mutex.h>
+
+#include <mutex>
 #include <sys/statvfs.h>
+#include <memory>
 #include <boost/noncopyable.hpp>
 #include <common/logger_useful.h>
 #include <DB/Common/Exception.h>
@@ -28,13 +30,12 @@ class DiskSpaceMonitor
 public:
 	class Reservation : private boost::noncopyable
 	{
-	friend class DiskSpaceMonitor;
 	public:
 		~Reservation()
 		{
 			try
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(DiskSpaceMonitor::mutex);
+				std::lock_guard<std::mutex> lock(DiskSpaceMonitor::mutex);
 				if (DiskSpaceMonitor::reserved_bytes < size)
 				{
 					DiskSpaceMonitor::reserved_bytes = 0;
@@ -63,7 +64,7 @@ public:
 		/// Изменить количество зарезервированного места. При увеличении не делается проверка, что места достаточно.
 		void update(size_t new_size)
 		{
-			Poco::ScopedLock<Poco::FastMutex> lock(DiskSpaceMonitor::mutex);
+			std::lock_guard<std::mutex> lock(DiskSpaceMonitor::mutex);
 			DiskSpaceMonitor::reserved_bytes -= size;
 			size = new_size;
 			DiskSpaceMonitor::reserved_bytes += size;
@@ -73,20 +74,21 @@ public:
 		{
 			return size;
 		}
-	private:
+
 		Reservation(size_t size_)
 			: size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size)
 		{
-			Poco::ScopedLock<Poco::FastMutex> lock(DiskSpaceMonitor::mutex);
+			std::lock_guard<std::mutex> lock(DiskSpaceMonitor::mutex);
 			DiskSpaceMonitor::reserved_bytes += size;
 			++DiskSpaceMonitor::reservation_count;
 		}
 
+	private:
 		size_t size;
 		CurrentMetrics::Increment metric_increment;
 	};
 
-	typedef Poco::SharedPtr<Reservation> ReservationPtr;
+	using ReservationPtr = std::shared_ptr<Reservation>;
 
 	static size_t getUnreservedFreeSpace(const std::string & path)
 	{
@@ -100,7 +102,7 @@ public:
 		/// Зарезервируем дополнительно 30 МБ. Когда я тестировал, statvfs показывал на несколько мегабайт больше свободного места, чем df.
 		res -= std::min(res, 30 * (1ul << 20));
 
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 
 		if (reserved_bytes > res)
 			res = 0;
@@ -112,13 +114,13 @@ public:
 
 	static size_t getReservedSpace()
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 		return reserved_bytes;
 	}
 
 	static size_t getReservationCount()
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 		return reservation_count;
 	}
 
@@ -129,13 +131,13 @@ public:
 		if (free_bytes < size)
 			throw Exception("Not enough free disk space to reserve: " + formatReadableSizeWithBinarySuffix(free_bytes) + " available, "
 				+ formatReadableSizeWithBinarySuffix(size) + " requested", ErrorCodes::NOT_ENOUGH_SPACE);
-		return new Reservation(size);
+		return std::make_shared<Reservation>(size);
 	}
 
 private:
 	static size_t reserved_bytes;
 	static size_t reservation_count;
-	static Poco::FastMutex mutex;
+	static std::mutex mutex;
 };
 
 }

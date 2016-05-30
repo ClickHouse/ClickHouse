@@ -9,7 +9,7 @@ http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html
 
 1. https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh
 
-2. 
+2.
 
 CREATE TABLE `ontime` (
   `Year` UInt16,
@@ -123,7 +123,7 @@ CREATE TABLE `ontime` (
   `Div5TailNum` String
 ) ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192)
 
-3. 
+3.
 
 for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 
@@ -143,29 +143,29 @@ Q3. Count of delays per airport for years 2000-2008
 SELECT Origin, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND Year <= 2008 GROUP BY Origin ORDER BY c DESC LIMIT 10
 
 Q4. Count of delays per Carrier for 2007 year
-SELECT carrier, count(*) FROM ontime WHERE DepDelay>10  AND Year = 2007 GROUP BY carrier ORDER BY 2 DESC
+SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10  AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
 
 Q5. Percentage of delays for each carrier for 2007 year.
 SELECT Carrier, c, c2, c*1000/c2 as c3
-FROM 
+FROM
 (
-	SELECT 
-		Carrier, 
-		count(*) AS c 
-	FROM ontime 
-	WHERE DepDelay>10 
-		AND Year=2007 
+	SELECT
+		Carrier,
+		count(*) AS c
+	FROM ontime
+	WHERE DepDelay>10
+		AND Year=2007
 	GROUP BY Carrier
 )
 ANY INNER JOIN
 (
-	SELECT 
-		Carrier, 
-		count(*) AS c2 
-	FROM ontime 
-	WHERE Year=2007 
+	SELECT
+		Carrier,
+		count(*) AS c2
+	FROM ontime
+	WHERE Year=2007
 	GROUP BY Carrier
-) USING Carrier 
+) USING Carrier
 ORDER BY c3 DESC;
 
 More optimal version of same query:
@@ -174,25 +174,25 @@ SELECT Carrier, avg(DepDelay > 10) * 1000 AS c3 FROM ontime WHERE Year = 2007 GR
 
 Q6. Let’s try the same query for wide range of years 2000-2008.
 SELECT Carrier, c, c2, c*1000/c2 as c3
-FROM 
+FROM
 (
-	SELECT 
-		Carrier, 
-		count(*) AS c 
-	FROM ontime 
-	WHERE DepDelay>10 
+	SELECT
+		Carrier,
+		count(*) AS c
+	FROM ontime
+	WHERE DepDelay>10
 		AND Year >= 2000 AND Year <= 2008
 	GROUP BY Carrier
 )
 ANY INNER JOIN
 (
-	SELECT 
-		Carrier, 
-		count(*) AS c2 
-	FROM ontime 
+	SELECT
+		Carrier,
+		count(*) AS c2
+	FROM ontime
 	WHERE Year >= 2000 AND Year <= 2008
 	GROUP BY Carrier
-) USING Carrier 
+) USING Carrier
 ORDER BY c3 DESC;
 
 More optimal version of same query:
@@ -200,22 +200,22 @@ More optimal version of same query:
 SELECT Carrier, avg(DepDelay > 10) * 1000 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
 
 Q7. Percent of delayed (more 10mins) flights per year.
-SELECT Year, c1/c2 
+SELECT Year, c1/c2
 FROM
 (
-	select 
-		Year, 
-		count(*)*1000 as c1 
-	from ontime 
-	WHERE DepDelay>10 
+	select
+		Year,
+		count(*)*1000 as c1
+	from ontime
+	WHERE DepDelay>10
 	GROUP BY Year
-) 
+)
 ANY INNER JOIN
 (
-	select 
+	select
 		Year,
-		count(*) as c2 
-	from ontime 
+		count(*) as c2
+	from ontime
 	GROUP BY Year
 ) USING (Year)
 ORDER BY Year
@@ -224,7 +224,7 @@ More optimal version of same query:
 
 SELECT Year, avg(DepDelay > 10) FROM ontime GROUP BY Year ORDER BY Year
 
-Q8. Most popular destination in sense count of direct connected cities for different diapason of years.
+Q8. Most popular destination in sense count of direct connected cities for different range of years.
 SELECT DestCityName, uniqExact(OriginCityName) AS u FROM ontime WHERE Year >= 2000 and Year <= 2010 GROUP BY DestCityName ORDER BY u DESC LIMIT 10;
 
 Q9. select Year, count(*) as c1 from ontime group by Year;
@@ -255,6 +255,6 @@ SELECT DestCityName, uniqExact(OriginCityName) AS u FROM ontime GROUP BY DestCit
 
 SELECT OriginCityName, DestCityName, count() AS c FROM ontime GROUP BY OriginCityName, DestCityName ORDER BY c DESC LIMIT 10;
 
-SELECT OriginCityName count() AS c FROM ontime GROUP BY OriginCityName ORDER BY c DESC LIMIT 10;
+SELECT OriginCityName, count() AS c FROM ontime GROUP BY OriginCityName ORDER BY c DESC LIMIT 10;
 
 

@@ -44,12 +44,12 @@ public:
 	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override		{ throwNoSerialization(); }
 	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override 		{ throwNoSerialization(); }
 
-	SharedPtr<IColumn> createColumn() const override
+	ColumnPtr createColumn() const override
 	{
 		throw Exception("Method createColumn() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	SharedPtr<IColumn> createConstColumn(size_t size, const Field & field) const override
+	ColumnPtr createConstColumn(size_t size, const Field & field) const override
 	{
 		throw Exception("Method createConstColumn() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}

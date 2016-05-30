@@ -11,7 +11,7 @@ class Context;
 
 
 /** Позволяет получить функцию по имени.
-  * Функция при создании также может использовать для инициализации (например, захватить SharedPtr)
+  * Функция при создании также может использовать для инициализации (например, захватить shared_ptr)
   *  какие-нибудь справочники, находящиеся в Context-е.
   */
 class FunctionFactory : public Singleton<FunctionFactory>
@@ -19,7 +19,7 @@ class FunctionFactory : public Singleton<FunctionFactory>
 	friend class StorageSystemFunctions;
 
 private:
-	typedef IFunction* (*Creator)(const Context & context);	/// Не std::function, так как меньше indirection и размер объекта.
+	typedef FunctionPtr (*Creator)(const Context & context);	/// Не std::function, так как меньше indirection и размер объекта.
 	std::unordered_map<String, Creator> functions;
 
 public:

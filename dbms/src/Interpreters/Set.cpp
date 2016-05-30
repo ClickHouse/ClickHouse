@@ -188,7 +188,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 	/// Запоминаем столбцы, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
 	{
-		key_columns[i] = block.getByPosition(i).column;
+		key_columns[i] = block.getByPosition(i).column.get();
 		data_types[i] = block.getByPosition(i).type;
 
 		if (auto converted = key_columns[i]->convertToFullColumnIfConst())
@@ -327,9 +327,8 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 	if (0 == num_key_columns)
 		throw Exception("Logical error: no columns passed to Set::execute method.", ErrorCodes::LOGICAL_ERROR);
 
-	ColumnUInt8 * p_res = new ColumnUInt8;
-	ColumnPtr res = p_res;
-	ColumnUInt8::Container_t & vec_res = p_res->getData();
+	auto res = std::make_shared<ColumnUInt8>();
+	ColumnUInt8::Container_t & vec_res = res->getData();
 	vec_res.resize(block.getByPosition(0).column->size());
 
 	Poco::ScopedReadRWLock lock(rwlock);
@@ -374,7 +373,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 		ConstColumnPlainPtrs key_columns(num_key_columns);
 		for (size_t i = 0; i < num_key_columns; ++i)
 		{
-			key_columns[i] = block.getByPosition(i).column;
+			key_columns[i] = block.getByPosition(i).column.get();
 
 			if (data_types[i]->getName() != block.getByPosition(i).type->getName())
 				throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: "

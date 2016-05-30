@@ -27,11 +27,11 @@ bool VirtualColumnFactory::hasColumn(const String & name)
 
 DataTypePtr VirtualColumnFactory::tryGetType(const String & name)
 {
-	if (name == "_table")			return new DataTypeString;
-	if (name == "_part")			return new DataTypeString;
-	if (name == "_part_index")		return new DataTypeUInt64;
-	if (name == "_sample_factor")	return new DataTypeFloat64;
-	if (name == "_replicated")		return new DataTypeUInt8;
+	if (name == "_table")			return std::make_shared<DataTypeString>();
+	if (name == "_part")			return std::make_shared<DataTypeString>();
+	if (name == "_part_index")		return std::make_shared<DataTypeUInt64>();
+	if (name == "_sample_factor")	return std::make_shared<DataTypeFloat64>();
+	if (name == "_replicated")		return std::make_shared<DataTypeUInt8>();
 	return nullptr;
 }
 

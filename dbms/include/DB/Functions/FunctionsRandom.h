@@ -73,7 +73,7 @@ namespace detail
 
 struct RandImpl
 {
-	typedef UInt32 ReturnType;
+	using ReturnType = UInt32;
 
 	static void execute(PaddedPODArray<ReturnType> & res)
 	{
@@ -111,7 +111,7 @@ struct RandImpl
 
 struct Rand64Impl
 {
-	typedef UInt64 ReturnType;
+	using ReturnType = UInt64;
 
 	static void execute(PaddedPODArray<ReturnType> & res)
 	{
@@ -150,11 +150,11 @@ template <typename Impl, typename Name>
 class FunctionRandom : public IFunction
 {
 private:
-	typedef typename Impl::ReturnType ToType;
+	using ToType = typename Impl::ReturnType;
 
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionRandom; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRandom>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -170,13 +170,13 @@ public:
 				+ toString(arguments.size()) + ", should be 0 or 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new typename DataTypeFromFieldType<typename Impl::ReturnType>::Type;
+		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ReturnType>::Type>();
 	}
 
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		ColumnVector<ToType> * col_to = new ColumnVector<ToType>;
+		auto col_to = std::make_shared<ColumnVector<ToType>>();
 		block.getByPosition(result).column = col_to;
 
 		typename ColumnVector<ToType>::Container_t & vec_to = col_to->getData();
@@ -192,7 +192,7 @@ template <typename Impl, typename Name>
 class FunctionRandomConstant : public IFunction
 {
 private:
-	typedef typename Impl::ReturnType ToType;
+	using ToType = typename Impl::ReturnType;
 
 	/// Значение одно для разных блоков.
 	bool is_initialized = false;
@@ -200,7 +200,7 @@ private:
 
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionRandomConstant; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRandomConstant>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -216,7 +216,7 @@ public:
 				+ toString(arguments.size()) + ", should be 0 or 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new typename DataTypeFromFieldType<typename Impl::ReturnType>::Type;
+		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ReturnType>::Type>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -230,7 +230,7 @@ public:
 			value = vec_to[0];
 		}
 
-		block.getByPosition(result).column = new ColumnConst<ToType>(block.rowsInFirstColumn(), value);
+		block.getByPosition(result).column = std::make_shared<ColumnConst<ToType>>(block.rowsInFirstColumn(), value);
 	}
 };
 
@@ -239,9 +239,9 @@ struct NameRand 		{ static constexpr auto name = "rand"; };
 struct NameRand64 		{ static constexpr auto name = "rand64"; };
 struct NameRandConstant { static constexpr auto name = "randConstant"; };
 
-typedef FunctionRandom<RandImpl,	NameRand> 	FunctionRand;
-typedef FunctionRandom<Rand64Impl,	NameRand64> FunctionRand64;
-typedef FunctionRandomConstant<RandImpl, NameRandConstant> FunctionRandConstant;
+using FunctionRand = FunctionRandom<RandImpl,	NameRand> ;
+using FunctionRand64 = FunctionRandom<Rand64Impl,	NameRand64>;
+using FunctionRandConstant = FunctionRandomConstant<RandImpl, NameRandConstant>;
 
 
 }

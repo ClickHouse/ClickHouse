@@ -69,7 +69,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
 	if (s_final.ignore(pos, end, max_parsed_pos, expected))
 		final = true;
 
-	ASTOptimizeQuery * query = new ASTOptimizeQuery(StringRange(begin, pos));
+	auto query = std::make_shared<ASTOptimizeQuery>(StringRange(begin, pos));
 	node = query;
 
 	if (database)

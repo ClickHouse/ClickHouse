@@ -7,16 +7,13 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
-
 VerticalRowOutputStream::VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
 	: ostr(ostr_), sample(sample_), field_number(0), row_number(0)
 {
 	size_t columns = sample.columns();
 	names.resize(columns);
 
-	typedef std::vector<size_t> Widths_t;
+	using Widths_t = std::vector<size_t>;
 	Widths_t name_widths(columns);
 	size_t max_name_width = 0;
 

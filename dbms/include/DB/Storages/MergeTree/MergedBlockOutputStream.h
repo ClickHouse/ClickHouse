@@ -110,26 +110,26 @@ protected:
 			String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
 				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
-			column_streams[size_name].reset(new ColumnStream(
+			column_streams[size_name] = std::make_unique<ColumnStream>(
 				escaped_size_name,
 				path + escaped_size_name + ".bin",
 				path + escaped_size_name + ".mrk",
 				max_compress_block_size,
 				compression_method,
 				estimated_size,
-				aio_threshold));
+				aio_threshold);
 
 			addStream(path, name, *type_arr->getNestedType(), estimated_size, level + 1);
 		}
 		else
-			column_streams[name].reset(new ColumnStream(
+			column_streams[name] = std::make_unique<ColumnStream>(
 				escaped_column_name,
 				path + escaped_column_name + ".bin",
 				path + escaped_column_name + ".mrk",
 				max_compress_block_size,
 				compression_method,
 				estimated_size,
-				aio_threshold));
+				aio_threshold);
 	}
 
 
@@ -368,8 +368,9 @@ private:
 
 		if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 		{
-			index_file_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
-			index_stream = new HashingWriteBuffer(*index_file_stream);
+			index_file_stream = std::make_unique<WriteBufferFromFile>(
+				part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+			index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
 		}
 	}
 
@@ -467,12 +468,11 @@ private:
 
 	size_t marks_count = 0;
 
-	SharedPtr<WriteBufferFromFile> index_file_stream;
-	SharedPtr<HashingWriteBuffer> index_stream;
+	std::unique_ptr<WriteBufferFromFile> index_file_stream;
+	std::unique_ptr<HashingWriteBuffer> index_stream;
 	MergeTreeData::DataPart::Index index_columns;
 };
 
-typedef Poco::SharedPtr<MergedBlockOutputStream> MergedBlockOutputStreamPtr;
 
 /// Записывает только те, столбцы, что лежат в block
 class MergedColumnOnlyOutputStream : public IMergedBlockOutputStream

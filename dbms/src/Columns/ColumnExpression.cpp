@@ -24,7 +24,7 @@ std::string ColumnExpression::getName() const
 
 ColumnPtr ColumnExpression::cloneDummy(size_t s_) const
 {
-	return new ColumnExpression(s_, expression, arguments, return_type, return_name);
+	return std::make_shared<ColumnExpression>(s_, expression, arguments, return_type, return_name);
 }
 
 const ExpressionActionsPtr & ColumnExpression::getExpression() const { return expression; }

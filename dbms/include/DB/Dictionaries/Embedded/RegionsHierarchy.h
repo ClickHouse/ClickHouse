@@ -30,19 +30,19 @@ private:
 	time_t file_modification_time;
 	Logger * log;
 
-	typedef Int32 RegionID;
-	typedef Int8 RegionType;
-	typedef Int8 RegionDepth;
-	typedef UInt32 RegionPopulation;
+	using RegionID = Int32;
+	using RegionType = Int8;
+	using RegionDepth = Int8;
+	using RegionPopulation = UInt32;
 
 	/// отношение parent; 0, если родителей нет - обычная lookup таблица.
-	typedef std::vector<RegionID> RegionParents;
+	using RegionParents = std::vector<RegionID>;
 	/// тип региона
-	typedef std::vector<RegionType> RegionTypes;
+	using RegionTypes = std::vector<RegionType>;
 	/// глубина в дереве, начиная от страны (страна: 1, корень: 0)
-	typedef std::vector<RegionDepth> RegionDepths;
+	using RegionDepths = std::vector<RegionDepth>;
 	/// население региона. Если больше 2^32 - 1, то приравнивается к этому максимуму.
-	typedef std::vector<RegionPopulation> RegionPopulations;
+	using RegionPopulations = std::vector<RegionPopulation>;
 
 	/// регион -> родительский регион
 	RegionParents parents;

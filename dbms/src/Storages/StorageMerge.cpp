@@ -177,7 +177,8 @@ BlockInputStreams StorageMerge::read(
 			if (virtual_column == "_table")
 			{
 				for (auto & stream : source_streams)
-					stream = new AddingConstColumnBlockInputStream<String>(stream, new DataTypeString, table->getTableName(), "_table");
+					stream = std::make_shared<AddingConstColumnBlockInputStream<String>>(
+						stream, std::make_shared<DataTypeString>(), table->getTableName(), "_table");
 			}
 		}
 
@@ -194,7 +195,7 @@ BlockInputStreams StorageMerge::read(
 Block StorageMerge::getBlockWithVirtualColumns(const std::vector<StoragePtr> & selected_tables) const
 {
 	Block res;
-	ColumnWithTypeAndName _table(new ColumnString, new DataTypeString, "_table");
+	ColumnWithTypeAndName _table(std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "_table");
 
 	for (StorageVector::const_iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
 		_table.column->insert((*it)->getTableName());

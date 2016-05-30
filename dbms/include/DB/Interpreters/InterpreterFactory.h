@@ -10,7 +10,7 @@ namespace DB
 class InterpreterFactory
 {
 public:
-	static SharedPtr<IInterpreter> get(
+	static std::unique_ptr<IInterpreter> get(
 		ASTPtr & query,
 		Context & context,
 		QueryProcessingStage::Enum stage = QueryProcessingStage::Complete);

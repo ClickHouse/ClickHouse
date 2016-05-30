@@ -1,5 +1,3 @@
-#include <Poco/SharedPtr.h>
-
 #include <DB/Common/Exception.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
@@ -9,8 +7,6 @@
 
 namespace DB
 {
-
-using Poco::SharedPtr;
 
 class NumbersBlockInputStream : public IProfilingBlockInputStream
 {
@@ -29,8 +25,8 @@ protected:
 		ColumnWithTypeAndName column_with_name_and_type;
 
 		column_with_name_and_type.name = "number";
-		column_with_name_and_type.type = new DataTypeUInt64();
-		ColumnUInt64 * column = new ColumnUInt64(block_size);
+		column_with_name_and_type.type = std::make_shared<DataTypeUInt64>();
+		auto column = std::make_shared<ColumnUInt64>(block_size);
 		ColumnUInt64::Container_t & vec = column->getData();
 		column_with_name_and_type.column = column;
 
@@ -53,7 +49,7 @@ private:
 
 
 StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multithreaded_)
-	: name(name_), columns{{"number", new DataTypeUInt64}}, multithreaded(multithreaded_)
+	: name(name_), columns{{"number", std::make_shared<DataTypeUInt64>()}}, multithreaded(multithreaded_)
 {
 }
 
@@ -80,7 +76,7 @@ BlockInputStreams StorageSystemNumbers::read(
 
 	BlockInputStreams res(threads);
 	for (size_t i = 0; i < threads; ++i)
-		res[i] = new NumbersBlockInputStream(max_block_size, i * max_block_size, threads * max_block_size);
+		res[i] = std::make_shared<NumbersBlockInputStream>(max_block_size, i * max_block_size, threads * max_block_size);
 
 	return res;
 }

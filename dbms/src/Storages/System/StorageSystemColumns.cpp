@@ -16,13 +16,13 @@ namespace DB
 StorageSystemColumns::StorageSystemColumns(const std::string & name_)
 	: name(name_)
 	, columns{
-		{ "database",           new DataTypeString },
-		{ "table",              new DataTypeString },
-		{ "name",               new DataTypeString },
-		{ "type",               new DataTypeString },
-		{ "default_type",       new DataTypeString },
-		{ "default_expression", new DataTypeString },
-		{ "bytes",				new DataTypeUInt64 },
+		{ "database",           std::make_shared<DataTypeString>() },
+		{ "table",              std::make_shared<DataTypeString>() },
+		{ "name",               std::make_shared<DataTypeString>() },
+		{ "type",               std::make_shared<DataTypeString>() },
+		{ "default_type",       std::make_shared<DataTypeString>() },
+		{ "default_expression", std::make_shared<DataTypeString>() },
+		{ "bytes",				std::make_shared<DataTypeUInt64>() },
 	}
 {
 }
@@ -52,10 +52,10 @@ BlockInputStreams StorageSystemColumns::read(
 		Databases databases = context.getDatabases();
 
 		/// Добавляем столбец database.
-		ColumnPtr database_column = new ColumnString;
+		ColumnPtr database_column = std::make_shared<ColumnString>();
 		for (const auto & database : databases)
 			database_column->insert(database.first);
-		block.insert(ColumnWithTypeAndName(database_column, new DataTypeString, "database"));
+		block.insert(ColumnWithTypeAndName(database_column, std::make_shared<DataTypeString>(), "database"));
 
 		/// Отфильтруем блок со столбцом database.
 		VirtualColumnUtils::filterBlockWithQuery(query, block, context);
@@ -67,7 +67,7 @@ BlockInputStreams StorageSystemColumns::read(
 		size_t rows = database_column->size();
 
 		/// Добавляем столбец table.
-		ColumnPtr table_column = new ColumnString;
+		ColumnPtr table_column = std::make_shared<ColumnString>();
 		IColumn::Offsets_t offsets(rows);
 		for (size_t i = 0; i < rows; ++i)
 		{
@@ -92,7 +92,7 @@ BlockInputStreams StorageSystemColumns::read(
 			column = column->replicate(offsets);
 		}
 
-		block.insert(ColumnWithTypeAndName(table_column, new DataTypeString, "table"));
+		block.insert(ColumnWithTypeAndName(table_column, std::make_shared<DataTypeString>(), "table"));
 	}
 
 	/// Отфильтруем блок со столбцами database и table.
@@ -105,13 +105,13 @@ BlockInputStreams StorageSystemColumns::read(
 	ColumnPtr filtered_table_column = block.getByName("table").column;
 
 	/// Составляем результат.
-	ColumnPtr database_column = new ColumnString;
-	ColumnPtr table_column = new ColumnString;
-	ColumnPtr name_column = new ColumnString;
-	ColumnPtr type_column = new ColumnString;
-	ColumnPtr default_type_column = new ColumnString;
-	ColumnPtr default_expression_column = new ColumnString;
-	ColumnPtr bytes_column = new ColumnUInt64;
+	ColumnPtr database_column = std::make_shared<ColumnString>();
+	ColumnPtr table_column = std::make_shared<ColumnString>();
+	ColumnPtr name_column = std::make_shared<ColumnString>();
+	ColumnPtr type_column = std::make_shared<ColumnString>();
+	ColumnPtr default_type_column = std::make_shared<ColumnString>();
+	ColumnPtr default_expression_column = std::make_shared<ColumnString>();
+	ColumnPtr bytes_column = std::make_shared<ColumnUInt64>();
 
 	size_t rows = filtered_database_column->size();
 	for (size_t i = 0; i < rows; ++i)
@@ -185,15 +185,15 @@ BlockInputStreams StorageSystemColumns::read(
 
 	block.clear();
 
-	block.insert(ColumnWithTypeAndName(database_column, new DataTypeString, "database"));
-	block.insert(ColumnWithTypeAndName(table_column, new DataTypeString, "table"));
-	block.insert(ColumnWithTypeAndName(name_column, new DataTypeString, "name"));
-	block.insert(ColumnWithTypeAndName(type_column, new DataTypeString, "type"));
-	block.insert(ColumnWithTypeAndName(default_type_column, new DataTypeString, "default_type"));
-	block.insert(ColumnWithTypeAndName(default_expression_column, new DataTypeString, "default_expression"));
-	block.insert(ColumnWithTypeAndName(bytes_column, new DataTypeUInt64, "bytes"));
+	block.insert(ColumnWithTypeAndName(database_column, std::make_shared<DataTypeString>(), "database"));
+	block.insert(ColumnWithTypeAndName(table_column, std::make_shared<DataTypeString>(), "table"));
+	block.insert(ColumnWithTypeAndName(name_column, std::make_shared<DataTypeString>(), "name"));
+	block.insert(ColumnWithTypeAndName(type_column, std::make_shared<DataTypeString>(), "type"));
+	block.insert(ColumnWithTypeAndName(default_type_column, std::make_shared<DataTypeString>(), "default_type"));
+	block.insert(ColumnWithTypeAndName(default_expression_column, std::make_shared<DataTypeString>(), "default_expression"));
+	block.insert(ColumnWithTypeAndName(bytes_column, std::make_shared<DataTypeUInt64>(), "bytes"));
 
-	return BlockInputStreams{ 1, new OneBlockInputStream(block) };
+	return BlockInputStreams{ 1, std::make_shared<OneBlockInputStream>(block) };
 }
 
 }

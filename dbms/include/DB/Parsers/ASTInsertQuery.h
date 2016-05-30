@@ -26,21 +26,19 @@ public:
 
 	ASTInsertQuery() = default;
 	ASTInsertQuery(const StringRange range_) : IAST(range_) {}
-	
+
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "InsertQuery_" + database + "_" + table; };
 
 	ASTPtr clone() const override
 	{
-		ASTInsertQuery * res = new ASTInsertQuery(*this);
-		ASTPtr ptr{res};
-
+		auto res = std::make_shared<ASTInsertQuery>(*this);
 		res->children.clear();
 
 		if (columns) 	{ res->columns = columns->clone(); 	res->children.push_back(res->columns); }
 		if (select) 	{ res->select = select->clone(); 	res->children.push_back(res->select); }
 
-		return ptr;
+		return res;
 	}
 
 protected:

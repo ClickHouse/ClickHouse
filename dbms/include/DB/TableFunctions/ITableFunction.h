@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/Storages/IStorage.h>
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Interpreters/Context.h>
@@ -32,7 +30,7 @@ public:
 	virtual ~ITableFunction() {};
 };
 
-typedef SharedPtr<ITableFunction> TableFunctionPtr;
+using TableFunctionPtr = std::shared_ptr<ITableFunction>;
 
 
 }

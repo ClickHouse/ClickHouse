@@ -38,7 +38,7 @@ public:
 
 	struct ColumnsInfo
 	{
-		NamesAndTypesListPtr columns = new NamesAndTypesList;
+		NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>();
 		NamesAndTypesList materialized_columns;
 		NamesAndTypesList alias_columns;
 		ColumnDefaults column_defaults;

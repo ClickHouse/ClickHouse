@@ -2,6 +2,7 @@
 
 #include <zkutil/ZooKeeper.h>
 #include <functional>
+#include <memory>
 #include <common/logger_useful.h>
 
 
@@ -13,7 +14,7 @@ namespace zkutil
 class LeaderElection
 {
 public:
-	typedef std::function<void()> LeadershipHandler;
+	using LeadershipHandler = std::function<void()>;
 
 	/** handler вызывается, когда этот экземпляр становится лидером.
 	  */
@@ -79,7 +80,7 @@ private:
 
 	std::thread thread;
 	volatile bool shutdown = false;
-	zkutil::EventPtr event = new Poco::Event();
+	zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
 	State state = WAITING_LEADERSHIP;
 
@@ -122,6 +123,6 @@ private:
 	}
 };
 
-typedef Poco::SharedPtr<LeaderElection> LeaderElectionPtr;
+using LeaderElectionPtr = std::shared_ptr<LeaderElection>;
 
 }

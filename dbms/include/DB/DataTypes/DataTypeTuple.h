@@ -19,7 +19,7 @@ public:
 	DataTypeTuple(DataTypes elems_) : elems(elems_) {}
 
 	std::string getName() const override;
-	SharedPtr<IDataType> clone() const override { return new DataTypeTuple(elems); }
+	DataTypePtr clone() const override { return std::make_shared<DataTypeTuple>(elems); }
 
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
 	void deserializeBinary(Field & field, ReadBuffer & istr) const override;

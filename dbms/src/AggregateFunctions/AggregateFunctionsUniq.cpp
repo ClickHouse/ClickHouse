@@ -19,18 +19,18 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 	{
 		const IDataType & argument_type = *argument_types[0];
 
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq, Data>(*argument_types[0]);
+		AggregateFunctionPtr res(createWithNumericType<AggregateFunctionUniq, Data>(*argument_types[0]));
 
 		if (res)
 			return res;
 		else if (typeid_cast<const DataTypeDate *>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDate::FieldType, Data>;
+			return std::make_shared<AggregateFunctionUniq<DataTypeDate::FieldType, Data>>();
 		else if (typeid_cast<const DataTypeDateTime *>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDateTime::FieldType, Data>;
+			return std::make_shared<AggregateFunctionUniq<DataTypeDateTime::FieldType, Data>>();
 		else if (typeid_cast<const DataTypeString *>(&argument_type) || typeid_cast<const DataTypeFixedString *>(&argument_type))
-			return new AggregateFunctionUniq<String, Data>;
+			return std::make_shared<AggregateFunctionUniq<String, Data>>();
 		else if (typeid_cast<const DataTypeTuple *>(&argument_type))
-			return new AggregateFunctionUniqVariadic<DataForVariadic, true>;
+			return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic, true>>();
 		else
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -43,7 +43,7 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 				throw Exception("Tuple argument of function " + name + " must be the only argument",
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new AggregateFunctionUniqVariadic<DataForVariadic, false>;
+		return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic, false>>();
 	}
 	else
 		throw Exception("Incorrect number of arguments for aggregate function " + name,
@@ -57,18 +57,18 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 	{
 		const IDataType & argument_type = *argument_types[0];
 
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq, Data>(*argument_types[0]);
+		AggregateFunctionPtr res(createWithNumericType<AggregateFunctionUniq, Data>(*argument_types[0]));
 
 		if (res)
 			return res;
 		else if (typeid_cast<const DataTypeDate *>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDate::FieldType, Data<DataTypeDate::FieldType>>;
+			return std::make_shared<AggregateFunctionUniq<DataTypeDate::FieldType, Data<DataTypeDate::FieldType>>>();
 		else if (typeid_cast<const DataTypeDateTime *>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>>;
+			return std::make_shared<AggregateFunctionUniq<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>>>();
 		else if (typeid_cast<const DataTypeString *>(&argument_type) || typeid_cast<const DataTypeFixedString *>(&argument_type))
-			return new AggregateFunctionUniq<String, Data<String>>;
+			return std::make_shared<AggregateFunctionUniq<String, Data<String>>>();
 		else if (typeid_cast<const DataTypeTuple *>(&argument_type))
-			return new AggregateFunctionUniqVariadic<DataForVariadic, true>;
+			return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic, true>>();
 		else
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -81,7 +81,7 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 				throw Exception("Tuple argument of function " + name + " must be the only argument",
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new AggregateFunctionUniqVariadic<DataForVariadic, false>;
+		return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic, false>>();
 	}
 	else
 		throw Exception("Incorrect number of arguments for aggregate function " + name,

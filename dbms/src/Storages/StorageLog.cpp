@@ -32,8 +32,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 namespace ErrorCodes
 {
 	extern const int LOGICAL_ERROR;
@@ -92,7 +90,7 @@ private:
 		CompressedReadBuffer compressed;
 	};
 
-	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
+	using FileStreams = std::map<std::string, std::unique_ptr<Stream> >;
 	FileStreams streams;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
@@ -152,12 +150,12 @@ private:
 		}
 	};
 
-	typedef std::vector<std::pair<size_t, Mark> > MarksForColumns;
+	using MarksForColumns = std::vector<std::pair<size_t, Mark> >;
 
-	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
+	using FileStreams = std::map<std::string, std::unique_ptr<Stream> >;
 	FileStreams streams;
 
-	typedef std::set<std::string> OffsetColumns;
+	using OffsetColumns = std::set<std::string>;
 
 	WriteBufferFromFile marks_stream; /// Объявлен ниже lock, чтобы файл открывался при захваченном rwlock.
 
@@ -209,7 +207,7 @@ Block LogBlockInputStream::readImpl()
 	}
 
 	/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
-	typedef std::map<std::string, ColumnPtr> OffsetColumns;
+	using OffsetColumns = std::map<std::string, ColumnPtr>;
 	OffsetColumns offset_columns;
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
@@ -230,11 +228,11 @@ Block LogBlockInputStream::readImpl()
 			String name = DataTypeNested::extractNestedTableName(column.name);
 
 			if (offset_columns.count(name) == 0)
-				offset_columns[name] = new ColumnArray::ColumnOffsets_t;
+				offset_columns[name] = std::make_shared<ColumnArray::ColumnOffsets_t>();
 			else
 				read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
 
-			column.column = new ColumnArray(type_arr->getNestedType()->createColumn(), offset_columns[name]);
+			column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[name]);
 		}
 		else
 			column.column = column.type->createColumn();
@@ -261,8 +259,8 @@ Block LogBlockInputStream::readImpl()
 			rows = res.rows();
 		if (rows > 0)
 		{
-			ColumnPtr column_ptr = ColumnConst<String>(rows, current_table.first, new DataTypeString).convertToFullColumn();
-			ColumnWithTypeAndName column(column_ptr, new DataTypeString, storage._table_column_name);
+			ColumnPtr column_ptr = ColumnConst<String>(rows, current_table.first, std::make_shared<DataTypeString>()).convertToFullColumn();
+			ColumnWithTypeAndName column(column_ptr, std::make_shared<DataTypeString>(), storage._table_column_name);
 			res.insert(column);
 		}
 	}
@@ -555,7 +553,7 @@ void StorageLog::loadMarks()
 	if (loaded_marks)
 		return;
 
-	typedef std::vector<Files_t::iterator> FilesByIndex;
+	using FilesByIndex = std::vector<Files_t::iterator>;
 	FilesByIndex files_by_index(files.size());
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 	{
@@ -683,7 +681,7 @@ BlockInputStreams StorageLog::read(
 
 	if (read_all_data_in_one_thread)
 	{
-		res.push_back(new LogBlockInputStream(
+		res.push_back(std::make_shared<LogBlockInputStream>(
 			max_block_size,
 			column_names,
 			*this,
@@ -706,7 +704,7 @@ BlockInputStreams StorageLog::read(
 
 		for (size_t thread = 0; thread < threads; ++thread)
 		{
-			res.push_back(new LogBlockInputStream(
+			res.push_back(std::make_shared<LogBlockInputStream>(
 				max_block_size,
 				column_names,
 				*this,
@@ -742,7 +740,7 @@ BlockOutputStreamPtr StorageLog::write(
 	ASTPtr query, const Settings & settings)
 {
 	loadMarks();
-	return new LogBlockOutputStream(*this);
+	return std::make_shared<LogBlockOutputStream>(*this);
 }
 
 bool StorageLog::checkData() const

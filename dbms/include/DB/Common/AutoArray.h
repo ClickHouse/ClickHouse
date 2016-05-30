@@ -150,8 +150,8 @@ public:
 		return data + sizeof(T) * i;
 	}
 
-	typedef T * iterator;
-	typedef const T * const_iterator;
+	using iterator = T *;
+	using const_iterator = const T *;
 
 	iterator begin() { return &elem(0); }
 	iterator end() { return &elem(size()); }

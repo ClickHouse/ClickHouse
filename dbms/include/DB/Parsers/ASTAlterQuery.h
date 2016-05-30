@@ -88,7 +88,7 @@ public:
 		void clone(Parameters & p) const;
 	};
 
-	typedef std::vector<Parameters> ParameterContainer;
+	using ParameterContainer = std::vector<Parameters>;
 	ParameterContainer parameters;
 	String database;
 	String table;

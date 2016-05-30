@@ -15,7 +15,7 @@ struct DataTypeFromFieldTypeOrError
 {
 	static DataTypePtr getDataType()
 	{
-		return new typename DataTypeFromFieldType<T>::Type;
+		return std::make_shared<typename DataTypeFromFieldType<T>::Type>();
 	}
 };
 
@@ -81,7 +81,7 @@ struct ToEnrichedDataTypeObject<TEnrichedType, true>
 		using Type1 = typename std::tuple_element<1, TEnrichedType>::type;
 		using DataType1 = typename DataTypeFromFieldType<Type1>::Type;
 
-		return std::make_pair(new DataType0{}, new DataType1{});
+		return std::make_pair(std::make_shared<DataType0>(), std::make_shared<DataType1>());
 	}
 };
 
@@ -94,7 +94,7 @@ struct ToEnrichedDataTypeObject<TEnrichedType, false>
 		using DataType0 = typename std::tuple_element<0, TEnrichedType>::type;
 		using DataType1 = typename std::tuple_element<1, TEnrichedType>::type;
 
-		return std::make_pair(new DataType0{}, new DataType1{});
+		return std::make_pair(std::make_shared<DataType0>(), std::make_shared<DataType1>());
 	}
 };
 

@@ -17,12 +17,12 @@
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #endif
 
-typedef unsigned long size_t;
+using size_t = unsigned long;
 
 class BufferBase
 {
 public:
-	typedef char * Position;
+	using Position = char *;
 
 	struct Buffer
 	{

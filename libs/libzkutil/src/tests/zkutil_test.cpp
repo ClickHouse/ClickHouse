@@ -94,7 +94,7 @@ int main(int argc, char ** argv)
 					std::string w;
 					ss >> w;
 					bool watch = w == "w";
-					zkutil::EventPtr event = watch ? new Poco::Event() : nullptr;
+					zkutil::EventPtr event = watch ? std::make_shared<Poco::Event>() : nullptr;
 					std::vector<std::string> v = zk.getChildren(path, nullptr, event);
 					for (size_t i = 0; i < v.size(); ++i)
 					{
@@ -148,7 +148,7 @@ int main(int argc, char ** argv)
 					std::string w;
 					ss >> w;
 					bool watch = w == "w";
-					zkutil::EventPtr event = watch ? new Poco::Event() : nullptr;
+					zkutil::EventPtr event = watch ? std::make_shared<Poco::Event>() : nullptr;
 					zkutil::Stat stat;
 					bool e = zk.exists(path, &stat, event);
 					if (e)
@@ -163,7 +163,7 @@ int main(int argc, char ** argv)
 					std::string w;
 					ss >> w;
 					bool watch = w == "w";
-					zkutil::EventPtr event = watch ? new Poco::Event() : nullptr;
+					zkutil::EventPtr event = watch ? std::make_shared<Poco::Event>() : nullptr;
 					zkutil::Stat stat;
 					std::string data = zk.get(path, &stat, event);
 					std::cout << "Data: " << data << std::endl;

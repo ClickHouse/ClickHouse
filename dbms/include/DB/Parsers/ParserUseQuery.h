@@ -38,10 +38,9 @@ protected:
 
 		ws.ignore(pos, end);
 
-		ASTUseQuery * query = new ASTUseQuery(StringRange(begin, pos));
-		node = query;
-
+		auto query = std::make_shared<ASTUseQuery>(StringRange(begin, pos));
 		query->database = typeid_cast<ASTIdentifier &>(*database).name;
+		node = query;
 
 		return true;
 	}

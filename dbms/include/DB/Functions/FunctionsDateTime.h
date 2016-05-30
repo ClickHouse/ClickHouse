@@ -486,7 +486,7 @@ struct DateTimeTransformImpl
 		{
 			if (sources)
 			{
-				auto * col_to = new ColumnVector<ToType>;
+				auto col_to = std::make_shared<ColumnVector<ToType>>();
 				block.getByPosition(result).column = col_to;
 
 				auto & vec_from = sources->getData();
@@ -500,7 +500,7 @@ struct DateTimeTransformImpl
 			{
 				ToType res;
 				Op::constant_constant(const_source->getData(), res);
-				block.getByPosition(result).column = new ColumnConst<ToType>(const_source->size(), res);
+				block.getByPosition(result).column = std::make_shared<ColumnConst<ToType>>(const_source->size(), res);
 			}
 			else
 			{
@@ -517,7 +517,7 @@ struct DateTimeTransformImpl
 
 			if (sources)
 			{
-				auto * col_to = new ColumnVector<ToType>;
+				auto col_to = std::make_shared<ColumnVector<ToType>>();
 				block.getByPosition(result).column = col_to;
 
 				auto & vec_from = sources->getData();
@@ -537,7 +537,7 @@ struct DateTimeTransformImpl
 			{
 				if (time_zones)
 				{
-					auto * col_to = new ColumnVector<ToType>;
+					auto col_to = std::make_shared<ColumnVector<ToType>>();
 					block.getByPosition(result).column = col_to;
 
 					auto & vec_to = col_to->getData();
@@ -549,7 +549,7 @@ struct DateTimeTransformImpl
 				{
 					ToType res;
 					Op::constant_constant(const_source->getData(), const_time_zone->getData(), res);
-					block.getByPosition(result).column = new ColumnConst<ToType>(const_source->size(), res);
+					block.getByPosition(result).column = std::make_shared<ColumnConst<ToType>>(const_source->size(), res);
 				}
 				else
 					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -571,7 +571,7 @@ class FunctionDateOrDateTimeToSomething : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionDateOrDateTimeToSomething; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -609,7 +609,7 @@ public:
 				+ toString(arguments.size()) + ", should be 1 or 2",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new ToDataType;
+		return std::make_shared<ToDataType>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -669,7 +669,7 @@ class FunctionNow : public IFunction
 {
 public:
 	static constexpr auto name = "now";
-	static IFunction * create(const Context & context) { return new FunctionNow; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNow>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -685,13 +685,13 @@ public:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeDateTime;
+		return std::make_shared<DataTypeDateTime>();
 	}
 
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConstUInt32(
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt32>(
 			block.rowsInFirstColumn(),
 			time(0));
 	}
@@ -702,7 +702,7 @@ class FunctionToday : public IFunction
 {
 public:
 	static constexpr auto name = "today";
-	static IFunction * create(const Context & context) { return new FunctionToday; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToday>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -718,13 +718,13 @@ public:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeDate;
+		return std::make_shared<DataTypeDate>();
 	}
 
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConstUInt16(
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt16>(
 			block.rowsInFirstColumn(),
 			DateLUT::instance().toDayNum(time(0)));
 	}
@@ -735,7 +735,7 @@ class FunctionYesterday : public IFunction
 {
 public:
 	static constexpr auto name = "yesterday";
-	static IFunction * create(const Context & context) { return new FunctionYesterday; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionYesterday>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -751,13 +751,13 @@ public:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeDate;
+		return std::make_shared<DataTypeDate>();
 	}
 
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConstUInt16(
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt16>(
 			block.rowsInFirstColumn(),
 			DateLUT::instance().toDayNum(time(0)) - 1);
 	}
@@ -768,7 +768,7 @@ class FunctionTimeSlot : public IFunction
 {
 public:
 	static constexpr auto name = "timeSlot";
-	static IFunction * create(const Context & context) { return new FunctionTimeSlot; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTimeSlot>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -788,7 +788,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeDateTime;
+		return std::make_shared<DataTypeDateTime>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -796,7 +796,7 @@ public:
 	{
 		if (const ColumnUInt32 * times = typeid_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnUInt32 * res = new ColumnUInt32;
+			auto res = std::make_shared<ColumnUInt32>();
 			ColumnPtr res_holder = res;
 			ColumnUInt32::Container_t & res_vec = res->getData();
 			const ColumnUInt32::Container_t & vec = times->getData();
@@ -811,7 +811,7 @@ public:
 		}
 		else if (const ColumnConstUInt32 * const_times = typeid_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConstUInt32(block.rowsInFirstColumn(), const_times->getData() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
+			block.getByPosition(result).column = std::make_shared<ColumnConstUInt32>(block.rowsInFirstColumn(), const_times->getData() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -904,7 +904,7 @@ class FunctionTimeSlots : public IFunction
 {
 public:
 	static constexpr auto name = "timeSlots";
-	static IFunction * create(const Context & context) { return new FunctionTimeSlots; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTimeSlots>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -928,7 +928,7 @@ public:
 			throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be UInt32.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeArray(new DataTypeDateTime);
+		return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>());
 	}
 
 	/// Выполнить функцию над блоком.
@@ -940,7 +940,7 @@ public:
 		const ColumnUInt32 * durations = typeid_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[1]).column);
 		const ColumnConstUInt32 * const_durations = typeid_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[1]).column);
 
-		ColumnArray * res = new ColumnArray(new ColumnUInt32);
+		auto res = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt32>());
 		ColumnPtr res_holder = res;
 		ColumnUInt32::Container_t & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
 
@@ -963,7 +963,7 @@ public:
 		{
 			Array const_res;
 			TimeSlotsImpl<UInt32>::constant_constant(const_starts->getData(), const_durations->getData(), const_res);
-			block.getByPosition(result).column = new ColumnConstArray(block.rowsInFirstColumn(), const_res, new DataTypeArray(new DataTypeDateTime));
+			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(block.rowsInFirstColumn(), const_res, std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()));
 		}
 		else
 			throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()
@@ -998,30 +998,30 @@ struct NameToRelativeMinuteNum	{ static constexpr auto name = "toRelativeMinuteN
 struct NameToRelativeSecondNum	{ static constexpr auto name = "toRelativeSecondNum"; };
 
 
-typedef FunctionDateOrDateTimeToSomething<DataTypeUInt16,	ToYearImpl, 		NameToYear> 		FunctionToYear;
-typedef FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToMonthImpl, 		NameToMonth> 		FunctionToMonth;
-typedef FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToDayOfMonthImpl, 	NameToDayOfMonth> 	FunctionToDayOfMonth;
-typedef FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToDayOfWeekImpl, 	NameToDayOfWeek> 	FunctionToDayOfWeek;
-typedef FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToHourImpl, 		NameToHour> 		FunctionToHour;
-typedef FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToMinuteImpl, 		NameToMinute> 		FunctionToMinute;
-typedef FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToSecondImpl, 		NameToSecond> 		FunctionToSecond;
-typedef FunctionDateOrDateTimeToSomething<DataTypeDate,		ToMondayImpl, 		NameToMonday> 		FunctionToMonday;
-typedef FunctionDateOrDateTimeToSomething<DataTypeDate,		ToStartOfMonthImpl, NameToStartOfMonth> FunctionToStartOfMonth;
-typedef FunctionDateOrDateTimeToSomething<DataTypeDate,	ToStartOfQuarterImpl, 	NameToStartOfQuarter> 	FunctionToStartOfQuarter;
-typedef FunctionDateOrDateTimeToSomething<DataTypeDate,		ToStartOfYearImpl, 	NameToStartOfYear> 	FunctionToStartOfYear;
-typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfMinuteImpl, NameToStartOfMinute> FunctionToStartOfMinute;
-typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfFiveMinuteImpl, NameToStartOfFiveMinute> FunctionToStartOfFiveMinute;
-typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfHourImpl, 	NameToStartOfHour> 	FunctionToStartOfHour;
-typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToTimeImpl, 		NameToTime> 		FunctionToTime;
+using FunctionToYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16,	ToYearImpl, 		NameToYear> 	;
+using FunctionToMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToMonthImpl, 		NameToMonth> 	;
+using FunctionToDayOfMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToDayOfMonthImpl, 	NameToDayOfMonth> ;
+using FunctionToDayOfWeek = FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToDayOfWeekImpl, 	NameToDayOfWeek> ;
+using FunctionToHour = FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToHourImpl, 		NameToHour> 	;
+using FunctionToMinute = FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToMinuteImpl, 		NameToMinute> 	;
+using FunctionToSecond = FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToSecondImpl, 		NameToSecond> 	;
+using FunctionToMonday = FunctionDateOrDateTimeToSomething<DataTypeDate,		ToMondayImpl, 		NameToMonday> 	;
+using FunctionToStartOfMonth = FunctionDateOrDateTimeToSomething<DataTypeDate,		ToStartOfMonthImpl, NameToStartOfMonth>;
+using FunctionToStartOfQuarter = FunctionDateOrDateTimeToSomething<DataTypeDate,	ToStartOfQuarterImpl, 	NameToStartOfQuarter> ;
+using FunctionToStartOfYear = FunctionDateOrDateTimeToSomething<DataTypeDate,		ToStartOfYearImpl, 	NameToStartOfYear> ;
+using FunctionToStartOfMinute = FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfMinuteImpl, NameToStartOfMinute>;
+using FunctionToStartOfFiveMinute = FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfFiveMinuteImpl, NameToStartOfFiveMinute>;
+using FunctionToStartOfHour = FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfHourImpl, 	NameToStartOfHour> ;
+using FunctionToTime = FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToTimeImpl, 		NameToTime> 	;
 
-typedef FunctionDateOrDateTimeToSomething<DataTypeUInt16,	ToRelativeYearNumImpl, 		NameToRelativeYearNum> 		FunctionToRelativeYearNum;
-typedef FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeMonthNumImpl, 	NameToRelativeMonthNum> 	FunctionToRelativeMonthNum;
-typedef FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeWeekNumImpl, 		NameToRelativeWeekNum> 		FunctionToRelativeWeekNum;
-typedef FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeDayNumImpl, 		NameToRelativeDayNum> 		FunctionToRelativeDayNum;
+using FunctionToRelativeYearNum = FunctionDateOrDateTimeToSomething<DataTypeUInt16,	ToRelativeYearNumImpl, 		NameToRelativeYearNum> 	;
+using FunctionToRelativeMonthNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeMonthNumImpl, 	NameToRelativeMonthNum> ;
+using FunctionToRelativeWeekNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeWeekNumImpl, 		NameToRelativeWeekNum> 	;
+using FunctionToRelativeDayNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeDayNumImpl, 		NameToRelativeDayNum> 	;
 
-typedef FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeHourNumImpl, 		NameToRelativeHourNum> 		FunctionToRelativeHourNum;
-typedef FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeMinuteNumImpl, 	NameToRelativeMinuteNum> 	FunctionToRelativeMinuteNum;
-typedef FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeSecondNumImpl, 	NameToRelativeSecondNum> 	FunctionToRelativeSecondNum;
+using FunctionToRelativeHourNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeHourNumImpl, 		NameToRelativeHourNum> 	;
+using FunctionToRelativeMinuteNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeMinuteNumImpl, 	NameToRelativeMinuteNum> ;
+using FunctionToRelativeSecondNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeSecondNumImpl, 	NameToRelativeSecondNum> ;
 
 
 }

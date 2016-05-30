@@ -13,7 +13,6 @@
 #include <boost/program_options.hpp>
 
 #include <Poco/File.h>
-#include <Poco/SharedPtr.h>
 #include <Poco/Util/Application.h>
 
 #include <common/ClickHouseRevision.h>
@@ -114,8 +113,6 @@ namespace ErrorCodes
 	extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
 }
 
-using Poco::SharedPtr;
-
 
 class Client : public Poco::Util::Application
 {
@@ -123,7 +120,7 @@ public:
 	Client() {}
 
 private:
-	typedef std::unordered_set<String> StringSet;
+	using StringSet = std::unordered_set<String>;
 	StringSet exit_strings {
 		"exit", "quit", "logout",
 		"учше", "йгше", "дщпщге",
@@ -139,7 +136,7 @@ private:
 
 	winsize terminal_size {};			/// Размер терминала - для вывода прогресс-бара.
 
-	SharedPtr<Connection> connection;	/// Соединение с БД.
+	std::unique_ptr<Connection> connection;	/// Соединение с БД.
 	String query;						/// Текущий запрос.
 
 	String format;						/// Формат вывода результата в консоль.
@@ -172,7 +169,7 @@ private:
 	ASTPtr parsed_query;
 
 	/// Последнее полученное от сервера исключение. Для кода возврата в неинтерактивном режиме.
-	Poco::SharedPtr<DB::Exception> last_exception;
+	std::unique_ptr<Exception> last_exception;
 
 	/// Было ли в последнем запросе исключение.
 	bool got_exception = false;
@@ -394,7 +391,7 @@ private:
 				<< (!user.empty() ? " as user " + user : "")
 				<< "." << std::endl;
 
-		connection = new Connection(host, port, default_database, user, password, "client", compression,
+		connection = std::make_unique<Connection>(host, port, default_database, user, password, "client", compression,
 			Poco::Timespan(config().getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
 			Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
 			Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
@@ -784,7 +781,7 @@ private:
 		BlockInputStreamPtr block_input = context.getInputFormat(
 			current_format, buf, sample, insert_format_max_block_size);
 
-		BlockInputStreamPtr async_block_input = new AsynchronousBlockInputStream(block_input);
+		BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
 
 		async_block_input->readPrefix();
 
@@ -881,7 +878,7 @@ private:
 
 			case Protocol::Server::Exception:
 				onException(*packet.exception);
-				last_exception = packet.exception;
+				last_exception = std::move(packet.exception);
 				return false;
 
 			case Protocol::Server::EndOfStream:
@@ -908,7 +905,7 @@ private:
 
 			case Protocol::Server::Exception:
 				onException(*packet.exception);
-				last_exception = packet.exception;
+				last_exception = std::move(packet.exception);
 				return false;
 
 			default:

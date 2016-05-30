@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Poco/Mutex.h>
-#include <Poco/SharedPtr.h>
+#include <mutex>
+#include <memory>
 
 
 /** Позволяет хранить некоторый объект, использовать его read-only в разных потоках,
@@ -20,12 +20,12 @@
   *
   * Все методы thread-safe.
   */
-template <typename T, typename Ptr = Poco::SharedPtr<T> >
+template <typename T, typename Ptr = std::shared_ptr<T>>
 class MultiVersion
 {
 public:
-	/// Конкретная версия объекта для использования. SharedPtr определяет время жизни версии.
-	typedef Ptr Version;
+	/// Конкретная версия объекта для использования. shared_ptr определяет время жизни версии.
+	using Version = Ptr;
 
 	/// Инициализация по-умолчанию (NULL-ом).
 	MultiVersion() = default;
@@ -36,27 +36,39 @@ public:
 		set(value);
 	}
 
+	/// Захватить владение первой версией.
+	MultiVersion(T * value)
+	{
+		set(value);
+	}
+
 	MultiVersion(Version && value)
 	{
 		set(std::move(value));
 	}
 
-	/// Получить текущую версию для использования. Возвращает SharedPtr, который определяет время жизни версии.
+	/// Получить текущую версию для использования. Возвращает shared_ptr, который определяет время жизни версии.
 	const Version get() const
 	{
-		/// TODO: можно ли заменять SharedPtr lock-free? (Можно, если сделать свою реализацию с использованием cmpxchg16b.)
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		/// TODO: можно ли заменять shared_ptr lock-free? (Можно, если сделать свою реализацию с использованием cmpxchg16b.)
+		std::lock_guard<std::mutex> lock(mutex);
 		return current_version;
 	}
 
 	/// Обновить объект новой версией.
 	void set(Version value)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 		current_version = value;
 	}
-	
+
+	/// Обновить объект новой версией и захватить владение.
+	void set(T * value)
+	{
+		set(Version(value));
+	}
+
 private:
 	Version current_version;
-	mutable Poco::FastMutex mutex;
+	mutable std::mutex mutex;
 };

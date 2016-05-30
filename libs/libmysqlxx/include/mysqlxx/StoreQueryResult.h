@@ -38,7 +38,7 @@ private:
 	  * То есть, чтобы можно было пользоваться несколькими Row одновременно,
 	  *  необходимо заранее куда-то сложить все длины.
 	  */
-	typedef std::vector<MYSQL_LENGTH> Lengths;
+	using Lengths = std::vector<MYSQL_LENGTH>;
 	Lengths lengths;
 };
 

@@ -130,7 +130,7 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeUInt64;
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 	void setArgument(const DataTypePtr & argument)
@@ -199,7 +199,7 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeUInt64;
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 	void setArguments(const DataTypes & arguments) override

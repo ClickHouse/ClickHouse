@@ -42,10 +42,10 @@ protected:
 	friend class const_iterator;
 	friend class iterator;
 
-	typedef size_t HashValue;
-	typedef TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable> Self;
+	using HashValue = size_t;
+	using Self = TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable>;
 public:
-	typedef ImplTable Impl;
+	using Impl = ImplTable;
 
 	static constexpr size_t NUM_BUCKETS = 1 << BITS_FOR_BUCKET;
 	static constexpr size_t MAX_BUCKET = NUM_BUCKETS - 1;
@@ -81,8 +81,8 @@ protected:
 	}
 
 public:
-	typedef typename Impl::key_type key_type;
-	typedef typename Impl::value_type value_type;
+	using key_type = typename Impl::key_type;
+	using value_type = typename Impl::value_type;
 
 	Impl impls[NUM_BUCKETS];
 

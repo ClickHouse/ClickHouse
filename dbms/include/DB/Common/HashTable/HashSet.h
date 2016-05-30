@@ -22,8 +22,8 @@ template
 class HashSetTable : public HashTable<Key, TCell, Hash, Grower, Allocator>
 {
 public:
-	typedef HashSetTable<Key, TCell, Hash, Grower, Allocator> Self;
-	typedef TCell Cell;
+	using Self = HashSetTable<Key, TCell, Hash, Grower, Allocator>;
+	using Cell = TCell;
 
 	void merge(const Self & rhs)
 	{
@@ -61,7 +61,7 @@ public:
 template <typename Key, typename Hash, typename TState = HashTableNoState>
 struct HashSetCellWithSavedHash : public HashTableCell<Key, Hash, TState>
 {
-	typedef HashTableCell<Key, Hash, TState> Base;
+	using Base = HashTableCell<Key, Hash, TState>;
 
 	size_t saved_hash;
 

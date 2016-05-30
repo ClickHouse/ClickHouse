@@ -1,8 +1,6 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Poco/Stopwatch.h>
-
 #include <DB/IO/WriteBufferFromOStream.h>
 
 #include <DB/Columns/ColumnString.h>
@@ -49,9 +47,9 @@ int main(int argc, char ** argv)
 		Context context;
 		NamesAndTypesList columns
 		{
-			{"x", new DataTypeInt16},
-			{"s1", new DataTypeString},
-			{"s2", new DataTypeString}
+			{"x", std::make_shared<DataTypeInt16>()},
+			{"s1", std::make_shared<DataTypeString>()},
+			{"s2", std::make_shared<DataTypeString>()}
 		};
 
 		ExpressionAnalyzer analyzer(ast, context, {}, columns);
@@ -67,8 +65,8 @@ int main(int argc, char ** argv)
 
 		ColumnWithTypeAndName column_x;
 		column_x.name = "x";
-		column_x.type = new DataTypeInt16;
-		ColumnInt16 * x = new ColumnInt16;
+		column_x.type = std::make_shared<DataTypeInt16>();
+		auto x = std::make_shared<ColumnInt16>();
 		column_x.column = x;
 		auto & vec_x = x->getData();
 
@@ -82,8 +80,8 @@ int main(int argc, char ** argv)
 
 		ColumnWithTypeAndName column_s1;
 		column_s1.name = "s1";
-		column_s1.type = new DataTypeString;
-		column_s1.column = new ColumnString;
+		column_s1.type = std::make_shared<DataTypeString>();
+		column_s1.column = std::make_shared<ColumnString>();
 
 		for (size_t i = 0; i < n; ++i)
 			column_s1.column->insert(String(strings[i % 5]));
@@ -92,8 +90,8 @@ int main(int argc, char ** argv)
 
 		ColumnWithTypeAndName column_s2;
 		column_s2.name = "s2";
-		column_s2.type = new DataTypeString;
-		column_s2.column = new ColumnString;
+		column_s2.type = std::make_shared<DataTypeString>();
+		column_s2.column = std::make_shared<ColumnString>();
 
 		for (size_t i = 0; i < n; ++i)
 			column_s2.column->insert(String(strings[i % 3]));
@@ -101,22 +99,22 @@ int main(int argc, char ** argv)
 		block.insert(column_s2);
 
 		{
-			Poco::Stopwatch stopwatch;
+			Stopwatch stopwatch;
 			stopwatch.start();
 
 			expression->execute(block);
 
 			stopwatch.stop();
 			std::cout << std::fixed << std::setprecision(2)
-				<< "Elapsed " << stopwatch.elapsed() / 1000000.0 << " sec."
-				<< ", " << n * 1000000 / stopwatch.elapsed() << " rows/sec."
+				<< "Elapsed " << stopwatch.elapsedSeconds() << " sec."
+				<< ", " << n / stopwatch.elapsedSeconds() << " rows/sec."
 				<< std::endl;
 		}
 
-		OneBlockInputStream * is = new OneBlockInputStream(block);
+		auto is = std::make_shared<OneBlockInputStream>(block);
 		LimitBlockInputStream lis(is, 20, std::max(0, static_cast<int>(n) - 20));
 		WriteBufferFromOStream out_buf(std::cout);
-		RowOutputStreamPtr os_ = new TabSeparatedRowOutputStream(out_buf, block);
+		RowOutputStreamPtr os_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, block);
 		BlockOutputStreamFromRowOutputStream os(os_);
 
 		copyData(lis, os);

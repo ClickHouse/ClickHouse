@@ -3,9 +3,6 @@
 #include <iostream>
 #include <fstream>
 
-#include <Poco/Stopwatch.h>
-#include <Poco/SharedPtr.h>
-
 #include <DB/Core/Block.h>
 #include <DB/Core/ColumnWithTypeAndName.h>
 
@@ -23,41 +20,39 @@
 
 
 int main(int argc, char ** argv)
+try
 {
-	try
-	{
-		DB::Block sample;
+	using namespace DB;
 
-		DB::ColumnWithTypeAndName col1;
-		col1.name = "col1";
-		col1.type = new DB::DataTypeUInt64;
-		col1.column = col1.type->createColumn();
-		sample.insert(col1);
+	Block sample;
 
-		DB::ColumnWithTypeAndName col2;
-		col2.name = "col2";
-		col2.type = new DB::DataTypeString;
-		col2.column = col2.type->createColumn();
-		sample.insert(col2);
+	ColumnWithTypeAndName col1;
+	col1.name = "col1";
+	col1.type = std::make_shared<DataTypeUInt64>();
+	col1.column = col1.type->createColumn();
+	sample.insert(col1);
 
-		std::ifstream istr("test_in");
-		std::ofstream ostr("test_out");
+	ColumnWithTypeAndName col2;
+	col2.name = "col2";
+	col2.type = std::make_shared<DataTypeString>();
+	col2.column = col2.type->createColumn();
+	sample.insert(col2);
 
-		DB::ReadBufferFromIStream in_buf(istr);
-		DB::WriteBufferFromOStream out_buf(ostr);
+	std::ifstream istr("test_in");
+	std::ofstream ostr("test_out");
 
-		DB::RowInputStreamPtr row_input = new DB::TabSeparatedRowInputStream(in_buf, sample);
-		DB::BlockInputStreamFromRowInputStream block_input(row_input, sample);
-		DB::RowOutputStreamPtr row_output = new DB::TabSeparatedRowOutputStream(out_buf, sample);
-		DB::BlockOutputStreamFromRowOutputStream block_output(row_output);
+	ReadBufferFromIStream in_buf(istr);
+	WriteBufferFromOStream out_buf(ostr);
 
-		DB::copyData(block_input, block_output);
-	}
-	catch (const DB::Exception & e)
-	{
-		std::cerr << e.what() << ", " << e.displayText() << std::endl;
-		return 1;
-	}
+	RowInputStreamPtr row_input = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample);
+	BlockInputStreamFromRowInputStream block_input(row_input, sample);
+	RowOutputStreamPtr row_output = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
+	BlockOutputStreamFromRowOutputStream block_output(row_output);
 
-	return 0;
+	copyData(block_input, block_output);
+}
+catch (const DB::Exception & e)
+{
+	std::cerr << e.what() << ", " << e.displayText() << std::endl;
+	return 1;
 }

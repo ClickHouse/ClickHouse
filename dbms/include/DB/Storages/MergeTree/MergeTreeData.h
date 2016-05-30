@@ -276,11 +276,11 @@ public:
 	NameAndTypePair getColumn(const String & column_name) const override
 	{
 		if (column_name == "_part")
-			return NameAndTypePair("_part", new DataTypeString);
+			return NameAndTypePair("_part", std::make_shared<DataTypeString>());
 		if (column_name == "_part_index")
-			return NameAndTypePair("_part_index", new DataTypeUInt64);
+			return NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>());
 		if (column_name == "_sample_factor")
-			return NameAndTypePair("_sample_factor", new DataTypeFloat64);
+			return NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>());
 
 		return ITableDeclaration::getColumn(column_name);
 	}
@@ -412,7 +412,7 @@ public:
 		bool skip_sanity_checks);
 
 	/// Нужно вызывать под залоченным lockStructureForAlter().
-	void setColumnsList(const NamesAndTypesList & new_columns) { columns = new NamesAndTypesList(new_columns); }
+	void setColumnsList(const NamesAndTypesList & new_columns) { columns = std::make_shared<NamesAndTypesList>(new_columns); }
 
 	/// Нужно вызвать, если есть подозрение, что данные куска испорчены.
 	void reportBrokenPart(const String & name)

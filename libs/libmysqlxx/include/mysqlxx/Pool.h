@@ -10,7 +10,6 @@
 #include <Poco/NumberFormatter.h>
 #include <Poco/Mutex.h>
 #include <Poco/Exception.h>
-#include <Poco/SharedPtr.h>
 
 #include <common/logger_useful.h>
 #include <mysqlxx/Connection.h>
@@ -359,7 +358,7 @@ private:
 	/** Признак того, что мы инициализированы. */
 	bool initialized{false};
 	/** Список соединений. */
-	typedef std::list<Connection *> Connections;
+	using Connections = std::list<Connection *>;
 	/** Список соединений. */
 	Connections connections;
 	/** Замок для доступа к списку соединений. */

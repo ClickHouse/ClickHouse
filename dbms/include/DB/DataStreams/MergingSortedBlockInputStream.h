@@ -146,13 +146,13 @@ protected:
 	size_t num_columns = 0;
 	std::vector<SharedBlockPtr> source_blocks;
 
-	typedef std::vector<SortCursorImpl> CursorImpls;
+	using CursorImpls = std::vector<SortCursorImpl>;
 	CursorImpls cursors;
 
-	typedef std::priority_queue<SortCursor> Queue;
+	using Queue = std::priority_queue<SortCursor>;
 	Queue queue;
 
-	typedef std::priority_queue<SortCursorWithCollation> QueueWithCollation;
+	using QueueWithCollation = std::priority_queue<SortCursorWithCollation>;
 	QueueWithCollation queue_with_collation;
 
 

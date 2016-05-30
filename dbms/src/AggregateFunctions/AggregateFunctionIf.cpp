@@ -5,7 +5,7 @@ namespace DB
 
 AggregateFunctionPtr createAggregateFunctionIf(AggregateFunctionPtr & nested)
 {
-	return new AggregateFunctionIf(nested);
+	return std::make_shared<AggregateFunctionIf>(nested);
 }
 
 }

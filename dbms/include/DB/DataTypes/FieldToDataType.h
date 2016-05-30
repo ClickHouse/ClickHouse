@@ -31,28 +31,28 @@ public:
 
 	DataTypePtr operator() (UInt64 	& x) const
 	{
-		if (x <= std::numeric_limits<UInt8>::max())		return new DataTypeUInt8;
-		if (x <= std::numeric_limits<UInt16>::max())	return new DataTypeUInt16;
-		if (x <= std::numeric_limits<UInt32>::max())	return new DataTypeUInt32;
-		return new DataTypeUInt64;
+		if (x <= std::numeric_limits<UInt8>::max())		return std::make_shared<DataTypeUInt8>();
+		if (x <= std::numeric_limits<UInt16>::max())	return std::make_shared<DataTypeUInt16>();
+		if (x <= std::numeric_limits<UInt32>::max())	return std::make_shared<DataTypeUInt32>();
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 	DataTypePtr operator() (Int64 	& x) const
 	{
-		if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min())		return new DataTypeInt8;
-		if (x <= std::numeric_limits<Int16>::max() && x >= std::numeric_limits<Int16>::min())	return new DataTypeInt16;
-		if (x <= std::numeric_limits<Int32>::max() && x >= std::numeric_limits<Int32>::min())	return new DataTypeInt32;
-		return new DataTypeInt64;
+		if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min())		return std::make_shared<DataTypeInt8>();
+		if (x <= std::numeric_limits<Int16>::max() && x >= std::numeric_limits<Int16>::min())	return std::make_shared<DataTypeInt16>();
+		if (x <= std::numeric_limits<Int32>::max() && x >= std::numeric_limits<Int32>::min())	return std::make_shared<DataTypeInt32>();
+		return std::make_shared<DataTypeInt64>();
 	}
 
 	DataTypePtr operator() (Float64 & x) const
 	{
-		return new DataTypeFloat64;
+		return std::make_shared<DataTypeFloat64>();
 	}
 
 	DataTypePtr operator() (String 	& x) const
 	{
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	DataTypePtr operator() (Array 	& x) const;

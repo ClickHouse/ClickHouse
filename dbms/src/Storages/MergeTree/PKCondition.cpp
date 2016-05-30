@@ -175,7 +175,7 @@ Block PKCondition::getBlockWithConstants(
 {
 	Block result
 	{
-		{ new ColumnConstUInt8{1, 0}, new DataTypeUInt8, "_dummy" }
+		{ std::make_shared<ColumnConstUInt8>(1, 0), std::make_shared<DataTypeUInt8>(), "_dummy" }
 	};
 
 	const auto expr_for_constant_folding = ExpressionAnalyzer{query, context, nullptr, all_columns}

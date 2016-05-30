@@ -13,6 +13,6 @@ namespace DB
   * Внимание! Предпочтительно вместо единичных строк хранить блоки столбцов. См. Block.h
   */
 
-typedef AutoArray<Field> Row;
+using Row = AutoArray<Field>;
 
 }

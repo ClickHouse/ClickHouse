@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
+#include <memory>
 
 #include <DB/Common/PODArray.h>
 #include <DB/Common/typeid_cast.h>
@@ -19,11 +19,9 @@ namespace ErrorCodes
 	extern const int NOT_IMPLEMENTED;
 }
 
-using Poco::SharedPtr;
-
 class IColumn;
 
-using ColumnPtr = SharedPtr<IColumn>;
+using ColumnPtr = std::shared_ptr<IColumn>;
 using Columns = std::vector<ColumnPtr>;
 using ColumnPlainPtrs = std::vector<IColumn *>;
 using ConstColumnPlainPtrs = std::vector<const IColumn *>;
@@ -55,7 +53,7 @@ public:
 	  *  и он может содержать как константные, так и полноценные столбцы,
 	  *  то превратить в нём все константные столбцы в полноценные, и вернуть результат.
 	  */
-	virtual SharedPtr<IColumn> convertToFullColumnIfConst() const { return {}; }
+	virtual ColumnPtr convertToFullColumnIfConst() const { return {}; }
 
 	/** Значения имеют фиксированную длину.
 	  */
@@ -66,16 +64,16 @@ public:
 	virtual size_t sizeOfField() const { throw Exception("Cannot get sizeOfField() for column " + getName(), ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
 
 	/** Создать столбец с такими же данными. */
-	virtual SharedPtr<IColumn> clone() const { return cut(0, size()); }
+	virtual ColumnPtr clone() const { return cut(0, size()); }
 
 	/** Создать пустой столбец такого же типа */
-	virtual SharedPtr<IColumn> cloneEmpty() const { return cloneResized(0); }
+	virtual ColumnPtr cloneEmpty() const { return cloneResized(0); }
 
 	/** Создать столбец такого же типа и указанного размера.
 	  * Если размер меньше текущего, данные обрезаются.
 	  * Если больше - добавляются значения по умолчанию.
 	  */
-	virtual SharedPtr<IColumn> cloneResized(size_t size) const { throw Exception("Cannot cloneResized() column " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+	virtual ColumnPtr cloneResized(size_t size) const { throw Exception("Cannot cloneResized() column " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
 	/** Количество значений в столбце. */
 	virtual size_t size() const = 0;
@@ -117,9 +115,9 @@ public:
 	/** Удалить всё кроме диапазона элементов.
 	  * Используется, например, для операции LIMIT.
 	  */
-	virtual SharedPtr<IColumn> cut(size_t start, size_t length) const
+	virtual ColumnPtr cut(size_t start, size_t length) const
 	{
-		SharedPtr<IColumn> res = cloneEmpty();
+		ColumnPtr res = cloneEmpty();
 		res.get()->insertRangeFrom(*this, start, length);
 		return res;
 	}
@@ -193,15 +191,15 @@ public:
 	  *  если 0, то не делать reserve,
 	  *  иначе сделать reserve по размеру исходного столбца.
 	  */
-	typedef PaddedPODArray<UInt8> Filter;
-	virtual SharedPtr<IColumn> filter(const Filter & filt, ssize_t result_size_hint) const = 0;
+	using Filter = PaddedPODArray<UInt8>;
+	virtual ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
 	/** Переставить значения местами, используя указанную перестановку.
 	  * Используется при сортировке.
 	  * limit - если не равно 0 - положить в результат только первые limit значений.
 	  */
-	typedef PaddedPODArray<size_t> Permutation;
-	virtual SharedPtr<IColumn> permute(const Permutation & perm, size_t limit) const = 0;
+	using Permutation = PaddedPODArray<size_t>;
+	virtual ColumnPtr permute(const Permutation & perm, size_t limit) const = 0;
 
 	/** Сравнить (*this)[n] и rhs[m].
 	  * Вернуть отрицательное число, 0, или положительное число, если меньше, равно, или больше, соответственно.
@@ -229,9 +227,9 @@ public:
 	  * (i-е значение размножается в offsets[i] - offsets[i - 1] значений.)
 	  * Необходимо для реализации операции ARRAY JOIN.
 	  */
-	typedef UInt64 Offset_t;
-	typedef PaddedPODArray<Offset_t> Offsets_t;
-	virtual SharedPtr<IColumn> replicate(const Offsets_t & offsets) const = 0;
+	using Offset_t = UInt64;
+	using Offsets_t = PaddedPODArray<Offset_t>;
+	virtual ColumnPtr replicate(const Offsets_t & offsets) const = 0;
 
 	/** Посчитать минимум и максимум по столбцу.
 	  * Функция должна быть реализована полноценно только для числовых столбцов, а также дат/дат-с-временем.

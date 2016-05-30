@@ -19,20 +19,20 @@
 #include <threadpool.hpp>
 
 
-typedef UInt64 Key;
-typedef UInt64 Value;
+using Key = UInt64;
+using Value = UInt64;
 
-typedef std::vector<Key> Source;
+using Source = std::vector<Key>;
 
-typedef HashMap<Key, Value> Map;
-typedef TwoLevelHashMap<Key, Value> MapTwoLevel;
+using Map = HashMap<Key, Value>;
+using MapTwoLevel = TwoLevelHashMap<Key, Value>;
 
 
 struct SmallLock
 {
 	std::atomic<int> locked {false};
 
-	bool tryLock()
+	bool try_lock()
 	{
 		int expected = 0;
 		return locked.compare_exchange_strong(expected, 1, std::memory_order_acquire);
@@ -50,7 +50,7 @@ struct __attribute__((__aligned__(64))) AlignedSmallLock : public SmallLock
 };
 
 
-typedef Poco::FastMutex Mutex;
+using Mutex = std::mutex;
 
 
 /*typedef HashTableWithSmallLocks<
@@ -143,7 +143,7 @@ void aggregate3(Map & local_map, Map & global_map, Mutex & mutex, Source::const_
 			++local_map[*it];	/// TODO Можно было бы делать один lookup, а не два.
 		else
 		{
-			if (mutex.tryLock())
+			if (mutex.try_lock())
 			{
 				++global_map[*it];
 				mutex.unlock();
@@ -204,7 +204,7 @@ void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexes, Sour
 					size_t hash_value = global_map.hash(*it);
 					size_t bucket = global_map.getBucketFromHash(hash_value);
 
-					if (mutexes[bucket].tryLock())
+					if (mutexes[bucket].try_lock())
 					{
 						++global_map.impls[bucket][*it];
 						mutexes[bucket].unlock();
@@ -886,7 +886,7 @@ int main(int argc, char ** argv)
 
 		watch.restart();
 
-		typedef std::vector<Map *> Maps;
+		using Maps = std::vector<Map *>;
 		Maps maps_to_merge(num_threads);
 		for (size_t i = 0; i < num_threads; ++i)
 			maps_to_merge[i] = &maps[i];

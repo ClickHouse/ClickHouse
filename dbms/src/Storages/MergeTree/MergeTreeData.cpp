@@ -553,7 +553,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 	out_rename_map = {};
 	out_force_update_metadata = false;
 
-	typedef std::map<String, DataTypePtr> NameToType;
+	using NameToType = std::map<String, DataTypePtr>;
 	NameToType new_types;
 	for (const NameAndTypePair & column : new_columns)
 	{
@@ -621,7 +621,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 				/// @todo invent the name more safely
 				const auto new_type_name_column = '#' + new_type_name + "_column";
 				out_expression->add(ExpressionAction::addColumn(
-					{ new ColumnConstString{1, new_type_name}, new DataTypeString, new_type_name_column }));
+					{ std::make_shared<ColumnConstString>(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
 
 				const FunctionPtr & function = FunctionFactory::instance().get("CAST", context);
 				out_expression->add(ExpressionAction::applyFunction(function, Names{
@@ -742,7 +742,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 	if (expression)
 	{
 		MarkRanges ranges(1, MarkRange(0, part->size));
-		BlockInputStreamPtr part_in = new MergeTreeBlockInputStream(full_path + part->name + '/',
+		BlockInputStreamPtr part_in = std::make_shared<MergeTreeBlockInputStream>(full_path + part->name + '/',
 			DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges,
 			false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
 

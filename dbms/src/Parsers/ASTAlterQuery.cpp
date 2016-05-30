@@ -56,7 +56,7 @@ String ASTAlterQuery::getID() const
 
 ASTPtr ASTAlterQuery::clone() const
 {
-	ASTAlterQuery * res = new ASTAlterQuery(*this);
+	auto res = std::make_shared<ASTAlterQuery>(*this);
 	for (ParameterContainer::size_type i = 0; i < parameters.size(); ++i)
 		parameters[i].clone(res->parameters[i]);
 	return res;

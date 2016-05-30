@@ -55,33 +55,33 @@ namespace ErrorCodes
   * PS. Существует много различных подходов к эффективной реализации параллельной и распределённой агрегации,
   *  лучшим образом подходящих для разных случаев, и этот подход - всего лишь один из них, выбранный по совокупности причин.
   */
-typedef AggregateDataPtr AggregatedDataWithoutKey;
+using AggregatedDataWithoutKey = AggregateDataPtr;
 
-typedef HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>> AggregatedDataWithUInt64Key;
-typedef HashMapWithSavedHash<StringRef, AggregateDataPtr> AggregatedDataWithStringKey;
-typedef HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32> AggregatedDataWithKeys128;
-typedef HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32> AggregatedDataWithKeys256;
-typedef HashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash> AggregatedDataHashed;
+using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
+using AggregatedDataWithStringKey = HashMapWithSavedHash<StringRef, AggregateDataPtr>;
+using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
+using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
+using AggregatedDataHashed = HashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash>;
 
-typedef TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>> AggregatedDataWithUInt64KeyTwoLevel;
-typedef TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr> AggregatedDataWithStringKeyTwoLevel;
-typedef TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32> AggregatedDataWithKeys128TwoLevel;
-typedef TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32> AggregatedDataWithKeys256TwoLevel;
-typedef TwoLevelHashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash> AggregatedDataHashedTwoLevel;
+using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
+using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr>;
+using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
+using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
+using AggregatedDataHashedTwoLevel = TwoLevelHashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash>;
 
-typedef HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<8>> AggregatedDataWithUInt8Key;
-typedef HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<16>> AggregatedDataWithUInt16Key;
+using AggregatedDataWithUInt8Key = HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<8>>;
+using AggregatedDataWithUInt16Key = HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<16>>;
 
 
 /// Для случая, когда есть один числовой ключ.
 template <typename FieldType, typename TData>	/// UInt8/16/32/64 для любых типов соответствующей битности.
 struct AggregationMethodOneNumber
 {
-	typedef TData Data;
-	typedef typename Data::key_type Key;
-	typedef typename Data::mapped_type Mapped;
-	typedef typename Data::iterator iterator;
-	typedef typename Data::const_iterator const_iterator;
+	using Data = TData;
+	using Key = typename Data::key_type;
+	using Mapped = typename Data::mapped_type;
+	using iterator = typename Data::iterator;
+	using const_iterator = typename Data::const_iterator;
 
 	Data data;
 
@@ -147,11 +147,11 @@ struct AggregationMethodOneNumber
 template <typename TData>
 struct AggregationMethodString
 {
-	typedef TData Data;
-	typedef typename Data::key_type Key;
-	typedef typename Data::mapped_type Mapped;
-	typedef typename Data::iterator iterator;
-	typedef typename Data::const_iterator const_iterator;
+	using Data = TData;
+	using Key = typename Data::key_type;
+	using Mapped = typename Data::mapped_type;
+	using iterator = typename Data::iterator;
+	using const_iterator = typename Data::const_iterator;
 
 	Data data;
 
@@ -210,11 +210,11 @@ struct AggregationMethodString
 template <typename TData>
 struct AggregationMethodFixedString
 {
-	typedef TData Data;
-	typedef typename Data::key_type Key;
-	typedef typename Data::mapped_type Mapped;
-	typedef typename Data::iterator iterator;
-	typedef typename Data::const_iterator const_iterator;
+	using Data = TData;
+	using Key = typename Data::key_type;
+	using Mapped = typename Data::mapped_type;
+	using iterator = typename Data::iterator;
+	using const_iterator = typename Data::const_iterator;
 
 	Data data;
 
@@ -271,11 +271,11 @@ struct AggregationMethodFixedString
 template <typename TData>
 struct AggregationMethodKeysFixed
 {
-	typedef TData Data;
-	typedef typename Data::key_type Key;
-	typedef typename Data::mapped_type Mapped;
-	typedef typename Data::iterator iterator;
-	typedef typename Data::const_iterator const_iterator;
+	using Data = TData;
+	using Key = typename Data::key_type;
+	using Mapped = typename Data::mapped_type;
+	using iterator = typename Data::iterator;
+	using const_iterator = typename Data::const_iterator;
 
 	Data data;
 
@@ -330,11 +330,11 @@ struct AggregationMethodKeysFixed
 template <typename TData>
 struct AggregationMethodConcat
 {
-	typedef TData Data;
-	typedef typename Data::key_type Key;
-	typedef typename Data::mapped_type Mapped;
-	typedef typename Data::iterator iterator;
-	typedef typename Data::const_iterator const_iterator;
+	using Data = TData;
+	using Key = typename Data::key_type;
+	using Mapped = typename Data::mapped_type;
+	using iterator = typename Data::iterator;
+	using const_iterator = typename Data::const_iterator;
 
 	Data data;
 
@@ -408,11 +408,11 @@ struct AggregationMethodConcat
 template <typename TData>
 struct AggregationMethodSerialized
 {
-	typedef TData Data;
-	typedef typename Data::key_type Key;
-	typedef typename Data::mapped_type Mapped;
-	typedef typename Data::iterator iterator;
-	typedef typename Data::const_iterator const_iterator;
+	using Data = TData;
+	using Key = typename Data::key_type;
+	using Mapped = typename Data::mapped_type;
+	using iterator = typename Data::iterator;
+	using const_iterator = typename Data::const_iterator;
 
 	Data data;
 
@@ -467,11 +467,11 @@ struct AggregationMethodSerialized
 template <typename TData>
 struct AggregationMethodHashed
 {
-	typedef TData Data;
-	typedef typename Data::key_type Key;
-	typedef typename Data::mapped_type Mapped;
-	typedef typename Data::iterator iterator;
-	typedef typename Data::const_iterator const_iterator;
+	using Data = TData;
+	using Key = typename Data::key_type;
+	using Mapped = typename Data::mapped_type;
+	using iterator = typename Data::iterator;
+	using const_iterator = typename Data::const_iterator;
 
 	Data data;
 
@@ -609,7 +609,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 	};
 	Type type = Type::EMPTY;
 
-	AggregatedDataVariants() : aggregates_pools(1, new Arena), aggregates_pool(aggregates_pools.back().get()) {}
+	AggregatedDataVariants() : aggregates_pools(1, std::make_shared<Arena>()), aggregates_pool(aggregates_pools.back().get()) {}
 	bool empty() const { return type == Type::EMPTY; }
 	void invalidate() { type = Type::EMPTY; }
 
@@ -752,8 +752,8 @@ struct AggregatedDataVariants : private boost::noncopyable
 			M(serialized_two_level)
 };
 
-typedef SharedPtr<AggregatedDataVariants> AggregatedDataVariantsPtr;
-typedef std::vector<AggregatedDataVariantsPtr> ManyAggregatedDataVariants;
+using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
+using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
 
 /** Как считаются "тотальные" значения при наличии WITH TOTALS?
   * (Более подробно смотрите в TotalsHavingBlockInputStream.)

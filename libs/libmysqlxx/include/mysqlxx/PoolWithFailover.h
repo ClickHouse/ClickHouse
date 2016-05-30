@@ -64,7 +64,7 @@ namespace mysqlxx
 	class PoolWithFailover final
 	{
 	private:
-		typedef Poco::SharedPtr<Pool> PoolPtr;
+		using PoolPtr = std::shared_ptr<Pool>;
 
 		struct Replica
 		{
@@ -77,19 +77,19 @@ namespace mysqlxx
 				: pool(pool_), priority(priority_), error_count(0) {}
 		};
 
-		typedef std::vector<Replica> Replicas;
+		using Replicas = std::vector<Replica>;
 		/// [приоритет][номер] -> реплика.
-		typedef std::map<int, Replicas> ReplicasByPriority;
+		using ReplicasByPriority = std::map<int, Replicas>;
 
 		ReplicasByPriority replicas_by_priority;
 
 		/// Количество попыток подключения.
 		size_t max_tries;
 		/// Mutex для доступа к списку реплик.
-		Poco::FastMutex mutex;
+		std::mutex mutex;
 
 	public:
-		typedef Pool::Entry Entry;
+		using Entry = Pool::Entry;
 
 		/**
 		 * @param config_name		Имя параметра в конфигурационном файле.

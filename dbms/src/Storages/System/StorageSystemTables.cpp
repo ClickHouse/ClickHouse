@@ -19,9 +19,9 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
 	: name(name_),
 	columns
 	{
-		{"database", 	new DataTypeString},
-		{"name", 		new DataTypeString},
-		{"engine", 		new DataTypeString},
+		{"database", 	std::make_shared<DataTypeString>()},
+		{"name", 		std::make_shared<DataTypeString>()},
+		{"engine", 		std::make_shared<DataTypeString>()},
 	}
 {
 }
@@ -36,8 +36,8 @@ static ColumnWithTypeAndName getFilteredDatabases(ASTPtr query, const Context & 
 {
 	ColumnWithTypeAndName column;
 	column.name = "database";
-	column.type = new DataTypeString;
-	column.column = new ColumnString;
+	column.type = std::make_shared<DataTypeString>();
+	column.column = std::make_shared<ColumnString>();
 
 	Block block;
 	block.insert(column);
@@ -66,20 +66,20 @@ BlockInputStreams StorageSystemTables::read(
 
 	ColumnWithTypeAndName col_db;
 	col_db.name = "database";
-	col_db.type = new DataTypeString;
-	col_db.column = new ColumnString;
+	col_db.type = std::make_shared<DataTypeString>();
+	col_db.column = std::make_shared<ColumnString>();
 	block.insert(col_db);
 
 	ColumnWithTypeAndName col_name;
 	col_name.name = "name";
-	col_name.type = new DataTypeString;
-	col_name.column = new ColumnString;
+	col_name.type = std::make_shared<DataTypeString>();
+	col_name.column = std::make_shared<ColumnString>();
 	block.insert(col_name);
 
 	ColumnWithTypeAndName col_engine;
 	col_engine.name = "engine";
-	col_engine.type = new DataTypeString;
-	col_engine.column = new ColumnString;
+	col_engine.type = std::make_shared<DataTypeString>();
+	col_engine.column = std::make_shared<ColumnString>();
 	block.insert(col_engine);
 
 	ColumnWithTypeAndName filtered_databases_column = getFilteredDatabases(query, context);
@@ -103,7 +103,7 @@ BlockInputStreams StorageSystemTables::read(
 		}
 	}
 
-	return BlockInputStreams(1, new OneBlockInputStream(block));
+	return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
 }
 
 }

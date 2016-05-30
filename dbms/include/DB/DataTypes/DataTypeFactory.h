@@ -21,7 +21,7 @@ public:
 	DataTypePtr get(const String & name) const;
 
 private:
-	typedef std::map<String, DataTypePtr> NonParametricDataTypes;
+	using NonParametricDataTypes = std::map<String, DataTypePtr>;
 	NonParametricDataTypes non_parametric_data_types;
 
 	Poco::RegularExpression fixed_string_regexp {R"--(^FixedString\s*\(\s*(\d+)\s*\)$)--"};

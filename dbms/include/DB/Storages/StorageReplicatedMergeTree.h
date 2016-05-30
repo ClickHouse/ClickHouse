@@ -107,7 +107,7 @@ public:
 
 	NameAndTypePair getColumn(const String & column_name) const override
 	{
-		if (column_name == "_replicated") return NameAndTypePair("_replicated", new DataTypeUInt8);
+		if (column_name == "_replicated") return NameAndTypePair("_replicated", std::make_shared<DataTypeUInt8>());
 		return data.getColumn(column_name);
 	}
 
@@ -275,7 +275,7 @@ private:
 
 	/// Поток, следящий за обновлениями в логах всех реплик и загружающий их в очередь.
 	std::thread queue_updating_thread;
-	zkutil::EventPtr queue_updating_event = zkutil::EventPtr(new Poco::Event);
+	zkutil::EventPtr queue_updating_event = std::make_shared<Poco::Event>();
 
 	/// Задание, выполняющее действия из очереди.
 	BackgroundProcessingPool::TaskHandle queue_task_handle;
@@ -298,7 +298,7 @@ private:
 	ReplicatedMergeTreePartCheckThread part_check_thread;
 
 	/// Событие, пробуждающее метод alter от ожидания завершения запроса ALTER.
-	zkutil::EventPtr alter_query_event = zkutil::EventPtr(new Poco::Event);
+	zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();
 
 	Logger * log;
 

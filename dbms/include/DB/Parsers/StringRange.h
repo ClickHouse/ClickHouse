@@ -6,7 +6,7 @@
 namespace DB
 {
 
-typedef std::pair<const char *, const char *> StringRange;
-typedef Poco::SharedPtr<String> StringPtr;
+using StringRange = std::pair<const char *, const char *>;
+using StringPtr = std::shared_ptr<String>;
 
 }

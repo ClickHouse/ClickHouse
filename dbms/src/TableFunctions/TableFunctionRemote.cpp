@@ -263,11 +263,11 @@ StoragePtr TableFunctionRemote::execute(ASTPtr ast_function, Context & context) 
 	if (names.empty())
 		throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
 
-	SharedPtr<Cluster> cluster = new Cluster(context.getSettings(), names, username, password);
+	auto cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password);
 
 	return StorageDistributed::create(
 		getName(),
-		new NamesAndTypesList(getStructureOfRemoteTable(*cluster, remote_database, remote_table, context)),
+		std::make_shared<NamesAndTypesList>(getStructureOfRemoteTable(*cluster, remote_database, remote_table, context)),
 		remote_database,
 		remote_table,
 		cluster,

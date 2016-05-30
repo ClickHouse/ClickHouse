@@ -42,7 +42,7 @@ public:
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
 		const String & remote_database_,	/// БД на удалённых серверах.
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
-		SharedPtr<Cluster> & owned_cluster_,
+		std::shared_ptr<Cluster> & owned_cluster_,
 		Context & context_);
 
 	std::string getName() const override { return "Distributed"; }
@@ -134,8 +134,9 @@ private:
 	Context & context;
 	Logger * log = &Logger::get("StorageDistributed");
 
-	/// Используется только, если таблица должна владеть объектом Cluster, которым больше никто не владеет - для реализации TableFunctionRemote.
-	SharedPtr<Cluster> owned_cluster;
+	/// Используется только, если таблица должна владеть объектом Cluster,
+	///  которым больше никто не владеет - для реализации TableFunctionRemote.
+	std::shared_ptr<Cluster> owned_cluster;
 
 	/// Соединения с удалёнными серверами.
 	const Cluster & cluster;

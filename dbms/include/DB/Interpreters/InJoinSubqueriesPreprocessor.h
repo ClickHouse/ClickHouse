@@ -269,10 +269,10 @@ private:
 
 			auto & distributed_storage = static_cast<TStorageDistributed &>(*subquery_table_storage);
 
-			if (sub_select_query.database.isNull())
+			if (!sub_select_query.database)
 			{
-				sub_select_query.database = new ASTIdentifier{{}, distributed_storage.getRemoteDatabaseName(),
-					ASTIdentifier::Database};
+				sub_select_query.database = std::make_shared<ASTIdentifier>(StringRange(), distributed_storage.getRemoteDatabaseName(),
+					ASTIdentifier::Database);
 
 				/// Поскольку был создан новый узел для БД, необходимо его вставить в список
 				/// потомков этого подзапроса. См. ParserSelectQuery для структуры потомков.
@@ -296,7 +296,7 @@ private:
 
 	StoragePtr getDistributedSubqueryStorage(const ASTSelectQuery & sub_select_query) const
 	{
-		if (sub_select_query.table.isNull())
+		if (!sub_select_query.table)
 			return {};
 
 		const auto identifier = typeid_cast<const ASTIdentifier *>(sub_select_query.table.get());

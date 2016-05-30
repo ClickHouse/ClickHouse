@@ -775,7 +775,7 @@ class FunctionStringOrArrayToT : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionStringOrArrayToT; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringOrArrayToT>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -796,7 +796,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new typename DataTypeFromFieldType<ResultType>::Type;
+		return std::make_shared<typename DataTypeFromFieldType<ResultType>::Type>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -805,7 +805,7 @@ public:
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
 		{
-			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+			auto col_res = std::make_shared<ColumnVector<ResultType>>();
 			block.getByPosition(result).column = col_res;
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
@@ -820,12 +820,12 @@ public:
 				ResultType res = 0;
 				Impl::vector_fixed_to_constant(col->getChars(), col->getN(), res);
 
-				ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col->size(), res);
+				auto col_res = std::make_shared<ColumnConst<ResultType>>(col->size(), res);
 				block.getByPosition(result).column = col_res;
 			}
 			else
 			{
-				ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+				auto col_res = std::make_shared<ColumnVector<ResultType>>();
 				block.getByPosition(result).column = col_res;
 
 				typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
@@ -838,12 +838,12 @@ public:
 			ResultType res = 0;
 			Impl::constant(col->getData(), res);
 
-			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col->size(), res);
+			auto col_res = std::make_shared<ColumnConst<ResultType>>(col->size(), res);
 			block.getByPosition(result).column = col_res;
 		}
 		else if (const ColumnArray * col = typeid_cast<const ColumnArray *>(&*column))
 		{
-			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+			auto col_res = std::make_shared<ColumnVector<ResultType>>();
 			block.getByPosition(result).column = col_res;
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
@@ -855,7 +855,7 @@ public:
 			ResultType res = 0;
 			Impl::constant_array(col->getData(), res);
 
-			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col->size(), res);
+			auto col_res = std::make_shared<ColumnConst<ResultType>>(col->size(), res);
 			block.getByPosition(result).column = col_res;
 		}
 		else
@@ -871,7 +871,7 @@ class FunctionStringToString : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionStringToString; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringToString>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -900,14 +900,14 @@ public:
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
 		{
-			ColumnString * col_res = new ColumnString;
+			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 			Impl::vector(col->getChars(), col->getOffsets(),
 				col_res->getChars(), col_res->getOffsets());
 		}
 		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column))
 		{
-			ColumnFixedString * col_res = new ColumnFixedString(col->getN());
+			auto col_res = std::make_shared<ColumnFixedString>(col->getN());
 			block.getByPosition(result).column = col_res;
 			Impl::vector_fixed(col->getChars(), col->getN(),
 				col_res->getChars());
@@ -916,7 +916,7 @@ public:
 		{
 			String res;
 			Impl::constant(col->getData(), res);
-			ColumnConstString * col_res = new ColumnConstString(col->size(), res);
+			auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
 			block.getByPosition(result).column = col_res;
 		}
 		else
@@ -932,7 +932,7 @@ class FunctionReverse : public IFunction
 {
 public:
 	static constexpr auto name = "reverse";
-	static IFunction * create(const Context & context) { return new FunctionReverse; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionReverse>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -962,14 +962,14 @@ public:
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(column.get()))
 		{
-			ColumnString * col_res = new ColumnString;
+			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 			ReverseImpl::vector(col->getChars(), col->getOffsets(),
 						 col_res->getChars(), col_res->getOffsets());
 		}
 		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(column.get()))
 		{
-			ColumnFixedString * col_res = new ColumnFixedString(col->getN());
+			auto col_res = std::make_shared<ColumnFixedString>(col->getN());
 			block.getByPosition(result).column = col_res;
 			ReverseImpl::vector_fixed(col->getChars(), col->getN(),
 							   col_res->getChars());
@@ -978,7 +978,7 @@ public:
 		{
 			String res;
 			ReverseImpl::constant(col->getData(), res);
-			ColumnConstString * col_res = new ColumnConstString(col->size(), res);
+			auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
 			block.getByPosition(result).column = col_res;
 		}
 		else if (typeid_cast<const ColumnArray *>(column.get()) || typeid_cast<const ColumnConstArray *>(column.get()))
@@ -998,7 +998,7 @@ class ConcatImpl : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new ConcatImpl; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<ConcatImpl>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1025,7 +1025,7 @@ public:
 				};
 		}
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -1118,13 +1118,13 @@ private:
 		/// Результат - const string
 		if (c0_const && c1_const)
 		{
-			ColumnConstString * c_res = new ColumnConstString(c0_const->size(), "");
+			auto c_res = std::make_shared<ColumnConstString>(c0_const->size(), "");
 			block.getByPosition(result).column = c_res;
 			constant_constant(c0_const->getData(), c1_const->getData(), c_res->getData());
 		}
 		else
 		{
-			ColumnString * c_res = new ColumnString;
+			auto c_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = c_res;
 			ColumnString::Chars_t & vec_res = c_res->getChars();
 			ColumnString::Offsets_t & offsets_res = c_res->getOffsets();
@@ -1187,7 +1187,7 @@ private:
 
 		if (result_is_const)
 		{
-			const auto out = new ColumnConst<String>{size, ""};
+			const auto out = std::make_shared<ColumnConstString>(size, "");
 			block.getByPosition(result).column = out;
 
 			auto & data = out->getData();
@@ -1198,7 +1198,7 @@ private:
 		}
 		else
 		{
-			const auto out = new ColumnString{};
+			const auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
 
 			auto & out_data = out->getChars();
@@ -1469,7 +1469,7 @@ class FunctionStringNumNumToString : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionStringNumNumToString; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringNumNumToString>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1493,7 +1493,7 @@ public:
 			throw Exception("Illegal type " + (arguments[1]->isNumeric() ? arguments[2]->getName() : arguments[1]->getName()) + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1517,7 +1517,7 @@ public:
 
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column_string))
 		{
-			ColumnString * col_res = new ColumnString;
+			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 			Impl::vector(col->getChars(), col->getOffsets(),
 				start, length,
@@ -1525,7 +1525,7 @@ public:
 		}
 		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column_string))
 		{
-			ColumnString * col_res = new ColumnString;
+			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 			Impl::vector_fixed(col->getChars(), col->getN(),
 				start, length,
@@ -1535,7 +1535,7 @@ public:
 		{
 			String res;
 			Impl::constant(col->getData(), start, length, res);
-			ColumnConstString * col_res = new ColumnConstString(col->size(), res);
+			auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
 			block.getByPosition(result).column = col_res;
 		}
 		else
@@ -1550,7 +1550,7 @@ class FunctionAppendTrailingCharIfAbsent : public IFunction
 {
 public:
 	static constexpr auto name = "appendTrailingCharIfAbsent";
-	static IFunction * create(const Context & context) { return new FunctionAppendTrailingCharIfAbsent; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionAppendTrailingCharIfAbsent>(); }
 
 	String getName() const override
 	{
@@ -1579,7 +1579,7 @@ private:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -1603,7 +1603,7 @@ private:
 
 		if (const auto col = typeid_cast<const ColumnString *>(&*column))
 		{
-			auto col_res = new ColumnString;
+			auto col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 
 			const auto & src_data = col->getChars();
@@ -1642,11 +1642,10 @@ private:
 		{
 			const auto & in_data = col->getData();
 
-			block.getByPosition(result).column = new ColumnConstString{
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(
 				col->size(),
 				in_data.size() == 0 ? in_data :
-					in_data.back() == trailing_char_str.front() ? in_data : in_data + trailing_char_str
-			};
+					in_data.back() == trailing_char_str.front() ? in_data : in_data + trailing_char_str);
 		}
 		else
 			throw Exception{
@@ -1672,21 +1671,21 @@ struct NameSubstringUTF8	{ static constexpr auto name = "substringUTF8"; };
 struct NameConcat			{ static constexpr auto name = "concat"; };
 struct NameConcatAssumeInjective	{ static constexpr auto name = "concatAssumeInjective"; };
 
-typedef FunctionStringOrArrayToT<EmptyImpl<false>,		NameEmpty,		UInt8> 	FunctionEmpty;
-typedef FunctionStringOrArrayToT<EmptyImpl<true>, 		NameNotEmpty,	UInt8> 	FunctionNotEmpty;
-typedef FunctionStringOrArrayToT<LengthImpl, 			NameLength,		UInt64> FunctionLength;
-typedef FunctionStringOrArrayToT<LengthUTF8Impl, 		NameLengthUTF8,	UInt64> FunctionLengthUTF8;
-typedef FunctionStringToString<LowerUpperImpl<'A', 'Z'>, NameLower>	FunctionLower;
-typedef FunctionStringToString<LowerUpperImpl<'a', 'z'>, NameUpper>	FunctionUpper;
+using FunctionEmpty = FunctionStringOrArrayToT<EmptyImpl<false>,		NameEmpty,		UInt8> ;
+using FunctionNotEmpty = FunctionStringOrArrayToT<EmptyImpl<true>, 		NameNotEmpty,	UInt8> ;
+using FunctionLength = FunctionStringOrArrayToT<LengthImpl, 			NameLength,		UInt64>;
+using FunctionLengthUTF8 = FunctionStringOrArrayToT<LengthUTF8Impl, 		NameLengthUTF8,	UInt64>;
+using FunctionLower = FunctionStringToString<LowerUpperImpl<'A', 'Z'>, NameLower>;
+using FunctionUpper = FunctionStringToString<LowerUpperImpl<'a', 'z'>, NameUpper>;
 typedef FunctionStringToString<
 	LowerUpperUTF8Impl<'A', 'Z', Poco::Unicode::toLower, UTF8CyrillicToCase<true>>,
 	NameLowerUTF8>	FunctionLowerUTF8;
 typedef FunctionStringToString<
 	LowerUpperUTF8Impl<'a', 'z', Poco::Unicode::toUpper, UTF8CyrillicToCase<false>>,
 	NameUpperUTF8>	FunctionUpperUTF8;
-typedef FunctionStringToString<ReverseUTF8Impl,			NameReverseUTF8>		FunctionReverseUTF8;
-typedef FunctionStringNumNumToString<SubstringImpl,		NameSubstring>			FunctionSubstring;
-typedef FunctionStringNumNumToString<SubstringUTF8Impl,	NameSubstringUTF8>		FunctionSubstringUTF8;
+using FunctionReverseUTF8 = FunctionStringToString<ReverseUTF8Impl,			NameReverseUTF8>	;
+using FunctionSubstring = FunctionStringNumNumToString<SubstringImpl,		NameSubstring>		;
+using FunctionSubstringUTF8 = FunctionStringNumNumToString<SubstringUTF8Impl,	NameSubstringUTF8>	;
 using FunctionConcat = ConcatImpl<NameConcat>;
 using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective>;
 

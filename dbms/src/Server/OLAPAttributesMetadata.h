@@ -24,7 +24,7 @@ namespace DB
 namespace OLAP
 {
 
-typedef Int64 BinaryData;
+using BinaryData = Int64;
 
 /** Информация о типе атрибута */
 struct IAttributeMetadata
@@ -117,14 +117,14 @@ struct AttributeTimeBase : public IAttributeMetadata
 };
 
 
-typedef AttributeUIntBase AttributeYearBase;
-typedef AttributeUIntBase AttributeMonthBase;
-typedef AttributeUIntBase AttributeDayOfWeekBase;
-typedef AttributeUIntBase AttributeDayOfMonthBase;
-typedef AttributeDateBase AttributeWeekBase;
-typedef AttributeUIntBase AttributeHourBase;
-typedef AttributeUIntBase AttributeMinuteBase;
-typedef AttributeUIntBase AttributeSecondBase;
+using AttributeYearBase = AttributeUIntBase;
+using AttributeMonthBase = AttributeUIntBase;
+using AttributeDayOfWeekBase = AttributeUIntBase;
+using AttributeDayOfMonthBase = AttributeUIntBase;
+using AttributeWeekBase = AttributeDateBase;
+using AttributeHourBase = AttributeUIntBase;
+using AttributeMinuteBase = AttributeUIntBase;
+using AttributeSecondBase = AttributeUIntBase;
 
 struct AttributeShortStringBase : public IAttributeMetadata
 {
@@ -138,50 +138,50 @@ struct AttributeShortStringBase : public IAttributeMetadata
 
 
 /** Атрибуты, относящиеся к времени начала визита */
-typedef AttributeDateTimeBase VisitStartDateTime;
-typedef AttributeDateTimeBase VisitStartDateTimeRoundedToMinute;
-typedef AttributeDateTimeBase VisitStartDateTimeRoundedToHour;
-typedef AttributeDateTimeBase VisitStartDateTime;
-typedef AttributeDateBase VisitStartDate;
-typedef AttributeDateBase VisitStartDateRoundedToMonth;
-typedef AttributeWeekBase VisitStartWeek;
-typedef AttributeTimeBase VisitStartTime;
-typedef AttributeTimeBase VisitStartTimeRoundedToMinute;
-typedef AttributeYearBase VisitStartYear;
-typedef AttributeMonthBase VisitStartMonth;
-typedef AttributeDayOfWeekBase VisitStartDayOfWeek;
-typedef AttributeDayOfMonthBase VisitStartDayOfMonth;
-typedef AttributeHourBase VisitStartHour;
-typedef AttributeMinuteBase VisitStartMinute;
-typedef AttributeSecondBase VisitStartSecond;
+using VisitStartDateTime = AttributeDateTimeBase;
+using VisitStartDateTimeRoundedToMinute = AttributeDateTimeBase;
+using VisitStartDateTimeRoundedToHour = AttributeDateTimeBase;
+using VisitStartDateTime = AttributeDateTimeBase;
+using VisitStartDate = AttributeDateBase;
+using VisitStartDateRoundedToMonth = AttributeDateBase;
+using VisitStartWeek = AttributeWeekBase;
+using VisitStartTime = AttributeTimeBase;
+using VisitStartTimeRoundedToMinute = AttributeTimeBase;
+using VisitStartYear = AttributeYearBase;
+using VisitStartMonth = AttributeMonthBase;
+using VisitStartDayOfWeek = AttributeDayOfWeekBase;
+using VisitStartDayOfMonth = AttributeDayOfMonthBase;
+using VisitStartHour = AttributeHourBase;
+using VisitStartMinute = AttributeMinuteBase;
+using VisitStartSecond = AttributeSecondBase;
 
 /** Атрибуты, относящиеся к времени начала первого визита */
-typedef AttributeDateTimeBase FirstVisitDateTime;
-typedef AttributeDateBase FirstVisitDate;
-typedef AttributeWeekBase FirstVisitWeek;
-typedef AttributeTimeBase FirstVisitTime;
-typedef AttributeYearBase FirstVisitYear;
-typedef AttributeMonthBase FirstVisitMonth;
-typedef AttributeDayOfWeekBase FirstVisitDayOfWeek;
-typedef AttributeDayOfMonthBase FirstVisitDayOfMonth;
-typedef AttributeHourBase FirstVisitHour;
-typedef AttributeMinuteBase FirstVisitMinute;
-typedef AttributeSecondBase FirstVisitSecond;
+using FirstVisitDateTime = AttributeDateTimeBase;
+using FirstVisitDate = AttributeDateBase;
+using FirstVisitWeek = AttributeWeekBase;
+using FirstVisitTime = AttributeTimeBase;
+using FirstVisitYear = AttributeYearBase;
+using FirstVisitMonth = AttributeMonthBase;
+using FirstVisitDayOfWeek = AttributeDayOfWeekBase;
+using FirstVisitDayOfMonth = AttributeDayOfMonthBase;
+using FirstVisitHour = AttributeHourBase;
+using FirstVisitMinute = AttributeMinuteBase;
+using FirstVisitSecond = AttributeSecondBase;
 
 /** Атрибуты, относящиеся к времени начала предпоследнего визита */
-typedef AttributeDateBase PredLastVisitDate;
-typedef AttributeWeekBase PredLastVisitWeek;
-typedef AttributeYearBase PredLastVisitYear;
-typedef AttributeMonthBase PredLastVisitMonth;
-typedef AttributeDayOfWeekBase PredLastVisitDayOfWeek;
-typedef AttributeDayOfMonthBase PredLastVisitDayOfMonth;
+using PredLastVisitDate = AttributeDateBase;
+using PredLastVisitWeek = AttributeWeekBase;
+using PredLastVisitYear = AttributeYearBase;
+using PredLastVisitMonth = AttributeMonthBase;
+using PredLastVisitDayOfWeek = AttributeDayOfWeekBase;
+using PredLastVisitDayOfMonth = AttributeDayOfMonthBase;
 
 /** Атрибуты, относящиеся к времени на компьютере посетителя */
-typedef AttributeDateTimeBase ClientDateTime;
-typedef AttributeTimeBase ClientTime;
-typedef AttributeHourBase ClientTimeHour;
-typedef AttributeMinuteBase ClientTimeMinute;
-typedef AttributeSecondBase ClientTimeSecond;
+using ClientDateTime = AttributeDateTimeBase;
+using ClientTime = AttributeTimeBase;
+using ClientTimeHour = AttributeHourBase;
+using ClientTimeMinute = AttributeMinuteBase;
+using ClientTimeSecond = AttributeSecondBase;
 
 /** Базовый класс для атрибутов, для которых хранится хэш. */
 struct AttributeHashBase : public IAttributeMetadata
@@ -204,22 +204,22 @@ struct AttributeHashBase : public IAttributeMetadata
 };
 
 
-typedef AttributeHashBase EndURLHash;
-typedef AttributeHashBase RefererHash;
-typedef AttributeHashBase SearchPhraseHash;
-typedef AttributeHashBase RefererDomainHash;
-typedef AttributeHashBase StartURLHash;
-typedef AttributeHashBase StartURLDomainHash;
-typedef AttributeUIntBase RegionID;
-typedef AttributeUIntBase RegionCity;
-typedef AttributeUIntBase RegionArea;
-typedef AttributeUIntBase RegionCountry;
-typedef AttributeIntBase TraficSourceID;
-typedef AttributeIntBase CorrectedTraficSourceID;
-typedef AttributeUIntBase CorrectedSearchEngineID;
+using EndURLHash = AttributeHashBase;
+using RefererHash = AttributeHashBase;
+using SearchPhraseHash = AttributeHashBase;
+using RefererDomainHash = AttributeHashBase;
+using StartURLHash = AttributeHashBase;
+using StartURLDomainHash = AttributeHashBase;
+using RegionID = AttributeUIntBase;
+using RegionCity = AttributeUIntBase;
+using RegionArea = AttributeUIntBase;
+using RegionCountry = AttributeUIntBase;
+using TraficSourceID = AttributeIntBase;
+using CorrectedTraficSourceID = AttributeIntBase;
+using CorrectedSearchEngineID = AttributeUIntBase;
 
-typedef AttributeUIntBase IsNewUser;
-typedef AttributeUIntBase UserNewness;
+using IsNewUser = AttributeUIntBase;
+using UserNewness = AttributeUIntBase;
 
 struct UserNewnessInterval : public IAttributeMetadata
 {
@@ -230,7 +230,7 @@ struct UserNewnessInterval : public IAttributeMetadata
 };
 
 
-typedef AttributeUIntBase UserReturnTime;
+using UserReturnTime = AttributeUIntBase;
 
 struct UserReturnTimeInterval : public IAttributeMetadata
 {
@@ -241,7 +241,7 @@ struct UserReturnTimeInterval : public IAttributeMetadata
 };
 
 
-typedef AttributeUIntBase UserVisitsPeriod;
+using UserVisitsPeriod = AttributeUIntBase;
 
 struct UserVisitsPeriodInterval : public IAttributeMetadata
 {
@@ -252,25 +252,25 @@ struct UserVisitsPeriodInterval : public IAttributeMetadata
 };
 
 
-typedef AttributeUIntBase VisitTime;
-typedef AttributeUIntBase VisitTimeInterval;
-typedef AttributeUIntBase PageViews;
-typedef AttributeUIntBase PageViewsInterval;
-typedef AttributeUIntBase Bounce;
-typedef AttributeUIntBase BouncePrecise;
-typedef AttributeUIntBase IsYandex;
-typedef AttributeUIntBase UserID;
-typedef AttributeDateTimeBase UserIDCreateDateTime;
-typedef AttributeDateBase UserIDCreateDate;
-typedef AttributeIntBase UserIDAge;
-typedef AttributeIntBase UserIDAgeInterval;
-typedef AttributeUIntBase TotalVisits;
-typedef AttributeUIntBase TotalVisitsInterval;
-typedef AttributeUIntBase Age;
-typedef AttributeUIntBase AgeInterval;
-typedef AttributeUIntBase Sex;
-typedef AttributeUIntBase Income;
-typedef AttributeUIntBase AdvEngineID;
+using VisitTime = AttributeUIntBase;
+using VisitTimeInterval = AttributeUIntBase;
+using PageViews = AttributeUIntBase;
+using PageViewsInterval = AttributeUIntBase;
+using Bounce = AttributeUIntBase;
+using BouncePrecise = AttributeUIntBase;
+using IsYandex = AttributeUIntBase;
+using UserID = AttributeUIntBase;
+using UserIDCreateDateTime = AttributeDateTimeBase;
+using UserIDCreateDate = AttributeDateBase;
+using UserIDAge = AttributeIntBase;
+using UserIDAgeInterval = AttributeIntBase;
+using TotalVisits = AttributeUIntBase;
+using TotalVisitsInterval = AttributeUIntBase;
+using Age = AttributeUIntBase;
+using AgeInterval = AttributeUIntBase;
+using Sex = AttributeUIntBase;
+using Income = AttributeUIntBase;
+using AdvEngineID = AttributeUIntBase;
 
 struct DotNet : public IAttributeMetadata
 {
@@ -346,16 +346,16 @@ struct Silverlight : public IAttributeMetadata
 };
 
 
-typedef AttributeUIntBase SilverlightMajor;
-typedef AttributeUIntBase Hits;
-typedef AttributeUIntBase HitsInterval;
-typedef AttributeUIntBase JavaEnable;
-typedef AttributeUIntBase CookieEnable;
-typedef AttributeUIntBase JavascriptEnable;
-typedef AttributeUIntBase IsMobile;
-typedef AttributeUIntBase MobilePhoneID;
-typedef AttributeHashBase MobilePhoneModelHash;
-typedef AttributeShortStringBase MobilePhoneModel;
+using SilverlightMajor = AttributeUIntBase;
+using Hits = AttributeUIntBase;
+using HitsInterval = AttributeUIntBase;
+using JavaEnable = AttributeUIntBase;
+using CookieEnable = AttributeUIntBase;
+using JavascriptEnable = AttributeUIntBase;
+using IsMobile = AttributeUIntBase;
+using MobilePhoneID = AttributeUIntBase;
+using MobilePhoneModelHash = AttributeHashBase;
+using MobilePhoneModel = AttributeShortStringBase;
 
 struct BrowserLanguage : public IAttributeMetadata
 {
@@ -368,13 +368,13 @@ struct BrowserLanguage : public IAttributeMetadata
 };
 
 
-typedef BrowserLanguage BrowserCountry;
-typedef AttributeShortStringBase TopLevelDomain;
-typedef AttributeShortStringBase URLScheme;
-typedef AttributeUIntBase IPNetworkID;
-typedef AttributeIntBase ClientTimeZone;
-typedef AttributeUIntBase OSID;
-typedef AttributeUIntBase OSMostAncestor;
+using BrowserCountry = BrowserLanguage;
+using TopLevelDomain = AttributeShortStringBase;
+using URLScheme = AttributeShortStringBase;
+using IPNetworkID = AttributeUIntBase;
+using ClientTimeZone = AttributeIntBase;
+using OSID = AttributeUIntBase;
+using OSMostAncestor = AttributeUIntBase;
 
 struct ClientIP : public IAttributeMetadata
 {
@@ -443,8 +443,8 @@ struct ResolutionHeight : public IAttributeMetadata
 };
 
 
-typedef ResolutionWidth ResolutionWidthInterval;
-typedef ResolutionHeight ResolutionHeightInterval;
+using ResolutionWidthInterval = ResolutionWidth;
+using ResolutionHeightInterval = ResolutionHeight;
 
 struct ResolutionColor : public IAttributeMetadata
 {
@@ -468,14 +468,14 @@ struct WindowClientArea : public IAttributeMetadata
 };
 
 
-typedef WindowClientArea WindowClientAreaInterval;
-typedef AttributeUIntBase WindowClientWidth;
-typedef WindowClientWidth WindowClientWidthInterval;
-typedef AttributeUIntBase WindowClientHeight;
-typedef WindowClientHeight WindowClientHeightInterval;
-typedef AttributeUIntBase SearchEngineID;
-typedef AttributeUIntBase SearchEngineMostAncestor;
-typedef AttributeUIntBase CodeVersion;
+using WindowClientAreaInterval = WindowClientArea;
+using WindowClientWidth = AttributeUIntBase;
+using WindowClientWidthInterval = WindowClientWidth;
+using WindowClientHeight = AttributeUIntBase;
+using WindowClientHeightInterval = WindowClientHeight;
+using SearchEngineID = AttributeUIntBase;
+using SearchEngineMostAncestor = AttributeUIntBase;
+using CodeVersion = AttributeUIntBase;
 
 /// формат строки вида "10 7.5b", где первое число - UserAgentID, дальше - версия.
 struct UserAgent : public IAttributeMetadata
@@ -531,27 +531,27 @@ struct UserAgentID : public IAttributeMetadata
 };
 
 
-typedef AttributeIntBase ClickGoodEvent;
-typedef AttributeIntBase ClickPriorityID;
-typedef AttributeIntBase ClickBannerID;
-typedef AttributeIntBase ClickPageID;
-typedef AttributeIntBase ClickPlaceID;
-typedef AttributeIntBase ClickTypeID;
-typedef AttributeIntBase ClickResourceID;
-typedef AttributeUIntBase ClickDomainID;
-typedef AttributeUIntBase ClickCost;
-typedef AttributeHashBase ClickURLHash;
-typedef AttributeUIntBase ClickOrderID;
-typedef AttributeIntBase GoalReachesAny;
-typedef AttributeIntBase GoalReachesDepth;
-typedef AttributeIntBase GoalReachesURL;
-typedef AttributeIntBase ConvertedAny;
-typedef AttributeIntBase ConvertedDepth;
-typedef AttributeIntBase ConvertedURL;
-typedef AttributeIntBase GoalReaches;
-typedef AttributeIntBase Converted;
-typedef AttributeUIntBase CounterID;
-typedef AttributeUIntBase VisitID;
+using ClickGoodEvent = AttributeIntBase;
+using ClickPriorityID = AttributeIntBase;
+using ClickBannerID = AttributeIntBase;
+using ClickPageID = AttributeIntBase;
+using ClickPlaceID = AttributeIntBase;
+using ClickTypeID = AttributeIntBase;
+using ClickResourceID = AttributeIntBase;
+using ClickDomainID = AttributeUIntBase;
+using ClickCost = AttributeUIntBase;
+using ClickURLHash = AttributeHashBase;
+using ClickOrderID = AttributeUIntBase;
+using GoalReachesAny = AttributeIntBase;
+using GoalReachesDepth = AttributeIntBase;
+using GoalReachesURL = AttributeIntBase;
+using ConvertedAny = AttributeIntBase;
+using ConvertedDepth = AttributeIntBase;
+using ConvertedURL = AttributeIntBase;
+using GoalReaches = AttributeIntBase;
+using Converted = AttributeIntBase;
+using CounterID = AttributeUIntBase;
+using VisitID = AttributeUIntBase;
 
 struct Interests : public IAttributeMetadata
 {
@@ -588,36 +588,36 @@ struct Interests : public IAttributeMetadata
 	}
 };
 
-typedef AttributeUIntBase HasInterestPhoto;
-typedef AttributeUIntBase HasInterestMoviePremieres;
-typedef AttributeUIntBase HasInterestTourism;
-typedef AttributeUIntBase HasInterestFamilyAndChildren;
-typedef AttributeUIntBase HasInterestFinance;
-typedef AttributeUIntBase HasInterestB2B;
-typedef AttributeUIntBase HasInterestCars;
-typedef AttributeUIntBase HasInterestMobileAndInternetCommunications;
-typedef AttributeUIntBase HasInterestBuilding;
-typedef AttributeUIntBase HasInterestCulinary;
-typedef AttributeUIntBase HasInterestSoftware;
-typedef AttributeUIntBase HasInterestEstate;
-typedef AttributeUIntBase HasInterestHealthyLifestyle;
-typedef AttributeUIntBase HasInterestLiterature;
-typedef AttributeHashBase OpenstatServiceNameHash;
-typedef AttributeHashBase OpenstatCampaignIDHash;
-typedef AttributeHashBase OpenstatAdIDHash;
-typedef AttributeHashBase OpenstatSourceIDHash;
-typedef AttributeHashBase UTMSourceHash;
-typedef AttributeHashBase UTMMediumHash;
-typedef AttributeHashBase UTMCampaignHash;
-typedef AttributeHashBase UTMContentHash;
-typedef AttributeHashBase UTMTermHash;
-typedef AttributeHashBase FromHash;
-typedef AttributeUIntBase CLID;
-typedef AttributeUIntBase SocialSourceNetworkID;
+using HasInterestPhoto = AttributeUIntBase;
+using HasInterestMoviePremieres = AttributeUIntBase;
+using HasInterestTourism = AttributeUIntBase;
+using HasInterestFamilyAndChildren = AttributeUIntBase;
+using HasInterestFinance = AttributeUIntBase;
+using HasInterestB2B = AttributeUIntBase;
+using HasInterestCars = AttributeUIntBase;
+using HasInterestMobileAndInternetCommunications = AttributeUIntBase;
+using HasInterestBuilding = AttributeUIntBase;
+using HasInterestCulinary = AttributeUIntBase;
+using HasInterestSoftware = AttributeUIntBase;
+using HasInterestEstate = AttributeUIntBase;
+using HasInterestHealthyLifestyle = AttributeUIntBase;
+using HasInterestLiterature = AttributeUIntBase;
+using OpenstatServiceNameHash = AttributeHashBase;
+using OpenstatCampaignIDHash = AttributeHashBase;
+using OpenstatAdIDHash = AttributeHashBase;
+using OpenstatSourceIDHash = AttributeHashBase;
+using UTMSourceHash = AttributeHashBase;
+using UTMMediumHash = AttributeHashBase;
+using UTMCampaignHash = AttributeHashBase;
+using UTMContentHash = AttributeHashBase;
+using UTMTermHash = AttributeHashBase;
+using FromHash = AttributeHashBase;
+using CLID = AttributeUIntBase;
+using SocialSourceNetworkID = AttributeUIntBase;
 
 
 /** Информация о типах атрибутов */
-typedef std::map<std::string, Poco::SharedPtr<IAttributeMetadata> > AttributeMetadatas;
+using AttributeMetadatas = std::map<std::string, Poco::SharedPtr<IAttributeMetadata>>;
 
 inline AttributeMetadatas GetOLAPAttributeMetadata()
 {

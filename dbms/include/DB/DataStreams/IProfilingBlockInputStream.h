@@ -14,6 +14,9 @@ namespace DB
 
 class QuotaForIntervals;
 struct ProcessListElement;
+class IProfilingBlockInputStream;
+
+using ProfilingBlockInputStreamPtr = std::shared_ptr<IProfilingBlockInputStream>;
 
 
 /** Смотрит за тем, как работает источник блоков.
@@ -211,7 +214,5 @@ protected:
 	  */
 	void collectAndSendTotalRowsApprox();
 };
-
-typedef SharedPtr<IProfilingBlockInputStream> ProfilingBlockInputStreamPtr;
 
 }

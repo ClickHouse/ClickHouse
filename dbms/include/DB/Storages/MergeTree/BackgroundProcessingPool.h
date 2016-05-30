@@ -5,10 +5,9 @@
 #include <map>
 #include <list>
 #include <condition_variable>
-#include <Poco/Mutex.h>
+#include <mutex>
 #include <Poco/RWLock.h>
 #include <Poco/Event.h>
-#include <Poco/SharedPtr.h>
 #include <DB/Core/Types.h>
 
 namespace DB
@@ -26,7 +25,7 @@ namespace DB
 class BackgroundProcessingPool
 {
 public:
-	typedef std::map<String, int> Counters;
+	using Counters = std::map<String, int>;
 
 	/** Используется изнутри задачи. Позволяет инкрементировать какие-нибудь счетчики.
 	  * После завершения задачи, все изменения откатятся.
@@ -53,7 +52,7 @@ public:
 	};
 
 	/// Возвращает true, если что-то получилось сделать. В таком случае поток не будет спать перед следующим вызовом.
-	typedef std::function<bool (Context & context)> Task;
+	using Task = std::function<bool (Context & context)>;
 
 
 	class TaskInfo
@@ -78,7 +77,7 @@ public:
 		TaskInfo(BackgroundProcessingPool & pool_, const Task & function_) : pool(pool_), function(function_) {}
 	};
 
-	typedef std::shared_ptr<TaskInfo> TaskHandle;
+	using TaskHandle = std::shared_ptr<TaskInfo>;
 
 
 	BackgroundProcessingPool(int size_);
@@ -96,8 +95,8 @@ public:
 	~BackgroundProcessingPool();
 
 private:
-	typedef std::list<TaskHandle> Tasks;
-	typedef std::vector<std::thread> Threads;
+	using Tasks = std::list<TaskHandle>;
+	using Threads = std::vector<std::thread>;
 
 	const size_t size;
 	static constexpr double sleep_seconds = 10;
@@ -116,6 +115,6 @@ private:
 	void threadFunction();
 };
 
-typedef Poco::SharedPtr<BackgroundProcessingPool> BackgroundProcessingPoolPtr;
+using BackgroundProcessingPoolPtr = std::shared_ptr<BackgroundProcessingPool>;
 
 }

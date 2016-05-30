@@ -72,10 +72,9 @@ static ASTPtr extractPrimaryKey(const ASTPtr & node)
 	else
 	{
 		/// Первичный ключ состоит из одного столбца.
-		ASTExpressionList * res = new ASTExpressionList;
-		ASTPtr res_ptr = res;
+		auto res = std::make_shared<ASTExpressionList>();
 		res->children.push_back(node);
-		return res_ptr;
+		return res;
 	}
 }
 
@@ -156,7 +155,7 @@ static void appendGraphitePattern(const Context & context,
 		{
 			/// TODO Не только Float64
 			pattern.function = context.getAggregateFunctionFactory().get(
-				config.getString(config_element + ".function"), { new DataTypeFloat64 });
+				config.getString(config_element + ".function"), { std::make_shared<DataTypeFloat64>() });
 		}
 		else if (startsWith(key, "retention"))
 		{

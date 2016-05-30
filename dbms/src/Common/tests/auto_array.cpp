@@ -14,7 +14,7 @@ int main(int argc, char ** argv)
 {
 	{
 		size_t n = 10;
-		typedef std::string T;
+		using T = std::string;
 		DB::AutoArray<T> arr(n);
 
 		for (size_t i = 0; i < arr.size(); ++i)
@@ -28,7 +28,7 @@ int main(int argc, char ** argv)
 
 	{
 		size_t n = 10;
-		typedef std::string T;
+		using T = std::string;
 		DB::AutoArray<T> arr(n, DB::DontInitElemsTag());
 
 		for (size_t i = 0; i < arr.size(); ++i)
@@ -42,8 +42,8 @@ int main(int argc, char ** argv)
 	
 	{
 		size_t n = 10;
-		typedef std::string T;
-		typedef DB::AutoArray<T> Arr;
+		using T = std::string;
+		using Arr = DB::AutoArray<T>;
 		Arr arr;
 
 		arr.resize(n);
@@ -68,9 +68,9 @@ int main(int argc, char ** argv)
 	{
 		size_t n = 10;
 		size_t keys = 10;
-		typedef std::string T;
-		typedef DB::AutoArray<T> Arr;
-		typedef std::map<Arr, T> Map;
+		using T = std::string;
+		using Arr = DB::AutoArray<T>;
+		using Map = std::map<Arr, T>;
 		Map map;
 
 		for (size_t i = 0; i < keys; ++i)
@@ -112,9 +112,9 @@ int main(int argc, char ** argv)
 	{
 		size_t n = 10;
 		size_t keys = 10;
-		typedef std::string T;
-		typedef DB::AutoArray<T> Arr;
-		typedef std::vector<Arr> Vec;
+		using T = std::string;
+		using Arr = DB::AutoArray<T>;
+		using Vec = std::vector<Arr>;
 		Vec vec;
 
 		for (size_t i = 0; i < keys; ++i)
@@ -149,13 +149,13 @@ int main(int argc, char ** argv)
 
 	size_t n = 5;
 	size_t map_size = 1000000;
-	typedef DB::Field T;
+	using T = DB::Field;
 	T field = std::string("Hello, world");
 
 	if (argc == 2 && !strcmp(argv[1], "1"))
 	{
-		typedef DB::AutoArray<T> Arr;
-		typedef HashMap<UInt64, Arr> Map;
+		using Arr = DB::AutoArray<T>;
+		using Map = HashMap<UInt64, Arr>;
 
 		Stopwatch watch;
 
@@ -184,8 +184,8 @@ int main(int argc, char ** argv)
 
 	if (argc == 2 && !strcmp(argv[1], "2"))
 	{
-		typedef std::vector<T> Arr;
-		typedef HashMap<UInt64, Arr> Map;
+		using Arr = std::vector<T>;
+		using Map = HashMap<UInt64, Arr>;
 
 		Stopwatch watch;
 
@@ -214,7 +214,7 @@ int main(int argc, char ** argv)
 
 	{
 		size_t n = 10000;
-		typedef DB::AutoArray<std::string> Arr;
+		using Arr = DB::AutoArray<std::string>;
 		Arr arr1(n);
 		Arr arr2(n);
 

@@ -14,21 +14,21 @@ namespace DB
 
 STRONG_TYPEDEF(char, Null);
 
-typedef Poco::UInt8 UInt8;
-typedef Poco::UInt16 UInt16;
-typedef Poco::UInt32 UInt32;
-typedef Poco::UInt64 UInt64;
+using UInt8 = Poco::UInt8;
+using UInt16 = Poco::UInt16;
+using UInt32 = Poco::UInt32;
+using UInt64 = Poco::UInt64;
 
-typedef Poco::Int8 Int8;
-typedef Poco::Int16 Int16;
-typedef Poco::Int32 Int32;
-typedef Poco::Int64 Int64;
+using Int8 = Poco::Int8;
+using Int16 = Poco::Int16;
+using Int32 = Poco::Int32;
+using Int64 = Poco::Int64;
 
-typedef float Float32;
-typedef double Float64;
+using Float32 = float;
+using Float64 = double;
 
-typedef std::string String;
-typedef std::vector<String> Strings;
+using String = std::string;
+using Strings = std::vector<String>;
 
 
 template <typename T> struct IsNumber 	{ static const bool value = false; };

@@ -29,7 +29,7 @@ class BufferBase
 {
 public:
 	/** Курсор в буфере. Позиция записи или чтения. */
-	typedef char * Position;
+	using Position = char *;
 
 	/** Ссылка на диапазон памяти. */
 	struct Buffer

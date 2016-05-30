@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
+#include <memory>
 
 #include <DB/Core/Names.h>
 #include <DB/Core/Block.h>
@@ -122,9 +122,7 @@ public:
 };
 
 
-using Poco::SharedPtr;
-
-typedef SharedPtr<IFunction> FunctionPtr;
+using FunctionPtr = std::shared_ptr<IFunction>;
 
 
 }

@@ -26,7 +26,7 @@ public:
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "OptimizeQuery_" + database + "_" + table + "_" + partition + "_" + toString(final); };
 
-	ASTPtr clone() const override { return new ASTOptimizeQuery(*this); }
+	ASTPtr clone() const override { return std::make_shared<ASTOptimizeQuery>(*this); }
 
 protected:
 	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

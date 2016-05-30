@@ -32,7 +32,7 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeAggregateFunction(nested_func_owner, arguments, params);
+		return std::make_shared<DataTypeAggregateFunction>(nested_func_owner, arguments, params);
 	}
 
 	void setArguments(const DataTypes & arguments_) override

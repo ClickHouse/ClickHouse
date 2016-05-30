@@ -72,7 +72,7 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 	if (!create.storage)
 	{
 		database_engine_name = "Ordinary";	/// Движок баз данных по-умолчанию.
-		ASTFunction * func = new ASTFunction();
+		auto func = std::make_shared<ASTFunction>();
 		func->name = database_engine_name;
 		create.storage = func;
 	}
@@ -161,7 +161,7 @@ static ColumnsAndDefaults parseColumns(
 
 	/** all default_expressions as a single expression list,
 	 *  mixed with conversion-columns for each explicitly specified type */
-	ASTPtr default_expr_list{new ASTExpressionList};
+	ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
 	default_expr_list->children.reserve(column_list_ast.children.size());
 
 	const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
@@ -178,7 +178,7 @@ static ColumnsAndDefaults parseColumns(
 		}
 		else
 			/// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
-			columns.emplace_back(col_decl.name, new DataTypeUInt8);
+			columns.emplace_back(col_decl.name, std::make_shared<DataTypeUInt8>());
 
 		/// add column to postprocessing if there is a default_expression specified
 		if (col_decl.default_expression)
@@ -195,8 +195,8 @@ static ColumnsAndDefaults parseColumns(
 				const auto data_type_ptr = columns.back().type.get();
 
 				default_expr_list->children.emplace_back(setAlias(
-					makeASTFunction("CAST", ASTPtr{new ASTIdentifier{{}, tmp_column_name}},
-						ASTPtr{new ASTLiteral{{}, data_type_ptr->getName()}}), final_column_name));
+					makeASTFunction("CAST", std::make_shared<ASTIdentifier>(StringRange(), tmp_column_name),
+						std::make_shared<ASTLiteral>(StringRange(), Field(data_type_ptr->getName()))), final_column_name));
 				default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
 			}
 			else
@@ -229,7 +229,7 @@ static ColumnsAndDefaults parseColumns(
 				if (explicit_type->getName() != deduced_type->getName())
 				{
 					col_decl_ptr->default_expression = makeASTFunction("CAST", col_decl_ptr->default_expression,
-						new ASTLiteral{{}, explicit_type->getName()});
+						std::make_shared<ASTLiteral>(StringRange(), explicit_type->getName()));
 
 					col_decl_ptr->children.clear();
 					col_decl_ptr->children.push_back(col_decl_ptr->type);
@@ -277,27 +277,24 @@ static NamesAndTypesList removeAndReturnColumns(
 
 ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 {
-	ASTPtr columns_list_ptr{new ASTExpressionList};
-	ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*columns_list_ptr);
+	auto columns_list = std::make_shared<ASTExpressionList>();
 
 	for (const auto & column : columns)
 	{
-		const auto column_declaration = new ASTColumnDeclaration;
-		ASTPtr column_declaration_ptr{column_declaration};
-
+		const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
 		column_declaration->name = column.name;
 
-		StringPtr type_name{new String(column.type->getName())};
+		StringPtr type_name = std::make_shared<String>(column.type->getName());
 		auto pos = type_name->data();
 		const auto end = pos + type_name->size();
 
 		ParserIdentifierWithOptionalParameters storage_p;
 		column_declaration->type = parseQuery(storage_p, pos, end, "data type");
 		column_declaration->type->query_string = type_name;
-		columns_list.children.push_back(column_declaration_ptr);
+		columns_list->children.emplace_back(column_declaration);
 	}
 
-	return columns_list_ptr;
+	return columns_list;
 }
 
 ASTPtr InterpreterCreateQuery::formatColumns(NamesAndTypesList columns,
@@ -308,17 +305,16 @@ ASTPtr InterpreterCreateQuery::formatColumns(NamesAndTypesList columns,
 	columns.insert(std::end(columns), std::begin(materialized_columns), std::end(materialized_columns));
 	columns.insert(std::end(columns), std::begin(alias_columns), std::end(alias_columns));
 
-	ASTPtr columns_list_ptr{new ASTExpressionList};
-	ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*columns_list_ptr);
+	auto columns_list = std::make_shared<ASTExpressionList>();
 
 	for (const auto & column : columns)
 	{
-		const auto column_declaration = new ASTColumnDeclaration;
+		const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
 		ASTPtr column_declaration_ptr{column_declaration};
 
 		column_declaration->name = column.name;
 
-		StringPtr type_name{new String(column.type->getName())};
+		StringPtr type_name = std::make_shared<String>(column.type->getName());
 		auto pos = type_name->data();
 		const auto end = pos + type_name->size();
 
@@ -333,10 +329,10 @@ ASTPtr InterpreterCreateQuery::formatColumns(NamesAndTypesList columns,
 			column_declaration->default_expression = it->second.expression->clone();
 		}
 
-		columns_list.children.push_back(column_declaration_ptr);
+		columns_list->children.push_back(column_declaration_ptr);
 	}
 
-	return columns_list_ptr;
+	return columns_list;
 }
 
 
@@ -348,7 +344,7 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::getColumnsInfo(
 	auto && columns_and_defaults = parseColumns(columns, context);
 	res.materialized_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Materialized);
 	res.alias_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Alias);
-	res.columns = new NamesAndTypesList{std::move(columns_and_defaults.first)};
+	res.columns = std::make_shared<NamesAndTypesList>(std::move(columns_and_defaults.first));
 	res.column_defaults = std::move(columns_and_defaults.second);
 
 	if (res.columns->size() + res.materialized_columns.size() == 0)
@@ -369,14 +365,14 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
 	}
 	else if (!create.as_table.empty())
 	{
-		res.columns = new NamesAndTypesList(as_storage->getColumnsListNonMaterialized());
+		res.columns = std::make_shared<NamesAndTypesList>(as_storage->getColumnsListNonMaterialized());
 		res.materialized_columns = as_storage->materialized_columns;
 		res.alias_columns = as_storage->alias_columns;
 		res.column_defaults = as_storage->column_defaults;
 	}
 	else if (create.select)
 	{
-		res.columns = new NamesAndTypesList;
+		res.columns = std::make_shared<NamesAndTypesList>();
 		for (size_t i = 0; i < as_select_sample.columns(); ++i)
 			res.columns->push_back(NameAndTypePair(as_select_sample.getByPosition(i).name, as_select_sample.getByPosition(i).type));
 	}
@@ -409,7 +405,7 @@ String InterpreterCreateQuery::setEngine(
 	auto set_engine = [&](const char * engine)
 	{
 		storage_name = engine;
-		ASTFunction * func = new ASTFunction();
+		auto func = std::make_shared<ASTFunction>();
 		func->name = engine;
 		create.storage = func;
 	};
@@ -523,26 +519,21 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 		auto table_lock = res->lockStructure(true);
 
 		/// Также см. InterpreterInsertQuery.
-		BlockOutputStreamPtr out{
-			new ProhibitColumnsBlockOutputStream{
-				new AddingDefaultBlockOutputStream{
-					new MaterializingBlockOutputStream{
-						new PushingToViewsBlockOutputStream{
+		BlockOutputStreamPtr out =
+			std::make_shared<ProhibitColumnsBlockOutputStream>(
+				std::make_shared<AddingDefaultBlockOutputStream>(
+					std::make_shared<MaterializingBlockOutputStream>(
+						std::make_shared<PushingToViewsBlockOutputStream>(
 							create.database, create.table,
 							create.is_temporary ? context.getSessionContext() : context,
-							query_ptr
-						}
-					},
+							query_ptr)),
 					/// @note shouldn't these two contexts be session contexts in case of temporary table?
-					columns.columns, columns.column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults)
-				},
-				columns.materialized_columns
-			}
-		};
+					columns.columns, columns.column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults)),
+				columns.materialized_columns);
 
 		BlockIO io;
 		io.in_sample = as_select_sample;
-		io.in = new NullAndDoCopyBlockInputStream(interpreter_select->execute().in, out);
+		io.in = std::make_shared<NullAndDoCopyBlockInputStream>(interpreter_select->execute().in, out);
 
 		return io;
 	}

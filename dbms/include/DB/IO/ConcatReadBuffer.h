@@ -13,7 +13,7 @@ namespace DB
 class ConcatReadBuffer : public ReadBuffer
 {
 public:
-	typedef std::vector<ReadBuffer *> ReadBuffers;
+	using ReadBuffers = std::vector<ReadBuffer *>;
 
 protected:
 	ReadBuffers buffers;

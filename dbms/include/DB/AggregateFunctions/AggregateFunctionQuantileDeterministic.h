@@ -55,7 +55,7 @@ public:
 
 	void setArgumentsImpl(const DataTypes & arguments)
 	{
-		type = returns_float ? new DataTypeFloat64 : arguments[0];
+		type = returns_float ? std::make_shared<DataTypeFloat64>() : arguments[0];
 
 		if (!arguments[1]->isNumeric())
 			throw Exception{
@@ -130,12 +130,12 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeArray(type);
+		return std::make_shared<DataTypeArray>(type);
 	}
 
 	void setArgumentsImpl(const DataTypes & arguments)
 	{
-		type = returns_float ? new DataTypeFloat64 : arguments[0];
+		type = returns_float ? std::make_shared<DataTypeFloat64>() : arguments[0];
 
 		if (!arguments[1]->isNumeric())
 			throw Exception{

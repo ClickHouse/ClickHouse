@@ -10,7 +10,6 @@
 #include <random>
 
 #include <Poco/File.h>
-#include <Poco/SharedPtr.h>
 #include <Poco/Util/Application.h>
 
 #include <DB/Common/Stopwatch.h>
@@ -83,15 +82,15 @@ public:
 	}
 
 private:
-	typedef std::string Query;
+	using Query = std::string;
 
 	unsigned concurrency;
 	double delay;
 
-	typedef std::vector<Query> Queries;
+	using Queries = std::vector<Query>;
 	Queries queries;
 
-	typedef ConcurrentBoundedQueue<Query> Queue;
+	using Queue = ConcurrentBoundedQueue<Query>;
 	Queue queue;
 
 	ConnectionPool connections;
@@ -108,7 +107,7 @@ private:
 		size_t result_rows = 0;
 		size_t result_bytes = 0;
 
-		typedef ReservoirSampler<double> Sampler;
+		using Sampler = ReservoirSampler<double>;
 		Sampler sampler {1 << 16};
 
 		void add(double seconds, size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc)
@@ -136,7 +135,7 @@ private:
 	Stats info_per_interval;
 	Stats info_total;
 
-	Poco::FastMutex mutex;
+	std::mutex mutex;
 
 	boost::threadpool::pool pool;
 
@@ -202,7 +201,7 @@ private:
 			{
 				auto total_queries = 0;
 				{
-					Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+					std::lock_guard<std::mutex> lock(mutex);
 					total_queries = info_total.queries;
 				}
 				printNumberOfQueriesExecuted(total_queries);
@@ -303,7 +302,7 @@ private:
 
 		double seconds = watch.elapsedSeconds();
 
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 		info_per_interval.add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
 		info_total.add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
 	}
@@ -311,7 +310,7 @@ private:
 
 	void report(Stats & info)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 
 		double seconds = info.watch.elapsedSeconds();
 

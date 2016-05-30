@@ -1,15 +1,10 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/Storages/IStorage.h>
 
 
 namespace DB
 {
-
-using Poco::SharedPtr;
-
 
 /** Реализует хранилище для системной таблицы Numbers.
   * Таблица содержит единственный столбец number UInt64.

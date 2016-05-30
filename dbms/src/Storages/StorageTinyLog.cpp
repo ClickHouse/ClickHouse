@@ -31,8 +31,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 namespace ErrorCodes
 {
 	extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
@@ -73,7 +71,7 @@ private:
 		CompressedReadBuffer compressed;
 	};
 
-	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
+	using FileStreams = std::map<std::string, std::unique_ptr<Stream> >;
 	FileStreams streams;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
@@ -128,10 +126,10 @@ private:
 		}
 	};
 
-	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
+	using FileStreams = std::map<std::string, std::unique_ptr<Stream> >;
 	FileStreams streams;
 
-	typedef std::set<std::string> OffsetColumns;
+	using OffsetColumns = std::set<std::string>;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
 	void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns, size_t level = 0);
@@ -178,7 +176,7 @@ Block TinyLogBlockInputStream::readImpl()
 			addStream(*it, *storage.getDataTypeByName(*it));
 
 	/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
-	typedef std::map<std::string, ColumnPtr> OffsetColumns;
+	using OffsetColumns = std::map<std::string, ColumnPtr>;
 	OffsetColumns offset_columns;
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
@@ -195,11 +193,11 @@ Block TinyLogBlockInputStream::readImpl()
 			String name = DataTypeNested::extractNestedTableName(column.name);
 
 			if (offset_columns.count(name) == 0)
-				offset_columns[name] = new ColumnArray::ColumnOffsets_t;
+				offset_columns[name] = std::make_shared<ColumnArray::ColumnOffsets_t>();
 			else
 				read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
 
-			column.column = new ColumnArray(type_arr->getNestedType()->createColumn(), offset_columns[name]);
+			column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[name]);
 		}
 		else
 			column.column = column.type->createColumn();
@@ -450,14 +448,14 @@ BlockInputStreams StorageTinyLog::read(
 {
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
-	return BlockInputStreams(1, new TinyLogBlockInputStream(max_block_size, column_names, *this, settings.max_read_buffer_size));
+	return BlockInputStreams(1, std::make_shared<TinyLogBlockInputStream>(max_block_size, column_names, *this, settings.max_read_buffer_size));
 }
 
 
 BlockOutputStreamPtr StorageTinyLog::write(
 	ASTPtr query, const Settings & settings)
 {
-	return new TinyLogBlockOutputStream(*this);
+	return std::make_shared<TinyLogBlockOutputStream>(*this);
 }
 
 

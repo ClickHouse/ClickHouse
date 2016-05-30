@@ -28,7 +28,7 @@ public:
 
 	String getID() const override { return "SampleRatio_" + toString(ratio); }
 
-	ASTPtr clone() const override { return new ASTSampleRatio(*this); }
+	ASTPtr clone() const override { return std::make_shared<ASTSampleRatio>(*this); }
 
 	static String toString(BigNum num);
 	static String toString(Rational ratio);

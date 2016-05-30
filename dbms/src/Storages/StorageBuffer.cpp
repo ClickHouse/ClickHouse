@@ -138,7 +138,7 @@ BlockInputStreams StorageBuffer::read(
 	BlockInputStreams streams_from_buffers;
 	streams_from_buffers.reserve(num_shards);
 	for (auto & buf : buffers)
-		streams_from_buffers.push_back(new BufferBlockInputStream(column_names, buf));
+		streams_from_buffers.push_back(std::make_shared<BufferBlockInputStream>(column_names, buf));
 
 	/** Если источники из таблицы были обработаны до какой-то не начальной стадии выполнения запроса,
 	  * то тогда источники из буферов надо тоже обернуть в конвейер обработки до той же стадии.
@@ -282,7 +282,7 @@ private:
 
 BlockOutputStreamPtr StorageBuffer::write(ASTPtr query, const Settings & settings)
 {
-	return new BufferBlockOutputStream(*this);
+	return std::make_shared<BufferBlockOutputStream>(*this);
 }
 
 
@@ -431,8 +431,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 		return;
 	}
 
-	ASTInsertQuery * insert = new ASTInsertQuery;
-	ASTPtr ast_ptr = insert;
+	auto insert = std::make_shared<ASTInsertQuery>();
 
 	insert->database = destination_database;
 	insert->table = destination_table;
@@ -469,13 +468,13 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 		LOG_WARNING(log, "Not all columns from block in buffer exist in destination table "
 			<< destination_database << "." << destination_table << ". Some columns are discarded.");
 
-	ASTExpressionList * list_of_columns = new ASTExpressionList;
+	auto list_of_columns = std::make_shared<ASTExpressionList>();
 	insert->columns = list_of_columns;
 	list_of_columns->children.reserve(columns_intersection.size());
 	for (const String & column : columns_intersection)
-		list_of_columns->children.push_back(new ASTIdentifier(StringRange(), column, ASTIdentifier::Column));
+		list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(StringRange(), column, ASTIdentifier::Column));
 
-	InterpreterInsertQuery interpreter{ast_ptr, context};
+	InterpreterInsertQuery interpreter{insert, context};
 
 	auto block_io = interpreter.execute();
 	block_io.out->writePrefix();

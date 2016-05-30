@@ -65,7 +65,7 @@ public:
 	{
 	public:
 		bool isLocal() const { return !local_addresses.empty(); }
-		bool hasRemoteConnections() const { return !pool.isNull(); }
+		bool hasRemoteConnections() const { return pool.get() != nullptr; }
 		size_t getLocalNodeCount() const { return local_addresses.size(); }
 
 	public:

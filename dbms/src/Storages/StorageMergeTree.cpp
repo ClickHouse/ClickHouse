@@ -139,7 +139,7 @@ BlockInputStreams StorageMergeTree::read(
 
 BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query, const Settings & settings)
 {
-	return new MergeTreeBlockOutputStream(*this);
+	return std::make_shared<MergeTreeBlockOutputStream>(*this);
 }
 
 void StorageMergeTree::drop()
@@ -213,7 +213,7 @@ void StorageMergeTree::alter(
 	if (primary_key_is_modified)
 		engine_modifier = [&new_primary_key_ast] (ASTPtr & engine_ast)
 		{
-			ASTFunction * tuple = new ASTFunction(new_primary_key_ast->range);
+			auto tuple = std::make_shared<ASTFunction>(new_primary_key_ast->range);
 			tuple->name = "tuple";
 			tuple->arguments = new_primary_key_ast;
 			tuple->children.push_back(tuple->arguments);
@@ -270,7 +270,7 @@ bool StorageMergeTree::merge(
 	String merged_name;
 
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(currently_merging_mutex);
+		std::lock_guard<std::mutex> lock(currently_merging_mutex);
 
 		MergeTreeData::DataPartsVector parts;
 		auto can_merge = std::bind(&StorageMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
@@ -295,7 +295,8 @@ bool StorageMergeTree::merge(
 		if (!selected)
 			return false;
 
-		merging_tagger = new CurrentlyMergingPartsTagger(parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(parts), *this);
+		merging_tagger = std::make_shared<CurrentlyMergingPartsTagger>(
+			parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(parts), *this);
 
 		/// Если собираемся сливать большие куски, увеличим счетчик потоков, сливающих большие куски.
 		if (pool_context)

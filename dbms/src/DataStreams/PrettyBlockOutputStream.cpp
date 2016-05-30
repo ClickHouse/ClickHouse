@@ -27,7 +27,7 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 	name_widths.resize(columns);
 
 	FunctionVisibleWidth visible_width_func;
-	DataTypePtr visible_width_type = new DataTypeUInt64;
+	DataTypePtr visible_width_type = std::make_shared<DataTypeUInt64>();
 
 	/// Вычислим ширину всех значений
 	for (size_t i = 0; i < columns; ++i)

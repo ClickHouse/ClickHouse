@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Poco/URI.h>
-#include <Poco/SharedPtr.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -46,7 +45,7 @@ private:
 
 	Poco::Net::HTTPClientSession session;
 	std::ostream * ostr;	/// этим владеет session
-	Poco::SharedPtr<WriteBuffer> impl;
+	std::unique_ptr<WriteBuffer> impl;
 
 	/// Отправили все данные и переименовали файл
 	bool finalized;
@@ -120,7 +119,7 @@ public:
 			break;
 		}
 
-		impl = new WriteBufferFromOStream(*ostr, buffer_size_);
+		impl = std::make_unique<WriteBufferFromOStream>(*ostr, buffer_size_);
 
 		set(impl->buffer().begin(), impl->buffer().size());
 	}

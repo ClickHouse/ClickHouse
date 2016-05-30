@@ -4,7 +4,6 @@
 
 #include <vector>
 
-#include <Poco/SharedPtr.h>
 #include <Poco/Net/NetException.h>
 
 #include <threadpool.hpp>
@@ -14,8 +13,6 @@
 
 namespace DB
 {
-
-using Poco::SharedPtr;
 
 
 /** Записывает данные асинхронно с помощью двойной буферизации.

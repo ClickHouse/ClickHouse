@@ -152,7 +152,7 @@ static size_t checkColumn(
 		if (auto array = typeid_cast<const DataTypeArray *>(type.get()))
 		{
 			String sizes_name = DataTypeNested::extractNestedTableName(name);
-			Stream sizes_stream(path, escapeForFileName(sizes_name) + ".size0", new DataTypeUInt64);
+			Stream sizes_stream(path, escapeForFileName(sizes_name) + ".size0", std::make_shared<DataTypeUInt64>());
 			Stream data_stream(path, escapeForFileName(name), array->getNestedType());
 
 			ColumnUInt64::Container_t sizes;

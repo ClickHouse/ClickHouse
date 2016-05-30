@@ -149,8 +149,8 @@ struct SEHierarchyImpl
   */
 struct RegionsHierarchyGetter
 {
-	typedef RegionsHierarchies Src;
-	typedef RegionsHierarchy Dst;
+	using Src = RegionsHierarchies;
+	using Dst = RegionsHierarchy;
 
 	static const Dst & get(const Src & src, const std::string & key)
 	{
@@ -163,8 +163,8 @@ struct RegionsHierarchyGetter
 template <typename Dict>
 struct IdentityDictionaryGetter
 {
-	typedef Dict Src;
-	typedef Dict Dst;
+	using Src = Dict;
+	using Dst = Dict;
 
 	static const Dst & get(const Src & src, const std::string & key)
 	{
@@ -185,10 +185,10 @@ public:
 	using base_type = FunctionTransformWithDictionary;
 
 private:
-	const SharedPtr<typename DictGetter::Src> owned_dict;
+	const std::shared_ptr<typename DictGetter::Src> owned_dict;
 
 public:
-	FunctionTransformWithDictionary(const SharedPtr<typename DictGetter::Src> & owned_dict_)
+	FunctionTransformWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
 		: owned_dict(owned_dict_)
 	{
 		if (!owned_dict)
@@ -245,7 +245,7 @@ public:
 
 		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<T> * col_to = new ColumnVector<T>;
+			auto col_to = std::make_shared<ColumnVector<T>>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
@@ -258,7 +258,8 @@ public:
 		}
 		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConst<T>(col_from->size(), Transform::apply(col_from->getData(), dict));
+			block.getByPosition(result).column = std::make_shared<ColumnConst<T>>(
+				col_from->size(), Transform::apply(col_from->getData(), dict));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -277,10 +278,10 @@ public:
 	using base_type = FunctionIsInWithDictionary;
 
 private:
-	const SharedPtr<typename DictGetter::Src> owned_dict;
+	const std::shared_ptr<typename DictGetter::Src> owned_dict;
 
 public:
-	FunctionIsInWithDictionary(const SharedPtr<typename DictGetter::Src> & owned_dict_)
+	FunctionIsInWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
 		: owned_dict(owned_dict_)
 	{
 		if (!owned_dict)
@@ -316,7 +317,7 @@ public:
 				+ " (must be " + TypeName<String>::get() + ")",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -347,12 +348,12 @@ public:
 
 		if (col_vec1 && col_vec2)
 		{
-			ColumnVector<UInt8> * col_to = new ColumnVector<UInt8>;
+			auto col_to = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
 			const typename ColumnVector<T>::Container_t & vec_from2 = col_vec2->getData();
-			typename ColumnVector<UInt8>::Container_t & vec_to = col_to->getData();
+			typename ColumnUInt8::Container_t & vec_to = col_to->getData();
 			size_t size = vec_from1.size();
 			vec_to.resize(size);
 
@@ -361,12 +362,12 @@ public:
 		}
 		else if (col_vec1 && col_const2)
 		{
-			ColumnVector<UInt8> * col_to = new ColumnVector<UInt8>;
+			auto col_to = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
 			const T const_from2 = col_const2->getData();
-			typename ColumnVector<UInt8>::Container_t & vec_to = col_to->getData();
+			typename ColumnUInt8::Container_t & vec_to = col_to->getData();
 			size_t size = vec_from1.size();
 			vec_to.resize(size);
 
@@ -375,12 +376,12 @@ public:
 		}
 		else if (col_const1 && col_vec2)
 		{
-			ColumnVector<UInt8> * col_to = new ColumnVector<UInt8>;
+			auto col_to = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = col_to;
 
 			const T const_from1 = col_const1->getData();
 			const typename ColumnVector<T>::Container_t & vec_from2 = col_vec2->getData();
-			typename ColumnVector<UInt8>::Container_t & vec_to = col_to->getData();
+			typename ColumnUInt8::Container_t & vec_to = col_to->getData();
 			size_t size = vec_from2.size();
 			vec_to.resize(size);
 
@@ -389,7 +390,7 @@ public:
 		}
 		else if (col_const1 && col_const2)
 		{
-			block.getByPosition(result).column = new ColumnConst<UInt8>(col_const1->size(),
+			block.getByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(col_const1->size(),
 				Transform::apply(col_const1->getData(), col_const2->getData(), dict));
 		}
 		else
@@ -410,10 +411,10 @@ public:
 	using base_type = FunctionHierarchyWithDictionary;
 
 private:
-	const SharedPtr<typename DictGetter::Src> owned_dict;
+	const std::shared_ptr<typename DictGetter::Src> owned_dict;
 
 public:
-	FunctionHierarchyWithDictionary(const SharedPtr<typename DictGetter::Src> & owned_dict_)
+	FunctionHierarchyWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
 	: owned_dict(owned_dict_)
 	{
 		if (!owned_dict)
@@ -444,7 +445,7 @@ public:
 				+ " (must be " + TypeName<String>::get() + ")",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeArray(arguments[0]);
+		return std::make_shared<DataTypeArray>(arguments[0]);
 	}
 
 	/// Выполнить функцию над блоком.
@@ -470,8 +471,8 @@ public:
 
 		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<T> * col_values = new ColumnVector<T>;
-			ColumnArray * col_array = new ColumnArray(col_values);
+			auto col_values = std::make_shared<ColumnVector<T>>();
+			auto col_array = std::make_shared<ColumnArray>(col_values);
 			block.getByPosition(result).column = col_array;
 
 			ColumnArray::Offsets_t & res_offsets = col_array->getOffsets();
@@ -504,7 +505,10 @@ public:
 				cur = Transform::toParent(cur, dict);
 			}
 
-			block.getByPosition(result).column = new ColumnConstArray(col_from->size(), res, new DataTypeArray(new typename DataTypeFromFieldType<T>::Type));
+			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(
+				col_from->size(),
+				res,
+				std::make_shared<DataTypeArray>(std::make_shared<typename DataTypeFromFieldType<T>::Type>()));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -536,135 +540,135 @@ struct NameSEHierarchy				{ static constexpr auto name = "SEHierarchy"; };
 struct FunctionRegionToCity :
 	public FunctionTransformWithDictionary<UInt32, RegionToCityImpl,	RegionsHierarchyGetter,	NameRegionToCity>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
 struct FunctionRegionToArea :
 	public FunctionTransformWithDictionary<UInt32, RegionToAreaImpl,	RegionsHierarchyGetter,	NameRegionToArea>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
 struct FunctionRegionToDistrict :
 	public FunctionTransformWithDictionary<UInt32, RegionToDistrictImpl, RegionsHierarchyGetter, NameRegionToDistrict>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
 struct FunctionRegionToCountry :
 	public FunctionTransformWithDictionary<UInt32, RegionToCountryImpl, RegionsHierarchyGetter, NameRegionToCountry>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
 struct FunctionRegionToContinent :
 	public FunctionTransformWithDictionary<UInt32, RegionToContinentImpl, RegionsHierarchyGetter, NameRegionToContinent>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
 struct FunctionRegionToTopContinent :
 	public FunctionTransformWithDictionary<UInt32, RegionToTopContinentImpl, RegionsHierarchyGetter, NameRegionToTopContinent>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
 struct FunctionRegionToPopulation :
 	public FunctionTransformWithDictionary<UInt32, RegionToPopulationImpl, RegionsHierarchyGetter, NameRegionToPopulation>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
 struct FunctionOSToRoot :
 	public FunctionTransformWithDictionary<UInt8, OSToRootImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSToRoot>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
 	}
 };
 
 struct FunctionSEToRoot :
 	public FunctionTransformWithDictionary<UInt8, SEToRootImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEToRoot>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
 	}
 };
 
 struct FunctionRegionIn :
 	public FunctionIsInWithDictionary<UInt32, RegionInImpl, RegionsHierarchyGetter,	NameRegionIn>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
 struct FunctionOSIn :
 	public FunctionIsInWithDictionary<UInt8,	OSInImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSIn>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
 	}
 };
 
 struct FunctionSEIn :
 	public FunctionIsInWithDictionary<UInt8,	SEInImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEIn>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
 	}
 };
 
 struct FunctionRegionHierarchy :
 	public FunctionHierarchyWithDictionary<UInt32, RegionHierarchyImpl, RegionsHierarchyGetter, NameRegionHierarchy>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
 	}
 };
 
 struct FunctionOSHierarchy :
 	public FunctionHierarchyWithDictionary<UInt8, OSHierarchyImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSHierarchy>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
 	}
 };
 
 struct FunctionSEHierarchy :
 	public FunctionHierarchyWithDictionary<UInt8, SEHierarchyImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEHierarchy>
 {
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -674,16 +678,16 @@ class FunctionRegionToName : public IFunction
 {
 public:
 	static constexpr auto name = "regionToName";
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new FunctionRegionToName(context.getDictionaries().getRegionsNames());
+		return std::make_shared<FunctionRegionToName>(context.getDictionaries().getRegionsNames());
 	}
 
 private:
-	const SharedPtr<RegionsNames> owned_dict;
+	const std::shared_ptr<RegionsNames> owned_dict;
 
 public:
-	FunctionRegionToName(const SharedPtr<RegionsNames> & owned_dict_)
+	FunctionRegionToName(const std::shared_ptr<RegionsNames> & owned_dict_)
 		: owned_dict(owned_dict_)
 	{
 		if (!owned_dict)
@@ -714,7 +718,7 @@ public:
 				+ " (must be " + TypeName<String>::get() + ")",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -735,12 +739,12 @@ public:
 
 		const RegionsNames & dict = *owned_dict;
 
-		if (const ColumnVector<UInt32> * col_from = typeid_cast<const ColumnVector<UInt32> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnUInt32 * col_from = typeid_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnString * col_to = new ColumnString;
+			auto col_to = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_to;
 
-			const ColumnVector<UInt32>::Container_t & region_ids = col_from->getData();
+			const ColumnUInt32::Container_t & region_ids = col_from->getData();
 
 			for (size_t i = 0; i < region_ids.size(); ++i)
 			{
@@ -753,7 +757,7 @@ public:
 			UInt32 region_id = col_from->getData();
 			const StringRef & name_ref = dict.getRegionName(region_id, language);
 
-			block.getByPosition(result).column = new ColumnConstString(col_from->size(), name_ref.toString());
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), name_ref.toString());
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -768,9 +772,9 @@ class FunctionDictHas final : public IFunction
 public:
 	static constexpr auto name = "dictHas";
 
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new FunctionDictHas{context.getExternalDictionaries()};
+		return std::make_shared<FunctionDictHas>(context.getExternalDictionaries());
 	}
 
 	FunctionDictHas(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
@@ -799,7 +803,7 @@ private:
 					+ ", must be UInt64 or tuple(...).",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -838,11 +842,11 @@ private:
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 		const auto id_col_untyped = block.getByPosition(arguments[1]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 		{
 			const auto & ids = id_col->getData();
 
-			const auto out = new ColumnVector<UInt8>(ext::size(ids));
+			const auto out = std::make_shared<ColumnUInt8>(ext::size(ids));
 			block.getByPosition(result).column = out;
 
 			dict->has(ids, out->getData());
@@ -854,7 +858,7 @@ private:
 
 			dict->has(ids, out);
 
-			block.getByPosition(result).column = new ColumnConst<UInt8>{id_col->size(), out.front()};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(id_col->size(), out.front());
 		}
 		else
 			throw Exception{
@@ -889,7 +893,7 @@ private:
 
 			const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-			const auto out = new ColumnVector<UInt8>(key_col->size());
+			const auto out = std::make_shared<ColumnUInt8>(key_col->size());
 			block.getByPosition(result).column = out;
 
 			dict->has(key_columns, key_types, out->getData());
@@ -911,9 +915,9 @@ class FunctionDictGetString final : public IFunction
 public:
 	static constexpr auto name = "dictGetString";
 
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new FunctionDictGetString{context.getExternalDictionaries()};
+		return std::make_shared<FunctionDictGetString>(context.getExternalDictionaries());
 	}
 
 	FunctionDictGetString(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
@@ -962,7 +966,7 @@ private:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 		}
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -1010,11 +1014,11 @@ private:
 		const auto & attr_name = attr_name_col->getData();
 
 		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 		{
-			const auto out = new ColumnString;
+			const auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
-			dict->getString(attr_name, id_col->getData(), out);
+			dict->getString(attr_name, id_col->getData(), out.get());
 		}
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
@@ -1022,9 +1026,8 @@ private:
 			auto out = std::make_unique<ColumnString>();
 			dict->getString(attr_name, ids, out.get());
 
-			block.getByPosition(result).column = new ColumnConst<String>{
-				id_col->size(), out->getDataAt(0).toString()
-			};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<String>>(
+				id_col->size(), out->getDataAt(0).toString());
 		}
 		else
 		{
@@ -1068,10 +1071,10 @@ private:
 
 			const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-			const auto out = new ColumnString;
+			const auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
 
-			dict->getString(attr_name, key_columns, key_types, out);
+			dict->getString(attr_name, key_columns, key_types, out.get());
 		}
 		else
 			throw Exception{
@@ -1105,7 +1108,7 @@ private:
 
 		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
 		const auto date_col_untyped = block.getByPosition(arguments[3]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 			executeRange(block, result, dict, attr_name, id_col, date_col_untyped);
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 			executeRange(block, result, dict, attr_name, id_col, date_col_untyped);
@@ -1122,21 +1125,21 @@ private:
 	template <typename DictionaryType>
 	void executeRange(
 		Block & block, const size_t result, const DictionaryType * const dictionary, const std::string & attr_name,
-		const ColumnVector<UInt64> * const id_col, const IColumn * const date_col_untyped)
+		const ColumnUInt64 * const id_col, const IColumn * const date_col_untyped)
 	{
-		if (const auto date_col = typeid_cast<const ColumnVector<UInt16> *>(date_col_untyped))
+		if (const auto date_col = typeid_cast<const ColumnUInt16 *>(date_col_untyped))
 		{
-			const auto out = new ColumnString;
+			const auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
-			dictionary->getString(attr_name, id_col->getData(), date_col->getData(), out);
+			dictionary->getString(attr_name, id_col->getData(), date_col->getData(), out.get());
 		}
 		else if (const auto date_col = typeid_cast<const ColumnConst<UInt16> *>(date_col_untyped))
 		{
-			auto out = new ColumnString;
+			auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
 
 			const PaddedPODArray<UInt16> dates(id_col->size(), date_col->getData());
-			dictionary->getString(attr_name, id_col->getData(), dates, out);
+			dictionary->getString(attr_name, id_col->getData(), dates, out.get());
 		}
 		else
 		{
@@ -1151,13 +1154,13 @@ private:
 		Block & block, const size_t result, const DictionaryType * const dictionary, const std::string & attr_name,
 		const ColumnConst<UInt64> * const id_col, const IColumn * const date_col_untyped)
 	{
-		if (const auto date_col = typeid_cast<const ColumnVector<UInt16> *>(date_col_untyped))
+		if (const auto date_col = typeid_cast<const ColumnUInt16 *>(date_col_untyped))
 		{
-			const auto out = new ColumnString;
+			const auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
 
 			const PaddedPODArray<UInt64> ids(date_col->size(), id_col->getData());
-			dictionary->getString(attr_name, ids, date_col->getData(), out);
+			dictionary->getString(attr_name, ids, date_col->getData(), out.get());
 		}
 		else if (const auto date_col = typeid_cast<const ColumnConst<UInt16> *>(date_col_untyped))
 		{
@@ -1167,9 +1170,8 @@ private:
 			auto out = std::make_unique<ColumnString>();
 			dictionary->getString(attr_name, ids, dates, out.get());
 
-			block.getByPosition(result).column = new ColumnConst<String>{
-				id_col->size(), out->getDataAt(0).toString()
-			};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<String>>(
+				id_col->size(), out->getDataAt(0).toString());
 		}
 		else
 		{
@@ -1188,9 +1190,9 @@ class FunctionDictGetStringOrDefault final : public IFunction
 public:
 	static constexpr auto name = "dictGetStringOrDefault";
 
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new FunctionDictGetStringOrDefault{context.getExternalDictionaries()};
+		return std::make_shared<FunctionDictGetStringOrDefault>(context.getExternalDictionaries());
 	}
 
 	FunctionDictGetStringOrDefault(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
@@ -1233,7 +1235,7 @@ private:
 					", must be String.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -1280,7 +1282,7 @@ private:
 		const auto & attr_name = attr_name_col->getData();
 
 		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 			executeDispatch(block, arguments, result, dict, attr_name, id_col);
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 			executeDispatch(block, arguments, result, dict, attr_name, id_col);
@@ -1295,30 +1297,30 @@ private:
 	template <typename DictionaryType>
 	void executeDispatch(
 		Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * const dictionary,
-		const std::string & attr_name, const ColumnVector<UInt64> * const id_col)
+		const std::string & attr_name, const ColumnUInt64 * const id_col)
 	{
 		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
 		if (const auto default_col = typeid_cast<const ColumnString *>(default_col_untyped))
 		{
 			/// vector ids, vector defaults
-			const auto out = new ColumnString;
+			const auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
 
 			const auto & ids = id_col->getData();
 
-			dictionary->getString(attr_name, ids, default_col, out);
+			dictionary->getString(attr_name, ids, default_col, out.get());
 		}
 		else if (const auto default_col = typeid_cast<const ColumnConst<String> *>(default_col_untyped))
 		{
 			/// vector ids, const defaults
-			const auto out = new ColumnString;
+			const auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
 
 			const auto & ids = id_col->getData();
 			const auto & def = default_col->getData();
 
-			dictionary->getString(attr_name, ids, def, out);
+			dictionary->getString(attr_name, ids, def, out.get());
 		}
 		else
 			throw Exception{
@@ -1338,10 +1340,10 @@ private:
 			/// const ids, vector defaults
 			/// @todo avoid materialization
 			const PaddedPODArray<UInt64> ids(id_col->size(), id_col->getData());
-			const auto out = new ColumnString;
+			const auto out = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = out;
 
-			dictionary->getString(attr_name, ids, default_col, out);
+			dictionary->getString(attr_name, ids, default_col, out.get());
 		}
 		else if (const auto default_col = typeid_cast<const ColumnConst<String> *>(default_col_untyped))
 		{
@@ -1353,9 +1355,8 @@ private:
 
 			dictionary->getString(attr_name, ids, def, out.get());
 
-			block.getByPosition(result).column = new ColumnConst<String>{
-				id_col->size(), out->getDataAt(0).toString()
-			};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<String>>(
+				id_col->size(), out->getDataAt(0).toString());
 		}
 		else
 			throw Exception{
@@ -1395,18 +1396,18 @@ private:
 
 		const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-		const auto out = new ColumnString;
+		const auto out = std::make_shared<ColumnString>();
 		block.getByPosition(result).column = out;
 
 		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 		if (const auto default_col = typeid_cast<const ColumnString *>(default_col_untyped))
 		{
-			dict->getString(attr_name, key_columns, key_types, default_col, out);
+			dict->getString(attr_name, key_columns, key_types, default_col, out.get());
 		}
 		else if (const auto default_col = typeid_cast<const ColumnConst<String> *>(default_col_untyped))
 		{
 			const auto & def = default_col->getData();
-			dict->getString(attr_name, key_columns, key_types, def, out);
+			dict->getString(attr_name, key_columns, key_types, def, out.get());
 		}
 		else
 			throw Exception{
@@ -1482,9 +1483,9 @@ class FunctionDictGet final : public IFunction
 public:
 	static const std::string name;
 
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new FunctionDictGet{context.getExternalDictionaries()};
+		return std::make_shared<FunctionDictGet>(context.getExternalDictionaries());
 	}
 
 	FunctionDictGet(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
@@ -1533,7 +1534,7 @@ private:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 		}
 
-		return new DataType;
+		return std::make_shared<DataType>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -1581,9 +1582,9 @@ private:
 		const auto & attr_name = attr_name_col->getData();
 
 		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 		{
-			const auto out = new ColumnVector<Type>(id_col->size());
+			const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
 			block.getByPosition(result).column = out;
 
 			const auto & ids = id_col->getData();
@@ -1597,7 +1598,7 @@ private:
 			PaddedPODArray<Type> data(1);
 			DictGetTraits<DataType>::get(dict, attr_name, ids, data);
 
-			block.getByPosition(result).column = new ColumnConst<Type>{id_col->size(), data.front()};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<Type>>(id_col->size(), data.front());
 		}
 		else
 		{
@@ -1641,7 +1642,7 @@ private:
 
 			const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-			const auto out = new ColumnVector<Type>(key_columns.front()->size());
+			const auto out = std::make_shared<ColumnVector<Type>>(key_columns.front()->size());
 			block.getByPosition(result).column = out;
 
 			auto & data = out->getData();
@@ -1680,7 +1681,7 @@ private:
 
 		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
 		const auto date_col_untyped = block.getByPosition(arguments[3]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 			executeRange(block, result, dict, attr_name, id_col, date_col_untyped);
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 			executeRange(block, result, dict, attr_name, id_col, date_col_untyped);
@@ -1697,15 +1698,15 @@ private:
 	template <typename DictionaryType>
 	void executeRange(
 		Block & block, const size_t result, const DictionaryType * const dictionary, const std::string & attr_name,
-		const ColumnVector<UInt64> * const id_col, const IColumn * const date_col_untyped)
+		const ColumnUInt64 * const id_col, const IColumn * const date_col_untyped)
 	{
-		if (const auto date_col = typeid_cast<const ColumnVector<UInt16> *>(date_col_untyped))
+		if (const auto date_col = typeid_cast<const ColumnUInt16 *>(date_col_untyped))
 		{
 			const auto size = id_col->size();
 			const auto & ids = id_col->getData();
 			const auto & dates = date_col->getData();
 
-			const auto out = new ColumnVector<Type>{size};
+			const auto out = std::make_shared<ColumnVector<Type>>(size);
 			block.getByPosition(result).column = out;
 
 			auto & data = out->getData();
@@ -1717,7 +1718,7 @@ private:
 			const auto & ids = id_col->getData();
 			const PaddedPODArray<UInt16> dates(size, date_col->getData());
 
-			const auto out = new ColumnVector<Type>{size};
+			const auto out = std::make_shared<ColumnVector<Type>>(size);
 			block.getByPosition(result).column = out;
 
 			auto & data = out->getData();
@@ -1736,13 +1737,13 @@ private:
 		Block & block, const size_t result, const DictionaryType * const dictionary, const std::string & attr_name,
 		const ColumnConst<UInt64> * const id_col, const IColumn * const date_col_untyped)
 	{
-		if (const auto date_col = typeid_cast<const ColumnVector<UInt16> *>(date_col_untyped))
+		if (const auto date_col = typeid_cast<const ColumnUInt16 *>(date_col_untyped))
 		{
 			const auto size = date_col->size();
 			const PaddedPODArray<UInt64> ids(size, id_col->getData());
 			const auto & dates = date_col->getData();
 
-			const auto out = new ColumnVector<Type>{size};
+			const auto out = std::make_shared<ColumnVector<Type>>(size);
 			block.getByPosition(result).column = out;
 
 			auto & data = out->getData();
@@ -1755,7 +1756,7 @@ private:
 			PaddedPODArray<Type> data(1);
 			DictGetTraits<DataType>::get(dictionary, attr_name, ids, dates, data);
 
-			block.getByPosition(result).column = new ColumnConst<Type>{id_col->size(), data.front()};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<Type>>(id_col->size(), data.front());
 		}
 		else
 		{
@@ -1794,9 +1795,9 @@ class FunctionDictGetOrDefault final : public IFunction
 public:
 	static const std::string name;
 
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new FunctionDictGetOrDefault{context.getExternalDictionaries()};
+		return std::make_shared<FunctionDictGetOrDefault>(context.getExternalDictionaries());
 	}
 
 	FunctionDictGetOrDefault(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
@@ -1845,7 +1846,7 @@ private:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 		}
 
-		return new DataType;
+		return std::make_shared<DataType>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -1892,7 +1893,7 @@ private:
 		const auto & attr_name = attr_name_col->getData();
 
 		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 			executeDispatch(block, arguments, result, dict, attr_name, id_col);
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 			executeDispatch(block, arguments, result, dict, attr_name, id_col);
@@ -1907,14 +1908,14 @@ private:
 	template <typename DictionaryType>
 	void executeDispatch(
 		Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * const dictionary,
-		const std::string & attr_name, const ColumnVector<UInt64> * const id_col)
+		const std::string & attr_name, const ColumnUInt64 * const id_col)
 	{
 		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
 		if (const auto default_col = typeid_cast<const ColumnVector<Type> *>(default_col_untyped))
 		{
 			/// vector ids, vector defaults
-			const auto out = new ColumnVector<Type>(id_col->size());
+			const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
 			block.getByPosition(result).column = out;
 
 			const auto & ids = id_col->getData();
@@ -1926,7 +1927,7 @@ private:
 		else if (const auto default_col =  typeid_cast<const ColumnConst<Type> *>(default_col_untyped))
 		{
 			/// vector ids, const defaults
-			const auto out = new ColumnVector<Type>(id_col->size());
+			const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
 			block.getByPosition(result).column = out;
 
 			const auto & ids = id_col->getData();
@@ -1954,7 +1955,7 @@ private:
 			/// @todo avoid materialization
 			const PaddedPODArray<UInt64> ids(id_col->size(), id_col->getData());
 
-			const auto out = new ColumnVector<Type>(id_col->size());
+			const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
 			block.getByPosition(result).column = out;
 
 			auto & data = out->getData();
@@ -1971,7 +1972,7 @@ private:
 
 			DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, def, data);
 
-			block.getByPosition(result).column = new ColumnConst<Type>{id_col->size(), data.front()};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<Type>>(id_col->size(), data.front());
 		}
 		else
 			throw Exception{
@@ -2013,7 +2014,7 @@ private:
 
 		/// @todo detect when all key columns are constant
 		const auto rows = key_col.size();
-		const auto out = new ColumnVector<Type>(rows);
+		const auto out = std::make_shared<ColumnVector<Type>>(rows);
 		block.getByPosition(result).column = out;
 		auto & data = out->getData();
 
@@ -2065,9 +2066,9 @@ class FunctionDictGetHierarchy final : public IFunction
 public:
 	static constexpr auto name = "dictGetHierarchy";
 
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new FunctionDictGetHierarchy{context.getExternalDictionaries()};
+		return std::make_shared<FunctionDictGetHierarchy>(context.getExternalDictionaries());
 	}
 
 	FunctionDictGetHierarchy(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
@@ -2099,7 +2100,7 @@ private:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 		}
 
-		return new DataTypeArray{new DataTypeUInt64};
+		return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -2187,11 +2188,11 @@ private:
 		};
 
 		const auto id_col_untyped = block.getByPosition(arguments[1]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 		{
 			const auto & in = id_col->getData();
-			const auto backend = new ColumnVector<UInt64>;
-			const auto array = new ColumnArray{backend};
+			const auto backend = std::make_shared<ColumnUInt64>();
+			const auto array = std::make_shared<ColumnArray>(backend);
 			block.getByPosition(result).column = array;
 
 			get_hierarchies(in, backend->getData(), array->getOffsets());
@@ -2199,16 +2200,15 @@ private:
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
 			const PaddedPODArray<UInt64> in(1, id_col->getData());
-			const auto backend = new ColumnVector<UInt64>;
-			const auto array = new ColumnArray{backend};
+			const auto backend = std::make_shared<ColumnUInt64>();
+			const auto array = std::make_shared<ColumnArray>(backend);
 
 			get_hierarchies(in, backend->getData(), array->getOffsets());
 
-			block.getByPosition(result).column = new ColumnConstArray{
+			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(
 				id_col->size(),
 				(*array)[0].get<Array>(),
-				new DataTypeArray{new DataTypeUInt64}
-			};
+				std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()));
 		}
 		else
 		{
@@ -2229,9 +2229,9 @@ class FunctionDictIsIn final : public IFunction
 public:
 	static constexpr auto name = "dictIsIn";
 
-	static IFunction * create(const Context & context)
+	static FunctionPtr create(const Context & context)
 	{
-		return new FunctionDictIsIn{context.getExternalDictionaries()};
+		return std::make_shared<FunctionDictIsIn>(context.getExternalDictionaries());
 	}
 
 	FunctionDictIsIn(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
@@ -2271,7 +2271,7 @@ private:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 		}
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -2309,7 +2309,7 @@ private:
 		const auto child_id_col_untyped = block.getByPosition(arguments[1]).column.get();
 		const auto ancestor_id_col_untyped = block.getByPosition(arguments[2]).column.get();
 
-		if (const auto child_id_col = typeid_cast<const ColumnVector<UInt64> *>(child_id_col_untyped))
+		if (const auto child_id_col = typeid_cast<const ColumnUInt64 *>(child_id_col_untyped))
 			execute(block, result, dict, child_id_col, ancestor_id_col_untyped);
 		else if (const auto child_id_col = typeid_cast<const ColumnConst<UInt64> *>(child_id_col_untyped))
 			execute(block, result, dict, child_id_col, ancestor_id_col_untyped);
@@ -2324,11 +2324,11 @@ private:
 
 	template <typename DictionaryType>
 	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
-		const ColumnVector<UInt64> * const child_id_col, const IColumn * const ancestor_id_col_untyped)
+		const ColumnUInt64 * const child_id_col, const IColumn * const ancestor_id_col_untyped)
 	{
-		if (const auto ancestor_id_col = typeid_cast<const ColumnVector<UInt64> *>(ancestor_id_col_untyped))
+		if (const auto ancestor_id_col = typeid_cast<const ColumnUInt64 *>(ancestor_id_col_untyped))
 		{
-			const auto out = new ColumnVector<UInt8>;
+			const auto out = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = out;
 
 			const auto & child_ids = child_id_col->getData();
@@ -2342,7 +2342,7 @@ private:
 		}
 		else if (const auto ancestor_id_col = typeid_cast<const ColumnConst<UInt64> *>(ancestor_id_col_untyped))
 		{
-			const auto out = new ColumnVector<UInt8>;
+			const auto out = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = out;
 
 			const auto & child_ids = child_id_col->getData();
@@ -2369,9 +2369,9 @@ private:
 	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
 		const ColumnConst<UInt64> * const child_id_col, const IColumn * const ancestor_id_col_untyped)
 	{
-		if (const auto ancestor_id_col = typeid_cast<const ColumnVector<UInt64> *>(ancestor_id_col_untyped))
+		if (const auto ancestor_id_col = typeid_cast<const ColumnUInt64 *>(ancestor_id_col_untyped))
 		{
-			const auto out = new ColumnVector<UInt8>;
+			const auto out = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = out;
 
 			const auto child_id = child_id_col->getData();
@@ -2385,10 +2385,9 @@ private:
 		}
 		else if (const auto ancestor_id_col = typeid_cast<const ColumnConst<UInt64> *>(ancestor_id_col_untyped))
 		{
-			block.getByPosition(result).column = new ColumnConst<UInt8>{
+			block.getByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(
 				child_id_col->size(),
-				dictionary->in(child_id_col->getData(), ancestor_id_col->getData())
-			};
+				dictionary->in(child_id_col->getData(), ancestor_id_col->getData()));
 		}
 		else
 		{

@@ -119,7 +119,7 @@ private:
 	SimpleIncrement increment;
 
 	MergeTreeData::DataParts currently_merging;
-	Poco::FastMutex currently_merging_mutex;
+	std::mutex currently_merging_mutex;
 
 	Logger * log;
 
@@ -152,7 +152,7 @@ private:
 		{
 			try
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(storage.currently_merging_mutex);
+				std::lock_guard<std::mutex> lock(storage.currently_merging_mutex);
 				for (const auto & part : parts)
 				{
 					if (!storage.currently_merging.count(part))
@@ -167,7 +167,7 @@ private:
 		}
 	};
 
-	typedef Poco::SharedPtr<CurrentlyMergingPartsTagger> CurrentlyMergingPartsTaggerPtr;
+	using CurrentlyMergingPartsTaggerPtr = std::shared_ptr<CurrentlyMergingPartsTagger>;
 
 	StorageMergeTree(
 		const String & path_,

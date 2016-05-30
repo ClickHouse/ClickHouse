@@ -41,7 +41,7 @@ private:
 	{
 		ColumnWithTypeAndName col;
 		col.name = "statement";
-		col.type = new DataTypeString;
+		col.type = std::make_shared<DataTypeString>();
 		col.column = col.type->createColumn();
 
 		Block block;
@@ -60,13 +60,13 @@ private:
 
 		ColumnWithTypeAndName col;
 		col.name = "statement";
-		col.type = new DataTypeString;
-		col.column = new ColumnConstString(1, res);
+		col.type = std::make_shared<DataTypeString>();
+		col.column = std::make_shared<ColumnConstString>(1, res);
 
 		Block block;
 		block.insert(col);
 
-		return new OneBlockInputStream(block);
+		return std::make_shared<OneBlockInputStream>(block);
 	}
 };
 

@@ -14,8 +14,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
 
-typedef Poco::AutoPtr<Poco::Util::AbstractConfiguration> ConfigurationPtr;
-typedef Poco::AutoPtr<Poco::XML::Document> XMLDocumentPtr;
+using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
+using XMLDocumentPtr = Poco::AutoPtr<Poco::XML::Document>;
 
 class ConfigProcessor
 {
@@ -50,8 +50,8 @@ private:
 	bool throw_on_bad_incl;
 	Substitutions substitutions;
 
-	typedef XMLDocumentPtr DocumentPtr;
-	typedef Poco::AutoPtr<Poco::XML::Node> NodePtr;
+	using DocumentPtr = XMLDocumentPtr;
+	using NodePtr = Poco::AutoPtr<Poco::XML::Node>;
 
 	void mergeRecursive(DocumentPtr config, Poco::XML::Node * config_node, Poco::XML::Node * with_node);
 

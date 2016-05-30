@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Poco/Mutex.h>
+#include <mutex>
 
 #include <DB/Common/OptimizedRegularExpression.h>
 #include <memory>
@@ -510,7 +510,7 @@ namespace Regexps
 template <bool like, bool revert = false>
 struct MatchImpl
 {
-	typedef UInt8 ResultType;
+	using ResultType = UInt8;
 
 	static void vector_constant(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		const std::string & pattern,
@@ -724,7 +724,7 @@ struct ReplaceRegexpImpl
 	/// Последовательность инструкций, описывает как получить конечную строку. Каждый элемент
 	/// либо подстановка, тогда первое число в паре ее id,
 	/// либо строка, которую необходимо вставить, записана второй в паре. (id = -1)
-	typedef std::vector< std::pair<int, std::string> > Instructions;
+	using Instructions = std::vector< std::pair<int, std::string> >;
 
 	static void split(const std::string & s, Instructions & instructions)
 	{
@@ -1161,7 +1161,7 @@ class FunctionStringReplace : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionStringReplace; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringReplace>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1189,7 +1189,7 @@ public:
 			throw Exception("Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1214,7 +1214,7 @@ public:
 
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column_src))
 		{
-			ColumnString * col_res = new ColumnString;
+			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 			Impl::vector(col->getChars(), col->getOffsets(),
 				needle, replacement,
@@ -1222,7 +1222,7 @@ public:
 		}
 		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column_src))
 		{
-			ColumnString * col_res = new ColumnString;
+			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 			Impl::vector_fixed(col->getChars(), col->getN(),
 				needle, replacement,
@@ -1232,7 +1232,7 @@ public:
 		{
 			String res;
 			Impl::constant(col->getData(), needle, replacement, res);
-			ColumnConstString * col_res = new ColumnConstString(col->size(), res);
+			auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
 			block.getByPosition(result).column = col_res;
 		}
 		else
@@ -1248,7 +1248,7 @@ class FunctionsStringSearch : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionsStringSearch; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionsStringSearch>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1272,13 +1272,13 @@ public:
 			throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new typename DataTypeFromFieldType<typename Impl::ResultType>::Type;
+		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ResultType>::Type>();
 	}
 
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		typedef typename Impl::ResultType ResultType;
+		using ResultType = typename Impl::ResultType;
 
 		const ColumnPtr & column_haystack = block.getByPosition(arguments[0]).column;
 		const ColumnPtr & column_needle = block.getByPosition(arguments[1]).column;
@@ -1290,12 +1290,11 @@ public:
 		{
 			ResultType res{};
 			Impl::constant_constant(col_haystack_const->getData(), col_needle_const->getData(), res);
-			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col_haystack_const->size(), res);
-			block.getByPosition(result).column = col_res;
+			block.getByPosition(result).column = std::make_shared<ColumnConst<ResultType>>(col_haystack_const->size(), res);
 			return;
 		}
 
-		ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+		auto col_res = std::make_shared<ColumnVector<ResultType>>();
 		block.getByPosition(result).column = col_res;
 
 		typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
@@ -1334,7 +1333,7 @@ class FunctionsStringSearchToString : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionsStringSearchToString; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionsStringSearchToString>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1358,7 +1357,7 @@ public:
 			throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1373,7 +1372,7 @@ public:
 
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
 		{
-			ColumnString * col_res = new ColumnString;
+			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 
 			ColumnString::Chars_t & vec_res = col_res->getChars();
@@ -1396,8 +1395,7 @@ public:
 			if (!res_offsets.empty())
 				res.assign(&res_vdata[0], &res_vdata[res_vdata.size() - 1]);
 
-			ColumnConstString * col_res = new ColumnConstString(col->size(), res);
-			block.getByPosition(result).column = col_res;
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col->size(), res);
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -1420,18 +1418,18 @@ struct NameReplaceAll					{ static constexpr auto name = "replaceAll"; };
 struct NameReplaceRegexpOne				{ static constexpr auto name = "replaceRegexpOne"; };
 struct NameReplaceRegexpAll				{ static constexpr auto name = "replaceRegexpAll"; };
 
-typedef FunctionsStringSearch<PositionImpl<PositionCaseSensitiveASCII>, NamePosition> 						FunctionPosition;
-typedef FunctionsStringSearch<PositionImpl<PositionCaseSensitiveUTF8>, NamePositionUTF8> 					FunctionPositionUTF8;
-typedef FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveASCII>, NamePositionCaseInsensitive> 		FunctionPositionCaseInsensitive;
-typedef FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveUTF8>, NamePositionCaseInsensitiveUTF8>	FunctionPositionCaseInsensitiveUTF8;
+using FunctionPosition = FunctionsStringSearch<PositionImpl<PositionCaseSensitiveASCII>, NamePosition> 					;
+using FunctionPositionUTF8 = FunctionsStringSearch<PositionImpl<PositionCaseSensitiveUTF8>, NamePositionUTF8> 				;
+using FunctionPositionCaseInsensitive = FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveASCII>, NamePositionCaseInsensitive> 	;
+using FunctionPositionCaseInsensitiveUTF8 = FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveUTF8>, NamePositionCaseInsensitiveUTF8>;
 
-typedef FunctionsStringSearch<MatchImpl<false>, 				NameMatch> 							FunctionMatch;
-typedef FunctionsStringSearch<MatchImpl<true>, 					NameLike> 							FunctionLike;
-typedef FunctionsStringSearch<MatchImpl<true, true>, 			NameNotLike> 						FunctionNotLike;
-typedef FunctionsStringSearchToString<ExtractImpl, 				NameExtract> 						FunctionExtract;
-typedef FunctionStringReplace<ReplaceStringImpl<true>,			NameReplaceOne>						FunctionReplaceOne;
-typedef FunctionStringReplace<ReplaceStringImpl<false>,			NameReplaceAll>						FunctionReplaceAll;
-typedef FunctionStringReplace<ReplaceRegexpImpl<true>,			NameReplaceRegexpOne>				FunctionReplaceRegexpOne;
-typedef FunctionStringReplace<ReplaceRegexpImpl<false>,			NameReplaceRegexpAll>				FunctionReplaceRegexpAll;
+using FunctionMatch = FunctionsStringSearch<MatchImpl<false>, 				NameMatch> 						;
+using FunctionLike = FunctionsStringSearch<MatchImpl<true>, 					NameLike> 						;
+using FunctionNotLike = FunctionsStringSearch<MatchImpl<true, true>, 			NameNotLike> 					;
+using FunctionExtract = FunctionsStringSearchToString<ExtractImpl, 				NameExtract> 					;
+using FunctionReplaceOne = FunctionStringReplace<ReplaceStringImpl<true>,			NameReplaceOne>					;
+using FunctionReplaceAll = FunctionStringReplace<ReplaceStringImpl<false>,			NameReplaceAll>					;
+using FunctionReplaceRegexpOne = FunctionStringReplace<ReplaceRegexpImpl<true>,			NameReplaceRegexpOne>			;
+using FunctionReplaceRegexpAll = FunctionStringReplace<ReplaceRegexpImpl<false>,			NameReplaceRegexpAll>			;
 
 }

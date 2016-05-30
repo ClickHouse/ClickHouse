@@ -20,7 +20,7 @@ public:
 	bool isConst() const override { return false; }
 
 	std::string getName() const override { return "ColumnSet"; }
-	ColumnPtr cloneDummy(size_t s_) const override { return new ColumnSet(s_, data); }
+	ColumnPtr cloneDummy(size_t s_) const override { return std::make_shared<ColumnSet>(s_, data); }
 
 	ConstSetPtr getData() const { return data; }
 

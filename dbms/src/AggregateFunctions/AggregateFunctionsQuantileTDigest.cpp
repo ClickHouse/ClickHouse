@@ -16,18 +16,18 @@ AggregateFunctionPtr createAggregateFunctionQuantileTDigest(const std::string & 
 
 	const IDataType & argument_type = *argument_types[0];
 
-		 if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new FunctionTemplate<UInt8, true>;
-	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new FunctionTemplate<UInt16, true>;
-	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new FunctionTemplate<UInt32, true>;
-	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new FunctionTemplate<UInt64, true>;
-	else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return new FunctionTemplate<Int8, true>;
-	else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return new FunctionTemplate<Int16, true>;
-	else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return new FunctionTemplate<Int32, true>;
-	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new FunctionTemplate<Int64, true>;
-	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new FunctionTemplate<Float32, true>;
-	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new FunctionTemplate<Float64, true>;
-	else if (typeid_cast<const DataTypeDate 	*>(&argument_type)) return new FunctionTemplate<DataTypeDate::FieldType, false>;
-	else if (typeid_cast<const DataTypeDateTime*>(&argument_type)) return new FunctionTemplate<DataTypeDateTime::FieldType, false>;
+		 if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return std::make_shared<FunctionTemplate<UInt8, true>>();
+	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return std::make_shared<FunctionTemplate<UInt16, true>>();
+	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return std::make_shared<FunctionTemplate<UInt32, true>>();
+	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return std::make_shared<FunctionTemplate<UInt64, true>>();
+	else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return std::make_shared<FunctionTemplate<Int8, true>>();
+	else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return std::make_shared<FunctionTemplate<Int16, true>>();
+	else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return std::make_shared<FunctionTemplate<Int32, true>>();
+	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return std::make_shared<FunctionTemplate<Int64, true>>();
+	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return std::make_shared<FunctionTemplate<Float32, true>>();
+	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return std::make_shared<FunctionTemplate<Float64, true>>();
+	else if (typeid_cast<const DataTypeDate 	*>(&argument_type)) return std::make_shared<FunctionTemplate<DataTypeDate::FieldType, false>>();
+	else if (typeid_cast<const DataTypeDateTime*>(&argument_type)) return std::make_shared<FunctionTemplate<DataTypeDateTime::FieldType, false>>();
 	else
 		throw Exception("Illegal type " + argument_type.getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
@@ -37,16 +37,16 @@ AggregateFunctionPtr createAggregateFunctionQuantileTDigestWeightedImpl(const st
 {
 	const IDataType & argument_type = *argument_types[1];
 
-		 if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new FunctionTemplate<T, UInt8, returns_float>;
-	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new FunctionTemplate<T, UInt16, returns_float>;
-	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new FunctionTemplate<T, UInt32, returns_float>;
-	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new FunctionTemplate<T, UInt64, returns_float>;
-	else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return new FunctionTemplate<T, Int8, returns_float>;
-	else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return new FunctionTemplate<T, Int16, returns_float>;
-	else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return new FunctionTemplate<T, Int32, returns_float>;
-	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new FunctionTemplate<T, Int64, returns_float>;
-	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new FunctionTemplate<T, Float32, returns_float>;
-	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new FunctionTemplate<T, Float64, returns_float>;
+		 if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return std::make_shared<FunctionTemplate<T, UInt8, returns_float>>();
+	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return std::make_shared<FunctionTemplate<T, UInt16, returns_float>>();
+	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return std::make_shared<FunctionTemplate<T, UInt32, returns_float>>();
+	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return std::make_shared<FunctionTemplate<T, UInt64, returns_float>>();
+	else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return std::make_shared<FunctionTemplate<T, Int8, returns_float>>();
+	else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return std::make_shared<FunctionTemplate<T, Int16, returns_float>>();
+	else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return std::make_shared<FunctionTemplate<T, Int32, returns_float>>();
+	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return std::make_shared<FunctionTemplate<T, Int64, returns_float>>();
+	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return std::make_shared<FunctionTemplate<T, Float32, returns_float>>();
+	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return std::make_shared<FunctionTemplate<T, Float64, returns_float>>();
 	else
 		throw Exception("Illegal type " + argument_type.getName() + " of second argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }

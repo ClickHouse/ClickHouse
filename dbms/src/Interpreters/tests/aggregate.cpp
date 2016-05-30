@@ -1,8 +1,6 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Poco/Stopwatch.h>
-
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 
@@ -28,8 +26,8 @@ int main(int argc, char ** argv)
 
 		ColumnWithTypeAndName column_x;
 		column_x.name = "x";
-		column_x.type = new DataTypeInt16;
-		ColumnInt16 * x = new ColumnInt16;
+		column_x.type = std::make_shared<DataTypeInt16>();
+		auto x = std::make_shared<ColumnInt16>();
 		column_x.column = x;
 		auto & vec_x = x->getData();
 
@@ -43,8 +41,8 @@ int main(int argc, char ** argv)
 
 		ColumnWithTypeAndName column_s1;
 		column_s1.name = "s1";
-		column_s1.type = new DataTypeString;
-		column_s1.column = new ColumnString;
+		column_s1.type = std::make_shared<DataTypeString>();
+		column_s1.column = std::make_shared<ColumnString>();
 
 		for (size_t i = 0; i < n; ++i)
 			column_s1.column->insert(std::string(strings[i % 5]));
@@ -53,15 +51,15 @@ int main(int argc, char ** argv)
 
 		ColumnWithTypeAndName column_s2;
 		column_s2.name = "s2";
-		column_s2.type = new DataTypeString;
-		column_s2.column = new ColumnString;
+		column_s2.type = std::make_shared<DataTypeString>();
+		column_s2.column = std::make_shared<ColumnString>();
 
 		for (size_t i = 0; i < n; ++i)
 			column_s2.column->insert(std::string(strings[i % 3]));
 
 		block.insert(column_s2);
 
-		BlockInputStreamPtr stream = new OneBlockInputStream(block);
+		BlockInputStreamPtr stream = std::make_shared<OneBlockInputStream>(block);
 		AggregatedDataVariants aggregated_data_variants;
 
 		Names key_column_names;
@@ -79,15 +77,15 @@ int main(int argc, char ** argv)
 		Aggregator aggregator(params);
 
 		{
-			Poco::Stopwatch stopwatch;
+			Stopwatch stopwatch;
 			stopwatch.start();
 
 			aggregator.execute(stream, aggregated_data_variants);
 
 			stopwatch.stop();
 			std::cout << std::fixed << std::setprecision(2)
-				<< "Elapsed " << stopwatch.elapsed() / 1000000.0 << " sec."
-				<< ", " << n * 1000000 / stopwatch.elapsed() << " rows/sec."
+				<< "Elapsed " << stopwatch.elapsedSeconds() << " sec."
+				<< ", " << n / stopwatch.elapsedSeconds() << " rows/sec."
 				<< std::endl;
 		}
 	}

@@ -36,7 +36,7 @@ struct NumIfImpl
 private:
 	static PaddedPODArray<ResultType> & result_vector(Block & block, size_t result, size_t size)
 	{
-		ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+		auto col_res = std::make_shared<ColumnVector<ResultType>>();
 		block.getByPosition(result).column = col_res;
 
 		typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
@@ -433,8 +433,8 @@ struct NumArrayIfImpl
 		Block & block, size_t result,
 		PaddedPODArray<ResultType> ** c_data, ColumnArray::Offsets_t ** c_offsets)
 	{
-		ColumnVector<ResultType> * col_res_vec = new ColumnVector<ResultType>;
-		ColumnArray * col_res_array = new ColumnArray(col_res_vec);
+		auto col_res_vec = std::make_shared<ColumnVector<ResultType>>();
+		auto col_res_array = std::make_shared<ColumnArray>(col_res_vec);
 		block.getByPosition(result).column = col_res_array;
 
 		*c_data = &col_res_vec->getData();
@@ -821,7 +821,7 @@ class FunctionIf : public IFunction
 {
 public:
 	static constexpr auto name = "if";
-	static IFunction * create(const Context & context) { return new FunctionIf; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIf>(); }
 
 private:
 	template <typename T0, typename T1>
@@ -829,7 +829,7 @@ private:
 	{
 		if (typeid_cast<const T1 *>(&*arguments[2]))
 		{
-			typedef typename NumberTraits::ResultOfIf<typename T0::FieldType, typename T1::FieldType>::Type ResultType;
+			using ResultType = typename NumberTraits::ResultOfIf<typename T0::FieldType, typename T1::FieldType>::Type;
 			type_res = DataTypeTraits::DataTypeFromFieldTypeOrError<ResultType>::getDataType();
 			if (!type_res)
 				throw Exception("Arguments 2 and 3 of function " + getName() + " are not upscalable to a common type without loss of precision: "
@@ -864,7 +864,7 @@ private:
 
 	template <typename T0, typename T1>
 	bool executeRightType(
-		const ColumnVector<UInt8> * cond_col,
+		const ColumnUInt8 * cond_col,
 		Block & block,
 		const ColumnNumbers & arguments,
 		size_t result,
@@ -876,7 +876,7 @@ private:
 		if (!col_right_vec && !col_right_const)
 			return false;
 
-		typedef typename NumberTraits::ResultOfIf<T0, T1>::Type ResultType;
+		using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
 		if (col_right_vec)
 			NumIfImpl<T0, T1, ResultType>::vector_vector(cond_col->getData(), col_left->getData(), col_right_vec->getData(), block, result);
@@ -888,7 +888,7 @@ private:
 
 	template <typename T0, typename T1>
 	bool executeConstRightType(
-		const ColumnVector<UInt8> * cond_col,
+		const ColumnUInt8 * cond_col,
 		Block & block,
 		const ColumnNumbers & arguments,
 		size_t result,
@@ -900,7 +900,7 @@ private:
 		if (!col_right_vec && !col_right_const)
 			return false;
 
-		typedef typename NumberTraits::ResultOfIf<T0, T1>::Type ResultType;
+		using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
 		if (col_right_vec)
 			NumIfImpl<T0, T1, ResultType>::constant_vector(cond_col->getData(), col_left->getData(), col_right_vec->getData(), block, result);
@@ -912,7 +912,7 @@ private:
 
 	template <typename T0, typename T1>
 	bool executeRightTypeArray(
-		const ColumnVector<UInt8> * cond_col,
+		const ColumnUInt8 * cond_col,
 		Block & block,
 		const ColumnNumbers & arguments,
 		size_t result,
@@ -927,7 +927,7 @@ private:
 		if (!col_right_array && !col_right_const_array)
 			return false;
 
-		typedef typename NumberTraits::ResultOfIf<T0, T1>::Type ResultType;
+		using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
 		if (col_right_array)
 		{
@@ -960,7 +960,7 @@ private:
 
 	template <typename T0, typename T1>
 	bool executeConstRightTypeArray(
-		const ColumnVector<UInt8> * cond_col,
+		const ColumnUInt8 * cond_col,
 		Block & block,
 		const ColumnNumbers & arguments,
 		size_t result,
@@ -974,7 +974,7 @@ private:
 		if (!col_right_array && !col_right_const_array)
 			return false;
 
-		typedef typename NumberTraits::ResultOfIf<T0, T1>::Type ResultType;
+		using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
 		if (col_right_array)
 		{
@@ -1006,7 +1006,7 @@ private:
 	}
 
 	template <typename T0>
-	bool executeLeftType(const ColumnVector<UInt8> * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+	bool executeLeftType(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		const IColumn * col_left_untyped = block.getByPosition(arguments[1]).column.get();
 
@@ -1109,7 +1109,7 @@ private:
 		return false;
 	}
 
-	bool executeString(const ColumnVector<UInt8> * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+	bool executeString(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		const IColumn * col_then_untyped = block.getByPosition(arguments[1]).column.get();
 		const IColumn * col_else_untyped = block.getByPosition(arguments[2]).column.get();
@@ -1132,7 +1132,7 @@ private:
 
 				size_t N = col_then_fixed->getN();
 
-				ColumnFixedString * col_res = new ColumnFixedString(N);
+				auto col_res = std::make_shared<ColumnFixedString>(N);
 				block.getByPosition(result).column = col_res;
 
 				ColumnFixedString::Chars_t & res_vec = col_res->getChars();
@@ -1147,7 +1147,7 @@ private:
 			else
 			{
 				/// Результат - String.
-				ColumnString * col_res = new ColumnString;
+				std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 				block.getByPosition(result).column = col_res;
 
 				ColumnString::Chars_t & res_vec = col_res->getChars();
@@ -1218,8 +1218,8 @@ private:
 		if (((col_arr_then && col_then_elements) || col_arr_then_const)
 			&& ((col_arr_else && col_else_elements) || col_arr_else_const))
 		{
-			ColumnString * col_res_elements = new ColumnString;
-			ColumnArray * col_res = new ColumnArray(col_res_elements);
+			auto col_res_elements = std::make_shared<ColumnString>();
+			auto col_res = std::make_shared<ColumnArray>(col_res_elements);
 			block.getByPosition(result).column = col_res;
 
 			ColumnString::Chars_t & res_chars = col_res_elements->getChars();
@@ -1301,7 +1301,7 @@ public:
 		else if (type_arr1 && type_arr2)
 		{
 			/// NOTE Сообщения об ошибках будут относится к типам элементов массивов, что немного некорректно.
-			return new DataTypeArray(getReturnType({arguments[0], type_arr1->getNestedType(), type_arr2->getNestedType()}));
+			return std::make_shared<DataTypeArray>(getReturnType({arguments[0], type_arr1->getNestedType(), type_arr2->getNestedType()}));
 		}
 		else if (arguments[1]->getName() != arguments[2]->getName())
 		{
@@ -1316,11 +1316,11 @@ public:
 					throw Exception("FixedString types as 'then' and 'else' arguments of function 'if' has different sizes",
 						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-				return new DataTypeFixedString(type_fixed_string1->getN());
+				return std::make_shared<DataTypeFixedString>(type_fixed_string1->getN());
 			}
 			else if ((type_string1 || type_fixed_string1) && (type_string2 || type_fixed_string2))
 			{
-				return new DataTypeString;
+				return std::make_shared<DataTypeString>();
 			}
 
 			throw Exception{
@@ -1336,7 +1336,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const ColumnVector<UInt8> * cond_col = typeid_cast<const ColumnVector<UInt8> *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(&*block.getByPosition(arguments[0]).column);
 		const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(&*block.getByPosition(arguments[0]).column);
 		ColumnPtr materialized_cond_col;
 
@@ -1353,7 +1353,7 @@ public:
 			else
 			{
 				materialized_cond_col = cond_const_col->convertToFullColumn();
-				cond_col = typeid_cast<const ColumnVector<UInt8> *>(&*materialized_cond_col);
+				cond_col = typeid_cast<const ColumnUInt8 *>(&*materialized_cond_col);
 			}
 		}
 
@@ -1399,7 +1399,7 @@ class FunctionMultiIf final : public IFunction
 {
 public:
 	static constexpr auto name = "multiIf";
-	static IFunction * create(const Context & context) { return new FunctionMultiIf; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMultiIf>(); }
 
 public:
 	String getName() const override
@@ -1512,7 +1512,7 @@ private:
 
 			push_branch_arg(Conditional::elseArg(args));
 
-			return new DataTypeArray{getReturnType(new_args)};
+			return std::make_shared<DataTypeArray>(getReturnType(new_args));
 		}
 		else if (!Conditional::hasIdenticalTypes(args))
 		{
@@ -1536,10 +1536,10 @@ private:
 				if (fixed_str == nullptr)
 					throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 
-				return new DataTypeFixedString{fixed_str->getN()};
+				return std::make_shared<DataTypeFixedString>(fixed_str->getN());
 			}
 			else if (Conditional::hasStrings(args))
-				return new DataTypeString;
+				return std::make_shared<DataTypeString>();
 			else
 			{
 				if (is_case_mode)

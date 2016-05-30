@@ -25,9 +25,9 @@ class Context;
 class Block
 {
 public:
-	typedef std::list<ColumnWithTypeAndName> Container_t;
-	typedef std::vector<Container_t::iterator> IndexByPosition_t;
-	typedef std::map<String, Container_t::iterator> IndexByName_t;
+	using Container_t = std::list<ColumnWithTypeAndName>;
+	using IndexByPosition_t = std::vector<Container_t::iterator>;
+	using IndexByName_t = std::map<String, Container_t::iterator>;
 
 private:
 	Container_t data;
@@ -123,8 +123,8 @@ public:
 	void swap(Block & other);
 };
 
-typedef std::vector<Block> Blocks;
-typedef std::list<Block> BlocksList;
+using Blocks = std::vector<Block>;
+using BlocksList = std::list<Block>;
 
 /// Сравнить типы столбцов у блоков. Порядок столбцов имеет значение. Имена не имеют значения.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);

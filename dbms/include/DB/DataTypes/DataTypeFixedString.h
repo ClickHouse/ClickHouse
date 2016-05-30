@@ -28,7 +28,7 @@ public:
 
 	DataTypePtr clone() const override
 	{
-		return new DataTypeFixedString(n);
+		return std::make_shared<DataTypeFixedString>(n);
 	}
 
 	size_t getN() const

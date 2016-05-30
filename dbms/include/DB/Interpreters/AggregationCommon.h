@@ -20,7 +20,7 @@ struct DefaultHash<StringRef> : public StringRefHash {};
 namespace DB
 {
 
-typedef std::vector<size_t> Sizes;
+using Sizes = std::vector<size_t>;
 
 
 /// Записать набор ключей фиксированной длины в T, уложив их подряд (при допущении, что они помещаются).

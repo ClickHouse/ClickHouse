@@ -19,15 +19,15 @@ namespace ErrorCodes
 
 
 DataTypeArray::DataTypeArray(DataTypePtr nested_)
-	: enriched_nested(std::make_pair(nested_, new DataTypeVoid)), nested{nested_}
+	: enriched_nested(std::make_pair(nested_, std::make_shared<DataTypeVoid>())), nested{nested_}
 {
-	offsets = new DataTypeFromFieldType<ColumnArray::Offset_t>::Type;
+	offsets = std::make_shared<DataTypeFromFieldType<ColumnArray::Offset_t>::Type>();
 }
 
 DataTypeArray::DataTypeArray(DataTypeTraits::EnrichedDataTypePtr enriched_nested_)
 	: enriched_nested{enriched_nested_}, nested{enriched_nested.first}
 {
-	offsets = new DataTypeFromFieldType<ColumnArray::Offset_t>::Type;
+	offsets = std::make_shared<DataTypeFromFieldType<ColumnArray::Offset_t>::Type>();
 }
 
 void DataTypeArray::serializeBinary(const Field & field, WriteBuffer & ostr) const
@@ -357,14 +357,14 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
 
 ColumnPtr DataTypeArray::createColumn() const
 {
-	return new ColumnArray(nested->createColumn());
+	return std::make_shared<ColumnArray>(nested->createColumn());
 }
 
 
 ColumnPtr DataTypeArray::createConstColumn(size_t size, const Field & field) const
 {
 	/// Последним аргументом нельзя отдать this.
-	return new ColumnConstArray(size, get<const Array &>(field), new DataTypeArray(nested));
+	return std::make_shared<ColumnConstArray>(size, get<const Array &>(field), std::make_shared<DataTypeArray>(nested));
 }
 
 }

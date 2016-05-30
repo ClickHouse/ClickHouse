@@ -586,7 +586,7 @@ void ZooKeeper::waitForDisappear(const std::string & path)
 {
 	while (true)
 	{
-		zkutil::EventPtr event = new Poco::Event;
+		zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
 		std::string unused;
 		/// get вместо exists, чтобы не утек watch, если ноды уже нет.

@@ -3,8 +3,7 @@
 #include <iostream>
 #include <fstream>
 
-#include <Poco/Stopwatch.h>
-#include <Poco/SharedPtr.h>
+#include <DB/Common/Stopwatch.h>
 
 #include <DB/IO/ReadBufferFromIStream.h>
 #include <DB/IO/WriteBufferFromOStream.h>
@@ -13,60 +12,60 @@
 
 
 int main(int argc, char ** argv)
+try
 {
-	try
+	using namespace DB;
+
+	Stopwatch stopwatch;
+	size_t n = 50000000;
+	const char * s = "";
+	size_t size = strlen(s) + 1;
+	DataTypeString data_type;
+
 	{
-		Poco::Stopwatch stopwatch;
-		size_t n = 50000000;
-		const char * s = "";
-		size_t size = strlen(s) + 1;
-		DB::DataTypeString data_type;
+		std::shared_ptr<ColumnString> column = std::make_shared<ColumnString>();
+		ColumnString::Chars_t & data = column->getChars();
+		ColumnString::Offsets_t & offsets = column->getOffsets();
 
+		data.resize(n * size);
+		offsets.resize(n);
+		for (size_t i = 0; i < n; ++i)
 		{
-			Poco::SharedPtr<DB::ColumnString> column = new DB::ColumnString();
-			DB::ColumnString::Chars_t & data = column->getChars();
-			DB::ColumnString::Offsets_t & offsets = column->getOffsets();
-
-			data.resize(n * size);
-			offsets.resize(n);
-			for (size_t i = 0; i < n; ++i)
-			{
-				memcpy(&data[i * size], s, size);
-				offsets[i] = (i + 1) * size;
-			}
-
-			std::ofstream ostr("test");
-			DB::WriteBufferFromOStream out_buf(ostr);
-
-			stopwatch.restart();
-			data_type.serializeBinary(*column, out_buf);
-			stopwatch.stop();
-
-			std::cout << "Writing, elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
+			memcpy(&data[i * size], s, size);
+			offsets[i] = (i + 1) * size;
 		}
 
-		{
-			Poco::SharedPtr<DB::ColumnString> column = new DB::ColumnString();
+		std::ofstream ostr("test");
+		WriteBufferFromOStream out_buf(ostr);
 
-			std::ifstream istr("test");
-			DB::ReadBufferFromIStream in_buf(istr);
+		stopwatch.restart();
+		data_type.serializeBinary(*column, out_buf);
+		stopwatch.stop();
 
-			stopwatch.restart();
-			data_type.deserializeBinary(*column, in_buf, n, 0);
-			stopwatch.stop();
-
-			std::cout << "Reading, elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
-
-			std::cout << std::endl
-				<< DB::get<const DB::String &>((*column)[0]) << std::endl
-				<< DB::get<const DB::String &>((*column)[n - 1]) << std::endl;
-		}
+		std::cout << "Writing, elapsed: " << stopwatch.elapsedSeconds() << std::endl;
 	}
-	catch (const DB::Exception & e)
+
 	{
-		std::cerr << e.what() << ", " << e.displayText() << std::endl;
-		return 1;
+		std::shared_ptr<ColumnString> column = std::make_shared<ColumnString>();
+
+		std::ifstream istr("test");
+		ReadBufferFromIStream in_buf(istr);
+
+		stopwatch.restart();
+		data_type.deserializeBinary(*column, in_buf, n, 0);
+		stopwatch.stop();
+
+		std::cout << "Reading, elapsed: " << stopwatch.elapsedSeconds() << std::endl;
+
+		std::cout << std::endl
+			<< get<const String &>((*column)[0]) << std::endl
+			<< get<const String &>((*column)[n - 1]) << std::endl;
 	}
 
 	return 0;
+}
+catch (const DB::Exception & e)
+{
+	std::cerr << e.what() << ", " << e.displayText() << std::endl;
+	return 1;
 }

@@ -1,16 +1,11 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/Storages/IStorage.h>
 #include <DB/Interpreters/Context.h>
 
 
 namespace DB
 {
-
-using Poco::SharedPtr;
-
 
 /** Реализует системную таблицу replication_queue, которая позволяет посмотреть очереди репликации для реплицируемых таблиц.
   */
