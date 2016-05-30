@@ -863,13 +863,9 @@ struct ArrayIndexNumImpl
 			typename IndexConv::ResultType current = 0;
 
 			for (size_t j = 0; j < array_size; ++j)
-			{
 				if (compare(data[current_offset + j], value, i))
-				{
 					if (!IndexConv::apply(j, current))
 						break;
-				}
-			}
 
 			result[i] = current;
 			current_offset = offsets[i];
@@ -1062,7 +1058,7 @@ private:
 		const auto item_arg = block.getByPosition(arguments[1]).column.get();
 		if (item_arg->isConst())
 		{
-			typename IndexConv::ResultType current{};
+			typename IndexConv::ResultType current = 0;
 			const auto & value = (*item_arg)[0];
 
 			for (size_t i = 0, size = arr.size(); i < size; ++i)
@@ -1089,14 +1085,12 @@ private:
 			for (size_t row = 0; row < size; ++row)
 			{
 				const auto & value = (*item_arg)[row];
+
+				data[row] = 0;
 				for (size_t i = 0, size = arr.size(); i < size; ++i)
-				{
 					if (apply_visitor(FieldVisitorAccurateEquals(), arr[i], value))
-					{
 						if (!IndexConv::apply(i, data[row]))
 							break;
-					}
-				}
 			}
 		}
 
