@@ -996,8 +996,7 @@ private:
 		if (const auto item_arg_const = typeid_cast<const ColumnConst<U> *>(item_arg))
 		{
 			const auto col_res = std::make_shared<ResultColumnType>();
-			ColumnPtr col_ptr{col_res};
-			block.getByPosition(result).column = col_ptr;
+			block.getByPosition(result).column = col_res;
 
 			ArrayIndexNumImpl<T, U, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
 				item_arg_const->getData(), col_res->getData());
@@ -1005,8 +1004,7 @@ private:
 		else if (const auto item_arg_vector = typeid_cast<const ColumnVector<U> *>(item_arg))
 		{
 			const auto col_res = std::make_shared<ResultColumnType>();
-			ColumnPtr col_ptr{col_res};
-			block.getByPosition(result).column = col_ptr;
+			block.getByPosition(result).column = col_res;
 
 			ArrayIndexNumImpl<T, U, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
 				item_arg_vector->getData(), col_res->getData());
@@ -1034,8 +1032,7 @@ private:
 		if (const auto item_arg_const = typeid_cast<const ColumnConst<String> *>(item_arg))
 		{
 			const auto col_res = std::make_shared<ResultColumnType>();
-			ColumnPtr col_ptr{col_res};
-			block.getByPosition(result).column = col_ptr;
+			block.getByPosition(result).column = col_res;
 
 			ArrayIndexStringImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(),
 				col_nested->getOffsets(), item_arg_const->getData(), col_res->getData());
@@ -1043,8 +1040,7 @@ private:
 		else if (const auto item_arg_vector = typeid_cast<const ColumnString *>(item_arg))
 		{
 			const auto col_res = std::make_shared<ResultColumnType>();
-			ColumnPtr col_ptr{col_res};
-			block.getByPosition(result).column = col_ptr;
+			block.getByPosition(result).column = col_res;
 
 			ArrayIndexStringImpl<IndexConv>::vector_vector(col_nested->getChars(), col_array->getOffsets(),
 				col_nested->getOffsets(), item_arg_vector->getChars(), item_arg_vector->getOffsets(),
@@ -2534,9 +2530,9 @@ struct NameHas			{ static constexpr auto name = "has"; };
 struct NameIndexOf		{ static constexpr auto name = "indexOf"; };
 struct NameCountEqual	{ static constexpr auto name = "countEqual"; };
 
-using FunctionHas = FunctionArrayIndex<IndexToOne, 		NameHas>	;
-using FunctionIndexOf = FunctionArrayIndex<IndexIdentity, 	NameIndexOf>;
-using FunctionCountEqual = FunctionArrayIndex<IndexCount, 	NameCountEqual>	;
+using FunctionHas = FunctionArrayIndex<IndexToOne, NameHas>;
+using FunctionIndexOf = FunctionArrayIndex<IndexIdentity, NameIndexOf>;
+using FunctionCountEqual = FunctionArrayIndex<IndexCount, NameCountEqual>;
 
 using FunctionEmptyArrayUInt8 = FunctionEmptyArray<DataTypeUInt8>;
 using FunctionEmptyArrayUInt16 = FunctionEmptyArray<DataTypeUInt16>;
