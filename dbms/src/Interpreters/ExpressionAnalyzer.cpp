@@ -755,9 +755,8 @@ void ExpressionAnalyzer::executeScalarSubqueries()
 }
 
 
-static ASTPtr addTypeConversion(ASTLiteral * ast_, const String & type_name)
+static ASTPtr addTypeConversion(std::unique_ptr<ASTLiteral> && ast, const String & type_name)
 {
-	auto ast = std::unique_ptr<ASTLiteral>(ast_);
 	auto func = std::make_shared<ASTFunction>(ast->range);
 	ASTPtr res = func;
 	func->alias = ast->alias;
@@ -825,9 +824,9 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 		size_t columns = block.columns();
 		if (columns == 1)
 		{
-			auto lit = std::make_shared<ASTLiteral>(ast->range, (*block.getByPosition(0).column)[0]);
+			auto lit = std::make_unique<ASTLiteral>(ast->range, (*block.getByPosition(0).column)[0]);
 			lit->alias = subquery->alias;
-			ast = addTypeConversion(lit.get(), block.getByPosition(0).type->getName());
+			ast = addTypeConversion(std::move(lit), block.getByPosition(0).type->getName());
 		}
 		else
 		{
@@ -844,7 +843,7 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 			for (size_t i = 0; i < columns; ++i)
 			{
 				exp_list->children[i] = addTypeConversion(
-					std::make_unique<ASTLiteral>(ast->range, (*block.getByPosition(i).column)[0]).get(),
+					std::make_unique<ASTLiteral>(ast->range, (*block.getByPosition(i).column)[0]),
 					block.getByPosition(i).type->getName());
 			}
 		}
