@@ -224,7 +224,7 @@ More optimal version of same query:
 
 SELECT Year, avg(DepDelay > 10) FROM ontime GROUP BY Year ORDER BY Year
 
-Q8. Most popular destination in sense count of direct connected cities for different diapason of years.
+Q8. Most popular destination in sense count of direct connected cities for different range of years.
 SELECT DestCityName, uniqExact(OriginCityName) AS u FROM ontime WHERE Year >= 2000 and Year <= 2010 GROUP BY DestCityName ORDER BY u DESC LIMIT 10;
 
 Q9. select Year, count(*) as c1 from ontime group by Year;
