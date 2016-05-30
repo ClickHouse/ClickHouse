@@ -147,11 +147,3 @@ struct BlockExtraInfo
 };
 
 }
-
-namespace std
-{
-	template<> inline void swap<DB::Block>(DB::Block & one, DB::Block & another) noexcept
-	{
-		one.swap(another);
-	}
-}
