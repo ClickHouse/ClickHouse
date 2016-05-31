@@ -155,6 +155,9 @@ using STL_NAMESPACE::vector;
 
 #include "libc_override.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+
 using tcmalloc::AlignmentForSize;
 using tcmalloc::kLog;
 using tcmalloc::kCrash;
@@ -1833,5 +1836,7 @@ extern "C" PERFTOOLS_DLL_DECL void* tc_malloc_skip_new_handler(size_t size)  PER
   MallocHook::InvokeNewHook(result, size);
   return result;
 }
+
+#pragma GCC diagnostic pop
 
 #endif  // TCMALLOC_USING_DEBUGALLOCATION

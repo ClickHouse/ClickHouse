@@ -14,6 +14,7 @@
 //
 
 
+#pragma GCC diagnostic push
 #if defined(__APPLE__)
 // Some OpenSSL functions are deprecated in OS X 10.7
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations" 
@@ -40,3 +41,5 @@ Session::~Session()
 
 
 } } // namespace Poco::Net
+
+#pragma GCC diagnostic pop

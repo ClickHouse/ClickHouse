@@ -143,7 +143,7 @@ public:
 		return chunk;
 	}
 
-	inline size_t getSize() const
+	inline size_t getSize() const override
 	{
 		return size;
 	}

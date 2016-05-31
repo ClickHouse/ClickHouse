@@ -58,7 +58,7 @@ namespace
 					ErrorCodes::INCORRECT_FILE_NAME
 				};
 
-			const auto user = unescapeForFileName({address.data(), has_pw ? colon : user_pw_end});
+			const auto user = unescapeForFileName({address.data(), has_pw ? static_cast<const char *>(colon) : user_pw_end});
 			const auto password = has_pw ? unescapeForFileName({colon + 1, user_pw_end}) : std::string{};
 			const auto host = unescapeForFileName({user_pw_end + 1, host_end});
 			const auto port = parse<UInt16>(host_end + 1);

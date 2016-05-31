@@ -37,7 +37,7 @@ std::string dumpArgTypes(const DataTypes & args)
 
 /// Forward declarations.
 template <typename TResult, typename TType>
-struct ResultDataTypeDeducer;
+class ResultDataTypeDeducer;
 
 /// Internal class used by ResultDataTypeDeducer. Calls ResultDataTypeDeducer
 /// for the next element to be processed.

@@ -172,7 +172,7 @@ public:
 			converted = std::make_unique<PaddedPODArray<TResult> >(array.size());
 			size_t size = array.size();
 			for (size_t i = 0; i < size; ++i)
-				(*converted)[i] = array[i].get<typename NearestFieldType<TType>::Type>();
+				(*converted)[i] = array[i].template get<typename NearestFieldType<TType>::Type>();
 		}
 
 		return {converted->data(), converted->size()};

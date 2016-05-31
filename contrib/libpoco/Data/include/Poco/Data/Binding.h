@@ -34,6 +34,10 @@
 #include <map>
 #include <cstddef>
 
+#pragma GCC diagnostic push
+#ifdef __clang__
+#pragma GCC diagnostic ignored "-Wunused-local-typedef"
+#endif
 
 namespace Poco {
 namespace Data {
@@ -1494,5 +1498,7 @@ inline AbstractBinding::Ptr bind(T t)
 
 } } // namespace Poco::Data
 
+
+#pragma GCC diagnostic pop
 
 #endif // Data_Binding_INCLUDED

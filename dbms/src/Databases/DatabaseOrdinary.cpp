@@ -230,7 +230,7 @@ public:
 		return it->first;
 	}
 
-	StoragePtr & table() const
+	StoragePtr & table() const override
 	{
 		return it->second;
 	}

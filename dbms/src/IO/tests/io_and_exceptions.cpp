@@ -13,9 +13,8 @@
   */
 
 /// В этом тесте намеренно ссылаемся за пределы массива.
-#ifdef __GNUC__
+#pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
-#endif
 
 using size_t = unsigned long;
 
@@ -161,3 +160,5 @@ void f()
 {
 	parse("123");
 }
+
+#pragma GCC diagnostic pop

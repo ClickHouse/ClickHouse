@@ -56,9 +56,8 @@
 #include "common.h"
 #include "internal_logging.h"
 
-#ifdef __GNUC__
+#pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
-#endif
 
 // On systems (like freebsd) that don't define MAP_ANONYMOUS, use the old
 // form of the name instead.
@@ -564,3 +563,5 @@ void TCMalloc_SystemCommit(void* start, size_t length) {
   // such that they need to be re-committed before they can be used by the
   // application.
 }
+
+#pragma GCC diagnostic pop

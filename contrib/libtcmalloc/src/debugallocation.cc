@@ -97,6 +97,12 @@
 # define MAP_ANONYMOUS MAP_ANON
 #endif
 
+#pragma GCC diagnostic push
+#ifdef __clang__
+#pragma GCC diagnostic ignored "-Wunused-private-field"
+#pragma GCC diagnostic ignored "-Wgnu-alignof-expression"
+#endif
+
 // ========================================================================= //
 
 DEFINE_bool(malloctrace,
@@ -1488,3 +1494,5 @@ extern "C" PERFTOOLS_DLL_DECL void* tc_malloc_skip_new_handler(size_t size) PERF
   MallocHook::InvokeNewHook(result, size);
   return result;
 }
+
+#pragma GCC diagnostic pop

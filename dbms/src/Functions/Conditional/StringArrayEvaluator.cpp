@@ -184,12 +184,12 @@ public:
 	{
 	}
 
-	size_t getDataSize() const
+	size_t getDataSize() const override
 	{
 		return data_size;
 	}
 
-	size_t getStringOffsetsSize() const
+	size_t getStringOffsetsSize() const override
 	{
 		return data.size();
 	}
