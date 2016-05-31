@@ -54,8 +54,10 @@
 
 #define VERSYM_VERSION 0x7fff
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-const-variable"
+#if __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-const-variable"
+#endif
 
 namespace base {
 
@@ -434,6 +436,8 @@ void ElfMemImage::SymbolIterator::Update(int increment) {
 
 }  // namespace base
 
-#pragma GCC diagnostic pop
+#if __clang__
+#pragma clang diagnostic pop
+#endif
 
 #endif  // HAVE_ELF_MEM_IMAGE
