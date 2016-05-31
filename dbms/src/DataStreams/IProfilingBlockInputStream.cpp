@@ -99,10 +99,10 @@ Block IProfilingBlockInputStream::read()
 
 void IProfilingBlockInputStream::readPrefix()
 {
+	readPrefixImpl();
+
 	for (auto & child : children)
 		child->readPrefix();
-
-	readPrefixImpl();
 }
 
 

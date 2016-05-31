@@ -18,25 +18,18 @@ Block CreatingSetsBlockInputStream::readImpl()
 {
 	Block res;
 
-	if (!created)
-	{
-		for (auto & elem : subqueries_for_sets)
-		{
-			if (elem.second.source)	/// Бывают заранее подготовленные Set/Join - для них не указывается source.
-			{
-				create(elem.second);
-				if (isCancelled())
-					return res;
-			}
-		}
-
-		created = true;
-	}
+	createAll();
 
 	if (isCancelled())
 		return res;
 
 	return children.back()->read();
+}
+
+
+void CreatingSetsBlockInputStream::readPrefixImpl()
+{
+	createAll();
 }
 
 
@@ -51,7 +44,27 @@ const Block & CreatingSetsBlockInputStream::getTotals()
 }
 
 
-void CreatingSetsBlockInputStream::create(SubqueryForSet & subquery)
+void CreatingSetsBlockInputStream::createAll()
+{
+	if (!created)
+	{
+		for (auto & elem : subqueries_for_sets)
+		{
+			if (elem.second.source)	/// Бывают заранее подготовленные Set/Join - для них не указывается source.
+			{
+				if (isCancelled())
+					return;
+
+				createOne(elem.second);
+			}
+		}
+
+		created = true;
+	}
+}
+
+
+void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 {
 	LOG_TRACE(log, (subquery.set ? "Creating set. " : "")
 		<< (subquery.join ? "Creating join. " : "")
