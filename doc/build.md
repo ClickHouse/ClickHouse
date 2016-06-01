@@ -120,7 +120,7 @@ Otherwise:
 sudo apt-get install scons
 git clone -b legacy https://github.com/mongodb/mongo-cxx-driver.git
 cd mongo-cxx-driver
-sudo scons --c++11 --release --cc=$CC --cxx=$CXX --disable-warnings-as-errors -j $THREADS --prefix=/usr/local install
+sudo scons --c++11 --release --cc=$CC --cxx=$CXX --ssl=0 --disable-warnings-as-errors -j $THREADS --prefix=/usr/local install
 cd ..
 ```
 
