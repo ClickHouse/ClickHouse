@@ -16,7 +16,7 @@ sudo apt-get install git cmake
 export THREADS=$(grep -c ^processor /proc/cpuinfo)
 ```
 
-## Install GCC 5.
+## Install GCC 5
 
 (GCC 6 is fine too)
 There are several ways to do it.
