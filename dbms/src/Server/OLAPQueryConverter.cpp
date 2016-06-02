@@ -18,15 +18,21 @@ namespace OLAP
 {
 
 QueryConverter::QueryConverter(Poco::Util::AbstractConfiguration & config)
+	: QueryConverter(
+		config.getString("olap_compatibility.table_for_single_counter"),
+		config.getString("olap_compatibility.table_for_all_counters"))
 {
-	table_for_single_counter = config.getString("olap_compatibility.table_for_single_counter");
-	table_for_all_counters = config.getString("olap_compatibility.table_for_all_counters");
+}
 
+QueryConverter::QueryConverter(const String & table_for_single_counter, const String & table_for_all_counters)
+	: table_for_single_counter(table_for_single_counter), table_for_all_counters(table_for_all_counters)
+{
 	fillFormattedAttributeMap();
 	fillNumericAttributeMap();
 	fillFormattingAggregatedAttributeMap();
 	attribute_metadatas = GetOLAPAttributeMetadata();
 }
+
 
 static std::string firstWord(std::string s)
 {
