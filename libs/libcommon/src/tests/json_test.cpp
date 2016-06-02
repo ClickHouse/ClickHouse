@@ -513,7 +513,7 @@ void get_string()
 		{ "\"/734859/samolet-radioupravlyaemyy-istrebitel-rabotaet-o\0k"s, ResultType::Throw, "JSON: incorrect syntax (expected end of string, found end of JSON)."s },
 		{ "\"/kosmetika-i-parfyum/parfyumeriya/mu\0t"s, ResultType::Throw, "JSON: incorrect syntax (expected end of string, found end of JSON)."s },
 		{ "\"/ko\0\x04"s, ResultType::Throw, "JSON: incorrect syntax (expected end of string, found end of JSON)."s },
-		{ ""s, ResultType::Throw, "JSON: expected \", got \0"s },
+		{ ""s, ResultType::Throw, "JSON: begin >= end."s },
 		{ "\"/stroitelstvo-i-remont/stroit\0t"s, ResultType::Throw, "JSON: incorrect syntax (expected end of string, found end of JSON)."s },
 		{ "\"/stroitelstvo-i-remont/stroitelnyy-instrument/av\0k"s, ResultType::Throw, "JSON: incorrect syntax (expected end of string, found end of JSON)."s },
 		{ "\"/s\0a"s, ResultType::Throw, "JSON: incorrect syntax (expected end of string, found end of JSON)."s },
@@ -636,15 +636,15 @@ void get_string()
 	{
 		static_cast<void>(i);
 
-		for (auto &r : test_data)
+		for (auto & r : test_data)
 		{
-			JSON j(r.input.c_str(), r.input.c_str() + r.input.size());
 			try
 			{
+				JSON j(r.input.c_str(), r.input.c_str() + r.input.size());
 				Test::compare(j.getString(), r.result);
 				Test::compare(r.result_type == ResultType::Return, true);
 			}
-			catch (JSONException &e)
+			catch (JSONException & e)
 			{
 				Test::compare(r.result_type == ResultType::Throw, true);
 				Test::compare(e.message(), r.result);
