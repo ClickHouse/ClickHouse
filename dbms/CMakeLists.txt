@@ -12,7 +12,7 @@ endif()
 if (${DISABLE_MONGODB})
 	add_definitions(-D DISABLE_MONGODB)
 else()
-	set (LINK_MONGOCLIENT libmongoclient.a)
+	set (LINK_MONGOCLIENT libmongoclient.a libssl.a libcrypto.a)
 endif()
 
 add_library (dbms
