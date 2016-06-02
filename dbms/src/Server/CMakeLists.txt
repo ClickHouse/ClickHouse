@@ -43,3 +43,10 @@ INSTALL(
 
 CREATE_INIT_SCRIPT(clickhouse-server clickhouse-server)
 
+
+add_executable(olap-query-converter
+	olap-query-converter.cpp
+	OLAPQueryParser.cpp
+	OLAPQueryConverter.cpp)
+
+target_link_libraries (olap-query-converter dbms)
