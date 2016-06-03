@@ -18,7 +18,6 @@
 
 Расширение пользовательской базы позволяет рассматривать примеры использования, о которых другим способом было бы трудно догадаться. Также это позволяет раньше находить баги и неудобства, которые имеют значение в том числе и для основного применения ClickHouse в Метрике. Без сомнения, это делает продукт качественнее.
 
-
 <b>Давайте рассмотрим, где находится ниша ClickHouse.</b> Зачем кому-то может понадобиться использовать ClickHouse, когда есть много других технологий для работы с большими данными?
 
 Если вам нужно просто хранить логи, у вас есть много вариантов. Вы можете загружать логи в Hadoop, анализировать их с помощью Hive, Spark или Impala. В этом случае, вам вовсе необязательно использовать ClickHouse. Всё становится сложнее, если вам нужно выполнять запросы в интерактивном режиме по неагрегированным данным, поступающим в систему в реальном времени. Для решения этой задачи, открытых технологий подходящего качества до сих пор не существовало.
@@ -27,15 +26,15 @@
 
 <ol>
 <li>Коммерческие OLAP СУБД для использования в собственной инфраструктуре.
-Примеры: HP Vertica, Actian Vector, Actian Matrix, Sybase IQ, SAP HANA и другие.
+Примеры: <a href="http://www8.hp.com/ru/ru/software-solutions/advanced-sql-big-data-analytics/">HP Vertica</a>, <a href="http://www.actian.com/products/big-data-analytics-platforms-with-hadoop/vector-smp-analytics-database/">Actian Vector</a>, <a href="http://www.actian.com/products/big-data-analytics-platforms-with-hadoop/matrix-mpp-analytics-databases/">Actian Matrix</a>, <a href="http://www.exasol.com/en/">EXASol</a>, <a href="https://go.sap.com/cis/cmp/ppc/crm-ru15-3di-ppc-it-a2/index.html">Sybase IQ</a> и другие.
 Наше отличие: мы сделали технологию открытой и бесплатной.
 </li>
 
-<li>Облачные решения. Примеры: Amazon Redshift и Google BigQuery.
+<li>Облачные решения. Примеры: <a href="http://aws.amazon.com/redshift/">Amazon Redshift</a> и <a href="https://cloud.google.com/bigquery/">Google BigQuery</a>.
 Наше отличие: клиент может использовать ClickHouse в своей инфраструктуре и не платить за облака.
 </li>
 
-<li>Надстройки над Hadoop. Примеры: Cloudera Impala, Facebook Presto, Apache Drill.
+<li>Надстройки над Hadoop. Примеры: <a href="http://impala.io/">Cloudera Impala</a>, <a href="http://spark.apache.org/sql/">Spark SQL</a>, <a href="https://prestodb.io/">Facebook Presto</a>, <a href="https://drill.apache.org/">Apache Drill</a>.
 Наши отличия:
 <ul>
 <li>в отличие от Hadoop, ClickHouse позволяет обслуживать аналитические запросы даже в рамках массового сервиса, доступного публично, такого как Яндекс.Метрика;</li>
@@ -45,12 +44,12 @@
 </ul>
 </li>
 
-<li>Open-source OLAP СУБД. Пример: InfiniDB, MonetDB, LucidDB.
+<li>Open-source OLAP СУБД. Пример: <a href="https://github.com/infinidb/infinidb">InfiniDB</a>, <a href="https://www.monetdb.org/">MonetDB</a>, <a href="https://github.com/LucidDB/luciddb">LucidDB</a>.
 Разработка всех этих проектов заброшена, они никогда не были достаточно зрелыми и, по сути, так и не вышли из альфа-версии. Эти системы не были распределёнными, что является критически необходимым для обработки больших данных. Активная разработка ClickHouse, зрелость технологии и ориентация на практические потребности, возникающие при обработке больших данных, обеспечечивается задачами Яндекса. Без использования «в бою» на реальных задачах, выходящих за рамки возможностей существующих систем, создать качественный продукт было бы невозможно.
 </li>
 
 <li>Open-source системы для аналитики, не являющиеся Relational OLAP СУБД.
-Пример: Metamarkets Druid, Apache Kylin.
+Пример: <a href="http://druid.io/">Metamarkets Druid</a>, <a href="http://kylin.apache.org/">Apache Kylin</a>.
 Нашё отличия: ClickHouse не требует предагрегации данных. ClickHouse поддерживает диалект языка SQL и предоставляет удобство реляционных СУБД.
 </li>
 </ol>
@@ -62,7 +61,7 @@
 
 <h1>Как перестать бояться и начать использовать ClickHouse</h1>
 
-Давайте рассмотрим начало работы с ClickHouse на примере «игрушечных» открытых данных — информации об авиаперелётах в США с 1987 по 2015 годы. Это нельзя назвать большими данными (всего 166 млн. строк, 63 GB несжатых данных), зато вы можете быстро скачать их и начать экспериментировать. Ссылка на Яндекс.Диск.
+Давайте рассмотрим начало работы с ClickHouse на примере «игрушечных» открытых данных — информации об авиаперелётах в США с 1987 по 2015 годы. Это нельзя назвать большими данными (всего 166 млн. строк, 63 GB несжатых данных), зато вы можете быстро скачать их и начать экспериментировать. TODO Ссылка на Яндекс.Диск.
 
 Также вы можете скачать данные из первоисточника. Как это сделать, написано <a href="https://github.com/yandex/ClickHouse/raw/master/doc/example_datasets/1_ontime.txt">здесь</a>.
 
@@ -70,8 +69,7 @@
 
 На Ubuntu и Debian Linux, вы можете установить ClickHouse из <a href="https://clickhouse.yandex/#download">готовых пакетов</a>. На других Linux системах, вы можете <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md">собрать ClickHouse из исходников</a> и установить его самостоятельно.
 
-Пакет clickhouse-client содержит программу <a href="https://clickhouse.yandex/reference_ru.html#%D0%9A%D0%BB%D0%B8%D0%B5%D0%BD%D1%82%20%D0%BA%D0%BE%D0%BC%D0%B0%D0%BD%D0%B4%D0%BD%D0%BE%D0%B9%20%D1%81%D1%82%D1%80%D0%BE%D0%BA%D0%B8">clickhouse-client</a> — клиент ClickHouse для работы в интерактивном режиме.
-Пакет clickhouse-server-base содержит бинарник clickhouse-server, а clickhouse-server-common — конфигурационные файлы к серверу.
+Пакет clickhouse-client содержит программу <a href="https://clickhouse.yandex/reference_ru.html#%D0%9A%D0%BB%D0%B8%D0%B5%D0%BD%D1%82%20%D0%BA%D0%BE%D0%BC%D0%B0%D0%BD%D0%B4%D0%BD%D0%BE%D0%B9%20%D1%81%D1%82%D1%80%D0%BE%D0%BA%D0%B8">clickhouse-client</a> — клиент ClickHouse для работы в интерактивном режиме. Пакет clickhouse-server-base содержит бинарник clickhouse-server, а clickhouse-server-common — конфигурационные файлы к серверу.
 
 Конфигурационные файлы сервера находятся в /etc/clickhouse-server/. Главное, на что следует обратить внимание перед началом работы — элемент path — место хранения данных. Не обязательно модифицировать непосредственно файл config.xml — это не очень удобно при обновлении пакетов. Вместо этого, можно переопределить нужные элементы <a href="https://clickhouse.yandex/reference_ru.html#%D0%9A%D0%BE%D0%BD%D1%84%D0%B8%D0%B3%D1%83%D1%80%D0%B0%D1%86%D0%B8%D0%BE%D0%BD%D0%BD%D1%8B%D0%B5%20%D1%84%D0%B0%D0%B9%D0%BB%D1%8B">в файлах в config.d директории</a>.
 Также имеет смысл обратить внимание на <a href="https://clickhouse.yandex/reference_ru.html#%D0%9F%D1%80%D0%B0%D0%B2%D0%B0%20%D0%B4%D0%BE%D1%81%D1%82%D1%83%D0%BF%D0%B0">настройки прав доступа</a>.
@@ -79,8 +77,7 @@
 Сервер не запускается самостоятельно при установке пакета и не перезапускается сам при обновлении.
 Для запуска сервера, выполните:
 
-<code>sudo service clickhouse-server start</code>
-
+<source lang="Bash">sudo service clickhouse-server start</source>
 Логи сервера расположены по-умолчанию в директории /var/log/clickhouse-server/
 После появления сообщения Ready for connections в логе, сервер будет принимать соединения.
 
@@ -88,31 +85,30 @@
 
 <spoiler title="Короткая справка:">
 Работа в интерактивном режиме:
-<code>
+<source lang="Bash">
 clickhouse-client
 clickhouse-client --host=... --port=... --user=... --password=...
-</code>
+</source>
 Включить многострочные запросы:
-<code>
+<source lang="Bash">
 clickhouse-client -m
 clickhouse-client --multiline
-</code>
+</source>
 Выполнение запросов в batch режиме:
-<code>
+<source lang="Bash">
 clickhouse-client --query='SELECT 1'
 echo 'SELECT 1' | clickhouse-client
-</code>
+</source>
 Вставка данных в заданном формате:
-<code>
-clickhouse-client --query='INSERT INTO table VALUES' < data.txt
-clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
-</code>
+<source lang="Bash">
+clickhouse-client --query='INSERT INTO table VALUES' &lt; data.txt
+clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' &lt; data.tsv
+</source>
 </spoiler>
 
-<h2>Создадим таблицу для тестовых данных</h2>
-
+<h3>Создадим таблицу для тестовых данных</h3>
 <spoiler title="Создание таблицы:">
-<code>
+<source lang="Bash">
 $ clickhouse-client --multiline
 ClickHouse client version 0.0.53720.
 Connecting to localhost:9000.
@@ -231,128 +227,162 @@ Connected to ClickHouse server version 0.0.53720.
     Div5TailNum String
 )
 ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
-</code>
+</source>
 </spoiler>
-
 Мы создали таблицу типа <a href="https://clickhouse.yandex/reference_ru.html#MergeTree">MergeTree</a>. Таблицы семейства MergeTree рекомендуется использовать для любых серьёзных применений. Такие таблицы содержит первичный ключ, по которому данные инкрементально сортируются, что позволяет быстро выполнять запросы по диапазону первичного ключа.
 
 Например, если у нас есть логи рекламной сети, и нам нужно показывать отчёты для конкретных клиентов — рекламодателей, то первичный ключ в таблице должен начинаться на идентификатор клиента ClientId, чтобы для получения данных для одного клиента, достаточно было только прочитать небольшой диапазон данных.
 
-<h2>Загрузим данные в таблицу</h2>
-
-<code>xz -v -c -d < ontime.csv.xz | clickhouse-client --query="INSERT INTO ontime FORMAT CSV"</code>
-
-Запрос INSERT в ClickHouse позволяет загружать данные в любом <a href="https://clickhouse.yandex/reference_ru.html#%D0%A4%D0%BE%D1%80%D0%BC%D0%B0%D1%82%D1%8B">поддерживаемом формате</a>. При этом, на загрузку данных расходуется O(1) памяти. На вход запроса INSERT можно передать любой объём данных. Вставлять данные всегда следует <a href="https://clickhouse.yandex/reference_ru.html#%D0%9F%D1%80%D0%BE%D0%B8%D0%B7%D0%B2%D0%BE%D0%B4%D0%B8%D1%82%D0%B5%D0%BB%D1%8C%D0%BD%D0%BE%D1%81%D1%82%D1%8C%20%D0%BF%D1%80%D0%B8%20%D0%B2%D1%81%D1%82%D0%B0%D0%B2%D0%BA%D0%B5%20%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85.">пачками не слишком маленького размера</a>. При этом, вставка блоков данных размера до max_insert_block_size, 1&nbsp;048&nbsp;576 по-умолчанию, является атомарной: блок данных либо целиком вставится, либо целиком не вставится. В случае разрыва соединения в процессе вставки, вы можете не знать, вставился ли блок данных. Для достижения exactly once семантики, для <a href="https://clickhouse.yandex/reference_ru.html#%D0%A0%D0%B5%D0%BF%D0%BB%D0%B8%D0%BA%D0%B0%D1%86%D0%B8%D1%8F%20%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85">реплицированных таблиц</a>, поддерживается идемпотентность: вы можете вставить один и тот же блок данных повторно, возможно, на другую реплику, и он будет вставлен только один раз. В данном примере, мы вставляем данные из localhost, поэтому мы не беспокоимся о формировании пачек и exactly-once семантике.
+<h3>Загрузим данные в таблицу</h3>
+<source lang="Bash">xz -v -c -d &lt; ontime.csv.xz | clickhouse-client --query="INSERT INTO ontime FORMAT CSV"</source>
+Запрос INSERT в ClickHouse позволяет загружать данные в любом <a href="https://clickhouse.yandex/reference_ru.html#%D0%A4%D0%BE%D1%80%D0%BC%D0%B0%D1%82%D1%8B">поддерживаемом формате</a>. При этом, на загрузку данных расходуется O(1) памяти. На вход запроса INSERT можно передать любой объём данных. Вставлять данные всегда следует <a href="https://clickhouse.yandex/reference_ru.html#%D0%9F%D1%80%D0%BE%D0%B8%D0%B7%D0%B2%D0%BE%D0%B4%D0%B8%D1%82%D0%B5%D0%BB%D1%8C%D0%BD%D0%BE%D1%81%D1%82%D1%8C%20%D0%BF%D1%80%D0%B8%20%D0%B2%D1%81%D1%82%D0%B0%D0%B2%D0%BA%D0%B5%20%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85.">пачками не слишком маленького размера</a>. При этом, вставка блоков данных размера до max_insert_block_size (= 1&nbsp;048&nbsp;576 строк по-умолчанию), является атомарной: блок данных либо целиком вставится, либо целиком не вставится. В случае разрыва соединения в процессе вставки, вы можете не знать, вставился ли блок данных. Для достижения exactly once семантики, для <a href="https://clickhouse.yandex/reference_ru.html#%D0%A0%D0%B5%D0%BF%D0%BB%D0%B8%D0%BA%D0%B0%D1%86%D0%B8%D1%8F%20%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85">реплицированных таблиц</a>, поддерживается идемпотентность: вы можете вставить один и тот же блок данных повторно, возможно, на другую реплику, и он будет вставлен только один раз. В данном примере, мы вставляем данные из localhost, поэтому мы не беспокоимся о формировании пачек и exactly-once семантике.
 
 Запрос INSERT в таблицы типа MergeTree является неблокирующим, ровно как и SELECT. После загрузки данных, или даже во время процесса загрузки, мы уже можем выполнять SELECT-ы.
 
-<small>В данном примере, некоторая неоптимальность состоит в том, что в таблице используется тип данных String тогда, когда подошёл бы Enum или числовой тип. Если множество разных значений строк заведомо небольшое (пример: название операционной системы, производитель мобильного телефона), то для максимальной производительности, мы рекомендуем использовать Enum-ы или числа. Если множество строк потенциально неограничено (пример: поисковый запрос, URL), то используйте тип данных String.
+<small>В данном примере, некоторая неоптимальность состоит в том, что в таблице используется тип данных String тогда, когда подошёл бы <a href="https://clickhouse.yandex/reference_ru.html#Enum">Enum</a> или числовой тип. Если множество разных значений строк заведомо небольшое (пример: название операционной системы, производитель мобильного телефона), то для максимальной производительности, мы рекомендуем использовать Enum-ы или числа. Если множество строк потенциально неограничено (пример: поисковый запрос, URL), то используйте тип данных String.
 
 Во вторых отметим, что в данном примере, структура таблицы содержит избыточные столбцы Year, Quarter, Month, DayofMonth, DayOfWeek, тогда как достаточно одного FlightDate. Скорее всего, это сделано для эффективной работы других СУБД, в которых функции для работы с датой и временем, могут быть неэффективными. В случае ClickHouse, в этом нет необходимости, так как <a href="https://clickhouse.yandex/reference_ru.html#%D0%A4%D1%83%D0%BD%D0%BA%D1%86%D0%B8%D0%B8%20%D0%B4%D0%BB%D1%8F%20%D1%80%D0%B0%D0%B1%D0%BE%D1%82%D1%8B%20%D1%81%20%D0%B4%D0%B0%D1%82%D0%B0%D0%BC%D0%B8%20%D0%B8%20%D0%B2%D1%80%D0%B5%D0%BC%D0%B5%D0%BD%D0%B5%D0%BC">соответствующие функции</a> хорошо оптимизированы. Впрочем, в наличии лишних столбцов нет проблемы: так как ClickHouse — это <a href="https://en.wikipedia.org/wiki/Column-oriented_DBMS">столбцовая СУБД</a>, вы можете позволить себе иметь в таблице достаточно много столбцов. Сотни столбцов — это нормально для ClickHouse.</small>
 
-<h2>Примеры работы с загруженными данными</h2>
+<h3>Примеры работы с загруженными данными</h3>
 
 <ul>
-<li>какие направления были самыми популярными в 2015 году;
+<li><spoiler title="какие направления были самыми популярными в 2015 году;">
 <source lang="SQL">
 SELECT OriginCityName, DestCityName, count(*) AS flights, bar(flights, 0, 20000, 40) FROM ontime WHERE Year = 2015 GROUP BY OriginCityName, DestCityName ORDER BY flights DESC LIMIT 20
 </source>
 <source lang="SQL">
-SELECT OriginCityName < DestCityName ? OriginCityName : DestCityName AS a, OriginCityName < DestCityName ? DestCityName : OriginCityName AS b, count(*) AS flights, bar(flights, 0, 20000, 40) FROM ontime WHERE Year = 2015 GROUP BY a, b ORDER BY flights DESC LIMIT 20
-</source>
+SELECT
+    OriginCityName &lt; DestCityName ? OriginCityName : DestCityName AS a,
+    OriginCityName &lt; DestCityName ? DestCityName : OriginCityName AS b,
+    count(*) AS flights,
+    bar(flights, 0, 20000, 40)
+FROM ontime WHERE Year = 2015 GROUP BY a, b ORDER BY flights DESC LIMIT 20
+</source></spoiler>
 </li>
-<li>из каких городов отправляется больше рейсов;
+<li><spoiler title="из каких городов отправляется больше рейсов;">
 <source lang="SQL">
 SELECT OriginCityName, count(*) AS flights FROM ontime GROUP BY OriginCityName ORDER BY flights DESC LIMIT 20
-</source>
+</source></spoiler>
 </li>
-<li>из каких городов можно улететь в максимальное количество направлений;
+<li><spoiler title="из каких городов можно улететь по максимальному количеству направлений;">
 <source lang="SQL">
 SELECT OriginCityName, uniq(Dest) AS u FROM ontime GROUP BY OriginCityName ORDER BY u DESC LIMIT 20
-</source>
+</source></spoiler>
 </li>
-<li>как зависит задержка вылета рейсов от дня недели вылета;
+<li><spoiler title="как зависит задержка вылета рейсов от дня недели вылета;">
 <source lang="SQL">
-SELECT DayOfWeek, count() AS c, avg(DepDelay > 60) AS delays FROM ontime GROUP BY DayOfWeek ORDER BY DayOfWeek
-</source>
+SELECT DayOfWeek, count() AS c, avg(DepDelay &gt;  60) AS delays FROM ontime GROUP BY DayOfWeek ORDER BY DayOfWeek
+</source></spoiler>
 </li>
-<li>из каких городов, самолёты чаще задерживаются с вылетом более чем на час;
+<li><spoiler title="из каких городов, самолёты чаще задерживаются с вылетом более чем на час;">
 <source lang="SQL">
-SELECT OriginCityName, count() AS c, avg(DepDelay > 60) AS delays FROM ontime GROUP BY OriginCityName HAVING c > 100000 ORDER BY delays DESC LIMIT 20
-</source>
+SELECT OriginCityName, count() AS c, avg(DepDelay &gt;  60) AS delays
+FROM ontime
+GROUP BY OriginCityName
+HAVING c &gt;  100000
+ORDER BY delays DESC
+LIMIT 20
+</source></spoiler>
 </li>
-<li>какие наиболее длинные рейсы;
+<li><spoiler title="какие наиболее длинные рейсы;">
 <source lang="SQL">
-SELECT OriginCityName, DestCityName, count(*) AS flights, avg(AirTime) AS duration FROM ontime GROUP BY OriginCityName, DestCityName ORDER BY duration DESC LIMIT 20
-</source>
+SELECT OriginCityName, DestCityName, count(*) AS flights, avg(AirTime) AS duration
+FROM ontime
+GROUP BY OriginCityName, DestCityName
+ORDER BY duration DESC
+LIMIT 20
+</source></spoiler>
 </li>
-<li>распределение времени зарежки прилёта, по авиакомпаниям;
+<li><spoiler title="распределение времени зарежки прилёта, по авиакомпаниям;">
 <source lang="SQL">
-SELECT Carrier, count() AS c, round(quantileTDigest(0.99)(DepDelay), 2) AS q FROM ontime GROUP BY Carrier ORDER BY q DESC
-</source>
+SELECT Carrier, count() AS c, round(quantileTDigest(0.99)(DepDelay), 2) AS q
+FROM ontime GROUP BY Carrier ORDER BY q DESC
+</source></spoiler>
 </li>
-<li>какие авиакомпании прекратили перелёты;
+<li><spoiler title="какие авиакомпании прекратили перелёты;">
 <source lang="SQL">
-SELECT Carrier, min(Year), max(Year), count() FROM ontime GROUP BY Carrier HAVING max(Year) < 2015 ORDER BY count() DESC
-</source>
+SELECT Carrier, min(Year), max(Year), count()
+FROM ontime GROUP BY Carrier HAVING max(Year) &lt; 2015 ORDER BY count() DESC
+</source></spoiler>
 </li>
-<li>в какие города стали больше летать в 2015 году;
+<li><spoiler title="в какие города стали больше летать в 2015 году;">
 <source lang="SQL">
-SELECT DestCityName, sum(Year = 2014) AS c2014, sum(Year = 2015) AS c2015, c2015 / c2014 AS diff FROM ontime WHERE Year IN (2014, 2015) GROUP BY DestCityName HAVING c2014 > 10000 AND c2015 > 1000 AND diff > 1 ORDER BY diff DESC
-</source>
+SELECT
+    DestCityName,
+    sum(Year = 2014) AS c2014,
+    sum(Year = 2015) AS c2015,
+    c2015 / c2014 AS diff
+FROM ontime
+WHERE Year IN (2014, 2015)
+GROUP BY DestCityName
+HAVING c2014 &gt;  10000 AND c2015 &gt;  1000 AND diff &gt;  1
+ORDER BY diff DESC
+</source></spoiler>
 </li>
-<li>перелёты в какие города больше зависят от сезонности;
+<li><spoiler title="перелёты в какие города больше зависят от сезонности;">
 <source lang="SQL">
-SELECT DestCityName, any(total), avg(abs(monthly * 12 - total) / total) AS avg_month_diff FROM (SELECT DestCityName, count() AS total FROM ontime GROUP BY DestCityName HAVING total > 100000) ALL INNER JOIN (SELECT DestCityName, Month, count() AS monthly FROM ontime GROUP BY DestCityName, Month HAVING monthly > 10000) USING DestCityName GROUP BY DestCityName ORDER BY avg_month_diff DESC LIMIT 20
-</source>
+SELECT
+    DestCityName,
+    any(total),
+    avg(abs(monthly * 12 - total) / total) AS avg_month_diff
+FROM
+(
+    SELECT DestCityName, count() AS total
+    FROM ontime GROUP BY DestCityName HAVING total &gt; 100000
+)
+ALL INNER JOIN
+(
+    SELECT DestCityName, Month, count() AS monthly
+    FROM ontime GROUP BY DestCityName, Month HAVING monthly &gt; 10000
+)
+USING DestCityName
+GROUP BY DestCityName
+ORDER BY avg_month_diff DESC
+LIMIT 20
+</source></spoiler>
 </li>
 </ul>
 
-<h2>Теперь рассмотрим, как установить ClickHouse на кластер из нескольких серверов</h2>
-
+<h3>Теперь рассмотрим, как установить ClickHouse на кластер из нескольких серверов</h3>
 С точки зрения установленного ПО, кластер ClickHouse является однородным, без выделенных узлов. Вам надо установить ClickHouse на все серверы кластера, затем прописать конфигурацию кластера в конфигурационном файле, создать на каждом сервере локальную таблицу и затем создать <a href="https://clickhouse.yandex/reference_ru.html#Distributed">Distributed таблицу</a>.
 
 <a href="https://clickhouse.yandex/reference_ru.html#Distributed">Distributed таблица</a> представляет собой «вид» на локальные таблицы на кластере ClickHouse. При SELECT-е из распределённой таблицы, запрос будет обработан распределённо, с использованием ресурсов всех шардов кластера. Вы можете объявить конфигурации нескольких разных кластеров и создать несколько Distributed таблиц, которые смотрят на разные кластеры.
 
 <spoiler title="Конфигурация кластера из трёх шардов, в каждом из которых данные расположены только на одной реплике:">
-<code>
+<source lang="XML">
 &lt;remote_servers&gt;
-	&lt;perftest_3shards_1replicas&gt;
-			&lt;shard&gt;
-					&lt;replica&gt;
-							&lt;host&gt;example-perftest01j.yandex.ru&lt;/host&gt;
-							&lt;port&gt;9000&lt;/port&gt;
-					&lt;/replica&gt;
-			&lt;/shard&gt;
-			&lt;shard&gt;
-					&lt;replica&gt;
-							&lt;host&gt;example-perftest02j.yandex.ru&lt;/host&gt;
-							&lt;port&gt;9000&lt;/port&gt;
-					&lt;/replica&gt;
-			&lt;/shard&gt;
-			&lt;shard&gt;
-					&lt;replica&gt;
-							&lt;host&gt;example-perftest03j.yandex.ru&lt;/host&gt;
-							&lt;port&gt;9000&lt;/port&gt;
-					&lt;/replica&gt;
-			&lt;/shard&gt;
-	&lt;/perftest_3shards_1replicas&gt;
+    &lt;perftest_3shards_1replicas&gt;
+        &lt;shard&gt;
+            &lt;replica&gt;
+                &lt;host&gt;example-perftest01j.yandex.ru&lt;/host&gt;
+                &lt;port&gt;9000&lt;/port&gt;
+            &lt;/replica&gt;
+        &lt;/shard&gt;
+        &lt;shard&gt;
+            &lt;replica&gt;
+                &lt;host&gt;example-perftest02j.yandex.ru&lt;/host&gt;
+                &lt;port&gt;9000&lt;/port&gt;
+            &lt;/replica&gt;
+        &lt;/shard&gt;
+        &lt;shard&gt;
+            &lt;replica&gt;
+                &lt;host&gt;example-perftest03j.yandex.ru&lt;/host&gt;
+                &lt;port&gt;9000&lt;/port&gt;
+            &lt;/replica&gt;
+        &lt;/shard&gt;
+    &lt;/perftest_3shards_1replicas&gt;
 &lt;/remote_servers&gt;
-</code>
+</source>
 </spoiler>
-
 Создание локальной таблицы:
-<code>CREATE TABLE ontime_local (...) ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);</code>
-
+<source lang="SQL">CREATE TABLE ontime_local (...) ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);</source>
 Создание распределённой таблицы, которая смотрит на локальные таблицы на кластере:
-<code>CREATE TABLE ontime_all AS ontime_local ENGINE = Distributed(perftest_3shards_1replicas, default, ontime_local, rand());</code>
-
+<source lang="SQL">CREATE TABLE ontime_all AS ontime_local ENGINE = Distributed(perftest_3shards_1replicas, default, ontime_local, rand());</source>
 Вы можете создать Distributed таблицу на всех серверах кластера — тогда для выполнения распределённых запросов, можно будет обратиться на любой сервер кластера. Кроме Distributed таблицы, вы также можете воспользоваться <a href="https://clickhouse.yandex/reference_ru.html#remote">табличной функцией remote</a>.
 
 Для того, чтобы распределить таблицу по нескольким серверам, сделаем <a href="https://clickhouse.yandex/reference_ru.html#INSERT">INSERT SELECT</a> в Distributed таблицу.
 
-<code>INSERT INTO ontime_all SELECT * FROM ontime;</code>
-
+<source lang="SQL">INSERT INTO ontime_all SELECT * FROM ontime;</source>
 Отметим, что для перешардирования больших таблиц, такой способ не подходит, и вместо этого следует воспользоваться встроенной <a href="https://clickhouse.yandex/reference_ru.html#TODO">функциональностью перешардирования</a>.
 
 Как и ожидается, большинство запросов из распределённой таблицы на трёх серверах, работают в несколько раз быстрее.
@@ -363,82 +393,76 @@ TODO SELECT OriginCityName, count(*) AS flights FROM ontime GROUP BY OriginCityN
 В данном примере, мы использовали кластер из трёх шардов, каждый шард которого состоит из одной реплики. Для реальных задач, в целях отказоустойчивости, каждый шард должен состоять из двух или трёх реплик, расположенных в разных датацентрах. (Поддерживается произвольное количество реплик).
 
 <spoiler title="Конфигурация кластера из одного шарда, на котором данные расположены в трёх репликах:">
-<code>
+<source lang="XML">
 &lt;remote_servers&gt;
-	...
-	&lt;perftest_1shards_3replicas&gt;
-			&lt;shard&gt;
-					&lt;replica&gt;
-							&lt;host&gt;example-perftest01j.yandex.ru&lt;/host&gt;
-							&lt;port&gt;9000&lt;/port&gt;
-					&lt;/replica&gt;
-					&lt;replica&gt;
-							&lt;host&gt;example-perftest02j.yandex.ru&lt;/host&gt;
-							&lt;port&gt;9000&lt;/port&gt;
-					&lt;/replica&gt;
-					&lt;replica&gt;
-							&lt;host&gt;example-perftest03j.yandex.ru&lt;/host&gt;
-							&lt;port&gt;9000&lt;/port&gt;
-					&lt;/replica&gt;
-			&lt;/shard&gt;
-	&lt;/perftest_1shards_3replicas&gt;
+    ...
+    &lt;perftest_1shards_3replicas&gt;
+        &lt;shard&gt;
+            &lt;replica&gt;
+                &lt;host&gt;example-perftest01j.yandex.ru&lt;/host&gt;
+                &lt;port&gt;9000&lt;/port&gt;
+             &lt;/replica&gt;
+             &lt;replica&gt;
+                &lt;host&gt;example-perftest02j.yandex.ru&lt;/host&gt;
+                &lt;port&gt;9000&lt;/port&gt;
+             &lt;/replica&gt;
+             &lt;replica&gt;
+                &lt;host&gt;example-perftest03j.yandex.ru&lt;/host&gt;
+                &lt;port&gt;9000&lt;/port&gt;
+             &lt;/replica&gt;
+        &lt;/shard&gt;
+    &lt;/perftest_1shards_3replicas&gt;
 &lt;/remote_servers&gt;
-</code>
+</source>
 </spoiler>
-
 Для работы репликации (хранение метаданных и координация действий), требуется <a href="http://zookeeper.apache.org/">ZooKeeper</a>. ClickHouse самостоятельно будет обеспечивать консистентность данных на репликах и производит восстановление после сбоя. Рекомендуется расположить кластер ZooKeeper на отдельных серверах.
 
 <small>На самом деле, использование ZooKeeper не обязательно: в самых простых случаях, вы можете дублировать данные, записывая их на все реплики вручную, и не использовать встроенный механизм репликации. Но такой способ не рекомендуется — ведь в таком случае, ClickHouse не сможет обеспечивать консистентность данных на репликах.</small>
 
-Пропишите адреса ZooKeeper в конфигурационном файле.
-
-<code>
+<spoiler title="Пропишите адреса ZooKeeper в конфигурационном файле.">
+<source lang="XML">
 &lt;zookeeper-servers&gt;
-		&lt;node index="1"&gt;
-				&lt;host&gt;zoo01.yandex.ru&lt;/host&gt;
-				&lt;port&gt;2181&lt;/port&gt;
-		&lt;/node&gt;
-		&lt;node index="2"&gt;
-				&lt;host&gt;zoo02.yandex.ru&lt;/host&gt;
-				&lt;port&gt;2181&lt;/port&gt;
-		&lt;/node&gt;
-		&lt;node index="3"&gt;
-				&lt;host&gt;zoo03.yandex.ru&lt;/host&gt;
-				&lt;port&gt;2181&lt;/port&gt;
-		&lt;/node&gt;
+    &lt;node index="1"&gt;
+        &lt;host&gt;zoo01.yandex.ru&lt;/host&gt;
+        &lt;port&gt;2181&lt;/port&gt;
+    &lt;/node&gt;
+    &lt;node index="2"&gt;
+        &lt;host&gt;zoo02.yandex.ru&lt;/host&gt;
+        &lt;port&gt;2181&lt;/port&gt;
+    &lt;/node&gt;
+    &lt;node index="3"&gt;
+        &lt;host&gt;zoo03.yandex.ru&lt;/host&gt;
+        &lt;port&gt;2181&lt;/port&gt;
+    &lt;/node&gt;
 &lt;/zookeeper-servers&gt;
-</code>
-
+</source>
+</spoiler>
 Также пропишем подстановки, идентифицирующие шард и реплику — они будут использоваться при создании таблицы.
 
-<code>
+<source lang="XML">
 &lt;macros&gt;
-		&lt;shard&gt;01&lt;/shard&gt;
-		&lt;replica&gt;01&lt;/replica&gt;
+    &lt;shard&gt;01&lt;/shard&gt;
+    &lt;replica&gt;01&lt;/replica&gt;
 &lt;/macros&gt;
-</code>
-
+</source>
 При создании реплицированной таблицы, если других реплик ещё нет, то создаётся первая реплика, а если есть — создаётся новая реплика и клонирует данные существующих реплик. Вы можете сразу создать все таблицы-реплики и затем загрузить в них данные, либо сначала создать часть реплик, а затем добавить другие, уже после загрузки или во время загрузки данных.
 
-<code>
+<source lang="XML">
 CREATE TABLE ontime_replica (...)
 ENGINE = ReplicatedMergeTree(
-	'/clickhouse_perftest/tables/{shard}/ontime',
-	'{replica}',
-	FlightDate,
-	(Year, FlightDate),
-	8192);
-</code>
-
+    '/clickhouse_perftest/tables/{shard}/ontime',
+    '{replica}',
+    FlightDate,
+    (Year, FlightDate),
+    8192);
+</source>
 Здесь видно, что мы используем тип таблицы <a href="https://clickhouse.yandex/reference_ru.html#ReplicatedMergeTree">ReplicatedMergeTree</a>, указывая в качестве параметров путь в ZooKeeper, содержащий идентификатор шарда, а также идентификатор реплики.
 
-<code>INSERT INTO ontime_replica SELECT * FROM ontime;</code>
-
+<source lang="SQL">INSERT INTO ontime_replica SELECT * FROM ontime;</source>
 Репликация работает в режиме multi-master. Вы можете вставлять данные на любую реплику, и данные автоматически разъезжаются по всем репликам. При этом, репликация асинхронная, и в заданный момент времени, реплики могут содержать не все недавно записанные данные. Для записи данных, достаточно доступности хотя бы одной реплики. Остальные реплики будут скачивать новые данные как только станут активными. Такая схема допускает возможность потери только что вставленных данных.
 
 
 <h1>Как я могу повлиять на развитие ClickHouse?</h1>
-
 Если у вас возникли вопросы, вы можете задать их на Stackoverflow с тегом «clickhouse», создать тему для обсуждения в <a href="https://groups.google.com/group/clickhouse">группе</a> , или написать своё предложение на рассылку clickhouse-feedback@yandex-team.ru.
 
 Вы можете разрабатывать ClickHouse, присоединившись к нашей команде в Яндексе. Для этого достаточно знать C++. Выберите <a href="https://yandex.ru/jobs/vacancies/dev/?tags=c%2B%2B">любую вакансию из списка</a> и укажите, что хотите попасть в группу разработки ClickHouse. Также у нас открыт приём на <a href="https://yandex.ru/jobs/vacancies/interns/summer">стажировку</a>.
