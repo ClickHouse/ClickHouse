@@ -28,10 +28,12 @@
 <li>Коммерческие OLAP СУБД для использования в собственной инфраструктуре.
 Примеры: <a href="http://www8.hp.com/ru/ru/software-solutions/advanced-sql-big-data-analytics/">HP Vertica</a>, <a href="http://www.actian.com/products/big-data-analytics-platforms-with-hadoop/vector-smp-analytics-database/">Actian Vector</a>, <a href="http://www.actian.com/products/big-data-analytics-platforms-with-hadoop/matrix-mpp-analytics-databases/">Actian Matrix</a>, <a href="http://www.exasol.com/en/">EXASol</a>, <a href="https://go.sap.com/cis/cmp/ppc/crm-ru15-3di-ppc-it-a2/index.html">Sybase IQ</a> и другие.
 Наше отличие: мы сделали технологию открытой и бесплатной.
+
 </li>
 
 <li>Облачные решения. Примеры: <a href="http://aws.amazon.com/redshift/">Amazon Redshift</a> и <a href="https://cloud.google.com/bigquery/">Google BigQuery</a>.
 Наше отличие: клиент может использовать ClickHouse в своей инфраструктуре и не платить за облака.
+
 </li>
 
 <li>Надстройки над Hadoop. Примеры: <a href="http://impala.io/">Cloudera Impala</a>, <a href="http://spark.apache.org/sql/">Spark SQL</a>, <a href="https://prestodb.io/">Facebook Presto</a>, <a href="https://drill.apache.org/">Apache Drill</a>.
@@ -46,6 +48,7 @@
 
 <li>Open-source OLAP СУБД. Пример: <a href="https://github.com/infinidb/infinidb">InfiniDB</a>, <a href="https://www.monetdb.org/">MonetDB</a>, <a href="https://github.com/LucidDB/luciddb">LucidDB</a>.
 Разработка всех этих проектов заброшена, они никогда не были достаточно зрелыми и, по сути, так и не вышли из альфа-версии. Эти системы не были распределёнными, что является критически необходимым для обработки больших данных. Активная разработка ClickHouse, зрелость технологии и ориентация на практические потребности, возникающие при обработке больших данных, обеспечечивается задачами Яндекса. Без использования «в бою» на реальных задачах, выходящих за рамки возможностей существующих систем, создать качественный продукт было бы невозможно.
+
 </li>
 
 <li>Open-source системы для аналитики, не являющиеся Relational OLAP СУБД.
@@ -54,7 +57,7 @@
 </li>
 </ol>
 
-В рамках своей достаточно узкой ниши, у ClickHouse до сих пор нет альтернатив. В рамках более широкой области применения, ClickHouse может оказаться выгоднее других систем с точки зрения скорости обработки запросов, эффективности использования ресурсов и простоты эксплуатации.
+В рамках своей достаточно узкой ниши, у ClickHouse до сих пор нет альтернатив. В рамках более широкой области применения, ClickHouse может оказаться выгоднее других систем с точки зрения <a href="https://clickhouse.yandex/benchmark.html">скорости обработки запросов</a>, эффективности использования ресурсов и простоты эксплуатации.
 
 Поэтому нам выгодно сделать ClickHouse открытым сегодня.
 
@@ -83,7 +86,7 @@
 
 Для подключения к серверу, используйте программу clickhouse-client.
 
-<spoiler title="Короткая справка:">
+<spoiler title="Короткая справка">
 Работа в интерактивном режиме:
 <source lang="Bash">
 clickhouse-client
@@ -107,7 +110,7 @@ clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' &lt; data.tsv
 </spoiler>
 
 <h3>Создадим таблицу для тестовых данных</h3>
-<spoiler title="Создание таблицы:">
+<spoiler title="Создание таблицы">
 <source lang="Bash">
 $ clickhouse-client --multiline
 ClickHouse client version 0.0.53720.
@@ -233,7 +236,7 @@ ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
 
 Например, если у нас есть логи рекламной сети, и нам нужно показывать отчёты для конкретных клиентов — рекламодателей, то первичный ключ в таблице должен начинаться на идентификатор клиента ClientId, чтобы для получения данных для одного клиента, достаточно было только прочитать небольшой диапазон данных.
 
-<h3>Загрузим данные в таблицу</h3>
+<h3>Загружаем данные в таблицу</h3>
 <source lang="Bash">xz -v -c -d &lt; ontime.csv.xz | clickhouse-client --query="INSERT INTO ontime FORMAT CSV"</source>
 Запрос INSERT в ClickHouse позволяет загружать данные в любом <a href="https://clickhouse.yandex/reference_ru.html#%D0%A4%D0%BE%D1%80%D0%BC%D0%B0%D1%82%D1%8B">поддерживаемом формате</a>. При этом, на загрузку данных расходуется O(1) памяти. На вход запроса INSERT можно передать любой объём данных. Вставлять данные всегда следует <a href="https://clickhouse.yandex/reference_ru.html#%D0%9F%D1%80%D0%BE%D0%B8%D0%B7%D0%B2%D0%BE%D0%B4%D0%B8%D1%82%D0%B5%D0%BB%D1%8C%D0%BD%D0%BE%D1%81%D1%82%D1%8C%20%D0%BF%D1%80%D0%B8%20%D0%B2%D1%81%D1%82%D0%B0%D0%B2%D0%BA%D0%B5%20%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85.">пачками не слишком маленького размера</a>. При этом, вставка блоков данных размера до max_insert_block_size (= 1&nbsp;048&nbsp;576 строк по-умолчанию), является атомарной: блок данных либо целиком вставится, либо целиком не вставится. В случае разрыва соединения в процессе вставки, вы можете не знать, вставился ли блок данных. Для достижения exactly once семантики, для <a href="https://clickhouse.yandex/reference_ru.html#%D0%A0%D0%B5%D0%BF%D0%BB%D0%B8%D0%BA%D0%B0%D1%86%D0%B8%D1%8F%20%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85">реплицированных таблиц</a>, поддерживается идемпотентность: вы можете вставить один и тот же блок данных повторно, возможно, на другую реплику, и он будет вставлен только один раз. В данном примере, мы вставляем данные из localhost, поэтому мы не беспокоимся о формировании пачек и exactly-once семантике.
 
@@ -248,7 +251,12 @@ ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
 <ul>
 <li><spoiler title="какие направления были самыми популярными в 2015 году;">
 <source lang="SQL">
-SELECT OriginCityName, DestCityName, count(*) AS flights, bar(flights, 0, 20000, 40) FROM ontime WHERE Year = 2015 GROUP BY OriginCityName, DestCityName ORDER BY flights DESC LIMIT 20
+SELECT
+    OriginCityName,
+    DestCityName,
+    count(*) AS flights,
+    bar(flights, 0, 20000, 40)
+FROM ontime WHERE Year = 2015 GROUP BY OriginCityName, DestCityName ORDER BY flights DESC LIMIT 20
 </source>
 <source lang="SQL">
 SELECT
@@ -348,7 +356,7 @@ LIMIT 20
 
 <a href="https://clickhouse.yandex/reference_ru.html#Distributed">Distributed таблица</a> представляет собой «вид» на локальные таблицы на кластере ClickHouse. При SELECT-е из распределённой таблицы, запрос будет обработан распределённо, с использованием ресурсов всех шардов кластера. Вы можете объявить конфигурации нескольких разных кластеров и создать несколько Distributed таблиц, которые смотрят на разные кластеры.
 
-<spoiler title="Конфигурация кластера из трёх шардов, в каждом из которых данные расположены только на одной реплике:">
+<spoiler title="Конфигурация кластера из трёх шардов, в каждом из которых данные расположены только на одной реплике">
 <source lang="XML">
 &lt;remote_servers&gt;
     &lt;perftest_3shards_1replicas&gt;
@@ -392,7 +400,7 @@ TODO SELECT OriginCityName, count(*) AS flights FROM ontime GROUP BY OriginCityN
 
 В данном примере, мы использовали кластер из трёх шардов, каждый шард которого состоит из одной реплики. Для реальных задач, в целях отказоустойчивости, каждый шард должен состоять из двух или трёх реплик, расположенных в разных датацентрах. (Поддерживается произвольное количество реплик).
 
-<spoiler title="Конфигурация кластера из одного шарда, на котором данные расположены в трёх репликах:">
+<spoiler title="Конфигурация кластера из одного шарда, на котором данные расположены в трёх репликах">
 <source lang="XML">
 &lt;remote_servers&gt;
     ...
@@ -419,7 +427,7 @@ TODO SELECT OriginCityName, count(*) AS flights FROM ontime GROUP BY OriginCityN
 
 <small>На самом деле, использование ZooKeeper не обязательно: в самых простых случаях, вы можете дублировать данные, записывая их на все реплики вручную, и не использовать встроенный механизм репликации. Но такой способ не рекомендуется — ведь в таком случае, ClickHouse не сможет обеспечивать консистентность данных на репликах.</small>
 
-<spoiler title="Пропишите адреса ZooKeeper в конфигурационном файле.">
+<spoiler title="Пропишите адреса ZooKeeper в конфигурационном файле">
 <source lang="XML">
 &lt;zookeeper-servers&gt;
     &lt;node index="1"&gt;
@@ -462,7 +470,7 @@ ENGINE = ReplicatedMergeTree(
 Репликация работает в режиме multi-master. Вы можете вставлять данные на любую реплику, и данные автоматически разъезжаются по всем репликам. При этом, репликация асинхронная, и в заданный момент времени, реплики могут содержать не все недавно записанные данные. Для записи данных, достаточно доступности хотя бы одной реплики. Остальные реплики будут скачивать новые данные как только станут активными. Такая схема допускает возможность потери только что вставленных данных.
 
 
-<h1>Как я могу повлиять на развитие ClickHouse?</h1>
-Если у вас возникли вопросы, вы можете задать их на Stackoverflow с тегом «clickhouse», создать тему для обсуждения в <a href="https://groups.google.com/group/clickhouse">группе</a> , или написать своё предложение на рассылку clickhouse-feedback@yandex-team.ru.
+<h1>Как вы можете повлиять на развитие ClickHouse?</h1>
+Если у вас возникли вопросы, вы можете задать их в комментариях к этой статье, либо на <a href="http://stackoverflow.com/">Stackoverflow</a> с тегом «clickhouse». Также вы можете создать тему для обсуждения в <a href="https://groups.google.com/group/clickhouse">группе</a> или написать своё предложение на рассылку clickhouse-feedback@yandex-team.ru.
 
 Вы можете разрабатывать ClickHouse, присоединившись к нашей команде в Яндексе. Для этого достаточно знать C++. Выберите <a href="https://yandex.ru/jobs/vacancies/dev/?tags=c%2B%2B">любую вакансию из списка</a> и укажите, что хотите попасть в группу разработки ClickHouse. Также у нас открыт приём на <a href="https://yandex.ru/jobs/vacancies/interns/summer">стажировку</a>.
