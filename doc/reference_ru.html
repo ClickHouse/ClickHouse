@@ -398,21 +398,20 @@ OLAPServer хорошо подходил для неагрегированных
 
 <h3>Установка из пакетов</h3>
 
-<p>Пропишите в <span class="inline-example">/etc/apt/sources.list</span> (или в отдельный файл <span class="inline-example">/etc/apt/sources.list.d/metrika.list</span>) репозитории:</p>
+<p>Пропишите в <span class="inline-example">/etc/apt/sources.list</span> (или в отдельный файл <span class="inline-example">/etc/apt/sources.list.d/clickhouse.list</span>) репозитории:</p>
 
-<p>Для использования из внутренней сети Яндекса, на Ubuntu Trusty (14.04):</p>
-
-<pre class="text-example">
-deb http://dist.yandex.ru/metrika-trusty/ stable/amd64/
-</pre>
-
-<p>Для использования из внутренней сети Яндекса, на Ubuntu Precise (12.04):</p>
+<p>На Ubuntu Trusty (14.04):</p>
 
 <pre class="text-example">
-deb http://dist.yandex.ru/metrika/ stable/amd64/
+deb http://repo.yandex.ru/clickhouse/trusty/ dists/stable/main/binary-amd64/
 </pre>
 
-<p>Репозитории для использования вне Яндекса будут добавлены позже.</p>
+<p>На Ubuntu Precise (12.04):</p>
+
+<pre class="text-example">
+deb http://repo.yandex.ru/clickhouse/precise/ dists/stable/main/binary-amd64/
+</pre>
+
 
 <p>Затем выполните:</p>
 

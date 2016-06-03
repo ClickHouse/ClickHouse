@@ -373,21 +373,19 @@ The terminal must use UTF-8 encoding (the default in Ubuntu).</p>
 
 <h3>Installing from packages</h3>
 
-<p>In <span class="inline-example">/etc/apt/sources.list</span> (or in a separate <span class="inline-example">/etc/apt/sources.list.d/metrika.list</span> file), add the repository:</p>
+<p>In <span class="inline-example">/etc/apt/sources.list</span> (or in a separate <span class="inline-example">/etc/apt/sources.list.d/clickhouse.list</span> file), add the repository:</p>
 
-<p>For internal usage in Yandex, on Ubuntu Trusty (14.04):</p>
-
-<pre class="text-example">
-deb http://dist.yandex.ru/metrika-trusty/ stable/amd64/
-</pre>
-
-<p>For internal usage in Yandex, on Ubuntu Precise (12.04):</p>
+<p>On Ubuntu Trusty (14.04):</p>
 
 <pre class="text-example">
-deb http://dist.yandex.ru/metrika/ stable/amd64/
+deb http://repo.yandex.ru/clickhouse/trusty/ dists/stable/main/binary-amd64/
 </pre>
 
-<p>Repositories for external users will be documented soon.</p>
+<p>On Ubuntu Precise (12.04):</p>
+
+<pre class="text-example">
+deb http://repo.yandex.ru/clickhouse/precise/ dists/stable/main/binary-amd64/
+</pre>
 
 <p>Then run:</p>
 
