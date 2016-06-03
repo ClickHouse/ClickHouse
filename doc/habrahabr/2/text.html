@@ -322,7 +322,7 @@ WHERE Year IN (2014, 2015)
 GROUP BY DestCityName
 HAVING c2014 &gt;  10000 AND c2015 &gt;  1000 AND diff &gt;  1
 ORDER BY diff DESC
-</source><img src="https://habrastorage.org/files/7f0/754/8ef/7f07548efe6b48b0ac047ae7cdaca3c1.png"/></spoiler>
+</source><img src="https://habrastorage.org/files/f31/32f/4d1/f3132f4d1c0d42eab26d9111afe7771a.png"/></spoiler>
 </li>
 <li><spoiler title="перелёты в какие города больше зависят от сезонности;">
 <source lang="SQL">
@@ -390,11 +390,10 @@ LIMIT 20
 <source lang="SQL">INSERT INTO ontime_all SELECT * FROM ontime;</source>
 Отметим, что для перешардирования больших таблиц, такой способ не подходит, и вместо этого следует воспользоваться встроенной <a href="https://clickhouse.yandex/reference_ru.html#TODO">функциональностью перешардирования</a>.
 
-Как и ожидается, большинство запросов из распределённой таблицы на трёх серверах, работают в несколько раз быстрее.
+Как и ожидается, более-менее долгие запросы работают в несколько раз быстрее, если их выполнять на трёх серверах, а не на одном. <spoiler title="Пример">
+<img src="https://habrastorage.org/files/ece/020/129/ece020129fdf4a18a6e75daf2e699cb9.png"/>
 
-TODO SELECT OriginCityName, count(*) AS flights FROM ontime GROUP BY OriginCityName ORDER BY flights DESC LIMIT 20
-
-
+Можно заметить, что результат рассчёта квантилей слегка отличается. Это происходит, потому что реализация алгоритма <a href="https://github.com/tdunning/t-digest/raw/master/docs/t-digest-paper/histo.pdf">t-digest</a> является недетерминированной — зависит от порядка обработки данных.</spoiler>
 В данном примере, мы использовали кластер из трёх шардов, каждый шард которого состоит из одной реплики. Для реальных задач, в целях отказоустойчивости, каждый шард должен состоять из двух или трёх реплик, расположенных в разных датацентрах. (Поддерживается произвольное количество реплик).
 
 <spoiler title="Конфигурация кластера из одного шарда, на котором данные расположены в трёх репликах">
