@@ -1,0 +1,13 @@
+add_subdirectory(EchoServer)
+add_subdirectory(HTTPFormServer)
+add_subdirectory(HTTPLoadTest)
+add_subdirectory(HTTPTimeServer)
+add_subdirectory(Mail)
+add_subdirectory(Ping)
+add_subdirectory(SMTPLogger)
+add_subdirectory(TimeServer)
+add_subdirectory(WebSocketServer)
+add_subdirectory(dict)
+add_subdirectory(download)
+add_subdirectory(httpget)
+
