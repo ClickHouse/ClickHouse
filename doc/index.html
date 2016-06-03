@@ -247,10 +247,10 @@
 
 	<div class="menu">
 		<a class="menu_item" href="reference_en.html">Documentation</a>
-		<a class="menu_item" href="#" id="download_menu_item">Download</a>
+		<a class="menu_item" href="#download" id="download_menu_item">Download</a>
 		<a class="menu_item" href="https://github.com/yandex/ClickHouse">Source</a>
 		<a class="menu_item" href="benchmark.html">Benchmark</a>
-		<a class="menu_item" href="#" id="feedback">Feedback</a>
+		<a class="menu_item" href="#feedback" id="feedback">Feedback</a>
 	</div>
 
 	<p>ClickHouse manages extremely large volumes of data in a stable and sustainable manner. It&nbsp;currently powers <a href="https://metrica.yandex.com/">Yandex.Metrica</a>, world’s <a href="http://w3techs.com/technologies/overview/traffic_analysis/all">second largest</a> web analytics platform, with over 13 trillion database records and over 20 billion events a day, generating customized reports on-the-fly, directly from non-aggregated data. This system was successfully implemented at <a href="https://www.yandex.com/company/press_center/press_releases/2012/2012-04-10/">CERN’s LHCb experiment</a> to store and process metadata on 10bn events with over 1000 attributes per event registered in 2011.</p>
@@ -431,17 +431,19 @@ clickhouse-client
 	}
 
 	document.getElementById('feedback').addEventListener('click', function(e) {
-		class_name = 'feedback_form';
+		var class_name = 'feedback_form';
 		block_visible[class_name] ? hideBlock(class_name) : showBlock(class_name);
 		e.stopPropagation();
 	});
 
 	var show_download_block = function(e) {
-		class_name = 'download_instructions';
+		var class_name = 'download_instructions';
 		block_visible[class_name] ? hideBlock(class_name) : showBlock(class_name);
 		document.getElementById('download_big_button').style.display = 'none';
-		e.stopPropagation();
-		e.preventDefault();
+		if (e) {
+			e.stopPropagation();
+			e.preventDefault();
+		}
 		window.scrollTo(0, document.getElementsByClassName(class_name)[0].offsetTop);
 	};
 
@@ -460,6 +462,15 @@ clickhouse-client
 		hideBlock('download_instructions');
 		document.getElementById('download_big_button').style.display = 'inline';
 	});
+
+	if (location.hash == "#download") {
+		show_download_block();
+	}
+
+	if (location.hash == "#feedback") {
+		var class_name = 'feedback_form';
+		block_visible[class_name] ? hideBlock(class_name) : showBlock(class_name);
+	}
 
 	</script>
 
