@@ -257,30 +257,31 @@ SELECT
     count(*) AS flights,
     bar(flights, 0, 20000, 40)
 FROM ontime WHERE Year = 2015 GROUP BY OriginCityName, DestCityName ORDER BY flights DESC LIMIT 20
-</source>
+</source><img src="https://habrastorage.org/files/a85/18a/200/a8518a200d6d405a95ee80ea1c8e1c90.png"/>
 <source lang="SQL">
 SELECT
     OriginCityName &lt; DestCityName ? OriginCityName : DestCityName AS a,
     OriginCityName &lt; DestCityName ? DestCityName : OriginCityName AS b,
     count(*) AS flights,
-    bar(flights, 0, 20000, 40)
+    bar(flights, 0, 40000, 40)
 FROM ontime WHERE Year = 2015 GROUP BY a, b ORDER BY flights DESC LIMIT 20
-</source></spoiler>
+</source><img src="https://habrastorage.org/files/d35/78d/b55/d3578db55e304bd7b5eba818abdb53f5.png"/>
+</spoiler>
 </li>
 <li><spoiler title="из каких городов отправляется больше рейсов;">
 <source lang="SQL">
 SELECT OriginCityName, count(*) AS flights FROM ontime GROUP BY OriginCityName ORDER BY flights DESC LIMIT 20
-</source></spoiler>
+</source><img src="https://habrastorage.org/files/ef4/141/f34/ef4141f348234773a5349c4bd3e8f804.png"/></spoiler>
 </li>
 <li><spoiler title="из каких городов можно улететь по максимальному количеству направлений;">
 <source lang="SQL">
 SELECT OriginCityName, uniq(Dest) AS u FROM ontime GROUP BY OriginCityName ORDER BY u DESC LIMIT 20
-</source></spoiler>
+</source><img src="https://habrastorage.org/files/240/9f4/9d1/2409f49d11fb4aa1b8b5ff34cf9ca75d.png"/></spoiler>
 </li>
 <li><spoiler title="как зависит задержка вылета рейсов от дня недели вылета;">
 <source lang="SQL">
 SELECT DayOfWeek, count() AS c, avg(DepDelay &gt;  60) AS delays FROM ontime GROUP BY DayOfWeek ORDER BY DayOfWeek
-</source></spoiler>
+</source><img src="https://habrastorage.org/files/885/e50/793/885e507930e34b7c8f788d25e7ca2bcf.png"/></spoiler>
 </li>
 <li><spoiler title="из каких городов, самолёты чаще задерживаются с вылетом более чем на час;">
 <source lang="SQL">
@@ -290,7 +291,7 @@ GROUP BY OriginCityName
 HAVING c &gt;  100000
 ORDER BY delays DESC
 LIMIT 20
-</source></spoiler>
+</source><img src="https://habrastorage.org/files/ac2/926/56d/ac292656d03946d0aba35c75783a31f2.png"/></spoiler>
 </li>
 <li><spoiler title="какие наиболее длинные рейсы;">
 <source lang="SQL">
@@ -299,19 +300,19 @@ FROM ontime
 GROUP BY OriginCityName, DestCityName
 ORDER BY duration DESC
 LIMIT 20
-</source></spoiler>
+</source><img src="https://habrastorage.org/files/7b3/c2e/685/7b3c2e685832439b8c373bf2015131d2.png"/></spoiler>
 </li>
 <li><spoiler title="распределение времени зарежки прилёта, по авиакомпаниям;">
 <source lang="SQL">
 SELECT Carrier, count() AS c, round(quantileTDigest(0.99)(DepDelay), 2) AS q
 FROM ontime GROUP BY Carrier ORDER BY q DESC
-</source></spoiler>
+</source><img src="https://habrastorage.org/files/49c/332/e3d/49c332e3d93146ba8f46beef6b2b02b0.png"/></spoiler>
 </li>
 <li><spoiler title="какие авиакомпании прекратили перелёты;">
 <source lang="SQL">
 SELECT Carrier, min(Year), max(Year), count()
 FROM ontime GROUP BY Carrier HAVING max(Year) &lt; 2015 ORDER BY count() DESC
-</source></spoiler>
+</source><img src="https://habrastorage.org/files/249/56f/1a2/24956f1a2efc48d78212586958aa036c.png"/></spoiler>
 </li>
 <li><spoiler title="в какие города стали больше летать в 2015 году;">
 <source lang="SQL">
@@ -325,7 +326,7 @@ WHERE Year IN (2014, 2015)
 GROUP BY DestCityName
 HAVING c2014 &gt;  10000 AND c2015 &gt;  1000 AND diff &gt;  1
 ORDER BY diff DESC
-</source></spoiler>
+</source><img src="https://habrastorage.org/files/7f0/754/8ef/7f07548efe6b48b0ac047ae7cdaca3c1.png"/></spoiler>
 </li>
 <li><spoiler title="перелёты в какие города больше зависят от сезонности;">
 <source lang="SQL">
@@ -347,7 +348,7 @@ USING DestCityName
 GROUP BY DestCityName
 ORDER BY avg_month_diff DESC
 LIMIT 20
-</source></spoiler>
+</source><img src="https://habrastorage.org/files/26b/2c7/aae/26b2c7aae21a4c76800cb1c7a33a374d.png"/></spoiler>
 </li>
 </ul>
 
@@ -430,15 +431,15 @@ TODO SELECT OriginCityName, count(*) AS flights FROM ontime GROUP BY OriginCityN
 <spoiler title="Пропишите адреса ZooKeeper в конфигурационном файле">
 <source lang="XML">
 &lt;zookeeper-servers&gt;
-    &lt;node index="1"&gt;
+    &lt;node&gt;
         &lt;host&gt;zoo01.yandex.ru&lt;/host&gt;
         &lt;port&gt;2181&lt;/port&gt;
     &lt;/node&gt;
-    &lt;node index="2"&gt;
+    &lt;node&gt;
         &lt;host&gt;zoo02.yandex.ru&lt;/host&gt;
         &lt;port&gt;2181&lt;/port&gt;
     &lt;/node&gt;
-    &lt;node index="3"&gt;
+    &lt;node&gt;
         &lt;host&gt;zoo03.yandex.ru&lt;/host&gt;
         &lt;port&gt;2181&lt;/port&gt;
     &lt;/node&gt;
@@ -467,7 +468,7 @@ ENGINE = ReplicatedMergeTree(
 Здесь видно, что мы используем тип таблицы <a href="https://clickhouse.yandex/reference_ru.html#ReplicatedMergeTree">ReplicatedMergeTree</a>, указывая в качестве параметров путь в ZooKeeper, содержащий идентификатор шарда, а также идентификатор реплики.
 
 <source lang="SQL">INSERT INTO ontime_replica SELECT * FROM ontime;</source>
-Репликация работает в режиме multi-master. Вы можете вставлять данные на любую реплику, и данные автоматически разъезжаются по всем репликам. При этом, репликация асинхронная, и в заданный момент времени, реплики могут содержать не все недавно записанные данные. Для записи данных, достаточно доступности хотя бы одной реплики. Остальные реплики будут скачивать новые данные как только станут активными. Такая схема допускает возможность потери только что вставленных данных.
+Репликация работает в режиме multi-master. Вы можете вставлять данные на любую реплику, и данные автоматически разъезжаются по всем репликам. При этом, репликация асинхронная, и в заданный момент времени, реплики могут содержать не все недавно записанные данные. Для записи данных, достаточно доступности хотя бы одной реплики. Остальные реплики будут скачивать новые данные и восстанавливать консистентность как только станут активными. Такая схема допускает возможность потери только что вставленных данных.
 
 
 <h1>Как вы можете повлиять на развитие ClickHouse?</h1>
