@@ -21,63 +21,25 @@ class ODBCDictionarySource final : public IDictionarySource
 public:
 	ODBCDictionarySource(const DictionaryStructure & dict_struct_,
 		const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-		const Block & sample_block)
-		: dict_struct{dict_struct_},
-		  db{config.getString(config_prefix + ".db", "")},
-		  table{config.getString(config_prefix + ".table")},
-		  where{config.getString(config_prefix + ".where", "")},
-		  sample_block{sample_block},
-		  pool{std::make_shared<Poco::Data::SessionPool>(
-			  config.getString(config_prefix + ".connector", "ODBC"),
-			  config.getString(config_prefix + ".connection_string"))},
-		  query_builder{dict_struct, db, table, where},
-		  load_all_query{query_builder.composeLoadAllQuery()}
-	{}
+		const Block & sample_block);
 
 	/// copy-constructor is provided in order to support cloneability
-	ODBCDictionarySource(const ODBCDictionarySource & other)
-		: dict_struct{other.dict_struct},
-		  db{other.db},
-		  table{other.table},
-		  where{other.where},
-		  sample_block{other.sample_block},
-		  pool{other.pool},
-		  query_builder{dict_struct, db, table, where},
-		  load_all_query{other.load_all_query}
-	{}
+	ODBCDictionarySource(const ODBCDictionarySource & other);
 
-	BlockInputStreamPtr loadAll() override
-	{
-		LOG_TRACE(log, load_all_query);
-		return std::make_shared<ODBCBlockInputStream>(pool->get(), load_all_query, sample_block, max_block_size);
-	}
+	BlockInputStreamPtr loadAll() override;
 
-	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
-	{
-		const auto query = query_builder.composeLoadIdsQuery(ids);
-		return std::make_shared<ODBCBlockInputStream>(pool->get(), query, sample_block, max_block_size);
-	}
+	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override;
 
 	BlockInputStreamPtr loadKeys(
-		const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows) override
-	{
-		const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-		return std::make_shared<ODBCBlockInputStream>(pool->get(), query, sample_block, max_block_size);
-	}
+		const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows) override;
 
-	bool isModified() const override
-	{
-		return true;
-	}
+	bool isModified() const override;
 
-	bool supportsSelectiveLoad() const override { return true; }
+	bool supportsSelectiveLoad() const override;
 
-	DictionarySourcePtr clone() const override { return std::make_unique<ODBCDictionarySource>(*this); }
+	DictionarySourcePtr clone() const override;
 
-	std::string toString() const override
-	{
-		return "ODBC: " + db + '.' + table + (where.empty() ? "" : ", where: " + where);
-	}
+	std::string toString() const override;
 
 private:
 	Logger * log = &Logger::get("ODBCDictionarySource");
