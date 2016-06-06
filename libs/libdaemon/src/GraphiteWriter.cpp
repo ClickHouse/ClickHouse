@@ -7,6 +7,8 @@
 #include <mutex>
 #include <iomanip>
 
+#include <statdaemons/EnvironmentDetector.h>
+
 
 GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::string & sub_path)
 {
@@ -62,14 +64,7 @@ std::string getPostfix()
 	std::string hostname = Poco::Net::DNS::hostName();
 	hostname = hostname.substr(0, hostname.find('.'));
 
-	const std::string development_suffix = "dev";
-	if (hostname.back() == 't')
-		path_full << "test.";
-	else if (hostname.size() > development_suffix.size() &&
-			hostname.substr(hostname.size() - development_suffix.size()) == development_suffix)
-		path_full << "development.";
-	else
-		path_full << "production.";
+	path_full << getEnvironmentString();
 
 	const BaseDaemon & daemon = BaseDaemon::instance();
 
