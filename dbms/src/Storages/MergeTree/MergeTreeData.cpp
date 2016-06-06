@@ -379,12 +379,34 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 }
 
 
+/** Является ли директория куска старой.
+  * Это так, если её дата модификации,
+  *  и одновременно дата модификации всех файлов внутри неё
+  *  (рассматриваются файлы только на одном уровне вложенности),
+  *  меньше threshold.
+  */
+static bool isOldPartDirectory(Poco::File & directory, time_t threshold)
+{
+	if (directory.getLastModified().epochTime() >= threshold)
+		return false;
+
+	Poco::DirectoryIterator end;
+	for (Poco::DirectoryIterator it(directory); it != end; ++it)
+		if (it->getLastModified().epochTime() >= threshold)
+			return false;
+
+	return true;
+}
+
+
 void MergeTreeData::clearOldTemporaryDirectories()
 {
 	/// Если метод уже вызван из другого потока, то можно ничего не делать.
 	std::unique_lock<std::mutex> lock(clear_old_temporary_directories_mutex, std::defer_lock);
 	if (!lock.try_lock())
 		return;
+
+	time_t current_time = time(0);
 
 	/// Удаляем временные директории старше суток.
 	Poco::DirectoryIterator end;
@@ -396,7 +418,7 @@ void MergeTreeData::clearOldTemporaryDirectories()
 
 			try
 			{
-				if (tmp_dir.isDirectory() && tmp_dir.getLastModified().epochTime() + 86400 < time(0))
+				if (tmp_dir.isDirectory() && isOldPartDirectory(tmp_dir, current_time - settings.temporary_directories_lifetime))
 				{
 					LOG_WARNING(log, "Removing temporary directory " << full_path << it.name());
 					Poco::File(full_path + it.name()).remove(true);
