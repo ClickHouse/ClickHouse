@@ -674,7 +674,16 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 	bool force_update_metadata;
 	createConvertExpression(part, part->columns, new_columns, expression, transaction->rename_map, force_update_metadata);
 
-	if (!skip_sanity_checks && transaction->rename_map.size() > settings.max_files_to_modify_in_alter_columns)
+	size_t num_files_to_modify = transaction->rename_map.size();
+	size_t num_files_to_remove = 0;
+
+	for (const auto & from_to : transaction->rename_map)
+		if (from_to.second.empty())
+			++num_files_to_remove;
+
+	if (!skip_sanity_checks
+		&& (num_files_to_modify > settings.max_files_to_modify_in_alter_columns
+			|| num_files_to_remove > settings.max_files_to_remove_in_alter_columns))
 	{
 		transaction->clear();
 
@@ -686,7 +695,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 		for (const auto & from_to : transaction->rename_map)
 		{
 			if (!first)
-					exception_message << ", ";
+				exception_message << ", ";
 			exception_message << "from '" << from_to.first << "' to '" << from_to.second << "'";
 			first = false;
 		}
