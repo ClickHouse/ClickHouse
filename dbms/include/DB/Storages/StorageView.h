@@ -61,6 +61,10 @@ protected:
 		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_);
+
+private:
+	/// Достать из самого внутреннего подзапроса имя базы данных и таблицы: select_database_name, select_table_name.
+	void extractDependentTable(const ASTSelectQuery & query);
 };
 
 }
