@@ -40,6 +40,16 @@ HashedDictionary::HashedDictionary(const HashedDictionary & other)
 }
 
 
+void HashedDictionary::toParent(const PaddedPODArray<id_t> & ids, PaddedPODArray<id_t> & out) const
+{
+	const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+
+	getItemsNumber<UInt64>(*hierarchical_attribute, ids,
+		[&] (const std::size_t row, const UInt64 value) { out[row] = value; },
+		[&] (const std::size_t) { return null_value; });
+}
+
+
 #define DECLARE(TYPE)\
 void HashedDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, PaddedPODArray<TYPE> & out) const\
 {\
