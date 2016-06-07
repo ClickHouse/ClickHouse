@@ -41,7 +41,7 @@ public:
 	{
 		empty_count.wait();
 		{
-			Poco::ScopedLock<Poco::Mutex> lock(mutex);
+			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 			queue.emplace(std::forward<Args>(args)...);
 		}
 		fill_count.set();
@@ -78,7 +78,7 @@ public:
 		if (empty_count.tryWait(milliseconds))
 		{
 			{
-				Poco::ScopedLock<Poco::Mutex> lock(mutex);
+				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 				queue.emplace(std::forward<Args>(args)...);
 			}
 			fill_count.set();
