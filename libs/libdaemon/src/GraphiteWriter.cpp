@@ -51,35 +51,6 @@ GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::strin
 		root_path += "." + sub_path;
 }
 
-std::string GraphiteWriter::getPerLayerPath(const std::string & prefix)
-{
-	const BaseDaemon & daemon = BaseDaemon::instance();
-	return getPerLayerPath(prefix, getEnvironment(), daemon.getLayer());
-}
-
-std::string GraphiteWriter::getPerLayerPath(const std::string & prefix, Environment environment, boost::optional<size_t> layer)
-{
-	std::stringstream path_full;
-	if (prefix.size())
-		path_full << prefix << ".";
-
-	path_full << environmentToString(environment) << ".";
-
-	if (layer)
-		path_full << "layer" << std::setfill('0') << std::setw(3) << *layer << ".";
-
-	/// Когда несколько демонов запускается на одной машине
-	/// к имени демона добавляется цифра.
-	/// Удалим последнюю цифру
-	std::locale locale;
-	std::string command_name = BaseDaemon::instance().commandName();
-	if (std::isdigit(command_name.back(), locale))
-		command_name = command_name.substr(0, command_name.size() - 1);
-	path_full << command_name;
-
-	return path_full.str();
-}
-
 std::string GraphiteWriter::getPerServerPath(const std::string & server_name, const std::string & root_path)
 {
 	std::string path = root_path + "." + server_name;
