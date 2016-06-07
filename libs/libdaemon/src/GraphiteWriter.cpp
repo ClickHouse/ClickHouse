@@ -51,42 +51,33 @@ GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::strin
 		root_path += "." + sub_path;
 }
 
-std::string getPostfix()
+std::string GraphiteWriter::getPerLayerPath(const std::string & prefix)
 {
-	/// Угадываем имя среды по имени машинки
-	/// машинки имеют имена вида example01dt.yandex.ru
-	/// t - test
-	/// dev - development
-	/// никакого суффикса - production
-
-	std::stringstream path_full;
-
-	std::string hostname = Poco::Net::DNS::hostName();
-	hostname = hostname.substr(0, hostname.find('.'));
-
-	path_full << getEnvironmentString();
-
 	const BaseDaemon & daemon = BaseDaemon::instance();
+	return getPerLayerPath(prefix, getEnvironment(), daemon.getLayer());
+}
 
-	if (daemon.getLayer())
-		path_full << "layer" << std::setfill('0') << std::setw(3) << *daemon.getLayer() << ".";
+std::string GraphiteWriter::getPerLayerPath(const std::string & prefix, Environment environment, boost::optional<size_t> layer)
+{
+	std::stringstream path_full;
+	if (prefix.size())
+		path_full << prefix << ".";
+
+	path_full << environmentToString(environment) << ".";
+
+	if (layer)
+		path_full << "layer" << std::setfill('0') << std::setw(3) << *layer << ".";
 
 	/// Когда несколько демонов запускается на одной машине
 	/// к имени демона добавляется цифра.
 	/// Удалим последнюю цифру
 	std::locale locale;
-	std::string command_name = daemon.commandName();
+	std::string command_name = BaseDaemon::instance().commandName();
 	if (std::isdigit(command_name.back(), locale))
 		command_name = command_name.substr(0, command_name.size() - 1);
 	path_full << command_name;
 
 	return path_full.str();
-}
-
-std::string GraphiteWriter::getPerLayerPath(const std::string & prefix)
-{
-	const std::string static postfix = getPostfix();
-	return prefix + "." + postfix;
 }
 
 std::string GraphiteWriter::getPerServerPath(const std::string & server_name, const std::string & root_path)
