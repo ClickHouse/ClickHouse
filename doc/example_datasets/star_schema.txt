@@ -1,0 +1,8 @@
+git clone https://github.com/electrum/ssb-dbgen.git
+
+In shared.h file change MAXAGG_LEN from 10 to 20.
+In makefile change MACHINE to Linux
+
+make
+
+
