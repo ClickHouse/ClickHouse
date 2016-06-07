@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+
+if [ -x "/etc/init.d/clickhouse-server" ]; then
+	update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
+fi
+
+useradd -p "" metrika ||:
+
+if id metrika > /dev/null 2>&1; then
+	mkdir -p /opt/clickhouse/data/default/
+	mkdir -p /opt/clickhouse/metadata/default/
+	mkdir -p /opt/cores/
+	chown metrika: /opt/clickhouse /opt/cores /opt/clickhouse/data /opt/clickhouse/metadata /opt/clickhouse/data/default /opt/clickhouse/metadata/default
+	# Очистка старых результатов динамической компиляции.
+	if [ -d "/opt/clickhouse/build" ]; then
+		rm -f /opt/clickhouse/build/*.cpp /opt/clickhouse/build/*.so ||:
+	fi
+else
+	echo "User metrika doesn't exist."
+	exit 1
+fi
+
+exit 0

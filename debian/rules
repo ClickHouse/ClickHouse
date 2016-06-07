@@ -1,0 +1,162 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+ifndef THREADS_COUNT
+    THREADS_COUNT=24
+endif
+
+configure-stamp:
+	dh_testdir
+	rm -rf build
+	make clean 1> /dev/null 2>&1 || echo "Nothing to clean"
+	rm -f CMakeCache.txt
+	mkdir -p build
+	touch configure-stamp
+
+build: build-stamp
+build-stamp: configure-stamp
+	dh_testdir
+	# если не задан тип сборки запускаем cmake без указания типа, если задан - передаём его
+	# для сборки в Debug нужно запустить так: debuild -e CMAKE_BUILD_TYPE=Debug
+	cd build && pwd && if [ -z CMAKE_BUILD_TYPE ]; then cmake ..; else cmake -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) ..; fi
+	# TODO: возможно надо исправить
+	# последовательно зкапускаем make для каждой из целей.
+	# т.к. при параллельном запуске (make target1 target2) несколько раз одновременно создаются бинарники
+	# и возникает raise с custom_command, использующие эти бинарники
+	for daemon in ${DAEMONS}; do $(MAKE) -j$(THREADS_COUNT) -C build $$daemon; done
+	touch $@
+
+clean:
+	dh_testdir
+	dh_testroot
+	rm -f configure-stamp
+	rm -f build-stamp
+	rm -rf build
+	# Удалим созданные для dh_installinit файлы
+	find ./debian/ -name "*.init" -type l -delete
+	# Удалим созданные для dh_installcron файлы
+	find ./debian/ -name "*.cron.d" -type f -delete
+	# Удалим созданные для dh_installlogrotate файлы
+	find ./debian/ -name "*.logrotate" -type f -delete
+	# Удалим созданные *.install файлы
+	for DAEMON_PKG in ${DAEMONS}; do AUTO=`grep "# automatically created" debian/$$DAEMON_PKG-metrika-yandex.install`; if [ "x$$AUTO" != "x" ]; then rm -f debian/$$DAEMON_PKG-metrika-yandex.install; fi; done
+	dh_clean
+
+install: build
+	dh_testdir
+	dh_testroot
+	dh_prep
+	cd build && \
+	for daemon in ${DAEMONS}; do\
+		DESTDIR=../debian/tmp cmake -DCOMPONENT=$$daemon -P cmake_install.cmake;\
+	done
+
+	# Создаём нужные файлы для dh_installinit, т.к. он их понимает только внутри debian/
+	for I in debian/tmp/etc/init.d/*; do echo $$I; ln -s tmp/etc/init.d/`basename $$I` debian/`basename $$I`.init; done
+	# Хотим, чтобы для пакета clickhouse-server-base init file назывался clickhouse-server
+	if [ -e debian/tmp/etc/init.d/clickhouse-server ]; then ln -s tmp/etc/init.d/clickhouse-server debian/clickhouse-server-base.clickhouse-server.init; fi
+
+	# создаем дефолтный cron, если нет крон-файла созданного пользователем
+	# cron_name имеет вид daemonname-metrika-yandex
+	# logrotate_name имеет вид daemonname
+	# Для ClickHouse не должно быть лишних зависимостей.
+	for I in debian/tmp/etc/init.d/*; \
+	do \
+		cron_name=`basename $$I`; \
+		if [ ! -d debian/tmp/etc/cron.d ]; then \
+			mkdir -p debian/tmp/etc/cron.d; \
+		fi; \
+		if [ ! -f debian/tmp/etc/cron.d/$$cron_name ]; then \
+			echo "#*/10 * * * * root /etc/init.d/$$cron_name condstart 1>/dev/null 2>&1" > debian/tmp/etc/cron.d/$$cron_name; \
+			logrotate_name=`basename $$I | sed 's/-metrika-yandex//'`; \
+			if [ -f debian/tmp/etc/logrotate.d/$$logrotate_name.logrt ]; then \
+				if [ -e debian/tmp/etc/init.d/clickhouse-server ]; then \
+					echo "#23 * * * * root flock -w 200 /var/run/lock/metrika-logrotate -c '/usr/sbin/logrotate /etc/logrotate.d/$$logrotate_name.logrt'" >> debian/tmp/etc/cron.d/$$cron_name; \
+				else \
+					echo "#23 * * * * root /usr/local/bin/metrika-logrotate /etc/logrotate.d/$$logrotate_name.logrt" >> debian/tmp/etc/cron.d/$$cron_name; \
+				fi; \
+			fi; \
+		fi; \
+	done; \
+	# Создаём нужные *.install файлы
+	# Только для демонов, т.к. пакеты ClickHouse не имеют суффикса metrika-yandex
+	for DAEMON_PKG in ${DAEMONS}; do \
+		if [ ! -e "debian/$$DAEMON_PKG-metrika-yandex.install" ]; then \
+			echo "# automatically created" > debian/$$DAEMON_PKG-metrika-yandex.install; \
+			echo "/etc/$$DAEMON_PKG/config.xml" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
+			echo "/usr/bin/$$DAEMON_PKG" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
+			echo "/etc/logrotate.d/$$DAEMON_PKG.logrt" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
+			echo "/etc/cron.d/$$DAEMON_PKG-metrika-yandex" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
+			if [ -e "debian/tmp/etc/monrun/conf.d/$$DAEMON_PKG.conf" ]; then \
+				echo "/etc/monrun/conf.d/$$DAEMON_PKG.conf" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
+			fi;\
+		fi;  \
+	done
+
+	# Создаём нужные *.postinst файлы
+	# Note: Только для демонов, т.к. пакеты ClickHouse не имеют суффикса metrika-yandex
+	for DAEMON_PKG in ${DAEMONS}; do \
+		if [ ! -e "debian/$$DAEMON_PKG-metrika-yandex.postinst" ]; then \
+			echo "# automatically created" > debian/$$DAEMON_PKG-metrika-yandex.postinst; \
+			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
+			echo "chown -R metrika: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
+			if [ -e "debian/tmp/etc/init.d/$$DAEMON_PKG-metrika-yandex" ]; then \
+				if echo $$DAEMON_PKG | grep server > /dev/null; then\
+					echo "update-rc.d $$DAEMON_PKG-metrika-yandex defaults > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
+				else\
+					echo "update-rc.d $$DAEMON_PKG-metrika-yandex start 30 2 3 4 5 . stop 70 0 1 6 . > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
+				fi\
+			fi\
+			\
+		else \
+			echo >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
+			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d; chown -R metrika: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
+		fi;  \
+	done
+
+
+	# В случае сборки clickhouse-server, добавим в пакет бинарник clang-а, ld и заголовочные файлы - для динамической компиляции.
+	if [ -e debian/tmp/etc/init.d/clickhouse-server ]; then \
+		mkdir -p debian/tmp/usr/share/clickhouse/bin debian/tmp/usr/share/clickhouse/headers; \
+		debian/copy_clang_binaries.sh debian/tmp/usr/share/clickhouse/bin/; \
+		./copy_headers.sh . debian/tmp/usr/share/clickhouse/headers; \
+	fi;
+
+
+	# Список бинариев, для которых делаем strip. Это делается из-за того, что на некоторых серверах мало места.
+	$(eval STRIP_LIST=\
+		clickhouse-client \
+	)
+
+	for DAEMON in ${STRIP_LIST}; do \
+		if [ -e debian/tmp/usr/bin/$$DAEMON ]; then strip debian/tmp/usr/bin/$$DAEMON; fi; \
+	done
+
+# Build architecture-independent files here.
+binary-indep: build install
+# We have nothing to do by default.
+
+# Build architecture-dependent files here.
+binary-arch: build install
+	dh_testdir
+	dh_testroot
+	dh_installdocs
+	dh_installinit --no-start --no-package=clickhouse-server-base
+	dh_installinit --no-start --package=clickhouse-server-base --name=clickhouse-server
+	dh_installcron
+	dh_installdirs
+	dh_installchangelogs
+	dh_install --sourcedir=debian/tmp
+	dh_link
+	dh_compress
+	dh_fixperms
+	dh_installdeb
+	dh_shlibdeps --exclude=clang --exclude=stdc
+	dh_gencontrol
+	dh_md5sums
+	dh_builddeb -- -z3
+
+binary: binary-indep binary-arch
+.PHONY: build clean binary-indep binary-arch binary install

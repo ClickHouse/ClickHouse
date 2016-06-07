@@ -1,0 +1,4 @@
+Hello, world	123	2016-01-01
+Hello, "world"	456	2016-01-02
+Hello "world"	789	2016-01-03
+Hello\n world	100	2016-01-04
