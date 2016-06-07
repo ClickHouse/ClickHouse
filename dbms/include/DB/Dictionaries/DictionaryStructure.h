@@ -39,6 +39,47 @@ enum class AttributeUnderlyingType
 	String
 };
 
+
+/** Для неявных преобразований в функциях dictGet.
+  */
+inline bool isAttributeTypeConvertibleTo(AttributeUnderlyingType from, AttributeUnderlyingType to)
+{
+	if (from == to)
+		return true;
+
+	/** Это перечисление может быть несколько неполным и смысл может не совпадать с NumberTraits.h.
+	  * (например тем, что целые числа нельзя преобразовать во float-ы)
+	  * Это нормально для ограниченной области применения.
+	  */
+	if (	(from == AttributeUnderlyingType::UInt8 && to == AttributeUnderlyingType::UInt16)
+		||	(from == AttributeUnderlyingType::UInt8 && to == AttributeUnderlyingType::UInt32)
+		||	(from == AttributeUnderlyingType::UInt8 && to == AttributeUnderlyingType::UInt64)
+		||	(from == AttributeUnderlyingType::UInt16 && to == AttributeUnderlyingType::UInt32)
+		||	(from == AttributeUnderlyingType::UInt16 && to == AttributeUnderlyingType::UInt64)
+		||	(from == AttributeUnderlyingType::UInt32 && to == AttributeUnderlyingType::UInt64)
+		||	(from == AttributeUnderlyingType::UInt8 && to == AttributeUnderlyingType::Int16)
+		||	(from == AttributeUnderlyingType::UInt8 && to == AttributeUnderlyingType::Int32)
+		||	(from == AttributeUnderlyingType::UInt8 && to == AttributeUnderlyingType::Int64)
+		||	(from == AttributeUnderlyingType::UInt16 && to == AttributeUnderlyingType::Int32)
+		||	(from == AttributeUnderlyingType::UInt16 && to == AttributeUnderlyingType::Int64)
+		||	(from == AttributeUnderlyingType::UInt32 && to == AttributeUnderlyingType::Int64)
+
+		||	(from == AttributeUnderlyingType::Int8 && to == AttributeUnderlyingType::Int16)
+		||	(from == AttributeUnderlyingType::Int8 && to == AttributeUnderlyingType::Int32)
+		||	(from == AttributeUnderlyingType::Int8 && to == AttributeUnderlyingType::Int64)
+		||	(from == AttributeUnderlyingType::Int16 && to == AttributeUnderlyingType::Int32)
+		||	(from == AttributeUnderlyingType::Int16 && to == AttributeUnderlyingType::Int64)
+		||	(from == AttributeUnderlyingType::Int32 && to == AttributeUnderlyingType::Int64)
+
+		||	(from == AttributeUnderlyingType::Float32 && to == AttributeUnderlyingType::Float64))
+	{
+		return true;
+	}
+
+	return false;
+}
+
+
 inline AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
 {
 	static const std::unordered_map<std::string, AttributeUnderlyingType> dictionary{

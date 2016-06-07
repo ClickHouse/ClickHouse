@@ -98,15 +98,14 @@ public:
 		dict_struct.validateKeyTypes(key_types);\
 		\
 		const auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeUnderlyingType::TYPE)\
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
 			throw Exception{\
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-				ErrorCodes::TYPE_MISMATCH\
-			};\
+				ErrorCodes::TYPE_MISMATCH};\
 		\
 		const auto null_value = std::get<TYPE>(attribute.null_values);\
 		\
-		getItems<TYPE>(attribute, key_columns,\
+		getItemsNumber<TYPE>(attribute, key_columns,\
 			[&] (const std::size_t row, const auto value) { out[row] = value; },\
 			[&] (const std::size_t) { return null_value; });\
 	}
@@ -128,15 +127,14 @@ public:
 		dict_struct.validateKeyTypes(key_types);
 
 		const auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeUnderlyingType::String)
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
 			throw Exception{
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
+				ErrorCodes::TYPE_MISMATCH};
 
 		const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
-		getItems<StringRef>(attribute, key_columns,
+		getItemsImpl<StringRef, StringRef>(attribute, key_columns,
 			[&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
 			[&] (const std::size_t) { return null_value; });
 	}
@@ -149,13 +147,12 @@ public:
  		dict_struct.validateKeyTypes(key_types);\
  		\
 		const auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeUnderlyingType::TYPE)\
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
 			throw Exception{\
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-				ErrorCodes::TYPE_MISMATCH\
-			};\
+				ErrorCodes::TYPE_MISMATCH};\
 		\
-		getItems<TYPE>(attribute, key_columns,\
+		getItemsNumber<TYPE>(attribute, key_columns,\
 			[&] (const std::size_t row, const auto value) { out[row] = value; },\
 			[&] (const std::size_t row) { return def[row]; });\
 	}
@@ -177,13 +174,12 @@ public:
  		dict_struct.validateKeyTypes(key_types);
 
 		const auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeUnderlyingType::String)
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
 			throw Exception{
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
+				ErrorCodes::TYPE_MISMATCH};
 
-		getItems<StringRef>(attribute, key_columns,
+		getItemsImpl<StringRef, StringRef>(attribute, key_columns,
 			[&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
 			[&] (const std::size_t row) { return def->getDataAt(row); });
 	}
@@ -196,13 +192,12 @@ public:
  		dict_struct.validateKeyTypes(key_types);\
  		\
 		const auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeUnderlyingType::TYPE)\
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
 			throw Exception{\
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-				ErrorCodes::TYPE_MISMATCH\
-			};\
+				ErrorCodes::TYPE_MISMATCH};\
 		\
-		getItems<TYPE>(attribute, key_columns,\
+		getItemsNumber<TYPE>(attribute, key_columns,\
 			[&] (const std::size_t row, const auto value) { out[row] = value; },\
 			[&] (const std::size_t) { return def; });\
 	}
@@ -224,13 +219,12 @@ public:
  		dict_struct.validateKeyTypes(key_types);
 
 		const auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeUnderlyingType::String)
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
 			throw Exception{
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
+				ErrorCodes::TYPE_MISMATCH};
 
-		getItems<StringRef>(attribute, key_columns,
+		getItemsImpl<StringRef, StringRef>(attribute, key_columns,
 			[&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
 			[&] (const std::size_t) { return StringRef{def}; });
 	}
@@ -290,8 +284,7 @@ private:
 			if (attribute.hierarchical)
 				throw Exception{
 					name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
-					ErrorCodes::TYPE_MISMATCH
-				};
+					ErrorCodes::TYPE_MISMATCH};
 		}
 	}
 
@@ -349,8 +342,7 @@ private:
 		if (require_nonempty && 0 == element_count)
 			throw Exception{
 				name + ": dictionary source is empty and 'require_nonempty' property is set.",
-				ErrorCodes::DICTIONARY_IS_EMPTY
-			};
+				ErrorCodes::DICTIONARY_IS_EMPTY};
 	}
 
 	template <typename T>
@@ -427,12 +419,41 @@ private:
 		return attr;
 	}
 
-	template <typename T, typename ValueSetter, typename DefaultGetter>
-	void getItems(
-		const attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, ValueSetter && set_value,
+
+	template <typename OutputType, typename ValueSetter, typename DefaultGetter>
+	void getItemsNumber(
+		const attribute_t & attribute,
+		const ConstColumnPlainPtrs & key_columns,
+		ValueSetter && set_value,
 		DefaultGetter && get_default) const
 	{
-		const auto & attr = *std::get<ContainerPtrType<T>>(attribute.maps);
+		if (false) {}
+	#define DISPATCH(TYPE) \
+		else if (attribute.type == AttributeUnderlyingType::TYPE) \
+			getItemsImpl<TYPE, OutputType>(attribute, key_columns, std::forward<ValueSetter>(set_value), std::forward<DefaultGetter>(get_default));
+		DISPATCH(UInt8)
+		DISPATCH(UInt16)
+		DISPATCH(UInt32)
+		DISPATCH(UInt64)
+		DISPATCH(Int8)
+		DISPATCH(Int16)
+		DISPATCH(Int32)
+		DISPATCH(Int64)
+		DISPATCH(Float32)
+		DISPATCH(Float64)
+	#undef DISPATCH
+		else
+			throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
+	}
+
+	template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+	void getItemsImpl(
+		const attribute_t & attribute,
+		const ConstColumnPlainPtrs & key_columns,
+		ValueSetter && set_value,
+		DefaultGetter && get_default) const
+	{
+		const auto & attr = *std::get<ContainerPtrType<AttributeType>>(attribute.maps);
 
 		const auto keys_size = key_columns.size();
 		StringRefs keys(keys_size);
@@ -453,6 +474,7 @@ private:
 
 		query_count.fetch_add(rows, std::memory_order_relaxed);
 	}
+
 
 	template <typename T>
 	bool setAttributeValueImpl(attribute_t & attribute, const StringRef key, const T value)
@@ -495,8 +517,7 @@ private:
 		if (it == std::end(attribute_index_by_name))
 			throw Exception{
 				name + ": no such attribute '" + attribute_name + "'",
-				ErrorCodes::BAD_ARGUMENTS
-			};
+				ErrorCodes::BAD_ARGUMENTS};
 
 		return attributes[it->second];
 	}

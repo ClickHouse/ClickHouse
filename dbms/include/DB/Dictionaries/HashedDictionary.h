@@ -92,7 +92,7 @@ public:
 	{
 		const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
 
-		getItems<UInt64>(*hierarchical_attribute, ids,
+		getItemsNumber<UInt64>(*hierarchical_attribute, ids,
 			[&] (const std::size_t row, const UInt64 value) { out[row] = value; },
 			[&] (const std::size_t) { return null_value; });
 	}
@@ -101,15 +101,14 @@ public:
 	void get##TYPE(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, PaddedPODArray<TYPE> & out) const\
 	{\
 		const auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeUnderlyingType::TYPE)\
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
 			throw Exception{\
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-				ErrorCodes::TYPE_MISMATCH\
-			};\
+				ErrorCodes::TYPE_MISMATCH};\
 		\
 		const auto null_value = std::get<TYPE>(attribute.null_values);\
 		\
-		getItems<TYPE>(attribute, ids,\
+		getItemsNumber<TYPE>(attribute, ids,\
 			[&] (const std::size_t row, const auto value) { out[row] = value; },\
 			[&] (const std::size_t) { return null_value; });\
 	}
@@ -127,15 +126,14 @@ public:
 	void getString(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, ColumnString * out) const
 	{
 		const auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeUnderlyingType::String)
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
 			throw Exception{
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
+				ErrorCodes::TYPE_MISMATCH};
 
 		const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
-		getItems<StringRef>(attribute, ids,
+		getItemsImpl<StringRef, StringRef>(attribute, ids,
 			[&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
 			[&] (const std::size_t) { return null_value; });
 	}
@@ -146,13 +144,12 @@ public:
 		PaddedPODArray<TYPE> & out) const\
 	{\
 		const auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeUnderlyingType::TYPE)\
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
 			throw Exception{\
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-				ErrorCodes::TYPE_MISMATCH\
-			};\
+				ErrorCodes::TYPE_MISMATCH};\
 		\
-		getItems<TYPE>(attribute, ids,\
+		getItemsNumber<TYPE>(attribute, ids,\
 			[&] (const std::size_t row, const auto value) { out[row] = value; },\
 			[&] (const std::size_t row) { return def[row]; });\
 	}
@@ -172,13 +169,12 @@ public:
 		ColumnString * const out) const
 	{
 		const auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeUnderlyingType::String)
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
 			throw Exception{
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
+				ErrorCodes::TYPE_MISMATCH};
 
-		getItems<StringRef>(attribute, ids,
+		getItemsImpl<StringRef, StringRef>(attribute, ids,
 			[&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
 			[&] (const std::size_t row) { return def->getDataAt(row); });
 	}
@@ -188,13 +184,12 @@ public:
 		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const TYPE & def, PaddedPODArray<TYPE> & out) const\
 	{\
 		const auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeUnderlyingType::TYPE)\
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
 			throw Exception{\
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-				ErrorCodes::TYPE_MISMATCH\
-			};\
+				ErrorCodes::TYPE_MISMATCH};\
 		\
-		getItems<TYPE>(attribute, ids,\
+		getItemsNumber<TYPE>(attribute, ids,\
 			[&] (const std::size_t row, const auto value) { out[row] = value; },\
 			[&] (const std::size_t) { return def; });\
 	}
@@ -214,13 +209,12 @@ public:
 		ColumnString * const out) const
 	{
 		const auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeUnderlyingType::String)
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
 			throw Exception{
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
+				ErrorCodes::TYPE_MISMATCH};
 
-		getItems<StringRef>(attribute, ids,
+		getItemsImpl<StringRef, StringRef>(attribute, ids,
 			[&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
 			[&] (const std::size_t) { return StringRef{def}; });
 	}
@@ -282,8 +276,7 @@ private:
 				if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
 					throw Exception{
 						name + ": hierarchical attribute must be UInt64.",
-						ErrorCodes::TYPE_MISMATCH
-					};
+						ErrorCodes::TYPE_MISMATCH};
 			}
 		}
 	}
@@ -314,8 +307,7 @@ private:
 		if (require_nonempty && 0 == element_count)
 			throw Exception{
 				name + ": dictionary source is empty and 'require_nonempty' property is set.",
-				ErrorCodes::DICTIONARY_IS_EMPTY
-			};
+				ErrorCodes::DICTIONARY_IS_EMPTY};
 	}
 
 	template <typename T>
@@ -390,12 +382,41 @@ private:
 		return attr;
 	}
 
-	template <typename T, typename ValueSetter, typename DefaultGetter>
-	void getItems(
-		const attribute_t & attribute, const PaddedPODArray<id_t> & ids, ValueSetter && set_value,
+
+	template <typename OutputType, typename ValueSetter, typename DefaultGetter>
+	void getItemsNumber(
+		const attribute_t & attribute,
+		const PaddedPODArray<id_t> & ids,
+		ValueSetter && set_value,
 		DefaultGetter && get_default) const
 	{
-		const auto & attr = *std::get<CollectionPtrType<T>>(attribute.maps);
+		if (false) {}
+	#define DISPATCH(TYPE) \
+		else if (attribute.type == AttributeUnderlyingType::TYPE) \
+			getItemsImpl<TYPE, OutputType>(attribute, ids, std::forward<ValueSetter>(set_value), std::forward<DefaultGetter>(get_default));
+		DISPATCH(UInt8)
+		DISPATCH(UInt16)
+		DISPATCH(UInt32)
+		DISPATCH(UInt64)
+		DISPATCH(Int8)
+		DISPATCH(Int16)
+		DISPATCH(Int32)
+		DISPATCH(Int64)
+		DISPATCH(Float32)
+		DISPATCH(Float64)
+	#undef DISPATCH
+		else
+			throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
+	}
+
+	template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+	void getItemsImpl(
+		const attribute_t & attribute,
+		const PaddedPODArray<id_t> & ids,
+		ValueSetter && set_value,
+		DefaultGetter && get_default) const
+	{
+		const auto & attr = *std::get<CollectionPtrType<AttributeType>>(attribute.maps);
 		const auto rows = ext::size(ids);
 
 		for (const auto i : ext::range(0, rows))
@@ -406,6 +427,7 @@ private:
 
 		query_count.fetch_add(rows, std::memory_order_relaxed);
 	}
+
 
 	template <typename T>
 	void setAttributeValueImpl(attribute_t & attribute, const id_t id, const T value)
@@ -445,8 +467,7 @@ private:
 		if (it == std::end(attribute_index_by_name))
 			throw Exception{
 				name + ": no such attribute '" + attribute_name + "'",
-				ErrorCodes::BAD_ARGUMENTS
-			};
+				ErrorCodes::BAD_ARGUMENTS};
 
 		return attributes[it->second];
 	}

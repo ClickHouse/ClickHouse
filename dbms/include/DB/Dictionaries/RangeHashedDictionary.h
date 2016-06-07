@@ -188,8 +188,7 @@ private:
 			if (attribute.hierarchical)
 				throw Exception{
 					name + ": hierarchical attributes not supported by " + getName() + " dictionary.",
-					ErrorCodes::BAD_ARGUMENTS
-				};
+					ErrorCodes::BAD_ARGUMENTS};
 		}
 	}
 
@@ -223,8 +222,7 @@ private:
 		if (require_nonempty && 0 == element_count)
 			throw Exception{
 				name + ": dictionary source is empty and 'require_nonempty' property is set.",
-				ErrorCodes::DICTIONARY_IS_EMPTY
-			};
+				ErrorCodes::DICTIONARY_IS_EMPTY};
 	}
 
 	template <typename T>
@@ -299,13 +297,42 @@ private:
 		return attr;
 	}
 
-	template <typename T>
+
+	template <typename OutputType>
 	void getItems(
-		const attribute_t & attribute, const PaddedPODArray<id_t> & ids, const PaddedPODArray<UInt16> & dates,
-		PaddedPODArray<T> & out) const
+		const attribute_t & attribute,
+		const PaddedPODArray<id_t> & ids,
+		const PaddedPODArray<UInt16> & dates,
+		PaddedPODArray<OutputType> & out) const
 	{
-		const auto & attr = *std::get<ptr_t<T>>(attribute.maps);
-		const auto null_value = std::get<T>(attribute.null_values);
+		if (false) {}
+	#define DISPATCH(TYPE) \
+		else if (attribute.type == AttributeUnderlyingType::TYPE) \
+			getItemsImpl<TYPE, OutputType>(attribute, ids, dates, out);
+		DISPATCH(UInt8)
+		DISPATCH(UInt16)
+		DISPATCH(UInt32)
+		DISPATCH(UInt64)
+		DISPATCH(Int8)
+		DISPATCH(Int16)
+		DISPATCH(Int32)
+		DISPATCH(Int64)
+		DISPATCH(Float32)
+		DISPATCH(Float64)
+	#undef DISPATCH
+		else
+			throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
+	}
+
+	template <typename AttributeType, typename OutputType>
+	void getItemsImpl(
+		const attribute_t & attribute,
+		const PaddedPODArray<id_t> & ids,
+		const PaddedPODArray<UInt16> & dates,
+		PaddedPODArray<OutputType> & out) const
+	{
+		const auto & attr = *std::get<ptr_t<AttributeType>>(attribute.maps);
+		const auto null_value = std::get<AttributeType>(attribute.null_values);
 
 		for (const auto i : ext::range(0, ids.size()))
 		{
@@ -315,7 +342,7 @@ private:
 				const auto date = dates[i];
 				const auto & ranges_and_values = it->second;
 				const auto val_it = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values),
-					[date] (const value_t<T> & v) { return v.range.contains(date); });
+					[date] (const value_t<AttributeType> & v) { return v.range.contains(date); });
 
 				out[i] = val_it != std::end(ranges_and_values) ? val_it->value : null_value;
 			}
@@ -325,6 +352,7 @@ private:
 
 		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
 	}
+
 
 	template <typename T>
 	void setAttributeValueImpl(attribute_t & attribute, const id_t id, const range_t & range, const T value)
@@ -395,8 +423,7 @@ private:
 		if (it == std::end(attribute_index_by_name))
 			throw Exception{
 				name + ": no such attribute '" + attribute_name + "'",
-				ErrorCodes::BAD_ARGUMENTS
-			};
+				ErrorCodes::BAD_ARGUMENTS};
 
 		return attributes[it->second];
 	}
@@ -407,8 +434,7 @@ private:
 		if (attribute.type != type)
 			throw Exception{
 				name + ": type mismatch: attribute " + name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
+				ErrorCodes::TYPE_MISMATCH};
 
 		return attribute;
 	}

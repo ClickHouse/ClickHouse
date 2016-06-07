@@ -46,8 +46,7 @@ public:
 		if (!this->source_ptr->supportsSelectiveLoad())
 			throw Exception{
 				name + ": source cannot be used with CacheDictionary",
-				ErrorCodes::UNSUPPORTED_METHOD
-			};
+				ErrorCodes::UNSUPPORTED_METHOD};
 
 		createAttributes();
 	}
@@ -105,22 +104,21 @@ public:
 	{
 		const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
 
-		getItems<UInt64>(*hierarchical_attribute, ids, out, [&] (const std::size_t) { return null_value; });
+		getItemsNumber<UInt64>(*hierarchical_attribute, ids, out, [&] (const std::size_t) { return null_value; });
 	}
 
 #define DECLARE(TYPE)\
 	void get##TYPE(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, PaddedPODArray<TYPE> & out) const\
 	{\
 		auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeUnderlyingType::TYPE)\
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
 			throw Exception{\
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-				ErrorCodes::TYPE_MISMATCH\
-			};\
+				ErrorCodes::TYPE_MISMATCH};\
 		\
 		const auto null_value = std::get<TYPE>(attribute.null_values);\
 		\
-		getItems<TYPE>(attribute, ids, out, [&] (const std::size_t) { return null_value; });\
+		getItemsNumber<TYPE>(attribute, ids, out, [&] (const std::size_t) { return null_value; });\
 	}
 	DECLARE(UInt8)
 	DECLARE(UInt16)
@@ -136,15 +134,14 @@ public:
 	void getString(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, ColumnString * out) const
 	{
 		auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeUnderlyingType::String)
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
 			throw Exception{
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
+				ErrorCodes::TYPE_MISMATCH};
 
 		const auto null_value = StringRef{std::get<String>(attribute.null_values)};
 
-		getItems(attribute, ids, out, [&] (const std::size_t) { return null_value; });
+		getItemsString(attribute, ids, out, [&] (const std::size_t) { return null_value; });
 	}
 
 #define DECLARE(TYPE)\
@@ -153,13 +150,12 @@ public:
 		PaddedPODArray<TYPE> & out) const\
 	{\
 		auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeUnderlyingType::TYPE)\
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
 			throw Exception{\
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-				ErrorCodes::TYPE_MISMATCH\
-			};\
+				ErrorCodes::TYPE_MISMATCH};\
 		\
-		getItems<TYPE>(attribute, ids, out, [&] (const std::size_t row) { return def[row]; });\
+		getItemsNumber<TYPE>(attribute, ids, out, [&] (const std::size_t row) { return def[row]; });\
 	}
 	DECLARE(UInt8)
 	DECLARE(UInt16)
@@ -177,13 +173,12 @@ public:
 		ColumnString * const out) const
 	{
 		auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeUnderlyingType::String)
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
 			throw Exception{
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
+				ErrorCodes::TYPE_MISMATCH};
 
-		getItems(attribute, ids, out, [&] (const std::size_t row) { return def->getDataAt(row); });
+		getItemsString(attribute, ids, out, [&] (const std::size_t row) { return def->getDataAt(row); });
 	}
 
 #define DECLARE(TYPE)\
@@ -191,13 +186,12 @@ public:
 		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const TYPE def, PaddedPODArray<TYPE> & out) const\
 	{\
 		auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeUnderlyingType::TYPE)\
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
 			throw Exception{\
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-				ErrorCodes::TYPE_MISMATCH\
-			};\
+				ErrorCodes::TYPE_MISMATCH};\
 		\
-		getItems<TYPE>(attribute, ids, out, [&] (const std::size_t) { return def; });\
+		getItemsNumber<TYPE>(attribute, ids, out, [&] (const std::size_t) { return def; });\
 	}
 	DECLARE(UInt8)
 	DECLARE(UInt16)
@@ -215,13 +209,12 @@ public:
 		ColumnString * const out) const
 	{
 		auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeUnderlyingType::String)
+		if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
 			throw Exception{
 				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
+				ErrorCodes::TYPE_MISMATCH};
 
-		getItems(attribute, ids, out, [&] (const std::size_t) { return StringRef{def}; });
+		getItemsString(attribute, ids, out, [&] (const std::size_t) { return StringRef{def}; });
 	}
 
 	void has(const PaddedPODArray<id_t> & ids, PaddedPODArray<UInt8> & out) const override
@@ -333,8 +326,7 @@ private:
 				if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
 					throw Exception{
 						name + ": hierarchical attribute must be UInt64.",
-						ErrorCodes::TYPE_MISMATCH
-					};
+						ErrorCodes::TYPE_MISMATCH};
 			}
 		}
 	}
@@ -407,13 +399,43 @@ private:
 		return attr;
 	}
 
-	template <typename T, typename DefaultGetter>
-	void getItems(
-		attribute_t & attribute, const PaddedPODArray<id_t> & ids, PaddedPODArray<T> & out, DefaultGetter && get_default) const
+
+	template <typename OutputType, typename DefaultGetter>
+	void getItemsNumber(
+		attribute_t & attribute,
+		const PaddedPODArray<id_t> & ids,
+		PaddedPODArray<OutputType> & out,
+		DefaultGetter && get_default) const
+	{
+		if (false) {}
+	#define DISPATCH(TYPE) \
+		else if (attribute.type == AttributeUnderlyingType::TYPE) \
+			getItemsNumberImpl<TYPE, OutputType>(attribute, ids, out, std::forward<DefaultGetter>(get_default));
+		DISPATCH(UInt8)
+		DISPATCH(UInt16)
+		DISPATCH(UInt32)
+		DISPATCH(UInt64)
+		DISPATCH(Int8)
+		DISPATCH(Int16)
+		DISPATCH(Int32)
+		DISPATCH(Int64)
+		DISPATCH(Float32)
+		DISPATCH(Float64)
+	#undef DISPATCH
+		else
+			throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
+	}
+
+	template <typename AttributeType, typename OutputType, typename DefaultGetter>
+	void getItemsNumberImpl(
+		attribute_t & attribute,
+		const PaddedPODArray<id_t> & ids,
+		PaddedPODArray<OutputType> & out,
+		DefaultGetter && get_default) const
 	{
 		/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
 		MapType<std::vector<std::size_t>> outdated_ids;
-		auto & attribute_array = std::get<ContainerPtrType<T>>(attribute.arrays);
+		auto & attribute_array = std::get<ContainerPtrType<OutputType>>(attribute.arrays);
 		const auto rows = ext::size(ids);
 
 		{
@@ -461,8 +483,11 @@ private:
 	}
 
 	template <typename DefaultGetter>
-	void getItems(
-		attribute_t & attribute, const PaddedPODArray<id_t> & ids, ColumnString * out, DefaultGetter && get_default) const
+	void getItemsString(
+		attribute_t & attribute,
+		const PaddedPODArray<id_t> & ids,
+		ColumnString * out,
+		DefaultGetter && get_default) const
 	{
 		const auto rows = ext::size(ids);
 
@@ -598,8 +623,7 @@ private:
 			if (!id_column)
 				throw Exception{
 					name + ": id column has type different from UInt64.",
-					ErrorCodes::TYPE_MISMATCH
-				};
+					ErrorCodes::TYPE_MISMATCH};
 
 			const auto & ids = id_column->getData();
 
