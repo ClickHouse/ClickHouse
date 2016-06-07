@@ -33,6 +33,8 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int DICTIONARIES_WAS_NOT_LOADED;
+	extern const int UNSUPPORTED_METHOD;
+	extern const int UNKNOWN_TYPE;
 }
 
 /** Функции, использующие словари Яндекс.Метрики
@@ -2285,9 +2287,9 @@ private:
 		auto dict = dictionaries.getDictionary(dict_name_col->getData());
 		const auto dict_ptr = dict.get();
 
-		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
+		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr)
+			&& !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr)
+			&& !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
 				ErrorCodes::UNKNOWN_TYPE};

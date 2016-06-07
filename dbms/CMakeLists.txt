@@ -756,6 +756,13 @@ add_library (dbms
 	src/Dictionaries/MySQLDictionarySource.cpp
 	src/Dictionaries/ODBCDictionarySource.cpp
 	src/Dictionaries/writeParenthesisedString.cpp
+	src/Dictionaries/DictionaryStructure.cpp
+	src/Dictionaries/FlatDictionary.cpp
+	src/Dictionaries/HashedDictionary.cpp
+	src/Dictionaries/CacheDictionary.cpp
+	src/Dictionaries/RangeHashedDictionary.cpp
+	src/Dictionaries/ComplexKeyHashedDictionary.cpp
+	src/Dictionaries/ComplexKeyCacheDictionary.cpp
 
 	src/Parsers/ASTSelectQuery.cpp
 	src/Parsers/ASTAlterQuery.cpp
