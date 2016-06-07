@@ -1,0 +1,6 @@
+Source: clickhouse
+Priority: optional
+Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
+Build-Depends: debhelper (>= 5)
+Standards-Version: 3.8.0
+Section: libs

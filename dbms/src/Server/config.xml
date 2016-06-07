@@ -1,0 +1,220 @@
+<?xml version="1.0"?>
+<yandex>
+	<logger>
+		<level>trace</level>
+		<log>/var/log/clickhouse-server/clickhouse-server.log</log>
+		<errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+
+		<!-- Встроенный механизм ротации логов.
+			 Порог выставлен в достаточно большую величину, так как вместо встроенного механизма, используется logrotate.
+			 То есть, эта настройка всего лишь защищает от случаев, когда logrotate не успевает вызваться.
+
+			 Почему используется logrotate? Потому что с помощью встроенного механизма нет возможности указать,
+			  чтобы два последних файла были несжатыми, а остальные - сжатыми (важно для некоторых скриптов админов).
+		  -->
+		<size>1000M</size>
+		<count>2</count>
+	</logger>
+
+
+	<http_port>8123</http_port>
+	<tcp_port>9000</tcp_port>
+
+	<!-- Порт для передачи данных между серверами. Используется для репликации. -->
+	<interserver_http_port>9009</interserver_http_port>
+
+	<!-- Хост, использующийся другими репликами для запросов к этому серверу.
+	     Если не задан - используется то же самое, что выдаёт команда hostname -f.
+	  -->
+	<!--
+	<interserver_http_host>example.yandex.ru</interserver_http_host>
+	-->
+
+	<!-- Слушать указанный хост. :: - wildcard IPv6 адрес, позволяющий принимать соединения по IPv4 и IPv6 откуда угодно. -->
+	<listen_host>::</listen_host>
+
+	<max_connections>4096</max_connections>
+	<keep_alive_timeout>3</keep_alive_timeout>
+
+	<!-- Максимальное количество одновременно выполняющихся запросов. -->
+	<max_concurrent_queries>100</max_concurrent_queries>
+
+	<!-- Размер кэша разжатых блоков, используемого в движках семейства MergeTree.
+		 Задаётся в байтах. Кэш один общий на весь сервер. Память выделяется и используется по мере необходимости.
+	  -->
+	<uncompressed_cache_size>8589934592</uncompressed_cache_size>
+
+	<!-- Примерный размер кэша засечек, используемого в движках семейства MergeTree.
+		 Задаётся в байтах. Кэш один общий на весь сервер. Память выделяется и используется по мере необходимости.
+	  -->
+	<mark_cache_size>5368709120</mark_cache_size>
+
+
+	<!-- Путь к директории с данными, включая слеш на конце. -->
+	<path>/opt/clickhouse/</path>
+
+	<!-- Путь к директории с временными данными, возникающими при обработке тяжёлых запросов. -->
+	<tmp_path>/opt/clickhouse/tmp/</tmp_path>
+
+	<!-- Путь к файлу с конфигурацией пользователей, прав доступа, профилей настроек, квот. -->
+	<users_config>users.xml</users_config>
+
+	<!-- Профиль настроек по-умолчанию. -->
+	<default_profile>default</default_profile>
+
+	<!-- БД по-умолчанию. -->
+	<default_database>default</default_database>
+
+	<!-- Группы удалённых серверов, которые могут быть подключены в таблицах типа Distributed.
+		 https://clickhouse.yandex-team.ru/#Distributed
+	  -->
+	<remote_servers incl="clickhouse_remote_servers" />
+
+
+	<!-- Если у элемента конфига присутствует атрибут incl, то в качестве значения будет использована соответствующая подстановка из другого файла.
+	     По-умолчанию, путь к файлу с подстановками - /etc/metrika.xml. Он может быть изменён в конфиге в элементе include_from.
+		 Значения подстановок указываются в элементах /yandex/имя_подстановки этого файла.
+	  -->
+
+	<!-- ZooKeeper нужен для хранения мета информации о репликах, при использовании Replicated таблиц.
+	     Не обязательно. Если вы не используете реплицируемые таблицы - можно не указывать.
+
+		 См. https://clickhouse.yandex-team.ru/#%D0%A0%D0%B5%D0%BF%D0%BB%D0%B8%D0%BA%D0%B0%D1%86%D0%B8%D1%8F%20%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85
+	  -->
+	<zookeeper incl="zookeeper-servers" optional="true" />
+
+	<!-- Подстановки для параметров реплицируемых таблиц.
+	     Не обязательно. Если вы не используете реплицируемые таблицы - можно не указывать.
+
+		 См. https://clickhouse.yandex-team.ru/#%D0%A1%D0%BE%D0%B7%D0%B4%D0%B0%D0%BD%D0%B8%D0%B5%20%D1%80%D0%B5%D0%BF%D0%BB%D0%B8%D1%86%D0%B8%D1%80%D1%83%D0%B5%D0%BC%D1%8B%D1%85%20%D1%82%D0%B0%D0%B1%D0%BB%D0%B8%D1%86
+	  -->
+	<macros incl="macros" optional="true" />
+
+
+	<!-- Отправка данных о работе сервера в Graphite для мониторинга. -->
+	<use_graphite>false</use_graphite>
+
+	<!-- Интервал обновления встроенных справочников, в секундах. По-умолчанию - 3600. -->
+	<builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
+
+	<!-- Раскомментируйте, если включено use_graphite.
+	<graphite>
+		<host>127.0.0.1</host>
+		<port>42000</port>
+		<root_path>one_min</root_path>
+		<timeout>0.1</timeout>
+	</graphite>
+	-->
+
+
+	<!-- Лог запросов. Используется, только для запросов с настройкой log_queries = 1. -->
+	<query_log>
+		<!-- В какую таблицу писать. Если таблицы нет, она создаётся.
+		     При изменении структуры лога, старая таблица переименовывается и создаётся новая.
+		-->
+		<database>system</database>
+		<table>query_log</table>
+
+		<!-- Интервал сброса данных в таблицу. -->
+		<flush_interval_milliseconds>7500</flush_interval_milliseconds>
+	</query_log>
+
+
+	<!-- Следующие параметры следует задавать, если используются функции, зависящие от словарей Яндекс.Метрики.
+		 См. https://clickhouse.yandex-team.ru/#%D0%A4%D1%83%D0%BD%D0%BA%D1%86%D0%B8%D0%B8%20%D0%B4%D0%BB%D1%8F%20%D1%80%D0%B0%D0%B1%D0%BE%D1%82%D1%8B%20%D1%81%D0%BE%20%D1%81%D0%BB%D0%BE%D0%B2%D0%B0%D1%80%D1%8F%D0%BC%D0%B8%20%D0%AF%D0%BD%D0%B4%D0%B5%D0%BA%D1%81.%D0%9C%D0%B5%D1%82%D1%80%D0%B8%D0%BA%D0%B8
+	-->
+
+	<!-- путь к файлу, содержащиму иерархию регионов -->
+	<!-- <path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file> -->
+
+	<!-- путь к директории с файлами, содержащими имена регионов -->
+	<!-- <path_to_regions_names_files>/opt/geo/</path_to_regions_names_files> -->
+
+	<!-- Параметры БД со словарями (UserAgent, OS, etc.) -->
+	<!--
+	<mysql_metrica>
+		<db>conv_main</db>
+		<replica>
+			<host>127.0.0.1</host>
+			<port>3306</port>
+			<user>metrika</user>
+			<password></password>
+			<priority>1</priority>
+		</replica>
+	</mysql_metrica>
+	-->
+
+
+	<!-- Конфигурационные файлы внешних словарей. Смотрите:
+		 https://clickhouse.yandex-team.ru/#%D0%92%D0%BD%D0%B5%D1%88%D0%BD%D0%B8%D0%B5%20%D1%81%D0%BB%D0%BE%D0%B2%D0%B0%D1%80%D0%B8
+	-->
+	<dictionaries_config>*_dictionary.xml</dictionaries_config>
+
+
+	<!-- Настройки режима совместимости с OLAPServer.
+	  -->
+	<!--
+	<olap_compatibility>
+		<port>8248</port>
+		<table_for_all_counters>default.visits_all</table_for_all_counters>
+		<table_for_single_counter>default.visits_layer</table_for_single_counter>
+		<profile>olap_compatibility</profile>
+	</olap_compatibility>
+	-->
+
+	<!-- Раскомментируйте, если хотите сделать так, чтобы ваши данные сжимались на 30-50% лучше.
+	     Не нужно этого делать, если вы только начинаете использовать ClickHouse.
+	  -->
+	<compression incl="clickhouse_compression">
+	<!--
+		<!- - Набор вариантов. Варианты проверяются подряд. Побеждает последний сработавший вариант. Если ни один не сработал, то используется lz4. - ->
+		<case>
+
+			<!- - Условия. Должны сработать одновременно все. Часть условий могут быть не указаны. - ->
+			<min_part_size>10000000000</min_part_size>		<!- - Минимальный размер куска в байтах. - ->
+			<min_part_size_ratio>0.01</min_part_size_ratio>	<!- - Минимальный размер куска относительно всех данных таблицы. - ->
+
+			<!- - Какой метод сжатия выбрать. - ->
+			<method>zstd</method>
+		</case>
+	-->
+	</compression>
+
+	<!-- Здесь могут быть тонкие настройки работы таблиц типа MergeTree. Смотрите документацию в исходниках, в файле MergeTreeSettings.h -->
+	<!--
+	<merge_tree>
+		<max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+	</merge_tree>
+	-->
+
+	<!-- Пример параметров для движка GraphiteMergeTree -->
+	<graphite_rollup_example>
+		<pattern>
+			<regexp>click_cost</regexp>
+			<function>any</function>
+			<retention>
+				<age>0</age>
+				<precision>3600</precision>
+			</retention>
+			<retention>
+				<age>86400</age>
+				<precision>60</precision>
+			</retention>
+		</pattern>
+		<default>
+			<function>max</function>
+			<retention>
+				<age>0</age>
+				<precision>60</precision>
+			</retention>
+			<retention>
+				<age>3600</age>
+				<precision>300</precision>
+			</retention>
+			<retention>
+				<age>86400</age>
+				<precision>3600</precision>
+			</retention>
+		</default>
+	</graphite_rollup_example>
+</yandex>
