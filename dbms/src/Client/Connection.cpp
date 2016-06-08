@@ -142,12 +142,30 @@ void Connection::receiveHello()
 	}
 }
 
-
 void Connection::setDefaultDatabase(const String & database)
 {
 	default_database = database;
 }
 
+const String & Connection::getDefaultDatabase() const
+{
+	return default_database;
+}
+
+const String & Connection::getDescription() const
+{
+	return description;
+}
+
+const String & Connection::getHost() const
+{
+	return host;
+}
+
+UInt16 Connection::getPort() const
+{
+	return port;
+}
 
 void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision)
 {
