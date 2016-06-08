@@ -272,7 +272,7 @@ private:
 
 					/// Заменим столбец со значением условия из PREWHERE на константу.
 					if (!task->remove_prewhere_column)
-						res.getByName(prewhere_column).column = new ColumnConstUInt8{rows, 1};
+						res.getByName(prewhere_column).column = std::make_shared<ColumnConstUInt8>(rows, 1);
 				}
 				else
 					throw Exception{
@@ -327,7 +327,7 @@ private:
 				{
 					block.insert(ColumnWithTypeAndName{
 						ColumnConst<String>{rows, task->data_part->name}.convertToFullColumn(),
-						new DataTypeString,
+						std::make_shared<DataTypeString>(),
 						virt_column_name
 					});
 				}
@@ -335,7 +335,7 @@ private:
 				{
 					block.insert(ColumnWithTypeAndName{
 						ColumnConst<UInt64>{rows, task->part_index_in_query}.convertToFullColumn(),
-						new DataTypeUInt64,
+						std::make_shared<DataTypeUInt64>(),
 						virt_column_name
 					});
 				}

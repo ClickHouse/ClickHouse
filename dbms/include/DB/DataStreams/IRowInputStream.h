@@ -1,7 +1,7 @@
 #pragma once
 
 #include <boost/noncopyable.hpp>
-#include <Poco/SharedPtr.h>
+#include <memory>
 
 
 namespace DB
@@ -27,6 +27,6 @@ public:
 	virtual ~IRowInputStream() {}
 };
 
-using RowInputStreamPtr = Poco::SharedPtr<IRowInputStream>;
+using RowInputStreamPtr = std::shared_ptr<IRowInputStream>;
 
 }

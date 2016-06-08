@@ -143,7 +143,7 @@ public:
 		return chunk;
 	}
 
-	inline size_t getSize() const
+	inline size_t getSize() const override
 	{
 		return size;
 	}
@@ -470,7 +470,7 @@ private:
 
 		size_t first_data_size = sources[0]->getDataSize();
 
-		ColumnFixedString * col_res = new ColumnFixedString{first_size};
+		auto col_res = std::make_shared<ColumnFixedString>(first_size);
 		block.getByPosition(result).column = col_res;
 		return FixedStringSink{col_res->getChars(), first_size, first_data_size};
 	}
@@ -495,7 +495,7 @@ private:
 		size_t offsets_size = row_count;
 		size_t data_size = computeResultSize(sources, row_count);
 
-		ColumnString * col_res = new ColumnString;
+		std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 		block.getByPosition(result).column = col_res;
 		return VarStringSink{col_res->getChars(), col_res->getOffsets(),
 			data_size, offsets_size};

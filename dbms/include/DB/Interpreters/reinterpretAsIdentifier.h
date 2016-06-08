@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
+#include <memory>
 
 
 namespace DB
@@ -13,6 +13,6 @@ class Context;
 /** \brief if `expr` is not already ASTIdentifier evaluates it
   *  and replaces by a new ASTIdentifier with the result of evaluation as its name.
   *  `expr` must evaluate to a String type */
-ASTIdentifier & reinterpretAsIdentifier(Poco::SharedPtr<IAST> & expr, const Context & context);
+ASTIdentifier & reinterpretAsIdentifier(std::shared_ptr<IAST> & expr, const Context & context);
 
 }

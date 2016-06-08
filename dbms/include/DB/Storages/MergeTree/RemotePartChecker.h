@@ -46,7 +46,7 @@ public:
 		const InterserverIOEndpointLocation & to_location);
 
 private:
-	Logger * log = &Logger::get("RemotePartChecker::Client");
+//	Logger * log = &Logger::get("RemotePartChecker::Client");
 };
 
 }

@@ -74,13 +74,14 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 		}
 	}
 
-	used_output.out = new WriteBufferFromHTTPServerResponse(response, client_supports_http_compression, http_response_compression_method);
+	used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
+		response, client_supports_http_compression, http_response_compression_method);
 
 	/** Клиент может указать compress в query string.
 	  * В этом случае, результат сжимается несовместимым алгоритмом для внутреннего использования и этот факт не отражается в HTTP заголовках.
 	  */
 	if (parse<bool>(params.get("compress", "0")))
-		used_output.out_maybe_compressed = new CompressedWriteBuffer(*used_output.out);
+		used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
 	else
 		used_output.out_maybe_compressed = used_output.out;
 
@@ -105,7 +106,7 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	context.setUser(user, password, request.clientAddress().host(), quota_key);
 	context.setCurrentQueryId(query_id);
 
-	SharedPtr<ReadBuffer> in_param = new ReadBufferFromString(query_param);
+	std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query_param);
 
 	/// Данные POST-а могут быть сжаты алгоритмом, указанным в Content-Encoding заголовке.
 	String http_request_compression_method_str = request.get("Content-Encoding", "");
@@ -130,34 +131,34 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	}
 
 	std::experimental::optional<Poco::InflatingInputStream> decompressing_stream;
-	SharedPtr<ReadBuffer> in_post;
+	std::unique_ptr<ReadBuffer> in_post;
 
 	if (http_request_decompress)
 	{
 		decompressing_stream.emplace(istr, http_request_compression_method);
-		in_post = new ReadBufferFromIStream(decompressing_stream.value());
+		in_post = std::make_unique<ReadBufferFromIStream>(decompressing_stream.value());
 	}
 	else
-		in_post = new ReadBufferFromIStream(istr);
+		in_post = std::make_unique<ReadBufferFromIStream>(istr);
 
 	/// Также данные могут быть сжаты несовместимым алгоритмом для внутреннего использования - это определяется параметром query_string.
-	SharedPtr<ReadBuffer> in_post_maybe_compressed;
+	std::unique_ptr<ReadBuffer> in_post_maybe_compressed;
 	bool in_post_compressed = false;
 
 	if (parse<bool>(params.get("decompress", "0")))
 	{
-		in_post_maybe_compressed = new CompressedReadBuffer(*in_post);
+		in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post);
 		in_post_compressed = true;
 	}
 	else
-		in_post_maybe_compressed = in_post;
+		in_post_maybe_compressed = std::move(in_post);
 
-	SharedPtr<ReadBuffer> in;
+	std::unique_ptr<ReadBuffer> in;
 
 	/// Поддержка "внешних данных для обработки запроса".
 	if (0 == strncmp(request.getContentType().data(), "multipart/form-data", strlen("multipart/form-data")))
 	{
-		in = in_param;
+		in = std::move(in_param);
 		ExternalTablesHandler handler(context, params);
 
 		params.load(request, istr, handler);
@@ -171,7 +172,7 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 		}
 	}
 	else
-		in = new ConcatReadBuffer(*in_param, *in_post_maybe_compressed);
+		in = std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
 	/** Настройки могут быть переопределены в запросе.
 	  * Некоторые параметры (database, default_format, и все что использовались выше),

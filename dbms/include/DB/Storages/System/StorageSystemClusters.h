@@ -16,7 +16,7 @@ public:
 	StorageSystemClusters(const std::string & name_, Context & context_);
 	static StoragePtr create(const std::string & name_, Context & context_);
 
-	std::string getName() const override { return "SystemColumns"; }
+	std::string getName() const override { return "SystemClusters"; }
 	std::string getTableName() const override { return name; }
 	const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 

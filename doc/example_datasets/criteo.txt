@@ -5,7 +5,7 @@ CREATE TABLE criteo_log (date Date, clicked UInt8, int1 Int32, int2 Int32, int3 
 
 3. 
 
-for i in {00..23}; do echo $i; zcat datasets/criteo/day_${i#0}.gz | sed -r 's/^/2000-01-'${i/00/24}'\t/' | clickhouse-client --host=mtlog-perftest01j --query="INSERT INTO criteo_log FORMAT TabSeparated"; done
+for i in {00..23}; do echo $i; zcat datasets/criteo/day_${i#0}.gz | sed -r 's/^/2000-01-'${i/00/24}'\t/' | clickhouse-client --host=example-perftest01j --query="INSERT INTO criteo_log FORMAT TabSeparated"; done
 
 4.
 

@@ -21,7 +21,7 @@ namespace DB
 template <typename ArgumentFieldType>
 struct AggregateFunctionQuantileData
 {
-	typedef ReservoirSampler<ArgumentFieldType, ReservoirSamplerOnEmpty::RETURN_NAN_OR_ZERO> Sample;
+	using Sample = ReservoirSampler<ArgumentFieldType, ReservoirSamplerOnEmpty::RETURN_NAN_OR_ZERO>;
 	Sample sample;	/// TODO Добавить MemoryTracker
 };
 
@@ -54,7 +54,7 @@ public:
 	void setArgument(const DataTypePtr & argument)
 	{
 		if (returns_float)
-			type = new DataTypeFloat64;
+			type = std::make_shared<DataTypeFloat64>();
 		else
 			type = argument;
 	}
@@ -121,13 +121,13 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeArray(type);
+		return std::make_shared<DataTypeArray>(type);
 	}
 
 	void setArgument(const DataTypePtr & argument)
 	{
 		if (returns_float)
-			type = new DataTypeFloat64;
+			type = std::make_shared<DataTypeFloat64>();
 		else
 			type = argument;
 	}

@@ -7,7 +7,7 @@ namespace DB
 
 ColumnPtr ColumnAggregateFunction::convertToValues() const
 {
-	const IAggregateFunction * function = holder->func;
+	const IAggregateFunction * function = func.get();
 	ColumnPtr res = function->getReturnType()->createColumn();
 
 	/** Если агрегатная функция возвращает нефинализированное состояние,
@@ -43,10 +43,9 @@ ColumnPtr ColumnAggregateFunction::convertToValues() const
 		*/
 	if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(function))
 	{
-		ColumnAggregateFunction * res_ = new ColumnAggregateFunction(*this);
-		res = res_;
-		res_->set(function_state->getNestedFunction());
-		res_->getData().assign(getData().begin(), getData().end());
+		std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
+		res->set(function_state->getNestedFunction());
+		res->getData().assign(getData().begin(), getData().end());
 		return res;
 	}
 

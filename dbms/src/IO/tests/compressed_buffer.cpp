@@ -5,8 +5,6 @@
 #include <fstream>
 #include <iomanip>
 
-#include <Poco/Stopwatch.h>
-
 #include <DB/Core/Types.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadBufferFromFile.h>
@@ -21,10 +19,10 @@ int main(int argc, char ** argv)
 	try
 	{
 		std::cout << std::fixed << std::setprecision(2);
-		
+
 		size_t n = 100000000;
-		Poco::Stopwatch stopwatch;
-	
+		Stopwatch stopwatch;
+
 		{
 			DB::WriteBufferFromFile buf("test1", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
 			DB::CompressedWriteBuffer compressed_buf(buf);
@@ -36,8 +34,8 @@ int main(int argc, char ** argv)
 				DB::writeChar('\t', compressed_buf);
 			}
 			stopwatch.stop();
-			std::cout << "Writing done (1). Elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000
-				<< ", " << (static_cast<double>(compressed_buf.count()) / stopwatch.elapsed()) << " MB/s"
+			std::cout << "Writing done (1). Elapsed: " << stopwatch.elapsedSeconds()
+				<< ", " << (compressed_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
 				<< std::endl;
 		}
 
@@ -52,7 +50,7 @@ int main(int argc, char ** argv)
 				size_t x;
 				DB::readIntText(x, compressed_buf);
 				compressed_buf.ignore();
-				
+
 				if (x != i)
 				{
 					std::stringstream s;
@@ -61,8 +59,8 @@ int main(int argc, char ** argv)
 				}
 			}
 			stopwatch.stop();
-			std::cout << "Reading done (1). Elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000
-				<< ", " << (static_cast<double>(compressed_buf.count()) / stopwatch.elapsed()) << " MB/s"
+			std::cout << "Reading done (1). Elapsed: " << stopwatch.elapsedSeconds()
+				<< ", " << (compressed_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
 				<< std::endl;
 		}
 	}

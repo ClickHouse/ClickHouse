@@ -425,7 +425,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 //				std::cerr << "merging overflows\n";
 
 				has_overflows = false;
-				BlocksToMerge blocks_to_merge = new BlocksList;
+				BlocksToMerge blocks_to_merge = std::make_unique<BlocksList>();
 
 				for (auto & input : inputs)
 					if (input.overflow_block)
@@ -485,7 +485,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 				continue;
 
 			/// Теперь собираем блоки для current_bucket_num, чтобы их померджить.
-			BlocksToMerge blocks_to_merge = new BlocksList;
+			BlocksToMerge blocks_to_merge = std::make_unique<BlocksList>();
 
 			for (auto & input : inputs)
 			{
@@ -512,7 +512,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 			/// Есть только одноуровневые данные. Просто мерджим их.
 //			std::cerr << "don't have two level\n";
 
-			BlocksToMerge blocks_to_merge = new BlocksList;
+			BlocksToMerge blocks_to_merge = std::make_unique<BlocksList>();
 
 			for (auto & input : inputs)
 				if (input.block)

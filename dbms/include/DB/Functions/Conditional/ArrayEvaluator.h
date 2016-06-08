@@ -172,7 +172,7 @@ public:
 			converted = std::make_unique<PaddedPODArray<TResult> >(array.size());
 			size_t size = array.size();
 			for (size_t i = 0; i < size; ++i)
-				(*converted)[i] = array[i].get<typename NearestFieldType<TType>::Type>();
+				(*converted)[i] = array[i].template get<typename NearestFieldType<TType>::Type>();
 		}
 
 		return {converted->data(), converted->size()};
@@ -382,8 +382,8 @@ private:
 		size_t offsets_size = row_count;
 		size_t data_size = computeResultSize(sources, row_count);
 
-		ColumnVector<TResult> * col_res_vec = new ColumnVector<TResult>;
-		ColumnArray * col_res_array = new ColumnArray{col_res_vec};
+		auto col_res_vec = std::make_shared<ColumnVector<TResult>>();
+		auto col_res_array = std::make_shared<ColumnArray>(col_res_vec);
 		block.getByPosition(result).column = col_res_array;
 
 		return ArraySink<TResult>{col_res_vec->getData(), col_res_array->getOffsets(),

@@ -78,10 +78,10 @@ template <typename TNestedPool>
 class PoolWithFailoverBase : private boost::noncopyable
 {
 public:
-	typedef TNestedPool NestedPool;
-	typedef Poco::SharedPtr<NestedPool> NestedPoolPtr;
-	typedef typename NestedPool::Entry Entry;
-	typedef std::vector<NestedPoolPtr> NestedPools;
+	using NestedPool = TNestedPool;
+	using NestedPoolPtr = std::shared_ptr<NestedPool>;
+	using Entry = typename NestedPool::Entry;
+	using NestedPools = std::vector<NestedPoolPtr>;
 
 	virtual ~PoolWithFailoverBase() {}
 
@@ -208,7 +208,7 @@ protected:
 			states.reserve(this->size());
 
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+				std::lock_guard<std::mutex> lock(mutex);
 
 				for (auto & pool : *this)
 					pool.randomize();
@@ -255,7 +255,7 @@ protected:
 		/// Время, когда последний раз уменьшался счётчик ошибок.
 		time_t last_decrease_time = 0;
 		time_t decrease_error_period;
-		Poco::FastMutex mutex;
+		std::mutex mutex;
 	};
 
 	PoolsWithErrorCount nested_pools;

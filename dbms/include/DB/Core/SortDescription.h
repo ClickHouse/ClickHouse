@@ -18,12 +18,12 @@ struct SortColumnDescription
 	String column_name;						/// Имя столбца.
 	size_t column_number;					/// Номер столбца (используется, если не задано имя).
 	int direction;							/// 1 - по возрастанию, -1 - по убыванию.
-	Poco::SharedPtr<Collator> collator;	/// Collator для locale-specific сортировки строк
+	std::shared_ptr<Collator> collator;	/// Collator для locale-specific сортировки строк
 
-	SortColumnDescription(size_t column_number_, int direction_, const Poco::SharedPtr<Collator> & collator_ = nullptr)
+	SortColumnDescription(size_t column_number_, int direction_, const std::shared_ptr<Collator> & collator_ = nullptr)
 		: column_number(column_number_), direction(direction_), collator(collator_) {}
 
-	SortColumnDescription(String column_name_, int direction_, const Poco::SharedPtr<Collator> & collator_ = nullptr)
+	SortColumnDescription(String column_name_, int direction_, const std::shared_ptr<Collator> & collator_ = nullptr)
 		: column_name(column_name_), column_number(0), direction(direction_), collator(collator_) {}
 
 	/// Для IBlockInputStream.
@@ -31,14 +31,14 @@ struct SortColumnDescription
 	{
 		std::stringstream res;
 		res << column_name << ", " << column_number << ", " << direction;
-		if (!collator.isNull())
+		if (collator)
 			res << ", collation locale: " << collator->getLocale();
 		return res.str();
 	}
 };
 
 /// Описание правила сортировки по нескольким столбцам.
-typedef std::vector<SortColumnDescription> SortDescription;
+using SortDescription = std::vector<SortColumnDescription>;
 
 
 /** Курсор, позволяющий сравнивать соответствующие строки в разных блоках.
@@ -59,7 +59,7 @@ struct SortCursorImpl
 	  */
 	size_t order;
 
-	typedef std::vector<UInt8> NeedCollationFlags;
+	using NeedCollationFlags = std::vector<UInt8>;
 
 	/** Нужно ли использовать Collator для сортировки столбца */
 	NeedCollationFlags need_collation;
@@ -96,7 +96,7 @@ struct SortCursorImpl
 
 			sort_columns.push_back(&*block.getByPosition(column_number).column);
 
-			need_collation[j] = !desc[j].collator.isNull() && sort_columns.back()->getName() == "ColumnString";
+			need_collation[j] = desc[j].collator != nullptr && sort_columns.back()->getName() == "ColumnString";
 			has_collation |= need_collation[j];
 		}
 

@@ -11,7 +11,7 @@
 class RegionsHierarchies
 {
 private:
-	typedef std::unordered_map<std::string, RegionsHierarchy> Container;
+	using Container = std::unordered_map<std::string, RegionsHierarchy>;
 	Container data;
 	Logger * log = &Logger::get("RegionsHierarchies");
 

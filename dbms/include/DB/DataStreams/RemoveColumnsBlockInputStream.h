@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Columns/ColumnConst.h>
 
@@ -9,7 +7,6 @@
 
 namespace DB
 {
-
 
 /** Удаляет из блока указанные столбцы.
   */

@@ -72,7 +72,7 @@ struct XorImpl
 template<typename A>
 struct NotImpl
 {
-	typedef UInt8 ResultType;
+	using ResultType = UInt8;
 
 	static inline UInt8 apply(A a)
 	{
@@ -81,8 +81,8 @@ struct NotImpl
 };
 
 
-typedef ColumnVector<UInt8>::Container_t UInt8Container;
-typedef std::vector<const ColumnVector<UInt8> *> UInt8ColumnPtrs;
+using UInt8Container = ColumnUInt8::Container_t;
+using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
 
 
 template <typename Op, size_t N>
@@ -154,7 +154,7 @@ class FunctionAnyArityLogical : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionAnyArityLogical; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionAnyArityLogical>(); };
 
 private:
 	bool extractConstColumns(ColumnPlainPtrs & in, UInt8 & res)
@@ -264,7 +264,7 @@ public:
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -286,7 +286,7 @@ public:
 		{
 			if (!in.empty())
 				const_val = Impl<UInt8>::apply(const_val, 0);
-			ColumnConst<UInt8> * col_res = new ColumnConst<UInt8>(n, const_val);
+			auto col_res = std::make_shared<ColumnConst<UInt8>>(n, const_val);
 			block.getByPosition(result).column = col_res;
 			return;
 		}
@@ -295,14 +295,14 @@ public:
 		if (has_consts && Impl<UInt8>::apply(const_val, 0) == 0 && Impl<UInt8>::apply(const_val, 1) == 1)
 			has_consts = false;
 
-		ColumnVector<UInt8> * col_res = new ColumnVector<UInt8>;
+		auto col_res = std::make_shared<ColumnUInt8>();
 		block.getByPosition(result).column = col_res;
 		UInt8Container & vec_res = col_res->getData();
 
 		if (has_consts)
 		{
 			vec_res.assign(n, const_val);
-			in.push_back(col_res);
+			in.push_back(col_res.get());
 		}
 		else
 		{
@@ -315,7 +315,7 @@ public:
 		ColumnPlainPtrs other_in;
 		for (IColumn * column : in)
 		{
-			if (auto uint8_column = typeid_cast<const ColumnVector<UInt8> *>(column))
+			if (auto uint8_column = typeid_cast<const ColumnUInt8 *>(column))
 				uint8_in.push_back(uint8_column);
 			else
 				other_in.push_back(column);
@@ -329,7 +329,7 @@ public:
 
 			convertToUInt8(other_in.back(), vec_res);
 			other_in.pop_back();
-			uint8_in.push_back(col_res);
+			uint8_in.push_back(col_res.get());
 		}
 
 		/// Эффективно скомбинируем все столбцы правильного типа.
@@ -338,7 +338,7 @@ public:
 			/// При большом размере блока объединять по 6 толбцов за проход быстрее всего.
 			/// При маленьком - чем больше, тем быстрее.
 			AssociativeOperationImpl<Impl<UInt8>, 10>::execute(uint8_in, vec_res);
-			uint8_in.push_back(col_res);
+			uint8_in.push_back(col_res.get());
 		}
 
 		/// По одному добавим все столбцы неправильного типа.
@@ -346,11 +346,11 @@ public:
 		{
 			executeUInt8Other(uint8_in[0]->getData(), other_in.back(), vec_res);
 			other_in.pop_back();
-			uint8_in[0] = col_res;
+			uint8_in[0] = col_res.get();
 		}
 
 		/// Такое возможно, если среди аргументов ровно один неконстантный, и он имеет тип UInt8.
-		if (uint8_in[0] != col_res)
+		if (uint8_in[0] != col_res.get())
 		{
 			vec_res.assign(uint8_in[0]->getData());
 		}
@@ -363,7 +363,7 @@ class FunctionUnaryLogical : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionUnaryLogical; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionUnaryLogical>(); };
 
 private:
 	template <typename T>
@@ -371,10 +371,10 @@ private:
 	{
 		if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<UInt8> * col_res = new ColumnVector<UInt8>;
+			auto col_res = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = col_res;
 
-			typename ColumnVector<UInt8>::Container_t & vec_res = col_res->getData();
+			typename ColumnUInt8::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col->getData().size());
 			UnaryOperationImpl<T, Impl<T> >::vector(col->getData(), vec_res);
 
@@ -385,7 +385,7 @@ private:
 			UInt8 res = 0;
 			UnaryOperationImpl<T, Impl<T> >::constant(col->getData(), res);
 
-			ColumnConst<UInt8> * col_res = new ColumnConst<UInt8>(col->size(), res);
+			auto col_res = std::make_shared<ColumnConst<UInt8>>(col->size(), res);
 			block.getByPosition(result).column = col_res;
 
 			return true;
@@ -415,7 +415,7 @@ public:
 				+ ") of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -443,9 +443,9 @@ struct NameOr	{ static constexpr auto name = "or"; };
 struct NameXor	{ static constexpr auto name = "xor"; };
 struct NameNot	{ static constexpr auto name = "not"; };
 
-typedef FunctionAnyArityLogical	<AndImpl,	NameAnd>	FunctionAnd;
-typedef FunctionAnyArityLogical	<OrImpl,	NameOr>		FunctionOr;
-typedef FunctionAnyArityLogical	<XorImpl,	NameXor>	FunctionXor;
-typedef FunctionUnaryLogical	<NotImpl,	NameNot>	FunctionNot;
+using FunctionAnd = FunctionAnyArityLogical	<AndImpl,	NameAnd>;
+using FunctionOr = FunctionAnyArityLogical	<OrImpl,	NameOr>	;
+using FunctionXor = FunctionAnyArityLogical	<XorImpl,	NameXor>;
+using FunctionNot = FunctionUnaryLogical	<NotImpl,	NameNot>;
 
 }

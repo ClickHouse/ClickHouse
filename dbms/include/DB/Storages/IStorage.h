@@ -30,14 +30,14 @@ class Context;
 class IBlockInputStream;
 class IBlockOutputStream;
 
-typedef SharedPtr<IBlockOutputStream> BlockOutputStreamPtr;
-typedef SharedPtr<IBlockInputStream> BlockInputStreamPtr;
-typedef std::vector<BlockInputStreamPtr> BlockInputStreams;
+using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
+using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
+using BlockInputStreams = std::vector<BlockInputStreamPtr>;
 
 
 class IStorage;
 
-typedef std::shared_ptr<IStorage> StoragePtr;
+using StoragePtr = std::shared_ptr<IStorage>;
 
 
 /** Хранилище. Отвечает за:
@@ -84,6 +84,7 @@ public:
 		std::experimental::optional<Poco::ScopedReadRWLock> data_lock;
 		std::experimental::optional<Poco::ScopedReadRWLock> structure_lock;
 
+	public:
 		TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data) : storage(storage_)
 		{
 			if (lock_data)
@@ -93,8 +94,8 @@ public:
 		}
 	};
 
-	typedef Poco::SharedPtr<TableStructureReadLock> TableStructureReadLockPtr;
-	typedef std::vector<TableStructureReadLockPtr> TableStructureReadLocks;
+	using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
+	using TableStructureReadLocks = std::vector<TableStructureReadLockPtr>;
 
 	/** Не дает изменять структуру или имя таблицы.
 	  * Если в рамках этого лока будут изменены данные в таблице, нужно указать will_modify_data=true.
@@ -105,15 +106,15 @@ public:
 	  */
 	TableStructureReadLockPtr lockStructure(bool will_modify_data)
 	{
-		TableStructureReadLockPtr res = new TableStructureReadLock(thisPtr(), true, will_modify_data);
+		TableStructureReadLockPtr res = std::make_shared<TableStructureReadLock>(thisPtr(), true, will_modify_data);
 		if (is_dropped)
 			throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 		return res;
 	}
 
-	typedef std::unique_ptr<Poco::ScopedWriteRWLock> TableStructureWriteLockPtr;
-	typedef std::unique_ptr<Poco::ScopedWriteRWLock> TableDataWriteLockPtr;
-	typedef std::pair<TableDataWriteLockPtr, TableStructureWriteLockPtr> TableFullWriteLockPtr;
+	using TableStructureWriteLockPtr = std::unique_ptr<Poco::ScopedWriteRWLock>;
+	using TableDataWriteLockPtr = std::unique_ptr<Poco::ScopedWriteRWLock>;
+	using TableFullWriteLockPtr = std::pair<TableDataWriteLockPtr, TableStructureWriteLockPtr>;
 
 	/** Не дает читать структуру таблицы. Берется для ALTER, RENAME и DROP.
 	  */
@@ -257,7 +258,7 @@ public:
 	/** Выполнить какую-либо фоновую работу. Например, объединение кусков в таблице типа MergeTree.
 	  * Возвращает - была ли выполнена какая-либо работа.
 	  */
-	virtual bool optimize(const Settings & settings)
+	virtual bool optimize(const String & partition, bool final, const Settings & settings)
 	{
 		throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
@@ -285,7 +286,7 @@ public:
 	bool is_dropped{false};
 
 	/// Поддерживается ли индекс в секции IN
-	virtual bool supportsIndexForIn() const { return false; };
+	virtual bool supportsIndexForIn() const { return false; }
 
 	/// проверяет валидность данных
 	virtual bool checkData() const { throw DB::Exception("Check query is not supported for " + getName() + " storage"); }

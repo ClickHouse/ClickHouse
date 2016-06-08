@@ -278,7 +278,7 @@ public:
 	void resetCaches() const;
 
 	const Cluster & getCluster(const std::string & cluster_name) const;
-	Poco::SharedPtr<Clusters> getClusters() const;
+	std::shared_ptr<Clusters> getClusters() const;
 
 	Compiler & getCompiler();
 	QueryLog & getQueryLog();

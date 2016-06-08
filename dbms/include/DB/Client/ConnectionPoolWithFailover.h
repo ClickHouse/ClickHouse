@@ -32,8 +32,8 @@ namespace ErrorCodes
 class ConnectionPoolWithFailover : public PoolWithFailoverBase<IConnectionPool>, public IConnectionPool
 {
 public:
-	typedef IConnectionPool::Entry Entry;
-	typedef PoolWithFailoverBase<IConnectionPool> Base;
+	using Entry = IConnectionPool::Entry;
+	using Base = PoolWithFailoverBase<IConnectionPool>;
 
 	ConnectionPoolWithFailover(ConnectionPools & nested_pools_,
 		LoadBalancing load_balancing,

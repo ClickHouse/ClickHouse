@@ -11,6 +11,7 @@
 #include <ext/scope_guard.hpp>
 
 #include <memory>
+#include <experimental/optional>
 
 #include <DB/Common/Macros.h>
 #include <DB/Common/getFQDNOrHostName.h>
@@ -390,13 +391,13 @@ int Server::main(const std::vector<std::string> & args)
 			new Poco::Net::TCPServerParams);
 
 		/// Interserver IO HTTP
-		Poco::SharedPtr<Poco::Net::HTTPServer> interserver_io_http_server;
+		std::experimental::optional<Poco::Net::HTTPServer> interserver_io_http_server;
 		if (config().has("interserver_http_port"))
 		{
 			Poco::Net::ServerSocket interserver_io_http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("interserver_http_port")));
 			interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
 			interserver_io_http_socket.setSendTimeout(settings.send_timeout);
-			interserver_io_http_server = new Poco::Net::HTTPServer(
+			interserver_io_http_server.emplace(
 				new HTTPRequestHandlerFactory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
 				server_pool,
 				interserver_io_http_socket,
@@ -404,17 +405,17 @@ int Server::main(const std::vector<std::string> & args)
 		}
 
 		/// OLAP HTTP
-		Poco::SharedPtr<Poco::Net::HTTPServer> olap_http_server;
+		std::experimental::optional<Poco::Net::HTTPServer> olap_http_server;
 		bool use_olap_server = config().has("olap_compatibility.port");
 		if (use_olap_server)
 		{
-			olap_parser.reset(new OLAP::QueryParser());
-			olap_converter.reset(new OLAP::QueryConverter(config()));
+			olap_parser = std::make_unique<OLAP::QueryParser>();
+			olap_converter = std::make_unique<OLAP::QueryConverter>(config());
 
 			Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("olap_compatibility.port")));
 			olap_http_socket.setReceiveTimeout(settings.receive_timeout);
 			olap_http_socket.setSendTimeout(settings.send_timeout);
-			olap_http_server = new Poco::Net::HTTPServer(
+			olap_http_server.emplace(
 				new HTTPRequestHandlerFactory<OLAPHTTPHandler>(*this, "OLAPHTTPHandler-factory"),
 				server_pool,
 				olap_http_socket,

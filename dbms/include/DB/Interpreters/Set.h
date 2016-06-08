@@ -33,8 +33,8 @@ namespace DB
 template <typename FieldType, typename TData>	/// UInt8/16/32/64 для любых типов соответствующей битности.
 struct SetMethodOneNumber
 {
-	typedef TData Data;
-	typedef typename Data::key_type Key;
+	using Data = TData;
+	using Key = typename Data::key_type;
 
 	Data data;
 
@@ -71,8 +71,8 @@ struct SetMethodOneNumber
 template <typename TData>
 struct SetMethodString
 {
-	typedef TData Data;
-	typedef typename Data::key_type Key;
+	using Data = TData;
+	using Key = typename Data::key_type;
 
 	Data data;
 
@@ -111,8 +111,8 @@ struct SetMethodString
 template <typename TData>
 struct SetMethodFixedString
 {
-	typedef TData Data;
-	typedef typename Data::key_type Key;
+	using Data = TData;
+	using Key = typename Data::key_type;
 
 	Data data;
 
@@ -149,8 +149,8 @@ struct SetMethodFixedString
 template <typename TData>
 struct SetMethodKeysFixed
 {
-	typedef TData Data;
-	typedef typename Data::key_type Key;
+	using Data = TData;
+	using Key = typename Data::key_type;
 
 	Data data;
 
@@ -177,8 +177,8 @@ struct SetMethodKeysFixed
 template <typename TData>
 struct SetMethodHashed
 {
-	typedef TData Data;
-	typedef typename Data::key_type Key;
+	using Data = TData;
+	using Key = typename Data::key_type;
 
 	Data data;
 
@@ -329,8 +329,8 @@ private:
 
 	/// Вектор упорядоченных элементов Set.
 	/// Нужен для работы индекса по первичному ключу в операторе IN.
-	typedef std::vector<Field> OrderedSetElements;
-	typedef std::unique_ptr<OrderedSetElements> OrderedSetElementsPtr;
+	using OrderedSetElements = std::vector<Field>;
+	using OrderedSetElementsPtr = std::unique_ptr<OrderedSetElements>;
 	OrderedSetElementsPtr ordered_set_elements;
 
 	/** Защищает работу с множеством в функциях insertFromBlock и execute.
@@ -366,9 +366,9 @@ private:
 		size_t rows) const;
 };
 
-typedef std::shared_ptr<Set> SetPtr;
-typedef std::shared_ptr<const Set> ConstSetPtr;
-typedef std::vector<SetPtr> Sets;
+using SetPtr = std::shared_ptr<Set>;
+using ConstSetPtr = std::shared_ptr<const Set>;
+using Sets = std::vector<SetPtr>;
 
 
 }

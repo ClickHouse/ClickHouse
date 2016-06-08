@@ -7,7 +7,9 @@
 namespace DB
 {
 
-/** Отдаёт без изменений данные из потока блоков, но перед чтением первого блока инициализирует все переданные множества.
+/** Отдаёт без изменений данные из потока блоков, но
+  * в функции readPrefix или перед чтением первого блока
+  * инициализирует все переданные множества.
   */
 class CreatingSetsBlockInputStream : public IProfilingBlockInputStream
 {
@@ -54,6 +56,7 @@ public:
 
 protected:
 	Block readImpl() override;
+	void readPrefixImpl() override;
 
 private:
 	SubqueriesForSets subqueries_for_sets;
@@ -68,7 +71,8 @@ private:
 
 	Logger * log = &Logger::get("CreatingSetsBlockInputStream");
 
-	void create(SubqueryForSet & subquery);
+	void createAll();
+	void createOne(SubqueryForSet & subquery);
 };
 
 }

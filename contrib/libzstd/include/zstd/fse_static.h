@@ -334,6 +334,54 @@ MEM_STATIC unsigned FSE_endOfDState(const FSE_DState_t* DStatePtr)
 }
 
 
+
+#ifndef FSE_COMMONDEFS_ONLY
+
+/* **************************************************************
+*  Tuning parameters
+****************************************************************/
+/*!MEMORY_USAGE :
+*  Memory usage formula : N->2^N Bytes (examples : 10 -> 1KB; 12 -> 4KB ; 16 -> 64KB; 20 -> 1MB; etc.)
+*  Increasing memory usage improves compression ratio
+*  Reduced memory usage can improve speed, due to cache effect
+*  Recommended max value is 14, for 16KB, which nicely fits into Intel x86 L1 cache */
+#define FSE_MAX_MEMORY_USAGE 14
+#define FSE_DEFAULT_MEMORY_USAGE 13
+
+/*!FSE_MAX_SYMBOL_VALUE :
+*  Maximum symbol value authorized.
+*  Required for proper stack allocation */
+#define FSE_MAX_SYMBOL_VALUE 255
+
+
+/* **************************************************************
+*  template functions type & suffix
+****************************************************************/
+#define FSE_FUNCTION_TYPE BYTE
+#define FSE_FUNCTION_EXTENSION
+#define FSE_DECODE_TYPE FSE_decode_t
+
+
+#endif   /* !FSE_COMMONDEFS_ONLY */
+
+
+/* ***************************************************************
+*  Constants
+*****************************************************************/
+#define FSE_MAX_TABLELOG  (FSE_MAX_MEMORY_USAGE-2)
+#define FSE_MAX_TABLESIZE (1U<<FSE_MAX_TABLELOG)
+#define FSE_MAXTABLESIZE_MASK (FSE_MAX_TABLESIZE-1)
+#define FSE_DEFAULT_TABLELOG (FSE_DEFAULT_MEMORY_USAGE-2)
+#define FSE_MIN_TABLELOG 5
+
+#define FSE_TABLELOG_ABSOLUTE_MAX 15
+#if FSE_MAX_TABLELOG > FSE_TABLELOG_ABSOLUTE_MAX
+#error "FSE_MAX_TABLELOG > FSE_TABLELOG_ABSOLUTE_MAX is not supported"
+#endif
+
+#define FSE_TABLESTEP(tableSize) ((tableSize>>1) + (tableSize>>3) + 3)
+
+
 #if defined (__cplusplus)
 }
 #endif

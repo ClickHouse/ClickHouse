@@ -42,7 +42,7 @@ public:
 
 	DataTypePtr clone() const override
 	{
-		return new DataTypeExpression(argument_types, return_type);
+		return std::make_shared<DataTypeExpression>(argument_types, return_type);
 	}
 
 	const DataTypes & getArgumentTypes() const

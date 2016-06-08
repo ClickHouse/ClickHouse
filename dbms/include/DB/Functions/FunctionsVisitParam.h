@@ -36,7 +36,7 @@ namespace DB
 
 struct HasParam
 {
-	typedef UInt8 ResultType;
+	using ResultType = UInt8;
 
 	static UInt8 extract(const UInt8 * begin, const UInt8 * end)
 	{
@@ -47,7 +47,7 @@ struct HasParam
 template<typename NumericType>
 struct ExtractNumericType
 {
-	typedef NumericType ResultType;
+	using ResultType = NumericType;
 
 	static ResultType extract(const UInt8 * begin, const UInt8 * end)
 	{
@@ -66,7 +66,7 @@ struct ExtractNumericType
 
 struct ExtractBool
 {
-	typedef UInt8 ResultType;
+	using ResultType = UInt8;
 
 	static UInt8 extract(const UInt8 * begin, const UInt8 * end)
 	{
@@ -283,7 +283,7 @@ struct ExtractString
 template <typename ParamExtractor>
 struct ExtractParamImpl
 {
-	typedef typename ParamExtractor::ResultType ResultType;
+	using ResultType = typename ParamExtractor::ResultType;
 
 	/// Предполагается, что res нужного размера и инициализирован нулями.
 	static void vector_constant(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
@@ -422,12 +422,12 @@ struct NameVisitParamExtractRaw		{ static constexpr auto name = "visitParamExtra
 struct NameVisitParamExtractString	{ static constexpr auto name = "visitParamExtractString"; };
 
 
-typedef FunctionsStringSearch<ExtractParamImpl<HasParam>, NameVisitParamHas> FunctionVisitParamHas;
-typedef FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<UInt64> >, NameVisitParamExtractUInt> FunctionVisitParamExtractUInt;
-typedef FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<Int64> >, NameVisitParamExtractInt> FunctionVisitParamExtractInt;
-typedef FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<Float64> >, NameVisitParamExtractFloat> FunctionVisitParamExtractFloat;
-typedef FunctionsStringSearch<ExtractParamImpl<ExtractBool>, NameVisitParamExtractBool> FunctionVisitParamExtractBool;
-typedef FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractRaw>, NameVisitParamExtractRaw> FunctionVisitParamExtractRaw;
-typedef FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractString>, NameVisitParamExtractString> FunctionVisitParamExtractString;
+using FunctionVisitParamHas = FunctionsStringSearch<ExtractParamImpl<HasParam>, NameVisitParamHas>;
+using FunctionVisitParamExtractUInt = FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<UInt64> >, NameVisitParamExtractUInt>;
+using FunctionVisitParamExtractInt = FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<Int64> >, NameVisitParamExtractInt>;
+using FunctionVisitParamExtractFloat = FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<Float64> >, NameVisitParamExtractFloat>;
+using FunctionVisitParamExtractBool = FunctionsStringSearch<ExtractParamImpl<ExtractBool>, NameVisitParamExtractBool>;
+using FunctionVisitParamExtractRaw = FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractRaw>, NameVisitParamExtractRaw>;
+using FunctionVisitParamExtractString = FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractString>, NameVisitParamExtractString>;
 
 }

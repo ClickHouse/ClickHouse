@@ -19,24 +19,24 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
 	: name(name_),
 	columns
 	{
-		{"partition", 			new DataTypeString},
-		{"name", 				new DataTypeString},
-		{"replicated",			new DataTypeUInt8},
-		{"active",				new DataTypeUInt8},
-		{"marks",				new DataTypeUInt64},
-		{"bytes",				new DataTypeUInt64},
-		{"modification_time",	new DataTypeDateTime},
-		{"remove_time",			new DataTypeDateTime},
-		{"refcount",			new DataTypeUInt32},
-		{"min_date",			new DataTypeDate},
-		{"max_date",			new DataTypeDate},
-		{"min_block_number",	new DataTypeInt64},
-		{"max_block_number",	new DataTypeInt64},
-		{"level",				new DataTypeUInt32},
+		{"partition", 			std::make_shared<DataTypeString>()},
+		{"name", 				std::make_shared<DataTypeString>()},
+		{"replicated",			std::make_shared<DataTypeUInt8>()},
+		{"active",				std::make_shared<DataTypeUInt8>()},
+		{"marks",				std::make_shared<DataTypeUInt64>()},
+		{"bytes",				std::make_shared<DataTypeUInt64>()},
+		{"modification_time",	std::make_shared<DataTypeDateTime>()},
+		{"remove_time",			std::make_shared<DataTypeDateTime>()},
+		{"refcount",			std::make_shared<DataTypeUInt32>()},
+		{"min_date",			std::make_shared<DataTypeDate>()},
+		{"max_date",			std::make_shared<DataTypeDate>()},
+		{"min_block_number",	std::make_shared<DataTypeInt64>()},
+		{"max_block_number",	std::make_shared<DataTypeInt64>()},
+		{"level",				std::make_shared<DataTypeUInt32>()},
 
-		{"database", 			new DataTypeString},
-		{"table", 				new DataTypeString},
-		{"engine", 				new DataTypeString},
+		{"database", 			std::make_shared<DataTypeString>()},
+		{"table", 				std::make_shared<DataTypeString>()},
+		{"engine", 				std::make_shared<DataTypeString>()},
 	}
 {
 }
@@ -70,10 +70,10 @@ BlockInputStreams StorageSystemParts::read(
 		Databases databases = context.getDatabases();
 
 		/// Добавим столбец database.
-		ColumnPtr database_column = new ColumnString;
+		ColumnPtr database_column = std::make_shared<ColumnString>();
 		for (const auto & database : databases)
 			database_column->insert(database.first);
-		block.insert(ColumnWithTypeAndName(database_column, new DataTypeString, "database"));
+		block.insert(ColumnWithTypeAndName(database_column, std::make_shared<DataTypeString>(), "database"));
 
 		/// Отфильтруем блок со столбцом database.
 		VirtualColumnUtils::filterBlockWithQuery(query, block, context);
@@ -86,10 +86,10 @@ BlockInputStreams StorageSystemParts::read(
 		size_t rows = database_column->size();
 
 		IColumn::Offsets_t offsets(rows);
-		ColumnPtr table_column = new ColumnString;
-		ColumnPtr engine_column = new ColumnString;
-		ColumnPtr replicated_column = new ColumnUInt8;
-		ColumnPtr active_column = new ColumnUInt8;
+		ColumnPtr table_column = std::make_shared<ColumnString>();
+		ColumnPtr engine_column = std::make_shared<ColumnString>();
+		ColumnPtr replicated_column = std::make_shared<ColumnUInt8>();
+		ColumnPtr active_column = std::make_shared<ColumnUInt8>();
 
 		for (size_t i = 0; i < rows; ++i)
 		{
@@ -131,10 +131,10 @@ BlockInputStreams StorageSystemParts::read(
 			column = column->replicate(offsets);
 		}
 
-		block.insert(ColumnWithTypeAndName(table_column, new DataTypeString, "table"));
-		block.insert(ColumnWithTypeAndName(engine_column, new DataTypeString, "engine"));
-		block.insert(ColumnWithTypeAndName(replicated_column, new DataTypeUInt8, "replicated"));
-		block.insert(ColumnWithTypeAndName(active_column, new DataTypeUInt8, "active"));
+		block.insert(ColumnWithTypeAndName(table_column, std::make_shared<DataTypeString>(), "table"));
+		block.insert(ColumnWithTypeAndName(engine_column, std::make_shared<DataTypeString>(), "engine"));
+		block.insert(ColumnWithTypeAndName(replicated_column, std::make_shared<DataTypeUInt8>(), "replicated"));
+		block.insert(ColumnWithTypeAndName(active_column, std::make_shared<DataTypeUInt8>(), "active"));
 	}
 
 	/// Отфильтруем блок со столбцами database, table, engine, replicated и active.
@@ -149,23 +149,23 @@ BlockInputStreams StorageSystemParts::read(
 	ColumnPtr filtered_active_column = block.getByName("active").column;
 
 	/// Наконец составим результат.
-	ColumnPtr database_column = new ColumnString;
-	ColumnPtr table_column = new ColumnString;
-	ColumnPtr engine_column = new ColumnString;
-	ColumnPtr partition_column = new ColumnString;
-	ColumnPtr name_column = new ColumnString;
-	ColumnPtr replicated_column = new ColumnUInt8;
-	ColumnPtr active_column = new ColumnUInt8;
-	ColumnPtr marks_column = new ColumnUInt64;
-	ColumnPtr bytes_column = new ColumnUInt64;
-	ColumnPtr modification_time_column = new ColumnUInt32;
-	ColumnPtr remove_time_column = new ColumnUInt32;
-	ColumnPtr refcount_column = new ColumnUInt32;
-	ColumnPtr min_date_column = new ColumnUInt16;
-	ColumnPtr max_date_column = new ColumnUInt16;
-	ColumnPtr min_block_number_column = new ColumnInt64;
-	ColumnPtr max_block_number_column = new ColumnInt64;
-	ColumnPtr level_column = new ColumnUInt32;
+	ColumnPtr database_column = std::make_shared<ColumnString>();
+	ColumnPtr table_column = std::make_shared<ColumnString>();
+	ColumnPtr engine_column = std::make_shared<ColumnString>();
+	ColumnPtr partition_column = std::make_shared<ColumnString>();
+	ColumnPtr name_column = std::make_shared<ColumnString>();
+	ColumnPtr replicated_column = std::make_shared<ColumnUInt8>();
+	ColumnPtr active_column = std::make_shared<ColumnUInt8>();
+	ColumnPtr marks_column = std::make_shared<ColumnUInt64>();
+	ColumnPtr bytes_column = std::make_shared<ColumnUInt64>();
+	ColumnPtr modification_time_column = std::make_shared<ColumnUInt32>();
+	ColumnPtr remove_time_column = std::make_shared<ColumnUInt32>();
+	ColumnPtr refcount_column = std::make_shared<ColumnUInt32>();
+	ColumnPtr min_date_column = std::make_shared<ColumnUInt16>();
+	ColumnPtr max_date_column = std::make_shared<ColumnUInt16>();
+	ColumnPtr min_block_number_column = std::make_shared<ColumnInt64>();
+	ColumnPtr max_block_number_column = std::make_shared<ColumnInt64>();
+	ColumnPtr level_column = std::make_shared<ColumnUInt32>();
 
 	for (size_t i = 0; i < filtered_database_column->size();)
 	{
@@ -246,25 +246,25 @@ BlockInputStreams StorageSystemParts::read(
 
 	block.clear();
 
-	block.insert(ColumnWithTypeAndName(partition_column, 			new DataTypeString, 	"partition"));
-	block.insert(ColumnWithTypeAndName(name_column, 				new DataTypeString, 	"name"));
-	block.insert(ColumnWithTypeAndName(replicated_column, 			new DataTypeUInt8,		"replicated"));
-	block.insert(ColumnWithTypeAndName(active_column, 				new DataTypeUInt8, 		"active"));
-	block.insert(ColumnWithTypeAndName(marks_column, 				new DataTypeUInt64, 	"marks"));
-	block.insert(ColumnWithTypeAndName(bytes_column, 				new DataTypeUInt64, 	"bytes"));
-	block.insert(ColumnWithTypeAndName(modification_time_column, 	new DataTypeDateTime, 	"modification_time"));
-	block.insert(ColumnWithTypeAndName(remove_time_column, 			new DataTypeDateTime, 	"remove_time"));
-	block.insert(ColumnWithTypeAndName(refcount_column, 			new DataTypeUInt32, 	"refcount"));
-	block.insert(ColumnWithTypeAndName(min_date_column,				new DataTypeDate,		"min_date"));
-	block.insert(ColumnWithTypeAndName(max_date_column,				new DataTypeDate,		"max_date"));
-	block.insert(ColumnWithTypeAndName(min_block_number_column,		new DataTypeInt64,		"min_block_number"));
-	block.insert(ColumnWithTypeAndName(max_block_number_column,		new DataTypeInt64,		"max_block_number"));
-	block.insert(ColumnWithTypeAndName(level_column,				new DataTypeUInt32,		"level"));
-	block.insert(ColumnWithTypeAndName(database_column, 			new DataTypeString, 	"database"));
-	block.insert(ColumnWithTypeAndName(table_column, 				new DataTypeString, 	"table"));
-	block.insert(ColumnWithTypeAndName(engine_column, 				new DataTypeString, 	"engine"));
+	block.insert(ColumnWithTypeAndName(partition_column, 			std::make_shared<DataTypeString>(), 	"partition"));
+	block.insert(ColumnWithTypeAndName(name_column, 				std::make_shared<DataTypeString>(), 	"name"));
+	block.insert(ColumnWithTypeAndName(replicated_column, 			std::make_shared<DataTypeUInt8>(),		"replicated"));
+	block.insert(ColumnWithTypeAndName(active_column, 				std::make_shared<DataTypeUInt8>(), 		"active"));
+	block.insert(ColumnWithTypeAndName(marks_column, 				std::make_shared<DataTypeUInt64>(), 	"marks"));
+	block.insert(ColumnWithTypeAndName(bytes_column, 				std::make_shared<DataTypeUInt64>(), 	"bytes"));
+	block.insert(ColumnWithTypeAndName(modification_time_column, 	std::make_shared<DataTypeDateTime>(), 	"modification_time"));
+	block.insert(ColumnWithTypeAndName(remove_time_column, 			std::make_shared<DataTypeDateTime>(), 	"remove_time"));
+	block.insert(ColumnWithTypeAndName(refcount_column, 			std::make_shared<DataTypeUInt32>(), 	"refcount"));
+	block.insert(ColumnWithTypeAndName(min_date_column,				std::make_shared<DataTypeDate>(),		"min_date"));
+	block.insert(ColumnWithTypeAndName(max_date_column,				std::make_shared<DataTypeDate>(),		"max_date"));
+	block.insert(ColumnWithTypeAndName(min_block_number_column,		std::make_shared<DataTypeInt64>(),		"min_block_number"));
+	block.insert(ColumnWithTypeAndName(max_block_number_column,		std::make_shared<DataTypeInt64>(),		"max_block_number"));
+	block.insert(ColumnWithTypeAndName(level_column,				std::make_shared<DataTypeUInt32>(),		"level"));
+	block.insert(ColumnWithTypeAndName(database_column, 			std::make_shared<DataTypeString>(), 	"database"));
+	block.insert(ColumnWithTypeAndName(table_column, 				std::make_shared<DataTypeString>(), 	"table"));
+	block.insert(ColumnWithTypeAndName(engine_column, 				std::make_shared<DataTypeString>(), 	"engine"));
 
-	return BlockInputStreams(1, new OneBlockInputStream(block));
+	return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
 }
 
 

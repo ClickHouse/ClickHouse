@@ -1,5 +1,3 @@
-#include <Poco/SharedPtr.h>
-
 #include <DB/Core/Defines.h>
 
 #include <DB/Columns/ColumnString.h>
@@ -300,13 +298,13 @@ void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, con
 
 ColumnPtr DataTypeString::createColumn() const
 {
-	return new ColumnString;
+	return std::make_shared<ColumnString>();
 }
 
 
 ColumnPtr DataTypeString::createConstColumn(size_t size, const Field & field) const
 {
-	return new ColumnConst<String>(size, get<const String &>(field));
+	return std::make_shared<ColumnConstString>(size, get<const String &>(field));
 }
 
 }

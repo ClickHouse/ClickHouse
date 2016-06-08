@@ -23,7 +23,7 @@ public:
 
 	DataTypePtr clone() const override
 	{
-		return new DataTypeNested(nested);
+		return std::make_shared<DataTypeNested>(nested);
 	}
 
 	const NamesAndTypesListPtr & getNestedTypesList() const { return nested; }

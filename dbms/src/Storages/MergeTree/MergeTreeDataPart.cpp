@@ -437,6 +437,7 @@ void MergeTreeDataPart::loadIndex()
 
 	if (key_size)
 	{
+		index.clear();
 		index.resize(key_size);
 
 		for (size_t i = 0; i < key_size; ++i)

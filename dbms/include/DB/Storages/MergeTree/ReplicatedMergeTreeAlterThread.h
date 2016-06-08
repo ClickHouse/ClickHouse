@@ -36,7 +36,7 @@ private:
 	StorageReplicatedMergeTree & storage;
 	Logger * log;
 
-	zkutil::EventPtr wakeup_event { new Poco::Event };
+	zkutil::EventPtr wakeup_event { std::make_shared<Poco::Event>() };
 	volatile bool need_stop { false };
 
 	std::thread thread;

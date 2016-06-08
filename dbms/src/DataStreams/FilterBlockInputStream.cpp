@@ -177,7 +177,7 @@ Block FilterBlockInputStream::readImpl()
 		if (filtered_rows == filter.size())
 		{
 			/// Заменим столбец с фильтром на константу.
-			res.getByPosition(filter_column).column = new ColumnConstUInt8(filtered_rows, 1);
+			res.getByPosition(filter_column).column = std::make_shared<ColumnConstUInt8>(filtered_rows, 1);
 			/// Остальные столбцы трогать не нужно.
 			return res;
 		}
@@ -190,7 +190,7 @@ Block FilterBlockInputStream::readImpl()
 			if (i == static_cast<size_t>(filter_column))
 			{
 				/// Сам столбец с фильтром заменяем на столбец с константой 1, так как после фильтрации в нём ничего другого не останется.
-				current_column.column = new ColumnConstUInt8(filtered_rows, 1);
+				current_column.column = std::make_shared<ColumnConstUInt8>(filtered_rows, 1);
 				continue;
 			}
 

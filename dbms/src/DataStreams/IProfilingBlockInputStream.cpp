@@ -1,6 +1,7 @@
 #include <iomanip>
+#include <random>
 
-/*#include <Poco/Mutex.h>
+/*#include <mutex>
 #include <Poco/Ext/ThreadNumber.h>*/
 
 #include <DB/Columns/ColumnConst.h>
@@ -49,8 +50,8 @@ Block IProfilingBlockInputStream::read()
 
 /*	if (res)
 	{
-		static Poco::FastMutex mutex;
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		static std::mutex mutex;
+		std::lock_guard<std::mutex> lock(mutex);
 
 		std::cerr << std::endl;
 		std::cerr << "[ " << Poco::ThreadNumber::get() << " ]\t" << getName() << std::endl;
@@ -93,6 +94,15 @@ Block IProfilingBlockInputStream::read()
 	progress(Progress(res.rowsInFirstColumn(), res.bytes()));
 
 	return res;
+}
+
+
+void IProfilingBlockInputStream::readPrefix()
+{
+	readPrefixImpl();
+
+	for (auto & child : children)
+		child->readPrefix();
 }
 
 

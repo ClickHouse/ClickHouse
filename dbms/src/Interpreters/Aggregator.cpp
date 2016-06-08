@@ -154,7 +154,7 @@ void Aggregator::initialize(const Block & block)
 			for (size_t j = 0; j < arguments_size; ++j)
 				argument_types[j] = block.getByPosition(params.aggregates[i].arguments[j]).type;
 
-			col.type = new DataTypeAggregateFunction(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
+			col.type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
 			col.column = col.type->createColumn();
 
 			sample.insert(col);
@@ -623,7 +623,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 	/// Запоминаем столбцы, с которыми будем работать
 	for (size_t i = 0; i < params.keys_size; ++i)
 	{
-		key_columns[i] = block.getByPosition(params.keys[i]).column;
+		key_columns[i] = block.getByPosition(params.keys[i]).column.get();
 
 		if (auto converted = key_columns[i]->convertToFullColumnIfConst())
 		{
@@ -639,7 +639,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 	{
 		for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
 		{
-			aggregate_columns[i][j] = block.getByPosition(params.aggregates[i].arguments[j]).column;
+			aggregate_columns[i][j] = block.getByPosition(params.aggregates[i].arguments[j]).column.get();
 
 			if (auto converted = aggregate_columns[i][j]->convertToFullColumnIfConst())
 			{
@@ -812,7 +812,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
 
 	/// NOTE Вместо освобождения памяти и создания новых хэш-таблиц и арены, можно переиспользовать старые.
 	data_variants.init(data_variants.type);
-	data_variants.aggregates_pools = Arenas(1, new Arena);
+	data_variants.aggregates_pools = Arenas(1, std::make_shared<Arena>());
 	data_variants.aggregates_pool = data_variants.aggregates_pools.back().get();
 
 	block_out.flush();
@@ -1052,7 +1052,7 @@ Block Aggregator::prepareBlockAndFill(
 
 	for (size_t i = 0; i < params.keys_size; ++i)
 	{
-		key_columns[i] = res.getByPosition(i).column;
+		key_columns[i] = res.getByPosition(i).column.get();
 		key_columns[i]->reserve(rows);
 	}
 
@@ -1086,7 +1086,7 @@ Block Aggregator::prepareBlockAndFill(
 					column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
 			}
 
-			final_aggregate_columns[i] = column.column;
+			final_aggregate_columns[i] = column.column.get();
 		}
 	}
 
@@ -1684,7 +1684,7 @@ std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
 			non_empty_data.push_back(data);
 
 	if (non_empty_data.empty())
-		return std::unique_ptr<IBlockInputStream>(new NullBlockInputStream);
+		return std::make_unique<NullBlockInputStream>();
 
 	if (non_empty_data.size() > 1)
 	{
@@ -1728,7 +1728,7 @@ std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
 			non_empty_data[i]->aggregates_pools.begin(), non_empty_data[i]->aggregates_pools.end());
 	}
 
-	return std::unique_ptr<IBlockInputStream>(new MergingAndConvertingBlockInputStream(*this, non_empty_data, final, max_threads));
+	return std::make_unique<MergingAndConvertingBlockInputStream>(*this, non_empty_data, final, max_threads);
 }
 
 
@@ -1746,7 +1746,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 
 	/// Запоминаем столбцы, с которыми будем работать
 	for (size_t i = 0; i < params.keys_size; ++i)
-		key_columns[i] = block.getByPosition(i).column;
+		key_columns[i] = block.getByPosition(i).column.get();
 
 	for (size_t i = 0; i < params.aggregates_size; ++i)
 		aggregate_columns[i] = &typeid_cast<ColumnAggregateFunction &>(*block.getByPosition(params.keys_size + i).column).getData();
@@ -1905,7 +1905,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 
 	/// Каким способом выполнять агрегацию?
 	for (size_t i = 0; i < params.keys_size; ++i)
-		key_columns[i] = sample.getByPosition(i).column;
+		key_columns[i] = sample.getByPosition(i).column.get();
 
 	Sizes key_sizes;
 	AggregatedDataVariants::Type method = chooseAggregationMethod(key_columns, key_sizes);
@@ -1987,7 +1987,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 			if (bucket == -1)
 				continue;
 
-			result.aggregates_pools.push_back(new Arena);
+			result.aggregates_pools.push_back(std::make_shared<Arena>());
 			Arena * aggregates_pool = result.aggregates_pools.back().get();
 
 			tasks[bucket] = std::packaged_task<void()>(std::bind(merge_bucket, bucket, aggregates_pool, current_memory_tracker));
@@ -2065,7 +2065,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
 	/// Каким способом выполнять агрегацию?
 	for (size_t i = 0; i < params.keys_size; ++i)
-		key_columns[i] = sample.getByPosition(i).column;
+		key_columns[i] = sample.getByPosition(i).column.get();
 
 	Sizes key_sizes;
 	AggregatedDataVariants::Type method = chooseAggregationMethod(key_columns, key_sizes);
@@ -2217,7 +2217,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
 			dst.insert({src_col.column->filter(filter, size_hint), src_col.type, src_col.name});
 
 			/** Вставленные в блок столбцы типа ColumnAggregateFunction будут владеть состояниями агрегатных функций
-			  *  путём удержания SharedPtr-а на исходный столбец. См. ColumnAggregateFunction.h
+			  *  путём удержания shared_ptr-а на исходный столбец. См. ColumnAggregateFunction.h
 			  */
 		}
 	}
@@ -2240,7 +2240,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 
 	/// Запоминаем столбцы, с которыми будем работать
 	for (size_t i = 0; i < params.keys_size; ++i)
-		key_columns[i] = block.getByPosition(i).column;
+		key_columns[i] = block.getByPosition(i).column.get();
 
 	AggregatedDataVariants::Type type = chooseAggregationMethod(key_columns, key_sizes);
 	data.keys_size = params.keys_size;

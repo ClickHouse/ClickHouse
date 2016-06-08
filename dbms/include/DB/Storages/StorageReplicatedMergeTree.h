@@ -107,7 +107,7 @@ public:
 
 	NameAndTypePair getColumn(const String & column_name) const override
 	{
-		if (column_name == "_replicated") return NameAndTypePair("_replicated", new DataTypeUInt8);
+		if (column_name == "_replicated") return NameAndTypePair("_replicated", std::make_shared<DataTypeUInt8>());
 		return data.getColumn(column_name);
 	}
 
@@ -128,7 +128,7 @@ public:
 
 	BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
 
-	bool optimize(const Settings & settings) override;
+	bool optimize(const String & partition, bool final, const Settings & settings) override;
 
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
@@ -275,7 +275,7 @@ private:
 
 	/// Поток, следящий за обновлениями в логах всех реплик и загружающий их в очередь.
 	std::thread queue_updating_thread;
-	zkutil::EventPtr queue_updating_event = zkutil::EventPtr(new Poco::Event);
+	zkutil::EventPtr queue_updating_event = std::make_shared<Poco::Event>();
 
 	/// Задание, выполняющее действия из очереди.
 	BackgroundProcessingPool::TaskHandle queue_task_handle;
@@ -298,7 +298,7 @@ private:
 	ReplicatedMergeTreePartCheckThread part_check_thread;
 
 	/// Событие, пробуждающее метод alter от ожидания завершения запроса ALTER.
-	zkutil::EventPtr alter_query_event = zkutil::EventPtr(new Poco::Event);
+	zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();
 
 	Logger * log;
 
@@ -396,6 +396,22 @@ private:
 	  */
 	void mergeSelectingThread();
 
+	using MemoizedPartsThatCouldBeMerged = std::set<std::pair<std::string, std::string>>;
+	/// Можно ли мерджить куски в указанном диапазоне? memo - необязательный параметр.
+	bool canMergeParts(
+		const MergeTreeData::DataPartPtr & left,
+		const MergeTreeData::DataPartPtr & right,
+		MemoizedPartsThatCouldBeMerged * memo);
+
+	/** Записать выбранные куски для слияния в лог,
+	  * Вызывать при заблокированном merge_selecting_mutex.
+	  * Возвращает false, если какого-то куска нет в ZK.
+	  */
+	bool createLogEntryToMergeParts(
+		const MergeTreeData::DataPartsVector & parts,
+		const String & merged_name,
+		ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
+
 	/// Обмен кусками.
 
 	/** Возвращает пустую строку, если куска ни у кого нет.
@@ -417,11 +433,11 @@ private:
 	/** Дождаться, пока все реплики, включая эту, выполнят указанное действие из лога.
 	  * Если одновременно с этим добавляются реплики, может не дождаться добавленную реплику.
 	  */
-	void waitForAllReplicasToProcessLogEntry(const LogEntry & entry);
+	void waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry);
 
 	/** Дождаться, пока указанная реплика выполнит указанное действие из лога.
 	  */
-	void waitForReplicaToProcessLogEntry(const String & replica_name, const LogEntry & entry);
+	void waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry);
 
 	/// Кинуть исключение, если таблица readonly.
 	void assertNotReadonly() const;

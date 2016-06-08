@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-void ReplicatedMergeTreeLogEntry::writeText(WriteBuffer & out) const
+void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 {
 	out << "format version: 3\n"
 		<< "create_time: " << LocalDateTime(create_time ? create_time : time(0)) << "\n"
@@ -56,7 +56,7 @@ void ReplicatedMergeTreeLogEntry::writeText(WriteBuffer & out) const
 		out << "quorum: " << quorum << '\n';
 }
 
-void ReplicatedMergeTreeLogEntry::readText(ReadBuffer & in)
+void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 {
 	UInt8 format_version = 0;
 	String type_str;
@@ -127,7 +127,7 @@ void ReplicatedMergeTreeLogEntry::readText(ReadBuffer & in)
 		in >> "quorum: " >> quorum >> "\n";
 }
 
-String ReplicatedMergeTreeLogEntry::toString() const
+String ReplicatedMergeTreeLogEntryData::toString() const
 {
 	String s;
 	{
@@ -140,7 +140,7 @@ String ReplicatedMergeTreeLogEntry::toString() const
 ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String & s, const zkutil::Stat & stat)
 {
 	ReadBufferFromString in(s);
-	Ptr res = new ReplicatedMergeTreeLogEntry;
+	Ptr res = std::make_shared<ReplicatedMergeTreeLogEntry>();
 	res->readText(in);
 	assertEOF(in);
 

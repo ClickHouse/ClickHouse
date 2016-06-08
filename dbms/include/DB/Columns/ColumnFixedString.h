@@ -27,11 +27,11 @@ namespace ErrorCodes
 class ColumnFixedString final : public IColumn
 {
 public:
-	typedef PaddedPODArray<UInt8> Chars_t;
+	using Chars_t = PaddedPODArray<UInt8>;
 
 private:
 	/// Байты строк, уложенные подряд. Строки хранятся без завершающего нулевого байта.
-	/** NOTE Требуется, чтобы смещение и тип chars в объекте был таким же, как у data в ColumnVector<UInt8>.
+	/** NOTE Требуется, чтобы смещение и тип chars в объекте был таким же, как у data в ColumnUInt8.
 	  * Это используется в функции packFixed (AggregationCommon.h)
 	  */
 	Chars_t chars;
@@ -46,7 +46,7 @@ public:
 
 	ColumnPtr cloneEmpty() const override
 	{
-		return new ColumnFixedString(n);
+		return std::make_shared<ColumnFixedString>(n);
 	}
 
 	size_t size() const override
@@ -210,19 +210,18 @@ public:
 		if (col_size != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		ColumnFixedString * res_ = new ColumnFixedString(n);
-		ColumnPtr res = res_;
+		std::shared_ptr<ColumnFixedString> res = std::make_shared<ColumnFixedString>(n);
 
 		if (result_size_hint)
-			res_->chars.reserve(result_size_hint > 0 ? result_size_hint * n : chars.size());
+			res->chars.reserve(result_size_hint > 0 ? result_size_hint * n : chars.size());
 
 		size_t offset = 0;
 		for (size_t i = 0; i < col_size; ++i, offset += n)
 		{
 			if (filt[i])
 			{
-				res_->chars.resize(res_->chars.size() + n);
-				memcpySmallAllowReadWriteOverflow15(&res_->chars[res_->chars.size() - n], &chars[offset], n);
+				res->chars.resize(res->chars.size() + n);
+				memcpySmallAllowReadWriteOverflow15(&res->chars[res->chars.size() - n], &chars[offset], n);
 			}
 		}
 
@@ -242,12 +241,11 @@ public:
 			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		if (limit == 0)
-			return new ColumnFixedString(n);
+			return std::make_shared<ColumnFixedString>(n);
 
-		ColumnFixedString * res_ = new ColumnFixedString(n);
-		ColumnPtr res = res_;
+		std::shared_ptr<ColumnFixedString> res = std::make_shared<ColumnFixedString>(n);
 
-		Chars_t & res_chars = res_->chars;
+		Chars_t & res_chars = res->chars;
 
 		res_chars.resize(n * limit);
 
@@ -264,13 +262,12 @@ public:
 		if (col_size != offsets.size())
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		ColumnFixedString * res_ = new ColumnFixedString(n);
-		ColumnPtr res = res_;
+		std::shared_ptr<ColumnFixedString> res = std::make_shared<ColumnFixedString>(n);
 
 		if (0 == col_size)
 			return res;
 
-		Chars_t & res_chars = res_->chars;
+		Chars_t & res_chars = res->chars;
 		res_chars.reserve(n * offsets.back());
 
 		Offset_t prev_offset = 0;

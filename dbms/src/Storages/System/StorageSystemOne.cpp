@@ -11,7 +11,7 @@ namespace DB
 
 
 StorageSystemOne::StorageSystemOne(const std::string & name_)
-	: name(name_), columns{{"dummy", new DataTypeUInt8}}
+	: name(name_), columns{{"dummy", std::make_shared<DataTypeUInt8>()}}
 {
 }
 
@@ -36,11 +36,11 @@ BlockInputStreams StorageSystemOne::read(
 	Block block;
 	ColumnWithTypeAndName col;
 	col.name = "dummy";
-	col.type = new DataTypeUInt8;
+	col.type = std::make_shared<DataTypeUInt8>();
 	col.column = ColumnConstUInt8(1, 0).convertToFullColumn();
 	block.insert(col);
 
-	return BlockInputStreams(1, new OneBlockInputStream(block));
+	return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
 }
 
 

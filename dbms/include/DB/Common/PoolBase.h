@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-#include <Poco/Mutex.h>
-#include <Poco/Condition.h>
+#include <mutex>
+#include <condition_variable>
 #include <Poco/Timespan.h>
 #include <boost/noncopyable.hpp>
 
@@ -28,26 +27,26 @@ template <typename TObject>
 class PoolBase : private boost::noncopyable
 {
 public:
-	typedef TObject Object;
-	typedef Poco::SharedPtr<Object> ObjectPtr;
-	typedef Poco::SharedPtr<PoolBase<TObject> > Ptr;
+	using Object = TObject;
+	using ObjectPtr = std::shared_ptr<Object>;
+	using Ptr = std::shared_ptr<PoolBase<TObject>>;
 
 private:
 
 	/** Объект с флагом, используется ли он сейчас. */
 	struct PooledObject
 	{
-		PooledObject(Poco::Condition & available_, ObjectPtr object_)
+		PooledObject(std::condition_variable & available_, ObjectPtr object_)
 			: object(object_), available(available_)
 		{
 		}
 
 		ObjectPtr object;
 		bool in_use = false;
-		Poco::Condition & available;
+		std::condition_variable & available;
 	};
 
-	typedef std::vector<Poco::SharedPtr<PooledObject> > Objects;
+	using Objects = std::vector<std::shared_ptr<PooledObject>>;
 
 	/** Помощник, который устанавливает флаг использования объекта, а в деструкторе - снимает,
 	  *  а также уведомляет о событии с помощью condvar-а.
@@ -55,7 +54,7 @@ private:
 	struct PoolEntryHelper
 	{
 		PoolEntryHelper(PooledObject & data_) : data(data_) { data.in_use = true; }
-		~PoolEntryHelper() { data.in_use = false; data.available.signal(); }
+		~PoolEntryHelper() { data.in_use = false; data.available.notify_one(); }
 
 		PooledObject & data;
 	};
@@ -85,12 +84,12 @@ public:
 		Object & operator*() &				{ return *data->data.object; }
 		const Object & operator*() const &	{ return *data->data.object; }
 
-		bool isNull() const { return data.isNull(); }
+		bool isNull() const { return data == nullptr; }
 
 	private:
-		Poco::SharedPtr<PoolEntryHelper> data;
+		std::shared_ptr<PoolEntryHelper> data;
 
-		Entry(PooledObject & object) : data(new PoolEntryHelper(object)) {}
+		Entry(PooledObject & object) : data(std::make_shared<PoolEntryHelper>(object)) {}
 	};
 
 	virtual ~PoolBase() {}
@@ -98,36 +97,36 @@ public:
 	/** Выделяет объект для работы. При timeout < 0 таймаут бесконечный. */
 	Entry get(Poco::Timespan::TimeDiff timeout)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::unique_lock<std::mutex> lock(mutex);
 
 		while (true)
 		{
-			for (typename Objects::iterator it = items.begin(); it != items.end(); it++)
-				if (!(*it)->in_use)
-					return Entry(**it);
+			for (auto & item : items)
+				if (!item->in_use)
+					return Entry(*item);
 
 			if (items.size() < max_items)
 			{
 				ObjectPtr object = allocObject();
-				items.push_back(new PooledObject(available, object));
+				items.emplace_back(std::make_shared<PooledObject>(available, object));
 				return Entry(*items.back());
 			}
 
 			LOG_INFO(log, "No free connections in pool. Waiting.");
 
 			if (timeout < 0)
-				available.wait(mutex);
+				available.wait(lock);
 			else
-				available.wait(mutex, timeout);
+				available.wait_for(lock, std::chrono::microseconds(timeout));
 		}
 	}
 
 	void reserve(size_t count)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 
 		while (items.size() < count)
-			items.push_back(new PooledObject(available, allocObject()));
+			items.emplace_back(std::make_shared<PooledObject>(available, allocObject()));
 	}
 
 private:
@@ -138,8 +137,8 @@ private:
 	Objects items;
 
 	/** Блокировка для доступа к пулу. */
-	Poco::FastMutex mutex;
-	Poco::Condition available;
+	std::mutex mutex;
+	std::condition_variable available;
 
 protected:
 

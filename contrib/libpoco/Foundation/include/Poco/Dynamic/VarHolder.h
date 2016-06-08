@@ -44,6 +44,11 @@
 #include <limits>
 
 
+#pragma GCC diagnostic push
+#ifdef __clang__
+#pragma GCC diagnostic ignored "-Wunused-local-typedef"
+#endif
+
 namespace Poco {
 namespace Dynamic {
 
@@ -3550,5 +3555,6 @@ typedef Vector           Array;
 
 } } // namespace Poco::Dynamic
 
+#pragma GCC diagnostic pop
 
 #endif // Foundation_VarHolder_INCLUDED

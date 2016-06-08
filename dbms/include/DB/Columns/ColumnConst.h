@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/Core/Field.h>
 #include <DB/Common/Exception.h>
 #include <DB/Columns/ColumnVector.h>
@@ -20,8 +18,6 @@ namespace ErrorCodes
 	extern const int NOT_IMPLEMENTED;
 	extern const int LOGICAL_ERROR;
 }
-
-using Poco::SharedPtr;
 
 
 class IColumnConst : public IColumn
@@ -57,11 +53,11 @@ namespace ColumnConstDetails
 
 
 /** Столбец-константа может содержать внутри себя само значение,
-  *  или, в случае массивов, SharedPtr от значения-массива,
+  *  или, в случае массивов, std::shared_ptr от значения-массива,
   *  чтобы избежать проблем производительности при копировании очень больших массивов.
   *
   * T - тип значения,
-  * DataHolder - как значение хранится в таблице (либо T, либо SharedPtr<T>)
+  * DataHolder - как значение хранится в таблице (либо T, либо std::shared_ptr<T>)
   * Derived должен реализовать методы getDataFromHolderImpl - получить ссылку на значение из holder-а.
   *
   * Для строк и массивов реализации sizeOfField и byteSize могут быть некорректными.
@@ -81,14 +77,14 @@ protected:
 		: s(s_), data(data_), data_type(data_type_) {}
 
 public:
-	typedef T Type;
-	typedef typename NearestFieldType<T>::Type FieldType;
+	using Type = T;
+	using FieldType = typename NearestFieldType<T>::Type;
 
 	std::string getName() const override { return "ColumnConst<" + TypeName<T>::get() + ">"; }
 	bool isNumeric() const override { return IsNumber<T>::value; }
 	bool isFixed() const override { return IsNumber<T>::value; }
 	size_t sizeOfField() const override { return sizeof(T); }
-	ColumnPtr cloneResized(size_t s_) const override { return new Derived(s_, data, data_type); }
+	ColumnPtr cloneResized(size_t s_) const override { return std::make_shared<Derived>(s_, data, data_type); }
 	size_t size() const override { return s; }
 	Field operator[](size_t n) const override { return FieldType(getDataFromHolder()); }
 	void get(size_t n, Field & res) const override { res = FieldType(getDataFromHolder()); }
@@ -145,7 +141,7 @@ public:
 		if (s != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		return new Derived(countBytesInFilter(filt), data, data_type);
+		return std::make_shared<Derived>(countBytesInFilter(filt), data, data_type);
 	}
 
 	ColumnPtr replicate(const Offsets_t & offsets) const override
@@ -154,7 +150,7 @@ public:
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		size_t replicated_size = 0 == s ? 0 : offsets.back();
-		return new Derived(replicated_size, data, data_type);
+		return std::make_shared<Derived>(replicated_size, data, data_type);
 	}
 
 	size_t byteSize() const override { return sizeof(data) + sizeof(s); }
@@ -169,7 +165,7 @@ public:
 		if (perm.size() < limit)
 			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		return new Derived(limit, data, data_type);
+		return std::make_shared<Derived>(limit, data, data_type);
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
@@ -232,21 +228,21 @@ public:
 
 
 template <>
-class ColumnConst<Array> final : public ColumnConstBase<Array, SharedPtr<Array>, ColumnConst<Array>>
+class ColumnConst<Array> final : public ColumnConstBase<Array, std::shared_ptr<Array>, ColumnConst<Array>>
 {
 private:
-	friend class ColumnConstBase<Array, SharedPtr<Array>, ColumnConst<Array>>;
+	friend class ColumnConstBase<Array, std::shared_ptr<Array>, ColumnConst<Array>>;
 
 	Array & getDataFromHolderImpl() { return *data; }
 	const Array & getDataFromHolderImpl() const { return *data; }
 
 public:
 	/// data_type_ должен быть ненулевым.
-	ColumnConst(size_t s_, const Array & data_, DataTypePtr data_type_ = DataTypePtr())
-		: ColumnConstBase<Array, SharedPtr<Array>, ColumnConst<Array>>(s_, new Array(data_), data_type_) {}
+	ColumnConst(size_t s_, const Array & data_, DataTypePtr data_type_)
+		: ColumnConstBase<Array, std::shared_ptr<Array>, ColumnConst<Array>>(s_, std::make_shared<Array>(data_), data_type_) {}
 
-	ColumnConst(size_t s_, const SharedPtr<Array> & data_, DataTypePtr data_type_ = DataTypePtr())
-		: ColumnConstBase<Array, SharedPtr<Array>, ColumnConst<Array>>(s_, data_, data_type_) {}
+	ColumnConst(size_t s_, const std::shared_ptr<Array> & data_, DataTypePtr data_type_)
+		: ColumnConstBase<Array, std::shared_ptr<Array>, ColumnConst<Array>>(s_, data_, data_type_) {}
 
 	StringRef getDataAt(size_t n) const override;
 	StringRef getDataAtWithTerminatingZero(size_t n) const override;
@@ -267,21 +263,21 @@ public:
 
 
 template <>
-class ColumnConst<Tuple> final : public ColumnConstBase<Tuple, SharedPtr<Tuple>, ColumnConst<Tuple>>
+class ColumnConst<Tuple> final : public ColumnConstBase<Tuple, std::shared_ptr<Tuple>, ColumnConst<Tuple>>
 {
 private:
-	friend class ColumnConstBase<Tuple, SharedPtr<Tuple>, ColumnConst<Tuple>>;
+	friend class ColumnConstBase<Tuple, std::shared_ptr<Tuple>, ColumnConst<Tuple>>;
 
 	Tuple & getDataFromHolderImpl() { return *data; }
 	const Tuple & getDataFromHolderImpl() const { return *data; }
 
 public:
 	/// data_type_ должен быть ненулевым.
-	ColumnConst(size_t s_, const Tuple & data_, DataTypePtr data_type_ = DataTypePtr())
-		: ColumnConstBase<Tuple, SharedPtr<Tuple>, ColumnConst<Tuple>>(s_, new Tuple(data_), data_type_) {}
+	ColumnConst(size_t s_, const Tuple & data_, DataTypePtr data_type_)
+		: ColumnConstBase<Tuple, std::shared_ptr<Tuple>, ColumnConst<Tuple>>(s_, std::make_shared<Tuple>(data_), data_type_) {}
 
-	ColumnConst(size_t s_, const SharedPtr<Tuple> & data_, DataTypePtr data_type_ = DataTypePtr())
-		: ColumnConstBase<Tuple, SharedPtr<Tuple>, ColumnConst<Tuple>>(s_, data_, data_type_) {}
+	ColumnConst(size_t s_, const std::shared_ptr<Tuple> & data_, DataTypePtr data_type_)
+		: ColumnConstBase<Tuple, std::shared_ptr<Tuple>, ColumnConst<Tuple>>(s_, data_, data_type_) {}
 
 	StringRef getDataAt(size_t n) const override;
 	StringRef getDataAtWithTerminatingZero(size_t n) const override;
@@ -297,16 +293,15 @@ public:
 };
 
 
-typedef ColumnConst<String> ColumnConstString;
-typedef ColumnConst<Array> ColumnConstArray;
-typedef ColumnConst<Tuple> ColumnConstTuple;
+using ColumnConstString = ColumnConst<String>;
+using ColumnConstArray = ColumnConst<Array>;
+using ColumnConstTuple = ColumnConst<Tuple>;
 
 
 template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const
 {
-	ColumnVector<T> * res_ = new ColumnVector<T>;
-	ColumnPtr res = res_;
-	res_->getData().assign(this->s, this->data);
+	std::shared_ptr<ColumnVector<T>> res = std::make_shared<ColumnVector<T>>();
+	res->getData().assign(this->s, this->data);
 	return res;
 }
 

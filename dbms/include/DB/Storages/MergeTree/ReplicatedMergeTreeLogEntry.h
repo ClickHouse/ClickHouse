@@ -51,6 +51,10 @@ struct ReplicatedMergeTreeLogEntryData
 		}
 	}
 
+	void writeText(WriteBuffer & out) const;
+	void readText(ReadBuffer & in);
+	String toString() const;
+
 	String znode_name;
 
 	Type type = EMPTY;
@@ -92,14 +96,10 @@ struct ReplicatedMergeTreeLogEntryData
 
 struct ReplicatedMergeTreeLogEntry : ReplicatedMergeTreeLogEntryData
 {
-	typedef Poco::SharedPtr<ReplicatedMergeTreeLogEntry> Ptr;
+	using Ptr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;
 
 	std::condition_variable execution_complete; /// Пробуждается когда currently_executing становится false.
 
-	void writeText(WriteBuffer & out) const;
-	void readText(ReadBuffer & in);
-
-	String toString() const;
 	static Ptr parse(const String & s, const Stat & stat);
 };
 

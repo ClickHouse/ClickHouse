@@ -571,7 +571,7 @@ inline bool operator==(StringRef_CompareAlmostAlwaysTrue lhs, StringRef_CompareA
 
 
 
-typedef UInt64 Value;
+using Value = UInt64;
 
 
 template <typename Key>
@@ -579,7 +579,7 @@ void NO_INLINE bench(const std::vector<StringRef> & data, const char * name)
 {
 	Stopwatch watch;
 
-	typedef HashMapWithSavedHash<Key, Value, DefaultHash<Key>> Map;
+	using Map = HashMapWithSavedHash<Key, Value, DefaultHash<Key>>;
 
 	Map map;
 	typename Map::iterator it;

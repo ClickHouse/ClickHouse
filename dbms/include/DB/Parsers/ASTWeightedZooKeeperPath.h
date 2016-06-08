@@ -13,7 +13,7 @@ public:
 	ASTWeightedZooKeeperPath() = default;
 	ASTWeightedZooKeeperPath(StringRange range_) : IAST(range_) {}
 	String getID() const override { return "Weighted_ZooKeeper_Path"; }
-	ASTPtr clone() const override { return new ASTWeightedZooKeeperPath(*this); }
+	ASTPtr clone() const override { return std::make_shared<ASTWeightedZooKeeperPath>(*this); }
 
 public:
 	String path;

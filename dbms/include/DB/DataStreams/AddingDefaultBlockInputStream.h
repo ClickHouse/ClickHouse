@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Interpreters/evaluateMissingDefaults.h>
 #include <DB/Columns/ColumnConst.h>

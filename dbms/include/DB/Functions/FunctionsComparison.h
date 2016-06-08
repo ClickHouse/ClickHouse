@@ -404,7 +404,7 @@ class FunctionComparison : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionComparison; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionComparison>(); };
 
 private:
 	template <typename T0, typename T1>
@@ -412,7 +412,7 @@ private:
 	{
 		if (const ColumnVector<T1> * col_right = typeid_cast<const ColumnVector<T1> *>(col_right_untyped))
 		{
-			ColumnUInt8 * col_res = new ColumnUInt8;
+			std::shared_ptr<ColumnUInt8> col_res = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = col_res;
 
 			ColumnUInt8::Container_t & vec_res = col_res->getData();
@@ -423,7 +423,7 @@ private:
 		}
 		else if (const ColumnConst<T1> * col_right = typeid_cast<const ColumnConst<T1> *>(col_right_untyped))
 		{
-			ColumnUInt8 * col_res = new ColumnUInt8;
+			std::shared_ptr<ColumnUInt8> col_res = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = col_res;
 
 			ColumnUInt8::Container_t & vec_res = col_res->getData();
@@ -441,7 +441,7 @@ private:
 	{
 		if (const ColumnVector<T1> * col_right = typeid_cast<const ColumnVector<T1> *>(col_right_untyped))
 		{
-			ColumnUInt8 * col_res = new ColumnUInt8;
+			std::shared_ptr<ColumnUInt8> col_res = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = col_res;
 
 			ColumnUInt8::Container_t & vec_res = col_res->getData();
@@ -455,7 +455,7 @@ private:
 			UInt8 res = 0;
 			NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->getData(), col_right->getData(), res);
 
-			ColumnConstUInt8 * col_res = new ColumnConstUInt8(col_left->size(), res);
+			auto col_res = std::make_shared<ColumnConstUInt8>(col_left->size(), res);
 			block.getByPosition(result).column = col_res;
 
 			return true;
@@ -520,13 +520,13 @@ private:
 
 		if (c0_const && c1_const)
 		{
-			ColumnConstUInt8 * c_res = new ColumnConstUInt8(c0_const->size(), 0);
+			auto c_res = std::make_shared<ColumnConstUInt8>(c0_const->size(), 0);
 			block.getByPosition(result).column = c_res;
 			StringImpl::constant_constant(c0_const->getData(), c1_const->getData(), c_res->getData());
 		}
 		else
 		{
-			ColumnUInt8 * c_res = new ColumnUInt8;
+			auto c_res = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = c_res;
 			ColumnUInt8::Container_t & vec_res = c_res->getData();
 			vec_res.resize(c0->size());
@@ -697,12 +697,12 @@ private:
 			tmp_block.insert(y->getData().getByPosition(i));
 
 			/// Сравнение элементов.
-			tmp_block.insert({ nullptr, new DataTypeUInt8, "" });
+			tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 			func_compare.execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2);
 		}
 
 		/// Логическая свёртка.
-		tmp_block.insert({ nullptr, new DataTypeUInt8, "" });
+		tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 
 		ColumnNumbers convolution_args(tuple_size);
 		for (size_t i = 0; i < tuple_size; ++i)
@@ -729,13 +729,13 @@ private:
 			tmp_block.insert(x->getData().getByPosition(i));
 			tmp_block.insert(y->getData().getByPosition(i));
 
-			tmp_block.insert({ nullptr, new DataTypeUInt8, "" });
+			tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 
 			if (i + 1 != tuple_size)
 			{
 				func_compare_head.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2);
 
-				tmp_block.insert({ nullptr, new DataTypeUInt8, "" });
+				tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 				func_equals.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 3);
 
 			}
@@ -747,9 +747,9 @@ private:
 		size_t i = tuple_size - 1;
 		while (i > 0)
 		{
-			tmp_block.insert({ nullptr, new DataTypeUInt8, "" });
+			tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 			func_and.execute(tmp_block, { tmp_block.columns() - 2, (i - 1) * 4 + 3 },  tmp_block.columns() - 1);
-			tmp_block.insert({ nullptr, new DataTypeUInt8, "" });
+			tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 			func_or.execute(tmp_block, { tmp_block.columns() - 2, (i - 1) * 4 + 2 },  tmp_block.columns() - 1);
 			--i;
 		}
@@ -836,7 +836,7 @@ public:
 				getReturnType({ left_tuple->getElements()[i], right_tuple->getElements()[i] });
 		}
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -879,12 +879,12 @@ public:
 };
 
 
-typedef FunctionComparison<EqualsOp, 			NameEquals>				FunctionEquals;
-typedef FunctionComparison<NotEqualsOp, 		NameNotEquals>			FunctionNotEquals;
-typedef FunctionComparison<LessOp, 				NameLess>				FunctionLess;
-typedef FunctionComparison<GreaterOp, 			NameGreater>			FunctionGreater;
-typedef FunctionComparison<LessOrEqualsOp, 		NameLessOrEquals>		FunctionLessOrEquals;
-typedef FunctionComparison<GreaterOrEqualsOp,	NameGreaterOrEquals>	FunctionGreaterOrEquals;
+using FunctionEquals = FunctionComparison<EqualsOp, 			NameEquals>			;
+using FunctionNotEquals = FunctionComparison<NotEqualsOp, 		NameNotEquals>		;
+using FunctionLess = FunctionComparison<LessOp, 				NameLess>			;
+using FunctionGreater = FunctionComparison<GreaterOp, 			NameGreater>		;
+using FunctionLessOrEquals = FunctionComparison<LessOrEqualsOp, 		NameLessOrEquals>	;
+using FunctionGreaterOrEquals = FunctionComparison<GreaterOrEqualsOp,	NameGreaterOrEquals>;
 
 
 template <>

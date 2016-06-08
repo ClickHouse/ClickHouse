@@ -98,7 +98,7 @@ class FunctionCurrentDatabase : public IFunction
 
 public:
 	static constexpr auto name = "currentDatabase";
-	static IFunction * create(const Context & context) { return new FunctionCurrentDatabase{context.getCurrentDatabase()}; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionCurrentDatabase>(context.getCurrentDatabase()); }
 
 	explicit FunctionCurrentDatabase(const String & db_name) : db_name{db_name} {}
 
@@ -113,14 +113,13 @@ public:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConstString{
-			block.rowsInFirstColumn(), db_name
-		};
+		block.getByPosition(result).column = std::make_shared<ColumnConstString>(
+			block.rowsInFirstColumn(), db_name);
 	}
 };
 
@@ -130,7 +129,7 @@ class FunctionHostName : public IFunction
 {
 public:
 	static constexpr auto name = "hostName";
-	static IFunction * create(const Context & context) { return new FunctionHostName; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionHostName>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -146,7 +145,7 @@ public:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	/** Выполнить функцию над блоком. convertToFullColumn вызывается для того, чтобы в случае
@@ -164,7 +163,7 @@ class FunctionVisibleWidth : public IFunction
 {
 public:
 	static constexpr auto name = "visibleWidth";
-	static IFunction * create(const Context & context) { return new FunctionVisibleWidth; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionVisibleWidth>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -180,7 +179,7 @@ public:
 				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeUInt64;
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -192,7 +191,7 @@ class FunctionToTypeName : public IFunction
 {
 public:
 	static constexpr auto name = "toTypeName";
-	static IFunction * create(const Context & context) { return new FunctionToTypeName; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToTypeName>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -208,13 +207,13 @@ public:
 				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConstString(block.rowsInFirstColumn(), block.getByPosition(arguments[0]).type->getName());
+		block.getByPosition(result).column = std::make_shared<ColumnConstString>(block.rowsInFirstColumn(), block.getByPosition(arguments[0]).type->getName());
 	}
 };
 
@@ -223,7 +222,7 @@ class FunctionBlockSize : public IFunction
 {
 public:
 	static constexpr auto name = "blockSize";
-	static IFunction * create(const Context & context) { return new FunctionBlockSize; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBlockSize>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -239,7 +238,7 @@ public:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeUInt64;
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -255,7 +254,7 @@ class FunctionRowNumberInBlock : public IFunction
 {
 public:
 	static constexpr auto name = "rowNumberInBlock";
-	static IFunction * create(const Context & context) { return new FunctionRowNumberInBlock; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRowNumberInBlock>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -271,14 +270,14 @@ public:
 				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeUInt64;
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t size = block.rowsInFirstColumn();
-		auto column = new ColumnUInt64;
+		auto column = std::make_shared<ColumnUInt64>();
 		block.getByPosition(result).column = column;
 		auto & data = column->getData();
 		data.resize(size);
@@ -288,11 +287,47 @@ public:
 };
 
 
+/** Инкрементальный номер блока среди вызовов этой функции. */
+class FunctionBlockNumber : public IFunction
+{
+private:
+	std::atomic<size_t> block_number {0};
+
+public:
+	static constexpr auto name = "blockNumber";
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBlockNumber>(); }
+
+	/// Получить имя функции.
+	String getName() const override
+	{
+		return name;
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (!arguments.empty())
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 0.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return std::make_shared<DataTypeUInt64>();
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		size_t current_block_number = block_number++;
+		block.getByPosition(result).column = ColumnConstUInt64(block.rowsInFirstColumn(), current_block_number).convertToFullColumn();
+	}
+};
+
+
 class FunctionSleep : public IFunction
 {
 public:
 	static constexpr auto name = "sleep";
-	static IFunction * create(const Context & context) { return new FunctionSleep; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionSleep>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -317,7 +352,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected Float64",
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -361,7 +396,7 @@ class FunctionMaterialize : public IFunction
 {
 public:
 	static constexpr auto name = "materialize";
-	static IFunction * create(const Context & context) { return new FunctionMaterialize; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMaterialize>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -402,7 +437,7 @@ class FunctionIn : public IFunction
 {
 public:
 	static constexpr auto name = FunctionInName<negative, global>::name;
-	static IFunction * create(const Context & context) { return new FunctionIn; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIn>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -418,7 +453,7 @@ public:
 				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -449,7 +484,7 @@ class FunctionTuple : public IFunction
 {
 public:
 	static constexpr auto name = "tuple";
-	static IFunction * create(const Context & context) { return new FunctionTuple; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTuple>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -463,7 +498,7 @@ public:
 		if (arguments.size() < 1)
 			throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new DataTypeTuple(arguments);
+		return std::make_shared<DataTypeTuple>(arguments);
 	}
 
 	/// Выполнить функцию над блоком.
@@ -474,7 +509,7 @@ public:
 		for (ColumnNumbers::const_iterator it = arguments.begin(); it != arguments.end(); ++it)
 			tuple_block.insert(block.getByPosition(*it));
 
-		block.getByPosition(result).column = new ColumnTuple(tuple_block);
+		block.getByPosition(result).column = std::make_shared<ColumnTuple>(tuple_block);
 	}
 };
 
@@ -483,7 +518,7 @@ class FunctionTupleElement : public IFunction
 {
 public:
 	static constexpr auto name = "tupleElement";
-	static IFunction * create(const Context & context) { return new FunctionTupleElement; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTupleElement>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -550,15 +585,15 @@ class FunctionIgnore : public IFunction
 {
 public:
 	static constexpr auto name = "ignore";
-	static IFunction * create(const Context & context) { return new FunctionIgnore; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIgnore>(); }
 
 	String getName() const override { return name; }
-	DataTypePtr getReturnType(const DataTypes & arguments) const override { return new DataTypeUInt8; }
+	DataTypePtr getReturnType(const DataTypes & arguments) const override { return std::make_shared<DataTypeUInt8>(); }
 
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConstUInt8(block.rowsInFirstColumn(), 0);
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rowsInFirstColumn(), 0);
 	}
 };
 
@@ -579,15 +614,15 @@ class FunctionIndexHint : public IFunction
 {
 public:
 	static constexpr auto name = "indexHint";
-	static IFunction * create(const Context & context) { return new FunctionIndexHint; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIndexHint>(); }
 
 	String getName() const override	{ return name; }
-	DataTypePtr getReturnType(const DataTypes & arguments) const override { return new DataTypeUInt8; }
+	DataTypePtr getReturnType(const DataTypes & arguments) const override { return std::make_shared<DataTypeUInt8>(); }
 
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConstUInt8(block.rowsInFirstColumn(), 1);
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rowsInFirstColumn(), 1);
 	}
 };
 
@@ -596,7 +631,7 @@ class FunctionIdentity : public IFunction
 {
 public:
 	static constexpr auto name = "identity";
-	static IFunction * create(const Context & context) { return new FunctionIdentity; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIdentity>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -626,7 +661,7 @@ class FunctionArrayJoin : public IFunction
 {
 public:
 	static constexpr auto name = "arrayJoin";
-	static IFunction * create(const Context & context) { return new FunctionArrayJoin; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayJoin>(); }
 
 
 	/// Получить имя функции.
@@ -663,7 +698,7 @@ class FunctionReplicate : public IFunction
 {
 public:
 	static constexpr auto name = "replicate";
-	static IFunction * create(const Context & context) { return new FunctionReplicate; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionReplicate>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -683,7 +718,7 @@ public:
 		if (!array_type)
 			throw Exception("Second argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeArray(arguments[0]->clone());
+		return std::make_shared<DataTypeArray>(arguments[0]->clone());
 	}
 
 	/// Выполнить функцию над блоком.
@@ -703,7 +738,7 @@ public:
 			array_column = typeid_cast<ColumnArray *>(&*temp_column);
 		}
 
-		block.getByPosition(result).column = new ColumnArray(
+		block.getByPosition(result).column = std::make_shared<ColumnArray>(
 			first_column->replicate(array_column->getOffsets()),
 			array_column->getOffsetsColumn());
 	}
@@ -714,7 +749,7 @@ class FunctionBar : public IFunction
 {
 public:
 	static constexpr auto name = "bar";
-	static IFunction * create(const Context & context) { return new FunctionBar; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBar>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -734,7 +769,7 @@ public:
 			|| (arguments.size() == 4 && !arguments[3]->isNumeric()))
 			throw Exception("All arguments for function " + getName() + " must be numeric.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -758,7 +793,7 @@ public:
 
 		if (src.isConst())
 		{
-			auto res_column = new ColumnConstString(block.rowsInFirstColumn(), "");
+			auto res_column = std::make_shared<ColumnConstString>(block.rowsInFirstColumn(), "");
 			block.getByPosition(result).column = res_column;
 
 			if (   executeConstNumber<UInt8>	(src, *res_column, min, max, max_width)
@@ -780,7 +815,7 @@ public:
 		}
 		else
 		{
-			auto res_column = new ColumnString;
+			auto res_column = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = res_column;
 
 			if (   executeNumber<UInt8>		(src, *res_column, min, max, max_width)
@@ -875,7 +910,7 @@ class FunctionNumericPredicate : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
-	static IFunction * create(const Context &) { return new FunctionNumericPredicate; }
+	static FunctionPtr create(const Context &) { return std::make_shared<FunctionNumericPredicate>(); }
 
 	String getName() const override { return name; }
 
@@ -905,7 +940,7 @@ public:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -935,7 +970,7 @@ public:
 		{
 			const auto size = in->size();
 
-			const auto out = new ColumnVector<UInt8>{size};
+			const auto out = std::make_shared<ColumnUInt8>(size);
 			block.getByPosition(result).column = out;
 
 			const auto & in_data = in->getData();
@@ -948,10 +983,9 @@ public:
 		}
 		else if (const auto in = typeid_cast<const ColumnConst<T> *>(in_untyped))
 		{
-			block.getByPosition(result).column = new ColumnConstUInt8{
+			block.getByPosition(result).column = std::make_shared<ColumnConstUInt8>(
 				in->size(),
-				Impl::execute(in->getData())
-			};
+				Impl::execute(in->getData()));
 
 			return true;
 		}
@@ -987,7 +1021,7 @@ class FunctionVersion : public IFunction
 {
 public:
 	static constexpr auto name = "version";
-	static IFunction * create(const Context & context) { return new FunctionVersion; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionVersion>(); }
 
 	String getName() const override { return name; }
 
@@ -995,13 +1029,13 @@ public:
 	{
 		if (!arguments.empty())
 			throw Exception("Function " + getName() + " must be called without arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		return new DataTypeString;
+		return std::make_shared<DataTypeString>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		static const std::string version = getVersion();
-		block.getByPosition(result).column = new ColumnConstString(block.rowsInFirstColumn(), version);
+		block.getByPosition(result).column = std::make_shared<ColumnConstString>(block.rowsInFirstColumn(), version);
 	}
 
 private:
@@ -1018,7 +1052,7 @@ class FunctionUptime : public IFunction
 {
 public:
 	static constexpr auto name = "uptime";
-	static IFunction * create(const Context & context) { return new FunctionUptime(context.getUptimeSeconds()); }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionUptime>(context.getUptimeSeconds()); }
 
 	FunctionUptime(time_t uptime_) : uptime(uptime_) {}
 
@@ -1028,12 +1062,12 @@ public:
 	{
 		if (!arguments.empty())
 			throw Exception("Function " + getName() + " must be called without arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		return new DataTypeUInt32;
+		return std::make_shared<DataTypeUInt32>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConstUInt32(block.rowsInFirstColumn(), uptime);
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt32>(block.rowsInFirstColumn(), uptime);
 	}
 
 private:
@@ -1051,7 +1085,7 @@ class FunctionRunningAccumulate : public IFunction
 {
 public:
 	static constexpr auto name = "runningAccumulate";
-	static IFunction * create(const Context & context) { return new FunctionRunningAccumulate; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRunningAccumulate>(); }
 
 	String getName() const override { return name; }
 
@@ -1105,7 +1139,7 @@ class FunctionFinalizeAggregation : public IFunction
 {
 public:
 	static constexpr auto name = "finalizeAggregation";
-	static IFunction * create(const Context & context) { return new FunctionFinalizeAggregation; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionFinalizeAggregation>(); }
 
 	String getName() const override { return name; }
 

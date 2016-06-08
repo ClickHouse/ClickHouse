@@ -7,8 +7,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 
 class DataTypeArray final : public IDataType
 {
@@ -31,7 +29,7 @@ public:
 
 	DataTypePtr clone() const override
 	{
-		return new DataTypeArray(enriched_nested);
+		return std::make_shared<DataTypeArray>(enriched_nested);
 	}
 
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const override;

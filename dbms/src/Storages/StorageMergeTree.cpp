@@ -4,8 +4,11 @@
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
 #include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
+#include <DB/Databases/IDatabase.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <Poco/DirectoryIterator.h>
 
 
@@ -136,7 +139,7 @@ BlockInputStreams StorageMergeTree::read(
 
 BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query, const Settings & settings)
 {
-	return new MergeTreeBlockOutputStream(*this);
+	return std::make_shared<MergeTreeBlockOutputStream>(*this);
 }
 
 void StorageMergeTree::drop()
@@ -158,7 +161,11 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 	/// TODO: Можно обновить названия логгеров у this, data, reader, writer, merger.
 }
 
-void StorageMergeTree::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
+void StorageMergeTree::alter(
+	const AlterCommands & params,
+	const String & database_name,
+	const String & table_name,
+	const Context & context)
 {
 	/// NOTE: Здесь так же как в ReplicatedMergeTree можно сделать ALTER, не блокирующий запись данных надолго.
 	const MergeTreeMergeBlocker merge_blocker{merger};
@@ -178,18 +185,48 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 	columns_for_parts.insert(std::end(columns_for_parts),
 		std::begin(new_materialized_columns), std::end(new_materialized_columns));
 
-	MergeTreeData::DataParts parts = data.getDataParts();
 	std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
-	for (const MergeTreeData::DataPartPtr & part : parts)
+
+	bool primary_key_is_modified = false;
+	ASTPtr new_primary_key_ast = data.primary_expr_ast;
+
+	for (const AlterCommand & param : params)
 	{
-		if (auto transaction = data.alterDataPart(part, columns_for_parts))
-			transactions.push_back(std::move(transaction));
+		if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
+		{
+			primary_key_is_modified = true;
+			new_primary_key_ast = param.primary_key;
+		}
 	}
+
+	if (primary_key_is_modified && data.merging_params.mode == MergeTreeData::MergingParams::Unsorted)
+		throw Exception("UnsortedMergeTree cannot have primary key", ErrorCodes::BAD_ARGUMENTS);
+
+	MergeTreeData::DataParts parts = data.getAllDataParts();
+	for (const MergeTreeData::DataPartPtr & part : parts)
+		if (auto transaction = data.alterDataPart(part, columns_for_parts, new_primary_key_ast, false))
+			transactions.push_back(std::move(transaction));
 
 	auto table_hard_lock = lockStructureForAlter();
 
-	InterpreterAlterQuery::updateMetadata(database_name, table_name, new_columns,
-		new_materialized_columns, new_alias_columns, new_column_defaults, context);
+	IDatabase::ASTModifier engine_modifier;
+	if (primary_key_is_modified)
+		engine_modifier = [&new_primary_key_ast] (ASTPtr & engine_ast)
+		{
+			auto tuple = std::make_shared<ASTFunction>(new_primary_key_ast->range);
+			tuple->name = "tuple";
+			tuple->arguments = new_primary_key_ast;
+			tuple->children.push_back(tuple->arguments);
+
+			/// Первичный ключ находится на втором месте в описании движка таблицы и может быть представлен в виде кортежа.
+			/// TODO: Не всегда на втором месте. Если есть ключ сэмплирования, то на третьем. Исправить.
+			typeid_cast<ASTExpressionList &>(*typeid_cast<ASTFunction &>(*engine_ast).arguments).children.at(1) = tuple;
+		};
+
+	context.getDatabase(database_name)->alterTable(
+		context, table_name,
+		new_columns, new_materialized_columns, new_alias_columns, new_column_defaults,
+		engine_modifier);
 
 	materialized_columns = new_materialized_columns;
 	alias_columns = new_alias_columns;
@@ -200,13 +237,25 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 	data.alias_columns = std::move(new_alias_columns);
 	data.column_defaults = std::move(new_column_defaults);
 
-	for (auto & transaction : transactions)
+	if (primary_key_is_modified)
 	{
-		transaction->commit();
+		data.primary_expr_ast = new_primary_key_ast;
+		data.initPrimaryKey();
 	}
+
+	for (auto & transaction : transactions)
+		transaction->commit();
+
+	if (primary_key_is_modified)
+		data.loadDataParts(false);
 }
 
-bool StorageMergeTree::merge(size_t aio_threshold, bool aggressive, BackgroundProcessingPool::Context * pool_context)
+bool StorageMergeTree::merge(
+	size_t aio_threshold,
+	bool aggressive,
+	BackgroundProcessingPool::Context * pool_context,
+	const String & partition,
+	bool final)
 {
 	/// Удаляем старые куски.
 	data.clearOldParts();
@@ -221,7 +270,7 @@ bool StorageMergeTree::merge(size_t aio_threshold, bool aggressive, BackgroundPr
 	String merged_name;
 
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(currently_merging_mutex);
+		std::lock_guard<std::mutex> lock(currently_merging_mutex);
 
 		MergeTreeData::DataPartsVector parts;
 		auto can_merge = std::bind(&StorageMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
@@ -230,13 +279,24 @@ bool StorageMergeTree::merge(size_t aio_threshold, bool aggressive, BackgroundPr
 		size_t big_merges = background_pool.getCounter("big merges");
 		bool only_small = pool_context && big_merges * 2 >= background_pool.getNumberOfThreads();
 
-		if (!merger.selectPartsToMerge(parts, merged_name, disk_space, false, aggressive, only_small, can_merge) &&
-			!merger.selectPartsToMerge(parts, merged_name, disk_space,  true, aggressive, only_small, can_merge))
+		bool selected = false;
+
+		if (partition.empty())
 		{
-			return false;
+			selected = merger.selectPartsToMerge(parts, merged_name, disk_space, false, aggressive, only_small, can_merge)
+				|| merger.selectPartsToMerge(parts, merged_name, disk_space,  true, aggressive, only_small, can_merge);
+		}
+		else
+		{
+			DayNum_t month = MergeTreeData::getMonthFromName(partition);
+			selected = merger.selectAllPartsToMergeWithinPartition(parts, merged_name, disk_space, can_merge, month, final);
 		}
 
-		merging_tagger = new CurrentlyMergingPartsTagger(parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(parts), *this);
+		if (!selected)
+			return false;
+
+		merging_tagger = std::make_shared<CurrentlyMergingPartsTagger>(
+			parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(parts), *this);
 
 		/// Если собираемся сливать большие куски, увеличим счетчик потоков, сливающих большие куски.
 		if (pool_context)
@@ -270,7 +330,7 @@ bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & background_
 	try
 	{
 		size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
-		return merge(aio_threshold, false, &background_processing_pool_context);
+		return merge(aio_threshold, false, &background_processing_pool_context, {}, {});
 	}
 	catch (Exception & e)
 	{

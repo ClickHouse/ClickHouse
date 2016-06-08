@@ -168,7 +168,7 @@ private:
 class ExpressionActions
 {
 public:
-	typedef std::vector<ExpressionAction> Actions;
+	using Actions = std::vector<ExpressionAction>;
 
 	ExpressionActions(const NamesAndTypesList & input_columns_, const Settings & settings_)
 		: input_columns(input_columns_), settings(settings_)
@@ -290,7 +290,7 @@ struct ExpressionActionsChain
 			: actions(actions_), required_output(required_output_) {}
 	};
 
-	typedef std::vector<Step> Steps;
+	using Steps = std::vector<Step>;
 
 	Settings settings;
 	Steps steps;

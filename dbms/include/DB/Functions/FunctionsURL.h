@@ -52,7 +52,7 @@ namespace DB
   *  URLHierarchy(URL)
   */
 
-typedef const char * Pos;
+using Pos = const char *;
 
 struct ExtractProtocol
 {
@@ -544,9 +544,9 @@ public:
 			+ toString(arguments.size()) + ", should be 1.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-			if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
-				throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
 	void init(Block & block, const ColumnNumbers & arguments) {}
@@ -632,9 +632,9 @@ public:
 			+ toString(arguments.size()) + ", should be 1.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-			if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
-				throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
 	/// Возвращает позицию аргумента, являющегося столбцом строк
@@ -712,9 +712,9 @@ public:
 			+ toString(arguments.size()) + ", should be 1.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-			if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
-				throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
 	void init(Block & block, const ColumnNumbers & arguments) {}
@@ -811,9 +811,9 @@ public:
 			+ toString(arguments.size()) + ", should be 1.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-			if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
-				throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
 	void init(Block & block, const ColumnNumbers & arguments) {}
@@ -1014,30 +1014,30 @@ struct NameCutQueryStringAndFragment 	{ static constexpr auto name = "cutQuerySt
 struct NameExtractURLParameter			{ static constexpr auto name = "extractURLParameter"; };
 struct NameCutURLParameter 				{ static constexpr auto name = "cutURLParameter"; };
 
-typedef FunctionStringToString<ExtractSubstringImpl<ExtractProtocol>, 				NameProtocol>	 		FunctionProtocol;
-typedef FunctionStringToString<ExtractSubstringImpl<ExtractDomain<false> >, 		NameDomain>	 			FunctionDomain;
-typedef FunctionStringToString<ExtractSubstringImpl<ExtractDomain<true>  >, 		NameDomainWithoutWWW>	FunctionDomainWithoutWWW;
-typedef FunctionStringToString<ExtractSubstringImpl<ExtractFirstSignificantSubdomain>, NameFirstSignificantSubdomain>	FunctionFirstSignificantSubdomain;
-typedef FunctionStringToString<ExtractSubstringImpl<ExtractTopLevelDomain>, 		NameTopLevelDomain>		FunctionTopLevelDomain;
-typedef FunctionStringToString<ExtractSubstringImpl<ExtractPath>, 					NamePath>				FunctionPath;
-typedef FunctionStringToString<ExtractSubstringImpl<ExtractPathFull>,				NamePathFull>			FunctionPathFull;
-typedef FunctionStringToString<ExtractSubstringImpl<ExtractQueryString<true> >, 	NameQueryString>		FunctionQueryString;
-typedef FunctionStringToString<ExtractSubstringImpl<ExtractFragment<true> >, 		NameFragment>			FunctionFragment;
-typedef FunctionStringToString<ExtractSubstringImpl<ExtractQueryStringAndFragment<true> >, NameQueryStringAndFragment>	FunctionQueryStringAndFragment;
+using FunctionProtocol = FunctionStringToString<ExtractSubstringImpl<ExtractProtocol>, 				NameProtocol>	 	;
+using FunctionDomain = FunctionStringToString<ExtractSubstringImpl<ExtractDomain<false> >, 		NameDomain>	 		;
+using FunctionDomainWithoutWWW = FunctionStringToString<ExtractSubstringImpl<ExtractDomain<true>  >, 		NameDomainWithoutWWW>;
+using FunctionFirstSignificantSubdomain = FunctionStringToString<ExtractSubstringImpl<ExtractFirstSignificantSubdomain>, NameFirstSignificantSubdomain>;
+using FunctionTopLevelDomain = FunctionStringToString<ExtractSubstringImpl<ExtractTopLevelDomain>, 		NameTopLevelDomain>	;
+using FunctionPath = FunctionStringToString<ExtractSubstringImpl<ExtractPath>, 					NamePath>			;
+using FunctionPathFull = FunctionStringToString<ExtractSubstringImpl<ExtractPathFull>,				NamePathFull>		;
+using FunctionQueryString = FunctionStringToString<ExtractSubstringImpl<ExtractQueryString<true> >, 	NameQueryString>	;
+using FunctionFragment = FunctionStringToString<ExtractSubstringImpl<ExtractFragment<true> >, 		NameFragment>		;
+using FunctionQueryStringAndFragment = FunctionStringToString<ExtractSubstringImpl<ExtractQueryStringAndFragment<true> >, NameQueryStringAndFragment>;
 
-typedef FunctionStringToString<ExtractSubstringImpl<CutToFirstSignificantSubdomain>, NameCutToFirstSignificantSubdomain> FunctionCutToFirstSignificantSubdomain;
+using FunctionCutToFirstSignificantSubdomain = FunctionStringToString<ExtractSubstringImpl<CutToFirstSignificantSubdomain>, NameCutToFirstSignificantSubdomain>;
 
-typedef FunctionStringToString<CutSubstringImpl<ExtractWWW>, 						NameCutWWW>				FunctionCutWWW;
-typedef FunctionStringToString<CutSubstringImpl<ExtractQueryString<false> >, 		NameCutQueryString>		FunctionCutQueryString;
-typedef FunctionStringToString<CutSubstringImpl<ExtractFragment<false> >, 			NameCutFragment>		FunctionCutFragment;
-typedef FunctionStringToString<CutSubstringImpl<ExtractQueryStringAndFragment<false> >, NameCutQueryStringAndFragment>	FunctionCutQueryStringAndFragment;
+using FunctionCutWWW = FunctionStringToString<CutSubstringImpl<ExtractWWW>, 						NameCutWWW>			;
+using FunctionCutQueryString = FunctionStringToString<CutSubstringImpl<ExtractQueryString<false> >, 		NameCutQueryString>	;
+using FunctionCutFragment = FunctionStringToString<CutSubstringImpl<ExtractFragment<false> >, 			NameCutFragment>	;
+using FunctionCutQueryStringAndFragment = FunctionStringToString<CutSubstringImpl<ExtractQueryStringAndFragment<false> >, NameCutQueryStringAndFragment>;
 
-typedef FunctionsStringSearchToString<ExtractURLParameterImpl, NameExtractURLParameter> FunctionExtractURLParameter;
-typedef FunctionsStringSearchToString<CutURLParameterImpl, NameCutURLParameter> FunctionCutURLParameter;
-typedef FunctionTokens<ExtractURLParametersImpl> FunctionExtractURLParameters;
-typedef FunctionTokens<ExtractURLParametersImpl> FunctionExtractURLParameters;
-typedef FunctionTokens<URLHierarchyImpl> FunctionURLHierarchy;
-typedef FunctionTokens<URLPathHierarchyImpl> FunctionURLPathHierarchy;
-typedef FunctionTokens<ExtractURLParameterNamesImpl> FunctionExtractURLParameterNames;
+using FunctionExtractURLParameter = FunctionsStringSearchToString<ExtractURLParameterImpl, NameExtractURLParameter>;
+using FunctionCutURLParameter = FunctionsStringSearchToString<CutURLParameterImpl, NameCutURLParameter>;
+using FunctionExtractURLParameters = FunctionTokens<ExtractURLParametersImpl>;
+using FunctionExtractURLParameters = FunctionTokens<ExtractURLParametersImpl>;
+using FunctionURLHierarchy = FunctionTokens<URLHierarchyImpl>;
+using FunctionURLPathHierarchy = FunctionTokens<URLPathHierarchyImpl>;
+using FunctionExtractURLParameterNames = FunctionTokens<ExtractURLParameterNamesImpl>;
 
 }

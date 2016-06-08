@@ -160,7 +160,7 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 
 	ArenaPtr arena;
 	if (init)
-		arena = new Arena;
+		arena = std::make_shared<Arena>();
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
@@ -178,14 +178,13 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 			continue;
 		}
 
-		ColumnAggregateFunction * target;
 		IAggregateFunction * function;
 		AggregateDataPtr data;
 
 		if (init)
 		{
-			function = column->getAggregateFunction();
-			target = new ColumnAggregateFunction(column->getAggregateFunction(), Arenas(1, arena));
+			function = column->getAggregateFunction().get();
+			auto target = std::make_shared<ColumnAggregateFunction>(column->getAggregateFunction(), Arenas(1, arena));
 			totals.insert(ColumnWithTypeAndName(target, current.type, current.name));
 
 			data = arena->alloc(function->sizeOfData());
@@ -194,11 +193,11 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 		}
 		else
 		{
-			target = typeid_cast<ColumnAggregateFunction *>(&*totals.getByPosition(i).column);
+			auto target = typeid_cast<ColumnAggregateFunction *>(totals.getByPosition(i).column.get());
 			if (!target)
 				throw Exception("Unexpected type of column: " + totals.getByPosition(i).column->getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
-			function = target->getAggregateFunction();
+			function = target->getAggregateFunction().get();
 			data = target->getData()[0];
 		}
 

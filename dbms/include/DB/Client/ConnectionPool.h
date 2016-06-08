@@ -8,9 +8,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
-
 /** Интерфейс для пулов соединений.
   *
   * Использование (на примере обычного ConnectionPool):
@@ -25,7 +22,7 @@ using Poco::SharedPtr;
 class IConnectionPool : private boost::noncopyable
 {
 public:
-	typedef PoolBase<Connection>::Entry Entry;
+	using Entry = PoolBase<Connection>::Entry;
 
 public:
 	virtual ~IConnectionPool() {}
@@ -56,9 +53,9 @@ protected:
 	}
 };
 
-typedef SharedPtr<IConnectionPool> ConnectionPoolPtr;
-typedef std::vector<ConnectionPoolPtr> ConnectionPools;
-typedef SharedPtr<ConnectionPools> ConnectionPoolsPtr;
+using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
+using ConnectionPools = std::vector<ConnectionPoolPtr>;
+using ConnectionPoolsPtr = std::shared_ptr<ConnectionPools>;
 
 
 /** Обычный пул соединений, без отказоустойчивости.
@@ -66,8 +63,8 @@ typedef SharedPtr<ConnectionPools> ConnectionPoolsPtr;
 class ConnectionPool : public PoolBase<Connection>, public IConnectionPool
 {
 public:
-	typedef IConnectionPool::Entry Entry;
-	typedef PoolBase<Connection> Base;
+	using Entry = IConnectionPool::Entry;
+	using Base = PoolBase<Connection>;
 
 	ConnectionPool(unsigned max_connections_,
 			const String & host_, UInt16 port_,
@@ -112,7 +109,7 @@ protected:
 	/** Создает новый объект для помещения в пул. */
 	ConnectionPtr allocObject() override
 	{
-		return new Connection(
+		return std::make_shared<Connection>(
 			host, port, resolved_address,
 			default_database, user, password,
 			client_name, compression,

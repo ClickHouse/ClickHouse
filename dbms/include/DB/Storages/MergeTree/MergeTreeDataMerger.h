@@ -21,8 +21,6 @@ public:
 	using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)>;
 
 public:
-	static const size_t NO_LIMIT = std::numeric_limits<size_t>::max();
-
 	MergeTreeDataMerger(MergeTreeData & data_);
 
 	void setCancellationHook(CancellationHook cancellation_hook_);
@@ -44,6 +42,17 @@ public:
 		bool aggressive,
 		bool only_small,
 		const AllowedMergingPredicate & can_merge);
+
+	/** Выбрать для слияния все куски в заданной партиции, если возможно.
+	  * final - выбирать для слияния даже единственный кусок - то есть, позволять мерджить один кусок "сам с собой".
+	  */
+	bool selectAllPartsToMergeWithinPartition(
+		MergeTreeData::DataPartsVector & what,
+		String & merged_name,
+		size_t available_disk_space,
+		const AllowedMergingPredicate & can_merge,
+		DayNum_t partition,
+		bool final);
 
 	/** Сливает куски.
 	  * Если reservation != nullptr, то и дело уменьшает размер зарезервированного места

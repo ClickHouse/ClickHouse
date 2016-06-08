@@ -297,7 +297,7 @@ void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainP
 	}
 	else if (type == Type::KEY_64)
 	{
-		typedef typename Maps::MapUInt64 Map;
+		using Map = typename Maps::MapUInt64;
 		Map & res = *maps.key64;
 		const IColumn & column = *key_columns[0];
 
@@ -311,7 +311,7 @@ void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainP
 	}
 	else if (type == Type::KEY_STRING)
 	{
-		typedef typename Maps::MapString Map;
+		using Map = typename Maps::MapString;
 		Map & res = *maps.key_string;
 		const IColumn & column = *key_columns[0];
 
@@ -346,7 +346,7 @@ void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainP
 	}
 	else if (type == Type::HASHED)
 	{
-		typedef typename Maps::MapHashed Map;
+		using Map = typename Maps::MapHashed;
 		Map & res = *maps.hashed;
 
 		/// Для всех строчек
@@ -375,7 +375,7 @@ void Join::setSampleBlock(const Block & block)
 	ConstColumnPlainPtrs key_columns(keys_size);
 
 	for (size_t i = 0; i < keys_size; ++i)
-		key_columns[i] = block.getByName(key_names_right[i]).column;
+		key_columns[i] = block.getByName(key_names_right[i]).column.get();
 
 	/// Выберем, какую структуру данных для множества использовать.
 	init(chooseMethod(key_columns, keys_fit_128_bits, key_sizes));
@@ -422,12 +422,12 @@ bool Join::insertFromBlock(const Block & block)
 	/// Запоминаем столбцы ключей, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
 	{
-		key_columns[i] = block.getByName(key_names_right[i]).column;
+		key_columns[i] = block.getByName(key_names_right[i]).column.get();
 
 		if (auto converted = key_columns[i]->convertToFullColumnIfConst())
 		{
 			materialized_columns.emplace_back(converted);
-			key_columns[i] = materialized_columns.back();
+			key_columns[i] = materialized_columns.back().get();
 		}
 	}
 
@@ -608,12 +608,12 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	/// Запоминаем столбцы ключей, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
 	{
-		key_columns[i] = block.getByName(key_names_left[i]).column;
+		key_columns[i] = block.getByName(key_names_left[i]).column.get();
 
 		if (auto converted = key_columns[i]->convertToFullColumnIfConst())
 		{
 			materialized_columns.emplace_back(converted);
-			key_columns[i] = materialized_columns.back();
+			key_columns[i] = materialized_columns.back().get();
 		}
 	}
 
@@ -643,7 +643,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 		const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.getByPosition(i);
 		ColumnWithTypeAndName new_column = src_column.cloneEmpty();
 		block.insert(new_column);
-		added_columns[i] = new_column.column;
+		added_columns[i] = new_column.column.get();
 		added_columns[i]->reserve(src_column.column->size());
 	}
 
@@ -674,7 +674,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 
 	if (type == Type::KEY_64)
 	{
-		typedef typename Maps::MapUInt64 Map;
+		using Map = typename Maps::MapUInt64;
 		const Map & map = *maps.key64;
 		const IColumn & column = *key_columns[0];
 
@@ -689,7 +689,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	}
 	else if (type == Type::KEY_STRING)
 	{
-		typedef typename Maps::MapString Map;
+		using Map = typename Maps::MapString;
 		const Map & map = *maps.key_string;
 		const IColumn & column = *key_columns[0];
 
@@ -726,7 +726,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	}
 	else if (type == Type::HASHED)
 	{
-		typedef typename Maps::MapHashed Map;
+		using Map = typename Maps::MapHashed;
 		Map & map = *maps.hashed;
 
 		/// Для всех строчек
@@ -769,8 +769,8 @@ void Join::joinBlockImplCross(Block & block) const
 
 	for (size_t i = 0; i < num_existing_columns; ++i)
 	{
-		src_left_columns[i] = block.unsafeGetByPosition(i).column;
-		dst_left_columns[i] = res.unsafeGetByPosition(i).column;
+		src_left_columns[i] = block.unsafeGetByPosition(i).column.get();
+		dst_left_columns[i] = res.unsafeGetByPosition(i).column.get();
 	}
 
 	for (size_t i = 0; i < num_columns_to_add; ++i)
@@ -778,7 +778,7 @@ void Join::joinBlockImplCross(Block & block) const
 		const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.unsafeGetByPosition(i);
 		ColumnWithTypeAndName new_column = src_column.cloneEmpty();
 		res.insert(new_column);
-		dst_right_columns[i] = new_column.column;
+		dst_right_columns[i] = new_column.column.get();
 	}
 
 	size_t rows_left = block.rowsInFirstColumn();
@@ -797,7 +797,7 @@ void Join::joinBlockImplCross(Block & block) const
 
 			for (size_t col_num = 0; col_num < num_columns_to_add; ++col_num)
 			{
-				const IColumn * column_right = block_right.unsafeGetByPosition(col_num).column;
+				const IColumn * column_right = block_right.unsafeGetByPosition(col_num).column.get();
 
 				for (size_t j = 0; j < rows_right; ++j)
 					dst_right_columns[col_num]->insertFrom(*column_right, j);
@@ -1082,7 +1082,7 @@ private:
 
 BlockInputStreamPtr Join::createStreamWithNonJoinedRows(Block & left_sample_block, size_t max_block_size) const
 {
-	return new NonJoinedBlockInputStream(*this, left_sample_block, max_block_size);
+	return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block, max_block_size);
 }
 
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Poco/Mutex.h>
+#include <mutex>
 
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Storages/IStorage.h>
@@ -63,7 +63,7 @@ private:
 	/// Сами данные. list - чтобы при вставке в конец, существующие итераторы не инвалидировались.
 	BlocksList data;
 
-	Poco::FastMutex mutex;
+	std::mutex mutex;
 
 	StorageMemory(
 		const std::string & name_,

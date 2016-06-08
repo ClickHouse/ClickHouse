@@ -22,10 +22,6 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 	{
 		first = false;
 
-		/// Например, если дети - AsynchronousBlockInputStream, это действие инициирует начало работы в фоновых потоках.
-		for (auto & child : children)
-			child->readPrefix();
-
 		size_t i = 0;
 		for (auto it = source_blocks.begin(); it != source_blocks.end(); ++it, ++i)
 		{

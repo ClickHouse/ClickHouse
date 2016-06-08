@@ -51,8 +51,8 @@ void Connection::connect()
 		socket.setSendTimeout(send_timeout);
 		socket.setNoDelay(true);
 
-		in = new ReadBufferFromPocoSocket(socket);
-		out = new WriteBufferFromPocoSocket(socket);
+		in = std::make_shared<ReadBufferFromPocoSocket>(socket);
+		out = std::make_shared<WriteBufferFromPocoSocket>(socket);
 
 		connected = true;
 
@@ -293,10 +293,10 @@ void Connection::sendQuery(const String & query, const String & query_id_, UInt6
 
 	writeStringBinary(query, *out);
 
-	maybe_compressed_in = nullptr;
-	maybe_compressed_out = nullptr;
-	block_in = nullptr;
-	block_out = nullptr;
+	maybe_compressed_in.reset();
+	maybe_compressed_out.reset();
+	block_in.reset();
+	block_out.reset();
 
 	/// Если версия сервера достаточно новая и стоит флаг, отправляем пустой блок, символизируя конец передачи данных.
 	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES && !with_pending_data)
@@ -323,11 +323,11 @@ void Connection::sendData(const Block & block, const String & name)
 	if (!block_out)
 	{
 		if (compression == Protocol::Compression::Enable)
-			maybe_compressed_out = new CompressedWriteBuffer(*out, network_compression_method);
+			maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, network_compression_method);
 		else
 			maybe_compressed_out = out;
 
-		block_out = new NativeBlockOutputStream(*maybe_compressed_out, server_revision);
+		block_out = std::make_shared<NativeBlockOutputStream>(*maybe_compressed_out, server_revision);
 	}
 
 	writeVarUInt(Protocol::Client::Data, *out);
@@ -520,11 +520,11 @@ void Connection::initBlockInput()
 	if (!block_in)
 	{
 		if (compression == Protocol::Compression::Enable)
-			maybe_compressed_in = new CompressedReadBuffer(*in);
+			maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
 		else
 			maybe_compressed_in = in;
 
-		block_in = new NativeBlockInputStream(*maybe_compressed_in, server_revision);
+		block_in = std::make_shared<NativeBlockInputStream>(*maybe_compressed_in, server_revision);
 	}
 }
 
@@ -539,13 +539,13 @@ void Connection::setDescription()
 }
 
 
-SharedPtr<Exception> Connection::receiveException()
+std::unique_ptr<Exception> Connection::receiveException()
 {
 	//LOG_TRACE(log_wrapper.get(), "Receiving exception");
 
 	Exception e;
 	readException(e, *in, "Received from " + getDescription());
-	return e.clone();
+	return std::unique_ptr<Exception>{ e.clone() };
 }
 
 

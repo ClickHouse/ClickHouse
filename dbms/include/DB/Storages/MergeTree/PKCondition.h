@@ -296,8 +296,8 @@ private:
 		mutable MonotonicFunctionsChain monotonic_functions_chain;	/// Выполнение функции не нарушает константность.
 	};
 
-	typedef std::vector<RPNElement> RPN;
-	typedef std::map<String, size_t> ColumnIndices;
+	using RPN = std::vector<RPNElement>;
+	using ColumnIndices = std::map<String, size_t>;
 
 	bool mayBeTrueInRange(
 		size_t used_key_size,

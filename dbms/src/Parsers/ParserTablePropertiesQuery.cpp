@@ -30,11 +30,11 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
 
 	if (s_exists.ignore(pos, end, max_parsed_pos, expected))
 	{
-		query_ptr = new ASTExistsQuery;
+		query_ptr = std::make_shared<ASTExistsQuery>();
 	}
 	else if (s_describe.ignore(pos, end, max_parsed_pos, expected) || s_desc.ignore(pos, end, max_parsed_pos, expected))
 	{
-		query_ptr = new ASTDescribeQuery;
+		query_ptr = std::make_shared<ASTDescribeQuery>();
 	}
 	else if (s_show.ignore(pos, end, max_parsed_pos, expected))
 	{
@@ -43,7 +43,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
 		if (!s_create.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 
-		query_ptr = new ASTShowCreateQuery;
+		query_ptr = std::make_shared<ASTShowCreateQuery>();
 	}
 	else
 	{

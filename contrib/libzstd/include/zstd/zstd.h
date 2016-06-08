@@ -59,9 +59,15 @@ extern "C" {
 /* *************************************
 *  Version
 ***************************************/
-#define ZSTD_VERSION_MAJOR    0    /* for breaking interface changes  */
-#define ZSTD_VERSION_MINOR    6    /* for new (non-breaking) interface capabilities */
-#define ZSTD_VERSION_RELEASE  0    /* for tweaks, bug-fixes, or development */
+#define ZSTD_VERSION_MAJOR    0
+#define ZSTD_VERSION_MINOR    6
+#define ZSTD_VERSION_RELEASE  1
+
+#define ZSTD_LIB_VERSION ZSTD_VERSION_MAJOR.ZSTD_VERSION_MINOR.ZSTD_VERSION_RELEASE
+#define ZSTD_QUOTE(str) #str
+#define ZSTD_EXPAND_AND_QUOTE(str) ZSTD_QUOTE(str)
+#define ZSTD_VERSION_STRING ZSTD_EXPAND_AND_QUOTE(ZSTD_LIB_VERSION)
+
 #define ZSTD_VERSION_NUMBER  (ZSTD_VERSION_MAJOR *100*100 + ZSTD_VERSION_MINOR *100 + ZSTD_VERSION_RELEASE)
 ZSTDLIB_API unsigned ZSTD_versionNumber (void);
 

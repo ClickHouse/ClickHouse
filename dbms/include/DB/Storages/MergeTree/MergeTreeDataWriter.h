@@ -24,7 +24,7 @@ struct BlockWithDateInterval
 	: block(block_), min_date(min_date_), max_date(max_date_) {}
 };
 
-typedef std::list<BlockWithDateInterval> BlocksWithDateIntervals;
+using BlocksWithDateIntervals = std::list<BlockWithDateInterval>;
 
 /** Записывает новые куски с данными в merge-дерево.
   */

@@ -20,9 +20,9 @@ public:
 
 	struct Output
 	{
-		SharedPtr<WriteBufferFromHTTPServerResponse> out;
+		std::shared_ptr<WriteBufferFromHTTPServerResponse> out;
 		/// Используется для выдачи ответа. Равен либо out, либо CompressedWriteBuffer(*out), в зависимости от настроек.
-		SharedPtr<WriteBuffer> out_maybe_compressed;
+		std::shared_ptr<WriteBuffer> out_maybe_compressed;
 	};
 
 	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response);

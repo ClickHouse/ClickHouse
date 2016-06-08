@@ -30,7 +30,7 @@ struct StringRef
 	explicit operator std::string() const { return toString(); }
 };
 
-typedef std::vector<StringRef> StringRefs;
+using StringRefs = std::vector<StringRef>;
 
 
 #if defined(__x86_64__)

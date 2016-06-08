@@ -4,7 +4,7 @@
 # Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
 ifndef THREADS_COUNT
-    THREADS_COUNT=24
+    THREADS_COUNT=`grep -c ^processor /proc/cpuinfo`
 endif
 
 configure-stamp:
@@ -22,7 +22,7 @@ build-stamp: configure-stamp
 	# для сборки в Debug нужно запустить так: debuild -e CMAKE_BUILD_TYPE=Debug
 	cd build && pwd && if [ -z CMAKE_BUILD_TYPE ]; then cmake ..; else cmake -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) ..; fi
 	# TODO: возможно надо исправить
-	# последовательно зкапускаем make для каждой из целей.
+	# последовательно запускаем make для каждой из целей.
 	# т.к. при параллельном запуске (make target1 target2) несколько раз одновременно создаются бинарники
 	# и возникает raise с custom_command, использующие эти бинарники
 	for daemon in ${DAEMONS}; do $(MAKE) -j$(THREADS_COUNT) -C build $$daemon; done

@@ -275,7 +275,7 @@ private:
 	Handler & handler;
 
 	/// Потоки.
-	typedef std::vector<std::thread> ThreadsData;
+	using ThreadsData = std::vector<std::thread>;
 	ThreadsData threads;
 
 	/** Набор доступных источников, которые не заняты каким-либо потоком в данный момент.
@@ -295,7 +295,7 @@ private:
 	  *
 	  * Поэтому, используется очередь. Это можно улучшить в дальнейшем.
 	  */
-	typedef std::queue<InputData> AvailableInputs;
+	using AvailableInputs = std::queue<InputData>;
 	AvailableInputs available_inputs;
 
 	/// Для операций с available_inputs.

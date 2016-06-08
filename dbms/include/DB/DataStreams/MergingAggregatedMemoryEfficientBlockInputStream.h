@@ -111,7 +111,7 @@ private:
 
 	std::vector<Input> inputs;
 
-	using BlocksToMerge = Poco::SharedPtr<BlocksList>;
+	using BlocksToMerge = std::unique_ptr<BlocksList>;
 
 	void start();
 

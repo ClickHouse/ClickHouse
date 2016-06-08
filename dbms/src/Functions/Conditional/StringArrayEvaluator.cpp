@@ -184,12 +184,12 @@ public:
 	{
 	}
 
-	size_t getDataSize() const
+	size_t getDataSize() const override
 	{
 		return data_size;
 	}
 
-	size_t getStringOffsetsSize() const
+	size_t getStringOffsetsSize() const override
 	{
 		return data.size();
 	}
@@ -358,8 +358,8 @@ VarStringArraySink createSink(Block & block, const StringArraySources & sources,
 
 	std::tie(data_size, offsets_size) = computeResultSize(sources, row_count);
 
-	ColumnString * col_res = new ColumnString;
-	ColumnArray * var_col_res = new ColumnArray{col_res};
+	std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+	auto var_col_res = std::make_shared<ColumnArray>(col_res);
 	block.getByPosition(result).column = var_col_res;
 
 	return VarStringArraySink{col_res->getChars(), col_res->getOffsets(),

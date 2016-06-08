@@ -57,8 +57,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 	ASTPtr col_after;
 	ASTPtr col_drop;
 
-	ASTAlterQuery * query = new ASTAlterQuery();
-	ASTPtr query_ptr = query;
+	auto query = std::make_shared<ASTAlterQuery>();
 
 	ws.ignore(pos, end);
 	if (!s_alter.ignore(pos, end, max_parsed_pos, expected))
@@ -267,8 +266,17 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 
 				ws.ignore(pos, end);
 
-				ParserParenthesisExpression parser_tuple;
-				if (!parser_tuple.parse(pos, end, params.primary_key, max_parsed_pos, expected))
+				if (!ParserString("(").ignore(pos, end, max_parsed_pos, expected))
+					return false;
+
+				ws.ignore(pos, end);
+
+				if (!ParserNotEmptyExpressionList(false).parse(pos, end, params.primary_key, max_parsed_pos, expected))
+					return false;
+
+				ws.ignore(pos, end);
+
+				if (!ParserString(")").ignore(pos, end, max_parsed_pos, expected))
 					return false;
 
 				ws.ignore(pos, end);
@@ -364,7 +372,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 	while (!parsing_finished);
 
 	query->range = StringRange(begin, end);
-	node = query_ptr;
+	node = query;
 
 	return true;
 }

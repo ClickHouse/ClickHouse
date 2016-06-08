@@ -83,7 +83,7 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
 
 	ws.ignore(pos, end);
 
-	ASTDropQuery * query = new ASTDropQuery(StringRange(begin, pos));
+	auto query = std::make_shared<ASTDropQuery>(StringRange(begin, pos));
 	node = query;
 
 	query->detach = detach;

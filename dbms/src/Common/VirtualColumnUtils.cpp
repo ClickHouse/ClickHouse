@@ -1,3 +1,5 @@
+#include <numeric>
+
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/ExpressionActions.h>
@@ -68,7 +70,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 	ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*ast);
 	ASTExpressionList & node = typeid_cast<ASTExpressionList &>(*select.select_expression_list);
 	ASTs & asts = node.children;
-	ASTLiteral * cur = new ASTLiteral(StringRange(), value);
+	auto cur = std::make_shared<ASTLiteral>(StringRange(), value);
 	cur->alias = column_name;
 	ASTPtr column_value = cur;
 	bool is_replaced = false;
@@ -122,10 +124,10 @@ static ASTPtr buildWhereExpression(const ASTs & functions)
 {
 	if (functions.size() == 0) return nullptr;
 	if (functions.size() == 1) return functions[0];
-	ASTPtr new_query = new ASTFunction();
+	ASTPtr new_query = std::make_shared<ASTFunction>();
 	ASTFunction & new_function = typeid_cast<ASTFunction & >(*new_query);
 	new_function.name = "and";
-	new_function.arguments = new ASTExpressionList();
+	new_function.arguments = std::make_shared<ASTExpressionList>();
 	new_function.arguments->children = functions;
 	new_function.children.push_back(new_function.arguments);
 	return new_query;

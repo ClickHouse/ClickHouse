@@ -30,12 +30,12 @@ public:
 	bool supportsSampling() const override 			{ return getInnerTable()->supportsSampling(); }
 	bool supportsPrewhere() const override 			{ return getInnerTable()->supportsPrewhere(); }
 	bool supportsFinal() const override 			{ return getInnerTable()->supportsFinal(); }
-	bool supportsIndexForIn() const override 		{ return getInnerTable()->supportsIndexForIn(); }
 	bool supportsParallelReplicas() const override 	{ return getInnerTable()->supportsParallelReplicas(); }
+	bool supportsIndexForIn() const override 		{ return getInnerTable()->supportsIndexForIn(); }
 
 	BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
 	void drop() override;
-	bool optimize(const Settings & settings) override;
+	bool optimize(const String & partition, bool final, const Settings & settings) override;
 
 	BlockInputStreams read(
 		const Names & column_names,

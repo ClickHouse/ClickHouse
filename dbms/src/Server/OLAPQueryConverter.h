@@ -16,6 +16,7 @@ class QueryConverter
 {
 public:
 	QueryConverter(Poco::Util::AbstractConfiguration & config);
+	QueryConverter(const String & table_for_single_counter, const String & table_for_all_counters);
 	
 	/// Получает из запроса в формате OLAP-server запрос и настройки для clickhouse.
 	void OLAPServerQueryToClickHouse(const QueryParseResult & query, Context & inout_context, std::string & out_query) const;

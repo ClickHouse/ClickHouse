@@ -161,7 +161,7 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 			else
 			{
 				info.dir_names.push_back(addressToDirName(address));
-				info.pool = new ConnectionPool(
+				info.pool = std::make_shared<ConnectionPool>(
 					settings.distributed_connections_pool_size,
 					address.host_name, address.port, address.resolved_address,
 					"", address.user, address.password,
@@ -240,7 +240,7 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 					shard_local_addresses.push_back(replica);
 				else
 				{
-					replicas.emplace_back(new ConnectionPool(
+					replicas.emplace_back(std::make_shared<ConnectionPool>(
 						settings.distributed_connections_pool_size,
 						replica.host_name, replica.port, replica.resolved_address,
 						"", replica.user, replica.password,
@@ -253,7 +253,7 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 
 			ConnectionPoolPtr shard_pool;
 			if (!replicas.empty())
-				shard_pool = new ConnectionPoolWithFailover(replicas, settings.load_balancing, settings.connections_with_failover_max_tries);
+				shard_pool = std::make_shared<ConnectionPoolWithFailover>(replicas, settings.load_balancing, settings.connections_with_failover_max_tries);
 
 			slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
 			shards_info.push_back({std::move(dir_names), current_shard_num, weight, shard_local_addresses, shard_pool});
@@ -289,7 +289,7 @@ Cluster::Cluster(const Settings & settings, std::vector<std::vector<String>> nam
 
 		for (const auto & replica : current)
 		{
-			replicas.emplace_back(new ConnectionPool(
+			replicas.emplace_back(std::make_shared<ConnectionPool>(
 				settings.distributed_connections_pool_size,
 				replica.host_name, replica.port, replica.resolved_address,
 				"", replica.user, replica.password,
@@ -299,7 +299,8 @@ Cluster::Cluster(const Settings & settings, std::vector<std::vector<String>> nam
 				saturate(settings.send_timeout, settings.limits.max_execution_time)));
 		}
 
-		ConnectionPoolPtr shard_pool = new ConnectionPoolWithFailover(replicas, settings.load_balancing, settings.connections_with_failover_max_tries);
+		ConnectionPoolPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
+			replicas, settings.load_balancing, settings.connections_with_failover_max_tries);
 
 		slot_to_shard.insert(std::end(slot_to_shard), default_weight, shards_info.size());
 		shards_info.push_back({{}, current_shard_num, default_weight, {}, shard_pool});
@@ -345,11 +346,11 @@ void Cluster::initMisc()
 		}
 	}
 
-	assignName();
+	calculateHashOfAddresses();
 }
 
 
-void Cluster::assignName()
+void Cluster::calculateHashOfAddresses()
 {
 	std::vector<std::string> elements;
 
@@ -382,10 +383,27 @@ void Cluster::assignName()
 	SHA512_Final(hash, &ctx);
 
 	{
-		WriteBufferFromString buf(name);
+		WriteBufferFromString buf(hash_of_addresses);
 		HexWriteBuffer hex_buf(buf);
 		hex_buf.write(reinterpret_cast<const char *>(hash), sizeof(hash));
 	}
+}
+
+
+std::unique_ptr<Cluster> Cluster::getClusterWithSingleShard(size_t index) const
+{
+	return std::unique_ptr<Cluster>{ new Cluster(*this, index) };
+}
+
+Cluster::Cluster(const Cluster & from, size_t index)
+	: shards_info{from.shards_info[index]}
+{
+	if (!from.addresses.empty())
+		addresses.emplace_back(from.addresses[index]);
+	if (!from.addresses_with_failover.empty())
+		addresses_with_failover.emplace_back(from.addresses_with_failover[index]);
+
+	initMisc();
 }
 
 }

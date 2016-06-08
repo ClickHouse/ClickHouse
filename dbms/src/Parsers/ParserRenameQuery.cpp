@@ -82,7 +82,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 			return false;
 	}
 
-	ASTRenameQuery * query = new ASTRenameQuery(StringRange(begin, pos));
+	auto query = std::make_shared<ASTRenameQuery>(StringRange(begin, pos));
 	node = query;
 
 	query->elements = elements;

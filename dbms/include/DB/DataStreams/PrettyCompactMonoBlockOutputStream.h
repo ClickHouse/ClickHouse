@@ -19,7 +19,7 @@ public:
 	void writeSuffix() override;
 
 private:
-	typedef std::vector<Block> Blocks_t;
+	using Blocks_t = std::vector<Block>;
 
 	Blocks_t blocks;
 };

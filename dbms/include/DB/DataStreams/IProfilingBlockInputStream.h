@@ -14,6 +14,9 @@ namespace DB
 
 class QuotaForIntervals;
 struct ProcessListElement;
+class IProfilingBlockInputStream;
+
+using ProfilingBlockInputStreamPtr = std::shared_ptr<IProfilingBlockInputStream>;
 
 
 /** Смотрит за тем, как работает источник блоков.
@@ -25,6 +28,13 @@ class IProfilingBlockInputStream : public IBlockInputStream
 {
 public:
 	Block read() override final;
+
+	/** Реализация по-умолчанию вызывает readPrefixImpl() у себя, а затем readPrefix() у всех детей рекурсивно.
+	  * Есть случаи, когда вы не хотите, чтобы readPrefix у детей вызывался синхронно, в этой функции,
+	  *  а хотите, чтобы они вызывались, например, в отдельных потоках (для распараллеливания инициализации детей).
+	  * Тогда перегрузите функцию readPrefix.
+	  */
+	void readPrefix() override;
 
 	/** Реализация по-умолчанию вызывает рекурсивно readSuffix() у всех детей, а затем readSuffixImpl() у себя.
 	  * Если этот поток вызывает у детей read() в отдельном потоке, этот поведение обычно неверно:
@@ -182,6 +192,9 @@ protected:
 	/// Наследники должны реализовать эту функцию.
 	virtual Block readImpl() = 0;
 
+	/// Здесь можно делать предварительную инициализацию.
+	virtual void readPrefixImpl() {}
+
 	/// Здесь необходимо делать финализацию, которая может привести к исключению.
 	virtual void readSuffixImpl() {}
 
@@ -201,7 +214,5 @@ protected:
 	  */
 	void collectAndSendTotalRowsApprox();
 };
-
-typedef SharedPtr<IProfilingBlockInputStream> ProfilingBlockInputStreamPtr;
 
 }

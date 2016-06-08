@@ -174,11 +174,11 @@ private:
 
 	NamesAndTypesList columns_added_by_join;
 
-	typedef std::unordered_map<String, ASTPtr> Aliases;
+	using Aliases = std::unordered_map<String, ASTPtr>;
 	Aliases aliases;
 
-	typedef std::set<const IAST *> SetOfASTs;
-	typedef std::map<ASTPtr, ASTPtr> MapOfASTs;
+	using SetOfASTs = std::set<const IAST *>;
+	using MapOfASTs = std::map<ASTPtr, ASTPtr>;
 
 	/// Какой столбец нужно по-ARRAY-JOIN-ить, чтобы получить указанный.
 	/// Например, для SELECT s.v ... ARRAY JOIN a AS s сюда попадет "s.v" -> "a.v".

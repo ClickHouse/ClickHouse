@@ -1,8 +1,10 @@
 #!/bin/bash
 ### BEGIN INIT INFO
 # Provides:          @DAEMON@
-# Default-Start:     2
-# Default-Stop:      1
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Required-Start:
+# Required-Stop:
 # Short-Description: Yandex daemon
 ### END INIT INFO
 

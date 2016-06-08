@@ -4,6 +4,7 @@
 #include <DB/Storages/ColumnsDescription.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeAlterThread.h>
+#include <DB/Databases/IDatabase.h>
 
 
 namespace DB
@@ -45,7 +46,7 @@ void ReplicatedMergeTreeAlterThread::run()
 			  *
 			  * При старте сервера, мог быть не завершён предыдущий ALTER.
 			  * Поэтому, в первый раз, независимо от изменений, проверяем структуру всех part-ов,
-			  *  (Пример: /clickhouse/tables/02-06/visits/replicas/mtlog02-06-1.yandex.ru/parts/20140806_20140831_131664_134988_3296/columns)
+			  *  (Пример: /clickhouse/tables/02-06/visits/replicas/example02-06-1.yandex.ru/parts/20140806_20140831_131664_134988_3296/columns)
 			  *  и делаем ALTER, если необходимо.
 			  *
 			  * TODO: Слишком сложно, всё переделать.
@@ -95,8 +96,9 @@ void ReplicatedMergeTreeAlterThread::run()
 					{
 						LOG_INFO(log, "Columns list changed in ZooKeeper. Applying changes locally.");
 
-						InterpreterAlterQuery::updateMetadata(storage.database_name, storage.table_name, columns,
-							materialized_columns, alias_columns, column_defaults, storage.context);
+						storage.context.getDatabase(storage.database_name)->alterTable(
+							storage.context, storage.table_name,
+							columns, materialized_columns, alias_columns, column_defaults, {});
 
 						if (columns_changed)
 						{
@@ -157,7 +159,8 @@ void ReplicatedMergeTreeAlterThread::run()
 						/// Обновим кусок и запишем результат во временные файлы.
 						/// TODO: Можно пропускать проверку на слишком большие изменения, если в ZooKeeper есть, например,
 						///  нода /flags/force_alter.
-						auto transaction = storage.data.alterDataPart(part, columns_plus_materialized);
+						auto transaction = storage.data.alterDataPart(
+							part, columns_plus_materialized, storage.data.primary_expr_ast, false);
 
 						if (!transaction)
 							continue;
@@ -195,7 +198,8 @@ void ReplicatedMergeTreeAlterThread::run()
 
 						for (const MergeTreeData::DataPartPtr & part : parts)
 						{
-							auto transaction = storage.unreplicated_data->alterDataPart(part, columns_plus_materialized);
+							auto transaction = storage.unreplicated_data->alterDataPart(
+								part, columns_plus_materialized, storage.data.primary_expr_ast, false);
 
 							if (!transaction)
 								continue;

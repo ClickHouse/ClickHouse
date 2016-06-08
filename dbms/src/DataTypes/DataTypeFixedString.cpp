@@ -1,5 +1,3 @@
-#include <Poco/SharedPtr.h>
-
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteHelpers.h>
 
@@ -16,8 +14,6 @@
 
 namespace DB
 {
-
-using Poco::SharedPtr;
 
 namespace ErrorCodes
 {
@@ -197,13 +193,13 @@ void DataTypeFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr
 
 ColumnPtr DataTypeFixedString::createColumn() const
 {
-	return new ColumnFixedString(n);
+	return std::make_shared<ColumnFixedString>(n);
 }
 
 
 ColumnPtr DataTypeFixedString::createConstColumn(size_t size, const Field & field) const
 {
-	return new ColumnConstString(size, get<const String &>(field), clone());
+	return std::make_shared<ColumnConstString>(size, get<const String &>(field), clone());
 }
 
 }

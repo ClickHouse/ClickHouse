@@ -26,7 +26,7 @@ namespace ErrorCodes
 template <typename R = void>
 struct StaticVisitor
 {
-	typedef R ResultType;
+	using ResultType = R;
 };
 
 

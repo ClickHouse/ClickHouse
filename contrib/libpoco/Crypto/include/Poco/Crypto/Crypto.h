@@ -22,6 +22,7 @@
 #define Crypto_Crypto_INCLUDED
 
 
+#pragma GCC diagnostic push
 #if defined(__APPLE__)
 // OS X 10.7 deprecates some OpenSSL functions
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations" 
@@ -115,5 +116,6 @@ void Crypto_API uninitializeCrypto();
 
 } } // namespace Poco::Crypto
 
+#pragma GCC diagnostic pop
 
 #endif // Crypto_Crypto_INCLUDED

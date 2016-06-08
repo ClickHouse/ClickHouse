@@ -47,7 +47,7 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeUInt8;
+		return std::make_shared<DataTypeUInt8>();
 	}
 
 	void addImpl(AggregateDataPtr place) const
@@ -78,7 +78,7 @@ public:
 
 AggregateFunctionPtr createAggregateFunctionDebug(const std::string & name, const DataTypes & argument_types)
 {
-	return new AggregateFunctionDebug;
+	return std::make_shared<AggregateFunctionDebug>();
 }
 
 

@@ -18,6 +18,7 @@
 #include <vector>
 #include <map>
 #include <tuple>
+#include <random>
 
 
 namespace DB
@@ -593,7 +594,7 @@ private:
 
 		while (const auto block = stream->read())
 		{
-			const auto id_column = typeid_cast<const ColumnVector<UInt64> *>(block.getByPosition(0).column.get());
+			const auto id_column = typeid_cast<const ColumnUInt64 *>(block.getByPosition(0).column.get());
 			if (!id_column)
 				throw Exception{
 					name + ": id column has type different from UInt64.",

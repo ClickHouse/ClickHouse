@@ -64,7 +64,7 @@ int main(int argc, char ** argv)
 		{
 			/// Копирование Query
 			mysqlxx::Query query = connection.query("SELECT 'Ok' x");
-			typedef std::vector<mysqlxx::Query> Queries;
+			using Queries = std::vector<mysqlxx::Query>;
 			Queries queries;
 			queries.push_back(query);
 
@@ -86,7 +86,7 @@ int main(int argc, char ** argv)
 
 		{
 			/// Копирование Query
-			typedef std::list<mysqlxx::Query> Queries;
+			using Queries = std::list<mysqlxx::Query>;
 			Queries queries;
 			queries.push_back(connection.query("SELECT"));
 			mysqlxx::Query & qref = queries.back();

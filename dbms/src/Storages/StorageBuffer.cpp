@@ -2,6 +2,7 @@
 #include <DB/Interpreters/InterpreterInsertQuery.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/Databases/IDatabase.h>
 #include <DB/Storages/StorageBuffer.h>
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -137,7 +138,7 @@ BlockInputStreams StorageBuffer::read(
 	BlockInputStreams streams_from_buffers;
 	streams_from_buffers.reserve(num_shards);
 	for (auto & buf : buffers)
-		streams_from_buffers.push_back(new BufferBlockInputStream(column_names, buf));
+		streams_from_buffers.push_back(std::make_shared<BufferBlockInputStream>(column_names, buf));
 
 	/** Если источники из таблицы были обработаны до какой-то не начальной стадии выполнения запроса,
 	  * то тогда источники из буферов надо тоже обернуть в конвейер обработки до той же стадии.
@@ -281,7 +282,7 @@ private:
 
 BlockOutputStreamPtr StorageBuffer::write(ASTPtr query, const Settings & settings)
 {
-	return new BufferBlockOutputStream(*this);
+	return std::make_shared<BufferBlockOutputStream>(*this);
 }
 
 
@@ -294,7 +295,7 @@ void StorageBuffer::shutdown()
 
 	try
 	{
-		optimize(context.getSettings());
+		optimize({}, {}, context.getSettings());
 	}
 	catch (...)
 	{
@@ -303,10 +304,15 @@ void StorageBuffer::shutdown()
 }
 
 
-bool StorageBuffer::optimize(const Settings & settings)
+bool StorageBuffer::optimize(const String & partition, bool final, const Settings & settings)
 {
-	flushAllBuffers(false);
+	if (!partition.empty())
+		throw Exception("Partition cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
 
+	if (final)
+		throw Exception("FINAL cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
+
+	flushAllBuffers(false);
 	return true;
 }
 
@@ -425,8 +431,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 		return;
 	}
 
-	ASTInsertQuery * insert = new ASTInsertQuery;
-	ASTPtr ast_ptr = insert;
+	auto insert = std::make_shared<ASTInsertQuery>();
 
 	insert->database = destination_database;
 	insert->table = destination_table;
@@ -463,13 +468,13 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 		LOG_WARNING(log, "Not all columns from block in buffer exist in destination table "
 			<< destination_database << "." << destination_table << ". Some columns are discarded.");
 
-	ASTExpressionList * list_of_columns = new ASTExpressionList;
+	auto list_of_columns = std::make_shared<ASTExpressionList>();
 	insert->columns = list_of_columns;
 	list_of_columns->children.reserve(columns_intersection.size());
 	for (const String & column : columns_intersection)
-		list_of_columns->children.push_back(new ASTIdentifier(StringRange(), column, ASTIdentifier::Column));
+		list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(StringRange(), column, ASTIdentifier::Column));
 
-	InterpreterInsertQuery interpreter{ast_ptr, context};
+	InterpreterInsertQuery interpreter{insert, context};
 
 	auto block_io = interpreter.execute();
 	block_io.out->writePrefix();
@@ -505,11 +510,13 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
 	auto lock = lockStructureForAlter();
 
 	/// Чтобы не осталось блоков старой структуры.
-	optimize(context.getSettings());
+	optimize({}, {}, context.getSettings());
 
 	params.apply(*columns, materialized_columns, alias_columns, column_defaults);
-	InterpreterAlterQuery::updateMetadata(database_name, table_name,
-		*columns, materialized_columns, alias_columns, column_defaults, context);
+
+	context.getDatabase(database_name)->alterTable(
+		context, table_name,
+		*columns, materialized_columns, alias_columns, column_defaults, {});
 }
 
 }

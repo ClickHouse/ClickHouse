@@ -26,9 +26,9 @@ template
 class ClearableHashMap : public HashTable<Key, ClearableHashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>
 {
 public:
-	typedef Key key_type;
-	typedef Mapped mapped_type;
-	typedef typename ClearableHashMap::cell_type::value_type value_type;
+	using key_type = Key;
+	using mapped_type = Mapped;
+	using value_type = typename ClearableHashMap::cell_type::value_type;
 
 	mapped_type & operator[](Key x)
 	{

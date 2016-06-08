@@ -18,8 +18,8 @@
 #include <DB/Common/HashTable/HashMap.h>
 
 
-typedef UInt64 Key;
-typedef UInt64 Value;
+using Key = UInt64;
+using Value = UInt64;
 
 struct CellWithoutZeroWithSavedHash : public HashMapCell<Key, Value, DefaultHash<Key> >
 {
@@ -108,10 +108,10 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-//		typedef HashMap<Key, Value> Map;
+//		using Map = HashMap<Key, Value>;
 
 		/// Из-за WithoutZero быстрее на 0.7% (для не влезающей в L3-кэш) - 2.3% (для влезающей в L3-кэш).
-		typedef HashMapTable<Key, CellWithoutZeroWithSavedHash, DefaultHash<Key>, Grower> Map;
+		using Map = HashMapTable<Key, CellWithoutZeroWithSavedHash, DefaultHash<Key>, Grower>;
 
 		Map map;
 		Map::iterator it;

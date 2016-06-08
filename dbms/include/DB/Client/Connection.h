@@ -24,12 +24,15 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 /// Поток блоков читающих из таблицы и ее имя
-typedef std::pair<BlockInputStreamPtr, std::string> ExternalTableData;
+using ExternalTableData = std::pair<BlockInputStreamPtr, std::string>;
 /// Вектор пар, описывающих таблицы
-typedef std::vector<ExternalTableData> ExternalTablesData;
+using ExternalTablesData = std::vector<ExternalTableData>;
+
+class Connection;
+
+using ConnectionPtr = std::shared_ptr<Connection>;
+using Connections = std::vector<ConnectionPtr>;
 
 
 /** Соединение с сервером БД для использования в клиенте.
@@ -113,7 +116,7 @@ public:
 		UInt64 type;
 
 		Block block;
-		SharedPtr<Exception> exception;
+		std::unique_ptr<Exception> exception;
 		Progress progress;
 		BlockStreamProfileInfo profile_info;
 
@@ -168,8 +171,8 @@ public:
 	  */
 	void fillBlockExtraInfo(BlockExtraInfo & info) const;
 
-	size_t outBytesCount() const { return !out.isNull() ? out->count() : 0; }
-	size_t inBytesCount() const { return !in.isNull() ? in->count() : 0; }
+	size_t outBytesCount() const { return out ? out->count() : 0; }
+	size_t inBytesCount() const { return in ? in->count() : 0; }
 
 private:
 	String host;
@@ -197,8 +200,8 @@ private:
 	UInt64 server_revision = 0;
 
 	Poco::Net::StreamSocket socket;
-	SharedPtr<ReadBuffer> in;
-	SharedPtr<WriteBuffer> out;
+	std::shared_ptr<ReadBuffer> in;
+	std::shared_ptr<WriteBuffer> out;
 
 	String query_id;
 	UInt64 compression;		/// Сжимать ли данные при взаимодействии с сервером.
@@ -216,11 +219,11 @@ private:
 	Poco::Timespan ping_timeout;
 
 	/// Откуда читать результат выполнения запроса.
-	SharedPtr<ReadBuffer> maybe_compressed_in;
+	std::shared_ptr<ReadBuffer> maybe_compressed_in;
 	BlockInputStreamPtr block_in;
 
 	/// Куда писать данные INSERT-а.
-	SharedPtr<WriteBuffer> maybe_compressed_out;
+	std::shared_ptr<WriteBuffer> maybe_compressed_out;
 	BlockOutputStreamPtr block_out;
 
 	/// логгер, создаваемый лениво, чтобы не обращаться к DNS в конструкторе
@@ -253,15 +256,11 @@ private:
 	bool ping();
 
 	Block receiveData();
-	SharedPtr<Exception> receiveException();
+	std::unique_ptr<Exception> receiveException();
 	Progress receiveProgress();
 	BlockStreamProfileInfo receiveProfileInfo();
 
 	void initBlockInput();
 };
-
-
-typedef SharedPtr<Connection> ConnectionPtr;
-typedef std::vector<ConnectionPtr> Connections;
 
 }

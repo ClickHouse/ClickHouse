@@ -82,9 +82,9 @@ public:
 
 	/** Выполнить очередной шаг объединения кусков.
 	  */
-	bool optimize(const Settings & settings) override
+	bool optimize(const String & partition, bool final, const Settings & settings) override
 	{
-		return merge(settings.min_bytes_to_use_direct_io, true);
+		return merge(settings.min_bytes_to_use_direct_io, true, nullptr, partition, final);
 	}
 
 	void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
@@ -119,7 +119,7 @@ private:
 	SimpleIncrement increment;
 
 	MergeTreeData::DataParts currently_merging;
-	Poco::FastMutex currently_merging_mutex;
+	std::mutex currently_merging_mutex;
 
 	Logger * log;
 
@@ -152,7 +152,7 @@ private:
 		{
 			try
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(storage.currently_merging_mutex);
+				std::lock_guard<std::mutex> lock(storage.currently_merging_mutex);
 				for (const auto & part : parts)
 				{
 					if (!storage.currently_merging.count(part))
@@ -167,7 +167,7 @@ private:
 		}
 	};
 
-	typedef Poco::SharedPtr<CurrentlyMergingPartsTagger> CurrentlyMergingPartsTaggerPtr;
+	using CurrentlyMergingPartsTaggerPtr = std::shared_ptr<CurrentlyMergingPartsTagger>;
 
 	StorageMergeTree(
 		const String & path_,
@@ -189,7 +189,7 @@ private:
 	  * Если aggressive - выбрать куски, не обращая внимание на соотношение размеров и их новизну (для запроса OPTIMIZE).
 	  * Возвращает, получилось ли что-нибудь объединить.
 	  */
-	bool merge(size_t aio_threshold, bool aggressive = false, BackgroundProcessingPool::Context * context = nullptr);
+	bool merge(size_t aio_threshold, bool aggressive, BackgroundProcessingPool::Context * context, const String & partition, bool final);
 
 	bool mergeTask(BackgroundProcessingPool::Context & context);
 

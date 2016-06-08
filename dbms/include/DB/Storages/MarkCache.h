@@ -29,7 +29,7 @@ struct MarksWeightFunction
 class MarkCache : public LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>
 {
 private:
-	typedef LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction> Base;
+	using Base = LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>;
 
 public:
 	MarkCache(size_t max_size_in_bytes, const Delay & expiration_delay)
@@ -60,6 +60,6 @@ public:
 	}
 };
 
-typedef std::shared_ptr<MarkCache> MarkCachePtr;
+using MarkCachePtr = std::shared_ptr<MarkCache>;
 
 }

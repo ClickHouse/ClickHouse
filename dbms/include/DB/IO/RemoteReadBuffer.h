@@ -15,8 +15,8 @@ namespace DB
 class RemoteReadBuffer : public ReadBuffer
 {
 private:
-	Poco::SharedPtr<ReadBufferFromHTTP> impl;
-	
+	std::unique_ptr<ReadBufferFromHTTP> impl;
+
 public:
 	RemoteReadBuffer(
 		const std::string & host,
@@ -34,7 +34,7 @@ public:
 			std::make_pair("path", path),
 			std::make_pair("compress", (compress ? "true" : "false"))};
 
-		impl = new ReadBufferFromHTTP(host, port, params, buffer_size, connection_timeout, send_timeout, receive_timeout);
+		impl = std::make_unique<ReadBufferFromHTTP>(host, port, params, buffer_size, connection_timeout, send_timeout, receive_timeout);
 	}
 
 	bool nextImpl()

@@ -35,7 +35,7 @@ public:
 	~SharedLibrary()
 	{
 		if (handle && dlclose(handle))
-			throw Exception("Cannot dlclose");
+			std::terminate();
 	}
 
 	template <typename Func>

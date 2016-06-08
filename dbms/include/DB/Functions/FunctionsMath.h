@@ -17,7 +17,7 @@ class FunctionMathNullaryConstFloat64 : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
-	static IFunction * create(const Context &) { return new FunctionMathNullaryConstFloat64; }
+	static FunctionPtr create(const Context &) { return std::make_shared<FunctionMathNullaryConstFloat64>(); }
 
 private:
 	String getName() const override { return name; }
@@ -31,15 +31,14 @@ private:
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
 			};
 
-		return new DataTypeFloat64;
+		return std::make_shared<DataTypeFloat64>();
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		block.getByPosition(result).column = new ColumnConst<Float64>{
+		block.getByPosition(result).column = std::make_shared<ColumnConst<Float64>>(
 			block.rowsInFirstColumn(),
-			Impl::value
-		};
+			Impl::value);
 	}
 };
 
@@ -48,7 +47,7 @@ template <typename Impl> class FunctionMathUnaryFloat64 : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
-	static IFunction * create(const Context &) { return new FunctionMathUnaryFloat64; }
+	static FunctionPtr create(const Context &) { return std::make_shared<FunctionMathUnaryFloat64>(); }
 	static_assert(Impl::rows_per_iteration > 0, "Impl must process at least one row per iteration");
 
 private:
@@ -84,7 +83,7 @@ private:
 
 		check_argument_type(arguments.front().get());
 
-		return new DataTypeFloat64;
+		return std::make_shared<DataTypeFloat64>();
 	}
 
 	template <typename FieldType>
@@ -92,7 +91,7 @@ private:
 	{
 		if (const auto col = typeid_cast<const ColumnVector<FieldType> *>(arg))
 		{
-			const auto dst = new ColumnVector<Float64>;
+			const auto dst = std::make_shared<ColumnVector<Float64>>();
 			block.getByPosition(result).column = dst;
 
 			const auto & src_data = col->getData();
@@ -127,7 +126,7 @@ private:
 
 			Impl::execute(src, dst);
 
-			block.getByPosition(result).column = new ColumnConst<Float64>{col->size(), dst[0]};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<Float64>>(col->size(), dst[0]);
 
 			return true;
 		}
@@ -199,7 +198,7 @@ template <typename Impl> class FunctionMathBinaryFloat64 : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
-	static IFunction * create(const Context &) { return new FunctionMathBinaryFloat64; }
+	static FunctionPtr create(const Context &) { return std::make_shared<FunctionMathBinaryFloat64>(); }
 	static_assert(Impl::rows_per_iteration > 0, "Impl must process at least one row per iteration");
 
 private:
@@ -236,7 +235,7 @@ private:
 		check_argument_type(arguments.front().get());
 		check_argument_type(arguments.back().get());
 
-		return new DataTypeFloat64;
+		return std::make_shared<DataTypeFloat64>();
 	}
 
 	template <typename LeftType, typename RightType>
@@ -245,7 +244,7 @@ private:
 	{
 		if (const auto right_arg_typed = typeid_cast<const ColumnVector<RightType> *>(right_arg))
 		{
-			const auto dst = new ColumnVector<Float64>;
+			const auto dst = std::make_shared<ColumnVector<Float64>>();
 			block.getByPosition(result).column = dst;
 
 			LeftType left_src_data[Impl::rows_per_iteration];
@@ -283,7 +282,7 @@ private:
 
 			Impl::execute(left_src, right_src, dst);
 
-			block.getByPosition(result).column = new ColumnConst<Float64>{left_arg->size(), dst[0]};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<Float64>>(left_arg->size(), dst[0]);
 
 			return true;
 		}
@@ -297,7 +296,7 @@ private:
 	{
 		if (const auto right_arg_typed = typeid_cast<const ColumnVector<RightType> *>(right_arg))
 		{
-			const auto dst = new ColumnVector<Float64>;
+			const auto dst = std::make_shared<ColumnVector<Float64>>();
 			block.getByPosition(result).column = dst;
 
 			const auto & left_src_data = left_arg->getData();
@@ -331,7 +330,7 @@ private:
 		}
 		else if (const auto right_arg_typed = typeid_cast<const ColumnConst<RightType> *>(right_arg))
 		{
-			const auto dst = new ColumnVector<Float64>;
+			const auto dst = std::make_shared<ColumnVector<Float64>>();
 			block.getByPosition(result).column = dst;
 
 			const auto & left_src_data = left_arg->getData();

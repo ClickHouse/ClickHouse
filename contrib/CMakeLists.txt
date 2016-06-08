@@ -7,6 +7,7 @@ add_subdirectory (libmetrohash)
 add_subdirectory (libpoco)
 add_subdirectory (libre2)
 add_subdirectory (libboost-threadpool)
+add_subdirectory (libtcmalloc)
 
 IF (NOT AARCH64)
 	add_subdirectory (libcpuid)

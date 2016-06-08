@@ -6,11 +6,11 @@
 		<db>Metrica</db>
 		<password>qwerty</password>
 		<replica>
-			<host>mtdev02t</host>
+			<host>example02t</host>
 			<priority>0</priority>
 		</replica>
 		<replica>
-			<host>mtdev02t</host>
+			<host>example02t</host>
 			<port>3306</port>
 			<user>root</user>
 			<password>qwerty</password>

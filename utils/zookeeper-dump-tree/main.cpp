@@ -12,6 +12,8 @@ struct CallbackState
 {
 	std::string path;
 	std::list<CallbackState>::const_iterator it;
+	std::list<std::list<CallbackState>::const_iterator> children;
+	int64_t dataLength = 0;
 };
 
 using CallbackStates = std::list<CallbackState>;
@@ -19,10 +21,11 @@ CallbackStates states;
 
 zkutil::ZooKeeper * zookeeper;
 
+int running_count = 0;
 Poco::Event completed;
 
 
-void process(const CallbackState & state);
+void process(CallbackState & state);
 
 void callback(
 	int rc,
@@ -30,12 +33,15 @@ void callback(
 	const Stat * stat,
 	const void * data)
 {
-	const CallbackState * state = reinterpret_cast<const CallbackState *>(data);
+	CallbackState * state = reinterpret_cast<CallbackState *>(const_cast<void *>(data));
 
 	if (rc != ZOK && rc != ZNONODE)
 	{
 		std::cerr << zerror(rc) << ", path: " << state->path << "\n";
 	}
+
+	if (stat != nullptr)
+		state->dataLength = stat->dataLength;
 
 	if (rc == ZOK && strings)
 	{
@@ -44,23 +50,38 @@ void callback(
 			states.emplace_back();
 			states.back().path = state->path + (state->path == "/" ? "" : "/") + strings->data[i];
 			states.back().it = --states.end();
+			state->children.push_back(states.back().it);
 
-			std::cout << states.back().path << '\n';
 			process(states.back());
 		}
 	}
 
-	states.erase(state->it);
-
-	if (states.empty())
+	--running_count;
+	if (running_count == 0)
 		completed.set();
 }
 
-void process(const CallbackState & state)
+void process(CallbackState & state)
 {
+	++running_count;
 	zoo_awget_children2(zookeeper->getHandle(), state.path.data(), nullptr, nullptr, callback, &state);
 }
 
+typedef std::pair<int64_t, int64_t> NodesBytes;
+
+NodesBytes printTree(const CallbackState & state)
+{
+	int64_t nodes = 1;
+	int64_t bytes = state.dataLength;
+	for (auto child : state.children)
+	{
+		NodesBytes nodesBytes = printTree(*child);
+		nodes += nodesBytes.first;
+		bytes += nodesBytes.second;
+	}
+	std::cout << state.path << '\t' << nodes << '\t' << bytes <<'\n';
+	return NodesBytes(nodes, bytes);
+}
 
 int main(int argc, char ** argv)
 try
@@ -69,7 +90,7 @@ try
 	desc.add_options()
 		("help,h", "produce help message")
 		("address,a", boost::program_options::value<std::string>()->required(),
-			"addresses of ZooKeeper instances, comma separated. Example: mtmon01e.yandex.ru:2181")
+			"addresses of ZooKeeper instances, comma separated. Example: example01e.yandex.ru:2181")
 		("path,p", boost::program_options::value<std::string>()->default_value("/"),
 			"where to start")
 	;
@@ -95,6 +116,8 @@ try
 	process(states.back());
 
 	completed.wait();
+
+	printTree(*states.begin());
 }
 catch (...)
 {

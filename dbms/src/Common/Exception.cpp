@@ -114,7 +114,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace)
 }
 
 
-Poco::SharedPtr<Poco::Exception> convertCurrentException()
+std::unique_ptr<Poco::Exception> convertCurrentException()
 {
 	try
 	{
@@ -122,19 +122,19 @@ Poco::SharedPtr<Poco::Exception> convertCurrentException()
 	}
 	catch (const Exception & e)
 	{
-		return e.clone();
+		return std::unique_ptr<Poco::Exception>{ e.clone() };
 	}
 	catch (const Poco::Exception & e)
 	{
-		return e.clone();
+		return std::unique_ptr<Poco::Exception>{ e.clone() };
 	}
 	catch (const std::exception & e)
 	{
-		return new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
+		return std::make_unique<Exception>(e.what(), ErrorCodes::STD_EXCEPTION);
 	}
 	catch (...)
 	{
-		return new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+		return std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
 	}
 }
 

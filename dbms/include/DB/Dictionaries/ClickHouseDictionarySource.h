@@ -74,7 +74,7 @@ public:
 		*/
 		if (is_local)
 			return executeQuery(load_all_query, context, true).in;
-		return new RemoteBlockInputStream{pool.get(), load_all_query, nullptr};
+		return std::make_shared<RemoteBlockInputStream>(pool.get(), load_all_query, nullptr);
 	}
 
 	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
@@ -107,7 +107,7 @@ private:
 	{
 		if (is_local)
 			return executeQuery(query, context, true).in;
-		return new RemoteBlockInputStream{pool.get(), query, nullptr};
+		return std::make_shared<RemoteBlockInputStream>(pool.get(), query, nullptr);
 	}
 
 

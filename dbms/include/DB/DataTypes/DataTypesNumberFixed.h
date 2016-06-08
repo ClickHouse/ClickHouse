@@ -17,12 +17,12 @@ struct DataTypeFromFieldType;
 	{																				\
 	public:																			\
 		std::string getName() const override { return #TYPE; }						\
-		DataTypePtr clone() const override { return new DataType ## TYPE; }			\
+		DataTypePtr clone() const override { return std::make_shared<DataType ## TYPE>(); } \
 	};																				\
 																					\
 	template <> struct DataTypeFromFieldType<TYPE>									\
 	{																				\
-		typedef DataType ## TYPE Type;												\
+		using Type = DataType ## TYPE;												\
 	};
 
 DEFINE_DATA_TYPE_NUMBER_FIXED(UInt8);
@@ -45,12 +45,12 @@ class DataTypeVoid : public IDataTypeNumberFixed<void, void>
 public:
 	DataTypeVoid() = default;
 	std::string getName() const override { return "void"; }
-	DataTypePtr clone() const override { return new DataTypeVoid; }
+	DataTypePtr clone() const override { return std::make_shared<DataTypeVoid>(); }
 };
 
 template <> struct DataTypeFromFieldType<void>
 {
-	typedef DataTypeVoid Type;
+	using Type = DataTypeVoid;
 };
 
 }

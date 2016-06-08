@@ -10,7 +10,7 @@
 int main(int argc, char ** argv)
 {
 	{
-		typedef SmallSet<int, 16> Cont;
+		using Cont = SmallSet<int, 16>;
 		Cont cont;
 
 		cont.insert(1);
@@ -38,7 +38,7 @@ int main(int argc, char ** argv)
 	}
 
 	{
-		typedef SmallMap<int, std::string, 16> Cont;
+		using Cont = SmallMap<int, std::string, 16>;
 		Cont cont;
 
 		cont.insert(Cont::value_type(1, "Hello, world!"));
@@ -57,7 +57,7 @@ int main(int argc, char ** argv)
 	}
 
 	{
-		typedef SmallSet<DB::UInt128, 16> Cont;
+		using Cont = SmallSet<DB::UInt128, 16>;
 		Cont cont;
 
 		std::string dump;

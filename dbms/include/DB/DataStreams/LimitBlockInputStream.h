@@ -1,14 +1,10 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB
 {
-
-using Poco::SharedPtr;
 
 
 /** Реализует реляционную операцию LIMIT.

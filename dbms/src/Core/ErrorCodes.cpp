@@ -347,6 +347,8 @@ namespace ErrorCodes
 	extern const int UNFINISHED = 341;
 	extern const int METADATA_MISMATCH = 342;
 	extern const int INVALID_FUNCTION_GENUS = 343;
+	extern const int SUPPORT_IS_DISABLED = 344;
+	extern const int TABLE_DIFFERS_TOO_MUCH = 345;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;

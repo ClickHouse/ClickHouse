@@ -70,8 +70,8 @@ void MergeTreeDataMerger::setCancellationHook(CancellationHook cancellation_hook
 /// log(max_bytes_to_merge_parts) / log(max_size_ratio_to_merge_parts) * (количество кусков размером больше max_bytes_to_merge_parts).
 /// Дальше эвристики.
 /// Будем выбирать максимальный по включению подходящий отрезок.
-/// Из всех таких выбираем отрезок с минимальным максимумом размера.
-/// Из всех таких выбираем отрезок с минимальным минимумом размера.
+/// Из всех таких выбираем отрезок с минимальным максимумом размера одного куска.
+/// Из всех таких выбираем отрезок с минимальным минимумом размера одного куска.
 /// Из всех таких выбираем отрезок с максимальной длиной.
 /// Дополнительно:
 /// 1) С 1:00 до 5:00 ограничение сверху на размер куска в основном потоке увеличивается в несколько раз.
@@ -80,8 +80,14 @@ void MergeTreeDataMerger::setCancellationHook(CancellationHook cancellation_hook
 /// 4) Если в одном из потоков идет мердж крупных кусков, то во втором сливать только маленькие кусочки.
 /// 5) С ростом логарифма суммарного размера кусочков в мердже увеличиваем требование сбалансированности.
 
-bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & parts, String & merged_name, size_t available_disk_space,
-	bool merge_anything_for_old_months, bool aggressive, bool only_small, const AllowedMergingPredicate & can_merge_callback)
+bool MergeTreeDataMerger::selectPartsToMerge(
+	MergeTreeData::DataPartsVector & parts,
+	String & merged_name,
+	size_t available_disk_space,
+	bool merge_anything_for_old_months,
+	bool aggressive,
+	bool only_small,
+	const AllowedMergingPredicate & can_merge_callback)
 {
 	MergeTreeData::DataParts data_parts = data.getDataParts();
 
@@ -175,7 +181,8 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 		MergeTreeData::DataParts::iterator jt = it;
 		while (cur_len < static_cast<int>(data.settings.max_parts_to_merge_at_once)
 			|| (cur_len < static_cast<int>(data.settings.max_parts_to_merge_at_once_if_small)
-				&& cur_sum < data.settings.merge_more_parts_if_sum_bytes_is_less_than))
+				&& cur_sum < data.settings.merge_more_parts_if_sum_bytes_is_less_than)
+			|| aggressive)
 		{
 			const MergeTreeData::DataPartPtr & prev_part = *jt;
 			++jt;
@@ -200,7 +207,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			/// Кусок правее предыдущего.
 			if (last_part->left < cur_id)
 			{
-				LOG_WARNING(log, "Part " << last_part->name << " intersects previous part");
+				LOG_ERROR(log, "Part " << last_part->name << " intersects previous part");
 				break;
 			}
 
@@ -219,7 +226,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			int cur_age_in_sec = time(0) - newest_modification_time;
 
 			/// Если куски больше 1 Gb и образовались меньше 6 часов назад, то мерджить не меньше чем по 3.
-			if (cur_max > 1024 * 1024 * 1024 && cur_age_in_sec < 6 * 3600)
+			if (cur_max > 1024 * 1024 * 1024 && cur_age_in_sec < 6 * 3600 && !aggressive)
 				min_len = 3;
 
 			/// Размер кусков после текущих, делить на максимальный из текущих кусков. Чем меньше, тем новее текущие куски.
@@ -316,6 +323,74 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 }
 
 
+bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
+	MergeTreeData::DataPartsVector & what,
+	String & merged_name,
+	size_t available_disk_space,
+	const AllowedMergingPredicate & can_merge,
+	DayNum_t partition,
+	bool final)
+{
+	MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition);
+
+	if (parts.empty())
+		return false;
+
+	if (!final && parts.size() == 1)
+		return false;
+
+	MergeTreeData::DataPartsVector::const_iterator it = parts.begin();
+	MergeTreeData::DataPartsVector::const_iterator prev_it = it;
+
+	size_t sum_bytes = 0;
+	DayNum_t left_date = DayNum_t(std::numeric_limits<UInt16>::max());
+	DayNum_t right_date = DayNum_t(std::numeric_limits<UInt16>::min());
+	UInt32 level = 0;
+
+	while (it != parts.end())
+	{
+		if ((it != parts.begin() || parts.size() == 1)	/// Для случая одного куска, проверяем, что его можно мерджить "самого с собой".
+			&& !can_merge(*prev_it, *it))
+			return false;
+
+		level = std::max(level, (*it)->level);
+		left_date = std::min(left_date, (*it)->left_date);
+		right_date = std::max(right_date, (*it)->right_date);
+
+		sum_bytes += (*it)->size_in_bytes;
+
+		prev_it = it;
+		++it;
+	}
+
+	/// Достаточно места на диске, чтобы покрыть новый мердж с запасом.
+	if (available_disk_space <= sum_bytes * DISK_USAGE_COEFFICIENT_TO_SELECT)
+	{
+		time_t now = time(0);
+		if (now - disk_space_warning_time > 3600)
+		{
+			disk_space_warning_time = now;
+			LOG_WARNING(log, "Won't merge parts from " << parts.front()->name << " to " << (*prev_it)->name
+				<< " because not enough free space: "
+				<< formatReadableSizeWithBinarySuffix(available_disk_space) << " free and unreserved "
+				<< "(" << formatReadableSizeWithBinarySuffix(DiskSpaceMonitor::getReservedSpace()) << " reserved in "
+				<< DiskSpaceMonitor::getReservationCount() << " chunks), "
+				<< formatReadableSizeWithBinarySuffix(sum_bytes)
+				<< " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
+				<< "% on overhead); suppressing similar warnings for the next hour");
+		}
+		return false;
+	}
+
+	what = parts;
+	merged_name = ActiveDataPartSet::getPartName(
+		left_date, right_date, parts.front()->left, parts.back()->right, level + 1);
+
+	LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
+	return true;
+}
+
+
 MergeTreeData::DataPartsVector MergeTreeDataMerger::selectAllPartsFromPartition(DayNum_t partition)
 {
 	MergeTreeData::DataPartsVector parts_from_partition;
@@ -352,20 +427,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 	if (Poco::File(merged_dir).exists())
 		throw Exception("Directory " + merged_dir + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
-	NameSet union_columns_set;
 	for (const MergeTreeData::DataPartPtr & part : parts)
 	{
 		Poco::ScopedReadRWLock part_lock(part->columns_lock);
-		Names part_columns = part->columns.getNames();
-		union_columns_set.insert(part_columns.begin(), part_columns.end());
 
 		merge_entry->total_size_bytes_compressed += part->size_in_bytes;
 		merge_entry->total_size_marks += part->size;
 	}
-
-	NamesAndTypesList columns_list = data.getColumnsList();
-	NamesAndTypesList union_columns = columns_list.filter(union_columns_set);
-	Names union_column_names = union_columns.getNames();
 
 	MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
 	if (aio_threshold > 0)
@@ -373,6 +441,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 		for (const MergeTreeData::DataPartPtr & part : parts)
 			part->accumulateColumnSizes(merged_column_to_size);
 	}
+
+	Names column_names = data.getColumnNamesList();
+	NamesAndTypesList column_names_and_types = data.getColumnsList();
 
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 	ActiveDataPartSet::parsePartName(merged_name, *new_data_part);
@@ -394,7 +465,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
 		String part_path = data.getFullPath() + parts[i]->name + '/';
 		auto input = std::make_unique<MergeTreeBlockInputStream>(
-			part_path, DEFAULT_MERGE_BLOCK_SIZE, union_column_names, data,
+			part_path, DEFAULT_MERGE_BLOCK_SIZE, column_names, data,
 			parts[i], ranges, false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
 
 		input->setProgressCallback([&merge_entry, rows_total] (const Progress & value)
@@ -408,10 +479,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 		});
 
 		if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
-			src_streams.push_back(new MaterializingBlockInputStream{
-				new ExpressionBlockInputStream(input.release(), data.getPrimaryExpression())});
+			src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(
+				std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.getPrimaryExpression())));
 		else
-			src_streams.push_back(input.release());
+			src_streams.emplace_back(std::move(input));
 
 		sum_rows_approx += parts[i]->size * data.index_granularity;
 	}
@@ -468,7 +539,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 		merge_entry->total_size_bytes_compressed,
 		static_cast<double>(merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
 
-	MergedBlockOutputStream to{data, new_part_tmp_path, union_columns, compression_method, merged_column_to_size, aio_threshold};
+	MergedBlockOutputStream to{
+		data, new_part_tmp_path, column_names_and_types, compression_method, merged_column_to_size, aio_threshold};
 
 	merged_stream->readPrefix();
 	to.writePrefix();
@@ -493,7 +565,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 		throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
 	merged_stream->readSuffix();
-	new_data_part->columns = union_columns;
+	new_data_part->columns = column_names_and_types;
 	new_data_part->checksums = to.writeSuffixAndGetChecksums();
 	new_data_part->index.swap(to.getIndex());
 
@@ -578,20 +650,13 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
 	/// Слияние всех кусков партиции.
 
-	NameSet union_columns_set;
 	for (const MergeTreeData::DataPartPtr & part : parts)
 	{
 		Poco::ScopedReadRWLock part_lock(part->columns_lock);
-		Names part_columns = part->columns.getNames();
-		union_columns_set.insert(part_columns.begin(), part_columns.end());
 
 		merge_entry->total_size_bytes_compressed += part->size_in_bytes;
 		merge_entry->total_size_marks += part->size;
 	}
-
-	NamesAndTypesList columns_list = data.getColumnsList();
-	NamesAndTypesList union_columns = columns_list.filter(union_columns_set);
-	Names union_column_names = union_columns.getNames();
 
 	MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
 	if (aio_threshold > 0)
@@ -599,6 +664,9 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 		for (const MergeTreeData::DataPartPtr & part : parts)
 			part->accumulateColumnSizes(merged_column_to_size);
 	}
+
+	Names column_names = data.getColumnNamesList();
+	NamesAndTypesList column_names_and_types = data.getColumnsList();
 
 	BlockInputStreams src_streams;
 
@@ -613,7 +681,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 		String part_path = data.getFullPath() + parts[i]->name + '/';
 
 		auto input = std::make_unique<MergeTreeBlockInputStream>(
-			part_path, DEFAULT_MERGE_BLOCK_SIZE, union_column_names, data,
+			part_path, DEFAULT_MERGE_BLOCK_SIZE, column_names, data,
 			parts[i], ranges, false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
 
 		input->setProgressCallback([&merge_entry, rows_total] (const Progress & value)
@@ -624,10 +692,10 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 			});
 
 		if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
-			src_streams.push_back(new MaterializingBlockInputStream{
-				new ExpressionBlockInputStream(input.release(), data.getPrimaryExpression())});
+			src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(
+				std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.getPrimaryExpression())));
 		else
-			src_streams.push_back(input.release());
+			src_streams.emplace_back(std::move(input));
 
 		sum_rows_approx += parts[i]->size * data.index_granularity;
 	}
@@ -678,7 +746,8 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 		Poco::File(new_part_tmp_path).createDirectories();
 
 		MergedBlockOutputStreamPtr output_stream;
-		output_stream = std::make_unique<MergedBlockOutputStream>(data, new_part_tmp_path, union_columns, compression_method, merged_column_to_size, aio_threshold);
+		output_stream = std::make_unique<MergedBlockOutputStream>(
+			data, new_part_tmp_path, column_names_and_types, compression_method, merged_column_to_size, aio_threshold);
 		per_shard_output.emplace(shard_no, std::move(output_stream));
 	}
 
@@ -789,7 +858,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
 		MergeTreeData::MutableDataPartPtr & data_part = per_shard_data_parts.at(shard_no);
 
-		data_part->columns = union_columns;
+		data_part->columns = column_names_and_types;
 		data_part->checksums = output_stream->writeSuffixAndGetChecksums();
 		data_part->index.swap(output_stream->getIndex());
 		data_part->size = output_stream->marksCount();

@@ -55,7 +55,7 @@ Block MergeSortingBlockInputStream::readImpl()
 
 		if (temporary_files.empty())
 		{
-			impl.reset(new MergeSortingBlocksBlockInputStream(blocks, description, max_merged_block_size, limit));
+			impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description, max_merged_block_size, limit);
 		}
 		else
 		{
@@ -67,16 +67,16 @@ Block MergeSortingBlockInputStream::readImpl()
 			/// Сформируем сортированные потоки для слияния.
 			for (const auto & file : temporary_files)
 			{
-				temporary_inputs.emplace_back(new TemporaryFileStream(file->path()));
+				temporary_inputs.emplace_back(std::make_unique<TemporaryFileStream>(file->path()));
 				inputs_to_merge.emplace_back(temporary_inputs.back()->block_in);
 			}
 
 			/// Оставшиеся в оперативке блоки.
 			if (!blocks.empty())
-				inputs_to_merge.emplace_back(new MergeSortingBlocksBlockInputStream(blocks, description, max_merged_block_size, limit));
+				inputs_to_merge.emplace_back(std::make_shared<MergeSortingBlocksBlockInputStream>(blocks, description, max_merged_block_size, limit));
 
 			/// Будем сливать эти потоки.
-			impl.reset(new MergingSortedBlockInputStream(inputs_to_merge, description, max_merged_block_size, limit));
+			impl = std::make_unique<MergingSortedBlockInputStream>(inputs_to_merge, description, max_merged_block_size, limit);
 		}
 	}
 

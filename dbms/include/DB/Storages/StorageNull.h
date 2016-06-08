@@ -39,15 +39,18 @@ public:
 		const size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		const unsigned threads = 1) override
 	{
-		return { new NullBlockInputStream };
+		return { std::make_shared<NullBlockInputStream>() };
 	}
 
 	BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override
 	{
-		return new NullBlockOutputStream;
+		return std::make_shared<NullBlockOutputStream>();
 	}
 
-	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
+	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override
+	{
+		name = new_table_name;
+	}
 
 private:
 	String name;

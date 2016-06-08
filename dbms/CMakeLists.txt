@@ -3,6 +3,18 @@ include_directories(/usr/include/mysql)
 
 add_subdirectory (src)
 
+set (DISABLE_MONGODB FALSE CACHE BOOL "Set to TRUE to disable MongoDB support as source for external dictionaries")
+
+if ($ENV{DISABLE_MONGODB})
+	set (DISABLE_MONGODB TRUE)
+endif()
+
+if (${DISABLE_MONGODB})
+	add_definitions(-D DISABLE_MONGODB)
+else()
+	set (LINK_MONGOCLIENT libmongoclient.a libssl.a libcrypto.a)
+endif()
+
 add_library (dbms
 	src/Server/OLAPAttributesMetadata.h
 	src/Server/InterserverIOHTTPHandler.h
@@ -58,7 +70,9 @@ add_library (dbms
 	include/DB/TableFunctions/TableFunctionRemote.h
 	include/DB/TableFunctions/TableFunctionFactory.h
 	include/DB/TableFunctions/TableFunctionMerge.h
+	include/DB/TableFunctions/TableFunctionShardByHash.h
 	include/DB/TableFunctions/ITableFunction.h
+	include/DB/TableFunctions/getStructureOfRemoteTable.h
 	include/DB/Parsers/ASTSetQuery.h
 	include/DB/Parsers/ASTRenameQuery.h
 	include/DB/Parsers/ParserQueryWithOutput.h
@@ -346,6 +360,7 @@ add_library (dbms
 	include/DB/Interpreters/InterpreterSelectQuery.h
 	include/DB/Interpreters/QueryPriorities.h
 	include/DB/Interpreters/QueryLog.h
+	include/DB/Interpreters/getClusterName.h
 	include/DB/Interpreters/ClusterProxy/IQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/SelectQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/DescribeQueryConstructor.h
@@ -738,6 +753,10 @@ add_library (dbms
 	src/DataTypes/DataTypeTuple.cpp
 	src/DataTypes/FieldToDataType.cpp
 
+	src/Dictionaries/MySQLDictionarySource.cpp
+	src/Dictionaries/ODBCDictionarySource.cpp
+	src/Dictionaries/writeParenthesisedString.cpp
+
 	src/Parsers/ASTSelectQuery.cpp
 	src/Parsers/ASTAlterQuery.cpp
 	src/Parsers/ASTLiteral.cpp
@@ -771,6 +790,10 @@ add_library (dbms
 	src/Parsers/queryToString.cpp
 
 	src/TableFunctions/TableFunctionFactory.cpp
+	src/TableFunctions/TableFunctionMerge.cpp
+	src/TableFunctions/TableFunctionRemote.cpp
+	src/TableFunctions/TableFunctionShardByHash.cpp
+	src/TableFunctions/getStructureOfRemoteTable.cpp
 
 	src/Interpreters/ExpressionActions.cpp
 	src/Interpreters/ExpressionAnalyzer.cpp
@@ -803,6 +826,7 @@ add_library (dbms
 	src/Interpreters/DictionaryFactory.cpp
 	src/Interpreters/ProcessList.cpp
 	src/Interpreters/QueryLog.cpp
+	src/Interpreters/getClusterName.cpp
 	src/Interpreters/ClusterProxy/SelectQueryConstructor.cpp
 	src/Interpreters/ClusterProxy/DescribeQueryConstructor.cpp
 	src/Interpreters/ClusterProxy/AlterQueryConstructor.cpp
@@ -915,8 +939,7 @@ target_link_libraries(dbms
 	libcrypto.a
 	libboost_thread.a
 	libboost_system.a
-	librt.a
-	libmongoclient.a
+	${LINK_MONGOCLIENT}
 	libboost_regex.a
 	PocoData
 	PocoDataODBC

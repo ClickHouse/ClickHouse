@@ -64,9 +64,9 @@ protected:
 };
 
 /** Имя и тип через пробел. Например, URL String. */
-typedef IParserNameTypePair<ParserIdentifier> ParserNameTypePair;
+using ParserNameTypePair = IParserNameTypePair<ParserIdentifier>;
 /** Имя и тип через пробел. Имя может содержать точку. Например, Hits.URL String. */
-typedef IParserNameTypePair<ParserCompoundIdentifier> ParserCompoundNameTypePair;
+using ParserCompoundNameTypePair = IParserNameTypePair<ParserCompoundIdentifier>;
 
 template <class NameParser>
 bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
@@ -82,11 +82,11 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 		&& ws_parser.ignore(pos, end, max_parsed_pos, expected)
 		&& type_parser.parse(pos, end, type, max_parsed_pos, expected))
 	{
-		ASTNameTypePair * name_type_pair = new ASTNameTypePair(StringRange(begin, pos));
-		node = name_type_pair;
+		auto name_type_pair = std::make_shared<ASTNameTypePair>(StringRange(begin, pos));
 		name_type_pair->name = typeid_cast<ASTIdentifier &>(*name).name;
 		name_type_pair->type = type;
 		name_type_pair->children.push_back(type);
+		node = name_type_pair;
 		return true;
 	}
 
@@ -110,8 +110,8 @@ protected:
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
-typedef IParserColumnDeclaration<ParserIdentifier> ParserColumnDeclaration;
-typedef IParserColumnDeclaration<ParserCompoundIdentifier> ParserCompoundColumnDeclaration;
+using ParserColumnDeclaration = IParserColumnDeclaration<ParserIdentifier>;
+using ParserCompoundColumnDeclaration = IParserColumnDeclaration<ParserCompoundIdentifier>;
 
 template <class NameParser>
 bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
@@ -167,7 +167,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr 
 	else if (!type)
 		return false; /// reject sole column name without type
 
-	const auto column_declaration = new ASTColumnDeclaration{StringRange{begin, pos}};
+	const auto column_declaration = std::make_shared<ASTColumnDeclaration>(StringRange{begin, pos});
 	node = column_declaration;
 	column_declaration->name = typeid_cast<ASTIdentifier &>(*name).name;
 	if (type)

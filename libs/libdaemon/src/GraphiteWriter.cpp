@@ -24,7 +24,7 @@ GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::strin
 	  * По-умолчанию (для совместимости с существовавшим ранее поведением),
 	  *  в качестве имени сервера берётся строка, аналогичная uname -n,
 	  *  а затем к нему приписывается то, что указано в hostname_suffix, если есть.
-	  * Часто серверы настроены так, что, например, для сервера mtlog01-01-1.yandex.ru, uname -n будет выдавать mtlog01-01-1
+	  * Часто серверы настроены так, что, например, для сервера example01-01-1.yandex.ru, uname -n будет выдавать example01-01-1
 	  * Впрочем, uname -n может быть настроен произвольным образом. Он также может совпадать с FQDN.
 	  *
 	  * Если указано use_fqdn со значением true,
@@ -52,7 +52,7 @@ GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::strin
 std::string getPostfix()
 {
 	/// Угадываем имя среды по имени машинки
-	/// машинки имеют имена вида mtcalclog01dt.yandex.ru
+	/// машинки имеют имена вида example01dt.yandex.ru
 	/// t - test
 	/// dev - development
 	/// никакого суффикса - production

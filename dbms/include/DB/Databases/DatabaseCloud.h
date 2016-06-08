@@ -105,6 +105,18 @@ public:
 	void shutdown() override;
 	void drop() override;
 
+	void alterTable(
+		const Context & context,
+		const String & name,
+		const NamesAndTypesList & columns,
+		const NamesAndTypesList & materialized_columns,
+		const NamesAndTypesList & alias_columns,
+		const ColumnDefaults & column_defaults,
+		const ASTModifier & engine_modifier) override
+	{
+		throw Exception("ALTER TABLE is not supported by database engine " + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	using Hash = UInt128;
 
 private:

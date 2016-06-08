@@ -15,7 +15,7 @@ using ColumnsWithSortDescriptions = std::vector<std::pair<const IColumn *, SortC
 
 static inline bool needCollation(const IColumn * column, const SortColumnDescription & description)
 {
-	if (description.collator.isNull())
+	if (!description.collator)
 		return false;
 
 	if (column->getName() != "ColumnString")
@@ -85,9 +85,9 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 	{
 		bool reverse = description[0].direction == -1;
 
-		IColumn * column = !description[0].column_name.empty()
-			? block.getByName(description[0].column_name).column
-			: block.getByPosition(description[0].column_number).column;
+		const IColumn * column = !description[0].column_name.empty()
+			? block.getByName(description[0].column_name).column.get()
+			: block.getByPosition(description[0].column_number).column.get();
 
 		IColumn::Permutation perm;
 		if (needCollation(column, description[0]))
@@ -117,9 +117,9 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 
 		for (size_t i = 0, size = description.size(); i < size; ++i)
 		{
-			IColumn * column = !description[i].column_name.empty()
-				? block.getByName(description[i].column_name).column
-				: block.getByPosition(description[i].column_number).column;
+			const IColumn * column = !description[i].column_name.empty()
+				? block.getByName(description[i].column_name).column.get()
+				: block.getByPosition(description[i].column_number).column.get();
 
 			columns_with_sort_desc.push_back(std::make_pair(column, description[i]));
 
@@ -168,8 +168,8 @@ void stableGetPermutation(const Block & block, const SortDescription & descripti
 	for (size_t i = 0, size = description.size(); i < size; ++i)
 	{
 		const IColumn * column = !description[i].column_name.empty()
-			? block.getByName(description[i].column_name).column
-			: block.getByPosition(description[i].column_number).column;
+			? block.getByName(description[i].column_name).column.get()
+			: block.getByPosition(description[i].column_number).column.get();
 
 		columns_with_sort_desc.push_back(std::make_pair(column, description[i]));
 	}
@@ -190,8 +190,8 @@ bool isAlreadySorted(const Block & block, const SortDescription & description)
 	for (size_t i = 0, size = description.size(); i < size; ++i)
 	{
 		const IColumn * column = !description[i].column_name.empty()
-			? block.getByName(description[i].column_name).column
-			: block.getByPosition(description[i].column_number).column;
+			? block.getByName(description[i].column_name).column.get()
+			: block.getByPosition(description[i].column_number).column.get();
 
 		columns_with_sort_desc.push_back(std::make_pair(column, description[i]));
 	}

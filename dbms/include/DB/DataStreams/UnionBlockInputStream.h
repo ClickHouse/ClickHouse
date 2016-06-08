@@ -10,8 +10,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
 namespace ErrorCodes
 {
 	extern const int LOGICAL_ERROR;
@@ -181,6 +179,11 @@ protected:
 
 		if (exception)
 			std::rethrow_exception(exception);
+	}
+
+	/// Ничего не делаем, чтобы подготовка к выполнению запроса делалась параллельно, в ParallelInputsProcessor.
+	void readPrefix() override
+	{
 	}
 
 	/** Возможны следующие варианты:

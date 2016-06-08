@@ -1,7 +1,7 @@
 #pragma once
 
 #include <time.h>
-#include <Poco/Mutex.h>
+#include <mutex>
 #include <Poco/ScopedLock.h>
 #include <common/Common.h>
 
@@ -59,7 +59,7 @@ public:
 	  */
 	bool lockTestAndRestart(double seconds)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 
 		if (elapsedSeconds() >= seconds)
 		{
@@ -71,5 +71,5 @@ public:
 	}
 
 private:
-	Poco::FastMutex mutex;
+	std::mutex mutex;
 };

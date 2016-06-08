@@ -38,7 +38,7 @@ public:
 	DataTypePtr getReturnType() const { return function->getReturnType(); };
 	DataTypes getArgumentsDataTypes() const { return argument_types; }
 
-	DataTypePtr clone() const override { return new DataTypeAggregateFunction(function, argument_types, parameters); }
+	DataTypePtr clone() const override { return std::make_shared<DataTypeAggregateFunction>(function, argument_types, parameters); }
 
 	/// NOTE Эти две функции сериализации одиночных значений несовместимы с функциями ниже.
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const override;

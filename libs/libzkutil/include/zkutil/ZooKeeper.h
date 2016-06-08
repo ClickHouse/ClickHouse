@@ -38,11 +38,11 @@ public:
 	/** конфиг вида
 		<zookeeper>
 			<node>
-				<host>mtmon1</host>
+				<host>example1</host>
 				<port>2181</port>
 			</node>
 			<node>
-				<host>mtmon2</host>
+				<host>example2</host>
 				<port>2181</port>
 			</node>
 			<session_timeout_ms>30000</session_timeout_ms>

@@ -12,7 +12,7 @@ BlockInputStreams narrowBlockInputStreams(BlockInputStreams & inputs, size_t wid
 
 	std::vector<BlockInputStreams> partitions(width);
 
-	typedef std::vector<size_t> Distribution;
+	using Distribution = std::vector<size_t>;
 	Distribution distribution(size);
 
 	for (size_t i = 0; i < size; ++i)
@@ -25,7 +25,7 @@ BlockInputStreams narrowBlockInputStreams(BlockInputStreams & inputs, size_t wid
 
 	BlockInputStreams res(width);
 	for (size_t i = 0; i < width; ++i)
-		res[i] = new ConcatBlockInputStream(partitions[i]);
+		res[i] = std::make_shared<ConcatBlockInputStream>(partitions[i]);
 
 	return res;
 }

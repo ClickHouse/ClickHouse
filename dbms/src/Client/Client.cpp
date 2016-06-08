@@ -3,9 +3,6 @@
 #include <fcntl.h>
 #include <signal.h>
 
-#include <readline/readline.h>
-#include <readline/history.h>
-
 #include <iostream>
 #include <fstream>
 #include <iomanip>
@@ -16,7 +13,6 @@
 #include <boost/program_options.hpp>
 
 #include <Poco/File.h>
-#include <Poco/SharedPtr.h>
 #include <Poco/Util/Application.h>
 
 #include <common/ClickHouseRevision.h>
@@ -62,6 +58,30 @@
 
 #include <DB/Common/NetException.h>
 
+
+/// Могут использоваться разные библиотеки для редактирования строк в зависимости от окружения.
+#ifdef USE_READLINE
+	#include <readline/readline.h>
+	#include <readline/history.h>
+#elif USE_LIBEDIT
+	#include <editline/readline.h>
+	#include <editline/history.h>
+#else
+	char * readline(const char * prompt)
+	{
+		std::string s;
+		std::cout << prompt;
+		std::getline(std::cin, s);
+
+		if (!std::cin.good())
+			return nullptr;
+		return strdup(s.data());
+	}
+	#define add_history(...) do {} while (0);
+	#define rl_bind_key(...) do {} while (0);
+#endif
+
+
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 #define SAVE_CURSOR_POSITION "\033[s"
 #define RESTORE_CURSOR_POSITION "\033[u"
@@ -93,8 +113,6 @@ namespace ErrorCodes
 	extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
 }
 
-using Poco::SharedPtr;
-
 
 class Client : public Poco::Util::Application
 {
@@ -102,7 +120,7 @@ public:
 	Client() {}
 
 private:
-	typedef std::unordered_set<String> StringSet;
+	using StringSet = std::unordered_set<String>;
 	StringSet exit_strings {
 		"exit", "quit", "logout",
 		"учше", "йгше", "дщпщге",
@@ -118,7 +136,7 @@ private:
 
 	winsize terminal_size {};			/// Размер терминала - для вывода прогресс-бара.
 
-	SharedPtr<Connection> connection;	/// Соединение с БД.
+	std::unique_ptr<Connection> connection;	/// Соединение с БД.
 	String query;						/// Текущий запрос.
 
 	String format;						/// Формат вывода результата в консоль.
@@ -151,7 +169,7 @@ private:
 	ASTPtr parsed_query;
 
 	/// Последнее полученное от сервера исключение. Для кода возврата в неинтерактивном режиме.
-	Poco::SharedPtr<DB::Exception> last_exception;
+	std::unique_ptr<Exception> last_exception;
 
 	/// Было ли в последнем запросе исключение.
 	bool got_exception = false;
@@ -323,9 +341,11 @@ private:
 			{
 				if (Poco::File(history_file).exists())
 				{
+#ifdef USE_READLINE
 					int res = read_history(history_file.c_str());
 					if (res)
 						throwFromErrno("Cannot read history from file " + history_file, ErrorCodes::CANNOT_READ_HISTORY);
+#endif
 				}
 				else	/// Создаём файл с историей.
 					Poco::File(history_file).createFile();
@@ -371,7 +391,7 @@ private:
 				<< (!user.empty() ? " as user " + user : "")
 				<< "." << std::endl;
 
-		connection = new Connection(host, port, default_database, user, password, "client", compression,
+		connection = std::make_unique<Connection>(host, port, default_database, user, password, "client", compression,
 			Poco::Timespan(config().getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
 			Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
 			Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
@@ -451,8 +471,10 @@ private:
 					std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
 					add_history(logged_query.c_str());
 
+#ifdef USE_READLINE
 					if (!history_file.empty() && append_history(1, history_file.c_str()))
 						throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
+#endif
 
 					prev_query = query;
 				}
@@ -759,7 +781,7 @@ private:
 		BlockInputStreamPtr block_input = context.getInputFormat(
 			current_format, buf, sample, insert_format_max_block_size);
 
-		BlockInputStreamPtr async_block_input = new AsynchronousBlockInputStream(block_input);
+		BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
 
 		async_block_input->readPrefix();
 
@@ -856,7 +878,7 @@ private:
 
 			case Protocol::Server::Exception:
 				onException(*packet.exception);
-				last_exception = packet.exception;
+				last_exception = std::move(packet.exception);
 				return false;
 
 			case Protocol::Server::EndOfStream:
@@ -883,7 +905,7 @@ private:
 
 			case Protocol::Server::Exception:
 				onException(*packet.exception);
-				last_exception = packet.exception;
+				last_exception = std::move(packet.exception);
 				return false;
 
 			default:

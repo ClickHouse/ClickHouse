@@ -476,9 +476,9 @@ void ExpressionActions::checkLimits(Block & block) const
 				if (!block.getByPosition(i).column->isConst())
 					list_of_non_const_columns << "\n" << block.getByPosition(i).name;
 
-				throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
-					+ ". Maximum: " + toString(limits.max_temporary_non_const_columns),
-					ErrorCodes::TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS);
+			throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
+				+ ". Maximum: " + toString(limits.max_temporary_non_const_columns),
+				ErrorCodes::TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS);
 		}
 	}
 }
@@ -548,7 +548,7 @@ void ExpressionActions::prependArrayJoin(const ExpressionAction & action, const 
 		if (array_join_set.count(it.name))
 		{
 			array_join_set.erase(it.name);
-			it.type = new DataTypeArray(it.type);
+			it.type = std::make_shared<DataTypeArray>(it.type);
 		}
 	}
 	for (const std::string & name : array_join_set)
@@ -575,7 +575,7 @@ bool ExpressionActions::popUnusedArrayJoin(const Names & required_columns, Expre
 	for (const std::string & name : actions.back().array_joined_columns)
 	{
 		DataTypePtr & type = sample_block.getByName(name).type;
-		type = new DataTypeArray(type);
+		type = std::make_shared<DataTypeArray>(type);
 	}
 	out_action = actions.back();
 	actions.pop_back();
@@ -737,7 +737,7 @@ void ExpressionActions::finalize(const Names & output_columns)
 				if (action.type == ExpressionAction::APPLY_FUNCTION && sample_block.has(out))
 				{
 					auto & result = sample_block.getByName(out);
-					if (!result.column.isNull())
+					if (result.column)
 					{
 						action.type = ExpressionAction::ADD_COLUMN;
 						action.result_type = result.type;

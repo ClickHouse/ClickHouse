@@ -76,20 +76,16 @@ BlockIO InterpreterInsertQuery::execute()
 
 	auto table_lock = table->lockStructure(true);
 
-	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getColumnsList());
+	NamesAndTypesListPtr required_columns = std::make_shared<NamesAndTypesList>(table->getColumnsList());
 
 	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
-	BlockOutputStreamPtr out{
-		new ProhibitColumnsBlockOutputStream{
-			new AddingDefaultBlockOutputStream{
-				new MaterializingBlockOutputStream{
-					new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr}
-				},
-				required_columns, table->column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults)
-			},
-			table->materialized_columns
-		}
-	};
+	BlockOutputStreamPtr out =
+		std::make_shared<ProhibitColumnsBlockOutputStream>(
+			std::make_shared<AddingDefaultBlockOutputStream>(
+				std::make_shared<MaterializingBlockOutputStream>(
+					std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, context, query_ptr)),
+				required_columns, table->column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults)),
+			table->materialized_columns);
 
 	BlockIO res;
 	res.out_sample = getSampleBlock();
@@ -103,7 +99,7 @@ BlockIO InterpreterInsertQuery::execute()
 	{
 		InterpreterSelectQuery interpreter_select{query.select, context};
 		BlockInputStreamPtr in{interpreter_select.execute().in};
-		res.in = new NullAndDoCopyBlockInputStream{in, out};
+		res.in = std::make_shared<NullAndDoCopyBlockInputStream>(in, out);
 		res.in_sample = interpreter_select.getSampleBlock();
 	}
 

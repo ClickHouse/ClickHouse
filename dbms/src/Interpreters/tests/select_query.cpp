@@ -1,8 +1,6 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Poco/SharedPtr.h>
-#include <Poco/Stopwatch.h>
 #include <Poco/ConsoleChannel.h>
 
 #include <DB/IO/ReadBufferFromIStream.h>

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/Storages/IStorage.h>
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Interpreters/Context.h>
@@ -16,8 +14,8 @@ namespace DB
   * Табличная функция возвращает временный объект StoragePtr, который используется для выполнения запроса.
   *
   * Пример:
-  * SELECT count() FROM remote('mtlog01-01-1', merge, hits)
-  * - пойти на mtlog01-01-1, в БД merge, таблицу hits.
+  * SELECT count() FROM remote('example01-01-1', merge, hits)
+  * - пойти на example01-01-1, в БД merge, таблицу hits.
   */
 
 class ITableFunction
@@ -32,7 +30,7 @@ public:
 	virtual ~ITableFunction() {};
 };
 
-typedef SharedPtr<ITableFunction> TableFunctionPtr;
+using TableFunctionPtr = std::shared_ptr<ITableFunction>;
 
 
 }

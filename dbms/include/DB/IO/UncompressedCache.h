@@ -31,7 +31,7 @@ struct UncompressedSizeWeightFunction
 class UncompressedCache : public LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>
 {
 private:
-	typedef LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction> Base;
+	using Base = LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>;
 
 public:
 	UncompressedCache(size_t max_size_in_bytes)
@@ -70,6 +70,6 @@ public:
 	}
 };
 
-typedef std::shared_ptr<UncompressedCache> UncompressedCachePtr;
+using UncompressedCachePtr = std::shared_ptr<UncompressedCache>;
 
 }

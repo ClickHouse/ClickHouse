@@ -25,7 +25,7 @@ namespace ErrorCodes
 }
 }
 
-/** Алгоритм реализовал Алексей Борзенков https://staff.yandex-team.ru/snaury
+/** Алгоритм реализовал Алексей Борзенков https://███████████.yandex-team.ru/snaury
   * Ему принадлежит авторство кода и половины комментариев в данном namespace,
   *  за исключением слияния, сериализации и сортировки, а также выбора типов и других изменений.
   * Мы благодарим Алексея Борзенкова за написание изначального кода.
@@ -369,7 +369,7 @@ public:
 	void setArgument(const DataTypePtr & argument)
 	{
 		if (returns_float)
-			type = new DataTypeFloat32;
+			type = std::make_shared<DataTypeFloat32>();
 		else
 			type = argument;
 	}
@@ -436,7 +436,7 @@ public:
 	void setArgumentsImpl(const DataTypes & arguments)
 	{
 		if (returns_float)
-			type = new DataTypeFloat32;
+			type = std::make_shared<DataTypeFloat32>();
 		else
 			type = arguments.at(0);
 	}
@@ -497,13 +497,13 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeArray(type);
+		return std::make_shared<DataTypeArray>(type);
 	}
 
 	void setArgument(const DataTypePtr & argument)
 	{
 		if (returns_float)
-			type = new DataTypeFloat32;
+			type = std::make_shared<DataTypeFloat32>();
 		else
 			type = argument;
 	}
@@ -577,13 +577,13 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeArray(type);
+		return std::make_shared<DataTypeArray>(type);
 	}
 
 	void setArgumentsImpl(const DataTypes & arguments)
 	{
 		if (returns_float)
-			type = new DataTypeFloat32;
+			type = std::make_shared<DataTypeFloat32>();
 		else
 			type = arguments.at(0);
 	}

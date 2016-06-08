@@ -10,7 +10,6 @@
 #include <Poco/NumberParser.h>
 #include <Poco/NumberFormatter.h>
 #include <Poco/Exception.h>
-#include <Poco/SharedPtr.h>
 
 #include <DB/Common/Exception.h>
 
@@ -242,7 +241,7 @@ int mainImpl(int argc, char ** argv)
 	if (-1 == fd)
 		throwFromErrno("Cannot open file");
 
-	typedef std::vector<std::exception_ptr> Exceptions;
+	using Exceptions = std::vector<std::exception_ptr>;
 
 	boost::threadpool::pool pool(threads_count);
 	Exceptions exceptions(threads_count);

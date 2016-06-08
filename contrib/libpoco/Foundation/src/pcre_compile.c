@@ -47,6 +47,10 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #endif
 
+#ifdef __GNUC__
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
+
 /* This module contains the external function pcre_compile(), along with
 supporting internal functions that are not used by other modules. */
 

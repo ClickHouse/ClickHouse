@@ -8,41 +8,41 @@
 #include <common/strong_typedef.h>
 
 
-typedef Poco::Int8 Int8;
-typedef Poco::Int16 Int16;
-typedef Poco::Int32 Int32;
-typedef Poco::Int64 Int64;
+using Int8 = Poco::Int8;
+using Int16 = Poco::Int16;
+using Int32 = Poco::Int32;
+using Int64 = Poco::Int64;
 
-typedef Poco::UInt8 UInt8;
-typedef Poco::UInt16 UInt16;
-typedef Poco::UInt32 UInt32;
-typedef Poco::UInt64 UInt64;
+using UInt8 = Poco::UInt8;
+using UInt16 = Poco::UInt16;
+using UInt32 = Poco::UInt32;
+using UInt64 = Poco::UInt64;
 
 
 /// Обход проблемы с тем, что KDevelop не видит time_t и size_t (для подсветки синтаксиса).
 #ifdef IN_KDEVELOP_PARSER
-	typedef Int64 time_t;
-	typedef UInt64 size_t;
+	using time_t = Int64;
+	using size_t = UInt64;
 #endif
 
 		
 /** Тип данных для хранения идентификатора пользователя. */
-typedef UInt64 UserID_t;
+using UserID_t = UInt64;
 
 /** Тип данных для хранения идентификатора счетчика. */
-typedef UInt32 CounterID_t;
+using CounterID_t = UInt32;
 
 /** Идентификатор хита */
-typedef UInt64 WatchID_t;
+using WatchID_t = UInt64;
 
 /** Идентификатор визита */
 STRONG_TYPEDEF(UInt64, VisitID_t);
 
 /** Идентификатор клика */
-typedef UInt64 ClickID_t;
+using ClickID_t = UInt64;
 
 /** Идентификатор цели */
-typedef UInt32 GoalID_t;
+using GoalID_t = UInt32;
 
 
 namespace std

@@ -204,9 +204,9 @@ private:
 			return;
 
 		IdentifierNameSet identifiers{};
-		collectIdentifiersNoSubqueries(condition, identifiers);
+		collectIdentifiersNoSubqueries(condition.get(), identifiers);
 
-		if (hasPrimaryKeyAtoms(condition) || !isSubsetOfTableColumns(identifiers))
+		if (hasPrimaryKeyAtoms(condition.get()) || !isSubsetOfTableColumns(identifiers))
 			return;
 
 		/// if condition is not "good" - check that it can be moved

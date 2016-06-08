@@ -74,15 +74,13 @@ public:
 
 	ASTPtr clone() const override
 	{
-		ASTJoin * res = new ASTJoin(*this);
-		ASTPtr ptr{res};
-
+		auto res = std::make_shared<ASTJoin>(*this);
 		res->children.clear();
 
 		if (table) 				{ res->table 			= table->clone(); 			res->children.push_back(res->table); }
 		if (using_expr_list) 	{ res->using_expr_list 	= using_expr_list->clone(); res->children.push_back(res->using_expr_list); }
 
-		return ptr;
+		return res;
 	}
 
 protected:

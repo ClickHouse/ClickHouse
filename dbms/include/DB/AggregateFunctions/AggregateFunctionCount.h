@@ -27,7 +27,7 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeUInt64;
+		return std::make_shared<DataTypeUInt64>();
 	}
 
 

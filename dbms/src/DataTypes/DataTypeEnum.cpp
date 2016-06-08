@@ -101,7 +101,7 @@ DataTypeEnum<Type>::DataTypeEnum(const DataTypeEnum & other) : values{other.valu
 template <typename Type>
 DataTypePtr DataTypeEnum<Type>::clone() const
 {
-	return new DataTypeEnum(*this);
+	return std::make_shared<DataTypeEnum>(*this);
 }
 
 
@@ -230,7 +230,7 @@ void DataTypeEnum<Type>::deserializeBinary(
 template <typename Type>
 ColumnPtr DataTypeEnum<Type>::createConstColumn(const size_t size, const Field & field) const
 {
-	return new ConstColumnType(size, get<typename NearestFieldType<FieldType>::Type>(field));
+	return std::make_shared<ConstColumnType>(size, get<typename NearestFieldType<FieldType>::Type>(field));
 }
 
 template <typename Type>

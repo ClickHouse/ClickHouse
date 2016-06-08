@@ -188,7 +188,7 @@ void Compiler::compile(
 		" -isystem /usr/share/clickhouse/headers/usr/include/x86_64-linux-gnu/c++/*/"
 		" -isystem /usr/share/clickhouse/headers/usr/local/lib/clang/*/include/"
 		" -I /usr/share/clickhouse/headers/dbms/include/"
-		" -I /usr/share/clickhouse/headers/contrib/libcityhash/"
+		" -I /usr/share/clickhouse/headers/contrib/libcityhash/include/"
 		" -I /usr/share/clickhouse/headers/contrib/libdouble-conversion/"
 		" -I /usr/share/clickhouse/headers/contrib/libpoco/Foundation/include/"
 		" -I /usr/share/clickhouse/headers/contrib/libpoco/Util/include/"

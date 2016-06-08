@@ -2,9 +2,9 @@
 
 #include <cerrno>
 #include <vector>
+#include <memory>
 
 #include <Poco/Exception.h>
-#include <Poco/SharedPtr.h>
 
 #include <DB/Common/StackTrace.h>
 
@@ -67,7 +67,7 @@ private:
 };
 
 
-typedef std::vector<std::exception_ptr> Exceptions;
+using Exceptions = std::vector<std::exception_ptr>;
 
 
 void throwFromErrno(const std::string & s, int code = 0, int the_errno = errno);
@@ -90,7 +90,7 @@ std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace);
 
 void rethrowFirstException(const Exceptions & exceptions);
 
-Poco::SharedPtr<Poco::Exception> convertCurrentException();
+std::unique_ptr<Poco::Exception> convertCurrentException();
 
 
 template <typename T>

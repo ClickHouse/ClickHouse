@@ -33,7 +33,7 @@ public:
 	{
 		/** В конфиге адреса либо находятся в узлах <node>:
 		* <node>
-		* 	<host>mtlog01-01-1</host>
+		* 	<host>example01-01-1</host>
 		* 	<port>9000</port>
 		* 	<!-- <user>, <password>, если нужны -->
 		* </node>
@@ -41,7 +41,7 @@ public:
 		* либо в узлах <shard>, и внутри - <replica>
 		* <shard>
 		* 	<replica>
-		* 		<host>mtlog01-01-1</host>
+		* 		<host>example01-01-1</host>
 		* 		<port>9000</port>
 		* 		<!-- <user>, <password>, если нужны -->
 		*	</replica>
@@ -65,13 +65,13 @@ public:
 	{
 	public:
 		bool isLocal() const { return !local_addresses.empty(); }
-		bool hasRemoteConnections() const { return !pool.isNull(); }
+		bool hasRemoteConnections() const { return pool.get() != nullptr; }
 		size_t getLocalNodeCount() const { return local_addresses.size(); }
 
 	public:
 		/// contains names of directories for asynchronous write to StorageDistributed
 		std::vector<std::string> dir_names;
-		UInt32 shard_num;
+		UInt32 shard_num;	/// Номер шарда, начиная с 1.
 		int weight;
 		Addresses local_addresses;
 		mutable ConnectionPoolPtr pool;
@@ -79,13 +79,17 @@ public:
 
 	using ShardsInfo = std::vector<ShardInfo>;
 
-public:
-	String getName() const { return name; }
+	String getHashOfAddresses() const { return hash_of_addresses; }
 	const ShardsInfo & getShardsInfo() const { return shards_info; }
 	const Addresses & getShardsAddresses() const { return addresses; }
 	const AddressesWithFailover & getShardsWithFailoverAddresses() const { return addresses_with_failover; }
 
-	const ShardInfo * getAnyRemoteShardInfo() const { return any_remote_shard_info; }
+	const ShardInfo & getAnyShardInfo() const
+	{
+		if (shards_info.empty())
+			throw Exception("Cluster is empty", ErrorCodes::LOGICAL_ERROR);
+		return shards_info.front();
+	}
 
 	/// Количество удалённых шардов.
 	size_t getRemoteShardCount() const { return remote_shard_count; }
@@ -94,24 +98,39 @@ public:
 	/// к локальным узлам обращаемся напрямую.
 	size_t getLocalShardCount() const { return local_shard_count; }
 
+	/// Количество всех шардов.
+	size_t getShardCount() const { return shards_info.size(); }
+
+	/// Получить подкластер, состоящий из одного шарда - index по счёту (с нуля) шарда данного кластера.
+	std::unique_ptr<Cluster> getClusterWithSingleShard(size_t index) const;
+
+private:
+	using SlotToShard = std::vector<size_t>;
+	SlotToShard slot_to_shard;
+
 public:
-	std::vector<size_t> slot_to_shard;
+	const SlotToShard & getSlotToShard() const { return slot_to_shard; }
 
 private:
 	void initMisc();
 
-	/// Create a unique name based on the list of addresses and ports.
+	/// Hash list of addresses and ports.
 	/// We need it in order to be able to perform resharding requests
 	/// on tables that have the distributed engine.
-	void assignName();
+	void calculateHashOfAddresses();
 
-private:
-	/// Название кластера.
-	String name;
+	/// Для реализации getClusterWithSingleShard.
+	Cluster(const Cluster & from, size_t index);
+
+	String hash_of_addresses;
 	/// Описание шардов кластера.
 	ShardsInfo shards_info;
 	/// Любой удалённый шард.
 	ShardInfo * any_remote_shard_info = nullptr;
+
+	/// Непустым является либо addresses, либо addresses_with_failover.
+	/// Размер и порядок элементов в соответствующем массиве соответствует shards_info.
+
 	/// Массив шардов. Каждый шард - адреса одного сервера.
 	Addresses addresses;
 	/// Массив шардов. Для каждого шарда - массив адресов реплик (серверов, считающихся идентичными).

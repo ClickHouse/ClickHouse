@@ -5,7 +5,7 @@
 #include <memory>
 #include <chrono>
 #include <Poco/ScopedLock.h>
-#include <Poco/Mutex.h>
+#include <mutex>
 #include <DB/Common/Exception.h>
 #include <common/logger_useful.h>
 
@@ -46,7 +46,7 @@ public:
 
 	MappedPtr get(const Key & key)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 
 		auto it = cells.find(key);
 		if (it == cells.end())
@@ -67,7 +67,7 @@ public:
 
 	void set(const Key & key, MappedPtr mapped)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 
 		auto res = cells.emplace(std::piecewise_construct,
 			std::forward_as_tuple(key),
@@ -96,26 +96,26 @@ public:
 
 	void getStats(size_t & out_hits, size_t & out_misses) const
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 		out_hits = hits;
 		out_misses = misses;
 	}
 
 	size_t weight() const
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 		return current_size;
 	}
 
 	size_t count() const
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 		return cells.size();
 	}
 
 	void reset()
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 		queue.clear();
 		cells.clear();
 		current_size = 0;
@@ -158,7 +158,7 @@ private:
 	const size_t max_size;
 	const Delay expiration_delay;
 
-	mutable Poco::FastMutex mutex;
+	mutable std::mutex mutex;
 	size_t hits = 0;
 	size_t misses = 0;
 

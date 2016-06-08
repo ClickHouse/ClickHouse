@@ -13,7 +13,7 @@ AggregateFunctionPtr createAggregateFunctionVarPop(const std::string & name, con
 	if (argument_types.size() != 1)
 		throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-	AggregateFunctionPtr res = createWithNumericType<AggregateFunctionVarPop>(*argument_types[0]);
+	AggregateFunctionPtr res(createWithNumericType<AggregateFunctionVarPop>(*argument_types[0]));
 
 	if (!res)
 		throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -26,7 +26,7 @@ AggregateFunctionPtr createAggregateFunctionVarSamp(const std::string & name, co
 	if (argument_types.size() != 1)
 		throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-	AggregateFunctionPtr res = createWithNumericType<AggregateFunctionVarSamp>(*argument_types[0]);
+	AggregateFunctionPtr res(createWithNumericType<AggregateFunctionVarSamp>(*argument_types[0]));
 
 	if (!res)
 		throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -39,7 +39,7 @@ AggregateFunctionPtr createAggregateFunctionStdDevPop(const std::string & name, 
 	if (argument_types.size() != 1)
 		throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-	AggregateFunctionPtr res = createWithNumericType<AggregateFunctionStdDevPop>(*argument_types[0]);
+	AggregateFunctionPtr res(createWithNumericType<AggregateFunctionStdDevPop>(*argument_types[0]));
 
 	if (!res)
 		throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -52,7 +52,7 @@ AggregateFunctionPtr createAggregateFunctionStdDevSamp(const std::string & name,
 	if (argument_types.size() != 1)
 		throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-	AggregateFunctionPtr res = createWithNumericType<AggregateFunctionStdDevSamp>(*argument_types[0]);
+	AggregateFunctionPtr res(createWithNumericType<AggregateFunctionStdDevSamp>(*argument_types[0]));
 
 	if (!res)
 		throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -65,7 +65,7 @@ AggregateFunctionPtr createAggregateFunctionCovarPop(const std::string & name, c
 	if (argument_types.size() != 2)
 		throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-	AggregateFunctionPtr res = createWithTwoNumericTypes<AggregateFunctionCovarPop>(*argument_types[0], *argument_types[1]);
+	AggregateFunctionPtr res(createWithTwoNumericTypes<AggregateFunctionCovarPop>(*argument_types[0], *argument_types[1]));
 	if (!res)
 		throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
 			+ " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -78,7 +78,7 @@ AggregateFunctionPtr createAggregateFunctionCovarSamp(const std::string & name, 
 	if (argument_types.size() != 2)
 		throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-	AggregateFunctionPtr res = createWithTwoNumericTypes<AggregateFunctionCovarSamp>(*argument_types[0], *argument_types[1]);
+	AggregateFunctionPtr res(createWithTwoNumericTypes<AggregateFunctionCovarSamp>(*argument_types[0], *argument_types[1]));
 	if (!res)
 		throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
 			+ " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -92,7 +92,7 @@ AggregateFunctionPtr createAggregateFunctionCorr(const std::string & name, const
 	if (argument_types.size() != 2)
 		throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-	AggregateFunctionPtr res = createWithTwoNumericTypes<AggregateFunctionCorr>(*argument_types[0], *argument_types[1]);
+	AggregateFunctionPtr res(createWithTwoNumericTypes<AggregateFunctionCorr>(*argument_types[0], *argument_types[1]));
 	if (!res)
 		throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
 			+ " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

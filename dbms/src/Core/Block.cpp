@@ -74,7 +74,7 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
 				*nested_type->createConstColumn(
 					nested_rows, nested_type->getDefault())).convertToFullColumn();
 
-			column_to_add.column = new ColumnArray(nested_column, offsets_column);
+			column_to_add.column = std::make_shared<ColumnArray>(nested_column, offsets_column);
 		}
 		else
 		{
@@ -279,10 +279,8 @@ size_t Block::rowsInFirstColumn() const
 	if (data.empty())
 		return 0;
 	for (const auto & elem : data)
-	{
-		if (!elem.column.isNull())
+		if (elem.column)
 			return elem.column->size();
-	}
 
 	return 0;
 }
@@ -372,7 +370,7 @@ NamesAndTypesList Block::getColumnsList() const
 void Block::checkNestedArraysOffsets() const
 {
 	/// Указатели на столбцы-массивы, для проверки равенства столбцов смещений во вложенных структурах данных
-	typedef std::map<String, const ColumnArray *> ArrayColumns;
+	using ArrayColumns = std::map<String, const ColumnArray *>;
 	ArrayColumns array_columns;
 
 	for (const auto & elem : data)
@@ -397,7 +395,7 @@ void Block::checkNestedArraysOffsets() const
 void Block::optimizeNestedArraysOffsets()
 {
 	/// Указатели на столбцы-массивы, для проверки равенства столбцов смещений во вложенных структурах данных
-	typedef std::map<String, ColumnArray *> ArrayColumns;
+	using ArrayColumns = std::map<String, ColumnArray *>;
 	ArrayColumns array_columns;
 
 	for (auto & elem : data)
@@ -449,7 +447,7 @@ void Block::clear()
 	index_by_position.clear();
 }
 
-void Block::swap(Block & other)
+void Block::swap(Block & other) noexcept
 {
 	std::swap(info, other.info);
 	data.swap(other.data);

@@ -32,7 +32,7 @@ public:
 	/// Переписывает select_expression_list, чтобы вернуть только необходимые столбцы в правильном порядке.
 	void rewriteSelectExpressionList(const Names & column_names);
 
-	bool isUnionAllHead() const { return (prev_union_all == nullptr) && !next_union_all.isNull(); }
+	bool isUnionAllHead() const { return (prev_union_all == nullptr) && next_union_all != nullptr; }
 
 	ASTPtr clone() const override;
 

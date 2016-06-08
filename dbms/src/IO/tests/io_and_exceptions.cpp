@@ -12,12 +12,16 @@
   * В gcc 4.9 и clang 3.6 всё Ок.
   */
 
-typedef unsigned long size_t;
+/// В этом тесте намеренно ссылаемся за пределы массива.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+
+using size_t = unsigned long;
 
 class BufferBase
 {
 public:
-	typedef char * Position;
+	using Position = char *;
 
 	struct Buffer
 	{
@@ -156,3 +160,5 @@ void f()
 {
 	parse("123");
 }
+
+#pragma GCC diagnostic pop

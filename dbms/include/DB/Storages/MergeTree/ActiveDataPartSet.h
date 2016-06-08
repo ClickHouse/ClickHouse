@@ -1,5 +1,5 @@
 #pragma once
-#include <Poco/Mutex.h>
+#include <mutex>
 #include <Poco/RegularExpression.h>
 #include <common/DateLUT.h>
 #include <DB/Core/Types.h>
@@ -39,6 +39,9 @@ public:
 			if (right != rhs.right)
 				return right < rhs.right;
 
+			if (level != rhs.level)
+				return level < rhs.level;
+
 			return false;
 		}
 
@@ -49,7 +52,8 @@ public:
 				&& left_date <= rhs.left_date
 				&& right_date >= rhs.right_date
 				&& left <= rhs.left
-				&& right >= rhs.right;
+				&& right >= rhs.right
+				&& level >= rhs.level;
 		}
 	};
 
@@ -73,12 +77,14 @@ public:
 	static bool contains(const String & outer_part_name, const String & inner_part_name);
 
 private:
-	typedef std::set<Part> Parts;
+	using Parts = std::set<Part>;
 
-	mutable Poco::Mutex mutex;
+	mutable std::mutex mutex;
 	Parts parts;
 
+	/// Не блокируют mutex.
 	void addImpl(const String & name);
+	String getContainingPartImpl(const String & name) const;
 };
 
 }

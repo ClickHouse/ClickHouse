@@ -55,7 +55,7 @@
 #include <string.h>   /* memset */
 #include "mem.h"
 #include "fse_static.h"
-#include "huff0_static.h"
+#include "huf_static.h"
 #include "zstd_internal.h"
 
 
@@ -218,7 +218,7 @@ static size_t ZSTD_resetCCtx_advanced (ZSTD_CCtx* zc,
     const size_t maxNbSeq = blockSize / divider;
     const size_t tokenSpace = blockSize + 11*maxNbSeq;
     const size_t chainSize = (params.cParams.strategy == ZSTD_fast) ? 0 : (1 << params.cParams.chainLog);
-    const size_t hSize = 1 << params.cParams.hashLog;
+    const size_t hSize = ((size_t)1) << params.cParams.hashLog;
     const size_t h3Size = (zc->hashLog3) ? 1 << zc->hashLog3 : 0;
     const size_t tableSpace = (chainSize + hSize + h3Size) * sizeof(U32);
 
@@ -291,7 +291,7 @@ size_t ZSTD_copyCCtx(ZSTD_CCtx* dstCCtx, const ZSTD_CCtx* srcCCtx)
 
     /* copy tables */
     {   const size_t chainSize = (srcCCtx->params.cParams.strategy == ZSTD_fast) ? 0 : (1 << srcCCtx->params.cParams.chainLog);
-        const size_t hSize = 1 << srcCCtx->params.cParams.hashLog;
+        const size_t hSize = ((size_t)1) << srcCCtx->params.cParams.hashLog;
         const size_t h3Size = (srcCCtx->hashLog3) ? 1 << srcCCtx->hashLog3 : 0;
         const size_t tableSpace = (chainSize + hSize + h3Size) * sizeof(U32);
         memcpy(dstCCtx->workSpace, srcCCtx->workSpace, tableSpace);
@@ -852,7 +852,7 @@ MEM_STATIC void ZSTD_storeSeq(seqStore_t* seqStorePtr, size_t litLength, const B
     static const BYTE* g_start = NULL;
     const U32 pos = (U32)(literals - g_start);
     if (g_start==NULL) g_start = literals;
-    if ((pos > 5810300) && (pos < 5810500))
+    if ((pos > 2587900) && (pos < 2588050))
         printf("Cpos %6u :%5u literals & match %3u bytes at distance %6u \n",
                pos, (U32)litLength, (U32)matchCode+MINMATCH, (U32)offsetCode);
 #endif
@@ -1619,9 +1619,6 @@ FORCE_INLINE size_t ZSTD_HcFindBestMatch_extDict_selectMLS (
     }
 }
 
-/* The optimal parser */
-#include "zstd_opt.h"
-
 
 /* *******************************
 *  Common parser - lazy strategy
@@ -1755,12 +1752,6 @@ _storeSequence:
     }
 }
 
-
-
-static void ZSTD_compressBlock_btopt(ZSTD_CCtx* ctx, const void* src, size_t srcSize)
-{
-    ZSTD_compressBlock_opt_generic(ctx, src, srcSize);
-}
 
 static void ZSTD_compressBlock_btlazy2(ZSTD_CCtx* ctx, const void* src, size_t srcSize)
 {
@@ -1973,6 +1964,16 @@ static void ZSTD_compressBlock_lazy2_extDict(ZSTD_CCtx* ctx, const void* src, si
 static void ZSTD_compressBlock_btlazy2_extDict(ZSTD_CCtx* ctx, const void* src, size_t srcSize)
 {
     ZSTD_compressBlock_lazy_extDict_generic(ctx, src, srcSize, 1, 2);
+}
+
+
+
+/* The optimal parser */
+#include "zstd_opt.h"
+
+static void ZSTD_compressBlock_btopt(ZSTD_CCtx* ctx, const void* src, size_t srcSize)
+{
+    ZSTD_compressBlock_opt_generic(ctx, src, srcSize);
 }
 
 static void ZSTD_compressBlock_btopt_extDict(ZSTD_CCtx* ctx, const void* src, size_t srcSize)
@@ -2309,17 +2310,6 @@ size_t ZSTD_compressBegin_usingDict(ZSTD_CCtx* zc, const void* dict, size_t dict
 }
 
 
-size_t ZSTD_compressBegin_targetSrcSize(ZSTD_CCtx* zc, const void* dict, size_t dictSize, size_t targetSrcSize, int compressionLevel)
-{
-    ZSTD_parameters params;
-    params.cParams = ZSTD_getCParams(compressionLevel, targetSrcSize, dictSize);
-    params.fParams.contentSizeFlag = 1;
-    ZSTD_adjustCParams(&params.cParams, targetSrcSize, dictSize);
-    ZSTD_LOG_BLOCK("%p: ZSTD_compressBegin_targetSrcSize compressionLevel=%d\n", zc->base, compressionLevel);
-    return ZSTD_compressBegin_internal(zc, dict, dictSize, params, targetSrcSize);
-}
-
-
 size_t ZSTD_compressBegin(ZSTD_CCtx* zc, int compressionLevel)
 {
     ZSTD_LOG_BLOCK("%p: ZSTD_compressBegin compressionLevel=%d\n", zc->base, compressionLevel);
@@ -2442,7 +2432,8 @@ size_t ZSTD_compress(void* dst, size_t dstCapacity, const void* src, size_t srcS
 
 /*-=====  Pre-defined compression levels  =====-*/
 
-#define ZSTD_MAX_CLEVEL 22
+#define ZSTD_DEFAULT_CLEVEL 5
+#define ZSTD_MAX_CLEVEL     22
 unsigned ZSTD_maxCLevel(void) { return ZSTD_MAX_CLEVEL; }
 
 static const ZSTD_compressionParameters ZSTD_defaultCParameters[4][ZSTD_MAX_CLEVEL+1] = {
@@ -2561,7 +2552,8 @@ ZSTD_compressionParameters ZSTD_getCParams(int compressionLevel, U64 srcSize, si
     size_t const addedSize = srcSize ? 0 : 500;
     U64 const rSize = srcSize+dictSize ? srcSize+dictSize+addedSize : (U64)-1;
     U32 const tableID = (rSize <= 256 KB) + (rSize <= 128 KB) + (rSize <= 16 KB);   /* intentional underflow for srcSizeHint == 0 */
-    if (compressionLevel<=0) compressionLevel = 1;
+    if (compressionLevel < 0) compressionLevel = ZSTD_DEFAULT_CLEVEL;
+    if (compressionLevel==0) compressionLevel = 1;
     if (compressionLevel > ZSTD_MAX_CLEVEL) compressionLevel = ZSTD_MAX_CLEVEL;
     cp = ZSTD_defaultCParameters[tableID][compressionLevel];
     if (MEM_32bits()) {   /* auto-correction, for 32-bits mode */

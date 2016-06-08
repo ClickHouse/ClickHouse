@@ -36,7 +36,7 @@ public:
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "Identifier_" + name; }
 
-	ASTPtr clone() const override { return new ASTIdentifier(*this); }
+	ASTPtr clone() const override { return std::make_shared<ASTIdentifier>(*this); }
 
 	void collectIdentifierNames(IdentifierNameSet & set) const override
 	{

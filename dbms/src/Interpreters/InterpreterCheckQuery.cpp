@@ -96,37 +96,37 @@ Block InterpreterCheckQuery::getSampleBlock() const
 	ColumnWithTypeAndName col;
 
 	col.name = "status";
-	col.type = new DataTypeUInt8;
+	col.type = std::make_shared<DataTypeUInt8>();
 	col.column = col.type->createColumn();
 	block.insert(col);
 
 	col.name = "host_name";
-	col.type = new DataTypeString;
+	col.type = std::make_shared<DataTypeString>();
 	col.column = col.type->createColumn();
 	block.insert(col);
 
 	col.name = "host_address";
-	col.type = new DataTypeString;
+	col.type = std::make_shared<DataTypeString>();
 	col.column = col.type->createColumn();
 	block.insert(col);
 
 	col.name = "port";
-	col.type = new DataTypeUInt16;
+	col.type = std::make_shared<DataTypeUInt16>();
 	col.column = col.type->createColumn();
 	block.insert(col);
 
 	col.name = "user";
-	col.type = new DataTypeString;
+	col.type = std::make_shared<DataTypeString>();
 	col.column = col.type->createColumn();
 	block.insert(col);
 
 	col.name = "structure_class";
-	col.type = new DataTypeUInt32;
+	col.type = std::make_shared<DataTypeUInt32>();
 	col.column = col.type->createColumn();
 	block.insert(col);
 
 	col.name = "structure";
-	col.type = new DataTypeString;
+	col.type = std::make_shared<DataTypeString>();
 	col.column = col.type->createColumn();
 	block.insert(col);
 
@@ -152,7 +152,8 @@ BlockIO InterpreterCheckQuery::execute()
 		const auto settings = context.getSettings();
 
 		BlockInputStreams streams = distributed_table->describe(context, settings);
-		streams[0] = new UnionBlockInputStream<StreamUnionMode::ExtraInfo>(streams, nullptr, settings.max_distributed_connections);
+		streams[0] = std::make_shared<UnionBlockInputStream<StreamUnionMode::ExtraInfo>>(
+			streams, nullptr, settings.max_distributed_connections);
 		streams.resize(1);
 
 		auto stream_ptr = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]);
@@ -169,7 +170,7 @@ BlockIO InterpreterCheckQuery::execute()
 			if (stream.isCancelled())
 			{
 				BlockIO res;
-				res.in = new OneBlockInputStream(result);
+				res.in = std::make_shared<OneBlockInputStream>(result);
 				return res;
 			}
 
@@ -207,13 +208,13 @@ BlockIO InterpreterCheckQuery::execute()
 
 		/// Составить результат.
 
-		ColumnPtr status_column = new ColumnUInt8;
-		ColumnPtr host_name_column = new ColumnString;
-		ColumnPtr host_address_column = new ColumnString;
-		ColumnPtr port_column = new ColumnUInt16;
-		ColumnPtr user_column = new ColumnString;
-		ColumnPtr structure_class_column = new ColumnUInt32;
-		ColumnPtr structure_column = new ColumnString;
+		ColumnPtr status_column = std::make_shared<ColumnUInt8>();
+		ColumnPtr host_name_column = std::make_shared<ColumnString>();
+		ColumnPtr host_address_column = std::make_shared<ColumnString>();
+		ColumnPtr port_column = std::make_shared<ColumnUInt16>();
+		ColumnPtr user_column = std::make_shared<ColumnString>();
+		ColumnPtr structure_class_column = std::make_shared<ColumnUInt32>();
+		ColumnPtr structure_column = std::make_shared<ColumnString>();
 
 		/// Это значение равно 1, если структура нигде не отлчиается, а 0 в противном случае.
 		UInt8 status_value = (structure_class == 0) ? 1 : 0;
@@ -231,27 +232,27 @@ BlockIO InterpreterCheckQuery::execute()
 
 		Block block;
 
-		block.insert(ColumnWithTypeAndName(status_column, new DataTypeUInt8, "status"));
-		block.insert(ColumnWithTypeAndName(host_name_column, new DataTypeString, "host_name"));
-		block.insert(ColumnWithTypeAndName(host_address_column, new DataTypeString, "host_address"));
-		block.insert(ColumnWithTypeAndName(port_column, new DataTypeUInt16, "port"));
-		block.insert(ColumnWithTypeAndName(user_column, new DataTypeString, "user"));
-		block.insert(ColumnWithTypeAndName(structure_class_column, new DataTypeUInt32, "structure_class"));
-		block.insert(ColumnWithTypeAndName(structure_column, new DataTypeString, "structure"));
+		block.insert(ColumnWithTypeAndName(status_column, std::make_shared<DataTypeUInt8>(), "status"));
+		block.insert(ColumnWithTypeAndName(host_name_column, std::make_shared<DataTypeString>(), "host_name"));
+		block.insert(ColumnWithTypeAndName(host_address_column, std::make_shared<DataTypeString>(), "host_address"));
+		block.insert(ColumnWithTypeAndName(port_column, std::make_shared<DataTypeUInt16>(), "port"));
+		block.insert(ColumnWithTypeAndName(user_column, std::make_shared<DataTypeString>(), "user"));
+		block.insert(ColumnWithTypeAndName(structure_class_column, std::make_shared<DataTypeUInt32>(), "structure_class"));
+		block.insert(ColumnWithTypeAndName(structure_column, std::make_shared<DataTypeString>(), "structure"));
 
 		BlockIO res;
-		res.in = new OneBlockInputStream(block);
+		res.in = std::make_shared<OneBlockInputStream>(block);
 		res.in_sample = getSampleBlock();
 
 		return res;
 	}
 	else
 	{
-		result = Block{{ new ColumnUInt8, new DataTypeUInt8, "result" }};
+		result = Block{{ std::make_shared<ColumnUInt8>(), std::make_shared<DataTypeUInt8>(), "result" }};
 		result.getByPosition(0).column->insert(Field(UInt64(table->checkData())));
 
 		BlockIO res;
-		res.in = new OneBlockInputStream(result);
+		res.in = std::make_shared<OneBlockInputStream>(result);
 		res.in_sample = result.cloneEmpty();
 
 		return res;

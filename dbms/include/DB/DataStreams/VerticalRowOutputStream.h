@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/Core/Block.h>
 #include <DB/Core/Names.h>
 #include <DB/IO/WriteBuffer.h>
@@ -10,9 +8,6 @@
 
 namespace DB
 {
-
-using Poco::SharedPtr;
-
 
 /** Поток для вывода данных в формате "каждое значение на своей строке".
   */
@@ -36,7 +31,7 @@ protected:
 	size_t field_number;
 	size_t row_number;
 
-	typedef std::vector<String> Pads_t;
+	using Pads_t = std::vector<String>;
 	Pads_t pads;
 };
 

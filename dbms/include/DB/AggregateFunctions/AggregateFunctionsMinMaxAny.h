@@ -22,7 +22,7 @@ namespace DB
 template <typename T>
 struct SingleValueDataFixed
 {
-	typedef SingleValueDataFixed<T> Self;
+	using Self = SingleValueDataFixed<T>;
 
 	bool has_value = false;	/// Надо запомнить, было ли передано хотя бы одно значение. Это нужно для AggregateFunctionIf.
 	T value;
@@ -141,7 +141,7 @@ struct SingleValueDataFixed
   */
 struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
 {
-	typedef SingleValueDataString Self;
+	using Self = SingleValueDataString;
 
 	Int32 size = -1;	/// -1 обозначает, что значения нет.
 
@@ -344,7 +344,7 @@ static_assert(
 /// Для любых других типов значений.
 struct SingleValueDataGeneric
 {
-	typedef SingleValueDataGeneric Self;
+	using Self = SingleValueDataGeneric;
 
 	Field value;
 
@@ -487,7 +487,7 @@ struct SingleValueDataGeneric
 template <typename Data>
 struct AggregateFunctionMinData : Data
 {
-	typedef AggregateFunctionMinData<Data> Self;
+	using Self = AggregateFunctionMinData<Data>;
 
 	bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeIfLess(column, row_num); }
 	bool changeIfBetter(const Self & to) 						{ return this->changeIfLess(to); }
@@ -498,7 +498,7 @@ struct AggregateFunctionMinData : Data
 template <typename Data>
 struct AggregateFunctionMaxData : Data
 {
-	typedef AggregateFunctionMaxData<Data> Self;
+	using Self = AggregateFunctionMaxData<Data>;
 
 	bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeIfGreater(column, row_num); }
 	bool changeIfBetter(const Self & to) 						{ return this->changeIfGreater(to); }
@@ -509,7 +509,7 @@ struct AggregateFunctionMaxData : Data
 template <typename Data>
 struct AggregateFunctionAnyData : Data
 {
-	typedef AggregateFunctionAnyData<Data> Self;
+	using Self = AggregateFunctionAnyData<Data>;
 
 	bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeFirstTime(column, row_num); }
 	bool changeIfBetter(const Self & to) 						{ return this->changeFirstTime(to); }
@@ -520,7 +520,7 @@ struct AggregateFunctionAnyData : Data
 template <typename Data>
 struct AggregateFunctionAnyLastData : Data
 {
-	typedef AggregateFunctionAnyLastData<Data> Self;
+	using Self = AggregateFunctionAnyLastData<Data>;
 
 	bool changeIfBetter(const IColumn & column, size_t row_num) { this->change(column, row_num); return true; }
 	bool changeIfBetter(const Self & to) 						{ this->change(to); return true; }

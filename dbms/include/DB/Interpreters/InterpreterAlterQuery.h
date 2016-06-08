@@ -20,16 +20,6 @@ public:
 
 	BlockIO execute() override;
 
-	/** Изменяет список столбцов в метаданных таблицы на диске. Нужно вызывать под TableStructureLock соответствующей таблицы.
-	  */
-	static void updateMetadata(const String & database,
-		const String & table,
-		const NamesAndTypesList & columns,
-		const NamesAndTypesList & materialized_columns,
-		const NamesAndTypesList & alias_columns,
-		const ColumnDefaults & column_defaults,
-		const Context & context);
-
 private:
 	struct PartitionCommand
 	{
@@ -88,7 +78,7 @@ private:
 		}
 	};
 
-	typedef std::vector<PartitionCommand> PartitionCommands;
+	using PartitionCommands = std::vector<PartitionCommand>;
 
 	ASTPtr query_ptr;
 

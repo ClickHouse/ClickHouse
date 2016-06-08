@@ -14,10 +14,10 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string & name,
 		throw Exception("Incorrect number of arguments for aggregate function " + name,
 			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-	AggregateFunctionPtr res = createWithNumericType<AggregateFunctionGroupArrayNumeric>(*argument_types[0]);
+	AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupArrayNumeric>(*argument_types[0]));
 
 	if (!res)
-		res = new AggregateFunctionGroupArrayGeneric;
+		res = std::make_shared<AggregateFunctionGroupArrayGeneric>();
 
 	return res;
 }

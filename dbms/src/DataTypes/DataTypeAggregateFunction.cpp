@@ -12,9 +12,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
-
 std::string DataTypeAggregateFunction::getName() const
 {
 	std::stringstream stream;
@@ -232,7 +229,7 @@ void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer 
 
 ColumnPtr DataTypeAggregateFunction::createColumn() const
 {
-	return new ColumnAggregateFunction(function);
+	return std::make_shared<ColumnAggregateFunction>(function);
 }
 
 ColumnPtr DataTypeAggregateFunction::createConstColumn(size_t size, const Field & field) const

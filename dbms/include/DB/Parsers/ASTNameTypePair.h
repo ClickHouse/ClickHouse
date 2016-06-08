@@ -25,14 +25,12 @@ public:
 
 	ASTPtr clone() const override
 	{
-		ASTNameTypePair * res = new ASTNameTypePair(*this);
-		ASTPtr ptr{res};
-
+		auto res = std::make_shared<ASTNameTypePair>(*this);
 		res->children.clear();
 
 		if (type) 	{ res->type = type->clone(); 	res->children.push_back(res->type); }
 
-		return ptr;
+		return res;
 	}
 
 protected:

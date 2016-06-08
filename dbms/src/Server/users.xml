@@ -1,73 +1,81 @@
 <?xml version="1.0"?>
 <yandex>
-	<!-- Профили настроек. -->
+	<!-- Profiles of settings. -->
 	<profiles>
-		<!-- Настройки по-умолчанию -->
+		<!-- Default settings. -->
 		<default>
-			<!-- Максимальное потребление оперативки одним запросом (байт). -->
+			<!-- Maximum memory usage for processing single query, in bytes. -->
 			<max_memory_usage>10000000000</max_memory_usage>
 
-			<!-- Использовать ли кэш разжатых блоков. Имеет смысл только для большого количества мелких запросов. -->
+			<!-- Use cache of uncompressed blocks of data. Meaningful only for processing many of very short queries. -->
 			<use_uncompressed_cache>0</use_uncompressed_cache>
 
-			<!-- Как выбирать реплику ClickHouse.
-			     random - среди реплик с минимальным количеством ошибок выбирается случайная
-			     nearest_hostname - среди реплик с минимальным количеством ошибок выбирается реплика
-			      с минимальным количеством отличающихся символов между именем реплики и именем локального хоста.
-				 in_order - реплики перебираются в точности в таком порядке, в каком они указаны.
+			<!-- How to choose between replicas during distributed query processing.
+			     random - choose random replica from set of replicas with minimum number of errors
+			     nearest_hostname - from set of replicas with minimum number of errors, choose replica
+			      with minumum number of different symbols between replica's hostname and local hostname
+				  (Hamming distance).
+				 in_order - first live replica is choosen in specified order.
 			-->
 			<load_balancing>random</load_balancing>
 		</default>
 
-		<!-- Разрешает запросы только на чтение. -->
+		<!-- Profile that allows only read queries. -->
 		<readonly>
 			<readonly>1</readonly>
 		</readonly>
 	</profiles>
 
-	<!-- Пользователи и ACL. -->
+	<!-- Users and ACL. -->
 	<users>
-		<!-- Если имя пользователя не указано, используется пользователь default. -->
+		<!-- If user name was not specified, 'default' user is used. -->
 		<default>
-			<!-- Пароль можно указать либо в открытом виде, либо в виде SHA256 (в hex формате).
+			<!-- Password could be specified in plaintext or in SHA256 (in hex format).
 
-			     Если вы хотите указать пароль в открытом виде (не рекомендуется), то укажите его в элементе password.
-			     Пример: <password>qwerty</password>.
-			     Пароль может быть пустым.
+			     If you want to specify password in plaintext (not recommended), place it in 'password' element.
+			     Example: <password>qwerty</password>.
+			     Password could be empty.
 
-			     Если вы хотите указать SHA256, то укажите его в элементе password_sha256_hex.
-			     Пример: <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
+			     If you want to specify SHA256, place it in 'password_sha256_hex' element.
+			     Example: <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
 
-			     Как сгенерировать хороший пароль:
-			     Выполните: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
-				 На первой строке будет пароль, а на второй - его SHA256.
+			     How to generate decent password:
+			     Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
+				 In first line will be password and in second - corresponding SHA256.
 			-->
 			<password></password>
 
-			<!-- Список сетей, из которых разрешён доступ.
+			<!-- List of networks with open access.
 
-				 Для доступа отовсюду, пропишите <ip>::/0</ip>
+				 To open access from everywhere, specify:
+					<ip>::/0</ip>
 
-				 Каждый элемент списка имеет одну из следующих форм:
-				 <ip> IP-адрес или маска подсети. Например, 213.180.204.3 или 10.0.0.1/8 или 2a02:6b8::3 или 2a02:6b8::3/64.
-				 <host> Имя хоста. Например: mtcalc01. Для проверки делается DNS-запрос, и все полученные адреса сравниваются с адресом клиента.
-				 <host_regexp> Регексп для имён хостов. Например, ^mtlog\d\d-\d\d-\d\.yandex\.ru$
-					 Для проверки, для адреса клиента делается DNS PTR-запрос и к результату применяется регексп.
-					 Потом для результата PTR-запроса делается снова DNS-запрос, и все полученные адреса сравниваются с адресом клиента.
-					 Настоятельно рекомендуется, чтобы регексп заканчивался на \.yandex\.ru$.
+				 To open access only from localhost, specify:
+					<ip>::1</ip>
+					<ip>127.0.0.1</ip>
+
+				 Each element of list has one of the following forms:
+				 <ip> IP-address or network mask. Examples: 213.180.204.3 or 10.0.0.1/8 or 2a02:6b8::3 or 2a02:6b8::3/64.
+				 <host> Hostname. Example: server01.yandex.ru.
+					 To check access, DNS query is performed, and all received addresses compared to peer address.
+				 <host_regexp> Regular expression for host names. Example, ^server\d\d-\d\d-\d\.yandex\.ru$
+					 To check access, DNS PTR query is performed for peer address and then regexp is applied.
+					 Then, for result of PTR query, another DNS query is performed and all received addresses compared to peer address.
+					 Strongly recommended that regexp is ends with $
+				 All results of DNS requests are cached till server restart.
 			-->
 			<networks incl="networks" replace="replace">
-				<ip>::1</ip>
-				<ip>127.0.0.1</ip>
+				<ip>::/0</ip>
 			</networks>
 
-			<!-- Профиль настроек, использующийся для пользователя. -->
+			<!-- Settings profile for user. -->
 			<profile>default</profile>
 
-			<!-- Квота, использующаяся для пользователя. -->
+			<!-- Quota for user. -->
 			<quota>default</quota>
 		</default>
 
+		<!-- Example of user with readonly access. -->
 		<readonly>
 			<password></password>
 			<networks incl="networks" replace="replace">
@@ -79,16 +87,16 @@
 		</readonly>
 	</users>
 
-	<!-- Квоты. -->
+	<!-- Quotas. -->
 	<quotas>
-		<!-- Имя квоты. -->
+		<!-- Name of quota. -->
 		<default>
-			<!-- Ограничения за интервал времени. Можно задать много интервалов с разными ограничениями. -->
+			<!-- Limits for time interval. You could specify many intervals with different limits. -->
 			<interval>
-				<!-- Длина интервала. -->
+				<!-- Length of interval. -->
 				<duration>3600</duration>
 
-				<!-- Без ограничений. Просто считать соответствующие данные за указанный интервал. -->
+				<!-- No limits. Just calculate resource usage for time interval. -->
 				<queries>0</queries>
 				<errors>0</errors>
 				<result_rows>0</result_rows>

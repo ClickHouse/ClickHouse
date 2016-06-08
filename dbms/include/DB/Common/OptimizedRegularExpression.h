@@ -4,8 +4,6 @@
 #include <vector>
 #include <memory>
 
-#include <Poco/SharedPtr.h>
-
 #include <re2/re2.h>
 #include <re2_st/re2.h>
 
@@ -47,7 +45,7 @@ public:
 	};
 
 	using Match = OptimizedRegularExpressionDetails::Match;
-	typedef std::vector<Match> MatchVec;
+	using MatchVec = std::vector<Match>;
 
 	using RegexType = typename std::conditional<thread_safe, re2::RE2, re2_st::RE2>::type;
 	using StringPieceType = typename std::conditional<thread_safe, re2::StringPiece, re2_st::StringPiece>::type;

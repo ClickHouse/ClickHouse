@@ -1,7 +1,7 @@
 #pragma once
 
 #include <boost/noncopyable.hpp>
-
+#include <memory>
 #include <DB/Core/Block.h>
 
 
@@ -46,6 +46,6 @@ public:
 	virtual ~IRowOutputStream() {}
 };
 
-typedef SharedPtr<IRowOutputStream> RowOutputStreamPtr;
+using RowOutputStreamPtr = std::shared_ptr<IRowOutputStream>;
 
 }

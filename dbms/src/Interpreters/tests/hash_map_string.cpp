@@ -232,8 +232,8 @@ struct SimpleHash
 };
 
 
-typedef CompactStringRef Key;
-typedef UInt64 Value;
+using Key = CompactStringRef;
+using Value = UInt64;
 
 
 struct Grower : public HashTableGrower<>
@@ -310,10 +310,10 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		//typedef HashMap<Key, Value> Map;
+		//using Map = HashMap<Key, Value>;
 
 		/// Сохранение хэша ускоряет ресайзы примерно в 2 раза, и общую производительность - на 6-8%.
-		typedef HashMapWithSavedHash<Key, Value, DefaultHash<Key>, Grower> Map;
+		using Map = HashMapWithSavedHash<Key, Value, DefaultHash<Key>, Grower>;
 
 		Map map;
 		Map::iterator it;
@@ -342,7 +342,7 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		typedef HashMapWithSavedHash<Key, Value, FastHash64, Grower> Map;
+		using Map = HashMapWithSavedHash<Key, Value, FastHash64, Grower>;
 
 		Map map;
 		Map::iterator it;
@@ -371,7 +371,7 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		typedef HashMapWithSavedHash<Key, Value, CrapWow, Grower> Map;
+		using Map = HashMapWithSavedHash<Key, Value, CrapWow, Grower>;
 
 		Map map;
 		Map::iterator it;
@@ -400,7 +400,7 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		typedef HashMapWithSavedHash<Key, Value, SimpleHash, Grower> Map;
+		using Map = HashMapWithSavedHash<Key, Value, SimpleHash, Grower>;
 
 		Map map;
 		Map::iterator it;

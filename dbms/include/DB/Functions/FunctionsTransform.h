@@ -48,7 +48,7 @@ class FunctionTransform : public IFunction
 {
 public:
 	static constexpr auto name = "transform";
-	static IFunction * create(const Context &) { return new FunctionTransform; }
+	static FunctionPtr create(const Context &) { return std::make_shared<FunctionTransform>(); }
 
 	String getName() const override
 	{

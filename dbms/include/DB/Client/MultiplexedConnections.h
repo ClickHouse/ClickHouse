@@ -4,7 +4,7 @@
 #include <DB/Client/Connection.h>
 #include <DB/Client/ConnectionPool.h>
 #include <Poco/ScopedLock.h>
-#include <Poco/Mutex.h>
+#include <mutex>
 
 namespace DB
 {
@@ -159,7 +159,7 @@ private:
 
 	/// Мьютекс для того, чтобы функция sendCancel могла выполняться безопасно
 	/// в отдельном потоке.
-	mutable Poco::FastMutex cancel_mutex;
+	mutable std::mutex cancel_mutex;
 };
 
 }

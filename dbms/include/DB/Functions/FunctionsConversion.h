@@ -45,15 +45,15 @@ namespace ErrorCodes
 template <typename FromDataType, typename ToDataType, typename Name>
 struct ConvertImpl
 {
-	typedef typename FromDataType::FieldType FromFieldType;
-	typedef typename ToDataType::FieldType ToFieldType;
+	using FromFieldType = typename FromDataType::FieldType;
+	using ToFieldType = typename ToDataType::FieldType;
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		if (const ColumnVector<FromFieldType> * col_from
 			= typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
+			auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
@@ -66,7 +66,7 @@ struct ConvertImpl
 		}
 		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), col_from->getData());
+			block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(col_from->size(), col_from->getData());
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -81,17 +81,17 @@ struct ConvertImpl
 template <typename Name>
 struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 {
-	typedef DataTypeDate::FieldType FromFieldType;
-	typedef DataTypeDateTime::FieldType ToFieldType;
+	using FromFieldType = DataTypeDate::FieldType;
+	using ToFieldType = DataTypeDateTime::FieldType;
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		typedef DataTypeDate::FieldType FromFieldType;
+		using FromFieldType = DataTypeDate::FieldType;
 		const auto & date_lut = DateLUT::instance();
 
 		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
+			auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
@@ -106,7 +106,8 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 		}
 		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), date_lut.fromDayNum(DayNum_t(col_from->getData())));
+			block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(
+				col_from->size(), date_lut.fromDayNum(DayNum_t(col_from->getData())));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -204,7 +205,7 @@ public:
 		{
 			if (sources)
 			{
-				auto * col_to = new ColumnVector<ToFieldType>;
+				auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 				block.getByPosition(result).column = col_to;
 
 				const auto & vec_from = sources->getData();
@@ -218,7 +219,7 @@ public:
 			{
 				ToFieldType res;
 				Op::constant_constant(const_source->getData(), res);
-				block.getByPosition(result).column = new ColumnConst<ToFieldType>(const_source->size(), res);
+				block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(const_source->size(), res);
 			}
 			else
 				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -233,7 +234,7 @@ public:
 
 			if (sources)
 			{
-				auto * col_to = new ColumnVector<ToFieldType>;
+				auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 				block.getByPosition(result).column = col_to;
 
 				auto & vec_from = sources->getData();
@@ -253,7 +254,7 @@ public:
 			{
 				if (time_zones)
 				{
-					auto * col_to = new ColumnVector<ToFieldType>;
+					auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 					block.getByPosition(result).column = col_to;
 
 					auto & vec_to = col_to->getData();
@@ -265,7 +266,7 @@ public:
 				{
 					ToFieldType res;
 					Op::constant_constant(const_source->getData(), const_time_zone->getData(), res);
-					block.getByPosition(result).column = new ColumnConst<ToFieldType>(const_source->size(), res);
+					block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(const_source->size(), res);
 				}
 				else
 					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -367,7 +368,7 @@ struct ConvertImpl<DataTypeEnum<FieldType>, typename DataTypeFromFieldType<Field
 template <typename FromDataType, typename Name>
 struct ConvertImpl<FromDataType, DataTypeString, Name>
 {
-	typedef typename FromDataType::FieldType FromFieldType;
+	using FromFieldType = typename FromDataType::FieldType;
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
@@ -376,7 +377,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 
 		if (const auto col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*col_with_name_and_type.column))
 		{
-			ColumnString * col_to = new ColumnString;
+			auto col_to = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
@@ -401,7 +402,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 			std::vector<char> buf;
 			WriteBufferFromVector<std::vector<char> > write_buffer(buf);
 			FormatImpl<FromDataType>::execute(col_from->getData(), write_buffer, type);
-			block.getByPosition(result).column = new ColumnConstString(col_from->size(), std::string(&buf[0], write_buffer.count()));
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), std::string(&buf[0], write_buffer.count()));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -581,7 +582,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
 		{
 			if (sources)
 			{
-				ColumnString * col_to = new ColumnString;
+				auto col_to = std::make_shared<ColumnString>();
 				block.getByPosition(result).column = col_to;
 
 				auto & vec_from = sources->getData();
@@ -593,7 +594,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
 			{
 				std::string res;
 				Op::constant_constant(const_source->getData(), res);
-				block.getByPosition(result).column = new ColumnConstString(const_source->size(), res);
+				block.getByPosition(result).column = std::make_shared<ColumnConstString>(const_source->size(), res);
 			}
 			else
 			{
@@ -610,7 +611,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
 
 			if (sources)
 			{
-				ColumnString * col_to = new ColumnString;
+				auto col_to = std::make_shared<ColumnString>();
 				block.getByPosition(result).column = col_to;
 
 				auto & vec_from = sources->getData();
@@ -629,7 +630,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
 			{
 				if (time_zones)
 				{
-					ColumnString * col_to = new ColumnString;
+					auto col_to = std::make_shared<ColumnString>();
 					block.getByPosition(result).column = col_to;
 					auto & vec_to = *col_to;
 
@@ -639,7 +640,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
 				{
 					std::string res;
 					Op::constant_constant(const_source->getData(), const_time_zone->getData(), res);
-					block.getByPosition(result).column = new ColumnConstString(const_source->size(), res);
+					block.getByPosition(result).column = std::make_shared<ColumnConstString>(const_source->size(), res);
 				}
 				else
 					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -677,13 +678,13 @@ template <> inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType 
 template <typename ToDataType, typename Name>
 struct ConvertImpl<DataTypeString, ToDataType, Name>
 {
-	typedef typename ToDataType::FieldType ToFieldType;
+	using ToFieldType = typename ToDataType::FieldType;
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
+			auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_to;
 
 			const ColumnString::Chars_t & data_from = col_from->getChars();
@@ -708,7 +709,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 			ReadBufferFromString read_buffer(s);
 			ToFieldType x = 0;
 			parseImpl<ToDataType>(x, read_buffer);
-			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), x);
+			block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(col_from->size(), x);
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -857,7 +858,7 @@ struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
 		{
 			if (sources)
 			{
-				auto * col_to = new ColumnVector<ToFieldType>;
+				auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 				block.getByPosition(result).column = col_to;
 
 				auto & vec_from = sources->getChars();
@@ -871,7 +872,7 @@ struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
 			{
 				ToFieldType res;
 				Op::constant_constant(const_source->getData(), res);
-				block.getByPosition(result).column = new ColumnConst<ToFieldType>(const_source->size(), res);
+				block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(const_source->size(), res);
 			}
 			else
 			{
@@ -888,7 +889,7 @@ struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
 
 			if (sources)
 			{
-				auto * col_to = new ColumnVector<ToFieldType>;
+				auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 				block.getByPosition(result).column = col_to;
 
 				auto & vec_from = sources->getChars();
@@ -909,7 +910,7 @@ struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
 			{
 				if (time_zones)
 				{
-					auto * col_to = new ColumnVector<ToFieldType>;
+					auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 					block.getByPosition(result).column = col_to;
 
 					auto & vec_to = col_to->getData();
@@ -921,7 +922,7 @@ struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
 				{
 					ToFieldType res;
 					Op::constant_constant(const_source->getData(), const_time_zone->getData(), res);
-					block.getByPosition(result).column = new ColumnConst<ToFieldType>(const_source->size(), res);
+					block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(const_source->size(), res);
 				}
 				else
 					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -956,13 +957,13 @@ struct ConvertImpl<DataTypeString, DataTypeString, Name>
 template <typename ToDataType, typename Name>
 struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 {
-	typedef typename ToDataType::FieldType ToFieldType;
+	using ToFieldType = typename ToDataType::FieldType;
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
+			auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_to;
 
 			const ColumnFixedString::Chars_t & data_from = col_from->getChars();
@@ -1009,7 +1010,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 	{
 		if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(&*block.getByPosition(arguments[0]).column))
 		{
-			ColumnString * col_to = new ColumnString;
+			auto col_to = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_to;
 
 			const ColumnFixedString::Chars_t & data_from = col_from->getChars();
@@ -1046,7 +1047,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 			while (bytes_to_copy > 0 && s[bytes_to_copy - 1] == 0)
 				--bytes_to_copy;
 
-			block.getByPosition(result).column = new ColumnConstString(col_from->size(), s.substr(0, bytes_to_copy));
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), s.substr(0, bytes_to_copy));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -1065,7 +1066,7 @@ public:
 	using Monotonic = MonotonicityImpl;
 
 	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionConvert; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionConvert>(); }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1127,7 +1128,7 @@ private:
 				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return new ToDataType;
+		return std::make_shared<ToDataType>();
 	}
 
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
@@ -1154,7 +1155,7 @@ private:
 			};
 		}
 
-		return new ToDataType2;
+		return std::make_shared<ToDataType2>();
 	}
 
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
@@ -1181,7 +1182,7 @@ private:
 			};
 		}
 
-		return new ToDataType2;
+		return std::make_shared<ToDataType2>();
 	}
 
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
@@ -1201,7 +1202,7 @@ private:
 			};
 		}
 
-		return new ToDataType2;
+		return std::make_shared<ToDataType2>();
 	}
 };
 
@@ -1212,7 +1213,7 @@ class FunctionToFixedString : public IFunction
 {
 public:
 	static constexpr auto name = "toFixedString";
-	static IFunction * create(const Context & context) { return new FunctionToFixedString; };
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToFixedString>(); };
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1240,7 +1241,7 @@ public:
 
 		const size_t n = getSize(arguments[1]);
 
-		out_return_type = new DataTypeFixedString(n);
+		out_return_type = std::make_shared<DataTypeFixedString>(n);
 	}
 
 	/// Выполнить функцию над блоком.
@@ -1263,13 +1264,12 @@ public:
 			auto resized_string = column_const->getData();
 			resized_string.resize(n);
 
-			block.getByPosition(result).column = new ColumnConst<String>{
-				column_const->size(), std::move(resized_string), new DataTypeFixedString(n)
-			};
+			block.getByPosition(result).column = std::make_shared<ColumnConst<String>>(
+				column_const->size(), std::move(resized_string), std::make_shared<DataTypeFixedString>(n));
 		}
 		else if (const auto column_string = typeid_cast<const ColumnString *>(&*column))
 		{
-			const auto column_fixed = new ColumnFixedString(n);
+			const auto column_fixed = std::make_shared<ColumnFixedString>(n);
 			ColumnPtr result_ptr = column_fixed;
 
 			auto & out_chars = column_fixed->getChars();
@@ -1299,7 +1299,7 @@ public:
 					ErrorCodes::TOO_LARGE_STRING_SIZE
 				};
 
-			const auto column_fixed = new ColumnFixedString{n};
+			const auto column_fixed = std::make_shared<ColumnFixedString>(n);
 			block.getByPosition(result).column = column_fixed;
 
 			auto & out_chars = column_fixed->getChars();
@@ -1468,20 +1468,20 @@ struct NameToFloat64		{ static constexpr auto name = "toFloat64"; };
 struct NameToDateTime		{ static constexpr auto name = "toDateTime"; };
 struct NameToString			{ static constexpr auto name = "toString"; };
 
-typedef FunctionConvert<DataTypeUInt8,		NameToUInt8,	ToIntMonotonicity<UInt8>> 	FunctionToUInt8;
-typedef FunctionConvert<DataTypeUInt16,		NameToUInt16,	ToIntMonotonicity<UInt16>> FunctionToUInt16;
-typedef FunctionConvert<DataTypeUInt32,		NameToUInt32,	ToIntMonotonicity<UInt32>> FunctionToUInt32;
-typedef FunctionConvert<DataTypeUInt64,		NameToUInt64,	ToIntMonotonicity<UInt64>> FunctionToUInt64;
-typedef FunctionConvert<DataTypeInt8,		NameToInt8,		ToIntMonotonicity<Int8>> 	FunctionToInt8;
-typedef FunctionConvert<DataTypeInt16,		NameToInt16,	ToIntMonotonicity<Int16>> 	FunctionToInt16;
-typedef FunctionConvert<DataTypeInt32,		NameToInt32,	ToIntMonotonicity<Int32>> 	FunctionToInt32;
-typedef FunctionConvert<DataTypeInt64,		NameToInt64,	ToIntMonotonicity<Int64>> 	FunctionToInt64;
-typedef FunctionConvert<DataTypeFloat32,	NameToFloat32,	PositiveMonotonicity> 		FunctionToFloat32;
-typedef FunctionConvert<DataTypeFloat64,	NameToFloat64,	PositiveMonotonicity> 		FunctionToFloat64;
-typedef FunctionConvert<DataTypeDate,		NameToDate,		ToIntMonotonicity<UInt16>> FunctionToDate;
-typedef FunctionConvert<DataTypeDateTime,	NameToDateTime,	ToIntMonotonicity<UInt32>> FunctionToDateTime;
-typedef FunctionConvert<DataTypeString,		NameToString, 	ToStringMonotonicity> 		FunctionToString;
-typedef FunctionConvert<DataTypeInt32,		NameToUnixTimestamp, ToIntMonotonicity<UInt32>> FunctionToUnixTimestamp;
+using FunctionToUInt8 = FunctionConvert<DataTypeUInt8,		NameToUInt8,	ToIntMonotonicity<UInt8>> ;
+using FunctionToUInt16 = FunctionConvert<DataTypeUInt16,		NameToUInt16,	ToIntMonotonicity<UInt16>>;
+using FunctionToUInt32 = FunctionConvert<DataTypeUInt32,		NameToUInt32,	ToIntMonotonicity<UInt32>>;
+using FunctionToUInt64 = FunctionConvert<DataTypeUInt64,		NameToUInt64,	ToIntMonotonicity<UInt64>>;
+using FunctionToInt8 = FunctionConvert<DataTypeInt8,		NameToInt8,		ToIntMonotonicity<Int8>> ;
+using FunctionToInt16 = FunctionConvert<DataTypeInt16,		NameToInt16,	ToIntMonotonicity<Int16>> ;
+using FunctionToInt32 = FunctionConvert<DataTypeInt32,		NameToInt32,	ToIntMonotonicity<Int32>> ;
+using FunctionToInt64 = FunctionConvert<DataTypeInt64,		NameToInt64,	ToIntMonotonicity<Int64>> ;
+using FunctionToFloat32 = FunctionConvert<DataTypeFloat32,	NameToFloat32,	PositiveMonotonicity> 	;
+using FunctionToFloat64 = FunctionConvert<DataTypeFloat64,	NameToFloat64,	PositiveMonotonicity> 	;
+using FunctionToDate = FunctionConvert<DataTypeDate,		NameToDate,		ToIntMonotonicity<UInt16>>;
+using FunctionToDateTime = FunctionConvert<DataTypeDateTime,	NameToDateTime,	ToIntMonotonicity<UInt32>>;
+using FunctionToString = FunctionConvert<DataTypeString,		NameToString, 	ToStringMonotonicity> 	;
+using FunctionToUnixTimestamp = FunctionConvert<DataTypeInt32,		NameToUnixTimestamp, ToIntMonotonicity<UInt32>>;
 
 template <typename DataType> struct FunctionTo;
 template <> struct FunctionTo<DataTypeUInt8> { using Type = FunctionToUInt8; };
@@ -1511,13 +1511,15 @@ class FunctionCast final : public IFunction
 	WrapperType wrapper_function;
 	std::function<Monotonicity(const IDataType &, const Field &, const Field &)> monotonicity_for_range;
 
+public:
 	FunctionCast(const Context & context) : context(context) {}
+private:
 
 	template <typename DataType> auto createWrapper(const DataTypePtr & from_type, const DataType * const)
 	{
 		using FunctionType = typename FunctionTo<DataType>::Type;
 
-		std::shared_ptr<FunctionType> function{static_cast<FunctionType *>(FunctionType::create(context))};
+		auto function = FunctionType::create(context);
 
 		/// Check conversion using underlying function
 		(void) function->getReturnType({ from_type });
@@ -1578,14 +1580,14 @@ class FunctionCast final : public IFunction
 
 			if (auto col_array = typeid_cast<const ColumnArray *>(array_arg.column.get()))
 			{
-				auto res = new ColumnArray{nullptr, col_array->getOffsetsColumn()};
-				block.getByPosition(result).column = res;
+				auto res = new ColumnArray(nullptr, col_array->getOffsetsColumn());
+				block.getByPosition(result).column.reset(res);
 
 				/// get the most nested column
 				while (const auto nested_col_array = typeid_cast<const ColumnArray *>(col_array->getDataPtr().get()))
 				{
 					/// create new level of array, copy offsets
-					res->getDataPtr() = new ColumnArray{nullptr, nested_col_array->getOffsetsColumn()};
+					res->getDataPtr() = std::make_shared<ColumnArray>(nullptr, nested_col_array->getOffsetsColumn());
 
 					res = static_cast<ColumnArray *>(res->getDataPtr().get());
 					col_array = nested_col_array;
@@ -1607,8 +1609,7 @@ class FunctionCast final : public IFunction
 			else
 				throw Exception{
 					"Illegal column " + array_arg.column->getName() + " for function CAST AS Array",
-					ErrorCodes::LOGICAL_ERROR
-				};
+					ErrorCodes::LOGICAL_ERROR};
 		};
 	}
 
@@ -1638,7 +1639,7 @@ class FunctionCast final : public IFunction
 		for (const auto & idx_type : ext::enumerate(from_type->getElements()))
 			element_wrappers.push_back(prepare(idx_type.second, to_element_types[idx_type.first].get()));
 
-		std::shared_ptr<FunctionTuple> function_tuple{static_cast<FunctionTuple *>(FunctionTuple::create(context))};
+		auto function_tuple = FunctionTuple::create(context);
 		return [element_wrappers, function_tuple, from_element_types, to_element_types]
 			(Block & block, const ColumnNumbers & arguments, const size_t result)
 		{
@@ -1661,7 +1662,7 @@ class FunctionCast final : public IFunction
 			const auto converted_tuple_pos = element_block.columns();
 
 			/// insert column for converted tuple
-			element_block.insert({ nullptr, new DataTypeTuple{to_element_types}, "" });
+			element_block.insert({ nullptr, std::make_shared<DataTypeTuple>(to_element_types), "" });
 
 			const auto converted_element_offset = from_element_types.size();
 
@@ -1697,7 +1698,7 @@ class FunctionCast final : public IFunction
 			return createStringToEnumWrapper<ColumnFixedString, EnumType>();
 		else if (from_type->behavesAsNumber())
 		{
-			std::shared_ptr<Function> function{static_cast<Function *>(Function::create(context))};
+			auto function = Function::create(context);
 
 			/// Check conversion using underlying function
 			(void) function->getReturnType({ from_type });
@@ -1871,7 +1872,7 @@ class FunctionCast final : public IFunction
 
 public:
 	static constexpr auto name = "CAST";
-	static IFunction * create(const Context & context) { return new FunctionCast{context}; }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionCast>(context); }
 
 	String getName() const override { return name; }
 

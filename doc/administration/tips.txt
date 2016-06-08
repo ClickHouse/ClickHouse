@@ -3,7 +3,7 @@ ClickHouse administration tips.
 
 CPU
 
-SSE 4.2 instruction set support is required. Most recent (since 2008) CPUs has this instruction set.
+SSE 4.2 instruction set support is required. Most recent (since 2008) CPUs have this instruction set.
 
 When choosing between CPU with more cores and slightly less frequency and CPU with less cores and more frequency, choose first.
 For example, 16 cores with 2600 MHz is better than 8 cores with 3600 MHz.
@@ -103,3 +103,15 @@ When using IPv6, you must increase route cache.
 Linux kernels before 3.2 has awful bugs in IPv6 implementation.
 
 Prefer at least 10 Gbit network. 1 Gbit will also work, but much worse for repairing replicas with tens of terabytes of data and for processing huge distributed queries with much intermediate data.
+
+
+ZooKeeper
+
+Probably you already have ZooKeeper for another purposes.
+It's Ok to use existing ZooKeeper installation if it is not overloaded.
+
+Use recent version of ZooKeeper. At least 3.5 is Ok. Version in your linux package repository might be outdated.
+
+With default settings, ZooKeeper have time bomb:
+"A ZooKeeper server will not remove old snapshots and log files when using the default configuration (see autopurge below), this is the responsibility of the operator."
+You need to defuse the bomb.

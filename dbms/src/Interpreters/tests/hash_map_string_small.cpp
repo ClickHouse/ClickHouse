@@ -87,7 +87,7 @@ struct DefaultHash<SmallStringRef>
 };
 
 
-typedef UInt64 Value;
+using Value = UInt64;
 
 
 int main(int argc, char ** argv)
@@ -124,7 +124,7 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		typedef HashMapWithSavedHash<StringRef, Value> Map;
+		using Map = HashMapWithSavedHash<StringRef, Value>;
 
 		Map map;
 		Map::iterator it;
@@ -153,7 +153,7 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		typedef HashMapWithSavedHash<SmallStringRef, Value> Map;
+		using Map = HashMapWithSavedHash<SmallStringRef, Value>;
 
 		Map map;
 		Map::iterator it;

@@ -30,8 +30,8 @@ struct ClearableHashSetState
 template <typename Key, typename BaseCell>
 struct ClearableHashTableCell : public BaseCell
 {
-	typedef ClearableHashSetState State;
-	typedef typename BaseCell::value_type value_type;
+	using State = ClearableHashSetState;
+	using value_type = typename BaseCell::value_type;
 
 	UInt32 version;
 
@@ -59,8 +59,8 @@ template
 class ClearableHashSet : public HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
 {
 public:
-	typedef Key key_type;
-	typedef typename ClearableHashSet::cell_type::value_type value_type;
+	using key_type = Key;
+	using value_type = typename ClearableHashSet::cell_type::value_type;
 
 	void clear()
 	{

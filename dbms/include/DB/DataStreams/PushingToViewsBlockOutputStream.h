@@ -32,7 +32,7 @@ public:
 		Dependencies dependencies = context.getDependencies(database, table);
 		for (size_t i = 0; i < dependencies.size(); ++i)
 		{
-			children.push_back(new PushingToViewsBlockOutputStream(dependencies[i].first, dependencies[i].second, context, ASTPtr()));
+			children.push_back(std::make_shared<PushingToViewsBlockOutputStream>(dependencies[i].first, dependencies[i].second, context, ASTPtr()));
 			queries.push_back(dynamic_cast<StorageView &>(*context.getTable(dependencies[i].first, dependencies[i].second)).getInnerQuery());
 		}
 
@@ -44,9 +44,9 @@ public:
 	{
 		for (size_t i = 0; i < children.size(); ++i)
 		{
-			BlockInputStreamPtr from = new OneBlockInputStream(block);
+			BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
 			InterpreterSelectQuery select(queries[i], context, QueryProcessingStage::Complete, 0, from);
-			BlockInputStreamPtr data = new MaterializingBlockInputStream(select.execute().in);
+			BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
 			copyData(*data, *children[i]);
 		}
 

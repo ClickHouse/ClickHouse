@@ -14,7 +14,7 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & n
 		throw Exception("Incorrect number of arguments for aggregate function " + name,
 			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-	AggregateFunctionPtr res = createWithNumericType<AggregateFunctionGroupUniqArray>(*argument_types[0]);
+	AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupUniqArray>(*argument_types[0]));
 
 	if (!res)
 		throw Exception("Illegal type " + argument_types[0]->getName() +

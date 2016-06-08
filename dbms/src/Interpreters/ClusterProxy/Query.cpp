@@ -105,14 +105,14 @@ BlockInputStreams Query::execute()
 
 			if (actual_pools_per_thread == 1)
 			{
-				res.emplace_back(query_constructor.createRemote(shard_info.pool, query, new_settings, throttler, context));
+				res.emplace_back(query_constructor.createRemote(shard_info.pool.get(), query, new_settings, throttler, context));
 				++current_thread;
 			}
 			else
 			{
 				if (do_init)
 				{
-					pools = new ConnectionPools;
+					pools = std::shared_ptr<ConnectionPools>();
 					do_init = false;
 				}
 

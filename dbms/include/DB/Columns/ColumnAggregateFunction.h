@@ -47,73 +47,56 @@ namespace ErrorCodes
   *  определяющий, какие отдельные значения надо уничтожать, а какие - нет.
   * Ясно, что этот метод имел бы существенно ненулевую цену.
   */
-class ColumnAggregateFunction final : public IColumn
+class ColumnAggregateFunction final : public IColumn, public std::enable_shared_from_this<ColumnAggregateFunction>
 {
 public:
 	using Container_t = PaddedPODArray<AggregateDataPtr>;
 
 private:
-	Arenas arenas;			/// Пулы, в которых выделены состояния агрегатных функций.
+	/// Пулы, в которых выделены состояния агрегатных функций.
+	Arenas arenas;
 
-	struct Holder
-	{
-		using Ptr = SharedPtr<Holder>;
+	/// Используется для уничтожения состояний и для финализации значений.
+	AggregateFunctionPtr func;
 
-		AggregateFunctionPtr func;	/// Используется для уничтожения состояний и для финализации значений.
-		const Ptr src;		/// Источник. Используется, если данный столбец создан из другого и использует все или часть его значений.
-		Container_t data;	/// Массив указателей на состояния агрегатных функций, расположенных в пулах.
+	/// Источник. Используется (удерживает источник от уничтожения),
+	///  если данный столбец создан из другого и использует все или часть его значений.
+	const std::shared_ptr<const ColumnAggregateFunction> src;
 
-		Holder(const AggregateFunctionPtr & func_) : func(func_) {}
-		Holder(const Ptr & src_) : func(src_->func), src(src_) {}
+	/// Массив указателей на состояния агрегатных функций, расположенных в пулах.
+	Container_t data;
 
-		~Holder()
-		{
-			IAggregateFunction * function = func;
-
-			if (!function->hasTrivialDestructor() && src.isNull())
-				for (auto val : data)
-					function->destroy(val);
-		}
-
-		void popBack(size_t n)
-		{
-			size_t size = data.size();
-			size_t new_size = size - n;
-
-			if (src.isNull())
-				for (size_t i = new_size; i < size; ++i)
-					func->destroy(data[i]);
-
-			data.resize_assume_reserved(new_size);
-		}
-	};
-
-	Holder::Ptr holder;		/// NOTE Вместо этого можно было бы унаследовать IColumn от enable_shared_from_this.
-
+public:
 	/// Создать столбец на основе другого.
-	ColumnAggregateFunction(const ColumnAggregateFunction & src)
-		: arenas(src.arenas), holder(new Holder(src.holder))
+	ColumnAggregateFunction(const ColumnAggregateFunction & other)
+		: arenas(other.arenas), func(other.func), src(other.shared_from_this())
 	{
 	}
 
-public:
 	ColumnAggregateFunction(const AggregateFunctionPtr & func_)
-		: holder(new Holder(func_))
+		: func(func_)
 	{
 	}
 
 	ColumnAggregateFunction(const AggregateFunctionPtr & func_, const Arenas & arenas_)
-		: arenas(arenas_), holder(new Holder(func_))
+		: arenas(arenas_), func(func_)
 	{
+	}
+
+    ~ColumnAggregateFunction()
+	{
+		if (!func->hasTrivialDestructor() && src)
+			for (auto val : data)
+				func->destroy(val);
 	}
 
     void set(const AggregateFunctionPtr & func_)
 	{
-		holder->func = func_;
+		func = func_;
 	}
 
-	AggregateFunctionPtr getAggregateFunction() { return holder->func; }
-	AggregateFunctionPtr getAggregateFunction() const { return holder->func; }
+	AggregateFunctionPtr getAggregateFunction() { return func; }
+	AggregateFunctionPtr getAggregateFunction() const { return func; }
 
 	/// Захватить владение ареной.
 	void addArena(ArenaPtr arena_)
@@ -136,7 +119,7 @@ public:
 
 	ColumnPtr cloneEmpty() const override
 	{
-		return new ColumnAggregateFunction(holder->func, Arenas(1, new Arena));
+		return std::make_shared<ColumnAggregateFunction>(func, Arenas(1, std::make_shared<Arena>()));
 	};
 
 	Field operator[](size_t n) const override
@@ -144,7 +127,7 @@ public:
 		Field field = String();
 		{
 			WriteBufferFromString buffer(field.get<String &>());
-			holder.get()->func->serialize(getData()[n], buffer);
+			func->serialize(getData()[n], buffer);
 		}
 		return field;
 	}
@@ -154,7 +137,7 @@ public:
 		res = String();
 		{
 			WriteBufferFromString buffer(res.get<String &>());
-			holder.get()->func->serialize(getData()[n], buffer);
+			func->serialize(getData()[n], buffer);
 		}
 	}
 
@@ -176,19 +159,19 @@ public:
 	/// Объединить состояние в последней строке с заданным
 	void insertMergeFrom(const IColumn & src, size_t n)
 	{
-		holder.get()->func.get()->merge(getData().back(), static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
+		func->merge(getData().back(), static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
 	}
 
 	Arena & createOrGetArena()
 	{
 		if (unlikely(arenas.empty()))
-			arenas.emplace_back(new Arena);
+			arenas.emplace_back(std::make_shared<Arena>());
 		return *arenas.back().get();
 	}
 
 	void insert(const Field & x) override
 	{
-		IAggregateFunction * function = holder.get()->func;
+		IAggregateFunction * function = func.get();
 
 		Arena & arena = createOrGetArena();
 
@@ -200,7 +183,7 @@ public:
 
 	void insertDefault() override
 	{
-		IAggregateFunction * function = holder.get()->func;
+		IAggregateFunction * function = func.get();
 
 		Arena & arena = createOrGetArena();
 
@@ -247,7 +230,14 @@ public:
 
 	void popBack(size_t n) override
 	{
-		holder.get()->popBack(n);
+		size_t size = data.size();
+		size_t new_size = size - n;
+
+		if (!src)
+			for (size_t i = new_size; i < size; ++i)
+				func->destroy(data[i]);
+
+		data.resize_assume_reserved(new_size);
 	}
 
 	ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override
@@ -256,13 +246,12 @@ public:
 		if (size != filter.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		ColumnAggregateFunction * res_ = new ColumnAggregateFunction(*this);
-		ColumnPtr res = res_;
+		std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
 
 		if (size == 0)
 			return res;
 
-		auto & res_data = res_->getData();
+		auto & res_data = res->getData();
 
 		if (result_size_hint)
 			res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
@@ -290,12 +279,11 @@ public:
 		if (perm.size() < limit)
 			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		ColumnAggregateFunction * res_ = new ColumnAggregateFunction(*this);
-		ColumnPtr res = res_;
+		std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
 
-		res_->getData().resize(limit);
+		res->getData().resize(limit);
 		for (size_t i = 0; i < limit; ++i)
-			res_->getData()[i] = getData()[perm[i]];
+			res->getData()[i] = getData()[perm[i]];
 
 		return res;
 	}
@@ -326,12 +314,12 @@ public:
 	/** Более эффективные методы манипуляции */
 	Container_t & getData()
 	{
-		return holder.get()->data;
+		return data;
 	}
 
 	const Container_t & getData() const
 	{
-		return holder.get()->data;
+		return data;
 	}
 };
 

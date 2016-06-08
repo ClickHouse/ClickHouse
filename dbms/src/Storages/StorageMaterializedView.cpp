@@ -55,18 +55,17 @@ StorageMaterializedView::StorageMaterializedView(
 	if (!attach_)
 	{
 		/// Составим запрос для создания внутреннего хранилища.
-		ASTCreateQuery * manual_create_query = new ASTCreateQuery();
+		auto manual_create_query = std::make_shared<ASTCreateQuery>();
 		manual_create_query->database = database_name;
 		manual_create_query->table = inner_table_name;
 		manual_create_query->columns = create.columns;
 		manual_create_query->children.push_back(manual_create_query->columns);
-		ASTPtr ast_create_query = manual_create_query;
 
 		/// Если не указан в запросе тип хранилища попробовать извлечь его из запроса Select.
 		if (!create.inner_storage)
 		{
 			/// TODO так же попытаться извлечь params для создания хранилища
-			ASTFunction * func = new ASTFunction();
+			auto func = std::make_shared<ASTFunction>();
 			func->name = context.getTable(select_database_name, select_table_name)->getName();
 			manual_create_query->storage = func;
 		}
@@ -76,7 +75,7 @@ StorageMaterializedView::StorageMaterializedView(
 		manual_create_query->children.push_back(manual_create_query->storage);
 
 		/// Выполним запрос.
-		InterpreterCreateQuery create_interpreter(ast_create_query, context);
+		InterpreterCreateQuery create_interpreter(manual_create_query, context);
 		create_interpreter.execute();
 	}
 }
@@ -123,7 +122,7 @@ void StorageMaterializedView::drop()
 	if (context.tryGetTable(database_name, inner_table_name))
 	{
 		/// Состваляем и выполняем запрос drop для внутреннего хранилища.
-		ASTDropQuery *drop_query = new ASTDropQuery;
+		auto drop_query = std::make_shared<ASTDropQuery>();
 		drop_query->database = database_name;
 		drop_query->table = inner_table_name;
 		ASTPtr ast_drop_query = drop_query;
@@ -132,9 +131,9 @@ void StorageMaterializedView::drop()
 	}
 }
 
-bool StorageMaterializedView::optimize(const Settings & settings)
+bool StorageMaterializedView::optimize(const String & partition, bool final, const Settings & settings)
 {
-	return getInnerTable()->optimize(settings);
+	return getInnerTable()->optimize(partition, final, settings);
 }
 
 

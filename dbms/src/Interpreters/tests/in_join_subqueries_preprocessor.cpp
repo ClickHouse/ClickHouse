@@ -1233,7 +1233,7 @@ bool parse(DB::ASTPtr & ast, const std::string & query)
 	auto begin = query.data();
 	auto end = begin + query.size();
 	ast = DB::tryParseQuery(parser, begin, end, message, false, "");
-	return !ast.isNull();
+	return ast != nullptr;
 }
 
 bool equals(const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)

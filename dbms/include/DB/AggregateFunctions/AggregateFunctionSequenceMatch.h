@@ -140,7 +140,7 @@ public:
 
 	String getName() const override { return "sequenceMatch"; }
 
-	DataTypePtr getReturnType() const override { return new DataTypeUInt8; }
+	DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt8>(); }
 
 	void setParameters(const Array & params) override
 	{
@@ -504,7 +504,7 @@ class AggregateFunctionSequenceCount final : public AggregateFunctionSequenceMat
 public:
 	String getName() const override { return "sequenceCount"; }
 
-	DataTypePtr getReturnType() const override { return new DataTypeUInt64; }
+	DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{

@@ -40,6 +40,8 @@ void ASTAlterQuery::addParameters(const Parameters & params)
 		children.push_back(params.sharding_key_expr);
 	if (params.coordinator)
 		children.push_back(params.coordinator);
+	if (params.primary_key)
+		children.push_back(params.primary_key);
 }
 
 ASTAlterQuery::ASTAlterQuery(StringRange range_) : IAST(range_)
@@ -54,7 +56,7 @@ String ASTAlterQuery::getID() const
 
 ASTPtr ASTAlterQuery::clone() const
 {
-	ASTAlterQuery * res = new ASTAlterQuery(*this);
+	auto res = std::make_shared<ASTAlterQuery>(*this);
 	for (ParameterContainer::size_type i = 0; i < parameters.size(); ++i)
 		parameters[i].clone(res->parameters[i]);
 	return res;
@@ -108,7 +110,9 @@ void ASTAlterQuery::formatImpl(const FormatSettings & settings, FormatState & st
 		else if (p.type == ASTAlterQuery::MODIFY_PRIMARY_KEY)
 		{
 			settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY PRIMARY KEY " << (settings.hilite ? hilite_none : "");
+			settings.ostr << "(";
 			p.primary_key->formatImpl(settings, state, frame);
+			settings.ostr << ")";
 		}
 		else if (p.type == ASTAlterQuery::DROP_PARTITION)
 		{

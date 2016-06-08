@@ -22,6 +22,10 @@
 #include "Poco/String.h"
 #include "Poco/Types.h"
 
+#pragma GCC diagnostic push
+#if __GNUC__ > 5
+#pragma GCC diagnostic ignored "-Wmisleading-indentation"
+#endif
 
 using Poco::RefCountedObject;
 using Poco::NumberFormatter;
@@ -808,3 +812,5 @@ bool IPv6AddressImpl::operator != (const IPv6AddressImpl& addr) const
 
 
 } } } // namespace Poco::Net::Impl
+
+#pragma GCC diagnostic pop

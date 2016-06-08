@@ -43,8 +43,8 @@ function make_control {
 		case "$DAEMON_PKG" in
 		'clickhouse-server' )
 			add_daemon_impl clickhouse-server-base '' 'clickhouse-server binary'
-			[ -n "$BUILD_PACKAGE_FOR_METRIKA" ] && add_daemon_impl clickhouse-server-metrika "clickhouse-server-base(=0.0.$REVISION)" 'Configuration files specific for Metrika project for clickhouse-server-base package'
-			add_daemon_impl clickhouse-server-common "clickhouse-server-base(=0.0.$REVISION)" 'Common configuration files for clickhouse-server-base package'
+			[ -n "$BUILD_PACKAGE_FOR_METRIKA" ] && add_daemon_impl clickhouse-server-metrika "clickhouse-server-base(=1.1.$REVISION)" 'Configuration files specific for Metrika project for clickhouse-server-base package'
+			add_daemon_impl clickhouse-server-common "clickhouse-server-base(=1.1.$REVISION)" 'Common configuration files for clickhouse-server-base package'
 		;;
 		'clickhouse-client' )
 			add_daemon_impl clickhouse-client
@@ -61,43 +61,48 @@ function gen_revision_author {
 	IS_IT_GITHUB=$( git config --get remote.origin.url | grep 'github')
 
 	REVISION=$( git tag | tag_filter | tail -1 )
-	MAX_REVISION=$(($REVISION + 10))	# Максимальное количество попыток отправить тег в Git.
+	REVISION_FULL_NAME=$REVISION
 
-	# Создадим номер ревизии и попытаемся залить на сервер.
-	succeeded=0
-	attempts=0
-	max_attempts=5
-	while [ $succeeded -eq 0 ] && [ $attempts -le $max_attempts ]
-	do
-		REVISION=$(($REVISION + 1))
-		attempts=$(($attempts + 1))
+	if [[ $STANDALONE != 'yes' ]]
+	then
+		MAX_REVISION=$(($REVISION + 10))	# Максимальное количество попыток отправить тег в Git.
 
-		[ "$REVISION" -ge "$MAX_REVISION" ] && exit 1
+		# Создадим номер ревизии и попытаемся залить на сервер.
+		succeeded=0
+		attempts=0
+		max_attempts=5
+		while [ $succeeded -eq 0 ] && [ $attempts -le $max_attempts ]
+		do
+			REVISION=$(($REVISION + 1))
+			attempts=$(($attempts + 1))
 
-		REVISION_FULL_NAME=$REVISION
+			[ "$REVISION" -ge "$MAX_REVISION" ] && exit 1
 
-		if [[ "$IS_IT_GITHUB" = "" ]]
-		then
-			REVISION_FULL_NAME=$REVISION_FULL_NAME-mobmet
-		fi
+			REVISION_FULL_NAME=$REVISION
 
-		echo -e "\nTrying to create revision:" $REVISION_FULL_NAME
-		if git tag $REVISION_FULL_NAME
-		then
-			echo -e "\nTrying to push revision to origin:" $REVISION_FULL_NAME
-				git push origin $REVISION_FULL_NAME
-			if [ $? -ne 0 ];
+			if [[ "$IS_IT_GITHUB" = "" ]]
 			then
-				git tag -d $REVISION_FULL_NAME
-			else
-				succeeded=1
+				REVISION_FULL_NAME=$REVISION_FULL_NAME-mobmet
 			fi
-		fi
-	done
 
-	if [ $succeeded -eq 0 ]; then
-		echo "Fail to create tag"
-		exit 1
+			echo -e "\nTrying to create revision:" $REVISION_FULL_NAME
+			if git tag $REVISION_FULL_NAME
+			then
+				echo -e "\nTrying to push revision to origin:" $REVISION_FULL_NAME
+					git push origin $REVISION_FULL_NAME
+				if [ $? -ne 0 ];
+				then
+					git tag -d $REVISION_FULL_NAME
+				else
+					succeeded=1
+				fi
+			fi
+		done
+
+		if [ $succeeded -eq 0 ]; then
+			echo "Fail to create tag"
+			exit 1
+		fi
 	fi
 
 	AUTHOR=$(git config --get user.name)
@@ -150,13 +155,13 @@ function upload_debs {
 	cat src/debian/dupload.conf.in | sed -e "s/[@]AUTHOR[@]/$(whoami)/g" > $DUPLOAD_CONF
 
 
-	dupload metrika-yandex_0.0."$REVISION"_amd64.changes -t $REPO -c --nomail
+	dupload metrika-yandex_1.1."$REVISION"_amd64.changes -t $REPO -c --nomail
 
 	# Загрузка в репозиторий баннерной крутилки (только ClickHouse).
 	if [[ -z "$(echo $DAEMONS | tr ' ' '\n' | grep -v clickhouse)" ]];
 	then
 		echo -e "\n\e[0;32mUploading daemons "$DAEMONS" to Banner System \e[0;0m\n "
-		dupload metrika-yandex_0.0."$REVISION"_amd64.changes -t $REPO_YABS -c --nomail
+		dupload metrika-yandex_1.1."$REVISION"_amd64.changes -t $REPO_YABS -c --nomail
 	else
 		echo -e "\n\e[0;31mWill not upload daemons to Banner System \e[0;0m\n "
 	fi

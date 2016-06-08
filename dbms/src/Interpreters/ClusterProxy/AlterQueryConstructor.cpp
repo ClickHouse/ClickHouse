@@ -24,7 +24,7 @@ BlockInputStreamPtr AlterQueryConstructor::createLocal(ASTPtr query_ast, const C
 BlockInputStreamPtr AlterQueryConstructor::createRemote(IConnectionPool * pool, const std::string & query,
 	const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
-	auto stream = new RemoteBlockInputStream{pool, query, &settings, throttler};
+	auto stream = std::make_shared<RemoteBlockInputStream>(pool, query, &settings, throttler);
 	stream->setPoolMode(pool_mode);
 	return stream;
 }
@@ -32,7 +32,7 @@ BlockInputStreamPtr AlterQueryConstructor::createRemote(IConnectionPool * pool, 
 BlockInputStreamPtr AlterQueryConstructor::createRemote(ConnectionPoolsPtr & pools, const std::string & query,
 	const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
-	auto stream = new RemoteBlockInputStream{pools, query, &settings, throttler};
+	auto stream = std::make_shared<RemoteBlockInputStream>(pools, query, &settings, throttler);
 	stream->setPoolMode(pool_mode);
 	return stream;
 }

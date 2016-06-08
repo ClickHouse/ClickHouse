@@ -31,6 +31,7 @@ namespace ErrorCodes
 	extern const int DIRECTORY_ALREADY_EXISTS;
 	extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
 	extern const int NO_SUCH_COLUMN_IN_TABLE;
+	extern const int TABLE_DIFFERS_TOO_MUCH;
 }
 
 /** Структура данных для *MergeTree движков.
@@ -225,8 +226,6 @@ public:
 	};
 
 
-	static void doNothing(const String & name) {}
-
 	/** Подцепить таблицу с соответствующим именем, по соответствующему пути (с / на конце),
 	  *  (корректность имён и путей не проверяется)
 	  *  состоящую из указанных столбцов.
@@ -249,7 +248,7 @@ public:
 					const MergeTreeSettings & settings_,
 					const String & log_name_,
 					bool require_part_metadata_,
-					BrokenPartCallback broken_part_callback_ = &MergeTreeData::doNothing);
+					BrokenPartCallback broken_part_callback_ = [](const String &){});
 
 	/// Загрузить множество кусков с данными с диска. Вызывается один раз - сразу после создания объекта.
 	void loadDataParts(bool skip_sanity_checks);
@@ -277,11 +276,11 @@ public:
 	NameAndTypePair getColumn(const String & column_name) const override
 	{
 		if (column_name == "_part")
-			return NameAndTypePair("_part", new DataTypeString);
+			return NameAndTypePair("_part", std::make_shared<DataTypeString>());
 		if (column_name == "_part_index")
-			return NameAndTypePair("_part_index", new DataTypeUInt64);
+			return NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>());
 		if (column_name == "_sample_factor")
-			return NameAndTypePair("_sample_factor", new DataTypeFloat64);
+			return NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>());
 
 		return ITableDeclaration::getColumn(column_name);
 	}
@@ -345,7 +344,8 @@ public:
 	/** То же, что renameTempPartAndAdd, но кусок может покрывать существующие куски.
 	  * Удаляет и возвращает все куски, покрытые добавляемым (в возрастающем порядке).
 	  */
-	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
+	DataPartsVector renameTempPartAndReplace(
+		MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
 	/** Убирает из рабочего набора куски remove и добавляет куски add. add должны уже быть в all_data_parts.
 	  * Если clear_without_timeout, данные будут удалены сразу, либо при следующем clearOldParts, игнорируя old_parts_lifetime.
@@ -405,10 +405,14 @@ public:
 	  * Если измененных столбцов подозрительно много, и !skip_sanity_checks, бросает исключение.
 	  * Если никаких действий над данными не требуется, возвращает nullptr.
 	  */
-	AlterDataPartTransactionPtr alterDataPart(const DataPartPtr & part, const NamesAndTypesList & new_columns, bool skip_sanity_checks = false);
+	AlterDataPartTransactionPtr alterDataPart(
+		const DataPartPtr & part,
+		const NamesAndTypesList & new_columns,
+		const ASTPtr & new_primary_key,
+		bool skip_sanity_checks);
 
 	/// Нужно вызывать под залоченным lockStructureForAlter().
-	void setColumnsList(const NamesAndTypesList & new_columns) { columns = new NamesAndTypesList(new_columns); }
+	void setColumnsList(const NamesAndTypesList & new_columns) { columns = std::make_shared<NamesAndTypesList>(new_columns); }
 
 	/// Нужно вызвать, если есть подозрение, что данные куска испорчены.
 	void reportBrokenPart(const String & name)
@@ -464,12 +468,13 @@ public:
 
 	const MergeTreeSettings settings;
 
-	const ASTPtr primary_expr_ast;
+	ASTPtr primary_expr_ast;
 	Block primary_key_sample;
 	DataTypes primary_key_data_types;
 
 private:
 	friend struct MergeTreeDataPart;
+	friend class StorageMergeTree;
 
 	bool require_part_metadata;
 
@@ -506,6 +511,8 @@ private:
 	/** Для каждого шарда множество шардированных кусков.
 	  */
 	PerShardDataParts per_shard_data_parts;
+
+	void initPrimaryKey();
 
 	/** Выражение, преобразующее типы столбцов.
 	  * Если преобразований типов нет, out_expression=nullptr.
