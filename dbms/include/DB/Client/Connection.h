@@ -129,20 +129,10 @@ public:
 	void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision);
 
 	/// Для сообщений в логе и в эксепшенах.
-	const String & getDescription() const
-	{
-		return description;
-	}
-
-	const String & getHost() const
-	{
-		return host;
-	}
-
-	UInt16 getPort() const
-	{
-		return port;
-	}
+	const String & getDescription() const;
+	const String & getHost() const;
+	UInt16 getPort() const;
+	const String & getDefaultDatabase() const;
 
 	/// Если последний флаг true, то затем необходимо вызвать sendExternalTablesData
 	void sendQuery(const String & query, const String & query_id_ = "", UInt64 stage = QueryProcessingStage::Complete,

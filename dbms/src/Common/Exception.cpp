@@ -139,7 +139,7 @@ std::unique_ptr<Poco::Exception> convertCurrentException()
 }
 
 
-void rethrowFirstException(Exceptions & exceptions)
+void rethrowFirstException(const Exceptions & exceptions)
 {
 	for (size_t i = 0, size = exceptions.size(); i < size; ++i)
 		if (exceptions[i])
