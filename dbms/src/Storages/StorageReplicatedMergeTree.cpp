@@ -2089,9 +2089,8 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 	auto & select = typeid_cast<const ASTSelectQuery &>(*query);
 
 	/// Try transferring some condition from WHERE to PREWHERE if enabled and viable
-	if (settings.optimize_move_to_prewhere)
-		if (select.where_expression && !select.prewhere_expression)
-			MergeTreeWhereOptimizer{query, context, data, real_column_names, log};
+	if (settings.optimize_move_to_prewhere && select.where_expression && !select.prewhere_expression && !select.final)
+		MergeTreeWhereOptimizer{query, context, data, real_column_names, log};
 
 	Block virtual_columns_block;
 	auto column = std::make_shared<ColumnUInt8>(2);

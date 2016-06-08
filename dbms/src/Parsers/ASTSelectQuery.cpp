@@ -247,11 +247,6 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 	if (table)
 	{
 		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FROM " << (s.hilite ? hilite_none : "");
-		if (database)
-		{
-			database->formatImpl(s, state, frame);
-			s.ostr << ".";
-		}
 
 		if (typeid_cast<const ASTSelectQuery *>(&*table))
 		{
@@ -270,7 +265,15 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 				s.ostr << "\n" << indent_str << ")";
 		}
 		else
+		{
+			if (database)
+			{
+				database->formatImpl(s, state, frame);
+				s.ostr << ".";
+			}
+
 			table->formatImpl(s, state, frame);
+		}
 	}
 
 	if (final)

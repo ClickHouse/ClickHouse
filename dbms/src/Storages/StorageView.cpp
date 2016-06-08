@@ -56,23 +56,38 @@ StorageView::StorageView(
 
 	inner_query = select;
 
-	if (inner_query.database)
-		select_database_name = typeid_cast<const ASTIdentifier &>(*inner_query.database).name;
-	else
-		throw Exception("Logical error while creating StorageView."
-			" Could not retrieve database name from select query.",
-			DB::ErrorCodes::LOGICAL_ERROR);
+	extractDependentTable(inner_query);
 
-	if (inner_query.table)
-		select_table_name = typeid_cast<const ASTIdentifier &>(*inner_query.table).name;
+	if (!select_table_name.empty())
+		context.getGlobalContext().addDependency(
+			DatabaseAndTableName(select_database_name, select_table_name),
+			DatabaseAndTableName(database_name, table_name));
+}
+
+
+void StorageView::extractDependentTable(const ASTSelectQuery & query)
+{
+	if (!query.table)
+		return;
+
+	if (const ASTIdentifier * ast_id = typeid_cast<const ASTIdentifier *>(query.table.get()))
+	{
+		if (!query.database)
+			throw Exception("Logical error while creating StorageView."
+				" Could not retrieve database name from select query.",
+				DB::ErrorCodes::LOGICAL_ERROR);
+
+		select_database_name = typeid_cast<const ASTIdentifier &>(*query.database).name;
+		select_table_name = ast_id->name;
+	}
+	else if (const ASTSelectQuery * ast_select = typeid_cast<const ASTSelectQuery *>(query.table.get()))
+	{
+		extractDependentTable(*ast_select);
+	}
 	else
 		throw Exception("Logical error while creating StorageView."
 			" Could not retrieve table name from select query.",
 			DB::ErrorCodes::LOGICAL_ERROR);
-
-	context.getGlobalContext().addDependency(
-		DatabaseAndTableName(select_database_name, select_table_name),
-		DatabaseAndTableName(database_name, table_name));
 }
 
 
@@ -110,9 +125,10 @@ BlockInputStreams StorageView::read(
 
 void StorageView::drop()
 {
-	context.getGlobalContext().removeDependency(
-		DatabaseAndTableName(select_database_name, select_table_name),
-		DatabaseAndTableName(database_name, table_name));
+	if (!select_table_name.empty())
+		context.getGlobalContext().removeDependency(
+			DatabaseAndTableName(select_database_name, select_table_name),
+			DatabaseAndTableName(database_name, table_name));
 }
 
 

@@ -91,7 +91,7 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 	}
 
 	for (size_t i = 0; i < num_columns; ++i)
-		merged_columns.push_back(&*merged_block.getByPosition(i).column);
+		merged_columns.emplace_back(merged_block.getByPosition(i).column.get());
 }
 
 

@@ -163,7 +163,7 @@ public:
 		
 protected:
 	int run();
-	void waitForTerminationRequest();
+	virtual void waitForTerminationRequest();
 #if !defined(_WIN32_WCE)
 	void defineOptions(OptionSet& options);
 #endif
