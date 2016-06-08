@@ -364,7 +364,7 @@ void CacheDictionary::getItemsNumberImpl(
 {
 	/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
 	MapType<std::vector<std::size_t>> outdated_ids;
-	auto & attribute_array = std::get<ContainerPtrType<OutputType>>(attribute.arrays);
+	auto & attribute_array = std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
 	const auto rows = ext::size(ids);
 
 	{
