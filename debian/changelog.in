@@ -1,0 +1,5 @@
+clickhouse (1.1.@REVISION@) unstable; urgency=low
+
+  * Modified source code
+
+ -- @AUTHOR@ <@EMAIL@>  @DATE@

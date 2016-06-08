@@ -1,0 +1,202 @@
+<?xml version="1.0"?>
+<yandex>
+	<logger>
+		<level>trace</level>
+		<log>/var/log/clickhouse-server/clickhouse-server.log</log>
+		<errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+
+		<!-- Built-in method of logs rotation.
+			 Threshold is big enough because 'logrotate' is used instead of built-in method.
+			 So, this threshold setting just protects from cases when 'logrotate' get called too late.
+
+			 Why logrotate? Becase built-in method doesn't allow to specify
+			  that two last files must be uncompressed and other compressed
+			  (important for some administration scripts).
+		  -->
+		<size>1000M</size>
+		<count>2</count>
+	</logger>
+
+
+	<http_port>8123</http_port>
+	<tcp_port>9000</tcp_port>
+
+	<!-- Port for communication between replicas. Used for data exchange. -->
+	<interserver_http_port>9009</interserver_http_port>
+
+	<!-- Hostname that is used by other replicas to request this server.
+	     If not specified, than it is determined analoguous to 'hostname -f' command.
+		 This setting could be used to switch replication to another network interface.
+	  -->
+	<!--
+	<interserver_http_host>example.yandex.ru</interserver_http_host>
+	-->
+
+	<!-- Listen specified host. :: - is wildcard IPv6 address, allows to accept connections both with IPv4 and IPv6 from everywhere. -->
+	<listen_host>::</listen_host>
+
+	<max_connections>4096</max_connections>
+	<keep_alive_timeout>3</keep_alive_timeout>
+
+	<!-- Maximum number of concurrent queries. -->
+	<max_concurrent_queries>100</max_concurrent_queries>
+
+	<!-- Size of cache of uncompressed blocks of data, used in tables of MergeTree family.
+		 In bytes. Cache is single for server. Memory is allocated only on demand.
+		 Cache is used when 'use_uncompressed_cache' user setting turned on (off by default).
+		 Uncompressed cache is advantageous only for very short queries and in rare cases.
+	  -->
+	<uncompressed_cache_size>8589934592</uncompressed_cache_size>
+
+	<!-- Approximate size of mark cache, used in tables of MergeTree family.
+		 In bytes. Cache is single for server. Memory is allocated only on demand.
+		 You should not lower this value.
+	  -->
+	<mark_cache_size>5368709120</mark_cache_size>
+
+
+	<!-- Path to data directory, with trailing slash. -->
+	<path>/opt/clickhouse/</path>
+
+	<!-- Path to temporary data for processing hard queries. -->
+	<tmp_path>/opt/clickhouse/tmp/</tmp_path>
+
+	<!-- Path to configuration file with users, access rights, profiles of settings, quotas. -->
+	<users_config>users.xml</users_config>
+
+	<!-- Default profile of settings.. -->
+	<default_profile>default</default_profile>
+
+	<!-- Default database. -->
+	<default_database>default</default_database>
+
+	<!-- Configuration of clusters that could be used in Distributed tables.
+		 https://clickhouse.yandex/reference_en.html#Distributed
+	  -->
+	<remote_servers incl="clickhouse_remote_servers" />
+
+
+	<!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
+	     By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
+		 Values for substitutions are specified in /yandex/name_of_substitution elements in that file.
+	  -->
+
+	<!-- ZooKeeper is used to store metadata about replicas, when using Replicated tables.
+	     Optional. If you don't use replicated tables, you could omit that.
+
+		 See https://clickhouse.yandex/reference_en.html#Data%20replication
+	  -->
+	<zookeeper incl="zookeeper-servers" optional="true" />
+
+	<!-- Substitutions for parameters of replicated tables.
+	      Optional. If you don't use replicated tables, you could omit that.
+
+		 See https://clickhouse.yandex/reference_en.html#Creating%20replicated%20tables
+	  -->
+	<macros incl="macros" optional="true" />
+
+
+	<!-- Reloading interval for embedded dictionaries, in seconds. Default: 3600. -->
+	<builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
+
+
+	<!-- Sending data to Graphite for monitoring. -->
+	<use_graphite>false</use_graphite>
+
+	<!-- Uncomment if use_graphite.
+	<graphite>
+		<host>127.0.0.1</host>
+		<port>42000</port>
+		<root_path>one_min</root_path>
+		<timeout>0.1</timeout>
+	</graphite>
+	-->
+
+
+	<!-- Query log. Used only for queries with setting log_queries = 1. -->
+	<query_log>
+		<!-- What table to insert data. If table is not exist, it will be created.
+		     When query log structure is changed after system update,
+		      then old table will be renamed and new table will be created automatically.
+		-->
+		<database>system</database>
+		<table>query_log</table>
+
+		<!-- Interval of flushing data. -->
+		<flush_interval_milliseconds>7500</flush_interval_milliseconds>
+	</query_log>
+
+
+	<!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
+		 See https://clickhouse.yandex/reference_en.html#Internal%20dictionaries
+	-->
+
+	<!-- Path to file with region hierarchy. -->
+	<!-- <path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file> -->
+
+	<!-- Path to directory with files containing names of regions -->
+	<!-- <path_to_regions_names_files>/opt/geo/</path_to_regions_names_files> -->
+
+
+	<!-- Configuration of external dictionaries. See:
+		 https://clickhouse.yandex/reference_en.html#External%20Dictionaries
+	-->
+	<dictionaries_config>*_dictionary.xml</dictionaries_config>
+
+
+	<!-- Uncomment if you want data to be compressed 30-100% better.
+		 Don't do that if you just started using ClickHouse.
+	  -->
+	<compression incl="clickhouse_compression">
+	<!--
+		<!- - Set of variants. Checked in order. Last matching case wins. If nothing matches, lz4 will be used. - ->
+		<case>
+
+			<!- - Conditions. All must be satisfied. Some conditions may be omitted. - ->
+			<min_part_size>10000000000</min_part_size>		<!- - Min part size in bytes. - ->
+			<min_part_size_ratio>0.01</min_part_size_ratio>	<!- - Min size of part relative to whole table size. - ->
+
+			<!- - Какой метод сжатия выбрать. - ->
+			<method>zstd</method>	<!- - Keep in mind that zstd compression library is highly experimental. - ->
+		</case>
+	-->
+	</compression>
+
+	<!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
+	<!--
+	<merge_tree>
+		<max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+	</merge_tree>
+	-->
+
+	<!-- Example of parameters for GraphiteMergeTree table engine -->
+	<graphite_rollup_example>
+		<pattern>
+			<regexp>click_cost</regexp>
+			<function>any</function>
+			<retention>
+				<age>0</age>
+				<precision>3600</precision>
+			</retention>
+			<retention>
+				<age>86400</age>
+				<precision>60</precision>
+			</retention>
+		</pattern>
+		<default>
+			<function>max</function>
+			<retention>
+				<age>0</age>
+				<precision>60</precision>
+			</retention>
+			<retention>
+				<age>3600</age>
+				<precision>300</precision>
+			</retention>
+			<retention>
+				<age>86400</age>
+				<precision>3600</precision>
+			</retention>
+		</default>
+	</graphite_rollup_example>
+</yandex>

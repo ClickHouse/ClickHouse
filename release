@@ -1,0 +1,41 @@
+#!/bin/bash
+
+source release_lib.sh
+
+CONTROL=debian/control
+CHLOG=debian/changelog
+CHDATE=$(LC_ALL=C date -R | sed -e 's/,/\\,/g') # Заменим запятую на '\,'
+
+# Собирать пакет с конфигурационными файлами для Яндекс.Метрики.
+BUILD_PACKAGE_FOR_METRIKA=$([ -f 'private/Server/metrika/config.xml' ] && echo 'yes')
+
+# Don't sign packages, don't upload, don't create tags.
+if [[ $1 == '--standalone' ]]
+then
+	STANDALONE='yes'
+	DEBUILD_NOSIGN_OPTIONS="-us -uc"
+	shift
+fi
+
+# Список демонов для сборки может быть указан в аргументах командной строки.
+if [ $# -gt 0 ]
+then
+	DAEMONS="$@"
+else
+	DAEMONS="$(echo `cat debian/daemons`)"
+fi
+
+gen_revision_author
+echo -e "\nCurrent revision is $REVISION"
+
+make_control "$CONTROL" "$DAEMONS"
+
+gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" "$CHLOG" "$DAEMONS"
+
+# Сборка (только бинарных пакетов).
+debuild -e DAEMONS="${DAEMONS}" -e DISABLE_MONGODB -e CC -e CXX -b ${DEBUILD_NOSIGN_OPTIONS}
+
+if [[ $STANDALONE != 'yes' ]]
+then
+	upload_debs "$REVISION" "$DAEMONS"
+fi

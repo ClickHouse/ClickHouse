@@ -1,0 +1,158 @@
+#!/bin/bash
+
+# Скрипт для тестирования запросов к ClickHouse.
+# Из файлов *.sql в заданной директории, в алфавитном порядке, отправляются все запросы.
+# Результаты сравниваются с эталонами.
+
+QUERIES_DIR="./queries"
+CLIENT_PROGRAM="clickhouse-client -n"
+
+if [ -t 1 ]; then	# stdout - терминал.
+	COLOR_RESET="\033[0m"
+	COLOR_WHITE="\033[1;37m"
+	COLOR_FAIL="\033[1;31m"
+	COLOR_UNKNOWN="\033[1;30m"
+	COLOR_OK="\033[1;32m"
+	COLOR_SKIPPED="\033[1;34m"
+else
+	COLOR_RESET=""
+	COLOR_WHITE=""
+	COLOR_FAIL=""
+	COLOR_UNKNOWN=""
+	COLOR_OK=""
+	COLOR_SKIPPED=""
+fi
+
+MSG_FAIL="${COLOR_WHITE}[ ${COLOR_FAIL}FAIL${COLOR_WHITE} ]${COLOR_RESET}"
+MSG_UNKNOWN="${COLOR_WHITE}[ ${COLOR_UNKNOWN}UNKNOWN${COLOR_WHITE} ]${COLOR_RESET}"
+MSG_OK="${COLOR_WHITE}[ ${COLOR_OK}OK${COLOR_WHITE} ]${COLOR_RESET}"
+MSG_GENERATED="${COLOR_WHITE}[ ${COLOR_UNKNOWN}GENERATED${COLOR_WHITE} ]${COLOR_RESET}"
+MSG_SKIPPED="${COLOR_WHITE}[ ${COLOR_SKIPPED}SKIPPED${COLOR_WHITE} ]${COLOR_RESET}"
+
+ERRORS=0
+
+
+if [ "$1" == "--zookeeper" ]; then
+	ZOOKEEPER=1
+	shift
+elif [ "$1" == "--no-zookeeper" ]; then
+	ZOOKEEPER=0
+	shift
+elif grep -q '<zookeeper' /etc/clickhouse-server/config-preprocessed.xml; then
+	ZOOKEEPER=1
+else
+	ZOOKEEPER=0
+fi
+
+
+if [ "$1" == "--generate" ]; then
+	GENERATE=1
+	shift
+else
+	GENERATE=0
+fi
+
+
+# Тесты, зависящие от данных Метрики - не публикуются наружу. Создаём симлинки на внутренний репозиторий. Весьма неудобно.
+QUERIES_PRIVATE_DIR="../../private/tests/${QUERIES_DIR}"
+if [ -d "$QUERIES_PRIVATE_DIR" ]; then
+	for dir in $(ls $QUERIES_PRIVATE_DIR)
+	do
+		[ -d "$QUERIES_DIR/$dir" ] || ln -s "../$QUERIES_PRIVATE_DIR/$dir" "$QUERIES_DIR/$dir"
+	done
+fi
+
+
+for dir in $(ls $QUERIES_DIR)
+do
+	tests_name=$(echo $dir | sed -E 's/^[0-9_]+//')
+
+	echo
+	echo "Running $tests_name tests."
+	echo
+
+	if [[ "$tests_name" =~ "stateful" && 0 -eq $(echo "EXISTS TABLE test.hits" | $CLIENT_PROGRAM) ]]; then
+		echo "Won't run stateful tests because test data wasn't loaded. See README.txt."
+		continue
+	fi
+
+	for query_file in $QUERIES_DIR/$dir/*.{sql,sh}
+	do
+		extension=$(echo $query_file | sed -r 's/^.+\.(sql|sh)$/\1/')
+		test_name=$(basename $query_file .$extension)
+
+		# нет файлов типа .sql или .sh
+		if [[ "$test_name" == '*' ]]; then
+			continue
+		fi
+
+		printf "%-70s" "$test_name: "
+
+		if [ $ZOOKEEPER -eq 0 ] && (echo "$test_name" | grep -q 'zookeeper'); then
+			echo -e "$MSG_SKIPPED - no zookeeper"
+			continue
+		fi
+
+		result_file=$QUERIES_DIR/$dir/$test_name.result
+		error_file=$QUERIES_DIR/$dir/$test_name.error
+		reference_file=$QUERIES_DIR/$dir/$test_name.reference
+		diff_file=$QUERIES_DIR/$dir/$test_name.diff
+
+		if [[ "$extension" == "sql" ]]; then
+			$CLIENT_PROGRAM < $query_file > $result_file 2> $error_file
+			ret_code=$?
+		else
+			$query_file > $result_file 2> $error_file
+			ret_code=$?
+		fi
+
+		if [ $ret_code -ne 0 ]; then
+			ERRORS=$(($ERRORS + 1))
+			echo -e "$MSG_FAIL - return code $ret_code"
+			if [ -s "$error_file" ]; then
+				cat $error_file
+			fi
+			# разорвано соединение с сервером
+			if grep -q -E "Connection refused|Attempt to read after eof" $error_file; then
+				exit 1;
+			fi
+		elif [ -s "$error_file" ]; then
+			ERRORS=$(($ERRORS + 1))
+			echo -e "$MSG_FAIL - having stderror:"
+			cat $error_file
+		elif grep -q "Exception" $result_file; then
+			ERRORS=$(($ERRORS + 1))
+			echo -e "$MSG_FAIL - having exception:"
+			cat $result_file
+		elif [ ! -e "$reference_file" ]; then
+			# надо сгенерировать эталонный результат
+			if [[ $GENERATE -eq 1 && ( -z "$1" || "$@" =~ "$test_name") ]]; then
+				cp $result_file $reference_file
+				echo -e "$MSG_GENERATED - generated reference file"
+			else
+				echo -e "$MSG_UNKNOWN - no reference file (use --generate [test_name]... to create)"
+			fi
+		else
+			diff $reference_file $result_file > $diff_file
+			if [ -s "$diff_file" ]; then
+				ERRORS=$(($ERRORS + 1))
+				echo -e "$MSG_FAIL - result differs with reference:"
+				cat $diff_file
+			else
+				echo -e "$MSG_OK"
+				rm $error_file $result_file $diff_file
+			fi
+		fi
+	done
+done
+
+
+echo
+
+if [ $ERRORS -gt 0 ]; then
+	echo -e "${COLOR_FAIL}Having $ERRORS errors!${COLOR_RESET}"
+	exit 1
+else
+	echo -e "${COLOR_OK}All tests passed.${COLOR_RESET}"
+	exit 0
+fi

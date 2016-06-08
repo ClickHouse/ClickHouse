@@ -1,0 +1,90 @@
+#include <iostream>
+#include <iomanip>
+
+#include <Poco/ConsoleChannel.h>
+
+#include <DB/IO/WriteBufferFromFileDescriptor.h>
+
+#include <DB/DataStreams/OneBlockInputStream.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
+#include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
+#include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
+#include <DB/DataStreams/copyData.h>
+#include <DB/Interpreters/Context.h>
+
+#include <DB/DataTypes/DataTypesNumberFixed.h>
+
+
+int main(int argc, char ** argv)
+try
+{
+	using namespace DB;
+
+	Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
+	Logger::root().setChannel(channel);
+	Logger::root().setLevel("trace");
+
+	Block block1;
+
+	{
+		ColumnWithTypeAndName column1;
+		column1.name = "Sign";
+		column1.type = std::make_shared<DataTypeInt8>();
+		column1.column = std::make_shared<ColumnInt8>();
+		column1.column->insert(DB::Int64(1));
+		column1.column->insert(DB::Int64(-1));
+		block1.insert(column1);
+
+		ColumnWithTypeAndName column2;
+		column2.name = "CounterID";
+		column2.type = std::make_shared<DataTypeUInt32>();
+		column2.column = std::make_shared<ColumnUInt32>();
+		column2.column->insert(DB::UInt64(123));
+		column2.column->insert(DB::UInt64(123));
+		block1.insert(column2);
+	}
+
+	Block block2;
+
+	{
+		ColumnWithTypeAndName column1;
+		column1.name = "Sign";
+		column1.type = std::make_shared<DataTypeInt8>();
+		column1.column = std::make_shared<ColumnInt8>();
+		column1.column->insert(DB::Int64(1));
+		column1.column->insert(DB::Int64(1));
+		block2.insert(column1);
+
+		ColumnWithTypeAndName column2;
+		column2.name = "CounterID";
+		column2.type = std::make_shared<DataTypeUInt32>();
+		column2.column = std::make_shared<ColumnUInt32>();
+		column2.column->insert(DB::UInt64(123));
+		column2.column->insert(DB::UInt64(456));
+		block2.insert(column2);
+	}
+
+	BlockInputStreams inputs;
+	inputs.push_back(std::make_shared<OneBlockInputStream>(block1));
+	inputs.push_back(std::make_shared<OneBlockInputStream>(block2));
+
+	SortDescription descr;
+	SortColumnDescription col_descr("CounterID", 1);
+	descr.push_back(col_descr);
+
+	//CollapsingSortedBlockInputStream collapsed(inputs, descr, "Sign", 1048576);
+	CollapsingFinalBlockInputStream collapsed(inputs, descr, "Sign");
+
+	Context context;
+	WriteBufferFromFileDescriptor out_buf(STDERR_FILENO);
+	BlockOutputStreamPtr output = context.getOutputFormat("TabSeparated", out_buf, block1);
+
+	copyData(collapsed, *output);
+
+	return 0;
+}
+catch (const DB::Exception & e)
+{
+	std::cerr << e.what() << ", " << e.displayText() << std::endl;
+	throw;
+}

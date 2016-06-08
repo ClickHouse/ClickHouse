@@ -1,0 +1,26 @@
+# В этом файле описаны действия для добавления logrotate файла.
+# Данный файл уникальный для каждого демона и лежит в /etc/logrotate.d/
+# Данный файл нужно включать в CMakeLists.txt в каталоге каждого конкретного демона.
+# Пример использования:
+# INCLUDE( ${PROJECT_SOURCE_DIR}/tools/logrotate/CMakeLists.logrotate )
+# CREATE_LOGROTATE(divider Divider)
+# Будет создан logrotate файл с названием divider.logrt для демона (бинарника) Divider
+
+# NB Тут _не_ используется add_custom_command. по аналогии с init.d скриптом - это делается только потому, что
+# если её использовать, то у cmake сносит крышу, и она начинает путать цели и файлы.
+
+macro (CREATE_LOGROTATE daemonname)
+add_custom_target(${daemonname}-logrotate.target ALL
+    COMMAND sed -e 's,[@]DAEMON[@],${daemonname},g' < ${PROJECT_SOURCE_DIR}/tools/logrotate/template > ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}.logrt
+    COMMAND chmod a+r ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}.logrt
+    COMMENT "Building ${daemonname}.logrt"
+)
+INSTALL(
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}.logrt
+    DESTINATION /etc/logrotate.d
+    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+    COMPONENT ${daemonname}
+)
+
+add_dependencies(${daemonname} ${daemonname}-logrotate.target)
+endmacro (CREATE_LOGROTATE)

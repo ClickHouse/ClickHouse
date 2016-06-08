@@ -1,0 +1,36 @@
+NetSSL requires OpenSSL release 0.9.8 or later.
+
+Unix
+====
+
+Most Unix systems already have OpenSSL preinstalled.
+If your system does not have OpenSSL, please get it from
+http://www.openssl.org/ or another source. You do not
+have to build OpenSSL yourself - a binary distribution
+is fine.
+
+If you do build OpenSSl yourself be sure to call
+
+./configure --prefix=/usr --openssldir/usr/openssl
+make
+make install (with superuser rights)
+
+so that poco works out of the box
+
+
+Windows
+=======
+
+The easiest way to install OpenSSL on Windows is to
+use a binary (prebuild) release, for example the
+one from Shining Light Productions that comes with
+a Windows installer.
+
+1. Download OpenSSL (at least v0.98a) from: 
+   http://www.slproweb.com/products/Win32OpenSSL.html
+2. Install OpenSSL (we assume you install to c:\OpenSSL)
+3. Start Visual Studio, go to Tools->Options, under Projects->VC++ Directories
+   add the following directories:
+    - Include Files: C:\OpenSSL\include
+    - Library Files: C:\OpenSSL\lib\VC
+4. You are now ready to build NetSSL.
