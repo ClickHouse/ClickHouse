@@ -1,6 +1,7 @@
 #pragma once
 
 #include <queue>
+#include <type_traits>
 
 #include <Poco/Mutex.h>
 #include <Poco/Semaphore.h>
@@ -52,7 +53,10 @@ public:
 		fill_count.wait();
 		{
 			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-			x = std::move(queue.front());
+			if (std::is_nothrow_move_constructible<T>::value)
+				x = std::move(queue.front());
+			else
+				x = queue.front();
 			queue.pop();
 		}
 		empty_count.set();
@@ -93,7 +97,10 @@ public:
 		{
 			{
 				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-				x = std::move(queue.front());
+				if (std::is_nothrow_move_constructible<T>::value)
+					x = std::move(queue.front());
+				else
+					x = queue.front();
 				queue.pop();
 			}
 			empty_count.set();
