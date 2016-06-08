@@ -88,7 +88,7 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
 std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace);
 
 
-void rethrowFirstException(Exceptions & exceptions);
+void rethrowFirstException(const Exceptions & exceptions);
 
 std::unique_ptr<Poco::Exception> convertCurrentException();
 
