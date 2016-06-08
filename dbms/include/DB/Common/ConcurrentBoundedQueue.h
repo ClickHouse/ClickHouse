@@ -53,7 +53,7 @@ public:
 		fill_count.wait();
 		{
 			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-			if (std::is_nothrow_move_constructible<T>::value)
+			if (std::is_nothrow_move_assignable<T>::value)
 				x = std::move(queue.front());
 			else
 				x = queue.front();
@@ -97,7 +97,7 @@ public:
 		{
 			{
 				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-				if (std::is_nothrow_move_constructible<T>::value)
+				if (std::is_nothrow_move_assignable<T>::value)
 					x = std::move(queue.front());
 				else
 					x = queue.front();
