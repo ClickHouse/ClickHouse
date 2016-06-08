@@ -52,6 +52,8 @@ namespace Poco { class TaskManager; }
 
 class BaseDaemon : public Poco::Util::ServerApplication
 {
+	friend class SignalListener;
+
 public:
 	BaseDaemon();
     ~BaseDaemon();
@@ -132,6 +134,14 @@ protected:
 	/// Используется при exitOnTaskError()
 	void handleNotification(Poco::TaskFailedNotification *);
 
+	/// thread safe
+	virtual void handleSignal(int signal_id);
+
+	/// реализация обработки сигналов завершения через pipe не требует блокировки сигнала с помощью sigprocmask во всех потоках
+	void waitForTerminationRequest() override;
+	/// thread safe
+	virtual void onInterruptSignals(int signal_id);
+
 	std::unique_ptr<Poco::TaskManager> task_manager;
 
 	/// Создание и автоматическое удаление pid файла.
@@ -156,8 +166,7 @@ protected:
 
 	PID pid;
 
-	/// Получен ли сигнал на завершение? Этот флаг устанавливается в BaseDaemonApplication.
-	bool is_cancelled = false;
+	std::atomic_bool is_cancelled{false};
 
 	/// Флаг устанавливается по сообщению из Task (при аварийном завершении).
 	bool task_failed = false;
@@ -179,4 +188,8 @@ protected:
 	std::unique_ptr<GraphiteWriter> graphite_writer;
 
 	boost::optional<size_t> layer;
+
+	std::mutex signal_handler_mutex;
+	std::condition_variable signal_event;
+	size_t terminate_signals_counter = 0;
 };
