@@ -212,8 +212,7 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 			/// definitions of dictionaries may have changed, recreate all of them
 			config_last_modified = last_modified;
 
-			const auto config = new Poco::Util::XMLConfiguration{config_path};
-			SCOPE_EXIT(config->release());
+			Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(config_path);
 
 			/// get all dictionaries' definitions
 			Poco::Util::AbstractConfiguration::Keys keys;

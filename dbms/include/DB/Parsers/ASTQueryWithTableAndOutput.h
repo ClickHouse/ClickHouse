@@ -46,15 +46,14 @@ protected:
 	\
 		ASTPtr clone() const override \
 		{ \
-			Name * res = new Name(*this); \
-			ASTPtr ptr{res};			  \
+			std::shared_ptr<Name> res = std::make_shared<Name>(*this); \
 			res->children.clear(); \
 			if (format) \
 			{ \
 				res->format = format->clone(); \
 				res->children.push_back(res->format); \
 			} \
-			return ptr; \
+			return res; \
 		} \
 	\
 	protected: \

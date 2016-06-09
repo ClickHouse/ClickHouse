@@ -40,9 +40,8 @@ ConfigProcessor::ConfigProcessor(bool throw_on_bad_incl_, bool log_to_console, c
 {
 	if (log_to_console && Logger::has("ConfigProcessor") == nullptr)
 	{
-		Poco::Channel * channel = new Poco::ConsoleChannel;
-		channel_ptr = channel;
-		log = &Logger::create("ConfigProcessor", channel, Poco::Message::PRIO_TRACE);
+		channel_ptr = new Poco::ConsoleChannel;
+		log = &Logger::create("ConfigProcessor", channel_ptr.get(), Poco::Message::PRIO_TRACE);
 	}
 	else
 	{
