@@ -85,7 +85,7 @@ public:
 
     ~ColumnAggregateFunction()
 	{
-		if (!func->hasTrivialDestructor() && src)
+		if (!func->hasTrivialDestructor() && !src)
 			for (auto val : data)
 				func->destroy(val);
 	}
