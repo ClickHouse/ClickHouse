@@ -14,7 +14,7 @@
 			  (important for some administration scripts).
 		  -->
 		<size>1000M</size>
-		<count>2</count>
+		<count>10</count>
 	</logger>
 
 

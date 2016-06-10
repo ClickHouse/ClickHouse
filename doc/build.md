@@ -3,7 +3,12 @@
 Build should work on Linux Ubuntu 12.04, 14.04 or newer.
 With appropriate changes, build should work on any other Linux distribution.
 Build is not intended to work on Mac OS X.
-Only x86_64 is supported. Support for AArch64 is experimental.
+Only x86_64 with SSE 4.2 is supported. Support for AArch64 is experimental.
+
+To test for SSE 4.2, do
+```
+grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
+```
 
 ## Install Git and CMake
 

@@ -63,7 +63,7 @@ MultiplexedConnections::MultiplexedConnections(ConnectionPools & pools_, const S
 
 	for (auto & pool : pools_)
 	{
-		if (pool)
+		if (!pool)
 			throw Exception("Invalid pool specified", ErrorCodes::LOGICAL_ERROR);
 		initFromShard(pool.get());
 	}

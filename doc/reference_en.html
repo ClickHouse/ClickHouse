@@ -361,7 +361,10 @@ At this time (May 2016), there aren&#39;t any available open-source and free sys
 
 <h2>System requirements</h2>
 
-<p>This is not a cross-platform system. It requires Linux Ubuntu Precise (12.04) or newer, with x86_64 architecture.
+<p>This is not a cross-platform system. It requires Linux Ubuntu Precise (12.04) or newer, x86_64 architecture with SSE 4.2 instruction set.
+To test for SSE 4.2 support, do
+<span class="inline-example">grep -q sse4_2 /proc/cpuinfo &amp;&amp; echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"</span>
+
 We recommend using Ubuntu Trusty or Ubuntu Precise.
 The terminal must use UTF-8 encoding (the default in Ubuntu).</p>
 

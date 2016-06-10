@@ -42,7 +42,7 @@ protected:
 	char * compressed_buffer = nullptr;
 
 #ifdef USE_QUICKLZ
-	qlz_state_decompress * qlz_state = nullptr;
+	std::unique_ptr<qlz_state_decompress> qlz_state;
 #else
 	void * fixed_size_padding = nullptr;
 #endif
@@ -122,7 +122,7 @@ protected:
 		{
 		#ifdef USE_QUICKLZ
 			if (!qlz_state)
-				qlz_state = new qlz_state_decompress;
+				qlz_state = std::make_unique<qlz_state_decompress>();
 
 			qlz_decompress(&compressed_buffer[0], to, qlz_state);
 		#else
@@ -152,14 +152,6 @@ public:
 	CompressedReadBufferBase(ReadBuffer * in = nullptr)
 		: compressed_in(in)
 	{
-	}
-
-	~CompressedReadBufferBase()
-	{
-	#ifdef USE_QUICKLZ
-		if (qlz_state)
-			delete qlz_state;
-	#endif
 	}
 
 	/** Не проверять чексуммы.

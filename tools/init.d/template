@@ -26,6 +26,14 @@ NUMBER_OF_PROCESSES=$DEFAULT_NUMBER_OF_PROCESSES
 
 LOG_FILE=""
 
+# On x86_64, check for required instruction set.
+if uname -mpi | grep -q x86_64; then
+	if ! grep -q sse4_2 /proc/cpuinfo; then
+		echo 'SSE 4.2 instruction set is not supported'
+		exit 3
+	fi
+fi
+
 # С помощью xmlstarlet пытаемся взять некоторые параметры из конфига
 if command -v xmlstarlet >/dev/null 2>&1; then
 	NUMBER_OF_PROCESSES=$(xmlstarlet sel -t -v "/yandex/number_of_processes" $CNFFILE || echo $DEFAULT_NUMBER_OF_PROCESSES)
