@@ -9,13 +9,25 @@ CHDATE=$(LC_ALL=C date -R | sed -e 's/,/\\,/g') # Заменим запятую 
 # Собирать пакет с конфигурационными файлами для Яндекс.Метрики.
 BUILD_PACKAGE_FOR_METRIKA=$([ -f 'private/Server/metrika/config.xml' ] && echo 'yes')
 
-# Don't sign packages, don't upload, don't create tags.
-if [[ $1 == '--standalone' ]]
-then
-	STANDALONE='yes'
-	DEBUILD_NOSIGN_OPTIONS="-us -uc"
-	shift
-fi
+while [[ $1 == --* ]]
+do
+	# Don't sign packages, don't upload, don't create tags.
+	if [[ $1 == '--standalone' ]]
+	then
+		STANDALONE='yes'
+		DEBUILD_NOSIGN_OPTIONS="-us -uc"
+		shift
+	elif [[ $1 == '--test' ]]
+	then
+		STANDALONE='yes'
+		TEST='yes'
+		DEBUILD_NOSIGN_OPTIONS="-us -uc"
+		shift
+	else
+		echo "Unknown option $1"
+		exit 2
+	fi
+done
 
 # Список демонов для сборки может быть указан в аргументах командной строки.
 if [ $# -gt 0 ]
@@ -25,7 +37,13 @@ else
 	DAEMONS="$(echo `cat debian/daemons`)"
 fi
 
-gen_revision_author
+if [[ $TEST != 'yes' ]]
+then
+	gen_revision_author
+else
+	REVISION=99999
+fi
+
 echo -e "\nCurrent revision is $REVISION"
 
 make_control "$CONTROL" "$DAEMONS"
