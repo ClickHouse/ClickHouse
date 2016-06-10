@@ -143,9 +143,9 @@ install: build
 		echo "README.md" >> debian/$$DAEMON_PKG.docs; \
 	done
 
-	ln -s debian/clickhouse-server-base.docs debian/clickhouse-server.docs
-	ln -s debian/clickhouse-server-common.docs debian/clickhouse-server.docs
-	ln -s debian/clickhouse-server-metrika.docs debian/clickhouse-server.docs
+	ln -s debian/clickhouse-server.docs debian/clickhouse-server-base.docs
+	ln -s debian/clickhouse-server.docs debian/clickhouse-server-common.docs
+	ln -s debian/clickhouse-server.docs debian/clickhouse-server-metrika.docs
 
 # Build architecture-independent files here.
 binary-indep: build install
