@@ -90,3 +90,12 @@
 #if !defined(__x86_64__) && !defined(__aarch64__)
 	#error PLATFORM_NOT_SUPPORTED
 #endif
+
+/// Проверка наличия address sanitizer
+#if defined(__has_feature)
+	#if __has_feature(address_sanitizer)
+		#define ADDRESS_SANITIZER 1
+	#endif
+#elif defined(__SANITIZE_ADDRESS__)
+	#define ADDRESS_SANITIZER 1
+#endif

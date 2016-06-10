@@ -686,7 +686,14 @@ void BaseDaemon::initialize(Application& self)
 		rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
 
 		if (setrlimit(RLIMIT_CORE, &rlim))
+		{
+		#ifndef ADDRESS_SANITIZER
 			throw Poco::Exception("Cannot setrlimit");
+		#else
+			/// Не работает под address sanitizer. http://lists.llvm.org/pipermail/llvm-bugs/2013-April/027880.html
+			std::cerr << "Cannot setrlimit\n";
+		#endif
+		}
 	}
 
 	task_manager.reset(new Poco::TaskManager);
