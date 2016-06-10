@@ -389,7 +389,7 @@ OLAPServer хорошо подходил для неагрегированных
 <p>Система некроссплатформенная. Требуется ОС Linux Ubuntu не более старая, чем Precise (12.04); архитектура x86_64 с поддержкой набора инструкций SSE 4.2.
 Для проверки наличия SSE 4.2, выполните:
 <span class="text-example">
-cat /proc/cpuinfo | grep -q sse4_2 &amp;&amp; echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
+grep -q sse4_2 /proc/cpuinfo &amp;&amp; echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 </span>
 
 Рекомендуется использовать Ubuntu Trusty или Ubuntu Precise.

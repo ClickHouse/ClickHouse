@@ -364,7 +364,7 @@ At this time (May 2016), there aren&#39;t any available open-source and free sys
 <p>This is not a cross-platform system. It requires Linux Ubuntu Precise (12.04) or newer, x86_64 architecture with SSE 4.2 instruction set.
 To test for SSE 4.2 support, do
 <span class="text-example">
-cat /proc/cpuinfo | grep -q sse4_2 &amp;&amp; echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
+grep -q sse4_2 /proc/cpuinfo &amp;&amp; echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 </span>
 
 We recommend using Ubuntu Trusty or Ubuntu Precise.
