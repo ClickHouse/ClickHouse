@@ -30,7 +30,7 @@ LOG_FILE=""
 if uname -mpi | grep -q 'x86_64'; then
 	if ! grep -q 'sse4_2' /proc/cpuinfo; then
 		# On KVM, cpuinfo could falsely not report SSE 4.2 support, so skip the check.
-		if ! grep -q 'Common KVM processor' /proc/cpuinfo
+		if ! grep -q 'Common KVM processor' /proc/cpuinfo; then
 			echo 'SSE 4.2 instruction set is not supported'
 			exit 3
 		fi
