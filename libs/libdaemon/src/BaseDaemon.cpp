@@ -909,6 +909,7 @@ void BaseDaemon::handleSignal(int signal_id)
 		std::unique_lock<std::mutex> lock(signal_handler_mutex);
 		{
 			++terminate_signals_counter;
+			sigint_signals_counter += signal_id == SIGINT;
 			signal_event.notify_all();
 		}
 
@@ -921,9 +922,13 @@ void BaseDaemon::handleSignal(int signal_id)
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
 	is_cancelled = true;
-	LOG_INFO(&logger(),
-		"Received termination signal (" << strsignal(signal_id) << ")."
-		" Terminate is requested " << terminate_signals_counter << " times.");
+	LOG_INFO(&logger(), "Received termination signal (" << strsignal(signal_id) << ")");
+
+	if (sigint_signals_counter >= 2)
+	{
+		LOG_INFO(&logger(), "Received second signal Interrupt. Immediately terminate.");
+		kill();
+	}
 }
 
 
