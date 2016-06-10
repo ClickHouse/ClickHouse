@@ -153,7 +153,7 @@ binary-arch: build install
 	dh_compress
 	dh_fixperms
 	dh_installdeb
-	dh_shlibdeps --exclude=clang --exclude=stdc
+	dh_shlibdeps --exclude=clang --exclude=stdc --exclude=ld
 	dh_gencontrol
 	dh_md5sums
 	dh_builddeb -- -z3

@@ -6,7 +6,7 @@
 DST=${1:-.};
 PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:$PATH"
 CLANG=$(command -v clang)
-LD=$(command -v ld)
+LD=$(command -v gold || command -v ld.gold || command -v ld)
 
 if [ ! -x "$CLANG" ]; then
 	echo "Not found executable clang."
@@ -14,12 +14,12 @@ if [ ! -x "$CLANG" ]; then
 fi
 
 if [ ! -x "$LD" ]; then
-	echo "Not found executable ld."
+	echo "Not found executable gold or ld."
 	exit 1
 fi
 
 cp "$CLANG" $DST
-cp "$LD" $DST
+cp "$LD" ${DST}/ld
 
 STDCPP=$(ldd $(command -v clang) | grep -oE '/[^ ]+libstdc++[^ ]+')
 
