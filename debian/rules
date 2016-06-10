@@ -138,12 +138,11 @@ install: build
 	cp LICENSE debian/copyright
 
 	for DAEMON_PKG in ${DAEMONS}; do \
-		> debian/$$DAEMON_PKG.docs \
-		echo "LICENSE" >> debian/$$DAEMON_PKG.docs \
-		echo "AUTHORS" >> debian/$$DAEMON_PKG.docs \
-		echo "README.md" >> debian/$$DAEMON_PKG.docs \
-		echo "doc/reference_en.html" >> debian/$$DAEMON_PKG.docs \
-		echo "doc/reference_ru.html" >> debian/$$DAEMON_PKG.docs \
+		echo "LICENSE" > debian/$$DAEMON_PKG.docs; \
+		echo "AUTHORS" >> debian/$$DAEMON_PKG.docs; \
+		echo "README.md" >> debian/$$DAEMON_PKG.docs; \
+		echo "doc/reference_en.html" >> debian/$$DAEMON_PKG.docs; \
+		echo "doc/reference_ru.html" >> debian/$$DAEMON_PKG.docs; \
 	done
 
 # Build architecture-independent files here.
