@@ -166,6 +166,7 @@ void Compiler::compile(
 	std::string prefix = path + "/" + file_name;
 	std::string cpp_file_path = prefix + ".cpp";
 	std::string so_file_path = prefix + ".so";
+	std::string so_tmp_file_path = prefix + ".so.tmp";
 
 	{
 		WriteBufferFromFile out(cpp_file_path);
@@ -196,7 +197,7 @@ void Compiler::compile(
 		" -I /usr/share/clickhouse/headers/libs/libcommon/include/"
 		" -I /usr/share/clickhouse/headers/libs/libmysqlxx/include/"
 		" " << additional_compiler_flags <<
-		" -o " << so_file_path << " " << cpp_file_path
+		" -o " << so_tmp_file_path << " " << cpp_file_path
 		<< " 2>&1 || echo Exit code: $?";
 
 	std::string compile_result;
@@ -218,6 +219,7 @@ void Compiler::compile(
 	/// Если до этого была ошибка, то файл с кодом остаётся для возможности просмотра.
 	Poco::File(cpp_file_path).remove();
 
+	Poco::File(so_tmp_file_path).renameTo(so_file_path);
 	SharedLibraryPtr lib(new SharedLibrary(so_file_path));
 
 	{
