@@ -6815,17 +6815,6 @@ style="width:80px; height:31px; border:0;" alt="Яндекс.Метрика" tit
 
 <script type="text/javascript">
 
-$('.show-example').each(function() {
-    var link = $('<a class="show-hide-link">Показать пример<\/a>');
-    var example = $(this);
-    example.before(link);
-    link.click(function() {
-        example.toggle(100);
-        link.text('Пример:');
-    });
-});
-
-
 // Генерация HTML по разметке, отдалённо напоминающей Wiki. Криво.
 function wikiToHTML(text) {
 
@@ -6852,6 +6841,17 @@ function wikiToHTML(text) {
 $('.content').each(function() {
 	var elem = $(this);
 	elem.html(wikiToHTML(elem.html()));
+});
+
+
+$('.show-example').each(function() {
+    var link = $('<a class="show-hide-link">Показать пример<\/a>');
+    var example = $(this);
+    example.before(link);
+    link.click(function() {
+        example.toggle(100);
+        link.text('Пример:');
+    });
 });
 
 
