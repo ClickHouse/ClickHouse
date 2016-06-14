@@ -36,13 +36,14 @@ body
 h1
 {
     font-family: 'Yandex Sans Display Web', Arial, sans-serif;
-
     margin: 0;
 }
 
 h2
 {
     font-family: 'Yandex Sans Display Web', Arial, sans-serif;
+	margin-top: 30px;
+	margin-bottom: 10px;
 }
 
 h3
@@ -53,7 +54,6 @@ h3
 p
 {
     line-height: 20px;
-
     white-space: pre-wrap;
 }
 
@@ -180,8 +180,8 @@ a:hover
 .head-anchor
 {
     float: right;
-
     color: #aaa;
+	margin-top: 10px;
 }
 
 .head-anchor:hover
