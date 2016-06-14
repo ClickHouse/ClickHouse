@@ -6876,7 +6876,19 @@ SET profile = 'web'
 &lt;users&gt;
     &lt;!-- Если имя пользователя не указано, используется пользователь default. --&gt;
     &lt;default&gt;
-        &lt;!-- Пароль (в открытом виде). Может быть пустым. --&gt;
+        &lt;!-- Password could be specified in plaintext or in SHA256 (in hex format).
+
+             If you want to specify password in plaintext (not recommended), place it in 'password' element.
+             Example: &lt;password&gt;qwerty&lt;/password&gt;.
+             Password could be empty.
+
+             If you want to specify SHA256, place it in 'password_sha256_hex' element.
+             Example: &lt;password_sha256_hex&gt;65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5&lt;/password_sha256_hex&gt;
+
+             How to generate decent password:
+             Execute: PASSWORD=$(base64 &lt; /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
+             In first line will be password and in second - corresponding SHA256.
+        --&gt;
         &lt;password&gt;&lt;/password&gt;
 
         &lt;!-- Список сетей, из которых разрешён доступ.
@@ -6914,7 +6926,7 @@ SET profile = 'web'
 Здесь видно объявление двух пользователей - default и web. Пользователя web мы добавили самостоятельно.
 Пользователь default выбирается в случаях, когда имя пользователя не передаётся, поэтому такой пользователь должен присутствовать в конфигурационном файле обязательно. Также пользователь default используется при распределённой обработки запроса - система ходит на удалённые серверы под ним. Поэтому, у пользователя default должен быть пустой пароль и не должно быть выставлено существенных ограничений или квот - иначе распределённые запросы сломаются.
 
-Пароль указывается в открытом виде, прямо в конфиге. В связи с этим, не следует рассматривать такие пароли, как защиту от потенциального злоумышленника. Скорее, они нужны для защиты от сотрудников Яндекса.
+Пароль указывается либо в открытом виде (не рекомендуется), либо в виде SHA-256. Хэш не содержит соль. В связи с этим, не следует рассматривать такие пароли, как защиту от потенциального злоумышленника. Скорее, они нужны для защиты от сотрудников.
 
 Указывается список сетей, из которых разрешён доступ. В этом примере, список сетей для обеих пользователей, загружается из отдельного файла (/etc/metrika.xml), содержащего подстановку networks. Вот его фрагмент:
 
