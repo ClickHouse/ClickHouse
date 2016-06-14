@@ -398,7 +398,7 @@ LIMIT 20
 Для того, чтобы распределить таблицу по нескольким серверам, сделаем <a href="https://clickhouse.yandex/reference_ru.html#INSERT">INSERT SELECT</a> в Distributed-таблицу.
 
 <source lang="SQL">INSERT INTO ontime_all SELECT * FROM ontime;</source>
-Отметим, что для перешардирования больших таблиц, такой способ не подходит, вместо этого следует воспользоваться встроенной <a href="https://clickhouse.yandex/reference_ru.html#TODO">функциональностью перешардирования</a>.
+Отметим, что для перешардирования больших таблиц, такой способ не подходит, вместо этого следует воспользоваться встроенной <a href="https://clickhouse.yandex/reference_ru.html#Перешардирование">функциональностью перешардирования</a>.
 
 Как и ожидалось, более-менее долгие запросы работают в несколько раз быстрее, если их выполнять на трёх серверах, а не на одном. <spoiler title="Пример">
 <img src="https://habrastorage.org/files/ece/020/129/ece020129fdf4a18a6e75daf2e699cb9.png"/>
