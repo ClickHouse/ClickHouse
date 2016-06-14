@@ -3872,8 +3872,121 @@ JSON совместим с JavaScript. Для этого, дополнитель
 
 Выводит данные в виде отдельных JSON объектов для каждой строки.
 
+%%
+{"SearchPhrase":"","count()":"8267016"}
+{"SearchPhrase":"интерьер ванной комнаты","count()":"2166"}
+{"SearchPhrase":"яндекс","count()":"1655"}
+{"SearchPhrase":"весна 2014 мода","count()":"1549"}
+{"SearchPhrase":"фриформ фото","count()":"1480"}
+{"SearchPhrase":"анджелина джоли","count()":"1245"}
+{"SearchPhrase":"омск","count()":"1112"}
+{"SearchPhrase":"фото собак разных пород","count()":"1091"}
+{"SearchPhrase":"дизайн штор","count()":"1064"}
+{"SearchPhrase":"баку","count()":"1000"}
+%%
+
+В отличие от формата JSON, нет замены невалидных UTF-8 последовательностей. В строках может выводиться произвольный набор байт. Это сделано для того, чтобы данные форматировались без потери информации. Экранирование значений осуществляется аналогично формату JSON.
+
+При чтении, поддерживается расположение значений разных столбцов в произвольном порядке. Допустимо отсутствие некоторых значений - тогда они воспринимаются как равные значениям по-умолчанию. При этом, в качестве значений по-умолчанию используются нули, пустые строки и не поддерживаются сложные значения по-умолчанию, которые могут быть заданы в таблице. Пропускаются пробельные символы между элементами. После объектов может быть расположена запятая, которая игнорируется. Объекты не обязательно должны быть разделены переводами строк.
 
 
+==TSKV==
+
+Похож на TabSeparated, но выводит значения в формате %%name=value%%. Имена экранируются так же, как строки в формате TabSeparated и, дополнительно, экранируется также символ %%=%%.
+
+%%
+SearchPhrase=   count()=8267016
+SearchPhrase=интерьер ванной комнаты    count()=2166
+SearchPhrase=яндекс     count()=1655
+SearchPhrase=весна 2014 мода    count()=1549
+SearchPhrase=фриформ фото       count()=1480
+SearchPhrase=анджелина джоли    count()=1245
+SearchPhrase=омск       count()=1112
+SearchPhrase=фото собак разных пород    count()=1091
+SearchPhrase=дизайн штор        count()=1064
+SearchPhrase=баку       count()=1000
+%%
+
+При большом количестве маленьких столбцов, этот формат существенно неэффективен, и обычно нет причин его использовать. Он реализован, так как используется в некоторых отделах Яндекса.
+
+Поддерживается как вывод так и чтение данных в этом формате. При чтении, поддерживается расположение значений разных столбцов в произвольном порядке. Допустимо отсутствие некоторых значений - тогда они воспринимаются как равные значениям по-умолчанию. При этом, в качестве значений по-умолчанию используются нули, пустые строки и не поддерживаются сложные значения по-умолчанию, которые могут быть заданы в таблице.
+
+При чтении, в качестве дополнительного поля, может присутствовать %%tskv%% без знака равенства и без значения. Это поле игнорируется.
+
+
+==XML==
+
+Формат XML подходит только для вывода данных, не для чтения. Пример:
+
+%%
+&lt;?xml version='1.0' encoding='UTF-8' ?&gt;
+&lt;result&gt;
+        &lt;meta&gt;
+                &lt;columns&gt;
+                        &lt;column&gt;
+                                &lt;name&gt;SearchPhrase&lt;/name&gt;
+                                &lt;type&gt;String&lt;/type&gt;
+                        &lt;/column&gt;
+                        &lt;column&gt;
+                                &lt;name&gt;count()&lt;/name&gt;
+                                &lt;type&gt;UInt64&lt;/type&gt;
+                        &lt;/column&gt;
+                &lt;/columns&gt;
+        &lt;/meta&gt;
+        &lt;data&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;&lt;/SearchPhrase&gt;
+                        &lt;field&gt;8267016&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;интерьер ванной комнаты&lt;/SearchPhrase&gt;
+                        &lt;field&gt;2166&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;яндекс&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1655&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;весна 2014 мода&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1549&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;фриформ фото&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1480&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;анджелина джоли&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1245&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;омск&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1112&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;фото собак разных пород&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1091&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;дизайн штор&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1064&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;баку&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1000&lt;/field&gt;
+                &lt;/row&gt;
+        &lt;/data&gt;
+        &lt;rows&gt;10&lt;/rows&gt;
+        &lt;rows_before_limit_at_least&gt;141137&lt;/rows_before_limit_at_least&gt;
+&lt;/result&gt;
+%%
+
+Если имя столбца не имеет некоторый допустимый вид, то в качестве имени элемента используется просто field. В остальном, структура XML повторяет структуру в формате JSON.
+Как и для формата JSON, невалидные UTF-8 последовательности заменяются на replacement character � и, таким образом, выводимый текст будет состоять из валидных UTF-8 последовательностей.
+
+В строковых значениях, экранируются символы %%&lt;%% и %%&amp;%% как %%&amp;lt;%% и %%&amp;amp;%%.
+
+Массивы выводятся как %%&lt;array&gt;&lt;elem&gt;Hello&lt;/elem&gt;&lt;elem&gt;World&lt;/elem&gt;...&lt;/array&gt;%%,
+а кортежи как %%&lt;tuple&gt;&lt;elem&gt;Hello&lt;/elem&gt;&lt;elem&gt;World&lt;/elem&gt;...&lt;/tuple&gt;%%.
 
 ==Null==
 
