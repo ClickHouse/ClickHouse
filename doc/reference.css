@@ -60,14 +60,12 @@ p
 a
 {
     text-decoration: none;
-
     color: #06f;
 }
 
 a:hover
 {
     text-decoration: underline;
-
     color: #f40;
 }
 
@@ -89,6 +87,12 @@ a:hover
     margin: 0;
 
     text-align: center;
+}
+
+.title_link, .title_link:active, .title_link:visited, .title_link:link, .title_link:hover
+{
+	text-decoration: none;
+	color: #000;
 }
 
 .subtitle
