@@ -4228,6 +4228,12 @@ When converting to or from a string, the value is formatted or parsed using the 
 When converting dates to numbers or vice versa, the date corresponds to the number of days since the beginning of the Unix epoch.
 When converting dates with times to numbers or vice versa, the date with time corresponds to the number of seconds since the beginning of the Unix epoch.
 
+Formats of date and date with time for toDate/toDateTime functions are defined as follows:
+%%
+YYYY-MM-DD
+YYYY-MM-DD hh:mm:ss
+%%
+
 As an exception, if converting from UInt32, Int32, UInt64, or Int64 type numbers to Date, and if the number is greater than or equal to 65536, the number is interpreted as a Unix timestamp (and not as the number of days) and is rounded to the date. This allows support for the common occurrence of writing &#39;toDate(unix_timestamp)&#39;, which otherwise would be an error and would require writing the more cumbersome &#39;toDate(toDateTime(unix_timestamp))&#39;.
 
 Conversion between a date and date with time is performed the natural way: by adding a null time or dropping the time.
