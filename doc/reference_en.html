@@ -5630,9 +5630,6 @@ SELECT
 ==count()==
 
 Counts the number of rows. Accepts zero arguments and returns UInt64.
-The only valid way of writing this function is &#39;count()&#39;.
-In contrast to standard SQL, you can&#39;t write &#39;count(*)&#39;. This is parsed as if passing all the columns to the &#39;count&#39; function as arguments.
-It also doesn&#39;t make sense to write &#39;count(column)&#39;, since ClickHouse doesn&#39;t have NULLs.
 The syntax COUNT(DISTINCT x) is not supported. The separate &#39;uniq&#39; aggregate function exists for this purpose.
 
 A &#39;SELECT count() FROM table&#39; query is not optimized, because the number of entries in the table is not stored separately. It will select some small column from the table and count the number of values in it.
