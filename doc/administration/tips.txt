@@ -36,7 +36,7 @@ RAM
 
 For small amount of data (up to ~200 GB compressed) prefer to use as much RAM as data volume.
 For larger amount of data, if you run interactive (online) queries, use reasonable amount of RAM (128 GB or more) to hot data fit in page cache.
-Even for data volumes of ~50 TB per server, using 128 GB or RAM is much better for query performance than 64 GB.
+Even for data volumes of ~50 TB per server, using 128 GB of RAM is much better for query performance than 64 GB.
 
 
 Swap
