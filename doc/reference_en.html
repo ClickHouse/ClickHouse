@@ -122,7 +122,7 @@ In a column-oriented DBMS, data is stored like this:
 
 These examples only show the order that data is arranged in.
 The values from different columns are stored separately, and data from the same column is stored together.
-Examples of a column-oriented DBMS: Vertica, Paraccel (Actian Matrix) (Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise) (Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Metamarkets Druid, kdb+ and others.
+Examples of a column-oriented DBMS: Vertica, Paraccel (Actian Matrix) (Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise) (Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid, kdb+ and others.
 
 
 Different orders for storing data are better suited to different scenarios.
@@ -248,7 +248,7 @@ Some column-oriented DBMSs (InfiniDB CE and MonetDB) do not use data compression
 
 <h3 class="not-for-contents">3. Disk storage of data.</h3>
 
-Many column-oriented DBMSs (SAP HANA, Metamarkets Druid, and Google PowerDrill) can only work in RAM. But even on thousands of servers, the RAM is too small for storing all the pageviews and sessions in Yandex.Metrica.
+Many column-oriented DBMSs (SAP HANA, and Google PowerDrill) can only work in RAM. But even on thousands of servers, the RAM is too small for storing all the pageviews and sessions in Yandex.Metrica.
 
 <h3 class="not-for-contents">4. Parallel processing on multiple cores.</h3>
 
