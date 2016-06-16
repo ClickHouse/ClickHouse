@@ -421,7 +421,7 @@ ClickHouse contains access restriction settings. They are located in the &#39;us
 By default, access is allowed from everywhere for the default user without a password. See &#39;user/default/networks&#39;. For more information, see the section &quot;Configuration files&quot;.
 
 
-===Installing from sources===
+===Installing from source===
 
 Build following the instructions in <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md">build.md</a>
 
@@ -837,7 +837,7 @@ The command-line client allows passing external data (external temporary tables)
 
 ==Syntax==
 
-There are two types of parsers in the system: a full SQL parser (a recursive descend parser), and a data format parser (a fast stream parser). In all cases except the INSERT query, only the full SQL parser is used.
+There are two types of parsers in the system: a full SQL parser (a recursive descent parser), and a data format parser (a fast stream parser). In all cases except the INSERT query, only the full SQL parser is used.
 The INSERT query uses both parsers:
 
 %%INSERT INTO t VALUES (1, &#39;Hello, world&#39;), (2, &#39;abc&#39;), (3, &#39;def&#39;)%%
@@ -2804,7 +2804,7 @@ For each INSERT query (more precisely, for each inserted block of data; the INSE
 
 For very large clusters, you can use different ZooKeeper clusters for different shards. However, this hasn&#39;t proven necessary on the Yandex.Metrica cluster (approximately 300 servers).
 
-Replication is asynchronous and multi-master. INSERT queries (as well as ALTER) can be sent to any available server. Data is inserted on this server, then sent to the other servers. Because it is asynchronous, recently inserted data appears on the other replicas with some latency. If part of the replicas are not available, the data on them is written when they become available. If a replica is available, the latency is the amount of time it takes to transfer the block of compressed data over the network.
+Replication is asynchronous and multi-master. INSERT queries (as well as ALTER) can be sent to any available server. Data is inserted on this server, then sent to the other servers. Because it is asynchronous, recently inserted data appears on the other replicas with some latency. If a part of the replicas is not available, the data on them is written when they become available. If a replica is available, the latency is the amount of time it takes to transfer the block of compressed data over the network.
 
 There are no quorum writes. You can&#39;t write data with confirmation that it was received by more than one replica. If you write a batch of data to one replica and the server with this data ceases to exist before the data has time to get to the other replicas, this data will be lost.
 
