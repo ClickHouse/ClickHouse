@@ -389,7 +389,7 @@ inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
 /** Выводит строку в для формата CSV.
   * Правила:
   * - строка выводится в кавычках;
-  * - кавычка внутри строки выводится как двойная кавычка.
+  * - кавычка внутри строки выводится как две кавычки подряд.
   */
 template <char quote = '"'>
 void writeCSVString(const char * begin, const char * end, WriteBuffer & buf)

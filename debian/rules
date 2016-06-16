@@ -134,6 +134,19 @@ install: build
 		if [ -e debian/tmp/usr/bin/$$DAEMON ]; then strip debian/tmp/usr/bin/$$DAEMON; fi; \
 	done
 
+	# Создаём документацию
+	cp LICENSE debian/copyright
+
+	for DAEMON_PKG in ${DAEMONS}; do \
+		echo "LICENSE" > debian/$$DAEMON_PKG.docs; \
+		echo "AUTHORS" >> debian/$$DAEMON_PKG.docs; \
+		echo "README.md" >> debian/$$DAEMON_PKG.docs; \
+	done
+
+	ln -s clickhouse-server.docs debian/clickhouse-server-base.docs
+	ln -s clickhouse-server.docs debian/clickhouse-server-common.docs
+	ln -s clickhouse-server.docs debian/clickhouse-server-metrika.docs
+
 # Build architecture-independent files here.
 binary-indep: build install
 # We have nothing to do by default.

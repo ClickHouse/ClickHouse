@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 2.6)
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     # require at least gcc 5
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5)
-        message(FATAL_ERROR "GCC version must be at least 5!")
+        message(FATAL_ERROR "GCC version must be at least 5! For example, if GCC 5 is available under gcc-5, g++-5 names, do the following: export CC=gcc-5 CXX=g++-5; rm -rf CMakeCache.txt CMakeFiles; and re run cmake.")
     endif()
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     # require at least clang 3.8

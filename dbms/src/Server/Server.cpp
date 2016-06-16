@@ -297,9 +297,9 @@ int Server::main(const std::vector<std::string> & args)
 		Poco::File(path + "data/system").createDirectories();
 		Poco::File(path + "metadata/system").createDirectories();
 
-		global_context->addDatabase("system",
-			std::make_shared<DatabaseOrdinary>(
-				"system", path + "metadata/system/", *global_context, nullptr));
+		auto system_database = std::make_shared<DatabaseOrdinary>("system", path + "metadata/system/");
+		global_context->addDatabase("system", system_database);
+		system_database->loadTables(*global_context, nullptr);
 	}
 
 	DatabasePtr system_database = global_context->getDatabase("system");

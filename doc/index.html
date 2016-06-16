@@ -4,20 +4,18 @@
 	<meta charset="utf-8"/>
 	<meta http-equiv="X-UA-Compatible" content="IE=edge"/>
 
-	<title>ClickHouse</title>
+	<title>ClickHouse — open-source distributed column-oriented DBMS</title>
 
 	<link rel="shortcut icon" href="favicon.ico"/>
 
 	<meta property="og:title" content="ClickHouse DBMS"/>
 	<meta property="og:description" content="ClickHouse is an open-source column-oriented database management system that allows generating analytical data reports in real time."/>
-	<meta property="og:image" content=""/>
 	<meta property="og:type" content="website"/>
 
-	<meta property="twitter:title" content=""/>
-	<meta property="twitter:image" content=""/>
+	<meta property="twitter:title" content="ClickHouse DBMS"/>
 
-	<meta name="description" content=""/>
-	<meta name="keywords" content=""/>
+	<meta name="description" content="ClickHouse — open-source distributed column-oriented DBMS"/>
+	<meta name="keywords" content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics"/>
 
 	<style type="text/css">
 		@font-face {
@@ -214,11 +212,6 @@
 		  text-indent: 5px;
 		}
 
-		.choose_distributive {
-			color: red;
-			font-style: italic;
-		}
-
 		.warranty {
 			font-size: 10pt;
 			color: #888;
@@ -226,7 +219,18 @@
 		}
 
 		.nomarkerlist {
-		  list-style-type: none;
+			list-style-type: none;
+		}
+
+		.distributive_selected {
+			color: #000;
+			font-weight: bold;
+		}
+
+		.distributive_not_selected {
+			color: #08f;
+			cursor: pointer;
+			border-bottom: 1px dashed #08f;
 		}
 	</style>
 </head>
@@ -388,12 +392,14 @@
 
 		<p>System requirements: Linux, x86_64 with SSE 4.2.</p>
 
-		<p>Install packages for Ubuntu 14.04 (Trusty) or Ubuntu 12.04 (Precise):</p>
+		<p>Install packages for
+			<span class="distributive_selected" id="ubuntu_trusty">Ubuntu 14.04 (Trusty)</span> or <span class="distributive_not_selected" id="ubuntu_precise">Ubuntu 12.04 (Precise)</span>:
+		</p>
 
 		<code>
 <pre>
 sudo mkdir -p /etc/apt/sources.list.d
-echo "deb http://repo.yandex.ru/clickhouse/<span class="choose_distributive">trusty|precise</span>/ dists/stable/main/binary-amd64/" |
+echo "deb http://repo.yandex.ru/clickhouse/<span id="distributive">trusty</span>/ dists/stable/main/binary-amd64/" |
 &nbsp;&nbsp;&nbsp;&nbsp;sudo tee /etc/apt/sources.list.d/clickhouse.list
 sudo apt-get update
 
@@ -471,6 +477,17 @@ clickhouse-client
 		var class_name = 'feedback_form';
 		block_visible[class_name] ? hideBlock(class_name) : showBlock(class_name);
 	}
+
+	function selectDistributive(name) {
+		var selected = name == 'precise' ? 'precise' : 'trusty';
+		var other = name == 'precise' ? 'trusty' : 'precise';
+		document.getElementById('ubuntu_' + selected).className = 'distributive_selected';
+		document.getElementById('ubuntu_' + other).className = 'distributive_not_selected';
+		document.getElementById('distributive').innerHTML = selected;
+	}
+
+	document.getElementById('ubuntu_precise').addEventListener('click', function(e) { selectDistributive('precise'); });
+	document.getElementById('ubuntu_trusty').addEventListener('click', function(e) { selectDistributive('trusty'); });
 
 	</script>
 

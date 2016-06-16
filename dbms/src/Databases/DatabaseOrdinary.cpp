@@ -89,8 +89,13 @@ static bool endsWith(const String & s, const char * suffix)
 
 
 DatabaseOrdinary::DatabaseOrdinary(
-	const String & name_, const String & path_, Context & context, boost::threadpool::pool * thread_pool)
+	const String & name_, const String & path_)
 	: name(name_), path(path_)
+{
+}
+
+
+void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * thread_pool)
 {
 	log = &Logger::get("DatabaseOrdinary (" + name + ")");
 
