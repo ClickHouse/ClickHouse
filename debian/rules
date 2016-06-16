@@ -42,7 +42,7 @@ clean:
 	find ./debian/ -name "*.logrotate" -type f -delete
 	# Удалим созданные ссылки на файлы документации
 	find ./debian/ -name "*.docs" -type l -delete
-	rm ./debian/copyright
+	rm -f ./debian/copyright
 	# Удалим созданные *.install файлы
 	for DAEMON_PKG in ${DAEMONS}; do AUTO=`grep "# automatically created" debian/$$DAEMON_PKG-metrika-yandex.install`; if [ "x$$AUTO" != "x" ]; then rm -f debian/$$DAEMON_PKG-metrika-yandex.install; fi; done
 	dh_clean
