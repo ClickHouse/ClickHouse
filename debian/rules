@@ -40,7 +40,7 @@ clean:
 	find ./debian/ -name "*.cron.d" -type f -delete
 	# Удалим созданные для dh_installlogrotate файлы
 	find ./debian/ -name "*.logrotate" -type f -delete
-	# Удалим созданные файлы документации
+	# Удалим созданные ссылки на файлы документации
 	find ./debian/ -name "*.docs" -type l -delete
 	rm ./debian/copyright
 	# Удалим созданные *.install файлы
