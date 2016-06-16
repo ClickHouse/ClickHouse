@@ -3037,10 +3037,10 @@ min_bytes, max_bytes - условие на количество байт в бу
 ALTER TABLE merge.hits
 RESHARD PARTITION 201501
 TO
-	/clickhouse/tables/01-01/hits WEIGHT 1,
-	/clickhouse/tables/01-02/hits WEIGHT 2,
-	/clickhouse/tables/01-03/hits WEIGHT 1,
-	/clickhouse/tables/01-04/hits WEIGHT 1
+	'/clickhouse/tables/01-01/hits' WEIGHT 1,
+	'/clickhouse/tables/01-02/hits' WEIGHT 2,
+	'/clickhouse/tables/01-03/hits' WEIGHT 1,
+	'/clickhouse/tables/01-04/hits' WEIGHT 1
 USING UserID
 %%
 
