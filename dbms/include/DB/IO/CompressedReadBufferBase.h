@@ -124,7 +124,7 @@ protected:
 			if (!qlz_state)
 				qlz_state = std::make_unique<qlz_state_decompress>();
 
-			qlz_decompress(&compressed_buffer[0], to, qlz_state);
+			qlz_decompress(&compressed_buffer[0], to, qlz_state.get());
 		#else
 			throw Exception("QuickLZ compression method is disabled", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
 		#endif
