@@ -1,7 +1,7 @@
 /*! \file
 * \brief Main include.
 *
-* This is the only file you have to include in order to use the 
+* This is the only file you have to include in order to use the
 * complete threadpool library.
 *
 * Copyright (c) 2005-2007 Philipp Henkel
@@ -17,7 +17,6 @@
 #ifndef THREADPOOL_HPP_INCLUDED
 #define THREADPOOL_HPP_INCLUDED
 
-#include "threadpool/future.hpp"
 #include "threadpool/pool.hpp"
 
 #include "threadpool/pool_adaptors.hpp"
