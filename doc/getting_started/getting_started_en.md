@@ -1,6 +1,6 @@
-## Введение
+## Introduction
 
-Для начала, возьмём какую-нибудь машину, например, создадим виртуальный инстанс в Openstack со следующими характеристиками:
+For a start, we need a computer. For example, let's create virtual instance in Openstack with following characteristics:
 ```
 RAM             61GB
 VCPUs           16 VCPU
@@ -8,7 +8,7 @@ Disk            40GB
 Ephemeral Disk  100GB
 ```
 
-ОС:
+OS:
 ```
 $ lsb_release -a
 No LSB modules are available.
@@ -18,43 +18,42 @@ Release:	16.04
 Codename:	xenial
 ```
 
-Будем работать с открытыми данными базы данных On Time, предоставленной Министерством транспорта США (United States Department of
-Transportation). Информация о ней, структура таблицы, а также примеры запросов приведены здесь:
+We gonna have a try with open data from On Time database, which is arranged by United States Department of
+Transportation). One can find information about it, structure of the table and examples of queries here:
 ```
 https://github.com/yandex/ClickHouse/blob/master/doc/example_datasets/1_ontime.txt
 ```
 
-## Сборка
+## Building
 
-При сборке ClickHouse будем использовать инструкцию, расположенную по адресу: 
+To build ClickHouse we will use a manual located here:
 ```
 https://github.com/yandex/ClickHouse/blob/master/doc/build.md
 ```
 
-Установим необходимые пакеты. После этого выполним следующую команду из директории с исходными кодами ClickHouse:
+Install required packages. After that let's run the following command from directory with source code of ClickHouse:
 ```
 ~/ClickHouse$ DISABLE_MONGODB=1 ./release --standalone
 ```
 
-Сборка успешно завершена:
+The build successfully completed:
 ![](images/build_completed.png)
 
-Установим пакеты и запустим ClickHouse:
+Installing packages and running ClickHouse:
 ```
 sudo apt-get install ../clickhouse-server-base_1.1.53960_amd64.deb ../clickhouse-server-common_1.1.53960_amd64.deb
 sudo apt-get install ../clickhouse-client_1.1.53960_amd64.deb
 sudo service clickhouse-server start
 ```
 
-## Создание таблицы
+## Creation of table
 
-Перед тем, как загружать данные базы данных On Time в ClickHouse, запустим консольный клиент ClickHouse, для того, чтобы создать таблицу с
-необходимыми полями:
+Before loading the date into ClickHouse, let's start console client of ClickHouse in order to create a table with necessary fields:
 ```
 $ clickhouse-client
 ```
 
-Таблица создаётся следующим запросом:
+The table is being created with following query:
 ```
 :) create table `ontime` (
   `Year` UInt16,
@@ -170,7 +169,7 @@ $ clickhouse-client
 ``` 
 ![](images/table_created.png)
 
-Информацию о таблице можно посмотреть следующими запросами:
+One can get information about table using following queries:
 ```
 :) desc ontime
 ```
@@ -179,9 +178,9 @@ $ clickhouse-client
 :) show create ontime
 ```
 
-## Наливка данных
+## Filling in the data
 
-Загрузим данные:
+Let's download the data:
 ```
 for s in `seq 1987 2015`; do
 	for m in `seq 1 12`; do
@@ -190,7 +189,7 @@ for s in `seq 1987 2015`; do
 done
 ```
 
-Теперь необходимо загрузить данные в ClickHouse:
+After that, add the data to ClickHouse:
 ```
 for i in *.zip; do
 	echo $i
@@ -198,16 +197,16 @@ for i in *.zip; do
 done
 ```
 
-## Работа с данными
+## Working with data
 
-Проверим, что в таблице что-то есть:
+Let's check if the table contains something:
 ```
 :) select FlightDate, FlightNum, OriginCityName, DestCityName from ontime limit 10; 
 ```
 
 ![](images/something.png)
 
-Теперь придумаем более сложный запрос. Например, выведем процент задержанных больше чем на 10 минут полётов за каждый год:
+Now we'll craft more complicated query. E.g., output fraction of flights delayed for more than 10 minutes, for each year:
 ```
 select Year, c1/c2
 from
@@ -232,34 +231,34 @@ order by Year;
 
 ![](images/complicated.png)
 
-## Дополнительно
+## Additionally
 
-### Копирование таблицы
+### Copying a table
 
-Предположим, нам нужно скопировать 1% записей из таблицы (самых удачливых) ```ontime``` в новую таблицу ```ontime_ltd```. Для этого выполним запросы:
+Suppose we need to copy 1% of records (luckiest ones) from ```ontime``` table to new table named ```ontime_ltd```.
+To achieve that make the queries:
 ```
 :) create table ontime_ltd as ontime;
 :) insert into ontime_ltd select * from ontime where rand() % 100 = 42;
 ```
 
-### Работа с несколькими таблицами
+### Working with multiple tables
 
-Если необходимо выполнять запросы над многими таблицами сразу, воспользуемся функцией ```merge(database, regexp)```:
+If one need to collect data from multiple tables, use function ```merge(database, regexp)```:
 ```
 :) select (select count(*) from merge(default, 'ontime.*'))/(select count() from ontime);
 ```
 
 ![](images/1_percent.png)
 
-### Список выполняющихся запросов
+### List of running queries
 
-В целях диагностики часто бывает нужно узнать, что именно в данный момент делает ClickHouse. Запустим запрос, который выполняется очень долго:
+For diagnostics one usually need to know what exactly ClickHouse is doing at the moment. Let's execute a query that gonna last long:
 ```
 :) select sleep(1000);
 ```
 
-Если теперь запустить ```clickhouse-client``` в другом терминале, можно будет вывести список запросов, а также некоторую
-полезную информацию о них:
+If we run ```clickhouse-client``` after that in another terminal, one can output list of queries and some additional useful information about them:
 ```
 :) show processlist;
 ```
