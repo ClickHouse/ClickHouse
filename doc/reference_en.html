@@ -263,7 +263,8 @@ In ClickHouse, data can reside on different shards. Each shard can be a group of
 
 If you are familiar with standard SQL, we can&#39;t really talk about SQL support.
 NULLs are not supported. All the functions have different names. However, this is a declarative query language based on SQL that can&#39;t be differentiated from SQL in many instances.
-JOINs are supported. Subqueries are supported in FROM, IN, and JOIN clauses.
+JOINs are supported. Subqueries are supported in FROM, IN, JOIN clauses; and scalar subqueries.
+Correllated subqueries are not supported.
 
 <h3 class="not-for-contents">7. Vector engine.</h3>
 
