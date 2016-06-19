@@ -4463,11 +4463,13 @@ The result type is UInt64.
 
 ===lowerUTF8===
 - Converts a string to lowercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text. It doesn&#39;t detect the language. So for Turkish the result might not be exactly correct.
-Note: I don&#39;t remember what it does if the string isn&#39;t UTF-8.
+If length of UTF-8 sequence is different for upper and lower case of code point, then result for that code point could be incorrect.
+If value contains invalid UTF-8, the behavior is unspecified.
 
 ===upperUTF8===
 - Converts a string to uppercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text. It doesn&#39;t detect the language. So for Turkish the result might not be exactly correct.
-Note: I don&#39;t remember what it does if the string isn&#39;t UTF-8.
+If length of UTF-8 sequence is different for upper and lower case of code point, then result for that code point could be incorrect.
+If value contains invalid UTF-8, the behavior is unspecified.
 
 ===reverse===
 - Reverses the string (as a sequence of bytes).
