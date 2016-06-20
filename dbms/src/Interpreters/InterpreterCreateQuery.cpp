@@ -101,7 +101,7 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 	Poco::File(metadata_path).createDirectory();
 	Poco::File(data_path).createDirectory();
 
-	DatabasePtr database = DatabaseFactory::get(database_engine_name, database_name, metadata_path, context, thread_pool);
+	DatabasePtr database = DatabaseFactory::get(database_engine_name, database_name, metadata_path, context);
 
 	/// Записываем файл с метаданными, если нужно.
 	String metadata_file_tmp_path = path + "metadata/" + database_name_escaped + ".sql.tmp";
@@ -133,6 +133,8 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
 		if (need_write_metadata)
 			Poco::File(metadata_file_tmp_path).renameTo(metadata_file_path);
+
+		database->loadTables(context, thread_pool);
 	}
 	catch (...)
 	{

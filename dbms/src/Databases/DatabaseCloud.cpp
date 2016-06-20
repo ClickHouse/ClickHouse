@@ -70,8 +70,7 @@ DatabaseCloud::DatabaseCloud(
 	const String & zookeeper_path_,
 	size_t replication_factor_,
 	const String & datacenter_name_,
-	Context & context_,
-	boost::threadpool::pool * thread_pool)
+	Context & context_)
 	:
 	name(name_),
 	zookeeper_path(context_.getMacros().expand(zookeeper_path_)),
@@ -92,6 +91,12 @@ DatabaseCloud::DatabaseCloud(
 
 	if (!attach)
 		createZookeeperNodes();
+}
+
+
+void loadTables(Context & context, boost::threadpool::pool * thread_pool)
+{
+	/// Ничего не делаем - все таблицы загружаются лениво.
 }
 
 

@@ -479,7 +479,7 @@ namespace detail
 
 
 /** sizeof - 64 байта.
-  * Если их не хватает - выделяет дополнительно около 20 КБ памяти.
+  * Если их не хватает - выделяет дополнительно до 20 КБ памяти.
   */
 class QuantileTiming : private boost::noncopyable
 {
@@ -525,6 +525,7 @@ private:
 		for (const auto & elem : medium.elems)
 			tmp_large->insert(elem);
 
+		medium.~QuantileTimingMedium();
 		large = tmp_large;
 		tiny.count = TINY_MAX_ELEMS + 2;
 	}

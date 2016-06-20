@@ -1,5 +1,6 @@
 #pragma once
 
+#include <threadpool.hpp>
 #include <DB/Core/Types.h>
 #include <DB/Parsers/IAST.h>
 #include <DB/Storages/IStorage.h>
@@ -39,6 +40,10 @@ class IDatabase : public std::enable_shared_from_this<IDatabase>
 public:
 	/// Получить имя движка базы данных.
 	virtual String getEngineName() const = 0;
+
+	/// Загрузить множество существующих таблиц. Если задан thread_pool - использовать его.
+	/// Можно вызывать только один раз, сразу после создания объекта.
+	virtual void loadTables(Context & context, boost::threadpool::pool * thread_pool) = 0;
 
 	/// Проверить существование таблицы.
 	virtual bool isTableExist(const String & name) const = 0;

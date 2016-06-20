@@ -27,10 +27,13 @@ NUMBER_OF_PROCESSES=$DEFAULT_NUMBER_OF_PROCESSES
 LOG_FILE=""
 
 # On x86_64, check for required instruction set.
-if uname -mpi | grep -q x86_64; then
-	if ! grep -q sse4_2 /proc/cpuinfo; then
-		echo 'SSE 4.2 instruction set is not supported'
-		exit 3
+if uname -mpi | grep -q 'x86_64'; then
+	if ! grep -q 'sse4_2' /proc/cpuinfo; then
+		# On KVM, cpuinfo could falsely not report SSE 4.2 support, so skip the check.
+		if ! grep -q 'Common KVM processor' /proc/cpuinfo; then
+			echo 'SSE 4.2 instruction set is not supported'
+			exit 3
+		fi
 	fi
 fi
 
