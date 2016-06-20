@@ -413,8 +413,8 @@ bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed
 	if (pos == end)
 		return false;
 
-	/** Максимальная длина числа. 319 символов достаточно, чтобы записать максимальный double в десятичной форме.
-	  * Лишнее копирование нужно, чтобы воспользоваться функциями strto*, которым нужна 0-терминированная строка.
+	/** Maximum length of number. 319 symbols is enough to write maximum double in decimal form.
+	  * Copy is needed to use strto* functions, which require 0-terminated string.
 	  */
 	char buf[320];
 
@@ -423,16 +423,28 @@ bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed
 	buf[bytes_to_copy] = 0;
 
 	char * pos_double = buf;
-	errno = 0;	/// Функции strto* не очищают errno.
+	errno = 0;	/// Functions strto* don't clear errno.
 	Float64 float_value = std::strtod(buf, &pos_double);
 	if (pos_double == buf || errno == ERANGE)
 	{
 		expected = "number";
 		return false;
 	}
+
+	/// excessive "word" symbols after number
+	if (pos_double < buf + bytes_to_copy
+		&& ((*pos_double >= 'a' && *pos_double <= 'z')
+			|| (*pos_double >= 'A' && *pos_double <= 'Z')
+			|| (*pos_double == '_')
+			|| (*pos_double >= '0' && *pos_double <= '9')))
+	{
+		expected = "number";
+		return false;
+	}
+
 	res = float_value;
 
-	/// попробуем использовать более точный тип - UInt64 или Int64
+	/// try to use more exact type: UInt64 or Int64
 
 	char * pos_integer = buf;
 	if (float_value < 0)
