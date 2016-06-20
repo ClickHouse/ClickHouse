@@ -36,13 +36,14 @@ body
 h1
 {
     font-family: 'Yandex Sans Display Web', Arial, sans-serif;
-
     margin: 0;
 }
 
 h2
 {
     font-family: 'Yandex Sans Display Web', Arial, sans-serif;
+	margin-top: 30px;
+	margin-bottom: 10px;
 }
 
 h3
@@ -53,21 +54,18 @@ h3
 p
 {
     line-height: 20px;
-
     white-space: pre-wrap;
 }
 
 a
 {
     text-decoration: none;
-
     color: #06f;
 }
 
 a:hover
 {
     text-decoration: underline;
-
     color: #f40;
 }
 
@@ -89,6 +87,12 @@ a:hover
     margin: 0;
 
     text-align: center;
+}
+
+.title_link, .title_link:active, .title_link:visited, .title_link:link, .title_link:hover
+{
+	text-decoration: none;
+	color: #000;
 }
 
 .subtitle
@@ -176,7 +180,6 @@ a:hover
 .head-anchor
 {
     float: right;
-
     color: #aaa;
 }
 

@@ -40,6 +40,9 @@ clean:
 	find ./debian/ -name "*.cron.d" -type f -delete
 	# Удалим созданные для dh_installlogrotate файлы
 	find ./debian/ -name "*.logrotate" -type f -delete
+	# Удалим созданные ссылки на файлы документации
+	find ./debian/ -name "*.docs" -type l -delete
+	rm -f ./debian/copyright
 	# Удалим созданные *.install файлы
 	for DAEMON_PKG in ${DAEMONS}; do AUTO=`grep "# automatically created" debian/$$DAEMON_PKG-metrika-yandex.install`; if [ "x$$AUTO" != "x" ]; then rm -f debian/$$DAEMON_PKG-metrika-yandex.install; fi; done
 	dh_clean
@@ -133,6 +136,19 @@ install: build
 	for DAEMON in ${STRIP_LIST}; do \
 		if [ -e debian/tmp/usr/bin/$$DAEMON ]; then strip debian/tmp/usr/bin/$$DAEMON; fi; \
 	done
+
+	# Создаём документацию
+	cp LICENSE debian/copyright
+
+	for DAEMON_PKG in ${DAEMONS}; do \
+		echo "LICENSE" > debian/$$DAEMON_PKG.docs; \
+		echo "AUTHORS" >> debian/$$DAEMON_PKG.docs; \
+		echo "README.md" >> debian/$$DAEMON_PKG.docs; \
+	done
+
+	ln -s clickhouse-server.docs debian/clickhouse-server-base.docs
+	ln -s clickhouse-server.docs debian/clickhouse-server-common.docs
+	ln -s clickhouse-server.docs debian/clickhouse-server-metrika.docs
 
 # Build architecture-independent files here.
 binary-indep: build install
