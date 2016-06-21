@@ -61,7 +61,7 @@ private:
 
 	/// Источник. Используется (удерживает источник от уничтожения),
 	///  если данный столбец создан из другого и использует все или часть его значений.
-	const std::shared_ptr<const ColumnAggregateFunction> src;
+	std::shared_ptr<const ColumnAggregateFunction> src;
 
 	/// Массив указателей на состояния агрегатных функций, расположенных в пулах.
 	Container_t data;
@@ -211,21 +211,31 @@ public:
 		return res;
 	}
 
-	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
+	void insertRangeFrom(const IColumn & from, size_t start, size_t length) override
 	{
-		const ColumnAggregateFunction & src_concrete = static_cast<const ColumnAggregateFunction &>(src);
+		const ColumnAggregateFunction & from_concrete = static_cast<const ColumnAggregateFunction &>(from);
 
-		if (start + length > src_concrete.getData().size())
+		if (start + length > from_concrete.getData().size())
 			throw Exception("Parameters start = "
 				+ toString(start) + ", length = "
 				+ toString(length) + " are out of bound in ColumnAggregateFunction::insertRangeFrom method"
-				" (data.size() = " + toString(src_concrete.getData().size()) + ").",
+				" (data.size() = " + toString(from_concrete.getData().size()) + ").",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
+
+		if (src && src.get() != &from_concrete)
+		{
+			throw Exception("ColumnAggregateFunction could have only one source that owns aggregation states", ErrorCodes::BAD_ARGUMENTS);
+		}
+		else
+		{
+			/// Keep shared ownership of aggregation states.
+			src = from_concrete.shared_from_this();
+		}
 
 		auto & data = getData();
 		size_t old_size = data.size();
 		data.resize(old_size + length);
-		memcpy(&data[old_size], &src_concrete.getData()[start], length * sizeof(data[0]));
+		memcpy(&data[old_size], &from_concrete.getData()[start], length * sizeof(data[0]));
 	}
 
 	void popBack(size_t n) override
