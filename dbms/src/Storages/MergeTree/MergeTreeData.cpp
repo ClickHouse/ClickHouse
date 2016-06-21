@@ -77,7 +77,7 @@ MergeTreeData::MergeTreeData(
 
 	merging_params.check(*columns);
 
-	/// создаём директорию, если её нет
+	/// Creating directories, if not exist.
 	Poco::File(full_path).createDirectories();
 	Poco::File(full_path + "detached").createDirectory();
 
@@ -90,7 +90,7 @@ MergeTreeData::MergeTreeData(
 
 void MergeTreeData::initPrimaryKey()
 {
-	/// инициализируем описание сортировки
+	/// Initialize description of sorting.
 	sort_descr.clear();
 	sort_descr.reserve(primary_expr_ast->children.size());
 	for (const ASTPtr & ast : primary_expr_ast->children)
@@ -105,6 +105,16 @@ void MergeTreeData::initPrimaryKey()
 	primary_key_sample = projected_expr->getSampleBlock();
 
 	size_t primary_key_size = primary_key_sample.columns();
+
+	/// Primary key cannot contain constants. It is meaningless.
+	///  (And also couldn't work because primary key is serialized with method of IDataType that doesn't support constants).
+	for (size_t i = 0; i < primary_key_size; ++i)
+	{
+		const ColumnPtr & column = primary_key_sample.unsafeGetByPosition(i).column;
+		if (column && column->isConst())
+			throw Exception("Primary key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN);
+	}
+
 	primary_key_data_types.resize(primary_key_size);
 	for (size_t i = 0; i < primary_key_size; ++i)
 		primary_key_data_types[i] = primary_key_sample.unsafeGetByPosition(i).type;
