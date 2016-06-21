@@ -259,6 +259,16 @@ public:
 		res = typename NearestFieldType<T>::Type(data[n]);
 	}
 
+	const T & get(size_t n) const
+	{
+		return data[n];
+	}
+
+	T & get(size_t n)
+	{
+		return data[n];
+	}
+
 	UInt64 get64(size_t n) const override
 	{
 		return unionCastToUInt64(data[n]);
