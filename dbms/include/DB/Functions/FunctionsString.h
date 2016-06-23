@@ -29,18 +29,14 @@ namespace DB
 /** Функции работы со строками:
   *
   * length, empty, notEmpty,
-  * concat, substring, lower, upper, reverse, // left, right, insert, replace,
-  * // escape, quote, unescape, unquote, trim, trimLeft, trimRight, pad, padLeft
-  * lengthUTF8, substringUTF8, lowerUTF8, upperUTF8, reverseUTF8, // leftUTF8, rightUTF8, insertUTF8, replaceUTF8
-  * // padUTF8, padLeftUTF8.
+  * concat, substring, lower, upper, reverse
+  * lengthUTF8, substringUTF8, lowerUTF8, upperUTF8, reverseUTF8
   *
   * s				-> UInt8:	empty, notEmpty
   * s 				-> UInt64: 	length, lengthUTF8
-  * s 				-> s:		lower, upper, lowerUTF8, upperUTF8, reverse, reverseUTF8, escape, quote, unescape, unquote, trim, trimLeft, trimRight
+  * s 				-> s:		lower, upper, lowerUTF8, upperUTF8, reverse, reverseUTF8
   * s, s 			-> s: 		concat
   * s, c1, c2 		-> s:		substring, substringUTF8
-  * s, c1 			-> s:		left, right, leftUTF8, rightUTF8
-  * s, c1, s2		-> s:		insert, insertUTF8, pad, padLeft, padUTF8, padLeftUTF8
   * s, c1, c2, s2	-> s:		replace, replaceUTF8
   *
   * Функции поиска строк и регулярных выражений расположены отдельно.
