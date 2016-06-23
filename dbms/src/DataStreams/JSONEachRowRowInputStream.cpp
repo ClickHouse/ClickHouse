@@ -15,6 +15,9 @@ namespace ErrorCodes
 JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & sample_)
 	: istr(istr_), sample(sample_), name_map(sample.columns())
 {
+	/// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
+	skipBOMIfExists(istr);
+
 	size_t columns = sample.columns();
 	for (size_t i = 0; i < columns; ++i)
 		name_map[sample.getByPosition(i).name] = i;		/// NOTE Можно было бы расположить имена более кэш-локально.

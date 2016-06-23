@@ -879,4 +879,21 @@ inline T parse(const String & s)
 	return parse<T>(s.data(), s.size());
 }
 
+
+/** Skip UTF-8 BOM if it is under cursor.
+  * As BOM is usually located at start of stream, and buffer size is usually larger than three bytes,
+  *  the function expects, that all three bytes of BOM is fully in buffer (otherwise it don't skip anything).
+  */
+inline void skipBOMIfExists(ReadBuffer & buf)
+{
+	if (!buf.eof()
+		&& buf.position() + 3 < buf.buffer().end()
+		&& buf.position()[0] == '\xEF'
+		&& buf.position()[1] == '\xBB'
+		&& buf.position()[2] == '\xBF')
+	{
+		buf.position() += 3;
+	}
+}
+
 }
