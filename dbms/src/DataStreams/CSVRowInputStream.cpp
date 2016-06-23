@@ -1,6 +1,7 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/Operators.h>
 
+#include <DB/DataStreams/verbosePrintString.h>
 #include <DB/DataStreams/CSVRowInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
@@ -96,6 +97,10 @@ static void skipRow(ReadBuffer & istr, const char delimiter, size_t columns)
 
 void CSVRowInputStream::readPrefix()
 {
+	/// In this format, we assume, that if first string field contain BOM as value, it will be written in quotes,
+	///  so BOM at beginning of stream cannot be confused with BOM in first string value, and it is safe to skip it.
+	skipBOMIfExists(istr);
+
 	size_t columns = sample.columns();
 	String tmp;
 
@@ -187,65 +192,6 @@ void CSVRowInputStream::printDiagnosticInfo(Block & block, WriteBuffer & out)
 	out << "\nRow " << row_num << ":\n";
 	parseRowAndPrintDiagnosticInfo(block, out, max_length_of_column_name, max_length_of_data_type_name);
 	out << "\n";
-}
-
-
-static void verbosePrintString(BufferBase::Position begin, BufferBase::Position end, WriteBuffer & out)
-{
-	if (end == begin)
-	{
-		out << "<EMPTY>";
-		return;
-	}
-
-	out << "\"";
-
-	for (auto pos = begin; pos < end; ++pos)
-	{
-		switch (*pos)
-		{
-			case '\0':
-				out << "<ASCII NUL>";
-				break;
-			case '\b':
-				out << "<BACKSPACE>";
-				break;
-			case '\f':
-				out << "<FORM FEED>";
-				break;
-			case '\n':
-				out << "<LINE FEED>";
-				break;
-			case '\r':
-				out << "<CARRIAGE RETURN>";
-				break;
-			case '\t':
-				out << "<TAB>";
-				break;
-			case '\\':
-				out << "<BACKSLASH>";
-				break;
-			case '"':
-				out << "<DOUBLE QUOTE>";
-				break;
-			case '\'':
-				out << "<SINGLE QUOTE>";
-				break;
-
-			default:
-			{
-				if (*pos >= 0 && *pos < 32)
-				{
-					static const char * hex = "0123456789ABCDEF";
-					out << "<0x" << hex[*pos / 16] << hex[*pos % 16] << ">";
-				}
-				else
-					out << *pos;
-			}
-		}
-	}
-
-	out << "\"";
 }
 
 
