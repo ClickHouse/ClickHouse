@@ -59,8 +59,8 @@ hash gcc g++
 gcc --version
 sudo ln -s /usr/local/bin/gcc /usr/local/bin/gcc-5
 sudo ln -s /usr/local/bin/g++ /usr/local/bin/g++-5
-sudo ln -s /usr/local/bin/cc /usr/local/bin/gcc-5
-sudo ln -s /usr/local/bin/c++ /usr/local/bin/g++-5
+sudo ln -s /usr/local/bin/gcc /usr/local/bin/cc
+sudo ln -s /usr/local/bin/g++ /usr/local/bin/c++
 # /usr/local/bin/ should be in $PATH
 ```
 
