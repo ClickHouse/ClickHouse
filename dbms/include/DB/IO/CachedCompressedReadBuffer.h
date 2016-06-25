@@ -40,7 +40,7 @@ private:
 	{
 		if (!file_in)
 		{
-			file_in.reset(createReadBufferFromFileBase(path, estimated_size, aio_threshold, buf_size));
+			file_in = createReadBufferFromFileBase(path, estimated_size, aio_threshold, buf_size);
 			compressed_in = &*file_in;
 
 			if (profile_callback)
