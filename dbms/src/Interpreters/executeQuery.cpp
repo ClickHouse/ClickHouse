@@ -75,7 +75,7 @@ static void onExceptionBeforeStart(const String & query, Context & context, time
 		elem.event_time = current_time;
 		elem.query_start_time = current_time;
 
-		elem.query = query;
+		elem.query = query.substr(0, context.getSettingsRef().log_queries_cut_to_length);
 		elem.exception = getCurrentExceptionMessage(false);
 
 		setClientInfo(elem, context);
@@ -105,10 +105,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 	ProfileEvents::increment(ProfileEvents::Query);
 	time_t current_time = time(0);
 
+	const Settings & settings = context.getSettingsRef();
+
 	ParserQuery parser;
 	ASTPtr ast;
 	size_t query_size;
-	size_t max_query_size = context.getSettingsRef().max_query_size;
+	size_t max_query_size = settings.max_query_size;
 
 	try
 	{
@@ -127,7 +129,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 		if (!internal)
 		{
 			String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
-			logQuery(query, context);
+			logQuery(query.substr(0, settings.log_queries_cut_to_length), context);
 			onExceptionBeforeStart(query, context, current_time);
 		}
 
@@ -140,17 +142,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 	try
 	{
 		if (!internal)
-			logQuery(query, context);
+			logQuery(query.substr(0, settings.log_queries_cut_to_length), context);
 
 		/// Проверка ограничений.
-		checkLimits(*ast, context.getSettingsRef().limits);
+		checkLimits(*ast, settings.limits);
 
 		QuotaForIntervals & quota = context.getQuota();
 
 		quota.addQuery(current_time);
 		quota.checkExceeded(current_time);
-
-		const Settings & settings = context.getSettingsRef();
 
 		/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
 		ProcessList::EntryPtr process_list_entry;
@@ -190,7 +190,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 			elem.event_time = current_time;
 			elem.query_start_time = current_time;
 
-			elem.query = query;
+			elem.query = query.substr(0, settings.log_queries_cut_to_length);
 
 			setClientInfo(elem, context);
 
