@@ -2,6 +2,7 @@
 
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/DNS.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DirectoryIterator.h>
 
@@ -371,7 +372,25 @@ int Server::main(const std::vector<std::string> & args)
 		http_params->setKeepAliveTimeout(keep_alive_timeout);
 
 		/// HTTP
-		Poco::Net::ServerSocket http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("http_port")));
+		Poco::Net::SocketAddress http_socket_address;
+
+		try
+		{
+			http_socket_address = Poco::Net::SocketAddress(listen_host, config().getInt("http_port"));
+		}
+		catch (const Poco::Net::DNSException & e)
+		{
+			/// Better message when IPv6 is disabled on host.
+			if (e.code() == EAI_ADDRFAMILY)
+			{
+				LOG_ERROR(log, "Cannot resolve listen_host (" << listen_host + "), error: " << e.message() << ". "
+					"If it is an IPv6 address and your host has disabled IPv6, then consider to specify IPv4 address to listen in <listen_host> element of configuration file. Example: <listen_host>0.0.0.0</listen_host>");
+			}
+
+			throw;
+		}
+
+		Poco::Net::ServerSocket http_socket(http_socket_address);
 		http_socket.setReceiveTimeout(settings.receive_timeout);
 		http_socket.setSendTimeout(settings.send_timeout);
 		Poco::Net::HTTPServer http_server(
