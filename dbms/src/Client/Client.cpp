@@ -231,8 +231,8 @@ private:
 
 			std::string text = e.displayText();
 
-			/** Если эксепшен пришёл с сервера, то стек трейс будет расположен внутри текста.
-			  * Если эксепшен на клиенте, то стек трейс расположен отдельно.
+			/** If exception is received from server, then stack trace is embedded in message.
+			  * If exception is thrown on client, then stack trace is in separate field.
 			  */
 
 			auto embedded_stack_trace_pos = text.find("Stack trace");
