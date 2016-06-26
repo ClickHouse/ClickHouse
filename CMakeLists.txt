@@ -68,9 +68,6 @@ ENDIF(TESTS)
 # Префикс для установки
 SET(CMAKE_INSTALL_PREFIX /usr)
 
-# Директория для файлов, специфичных для Яндекса
-SET(CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)
-
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libcityhash/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/liblz4/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libdivide/)
@@ -120,8 +117,14 @@ include_directories (/usr/local/include/)
 
 link_directories (/usr/local/lib)
 
+# Directory for Yandex specific files
+SET(CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)
+
 add_subdirectory (contrib)
 add_subdirectory (libs)
 add_subdirectory (utils)
 add_subdirectory (dbms)
-add_subdirectory (private)
+
+IF (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
+	add_subdirectory (private)
+ENDIF()
