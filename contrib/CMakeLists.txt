@@ -8,6 +8,7 @@ add_subdirectory (libpoco)
 add_subdirectory (libre2)
 add_subdirectory (libboost-threadpool)
 add_subdirectory (libtcmalloc)
+add_subdirectory (libzookeeper)
 
 IF (NOT AARCH64)
 	add_subdirectory (libcpuid)
