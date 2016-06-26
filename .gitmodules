@@ -1,3 +1,0 @@
-[submodule "private"]
-	path = private
-	url = git@github.yandex-team.ru:Metrika/ClickHouse_private.git
