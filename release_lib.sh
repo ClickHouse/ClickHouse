@@ -49,6 +49,12 @@ function make_control {
 		'clickhouse-client' )
 			add_daemon_impl clickhouse-client
 		;;
+		'clickhouse-benchmark' )
+			add_daemon_impl clickhouse-benchmark
+		;;
+		* )
+			add_daemon "$DAEMON_PKG"
+		;;
 		esac
 	done
 }
