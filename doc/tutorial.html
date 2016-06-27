@@ -166,6 +166,25 @@
 			border-bottom: 1px dashed #f00;
 			text-decoration: none;
 		}
+
+		.tip
+		{
+			background-color: #EEE;
+			border: 1px solid #EEE;
+			padding: 5px 10px 5px 10px;
+		}
+
+		.tip b
+		{
+			font-size: 150%;
+			color: #888;
+		}
+
+		.warranty {
+			font-size: 10pt;
+			color: #888;
+			line-height: 150%;
+		}
 	</style>
 </head>
 <body>
@@ -403,14 +422,12 @@ Let assume that our aim is to provide a set of reports for each advertiser. Comm
 
 <p>The first is that String data type is used in cases when <a href="https://clickhouse.yandex/reference_en.html#Enum">Enum</a> or numeric type would fit best.</p>
 
-<b>Tip 1</b>
-<p>When set of possible values is determined and known to be small. (E.g. OS name, browser vendors etc.) it's recommended to use Enums or numbers to improve performance.
-When set of possible values is not limited (search query, URL, etc.) just go ahead with String.</p>
+<p class="tip"><b>⚖</b> When set of possible values is determined and known to be small. (E.g. OS name, browser vendors etc.) it's&nbsp;recommended to use Enums or numbers to improve performance.
+When set of possible values is not limited (search&nbsp;query, URL, etc.) just go ahead with String.</p>
 
 <p>The second is that dataset contains redundant fields like Year, Quarter, Month, DayOfMonth, DayOfWeek. In fact a single FlightDate would be enough. Most likely they have been added to improve performance for other DBMS'es which DateTime handling functions may be not efficient.</p>
 
-<b>Tip 2</b>
-<p>ClickHouse <a href="https://clickhouse.yandex/reference_en.html#Functions%20for%20working%20with%20dates%20and%20times">functions for operating with DateTime fields</a> are well-optimized so such redundancy is not required. Anyway much columns is not a reason to worry — ClickHouse is a <a href="https://en.wikipedia.org/wiki/Column-oriented_DBMS">column-oriented DBMS</a>. This allows you to have as much fields as you need. Hundreds of columns in a table is fine for ClickHouse.</p>
+<p class="tip"><b>✯</b> ClickHouse <a href="https://clickhouse.yandex/reference_en.html#Functions%20for%20working%20with%20dates%20and%20times">functions for operating with DateTime fields</a> are well-optimized so such redundancy is not required. Anyway much columns is not a reason to worry — ClickHouse is a <a href="https://en.wikipedia.org/wiki/Column-oriented_DBMS">column-oriented DBMS</a>. This allows you to have as much fields as you need. Hundreds of columns in a table is fine for ClickHouse.</p>
 
 <h3>Querying the sample dataset</h3>
 
@@ -580,8 +597,7 @@ Creating a distributed table providing a view into local tables of the cluster:
 
 <pre>INSERT INTO ontime_all SELECT * FROM ontime;</pre>
 
-<b>Tip 3</b>
-<p>Worth to notice that the approach given above wouldn't fit for sharding of large tables. Please use <a href="https://clickhouse.yandex/reference_en.html#Resharding">built-in sharding feature</a>.</p>
+<p class="tip"><b>⚠</b> Worth to notice that the approach given above wouldn't fit for sharding of large tables.<br />Please use <a href="https://clickhouse.yandex/reference_en.html#Resharding">built-in sharding feature</a>.</p>
 
 <p>As you could expect heavy queries are executed N times faster being launched on 3 servers instead of one.</p>
 <div class="spoiler"><a class="spoiler_title">See here</a>
@@ -666,6 +682,10 @@ ENGINE = ReplicatedMergeTree(
 
 <pre>INSERT INTO ontime_replica SELECT * FROM ontime;</pre>
 <p>Replication operates in multi-master mode. Data can be loaded into any replica — it will be synced with other instances automatically. Replication is asynchronous so at a given moment of time not all replicas may contain recently inserted data. To allow data insertion at least one replica should be up. Others will sync up data and repair consistency once they will become active again. Please notice that such scheme allows for the possibility of just appended data loss.</p>
+
+<h3>Feedback</h3>
+<p>Ask any questions on <a href="https://stackoverflow.com/">Stackoverflow</a>. Use <a href="https://groups.google.com/group/clickhouse">Google Group</a> for discussion.<br />Or send private message to developers: <a href="mailto:clickhouse-feedback@yandex-team.com">clickhouse-feedback@yandex-team.com</a>.</p>
+<p class="warranty">Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</p>
 
 <p class="footer">&copy; 2016 YANDEX LLC</p>
 </div>
