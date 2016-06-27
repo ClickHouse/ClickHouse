@@ -1,6 +1,16 @@
-/// Include this file with -include compiler parameter.
-/// And add -Wl,--wrap=memcpy for linking.
-
+/** Allows to build programs with libc 2.18 and run on systems with at least libc 2.11,
+  *  such as Ubuntu Lucid or CentOS 6.
+  *
+  * Highly experimental, not recommended, disabled by default.
+  *
+  * To use, include this file with -include compiler parameter.
+  * And add -Wl,--wrap=memcpy for linking.
+  *
+  * Also look at http://www.lightofdawn.org/wiki/wiki.cgi/NewAppsOnOldGlibc
+  *
+  * If you want even older systems, such as Ubuntu Hardy,
+  *  add fallocate, pipe2, __longjmp_chk, __vasprintf_chk.
+  */
 
 #if defined (__cplusplus)
 extern "C" {
@@ -39,7 +49,7 @@ __attribute__((__weak__)) void * __wrap_memcpy(void * dest, const void * src, si
 
 __attribute__((__weak__)) size_t __pthread_get_minstack(const pthread_attr_t * attr)
 {
-	return 1048576;
+	return 1048576;		/// This is a guess. Don't sure it is correct.
 }
 
 #include <string.h>
