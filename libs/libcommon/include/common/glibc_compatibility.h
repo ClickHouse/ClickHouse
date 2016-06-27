@@ -37,7 +37,7 @@ __attribute__((__weak__)) void * __wrap_memcpy(void * dest, const void * src, si
 }
 
 
-size_t __pthread_get_minstack(const pthread_attr_t * attr)
+__attribute__((__weak__)) size_t __pthread_get_minstack(const pthread_attr_t * attr)
 {
 	return 1048576;
 }
@@ -47,7 +47,7 @@ size_t __pthread_get_minstack(const pthread_attr_t * attr)
 #include <unistd.h>
 #include <sys/syscall.h>
 
-int __gai_sigqueue(int sig, const union sigval val, pid_t caller_pid)
+__attribute__((__weak__)) int __gai_sigqueue(int sig, const union sigval val, pid_t caller_pid)
 {
 	siginfo_t info;
 
