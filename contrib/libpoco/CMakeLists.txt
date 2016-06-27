@@ -322,9 +322,6 @@ install(
 message(STATUS "CMake ${CMAKE_VERSION} successfully configured ${PROJECT_NAME} using ${CMAKE_GENERATOR} generator")
 message(STATUS "Installation target path: ${CMAKE_INSTALL_PREFIX}")
 
-message(STATUS "C_FLAGS:  =${CMAKE_C_FLAGS}")
-message(STATUS "CXX_FLAGS:=${CMAKE_CXX_FLAGS}")
-
 foreach(component ${Poco_COMPONENTS})
 message(STATUS "Building: ${component}")
 endforeach()

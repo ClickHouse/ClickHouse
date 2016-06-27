@@ -144,3 +144,6 @@ add_subdirectory (dbms)
 IF (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
 	add_subdirectory (private)
 ENDIF()
+
+message(STATUS "C_FLAGS:  =${CMAKE_C_FLAGS}")
+message(STATUS "CXX_FLAGS:=${CMAKE_CXX_FLAGS}")
