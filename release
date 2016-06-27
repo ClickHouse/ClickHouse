@@ -51,7 +51,7 @@ make_control "$CONTROL" "$DAEMONS"
 gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" "$CHLOG" "$DAEMONS"
 
 # Build (only binary packages).
-debuild -e DAEMONS="${DAEMONS}" -e DISABLE_MONGODB -e CC -e CXX -b ${DEBUILD_NOSIGN_OPTIONS}
+debuild -e DAEMONS="${DAEMONS}" -e DISABLE_MONGODB -e GLIBC_COMPATIBILITY -e CC -e CXX -b ${DEBUILD_NOSIGN_OPTIONS}
 
 if [[ $STANDALONE != 'yes' ]]
 then
