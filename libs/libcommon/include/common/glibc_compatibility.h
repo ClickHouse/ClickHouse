@@ -57,6 +57,8 @@ __attribute__((__weak__)) size_t __pthread_get_minstack(const pthread_attr_t * a
 #include <unistd.h>
 #include <sys/syscall.h>
 
+extern long int syscall (long int __sysno, ...) __THROW;
+
 __attribute__((__weak__)) int __gai_sigqueue(int sig, const union sigval val, pid_t caller_pid)
 {
 	siginfo_t info;
