@@ -2,11 +2,11 @@
 <html lang="ru">
 <head>
 	<meta charset="utf-8"/>
-	<title>ClickHouse — руководство</title>
+	<title>ClickHouse — quick start guide</title>
 
 	<link rel="shortcut icon" href="favicon.ico"/>
 
-	<meta name="description" content="ClickHouse — open-source distributed column-oriented DBMS"/>
+	<meta name="description" content="Quick start guide to ClickHouse — open-source distributed column-oriented DBMS"/>
 	<meta name="keywords" content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics"/>
 
 	<style type="text/css">
@@ -243,7 +243,7 @@ try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
 
 <p>On Ubuntu and Debian Linux ClickHouse can be installed from <a href="https://clickhouse.yandex/#download">packages</a>. For other Linux distributions you can <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md">compile ClickHouse from sources</a> and then install.</p>
 
-<p><b>clickhouse-client</b> package contains <a href="https://clickhouse.yandex/reference_en.html#Command-line%20client">clickhouse-client</a> application — interactive ClickHouse client. clickhouse-server-base contains a  clickhouse-server binary file. clickhouse-server-common — contains config files for the clickhouse-server.</p>
+<p><b>clickhouse-client</b> package contains <a href="https://clickhouse.yandex/reference_en.html#Command-line%20client">clickhouse-client</a> application — interactive ClickHouse client. <b>clickhouse-server-base</b> contains a clickhouse-server binary file. <b>clickhouse-server-common</b> — contains config files for the clickhouse-server.</p>
 
 <p>Server config files are located in /etc/clickhouse-server/. Before getting to work please notice the <b>path</b> element in config. <b>Path</b>&nbsp;determines the location for data storage. It's not really handy to directly edit <b>config.xml</b> file considering package updates. Recommended way is to override the config elements in <a href="https://clickhouse.yandex/reference_en.html#Configuration%20files">files of config.d directory</a>.
 Also you may want to <a href="https://clickhouse.yandex/reference_en.html#Access%20rights">set up access rights</a> at the start.</p>
