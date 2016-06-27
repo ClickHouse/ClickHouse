@@ -36,14 +36,29 @@ IF (NOT AARCH64)
 	SET(MACHINE_FLAGS "-msse4 -mpopcnt")
 ENDIF()
 
+SET(COMMON_WARNING_FLAGS "-Wall -Werror")
+
+
+set (GLIBC_COMPATIBILITY FALSE CACHE BOOL "Set to TRUE to enable compatibility with older glibc libraries")
+
+if ($ENV{GLIBC_COMPATIBILITY})
+	set (GLIBC_COMPATIBILITY TRUE)
+endif()
+
+if (GLIBC_COMPATIBILITY)
+	SET(GLIBC_COMPATIBILITY_COMPILE_FLAGS   "-include ${ClickHouse_SOURCE_DIR}/libs/libcommon/include/common/glibc_compatibility.h")
+	SET(GLIBC_COMPATIBILITY_LINK_FLAGS      "-Wl,--wrap=memcpy")
+endif()
+
+
 SET(CMAKE_BUILD_COLOR_MAKEFILE          ON)
-SET(CMAKE_CXX_FLAGS                     "-std=gnu++1y -Wall -Werror -Wnon-virtual-dtor ${MACHINE_FLAGS}")
+SET(CMAKE_CXX_FLAGS "-std=gnu++1y ${COMMON_WARNING_FLAGS} -Wnon-virtual-dtor ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
 SET(CMAKE_CXX_FLAGS_RELEASE             "-O3 -DNDEBUG")
 SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO      "-O3 -g")
-SET(CMAKE_C_FLAGS                       "-Wall -Werror ${MACHINE_FLAGS}")
+SET(CMAKE_C_FLAGS                       "${COMMON_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
 SET(CMAKE_C_FLAGS_RELEASE               "-O3 -DNDEBUG")
 SET(CMAKE_C_FLAGS_RELWITHDEBINFO        "-O3 -g")
-SET(CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++")
+SET(CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++ ${GLIBC_COMPATIBILITY_LINK_FLAGS}")
 
 # cmake -DCMAKE_BUILD_TYPE=Debug ..
 SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
