@@ -1,49 +1,85 @@
+<!DOCTYPE html>
+<html lang="ru">
+    <head>
+        <meta charset="utf-8"/>
+        <title>ClickHouse — руководство</title>
+
+        <link rel="shortcut icon" href="favicon.ico"/>
+        <link rel="stylesheet" href="reference.css"/>
+
+        <meta name="description" content="ClickHouse — open-source distributed column-oriented DBMS"/>
+		<meta name="keywords" content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics"/>
+    </head>
+    <body>
+
+<script type="text/javascript">
+function getParams() {
+    var matches = document.cookie.match(/yandex_login=([\w\-]+)/);
+    return (matches && matches.length == 2) ? { "login": matches[1] } : {};
+}
+</script>
+
+<!-- Yandex.Metrika counter -->
+<script src="https://mc.yandex.ru/metrika/watch.js" type="text/javascript"></script>
+<script type="text/javascript">
+try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
+          webvisor:true,
+          clickmap:true,
+          trackLinks:true,
+          accurateTrackBounce:true,
+          trackHash:true,
+          params: getParams()});
+} catch(e) { }
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+
 <h1>ClickHouse quickstart guide</h1>
 
-Let's get started with sample dataset from open sources. We will use USA civil flights data since 1987 till 2015. It's hard to call this sample a Big Data (contains 166 millions rows, 63 Gb of uncompressed data) but this allows us to quickly get to work. Dataset is available for download <a href="https://yadi.sk/d/pOZxpa42sDdgm">here</a>. Also you may download it from the original datasource <a href="https://github.com/yandex/ClickHouse/raw/master/doc/example_datasets/1_ontime.txt">as described here</a>.
+<p>Let's get started with sample dataset from open sources. We will use USA civil flights data since 1987 till 2015. It's hard to call this sample a Big Data (contains 166 millions rows, 63 Gb of uncompressed data) but this allows us to quickly get to work. Dataset is available for download <a href="https://yadi.sk/d/pOZxpa42sDdgm">here</a>. Also you may download it from the original datasource <a href="https://github.com/yandex/ClickHouse/raw/master/doc/example_datasets/1_ontime.txt">as described here</a>.</p>
 
-Firstly we will deploy ClickHouse to a single server. Below that we will also review the process of deployment to a cluster with support for sharding and replication.
+<p>Firstly we will deploy ClickHouse to a single server. Below that we will also review the process of deployment to a cluster with support for sharding and replication.</p>
 
-On Ubuntu and Debian Linux ClickHouse can be installed from <a href="https://clickhouse.yandex/#download">packages</a>. For other Linux distributions you can <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md">compile ClickHouse from sources</a> and then install.
+<p>On Ubuntu and Debian Linux ClickHouse can be installed from <a href="https://clickhouse.yandex/#download">packages</a>. For other Linux distributions you can <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md">compile ClickHouse from sources</a> and then install.</p>
 
-<b>clickhouse-client</b> package contains <a href="https://clickhouse.yandex/reference_en.html#Command-line%20client">clickhouse-client</a> application — interactive ClickHouse client. clickhouse-server-base contains a  clickhouse-server binary file. clickhouse-server-common — contains config files for the clickhouse-server.
+<p><b>clickhouse-client</b> package contains <a href="https://clickhouse.yandex/reference_en.html#Command-line%20client">clickhouse-client</a> application — interactive ClickHouse client. clickhouse-server-base contains a  clickhouse-server binary file. clickhouse-server-common — contains config files for the clickhouse-server.</p>
 
-Server config files are located in /etc/clickhouse-server/. Before getting to work please notice the <b>path</b> element in config. <b>Path</b> determines the location for data storage. It's not really handy to directly edit <b>config.xml</b> file considering package updates. Recommended way is to override the config elements in <a href="https://clickhouse.yandex/reference_en.html#Configuration%20files">files of config.d directory</a>.
-Also you may want to <a href="https://clickhouse.yandex/reference_en.html#Access%20rights">set up access rights</a> at the start.
+<p>Server config files are located in /etc/clickhouse-server/. Before getting to work please notice the <b>path</b> element in config. <b>Path</b> determines the location for data storage. It's not really handy to directly edit <b>config.xml</b> file considering package updates. Recommended way is to override the config elements in <a href="https://clickhouse.yandex/reference_en.html#Configuration%20files">files of config.d directory</a>.
+Also you may want to <a href="https://clickhouse.yandex/reference_en.html#Access%20rights">set up access rights</a> at the start.</p>
 
-<b>clickhouse-server</b> won't be launched automatically after package installation. It won't be automatically restarted after updates either. Start the server with:
-<source lang="Bash">sudo service clickhouse-server start</source>
-Default location for server logs is /var/log/clickhouse-server/ 
-Server is ready to handle client conections once "Ready for connections" message was logged.
+<p><b>clickhouse-server</b> won't be launched automatically after package installation. It won't be automatically restarted after updates either. Start the server with:
+<pre>sudo service clickhouse-server start</pre>
+Default location for server logs is /var/log/clickhouse-server/
+Server is ready to handle client conections once "Ready for connections" message was logged.</p>
 
-Use <b>clickhouse-client</b> to connect to the server.
+<p>Use <b>clickhouse-client</b> to connect to the server.</p>
 
 <spoiler title="Tips for clickhouse-client">
 Interactive mode:
-<source lang="Bash">
+<pre>
 clickhouse-client
 clickhouse-client --host=... --port=... --user=... --password=...
-</source>
+</pre>
 Enable multiline queries:
-<source lang="Bash">
+<pre>
 clickhouse-client -m
 clickhouse-client --multiline
-</source>
+</pre>
 Run queries in batch-mode:
-<source lang="Bash">
+<pre>
 clickhouse-client --query='SELECT 1'
 echo 'SELECT 1' | clickhouse-client
-</source>
+</pre>
 Inser data from file of a specified format:
-<source lang="Bash">
+<pre>
 clickhouse-client --query='INSERT INTO table VALUES' &lt; data.txt
 clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' &lt; data.tsv
-</source>
+</pre>
 </spoiler>
 
 <h3>Create table for sample dataset</h3>
 <spoiler title="Create table query">
-<source lang="Bash">
+<pre>
 $ clickhouse-client --multiline
 ClickHouse client version 0.0.53720.
 Connecting to localhost:9000.
@@ -162,107 +198,107 @@ Connected to ClickHouse server version 0.0.53720.
     Div5TailNum String
 )
 ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
-</source>
+</pre>
 </spoiler>
-Now we have a table of <a href="https://clickhouse.yandex/reference_en.html#MergeTree">MergeTree type</a>.  MergeTree table type is recommended for usage in production. Table of this kind has a primary key used for incremental sort of table data. This allows fast execution of queries in ranges of a primary key.
+<p>Now we have a table of <a href="https://clickhouse.yandex/reference_en.html#MergeTree">MergeTree type</a>.  MergeTree table type is recommended for usage in production. Table of this kind has a primary key used for incremental sort of table data. This allows fast execution of queries in ranges of a primary key.</p>
 
 
-<b>Note</b>
+<p><b>Note</b>
 We store ad network banners impressions logs in ClickHouse. Each table entry looks like:
-<source>[Advertiser ID, Impression ID, attribute1, attribute2, ...]</source>
-Let assume that our aim is to provide a set of reports for each advertiser. Common and frequently demanded query would be to count impressions for a specific Advertiser ID. This means that table primary key should start with <source>Advertiser ID</source>. In this case ClickHouse needs to read smaller amount of data to perform the query for a given <source>Advertiser ID</source>.
+<source>[Advertiser ID, Impression ID, attribute1, attribute2, ...]</pre>
+Let assume that our aim is to provide a set of reports for each advertiser. Common and frequently demanded query would be to count impressions for a specific Advertiser ID. This means that table primary key should start with <source>Advertiser ID</pre>. In this case ClickHouse needs to read smaller amount of data to perform the query for a given <source>Advertiser ID</pre>.</p>
 
 <h3>Load data</h3>
-<source lang="Bash">xz -v -c -d &lt; ontime.csv.xz | clickhouse-client --query="INSERT INTO ontime FORMAT CSV"</source>
-ClickHouse INSERT query allows to load data in any <a href="https://clickhouse.yandex/reference_en.html#Formats">supported format</a>. Data load requires just O(1) RAM consumption. INSERT query can receive any data volume as input. It's strongly recommended to insert data with<a href="https://clickhouse.yandex/reference_en.html#Performance%20on%20data%20insertion.">not too small size blocks</a>. Notice that insert of blocks with size up to max_insert_block_size (= 1&nbsp;048&nbsp;576 rows by default) is an atomic operation: data block will be inserted completely or not inserted at all. In case of disconnect during insert operation you may not know if the block was inserted successfully. To achieve exactly-once semantics ClickHouse supports idempotency for <a href="https://clickhouse.yandex/reference_en.html#Data%20replication">replicated tables</a>. This means that you may retry insert of the same data block (possibly on a different replicas) but this block will be inserted just once. Anyway in this guide we will load data from our localhost so we may not take care about data blocks generation and exactly-once semantics.
+<pre>xz -v -c -d &lt; ontime.csv.xz | clickhouse-client --query="INSERT INTO ontime FORMAT CSV"</pre>
+<p>ClickHouse INSERT query allows to load data in any <a href="https://clickhouse.yandex/reference_en.html#Formats">supported format</a>. Data load requires just O(1) RAM consumption. INSERT query can receive any data volume as input. It's strongly recommended to insert data with <a href="https://clickhouse.yandex/reference_en.html#Performance%20on%20data%20insertion.">not too small size blocks</a>. Notice that insert of blocks with size up to max_insert_block_size (= 1&nbsp;048&nbsp;576 rows by default) is an atomic operation: data block will be inserted completely or not inserted at all. In case of disconnect during insert operation you may not know if the block was inserted successfully. To achieve exactly-once semantics ClickHouse supports idempotency for <a href="https://clickhouse.yandex/reference_en.html#Data%20replication">replicated tables</a>. This means that you may retry insert of the same data block (possibly on a different replicas) but this block will be inserted just once. Anyway in this guide we will load data from our localhost so we may not take care about data blocks generation and exactly-once semantics.</p>
 
-INSERT query into tables of MergeTree type is non-blocking (so does a SELECT query). You can execute SELECT queries right after of during insert operation.
+<p>INSERT query into tables of MergeTree type is non-blocking (so does a SELECT query). You can execute SELECT queries right after of during insert operation.</p>
 
-Our sample dataset is a bit not optimal. There are two reasons.
+<p>Our sample dataset is a bit not optimal. There are two reasons.</p>
 
-The first is that String data type is used in cases when <a href="https://clickhouse.yandex/reference_en.html#Enum">Enum</a> or numeric type would fit best.
+<p>The first is that String data type is used in cases when <a href="https://clickhouse.yandex/reference_en.html#Enum">Enum</a> or numeric type would fit best.</p>
 
 <b>Tip 1</b>
-When set of possible values is determined and known to be small. (E.g. OS name, browser vendors etc.) it's recommended to use Enums or numbers to improve performance. 
-When set of possible values is not limited (search query, URL, etc.) just go ahead with String.
+<p>When set of possible values is determined and known to be small. (E.g. OS name, browser vendors etc.) it's recommended to use Enums or numbers to improve performance.
+When set of possible values is not limited (search query, URL, etc.) just go ahead with String.</p>
 
-The second is that dataset contains redundant fields like Year, Quarter, Month, DayOfMonth, DayOfWeek. In fact a single FlightDate would be enough. Most likely they have been added to improve performance for other DBMS'es which DateTime handling functions may be not efficient. 
+<p>The second is that dataset contains redundant fields like Year, Quarter, Month, DayOfMonth, DayOfWeek. In fact a single FlightDate would be enough. Most likely they have been added to improve performance for other DBMS'es which DateTime handling functions may be not efficient.</p>
 
 <b>Tip 2</b>
-ClickHouse <a href="https://clickhouse.yandex/reference_en.html#Functions%20for%20working%20with%20dates%20and%20times">functions for operating with DateTime fields</a> are well-optimized so such redundancy is not required. Anyway much columns is not a reason to worry - ClickHouse is a <a href="https://en.wikipedia.org/wiki/Column-oriented_DBMS">column-oriented DBMS</a>. This allows you to have as much fields as you need. Hundreds of columns in a table is fine for ClickHouse.
+<p>ClickHouse <a href="https://clickhouse.yandex/reference_en.html#Functions%20for%20working%20with%20dates%20and%20times">functions for operating with DateTime fields</a> are well-optimized so such redundancy is not required. Anyway much columns is not a reason to worry - ClickHouse is a <a href="https://en.wikipedia.org/wiki/Column-oriented_DBMS">column-oriented DBMS</a>. This allows you to have as much fields as you need. Hundreds of columns in a table is fine for ClickHouse.</p>
 
 <h3>Querying the sample dataset</h3>
 
-Here are some examples of the queries from our test data.
+<p>Here are some examples of the queries from our test data.</p>
 
 <ul>
 <li><spoiler title="the most popular destinations in 2015;">
-<source lang="SQL">
+<pre>
 SELECT
     OriginCityName,
     DestCityName,
     count(*) AS flights,
     bar(flights, 0, 20000, 40)
 FROM ontime WHERE Year = 2015 GROUP BY OriginCityName, DestCityName ORDER BY flights DESC LIMIT 20
-</source><img src="https://habrastorage.org/files/a85/18a/200/a8518a200d6d405a95ee80ea1c8e1c90.png"/>
-<source lang="SQL">
+</pre><img src="https://habrastorage.org/files/a85/18a/200/a8518a200d6d405a95ee80ea1c8e1c90.png"/>
+<pre>
 SELECT
     OriginCityName &lt; DestCityName ? OriginCityName : DestCityName AS a,
     OriginCityName &lt; DestCityName ? DestCityName : OriginCityName AS b,
     count(*) AS flights,
     bar(flights, 0, 40000, 40)
 FROM ontime WHERE Year = 2015 GROUP BY a, b ORDER BY flights DESC LIMIT 20
-</source><img src="https://habrastorage.org/files/d35/78d/b55/d3578db55e304bd7b5eba818abdb53f5.png"/>
+</pre><img src="https://habrastorage.org/files/d35/78d/b55/d3578db55e304bd7b5eba818abdb53f5.png"/>
 </spoiler>
 </li>
 <li><spoiler title="the most popular cities of departure;">
-<source lang="SQL">
+<pre>
 SELECT OriginCityName, count(*) AS flights FROM ontime GROUP BY OriginCityName ORDER BY flights DESC LIMIT 20
-</source><img src="https://habrastorage.org/files/ef4/141/f34/ef4141f348234773a5349c4bd3e8f804.png"/></spoiler>
+</pre><img src="https://habrastorage.org/files/ef4/141/f34/ef4141f348234773a5349c4bd3e8f804.png"/></spoiler>
 </li>
 <li><spoiler title="cities of departure which offer maximum variety of destinations;">
-<source lang="SQL">
+<pre>
 SELECT OriginCityName, uniq(Dest) AS u FROM ontime GROUP BY OriginCityName ORDER BY u DESC LIMIT 20
-</source><img src="https://habrastorage.org/files/240/9f4/9d1/2409f49d11fb4aa1b8b5ff34cf9ca75d.png"/></spoiler>
+</pre><img src="https://habrastorage.org/files/240/9f4/9d1/2409f49d11fb4aa1b8b5ff34cf9ca75d.png"/></spoiler>
 </li>
 <li><spoiler title="flight delay dependence on the day of week;">
-<source lang="SQL">
+<pre>
 SELECT DayOfWeek, count() AS c, avg(DepDelay &gt;  60) AS delays FROM ontime GROUP BY DayOfWeek ORDER BY DayOfWeek
-</source><img src="https://habrastorage.org/files/885/e50/793/885e507930e34b7c8f788d25e7ca2bcf.png"/></spoiler>
+</pre><img src="https://habrastorage.org/files/885/e50/793/885e507930e34b7c8f788d25e7ca2bcf.png"/></spoiler>
 </li>
 <li><spoiler title="cities of departure with most frequent delays for 1 hour or longer;">
-<source lang="SQL">
+<pre>
 SELECT OriginCityName, count() AS c, avg(DepDelay &gt;  60) AS delays
 FROM ontime
 GROUP BY OriginCityName
 HAVING c &gt;  100000
 ORDER BY delays DESC
 LIMIT 20
-</source><img src="https://habrastorage.org/files/ac2/926/56d/ac292656d03946d0aba35c75783a31f2.png"/></spoiler>
+</pre><img src="https://habrastorage.org/files/ac2/926/56d/ac292656d03946d0aba35c75783a31f2.png"/></spoiler>
 </li>
 <li><spoiler title="flights of maximum duration;">
-<source lang="SQL">
+<pre>
 SELECT OriginCityName, DestCityName, count(*) AS flights, avg(AirTime) AS duration
 FROM ontime
 GROUP BY OriginCityName, DestCityName
 ORDER BY duration DESC
 LIMIT 20
-</source><img src="https://habrastorage.org/files/7b3/c2e/685/7b3c2e685832439b8c373bf2015131d2.png"/></spoiler>
+</pre><img src="https://habrastorage.org/files/7b3/c2e/685/7b3c2e685832439b8c373bf2015131d2.png"/></spoiler>
 </li>
 <li><spoiler title="distribution of arrival time delays split by aircompanies;">
-<source lang="SQL">
+<pre>
 SELECT Carrier, count() AS c, round(quantileTDigest(0.99)(DepDelay), 2) AS q
 FROM ontime GROUP BY Carrier ORDER BY q DESC
-</source><img src="https://habrastorage.org/files/49c/332/e3d/49c332e3d93146ba8f46beef6b2b02b0.png"/></spoiler>
+</pre><img src="https://habrastorage.org/files/49c/332/e3d/49c332e3d93146ba8f46beef6b2b02b0.png"/></spoiler>
 </li>
 <li><spoiler title="aircompanies who stopped flights operation;">
-<source lang="SQL">
+<pre>
 SELECT Carrier, min(Year), max(Year), count()
 FROM ontime GROUP BY Carrier HAVING max(Year) &lt; 2015 ORDER BY count() DESC
-</source><img src="https://habrastorage.org/files/249/56f/1a2/24956f1a2efc48d78212586958aa036c.png"/></spoiler>
+</pre><img src="https://habrastorage.org/files/249/56f/1a2/24956f1a2efc48d78212586958aa036c.png"/></spoiler>
 </li>
 <li><spoiler title="most trending destination cities in 2015;">
-<source lang="SQL">
+<pre>
 SELECT
     DestCityName,
     sum(Year = 2014) AS c2014,
@@ -273,10 +309,10 @@ WHERE Year IN (2014, 2015)
 GROUP BY DestCityName
 HAVING c2014 &gt;  10000 AND c2015 &gt;  1000 AND diff &gt;  1
 ORDER BY diff DESC
-</source><img src="https://habrastorage.org/files/f31/32f/4d1/f3132f4d1c0d42eab26d9111afe7771a.png"/></spoiler>
+</pre><img src="https://habrastorage.org/files/f31/32f/4d1/f3132f4d1c0d42eab26d9111afe7771a.png"/></spoiler>
 </li>
 <li><spoiler title="destination cities with maximum popularity-season dependency.">
-<source lang="SQL">
+<pre>
 SELECT
     DestCityName,
     any(total),
@@ -295,21 +331,21 @@ USING DestCityName
 GROUP BY DestCityName
 ORDER BY avg_month_diff DESC
 LIMIT 20
-</source><img src="https://habrastorage.org/files/26b/2c7/aae/26b2c7aae21a4c76800cb1c7a33a374d.png"/></spoiler>
+</pre><img src="https://habrastorage.org/files/26b/2c7/aae/26b2c7aae21a4c76800cb1c7a33a374d.png"/></spoiler>
 </li>
 </ul>
 
 <h3>ClickHouse deployment to cluster</h3>
-ClickHouse cluster is a homogenous cluster. Steps to set up:
+<p>ClickHouse cluster is a homogenous cluster. Steps to set up:
 1. Install ClickHouse server on all machines of the cluster
 2. Set up cluster configs in configuration file
 3. Create local tables on each instance
-4. Create a <a href="https://clickhouse.yandex/reference_en.html#Distributed">Distributed table</a>
+4. Create a <a href="https://clickhouse.yandex/reference_en.html#Distributed">Distributed table</a></p>
 
-<a href="https://clickhouse.yandex/reference_en.html#Distributed">Distributed-table</a> is actually a kind of "view" to local tables of ClickHouse cluster. SELECT query from a distributed table will be executed using resources of all cluster's shards. You may specify configs for multiple clusters and create multiple Distributed-tables providing views to different clusters.
+<p><a href="https://clickhouse.yandex/reference_en.html#Distributed">Distributed-table</a> is actually a kind of "view" to local tables of ClickHouse cluster. SELECT query from a distributed table will be executed using resources of all cluster's shards. You may specify configs for multiple clusters and create multiple Distributed-tables providing views to different clusters.</p>
 
 <spoiler title="Config for cluster of three shards. Each shard stores data on a single replica">
-<source lang="XML">
+<pre>
 &lt;remote_servers&gt;
     &lt;perftest_3shards_1replicas&gt;
         &lt;shard&gt;
@@ -332,33 +368,33 @@ ClickHouse cluster is a homogenous cluster. Steps to set up:
         &lt;/shard&gt;
     &lt;/perftest_3shards_1replicas&gt;
 &lt;/remote_servers&gt;
-</source>
+</pre>
 </spoiler>
 Creating a local table:
-<source lang="SQL">CREATE TABLE ontime_local (...) ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);</source>
+<pre>CREATE TABLE ontime_local (...) ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);</pre>
 Creating a distributed table providing a view into local tables of the cluster:
-<source lang="SQL">CREATE TABLE ontime_all AS ontime_local ENGINE = Distributed(perftest_3shards_1replicas, default, ontime_local, rand());</source>
+<pre>CREATE TABLE ontime_all AS ontime_local ENGINE = Distributed(perftest_3shards_1replicas, default, ontime_local, rand());</pre>
 
-You can create a Distributed table on all machines in the cluster. This would allow to run distributed queries on any machine of the cluster. Besides distributed table you can also use <a href="https://clickhouse.yandex/reference_en.html#remote">*remote* table function</a>.
+<p>You can create a Distributed table on all machines in the cluster. This would allow to run distributed queries on any machine of the cluster. Besides distributed table you can also use <a href="https://clickhouse.yandex/reference_en.html#remote">*remote* table function</a>.</p>
 
-Let's run <a href="https://clickhouse.yandex/reference_en.html#INSERT">INSERT SELECT</a> into Distributed table to spread the table to multiple servers.
+<p>Let's run <a href="https://clickhouse.yandex/reference_en.html#INSERT">INSERT SELECT</a> into Distributed table to spread the table to multiple servers.</p>
 
-<source lang="SQL">INSERT INTO ontime_all SELECT * FROM ontime;</source>
+<pre>INSERT INTO ontime_all SELECT * FROM ontime;</pre>
 
-*Tip 3*
-Worth to notice that the approach given above wouldn't fit for sharding of large tables. Please use <a href="https://clickhouse.yandex/reference_en.html#Resharding">built-in sharding feature</a>.
+<b>Tip 3</b>
+<p>Worth to notice that the approach given above wouldn't fit for sharding of large tables. Please use <a href="https://clickhouse.yandex/reference_en.html#Resharding">built-in sharding feature</a>.</p>
 
-As you could expect heavy queries are executed N times faster being launched on 3 servers instead of one.
+<p>As you could expect heavy queries are executed N times faster being launched on 3 servers instead of one.</p>
 <spoiler title="See here">
 <img src="https://habrastorage.org/files/ece/020/129/ece020129fdf4a18a6e75daf2e699cb9.png"/>
 
-You may have noticed that quantiles calculation are slightly different. This happens due to <a href="https://github.com/tdunning/t-digest/raw/master/docs/t-digest-paper/histo.pdf">t-digest</a> algorithm implementation which is non-deterministic — it depends on the order of data processing.</spoiler>
-In this case we have used a cluster with 3 shards each contains a single replica. 
+<p>You may have noticed that quantiles calculation are slightly different. This happens due to <a href="https://github.com/tdunning/t-digest/raw/master/docs/t-digest-paper/histo.pdf">t-digest</a> algorithm implementation which is non-deterministic — it depends on the order of data processing.</p></spoiler>
+<p>In this case we have used a cluster with 3 shards each contains a single replica.</p>
 
-To provide for resilience in production environment we recommend that each shard should contain 2-3 replicas distributed between multiple data-centers. Note that ClickHouse supports unlimited number of replicas.
+<p>To provide for resilience in production environment we recommend that each shard should contain 2-3 replicas distributed between multiple data-centers. Note that ClickHouse supports unlimited number of replicas.</p>
 
 <spoiler title="Config for cluster of one shard containing three replicas">
-<source lang="XML">
+<pre>
 &lt;remote_servers&gt;
     ...
     &lt;perftest_1shards_3replicas&gt;
@@ -378,15 +414,15 @@ To provide for resilience in production environment we recommend that each shard
         &lt;/shard&gt;
     &lt;/perftest_1shards_3replicas&gt;
 &lt;/remote_servers&gt;
-</source>
+</pre>
 </spoiler>
 
-To enable replication <a href="http://zookeeper.apache.org/">ZooKeeper</a> is required. ClickHouse will take care of data consistency on all replicas and run restore procedure after failure automatically. It's recommended to deploy ZooKeeper cluster to separate servers.
+<p>To enable replication <a href="http://zookeeper.apache.org/">ZooKeeper</a> is required. ClickHouse will take care of data consistency on all replicas and run restore procedure after failure automatically. It's recommended to deploy ZooKeeper cluster to separate servers.</p>
 
-ZooKeeper is not a requirement - in some simple cases you can duplicate the data by writing it into all the replicas from your application code. This approach is not recommended - in this case ClickHouse is not able to guarantee data consistency on all replicas. This remains the responsibility of your application.
+<p>ZooKeeper is not a requirement - in some simple cases you can duplicate the data by writing it into all the replicas from your application code. This approach is not recommended - in this case ClickHouse is not able to guarantee data consistency on all replicas. This remains the responsibility of your application.</p>
 
 <spoiler title="Set ZooKeeper locations in configuration file">
-<source lang="XML">
+<pre>
 &lt;zookeeper-servers&gt;
     &lt;node&gt;
         &lt;host&gt;zoo01.yandex.ru&lt;/host&gt;
@@ -401,19 +437,19 @@ ZooKeeper is not a requirement - in some simple cases you can duplicate the data
         &lt;port&gt;2181&lt;/port&gt;
     &lt;/node&gt;
 &lt;/zookeeper-servers&gt;
-</source>
+</pre>
 </spoiler>
 
-Also we need to set macros for identifying shard and replica - it will be used on table creation
-<source lang="XML">
+<p>Also we need to set macros for identifying shard and replica - it will be used on table creation</p>
+<pre>
 &lt;macros&gt;
     &lt;shard&gt;01&lt;/shard&gt;
     &lt;replica&gt;01&lt;/replica&gt;
 &lt;/macros&gt;
-</source>
-If there are no replicas at the moment on replicated table creation - a new first replica will be instantiated. If there are already live replicas - new replica will clone the data from existing ones. You have an option to create all replicated tables first and that insert data to it. Another option is to create some replicas and add the others after or during data insertion.
- 
-<source lang="SQL">
+</pre>
+<p>If there are no replicas at the moment on replicated table creation - a new first replica will be instantiated. If there are already live replicas - new replica will clone the data from existing ones. You have an option to create all replicated tables first and that insert data to it. Another option is to create some replicas and add the others after or during data insertion.</p>
+
+<pre>
 CREATE TABLE ontime_replica (...)
 ENGINE = ReplicatedMergeTree(
     '/clickhouse_perftest/tables/{shard}/ontime',
@@ -421,8 +457,11 @@ ENGINE = ReplicatedMergeTree(
     FlightDate,
     (Year, FlightDate),
     8192);
-</source>
-Here we use <a href="https://clickhouse.yandex/reference_en.html#ReplicatedMergeTree">ReplicatedMergeTree</a> table type. In parameters we specify ZooKeeper path containing shard and replica identifiers.
+</pre>
+<p>Here we use <a href="https://clickhouse.yandex/reference_en.html#ReplicatedMergeTree">ReplicatedMergeTree</a> table type. In parameters we specify ZooKeeper path containing shard and replica identifiers.</p>
 
-<source lang="SQL">INSERT INTO ontime_replica SELECT * FROM ontime;</source>
-Replication operates in multi-master mode. Data can be loaded into any replica - it will be synced with other instances automatically. Replication is asynchronous so at a given moment of time not all replicas may contain recently inserted data. To allow data insertion at least one replica should be up. Others will sync up data and repair consistency once they will become active again. Please notice that such scheme allows for the possibility of just appended data loss.
+<pre>INSERT INTO ontime_replica SELECT * FROM ontime;</pre>
+<p>Replication operates in multi-master mode. Data can be loaded into any replica - it will be synced with other instances automatically. Replication is asynchronous so at a given moment of time not all replicas may contain recently inserted data. To allow data insertion at least one replica should be up. Others will sync up data and repair consistency once they will become active again. Please notice that such scheme allows for the possibility of just appended data loss.</p>
+
+</body>
+</html>
