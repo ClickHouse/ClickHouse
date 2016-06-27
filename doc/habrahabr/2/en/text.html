@@ -1,74 +1,3 @@
-Сегодня внутренняя разработка компании Яндекс — <a href="https://clickhouse.yandex/">аналитическая СУБД ClickHouse</a>, стала доступна каждому. Исходники опубликованы на <a href="https://github.com/yandex/ClickHouse">GitHub</a> под лицензией Apache 2.0.
-
-<img src="https://habrastorage.org/files/d9b/066/e61/d9b066e61e1f480a977d889dc03ded99.png"/>
-
-ClickHouse позволяет выполнять аналитические запросы в интерактивном режиме по данным, обновляемым в реальном времени. Система способна масштабироваться до десятков триллионов записей и петабайт хранимых данных. Использование ClickHouse открывает возможности, которые раньше было даже трудно представить: вы можете сохранять весь поток данных без предварительной агрегации и быстро получать отчёты в любых разрезах. ClickHouse разработан в Яндексе для задач <a href="https://metrika.yandex.ru/">Яндекс.Метрики</a> — второй по величине системы веб-аналитики в мире.
-
-В этой статье мы расскажем, как и для чего ClickHouse появился в Яндексе и что он умеет; сравним его с другими системами и покажем, как его поднять у себя с минимальными усилиями.
-
-<cut />
-
-<h1>Где находится ниша ClickHouse</h1>
-
-Зачем кому-то может понадобиться использовать ClickHouse, когда есть много других технологий для работы с большими данными?
-
-Если вам нужно просто хранить логи, у вас есть много вариантов. Вы можете загружать логи в Hadoop, анализировать их с помощью Hive, Spark или Impala. В этом случае вовсе не обязательно использовать ClickHouse. Всё становится сложнее, если вам нужно выполнять запросы в интерактивном режиме по неагрегированным данным, поступающим в систему в реальном времени. Для решения этой задачи, открытых технологий подходящего качества до сих пор не существовало.
-
-Есть отдельные области, в которых могут быть использованы другие системы. Их можно классифицировать следующим образом:
-
-<ol>
-<li>Коммерческие OLAP СУБД для использования в собственной инфраструктуре.
-Примеры: <a href="http://www8.hp.com/ru/ru/software-solutions/advanced-sql-big-data-analytics/">HP Vertica</a>, <a href="http://www.actian.com/products/big-data-analytics-platforms-with-hadoop/vector-smp-analytics-database/">Actian Vector</a>, <a href="http://www.actian.com/products/big-data-analytics-platforms-with-hadoop/matrix-mpp-analytics-databases/">Actian Matrix</a>, <a href="http://www.exasol.com/en/">EXASol</a>, <a href="https://go.sap.com/cis/cmp/ppc/crm-ru15-3di-ppc-it-a2/index.html">Sybase IQ</a> и другие.
-Наши отличия: мы сделали технологию открытой и бесплатной.
-
-</li>
-
-<li>Облачные решения.
-Примеры: <a href="http://aws.amazon.com/redshift/">Amazon Redshift</a> и <a href="https://cloud.google.com/bigquery/">Google BigQuery</a>.
-Наши отличия: клиент может использовать ClickHouse в своей инфраструктуре и не платить за облака.
-
-</li>
-
-<li>Надстройки над Hadoop.
-Примеры: <a href="http://impala.io/">Cloudera Impala</a>, <a href="http://spark.apache.org/sql/">Spark SQL</a>, <a href="https://prestodb.io/">Facebook Presto</a>, <a href="https://drill.apache.org/">Apache Drill</a>.
-Наши отличия:
-<ul>
-<li>в отличие от Hadoop, ClickHouse позволяет обслуживать аналитические запросы даже в рамках массового сервиса, доступного публично, такого как Яндекс.Метрика;</li>
-<li>для функционирования ClickHouse не требуется разворачивать Hadoop инфраструктуру, он прост в использовании, и подходит даже для небольших проектов;</li>
-<li>ClickHouse позволяет загружать данные в реальном времени и самостоятельно занимается их хранением и индексацией;</li>
-<li>в отличие от Hadoop, ClickHouse работает в географически распределённых датацентрах.</li>
-</ul>
-</li>
-
-<li>Open-source OLAP СУБД.
-Примеры: <a href="https://github.com/infinidb/infinidb">InfiniDB</a>, <a href="https://www.monetdb.org/">MonetDB</a>, <a href="https://github.com/LucidDB/luciddb">LucidDB</a>.
-Разработка всех этих проектов заброшена, они никогда не были достаточно зрелыми и, по сути, так и не вышли из альфа-версии. Эти системы не были распределёнными, что является критически необходимым для обработки больших данных. Активная разработка ClickHouse, зрелость технологии и ориентация на практические потребности, возникающие при обработке больших данных, обеспечивается задачами Яндекса. Без использования «в бою» на реальных задачах, выходящих за рамки возможностей существующих систем, создать качественный продукт было бы невозможно.
-
-</li>
-
-<li>Open-source системы для аналитики, не являющиеся Relational OLAP СУБД.
-Примеры: <a href="http://druid.io/">Metamarkets Druid</a>, <a href="http://kylin.apache.org/">Apache Kylin</a>.
-Наши отличия: ClickHouse не требует предагрегации данных. ClickHouse поддерживает диалект языка SQL и предоставляет удобство реляционных СУБД.
-</li>
-</ol>
-В рамках той достаточно узкой ниши, в которой находится ClickHouse, у него до сих пор нет альтернатив. В рамках более широкой области применения, ClickHouse может оказаться выгоднее других систем с точки зрения <a href="https://clickhouse.yandex/benchmark.html">скорости обработки запросов</a>, эффективности использования ресурсов и простоты эксплуатации.
-
-
-<img src="https://habrastorage.org/files/37e/1b6/556/37e1b65562844a7a9c2477f9b5f7cda1.png"/>
-<i>Карта кликов в Яндекс.Метрике и соответствующий запрос в ClickHouse</i>
-
-Изначально мы разрабатывали ClickHouse исключительно для задач <a href="https://metrika.yandex.ru/">Яндекс.Метрики</a> — чтобы строить отчёты в интерактивном режиме по неагрегированным логам пользовательских действий. В связи с тем, что система является полноценной СУБД и обладает весьма широкой функциональностью, уже в начале использования в 2012 году, была написана <a href="https://clickhouse.yandex/reference_ru.html">подробная документация</a>. Это отличает ClickHouse от многих типичных внутренних разработок — специализированных и встраиваемых структур данных для решения конкретных задач, таких как, например, Metrage и OLAPServer, о которых я рассказывал в <a href="http://habrahabr.ru/company/yandex/blog/273305/">предыдущей статье</a>.
-
-Развитая функциональность и наличие детальной документации привели к тому, что ClickHouse постепенно распространился по многим отделам Яндекса. Неожиданно оказалось, что система может быть установлена по инструкции и работает "из коробки", то есть не требует привлечения разработчиков. ClickHouse стал использоваться в Директе, Маркете, Почте, AdFox, Вебмастере, в мониторингах и в бизнес-аналитике. ClickHouse позволял либо решать задачи, для которых раньше не было подходящих инструментов, либо решать задачи на порядки эффективнее, чем другие системы.
-
-Постепенно возник спрос на использование ClickHouse не только во внутренних продуктах Яндекса. Например, в 2013 году, ClickHouse применялся для анализа метаданных о событиях <a href="https://www.yandex.com/company/press_center/press_releases/2012/2012-04-10/">эксперимента LHCb в CERN</a>. Система могла бы использоваться более широко, но в то время этому мешал закрытый статус. Другой пример: open-source технология <a href="https://tech.yandex.ru/tank/">Яндекс.Танк</a> внутри Яндекса использует ClickHouse для хранения данных телеметрии, тогда как для внешних пользователей в качестве базы данных был доступен только MySQL, который плохо подходит для данной задачи.
-
-По мере расширения пользовательской базы, возникла необходимость тратить на разработку чуть больше усилий, хоть и не очень много по сравнению с трудозатратами на решение задач Метрики. Зато в награду мы получаем повышение качества продукта, особенно в плане юзабилити.
-
-Расширение пользовательской базы позволяет рассматривать примеры использования, которые без этого едва ли пришли бы в голову. Также это позволяет быстрее находить баги и неудобства, которые имеют значение в том числе и для основного применения ClickHouse — в Метрике. Без сомнения, всё это повышает качество продукта. Поэтому нам выгодно сделать ClickHouse открытым сегодня.
-
-
-
 <h1>ClickHouse quickstart guide</h1>
 
 Let's get started with sample dataset from open sources. We will use USA civil flights data since 1987 till 2015. It's hard to call this sample a Big Data (contains 166 millions rows, 63 Gb of uncompressed data) but this allows us to quickly get to work. Dataset is available for download <a href="https://yadi.sk/d/pOZxpa42sDdgm">here</a>. Also you may download it from the original datasource <a href="https://github.com/yandex/ClickHouse/raw/master/doc/example_datasets/1_ontime.txt">as described here</a>.
@@ -245,7 +174,7 @@ Let assume that our aim is to provide a set of reports for each advertiser. Comm
 
 <h3>Load data</h3>
 <source lang="Bash">xz -v -c -d &lt; ontime.csv.xz | clickhouse-client --query="INSERT INTO ontime FORMAT CSV"</source>
-ClickHouse INSERT query allows to load data in any <a href="https://clickhouse.yandex/reference_en.html#Formats">supported format</a>. Data load requires just O(1) RAM consumption. INSERT query can receive any data volume as input. It's strongly recommended to insert data with<a href="https://clickhouse.yandex/reference_en.html#Performance%20on%20data%20insertion.">not too small size blocks</a>. Notice that insert of blocks with size up to max_insert_block_size (= 1&nbsp;048&nbsp;576 rows by default) is an atomic operation: data block will be inserted completely or not inserted at all. In case of disconnect during insert operation you may not know if the block was inserted successfully. To achieve exactly-once semantics ClickHouse supports idempotency for<a href="https://clickhouse.yandex/reference_en.html#Data%20replication">replicated tables</a>. This means that you may retry insert of the same data block (possibly on a different replicas) but this block will be inserted just once. Anyway in this guide we will load data from our localhost so we may not take care about data blocks generation and exactly-once semantics.
+ClickHouse INSERT query allows to load data in any <a href="https://clickhouse.yandex/reference_en.html#Formats">supported format</a>. Data load requires just O(1) RAM consumption. INSERT query can receive any data volume as input. It's strongly recommended to insert data with<a href="https://clickhouse.yandex/reference_en.html#Performance%20on%20data%20insertion.">not too small size blocks</a>. Notice that insert of blocks with size up to max_insert_block_size (= 1&nbsp;048&nbsp;576 rows by default) is an atomic operation: data block will be inserted completely or not inserted at all. In case of disconnect during insert operation you may not know if the block was inserted successfully. To achieve exactly-once semantics ClickHouse supports idempotency for <a href="https://clickhouse.yandex/reference_en.html#Data%20replication">replicated tables</a>. This means that you may retry insert of the same data block (possibly on a different replicas) but this block will be inserted just once. Anyway in this guide we will load data from our localhost so we may not take care about data blocks generation and exactly-once semantics.
 
 INSERT query into tables of MergeTree type is non-blocking (so does a SELECT query). You can execute SELECT queries right after of during insert operation.
 
@@ -497,7 +426,3 @@ Here we use <a href="https://clickhouse.yandex/reference_en.html#ReplicatedMerge
 
 <source lang="SQL">INSERT INTO ontime_replica SELECT * FROM ontime;</source>
 Replication operates in multi-master mode. Data can be loaded into any replica - it will be synced with other instances automatically. Replication is asynchronous so at a given moment of time not all replicas may contain recently inserted data. To allow data insertion at least one replica should be up. Others will sync up data and repair consistency once they will become active again. Please notice that such scheme allows for the possibility of just appended data loss.
-
-
-<h1>Как повлиять на развитие ClickHouse</h1>
-Если у вас возникли вопросы, можно задать их в комментариях к этой статье либо на <a href="http://stackoverflow.com/">StackOverflow</a> с тегом «clickhouse». Также вы можете создать тему для обсуждения в <a href="https://groups.google.com/group/clickhouse">группе</a> или написать своё предложение на рассылку clickhouse-feedback@yandex-team.ru. А если вам хочется попробовать поработать над ClickHouse изнутри, приглашаем присоединиться к нашей команде в Яндексе. У нас открыты <a href="https://yandex.ru/jobs/vacancies/dev/?tags=c%2B%2B">вакансии</a> и <a href="https://yandex.ru/jobs/vacancies/interns/summer">стажировки</a>.
