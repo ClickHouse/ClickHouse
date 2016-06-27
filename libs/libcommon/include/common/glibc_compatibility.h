@@ -37,6 +37,30 @@ __attribute__((__weak__)) void * __wrap_memcpy(void * dest, const void * src, si
 }
 
 
+size_t __pthread_get_minstack(const pthread_attr_t * attr)
+{
+	return 1048576;
+}
+
+#include <string.h>
+#include <signal.h>
+#include <unistd.h>
+
+int __gai_sigqueue(int sig, const union sigval val, pid_t caller_pid)
+{
+	siginfo_t info;
+
+	memset(&info, 0, sizeof(siginfo_t));
+	info.si_signo = sig;
+	info.si_code = SI_ASYNCNL;
+	info.si_pid = caller_pid;
+	info.si_uid = getuid();
+	info.si_value = val;
+
+	return syscall(__NR_rt_sigqueueinfo, info.si_pid, sig, &info);
+}
+
+
 #if defined (__cplusplus)
 }
 #endif
