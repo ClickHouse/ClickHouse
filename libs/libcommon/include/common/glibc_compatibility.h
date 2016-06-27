@@ -45,6 +45,7 @@ size_t __pthread_get_minstack(const pthread_attr_t * attr)
 #include <string.h>
 #include <signal.h>
 #include <unistd.h>
+#include <sys/syscall.h>
 
 int __gai_sigqueue(int sig, const union sigval val, pid_t caller_pid)
 {
