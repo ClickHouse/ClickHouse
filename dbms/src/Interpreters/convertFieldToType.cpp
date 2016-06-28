@@ -138,7 +138,11 @@ Field convertFieldToType(const Field & src, const IDataType & type)
 
 		Array res(src_arr_size);
 		for (size_t i = 0; i < src_arr_size; ++i)
+		{
 			res[i] = convertFieldToType(src_arr[i], nested_type);
+			if (res[i].isNull())
+				return {};
+		}
 
 		return res;
 	}
