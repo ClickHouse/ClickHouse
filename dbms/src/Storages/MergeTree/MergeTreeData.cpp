@@ -1388,14 +1388,18 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 }
 
 
-void MergeTreeData::freezePartition(const std::string & prefix)
+void MergeTreeData::freezePartition(const std::string & prefix, const String & with_name)
 {
 	LOG_DEBUG(log, "Freezing parts with prefix " + prefix);
 
 	String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
 	String shadow_path = clickhouse_path + "shadow/";
 	Poco::File(shadow_path).createDirectories();
-	String backup_path = shadow_path + toString(Increment(shadow_path + "increment.txt").get(true)) + "/";
+	String backup_path = shadow_path
+		+ (!with_name.empty()
+			? escapeForFileName(with_name)
+			: toString(Increment(shadow_path + "increment.txt").get(true)))
+		+ "/";
 
 	LOG_DEBUG(log, "Snapshot will be placed at " + backup_path);
 

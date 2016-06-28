@@ -84,6 +84,10 @@ public:
 		ASTPtr sharding_key_expr;
 		ASTPtr coordinator;
 
+		/** For FREEZE PARTITION - place local backup to directory with specified name.
+		  */
+		String with_name;
+
 		/// deep copy
 		void clone(Parameters & p) const;
 	};

@@ -440,12 +440,12 @@ void StorageMergeTree::attachPartition(ASTPtr query, const Field & field, bool u
 }
 
 
-void StorageMergeTree::freezePartition(const Field & partition, const Settings & settings)
+void StorageMergeTree::freezePartition(const Field & partition, const String & with_name, const Settings & settings)
 {
 	/// Префикс может быть произвольным. Не обязательно месяц - можно указать лишь год.
 	data.freezePartition(partition.getType() == Field::Types::UInt64
 		? toString(partition.get<UInt64>())
-		: partition.safeGet<String>());
+		: partition.safeGet<String>(), with_name);
 }
 
 }

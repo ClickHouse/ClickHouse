@@ -3245,16 +3245,16 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const S
 }
 
 
-void StorageReplicatedMergeTree::freezePartition(const Field & partition, const Settings & settings)
+void StorageReplicatedMergeTree::freezePartition(const Field & partition, const String & with_name, const Settings & settings)
 {
 	/// Префикс может быть произвольным. Не обязательно месяц - можно указать лишь год.
 	String prefix = partition.getType() == Field::Types::UInt64
 		? toString(partition.get<UInt64>())
 		: partition.safeGet<String>();
 
-	data.freezePartition(prefix);
+	data.freezePartition(prefix, with_name);
 	if (unreplicated_data)
-		unreplicated_data->freezePartition(prefix);
+		unreplicated_data->freezePartition(prefix, with_name);
 }
 
 
