@@ -179,7 +179,8 @@ public:
 	{
 		auto & offsets = getOffsets();
 		size_t nested_n = offsets.back() - offsetAt(offsets.size() - n);
-		getData().popBack(nested_n);
+		if (nested_n)
+			getData().popBack(nested_n);
 		offsets.resize_assume_reserved(offsets.size() - n);
 	}
 
