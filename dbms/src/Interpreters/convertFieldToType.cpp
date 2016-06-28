@@ -125,17 +125,33 @@ Field convertFieldToType(const Field & src, const IDataType & type)
 		throw Exception("Type mismatch in IN or VALUES section: " + type.getName() + " expected, "
 			+ Field::Types::toString(src.getType()) + " got", ErrorCodes::TYPE_MISMATCH);
 	}
+	else if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type))
+	{
+		if (src.getType() != Field::Types::Array)
+			throw Exception("Type mismatch in IN or VALUES section: " + type.getName() + " expected, "
+				+ Field::Types::toString(src.getType()) + " got", ErrorCodes::TYPE_MISMATCH);
+
+		const IDataType & nested_type = *type_array->getNestedType();
+
+		const Array & src_arr = src.get<Array>();
+		size_t src_arr_size = src_arr.size();
+
+		Array res(src_arr_size);
+		for (size_t i = 0; i < src_arr_size; ++i)
+			res[i] = convertFieldToType(src_arr[i], nested_type);
+
+		return res;
+	}
 	else
 	{
 		if (src.getType() == Field::Types::UInt64
 			|| src.getType() == Field::Types::Int64
 			|| src.getType() == Field::Types::Float64
 			|| src.getType() == Field::Types::Null
+			|| src.getType() == Field::Types::Array
 			|| (src.getType() == Field::Types::String
 				&& !typeid_cast<const DataTypeString *>(&type)
-				&& !typeid_cast<const DataTypeFixedString *>(&type))
-			|| (src.getType() == Field::Types::Array
-				&& !typeid_cast<const DataTypeArray *>(&type)))
+				&& !typeid_cast<const DataTypeFixedString *>(&type)))
 			throw Exception("Type mismatch in IN or VALUES section: " + type.getName() + " expected, "
 				+ Field::Types::toString(src.getType()) + " got", ErrorCodes::TYPE_MISMATCH);
 	}
