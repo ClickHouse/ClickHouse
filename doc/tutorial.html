@@ -551,10 +551,13 @@ LIMIT 20
 
 <h3>ClickHouse deployment to cluster</h3>
 <p>ClickHouse cluster is a homogenous cluster. Steps to set up:
-1. Install ClickHouse server on all machines of the cluster
-2. Set up cluster configs in configuration file
-3. Create local tables on each instance
-4. Create a <a href="https://clickhouse.yandex/reference_en.html#Distributed">Distributed table</a></p>
+<ol>
+<li>Install ClickHouse server on all machines of the cluster</li>
+<li>Set up cluster configs in configuration file</li>
+<li>Create local tables on each instance</li>
+<li>Create a <a href="https://clickhouse.yandex/reference_en.html#Distributed">Distributed table</a></li>
+</ol>
+</p>
 
 <p><a href="https://clickhouse.yandex/reference_en.html#Distributed">Distributed-table</a> is actually a kind of "view" to local tables of ClickHouse cluster. SELECT query from a distributed table will be executed using resources of all cluster's shards. You may specify configs for multiple clusters and create multiple Distributed-tables providing views to different clusters.</p>
 
