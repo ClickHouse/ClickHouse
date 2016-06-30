@@ -8,6 +8,7 @@
 #include <boost/range/iterator_range_core.hpp>
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Common/PODArray.h>
 #include <bitset>
 #include <stack>
 
@@ -44,7 +45,8 @@ struct AggregateFunctionSequenceMatchData final
 	using Comparator = ComparePairFirst<std::less>;
 
 	bool sorted = true;
-	std::vector<TimestampEvents> eventsList;
+	static constexpr size_t bytes_in_arena = 64;
+	PODArray<TimestampEvents, bytes_in_arena, AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>> eventsList;
 
 	void add(const Timestamp timestamp, const Events & events)
 	{
@@ -60,7 +62,7 @@ struct AggregateFunctionSequenceMatchData final
 	{
 		const auto size = eventsList.size();
 
-		eventsList.insert(std::end(eventsList), std::begin(other.eventsList), std::end(other.eventsList));
+		eventsList.insert(std::begin(other.eventsList), std::end(other.eventsList));
 
 		/// either sort whole container or do so partially merging ranges afterwards
 		if (!sorted && !other.sorted)
@@ -262,14 +264,14 @@ private:
 		PatternAction(const PatternActionType type, const std::uint32_t extra = 0) : type{type}, extra{extra} {}
 	};
 
-	using PatternActions = std::vector<PatternAction>;
+	static constexpr size_t bytes_on_stack = 64;
+	using PatternActions = PODArray<PatternAction, bytes_on_stack, AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
 
 
 	void parsePattern()
 	{
-		PatternActions actions{
-			{ PatternActionType::KleeneStar }
-		};
+		PatternActions actions;
+		actions.emplace_back(PatternActionType::KleeneStar);
 
 		ParserString special_open_p("(?");
 		ParserString special_close_p(")");
