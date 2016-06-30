@@ -399,8 +399,10 @@
 
 		<code>
 <pre>
+sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
+
 sudo mkdir -p /etc/apt/sources.list.d
-echo "deb http://repo.yandex.ru/clickhouse/<span id="distributive">trusty</span>/ dists/stable/main/binary-amd64/" |
+echo "deb http://repo.yandex.ru/clickhouse/<span id="distributive">trusty</span> stable main" |
 &nbsp;&nbsp;&nbsp;&nbsp;sudo tee /etc/apt/sources.list.d/clickhouse.list
 sudo apt-get update
 

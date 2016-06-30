@@ -424,25 +424,27 @@ YT позволяет хранить группы столбцов по отде
 На Ubuntu Trusty (14.04):
 
 %%
-deb http://repo.yandex.ru/clickhouse/trusty/ dists/stable/main/binary-amd64/
+deb http://repo.yandex.ru/clickhouse/trusty stable main
 %%
 
 На Ubuntu Precise (12.04):
 
 %%
-deb http://repo.yandex.ru/clickhouse/precise/ dists/stable/main/binary-amd64/
+deb http://repo.yandex.ru/clickhouse/precise stable main
 %%
 
 
 Затем выполните:
 
 %%
+sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server-common
 %%
 
 Также можно скачать и установить пакеты вручную, отсюда:
-<a href="https://dist.yandex.ru/metrika/stable/amd64/">https://dist.yandex.ru/metrika/stable/amd64/</a>.
+<a href="http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/">http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/</a>,
+<a href="http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/">http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/</a>.
 
 ClickHouse содержит настройки ограничения доступа. Они расположены в файле users.xml (рядом с config.xml).
 По умолчанию, разрешён доступ отовсюду для пользователя default без пароля. См. секцию users/default/networks.
@@ -2867,7 +2869,7 @@ min_bytes, max_bytes - условие на количество байт в бу
 &lt;/zookeeper&gt;
 %%
 
-Используйте версию ZooKeeper не старее 3.4.5. Для примера, в Ubuntu Precise слишком старая версия в пакете. Достаточно новую версию для Ubuntu Precise можно взять из репозитория <a href='https://dist.yandex.net/metrika/stable/amd64/'>https://dist.yandex.net/metrika/stable/amd64/</a>.
+Используйте версию ZooKeeper не старее 3.4.5. Для примера, в Ubuntu Precise слишком старая версия в пакете.
 
 Можно указать любой имеющийся у вас ZooKeeper-кластер - система будет использовать в нём одну директорию для своих данных (директория указывается при создании реплицируемой таблицы).
 
