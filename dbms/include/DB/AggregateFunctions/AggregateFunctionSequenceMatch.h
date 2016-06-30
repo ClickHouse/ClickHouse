@@ -264,7 +264,8 @@ private:
 		PatternAction(const PatternActionType type, const std::uint32_t extra = 0) : type{type}, extra{extra} {}
 	};
 
-	using PatternActions = PODArray<PatternAction>;
+	static constexpr size_t bytes_in_arena = 64;
+	using PatternActions = PODArray<PatternAction, bytes_in_arena, AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>>;
 
 
 	void parsePattern()
