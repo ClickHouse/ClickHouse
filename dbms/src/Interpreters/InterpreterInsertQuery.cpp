@@ -5,6 +5,7 @@
 #include <DB/DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DB/DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DB/DataStreams/NullAndDoCopyBlockInputStream.h>
+#include <DB/DataStreams/SquashingBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTInsertQuery.h>
@@ -98,7 +99,12 @@ BlockIO InterpreterInsertQuery::execute()
 	else
 	{
 		InterpreterSelectQuery interpreter_select{query.select, context};
-		BlockInputStreamPtr in{interpreter_select.execute().in};
+		BlockInputStreamPtr in = interpreter_select.execute().in;
+
+		in = std::make_shared<SquashingBlockInputStream>(in,
+			context.getSettingsRef().min_insert_block_size_rows,
+			context.getSettingsRef().min_insert_block_size_bytes);
+
 		res.in = std::make_shared<NullAndDoCopyBlockInputStream>(in, out);
 		res.in_sample = interpreter_select.getSampleBlock();
 	}

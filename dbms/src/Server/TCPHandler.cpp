@@ -18,6 +18,7 @@
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
+#include <DB/DataStreams/SquashingBlockInputStream.h>
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/Quota.h>
 
@@ -616,6 +617,10 @@ void TCPHandler::initBlockInput()
 		state.block_in = std::make_shared<NativeBlockInputStream>(
 			*state.maybe_compressed_in,
 			client_revision);
+
+		state.block_in = std::make_shared<SquashingBlockInputStream>(state.block_in,
+			query_context.getSettingsRef().min_insert_block_size_rows,
+			query_context.getSettingsRef().min_insert_block_size_bytes);
 	}
 }
 
@@ -626,7 +631,7 @@ void TCPHandler::initBlockOutput()
 	{
 		if (state.compression == Protocol::Compression::Enable)
 			state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-				*out, query_context.getSettings().network_compression_method);
+				*out, query_context.getSettingsRef().network_compression_method);
 		else
 			state.maybe_compressed_out = out;
 

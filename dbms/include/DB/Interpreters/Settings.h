@@ -39,6 +39,10 @@ struct Settings
 	M(SettingUInt64, max_block_size, DEFAULT_BLOCK_SIZE) \
 	/** Максимальный размер блока для вставки, если мы управляем формированием блоков для вставки. */ \
 	M(SettingUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE) \
+	/** Squash blocks passed to INSERT query to specified size in rows, if blocks are not big enough. */ \
+	M(SettingUInt64, min_insert_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE) \
+	/** Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough. */ \
+	M(SettingUInt64, min_insert_block_size_bytes, (DEFAULT_INSERT_BLOCK_SIZE * 256)) \
 	/** Максимальное количество потоков выполнения запроса. По-умолчанию - определять автоматически. */ \
 	M(SettingMaxThreads, max_threads, 0) \
 	/** Максимальный размер буфера для чтения из файловой системы. */ \
