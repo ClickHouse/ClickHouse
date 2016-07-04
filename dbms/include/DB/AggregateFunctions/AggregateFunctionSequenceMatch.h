@@ -113,7 +113,7 @@ struct AggregateFunctionSequenceMatchData final
 		std::size_t size;
 		readBinary(size, buf);
 
-		decltype(eventsList) eventsList;
+		eventsList.clear();
 		eventsList.reserve(size);
 
 		for (std::size_t i = 0; i < size; ++i)
@@ -126,8 +126,6 @@ struct AggregateFunctionSequenceMatchData final
 
 			eventsList.emplace_back(timestamp, Events{events});
 		}
-
-		this->eventsList = std::move(eventsList);
 	}
 };
 
@@ -270,7 +268,7 @@ private:
 
 	void parsePattern()
 	{
-		PatternActions actions;
+		actions.clear();
 		actions.emplace_back(PatternActionType::KleeneStar);
 
 		ParserString special_open_p("(?");
@@ -356,8 +354,6 @@ private:
 			else
 				throw_exception("Could not parse pattern, unexpected starting symbol");
 		}
-
-		this->actions = std::move(actions);
 	}
 
 protected:
