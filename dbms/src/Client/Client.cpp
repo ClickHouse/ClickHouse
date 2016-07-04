@@ -1143,6 +1143,7 @@ public:
 			("time,t",			"print query execution time to stderr in non-interactive mode (for benchmarks)")
 			("stacktrace",		"print stack traces of exceptions")
 			("progress",		"print progress even in non-interactive mode")
+			("compression",		boost::program_options::value<bool>(),			"enable or disable compression")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
 			APPLY_FOR_LIMITS(DECLARE_LIMIT)
 		;
@@ -1265,6 +1266,8 @@ public:
 			config().setBool("progress", true);
 		if (options.count("time"))
 			print_time_to_stderr = true;
+		if (options.count("compression"))
+			config().setBool("compression", options["compression"].as<bool>());
 	}
 };
 
