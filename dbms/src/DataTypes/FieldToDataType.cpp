@@ -12,7 +12,6 @@ namespace ErrorCodes
 {
 	extern const int EMPTY_DATA_PASSED;
 	extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-	extern const int NOT_IMPLEMENTED;
 }
 
 
