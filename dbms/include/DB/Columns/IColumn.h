@@ -26,6 +26,8 @@ using Columns = std::vector<ColumnPtr>;
 using ColumnPlainPtrs = std::vector<IColumn *>;
 using ConstColumnPlainPtrs = std::vector<const IColumn *>;
 
+using NullValuesByteMap = PaddedPODArray<UInt8>;
+
 class Arena;
 
 
@@ -45,6 +47,9 @@ public:
 	/** Столбец представляет собой константу.
 	  */
 	virtual bool isConst() const { return false; }
+
+	/// Is this column a container for nullable values?
+	virtual bool isNullable() const { return false; }
 
 	/** Если столбец не константа - возвращает nullptr (либо может вернуть самого себя).
 	  * Если столбец константа, то превращает его в полноценный столбец (если тип столбца предполагает такую возможность) и возвращает его.
@@ -238,7 +243,10 @@ public:
 	  *  (за исключением константных столбцов, для которых можно возвращать значение константы).
 	  * Если столбец пустой - функция должна возвращать значения по-умолчанию.
 	  */
-	virtual void getExtremes(Field & min, Field & max) const = 0;
+	inline void getExtremes(Field & min, Field & max, const PaddedPODArray<UInt8> * null_map_ = nullptr) const
+	{
+		getExtremesImpl(min, max, null_map_);
+	}
 
 	/** Если возможно - зарезервировать место для указанного количества элементов. Если невозможно или не поддерживается - ничего не делать.
 	  * Функция влияет только на производительность.
@@ -249,6 +257,9 @@ public:
 	virtual size_t byteSize() const = 0;
 
 	virtual ~IColumn() {}
+
+protected:
+	virtual void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const = 0;
 };
 
 

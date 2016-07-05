@@ -418,18 +418,18 @@ public:
 		chars.reserve(n * DBMS_APPROX_STRING_SIZE);
 	}
 
-	void getExtremes(Field & min, Field & max) const override
-	{
-		min = String();
-		max = String();
-	}
-
-
 	Chars_t & getChars() { return chars; }
 	const Chars_t & getChars() const { return chars; }
 
 	Offsets_t & getOffsets() { return offsets; }
 	const Offsets_t & getOffsets() const { return offsets; }
+
+private:
+	void getExtremesImpl(Field & min, Field & max, const PaddedPODArray<UInt8> * null_map_) const override
+	{
+		min = String();
+		max = String();
+	}
 };
 
 

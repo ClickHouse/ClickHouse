@@ -9,6 +9,8 @@
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeTuple.h>
 #include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypeNull.h>
+#include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
@@ -54,6 +56,7 @@ DataTypeFactory::DataTypeFactory()
 		{"Date",				std::make_shared<DataTypeDate>()},
 		{"DateTime",			std::make_shared<DataTypeDateTime>()},
 		{"String",				std::make_shared<DataTypeString>()},
+		{"Null",				std::make_shared<DataTypeNull>()}
 	}
 {
 }
@@ -103,6 +106,9 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 	{
 		String base_name(name.data() + matches[1].offset, matches[1].length);
 		String parameters(name.data() + matches[2].offset, matches[2].length);
+
+		if (base_name == "Nullable")
+			return std::make_shared<DataTypeNullable>(get(parameters));
 
 		if (base_name == "Array")
 			return std::make_shared<DataTypeArray>(get(parameters));

@@ -236,12 +236,6 @@ public:
 		return getData().byteSize() + getOffsets().size() * sizeof(getOffsets()[0]);
 	}
 
-	void getExtremes(Field & min, Field & max) const override
-	{
-		min = Array();
-		max = Array();
-	}
-
 	bool hasEqualOffsets(const ColumnArray & other) const
 	{
 		if (offsets == other.offsets)
@@ -295,6 +289,12 @@ public:
 	}
 
 private:
+	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override
+	{
+		min = Array();
+		max = Array();
+	}
+
 	ColumnPtr data;
 	ColumnPtr offsets;	/// Смещения могут быть разделяемыми для нескольких столбцов - для реализации вложенных структур данных.
 

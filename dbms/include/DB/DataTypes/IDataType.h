@@ -27,6 +27,12 @@ public:
 	/// Основное имя типа (например, UInt64).
 	virtual std::string getName() const = 0;
 
+	/// Is this type the null type?
+	virtual bool isNull() const { return false; }
+
+	/// Is this type nullable?
+	virtual bool isNullable() const { return false; }
+
 	/// Является ли тип числовым. Дата и дата-с-временем тоже считаются такими.
 	virtual bool isNumeric() const { return false; }
 
@@ -66,37 +72,79 @@ public:
 	/// Если функция кидает исключение при чтении, то столбец будет находиться в таком же состоянии, как до вызова функции.
 	virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
 
-	/** Текстовая сериализация с эскейпингом, но без квотирования.
+	/** Text serialization with escaping but without quoting.
 	  */
-	virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
-	virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const = 0;
-
-	/** Текстовая сериализация в виде литерала, который может быть вставлен в запрос.
-	  */
-	virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
-	virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const = 0;
-
-	/** Текстовая сериализация для формата CSV.
-	  * delimiter - какого разделителя ожидать при чтении, если строковое значение не в кавычках (сам разделитель не съедается).
-	  */
-	virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
-	virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const = 0;
-
-	/** Текстовая сериализация - для вывода на экран / сохранения в текстовый файл и т. п.
-	  * Без эскейпинга и квотирования.
-	  */
-	virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
-
-	/** Текстовая сериализация в виде литерала для использования в формате JSON.
-	  */
-	virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
-	virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const = 0;
-
-	/** Текстовая сериализация для подстановки в формат XML.
-	  */
-	virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+	inline void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+		const PaddedPODArray<UInt8> * null_map = nullptr) const
 	{
-		serializeText(column, row_num, ostr);
+		serializeTextEscapedImpl(column, row_num, ostr, null_map);
+	}
+
+	inline void deserializeTextEscaped(IColumn & column, ReadBuffer & istr,
+		PaddedPODArray<UInt8> * null_map = nullptr) const
+	{
+		deserializeTextEscapedImpl(column, istr, null_map);
+	}
+
+	/** Text serialization as a literal that may be inserted into a query.
+	  */
+	inline void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+		const PaddedPODArray<UInt8> * null_map = nullptr) const
+	{
+		serializeTextQuotedImpl(column, row_num, ostr, null_map);
+	}
+
+	inline void deserializeTextQuoted(IColumn & column, ReadBuffer & istr,
+		PaddedPODArray<UInt8> * null_map = nullptr) const
+	{
+		deserializeTextQuotedImpl(column, istr, null_map);
+	}
+
+	/** Text serialization for the CSV format.
+	  */
+	inline void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+		const PaddedPODArray<UInt8> * null_map = nullptr) const
+	{
+		serializeTextCSVImpl(column, row_num, ostr, null_map);
+	}
+
+	/** delimiter - the delimiter we expect when reading a value that is not double-quoted.
+	  */
+	inline void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter,
+		PaddedPODArray<UInt8> * null_map = nullptr) const
+	{
+		deserializeTextCSVImpl(column, istr, delimiter, null_map);
+	}
+
+	/** Text serialization for displaying on a terminal or saving into a text file, and the like.
+	  * Without escaping or quoting.
+	  */
+	inline void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+		const PaddedPODArray<UInt8> * null_map = nullptr) const
+	{
+		serializeTextImpl(column, row_num, ostr, null_map);
+	}
+
+	/** Text serialization as a literal for using with the JSON format.
+	  */
+	inline void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+		const PaddedPODArray<UInt8> * null_map = nullptr) const
+	{
+		serializeTextJSONImpl(column, row_num, ostr, null_map);
+	}
+
+	inline void deserializeTextJSON(IColumn & column, ReadBuffer & istr,
+		PaddedPODArray<UInt8> * null_map = nullptr) const
+	{
+		deserializeTextJSONImpl(column, istr, null_map);
+	}
+
+	/** Text serialization for putting into the XML format.
+	  */
+	inline void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+		const PaddedPODArray<UInt8> * null_map = nullptr) const
+	{
+		serializeTextXMLImpl(column, row_num, ostr, null_map);
 	}
 
 	/** Создать пустой столбец соответствующего типа.
@@ -118,6 +166,26 @@ public:
 	}
 
 	virtual ~IDataType() {}
+
+protected:
+	inline bool isNullValue(const NullValuesByteMap * null_map, size_t row_num) const
+	{
+		return (null_map != nullptr) && ((*null_map)[row_num] == 1);
+	}
+
+	virtual void serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const = 0;
+	virtual void deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const = 0;
+	virtual void serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const = 0;
+	virtual void deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const = 0;
+	virtual void serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const = 0;
+	virtual void deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter, NullValuesByteMap * null_map) const = 0;
+	virtual void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const = 0;
+	virtual void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const = 0;
+	virtual void deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const = 0;
+	virtual void serializeTextXMLImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const
+	{
+		serializeTextImpl(column, row_num, ostr, null_map);
+	}
 };
 
 

@@ -159,73 +159,73 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
 	column_concrete.getData().push_back(place);
 }
 
-void DataTypeAggregateFunction::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
 	writeString(serializeToString(function, column, row_num), ostr);
 }
 
-
-void DataTypeAggregateFunction::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
 	writeEscapedString(serializeToString(function, column, row_num), ostr);
 }
 
-
-void DataTypeAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
+void DataTypeAggregateFunction::deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr,
+	NullValuesByteMap * null_map) const
 {
 	String s;
 	readEscapedString(s, istr);
 	deserializeFromString(function, column, s);
 }
 
-
-void DataTypeAggregateFunction::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
 	writeQuotedString(serializeToString(function, column, row_num), ostr);
 }
 
-
-void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
+void DataTypeAggregateFunction::deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr,
+	NullValuesByteMap * null_map) const
 {
 	String s;
 	readQuotedString(s, istr);
 	deserializeFromString(function, column, s);
 }
 
-
-void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
 	writeJSONString(serializeToString(function, column, row_num), ostr);
 }
 
-
-void DataTypeAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+void DataTypeAggregateFunction::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr,
+	NullValuesByteMap * null_map) const
 {
 	String s;
 	readJSONString(s, istr);
 	deserializeFromString(function, column, s);
 }
 
-
-void DataTypeAggregateFunction::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextXMLImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
 	writeXMLString(serializeToString(function, column, row_num), ostr);
 }
 
-
-void DataTypeAggregateFunction::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
 	writeCSV(serializeToString(function, column, row_num), ostr);
 }
 
-
-void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeAggregateFunction::deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter,
+	NullValuesByteMap * null_map) const
 {
 	String s;
 	readCSV(s, istr, delimiter);
 	deserializeFromString(function, column, s);
 }
-
 
 ColumnPtr DataTypeAggregateFunction::createColumn() const
 {
@@ -236,7 +236,6 @@ ColumnPtr DataTypeAggregateFunction::createConstColumn(size_t size, const Field 
 {
 	throw Exception("Const column with aggregate function is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
-
 
 }
 

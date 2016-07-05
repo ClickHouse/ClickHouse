@@ -219,7 +219,8 @@ public:
 	/** Преобразование из константы в полноценный столбец */
 	ColumnPtr convertToFullColumn() const override;
 
-	void getExtremes(Field & min, Field & max) const override
+private:
+	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override
 	{
 		min = typename ColumnConstBase<T, T, ColumnConst<T>>::FieldType(this->data);
 		max = typename ColumnConstBase<T, T, ColumnConst<T>>::FieldType(this->data);
@@ -254,7 +255,8 @@ public:
 	/** Преобразование из константы в полноценный столбец */
 	ColumnPtr convertToFullColumn() const override;
 
-	void getExtremes(Field & min, Field & max) const override
+private:
+	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override
 	{
 		min = FieldType();
 		max = FieldType();
@@ -289,7 +291,8 @@ public:
 	/** Преобразование из константы в полноценный столбец */
 	ColumnPtr convertToFullColumn() const override;
 
-	void getExtremes(Field & min, Field & max) const override;
+private:
+	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override;
 };
 
 

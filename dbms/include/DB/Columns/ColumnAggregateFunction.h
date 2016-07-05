@@ -303,11 +303,6 @@ public:
 		throw Exception("Method replicate is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void getExtremes(Field & min, Field & max) const override
-	{
-		throw Exception("Method getExtremes is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
-	}
-
 	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 	{
 		return 0;
@@ -330,6 +325,12 @@ public:
 	const Container_t & getData() const
 	{
 		return data;
+	}
+
+private:
+	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override
+	{
+		throw Exception("Method getExtremes is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 };
 

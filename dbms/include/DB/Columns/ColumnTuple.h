@@ -237,20 +237,6 @@ public:
 		return res;
 	}
 
-	void getExtremes(Field & min, Field & max) const override
-	{
-		const size_t tuple_size = columns.size();
-
-		min = Tuple(TupleBackend(tuple_size));
-		max = Tuple(TupleBackend(tuple_size));
-
-		auto & min_backend = min.get<Tuple &>().t;
-		auto & max_backend = max.get<Tuple &>().t;
-
-		for (const auto i : ext::range(0, tuple_size))
-			columns[i]->getExtremes(min_backend[i], max_backend[i]);
-	}
-
 	ColumnPtr convertToFullColumnIfConst() const override
 	{
 		Block materialized = data;
@@ -267,6 +253,21 @@ public:
 
 	const Columns & getColumns() const { return columns; }
 	Columns & getColumns() { return columns; }
+
+private:
+	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override
+	{
+		const size_t tuple_size = columns.size();
+
+		min = Tuple(TupleBackend(tuple_size));
+		max = Tuple(TupleBackend(tuple_size));
+
+		auto & min_backend = min.get<Tuple &>().t;
+		auto & max_backend = max.get<Tuple &>().t;
+
+		for (const auto i : ext::range(0, tuple_size))
+			columns[i]->getExtremes(min_backend[i], max_backend[i], null_map_);
+	}
 };
 
 

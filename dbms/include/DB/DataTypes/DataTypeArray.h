@@ -37,23 +37,6 @@ public:
 	void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 	void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
 
-	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-	void deserializeText(IColumn & column, ReadBuffer & istr) const;
-
-	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override;
-
-	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
-
-	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
-
-	void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-
-	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
-
 	/** Потоковая сериализация массивов устроена по-особенному:
 	  * - записываются/читаются элементы, уложенные подряд, без размеров массивов;
 	  * - размеры записываются/читаются в отдельный столбец,
@@ -86,6 +69,21 @@ public:
 	const DataTypePtr & getNestedType() const { return nested; }
 	const DataTypeTraits::EnrichedDataTypePtr & getEnrichedNestedType() const { return enriched_nested; }
 	const DataTypePtr & getOffsetsType() const { return offsets; }
+
+private:
+	void serializeTextInternal(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const;
+	void deserializeTextQuotedInternal(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const;
+	void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
+	void deserializeTextImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const;
+	void serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
+	void deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const override;
+	void serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
+	void deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const override;
+	void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
+	void deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const override;
+	void serializeTextXMLImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
+	void serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
+	void deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter, NullValuesByteMap * null_map) const override;
 };
 
 }

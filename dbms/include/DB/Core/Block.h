@@ -77,6 +77,8 @@ public:
 	const ColumnWithTypeAndName & getByName(const std::string & name) const;
 
 	bool has(const std::string & name) const;
+	bool hasNullColumns() const;
+	bool hasNullableColumns() const;
 
 	size_t getPositionByName(const std::string & name) const;
 
@@ -112,6 +114,10 @@ public:
 	/** Получить блок со столбцами, переставленными в порядке их имён. */
 	Block sortColumns() const;
 
+	/// Returns a block in which all the nullable columns are replaced by
+	/// their non-nullable counterparts.
+	Block extractNonNullableBlock() const;
+
 	/** Заменяет столбцы смещений внутри вложенных таблиц на один общий для таблицы.
 	 *  Кидает исключение, если эти смещения вдруг оказались неодинаковы.
 	 */
@@ -121,6 +127,8 @@ public:
 
 	void clear();
 	void swap(Block & other) noexcept;
+
+	void reserve(size_t size);
 };
 
 using Blocks = std::vector<Block>;

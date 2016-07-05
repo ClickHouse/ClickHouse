@@ -7,8 +7,11 @@
 #include <DB/Storages/ColumnDefault.h>
 
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnNullable.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNull.h>
+#include <DB/DataTypes/DataTypeNullable.h>
 
 #include <DB/Parsers/ASTExpressionList.h>
 #include <memory>
@@ -243,6 +246,34 @@ bool Block::has(const std::string & name) const
 }
 
 
+bool Block::hasNullColumns() const
+{
+	for (const auto & elem : data)
+	{
+		if (elem.column && elem.type)
+		{
+			if (elem.type.get()->isNull())
+				return true;
+		}
+	}
+	return false;
+}
+
+
+bool Block::hasNullableColumns() const
+{
+	for (const auto & elem : data)
+	{
+		if (elem.column && elem.type)
+		{
+			if (elem.type.get()->isNullable())
+				return true;
+		}
+	}
+	return false;
+}
+
+
 size_t Block::getPositionByName(const std::string & name) const
 {
 	IndexByName_t::const_iterator it = index_by_name.find(name);
@@ -350,6 +381,35 @@ Block Block::sortColumns() const
 }
 
 
+Block Block::extractNonNullableBlock() const
+{
+	Block non_nullable_block;
+	non_nullable_block.reserve(columns());
+
+	size_t pos = 0;
+	for (const auto & col_it : index_by_position)
+	{
+		const auto & col = *col_it;
+
+		if (col.column && col.type && (col.type.get()->isNullable()))
+		{
+			auto nullable_col = static_cast<const ColumnNullable *>(col.column.get());
+			ColumnPtr nested_col = nullable_col->getNestedColumn();
+			auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
+			DataTypePtr nested_type = nullable_type->getNestedType();
+
+			non_nullable_block.insert(pos, {nested_col, nested_type, col.name});
+		}
+		else
+			non_nullable_block.insert(pos, col);
+
+		++pos;
+	}
+
+	return non_nullable_block;
+}
+
+
 ColumnsWithTypeAndName Block::getColumns() const
 {
 	return ColumnsWithTypeAndName(data.begin(), data.end());
@@ -453,6 +513,11 @@ void Block::swap(Block & other) noexcept
 	data.swap(other.data);
 	index_by_name.swap(other.index_by_name);
 	index_by_position.swap(other.index_by_position);
+}
+
+void Block::reserve(size_t size)
+{
+	index_by_position.reserve(size);
 }
 
 }

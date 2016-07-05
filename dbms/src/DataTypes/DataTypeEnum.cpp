@@ -1,5 +1,6 @@
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/DataTypes/NullSymbol.h>
 
 
 namespace DB
@@ -135,72 +136,132 @@ void DataTypeEnum<Type>::deserializeBinary(IColumn & column, ReadBuffer & istr) 
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
-	writeString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+	if (isNullValue(null_map, row_num))
+		writeCString(NullSymbol::Plain::name, ostr);
+	else
+		writeString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
-	writeEscapedString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+	if (isNullValue(null_map, row_num))
+		writeCString(NullSymbol::Escaped::name, ostr);
+	else
+		writeEscapedString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
+void DataTypeEnum<Type>::deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr,
+	NullValuesByteMap * null_map) const
 {
-	/// NOTE Неплохо было бы сделать без создания временного объекта - хотя бы вынести std::string наружу.
-	std::string name;
-	readEscapedString(name, istr);
-	static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
+	if (NullSymbol::Deserializer<NullSymbol::Escaped>::execute(column, istr, null_map))
+	{
+		FieldType default_val = get<FieldType>(getDefault());
+		static_cast<ColumnType &>(column).getData().push_back(default_val);
+	}
+	else
+	{
+		/// NOTE Неплохо было бы сделать без создания временного объекта - хотя бы вынести std::string наружу.
+		std::string name;
+		readEscapedString(name, istr);
+		static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
+	}
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
-	writeQuotedString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+	if (isNullValue(null_map, row_num))
+		writeCString(NullSymbol::Quoted::name, ostr);
+	else
+		writeQuotedString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
+void DataTypeEnum<Type>::deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr,
+	NullValuesByteMap * null_map) const
 {
-	std::string name;
-	readQuotedString(name, istr);
-	static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
+	if (NullSymbol::Deserializer<NullSymbol::Quoted>::execute(column, istr, null_map))
+	{
+		FieldType default_val = get<FieldType>(getDefault());
+		static_cast<ColumnType &>(column).getData().push_back(default_val);
+	}
+	else
+	{
+		std::string name;
+		readQuotedString(name, istr);
+		static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
+	}
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
-	writeJSONString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+	if (isNullValue(null_map, row_num))
+		writeCString(NullSymbol::JSON::name, ostr);
+	else
+		writeJSONString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextXMLImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
-	writeXMLString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+	if (isNullValue(null_map, row_num))
+		writeCString(NullSymbol::XML::name, ostr);
+	else
+		writeXMLString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+void DataTypeEnum<Type>::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr,
+	NullValuesByteMap * null_map) const
 {
-	std::string name;
-	readJSONString(name, istr);
-	static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
+	if (NullSymbol::Deserializer<NullSymbol::JSON>::execute(column, istr, null_map))
+	{
+		FieldType default_val = get<FieldType>(getDefault());
+		static_cast<ColumnType &>(column).getData().push_back(default_val);
+	}
+	else
+	{
+		std::string name;
+		readJSONString(name, istr);
+		static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
+	}
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
-	writeCSVString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+	if (isNullValue(null_map, row_num))
+		writeCString(NullSymbol::CSV::name, ostr);
+	else
+		writeCSVString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeEnum<Type>::deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter,
+	NullValuesByteMap * null_map) const
 {
-	std::string name;
-	readCSVString(name, istr, delimiter);
-	static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
+	if (NullSymbol::Deserializer<NullSymbol::CSV>::execute(column, istr, null_map))
+	{
+		FieldType default_val = get<FieldType>(getDefault());
+		static_cast<ColumnType &>(column).getData().push_back(default_val);
+	}
+	else
+	{
+		std::string name;
+		readCSVString(name, istr, delimiter);
+		static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
+	}
 }
 
 template <typename Type>

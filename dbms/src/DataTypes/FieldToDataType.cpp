@@ -1,6 +1,7 @@
 #include <DB/Core/FieldVisitors.h>
 #include <DB/DataTypes/FieldToDataType.h>
 #include <DB/DataTypes/DataTypeTuple.h>
+#include <DB/DataTypes/DataTypeNull.h>
 #include <ext/size.hpp>
 
 
@@ -41,6 +42,7 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 	bool has_array = false;
 	bool has_float = false;
 	bool has_tuple = false;
+	bool has_null = false;
 	int max_bits = 0;
 	int max_signed_bits = 0;
 	int max_unsigned_bits = 0;
@@ -99,7 +101,7 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 			}
 			case Field::Types::Null:
 			{
-				throw Exception("NULL literals are not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
+				has_null = true;
 				break;
 			}
 		}
@@ -182,6 +184,9 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 				return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
 		}
 	}
+
+	if (has_null)
+		return std::make_shared<DataTypeNull>();
 
 	throw Exception("Incompatible types of elements of array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }

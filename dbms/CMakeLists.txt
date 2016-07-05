@@ -266,6 +266,7 @@ add_library (dbms
 	include/DB/DataStreams/CSVRowOutputStream.h
 	include/DB/DataStreams/CSVRowInputStream.h
 	include/DB/DataStreams/verbosePrintString.h
+	include/DB/DataTypes/NullSymbol.h
 	include/DB/DataTypes/IDataType.h
 	include/DB/DataTypes/IDataTypeDummy.h
 	include/DB/DataTypes/DataTypeSet.h
@@ -284,6 +285,8 @@ add_library (dbms
 	include/DB/DataTypes/DataTypeExpression.h
 	include/DB/DataTypes/DataTypeDateTime.h
 	include/DB/DataTypes/DataTypesNumberFixed.h
+	include/DB/DataTypes/DataTypeNull.h
+	include/DB/DataTypes/DataTypeNullable.h
 	include/DB/Dictionaries/FileDictionarySource.h
 	include/DB/Dictionaries/DictionarySourceFactory.h
 	include/DB/Dictionaries/DictionaryStructure.h
@@ -491,6 +494,8 @@ add_library (dbms
 	include/DB/Columns/ColumnSet.h
 	include/DB/Columns/ColumnArray.h
 	include/DB/Columns/ColumnsNumber.h
+	include/DB/Columns/ColumnNull.h
+	include/DB/Columns/ColumnNullable.h
 	include/DB/Client/MultiplexedConnections.h
 	include/DB/Client/ConnectionPoolWithFailover.h
 	include/DB/Client/Connection.h
@@ -625,6 +630,8 @@ add_library (dbms
 	src/Columns/ColumnArray.cpp
 	src/Columns/ColumnAggregateFunction.cpp
 	src/Columns/ColumnExpression.cpp
+	src/Columns/ColumnNull.cpp
+	src/Columns/ColumnNullable.cpp
 	src/Columns/ColumnsCommon.cpp
 
 	src/Storages/StorageMaterializedView.cpp
@@ -753,6 +760,8 @@ add_library (dbms
 	src/DataTypes/DataTypeAggregateFunction.cpp
 	src/DataTypes/DataTypeEnum.cpp
 	src/DataTypes/DataTypeTuple.cpp
+	src/DataTypes/DataTypeNull.cpp
+	src/DataTypes/DataTypeNullable.cpp
 	src/DataTypes/FieldToDataType.cpp
 
 	src/Dictionaries/MySQLDictionarySource.cpp

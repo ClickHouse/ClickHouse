@@ -123,7 +123,7 @@ ColumnPtr ColumnConst<Tuple>::convertToFullColumn() const
 	return res;
 }
 
-void ColumnConst<Tuple>::getExtremes(Field & min, Field & max) const
+void ColumnConst<Tuple>::getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const
 {
 	min = data_type->getDefault();
 	max = data_type->getDefault();

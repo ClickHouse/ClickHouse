@@ -394,33 +394,6 @@ public:
 		return res;
 	}
 
-	void getExtremes(Field & min, Field & max) const override
-	{
-		size_t size = data.size();
-
-		if (size == 0)
-		{
-			min = typename NearestFieldType<T>::Type(0);
-			max = typename NearestFieldType<T>::Type(0);
-			return;
-		}
-
-		T cur_min = data[0];
-		T cur_max = data[0];
-
-		for (size_t i = 1; i < size; ++i)
-		{
-			if (data[i] < cur_min)
-				cur_min = data[i];
-
-			if (data[i] > cur_max)
-				cur_max = data[i];
-		}
-
-		min = typename NearestFieldType<T>::Type(cur_min);
-		max = typename NearestFieldType<T>::Type(cur_max);
-	}
-
 	/** Более эффективные методы манипуляции */
 	Container_t & getData()
 	{
@@ -434,6 +407,72 @@ public:
 
 protected:
 	Container_t data;
+
+private:
+	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override
+	{
+		size_t size = data.size();
+
+		if (size == 0)
+		{
+			min = typename NearestFieldType<T>::Type(0);
+			max = typename NearestFieldType<T>::Type(0);
+			return;
+		}
+
+		size_t min_i = 0;
+		if (null_map_ != nullptr)
+		{
+			const auto & null_map_ref = *null_map_;
+
+			for (; min_i < size; ++min_i)
+			{
+				if (null_map_ref[min_i]  == 0)
+					break;
+			}
+
+			if (min_i == size)
+			{
+				min = Field{};
+				max = Field{};
+				return;
+			}
+		}
+
+		T cur_min = data[min_i];
+		T cur_max = data[min_i];
+
+		if (null_map_ != nullptr)
+		{
+			const auto & null_map_ref = *null_map_;
+
+			for (size_t i = min_i + 1; i < size; ++i)
+			{
+				if (null_map_ref[i] != 0)
+					continue;
+
+				if (data[i] < cur_min)
+					cur_min = data[i];
+
+				if (data[i] > cur_max)
+					cur_max = data[i];
+			}
+		}
+		else
+		{
+			for (size_t i = min_i + 1; i < size; ++i)
+			{
+				if (data[i] < cur_min)
+					cur_min = data[i];
+
+				if (data[i] > cur_max)
+					cur_max = data[i];
+			}
+		}
+
+		min = typename NearestFieldType<T>::Type(cur_min);
+		max = typename NearestFieldType<T>::Type(cur_max);
+	}
 };
 
 

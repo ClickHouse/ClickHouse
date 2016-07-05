@@ -5,6 +5,7 @@
 #include <DB/Columns/ColumnConst.h>
 
 #include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/NullSymbol.h>
 
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
@@ -211,17 +212,27 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 }
 
 
-void DataTypeString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeString::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
-	writeString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+	if (isNullValue(null_map, row_num))
+		writeCString(NullSymbol::Plain::name, ostr);
+	else
+		writeString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeString::serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
-	writeEscapedString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+	if (isNullValue(null_map, row_num))
+		writeCString(NullSymbol::Escaped::name, ostr);
+	else
+		writeEscapedString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
+namespace
+{
 
 template <typename Reader>
 static inline void read(IColumn & column, ReadBuffer & istr, Reader && reader)
@@ -247,52 +258,95 @@ static inline void read(IColumn & column, ReadBuffer & istr, Reader && reader)
 	}
 }
 
-
-void DataTypeString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
+void insertEmptyString(IColumn & column)
 {
-	read(column, istr, [&](ColumnString::Chars_t & data) { readEscapedStringInto(data, istr); });
+	ColumnString & column_string = static_cast<ColumnString &>(column);
+	ColumnString::Chars_t & data = column_string.getChars();
+	ColumnString::Offsets_t & offsets = column_string.getOffsets();
+
+	data.push_back(0);
+	offsets.push_back(data.size());
+}
+
+}
+
+void DataTypeString::deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr,
+	NullValuesByteMap * null_map) const
+{
+	if (NullSymbol::Deserializer<NullSymbol::Escaped>::execute(column, istr, null_map))
+		insertEmptyString(column);
+	else
+		read(column, istr, [&](ColumnString::Chars_t & data) { readEscapedStringInto(data, istr); });
 }
 
 
-void DataTypeString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeString::serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
-	writeQuotedString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+	if (isNullValue(null_map, row_num))
+		writeCString(NullSymbol::Quoted::name, ostr);
+	else
+		writeQuotedString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
+void DataTypeString::deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr,
+	NullValuesByteMap * null_map) const
 {
-	read(column, istr, [&](ColumnString::Chars_t & data) { readQuotedStringInto(data, istr); });
+	if (NullSymbol::Deserializer<NullSymbol::Quoted>::execute(column, istr, null_map))
+		insertEmptyString(column);
+	else
+		read(column, istr, [&](ColumnString::Chars_t & data) { readQuotedStringInto(data, istr); });
 }
 
 
-void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeString::serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
-	writeJSONString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+	if (isNullValue(null_map, row_num))
+		writeCString(NullSymbol::JSON::name, ostr);
+	else
+		writeJSONString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+void DataTypeString::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr,
+	NullValuesByteMap * null_map) const
 {
-	read(column, istr, [&](ColumnString::Chars_t & data) { readJSONStringInto(data, istr); });
+	if (NullSymbol::Deserializer<NullSymbol::JSON>::execute(column, istr, null_map))
+		insertEmptyString(column);
+	else
+		read(column, istr, [&](ColumnString::Chars_t & data) { readJSONStringInto(data, istr); });
 }
 
 
-void DataTypeString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeString::serializeTextXMLImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
-	writeXMLString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+	if (isNullValue(null_map, row_num))
+		writeCString(NullSymbol::XML::name, ostr);
+	else
+		writeXMLString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeString::serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	const NullValuesByteMap * null_map) const
 {
-	writeCSVString<>(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+	if (isNullValue(null_map, row_num))
+		writeCString(NullSymbol::CSV::name, ostr);
+	else
+		writeCSVString<>(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeString::deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter,
+	NullValuesByteMap * null_map) const
 {
-	read(column, istr, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr); });
+	if (NullSymbol::Deserializer<NullSymbol::CSV>::execute(column, istr, null_map))
+		insertEmptyString(column);
+	else
+		read(column, istr, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr); });
 }
 
 
