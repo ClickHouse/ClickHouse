@@ -5,7 +5,10 @@
 #include <DB/IO/CompressedReadBufferFromFile.h>
 
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnNullable.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 
 #include <DB/DataStreams/NativeBlockInputStream.h>
@@ -21,6 +24,20 @@ namespace ErrorCodes
 	extern const int CANNOT_READ_ALL_DATA;
 }
 
+namespace
+{
+
+void deserializeNullValuesByteMap(ColumnNullable & nullable_col, ReadBuffer & istr, size_t limit)
+{
+	ColumnUInt8 & null_map = static_cast<ColumnUInt8 &>(*(nullable_col.getNullValuesByteMap().get()));
+	auto & x = null_map.getData();
+
+	x.resize(limit);
+	size_t read_count = istr.readBig(reinterpret_cast<char *>(&x[0]), limit);
+	x.resize(read_count);
+}
+
+}
 
 NativeBlockInputStream::NativeBlockInputStream(
 	ReadBuffer & istr_, UInt64 server_revision_,
@@ -43,10 +60,23 @@ NativeBlockInputStream::NativeBlockInputStream(
 
 void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows)
 {
-	/** Для массивов требуется сначала десериализовать смещения, а потом значения.
-	  */
-	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	if (type.isNullable())
 	{
+		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
+		const IDataType & nested_type = *(nullable_type.getNestedType().get());
+
+		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(column);
+		IColumn & nested_col = *(nullable_col.getNestedColumn().get());
+
+		deserializeNullValuesByteMap(nullable_col, istr, rows);
+		readData(nested_type, nested_col, istr, rows);
+
+		return;
+	}
+	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	{
+		/** Для массивов требуется сначала десериализовать смещения, а потом значения.
+		*/
 		IColumn & offsets_column = *typeid_cast<ColumnArray &>(column).getOffsetsColumn();
 		type_arr->getOffsetsType()->deserializeBinary(offsets_column, istr, rows, 0);
 

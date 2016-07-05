@@ -6,8 +6,11 @@
 
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnNullable.h>
+#include <DB/Columns/ColumnsNumber.h>
 
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNullable.h>
 
 #include <DB/DataStreams/MarkInCompressedFile.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
@@ -16,6 +19,23 @@
 namespace DB
 {
 
+namespace
+{
+
+void serializeNullValuesByteMap(const ColumnNullable & nullable_col, WriteBuffer & ostr, size_t offset, size_t limit)
+{
+	const IColumn & nested_col = *(nullable_col.getNestedColumn().get());
+	const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*(nullable_col.getNullValuesByteMap().get()));
+	const auto & x = content.getData();
+
+	size_t size = nested_col.size();
+	if ((limit == 0) || (offset + limit) > size)
+		limit = size - offset;
+
+	ostr.write(reinterpret_cast<const char *>(&x[offset]), limit);
+}
+
+}
 
 NativeBlockOutputStream::NativeBlockOutputStream(
 	WriteBuffer & ostr_, UInt64 client_revision_,
@@ -44,10 +64,21 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 	else
 		full_column = column;
 
-	/** Для массивов требуется сначала сериализовать смещения, а потом значения.
-	  */
-	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	if (type.isNullable())
 	{
+		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
+		const IDataType & nested_type = *(nullable_type.getNestedType().get());
+
+		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*full_column.get());
+		const ColumnPtr & nested_col = nullable_col.getNestedColumn();
+
+		serializeNullValuesByteMap(nullable_col, ostr, offset, limit);
+		writeData(nested_type, nested_col, ostr, offset, limit);
+	}
+	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	{
+		/** Для массивов требуется сначала сериализовать смещения, а потом значения.
+		*/
 		const ColumnArray & column_array = typeid_cast<const ColumnArray &>(*full_column);
 		type_arr->getOffsetsType()->serializeBinary(*column_array.getOffsetsColumn(), ostr, offset, limit);
 
