@@ -2,6 +2,7 @@
 #include <unistd.h>
 
 #include <DB/DataStreams/PrettyCompactBlockOutputStream.h>
+#include <DB/DataTypes/NullSymbol.h>
 
 
 namespace DB
@@ -83,19 +84,23 @@ void PrettyCompactBlockOutputStream::writeRow(
 
 		const ColumnWithTypeAndName & col = block.getByPosition(j);
 
+		size_t width;
+
+		Field f = (*(block.getByPosition(columns + j).column))[row_id];
+		if (f.isNull())
+			width = NullSymbol::Escaped::length;
+		else
+			width = get<UInt64>(f);
+
 		if (col.type->isNumeric())
 		{
-			size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[row_id]);
 			for (size_t k = 0; k < max_widths[j] - width; ++k)
 				writeChar(' ', ostr);
-
 			col.type->serializeTextEscaped(*col.column.get(), row_id, ostr);
 		}
 		else
 		{
 			col.type->serializeTextEscaped(*col.column.get(), row_id, ostr);
-
-			size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[row_id]);
 			for (size_t k = 0; k < max_widths[j] - width; ++k)
 				writeChar(' ', ostr);
 		}
