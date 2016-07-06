@@ -11,6 +11,7 @@
 
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 
 #include <DB/DataStreams/MarkInCompressedFile.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
@@ -18,24 +19,6 @@
 
 namespace DB
 {
-
-namespace
-{
-
-void serializeNullValuesByteMap(const ColumnNullable & nullable_col, WriteBuffer & ostr, size_t offset, size_t limit)
-{
-	const IColumn & nested_col = *(nullable_col.getNestedColumn().get());
-	const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*(nullable_col.getNullValuesByteMap().get()));
-	const auto & x = content.getData();
-
-	size_t size = nested_col.size();
-	if ((limit == 0) || (offset + limit) > size)
-		limit = size - offset;
-
-	ostr.write(reinterpret_cast<const char *>(&x[offset]), limit);
-}
-
-}
 
 NativeBlockOutputStream::NativeBlockOutputStream(
 	WriteBuffer & ostr_, UInt64 client_revision_,
@@ -72,7 +55,9 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*full_column.get());
 		const ColumnPtr & nested_col = nullable_col.getNestedColumn();
 
-		serializeNullValuesByteMap(nullable_col, ostr, offset, limit);
+		const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*(nullable_col.getNullValuesByteMap().get()));
+		DataTypeUInt8{}.serializeBinary(content, ostr, offset, limit);
+
 		writeData(nested_type, nested_col, ostr, offset, limit);
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))

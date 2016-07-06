@@ -9,6 +9,7 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 
 #include <DB/DataStreams/NativeBlockInputStream.h>
@@ -22,21 +23,6 @@ namespace ErrorCodes
 	extern const int INCORRECT_INDEX;
 	extern const int LOGICAL_ERROR;
 	extern const int CANNOT_READ_ALL_DATA;
-}
-
-namespace
-{
-
-void deserializeNullValuesByteMap(ColumnNullable & nullable_col, ReadBuffer & istr, size_t limit)
-{
-	ColumnUInt8 & null_map = static_cast<ColumnUInt8 &>(*(nullable_col.getNullValuesByteMap().get()));
-	auto & x = null_map.getData();
-
-	x.resize(limit);
-	size_t read_count = istr.readBig(reinterpret_cast<char *>(&x[0]), limit);
-	x.resize(read_count);
-}
-
 }
 
 NativeBlockInputStream::NativeBlockInputStream(
@@ -68,7 +54,9 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
 		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(column);
 		IColumn & nested_col = *(nullable_col.getNestedColumn().get());
 
-		deserializeNullValuesByteMap(nullable_col, istr, rows);
+		ColumnUInt8 & null_map = static_cast<ColumnUInt8 &>(*(nullable_col.getNullValuesByteMap().get()));
+		DataTypeUInt8{}.deserializeBinary(null_map, istr, rows, 0);
+
 		readData(nested_type, nested_col, istr, rows);
 
 		return;
