@@ -10,7 +10,7 @@ SquashingTransform::SquashingTransform(size_t min_block_size_rows, size_t min_bl
 }
 
 
-SquashingTransform::Result SquashingTransform::add(Block & block)
+SquashingTransform::Result SquashingTransform::add(Block && block)
 {
 	if (all_read)
 		return true;

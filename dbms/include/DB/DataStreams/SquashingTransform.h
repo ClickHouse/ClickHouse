@@ -18,7 +18,7 @@ public:
 		Result(Block && block_) : ready(true), block(std::move(block_)) {}
 	};
 
-	Result add(Block & block);
+	Result add(Block && block);
 
 private:
 	size_t min_block_size_rows;
