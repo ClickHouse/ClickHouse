@@ -617,10 +617,6 @@ void TCPHandler::initBlockInput()
 		state.block_in = std::make_shared<NativeBlockInputStream>(
 			*state.maybe_compressed_in,
 			client_revision);
-
-		state.block_in = std::make_shared<SquashingBlockInputStream>(state.block_in,
-			query_context.getSettingsRef().min_insert_block_size_rows,
-			query_context.getSettingsRef().min_insert_block_size_bytes);
 	}
 }
 
