@@ -763,6 +763,7 @@ add_library (dbms
 	src/DataTypes/DataTypeTuple.cpp
 	src/DataTypes/DataTypeNull.cpp
 	src/DataTypes/DataTypeNullable.cpp
+	src/DataTypes/NullSymbol.cpp
 	src/DataTypes/FieldToDataType.cpp
 
 	src/Dictionaries/MySQLDictionarySource.cpp
