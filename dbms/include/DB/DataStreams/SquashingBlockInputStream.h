@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/SquashingTransform.h>
 
 
 namespace DB
@@ -37,15 +38,7 @@ protected:
 	Block readImpl() override;
 
 private:
-	size_t min_block_size_rows;
-	size_t min_block_size_bytes;
-
-	Block accumulated_block;
-	bool all_read = false;
-
-	void append(Block && block);
-
-	bool isEnoughSize(size_t rows, size_t bytes) const;
+	SquashingTransform transform;
 };
 
 }

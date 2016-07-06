@@ -266,6 +266,7 @@ add_library (dbms
 	include/DB/DataStreams/CSVRowOutputStream.h
 	include/DB/DataStreams/CSVRowInputStream.h
 	include/DB/DataStreams/verbosePrintString.h
+	include/DB/DataStreams/SquashingTransform.h
 	include/DB/DataStreams/SquashingBlockInputStream.h
 	include/DB/DataTypes/IDataType.h
 	include/DB/DataTypes/IDataTypeDummy.h
@@ -745,6 +746,7 @@ add_library (dbms
 	src/DataStreams/RemoteBlockInputStream.cpp
 	src/DataStreams/BlockIO.cpp
 	src/DataStreams/verbosePrintString.cpp
+	src/DataStreams/SquashingTransform.cpp
 	src/DataStreams/SquashingBlockInputStream.cpp
 
 	src/DataTypes/DataTypeString.cpp
