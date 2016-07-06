@@ -1075,13 +1075,13 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		return getReturnTypeImpl(arguments);
+		return getReturnTypeInternal(arguments);
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		IDataType * from_type = &*block.getByPosition(arguments[0]).type;
 
@@ -1118,7 +1118,7 @@ public:
 
 private:
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
+	DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
 		typename std::enable_if<!(std::is_same<ToDataType2, DataTypeString>::value ||
 			std::is_same<Name2, NameToUnixTimestamp>::value ||
 			std::is_same<Name2, NameToDate>::value)>::type * = nullptr) const
@@ -1132,7 +1132,7 @@ private:
 	}
 
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
+	DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
 		typename std::enable_if<std::is_same<ToDataType2, DataTypeString>::value>::type * = nullptr) const
 	{
 		if ((arguments.size() < 1) || (arguments.size() > 2))
@@ -1159,7 +1159,7 @@ private:
 	}
 
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
+	DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
 		typename std::enable_if<std::is_same<Name2, NameToUnixTimestamp>::value, void>::type * = nullptr) const
 	{
 		if ((arguments.size() < 1) || (arguments.size() > 2))
@@ -1186,7 +1186,7 @@ private:
 	}
 
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
+	DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
 		typename std::enable_if<std::is_same<Name2, NameToDate>::value>::type * = nullptr) const
 	{
 		if ((arguments.size() < 1) || (arguments.size() > 2))
@@ -1225,7 +1225,7 @@ public:
 	  * Если функция неприменима для данных аргументов - кинуть исключение.
 	  * Для неконстантных столбцов arguments[i].column = nullptr.
 	  */
-	void getReturnTypeAndPrerequisites(const ColumnsWithTypeAndName & arguments,
+	void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
 		DataTypePtr & out_return_type,
 		std::vector<ExpressionAction> & out_prerequisites) override
 	{
@@ -1245,7 +1245,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto n = getSize(block.getByPosition(arguments[1]));
 		return execute(block, arguments, result, n);
@@ -1876,7 +1876,7 @@ public:
 
 	String getName() const override { return name; }
 
-	void getReturnTypeAndPrerequisites(
+	void getReturnTypeAndPrerequisitesImpl(
 		const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type,
 		std::vector<ExpressionAction> & out_prerequisites) override
 	{
@@ -1897,7 +1897,7 @@ public:
 		prepareMonotonicityInformation(arguments.front().type, out_return_type.get());
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		/// drop second argument, pass others
 		ColumnNumbers new_arguments{arguments.front()};

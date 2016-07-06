@@ -30,6 +30,7 @@ add_library (dbms
 	src/Server/ReplicasStatusHandler.h
 	src/Client/InterruptListener.h
 	include/DB/Functions/FunctionsLogical.h
+	include/DB/Functions/FunctionsNull.h
 	include/DB/Functions/FunctionsReinterpret.h
 	include/DB/Functions/FunctionFactory.h
 	include/DB/Functions/FunctionsArray.h
@@ -850,6 +851,7 @@ add_library (dbms
 	src/Interpreters/ClusterProxy/AlterQueryConstructor.cpp
 	src/Interpreters/ClusterProxy/Query.cpp
 
+	src/Functions/IFunction.cpp
 	src/Functions/FunctionFactory.cpp
 	src/Functions/FunctionsArithmetic.cpp
 	src/Functions/FunctionsArray.cpp
@@ -863,6 +865,7 @@ add_library (dbms
 	src/Functions/FunctionsHashing.cpp
 	src/Functions/FunctionsHigherOrder.cpp
 	src/Functions/FunctionsLogical.cpp
+	src/Functions/FunctionsNull.cpp
 	src/Functions/FunctionsRandom.cpp
 	src/Functions/FunctionsReinterpret.cpp
 	src/Functions/FunctionsRound.cpp

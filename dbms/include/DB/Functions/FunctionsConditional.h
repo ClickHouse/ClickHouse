@@ -1267,7 +1267,7 @@ public:
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 3)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1334,7 +1334,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(&*block.getByPosition(arguments[0]).column);
 		const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(&*block.getByPosition(arguments[0]).column);
@@ -1412,13 +1412,13 @@ public:
 		is_case_mode = true;
 	}
 
-	DataTypePtr getReturnType(const DataTypes & args) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
 	{
 		DataTypePtr data_type;
 
 		try
 		{
-			data_type = getReturnTypeImpl(args);
+			data_type = getReturnTypeInternal(args);
 		}
 		catch (const Conditional::CondException & ex)
 		{
@@ -1428,7 +1428,7 @@ public:
 		return data_type;
 	}
 
-	void execute(Block & block, const ColumnNumbers & args, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override
 	{
 		try
 		{
@@ -1459,7 +1459,7 @@ public:
 	}
 
 private:
-	DataTypePtr getReturnTypeImpl(const DataTypes & args) const
+	DataTypePtr getReturnTypeInternal(const DataTypes & args) const
 	{
 		if (!Conditional::hasValidArgCount(args))
 		{
@@ -1512,7 +1512,7 @@ private:
 
 			push_branch_arg(Conditional::elseArg(args));
 
-			return std::make_shared<DataTypeArray>(getReturnType(new_args));
+			return std::make_shared<DataTypeArray>(getReturnTypeImpl(new_args));
 		}
 		else if (!Conditional::hasIdenticalTypes(args))
 		{

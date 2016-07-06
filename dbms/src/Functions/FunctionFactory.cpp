@@ -36,6 +36,7 @@ void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
 void registerFunctionsTransform(FunctionFactory &);
+void registerFunctionsNull(FunctionFactory &);
 
 
 FunctionFactory::FunctionFactory()
@@ -63,6 +64,7 @@ FunctionFactory::FunctionFactory()
 	registerFunctionsVisitParam(*this);
 	registerFunctionsMath(*this);
 	registerFunctionsTransform(*this);
+	registerFunctionsNull(*this);
 }
 
 

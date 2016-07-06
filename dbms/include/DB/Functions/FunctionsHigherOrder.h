@@ -555,7 +555,7 @@ public:
 
 	/// Вызывается, если хоть один агрумент функции - лямбда-выражение.
 	/// Для аргументов-лямбда-выражений определяет типы аргументов этих выражений.
-	void getLambdaArgumentTypes(DataTypes & arguments) const override
+	void getLambdaArgumentTypesImpl(DataTypes & arguments) const override
 	{
 		if (arguments.size() < 1)
 			throw Exception("Function " + getName() + " needs at least one argument; passed "
@@ -585,7 +585,7 @@ public:
 		arguments[0] = std::make_shared<DataTypeExpression>(nested_types);
 	}
 
-	void getReturnTypeAndPrerequisites(const ColumnsWithTypeAndName & arguments,
+	void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
 										DataTypePtr & out_return_type,
 										ExpressionActions::Actions & out_prerequisites) override
 	{
@@ -655,7 +655,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result) override
 	{
 		if (arguments.size() == 1)
 		{

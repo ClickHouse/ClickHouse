@@ -22,7 +22,7 @@ public:
 private:
 	String getName() const override { return name; }
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 0)
 			throw Exception{
@@ -34,7 +34,7 @@ private:
 		return std::make_shared<DataTypeFloat64>();
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		block.getByPosition(result).column = std::make_shared<ColumnConst<Float64>>(
 			block.rowsInFirstColumn(),
@@ -53,7 +53,7 @@ public:
 private:
 	String getName() const override { return name; }
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception{
@@ -134,7 +134,7 @@ private:
 		return false;
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto arg = block.getByPosition(arguments[0]).column.get();
 
@@ -204,7 +204,7 @@ public:
 private:
 	String getName() const override { return name; }
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 2)
 			throw Exception{
@@ -409,7 +409,7 @@ private:
 		return false;
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto left_arg = block.getByPosition(arguments[0]).column.get();
 

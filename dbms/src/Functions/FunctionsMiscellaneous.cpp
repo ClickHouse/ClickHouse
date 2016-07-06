@@ -172,7 +172,7 @@ namespace VisibleWidth
 }
 
 
-void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & arguments, size_t result)
+void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
 	const ColumnPtr column = block.getByPosition(arguments[0]).column;
 	const DataTypePtr type = block.getByPosition(arguments[0]).type;
