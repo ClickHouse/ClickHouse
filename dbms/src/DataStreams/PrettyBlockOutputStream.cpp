@@ -2,8 +2,9 @@
 #include <unistd.h>
 
 #include <DB/Functions/FunctionsMiscellaneous.h>
-
 #include <DB/DataStreams/PrettyBlockOutputStream.h>
+#include <DB/Columns/ColumnNullable.h>
+#include <DB/DataTypes/NullSymbol.h>
 
 
 namespace DB
@@ -46,20 +47,39 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 
 		column.column = block.getByPosition(i + columns).column;
 
-		if (const ColumnUInt64 * col = typeid_cast<const ColumnUInt64 *>(&*column.column))
+		IColumn * observed_col;
+		if (column.column.get()->isNullable())
+		{
+			ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(column.column.get()));
+			observed_col = nullable_col.getNestedColumn().get();
+		}
+		else
+			observed_col = column.column.get();
+
+		if (const ColumnUInt64 * col = typeid_cast<const ColumnUInt64 *>(observed_col))
 		{
 			const ColumnUInt64::Container_t & res = col->getData();
 			for (size_t j = 0; j < rows; ++j)
-				if (res[j] > max_widths[i])
-					max_widths[i] = res[j];
+			{
+				Field f = (*(block.getByPosition(columns + i).column))[j];
+
+				size_t cur_width;
+				if (f.isNull())
+					cur_width = NullSymbol::Escaped::length;
+				else
+					cur_width = res[j];
+
+				if (cur_width > max_widths[i])
+					max_widths[i] = cur_width;
+			}
 		}
-		else if (const ColumnConstUInt64 * col = typeid_cast<const ColumnConstUInt64 *>(&*column.column))
+		else if (const ColumnConstUInt64 * col = typeid_cast<const ColumnConstUInt64 *>(observed_col))
 		{
 			UInt64 res = col->getData();
 			max_widths[i] = res;
 		}
 		else
-			throw Exception("Illegal column " + column.column->getName()
+			throw Exception("Illegal column " + observed_col->getName()
 				+ " of result of function " + visible_width_func.getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 

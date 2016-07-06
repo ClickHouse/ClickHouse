@@ -4,6 +4,7 @@
 #include <DB/Functions/FunctionsArithmetic.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
 #include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/Columns/ColumnNull.h>
 #include <ext/enumerate.hpp>
 
 
@@ -368,6 +369,8 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
 		  */
 		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(rows, 10);
 	}
+	else if (typeid_cast<const ColumnNull *>(&*column) != nullptr)
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(rows, strlen_constexpr("NULL"));
 	else
 	   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
 			+ " of argument of function " + getName(),
