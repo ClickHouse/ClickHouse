@@ -130,34 +130,43 @@ public:
 
 	PODArray() {}
 
-    PODArray(size_t n)
+	PODArray(size_t n)
 	{
 		alloc_for_num_elements(n);
 		c_end += byte_size(n);
 	}
 
-    PODArray(size_t n, const T & x)
+	PODArray(size_t n, const T & x)
 	{
 		alloc_for_num_elements(n);
 		assign(n, x);
 	}
 
-    PODArray(const_iterator from_begin, const_iterator from_end)
+	PODArray(const_iterator from_begin, const_iterator from_end)
 	{
 		alloc_for_num_elements(from_end - from_begin);
 		insert(from_begin, from_end);
 	}
 
-    ~PODArray()
+	~PODArray()
 	{
 		dealloc();
 	}
 
 	PODArray(PODArray && other)
 	{
-		c_start = other.c_start;
-		c_end = other.c_end;
-		c_end_of_storage = other.c_end_of_storage;
+		if ((other.size() > 0) && (other.size() <= TAllocator::getStackThreshold()))
+		{
+			alloc(other.size());
+			TAllocator::copyStackMemoryFrom(&other, other.size());
+			c_end = c_start + (other.c_end - other.c_start);
+		}
+		else
+		{
+			c_start = other.c_start;
+			c_end = other.c_end;
+			c_end_of_storage = other.c_end_of_storage;
+		}
 
 		other.c_start = nullptr;
 		other.c_end = nullptr;
@@ -166,9 +175,23 @@ public:
 
 	PODArray & operator=(PODArray && other)
 	{
-		std::swap(c_start, other.c_start);
-		std::swap(c_end, other.c_end);
-		std::swap(c_end_of_storage, other.c_end_of_storage);
+		if ((other.size()) > 0 && (other.size() <= TAllocator::getStackThreshold()))
+		{
+			clear();
+			alloc(other.size());
+			TAllocator::copyStackMemoryFrom(&other, other.size());
+			c_end = c_start + (other.c_end - other.c_start);
+
+			other.c_start = nullptr;
+			other.c_end = nullptr;
+			other.c_end_of_storage = nullptr;
+		}
+		else
+		{
+			std::swap(c_start, other.c_start);
+			std::swap(c_end, other.c_end);
+			std::swap(c_end_of_storage, other.c_end_of_storage);
+		}
 
 		return *this;
 	}
@@ -176,9 +199,9 @@ public:
 	T * data() { return t_start(); }
 	const T * data() const { return t_start(); }
 
-    size_t size() const { return t_end() - t_start(); }
-    bool empty() const { return t_end() == t_start(); }
-    size_t capacity() const { return t_end_of_storage() - t_start(); }
+	size_t size() const { return t_end() - t_start(); }
+	bool empty() const { return t_end() == t_start(); }
+	size_t capacity() const { return t_end_of_storage() - t_start(); }
 
 	T & operator[] (size_t n) 				{ return t_start()[n]; }
 	const T & operator[] (size_t n) const 	{ return t_start()[n]; }
@@ -310,9 +333,28 @@ public:
 
 	void swap(PODArray & rhs)
 	{
-		std::swap(c_start, rhs.c_start);
-		std::swap(c_end, rhs.c_end);
-		std::swap(c_end_of_storage, rhs.c_end_of_storage);
+		if (rhs.size() <= TAllocator::getStackThreshold())
+		{
+			size_t lhs_size = size();
+			size_t rhs_size = rhs.size();
+
+			clear();
+			alloc(rhs_size);
+
+			rhs.clear();
+			rhs.alloc(lhs_size);
+
+			TAllocator::swapStackMemoryWith(&rhs);
+
+			c_end = c_start + rhs_size;
+			rhs.c_end = rhs.c_start + lhs_size;
+		}
+		else
+		{
+			std::swap(c_start, rhs.c_start);
+			std::swap(c_end, rhs.c_end);
+			std::swap(c_end_of_storage, rhs.c_end_of_storage);
+		}
 	}
 
 	void assign(size_t n, const T & x)

@@ -164,6 +164,20 @@ public:
 
 		return buf;
 	}
+
+protected:
+	static constexpr size_t getStackThreshold()
+	{
+		return 0;
+	}
+
+	void copyStackMemoryFrom(const void * src, size_t byte_count)
+	{
+	}
+
+	void swapStackMemoryWith(void * src)
+	{
+	}
 };
 
 
@@ -208,6 +222,28 @@ public:
 		void * new_buf = Base::alloc(new_size);
 		memcpy(new_buf, buf, old_size);
 		return new_buf;
+	}
+
+protected:
+	static constexpr size_t getStackThreshold()
+	{
+		return N;
+	}
+
+	void copyStackMemoryFrom(const void * src, size_t byte_count)
+	{
+		const auto from = reinterpret_cast<const AllocatorWithStackMemory *>(src);
+		if (Base::clear_memory)
+			memcpy(&stack_memory[0], &from->stack_memory[0], N * sizeof(char));
+		else
+			memcpy(&stack_memory[0], &from->stack_memory[0], byte_count * sizeof(char));
+	}
+
+	void swapStackMemoryWith(void * rhs)
+	{
+		auto other = reinterpret_cast<const AllocatorWithStackMemory *>(rhs);
+		for (size_t i = 0; i < N; ++i)
+			std::swap(stack_memory[i], other->stack_memory[i]);
 	}
 };
 
