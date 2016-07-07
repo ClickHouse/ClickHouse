@@ -104,13 +104,13 @@ size_t DataTypeNull::getSizeOfField() const
 void DataTypeNull::serializeTextEscapedImpl(const IColumn & column, size_t row_num,
 	WriteBuffer & ostr, const NullValuesByteMap * null_map) const
 {
-	writeCString(NullSymbol::Quoted::name, ostr);
+	writeCString(NullSymbol::Escaped::name, ostr);
 }
 
 void DataTypeNull::deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr,
 	NullValuesByteMap * null_map) const
 {
-	assertString(NullSymbol::Quoted::name, istr);
+	assertString(NullSymbol::Escaped::name, istr);
 }
 
 void DataTypeNull::serializeTextQuotedImpl(const IColumn & column, size_t row_num,

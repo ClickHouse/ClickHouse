@@ -9,7 +9,7 @@ namespace DB
 class ColumnNullable final : public IColumn
 {
 public:
-	ColumnNullable(ColumnPtr nested_column);
+	ColumnNullable(ColumnPtr nested_column_);
 	std::string getName() const override;
 	bool isNumeric() const override;
 	bool isConst() const override;
@@ -49,12 +49,12 @@ public:
 
 private:
 	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override;
+	ColumnUInt8 & getNullMapContent();
+	const ColumnUInt8 & getNullMapContent() const;
 
 private:
-	ColumnPtr data_holder;
-	IColumn & data;
-	ColumnPtr null_map_holder;
-	ColumnUInt8 & null_map;
+	ColumnPtr nested_column;
+	ColumnPtr null_map;
 };
 
 }

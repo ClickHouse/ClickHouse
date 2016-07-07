@@ -8,7 +8,7 @@ namespace DB
 class DataTypeNullable : public IDataType
 {
 public:
-	DataTypeNullable(DataTypePtr nested_data_type_holder_);
+	DataTypeNullable(DataTypePtr nested_data_type_);
 	std::string getName() const override;
 	bool isNullable() const override;
 	bool isNumeric() const override;
@@ -40,8 +40,7 @@ private:
 	void serializeTextXMLImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
 
 private:
-	DataTypePtr nested_data_type_holder;
-	IDataType & nested_data_type;
+	DataTypePtr nested_data_type;
 };
 
 }

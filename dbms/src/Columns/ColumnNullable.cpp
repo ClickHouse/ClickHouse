@@ -10,38 +10,36 @@ extern const int LOGICAL_ERROR;
 
 }
 
-ColumnNullable::ColumnNullable(ColumnPtr nested_column)
-	: data_holder{nested_column},
-	data{*(data_holder.get())},
-	null_map_holder{std::make_shared<ColumnUInt8>()},
-	null_map{static_cast<ColumnUInt8 &>(*null_map_holder.get())}
+ColumnNullable::ColumnNullable(ColumnPtr nested_column_)
+	: nested_column{nested_column_},
+	null_map{std::make_shared<ColumnUInt8>()}
 {
-	if (data.isNullable())
+	if (nested_column.get()->isNullable())
 		throw Exception{"A nullable column cannot contain another nullable column", ErrorCodes::LOGICAL_ERROR};
 
-	size_t n = data.size();
+	size_t n = nested_column.get()->size();
 	if (n > 0)
-		null_map.getData().resize_fill(n, 0);
+		getNullMapContent().getData().resize_fill(n, 0);
 }
 
 std::string ColumnNullable::getName() const
 {
-	return "ColumnNullable(" + data.getName() + ")";
+	return "ColumnNullable(" + nested_column.get()->getName() + ")";
 }
 
 bool ColumnNullable::isNumeric() const
 {
-	return data.isNumeric();
+	return nested_column.get()->isNumeric();
 }
 
 bool ColumnNullable::isConst() const
 {
-	return data.isConst();
+	return nested_column.get()->isConst();
 }
 
 bool ColumnNullable::isFixed() const
 {
-	return data.isFixed();
+	return nested_column.get()->isFixed();
 }
 
 bool ColumnNullable::isNullable() const
@@ -51,23 +49,23 @@ bool ColumnNullable::isNullable() const
 
 size_t ColumnNullable::sizeOfField() const
 {
-	return data.sizeOfField();
+	return nested_column.get()->sizeOfField();
 }
 
 ColumnPtr ColumnNullable::convertToFullColumnIfConst() const
 {
 	ColumnPtr new_col_holder;
 
-	if (auto full_col = data.convertToFullColumnIfConst())
+	if (auto full_col = nested_column.get()->convertToFullColumnIfConst())
 	{
 		new_col_holder = std::make_shared<ColumnNullable>(full_col);
 		ColumnNullable & new_col = static_cast<ColumnNullable &>(*new_col_holder.get());
 
 		/// Create a byte map.
 		if (new_col[0].isNull())
-			new_col.null_map_holder = std::make_shared<ColumnUInt8>(new_col.size(), 1);
+			new_col.null_map = std::make_shared<ColumnUInt8>(new_col.size(), 1);
 		else
-			new_col.null_map_holder = std::make_shared<ColumnUInt8>(new_col.size(), 0);
+			new_col.null_map = std::make_shared<ColumnUInt8>(new_col.size(), 0);
 	}
 	else
 		new_col_holder = {};
@@ -77,17 +75,17 @@ ColumnPtr ColumnNullable::convertToFullColumnIfConst() const
 
 ColumnPtr ColumnNullable::cloneResized(size_t size) const
 {
-	return std::make_shared<ColumnNullable>(data.cloneResized(size));
+	return std::make_shared<ColumnNullable>(nested_column.get()->cloneResized(size));
 }
 
 ColumnPtr ColumnNullable::cloneEmpty() const
 {
-	return std::make_shared<ColumnNullable>(data.cloneEmpty());
+	return std::make_shared<ColumnNullable>(nested_column.get()->cloneEmpty());
 }
 
 size_t ColumnNullable::size() const
 {
-	return data.size();
+	return nested_column.get()->size();
 }
 
 Field ColumnNullable::operator[](size_t n) const
@@ -95,7 +93,10 @@ Field ColumnNullable::operator[](size_t n) const
 	if (isNullAt(n))
 		return Field{};
 	else
-		return data[n];
+	{
+		const IColumn & col = *(nested_column.get());
+		return col[n];
+	}
 }
 
 void ColumnNullable::get(size_t n, Field & res) const
@@ -103,7 +104,7 @@ void ColumnNullable::get(size_t n, Field & res) const
 	if (isNullAt(n))
 		res = Field{};
 	else
-		data.get(n, res);
+		nested_column.get()->get(n, res);
 }
 
 UInt64 ColumnNullable::get64(size_t n) const
@@ -116,23 +117,23 @@ StringRef ColumnNullable::getDataAt(size_t n) const
 	if (isNullAt(n))
 		return StringRef{};
 	else
-		return data.getDataAt(n);
+		return nested_column.get()->getDataAt(n);
 }
 
 void ColumnNullable::insertData(const char * pos, size_t length)
 {
-	data.insertData(pos, length);
-	null_map.getData().resize_fill(data.size(), 0);
+	nested_column.get()->insertData(pos, length);
+	getNullMapContent().getData().resize_fill(nested_column.get()->size(), 0);
 }
 
 StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-	return data.serializeValueIntoArena(n, arena, begin);
+	return nested_column.get()->serializeValueIntoArena(n, arena, begin);
 }
 
 const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
 {
-	return data.deserializeAndInsertFromArena(pos);
+	return nested_column.get()->deserializeAndInsertFromArena(pos);
 }
 
 void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -149,51 +150,51 @@ void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t l
 		throw Exception{"Parameter out of bound in ColumNullable::insertRangeFrom method.",
 			ErrorCodes::PARAMETER_OUT_OF_BOUND};
 
-	null_map.insertRangeFrom(*(concrete_src.null_map_holder.get()), start, length);
-	data.insertRangeFrom(concrete_src.data, start, length);
+	getNullMapContent().insertRangeFrom(*(concrete_src.null_map.get()), start, length);
+	nested_column.get()->insertRangeFrom(*(concrete_src.nested_column.get()), start, length);
 }
 
 void ColumnNullable::insert(const Field & x)
 {
 	if (x.isNull())
 	{
-		data.insertDefault();
-		null_map.insert(1);
+		nested_column.get()->insertDefault();
+		getNullMapContent().insert(1);
 	}
 	else
 	{
-		data.insert(x);
-		null_map.insert(0);
+		nested_column.get()->insert(x);
+		getNullMapContent().insert(0);
 	}
 }
 
 void ColumnNullable::insertDefault()
 {
-	data.insertDefault();
-	null_map.insert(0);
+	nested_column.get()->insertDefault();
+	getNullMapContent().insert(0);
 }
 
 void ColumnNullable::popBack(size_t n)
 {
-	data.popBack(n);
-	null_map.popBack(n);
+	nested_column.get()->popBack(n);
+	getNullMapContent().popBack(n);
 }
 
 ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-	ColumnPtr new_data = data.filter(filt, result_size_hint);
+	ColumnPtr new_data = nested_column.get()->filter(filt, result_size_hint);
 	ColumnPtr filtered_col_holder = std::make_shared<ColumnNullable>(new_data);
 	ColumnNullable & filtered_col = static_cast<ColumnNullable &>(*(filtered_col_holder.get()));
-	filtered_col.null_map_holder = null_map.filter(filt, result_size_hint);
+	filtered_col.null_map = getNullMapContent().filter(filt, result_size_hint);
 	return filtered_col_holder;
 }
 
 ColumnPtr ColumnNullable::permute(const Permutation & perm, size_t limit) const
 {
-	ColumnPtr new_data = data.permute(perm, limit);
+	ColumnPtr new_data = nested_column.get()->permute(perm, limit);
 	ColumnPtr permuted_col_holder = std::make_shared<ColumnNullable>(new_data);
 	ColumnNullable & permuted_col = static_cast<ColumnNullable &>(*permuted_col_holder);
-	permuted_col.null_map_holder = null_map.permute(perm, limit);
+	permuted_col.null_map = getNullMapContent().permute(perm, limit);
 	return permuted_col_holder;
 }
 
@@ -217,62 +218,62 @@ int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_
 	const ColumnNullable & nullable_rhs = static_cast<const ColumnNullable &>(rhs_);
 	const IColumn & nested_rhs = *(nullable_rhs.getNestedColumn().get());
 
-	return data.compareAt(n, m, nested_rhs, nan_direction_hint);
+	return nested_column.get()->compareAt(n, m, nested_rhs, nan_direction_hint);
 }
 
 void ColumnNullable::getPermutation(bool reverse, size_t limit, Permutation & res) const
 {
-	data.getPermutation(reverse, limit, res);
+	nested_column.get()->getPermutation(reverse, limit, res);
 }
 
 void ColumnNullable::reserve(size_t n)
 {
-	data.reserve(n);
-	null_map.reserve(n);
+	nested_column.get()->reserve(n);
+	getNullMapContent().reserve(n);
 }
 
 size_t ColumnNullable::byteSize() const
 {
-	return data.byteSize() + null_map.byteSize();
+	return nested_column.get()->byteSize() + getNullMapContent().byteSize();
 }
 
 void ColumnNullable::getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const
 {
-	return data.getExtremes(min, max, &(null_map.getData()));
+	return nested_column.get()->getExtremes(min, max, &(getNullMapContent().getData()));
 }
 
 ColumnPtr ColumnNullable::replicate(const Offsets_t & offsets) const
 {
-	ColumnPtr replicated_col_holder = std::make_shared<ColumnNullable>(data.replicate(offsets));
+	ColumnPtr replicated_col_holder = std::make_shared<ColumnNullable>(nested_column.get()->replicate(offsets));
 	ColumnNullable & replicated_col = static_cast<ColumnNullable &>(*replicated_col_holder);
-	replicated_col.null_map_holder = null_map.replicate(offsets);
+	replicated_col.null_map = getNullMapContent().replicate(offsets);
 	return replicated_col_holder;
 }
 
 ColumnPtr & ColumnNullable::getNestedColumn()
 {
-	return data_holder;
+	return nested_column;
 }
 
 const ColumnPtr & ColumnNullable::getNestedColumn() const
 {
-	return data_holder;
+	return nested_column;
 }
 
 ColumnPtr & ColumnNullable::getNullValuesByteMap()
 {
-	return null_map_holder;
+	return null_map;
 }
 
 const ColumnPtr & ColumnNullable::getNullValuesByteMap() const
 {
-	return null_map_holder;
+	return null_map;
 }
 
 void ColumnNullable::updateNullValuesByteMap(const ColumnNullable & other)
 {
-	NullValuesByteMap & arr1 = null_map.getData();
-	const NullValuesByteMap & arr2 = other.null_map.getData();
+	NullValuesByteMap & arr1 = getNullMapContent().getData();
+	const NullValuesByteMap & arr2 = other.getNullMapContent().getData();
 
 	if (arr1.size() != arr2.size())
 		throw Exception{"Inconsistent sizes", ErrorCodes::LOGICAL_ERROR};
@@ -283,8 +284,18 @@ void ColumnNullable::updateNullValuesByteMap(const ColumnNullable & other)
 
 bool ColumnNullable::isNullAt(size_t n) const
 {
-	auto & arr = null_map.getData();
+	auto & arr = getNullMapContent().getData();
 	return arr[n] != 0;
+}
+
+ColumnUInt8 & ColumnNullable::getNullMapContent()
+{
+	return static_cast<ColumnUInt8 &>(*(null_map.get()));
+}
+
+const ColumnUInt8 & ColumnNullable::getNullMapContent() const
+{
+	return static_cast<const ColumnUInt8 &>(*(null_map.get()));
 }
 
 }
