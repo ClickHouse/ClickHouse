@@ -335,6 +335,8 @@ public:
 	{
 		if (rhs.size() <= TAllocator::getStackThreshold())
 		{
+			TAllocator::swapStackMemoryWith(&rhs);
+
 			size_t lhs_size = size();
 			size_t rhs_size = rhs.size();
 
@@ -343,8 +345,6 @@ public:
 
 			rhs.clear();
 			rhs.alloc(lhs_size);
-
-			TAllocator::swapStackMemoryWith(&rhs);
 
 			c_end = c_start + rhs_size;
 			rhs.c_end = rhs.c_start + lhs_size;
