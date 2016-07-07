@@ -193,6 +193,10 @@ public:
 			c_start = other.c_start;
 			c_end = other.c_end;
 			c_end_of_storage = other.c_end_of_storage;
+
+			other.c_start = nullptr;
+			other.c_end = nullptr;
+			other.c_end_of_storage = nullptr;
 		}
 		else
 		{
