@@ -39,6 +39,8 @@ inline char parseEscapeSequence(char c)
 {
 	switch(c)
 	{
+		case 'a':
+			return '\a';
 		case 'b':
 			return '\b';
 		case 'f':
@@ -49,6 +51,8 @@ inline char parseEscapeSequence(char c)
 			return '\r';
 		case 't':
 			return '\t';
+		case 'v':
+			return '\v';
 		case '0':
 			return '\0';
 		default:

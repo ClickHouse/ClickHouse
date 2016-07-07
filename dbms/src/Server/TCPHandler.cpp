@@ -626,7 +626,7 @@ void TCPHandler::initBlockOutput()
 	{
 		if (state.compression == Protocol::Compression::Enable)
 			state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-				*out, query_context.getSettings().network_compression_method);
+				*out, query_context.getSettingsRef().network_compression_method);
 		else
 			state.maybe_compressed_out = out;
 

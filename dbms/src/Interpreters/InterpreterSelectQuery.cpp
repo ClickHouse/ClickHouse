@@ -785,6 +785,9 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 	{
 		size_t max_streams = settings.max_threads;
 
+		if (max_streams == 0)
+			throw Exception("Logical error: zero number of streams requested", ErrorCodes::LOGICAL_ERROR);
+
 		/// Если надо - запрашиваем больше источников, чем количество потоков - для более равномерного распределения работы по потокам.
 		if (max_streams > 1 && !is_remote)
 			max_streams *= settings.max_streams_to_max_threads_ratio;

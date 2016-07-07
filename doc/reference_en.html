@@ -417,23 +417,26 @@ In %%/etc/apt/sources.list%% (or in a separate %%/etc/apt/sources.list.d/clickho
 On Ubuntu Trusty (14.04):
 
 %%
-deb http://repo.yandex.ru/clickhouse/trusty/ dists/stable/main/binary-amd64/
+deb http://repo.yandex.ru/clickhouse/trusty stable main
 %%
 
 On Ubuntu Precise (12.04):
 
 %%
-deb http://repo.yandex.ru/clickhouse/precise/ dists/stable/main/binary-amd64/
+deb http://repo.yandex.ru/clickhouse/precise stable main
 %%
 
 Then run:
 
 %%
+sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server-common
 %%
 
-You can also download and install packages manually from here: <a href="https://dist.yandex.ru/metrika/stable/amd64/">https://dist.yandex.ru/metrika/stable/amd64/</a>.
+You can also download and install packages manually from here:
+<a href="http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/">http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/</a>,
+<a href="http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/">http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/</a>.
 
 ClickHouse contains access restriction settings. They are located in the &#39;users.xml&#39; file (next to &#39;config.xml&#39;).
 By default, access is allowed from everywhere for the default user without a password. See &#39;user/default/networks&#39;. For more information, see the section &quot;Configuration files&quot;.
@@ -2810,7 +2813,7 @@ Replication is an optional feature. To use replication, set the addresses of the
 &lt;/zookeeper>
 %%
 
-Use ZooKeeper version 3.4.5 or later. For example, the version in the Ubuntu Precise package is too old. You can get a newer version for Ubuntu Precise from the repository <a href="https://dist.yandex.net/metrika/stable/amd64/">https://dist.yandex.net/metrika/stable/amd64/</a>.
+Use ZooKeeper version 3.4.5 or later. For example, the version in the Ubuntu Precise package is too old.
 
 You can specify any existing ZooKeeper cluster - the system will use a directory on it for its own data (the directory is specified when creating a replicatable table).
 
