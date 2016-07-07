@@ -12,14 +12,8 @@ SquashingTransform::SquashingTransform(size_t min_block_size_rows, size_t min_bl
 
 SquashingTransform::Result SquashingTransform::add(Block && block)
 {
-	if (all_read)
-		return true;
-
 	if (!block)
-	{
-		all_read = true;
 		return Result(std::move(accumulated_block));
-	}
 
 	/// Just read block is alredy enough.
 	if (isEnoughSize(block.rowsInFirstColumn(), block.bytes()))

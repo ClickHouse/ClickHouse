@@ -13,9 +13,16 @@ SquashingBlockInputStream::SquashingBlockInputStream(BlockInputStreamPtr & src, 
 
 Block SquashingBlockInputStream::readImpl()
 {
+	if (all_read)
+		return {};
+
 	while (true)
 	{
-		SquashingTransform::Result result = transform.add(children[0]->read());
+		Block block = children[0]->read();
+		if (!block)
+			all_read = true;
+
+		SquashingTransform::Result result = transform.add(std::move(block));
 		if (result.ready)
 			return result.block;
 	}

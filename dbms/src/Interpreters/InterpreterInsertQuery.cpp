@@ -5,7 +5,7 @@
 #include <DB/DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DB/DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DB/DataStreams/NullAndDoCopyBlockInputStream.h>
-#include <DB/DataStreams/SquashingBlockInputStream.h>
+#include <DB/DataStreams/SquashingBlockOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTInsertQuery.h>
@@ -79,14 +79,21 @@ BlockIO InterpreterInsertQuery::execute()
 
 	NamesAndTypesListPtr required_columns = std::make_shared<NamesAndTypesList>(table->getColumnsList());
 
-	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
-	BlockOutputStreamPtr out =
-		std::make_shared<ProhibitColumnsBlockOutputStream>(
-			std::make_shared<AddingDefaultBlockOutputStream>(
-				std::make_shared<MaterializingBlockOutputStream>(
-					std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, context, query_ptr)),
-				required_columns, table->column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults)),
-			table->materialized_columns);
+	/// Создаем конвейер из нескольких стримов, в которые будем писать данные.
+	BlockOutputStreamPtr out;
+
+	out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, context, query_ptr);
+
+	out = std::make_shared<MaterializingBlockOutputStream>(out);
+
+	out = std::make_shared<AddingDefaultBlockOutputStream>(out,
+		required_columns, table->column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults));
+
+	out = std::make_shared<ProhibitColumnsBlockOutputStream>(out, table->materialized_columns);
+
+	out = std::make_shared<SquashingBlockOutputStream>(out,
+		context.getSettingsRef().min_insert_block_size_rows,
+		context.getSettingsRef().min_insert_block_size_bytes);
 
 	BlockIO res;
 	res.out_sample = getSampleBlock();
@@ -100,10 +107,6 @@ BlockIO InterpreterInsertQuery::execute()
 	{
 		InterpreterSelectQuery interpreter_select{query.select, context};
 		BlockInputStreamPtr in = interpreter_select.execute().in;
-
-		in = std::make_shared<SquashingBlockInputStream>(in,
-			context.getSettingsRef().min_insert_block_size_rows,
-			context.getSettingsRef().min_insert_block_size_bytes);
 
 		res.in = std::make_shared<NullAndDoCopyBlockInputStream>(in, out);
 		res.in_sample = interpreter_select.getSampleBlock();

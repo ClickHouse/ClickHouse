@@ -18,7 +18,6 @@
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
-#include <DB/DataStreams/SquashingBlockInputStream.h>
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/Quota.h>
 

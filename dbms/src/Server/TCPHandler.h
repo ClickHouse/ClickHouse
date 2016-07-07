@@ -18,26 +18,26 @@ namespace DB
 {
 
 
-/// Состояние обработки запроса.
+/// State of query processing.
 struct QueryState
 {
-	/// Идентификатор запроса.
+	/// Identifier of the query.
 	String query_id;
 
 	QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
 	Protocol::Compression::Enum compression = Protocol::Compression::Disable;
 
-	/// Откуда читать данные для INSERT-а.
+	/// From where to read data for INSERT.
 	std::shared_ptr<ReadBuffer> maybe_compressed_in;
 	BlockInputStreamPtr block_in;
 
-	/// Куда писать возвращаемые данные.
+	/// Where to write result data.
 	std::shared_ptr<WriteBuffer> maybe_compressed_out;
 	BlockOutputStreamPtr block_out;
 
-	/// Текст запроса.
+	/// Query text.
 	String query;
-	/// Потоки блоков, с помощью которых выполнять запрос.
+	/// Streams of blocks, that are processing the query.
 	BlockIO io;
 
 	/// Отменен ли запрос
