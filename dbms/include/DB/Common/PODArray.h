@@ -109,6 +109,12 @@ private:
 		c_end_of_storage = c_start + bytes - pad_right;
 	}
 
+	bool isAllocatedFromStack() const
+	{
+		constexpr size_t stack_threshold = TAllocator::getStackThreshold();
+		return (stack_threshold > 0) && (allocated_size() <= stack_threshold);
+	}
+
 public:
 	using value_type = T;
 
@@ -155,11 +161,10 @@ public:
 
 	PODArray(PODArray && other)
 	{
-		size_t stack_threshold = TAllocator::getStackThreshold();
-		if ((stack_threshold > 0) && (other.size() <= stack_threshold))
+		if (other.isAllocatedFromStack())
 		{
-			alloc(other.size());
-			TAllocator::copyStackMemoryFrom(&other, other.size());
+			alloc(other.allocated_size());
+			memcpy(t_start(), other.t_start(), byte_size(other.size()));
 			c_end = c_start + (other.c_end - other.c_start);
 		}
 		else
@@ -176,19 +181,18 @@ public:
 
 	PODArray & operator=(PODArray && other)
 	{
-		size_t stack_threshold = TAllocator::getStackThreshold();
-		if ((stack_threshold > 0) && (other.size() <= stack_threshold))
+		if (other.isAllocatedFromStack())
 		{
 			dealloc();
-			alloc(other.size());
-			TAllocator::copyStackMemoryFrom(&other, other.size());
+			alloc(other.allocated_size());
+			memcpy(t_start(), other.t_start(), byte_size(other.size()));
 			c_end = c_start + (other.c_end - other.c_start);
 
 			other.c_start = nullptr;
 			other.c_end = nullptr;
 			other.c_end_of_storage = nullptr;
 		}
-		else if ((stack_threshold > 0) && (size() <= stack_threshold))
+		else if (isAllocatedFromStack())
 		{
 			c_start = other.c_start;
 			c_end = other.c_end;
@@ -345,23 +349,64 @@ public:
 
 	void swap(PODArray & rhs)
 	{
-		size_t stack_threshold = TAllocator::getStackThreshold();
-		if ((stack_threshold > 0) && (size() <= stack_threshold))
+		auto swap_stack_heap = [](PODArray & stack_array, PODArray & heap_array)
 		{
-			TAllocator::swapStackMemoryWith(&rhs);
+			size_t stack_size = stack_array.size();
+			size_t stack_allocated = stack_array.allocated_size();
+
+			size_t heap_size = heap_array.size();
+			size_t heap_allocated = heap_array.allocated_size();
+
+			/// Keep track of the stack content we want to move.
+			T * stack_t_start = stack_array.t_start();
+
+			/// stack_array takes ownership of the heap memory of heap_array.
+			stack_array.c_start = heap_array.c_start;
+			stack_array.c_end_of_storage = stack_array.c_start + heap_allocated - stack_array.pad_right;
+			stack_array.c_end = stack_array.c_start + byte_size(heap_size);
+
+			/// Allocate stack space for heap_array.
+			heap_array.alloc(stack_allocated);
+			/// Copy our old stack content into the new stack memory of heap_array.
+			memcpy(heap_array.t_start(), stack_t_start, byte_size(stack_size));
+			heap_array.c_end = heap_array.c_start + byte_size(stack_size);
+		};
+
+		if (isAllocatedFromStack() && rhs.isAllocatedFromStack())
+		{
+			size_t min_size = std::min(size(), rhs.size());
+			size_t max_size = std::max(size(), rhs.size());
+
+			for (size_t i = 0; i < min_size; ++i)
+				std::swap(this->operator[](i), rhs[i]);
+
+			if (size() == max_size)
+			{
+				for (size_t i = min_size; i < max_size; ++i)
+					rhs[i] = this->operator[](i);
+			}
+			else
+			{
+				for (size_t i = min_size; i < max_size; ++i)
+					this->operator[](i) = rhs[i];
+			}
 
 			size_t lhs_size = size();
+			size_t lhs_allocated = allocated_size();
+
 			size_t rhs_size = rhs.size();
+			size_t rhs_allocated = rhs.allocated_size();
 
-			clear();
-			alloc(rhs_size);
+			c_end_of_storage = c_start + rhs_allocated - pad_right;
+			rhs.c_end_of_storage = rhs.c_start + lhs_allocated - pad_right;
 
-			rhs.clear();
-			rhs.alloc(lhs_size);
-
-			c_end = c_start + rhs_size;
-			rhs.c_end = rhs.c_start + lhs_size;
+			c_end = c_start + byte_size(rhs_size);
+			rhs.c_end = rhs.c_start + byte_size(lhs_size);
 		}
+		else if (isAllocatedFromStack() && !rhs.isAllocatedFromStack())
+			swap_stack_heap(*this, rhs);
+		else if (!isAllocatedFromStack() && rhs.isAllocatedFromStack())
+			swap_stack_heap(rhs, *this);
 		else
 		{
 			std::swap(c_start, rhs.c_start);
