@@ -155,7 +155,8 @@ public:
 
 	PODArray(PODArray && other)
 	{
-		if ((other.size() > 0) && (other.size() <= TAllocator::getStackThreshold()))
+		size_t stack_threshold = TAllocator::getStackThreshold();
+		if ((stack_threshold > 0) && (other.size() <= stack_threshold))
 		{
 			alloc(other.size());
 			TAllocator::copyStackMemoryFrom(&other, other.size());
@@ -175,9 +176,10 @@ public:
 
 	PODArray & operator=(PODArray && other)
 	{
-		if ((other.size()) > 0 && (other.size() <= TAllocator::getStackThreshold()))
+		size_t stack_threshold = TAllocator::getStackThreshold();
+		if ((stack_threshold > 0) && (other.size() <= stack_threshold))
 		{
-			clear();
+			dealloc();
 			alloc(other.size());
 			TAllocator::copyStackMemoryFrom(&other, other.size());
 			c_end = c_start + (other.c_end - other.c_start);
@@ -185,6 +187,12 @@ public:
 			other.c_start = nullptr;
 			other.c_end = nullptr;
 			other.c_end_of_storage = nullptr;
+		}
+		else if ((stack_threshold > 0) && (size() <= stack_threshold))
+		{
+			c_start = other.c_start;
+			c_end = other.c_end;
+			c_end_of_storage = other.c_end_of_storage;
 		}
 		else
 		{
@@ -333,7 +341,8 @@ public:
 
 	void swap(PODArray & rhs)
 	{
-		if (rhs.size() <= TAllocator::getStackThreshold())
+		size_t stack_threshold = TAllocator::getStackThreshold();
+		if ((stack_threshold > 0) && (size() <= stack_threshold))
 		{
 			TAllocator::swapStackMemoryWith(&rhs);
 
