@@ -487,7 +487,7 @@ public:
 };
 
 template <typename T, size_t INITIAL_SIZE, typename TAllocator, size_t pad_right_>
-void swap(PODArray<T, INITIAL_SIZE, Allocator, pad_right_> & lhs, PODArray<T, INITIAL_SIZE, Allocator, pad_right_> & rhs)
+void swap(PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & lhs, PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & rhs)
 {
 	lhs.swap(rhs);
 }

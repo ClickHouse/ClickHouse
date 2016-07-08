@@ -20,7 +20,7 @@ void test1()
 
 	static constexpr size_t initial_size = 8;
 	static constexpr size_t stack_threshold = 32;
-	using Array = PODArray<UInt64, initial_size, AllocatorWithStackMemory<Allocator2<false>, stack_threshold>>;
+	using Array = PODArray<UInt64, initial_size, AllocatorWithStackMemory<Allocator<false>, stack_threshold>>;
 
 	bool res = true;
 
@@ -141,7 +141,7 @@ void test2()
 
 	static constexpr size_t initial_size = 8;
 	static constexpr size_t stack_threshold = 32;
-	using Array = PODArray<UInt64, initial_size, AllocatorWithStackMemory<Allocator2<false>, stack_threshold>>;
+	using Array = PODArray<UInt64, initial_size, AllocatorWithStackMemory<Allocator<false>, stack_threshold>>;
 
 	bool res = true;
 
@@ -391,7 +391,7 @@ void test3()
 
 	static constexpr size_t initial_size = 8;
 	static constexpr size_t stack_threshold = 32;
-	using Array = PODArray<UInt64, initial_size, AllocatorWithStackMemory<Allocator2<false>, stack_threshold>>;
+	using Array = PODArray<UInt64, initial_size, AllocatorWithStackMemory<Allocator<false>, stack_threshold>>;
 
 	bool res = true;
 
