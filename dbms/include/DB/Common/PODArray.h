@@ -166,54 +166,12 @@ public:
 
 	PODArray(PODArray && other)
 	{
-		if (other.isInitialized() && other.isAllocatedFromStack())
-		{
-			alloc(other.allocated_size());
-			memcpy(c_start, other.c_start, byte_size(other.size()));
-			c_end = c_start + (other.c_end - other.c_start);
-		}
-		else
-		{
-			c_start = other.c_start;
-			c_end = other.c_end;
-			c_end_of_storage = other.c_end_of_storage;
-		}
-
-		other.c_start = nullptr;
-		other.c_end = nullptr;
-		other.c_end_of_storage = nullptr;
+		this->swap(other);
 	}
 
 	PODArray & operator=(PODArray && other)
 	{
-		if (other.isInitialized() && other.isAllocatedFromStack())
-		{
-			dealloc();
-			alloc(other.allocated_size());
-			memcpy(c_start, other.c_start, byte_size(other.size()));
-			c_end = c_start + (other.c_end - other.c_start);
-
-			other.c_start = nullptr;
-			other.c_end = nullptr;
-			other.c_end_of_storage = nullptr;
-		}
-		else if (isInitialized() && isAllocatedFromStack())
-		{
-			c_start = other.c_start;
-			c_end = other.c_end;
-			c_end_of_storage = other.c_end_of_storage;
-
-			other.c_start = nullptr;
-			other.c_end = nullptr;
-			other.c_end_of_storage = nullptr;
-		}
-		else
-		{
-			std::swap(c_start, other.c_start);
-			std::swap(c_end, other.c_end);
-			std::swap(c_end_of_storage, other.c_end_of_storage);
-		}
-
+		this->swap(other);
 		return *this;
 	}
 
@@ -380,16 +338,37 @@ public:
 			arr2.c_end = arr2.c_start + byte_size(stack_size);
 		};
 
+		auto do_move = [](PODArray & src, PODArray & dest)
+		{
+			if (src.isAllocatedFromStack())
+			{
+				dest.dealloc();
+				dest.alloc(src.allocated_size());
+				memcpy(dest.c_start, src.c_start, byte_size(src.size()));
+				dest.c_end = dest.c_start + (src.c_end - src.c_start);
+
+				src.c_start = nullptr;
+				src.c_end = nullptr;
+				src.c_end_of_storage = nullptr;
+			}
+			else
+			{
+				std::swap(dest.c_start, src.c_start);
+				std::swap(dest.c_end, src.c_end);
+				std::swap(dest.c_end_of_storage, src.c_end_of_storage);
+			}
+		};
+
 		if (!isInitialized() && !rhs.isInitialized())
 			return;
 		else if (!isInitialized() && rhs.isInitialized())
 		{
-			*this = std::move(rhs);
+			do_move(rhs, *this);
 			return;
 		}
 		else if (isInitialized() && !rhs.isInitialized())
 		{
-			rhs = std::move(*this);
+			do_move(*this, rhs);
 			return;
 		}
 
