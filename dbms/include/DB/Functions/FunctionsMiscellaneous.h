@@ -278,11 +278,12 @@ public:
 	{
 		size_t size = block.rowsInFirstColumn();
 		auto column = std::make_shared<ColumnUInt64>();
-		block.getByPosition(result).column = column;
 		auto & data = column->getData();
 		data.resize(size);
 		for (size_t i = 0; i < size; ++i)
 			data[i] = i;
+
+		block.getByPosition(result).column = column;
 	}
 };
 
@@ -319,6 +320,50 @@ public:
 	{
 		size_t current_block_number = block_number++;
 		block.getByPosition(result).column = ColumnConstUInt64(block.rowsInFirstColumn(), current_block_number).convertToFullColumn();
+	}
+};
+
+
+/** Incremental number of row within all blocks passed to this function. */
+class FunctionRowNumberInAllBlocks : public IFunction
+{
+private:
+	std::atomic<size_t> rows {0};
+
+public:
+	static constexpr auto name = "rowNumberInAllBlocks";
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRowNumberInAllBlocks>(); }
+
+	/// Получить имя функции.
+	String getName() const override
+	{
+		return name;
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (!arguments.empty())
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 0.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return std::make_shared<DataTypeUInt64>();
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		size_t rows_in_block = block.rowsInFirstColumn();
+		size_t current_row_number = rows.fetch_add(rows_in_block);
+
+		auto column = std::make_shared<ColumnUInt64>();
+		auto & data = column->getData();
+		data.resize(rows_in_block);
+		for (size_t i = 0; i < rows_in_block; ++i)
+			data[i] = current_row_number + i;
+
+		block.getByPosition(result).column = column;
 	}
 };
 
