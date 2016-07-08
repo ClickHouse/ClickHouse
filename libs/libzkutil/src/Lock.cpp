@@ -16,6 +16,9 @@ bool Lock::tryLock()
 	{
 		size_t attempt;
 		std::string dummy;
+
+		/// TODO: ошибка. можно создать эфемерную ноду, но при этом не получить подтверждения даже после нескольких попыток.
+		/// тогда все последующие локи будут неуспешные из-за существования ноды.
 		int32_t code = zookeeper->tryCreateWithRetries(lock_path, lock_message, zkutil::CreateMode::Ephemeral, dummy, &attempt);
 
 		if (code == ZNODEEXISTS)
