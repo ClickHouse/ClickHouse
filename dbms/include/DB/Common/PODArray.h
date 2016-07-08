@@ -486,6 +486,11 @@ public:
 	}
 };
 
+template <typename T, size_t INITIAL_SIZE, typename TAllocator, size_t pad_right_>
+void swap(PODArray<T, INITIAL_SIZE, Allocator, pad_right_> & lhs, PODArray<T, INITIAL_SIZE, Allocator, pad_right_> & rhs)
+{
+	lhs.swap(rhs);
+}
 
 /** Для столбцов. Padding-а хватает, чтобы читать и писать xmm-регистр по адресу последнего элемента. */
 template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>>
