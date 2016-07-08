@@ -288,7 +288,7 @@ struct ArrayElementNumImpl
 {
 	/** Implementation for constant index.
 	  * If negative = false - index is from beginning of array, started from 1.
-	  * Если negative = true - index is from end of array, started from -1.
+	  * If negative = true - index is from end of array, started from -1.
 	  */
 	template <bool negative>
 	static void vectorConst(
@@ -346,7 +346,7 @@ struct ArrayElementStringImpl
 {
 	/** Implementation for constant index.
 	  * If negative = false - index is from beginning of array, started from 1.
-	  * Если negative = true - index is from end of array, started from -1.
+	  * If negative = true - index is from end of array, started from -1.
 	  */
 	template <bool negative>
 	static void vectorConst(
@@ -451,7 +451,7 @@ struct ArrayElementGenericImpl
 {
 	/** Implementation for constant index.
 	  * If negative = false - index is from beginning of array, started from 1.
-	  * Если negative = true - index is from end of array, started from -1.
+	  * If negative = true - index is from end of array, started from -1.
 	  */
 	template <bool negative>
 	static void vectorConst(
