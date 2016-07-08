@@ -537,7 +537,7 @@ void BaseDaemon::terminate()
 	getTaskManager().cancelAll();
 	if (::kill(Poco::Process::id(), SIGTERM) != 0)
 	{
-		Poco::SystemException("cannot terminate process");
+		throw Poco::SystemException("cannot terminate process");
 	}
 }
 
