@@ -109,6 +109,11 @@ private:
 		c_end_of_storage = c_start + bytes - pad_right;
 	}
 
+	bool isInitialized() const
+	{
+		return (c_start != nullptr) && (c_end != nullptr) && (c_end_of_storage != nullptr);
+	}
+
 	bool isAllocatedFromStack() const
 	{
 		constexpr size_t stack_threshold = TAllocator::getStackThreshold();
@@ -161,10 +166,10 @@ public:
 
 	PODArray(PODArray && other)
 	{
-		if (other.isAllocatedFromStack())
+		if (other.isInitialized() && other.isAllocatedFromStack())
 		{
 			alloc(other.allocated_size());
-			memcpy(t_start(), other.t_start(), byte_size(other.size()));
+			memcpy(c_start, other.c_start, byte_size(other.size()));
 			c_end = c_start + (other.c_end - other.c_start);
 		}
 		else
@@ -181,18 +186,18 @@ public:
 
 	PODArray & operator=(PODArray && other)
 	{
-		if (other.isAllocatedFromStack())
+		if (other.isInitialized() && other.isAllocatedFromStack())
 		{
 			dealloc();
 			alloc(other.allocated_size());
-			memcpy(t_start(), other.t_start(), byte_size(other.size()));
+			memcpy(c_start, other.c_start, byte_size(other.size()));
 			c_end = c_start + (other.c_end - other.c_start);
 
 			other.c_start = nullptr;
 			other.c_end = nullptr;
 			other.c_end_of_storage = nullptr;
 		}
-		else if (isAllocatedFromStack())
+		else if (isInitialized() && isAllocatedFromStack())
 		{
 			c_start = other.c_start;
 			c_end = other.c_end;
@@ -349,28 +354,44 @@ public:
 
 	void swap(PODArray & rhs)
 	{
-		auto swap_stack_heap = [](PODArray & stack_array, PODArray & heap_array)
+		/// Swap two PODArray objects, arr1 and arr2, that satisfy the following conditions:
+		/// - The elements of arr1 are stored on stack.
+		/// - The elements of arr2 are stored on heap.
+		auto swap_stack_heap = [](PODArray & arr1, PODArray & arr2)
 		{
-			size_t stack_size = stack_array.size();
-			size_t stack_allocated = stack_array.allocated_size();
+			size_t stack_size = arr1.size();
+			size_t stack_allocated = arr1.allocated_size();
 
-			size_t heap_size = heap_array.size();
-			size_t heap_allocated = heap_array.allocated_size();
+			size_t heap_size = arr2.size();
+			size_t heap_allocated = arr2.allocated_size();
 
-			/// Keep track of the stack content we want to move.
-			T * stack_t_start = stack_array.t_start();
+			/// Keep track of the stack content we have to copy.
+			char * stack_c_start = arr1.c_start;
 
-			/// stack_array takes ownership of the heap memory of heap_array.
-			stack_array.c_start = heap_array.c_start;
-			stack_array.c_end_of_storage = stack_array.c_start + heap_allocated - stack_array.pad_right;
-			stack_array.c_end = stack_array.c_start + byte_size(heap_size);
+			/// arr1 takes ownership of the heap memory of arr2.
+			arr1.c_start = arr2.c_start;
+			arr1.c_end_of_storage = arr1.c_start + heap_allocated - arr1.pad_right;
+			arr1.c_end = arr1.c_start + byte_size(heap_size);
 
-			/// Allocate stack space for heap_array.
-			heap_array.alloc(stack_allocated);
-			/// Copy our old stack content into the new stack memory of heap_array.
-			memcpy(heap_array.t_start(), stack_t_start, byte_size(stack_size));
-			heap_array.c_end = heap_array.c_start + byte_size(stack_size);
+			/// Allocate stack space for arr2.
+			arr2.alloc(stack_allocated);
+			/// Copy the stack content.
+			memcpy(arr2.c_start, stack_c_start, byte_size(stack_size));
+			arr2.c_end = arr2.c_start + byte_size(stack_size);
 		};
+
+		if (!isInitialized() && !rhs.isInitialized())
+			return;
+		else if (!isInitialized() && rhs.isInitialized())
+		{
+			*this = std::move(rhs);
+			return;
+		}
+		else if (isInitialized() && !rhs.isInitialized())
+		{
+			rhs = std::move(*this);
+			return;
+		}
 
 		if (isAllocatedFromStack() && rhs.isAllocatedFromStack())
 		{
