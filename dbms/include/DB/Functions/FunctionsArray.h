@@ -879,14 +879,14 @@ public:
 };
 
 
-/// Для has.
+/// For has.
 struct IndexToOne
 {
 	using ResultType = UInt8;
 	static bool apply(size_t j, ResultType & current) { current = 1; return false; }
 };
 
-/// Для indexOf.
+/// For indexOf.
 struct IndexIdentity
 {
 	using ResultType = UInt64;
@@ -894,7 +894,7 @@ struct IndexIdentity
 	static bool apply(size_t j, ResultType & current) { current = j + 1; return false; }
 };
 
-/// Для countEqual.
+/// For countEqual.
 struct IndexCount
 {
 	using ResultType = UInt32;
@@ -1016,6 +1016,40 @@ struct ArrayIndexStringImpl
 	}
 };
 
+/** Catch-all implementation for arrays of arbitary type.
+  */
+template <typename IndexConv, bool is_value_has_single_element_to_compare>
+struct ArrayIndexGenericImpl
+{
+	/** To compare with constant value, create non-constant column with single element,
+	  *  and pass is_value_has_single_element_to_compare = true.
+	  */
+
+	static void vector(
+		const IColumn & data, const ColumnArray::Offsets_t & offsets,
+		const IColumn & value,
+		PaddedPODArray<typename IndexConv::ResultType> & result)
+	{
+		size_t size = offsets.size();
+		result.resize(size);
+
+		ColumnArray::Offset_t current_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t array_size = offsets[i] - current_offset;
+			typename IndexConv::ResultType current = 0;
+
+			for (size_t j = 0; j < array_size; ++j)
+				if (0 == data.compareAt(current_offset + j, is_value_has_single_element_to_compare ? 0 : i, value, 1))
+					if (!IndexConv::apply(j, current))
+						break;
+
+			result[i] = current;
+			current_offset = offsets[i];
+		}
+	}
+};
+
 
 template <typename IndexConv, typename Name>
 class FunctionArrayIndex : public IFunction
@@ -1110,6 +1144,8 @@ private:
 				col_nested->getOffsets(), item_arg_vector->getChars(), item_arg_vector->getOffsets(),
 				col_res->getData());
 		}
+		else
+			return false;
 
 		return true;
 	}
@@ -1165,6 +1201,40 @@ private:
 		return true;
 	}
 
+	bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.getByPosition(arguments[0]).column.get());
+
+		if (!col_array)
+			return false;
+
+		const IColumn & col_nested = col_array->getData();
+		const IColumn & item_arg = *block.getByPosition(arguments[1]).column;
+
+		const auto col_res = std::make_shared<ResultColumnType>();
+		block.getByPosition(result).column = col_res;
+
+		if (item_arg.isConst())
+		{
+			ArrayIndexGenericImpl<IndexConv, true>::vector(col_nested, col_array->getOffsets(),
+				*item_arg.cut(0, 1)->convertToFullColumnIfConst(), col_res->getData());
+		}
+		else
+		{
+			/// If item_arg is tuple and have constants.
+			if (auto materialized_tuple = item_arg.convertToFullColumnIfConst())
+			{
+				ArrayIndexGenericImpl<IndexConv, false>::vector(
+					col_nested, col_array->getOffsets(), *materialized_tuple, col_res->getData());
+			}
+			else
+				ArrayIndexGenericImpl<IndexConv, false>::vector(
+					col_nested, col_array->getOffsets(), item_arg, col_res->getData());
+		}
+
+		return true;
+	}
+
 
 public:
 	/// Получить имя функции.
@@ -1197,22 +1267,22 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (!(executeNumber<UInt8>(block, arguments, result)
-			  || executeNumber<UInt16>(block, arguments, result)
-			  || executeNumber<UInt32>(block, arguments, result)
-			  || executeNumber<UInt64>(block, arguments, result)
-			  || executeNumber<Int8>(block, arguments, result)
-			  || executeNumber<Int16>(block, arguments, result)
-			  || executeNumber<Int32>(block, arguments, result)
-			  || executeNumber<Int64>(block, arguments, result)
-			  || executeNumber<Float32>(block, arguments, result)
-			  || executeNumber<Float64>(block, arguments, result)
-			  || executeConst(block, arguments, result)
-			  || executeString(block, arguments, result)))
+			|| executeNumber<UInt16>(block, arguments, result)
+			|| executeNumber<UInt32>(block, arguments, result)
+			|| executeNumber<UInt64>(block, arguments, result)
+			|| executeNumber<Int8>(block, arguments, result)
+			|| executeNumber<Int16>(block, arguments, result)
+			|| executeNumber<Int32>(block, arguments, result)
+			|| executeNumber<Int64>(block, arguments, result)
+			|| executeNumber<Float32>(block, arguments, result)
+			|| executeNumber<Float64>(block, arguments, result)
+			|| executeConst(block, arguments, result)
+			|| executeString(block, arguments, result)
+			|| executeGeneric(block, arguments, result)))
 			throw Exception{
 				"Illegal column " + block.getByPosition(arguments[0]).column->getName()
 				+ " of first argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN
-			};
+				ErrorCodes::ILLEGAL_COLUMN};
 	}
 };
 
