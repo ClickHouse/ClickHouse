@@ -17,6 +17,7 @@
 #include <DB/Common/HashTable/ClearableHashMap.h>
 #include <DB/Interpreters/AggregationCommon.h>
 #include <DB/Functions/FunctionsConditional.h>
+#include <DB/Functions/FunctionsConversion.h>
 #include <DB/Functions/Conditional/getArrayType.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
@@ -71,9 +72,13 @@ class FunctionArray : public IFunction
 {
 public:
 	static constexpr auto name = "array";
-	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArray>(); }
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArray>(context); }
+
+	FunctionArray(const Context & context) : context(context) {}
 
 private:
+	const Context & context;
+
 	/// Получить имя функции.
 	String getName() const override
 	{
@@ -234,7 +239,7 @@ public:
 		DataTypeTraits::EnrichedDataTypePtr enriched_result_type;
 		if (result_type->behavesAsNumber())
 		{
-			/// Если тип числовой, вычисляем наименьший общий тип
+			/// If type is numeric, calculate least common type.
 			DataTypes types;
 			types.reserve(num_elements);
 
@@ -261,35 +266,74 @@ public:
 		}
 		else
 		{
-			auto out = std::make_shared<ColumnArray>(result_type->createColumn());
+			size_t block_size = block.rowsInFirstColumn();
 
-			bool need_type_conversion_mask[num_elements];
+			/** If part of columns have not same type as common type of all elements of array,
+			  *  then convert them to common type.
+			  * If part of columns are constants,
+			  *  then convert them to full columns.
+			  */
+
+			Columns columns_holder(num_elements);
 			const IColumn * columns[num_elements];
 
-			for (const auto arg_num : arguments)
+			for (size_t i = 0; i < num_elements; ++i)
 			{
-				need_type_conversion_mask[arg_num] = block.getByPosition(arg_num).type->getName() != result_type->getName();
-				columns[arg_num] = block.getByPosition(arg_num).column.get();
-			}
+				const auto & arg = block.getByPosition(arguments[i]);
 
-			Field arr_field = Array();
-			Array & arr = arr_field.get<Array>();
-			for (const auto row_num : ext::range(0, first_arg.column->size()))
-			{
-				arr.clear();
+				String result_type_name = result_type->getName();
+				ColumnPtr preprocessed_column = arg.column;
 
-				for (const auto arg_num : arguments)
+				if (arg.type->getName() != result_type_name)
 				{
-					if (!need_type_conversion_mask[arg_num])
+					Block temporary_block
 					{
-						arr.emplace_back();
-						columns[arg_num]->get(row_num, arr.back());
-					}
-					else
-						addField(result_type, (*columns[arg_num])[row_num], arr);
+						{
+							arg.column,
+							arg.type,
+							arg.name
+						},
+						{
+							std::make_shared<ColumnConstString>(block_size, result_type_name),
+							std::make_shared<DataTypeString>(),
+							""
+						},
+						{
+							nullptr,
+							result_type,
+							""
+						}
+					};
+
+					FunctionCast(context).execute(temporary_block, {0, 1}, 2);
+					preprocessed_column = temporary_block.unsafeGetByPosition(2).column;
 				}
 
-				out->insert(arr_field);
+				if (auto materialized_column = preprocessed_column->convertToFullColumnIfConst())
+					preprocessed_column = materialized_column;
+
+				columns_holder[i] = std::move(preprocessed_column);
+				columns[i] = columns_holder[i].get();
+			}
+
+			/** Create and fill the result array.
+			  */
+
+			auto out = std::make_shared<ColumnArray>(result_type->createColumn());
+			IColumn & out_data = out->getData();
+			IColumn::Offsets_t & out_offsets = out->getOffsets();
+
+			out_data.reserve(block_size * num_elements);
+			out_offsets.resize(block_size);
+
+			IColumn::Offset_t current_offset = 0;
+			for (size_t i = 0; i < block_size; ++i)
+			{
+				for (size_t j = 0; j < num_elements; ++j)
+					out_data.insertFrom(*columns[j], i);
+
+				out_offsets[i] = current_offset;
+				current_offset += num_elements;
 			}
 
 			block.getByPosition(result).column = out;
