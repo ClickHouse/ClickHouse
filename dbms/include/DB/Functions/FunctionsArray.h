@@ -217,13 +217,17 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const auto is_const = [&] {
-			for (const auto arg_num : arguments)
-				if (!block.getByPosition(arg_num).column->isConst())
-					return false;
+		size_t num_elements = arguments.size();
+		bool is_const = true;
 
-			return true;
-		}();
+		for (const auto arg_num : arguments)
+		{
+			if (!block.getByPosition(arg_num).column->isConst())
+			{
+				is_const = false;
+				break;
+			}
+		}
 
 		const auto first_arg = block.getByPosition(arguments[0]);
 		DataTypePtr result_type = first_arg.type;
@@ -232,7 +236,7 @@ public:
 		{
 			/// Если тип числовой, вычисляем наименьший общий тип
 			DataTypes types;
-			types.reserve(arguments.size());
+			types.reserve(num_elements);
 
 			for (const auto & argument : arguments)
 				types.push_back(block.getByPosition(argument).type);
@@ -259,19 +263,33 @@ public:
 		{
 			auto out = std::make_shared<ColumnArray>(result_type->createColumn());
 
+			bool need_type_conversion_mask[num_elements];
+			const IColumn * columns[num_elements];
+
+			for (const auto arg_num : arguments)
+			{
+				need_type_conversion_mask[arg_num] = block.getByPosition(arg_num).type->getName() != result_type->getName();
+				columns[arg_num] = block.getByPosition(arg_num).column.get();
+			}
+
+			Field arr_field = Array();
+			Array & arr = arr_field.get<Array>();
 			for (const auto row_num : ext::range(0, first_arg.column->size()))
 			{
-				Array arr;
+				arr.clear();
 
 				for (const auto arg_num : arguments)
-					if (block.getByPosition(arg_num).type->getName() == result_type->getName())
-						/// Если элемент такого же типа как результат, просто добавляем его в ответ
-						arr.push_back((*block.getByPosition(arg_num).column)[row_num]);
+				{
+					if (!need_type_conversion_mask[arg_num])
+					{
+						arr.emplace_back();
+						columns[arg_num]->get(row_num, arr.back());
+					}
 					else
-						/// Иначе необходимо привести его к типу результата
-						addField(result_type, (*block.getByPosition(arg_num).column)[row_num], arr);
+						addField(result_type, (*columns[arg_num])[row_num], arr);
+				}
 
-				out->insert(arr);
+				out->insert(arr_field);
 			}
 
 			block.getByPosition(result).column = out;
