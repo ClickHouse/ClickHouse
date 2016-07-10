@@ -17,7 +17,6 @@ namespace ErrorCodes
 
 /** Column, that is just group of few another columns.
   *
-  * Nested columns must not be constant.
   * For constant Tuples, see ColumnConstTuple.
   * Mixed constant/non-constant columns is prohibited in tuple
   *  for implementation simplicity.

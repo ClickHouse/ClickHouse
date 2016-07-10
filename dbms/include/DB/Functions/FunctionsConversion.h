@@ -1652,7 +1652,7 @@ private:
 			if (const auto column_tuple = typeid_cast<const ColumnTuple *>(col))
 				element_block = column_tuple->getData();
 			else if (const auto column_const_tuple = typeid_cast<const ColumnConstTuple *>(col))
-				element_block = static_cast<const ColumnTuple &>(*column_const_tuple->convertToFullColumn()).getData();
+				element_block = static_cast<const ColumnTuple &>(*column_const_tuple->convertToTupleOfConstants()).getData();
 
 			/// create columns for converted elements
 			for (const auto & to_element_type : to_element_types)

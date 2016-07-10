@@ -571,6 +571,11 @@ private:
 				executeForArgument(col.type.get(), col.column.get(), vec_to, is_first);
 			}
 		}
+		else if (const ColumnConstTuple * tuple = typeid_cast<const ColumnConstTuple *>(column))
+		{
+			ColumnPtr tuple_of_constants = tuple->convertToTupleOfConstants();
+			executeForArgument(type, tuple_of_constants.get(), vec_to, is_first);
+		}
 		else
 		{
 			if (is_first)

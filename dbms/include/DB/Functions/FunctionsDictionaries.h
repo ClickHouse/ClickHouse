@@ -885,17 +885,19 @@ private:
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 		const auto key_col_with_type = block.getByPosition(arguments[1]);
-		if (const ColumnTuple * key_col = typeid_cast<const ColumnTuple *>(key_col_with_type.column.get()))
+		if (typeid_cast<const ColumnTuple *>(key_col_with_type.column.get())
+			|| typeid_cast<const ColumnConstTuple *>(key_col_with_type.column.get()))
 		{
 			/// Функции у внешних словарей поддерживают только полноценные (не константные) столбцы с ключами.
-			const ColumnPtr key_col_materialized = key_col->convertToFullColumnIfConst();
+			const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
 
 			const auto key_columns = ext::map<ConstColumnPlainPtrs>(
-				static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(), [](const ColumnPtr & ptr) { return ptr.get(); });
+				static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(),
+				[](const ColumnPtr & ptr) { return ptr.get(); });
 
 			const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-			const auto out = std::make_shared<ColumnUInt8>(key_col->size());
+			const auto out = std::make_shared<ColumnUInt8>(key_col_with_type.column->size());
 			block.getByPosition(result).column = out;
 
 			dict->has(key_columns, key_types, out->getData());
@@ -1064,12 +1066,14 @@ private:
 		const auto & attr_name = attr_name_col->getData();
 
 		const auto key_col_with_type = block.getByPosition(arguments[2]);
-		if (const auto key_col = typeid_cast<const ColumnTuple *>(key_col_with_type.column.get()))
+		if (typeid_cast<const ColumnTuple *>(key_col_with_type.column.get())
+			|| typeid_cast<const ColumnConstTuple *>(key_col_with_type.column.get()))
 		{
-			const ColumnPtr key_col_materialized = key_col->convertToFullColumnIfConst();
+			const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
 
 			const auto key_columns = ext::map<ConstColumnPlainPtrs>(
-				static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(), [](const ColumnPtr & ptr) { return ptr.get(); });
+				static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(),
+				[](const ColumnPtr & ptr) { return ptr.get(); });
 
 			const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
@@ -1635,12 +1639,14 @@ private:
 		const auto & attr_name = attr_name_col->getData();
 
 		const auto key_col_with_type = block.getByPosition(arguments[2]);
-		if (const auto key_col = typeid_cast<const ColumnTuple *>(key_col_with_type.column.get()))
+		if (typeid_cast<const ColumnTuple *>(key_col_with_type.column.get())
+			|| typeid_cast<const ColumnConstTuple *>(key_col_with_type.column.get()))
 		{
-			const ColumnPtr key_col_materialized = key_col->convertToFullColumnIfConst();
+			const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
 
 			const auto key_columns = ext::map<ConstColumnPlainPtrs>(
-				static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(), [](const ColumnPtr & ptr) { return ptr.get(); });
+				static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(),
+				[](const ColumnPtr & ptr) { return ptr.get(); });
 
 			const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 

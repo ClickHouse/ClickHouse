@@ -349,12 +349,13 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 
 		block.getByPosition(result).column = nested_result_column;
 	}
-	else if (const ColumnConstArray * col = typeid_cast<const ColumnConstArray *>(column.get()))
+	else if (typeid_cast<const ColumnConstArray *>(column.get())
+		|| typeid_cast<const ColumnConstTuple *>(column.get()))
 	{
 		String s;
 		{
 			WriteBufferFromString wb(s);
-			type->serializeTextEscaped(*col->convertToFullColumn(), 0, wb);
+			type->serializeTextEscaped(*column->cut(0, 1)->convertToFullColumnIfConst(), 0, wb);
 		}
 
 		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(rows, s.size());

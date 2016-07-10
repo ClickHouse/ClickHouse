@@ -1262,6 +1262,11 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 
 	ASTFunction * left_arg_tuple = typeid_cast<ASTFunction *>(left_arg.get());
 
+	/** NOTE If tuple in left hand side specified non-explicitly
+	  * Example: identity((a, b)) IN ((1, 2), (3, 4))
+	  *  instead of        (a, b)) IN ((1, 2), (3, 4))
+	  * then set creation of set doesn't work correctly.
+	  */
 	if (left_arg_tuple && left_arg_tuple->name == "tuple")
 	{
 		for (const auto & arg : left_arg_tuple->arguments->children)

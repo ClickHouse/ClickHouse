@@ -109,6 +109,11 @@ StringRef ColumnConst<Array>::getDataAtWithTerminatingZero(size_t n) const
 
 ColumnPtr ColumnConst<Tuple>::convertToFullColumn() const
 {
+	return convertToTupleOfConstants()->convertToFullColumnIfConst();
+}
+
+ColumnPtr ColumnConst<Tuple>::convertToTupleOfConstants() const
+{
 	if (!data_type)
 		throw Exception("No data type specified for ColumnConstTuple", ErrorCodes::LOGICAL_ERROR);
 
@@ -123,7 +128,7 @@ ColumnPtr ColumnConst<Tuple>::convertToFullColumn() const
 
 	for (size_t i = 0; i < tuple_size; ++i)
 		block.insert(ColumnWithTypeAndName{
-			element_types[i]->createConstColumn(s, static_cast<const TupleBackend &>(*data)[i])->convertToFullColumnIfConst(),
+			element_types[i]->createConstColumn(s, static_cast<const TupleBackend &>(*data)[i]),
 			element_types[i],
 			""});
 

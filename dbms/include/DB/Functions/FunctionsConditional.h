@@ -1269,11 +1269,25 @@ private:
 		const ColumnWithTypeAndName & arg1 = block.getByPosition(arguments[1]);
 		const ColumnWithTypeAndName & arg2 = block.getByPosition(arguments[2]);
 
-		const ColumnTuple * col1 = static_cast<const ColumnTuple *>(arg1.column.get());
-		const ColumnTuple * col2 = static_cast<const ColumnTuple *>(arg2.column.get());
+		ColumnPtr col1_holder;
+		ColumnPtr col2_holder;
 
-		if (!col1 || !col2)
+		if (typeid_cast<const ColumnTuple *>(arg1.column.get()))
+			col1_holder = arg1.column;
+		else if (const ColumnConstTuple * const_tuple = typeid_cast<const ColumnConstTuple *>(arg1.column.get()))
+			col1_holder = const_tuple->convertToTupleOfConstants();
+		else
 			return false;
+
+		if (typeid_cast<const ColumnTuple *>(arg2.column.get()))
+			col2_holder = arg2.column;
+		else if (const ColumnConstTuple * const_tuple = typeid_cast<const ColumnConstTuple *>(arg2.column.get()))
+			col2_holder = const_tuple->convertToTupleOfConstants();
+		else
+			return false;
+
+		const ColumnTuple * col1 = static_cast<const ColumnTuple *>(col1_holder.get());
+		const ColumnTuple * col2 = static_cast<const ColumnTuple *>(col2_holder.get());
 
 		const DataTypeTuple & type1 = static_cast<const DataTypeTuple &>(*arg1.type);
 		const DataTypeTuple & type2 = static_cast<const DataTypeTuple &>(*arg2.type);

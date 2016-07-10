@@ -289,6 +289,9 @@ public:
 	/** Преобразование из константы в полноценный столбец */
 	ColumnPtr convertToFullColumn() const override;
 
+	/** Create ColumnTuple of constant columns as elements. */
+	ColumnPtr convertToTupleOfConstants() const;
+
 	void getExtremes(Field & min, Field & max) const override;
 };
 
