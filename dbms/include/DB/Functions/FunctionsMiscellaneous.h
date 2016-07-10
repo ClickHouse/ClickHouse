@@ -124,20 +124,18 @@ public:
 };
 
 
-/// Получить имя хоста. (Оно - константа, вычисляется один раз за весь запрос.)
+/// Get the host name. Is is constant on single server, but is not constant in distributed queries.
 class FunctionHostName : public IFunction
 {
 public:
 	static constexpr auto name = "hostName";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionHostName>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 0)
@@ -148,8 +146,9 @@ public:
 		return std::make_shared<DataTypeString>();
 	}
 
-	/** Выполнить функцию над блоком. convertToFullColumn вызывается для того, чтобы в случае
-	 *	распределенного выполнения запроса каждый сервер возвращал свое имя хоста. */
+	/** convertToFullColumn needed because in distributed query processing,
+	  *	each server returns its own value.
+	  */
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.getByPosition(result).column = ColumnConstString(
@@ -187,19 +186,18 @@ public:
 };
 
 
+/// Returns name of IDataType instance (name of data type).
 class FunctionToTypeName : public IFunction
 {
 public:
 	static constexpr auto name = "toTypeName";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToTypeName>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
@@ -210,10 +208,40 @@ public:
 		return std::make_shared<DataTypeString>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.getByPosition(result).column = std::make_shared<ColumnConstString>(block.rowsInFirstColumn(), block.getByPosition(arguments[0]).type->getName());
+		block.getByPosition(result).column = std::make_shared<ColumnConstString>(
+			block.rowsInFirstColumn(), block.getByPosition(arguments[0]).type->getName());
+	}
+};
+
+
+/// Returns name of IColumn instance.
+class FunctionToColumnTypeName : public IFunction
+{
+public:
+	static constexpr auto name = "toColumnTypeName";
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToColumnTypeName>(); }
+
+	String getName() const override
+	{
+		return name;
+	}
+
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return std::make_shared<DataTypeString>();
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		block.getByPosition(result).column = std::make_shared<ColumnConstString>(
+			block.rowsInFirstColumn(), block.getByPosition(arguments[0]).column->getName());
 	}
 };
 
@@ -432,6 +460,7 @@ public:
 		if (size > 0)
 			usleep(static_cast<unsigned>(seconds * 1e6));
 
+		/// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.
 		block.getByPosition(result).column = ColumnConst<UInt8>(size, 0).convertToFullColumn();
 	}
 };
@@ -531,13 +560,11 @@ public:
 	static constexpr auto name = "tuple";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTuple>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() < 1)
@@ -546,15 +573,47 @@ public:
 		return std::make_shared<DataTypeTuple>(arguments);
 	}
 
-	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		Block tuple_block;
 
-		for (ColumnNumbers::const_iterator it = arguments.begin(); it != arguments.end(); ++it)
-			tuple_block.insert(block.getByPosition(*it));
+		size_t num_constants = 0;
+		for (auto column_number : arguments)
+		{
+			const auto & elem = block.getByPosition(column_number);
+			if (elem.column->isConst())
+				++num_constants;
 
-		block.getByPosition(result).column = std::make_shared<ColumnTuple>(tuple_block);
+			tuple_block.insert(elem);
+		}
+
+		if (num_constants == arguments.size())
+		{
+			/** Return ColumnConstTuple rather than ColumnTuple of nested const columns.
+			  * (otherwise, ColumnTuple will not be understanded as constant in many places in code).
+			  */
+
+			TupleBackend tuple(arguments.size());
+			for (size_t i = 0, size = arguments.size(); i < size; ++i)
+				tuple_block.unsafeGetByPosition(i).column->get(0, tuple[i]);
+
+			block.getByPosition(result).column = std::make_shared<ColumnConstTuple>(
+				block.rowsInFirstColumn(), Tuple(tuple), block.getByPosition(result).type);
+		}
+		else
+		{
+			ColumnPtr res = std::make_shared<ColumnTuple>(tuple_block);
+
+			/** If tuple is mixed of constant and not constant columns,
+			  *  convert all to non-constant columns,
+			  *  because many places in code expect all non-constant columns in non-constant tuple.
+			  */
+			if (num_constants != 0)
+				if (auto converted = res->convertToFullColumnIfConst())
+					res = converted;
+
+			block.getByPosition(result).column = res;
+		}
 	}
 };
 
@@ -790,19 +849,19 @@ public:
 };
 
 
+/** Returns a string with nice Unicode-art bar with resolution of 1/8 part of symbol.
+  */
 class FunctionBar : public IFunction
 {
 public:
 	static constexpr auto name = "bar";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBar>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 3 && arguments.size() != 4)
@@ -817,7 +876,6 @@ public:
 		return std::make_shared<DataTypeString>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		Int64 min = extractConstant<Int64>(block, arguments, 1, "Second");	/// Уровень значения, при котором полоска имеет нулевую длину.
@@ -1062,6 +1120,8 @@ using FunctionIsInfinite = FunctionNumericPredicate<IsInfiniteImpl>;
 using FunctionIsNaN = FunctionNumericPredicate<IsNaNImpl>;
 
 
+/** Returns server version (constant).
+  */
 class FunctionVersion : public IFunction
 {
 public:
@@ -1093,6 +1153,8 @@ private:
 };
 
 
+/** Returns server uptime in seconds.
+  */
 class FunctionUptime : public IFunction
 {
 public:
@@ -1120,11 +1182,11 @@ private:
 };
 
 
-/** Весьма необычная функция.
-  * Принимает состояние агрегатной функции (например runningAccumulate(uniqState(UserID))),
-  *  и для каждой строки блока, возвращает результат агрегатной функции по объединению состояний от всех предыдущих строк блока и текущей строки.
+/** Quite unusual function.
+  * Takes state of aggregate function (example runningAccumulate(uniqState(UserID))),
+  *  and for each row of block, return result of aggregate function on merge of states of all previous rows and current row.
   *
-  * То есть, функция зависит от разбиения данных на блоки и от порядка строк в блоке.
+  * So, result of function depends on partition of data to blocks and on order of data in block.
   */
 class FunctionRunningAccumulate : public IFunction
 {
@@ -1178,7 +1240,7 @@ public:
 };
 
 
-/** Принимает состояние агрегатной функции. Возвращает результат агрегации.
+/** Takes state of aggregate function. Returns result of aggregation (finalized state).
   */
 class FunctionFinalizeAggregation : public IFunction
 {
