@@ -618,13 +618,14 @@ public:
 };
 
 
+/** Extract element of tuple by constant index. The operation is essentially free.
+  */
 class FunctionTupleElement : public IFunction
 {
 public:
 	static constexpr auto name = "tupleElement";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTupleElement>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -659,14 +660,13 @@ public:
 		out_return_type = elems[index - 1]->clone();
 	}
 
-	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(block.getByPosition(arguments[0]).column.get());
 		const ColumnConstTuple * const_tuple_col = typeid_cast<const ColumnConstTuple *>(block.getByPosition(arguments[0]).column.get());
 		const ColumnConstUInt8 * index_col = typeid_cast<const ColumnConstUInt8 *>(block.getByPosition(arguments[1]).column.get());
 
-		if (!tuple_col)
+		if (!tuple_col && !const_tuple_col)
 			throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_COLUMN);
 
 		if (!index_col)
@@ -676,12 +676,21 @@ public:
 		if (index == 0)
 			throw Exception("Indices in tuples is 1-based.", ErrorCodes::ILLEGAL_INDEX);
 
-		const Block & tuple_block = tuple_col->getData();
+		if (tuple_col)
+		{
+			const Block & tuple_block = tuple_col->getData();
 
-		if (index > tuple_block.columns())
-			throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
+			if (index > tuple_block.columns())
+				throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
 
-		block.getByPosition(result).column = tuple_block.getByPosition(index - 1).column;
+			block.getByPosition(result).column = tuple_block.getByPosition(index - 1).column;
+		}
+		else
+		{
+			const TupleBackend & data = const_tuple_col->getData();
+			block.getByPosition(result).column = static_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type)
+				.getElements()[index - 1]->createConstColumn(block.rowsInFirstColumn(), data[index - 1]);
+		}
 	}
 };
 
