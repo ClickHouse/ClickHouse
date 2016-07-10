@@ -128,6 +128,12 @@ public:
 		return pos;
 	}
 
+	void updateHashWithValue(size_t n, SipHash & hash) const override
+	{
+		for (auto & column : columns)
+			column->updateHashWithValue(n, hash);
+	}
+
 	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
 	{
 		for (size_t i = 0; i < columns.size(); ++i)

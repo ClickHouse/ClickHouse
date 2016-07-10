@@ -10,6 +10,9 @@
 #include <DB/Core/StringRef.h>
 
 
+class SipHash;
+
+
 namespace DB
 {
 
@@ -181,10 +184,11 @@ public:
 	  */
 	virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
 
-	/** Соединить столбец с одним или несколькими другими.
-	  * Используется при склейке маленьких блоков.
+	/** Update state of hash function with value at index n.
+	  * On subsequent calls of this method for sequence of column values of arbitary types,
+	  *  passed bytes to hash must identify sequence of values unambiguously.
 	  */
-	//virtual void merge(const Columns & columns) = 0;
+	virtual void updateHashWithValue(size_t n, SipHash & hash) const = 0;
 
 	/** Оставить только значения, соответствующие фильтру.
 	  * Используется для операции WHERE / HAVING.
