@@ -1233,7 +1233,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const IColumn * column = &*block.getByPosition(arguments[0]).column;
+		const IColumn * column = block.getByPosition(arguments[0]).column.get();
 		ColumnPtr & res_column = block.getByPosition(result).column;
 
 		if (tryExecuteUInt<UInt8>(column, res_column) ||
@@ -1453,7 +1453,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const IColumn * in_column = &*block.getByPosition(arguments[0]).column;
+		const IColumn * in_column = block.getByPosition(arguments[0]).column.get();
 		ColumnPtr & out_column = block.getByPosition(result).column;
 
 		if (tryExecute<UInt8>(in_column, out_column) ||
@@ -1603,7 +1603,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const IColumn * column = &*block.getByPosition(arguments[0]).column;
+		const IColumn * column = block.getByPosition(arguments[0]).column.get();
 		ColumnPtr & res_column = block.getByPosition(result).column;
 
 		if (tryExecuteFixedString(column, res_column) || tryExecuteString(column, res_column))

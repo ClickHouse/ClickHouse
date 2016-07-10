@@ -343,7 +343,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 		return res;
 	}
 
-	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*block.getByPosition(0).type);
+	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(block.getByPosition(0).type.get());
 
 	if (array_type)
 	{
@@ -352,7 +352,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 		if (array_type->getNestedType()->getName() != data_types[0]->getName())
 			throw Exception(std::string() + "Types in section IN don't match: " + data_types[0]->getName() + " on the right, " + array_type->getNestedType()->getName() + " on the left.", ErrorCodes::TYPE_MISMATCH);
 
-		const IColumn * in_column = &*block.getByPosition(0).column;
+		const IColumn * in_column = block.getByPosition(0).column.get();
 
 		/// Константный столбец слева от IN поддерживается не напрямую. Для этого, он сначала материализуется.
 		ColumnPtr materialized_column = in_column->convertToFullColumnIfConst();

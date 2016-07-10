@@ -1202,8 +1202,8 @@ public:
 		if (!column_needle->isConst() || !column_replacement->isConst())
 			throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
 
-		const IColumn * c1 = &*block.getByPosition(arguments[1]).column;
-		const IColumn * c2 = &*block.getByPosition(arguments[2]).column;
+		const IColumn * c1 = block.getByPosition(arguments[1]).column.get();
+		const IColumn * c2 = block.getByPosition(arguments[2]).column.get();
 		const ColumnConstString * c1_const = typeid_cast<const ColumnConstString *>(c1);
 		const ColumnConstString * c2_const = typeid_cast<const ColumnConstString *>(c2);
 		String needle = c1_const->getData();

@@ -431,7 +431,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		IColumn * col = &*block.getByPosition(arguments[0]).column;
+		IColumn * col = block.getByPosition(arguments[0]).column.get();
 		double seconds;
 		size_t size = col->size();
 
@@ -543,7 +543,7 @@ public:
 		Block block_of_key_columns;
 
 		/// Первый аргумент может быть tuple или одиночным столбцом.
-		const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(block.getByPosition(arguments[0]).column.get());
 		if (tuple)
 			block_of_key_columns = tuple->getData();
 		else
@@ -662,8 +662,9 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(&*block.getByPosition(arguments[0]).column);
-		const ColumnConstUInt8 * index_col = typeid_cast<const ColumnConstUInt8 *>(&*block.getByPosition(arguments[1]).column);
+		const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(block.getByPosition(arguments[0]).column.get());
+		const ColumnConstTuple * const_tuple_col = typeid_cast<const ColumnConstTuple *>(block.getByPosition(arguments[0]).column.get());
+		const ColumnConstUInt8 * index_col = typeid_cast<const ColumnConstUInt8 *>(block.getByPosition(arguments[1]).column.get());
 
 		if (!tuple_col)
 			throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_COLUMN);
@@ -830,12 +831,12 @@ public:
 	{
 		ColumnPtr first_column = block.getByPosition(arguments[0]).column;
 
-		ColumnArray * array_column = typeid_cast<ColumnArray *>(&*block.getByPosition(arguments[1]).column);
+		ColumnArray * array_column = typeid_cast<ColumnArray *>(block.getByPosition(arguments[1]).column.get());
 		ColumnPtr temp_column;
 
 		if (!array_column)
 		{
-			ColumnConstArray * const_array_column = typeid_cast<ColumnConstArray *>(&*block.getByPosition(arguments[1]).column);
+			ColumnConstArray * const_array_column = typeid_cast<ColumnConstArray *>(block.getByPosition(arguments[1]).column.get());
 			if (!const_array_column)
 				throw Exception("Unexpected column for replicate", ErrorCodes::ILLEGAL_COLUMN);
 			temp_column = const_array_column->convertToFullColumn();

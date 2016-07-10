@@ -873,8 +873,8 @@ private:
 		size_t result,
 		const ColumnVector<T0> * col_left)
 	{
-		const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(&*block.getByPosition(arguments[2]).column);
-		const ColumnConst<T1> * col_right_const = typeid_cast<const ColumnConst<T1> *>(&*block.getByPosition(arguments[2]).column);
+		const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(block.getByPosition(arguments[2]).column.get());
+		const ColumnConst<T1> * col_right_const = typeid_cast<const ColumnConst<T1> *>(block.getByPosition(arguments[2]).column.get());
 
 		if (!col_right_vec && !col_right_const)
 			return false;
@@ -897,8 +897,8 @@ private:
 		size_t result,
 		const ColumnConst<T0> * col_left)
 	{
-		const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(&*block.getByPosition(arguments[2]).column);
-		const ColumnConst<T1> * col_right_const = typeid_cast<const ColumnConst<T1> *>(&*block.getByPosition(arguments[2]).column);
+		const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(block.getByPosition(arguments[2]).column.get());
+		const ColumnConst<T1> * col_right_const = typeid_cast<const ColumnConst<T1> *>(block.getByPosition(arguments[2]).column.get());
 
 		if (!col_right_vec && !col_right_const)
 			return false;
@@ -1400,8 +1400,8 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(&*block.getByPosition(arguments[0]).column);
-		const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(block.getByPosition(arguments[0]).column.get());
+		const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(block.getByPosition(arguments[0]).column.get());
 		ColumnPtr materialized_cond_col;
 
 		const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
@@ -1641,7 +1641,7 @@ private:
 
 		for (size_t i = Conditional::firstCond(); i < else_arg; i = Conditional::nextCond(i))
 		{
-			auto cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(&*block.getByPosition(args[i]).column);
+			auto cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(block.getByPosition(args[i]).column.get());
 			if (!cond_const_col)
 				return false;
 
