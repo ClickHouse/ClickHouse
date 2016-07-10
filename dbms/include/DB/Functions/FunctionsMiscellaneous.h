@@ -513,13 +513,11 @@ public:
 	static constexpr auto name = FunctionInName<negative, global>::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIn>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 2)
@@ -530,22 +528,25 @@ public:
 		return std::make_shared<DataTypeUInt8>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		/// Второй аргумент - обязательно ColumnSet.
+		/// Second argument must be ColumnSet.
 		ColumnPtr column_set_ptr = block.getByPosition(arguments[1]).column;
 		const ColumnSet * column_set = typeid_cast<const ColumnSet *>(&*column_set_ptr);
 		if (!column_set)
 			throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
-							ErrorCodes::ILLEGAL_COLUMN);
+				ErrorCodes::ILLEGAL_COLUMN);
 
 		Block block_of_key_columns;
 
-		/// Первый аргумент может быть tuple или одиночным столбцом.
+		/// First argument may be tuple or single column.
 		const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(block.getByPosition(arguments[0]).column.get());
+		const ColumnConstTuple * const_tuple = typeid_cast<const ColumnConstTuple *>(block.getByPosition(arguments[0]).column.get());
+
 		if (tuple)
 			block_of_key_columns = tuple->getData();
+		else if (const_tuple)
+			block_of_key_columns = static_cast<const ColumnTuple &>(*const_tuple->convertToFullColumn()).getData();
 		else
 			block_of_key_columns.insert(block.getByPosition(arguments[0]));
 
