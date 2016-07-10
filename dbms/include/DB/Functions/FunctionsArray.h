@@ -332,8 +332,8 @@ public:
 				for (size_t j = 0; j < num_elements; ++j)
 					out_data.insertFrom(*columns[j], i);
 
-				out_offsets[i] = current_offset;
 				current_offset += num_elements;
+				out_offsets[i] = current_offset;
 			}
 
 			block.getByPosition(result).column = out;
