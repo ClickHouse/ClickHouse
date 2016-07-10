@@ -137,8 +137,8 @@ ColumnPtr ColumnConst<Tuple>::convertToTupleOfConstants() const
 
 void ColumnConst<Tuple>::getExtremes(Field & min, Field & max) const
 {
-	min = data_type->getDefault();
-	max = data_type->getDefault();
+	min = *data;
+	max = *data;
 }
 
 StringRef ColumnConst<Tuple>::getDataAt(size_t n) const
