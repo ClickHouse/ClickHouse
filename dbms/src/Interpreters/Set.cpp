@@ -136,14 +136,14 @@ SetVariants::Type SetVariants::chooseMethod(const ConstColumnPlainPtrs & key_col
 	if (all_fixed && keys_bytes <= 32)
 		return SetVariants::Type::keys256;
 
-	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
+	/// If there is single string key, use hash table of it's values.
 	if (keys_size == 1 && (typeid_cast<const ColumnString *>(key_columns[0]) || typeid_cast<const ColumnConstString *>(key_columns[0])))
 		return SetVariants::Type::key_string;
 
 	if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
 		return SetVariants::Type::key_fixed_string;
 
-	/// Иначе будем агрегировать по конкатенации ключей.
+	/// Otherwise, will use set of cryptographic hashes of unambiguously serialized values.
 	return SetVariants::Type::hashed;
 }
 
