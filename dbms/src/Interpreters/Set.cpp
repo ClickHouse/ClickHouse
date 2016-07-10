@@ -182,7 +182,12 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 	size_t keys_size = block.columns();
 	ConstColumnPlainPtrs key_columns;
 	key_columns.reserve(keys_size);
-	data_types.reserve(keys_size);
+
+	if (empty())
+	{
+		data_types.clear();
+		data_types.reserve(keys_size);
+	}
 
 	/// Константные столбцы справа от IN поддерживается не напрямую. Для этого, они сначала материализуется.
 	Columns materialized_columns;
@@ -191,7 +196,9 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 	for (size_t i = 0; i < keys_size; ++i)
 	{
 		key_columns.emplace_back(block.getByPosition(i).column.get());
-		data_types.emplace_back(block.getByPosition(i).type);
+
+		if (empty())
+			data_types.emplace_back(block.getByPosition(i).type);
 
 		if (auto converted = key_columns.back()->convertToFullColumnIfConst())
 		{
@@ -211,10 +218,13 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 			for (const auto & elem : tuple_elements)
 				key_columns.push_back(elem.get());
 
-			data_types.pop_back();
-			const Block & tuple_block = tuple->getData();
-			for (size_t i = 0, size = tuple_block.columns(); i < size; ++i)
-				data_types.push_back(tuple_block.unsafeGetByPosition(i).type);
+			if (empty())
+			{
+				data_types.pop_back();
+				const Block & tuple_block = tuple->getData();
+				for (size_t i = 0, size = tuple_block.columns(); i < size; ++i)
+					data_types.push_back(tuple_block.unsafeGetByPosition(i).type);
+			}
 		}
 	}
 
