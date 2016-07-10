@@ -577,6 +577,13 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 			replaced = true;
 		}
 
+		/// Select implementation of countDistinct based on settings.
+		/// Important that it is done as query rewrite. It means rewritten query
+		///  will be sent to remote servers during distributed query execution,
+		///  and on all remote servers, function implementation will be same.
+		if (func_node->name == "countDistinct")
+			func_node->name = settings.count_distinct_implementation;
+
 		/// Может быть указано IN t, где t - таблица, что равносильно IN (SELECT * FROM t).
 		if (functionIsInOrGlobalInOperator(func_node->name))
 			if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(func_node->arguments->children.at(1).get()))

@@ -203,8 +203,11 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 
 	ParserIdentifier id_parser;
 	ParserString open("("), close(")");
+	ParserString distinct("DISTINCT", true, true);
 	ParserExpressionList contents(false);
 	ParserWhiteSpaceOrComments ws;
+
+	bool has_distinct_modifier = false;
 
 	ASTPtr identifier;
 	ASTPtr expr_list_args;
@@ -219,6 +222,13 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 		return false;
 
 	ws.ignore(pos, end);
+
+	if (distinct.ignore(pos, end, max_parsed_pos, expected))
+	{
+		has_distinct_modifier = true;
+		ws.ignore(pos, end);
+	}
+
 	Pos contents_begin = pos;
 	if (!contents.parse(pos, end, expr_list_args, max_parsed_pos, expected))
 		return false;
@@ -254,10 +264,21 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 	/// У параметрической агрегатной функции - два списка (параметры и аргументы) в круглых скобках. Пример: quantile(0.9)(x).
 	if (open.ignore(pos, end, max_parsed_pos, expected))
 	{
+		/// Parametric aggregate functions cannot have DISTINCT in parameters list.
+		if (has_distinct_modifier)
+			return false;
+
 		expr_list_params = expr_list_args;
 		expr_list_args = nullptr;
 
 		ws.ignore(pos, end);
+
+		if (distinct.ignore(pos, end, max_parsed_pos, expected))
+		{
+			has_distinct_modifier = true;
+			ws.ignore(pos, end);
+		}
+
 		if (!contents.parse(pos, end, expr_list_args, max_parsed_pos, expected))
 			return false;
 		ws.ignore(pos, end);
@@ -267,8 +288,11 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 	}
 
 	auto function_node = std::make_shared<ASTFunction>(StringRange(begin, pos));
-	ASTPtr node_holder{function_node};
 	function_node->name = typeid_cast<ASTIdentifier &>(*identifier).name;
+
+	/// func(DISTINCT ...) is equivalent to funcDistinct(...)
+	if (has_distinct_modifier)
+		function_node->name += "Distinct";
 
 	function_node->arguments = expr_list_args;
 	function_node->children.push_back(function_node->arguments);
@@ -279,7 +303,7 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 		function_node->children.push_back(function_node->parameters);
 	}
 
-	node = node_holder;
+	node = function_node;
 	return true;
 }
 
