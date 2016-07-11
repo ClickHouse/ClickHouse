@@ -62,6 +62,12 @@ public:
 
 	void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 
+
+	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
+	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
+
 	/** Записать размеры. */
 	void serializeOffsets(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const;
 
@@ -83,11 +89,6 @@ public:
 private:
 	void serializeTextInternal(const IColumn & column, size_t row_num, WriteBuffer & ostr) const;
 	void deserializeTextQuotedInternal(IColumn & column, ReadBuffer & istr) const;
-
-	void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
-	void deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const override;
-	void serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
-	void deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter, NullValuesByteMap * null_map) const override;
 };
 
 }

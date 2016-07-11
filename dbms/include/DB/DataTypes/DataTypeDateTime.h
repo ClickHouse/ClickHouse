@@ -54,64 +54,34 @@ private:
 		static_cast<ColumnType &>(column).getData().push_back(x);	/// Важно делать это в конце - для exception safety.
 	}
 
-	void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const NullValuesByteMap * null_map) const override
+	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		if (isNullValue(null_map, row_num))
-			writeCString(NullSymbol::JSON::name, ostr);
-		else
-		{
-			writeChar('"', ostr);
-			serializeText(column, row_num, ostr);
-			writeChar('"', ostr);
-		}
+		writeChar('"', ostr);
+		serializeText(column, row_num, ostr);
+		writeChar('"', ostr);
 	}
 
-	void deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr,
-		NullValuesByteMap * null_map) const override
+	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override
 	{
-		if (NullSymbol::Deserializer<NullSymbol::JSON>::execute(column, istr, null_map))
-		{
-			FieldType default_val = get<FieldType>(getDefault());
-			static_cast<ColumnType &>(column).getData().push_back(default_val);
-		}
-		else
-		{
-			time_t x;
-			assertChar('"', istr);
-			readDateTimeText(x, istr);
-			assertChar('"', istr);
-			static_cast<ColumnType &>(column).getData().push_back(x);
-		}
+		time_t x;
+		assertChar('"', istr);
+		readDateTimeText(x, istr);
+		assertChar('"', istr);
+		static_cast<ColumnType &>(column).getData().push_back(x);
 	}
 
-	void serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const NullValuesByteMap * null_map) const override
+	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		if (isNullValue(null_map, row_num))
-			writeCString(NullSymbol::CSV::name, ostr);
-		else
-		{
-			writeChar('"', ostr);
-			serializeText(column, row_num, ostr);
-			writeChar('"', ostr);
-		}
+		writeChar('"', ostr);
+		serializeText(column, row_num, ostr);
+		writeChar('"', ostr);
 	}
 
-	void deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter,
-		NullValuesByteMap * null_map) const override
+	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override
 	{
-		if (NullSymbol::Deserializer<NullSymbol::CSV>::execute(column, istr, null_map))
-		{
-			FieldType default_val = get<FieldType>(getDefault());
-			static_cast<ColumnType &>(column).getData().push_back(default_val);
-		}
-		else
-		{
-			LocalDateTime value;
-			readCSV(value, istr);
-			static_cast<ColumnType &>(column).getData().push_back(static_cast<time_t>(value));
-		}
+		LocalDateTime value;
+		readCSV(value, istr);
+		static_cast<ColumnType &>(column).getData().push_back(static_cast<time_t>(value));
 	}
 };
 

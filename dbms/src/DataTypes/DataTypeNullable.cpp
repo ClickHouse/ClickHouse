@@ -142,26 +142,34 @@ void DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
 		nested_data_type.get()->deserializeTextQuoted(*(col->getNestedColumn().get()), istr);
 }
 
-void DataTypeNullable::serializeTextCSVImpl(const IColumn & column, size_t row_num,
-	WriteBuffer & ostr, const NullValuesByteMap * null_map) const
+void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	const ColumnNullable * col = typeid_cast<const ColumnNullable *>(&column);
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
 	const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
-	nested_data_type.get()->serializeTextCSV(*(col->getNestedColumn().get()), row_num, ostr, &content.getData());
+	const auto & null_map = content.getData();
+
+	if (isNullValue(&null_map, row_num))
+		writeCString(NullSymbol::Quoted::name, ostr);
+	else
+		nested_data_type.get()->serializeTextCSV(*(col->getNestedColumn().get()), row_num, ostr);
 }
 
-void DataTypeNullable::deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr,
-	const char delimiter, NullValuesByteMap * null_map) const
+void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
 {
 	ColumnNullable * col = typeid_cast<ColumnNullable *>(&column);
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
 	ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
-	nested_data_type.get()->deserializeTextCSV(*(col->getNestedColumn().get()), istr, delimiter, &content.getData());
+	auto & null_map = content.getData();
+
+	if (NullSymbol::Deserializer<NullSymbol::Quoted>::execute(column, istr, &null_map))
+		col->insertDefault();
+	else
+		nested_data_type.get()->deserializeTextCSV(*(col->getNestedColumn().get()), istr, delimiter);
 }
 
 void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -179,26 +187,34 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
 		nested_data_type.get()->serializeText(*(col->getNestedColumn().get()), row_num, ostr);
 }
 
-void DataTypeNullable::serializeTextJSONImpl(const IColumn & column, size_t row_num,
-	WriteBuffer & ostr, const NullValuesByteMap * null_map) const
+void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	const ColumnNullable * col = typeid_cast<const ColumnNullable *>(&column);
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
 	const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
-	nested_data_type.get()->serializeTextJSON(*(col->getNestedColumn().get()), row_num, ostr, &content.getData());
+	const auto & null_map = content.getData();
+
+	if (isNullValue(&null_map, row_num))
+		writeCString(NullSymbol::JSON::name, ostr);
+	else
+		nested_data_type.get()->serializeTextJSON(*(col->getNestedColumn().get()), row_num, ostr);
 }
 
-void DataTypeNullable::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
 	ColumnNullable * col = typeid_cast<ColumnNullable *>(&column);
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
 	ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
-	nested_data_type.get()->deserializeTextJSON(*(col->getNestedColumn().get()), istr, &content.getData());
+	auto & null_map = content.getData();
+
+	if (NullSymbol::Deserializer<NullSymbol::JSON>::execute(column, istr, &null_map))
+		col->insertDefault();
+	else
+		nested_data_type.get()->deserializeTextJSON(*(col->getNestedColumn().get()), istr);
 }
 
 void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const

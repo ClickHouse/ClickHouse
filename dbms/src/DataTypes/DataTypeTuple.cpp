@@ -145,46 +145,36 @@ void DataTypeTuple::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) c
 	deserializeText(column, istr);
 }
 
-void DataTypeTuple::serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::JSON::name, ostr);
-	else
+	writeChar('[', ostr);
+	for (const auto i : ext::range(0, ext::size(elems)))
 	{
-		writeChar('[', ostr);
-		for (const auto i : ext::range(0, ext::size(elems)))
-		{
-			if (i != 0)
-				writeChar(',', ostr);
-			elems[i]->serializeTextJSON(extractElementColumn(column, i), row_num, ostr, null_map);
-		}
-		writeChar(']', ostr);
+		if (i != 0)
+			writeChar(',', ostr);
+		elems[i]->serializeTextJSON(extractElementColumn(column, i), row_num, ostr);
 	}
+	writeChar(']', ostr);
 }
 
-void DataTypeTuple::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
-	if (!NullSymbol::Deserializer<NullSymbol::JSON>::execute(column, istr, null_map))
+	const size_t size = elems.size();
+	assertChar('[', istr);
+
+	deserializeSafe(elems, column, istr, [&]
 	{
-		const size_t size = elems.size();
-		assertChar('[', istr);
-
-		deserializeSafe(elems, column, istr, [&]
+		for (const auto i : ext::range(0, size))
 		{
-			for (const auto i : ext::range(0, size))
-			{
-				skipWhitespaceIfAny(istr);
-				if (i != 0)
-					assertChar(',', istr);
-				elems[i]->deserializeTextJSON(extractElementColumn(column, i), istr, null_map);
-			}
-		});
+			skipWhitespaceIfAny(istr);
+			if (i != 0)
+				assertChar(',', istr);
+			elems[i]->deserializeTextJSON(extractElementColumn(column, i), istr);
+		}
+	});
 
-		skipWhitespaceIfAny(istr);
-		assertChar(']', istr);
-	}
+	skipWhitespaceIfAny(istr);
+	assertChar(']', istr);
 }
 
 void DataTypeTuple::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -199,42 +189,32 @@ void DataTypeTuple::serializeTextXML(const IColumn & column, size_t row_num, Wri
 	writeCString("</tuple>", ostr);
 }
 
-void DataTypeTuple::serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeTuple::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::CSV::name, ostr);
-	else
+	for (const auto i : ext::range(0, ext::size(elems)))
 	{
-		for (const auto i : ext::range(0, ext::size(elems)))
-		{
-			if (i != 0)
-				writeChar(',', ostr);
-			elems[i]->serializeTextCSV(extractElementColumn(column, i), row_num, ostr, null_map);
-		}
+		if (i != 0)
+			writeChar(',', ostr);
+		elems[i]->serializeTextCSV(extractElementColumn(column, i), row_num, ostr);
 	}
 }
 
-void DataTypeTuple::deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter,
-	NullValuesByteMap * null_map) const
+void DataTypeTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
 {
-	if (!NullSymbol::Deserializer<NullSymbol::JSON>::execute(column, istr, null_map))
+	deserializeSafe(elems, column, istr, [&]
 	{
-		deserializeSafe(elems, column, istr, [&]
+		const size_t size = elems.size();
+		for (const auto i : ext::range(0, size))
 		{
-			const size_t size = elems.size();
-			for (const auto i : ext::range(0, size))
+			if (i != 0)
 			{
-				if (i != 0)
-				{
-					skipWhitespaceIfAny(istr);
-					assertChar(delimiter, istr);
-					skipWhitespaceIfAny(istr);
-				}
-				elems[i]->deserializeTextCSV(extractElementColumn(column, i), istr, delimiter, null_map);
+				skipWhitespaceIfAny(istr);
+				assertChar(delimiter, istr);
+				skipWhitespaceIfAny(istr);
 			}
-		});
-	}
+			elems[i]->deserializeTextCSV(extractElementColumn(column, i), istr, delimiter);
+		}
+	});
 }
 
 void DataTypeTuple::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const

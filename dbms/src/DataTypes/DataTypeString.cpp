@@ -250,16 +250,6 @@ static inline void read(IColumn & column, ReadBuffer & istr, Reader && reader)
 	}
 }
 
-void insertEmptyString(IColumn & column)
-{
-	ColumnString & column_string = static_cast<ColumnString &>(column);
-	ColumnString::Chars_t & data = column_string.getChars();
-	ColumnString::Offsets_t & offsets = column_string.getOffsets();
-
-	data.push_back(0);
-	offsets.push_back(data.size());
-}
-
 }
 
 void DataTypeString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
@@ -280,23 +270,15 @@ void DataTypeString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) 
 }
 
 
-void DataTypeString::serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::JSON::name, ostr);
-	else
-		writeJSONString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+	writeJSONString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeString::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
-	if (NullSymbol::Deserializer<NullSymbol::JSON>::execute(column, istr, null_map))
-		insertEmptyString(column);
-	else
-		read(column, istr, [&](ColumnString::Chars_t & data) { readJSONStringInto(data, istr); });
+	read(column, istr, [&](ColumnString::Chars_t & data) { readJSONStringInto(data, istr); });
 }
 
 
@@ -306,23 +288,15 @@ void DataTypeString::serializeTextXML(const IColumn & column, size_t row_num, Wr
 }
 
 
-void DataTypeString::serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::CSV::name, ostr);
-	else
-		writeCSVString<>(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+	writeCSVString<>(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter,
-	NullValuesByteMap * null_map) const
+void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
 {
-	if (NullSymbol::Deserializer<NullSymbol::CSV>::execute(column, istr, null_map))
-		insertEmptyString(column);
-	else
-		read(column, istr, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr); });
+	read(column, istr, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr); });
 }
 
 

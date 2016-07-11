@@ -141,13 +141,6 @@ static inline void read(const DataTypeFixedString & self, IColumn & column, Read
 	}
 }
 
-void insertEmptyString(const DataTypeFixedString & self, IColumn & column)
-{
-	ColumnFixedString::Chars_t & data = typeid_cast<ColumnFixedString &>(column).getChars();
-	size_t prev_size = data.size();
-	data.resize_fill(prev_size + self.getN());
-}
-
 }
 
 void DataTypeFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
@@ -169,26 +162,16 @@ void DataTypeFixedString::deserializeTextQuoted(IColumn & column, ReadBuffer & i
 }
 
 
-void DataTypeFixedString::serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeFixedString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::JSON::name, ostr);
-	else
-	{
-		const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-		writeJSONString(pos, pos + n, ostr);
-	}
+	const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
+	writeJSONString(pos, pos + n, ostr);
 }
 
 
-void DataTypeFixedString::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeFixedString::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
-	if (NullSymbol::Deserializer<NullSymbol::JSON>::execute(column, istr, null_map))
-		insertEmptyString(*this, column);
-	else
-		read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readJSONStringInto(data, istr); });
+	read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readJSONStringInto(data, istr); });
 }
 
 
@@ -199,26 +182,16 @@ void DataTypeFixedString::serializeTextXML(const IColumn & column, size_t row_nu
 }
 
 
-void DataTypeFixedString::serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeFixedString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::CSV::name, ostr);
-	else
-	{
-		const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-		writeCSVString(pos, pos + n, ostr);
-	}
+	const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
+	writeCSVString(pos, pos + n, ostr);
 }
 
 
-void DataTypeFixedString::deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter,
-	NullValuesByteMap * null_map) const
+void DataTypeFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
 {
-	if (NullSymbol::Deserializer<NullSymbol::CSV>::execute(column, istr, null_map))
-		insertEmptyString(*this, column);
-	else
-		read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readCSVStringInto(data, istr); });
+	read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readCSVStringInto(data, istr); });
 }
 
 

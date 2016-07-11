@@ -121,14 +121,12 @@ void DataTypeNull::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) co
 	assertString(NullSymbol::Quoted::name, istr);
 }
 
-void DataTypeNull::serializeTextCSVImpl(const IColumn & column, size_t row_num,
-	WriteBuffer & ostr, const NullValuesByteMap * null_map) const
+void DataTypeNull::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeCString(NullSymbol::CSV::name, ostr);
 }
 
-void DataTypeNull::deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr,
-	const char delimiter, NullValuesByteMap * null_map) const
+void DataTypeNull::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
 {
 	assertString(NullSymbol::CSV::name, istr);
 }
@@ -138,14 +136,12 @@ void DataTypeNull::serializeText(const IColumn & column, size_t row_num, WriteBu
 	writeCString(NullSymbol::Plain::name, ostr);
 }
 
-void DataTypeNull::serializeTextJSONImpl(const IColumn & column, size_t row_num,
-	WriteBuffer & ostr, const NullValuesByteMap * null_map) const
+void DataTypeNull::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeCString(NullSymbol::JSON::name, ostr);
 }
 
-void DataTypeNull::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeNull::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
 	assertString(NullSymbol::JSON::name, istr);
 }

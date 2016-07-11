@@ -40,6 +40,11 @@ public:
 		throwNoSerialization();
 	}
 
+	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override
+	{
+		throwNoSerialization();
+	}
+
 	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
 		throwNoSerialization();
@@ -60,7 +65,22 @@ public:
 		throwNoSerialization();
 	}
 
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override
+	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
+	{
+		throwNoSerialization();
+	}
+
+	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override
+	{
+		throwNoSerialization();
+	}
+
+	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
+	{
+		throwNoSerialization();
+	}
+
+	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override
 	{
 		throwNoSerialization();
 	}
@@ -83,31 +103,6 @@ public:
 	Field getDefault() const override
 	{
 		throw Exception("Method getDefault() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-	}
-
-protected:
-	void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const NullValuesByteMap * null_map) const override
-	{
-		throwNoSerialization();
-	}
-
-	void deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr,
-		NullValuesByteMap * null_map) const override
-	{
-		throwNoSerialization();
-	}
-
-	void serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const NullValuesByteMap * null_map) const override
-	{
-		throwNoSerialization();
-	}
-
-	void deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter,
-		NullValuesByteMap * null_map) const override
-	{
-		throwNoSerialization();
 	}
 
 private:

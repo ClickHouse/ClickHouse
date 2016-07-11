@@ -188,14 +188,12 @@ void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuff
 	deserializeFromString(function, column, s);
 }
 
-void DataTypeAggregateFunction::serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeJSONString(serializeToString(function, column, row_num), ostr);
 }
 
-void DataTypeAggregateFunction::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
 	String s;
 	readJSONString(s, istr);
@@ -207,14 +205,12 @@ void DataTypeAggregateFunction::serializeTextXML(const IColumn & column, size_t 
 	writeXMLString(serializeToString(function, column, row_num), ostr);
 }
 
-void DataTypeAggregateFunction::serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeAggregateFunction::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeCSV(serializeToString(function, column, row_num), ostr);
 }
 
-void DataTypeAggregateFunction::deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter,
-	NullValuesByteMap * null_map) const
+void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
 {
 	String s;
 	readCSV(s, istr, delimiter);

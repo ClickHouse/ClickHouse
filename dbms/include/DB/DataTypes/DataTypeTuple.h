@@ -39,6 +39,13 @@ public:
 	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
 
+	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
+
+	/// Кортежи в формате CSV будем сериализовать, как отдельные столбцы (то есть, теряя их вложенность в кортеж).
+	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
+
 	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 	void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 
@@ -50,12 +57,6 @@ public:
 
 private:
 	void deserializeText(IColumn & column, ReadBuffer & istr) const;
-	void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
-	void deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const override;
-
-	/// Кортежи в формате CSV будем сериализовать, как отдельные столбцы (то есть, теряя их вложенность в кортеж).
-	void serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
-	void deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter, NullValuesByteMap * null_map) const override;
 };
 
 }

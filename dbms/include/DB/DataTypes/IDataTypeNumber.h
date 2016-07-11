@@ -66,11 +66,9 @@ protected:
 		deserializeText<NullSymbol::Quoted>(column, istr);
 	}
 
-	inline void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const PaddedPODArray<UInt8> * null_map) const override;
+	inline void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 
-	void deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr,
-		PaddedPODArray<UInt8> * null_map) const override
+	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override
 	{
 		bool has_quote = false;
 		if (!istr.eof() && *istr.position() == '"')		/// Понимаем число как в кавычках, так и без.
@@ -88,9 +86,6 @@ protected:
 			assertString(NullSymbol::JSON::suffix, istr);
 
 			x = valueForJSONNull();
-
-			if (null_map != nullptr)
-				null_map->push_back(1);
 		}
 		else
 		{
@@ -103,29 +98,16 @@ protected:
 		static_cast<ColumnType &>(column).getData().push_back(x);
 	}
 
-	void serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const PaddedPODArray<UInt8> * null_map) const override
+	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		if (isNullValue(null_map, row_num))
-			writeCString(NullSymbol::CSV::name, ostr);
-		else
-			writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
+		writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
 	}
 
-	void deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter,
-		PaddedPODArray<UInt8> * null_map) const override
+	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override
 	{
-		if (NullSymbol::Deserializer<NullSymbol::CSV>::execute(column, istr, null_map))
-		{
-			FieldType default_val = get<FieldType>(getDefault());
-			static_cast<ColumnType &>(column).getData().push_back(default_val);
-		}
-		else
-		{
-			FieldType x;
-			readCSV(x, istr);
-			static_cast<ColumnType &>(column).getData().push_back(x);
-		}
+		FieldType x;
+		readCSV(x, istr);
+		static_cast<ColumnType &>(column).getData().push_back(x);
 	}
 };
 
@@ -143,83 +125,53 @@ public:
 	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override {}
 	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
 	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override {}
+	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
+	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override {}
+	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
+	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override {}
 	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
-
-protected:
-	void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const PaddedPODArray<UInt8> * null_map) const override {}
-	void deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, PaddedPODArray<UInt8> * null_map) const override {}
-	void serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const PaddedPODArray<UInt8> * null_map) const override {}
-	void deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter, PaddedPODArray<UInt8> * null_map) const override {}
 };
 
 template <typename FType>
-inline void IDataTypeNumber<FType>::serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const PaddedPODArray<UInt8> * null_map) const
+inline void IDataTypeNumber<FType>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::JSON::name, ostr);
-	else
-		writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
+	writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
 }
 
 template <>
-inline void IDataTypeNumber<Int64>::serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const PaddedPODArray<UInt8> * null_map) const
+inline void IDataTypeNumber<Int64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::JSON::name, ostr);
-	else
-	{
-		writeChar('"', ostr);
-		writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
-		writeChar('"', ostr);
-	}
+	writeChar('"', ostr);
+	writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
+	writeChar('"', ostr);
 }
 
 template <>
-inline void IDataTypeNumber<UInt64>::serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const PaddedPODArray<UInt8> * null_map) const
+inline void IDataTypeNumber<UInt64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::JSON::name, ostr);
-	else
-	{
-		writeChar('"', ostr);
-		writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
-		writeChar('"', ostr);
-	}
+	writeChar('"', ostr);
+	writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
+	writeChar('"', ostr);
 }
 
 template <>
-inline void IDataTypeNumber<Float32>::serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const PaddedPODArray<UInt8> * null_map) const
+inline void IDataTypeNumber<Float32>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::JSON::name, ostr);
+	auto x = static_cast<const ColumnType &>(column).getData()[row_num];
+	if (likely(std::isfinite(x)))
+		writeText(x, ostr);
 	else
-	{
-		auto x = static_cast<const ColumnType &>(column).getData()[row_num];
-		if (likely(std::isfinite(x)))
-			writeText(x, ostr);
-		else
-			writeCString(NullSymbol::JSON::name, ostr);
-	}
+		writeCString(NullSymbol::JSON::name, ostr);
 }
 
 template <>
-inline void IDataTypeNumber<Float64>::serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const PaddedPODArray<UInt8> * null_map) const
+inline void IDataTypeNumber<Float64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::JSON::name, ostr);
+	auto x = static_cast<const ColumnType &>(column).getData()[row_num];
+	if (likely(std::isfinite(x)))
+		writeText(x, ostr);
 	else
-	{
-		auto x = static_cast<const ColumnType &>(column).getData()[row_num];
-		if (likely(std::isfinite(x)))
-			writeText(x, ostr);
-		else
-			writeCString(NullSymbol::JSON::name, ostr);
-	}
+		writeCString(NullSymbol::JSON::name, ostr);
 }
 
 template <typename FType>

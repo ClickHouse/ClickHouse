@@ -24,6 +24,10 @@ public:
 	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override;
 	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
+	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
+	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
 	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 	void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 	ColumnPtr createColumn() const override;
@@ -32,12 +36,6 @@ public:
 	size_t getSizeOfField() const override;
 	DataTypePtr & getNestedType();
 	const DataTypePtr & getNestedType() const;
-
-private:
-	void serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
-	void deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter, NullValuesByteMap * null_map) const override;
-	void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
-	void deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const override;
 
 private:
 	DataTypePtr nested_data_type;

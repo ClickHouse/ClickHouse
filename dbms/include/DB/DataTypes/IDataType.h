@@ -86,19 +86,11 @@ public:
 
 	/** Text serialization for the CSV format.
 	  */
-	inline void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const PaddedPODArray<UInt8> * null_map = nullptr) const
-	{
-		serializeTextCSVImpl(column, row_num, ostr, null_map);
-	}
+	virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
 
 	/** delimiter - the delimiter we expect when reading a value that is not double-quoted.
 	  */
-	inline void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter,
-		PaddedPODArray<UInt8> * null_map = nullptr) const
-	{
-		deserializeTextCSVImpl(column, istr, delimiter, null_map);
-	}
+	virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const = 0;
 
 	/** Text serialization for displaying on a terminal or saving into a text file, and the like.
 	  * Without escaping or quoting.
@@ -107,17 +99,8 @@ public:
 
 	/** Text serialization as a literal for using with the JSON format.
 	  */
-	inline void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const PaddedPODArray<UInt8> * null_map = nullptr) const
-	{
-		serializeTextJSONImpl(column, row_num, ostr, null_map);
-	}
-
-	inline void deserializeTextJSON(IColumn & column, ReadBuffer & istr,
-		PaddedPODArray<UInt8> * null_map = nullptr) const
-	{
-		deserializeTextJSONImpl(column, istr, null_map);
-	}
+	virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+	virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const = 0;
 
 	/** Text serialization for putting into the XML format.
 	  */
@@ -151,11 +134,6 @@ protected:
 	{
 		return (null_map != nullptr) && ((*null_map)[row_num] == 1);
 	}
-
-	virtual void serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const = 0;
-	virtual void deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter, NullValuesByteMap * null_map) const = 0;
-	virtual void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const = 0;
-	virtual void deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const = 0;
 };
 
 
