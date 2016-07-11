@@ -4,6 +4,7 @@
 
 #include <DB/Common/PODArray.h>
 #include <DB/Common/Arena.h>
+#include <DB/Common/SipHash.h>
 #include <DB/Common/memcpySmall.h>
 #include <DB/Columns/IColumn.h>
 #include <DB/IO/ReadHelpers.h>
@@ -141,6 +142,11 @@ public:
 		chars.resize(old_size + n);
 		memcpy(&chars[old_size], pos, n);
 		return pos + n;
+	}
+
+	void updateHashWithValue(size_t index, SipHash & hash) const override
+	{
+		hash.update(reinterpret_cast<const char *>(&chars[n * index]), n);
 	}
 
 	int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int nan_direction_hint) const override

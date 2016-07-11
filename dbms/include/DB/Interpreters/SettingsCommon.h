@@ -747,4 +747,44 @@ struct SettingGlobalSubqueriesMethod
 	}
 };
 
+
+struct SettingString
+{
+	String value;
+	bool changed = false;
+
+	SettingString(const String & x = String{}) : value(x) {}
+
+	operator String() const { return value; }
+	SettingString & operator= (const String & x) { set(x); return *this; }
+
+	String toString() const
+	{
+		return value;
+	}
+
+	void set(const String & x)
+	{
+		value = x;
+		changed = true;
+	}
+
+	void set(const Field & x)
+	{
+		set(safeGet<const String &>(x));
+	}
+
+	void set(ReadBuffer & buf)
+	{
+		String x;
+		readBinary(x, buf);
+		set(x);
+	}
+
+	void write(WriteBuffer & buf) const
+	{
+		writeBinary(value, buf);
+	}
+};
+
 }

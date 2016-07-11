@@ -39,6 +39,7 @@ public:
 	size_t byteSize() const override;
 	ColumnPtr replicate(const Offsets_t & replicate_offsets) const override;
 	ColumnPtr convertToFullColumnIfConst() const override;
+	void updateHashWithValue(size_t n, SipHash & hash) const override;
 
 	ColumnPtr & getNestedColumn();
 	const ColumnPtr & getNestedColumn() const;

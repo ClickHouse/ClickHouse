@@ -2176,7 +2176,7 @@ This is more optimal than using the normal IN. However, keep the following point
 2. The temporary table will be sent to all the remote servers. Transmission does not account for network topology. For example, if 10 remote servers reside in a datacenter that is very remote in relation to the requestor server, the data will be sent 10 times over the channel to the remote datacenter. Try to avoid large data sets when using %%GLOBAL IN%%.
 3. When transmitting data to remote servers, restrictions on network bandwidth are not configurable. You might overload the network.
 4. Try to distribute data across servers so that you don&#39;t need to use %%GLOBAL IN%% on a regular basis.
-5. If you need to use %%GLOBAL IN%% often, plan the location of the ClickHouse cluster so that a single group of replicas resides in no more than one data center, and there is a fast network between them.
+5. If you need to use %%GLOBAL IN%% often, plan the location of the ClickHouse cluster so that in each datacenter, there will be at least one replica of each shard, and there is a fast network between them - for possibility to process query with transferring data only inside datacenter.
 
 It also makes sense to specify a local table in the %%GLOBAL IN%% clause, in case this local table is only available on the requestor server and you want to use data from it on remote servers.
 
@@ -3505,7 +3505,8 @@ The password can be omitted. In this case, an empty password is used.
 </div>
 <div class="island content">
 
-The format determines how data is given to you after SELECTs, and how it is accepted for INSERTs.
+The format determines how data is given (written by server as output) to you after SELECTs, and how it is accepted (read by server as input) for INSERTs.
+
 
 
 ==Native==
@@ -3847,9 +3848,9 @@ For example, the &#39;length&#39; function calculates the string length in bytes
 ==FixedString(N)==
 
 A fixed-length string of N bytes (not characters or code points). N must be a strictly positive natural number.
-When reading a string that contains fewer bytes, the string is padded to N bytes by appending null bytes at the right.
-When reading a string that contains more bytes, an error message is returned.
-When writing a string, null bytes are not trimmed off of the end of the string, but are output.
+When server reads a string (as an input passed in INSERT query, for example) that contains fewer bytes, the string is padded to N bytes by appending null bytes at the right.
+When server reads a string that contains more bytes, an error message is returned.
+When server writes a string (as an output of SELECT query, for example), null bytes are not trimmed off of the end of the string, but are output.
 Note that this behavior differs from MySQL behavior for the CHAR type (where strings are padded with spaces, and the spaces are removed for output).
 
 Fewer functions can work with the FixedString(N) type than with String, so it is less convenient to use.

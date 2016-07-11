@@ -1101,8 +1101,8 @@ private:
 
 	void executeBinary(Block & block, const ColumnNumbers & arguments, const size_t result)
 	{
-		const IColumn * c0 = &*block.getByPosition(arguments[0]).column;
-		const IColumn * c1 = &*block.getByPosition(arguments[1]).column;
+		const IColumn * c0 = block.getByPosition(arguments[0]).column.get();
+		const IColumn * c1 = block.getByPosition(arguments[1]).column.get();
 
 		const ColumnString * c0_string = typeid_cast<const ColumnString *>(c0);
 		const ColumnString * c1_string = typeid_cast<const ColumnString *>(c1);

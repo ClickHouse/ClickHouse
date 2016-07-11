@@ -214,6 +214,9 @@ struct Settings
 	\
 	/** Таймаут в секундах */ \
 	M(SettingUInt64, resharding_barrier_timeout, 300) \
+	\
+	/** What aggregate function to use for implementation of count(DISTINCT ...) */ \
+	M(SettingString, count_distinct_implementation, "uniq") \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

@@ -15,7 +15,11 @@ namespace ErrorCodes
 }
 
 
-/** Столбец, который всего лишь группирует вместе несколько других столбцов.
+/** Column, that is just group of few another columns.
+  *
+  * For constant Tuples, see ColumnConstTuple.
+  * Mixed constant/non-constant columns is prohibited in tuple
+  *  for implementation simplicity.
   */
 class ColumnTuple final : public IColumn
 {
@@ -122,6 +126,12 @@ public:
 			pos = column->deserializeAndInsertFromArena(pos);
 
 		return pos;
+	}
+
+	void updateHashWithValue(size_t n, SipHash & hash) const override
+	{
+		for (auto & column : columns)
+			column->updateHashWithValue(n, hash);
 	}
 
 	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override

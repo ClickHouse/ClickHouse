@@ -52,7 +52,7 @@ public:
 	template<typename T>
 	bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_to;
@@ -80,7 +80,7 @@ public:
 			}
 			data_to.resize(pos);
 		}
-		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			std::string res(reinterpret_cast<const char *>(&col_from->getData()), sizeof(T));
 			while (!res.empty() && res[res.length() - 1] == '\0')
@@ -149,7 +149,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		if (ColumnString * col_from = typeid_cast<ColumnString *>(&*block.getByPosition(arguments[0]).column))
+		if (ColumnString * col_from = typeid_cast<ColumnString *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_res = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_res;
@@ -170,7 +170,7 @@ public:
 				offset = offsets_from[i];
 			}
 		}
-		else if (ColumnFixedString * col_from = typeid_cast<ColumnFixedString *>(&*block.getByPosition(arguments[0]).column))
+		else if (ColumnFixedString * col_from = typeid_cast<ColumnFixedString *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_res = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_res;
@@ -191,7 +191,7 @@ public:
 				offset += step;
 			}
 		}
-		else if (ColumnConst<String> * col = typeid_cast<ColumnConst<String> *>(&*block.getByPosition(arguments[0]).column))
+		else if (ColumnConst<String> * col = typeid_cast<ColumnConst<String> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			ToFieldType value = 0;
 			const String & str = col->getData();

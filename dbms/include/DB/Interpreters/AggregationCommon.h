@@ -86,7 +86,7 @@ static inline UInt128 ALWAYS_INLINE hash128(
 }
 
 
-/// То же самое, но без возврата ссылок на данные ключей.
+/// Почти то же самое, но без возврата ссылок на данные ключей.
 static inline UInt128 ALWAYS_INLINE hash128(
 	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns)
 {
@@ -94,11 +94,7 @@ static inline UInt128 ALWAYS_INLINE hash128(
 	SipHash hash;
 
 	for (size_t j = 0; j < keys_size; ++j)
-	{
-		/// Хэшируем ключ.
-		StringRef key = key_columns[j]->getDataAtWithTerminatingZero(i);
-		hash.update(key.data, key.size);
-	}
+		key_columns[j]->updateHashWithValue(i, hash);
 
     hash.get128(key.first, key.second);
 

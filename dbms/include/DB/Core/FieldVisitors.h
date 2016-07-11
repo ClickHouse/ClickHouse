@@ -254,16 +254,16 @@ public:
 UInt64 stringToDateOrDateTime(const String & s);
 
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-
-/** Более точное сравнение.
-  * Отличается от Field::operator< и Field::operator== тем, что сравнивает значения разных числовых типов между собой.
-  * Правила сравнения - такие же, что и в FunctionsComparison.
-  * В том числе, сравнение знаковых и беззнаковых оставляем UB.
+/** More precise comparison, used for index.
+  * Differs from Field::operator< and Field::operator== in that it also compares values of different types.
+  * Comparison rules are same as in FunctionsComparison (to be consistent with expression evaluation in query).
+  * Except in cases when comparing signed and unsigned integers, which is unspecified behavior in FunctionsComparison,
+  *  and when comparing integers and floats. Comparison is accurate here.
   */
 class FieldVisitorAccurateEquals : public StaticVisitor<bool>
 {
+	using Double128 = long double;		/// Non portable. Must have 64 bit mantissa to provide accurate comparisons.
+
 public:
 	bool operator() (const Null & l, const Null & r)        const { return true; }
 	bool operator() (const Null & l, const UInt64 & r)      const { return false; }
@@ -275,23 +275,23 @@ public:
 
 	bool operator() (const UInt64 & l, const Null & r)      const { return false; }
 	bool operator() (const UInt64 & l, const UInt64 & r)    const { return l == r; }
-	bool operator() (const UInt64 & l, const Int64 & r)     const { return l == r; }
-	bool operator() (const UInt64 & l, const Float64 & r)   const { return l == r; }
+	bool operator() (const UInt64 & l, const Int64 & r)     const { return r >= 0 && l == UInt64(r); }
+	bool operator() (const UInt64 & l, const Float64 & r)   const { return Double128(l) == Double128(r); }
 	bool operator() (const UInt64 & l, const String & r)    const { return l == stringToDateOrDateTime(r); }
 	bool operator() (const UInt64 & l, const Array & r)     const { return false; }
 	bool operator() (const UInt64 & l, const Tuple & r)     const { return false; }
 
 	bool operator() (const Int64 & l, const Null & r)       const { return false; }
-	bool operator() (const Int64 & l, const UInt64 & r)     const { return l == r; }
+	bool operator() (const Int64 & l, const UInt64 & r)     const { return l >= 0 && UInt64(l) == r; }
 	bool operator() (const Int64 & l, const Int64 & r)      const { return l == r; }
-	bool operator() (const Int64 & l, const Float64 & r)    const { return l == r; }
+	bool operator() (const Int64 & l, const Float64 & r)    const { return Double128(l) == Double128(r); }
 	bool operator() (const Int64 & l, const String & r)     const { return false; }
 	bool operator() (const Int64 & l, const Array & r)      const { return false; }
 	bool operator() (const Int64 & l, const Tuple & r)      const { return false; }
 
 	bool operator() (const Float64 & l, const Null & r)     const { return false; }
-	bool operator() (const Float64 & l, const UInt64 & r)   const { return l == r; }
-	bool operator() (const Float64 & l, const Int64 & r)    const { return l == r; }
+	bool operator() (const Float64 & l, const UInt64 & r)   const { return Double128(l) == Double128(r); }
+	bool operator() (const Float64 & l, const Int64 & r)    const { return Double128(l) == Double128(r); }
 	bool operator() (const Float64 & l, const Float64 & r)  const { return l == r; }
 	bool operator() (const Float64 & l, const String & r)   const { return false; }
 	bool operator() (const Float64 & l, const Array & r)    const { return false; }
@@ -324,6 +324,8 @@ public:
 
 class FieldVisitorAccurateLess : public StaticVisitor<bool>
 {
+	using Double128 = long double;		/// Non portable. Must have 64 bit mantissa to provide accurate comparisons.
+
 public:
 	bool operator() (const Null & l, const Null & r)        const { return false; }
 	bool operator() (const Null & l, const UInt64 & r)      const { return true; }
@@ -335,23 +337,23 @@ public:
 
 	bool operator() (const UInt64 & l, const Null & r)      const { return false; }
 	bool operator() (const UInt64 & l, const UInt64 & r)    const { return l < r; }
-	bool operator() (const UInt64 & l, const Int64 & r)     const { return l < r; }
-	bool operator() (const UInt64 & l, const Float64 & r)   const { return l < r; }
+	bool operator() (const UInt64 & l, const Int64 & r)     const { return r >= 0 && l < UInt64(r); }
+	bool operator() (const UInt64 & l, const Float64 & r)   const { return Double128(l) < Double128(r); }
 	bool operator() (const UInt64 & l, const String & r)    const { return l < stringToDateOrDateTime(r); }
 	bool operator() (const UInt64 & l, const Array & r)     const { return true; }
 	bool operator() (const UInt64 & l, const Tuple & r)     const { return true; }
 
 	bool operator() (const Int64 & l, const Null & r)       const { return false; }
-	bool operator() (const Int64 & l, const UInt64 & r)     const { return l < r; }
+	bool operator() (const Int64 & l, const UInt64 & r)     const { return l < 0 || UInt64(l) < r; }
 	bool operator() (const Int64 & l, const Int64 & r)      const { return l < r; }
-	bool operator() (const Int64 & l, const Float64 & r)    const { return l < r; }
+	bool operator() (const Int64 & l, const Float64 & r)    const { return Double128(l) < Double128(r); }
 	bool operator() (const Int64 & l, const String & r)     const { return true; }
 	bool operator() (const Int64 & l, const Array & r)      const { return true; }
 	bool operator() (const Int64 & l, const Tuple & r)      const { return true; }
 
 	bool operator() (const Float64 & l, const Null & r)     const { return false; }
-	bool operator() (const Float64 & l, const UInt64 & r)   const { return l < r; }
-	bool operator() (const Float64 & l, const Int64 & r)    const { return l < r; }
+	bool operator() (const Float64 & l, const UInt64 & r)   const { return Double128(l) < Double128(r); }
+	bool operator() (const Float64 & l, const Int64 & r)    const { return Double128(l) < Double128(r); }
 	bool operator() (const Float64 & l, const Float64 & r)  const { return l < r; }
 	bool operator() (const Float64 & l, const String & r)   const { return true; }
 	bool operator() (const Float64 & l, const Array & r)    const { return true; }
@@ -381,7 +383,5 @@ public:
 	bool operator() (const Tuple & l, const Array & r)      const { return false; }
 	bool operator() (const Tuple & l, const Tuple & r)      const { return l < r; }
 };
-
-#pragma GCC diagnostic pop
 
 }

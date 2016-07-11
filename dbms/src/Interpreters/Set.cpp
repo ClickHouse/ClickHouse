@@ -4,6 +4,7 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnTuple.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
@@ -135,14 +136,14 @@ SetVariants::Type SetVariants::chooseMethod(const ConstColumnPlainPtrs & key_col
 	if (all_fixed && keys_bytes <= 32)
 		return SetVariants::Type::keys256;
 
-	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
+	/// If there is single string key, use hash table of it's values.
 	if (keys_size == 1 && (typeid_cast<const ColumnString *>(key_columns[0]) || typeid_cast<const ColumnConstString *>(key_columns[0])))
 		return SetVariants::Type::key_string;
 
 	if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
 		return SetVariants::Type::key_fixed_string;
 
-	/// Иначе будем агрегировать по конкатенации ключей.
+	/// Otherwise, will use set of cryptographic hashes of unambiguously serialized values.
 	return SetVariants::Type::hashed;
 }
 
@@ -179,8 +180,14 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 	Poco::ScopedWriteRWLock lock(rwlock);
 
 	size_t keys_size = block.columns();
-	ConstColumnPlainPtrs key_columns(keys_size);
-	data_types.resize(keys_size);
+	ConstColumnPlainPtrs key_columns;
+	key_columns.reserve(keys_size);
+
+	if (empty())
+	{
+		data_types.clear();
+		data_types.reserve(keys_size);
+	}
 
 	/// Константные столбцы справа от IN поддерживается не напрямую. Для этого, они сначала материализуется.
 	Columns materialized_columns;
@@ -188,13 +195,36 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 	/// Запоминаем столбцы, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
 	{
-		key_columns[i] = block.getByPosition(i).column.get();
-		data_types[i] = block.getByPosition(i).type;
+		key_columns.emplace_back(block.getByPosition(i).column.get());
 
-		if (auto converted = key_columns[i]->convertToFullColumnIfConst())
+		if (empty())
+			data_types.emplace_back(block.getByPosition(i).type);
+
+		if (auto converted = key_columns.back()->convertToFullColumnIfConst())
 		{
 			materialized_columns.emplace_back(converted);
-			key_columns[i] = materialized_columns.back().get();
+			key_columns.back() = materialized_columns.back().get();
+		}
+
+		/** Flatten tuples. For case when written
+		  *  (a, b) IN (SELECT (a, b) FROM table)
+		  * instead of more typical
+		  *  (a, b) IN (SELECT a, b FROM table)
+		  */
+		if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(key_columns.back()))
+		{
+			key_columns.pop_back();
+			const Columns & tuple_elements = tuple->getColumns();
+			for (const auto & elem : tuple_elements)
+				key_columns.push_back(elem.get());
+
+			if (empty())
+			{
+				data_types.pop_back();
+				const Block & tuple_block = tuple->getData();
+				for (size_t i = 0, size = tuple_block.columns(); i < size; ++i)
+					data_types.push_back(tuple_block.unsafeGetByPosition(i).type);
+			}
 		}
 	}
 
@@ -343,7 +373,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 		return res;
 	}
 
-	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*block.getByPosition(0).type);
+	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(block.getByPosition(0).type.get());
 
 	if (array_type)
 	{
@@ -352,7 +382,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 		if (array_type->getNestedType()->getName() != data_types[0]->getName())
 			throw Exception(std::string() + "Types in section IN don't match: " + data_types[0]->getName() + " on the right, " + array_type->getNestedType()->getName() + " on the left.", ErrorCodes::TYPE_MISMATCH);
 
-		const IColumn * in_column = &*block.getByPosition(0).column;
+		const IColumn * in_column = block.getByPosition(0).column.get();
 
 		/// Константный столбец слева от IN поддерживается не напрямую. Для этого, он сначала материализуется.
 		ColumnPtr materialized_column = in_column->convertToFullColumnIfConst();
@@ -367,28 +397,33 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 	else
 	{
 		if (data_types.size() != num_key_columns)
-			throw Exception("Number of columns in section IN doesn't match.", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+		{
+			std::stringstream message;
+			message << "Number of columns in section IN doesn't match. "
+				<< num_key_columns << " at left, " << data_types.size() << " at right.";
+			throw Exception(message.str(), ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+		}
 
 		/// Запоминаем столбцы, с которыми будем работать. Также проверим, что типы данных правильные.
-		ConstColumnPlainPtrs key_columns(num_key_columns);
+		ConstColumnPlainPtrs key_columns;
+		key_columns.reserve(num_key_columns);
+
+		/// Константные столбцы слева от IN поддерживается не напрямую. Для этого, они сначала материализуется.
+		Columns materialized_columns;
+
 		for (size_t i = 0; i < num_key_columns; ++i)
 		{
-			key_columns[i] = block.getByPosition(i).column.get();
+			key_columns.push_back(block.getByPosition(i).column.get());
 
 			if (data_types[i]->getName() != block.getByPosition(i).type->getName())
 				throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: "
 					+ data_types[i]->getName() + " on the right, " + block.getByPosition(i).type->getName() + " on the left.",
 					ErrorCodes::TYPE_MISMATCH);
-		}
 
-		/// Константные столбцы слева от IN поддерживается не напрямую. Для этого, они сначала материализуется.
-		Columns materialized_columns;
-		for (auto & column_ptr : key_columns)
-		{
-			if (auto converted = column_ptr->convertToFullColumnIfConst())
+			if (auto converted = key_columns.back()->convertToFullColumnIfConst())
 			{
 				materialized_columns.emplace_back(converted);
-				column_ptr = materialized_columns.back().get();
+				key_columns.back() = materialized_columns.back().get();
 			}
 		}
 

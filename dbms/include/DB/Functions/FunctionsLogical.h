@@ -273,7 +273,7 @@ public:
 		ColumnPlainPtrs in(arguments.size());
 		for (size_t i = 0; i < arguments.size(); ++i)
 		{
-			in[i] = &*block.getByPosition(arguments[i]).column;
+			in[i] = block.getByPosition(arguments[i]).column.get();
 		}
 		size_t n = in[0]->size();
 
@@ -369,7 +369,7 @@ private:
 	template <typename T>
 	bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
+		if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_res = std::make_shared<ColumnUInt8>();
 			block.getByPosition(result).column = col_res;
@@ -380,7 +380,7 @@ private:
 
 			return true;
 		}
-		else if (ColumnConst<T> * col = typeid_cast<ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
+		else if (ColumnConst<T> * col = typeid_cast<ColumnConst<T> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			UInt8 res = 0;
 			UnaryOperationImpl<T, Impl<T> >::constant(col->getData(), res);

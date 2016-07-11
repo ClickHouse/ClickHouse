@@ -89,7 +89,7 @@ private:
 	template <typename T>
 	bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_to;
@@ -111,7 +111,7 @@ private:
 			}
 			data_to.resize(buf_to.count());
 		}
-		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			std::string res;
 			{
@@ -181,7 +181,7 @@ private:
 	template <typename T>
 	bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_to;
@@ -203,7 +203,7 @@ private:
 			}
 			data_to.resize(buf_to.count());
 		}
-		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), formatReadableSizeWithBinarySuffix(col_from->getData()));
 		}

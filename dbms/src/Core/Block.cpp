@@ -159,7 +159,9 @@ void Block::erase(size_t position)
 			+ toString(index_by_position.size() - 1), ErrorCodes::POSITION_OUT_OF_BOUND);
 
 	Container_t::iterator it = index_by_position[position];
-	index_by_name.erase(index_by_name.find(it->name));
+	auto index_by_name_it = index_by_name.find(it->name);
+	if (index_by_name.end() != index_by_name_it)
+		index_by_name.erase(index_by_name_it);
 	data.erase(it);
 
 	for (size_t i = position, size = index_by_position.size() - 1; i < size; ++i)

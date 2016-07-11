@@ -9,6 +9,7 @@
 #include <DB/Common/Collator.h>
 #include <DB/Common/PODArray.h>
 #include <DB/Common/Arena.h>
+#include <DB/Common/SipHash.h>
 #include <DB/Common/memcpySmall.h>
 
 
@@ -157,6 +158,15 @@ public:
 
 		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + string_size);
 		return pos + string_size;
+	}
+
+	void updateHashWithValue(size_t n, SipHash & hash) const override
+	{
+		size_t string_size = sizeAt(n);
+		size_t offset = offsetAt(n);
+
+		hash.update(reinterpret_cast<const char *>(&string_size), sizeof(string_size));
+		hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
 	}
 
 	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override

@@ -88,16 +88,14 @@ struct UniqVariadicHash<true, false>
 {
 	static inline UInt128 apply(size_t num_args, const IColumn ** columns, size_t row_num)
 	{
-		SipHash hash;
-
 		const IColumn ** column = columns;
 		const IColumn ** columns_end = column + num_args;
 
+		SipHash hash;
+
 		while (column < columns_end)
 		{
-			StringRef value = (*column)->getDataAt(row_num);
-			hash.update(reinterpret_cast<const char *>(&value.size), sizeof(value.size));
-			hash.update(value.data, value.size);
+			(*column)->updateHashWithValue(row_num, hash);
 			++column;
 		}
 
@@ -112,18 +110,16 @@ struct UniqVariadicHash<true, true>
 {
 	static inline UInt128 apply(size_t num_args, const IColumn ** columns, size_t row_num)
 	{
-		SipHash hash;
-
 		const Columns & tuple_columns = static_cast<const ColumnTuple *>(columns[0])->getColumns();
 
 		const ColumnPtr * column = tuple_columns.data();
 		const ColumnPtr * columns_end = column + num_args;
 
+		SipHash hash;
+
 		while (column < columns_end)
 		{
-			StringRef value = column->get()->getDataAt(row_num);
-			hash.update(reinterpret_cast<const char *>(&value.size), sizeof(value.size));
-			hash.update(value.data, value.size);
+			(*column)->updateHashWithValue(row_num, hash);
 			++column;
 		}
 

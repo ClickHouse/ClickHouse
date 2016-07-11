@@ -193,8 +193,8 @@ public:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		const ColumnConstArray * array_from = typeid_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[1]).column);
-		const ColumnConstArray * array_to = typeid_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[2]).column);
+		const ColumnConstArray * array_from = typeid_cast<const ColumnConstArray *>(block.getByPosition(arguments[1]).column.get());
+		const ColumnConstArray * array_to = typeid_cast<const ColumnConstArray *>(block.getByPosition(arguments[2]).column.get());
 
 		if (!array_from || !array_to)
 		{

@@ -73,6 +73,11 @@ ColumnPtr ColumnNullable::convertToFullColumnIfConst() const
 	return new_col_holder;
 }
 
+void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
+{
+	nested_column.get()->updateHashWithValue(n, hash);
+}
+
 ColumnPtr ColumnNullable::cloneResized(size_t size) const
 {
 	return std::make_shared<ColumnNullable>(nested_column.get()->cloneResized(size));

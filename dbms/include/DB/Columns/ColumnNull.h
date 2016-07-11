@@ -32,6 +32,7 @@ public:
 	void getPermutation(bool reverse, size_t limit, Permutation & res) const override;
 	ColumnPtr replicate(const Offsets_t & offsets) const override;
 	size_t byteSize() const override;
+	void updateHashWithValue(size_t n, SipHash & hash) const override;
 
 private:
 	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override;

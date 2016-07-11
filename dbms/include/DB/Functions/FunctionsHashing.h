@@ -197,7 +197,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnUInt64>();
 			block.getByPosition(result).column = col_to;
@@ -213,7 +213,7 @@ public:
 					reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
 					i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
 		}
-		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(
 				col_from->size(),
@@ -258,7 +258,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnFixedString>(Impl::length);
 			block.getByPosition(result).column = col_to;
@@ -275,7 +275,7 @@ public:
 					i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]),
 					&chars_to[i * Impl::length]);
 		}
-		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			const auto & data = col_from->getData();
 
@@ -308,7 +308,7 @@ private:
 	template <typename FromType>
 	void executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (ColumnVector<FromType> * col_from = typeid_cast<ColumnVector<FromType> *>(&*block.getByPosition(arguments[0]).column))
+		if (ColumnVector<FromType> * col_from = typeid_cast<ColumnVector<FromType> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnVector<ToType>>();
 			block.getByPosition(result).column = col_to;
@@ -321,7 +321,7 @@ private:
 			for (size_t i = 0; i < size; ++i)
 				vec_to[i] = Impl::apply(vec_from[i]);
 		}
-		else if (ColumnConst<FromType> * col_from = typeid_cast<ColumnConst<FromType> *>(&*block.getByPosition(arguments[0]).column))
+		else if (ColumnConst<FromType> * col_from = typeid_cast<ColumnConst<FromType> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			block.getByPosition(result).column = std::make_shared<ColumnConst<ToType>>(col_from->size(), Impl::apply(col_from->getData()));
 		}
@@ -356,7 +356,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		IDataType * from_type = &*block.getByPosition(arguments[0]).type;
+		IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
 		if      (typeid_cast<const DataTypeUInt8 *		>(from_type)) executeType<UInt8	>(block, arguments, result);
 		else if (typeid_cast<const DataTypeUInt16 *	>(from_type)) executeType<UInt16>(block, arguments, result);
@@ -570,6 +570,11 @@ private:
 				const ColumnWithTypeAndName & col = tuple_data.unsafeGetByPosition(i);
 				executeForArgument(col.type.get(), col.column.get(), vec_to, is_first);
 			}
+		}
+		else if (const ColumnConstTuple * tuple = typeid_cast<const ColumnConstTuple *>(column))
+		{
+			ColumnPtr tuple_of_constants = tuple->convertToTupleOfConstants();
+			executeForArgument(type, tuple_of_constants.get(), vec_to, is_first);
 		}
 		else
 		{

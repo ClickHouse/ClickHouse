@@ -232,7 +232,7 @@ public:
 
 		if (arguments.size() == 2)
 		{
-			const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column);
+			const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[1]).column.get());
 
 			if (!key_col)
 				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -245,7 +245,7 @@ public:
 
 		const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnVector<T>>();
 			block.getByPosition(result).column = col_to;
@@ -258,7 +258,7 @@ public:
 			for (size_t i = 0; i < size; ++i)
 				vec_to[i] = Transform::apply(vec_from[i], dict);
 		}
-		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			block.getByPosition(result).column = std::make_shared<ColumnConst<T>>(
 				col_from->size(), Transform::apply(col_from->getData(), dict));
@@ -330,7 +330,7 @@ public:
 
 		if (arguments.size() == 3)
 		{
-			const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[2]).column);
+			const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[2]).column.get());
 
 			if (!key_col)
 				throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
@@ -343,10 +343,10 @@ public:
 
 		const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-		const ColumnVector<T> * col_vec1 = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column);
-		const ColumnVector<T> * col_vec2 = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[1]).column);
-		const ColumnConst<T> * col_const1 = typeid_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column);
-		const ColumnConst<T> * col_const2 = typeid_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[1]).column);
+		const ColumnVector<T> * col_vec1 = typeid_cast<const ColumnVector<T> *>(block.getByPosition(arguments[0]).column.get());
+		const ColumnVector<T> * col_vec2 = typeid_cast<const ColumnVector<T> *>(block.getByPosition(arguments[1]).column.get());
+		const ColumnConst<T> * col_const1 = typeid_cast<const ColumnConst<T> *>(block.getByPosition(arguments[0]).column.get());
+		const ColumnConst<T> * col_const2 = typeid_cast<const ColumnConst<T> *>(block.getByPosition(arguments[1]).column.get());
 
 		if (col_vec1 && col_vec2)
 		{
@@ -458,7 +458,7 @@ public:
 
 		if (arguments.size() == 2)
 		{
-			const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column);
+			const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[1]).column.get());
 
 			if (!key_col)
 				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -471,7 +471,7 @@ public:
 
 		const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_values = std::make_shared<ColumnVector<T>>();
 			auto col_array = std::make_shared<ColumnArray>(col_values);
@@ -496,7 +496,7 @@ public:
 				res_offsets[i] = res_values.size();
 			}
 		}
-		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			Array res;
 
@@ -731,7 +731,7 @@ public:
 		/// Если указан язык результата
 		if (arguments.size() == 2)
 		{
-			if (const ColumnConstString * col_language = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column))
+			if (const ColumnConstString * col_language = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[1]).column.get()))
 				language = RegionsNames::getLanguageEnum(col_language->getData());
 			else
 				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -741,7 +741,7 @@ public:
 
 		const RegionsNames & dict = *owned_dict;
 
-		if (const ColumnUInt32 * col_from = typeid_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnUInt32 * col_from = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_to;
@@ -754,7 +754,7 @@ public:
 				col_to->insertDataWithTerminatingZero(name_ref.data, name_ref.size + 1);
 			}
 		}
-		else if (const ColumnConst<UInt32> * col_from = typeid_cast<const ColumnConst<UInt32> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<UInt32> * col_from = typeid_cast<const ColumnConst<UInt32> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			UInt32 region_id = col_from->getData();
 			const StringRef & name_ref = dict.getRegionName(region_id, language);
@@ -885,17 +885,19 @@ private:
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 		const auto key_col_with_type = block.getByPosition(arguments[1]);
-		if (const ColumnTuple * key_col = typeid_cast<const ColumnTuple *>(key_col_with_type.column.get()))
+		if (typeid_cast<const ColumnTuple *>(key_col_with_type.column.get())
+			|| typeid_cast<const ColumnConstTuple *>(key_col_with_type.column.get()))
 		{
 			/// Функции у внешних словарей поддерживают только полноценные (не константные) столбцы с ключами.
-			const ColumnPtr key_col_materialized = key_col->convertToFullColumnIfConst();
+			const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
 
 			const auto key_columns = ext::map<ConstColumnPlainPtrs>(
-				static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(), [](const ColumnPtr & ptr) { return ptr.get(); });
+				static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(),
+				[](const ColumnPtr & ptr) { return ptr.get(); });
 
 			const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-			const auto out = std::make_shared<ColumnUInt8>(key_col->size());
+			const auto out = std::make_shared<ColumnUInt8>(key_col_with_type.column->size());
 			block.getByPosition(result).column = out;
 
 			dict->has(key_columns, key_types, out->getData());
@@ -1064,12 +1066,14 @@ private:
 		const auto & attr_name = attr_name_col->getData();
 
 		const auto key_col_with_type = block.getByPosition(arguments[2]);
-		if (const auto key_col = typeid_cast<const ColumnTuple *>(key_col_with_type.column.get()))
+		if (typeid_cast<const ColumnTuple *>(key_col_with_type.column.get())
+			|| typeid_cast<const ColumnConstTuple *>(key_col_with_type.column.get()))
 		{
-			const ColumnPtr key_col_materialized = key_col->convertToFullColumnIfConst();
+			const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
 
 			const auto key_columns = ext::map<ConstColumnPlainPtrs>(
-				static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(), [](const ColumnPtr & ptr) { return ptr.get(); });
+				static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(),
+				[](const ColumnPtr & ptr) { return ptr.get(); });
 
 			const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
@@ -1635,12 +1639,14 @@ private:
 		const auto & attr_name = attr_name_col->getData();
 
 		const auto key_col_with_type = block.getByPosition(arguments[2]);
-		if (const auto key_col = typeid_cast<const ColumnTuple *>(key_col_with_type.column.get()))
+		if (typeid_cast<const ColumnTuple *>(key_col_with_type.column.get())
+			|| typeid_cast<const ColumnConstTuple *>(key_col_with_type.column.get()))
 		{
-			const ColumnPtr key_col_materialized = key_col->convertToFullColumnIfConst();
+			const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
 
 			const auto key_columns = ext::map<ConstColumnPlainPtrs>(
-				static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(), [](const ColumnPtr & ptr) { return ptr.get(); });
+				static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(),
+				[](const ColumnPtr & ptr) { return ptr.get(); });
 
 			const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 

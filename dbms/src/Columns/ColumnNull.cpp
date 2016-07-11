@@ -133,6 +133,10 @@ ColumnPtr ColumnNull::replicate(const IColumn::Offsets_t & offsets) const
 	return std::make_shared<ColumnNull>(offsets.back());
 }
 
+void ColumnNull::updateHashWithValue(size_t n, SipHash & hash) const
+{
+}
+
 size_t ColumnNull::byteSize() const
 {
 	return count * sizeof(UInt8);

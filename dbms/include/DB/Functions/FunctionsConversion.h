@@ -51,7 +51,7 @@ struct ConvertImpl
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		if (const ColumnVector<FromFieldType> * col_from
-			= typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+			= typeid_cast<const ColumnVector<FromFieldType> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_to;
@@ -64,7 +64,7 @@ struct ConvertImpl
 			for (size_t i = 0; i < size; ++i)
 				vec_to[i] = vec_from[i];
 		}
-		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(col_from->size(), col_from->getData());
 		}
@@ -89,7 +89,7 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 		using FromFieldType = DataTypeDate::FieldType;
 		const auto & date_lut = DateLUT::instance();
 
-		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_to;
@@ -104,7 +104,7 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 				vec_to[i] = date_lut.fromDayNum(DayNum_t(vec_from[i]));
 			}
 		}
-		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(
 				col_from->size(), date_lut.fromDayNum(DayNum_t(col_from->getData())));
@@ -682,7 +682,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_to;
@@ -703,7 +703,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 					throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
 			}
 		}
-		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			const String & s = col_from->getData();
 			ReadBufferFromString read_buffer(s);
@@ -961,7 +961,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_to;
@@ -989,7 +989,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 				}
 			}
 		}
-		else if (typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
+		else if (typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			ConvertImpl<DataTypeString, ToDataType, Name>::execute(block, arguments, result);
 		}
@@ -1008,7 +1008,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 {
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_to;
@@ -1039,7 +1039,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 
 			data_to.resize(offset_to);
 		}
-		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			const String & s = col_from->getData();
 
@@ -1083,7 +1083,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		IDataType * from_type = &*block.getByPosition(arguments[0]).type;
+		IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
 		if      (typeid_cast<const DataTypeUInt8 *		>(from_type)) ConvertImpl<DataTypeUInt8, 	ToDataType, Name>::execute(block, arguments, result);
 		else if (typeid_cast<const DataTypeUInt16 *		>(from_type)) ConvertImpl<DataTypeUInt16, 	ToDataType, Name>::execute(block, arguments, result);
@@ -1652,7 +1652,7 @@ private:
 			if (const auto column_tuple = typeid_cast<const ColumnTuple *>(col))
 				element_block = column_tuple->getData();
 			else if (const auto column_const_tuple = typeid_cast<const ColumnConstTuple *>(col))
-				element_block = static_cast<const ColumnTuple &>(*column_const_tuple->convertToFullColumn()).getData();
+				element_block = static_cast<const ColumnTuple &>(*column_const_tuple->convertToTupleOfConstants()).getData();
 
 			/// create columns for converted elements
 			for (const auto & to_element_type : to_element_types)

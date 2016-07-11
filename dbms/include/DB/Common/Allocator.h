@@ -164,6 +164,12 @@ public:
 
 		return buf;
 	}
+
+protected:
+	static constexpr size_t getStackThreshold()
+	{
+		return 0;
+	}
 };
 
 
@@ -208,6 +214,12 @@ public:
 		void * new_buf = Base::alloc(new_size);
 		memcpy(new_buf, buf, old_size);
 		return new_buf;
+	}
+
+protected:
+	static constexpr size_t getStackThreshold()
+	{
+		return N;
 	}
 };
 

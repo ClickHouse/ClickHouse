@@ -675,7 +675,7 @@ public:
 		}
 		else
 		{
-			ColumnExpression * column_expression = typeid_cast<ColumnExpression *>(&*block.getByPosition(arguments[0]).column);
+			ColumnExpression * column_expression = typeid_cast<ColumnExpression *>(block.getByPosition(arguments[0]).column.get());
 
 			ColumnPtr offsets_column;
 
