@@ -6,6 +6,16 @@
 namespace DB
 {
 
+namespace
+{
+
+inline bool isNullValue(const NullValuesByteMap * null_map, size_t row_num) const
+{
+	return (null_map != nullptr) && ((*null_map)[row_num] == 1);
+}
+
+}
+
 DataTypeNullable::DataTypeNullable(DataTypePtr nested_data_type_)
 	: nested_data_type{nested_data_type_}
 {
