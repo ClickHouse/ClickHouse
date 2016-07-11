@@ -535,7 +535,10 @@ BaseDaemon::~BaseDaemon()
 void BaseDaemon::terminate()
 {
 	getTaskManager().cancelAll();
-	ServerApplication::terminate();
+	if (::kill(Poco::Process::id(), SIGTERM) != 0)
+	{
+		throw Poco::SystemException("cannot terminate process");
+	}
 }
 
 void BaseDaemon::kill()
