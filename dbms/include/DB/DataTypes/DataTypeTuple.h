@@ -34,6 +34,14 @@ public:
 	  */
 	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
+	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override;
+	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
+
+	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+
 	ColumnPtr createColumn() const override;
 	ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 
@@ -41,15 +49,9 @@ public:
 	const DataTypes & getElements() const { return elems; }
 
 private:
-	void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
-	void deserializeTextImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const;
-	void serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
-	void deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const override;
-	void serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
-	void deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const override;
+	void deserializeText(IColumn & column, ReadBuffer & istr) const;
 	void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
 	void deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const override;
-	void serializeTextXMLImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
 
 	/// Кортежи в формате CSV будем сериализовать, как отдельные столбцы (то есть, теряя их вложенность в кортеж).
 	void serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;

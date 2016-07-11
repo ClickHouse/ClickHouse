@@ -101,26 +101,22 @@ size_t DataTypeNull::getSizeOfField() const
 	return 0;
 }
 
-void DataTypeNull::serializeTextEscapedImpl(const IColumn & column, size_t row_num,
-	WriteBuffer & ostr, const NullValuesByteMap * null_map) const
+void DataTypeNull::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeCString(NullSymbol::Escaped::name, ostr);
 }
 
-void DataTypeNull::deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeNull::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
 	assertString(NullSymbol::Escaped::name, istr);
 }
 
-void DataTypeNull::serializeTextQuotedImpl(const IColumn & column, size_t row_num,
-	WriteBuffer & ostr, const NullValuesByteMap * null_map) const
+void DataTypeNull::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeCString(NullSymbol::Quoted::name, ostr);
 }
 
-void DataTypeNull::deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeNull::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
 	assertString(NullSymbol::Quoted::name, istr);
 }
@@ -137,8 +133,7 @@ void DataTypeNull::deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr,
 	assertString(NullSymbol::CSV::name, istr);
 }
 
-void DataTypeNull::serializeTextImpl(const IColumn & column, size_t row_num,
-	WriteBuffer & ostr, const NullValuesByteMap * null_map) const
+void DataTypeNull::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeCString(NullSymbol::Plain::name, ostr);
 }

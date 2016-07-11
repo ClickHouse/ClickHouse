@@ -21,69 +21,37 @@ public:
 	DataTypePtr clone() const override { return std::make_shared<DataTypeDateTime>(); }
 
 private:
-	void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const NullValuesByteMap * null_map) const override
+	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		if (isNullValue(null_map, row_num))
-			writeCString(NullSymbol::Plain::name, ostr);
-		else
-			writeDateTimeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
+		writeDateTimeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
 	}
 
-	void serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const NullValuesByteMap * null_map) const override
+	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		if (isNullValue(null_map, row_num))
-			writeCString(NullSymbol::Escaped::name, ostr);
-		else
-			serializeTextImpl(column, row_num, ostr, null_map);
+		serializeText(column, row_num, ostr);
 	}
 
-	void deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr,
-		NullValuesByteMap * null_map) const override
+	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override
 	{
-		if (NullSymbol::Deserializer<NullSymbol::Escaped>::execute(column, istr, null_map))
-		{
-			FieldType default_val = get<FieldType>(getDefault());
-			static_cast<ColumnType &>(column).getData().push_back(default_val);
-		}
-		else
-		{
-			time_t x;
-			readDateTimeText(x, istr);
-			static_cast<ColumnType &>(column).getData().push_back(x);
-		}
+		time_t x;
+		readDateTimeText(x, istr);
+		static_cast<ColumnType &>(column).getData().push_back(x);
 	}
 
-	void serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const NullValuesByteMap * null_map) const override
+	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		if (isNullValue(null_map, row_num))
-			writeCString(NullSymbol::Quoted::name, ostr);
-		else
-		{
-			writeChar('\'', ostr);
-			serializeTextImpl(column, row_num, ostr, null_map);
-			writeChar('\'', ostr);
-		}
+		writeChar('\'', ostr);
+		serializeText(column, row_num, ostr);
+		writeChar('\'', ostr);
 	}
 
-	void deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr,
-		NullValuesByteMap * null_map) const override
+	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override
 	{
-		if (NullSymbol::Deserializer<NullSymbol::Quoted>::execute(column, istr, null_map))
-		{
-			FieldType default_val = get<FieldType>(getDefault());
-			static_cast<ColumnType &>(column).getData().push_back(default_val);
-		}
-		else
-		{
-			time_t x;
-			assertChar('\'', istr);
-			readDateTimeText(x, istr);
-			assertChar('\'', istr);
-			static_cast<ColumnType &>(column).getData().push_back(x);	/// Важно делать это в конце - для exception safety.
-		}
+		time_t x;
+		assertChar('\'', istr);
+		readDateTimeText(x, istr);
+		assertChar('\'', istr);
+		static_cast<ColumnType &>(column).getData().push_back(x);	/// Важно делать это в конце - для exception safety.
 	}
 
 	void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
@@ -94,7 +62,7 @@ private:
 		else
 		{
 			writeChar('"', ostr);
-			serializeTextImpl(column, row_num, ostr, null_map);
+			serializeText(column, row_num, ostr);
 			writeChar('"', ostr);
 		}
 	}
@@ -125,7 +93,7 @@ private:
 		else
 		{
 			writeChar('"', ostr);
-			serializeTextImpl(column, row_num, ostr, null_map);
+			serializeText(column, row_num, ostr);
 			writeChar('"', ostr);
 		}
 	}

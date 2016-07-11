@@ -100,26 +100,16 @@ void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr,
 }
 
 
-void DataTypeFixedString::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeFixedString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::Plain::name, ostr);
-	else
-		writeString(reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]), n, ostr);
+	writeString(reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]), n, ostr);
 }
 
 
-void DataTypeFixedString::serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeFixedString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::Escaped::name, ostr);
-	else
-	{
-		const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-		writeAnyEscapedString<'\''>(pos, pos + n, ostr);
-	}
+	const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
+	writeAnyEscapedString<'\''>(pos, pos + n, ostr);
 }
 
 namespace
@@ -160,36 +150,22 @@ void insertEmptyString(const DataTypeFixedString & self, IColumn & column)
 
 }
 
-void DataTypeFixedString::deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
-	if (NullSymbol::Deserializer<NullSymbol::Escaped>::execute(column, istr, null_map))
-		insertEmptyString(*this, column);
-	else
-		read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readEscapedStringInto(data, istr); });
+	read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readEscapedStringInto(data, istr); });
 }
 
 
-void DataTypeFixedString::serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeFixedString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::Quoted::name, ostr);
-	else
-	{
-		const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-		writeAnyQuotedString<'\''>(pos, pos + n, ostr);
-	}
+	const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
+	writeAnyQuotedString<'\''>(pos, pos + n, ostr);
 }
 
 
-void DataTypeFixedString::deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeFixedString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
-	if (NullSymbol::Deserializer<NullSymbol::Quoted>::execute(column, istr, null_map))
-		insertEmptyString(*this, column);
-	else
-		read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readQuotedStringInto(data, istr); });
+	read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readQuotedStringInto(data, istr); });
 }
 
 
@@ -216,16 +192,10 @@ void DataTypeFixedString::deserializeTextJSONImpl(IColumn & column, ReadBuffer &
 }
 
 
-void DataTypeFixedString::serializeTextXMLImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeFixedString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::XML::name, ostr);
-	else
-	{
-		const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-		writeXMLString(pos, pos + n, ostr);
-	}
+	const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
+	writeXMLString(pos, pos + n, ostr);
 }
 
 

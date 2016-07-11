@@ -21,64 +21,37 @@ public:
 	DataTypePtr clone() const override { return std::make_shared<DataTypeDate>(); }
 
 private:
-	void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override
+	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		if (isNullValue(null_map, row_num))
-			writeCString(NullSymbol::Plain::name, ostr);
-		else
-			writeDateText(DayNum_t(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+		writeDateText(DayNum_t(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 	}
 
-	void serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override
+	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		if (isNullValue(null_map, row_num))
-			writeCString(NullSymbol::Escaped::name, ostr);
-		else
-			writeDateText(DayNum_t(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+		writeDateText(DayNum_t(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 	}
 
-	void deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const override
+	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override
 	{
-		if (NullSymbol::Deserializer<NullSymbol::Escaped>::execute(column, istr, null_map))
-		{
-			FieldType default_val = get<FieldType>(getDefault());
-			static_cast<ColumnType &>(column).getData().push_back(default_val);
-		}
-		else
-		{
-			DayNum_t x;
-			readDateText(x, istr);
-			static_cast<ColumnType &>(column).getData().push_back(x);
-		}
+		DayNum_t x;
+		readDateText(x, istr);
+		static_cast<ColumnType &>(column).getData().push_back(x);
 	}
 
-	void serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override
+	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		if (isNullValue(null_map, row_num))
-			writeCString(NullSymbol::Quoted::name, ostr);
-		else
-		{
-			writeChar('\'', ostr);
-			writeDateText(DayNum_t(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
-			writeChar('\'', ostr);
-		}
+		writeChar('\'', ostr);
+		writeDateText(DayNum_t(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+		writeChar('\'', ostr);
 	}
 
-	void deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const override
+	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override
 	{
-		if (NullSymbol::Deserializer<NullSymbol::Quoted>::execute(column, istr, null_map))
-		{
-			FieldType default_val = get<FieldType>(getDefault());
-			static_cast<ColumnType &>(column).getData().push_back(default_val);
-		}
-		else
-		{
-			DayNum_t x;
-			assertChar('\'', istr);
-			readDateText(x, istr);
-			assertChar('\'', istr);
-			static_cast<ColumnType &>(column).getData().push_back(x);	/// Важно делать это в конце - для exception safety.
-		}
+		DayNum_t x;
+		assertChar('\'', istr);
+		readDateText(x, istr);
+		assertChar('\'', istr);
+		static_cast<ColumnType &>(column).getData().push_back(x);	/// Важно делать это в конце - для exception safety.
 	}
 
 	void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override

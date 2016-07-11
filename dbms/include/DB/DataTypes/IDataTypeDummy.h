@@ -40,7 +40,32 @@ public:
 		throwNoSerialization();
 	}
 
+	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
+	{
+		throwNoSerialization();
+	}
+
+	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override
+	{
+		throwNoSerialization();
+	}
+
+	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
+	{
+		throwNoSerialization();
+	}
+
+	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override
+	{
+		throwNoSerialization();
+	}
+
 	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override
+	{
+		throwNoSerialization();
+	}
+
+	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
 		throwNoSerialization();
 	}
@@ -61,36 +86,6 @@ public:
 	}
 
 protected:
-	void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const NullValuesByteMap * null_map) const override
-	{
-		throwNoSerialization();
-	}
-
-	void serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const NullValuesByteMap * null_map) const override
-	{
-		throwNoSerialization();
-	}
-
-	void deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr,
-		NullValuesByteMap * null_map) const override
-	{
-		throwNoSerialization();
-	}
-
-	void serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const NullValuesByteMap * null_map) const override
-	{
-		throwNoSerialization();
-	}
-
-	void deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr,
-		NullValuesByteMap * null_map) const override
-	{
-		throwNoSerialization();
-	}
-
 	void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
 		const NullValuesByteMap * null_map) const override
 	{

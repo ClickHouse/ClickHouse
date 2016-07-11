@@ -80,6 +80,14 @@ public:
 	void serializeBinary(const IColumn & column, WriteBuffer & ostr, const size_t offset = 0, size_t limit = 0) const override;
 	void deserializeBinary(IColumn & column, ReadBuffer & istr, const size_t limit, const double avg_value_size_hint) const override;
 
+	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override;
+	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
+
+	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+
 	size_t getSizeOfField() const override { return sizeof(FieldType); }
 
 	ColumnPtr createColumn() const override { return std::make_shared<ColumnType>(); }
@@ -88,14 +96,9 @@ public:
 	Field getDefault() const override;
 
 private:
-	void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
-	void serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
-	void deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const override;
-	void serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
-	void deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const override;
+
 	void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
 	void deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map) const override;
-	void serializeTextXMLImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
 	void serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const NullValuesByteMap * null_map) const override;
 	void deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const char delimiter, NullValuesByteMap * null_map) const override;
 };

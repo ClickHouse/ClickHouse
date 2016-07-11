@@ -93,70 +93,56 @@ void DataTypeTuple::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 	});
 }
 
-void DataTypeTuple::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::Quoted::name, ostr);
-	else
+	writeChar('(', ostr);
+	for (const auto i : ext::range(0, ext::size(elems)))
 	{
-		writeChar('(', ostr);
-		for (const auto i : ext::range(0, ext::size(elems)))
+		if (i != 0)
+			writeChar(',', ostr);
+		elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr);
+	}
+	writeChar(')', ostr);
+}
+
+void DataTypeTuple::deserializeText(IColumn & column, ReadBuffer & istr) const
+{
+	const size_t size = elems.size();
+	assertChar('(', istr);
+
+	deserializeSafe(elems, column, istr, [&]
+	{
+		for (const auto i : ext::range(0, size))
 		{
+			skipWhitespaceIfAny(istr);
 			if (i != 0)
-				writeChar(',', ostr);
-			elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr, null_map);
+				assertChar(',', istr);
+			elems[i]->deserializeTextQuoted(extractElementColumn(column, i), istr);
 		}
-		writeChar(')', ostr);
-	}
+	});
+
+	skipWhitespaceIfAny(istr);
+	assertChar(')', istr);
 }
 
-void DataTypeTuple::deserializeTextImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeTuple::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (!NullSymbol::Deserializer<NullSymbol::Quoted>::execute(column, istr, null_map))
-	{
-		const size_t size = elems.size();
-		assertChar('(', istr);
-
-		deserializeSafe(elems, column, istr, [&]
-		{
-			for (const auto i : ext::range(0, size))
-			{
-				skipWhitespaceIfAny(istr);
-				if (i != 0)
-					assertChar(',', istr);
-				elems[i]->deserializeTextQuoted(extractElementColumn(column, i), istr, null_map);
-			}
-		});
-
-		skipWhitespaceIfAny(istr);
-		assertChar(')', istr);
-	}
+	serializeText(column, row_num, ostr);
 }
 
-void DataTypeTuple::serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeTuple::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
-	serializeTextImpl(column, row_num, ostr, null_map);
+	deserializeText(column, istr);
 }
 
-void DataTypeTuple::deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeTuple::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	deserializeTextImpl(column, istr, null_map);
+	serializeText(column, row_num, ostr);
 }
 
-void DataTypeTuple::serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeTuple::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
-	serializeTextImpl(column, row_num, ostr, null_map);
-}
-
-void DataTypeTuple::deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
-{
-	deserializeTextImpl(column, istr, null_map);
+	deserializeText(column, istr);
 }
 
 void DataTypeTuple::serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
@@ -201,22 +187,16 @@ void DataTypeTuple::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr,
 	}
 }
 
-void DataTypeTuple::serializeTextXMLImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeTuple::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::XML::name, ostr);
-	else
+	writeCString("<tuple>", ostr);
+	for (const auto i : ext::range(0, ext::size(elems)))
 	{
-		writeCString("<tuple>", ostr);
-		for (const auto i : ext::range(0, ext::size(elems)))
-		{
-			writeCString("<elem>", ostr);
-			elems[i]->serializeTextXML(extractElementColumn(column, i), row_num, ostr, null_map);
-			writeCString("</elem>", ostr);
-		}
-		writeCString("</tuple>", ostr);
+		writeCString("<elem>", ostr);
+		elems[i]->serializeTextXML(extractElementColumn(column, i), row_num, ostr);
+		writeCString("</elem>", ostr);
 	}
+	writeCString("</tuple>", ostr);
 }
 
 void DataTypeTuple::serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,

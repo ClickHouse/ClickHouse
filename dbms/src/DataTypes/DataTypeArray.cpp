@@ -187,8 +187,7 @@ void DataTypeArray::deserializeOffsets(IColumn & column, ReadBuffer & istr, size
 	offsets.resize(i);
 }
 
-void DataTypeArray::serializeTextInternal(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeArray::serializeTextInternal(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
 	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
@@ -203,26 +202,21 @@ void DataTypeArray::serializeTextInternal(const IColumn & column, size_t row_num
 	{
 		if (i != offset)
 			writeChar(',', ostr);
-		nested->serializeTextQuoted(nested_column, i, ostr, null_map);
+		nested->serializeTextQuoted(nested_column, i, ostr);
 	}
 	writeChar(']', ostr);
 }
 
-void DataTypeArray::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::Quoted::name, ostr);
-	else
-		serializeTextInternal(column, row_num, ostr, null_map);
+	serializeTextInternal(column, row_num, ostr);
 }
 
 namespace
 {
 
 template <typename Reader>
-void deserializeTextInternal(IColumn & column, ReadBuffer & istr, Reader && read_nested,
-	NullValuesByteMap * null_map)
+void deserializeTextInternal(IColumn & column, ReadBuffer & istr, Reader && read_nested)
 {
 	ColumnArray & column_array = static_cast<ColumnArray &>(column);
 	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
@@ -277,53 +271,38 @@ void insertEmptyArray(IColumn & column)
 
 }
 
-void DataTypeArray::deserializeTextQuotedInternal(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeArray::deserializeTextQuotedInternal(IColumn & column, ReadBuffer & istr) const
 {
-	deserializeTextInternal(column, istr, [&](IColumn & nested_column) { nested->deserializeTextQuoted(nested_column, istr); }, null_map);
+	deserializeTextInternal(column, istr, [&](IColumn & nested_column) { nested->deserializeTextQuoted(nested_column, istr); });
 }
 
-void DataTypeArray::deserializeTextImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr) const
 {
-	if (NullSymbol::Deserializer<NullSymbol::Quoted>::execute(column, istr, null_map))
-		insertEmptyArray(column);
-	else
-		deserializeTextQuotedInternal(column, istr, null_map);
+	deserializeTextQuotedInternal(column, istr);
 }
 
 
-void DataTypeArray::serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeArray::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::Quoted::name, ostr);
-	else
-		serializeTextInternal(column, row_num, ostr, null_map);
+	serializeTextInternal(column, row_num, ostr);
 }
 
 
-void DataTypeArray::deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeArray::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
-	deserializeTextImpl(column, istr, null_map);
+	deserializeText(column, istr);
 }
 
 
-void DataTypeArray::serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeArray::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::Quoted::name, ostr);
-	else
-		serializeTextInternal(column, row_num, ostr, null_map);
+	serializeTextInternal(column, row_num, ostr);
 }
 
 
-void DataTypeArray::deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeArray::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
-	deserializeTextImpl(column, istr, null_map);
+	deserializeText(column, istr);
 }
 
 
@@ -360,34 +339,28 @@ void DataTypeArray::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr,
 	if (NullSymbol::Deserializer<NullSymbol::JSON>::execute(column, istr, null_map))
 		insertEmptyArray(column);
 	else
-		deserializeTextInternal(column, istr, [&](IColumn & nested_column) { nested->deserializeTextJSON(nested_column, istr); }, null_map);
+		deserializeTextInternal(column, istr, [&](IColumn & nested_column) { nested->deserializeTextJSON(nested_column, istr); });
 }
 
 
-void DataTypeArray::serializeTextXMLImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeArray::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::XML::name, ostr);
-	else
+	const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+
+	size_t offset = row_num == 0 ? 0 : offsets[row_num - 1];
+	size_t next_offset = offsets[row_num];
+
+	const IColumn & nested_column = column_array.getData();
+
+	writeCString("<array>", ostr);
+	for (size_t i = offset; i < next_offset; ++i)
 	{
-		const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
-		const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
-
-		size_t offset = row_num == 0 ? 0 : offsets[row_num - 1];
-		size_t next_offset = offsets[row_num];
-
-		const IColumn & nested_column = column_array.getData();
-
-		writeCString("<array>", ostr);
-		for (size_t i = offset; i < next_offset; ++i)
-		{
-			writeCString("<elem>", ostr);
-			nested->serializeTextXML(nested_column, i, ostr, null_map);
-			writeCString("</elem>", ostr);
-		}
-		writeCString("</array>", ostr);
+		writeCString("<elem>", ostr);
+		nested->serializeTextXML(nested_column, i, ostr);
+		writeCString("</elem>", ostr);
 	}
+	writeCString("</array>", ostr);
 }
 
 
@@ -402,7 +375,7 @@ void DataTypeArray::serializeTextCSVImpl(const IColumn & column, size_t row_num,
 		String s;
 		{
 			WriteBufferFromString wb(s);
-			serializeTextInternal(column, row_num, wb, null_map);
+			serializeTextInternal(column, row_num, wb);
 		}
 		writeCSV(s, ostr);
 	}
@@ -419,7 +392,7 @@ void DataTypeArray::deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, 
 		String s;
 		readCSV(s, istr, delimiter);
 		ReadBufferFromString rb(s);
-		deserializeTextQuotedInternal(column, rb, null_map);
+		deserializeTextQuotedInternal(column, rb);
 	}
 }
 

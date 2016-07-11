@@ -38,46 +38,32 @@ public:
 	}
 
 private:
-	template <typename Null> inline void deserializeText(IColumn & column, ReadBuffer & istr, PaddedPODArray<UInt8> * null_map) const;
+	template <typename Null> inline void deserializeText(IColumn & column, ReadBuffer & istr) const;
 
 protected:
-	void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const PaddedPODArray<UInt8> * null_map) const override
+	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		if (isNullValue(null_map, row_num))
-			writeCString(NullSymbol::Plain::name, ostr);
-		else
-			writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
+		writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
 	}
 
-	void serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const PaddedPODArray<UInt8> * null_map) const override
+	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		if (isNullValue(null_map, row_num))
-			writeCString(NullSymbol::Escaped::name, ostr);
-		else
-			writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
+		writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
 	}
 
-	void deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr,
-		PaddedPODArray<UInt8> * null_map) const override
+	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override
 	{
-		deserializeText<NullSymbol::Escaped>(column, istr, null_map);
+		deserializeText<NullSymbol::Escaped>(column, istr);
 	}
 
-	void serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-		const PaddedPODArray<UInt8> * null_map) const override
+	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		if (isNullValue(null_map, row_num))
-			writeCString(NullSymbol::Quoted::name, ostr);
-		else
-			writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
+		writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
 	}
 
-	void deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr,
-		PaddedPODArray<UInt8> * null_map) const override
+	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override
 	{
-		deserializeText<NullSymbol::Quoted>(column, istr, null_map);
+		deserializeText<NullSymbol::Quoted>(column, istr);
 	}
 
 	inline void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
@@ -153,13 +139,13 @@ public:
 	bool behavesAsNumber() const override { return true; }
 	size_t getSizeOfField() const override { return 0; }
 	Field getDefault() const override { return {}; }
+	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
+	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override {}
+	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
+	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override {}
+	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
 
 protected:
-	void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const PaddedPODArray<UInt8> * null_map) const override {}
-	void serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const PaddedPODArray<UInt8> * null_map) const override {}
-	void deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr, PaddedPODArray<UInt8> * null_map) const override {}
-	void serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const PaddedPODArray<UInt8> * null_map) const override {}
-	void deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, PaddedPODArray<UInt8> * null_map) const override {}
 	void serializeTextJSONImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const PaddedPODArray<UInt8> * null_map) const override {}
 	void deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, PaddedPODArray<UInt8> * null_map) const override {}
 	void serializeTextCSVImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const PaddedPODArray<UInt8> * null_map) const override {}
@@ -238,56 +224,29 @@ inline void IDataTypeNumber<Float64>::serializeTextJSONImpl(const IColumn & colu
 
 template <typename FType>
 template <typename Null>
-inline void IDataTypeNumber<FType>::deserializeText(IColumn & column, ReadBuffer & istr,
-	PaddedPODArray<UInt8> * null_map) const
+inline void IDataTypeNumber<FType>::deserializeText(IColumn & column, ReadBuffer & istr) const
 {
-	if (NullSymbol::Deserializer<Null>::execute(column, istr, null_map))
-	{
-		FieldType default_val = get<FieldType>(getDefault());
-		static_cast<ColumnType &>(column).getData().push_back(default_val);
-	}
-	else
-	{
-		FieldType x;
-		readIntTextUnsafe(x, istr);
-		static_cast<ColumnType &>(column).getData().push_back(x);
-	}
+	FieldType x;
+	readIntTextUnsafe(x, istr);
+	static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 template <>
 template <typename Null>
-inline void IDataTypeNumber<Float64>::deserializeText(IColumn & column, ReadBuffer & istr,
-	PaddedPODArray<UInt8> * null_map) const
+inline void IDataTypeNumber<Float64>::deserializeText(IColumn & column, ReadBuffer & istr) const
 {
-	if (NullSymbol::Deserializer<Null>::execute(column, istr, null_map))
-	{
-		FieldType default_val = get<FieldType>(getDefault());
-		static_cast<ColumnType &>(column).getData().push_back(default_val);
-	}
-	else
-	{
-		FieldType x;
-		readText(x, istr);
-		static_cast<ColumnType &>(column).getData().push_back(x);
-	}
+	FieldType x;
+	readText(x, istr);
+	static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 template <>
 template <typename Null>
-inline void IDataTypeNumber<Float32>::deserializeText(IColumn & column, ReadBuffer & istr,
-	PaddedPODArray<UInt8> * null_map) const
+inline void IDataTypeNumber<Float32>::deserializeText(IColumn & column, ReadBuffer & istr) const
 {
-	if (NullSymbol::Deserializer<Null>::execute(column, istr, null_map))
-	{
-		FieldType default_val = get<FieldType>(getDefault());
-		static_cast<ColumnType &>(column).getData().push_back(default_val);
-	}
-	else
-	{
-		FieldType x;
-		readText(x, istr);
-		static_cast<ColumnType &>(column).getData().push_back(x);
-	}
+	FieldType x;
+	readText(x, istr);
+	static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 template <typename FType> inline FType IDataTypeNumber<FType>::valueForJSONNull() { return 0; }

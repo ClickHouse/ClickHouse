@@ -212,23 +212,15 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 }
 
 
-void DataTypeString::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::Plain::name, ostr);
-	else
-		writeString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+	writeString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::Escaped::name, ostr);
-	else
-		writeEscapedString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+	writeEscapedString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 namespace
@@ -270,33 +262,21 @@ void insertEmptyString(IColumn & column)
 
 }
 
-void DataTypeString::deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
-	if (NullSymbol::Deserializer<NullSymbol::Escaped>::execute(column, istr, null_map))
-		insertEmptyString(column);
-	else
-		read(column, istr, [&](ColumnString::Chars_t & data) { readEscapedStringInto(data, istr); });
+	read(column, istr, [&](ColumnString::Chars_t & data) { readEscapedStringInto(data, istr); });
 }
 
 
-void DataTypeString::serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::Quoted::name, ostr);
-	else
-		writeQuotedString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+	writeQuotedString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
-	if (NullSymbol::Deserializer<NullSymbol::Quoted>::execute(column, istr, null_map))
-		insertEmptyString(column);
-	else
-		read(column, istr, [&](ColumnString::Chars_t & data) { readQuotedStringInto(data, istr); });
+	read(column, istr, [&](ColumnString::Chars_t & data) { readQuotedStringInto(data, istr); });
 }
 
 
@@ -320,13 +300,9 @@ void DataTypeString::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr
 }
 
 
-void DataTypeString::serializeTextXMLImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::XML::name, ostr);
-	else
-		writeXMLString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+	writeXMLString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 

@@ -159,34 +159,29 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
 	column_concrete.getData().push_back(place);
 }
 
-void DataTypeAggregateFunction::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeAggregateFunction::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeString(serializeToString(function, column, row_num), ostr);
 }
 
-void DataTypeAggregateFunction::serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeAggregateFunction::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeEscapedString(serializeToString(function, column, row_num), ostr);
 }
 
-void DataTypeAggregateFunction::deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
 	String s;
 	readEscapedString(s, istr);
 	deserializeFromString(function, column, s);
 }
 
-void DataTypeAggregateFunction::serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeAggregateFunction::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeQuotedString(serializeToString(function, column, row_num), ostr);
 }
 
-void DataTypeAggregateFunction::deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
 	String s;
 	readQuotedString(s, istr);
@@ -207,8 +202,7 @@ void DataTypeAggregateFunction::deserializeTextJSONImpl(IColumn & column, ReadBu
 	deserializeFromString(function, column, s);
 }
 
-void DataTypeAggregateFunction::serializeTextXMLImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeAggregateFunction::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeXMLString(serializeToString(function, column, row_num), ostr);
 }

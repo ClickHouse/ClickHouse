@@ -136,68 +136,38 @@ void DataTypeEnum<Type>::deserializeBinary(IColumn & column, ReadBuffer & istr) 
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeEnum<Type>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::Plain::name, ostr);
-	else
-		writeString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+	writeString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextEscapedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeEnum<Type>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::Escaped::name, ostr);
-	else
-		writeEscapedString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+	writeEscapedString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
-	if (NullSymbol::Deserializer<NullSymbol::Escaped>::execute(column, istr, null_map))
-	{
-		FieldType default_val = get<FieldType>(getDefault());
-		static_cast<ColumnType &>(column).getData().push_back(default_val);
-	}
-	else
-	{
-		/// NOTE Неплохо было бы сделать без создания временного объекта - хотя бы вынести std::string наружу.
-		std::string name;
-		readEscapedString(name, istr);
-		static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
-	}
+	/// NOTE Неплохо было бы сделать без создания временного объекта - хотя бы вынести std::string наружу.
+	std::string name;
+	readEscapedString(name, istr);
+	static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextQuotedImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeEnum<Type>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::Quoted::name, ostr);
-	else
-		writeQuotedString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+	writeQuotedString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr,
-	NullValuesByteMap * null_map) const
+void DataTypeEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
-	if (NullSymbol::Deserializer<NullSymbol::Quoted>::execute(column, istr, null_map))
-	{
-		FieldType default_val = get<FieldType>(getDefault());
-		static_cast<ColumnType &>(column).getData().push_back(default_val);
-	}
-	else
-	{
-		std::string name;
-		readQuotedString(name, istr);
-		static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
-	}
+	std::string name;
+	readQuotedString(name, istr);
+	static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
 }
 
 template <typename Type>
@@ -211,13 +181,9 @@ void DataTypeEnum<Type>::serializeTextJSONImpl(const IColumn & column, size_t ro
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextXMLImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-	const NullValuesByteMap * null_map) const
+void DataTypeEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	if (isNullValue(null_map, row_num))
-		writeCString(NullSymbol::XML::name, ostr);
-	else
-		writeXMLString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+	writeXMLString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
