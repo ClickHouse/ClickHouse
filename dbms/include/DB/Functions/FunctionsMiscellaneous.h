@@ -236,7 +236,7 @@ public:
 		return name;
 	}
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -246,7 +246,7 @@ public:
 		return std::make_shared<DataTypeString>();
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.getByPosition(result).column = std::make_shared<ColumnConstString>(
 			block.rowsInFirstColumn(), block.getByPosition(arguments[0]).column->getName());
@@ -377,7 +377,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!arguments.empty())
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -388,7 +388,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t rows_in_block = block.rowsInFirstColumn();
 		size_t current_row_number = rows.fetch_add(rows_in_block);
