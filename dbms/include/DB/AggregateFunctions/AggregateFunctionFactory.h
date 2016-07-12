@@ -44,6 +44,8 @@ public:
 	};
 
 private:
+	AggregateFunctionPtr getImpl(const String & name, const DataTypes & argument_types, int recursion_level) const;
+
 	/// Вспомогательная функция для реализации итератора (см. ниже).
 	static Details getDetails(const AggregateFunctions::value_type & entry);
 

@@ -9,7 +9,7 @@ namespace DB
 namespace
 {
 
-inline bool isNullValue(const NullValuesByteMap * null_map, size_t row_num) const
+inline bool isNullValue(const NullValuesByteMap * null_map, size_t row_num)
 {
 	return (null_map != nullptr) && ((*null_map)[row_num] == 1);
 }

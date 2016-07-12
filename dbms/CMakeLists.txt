@@ -133,6 +133,7 @@ add_library (dbms
 	include/DB/Parsers/ASTSampleRatio.h
 	include/DB/Parsers/ParserSampleRatio.h
 	include/DB/Parsers/ParserCase.h
+	include/DB/AggregateFunctions/AggregateFunctionNull.h
 	include/DB/AggregateFunctions/AggregateFunctionMerge.h
 	include/DB/AggregateFunctions/AggregateFunctionUniqUpTo.h
 	include/DB/AggregateFunctions/AggregateFunctionIf.h
@@ -892,6 +893,7 @@ add_library (dbms
 	src/Functions/Conditional/StringArrayEvaluator.cpp
 
 	src/AggregateFunctions/UniqCombinedBiasData.cpp
+	src/AggregateFunctions/AggregateFunctionNull.cpp
 	src/AggregateFunctions/AggregateFunctionFactory.cpp
 	src/AggregateFunctions/AggregateFunctionArray.cpp
 	src/AggregateFunctions/AggregateFunctionAvg.cpp

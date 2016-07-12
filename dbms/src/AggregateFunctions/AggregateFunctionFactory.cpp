@@ -3,6 +3,8 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNullable.h>
+
 
 namespace DB
 {
@@ -85,6 +87,7 @@ AggregateFunctionPtr createAggregateFunctionArray(AggregateFunctionPtr & nested)
 AggregateFunctionPtr createAggregateFunctionIf(AggregateFunctionPtr & nested);
 AggregateFunctionPtr createAggregateFunctionState(AggregateFunctionPtr & nested);
 AggregateFunctionPtr createAggregateFunctionMerge(AggregateFunctionPtr & nested);
+AggregateFunctionPtr createAggregateFunctionNull(AggregateFunctionPtr & nested);
 
 
 AggregateFunctionFactory::AggregateFunctionFactory()
@@ -136,6 +139,43 @@ void AggregateFunctionFactory::registerFunction(const std::vector<std::string> &
 
 
 AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const DataTypes & argument_types, int recursion_level) const
+{
+	bool has_nullable_types = false;
+	for (const auto & arg_type : argument_types)
+	{
+		if (arg_type.get()->isNullable())
+		{
+			has_nullable_types = true;
+			break;
+		}
+	}
+
+	if (has_nullable_types)
+	{
+		DataTypes new_argument_types;
+		new_argument_types.reserve(argument_types.size());
+
+		for (const auto & arg_type : argument_types)
+		{
+			if (arg_type.get()->isNullable())
+			{
+				const DataTypeNullable & actual_type = static_cast<const DataTypeNullable &>(*arg_type.get());
+				const DataTypePtr & nested_type = actual_type.getNestedType();
+				new_argument_types.push_back(nested_type);
+			}
+			else
+				new_argument_types.push_back(arg_type);
+		}
+
+		AggregateFunctionPtr function = getImpl(name, new_argument_types, recursion_level);
+		return createAggregateFunctionNull(function);
+	}
+	else
+		return getImpl(name, argument_types, recursion_level);
+}
+
+
+AggregateFunctionPtr AggregateFunctionFactory::getImpl(const String & name, const DataTypes & argument_types, int recursion_level) const
 {
 	auto it = aggregate_functions.find(name);
 	if (it != aggregate_functions.end())
