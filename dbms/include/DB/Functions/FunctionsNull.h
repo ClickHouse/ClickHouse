@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Functions/IFunction.h>
+#include <DB/Functions/FunctionsLogical.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Columns/ColumnNullable.h>
 
@@ -83,32 +84,22 @@ public:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
-		if (elem.column->isNullable())
-		{
-			/// Create a complemented null map.
-			const ColumnNullable & src_nullable_col = static_cast<const ColumnNullable &>(*elem.column);
-			const ColumnUInt8 & src_content = static_cast<const ColumnUInt8 &>(*(src_nullable_col.getNullValuesByteMap().get()));
+		FunctionIsNull is_null_func;
 
-			ColumnPtr holder = src_content.clone();
-			ColumnUInt8 & dest_content = static_cast<ColumnUInt8 &>(*(holder.get()));
-			NullValuesByteMap & dest_null_map = dest_content.getData();
+		ColumnWithTypeAndName temp_res;
+		temp_res.type = std::make_shared<DataTypeUInt8>();
 
-			for (auto & byte : dest_null_map)
-				byte = ((byte == 0) ? 1 : 0);
+		block.insert(temp_res);
 
-			block.getByPosition(result).column = holder;
-		}
-		else
-		{
-			/// Since no element is nullable, create a one-filled null map.
-			ColumnPtr holder = std::make_shared<ColumnUInt8>();
-			ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*(holder.get()));
-			NullValuesByteMap & null_map = content.getData();
+		size_t temp_res_num = block.columns() - 1;
 
-			null_map.resize_fill(elem.column.get()->size(), 1);
-			block.getByPosition(result).column = holder;
-		}
+		is_null_func.executeImpl(block, arguments, temp_res_num);
+
+		FunctionNot not_func;
+
+		ColumnNumbers new_args;
+		new_args.push_back(temp_res_num);
+		not_func.executeImpl(block, new_args, result);
 	}
 };
 
