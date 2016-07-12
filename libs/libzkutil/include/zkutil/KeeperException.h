@@ -50,6 +50,11 @@ public:
 		return isUnrecoverable() || code == ZCONNECTIONLOSS || code == ZOPERATIONTIMEOUT;
 	}
 
+	bool isTemporaryError() const
+	{
+		return code == ZCONNECTIONLOSS || code == ZOPERATIONTIMEOUT;
+	}
+	
 	const int32_t code;
 
 private:
