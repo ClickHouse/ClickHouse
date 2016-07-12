@@ -17,15 +17,14 @@ extern const int LOGICAL_ERROR;
 class AggregateFunctionNull : public IAggregateFunction
 {
 public:
-	AggregateFunctionNull(AggregateFunctionPtr nested_function_holder_)
-		: nested_function_holder{nested_function_holder_},
-		nested_function{init(nested_function_holder)}
+	AggregateFunctionNull(AggregateFunctionPtr nested_function_)
+		: nested_function{nested_function_}
 	{
 	}
 
 	String getName() const override
 	{
-		return nested_function.getName();
+		return nested_function.get()->getName();
 	}
 
 	void setArguments(const DataTypes & arguments) override
@@ -58,45 +57,45 @@ public:
 					new_args.push_back(arg);
 			}
 
-			nested_function.setArguments(new_args);
+			nested_function.get()->setArguments(new_args);
 		}
 		else
-			nested_function.setArguments(arguments);
+			nested_function.get()->setArguments(arguments);
 	}
 
 	void setParameters(const Array & params)
 	{
-		nested_function.setParameters(params);
+		nested_function.get()->setParameters(params);
 	}
 
 	DataTypePtr getReturnType() const override
 	{
-		return nested_function.getReturnType();
+		return nested_function.get()->getReturnType();
 	}
 
 	void create(AggregateDataPtr place) const override
 	{
-		nested_function.create(place);
+		nested_function.get()->create(place);
 	}
 
 	void destroy(AggregateDataPtr place) const noexcept override
 	{
-		nested_function.destroy(place);
+		nested_function.get()->destroy(place);
 	}
 
 	bool hasTrivialDestructor() const override
 	{
-		return nested_function.hasTrivialDestructor();
+		return nested_function.get()->hasTrivialDestructor();
 	}
 
 	size_t sizeOfData() const override
 	{
-		return nested_function.sizeOfData();
+		return nested_function.get()->sizeOfData();
 	}
 
 	size_t alignOfData() const override
 	{
-		return nested_function.alignOfData();
+		return nested_function.get()->alignOfData();
 	}
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
@@ -117,7 +116,7 @@ public:
 		thread_local std::unique_ptr<std::vector<const IColumn *> > passed_columns_holder = init();
 
 		if (!has_nullable_columns)
-			nested_function.add(place, columns, row_num);
+			nested_function.get()->add(place, columns, row_num);
 		else
 		{
 			std::vector<const IColumn *> & passed_columns = *passed_columns_holder;
@@ -141,28 +140,28 @@ public:
 				}
 			}
 
-			nested_function.add(place, passed_columns.data(), row_num);
+			nested_function.get()->add(place, passed_columns.data(), row_num);
 		}
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
-		nested_function.merge(place, rhs);
+		nested_function.get()->merge(place, rhs);
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
-		nested_function.serialize(place, buf);
+		nested_function.get()->serialize(place, buf);
 	}
 
 	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		nested_function.deserialize(place, buf);
+		nested_function.get()->deserialize(place, buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
-		nested_function.insertResultInto(place, to);
+		nested_function.get()->insertResultInto(place, to);
 	}
 
 	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num)
@@ -176,16 +175,7 @@ public:
 	}
 
 private:
-	static IAggregateFunction & init(AggregateFunctionPtr & nested_function_holder_)
-	{
-		if (!nested_function_holder_)
-			throw Exception{"Passed null pointer to aggregate function", ErrorCodes::LOGICAL_ERROR};
-		return *nested_function_holder_.get();
-	}
-
-private:
-	AggregateFunctionPtr nested_function_holder;
-	IAggregateFunction & nested_function;
+	AggregateFunctionPtr nested_function;
 	std::vector<bool> is_nullable;
 	size_t argument_count = 0;
 	bool has_nullable_columns = false;
