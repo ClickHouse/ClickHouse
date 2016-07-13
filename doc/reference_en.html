@@ -3809,6 +3809,129 @@ Differs from JSON only in that data rows are output in arrays, not in objects. E
 %%
 
 
+==JSONEachRow==
+
+If put in SELECT query, displays data in NEWLINE_DELIMITED_JSON (JSON objects separated by \\n character) format.
+If put in INSERT query, expect this kind of data as input.
+
+%%
+{"SearchPhrase":"","count()":"8267016"}
+{"SearchPhrase":"bathroom interior","count()":"2166"}
+{"SearchPhrase":"yandex","count()":"1655"}
+{"SearchPhrase":"spring 2014 fashion","count()":"1549"}
+{"SearchPhrase":"free-form photo","count()":"1480"}
+{"SearchPhrase":"Angelina Jolie","count()":"1245"}
+{"SearchPhrase":"omsk","count()":"1112"}
+{"SearchPhrase":"photos of dog breeds","count()":"1091"}
+{"SearchPhrase":"curtain design","count()":"1064"}
+{"SearchPhrase":"baku","count()":"1000"}
+%%
+
+Unlike JSON format, there are no replacements of invalid UTF-8 sequences. There can be arbitrary amount of bytes in a line. 
+This is done in order to avoid data loss during formatting. Values are displayed analogous to JSON format.
+
+In INSERT queries JSON data can be supplied with arbitrary order of columns(JSON key-value pairs). It is also possible to omit values in which case the default value of the column is inserted. N.B. when using JSONEachRow format, complex default values are not supported, so when omitting a column its value will be zeros or empty string depending on its type.
+Space characters between JSON objects are skipped. Between objects there can be a comma which is ignored. NEWLINE character is not a mandatory separator for objects.
+
+
+==TSKV==
+
+Similar to TabSeparated, but displays data in %%name=value%% format. Names are displayed just as in TabSeparated. Additionally, a %%=%% symbol is displayed.
+
+%%
+SearchPhrase=   count()=8267016
+SearchPhrase=bathroom interior    count()=2166
+SearchPhrase=yandex     count()=1655
+SearchPhrase=spring 2014 fashion    count()=1549
+SearchPhrase=free-form photo       count()=1480
+SearchPhrase=Angelina Jolie    count()=1245
+SearchPhrase=omsk       count()=1112
+SearchPhrase=photos of dog breeds    count()=1091
+SearchPhrase=curtain design        count()=1064
+SearchPhrase=baku       count()=1000
+%%
+
+In case of many small columns this format is obviously not effective and there usually is no reason to use it. This format is supported because it is used for some cases in Yandex.
+
+Format is supported both for read and write. In INSERT queries data can be supplied with arbitrary order of columns. It is also possible to omit values in which case the default value of the column is inserted. N.B. when using TSKV format, complex default values are not supported, so when omitting a column its value will be zeros or empty string depending on its type.
+
+
+
+==XML==
+
+XML format is supported only for displaying data not for INSERTS. Example:
+
+%%
+&lt;?xml version='1.0' encoding='UTF-8' ?&gt;
+&lt;result&gt;
+        &lt;meta&gt;
+                &lt;columns&gt;
+                        &lt;column&gt;
+                                &lt;name&gt;SearchPhrase&lt;/name&gt;
+                                &lt;type&gt;String&lt;/type&gt;
+                        &lt;/column&gt;
+                        &lt;column&gt;
+                                &lt;name&gt;count()&lt;/name&gt;
+                                &lt;type&gt;UInt64&lt;/type&gt;
+                        &lt;/column&gt;
+                &lt;/columns&gt;
+        &lt;/meta&gt;
+        &lt;data&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;&lt;/SearchPhrase&gt;
+                        &lt;field&gt;8267016&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;bathroom interior&lt;/SearchPhrase&gt;
+                        &lt;field&gt;2166&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;yandex&gt;
+                        &lt;field&gt;1655&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;spring 2014 fashion&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1549&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;free-form photo&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1480&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;Angelina Jolie&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1245&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;omsk&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1112&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;photos of dog breeds&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1091&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;curtain design&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1064&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;baku&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1000&lt;/field&gt;
+                &lt;/row&gt;
+        &lt;/data&gt;
+        &lt;rows&gt;10&lt;/rows&gt;
+        &lt;rows_before_limit_at_least&gt;141137&lt;/rows_before_limit_at_least&gt;
+&lt;/result&gt;
+%%
+
+If name of a column contains some unacceptable character, field is used as a name. In other aspects XML uses JSON structure.
+As in case of JSON, invalid UTF-8 sequences are replaced by replacement character � so displayed text will only contain valid UTF-8 sequences.
+
+In string values %%&lt;%% and %%&amp;%% are displayed as %%&amp;lt;%% and %%&amp;amp;%%.
+
+Arrays are displayed as %%&lt;array&gt;&lt;elem&gt;Hello&lt;/elem&gt;&lt;elem&gt;World&lt;/elem&gt;...&lt;/array&gt;%%,
+and tuples as %%&lt;tuple&gt;&lt;elem&gt;Hello&lt;/elem&gt;&lt;elem&gt;World&lt;/elem&gt;...&lt;/tuple&gt;%%.
+
+
 ==Null==
 
 Nothing is output. However, the query is processed, and when using the command-line client, data is transmitted to the client. This is used for tests, including productivity testing. Obviously, this format is only appropriate for writes, not for reads.
