@@ -311,6 +311,8 @@ Block LogBlockInputStream::readImpl()
 		  *  буферы не висели в памяти.
 		  */
 		streams.clear();
+		if (has_null_marks)
+			null_streams.clear();
 	}
 
 	return res;
