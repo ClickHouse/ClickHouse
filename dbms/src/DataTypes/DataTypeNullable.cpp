@@ -117,7 +117,10 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
 	auto & null_map = content.getData();
 
 	if (NullSymbol::Deserializer<NullSymbol::Escaped>::execute(column, istr, &null_map))
-		col->insertDefault();
+	{
+		ColumnPtr & nested_col = col->getNestedColumn();
+		nested_col.get()->insertDefault();
+	}
 	else
 		nested_data_type.get()->deserializeTextEscaped(*(col->getNestedColumn().get()), istr);
 }
@@ -147,7 +150,10 @@ void DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
 	auto & null_map = content.getData();
 
 	if (NullSymbol::Deserializer<NullSymbol::Quoted>::execute(column, istr, &null_map))
-		col->insertDefault();
+	{
+		ColumnPtr & nested_col = col->getNestedColumn();
+		nested_col.get()->insertDefault();
+	}
 	else
 		nested_data_type.get()->deserializeTextQuoted(*(col->getNestedColumn().get()), istr);
 }
@@ -177,7 +183,10 @@ void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
 	auto & null_map = content.getData();
 
 	if (NullSymbol::Deserializer<NullSymbol::Quoted>::execute(column, istr, &null_map))
-		col->insertDefault();
+	{
+		ColumnPtr & nested_col = col->getNestedColumn();
+		nested_col.get()->insertDefault();
+	}
 	else
 		nested_data_type.get()->deserializeTextCSV(*(col->getNestedColumn().get()), istr, delimiter);
 }
@@ -222,7 +231,10 @@ void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr) 
 	auto & null_map = content.getData();
 
 	if (NullSymbol::Deserializer<NullSymbol::JSON>::execute(column, istr, &null_map))
-		col->insertDefault();
+	{
+		ColumnPtr & nested_col = col->getNestedColumn();
+		nested_col.get()->insertDefault();
+	}
 	else
 		nested_data_type.get()->deserializeTextJSON(*(col->getNestedColumn().get()), istr);
 }
