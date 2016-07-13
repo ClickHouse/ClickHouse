@@ -189,7 +189,9 @@ private:
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
 	void addNullStream(const String & name);
-	void writeData(const String & name, const IDataType & type, const IColumn & column, MarksForColumns & out_marks, OffsetColumns & offset_columns, size_t level = 0);
+	void writeData(const String & name, const IDataType & type, const IColumn & column,
+		MarksForColumns & out_marks, MarksForColumns & out_null_marks,
+		OffsetColumns & offset_columns, size_t level = 0);
 	void writeMarks(MarksForColumns marks);
 	void writeNullMarks(MarksForColumns marks);
 	void writeMarksImpl(MarksForColumns marks, StorageLog::Files_t & files_descs);
@@ -412,12 +414,17 @@ void LogBlockOutputStream::write(const Block & block)
 
 	MarksForColumns marks;
 	marks.reserve(storage.files.size());
+
+	MarksForColumns null_marks;
+	null_marks.reserve(storage.null_files.size());
+
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		const ColumnWithTypeAndName & column = block.getByPosition(i);
-		writeData(column.name, *column.type, *column.column, marks, offset_columns);
+		writeData(column.name, *column.type, *column.column, marks, null_marks, offset_columns);
 	}
 	writeMarks(marks);
+	writeNullMarks(null_marks);
 }
 
 
@@ -433,6 +440,9 @@ void LogBlockOutputStream::writeSuffix()
 	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		it->second->finalize();
 
+	for (FileStreams::iterator it = null_streams.begin(); it != null_streams.end(); ++it)
+		it->second->finalize();
+
 	std::vector<Poco::File> column_files;
 	for (auto & pair : streams)
 		column_files.push_back(storage.files[pair.first].data_file);
@@ -441,6 +451,7 @@ void LogBlockOutputStream::writeSuffix()
 	storage.file_checker.update(column_files.begin(), column_files.end());
 
 	streams.clear();
+	null_streams.clear();
 }
 
 
@@ -474,12 +485,32 @@ void LogBlockOutputStream::addNullStream(const String & name)
 }
 
 
-void LogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column, MarksForColumns & out_marks,
-										OffsetColumns & offset_columns, size_t level)
+void LogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column,
+	MarksForColumns & out_marks, MarksForColumns & out_null_marks,
+	OffsetColumns & offset_columns, size_t level)
 {
-	/// Для массивов требуется сначала сериализовать размеры, а потом значения.
-	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	if (type.isNullable())
 	{
+		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
+		const IDataType & nested_type = *(nullable_type.getNestedType().get());
+
+		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(column);
+		const IColumn & nested_col = *(nullable_col.getNestedColumn().get());
+
+		Mark mark;
+		mark.rows = (storage.null_files[name].marks.empty() ? 0 : storage.null_files[name].marks.back().rows) + column.size();
+		mark.offset = null_streams[name]->plain_offset + null_streams[name]->plain.count();
+
+		out_null_marks.emplace_back(storage.null_files[name].column_index, mark);
+
+		DataTypeUInt8{}.serializeBinary(*(nullable_col.getNullValuesByteMap().get()), null_streams[name]->compressed);
+		null_streams[name]->compressed.next();
+
+		writeData(name, nested_type, nested_col, out_marks, out_null_marks, offset_columns, level);
+	}
+	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	{
+		/// Для массивов требуется сначала сериализовать размеры, а потом значения.
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
 		if (offset_columns.count(size_name) == 0)
@@ -496,7 +527,8 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 			streams[size_name]->compressed.next();
 		}
 
-		writeData(name, *type_arr->getNestedType(), typeid_cast<const ColumnArray &>(column).getData(), out_marks, offset_columns, level + 1);
+		writeData(name, *type_arr->getNestedType(), typeid_cast<const ColumnArray &>(column).getData(),
+			out_marks, out_null_marks, offset_columns, level + 1);
 	}
 	else
 	{
@@ -735,6 +767,13 @@ void StorageLog::rename(const String & new_path_to_db, const String & new_databa
 	}
 
 	marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
+
+	for (Files_t::iterator it = null_files.begin(); it != null_files.end(); ++it)
+	{
+		it->second.data_file = Poco::File(path + escapeForFileName(name) + '/' + Poco::Path(it->second.data_file.path()).getFileName());
+	}
+
+	null_marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
 }
 
 
