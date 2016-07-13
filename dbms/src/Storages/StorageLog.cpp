@@ -605,6 +605,7 @@ StorageLog::StorageLog(
 		addFile(column.name, *column.type);
 
 	marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
+	null_marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_NULL_MARKS_FILE_NAME);
 }
 
 StoragePtr StorageLog::create(
@@ -773,7 +774,7 @@ void StorageLog::rename(const String & new_path_to_db, const String & new_databa
 		it->second.data_file = Poco::File(path + escapeForFileName(name) + '/' + Poco::Path(it->second.data_file.path()).getFileName());
 	}
 
-	null_marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
+	null_marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_NULL_MARKS_FILE_NAME);
 }
 
 
