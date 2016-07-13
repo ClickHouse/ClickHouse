@@ -58,6 +58,7 @@ void Lock::unlock()
 			{
 				size_t attempt;
 				int32_t code = zookeeper->tryRemoveEphemeralNodeWithRetries(lock_path, -1, &attempt);
+
 				if (attempt)
 				{
 					if (code != ZOK)
@@ -117,5 +118,23 @@ std::string Lock::status2String(Status status)
 		throw zkutil::KeeperException("Wrong status code: " + std::to_string(status));
 	static const char * names[] = {"Unlocked", "Locked by me", "Locked by other"};
 	return names[status];
+}
+
+void Lock::unlockAndMoveIfFailed(std::vector<zkutil::Lock> & failed_to_unlock_locks)
+{
+	try
+	{
+		unlock();
+	}
+	catch (const zkutil::KeeperException & e)
+	{
+		if (e.isTemporaryError())
+		{
+			LOG_WARNING(log, "Fail to unlock lock. Move lock to vector to remove later. Path: " << getPath());
+			failed_to_unlock_locks.emplace_back(std::move(*this));
+		}
+		else
+			throw;
+	}
 }
 

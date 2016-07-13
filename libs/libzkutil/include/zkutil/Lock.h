@@ -59,6 +59,7 @@ namespace zkutil
 		Status tryCheck() const;
 
 		void unlock();
+		void unlockAndMoveIfFailed(std::vector<zkutil::Lock> & failed_to_unlock_locks);
 
 		bool tryLock();
 
