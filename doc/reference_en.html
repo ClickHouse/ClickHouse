@@ -3765,7 +3765,7 @@ If the query contains GROUP BY, %%rows_before_limit_at_least%% is the exact numb
 
 
 This format is only appropriate for reads (SELECT queries), not for writes (INSERT queries).
-
+See JSONEachRow format for INSERT queries.
 
 ==JSONCompact==
 
@@ -3812,7 +3812,7 @@ Differs from JSON only in that data rows are output in arrays, not in objects. E
 ==JSONEachRow==
 
 If put in SELECT query, displays data in NEWLINE_DELIMITED_JSON (JSON objects separated by \\n character) format.
-If put in INSERT query, expect this kind of data as input.
+If put in INSERT query, expects this kind of data as input.
 
 %%
 {"SearchPhrase":"","count()":"8267016"}
