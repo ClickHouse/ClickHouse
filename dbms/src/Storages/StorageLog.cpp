@@ -780,16 +780,6 @@ void StorageLog::rename(const String & new_path_to_db, const String & new_databa
 
 const Marks & StorageLog::getMarksWithRealRowCount() const
 {
-	return getMarksWithRealRowCountImpl(files);
-}
-
-const Marks & StorageLog::getNullMarksWithRealRowCount() const
-{
-	return getMarksWithRealRowCountImpl(null_files);
-}
-
-const Marks & StorageLog::getMarksWithRealRowCountImpl(const Files_t & files_descs) const
-{
 	auto init_column_type = [&]()
 	{
 		const IDataType * type = columns->front().type.get();
@@ -818,8 +808,8 @@ const Marks & StorageLog::getMarksWithRealRowCountImpl(const Files_t & files_des
 		file_name = column_name;
 	}
 
-	Files_t::const_iterator it = files_descs.find(file_name);
-	if (files_descs.end() == it)
+	Files_t::const_iterator it = files.find(file_name);
+	if (files.end() == it)
 		throw Exception("Cannot find file " + file_name, ErrorCodes::LOGICAL_ERROR);
 
 	return it->second.marks;
@@ -830,7 +820,6 @@ BlockInputStreams StorageLog::read(
 	size_t from_mark,
 	size_t to_mark,
 	size_t from_null_mark,
-	size_t to_null_mark,
 	const Names & column_names,
 	ASTPtr query,
 	const Context & context,
@@ -878,14 +867,8 @@ BlockInputStreams StorageLog::read(
 		const Marks & marks = getMarksWithRealRowCount();
 		size_t marks_size = marks.size();
 
-		const Marks & null_marks = getNullMarksWithRealRowCount();
-		size_t null_marks_size = null_marks.size();
-
-		if ((to_mark == std::numeric_limits<size_t>::max()) && (to_null_mark == std::numeric_limits<size_t>::max()))
-		{
+		if (to_mark == std::numeric_limits<size_t>::max())
 			to_mark = marks_size;
-			to_null_mark = null_marks_size;
-		}
 
 		if (to_mark > marks_size || to_mark < from_mark)
 			throw Exception("Marks out of range in StorageLog::read", ErrorCodes::LOGICAL_ERROR);
@@ -960,7 +943,7 @@ BlockInputStreams StorageLog::read(
 {
 	return read(
 		0, std::numeric_limits<size_t>::max(),
-		0, std::numeric_limits<size_t>::max(),
+		0,
 		column_names,
 		query, context, settings, processed_stage,
 		max_block_size, threads);

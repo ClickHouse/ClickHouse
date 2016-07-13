@@ -133,7 +133,6 @@ protected:
 		size_t from_mark,
 		size_t to_mark,
 		size_t from_null_mark,
-		size_t to_null_mark,
 		const Names & column_names,
 		ASTPtr query,
 		const Context & context,
@@ -174,8 +173,6 @@ private:
 	  * Вернуть первую попавшуюся группу засечек, в которых указано количество строчек, а не внутренностей массивов.
 	  */
 	const Marks & getMarksWithRealRowCount() const;
-	const Marks & getNullMarksWithRealRowCount() const;
-	const Marks & getMarksWithRealRowCountImpl(const Files_t & files_descs) const;
 
 	std::string getFullPath() const { return path + escapeForFileName(name) + '/';}
 };
