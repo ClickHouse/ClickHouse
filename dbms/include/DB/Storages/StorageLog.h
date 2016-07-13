@@ -7,6 +7,7 @@
 
 #include <DB/Storages/IStorage.h>
 #include <DB/Common/FileChecker.h>
+#include <DB/Common/escapeForFileName.h>
 
 
 namespace DB
@@ -175,6 +176,8 @@ private:
 	const Marks & getMarksWithRealRowCount() const;
 	const Marks & getNullMarksWithRealRowCount() const;
 	const Marks & getMarksWithRealRowCountImpl(const Files_t & files_descs) const;
+
+	std::string getFullPath() const { return path + escapeForFileName(name) + '/';}
 };
 
 }

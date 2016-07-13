@@ -1,6 +1,4 @@
-#include <Poco/Path.h>
-
-#include <DB/Common/escapeForFileName.h>
+#include <DB/Storages/StorageLog.h>
 
 #include <DB/Common/Exception.h>
 
@@ -12,6 +10,7 @@
 #include <DB/IO/WriteHelpers.h>
 
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
@@ -22,9 +21,8 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnNullable.h>
 
-#include <DB/Storages/StorageLog.h>
-
-#include <DB/DataTypes/DataTypeString.h>
+#include <Poco/Path.h>
+#include <Poco/DirectoryIterator.h>
 
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION 	".bin"
@@ -64,7 +62,7 @@ public:
 		size_t mark_number_, size_t null_mark_number_, size_t rows_limit_, size_t max_read_buffer_size_)
 		: block_size(block_size_), column_names(column_names_), storage(storage_),
 		mark_number(mark_number_), null_mark_number(null_mark_number_), rows_limit(rows_limit_),
-		current_mark(mark_number_), current_null_mark(null_mark_number_),
+		current_mark(mark_number_),
 		max_read_buffer_size(max_read_buffer_size_), has_null_marks(true)
 	{
 	}
@@ -94,7 +92,6 @@ private:
 	size_t rows_limit;		/// Максимальное количество строк, которых можно прочитать
 	size_t rows_read = 0;
 	size_t current_mark;
-	size_t current_null_mark;
 	size_t max_read_buffer_size;
 	bool has_null_marks;
 
@@ -129,7 +126,8 @@ public:
 		: storage(storage_),
 		lock(storage.rwlock),
 		marks_stream(storage.marks_file.path(), 4096, O_APPEND | O_CREAT | O_WRONLY),
-		null_marks_stream(storage.null_marks_file.path(), 4096, O_APPEND | O_CREAT | O_WRONLY)
+		null_marks_stream(storage.has_nullable_columns ?
+			std::make_unique<WriteBufferFromFile>(storage.null_marks_file.path(), 4096, O_APPEND | O_CREAT | O_WRONLY) : nullptr)
 	{
 		for (const auto & column : storage.getColumnsList())
 			addStream(column.name, *column.type);
@@ -185,7 +183,7 @@ private:
 	using OffsetColumns = std::set<std::string>;
 
 	WriteBufferFromFile marks_stream; /// Объявлен ниже lock, чтобы файл открывался при захваченном rwlock.
-	WriteBufferFromFile null_marks_stream;
+	std::unique_ptr<WriteBufferFromFile> null_marks_stream;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
 	void addNullStream(const String & name);
@@ -194,7 +192,7 @@ private:
 		OffsetColumns & offset_columns, size_t level = 0);
 	void writeMarks(MarksForColumns marks);
 	void writeNullMarks(MarksForColumns marks);
-	void writeMarksImpl(MarksForColumns marks, StorageLog::Files_t & files_descs);
+	void writeMarksImpl(MarksForColumns marks, WriteBufferFromFile & stream, StorageLog::Files_t & files_descs);
 };
 
 
@@ -203,6 +201,10 @@ Block LogBlockInputStream::readImpl()
 	Block res;
 
 	if (rows_read == rows_limit)
+		return res;
+
+	/// If there are no files in the folder, the table is empty.
+	if (Poco::DirectoryIterator(storage.getFullPath()) == Poco::DirectoryIterator())
 		return res;
 
 	/// Если файлы не открыты, то открываем их.
@@ -223,9 +225,7 @@ Block LogBlockInputStream::readImpl()
 	/// Сколько строк читать для следующего блока.
 	size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
 	const Marks & marks = storage.getMarksWithRealRowCount();
-	const Marks * null_marks = nullptr;
-	if (has_null_marks)
-		null_marks = &storage.getNullMarksWithRealRowCount();
+
 	std::pair<String, size_t> current_table;
 
 	/// Отдельно обрабатываем виртуальный столбец
@@ -236,12 +236,6 @@ Block LogBlockInputStream::readImpl()
 			current_row += marks[mark_number-1].rows;
 		while (current_mark < marks.size() && marks[current_mark].rows <= current_row)
 			++current_mark;
-
-		if (has_null_marks)
-		{
-			while (current_null_mark < null_marks->size() && (*null_marks)[current_null_mark].rows <= current_row)
-				++current_null_mark;
-		}
 
 		current_table = storage.getTableFromMark(current_mark);
 		current_table.second = std::min(current_table.second, marks.size() - 1);
@@ -416,7 +410,8 @@ void LogBlockOutputStream::write(const Block & block)
 	marks.reserve(storage.files.size());
 
 	MarksForColumns null_marks;
-	null_marks.reserve(storage.null_files.size());
+	if (null_marks_stream)
+		null_marks.reserve(storage.null_files.size());
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
@@ -436,6 +431,8 @@ void LogBlockOutputStream::writeSuffix()
 
 	/// Заканчиваем запись.
 	marks_stream.next();
+	if (null_marks_stream)
+		null_marks_stream->next();
 
 	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		it->second->finalize();
@@ -550,17 +547,18 @@ static bool ColumnIndexLess(const std::pair<size_t, Mark> & a, const std::pair<s
 
 void LogBlockOutputStream::writeMarks(MarksForColumns marks)
 {
-	writeMarksImpl(marks, storage.files);
+	writeMarksImpl(marks, marks_stream, storage.files);
 }
 
 
 void LogBlockOutputStream::writeNullMarks(MarksForColumns marks)
 {
-	writeMarksImpl(marks, storage.null_files);
+	if (null_marks_stream)
+		writeMarksImpl(marks, *null_marks_stream, storage.null_files);
 }
 
 
-void LogBlockOutputStream::writeMarksImpl(MarksForColumns marks, StorageLog::Files_t & files_descs)
+void LogBlockOutputStream::writeMarksImpl(MarksForColumns marks, WriteBufferFromFile & stream, StorageLog::Files_t & files_descs)
 {
 	if (marks.size() != storage.files.size())
 		throw Exception("Wrong number of marks generated from block. Makes no sense.", ErrorCodes::LOGICAL_ERROR);
@@ -574,8 +572,8 @@ void LogBlockOutputStream::writeMarksImpl(MarksForColumns marks, StorageLog::Fil
 
 		Mark mark = marks[i].second;
 
-		writeIntBinary(mark.rows, marks_stream);
-		writeIntBinary(mark.offset, marks_stream);
+		writeIntBinary(mark.rows, stream);
+		writeIntBinary(mark.offset, stream);
 
 		files_descs[storage.column_names[i]].marks.push_back(mark);
 	}
@@ -605,7 +603,9 @@ StorageLog::StorageLog(
 		addFile(column.name, *column.type);
 
 	marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
-	null_marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_NULL_MARKS_FILE_NAME);
+
+	if (has_nullable_columns)
+		null_marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_NULL_MARKS_FILE_NAME);
 }
 
 StoragePtr StorageLog::create(
