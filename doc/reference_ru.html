@@ -771,6 +771,11 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 HTTP интерфейс позволяет передать внешние данные (внешние временные таблицы) для использования запроса. Подробнее смотрите раздел "Внешние данные для обработки запроса"
 
 
+==Библиотеки от сторонних разработчиков==
+
+Существуют библиотеки для работы с ClickHouse для <a href="https://github.com/Infinidat/infi.clickhouse_orm">Python</a>, <a href="https://github.com/8bitov/clickhouse-php-client">PHP</a>, <a href="https://github.com/roistat/go-clickhouse">Go</a>, <a href="https://github.com/TimonKK/clickhouse">Node.js</a>.
+
+
 ==Родной интерфейс (TCP)==
 
 Родной интерфейс используется в клиенте командной строки clickhouse-client, при межсерверном взаимодействии для распределённой обработки запроса, а также в программах на C++. Будет рассмотрен только клиент командной строки.
