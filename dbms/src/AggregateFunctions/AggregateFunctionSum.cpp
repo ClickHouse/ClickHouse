@@ -25,7 +25,7 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
 
 void registerAggregateFunctionSum(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction({"sum"}, createAggregateFunctionSum);
+	factory.registerFunction("sum", createAggregateFunctionSum, AggregateFunctionFactory::CaseInsensitive);
 }
 
 }

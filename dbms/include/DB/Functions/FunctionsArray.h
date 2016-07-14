@@ -15,6 +15,7 @@
 #include <DB/Functions/IFunction.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Common/HashTable/ClearableHashMap.h>
+#include <DB/Common/StringUtils.h>
 #include <DB/Interpreters/AggregationCommon.h>
 #include <DB/Functions/FunctionsConditional.h>
 #include <DB/Functions/FunctionsConversion.h>
@@ -888,7 +889,7 @@ public:
 			throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		if (!arguments[1]->isNumeric()
-			|| (0 != arguments[1]->getName().compare(0, 4, "UInt") && 0 != arguments[1]->getName().compare(0, 3, "Int")))
+			|| (!startsWith(arguments[1]->getName(), "UInt") && !startsWith(arguments[1]->getName(), "Int")))
 			throw Exception("Second argument for function " + getName() + " must have UInt or Int type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		return array_type->getNestedType();

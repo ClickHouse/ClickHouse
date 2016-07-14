@@ -3,6 +3,7 @@
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Common/StringUtils.h>
 #include <Poco/DirectoryIterator.h>
 
 
@@ -93,8 +94,7 @@ void StorageSetOrJoinBase::restore()
 		const auto & name = dir_it.name();
 
 		if (dir_it->isFile()
-			&& name.size() > file_suffix_size
-			&& 0 == name.compare(name.size() - file_suffix_size, file_suffix_size, file_suffix)
+			&& endsWith(name, file_suffix)
 			&& dir_it->getSize() > 0)
 		{
 			/// Вычисляем максимальный номер имеющихся файлов с бэкапом, чтобы добавлять следующие файлы с большими номерами.

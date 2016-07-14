@@ -63,8 +63,9 @@ AggregateFunctionPtr createAggregateFunctionQuantilesExact(const std::string & n
 
 void registerAggregateFunctionsQuantileExact(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction({"quantileExact", "medianExact"}, createAggregateFunctionQuantileExact);
-	factory.registerFunction({"quantilesExact"}, createAggregateFunctionQuantilesExact);
+	factory.registerFunction("quantileExact", createAggregateFunctionQuantileExact);
+	factory.registerFunction("medianExact", createAggregateFunctionQuantileExact);
+	factory.registerFunction("quantilesExact", createAggregateFunctionQuantilesExact);
 }
 
 }

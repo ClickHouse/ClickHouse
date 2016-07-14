@@ -432,6 +432,7 @@ add_library (dbms
 	include/DB/Common/getNumberOfPhysicalCPUCores.h
 	include/DB/Common/BitHelpers.h
 	include/DB/Common/BlockFilterCreator.h
+	include/DB/Common/StringUtils.h
 	include/DB/IO/CompressedStream.h
 	include/DB/IO/ReadBufferFromFileDescriptor.h
 	include/DB/IO/CompressedWriteBuffer.h
@@ -601,6 +602,7 @@ add_library (dbms
 	src/Common/ShellCommand.cpp
 	src/Common/isLocalAddress.cpp
 	src/Common/getNumberOfPhysicalCPUCores.cpp
+	src/Common/StringUtils.cpp
 
 	src/Core/Field.cpp
 	src/Core/FieldVisitors.cpp

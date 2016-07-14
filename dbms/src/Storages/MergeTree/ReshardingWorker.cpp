@@ -15,6 +15,7 @@
 
 #include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Common/SipHash.h>
+#include <DB/Common/StringUtils.h>
 
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/Context.h>
@@ -172,7 +173,7 @@ std::string computeHashFromPartition(const std::string & data_path, const std::s
 		const auto filename = it.name();
 		if (!ActiveDataPartSet::isPartDirectory(filename))
 			continue;
-		if (0 != filename.compare(0, partition_name.size(), partition_name))
+		if (!startsWith(filename, partition_name))
 			continue;
 
 		const auto part_path = it.path().absolute().toString();

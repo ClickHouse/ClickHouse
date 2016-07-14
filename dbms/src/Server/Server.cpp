@@ -16,6 +16,7 @@
 
 #include <DB/Common/Macros.h>
 #include <DB/Common/getFQDNOrHostName.h>
+#include <DB/Common/StringUtils.h>
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/ProcessList.h>
@@ -131,7 +132,7 @@ public:
 		{
 			if (uri == "/" || uri == "/ping")
 				return new PingRequestHandler;
-			else if (0 == uri.compare(0, strlen("/replicas_status"), "/replicas_status"))
+			else if (startsWith(uri, "/replicas_status"))
 				return new ReplicasStatusHandler(*server.global_context);
 		}
 
@@ -231,7 +232,7 @@ int Server::main(const std::vector<std::string> & args)
 		Poco::DirectoryIterator dir_end;
 		for (Poco::DirectoryIterator it(tmp_path); it != dir_end; ++it)
 		{
-			if (it->isFile() && 0 == it.name().compare(0, 3, "tmp"))
+			if (it->isFile() && startsWith(it.name(), "tmp"))
 			{
 				LOG_DEBUG(log, "Removing old temporary file " << it->path());
 				it->remove();

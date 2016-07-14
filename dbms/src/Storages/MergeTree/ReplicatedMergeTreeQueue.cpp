@@ -2,6 +2,7 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
+#include <DB/Common/StringUtils.h>
 
 
 namespace DB
@@ -275,7 +276,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 			auto last = end - 1;
 
 			String last_entry = *last;
-			if (0 != last_entry.compare(0, strlen("log-"), "log-"))
+			if (!startsWith(last_entry, "log-"))
 				throw Exception("Error in zookeeper data: unexpected node " + last_entry + " in " + zookeeper_path + "/log",
 					ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER);
 

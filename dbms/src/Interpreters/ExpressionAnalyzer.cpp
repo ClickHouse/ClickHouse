@@ -577,23 +577,28 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 			replaced = true;
 		}
 
-		/// Select implementation of countDistinct based on settings.
-		/// Important that it is done as query rewrite. It means rewritten query
-		///  will be sent to remote servers during distributed query execution,
-		///  and on all remote servers, function implementation will be same.
-		if (func_node->name == "countDistinct")
-			func_node->name = settings.count_distinct_implementation;
-
 		/// Может быть указано IN t, где t - таблица, что равносильно IN (SELECT * FROM t).
 		if (functionIsInOrGlobalInOperator(func_node->name))
 			if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(func_node->arguments->children.at(1).get()))
 				right->kind = ASTIdentifier::Table;
 
-		/// А ещё, в качестве исключения, будем понимать count(*) как count(), а не count(список всех столбцов).
-		if (func_node->name == "count" && func_node->arguments->children.size() == 1
-			&& typeid_cast<const ASTAsterisk *>(func_node->arguments->children[0].get()))
+		/// Special cases for count function.
+		String func_name_lowercase = Poco::toLower(func_node->name);
+		if (startsWith(func_name_lowercase, "count"))
 		{
-			func_node->arguments->children.clear();
+			/// Select implementation of countDistinct based on settings.
+			/// Important that it is done as query rewrite. It means rewritten query
+			///  will be sent to remote servers during distributed query execution,
+			///  and on all remote servers, function implementation will be same.
+			if (endsWith(func_node->name, "Distinct") && func_name_lowercase == "countdistinct")
+				func_node->name = settings.count_distinct_implementation;
+
+			/// As special case, treat count(*) as count(), not as count(list of all columns).
+			if (func_name_lowercase == "count" && func_node->arguments->children.size() == 1
+				&& typeid_cast<const ASTAsterisk *>(func_node->arguments->children[0].get()))
+			{
+				func_node->arguments->children.clear();
+			}
 		}
 	}
 	else if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(ast.get()))

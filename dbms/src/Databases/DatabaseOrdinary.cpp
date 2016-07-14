@@ -4,6 +4,7 @@
 #include <DB/Databases/DatabaseOrdinary.h>
 #include <DB/Databases/DatabasesCommon.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Common/StringUtils.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
@@ -79,13 +80,6 @@ static void loadTable(
 			ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
 	}
 }
-
-
-static bool endsWith(const String & s, const char * suffix)
-{
-	return s.size() >= strlen(suffix) && 0 == s.compare(s.size() - strlen(suffix), strlen(suffix), suffix);
-}
-
 
 
 DatabaseOrdinary::DatabaseOrdinary(

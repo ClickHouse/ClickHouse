@@ -32,6 +32,7 @@
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Common/formatReadable.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/StringUtils.h>
 
 #include <Poco/DirectoryIterator.h>
 
@@ -2648,7 +2649,7 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 			String name = it.name();
 			if (!ActiveDataPartSet::isPartDirectory(name))
 				continue;
-			if (0 != name.compare(0, partition.size(), partition))
+			if (!startsWith(name, partition))
 				continue;
 			LOG_DEBUG(log, "Found part " << name);
 			active_parts.add(name);
@@ -2861,7 +2862,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 	  * Для этого проверяем её узел log_pointer - максимальный номер взятого элемента из log плюс единица.
 	  */
 
-	if (0 == entry.znode_name.compare(0, strlen("log-"), "log-"))
+	if (startsWith(entry.znode_name, "log-"))
 	{
 		/** В этом случае просто берём номер из имени ноды log-xxxxxxxxxx.
 		  */
@@ -2883,7 +2884,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 			event->wait();
 		}
 	}
-	else if (0 == entry.znode_name.compare(0, strlen("queue-"), "queue-"))
+	else if (startsWith(entry.znode_name, "queue-"))
 	{
 		/** В этом случае номер log-ноды неизвестен. Нужно просмотреть все от log_pointer до конца,
 		  *  ища ноду с таким же содержимым. И если мы её не найдём - значит реплика уже взяла эту запись в свою queue.
@@ -3118,7 +3119,7 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const S
 	  */
 	Poco::DirectoryIterator dir_end;
 	for (Poco::DirectoryIterator dir_it{data.getFullPath() + "detached/"}; dir_it != dir_end; ++dir_it)
-		if (0 == dir_it.name().compare(0, partition_str.size(), partition_str))
+		if (startsWith(dir_it.name(), partition_str))
 			throw Exception("Detached partition " + partition_str + " already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
 
 	/// Список реплик шарда-источника.
@@ -3201,7 +3202,7 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const S
 			/// Оставляем только куски нужной партиции.
 			Strings parts_to_fetch_partition;
 			for (const String & part : parts_to_fetch)
-				if (0 == part.compare(0, partition_str.size(), partition_str))
+				if (startsWith(part, partition_str))
 					parts_to_fetch_partition.push_back(part);
 
 			parts_to_fetch = std::move(parts_to_fetch_partition);

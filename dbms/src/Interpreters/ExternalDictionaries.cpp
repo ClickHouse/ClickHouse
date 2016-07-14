@@ -2,6 +2,7 @@
 #include <DB/Dictionaries/DictionaryFactory.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/IDictionarySource.h>
+#include <DB/Common/StringUtils.h>
 #include <ext/scope_guard.hpp>
 #include <Poco/Util/Application.h>
 #include <Poco/Glob.h>
@@ -223,9 +224,9 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 			{
 				std::string name;
 
-				if (0 != strncmp(key.data(), "dictionary", strlen("dictionary")))
+				if (!startsWith(key, "dictionary"))
 				{
-					if (0 != strncmp(key.data(), "comment", strlen("comment")))
+					if (!startsWith(key.data(), "comment"))
 						LOG_WARNING(log,
 							config_path << ": unknown node in dictionaries file: '" << key + "', 'dictionary'");
 

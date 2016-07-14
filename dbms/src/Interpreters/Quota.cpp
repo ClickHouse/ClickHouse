@@ -3,6 +3,7 @@
 #include <common/logger_useful.h>
 
 #include <DB/Common/SipHash.h>
+#include <DB/Common/StringUtils.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/Interpreters/Quota.h>
 
@@ -143,7 +144,7 @@ void QuotaForIntervals::initFromConfig(const String & config_elem, Poco::Util::A
 
 	for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
 	{
-		if (0 != it->compare(0, strlen("interval"), "interval"))
+		if (!startsWith(*it, "interval"))
 			continue;
 
 		String interval_config_elem = config_elem + "." + *it;

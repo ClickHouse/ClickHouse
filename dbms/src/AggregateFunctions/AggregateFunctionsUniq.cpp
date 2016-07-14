@@ -92,25 +92,25 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 
 void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction({"uniq"},
+	factory.registerFunction("uniq",
 		createAggregateFunctionUniq<AggregateFunctionUniqUniquesHashSetData, AggregateFunctionUniqUniquesHashSetDataForVariadic>);
 
-	factory.registerFunction({"uniqHLL12"},
+	factory.registerFunction("uniqHLL12",
 		createAggregateFunctionUniq<AggregateFunctionUniqHLL12Data, AggregateFunctionUniqHLL12DataForVariadic>);
 
-	factory.registerFunction({"uniqExact"},
+	factory.registerFunction("uniqExact",
 		createAggregateFunctionUniq<AggregateFunctionUniqExactData, AggregateFunctionUniqExactData<String>>);
 
-	factory.registerFunction({"uniqCombinedRaw"},
+	factory.registerFunction("uniqCombinedRaw",
 		createAggregateFunctionUniq<AggregateFunctionUniqCombinedRawData, AggregateFunctionUniqCombinedRawData<UInt64>>);
 
-	factory.registerFunction({"uniqCombinedLinearCounting"},
+	factory.registerFunction("uniqCombinedLinearCounting",
 		createAggregateFunctionUniq<AggregateFunctionUniqCombinedLinearCountingData, AggregateFunctionUniqCombinedLinearCountingData<UInt64>>);
 
-	factory.registerFunction({"uniqCombinedBiasCorrected"},
+	factory.registerFunction("uniqCombinedBiasCorrected",
 		createAggregateFunctionUniq<AggregateFunctionUniqCombinedBiasCorrectedData, AggregateFunctionUniqCombinedBiasCorrectedData<UInt64>>);
 
-	factory.registerFunction({"uniqCombined"},
+	factory.registerFunction("uniqCombined",
 		createAggregateFunctionUniq<AggregateFunctionUniqCombinedData, AggregateFunctionUniqCombinedData<UInt64>>);
 }
 

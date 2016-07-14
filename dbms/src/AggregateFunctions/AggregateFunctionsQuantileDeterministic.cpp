@@ -85,8 +85,9 @@ AggregateFunctionPtr createAggregateFunctionQuantilesDeterministic(const std::st
 
 void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction({"quantileDeterministic", "medianDeterministic"}, createAggregateFunctionQuantileDeterministic);
-	factory.registerFunction({"quantilesDeterministic"}, createAggregateFunctionQuantilesDeterministic);
+	factory.registerFunction("quantileDeterministic", createAggregateFunctionQuantileDeterministic);
+	factory.registerFunction("medianDeterministic", createAggregateFunctionQuantileDeterministic);
+	factory.registerFunction("quantilesDeterministic", createAggregateFunctionQuantilesDeterministic);
 }
 
 }
