@@ -1,4 +1,5 @@
 #include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnNullable.h>
 #include <DB/Columns/ColumnsCommon.h>
 #include <DB/Interpreters/ExpressionActions.h>
 
@@ -77,6 +78,12 @@ Block FilterBlockInputStream::readImpl()
 
 		if (column)
 		{
+			if (column.get()->isNullable())
+			{
+				ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(column.get()));
+				column = nullable_col.getNestedColumn();
+			}
+
 			const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(&*column);
 
 			if (column_const)
@@ -110,8 +117,22 @@ Block FilterBlockInputStream::readImpl()
 
 		size_t columns = res.columns();
 		ColumnPtr column = res.getByPosition(filter_column).column;
+		bool is_nullable_column = column.get()->isNullable();
 
-		const ColumnUInt8 * column_vec = typeid_cast<const ColumnUInt8 *>(&*column);
+		auto init_observed_column = [&column, &is_nullable_column]()
+		{
+			if (is_nullable_column)
+			{
+				ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column.get());
+				return nullable_col.getNestedColumn().get();
+			}
+			else
+				return column.get();
+		};
+
+		IColumn * observed_column = init_observed_column();
+
+		const ColumnUInt8 * column_vec = typeid_cast<const ColumnUInt8 *>(observed_column);
 		if (!column_vec)
 		{
 			/** Бывает, что на этапе анализа выражений (в sample_block) столбцы-константы ещё не вычислены,
@@ -119,7 +140,7 @@ Block FilterBlockInputStream::readImpl()
 			  * Это происходит, если функция возвращает константу для неконстантного аргумента.
 			  * Например, функция ignore.
 			  */
-			const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(&*column);
+			const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(observed_column);
 
 			if (column_const)
 			{
@@ -137,6 +158,28 @@ Block FilterBlockInputStream::readImpl()
 
 			throw Exception("Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8.",
 				ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+		}
+
+		if (is_nullable_column)
+		{
+			/// Exclude the entries of the filter column that actually are NULL values.
+
+			/// Access the filter content.
+			ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(column.get()));
+			auto & nested_col = nullable_col.getNestedColumn();
+			auto & actual_col = static_cast<ColumnUInt8 &>(*(nested_col.get()));
+			auto & filter_col = actual_col.getData();
+
+			/// Access the null values byte map content.
+			ColumnPtr & null_map = nullable_col.getNullValuesByteMap();
+			ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*(null_map.get()));
+			auto & data = content.getData();
+
+			for (size_t i = 0; i < data.size(); ++i)
+			{
+				if (data[i] != 0)
+					filter_col[i] = 0;
+			}
 		}
 
 		const IColumn::Filter & filter = column_vec->getData();
