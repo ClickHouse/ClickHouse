@@ -258,8 +258,17 @@ Block LogBlockInputStream::readImpl()
 
 		bool read_offsets = true;
 
+		const IDataType * observed_type;
+		if (column.type.get()->isNullable())
+		{
+			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(column.type.get()));
+			observed_type = nullable_type.getNestedType().get();
+		}
+		else
+			observed_type = column.type.get();
+
 		/// Для вложенных структур запоминаем указатели на столбцы со смещениями
-		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&*column.type))
+		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(observed_type))
 		{
 			String name = DataTypeNested::extractNestedTableName(column.name);
 

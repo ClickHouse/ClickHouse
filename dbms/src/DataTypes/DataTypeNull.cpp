@@ -1,6 +1,10 @@
 #include <DB/DataTypes/DataTypeNull.h>
 #include <DB/DataTypes/NullSymbol.h>
 #include <DB/Columns/ColumnNull.h>
+#include <DB/IO/ReadBuffer.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
 
 namespace DB
 {

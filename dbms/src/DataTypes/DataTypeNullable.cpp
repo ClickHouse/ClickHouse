@@ -1,13 +1,46 @@
 #include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/DataTypes/NullSymbol.h>
 #include <DB/Columns/ColumnNullable.h>
 #include <DB/Common/typeid_cast.h>
-#include <DB/DataTypes/NullSymbol.h>
+#include <DB/IO/ReadBuffer.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
 
 namespace DB
 {
 
 namespace
 {
+
+template <typename Null>
+struct Deserializer
+{
+	static bool execute(IColumn & column, ReadBuffer & istr, NullValuesByteMap * null_map)
+	{
+		if (null_map != nullptr)
+		{
+			if (!istr.eof())
+			{
+				if (*istr.position() == Null::prefix)
+				{
+					++istr.position();
+					if (Null::length > 1)
+						assertString(Null::suffix, istr);
+					null_map->push_back(1);
+					return true;
+				}
+				else
+				{
+					null_map->push_back(0);
+					return false;
+				}
+			}
+		}
+
+		return false;
+	}
+};
 
 inline bool isNullValue(const NullValuesByteMap * null_map, size_t row_num)
 {
@@ -116,7 +149,7 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
 	ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
 	auto & null_map = content.getData();
 
-	if (NullSymbol::Deserializer<NullSymbol::Escaped>::execute(column, istr, &null_map))
+	if (Deserializer<NullSymbol::Escaped>::execute(column, istr, &null_map))
 	{
 		ColumnPtr & nested_col = col->getNestedColumn();
 		nested_col.get()->insertDefault();
@@ -149,7 +182,7 @@ void DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
 	ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
 	auto & null_map = content.getData();
 
-	if (NullSymbol::Deserializer<NullSymbol::Quoted>::execute(column, istr, &null_map))
+	if (Deserializer<NullSymbol::Quoted>::execute(column, istr, &null_map))
 	{
 		ColumnPtr & nested_col = col->getNestedColumn();
 		nested_col.get()->insertDefault();
@@ -182,7 +215,7 @@ void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
 	ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
 	auto & null_map = content.getData();
 
-	if (NullSymbol::Deserializer<NullSymbol::Quoted>::execute(column, istr, &null_map))
+	if (Deserializer<NullSymbol::Quoted>::execute(column, istr, &null_map))
 	{
 		ColumnPtr & nested_col = col->getNestedColumn();
 		nested_col.get()->insertDefault();
@@ -230,7 +263,7 @@ void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr) 
 	ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
 	auto & null_map = content.getData();
 
-	if (NullSymbol::Deserializer<NullSymbol::JSON>::execute(column, istr, &null_map))
+	if (Deserializer<NullSymbol::JSON>::execute(column, istr, &null_map))
 	{
 		ColumnPtr & nested_col = col->getNestedColumn();
 		nested_col.get()->insertDefault();
