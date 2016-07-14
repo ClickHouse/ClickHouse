@@ -3520,20 +3520,20 @@ You can use this format to quickly generate dumps that can only be read by the C
 
 In TabSeparated format, data is written by row. Each row contains values separated by tabs. Each value is follow by a tab, except the last value in the row, which is followed by a line break. Strictly Unix line breaks are assumed everywhere. The last row also must contain a line break at the end. Values are written in text format, without enclosing quotation marks, and with special characters escaped.
 
-Whole numbers are written in decimal form. Numbers may contain an extra &quot;+&quot; symbol at the beginning (but it is not recorded during a write). Non-negative numbers can&#39;t contain the negative sign. When reading, it is allowed to parse an empty string as a zero, or (for signed types) a string consisting of just a minus sign as a zero. Numbers that do not fit into the corresponding data type may be parsed as a different number, without an error message.
+Numbers are written in decimal form. Numbers may contain an extra &quot;+&quot; symbol at the beginning (but it is not recorded during an output). Non-negative numbers can&#39;t contain the negative sign. When parsing, it is allowed to parse an empty string as a zero, or (for signed types) a string consisting of just a minus sign as a zero. Numbers that do not fit into the corresponding data type may be parsed as a different number, without an error message.
 
-Floating-point numbers are written in decimal form. The dot is used as the decimal separator. Exponential entries are supported, as are &#39;inf&#39;, &#39;+inf&#39;, &#39;-inf&#39;, and &#39;nan&#39;. An entry of floating-point numbers may begin or end with a decimal point.
-For writes, accuracy may be lost on floating-point numbers.
-For reads, a result is not necessarily the nearest machine-representable number.
+Floating-point numbers are formatted in decimal form. The dot is used as the decimal separator. Exponential entries are supported, as are &#39;inf&#39;, &#39;+inf&#39;, &#39;-inf&#39;, and &#39;nan&#39;. An entry of floating-point numbers may begin or end with a decimal point.
+During formatting, accuracy may be lost on floating-point numbers.
+During parsing, a result is not necessarily the nearest machine-representable number.
 
-Data is written in YYYY-MM-DD format and read in the same format, but with any characters as separators.
-Dates with times are written in the format YYYY-MM-DD hh:mm:ss and read in the same format, but with any characters as separators.
-This all occurs in the system time zone at the time the client or server starts (depending on which one formats data). For dates with times, daylight saving time is not specified. So if a dump has times during daylight saving time, the dump does not unequivocally match the data, and a read will select one of the two times.
-During a read operation, incorrect dates and dates with times can be parsed with natural overflow or as null dates and times, without an error message.
+Dates are formatted in YYYY-MM-DD format and parsed in the same format, but with any characters as separators.
+DateTimes are formatted in the format YYYY-MM-DD hh:mm:ss and parsed in the same format, but with any characters as separators.
+This all occurs in the system time zone at the time the client or server starts (depending on which one formats data). For DateTimes, daylight saving time is not specified. So if a dump has times during daylight saving time, the dump does not unequivocally match the data, and parsing will select one of the two times.
+During a parsing operation, incorrect dates and dates with times can be parsed with natural overflow or as null dates and times, without an error message.
 
-As an exception, reading dates with times is also supported in Unix timestamp format, if it consists of exactly 10 decimal digits. However, the result is not time zone-dependent. The formats YYYY-MM-DD hh:mm:ss and NNNNNNNNNN are differentiated automatically.
+As an exception, parsing DateTime is also supported in Unix timestamp format, if it consists of exactly 10 decimal digits. The result is not time zone-dependent. The formats YYYY-MM-DD hh:mm:ss and NNNNNNNNNN are differentiated automatically.
 
-Strings are written with backslash-escaped special characters. The following escape sequences are used: %%\b%%, %%\f%%, %%\r,%% %%\n%%, %%\t%%, %%\0%%, %%\&#39;%%, and %%\\%%. For a read, any sequences of the type <span class="inline-example">\<i>x</i></span> are also supported, where <i>x</i> is any character. These sequences are converted to <i>x</i>. This means that a read supports formats where a line break can be written as %%\n%% or as %%\%% and a line break. For example, the string &#39;Hello world&#39; with a line break between the words instead of a space can be retrieved in any of the following variations:
+Strings are parsed and formatted with backslash-escaped special characters. The following escape sequences are used while formatting: %%\b%%, %%\f%%, %%\r,%% %%\n%%, %%\t%%, %%\0%%, %%\&#39;%%, and %%\\%%. For parsing, also supported %%\a%%, %%\v%% and <span class="inline-example">\x<i>HH</i></span> (hex escape sequence) and any sequences of the type <span class="inline-example">\<i>c</i></span> where <i>c</i> is any character (these sequences are converted to <i>c</i>). This means that parsing supports formats where a line break can be written as %%\n%% or as %%\%% and a line break. For example, the string &#39;Hello world&#39; with a line break between the words instead of a space can be retrieved in any of the following variations:
 
 %%Hello\nworld%%
 
@@ -3544,7 +3544,7 @@ The second variant is supported because MySQL uses it when writing tab-separated
 
 Only a small set of symbols are escaped. You can easily stumble onto a string value that your terminal will ruin in output.
 
-Arrays are written as a list of comma-separated values in square brackets. Number items in the array are written as normally, but dates, dates with times, and strings are written in single quotes with the same escaping rules as above.
+Arrays are formatted as a list of comma-separated values in square brackets. Number items in the array are formatted as normally, but dates, dates with times, and strings are formatted in single quotes with the same escaping rules as above.
 
 The TabSeparated format is convenient for processing data using custom programs and scripts. It is used by default in the HTTP interface, and in the command-line client&#39;s batch mode. This format also allows transferring data between different DBMSs. For example, you can get a dump from MySQL and upload it to ClickHouse, or vice versa.
 
@@ -3569,20 +3569,21 @@ The TabSeparated format supports outputting total values (when using WITH TOTALS
 
 ==TabSeparatedWithNames==
 
-Differs from the TabSeparated format in that the column names are written in the first row.
-For a read, the first row is completely ignored. You can&#39;t use column names to determine their position or to check their correctness.
+Differs from the TabSeparated format in that the column names are output in the first row.
+For parsing, the first row is completely ignored. You can&#39;t use column names to determine their position or to check their correctness.
+(Support for using header while parsing could be added in future.)
 
 
 ==TabSeparatedWithNamesAndTypes==
 
-Differs from the TabSeparated format in that the column names are written to the first row, while the column types are in the second row.
-For a read, the first and second rows are completely ignored.
+Differs from the TabSeparated format in that the column names are output to the first row, while the column types are in the second row.
+For parsing, the first and second rows are completely ignored.
 
 
 ==TabSeparatedRaw==
 
-Differs from the TabSeparated format in that the rows are written without escaping.
-This format is only appropriate for writing (outputting a query result), but not for reading (retrieving data to insert in a table).
+Differs from the TabSeparated format in that the rows are formatted without escaping.
+This format is only appropriate for outputting a query result, but not for parsing data to insert into a table.
 
 
 ==BlockTabSeparated==
@@ -3592,7 +3593,23 @@ Each block consists of parts of columns, each of which is written on a separate 
 The values are tab-separated. The last value in a column part is followed by a line break instead of a tab.
 Blocks are separated by a double line break.
 The rest of the rules are the same as in the TabSeparated format.
-This format is only appropriate for writes, not for reads.
+This format is only appropriate for outputting a query result, not for parsing.
+
+
+==CSV==
+
+Comma separated values (<a href="https://tools.ietf.org/html/rfc4180">RFC</a>).
+
+String values are output in double quotes. Double quote inside a string is output as two consecutive double quotes. That's all escaping rules. Date and DateTime values are output in double quotes. Numbers are output without quotes. Fields are delimited by commas. Rows are delimited by unix newlines (LF). Arrays are output in following way: first, array are serialized to String (as in TabSeparated or Values formats), and then the String value are output in double quotes. Tuples are narrowed and serialized as separate columns.
+
+During parsing, values could be enclosed or not enclosed in quotes. Supported both single and double quotes. In particular, Strings could be represented without quotes - in that case, they are parsed up to comma or newline (CR or LF). Contrary to RFC, in case of parsing strings without quotes, leading and trailing spaces and tabs are ignored. As line delimiter, both Unix (LF), Windows (CR LF) or Mac OS Classic (LF CR) variants are supported.
+
+CSV format supports output of totals and extremes similar to TabSeparated format.
+
+
+==CSVWithNames==
+
+Also contains header, similar to TabSeparatedWithNames.
 
 
 ==RowBinary==
@@ -3600,13 +3617,20 @@ This format is only appropriate for writes, not for reads.
 Writes data by row in binary format. Rows and values are listed consecutively, without separators.
 This format is less efficient than the Native format, since it is row-based.
 
+Numbers is written in little endian, fixed width. For example, UInt64 takes 8 bytes.
+DateTime is written as UInt32 with unix timestamp value.
+Date is written as UInt16 with number of days since 1970-01-01 in value.
+String is written as length in varint (unsigned <a href="https://en.wikipedia.org/wiki/LEB128">LEB128</a>) format and then bytes of string.
+FixedString is written as just its bytes.
+Array is written as length in varint (unsigned <a href="https://en.wikipedia.org/wiki/LEB128">LEB128</a>) format and then all elements, contiguously.
+
 
 ==Pretty==
 
 Writes data as Unicode-art tables, also using ANSI-escape sequences for setting colors in the terminal.
 A full grid of the table is drawn, and each row occupies two lines in the terminal. Each result block is output as a separate table. This is necessary so that blocks can be output without buffering results (buffering would be necessary in order to pre-calculate the visible width of all the values).
 To avoid dumping too much data to the terminal, only the first 10,000 rows are printed. If the number of rows is greater than or equal to 10,000, the message &quot;Showed first 10,000&quot; is printed.
-This format is only appropriate for writes (outputting a query result), but not for reads.
+This format is only appropriate for outputting a query result, not for parsing.
 
 The Pretty format supports outputting total values (when using WITH TOTALS) and extremes (when &#39;extremes&#39; is set to 1). In these cases, total values and extreme values are output after the main data, in separate tables. Example (shown for the PrettyCompact format):
 
@@ -3673,15 +3697,15 @@ The same.
 ==Vertical==
 
 Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows, if each row consists of a large number of columns.
-This format is only appropriate for writes, not for reads.
+This format is only appropriate for outputting a query result, not for parsing.
 
 
 ==Values==
 
-Prints every row in brackets. Rows are separated by commas. There is no comma after the last row. The values inside the brackets are also comma-separated. Numbers are output in decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are similar to the TabSeparated format. During formatting, extra spaces aren&#39;t inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed).
+Prints every row in parentheses. Rows are separated by commas. There is no comma after the last row. The values inside the parentheses are also comma-separated. Numbers are output in decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are same as in the TabSeparated format. During formatting, extra spaces aren&#39;t inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed).
 
 This is the format that is used in INSERT INTO t VALUES ...
-But you can also use it for output.
+But you can also use it for query result.
 
 
 ==JSON==
@@ -3763,9 +3787,9 @@ If the query contains GROUP BY, %%rows_before_limit_at_least%% is the exact numb
 %%totals%% - Total values (when using %%WITH TOTALS%%).
 %%extremes%% - Extreme values (when %%extremes%% is set to 1).
 
-
-This format is only appropriate for reads (SELECT queries), not for writes (INSERT queries).
+This format is only appropriate for outputting a query result, not for parsing.
 See JSONEachRow format for INSERT queries.
+
 
 ==JSONCompact==
 
@@ -3808,10 +3832,13 @@ Differs from JSON only in that data rows are output in arrays, not in objects. E
 }
 %%
 
+This format is only appropriate for outputting a query result, not for parsing.
+See JSONEachRow format for INSERT queries.
+
 
 ==JSONEachRow==
 
-If put in SELECT query, displays data in NEWLINE_DELIMITED_JSON (JSON objects separated by \\n character) format.
+If put in SELECT query, displays data in newline delimited JSON (JSON objects separated by \\n character) format.
 If put in INSERT query, expects this kind of data as input.
 
 %%
@@ -3827,11 +3854,12 @@ If put in INSERT query, expects this kind of data as input.
 {"SearchPhrase":"baku","count()":"1000"}
 %%
 
-Unlike JSON format, there are no replacements of invalid UTF-8 sequences. There can be arbitrary amount of bytes in a line. 
+Unlike JSON format, there are no replacements of invalid UTF-8 sequences. There can be arbitrary amount of bytes in a line.
 This is done in order to avoid data loss during formatting. Values are displayed analogous to JSON format.
 
-In INSERT queries JSON data can be supplied with arbitrary order of columns(JSON key-value pairs). It is also possible to omit values in which case the default value of the column is inserted. N.B. when using JSONEachRow format, complex default values are not supported, so when omitting a column its value will be zeros or empty string depending on its type.
-Space characters between JSON objects are skipped. Between objects there can be a comma which is ignored. NEWLINE character is not a mandatory separator for objects.
+In INSERT queries JSON data can be supplied with arbitrary order of columns (JSON key-value pairs). It is also possible to omit values in which case the default value of the column is inserted. N.B. when using JSONEachRow format, complex default values are not supported, so when omitting a column its value will be zeros or empty string depending on its type.
+
+Space characters between JSON objects are skipped. Between objects there can be a comma which is ignored. Newline character is not a mandatory separator for objects.
 
 
 ==TSKV==
@@ -3853,13 +3881,12 @@ SearchPhrase=baku       count()=1000
 
 In case of many small columns this format is obviously not effective and there usually is no reason to use it. This format is supported because it is used for some cases in Yandex.
 
-Format is supported both for read and write. In INSERT queries data can be supplied with arbitrary order of columns. It is also possible to omit values in which case the default value of the column is inserted. N.B. when using TSKV format, complex default values are not supported, so when omitting a column its value will be zeros or empty string depending on its type.
-
+Format is supported both for input and output. In INSERT queries data can be supplied with arbitrary order of columns. It is also possible to omit values in which case the default value of the column is inserted. N.B. when using TSKV format, complex default values are not supported, so when omitting a column its value will be zeros or empty string depending on its type.
 
 
 ==XML==
 
-XML format is supported only for displaying data not for INSERTS. Example:
+XML format is supported only for displaying data, not for INSERTS. Example:
 
 %%
 &lt;?xml version='1.0' encoding='UTF-8' ?&gt;
@@ -3934,7 +3961,8 @@ and tuples as %%&lt;tuple&gt;&lt;elem&gt;Hello&lt;/elem&gt;&lt;elem&gt;World&lt;
 
 ==Null==
 
-Nothing is output. However, the query is processed, and when using the command-line client, data is transmitted to the client. This is used for tests, including productivity testing. Obviously, this format is only appropriate for writes, not for reads.
+Nothing is output. However, the query is processed, and when using the command-line client, data is transmitted to the client. This is used for tests, including productivity testing. Obviously, this format is only appropriate for outputting a query result, not for parsing.
+
 
 </div>
 <div class="island">
