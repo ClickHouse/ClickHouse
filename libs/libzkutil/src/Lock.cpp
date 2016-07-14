@@ -120,7 +120,7 @@ std::string Lock::status2String(Status status)
 	return names[status];
 }
 
-void Lock::unlockAndMoveIfFailed(std::vector<zkutil::Lock> & failed_to_unlock_locks)
+void Lock::unlockOrMoveIfFailed(std::vector<zkutil::Lock> & failed_to_unlock_locks)
 {
 	try
 	{
