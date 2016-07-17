@@ -582,6 +582,7 @@ struct AggregateFunctionAnyHeavyData : Data
 			if (counter == 0)
 			{
 				this->change(column, row_num);
+				++counter;
 				return true;
 			}
 			else
@@ -607,6 +608,18 @@ struct AggregateFunctionAnyHeavyData : Data
 				counter -= to.counter;
 		}
 		return false;
+	}
+
+	void write(WriteBuffer & buf, const IDataType & data_type) const
+	{
+		Data::write(buf, data_type);
+		writeBinary(counter, buf);
+	}
+
+	void read(ReadBuffer & buf, const IDataType & data_type)
+	{
+		Data::read(buf, data_type);
+		readBinary(counter, buf);
 	}
 
 	static const char * name() { return "anyHeavy"; }
