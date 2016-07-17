@@ -9,7 +9,7 @@
 namespace DB
 {
 
-/** SELECT запрос
+/** SELECT query
   */
 class ASTSelectQuery : public ASTQueryWithOutput
 {
@@ -49,10 +49,10 @@ public:
 	bool distinct = false;
 	ASTPtr select_expression_list;
 	ASTPtr database;
-	ASTPtr table;	/// Имя таблицы, табличная функция или подзапрос (рекурсивно ASTSelectQuery)
+	ASTPtr table;	/// Name of table, table function or subquery (recursivelly ASTSelectQuery)
 	bool array_join_is_left = false;	/// LEFT ARRAY JOIN
 	ASTPtr array_join_expression_list;	/// ARRAY JOIN
-	ASTPtr join;						/// Обычный (не ARRAY) JOIN.
+	ASTPtr join;						/// Ordinary (not ARRAY) JOIN.
 	bool final = false;
 	ASTPtr sample_size;
 	ASTPtr sample_offset;
@@ -71,9 +71,8 @@ public:
 	/// Следующий запрос SELECT в цепочке UNION ALL, если такой есть
 	ASTPtr next_union_all;
 	/// Предыдущий запрос SELECT в цепочке UNION ALL (не вставляется в children и не клонируется)
-	/// Указатель голый по следующим двум причинам:
+	/// Указатель голый по следующим причинам:
 	/// 1. чтобы предотвратить появление циклических зависимостей и, значит, утечки памяти;
-	/// 2. библиотека Poco не поддерживает указателей наподобие std::weak_ptr.
 	IAST * prev_union_all = nullptr;
 
 protected:

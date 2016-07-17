@@ -132,6 +132,7 @@ add_library (dbms
 	include/DB/Parsers/ASTSampleRatio.h
 	include/DB/Parsers/ParserSampleRatio.h
 	include/DB/Parsers/ParserCase.h
+	include/DB/Parsers/ASTTablesInSelectQuery.h
 	include/DB/AggregateFunctions/AggregateFunctionMerge.h
 	include/DB/AggregateFunctions/AggregateFunctionUniqUpTo.h
 	include/DB/AggregateFunctions/AggregateFunctionIf.h
@@ -781,6 +782,7 @@ add_library (dbms
 	src/Parsers/ASTWithAlias.cpp
 	src/Parsers/ASTIdentifier.cpp
 	src/Parsers/ASTSampleRatio.cpp
+	src/Parsers/ASTTablesInSelectQuery.cpp
 	src/Parsers/IAST.cpp
 	src/Parsers/IParserBase.cpp
 	src/Parsers/ExpressionElementParsers.cpp
