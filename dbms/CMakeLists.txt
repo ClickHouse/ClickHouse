@@ -82,7 +82,6 @@ add_library (dbms
 	include/DB/Parsers/ASTExpressionList.h
 	include/DB/Parsers/ASTQueryWithOutput.h
 	include/DB/Parsers/ParserSelectQuery.h
-	include/DB/Parsers/ParserTableExpression.h
 	include/DB/Parsers/ParserUseQuery.h
 	include/DB/Parsers/ASTShowTablesQuery.h
 	include/DB/Parsers/ASTFunction.h
@@ -133,6 +132,7 @@ add_library (dbms
 	include/DB/Parsers/ParserSampleRatio.h
 	include/DB/Parsers/ParserCase.h
 	include/DB/Parsers/ASTTablesInSelectQuery.h
+	include/DB/Parsers/ParserTablesInSelectQuery.h
 	include/DB/AggregateFunctions/AggregateFunctionMerge.h
 	include/DB/AggregateFunctions/AggregateFunctionUniqUpTo.h
 	include/DB/AggregateFunctions/AggregateFunctionIf.h
@@ -790,7 +790,6 @@ add_library (dbms
 	src/Parsers/ParserQueryWithOutput.cpp
 	src/Parsers/ParserCreateQuery.cpp
 	src/Parsers/ParserSelectQuery.cpp
-	src/Parsers/ParserTableExpression.cpp
 	src/Parsers/ParserJoin.cpp
 	src/Parsers/ParserInsertQuery.cpp
 	src/Parsers/ParserDropQuery.cpp
@@ -804,6 +803,7 @@ add_library (dbms
 	src/Parsers/ParserCheckQuery.cpp
 	src/Parsers/ParserSampleRatio.cpp
 	src/Parsers/ParserCase.cpp
+	src/Parsers/ParserTablesInSelectQuery.cpp
 	src/Parsers/formatAST.cpp
 	src/Parsers/parseQuery.cpp
 	src/Parsers/queryToString.cpp

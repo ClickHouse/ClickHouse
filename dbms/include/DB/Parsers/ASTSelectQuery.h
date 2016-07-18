@@ -48,14 +48,7 @@ private:
 public:
 	bool distinct = false;
 	ASTPtr select_expression_list;
-	ASTPtr database;
-	ASTPtr table;	/// Name of table, table function or subquery (recursivelly ASTSelectQuery)
-	bool array_join_is_left = false;	/// LEFT ARRAY JOIN
-	ASTPtr array_join_expression_list;	/// ARRAY JOIN
-	ASTPtr join;						/// Ordinary (not ARRAY) JOIN.
-	bool final = false;
-	ASTPtr sample_size;
-	ASTPtr sample_offset;
+	ASTPtr tables;
 	ASTPtr prewhere_expression;
 	ASTPtr where_expression;
 	ASTPtr group_expression_list;
@@ -65,6 +58,16 @@ public:
 	ASTPtr limit_offset;
 	ASTPtr limit_length;
 	ASTPtr settings;
+
+	/// TODO remove
+	ASTPtr database;
+	ASTPtr table;
+	ASTPtr sample_size;
+	ASTPtr sample_offset;
+	ASTPtr array_join_expression_list;
+	ASTPtr join;
+	bool array_join_is_left;
+	bool final;
 
 	/// Двусвязный список запросов SELECT внутри запроса UNION ALL.
 

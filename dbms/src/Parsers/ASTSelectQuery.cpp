@@ -191,12 +191,7 @@ ASTPtr ASTSelectQuery::cloneImpl(bool traverse_union_all) const
 		*  то на разных серверах получатся разные идентификаторы.
 		*/
 	CLONE(select_expression_list)
-	CLONE(database)
-	CLONE(table)
-	CLONE(array_join_expression_list)
-	CLONE(join)
-	CLONE(sample_size)
-	CLONE(sample_offset)
+	CLONE(tables)
 	CLONE(prewhere_expression)
 	CLONE(where_expression)
 	CLONE(group_expression_list)
@@ -244,69 +239,10 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 		? select_expression_list->formatImpl(s, state, frame)
 		: typeid_cast<const ASTExpressionList &>(*select_expression_list).formatImplMultiline(s, state, frame);
 
-	if (table)
+	if (tables)
 	{
 		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FROM " << (s.hilite ? hilite_none : "");
-
-		if (typeid_cast<const ASTSelectQuery *>(&*table))
-		{
-			if (s.one_line)
-				s.ostr << " (";
-			else
-				s.ostr << "\n" << indent_str << "(\n";
-
-			FormatStateStacked frame_with_indent = frame;
-			++frame_with_indent.indent;
-			table->formatImpl(s, state, frame_with_indent);
-
-			if (s.one_line)
-				s.ostr << ")";
-			else
-				s.ostr << "\n" << indent_str << ")";
-		}
-		else
-		{
-			if (database)
-			{
-				database->formatImpl(s, state, frame);
-				s.ostr << ".";
-			}
-
-			table->formatImpl(s, state, frame);
-		}
-	}
-
-	if (final)
-	{
-		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FINAL" << (s.hilite ? hilite_none : "");
-	}
-
-	if (sample_size)
-	{
-		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SAMPLE " << (s.hilite ? hilite_none : "");
-		sample_size->formatImpl(s, state, frame);
-
-		if (sample_offset)
-		{
-			s.ostr << (s.hilite ? hilite_keyword : "") << ' ' << "OFFSET " << (s.hilite ? hilite_none : "");
-			sample_offset->formatImpl(s, state, frame);
-		}
-	}
-
-	if (array_join_expression_list)
-	{
-		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str
-		<< (array_join_is_left ? "LEFT " : "") << "ARRAY JOIN " << (s.hilite ? hilite_none : "");
-
-		s.one_line
-			? array_join_expression_list->formatImpl(s, state, frame)
-			: typeid_cast<const ASTExpressionList &>(*array_join_expression_list).formatImplMultiline(s, state, frame);
-	}
-
-	if (join)
-	{
-		s.ostr << " ";
-		join->formatImpl(s, state, frame);
+		tables->formatImpl(s, state, frame);
 	}
 
 	if (prewhere_expression)

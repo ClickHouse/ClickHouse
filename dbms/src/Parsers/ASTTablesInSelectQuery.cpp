@@ -8,7 +8,7 @@ do \
 { \
 	if (member) \
 	{ \
-		res->member = std::static_pointer_cast<decltype(res->member)::element_type>(member->clone()); \
+		res->member = member->clone(); \
 		res->children.push_back(res->member); \
 	} \
 } \
@@ -180,14 +180,14 @@ void ASTTablesInSelectQueryElement::formatImpl(const FormatSettings & settings, 
 	if (table_expression)
 	{
 		if (table_join)
-			table_join->formatImplBeforeTable(settings, state, frame);
+			static_cast<const ASTTableJoin &>(*table_join).formatImplBeforeTable(settings, state, frame);
 
 		settings.ostr << " ";
 		table_expression->formatImpl(settings, state, frame);
 
 		settings.ostr << " ";
 		if (table_join)
-			table_join->formatImplAfterTable(settings, state, frame);
+			static_cast<const ASTTableJoin &>(*table_join).formatImplAfterTable(settings, state, frame);
 	}
 	else if (array_join)
 	{
