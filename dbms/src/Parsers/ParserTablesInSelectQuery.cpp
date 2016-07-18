@@ -32,7 +32,8 @@ bool ParserTableExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 	{
 		static_cast<ASTFunction &>(*res->table_function).kind = ASTFunction::TABLE_FUNCTION;
 	}
-	else if (ParserCompoundIdentifier().parse(pos, end, res->database_and_table_name, max_parsed_pos, expected))
+	else if (ParserWithOptionalAlias(std::make_unique<ParserCompoundIdentifier>(), true)
+		.parse(pos, end, res->database_and_table_name, max_parsed_pos, expected))
 	{
 		static_cast<ASTIdentifier &>(*res->database_and_table_name).kind = ASTIdentifier::Table;
 	}
@@ -243,7 +244,8 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, Pos end, ASTPtr & no
 			{
 				ws.ignore(pos, end);
 
-				if (!ParserExpressionElement().parse(pos, end, table_join->on_expression, max_parsed_pos, expected))
+				/// OR is operator with lowest priority, so start parsing from it.
+				if (!ParserLogicalOrExpression().parse(pos, end, table_join->on_expression, max_parsed_pos, expected))
 					return false;
 
 				ws.ignore(pos, end);
@@ -291,6 +293,7 @@ bool ParserTablesInSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos
 	while (ParserTablesInSelectQueryElement(false).parse(pos, end, child, max_parsed_pos, expected))
 		res->children.emplace_back(child);
 
+	node = res;
 	return true;
 }
 

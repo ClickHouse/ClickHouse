@@ -5,7 +5,6 @@
 #include <DB/Parsers/CommonParsers.h>
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ExpressionListParsers.h>
-#include <DB/Parsers/ParserJoin.h>
 #include <DB/Parsers/ParserSetQuery.h>
 #include <DB/Parsers/ParserSampleRatio.h>
 #include <DB/Parsers/ParserSelectQuery.h>
@@ -47,7 +46,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	ParserNotEmptyExpressionList exp_list(false);
 	ParserNotEmptyExpressionList exp_list_for_select_clause(true);	/// Allows aliases without AS keyword.
 	ParserExpressionWithOptionalAlias exp_elem(false);
-	ParserJoin join;
 	ParserOrderByExpressionList order_list;
 
 	ws.ignore(pos, end);

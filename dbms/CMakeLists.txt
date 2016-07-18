@@ -94,7 +94,6 @@ add_library (dbms
 	include/DB/Parsers/ASTSubquery.h
 	include/DB/Parsers/ASTUseQuery.h
 	include/DB/Parsers/ASTIdentifier.h
-	include/DB/Parsers/ParserJoin.h
 	include/DB/Parsers/ParserTablePropertiesQuery.h
 	include/DB/Parsers/ASTJoin.h
 	include/DB/Parsers/ParserCheckQuery.h
@@ -790,7 +789,6 @@ add_library (dbms
 	src/Parsers/ParserQueryWithOutput.cpp
 	src/Parsers/ParserCreateQuery.cpp
 	src/Parsers/ParserSelectQuery.cpp
-	src/Parsers/ParserJoin.cpp
 	src/Parsers/ParserInsertQuery.cpp
 	src/Parsers/ParserDropQuery.cpp
 	src/Parsers/ParserRenameQuery.cpp

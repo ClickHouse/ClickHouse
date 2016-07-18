@@ -119,21 +119,55 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
 {
 	settings.ostr << (settings.hilite ? hilite_keyword : "");
 
-	if (locality == Locality::Global)
-		settings.ostr << "GLOBAL ";
+	switch (locality)
+	{
+		case Locality::Unspecified:
+			break;
+		case Locality::Local:
+			break;
+		case Locality::Global:
+			settings.ostr << "GLOBAL ";
+			break;
+	}
 
 	if (kind != Kind::Cross && kind != Kind::Comma)
-		settings.ostr << (strictness == Strictness::Any ? "ANY " : "ALL ");
+	{
+		switch (strictness)
+		{
+			case Strictness::Unspecified:
+				break;
+			case Strictness::Any:
+				settings.ostr << "ANY ";
+				break;
+			case Strictness::All:
+				settings.ostr << "ALL ";
+				break;
+		}
+	}
 
-	settings.ostr <<
-		  (kind == Kind::Inner ? "INNER"
-		: (kind == Kind::Left ? "LEFT"
-		: (kind == Kind::Right ? "RIGHT"
-		: (kind == Kind::Cross ? "CROSS"
-		: "FULL OUTER"))));
+	switch (kind)
+	{
+		case Kind::Inner:
+			settings.ostr << "INNER JOIN";
+			break;
+		case Kind::Left:
+			settings.ostr << "LEFT JOIN";
+			break;
+		case Kind::Right:
+			settings.ostr << "RIGHT JOIN";
+			break;
+		case Kind::Full:
+			settings.ostr << "FULL OUTER JOIN";
+			break;
+		case Kind::Cross:
+			settings.ostr << "CROSS JOIN";
+			break;
+		case Kind::Comma:
+			settings.ostr << ",";
+			break;
+	}
 
-	settings.ostr << " JOIN "
-		<< (settings.hilite ? hilite_none : "");
+	settings.ostr << (settings.hilite ? hilite_none : "");
 }
 
 
@@ -143,14 +177,14 @@ void ASTTableJoin::formatImplAfterTable(const FormatSettings & settings, FormatS
 
 	if (using_expression_list)
 	{
-		settings.ostr << (settings.hilite ? hilite_keyword : "") << " USING " << (settings.hilite ? hilite_none : "");
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << "USING " << (settings.hilite ? hilite_none : "");
 		settings.ostr << "(";
 		using_expression_list->formatImpl(settings, state, frame);
 		settings.ostr << ")";
 	}
 	else if (on_expression)
 	{
-		settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << "ON " << (settings.hilite ? hilite_none : "");
 		on_expression->formatImpl(settings, state, frame);
 	}
 }
@@ -180,12 +214,14 @@ void ASTTablesInSelectQueryElement::formatImpl(const FormatSettings & settings, 
 	if (table_expression)
 	{
 		if (table_join)
+		{
 			static_cast<const ASTTableJoin &>(*table_join).formatImplBeforeTable(settings, state, frame);
+			settings.ostr << " ";
+		}
 
-		settings.ostr << " ";
 		table_expression->formatImpl(settings, state, frame);
-
 		settings.ostr << " ";
+
 		if (table_join)
 			static_cast<const ASTTableJoin &>(*table_join).formatImplAfterTable(settings, state, frame);
 	}
