@@ -594,4 +594,48 @@ bool ParserOrderByExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, P
 }
 
 
+bool ParserNullityChecking::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+{
+	ParserWhiteSpaceOrComments ws;
+
+	ASTPtr node_comp;
+	if (!ParserComparisonExpression{}.parse(pos, end, node_comp, max_parsed_pos, expected))
+		return false;
+
+	ParserString s_is{"IS", true, true};
+	ParserString s_not{"NOT", true, true};
+	ParserString s_null{"NULL", true, true};
+
+	ws.ignore(pos, end);
+
+	if (s_is.ignore(pos, end, max_parsed_pos, expected))
+	{
+		bool is_not = false;
+
+		ws.ignore(pos, end);
+		if (s_not.ignore(pos, end, max_parsed_pos, expected))
+		{
+			is_not = true;
+			ws.ignore(pos, end);
+		}
+		if (!s_null.ignore(pos, end, max_parsed_pos, expected))
+			return false;
+
+		auto args = std::make_shared<ASTExpressionList>();
+		args->children.push_back(node_comp);
+
+		auto function = std::make_shared<ASTFunction>(StringRange{pos, end});
+		function->name = is_not ? "isNotNull" : "isNull";
+		function->arguments = args;
+		function->children.push_back(function->arguments);
+
+		node = function;
+	}
+	else
+		node = node_comp;
+
+	return true;
+}
+
+
 }

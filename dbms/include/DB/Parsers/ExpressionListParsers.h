@@ -208,11 +208,21 @@ protected:
 };
 
 
+/** Parser for nullity checking with IS (NOT) NULL.
+  */
+class ParserNullityChecking : public IParserBase
+{
+protected:
+	const char * getName() const { return "nullity checking"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) override;
+};
+
+
 class ParserLogicalNotExpression : public IParserBase
 {
 private:
 	static const char * operators[];
-	ParserPrefixUnaryOperatorExpression operator_parser {operators, ParserPtr(new ParserComparisonExpression)};
+	ParserPrefixUnaryOperatorExpression operator_parser {operators, ParserPtr{new ParserNullityChecking}};
 
 protected:
 	const char * getName() const { return "logical-NOT expression"; }
