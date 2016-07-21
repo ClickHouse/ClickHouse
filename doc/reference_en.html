@@ -401,7 +401,7 @@ This is not a cross-platform system. It requires Linux Ubuntu Precise (12.04) or
 To test for SSE 4.2 support, do
 %%grep -q sse4_2 /proc/cpuinfo &amp;&amp; echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"%%
 
-We recommend using Ubuntu Trusty or Ubuntu Precise.
+We recommend using Ubuntu Trusty or Ubuntu Xenial or Ubuntu Precise.
 The terminal must use UTF-8 encoding (the default in Ubuntu).
 
 
@@ -420,11 +420,7 @@ On Ubuntu Trusty (14.04):
 deb http://repo.yandex.ru/clickhouse/trusty stable main
 %%
 
-On Ubuntu Precise (12.04):
-
-%%
-deb http://repo.yandex.ru/clickhouse/precise stable main
-%%
+For other Ubuntu versions, replace %%trusty%% to %%xenial%% or %%precise%%.
 
 Then run:
 
@@ -436,6 +432,7 @@ sudo apt-get install clickhouse-client clickhouse-server-common
 
 You can also download and install packages manually from here:
 <a href="http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/">http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/</a>,
+<a href="http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/">http://repo.yandex.ru/clickhouse/xenial/pool/main/c/clickhouse/</a>
 <a href="http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/">http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/</a>.
 
 ClickHouse contains access restriction settings. They are located in the &#39;users.xml&#39; file (next to &#39;config.xml&#39;).
