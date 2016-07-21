@@ -220,18 +220,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	select_query->range = StringRange(begin, pos);
 
 	select_query->children.push_back(select_query->select_expression_list);
-	if (select_query->database)
-		select_query->children.push_back(select_query->database);
-	if (select_query->table)
-		select_query->children.push_back(select_query->table);
-	if (select_query->array_join_expression_list)
-		select_query->children.push_back(select_query->array_join_expression_list);
-	if (select_query->join)
-		select_query->children.push_back(select_query->join);
-	if (select_query->sample_size)
-		select_query->children.push_back(select_query->sample_size);
-	if (select_query->sample_offset)
-		select_query->children.push_back(select_query->sample_offset);
+	if (select_query->tables)
+		select_query->children.push_back(select_query->tables);
 	if (select_query->prewhere_expression)
 		select_query->children.push_back(select_query->prewhere_expression);
 	if (select_query->where_expression)

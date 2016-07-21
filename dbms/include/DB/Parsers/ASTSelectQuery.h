@@ -9,6 +9,9 @@
 namespace DB
 {
 
+class ASTTablesInSelectQueryElement;
+
+
 /** SELECT query
   */
 class ASTSelectQuery : public ASTQueryWithOutput
@@ -59,15 +62,17 @@ public:
 	ASTPtr limit_length;
 	ASTPtr settings;
 
-	/// TODO remove
-	ASTPtr database;
-	ASTPtr table;
-	ASTPtr sample_size;
-	ASTPtr sample_offset;
-	ASTPtr array_join_expression_list;
-	ASTPtr join;
-	bool array_join_is_left;
-	bool final;
+	/// Compatibility with old parser of tables list. TODO remove
+	ASTPtr database() const;
+	ASTPtr table() const;
+	ASTPtr sample_size() const;
+	ASTPtr sample_offset() const;
+	ASTPtr array_join_expression_list() const;
+	const ASTTablesInSelectQueryElement * join() const;
+	bool array_join_is_left() const;
+	bool final() const;
+	void setDatabaseIfNeeded(const String & database_name);
+	void replaceDatabaseAndTable(const String & database_name, const String & table_name);
 
 	/// Двусвязный список запросов SELECT внутри запроса UNION ALL.
 

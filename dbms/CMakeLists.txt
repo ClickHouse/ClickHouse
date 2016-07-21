@@ -95,7 +95,6 @@ add_library (dbms
 	include/DB/Parsers/ASTUseQuery.h
 	include/DB/Parsers/ASTIdentifier.h
 	include/DB/Parsers/ParserTablePropertiesQuery.h
-	include/DB/Parsers/ASTJoin.h
 	include/DB/Parsers/ParserCheckQuery.h
 	include/DB/Parsers/ParserRenameQuery.h
 	include/DB/Parsers/ParserInsertQuery.h
