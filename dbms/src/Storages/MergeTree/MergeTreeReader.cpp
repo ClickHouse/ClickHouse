@@ -2,6 +2,7 @@
 #include <DB/DataTypes/IDataType.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Interpreters/evaluateMissingDefaults.h>
@@ -12,25 +13,39 @@ namespace DB
 
 namespace
 {
-	using OffsetColumns = std::map<std::string, ColumnPtr>;
+
+using OffsetColumns = std::map<std::string, ColumnPtr>;
+
+constexpr auto DATA_FILE_EXTENSION = ".bin";
+constexpr auto NULL_MAP_EXTENSION = ".null";
+
+bool isNullStream(const std::string & extension)
+{
+	return extension == NULL_MAP_EXTENSION;
+}
+
 }
 
 namespace ErrorCodes
 {
-	extern const int NOT_FOUND_EXPECTED_DATA_PART;
-	extern const int MEMORY_LIMIT_EXCEEDED;
+
+extern const int NOT_FOUND_EXPECTED_DATA_PART;
+extern const int MEMORY_LIMIT_EXCEEDED;
+
 }
 
 
 MergeTreeReader::MergeTreeReader(const String & path, /// Путь к куску
 	const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
-	UncompressedCache * uncompressed_cache, MarkCache * mark_cache, bool save_marks_in_cache,
+	UncompressedCache * uncompressed_cache, MarkCache * mark_cache, MarkCache * null_mark_cache_,
+	bool save_marks_in_cache,
 	MergeTreeData & storage, const MarkRanges & all_mark_ranges,
 	size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints,
 	const ReadBufferFromFileBase::ProfileCallback & profile_callback,
 	clockid_t clock_type)
 	: avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns),
-		uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), save_marks_in_cache(save_marks_in_cache), storage(storage),
+		uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), null_mark_cache{null_mark_cache_},
+		save_marks_in_cache(save_marks_in_cache), storage(storage),
 		all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
 {
 	try
@@ -81,8 +96,17 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
 
 			bool read_offsets = true;
 
+			const IDataType * observed_type;
+			if (column.type.get()->isNullable())
+			{
+				const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(column.type.get()));
+				observed_type = nullable_type.getNestedType().get();
+			}
+			else
+				observed_type = column.type.get();
+
 			/// Для вложенных структур запоминаем указатели на столбцы со смещениями
-			if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&*column.type))
+			if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(observed_type))
 			{
 				String name = DataTypeNested::extractNestedTableName(column.name);
 
@@ -150,12 +174,19 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 	/** Если файла с данными нет - то не будем пытаться открыть его.
 	  * Это нужно, чтобы можно было добавлять новые столбцы к структуре таблицы без создания файлов для старых кусков.
 	  */
-	if (!Poco::File(path + escaped_column_name + ".bin").exists())
+	if (!Poco::File(path + escaped_column_name + DATA_FILE_EXTENSION).exists())
 		return;
 
-	/// Для массивов используются отдельные потоки для размеров.
-	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	if (type.isNullable())
 	{
+		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
+		const IDataType & nested_type = *(nullable_type.getNestedType().get());
+		addNullStream(name, all_mark_ranges, profile_callback, clock_type);
+		addStream(name, nested_type, all_mark_ranges, profile_callback, clock_type, level);
+	}
+	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	{
+		/// Для массивов используются отдельные потоки для размеров.
 		String size_name = DataTypeNested::extractNestedTableName(name)
 			+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
@@ -163,24 +194,52 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 
 		if (!streams.count(size_name))
 			streams.emplace(size_name, std::make_unique<Stream>(
-				path + escaped_size_name, uncompressed_cache, mark_cache, save_marks_in_cache,
+				path + escaped_size_name, DATA_FILE_EXTENSION, uncompressed_cache, mark_cache, save_marks_in_cache,
 				all_mark_ranges, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
 
 		addStream(name, *type_arr->getNestedType(), all_mark_ranges, profile_callback, clock_type, level + 1);
 	}
 	else
 		streams.emplace(name, std::make_unique<Stream>(
-			path + escaped_column_name, uncompressed_cache, mark_cache, save_marks_in_cache,
+			path + escaped_column_name, DATA_FILE_EXTENSION, uncompressed_cache, mark_cache, save_marks_in_cache,
 			all_mark_ranges, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+}
+
+
+void MergeTreeReader::addNullStream(const String & name, const MarkRanges & all_mark_ranges,
+	const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
+{
+	String escaped_column_name = escapeForFileName(name);
+
+	/** Если файла с данными нет - то не будем пытаться открыть его.
+	  * Это нужно, чтобы можно было добавлять новые столбцы к структуре таблицы без создания файлов для старых кусков.
+	  */
+	if (!Poco::File(path + escaped_column_name + NULL_MAP_EXTENSION).exists())
+		return;
+
+	null_streams.emplace(name, std::make_unique<Stream>(
+		path + escaped_column_name, NULL_MAP_EXTENSION, uncompressed_cache, null_mark_cache, save_marks_in_cache,
+		all_mark_ranges, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
 }
 
 
 void MergeTreeReader::readData(const String & name, const IDataType & type, IColumn & column, size_t from_mark, size_t max_rows_to_read,
 	size_t level, bool read_offsets)
 {
-	/// Для массивов требуется сначала десериализовать размеры, а потом значения.
-	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	if (type.isNullable())
 	{
+		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
+		const IDataType & nested_type = *(nullable_type.getNestedType().get());
+
+		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(column);
+		IColumn & nested_col = *(nullable_col.getNestedColumn().get());
+
+		readNullData(name, nullable_col, from_mark, max_rows_to_read);
+		readData(name, nested_type, nested_col, from_mark, max_rows_to_read, level, read_offsets);
+	}
+	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	{
+		/// Для массивов требуется сначала десериализовать размеры, а потом значения.
 		if (read_offsets)
 		{
 			Stream & stream = *streams[DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)];
@@ -251,6 +310,29 @@ void MergeTreeReader::readData(const String & name, const IDataType & type, ICol
 }
 
 
+void MergeTreeReader::readNullData(const String & name, ColumnNullable & nullable_col, size_t from_mark, size_t max_rows_to_read)
+{
+	Stream & stream = *null_streams.at(name);
+	double & avg_value_size_hint = avg_value_size_hints[name];
+	stream.seekToMark(from_mark);
+	IColumn & col8 = *(nullable_col.getNullValuesByteMap().get());
+	DataTypeUInt8{}.deserializeBinary(col8, *stream.data_buffer, max_rows_to_read, avg_value_size_hint);
+
+	/// Вычисление подсказки о среднем размере значения.
+	size_t column_size = col8.size();
+	if (column_size)
+	{
+		double current_avg_value_size = static_cast<double>(col8.byteSize()) / column_size;
+
+		/// Эвристика, чтобы при изменениях, значение avg_value_size_hint быстро росло, но медленно уменьшалось.
+		if (current_avg_value_size > avg_value_size_hint)
+			avg_value_size_hint = current_avg_value_size;
+		else if (current_avg_value_size * 2 < avg_value_size_hint)
+			avg_value_size_hint = (current_avg_value_size + avg_value_size_hint * 3) / 4;
+	}
+}
+
+
 void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder)
 {
 	if (!res)
@@ -270,9 +352,24 @@ void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_
 		for (size_t i = 0; i < res.columns(); ++i)
 		{
 			const ColumnWithTypeAndName & column = res.getByPosition(i);
-			if (const ColumnArray * array = typeid_cast<const ColumnArray *>(&*column.column))
+
+			ColumnPtr observed_column;
+			std::string column_name;
+			if (column.column.get()->isNullable())
 			{
-				String offsets_name = DataTypeNested::extractNestedTableName(column.name);
+				ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(column.column.get()));
+				observed_column = nullable_col.getNestedColumn();
+				column_name = observed_column.get()->getName();
+			}
+			else
+			{
+				observed_column = column.column;
+				column_name = column.name;
+			}
+
+			if (const ColumnArray * array = typeid_cast<const ColumnArray *>(observed_column.get()))
+			{
+				String offsets_name = DataTypeNested::extractNestedTableName(column_name);
 				auto & offsets_column = offset_columns[offsets_name];
 
 				/// Если почему-то есть разные столбцы смещений для одной вложенной структуры, то берём непустой.
@@ -350,17 +447,19 @@ void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_
 }
 
 
-///
+/// Stream implementation.
 
 
 MergeTreeReader::Stream::Stream(
-	const String & path_prefix_, UncompressedCache * uncompressed_cache,
+	const String & path_prefix_, const String & extension_, UncompressedCache * uncompressed_cache,
 	MarkCache * mark_cache, bool save_marks_in_cache,
 	const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size,
 	const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
-	: path_prefix(path_prefix_)
+	: path_prefix{path_prefix_}, extension{extension_}
 {
-	loadMarks(mark_cache, save_marks_in_cache);
+	loadMarks(mark_cache, save_marks_in_cache, isNullStream(extension));
+
+	/// Compute the size of the buffer.
 	size_t max_mark_range = 0;
 
 	for (size_t i = 0; i < all_mark_ranges.size(); ++i)
@@ -389,6 +488,7 @@ MergeTreeReader::Stream::Stream(
 
 	size_t buffer_size = std::min(max_read_buffer_size, max_mark_range);
 
+	/// Compute the estimated size of the data to be read.
 	size_t estimated_size = 0;
 	if (aio_threshold > 0)
 	{
@@ -400,17 +500,18 @@ MergeTreeReader::Stream::Stream(
 			if (mark_range.end < (*marks).size())
 				offset_end = (*marks)[mark_range.end].offset_in_compressed_file;
 			else
-				offset_end = Poco::File(path_prefix + ".bin").getSize();
+				offset_end = Poco::File(path_prefix + extension).getSize();
 
 			if (offset_end > 0)
 				estimated_size += offset_end - offset_begin;
 		}
 	}
 
+	/// Initialize the objects that shall be used to perform read operations.
 	if (uncompressed_cache)
 	{
 		cached_buffer = std::make_unique<CachedCompressedReadBuffer>(
-			path_prefix + ".bin", uncompressed_cache, estimated_size, aio_threshold, buffer_size);
+			path_prefix + extension, uncompressed_cache, estimated_size, aio_threshold, buffer_size);
 
 		if (profile_callback)
 			cached_buffer->setProfileCallback(profile_callback, clock_type);
@@ -420,7 +521,7 @@ MergeTreeReader::Stream::Stream(
 	else
 	{
 		non_cached_buffer = std::make_unique<CompressedReadBufferFromFile>(
-			path_prefix + ".bin", estimated_size, aio_threshold, buffer_size);
+			path_prefix + extension, estimated_size, aio_threshold, buffer_size);
 
 		if (profile_callback)
 			non_cached_buffer->setProfileCallback(profile_callback, clock_type);
@@ -429,9 +530,14 @@ MergeTreeReader::Stream::Stream(
 	}
 }
 
-void MergeTreeReader::Stream::loadMarks(MarkCache * cache, bool save_in_cache)
+void MergeTreeReader::Stream::loadMarks(MarkCache * cache, bool save_in_cache, bool is_null_stream)
 {
-	std::string path = path_prefix + ".mrk";
+	std::string path;
+
+	if (is_null_stream)
+		path = path_prefix + ".null_mrk";
+	else
+		path = path_prefix + ".mrk";
 
 	UInt128 key;
 	if (cache)

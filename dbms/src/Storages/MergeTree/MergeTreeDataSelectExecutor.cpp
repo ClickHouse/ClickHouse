@@ -33,6 +33,7 @@
 #include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeDate.h>
+#include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/Common/VirtualColumnUtils.h>
 
 
@@ -330,16 +331,25 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		RelativeSize size_of_universum = 0;
 		DataTypePtr type = data.getPrimaryExpression()->getSampleBlock().getByName(data.sampling_expression->getColumnName()).type;
 
-		if (typeid_cast<const DataTypeUInt64 *>(type.get()))
+		DataTypePtr observed_type;
+		if (type.get()->isNullable())
+		{
+			const DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*(type.get()));
+			observed_type = nullable_type.getNestedType();
+		}
+		else
+			observed_type = type;
+
+		if (typeid_cast<const DataTypeUInt64 *>(observed_type.get()))
 			size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + 1;
-		else if (typeid_cast<const DataTypeUInt32 *>(type.get()))
+		else if (typeid_cast<const DataTypeUInt32 *>(observed_type.get()))
 			size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + 1;
-		else if (typeid_cast<const DataTypeUInt16 *>(type.get()))
+		else if (typeid_cast<const DataTypeUInt16 *>(observed_type.get()))
 			size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + 1;
-		else if (typeid_cast<const DataTypeUInt8 *>(type.get()))
+		else if (typeid_cast<const DataTypeUInt8 *>(observed_type.get()))
 			size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + 1;
 		else
-			throw Exception("Invalid sampling column type in storage parameters: " + type->getName() + ". Must be unsigned integer type.",
+			throw Exception("Invalid sampling column type in storage parameters: " + observed_type->getName() + ". Must be unsigned integer type.",
 				ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
 		if (settings.parallel_replicas_count > 1)

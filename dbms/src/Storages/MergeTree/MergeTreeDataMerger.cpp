@@ -842,7 +842,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
 	merged_stream->readSuffix();
 
-	/// Завершить инициализацию куски новых партиций.
+	/// Завершить инициализацию кусков новых партиций.
 	for (size_t shard_no = 0; shard_no < job.paths.size(); ++shard_no)
 	{
 		abortIfRequested();

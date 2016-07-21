@@ -4,6 +4,7 @@
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/MergeTree/PKCondition.h>
 #include <DB/Storages/MergeTree/MergeTreeReader.h>
+#include <DB/Columns/ColumnNullable.h>
 
 
 namespace DB
@@ -223,16 +224,19 @@ protected:
 				owned_uncompressed_cache = storage.context.getUncompressedCache();
 
 			owned_mark_cache = storage.context.getMarkCache();
+			owned_null_mark_cache = storage.context.getNullMarkCache();
 
 			reader.reset(new MergeTreeReader(
 				path, owned_data_part, columns, owned_uncompressed_cache.get(),
-				owned_mark_cache.get(), save_marks_in_cache, storage,
+				owned_mark_cache.get(), owned_null_mark_cache.get(),
+				save_marks_in_cache, storage,
 				all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size));
 
 			if (prewhere_actions)
 				pre_reader.reset(new MergeTreeReader(
 					path, owned_data_part, pre_columns, owned_uncompressed_cache.get(),
-					owned_mark_cache.get(), save_marks_in_cache, storage,
+					owned_mark_cache.get(), owned_null_mark_cache.get(),
+					save_marks_in_cache, storage,
 					all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size));
 		}
 
@@ -273,10 +277,19 @@ protected:
 
 				size_t pre_bytes = res.bytes();
 
+				ColumnPtr observed_column;
+				if (column.get()->isNullable())
+				{
+					ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(column.get()));
+					observed_column = nullable_col.getNestedColumn();
+				}
+				else
+					observed_column = column;
+
 				/** Если фильтр - константа (например, написано PREWHERE 1),
 				  *  то либо вернём пустой блок, либо вернём блок без изменений.
 				  */
-				if (ColumnConstUInt8 * column_const = typeid_cast<ColumnConstUInt8 *>(&*column))
+				if (ColumnConstUInt8 * column_const = typeid_cast<ColumnConstUInt8 *>(observed_column.get()))
 				{
 					if (!column_const->getData())
 					{
@@ -292,7 +305,7 @@ protected:
 
 					progressImpl(Progress(0, res.bytes() - pre_bytes));
 				}
-				else if (ColumnUInt8 * column_vec = typeid_cast<ColumnUInt8 *>(&*column))
+				else if (ColumnUInt8 * column_vec = typeid_cast<ColumnUInt8 *>(observed_column.get()))
 				{
 					size_t index_granularity = storage.index_granularity;
 
@@ -439,6 +452,7 @@ private:
 
 	UncompressedCachePtr owned_uncompressed_cache;
 	MarkCachePtr owned_mark_cache;
+	MarkCachePtr owned_null_mark_cache;
 	/// Если выставлено в false - при отсутствии засечек в кэше, считавать засечки, но не сохранять их в кэш, чтобы не вымывать оттуда другие данные.
 	bool save_marks_in_cache;
 };

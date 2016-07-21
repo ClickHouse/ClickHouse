@@ -683,6 +683,7 @@ add_library (dbms
 	src/Storages/MergeTree/MergeTreeReader.cpp
 	src/Storages/MergeTree/MergeTreeDataWriter.cpp
 	src/Storages/MergeTree/MergeTreeDataMerger.cpp
+	src/Storages/MergeTree/MergedBlockOutputStream.cpp
 	src/Storages/MergeTree/MergeTreePartChecker.cpp
 	src/Storages/MergeTree/ReplicatedMergeTreeLogEntry.cpp
 	src/Storages/MergeTree/ReplicatedMergeTreeQueue.cpp
