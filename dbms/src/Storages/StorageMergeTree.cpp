@@ -130,7 +130,7 @@ BlockInputStreams StorageMergeTree::read(
 	auto & select = typeid_cast<const ASTSelectQuery &>(*query);
 
 	/// Try transferring some condition from WHERE to PREWHERE if enabled and viable
-	if (settings.optimize_move_to_prewhere && select.where_expression && !select.prewhere_expression && !select.final)
+	if (settings.optimize_move_to_prewhere && select.where_expression && !select.prewhere_expression && !select.final())
 		MergeTreeWhereOptimizer{query, context, data, column_names, log};
 
 	return reader.read(column_names, query, context, settings, processed_stage, max_block_size, threads, nullptr, 0);
@@ -157,7 +157,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 	table_name = new_table_name;
 	full_path = new_full_path;
 
-	/// TODO: Можно обновить названия логгеров у this, data, reader, writer, merger.
+	/// NOTE: Logger names are not updated.
 }
 
 void StorageMergeTree::alter(

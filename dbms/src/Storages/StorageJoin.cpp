@@ -15,7 +15,7 @@ StorageJoin::StorageJoin(
 	const String & path_,
 	const String & name_,
 	const Names & key_names_,
-	ASTJoin::Kind kind_, ASTJoin::Strictness strictness_,
+	ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_,
 	NamesAndTypesListPtr columns_,
 	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
@@ -23,7 +23,7 @@ StorageJoin::StorageJoin(
 	: StorageSetOrJoinBase{path_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_},
 	key_names(key_names_), kind(kind_), strictness(strictness_)
 {
-	/// Проверяем, что ключ существует в определении таблицы.
+	/// Check that key exists in table definition.
 	const auto check_key_exists = [] (const NamesAndTypesList & columns, const String & key)
 	{
 		for (const auto & column : columns)
@@ -44,9 +44,9 @@ StorageJoin::StorageJoin(
 }
 
 
-void StorageJoin::assertCompatible(ASTJoin::Kind kind_, ASTJoin::Strictness strictness_) const
+void StorageJoin::assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_) const
 {
-	/// NOTE Можно немного ослабить.
+	/// NOTE Could be more loose.
 	if (!(kind == kind_ && strictness == strictness_))
 		throw Exception("Table " + name + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 }

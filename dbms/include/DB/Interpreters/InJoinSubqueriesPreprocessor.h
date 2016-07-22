@@ -2,7 +2,7 @@
 
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTJoin.h>
+#include <DB/Parsers/ASTTablesInSelectQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/Storages/StorageDistributed.h>
@@ -69,11 +69,13 @@ std::string getNameFromInSubqueryAttributes(IAST::Attributes attributes)
 /// Проверить, указана ли таблица в секции FROM.
 bool isQueryFromTable(const ASTSelectQuery & query)
 {
-	if (query.table)
+	auto query_table = query.table();
+
+	if (query_table)
 	{
-		if (typeid_cast<const ASTSelectQuery *>(query.table.get()) != nullptr)
+		if (typeid_cast<const ASTSelectQuery *>(query_table.get()) != nullptr)
 			return false;
-		else if (typeid_cast<const ASTFunction *>(query.table.get()) != nullptr)
+		else if (typeid_cast<const ASTFunction *>(query_table.get()) != nullptr)
 			return false;
 		else
 			return true;
@@ -165,7 +167,7 @@ public:
 			to_preprocess.pop_back();
 
 			ASTFunction * function;
-			ASTJoin * join;
+			ASTTableJoin * join;
 			ASTSelectQuery * sub_select_query;
 
 			if ((function = typeid_cast<ASTFunction *>(node)) != nullptr)
@@ -178,12 +180,12 @@ public:
 					node->attributes |= attributes;
 				}
 			}
-			else if ((join = typeid_cast<ASTJoin *>(node)) != nullptr)
+			else if ((join = typeid_cast<ASTTableJoin *>(node)) != nullptr)
 			{
 				/// Найдена секция JOIN.
 				node->enclosing_in_or_join = node;
 				node->attributes |= IAST::IsJoin;
-				if (join->locality == ASTJoin::Global)
+				if (join->locality == ASTTableJoin::Locality::Global)
 					node->attributes |= IAST::IsGlobal;
 			}
 			else if ((node != static_cast<IAST *>(select_query))
@@ -250,8 +252,8 @@ private:
 			{
 				if (enclosing_in_or_join.attributes & IAST::IsJoin)
 				{
-					auto & join = static_cast<ASTJoin &>(enclosing_in_or_join);
-					join.locality = ASTJoin::Global;
+					auto & join = static_cast<ASTTableJoin &>(enclosing_in_or_join);
+					join.locality = ASTTableJoin::Locality::Global;
 				}
 				else if (enclosing_in_or_join.attributes & (IAST::IsIn | IAST::IsNotIn))
 				{
@@ -268,27 +270,9 @@ private:
 			/// Преобразовать распределённую таблицу в соответствующую удалённую таблицу.
 
 			auto & distributed_storage = static_cast<TStorageDistributed &>(*subquery_table_storage);
-
-			if (!sub_select_query.database)
-			{
-				sub_select_query.database = std::make_shared<ASTIdentifier>(StringRange(), distributed_storage.getRemoteDatabaseName(),
-					ASTIdentifier::Database);
-
-				/// Поскольку был создан новый узел для БД, необходимо его вставить в список
-				/// потомков этого подзапроса. См. ParserSelectQuery для структуры потомков.
-				if (sub_select_query.children.size() < 2)
-					throw Exception("InJoinSubqueriesPreprocessor: Internal error", ErrorCodes::LOGICAL_ERROR);
-				auto it = ++sub_select_query.children.begin();
-				sub_select_query.children.insert(it, sub_select_query.database);
-			}
-			else
-			{
-				auto & db_name = typeid_cast<ASTIdentifier &>(*sub_select_query.database).name;
-				db_name = distributed_storage.getRemoteDatabaseName();
-			}
-
-			auto & table_name = typeid_cast<ASTIdentifier &>(*sub_select_query.table).name;
-			table_name = distributed_storage.getRemoteTableName();
+			sub_select_query.replaceDatabaseAndTable(
+				distributed_storage.getRemoteDatabaseName(),
+				distributed_storage.getRemoteTableName());
 		}
 		else
 			throw Exception("InJoinSubqueriesPreprocessor: Internal error", ErrorCodes::LOGICAL_ERROR);
@@ -296,18 +280,21 @@ private:
 
 	StoragePtr getDistributedSubqueryStorage(const ASTSelectQuery & sub_select_query) const
 	{
-		if (!sub_select_query.table)
+		auto database = sub_select_query.database();
+		auto table = sub_select_query.table();
+
+		if (!table)
 			return {};
 
-		const auto identifier = typeid_cast<const ASTIdentifier *>(sub_select_query.table.get());
+		const auto identifier = typeid_cast<const ASTIdentifier *>(table.get());
 		if (identifier == nullptr)
 			return {};
 
 		const std::string & table_name = identifier->name;
 
 		std::string database_name;
-		if (sub_select_query.database)
-			database_name = typeid_cast<const ASTIdentifier &>(*sub_select_query.database).name;
+		if (database)
+			database_name = typeid_cast<const ASTIdentifier &>(*database).name;
 		else
 			database_name = "";
 

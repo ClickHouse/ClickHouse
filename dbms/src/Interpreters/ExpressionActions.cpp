@@ -993,7 +993,7 @@ BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRigh
 {
 	for (const auto & action : actions)
 	{
-		if (action.join && (action.join->getKind() == ASTJoin::Full || action.join->getKind() == ASTJoin::Right))
+		if (action.join && (action.join->getKind() == ASTTableJoin::Kind::Full || action.join->getKind() == ASTTableJoin::Kind::Right))
 		{
 			Block left_sample_block;
 			for (const auto & input_elem : input_columns)

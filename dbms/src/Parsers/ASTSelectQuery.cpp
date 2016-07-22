@@ -347,6 +347,22 @@ static const ASTTableExpression * getFirstTableExpression(const ASTSelectQuery &
 	return static_cast<const ASTTableExpression *>(tables_element.table_expression.get());
 }
 
+static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select)
+{
+	if (!select.tables)
+		return {};
+
+	ASTTablesInSelectQuery & tables_in_select_query = static_cast<ASTTablesInSelectQuery &>(*select.tables);
+	if (tables_in_select_query.children.empty())
+		return {};
+
+	ASTTablesInSelectQueryElement & tables_element = static_cast<ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[0]);
+	if (!tables_element.table_expression)
+		return {};
+
+	return static_cast<ASTTableExpression *>(tables_element.table_expression.get());
+}
+
 static const ASTArrayJoin * getFirstArrayJoin(const ASTSelectQuery & select)
 {
 	if (!select.tables)
@@ -491,6 +507,51 @@ bool ASTSelectQuery::array_join_is_left() const
 const ASTTablesInSelectQueryElement * ASTSelectQuery::join() const
 {
 	return getFirstTableJoin(*this);
+}
+
+
+void ASTSelectQuery::setDatabaseIfNeeded(const String & database_name)
+{
+	ASTTableExpression * table_expression = getFirstTableExpression(*this);
+	if (!table_expression)
+		return;
+
+	if (!table_expression->database_and_table_name)
+		return;
+
+	if (table_expression->database_and_table_name->children.empty())
+	{
+		ASTPtr database = std::make_shared<ASTIdentifier>(StringRange(), database_name, ASTIdentifier::Database);
+		ASTPtr table = table_expression->database_and_table_name;
+
+		const String & old_name = static_cast<ASTIdentifier &>(*table_expression->database_and_table_name).name;
+		table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(StringRange(), database_name + "." + old_name, ASTIdentifier::Table);
+		table_expression->database_and_table_name->children = {database, table};
+	}
+	else if (table_expression->database_and_table_name->children.size() != 2)
+	{
+		throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
+	}
+	else
+	{
+		table_expression->database_and_table_name->children[0] = std::make_shared<ASTIdentifier>(
+			StringRange(), database_name, ASTIdentifier::Database);
+	}
+}
+
+
+void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const String & table_name)
+{
+	ASTTableExpression * table_expression = getFirstTableExpression(*this);
+	if (!table_expression)
+		return;
+
+	ASTPtr database = std::make_shared<ASTIdentifier>(StringRange(), database_name, ASTIdentifier::Database);
+	ASTPtr table = std::make_shared<ASTIdentifier>(StringRange(), table_name, ASTIdentifier::Table);
+
+	table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(
+		StringRange(), database_name + "." + table_name, ASTIdentifier::Table);
+	table_expression->database_and_table_name->children = {database, table};
 }
 
 };

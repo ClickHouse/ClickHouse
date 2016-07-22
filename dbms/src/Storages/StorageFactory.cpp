@@ -281,11 +281,11 @@ StoragePtr StorageFactory::get(
 			throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
 		const String strictness_str = Poco::toLower(strictness_id->name);
-		ASTJoin::Strictness strictness;
+		ASTTableJoin::Strictness strictness;
 		if (strictness_str == "any")
-			strictness = ASTJoin::Strictness::Any;
+			strictness = ASTTableJoin::Strictness::Any;
 		else if (strictness_str == "all")
-			strictness = ASTJoin::Strictness::All;
+			strictness = ASTTableJoin::Strictness::All;
 		else
 			throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
@@ -294,15 +294,15 @@ StoragePtr StorageFactory::get(
 			throw Exception("Second parameter of storage Join must be LEFT or INNER (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
 		const String kind_str = Poco::toLower(kind_id->name);
-		ASTJoin::Kind kind;
+		ASTTableJoin::Kind kind;
 		if (kind_str == "left")
-			kind = ASTJoin::Kind::Left;
+			kind = ASTTableJoin::Kind::Left;
 		else if (kind_str == "inner")
-			kind = ASTJoin::Kind::Inner;
+			kind = ASTTableJoin::Kind::Inner;
 		else if (kind_str == "right")
-			kind = ASTJoin::Kind::Right;
+			kind = ASTTableJoin::Kind::Right;
 		else if (kind_str == "full")
-			kind = ASTJoin::Kind::Full;
+			kind = ASTTableJoin::Kind::Full;
 		else
 			throw Exception("Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
