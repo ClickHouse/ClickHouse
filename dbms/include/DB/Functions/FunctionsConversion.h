@@ -1347,7 +1347,7 @@ private:
 };
 
 
-/// Монотонность.
+/// Monotonicity.
 
 struct PositiveMonotonicity
 {
@@ -1373,20 +1373,20 @@ struct ToIntMonotonicity
 	{
 		size_t size_of_type = type.getSizeOfField();
 
-		/// Если тип расширяется, то функция монотонна.
+		/// If type is expanding, then function is monotonic.
 		if (sizeof(T) > size_of_type)
 			return { true };
 
-		/// Если тип совпадает - тоже. (Enum обрабатываем отдельно, так как он имеет другой тип)
+		/// If type is same, too. (Enum has separate case, because it is different data type)
 		if (typeid_cast<const typename DataTypeFromFieldType<T>::Type *>(&type) ||
 			typeid_cast<const DataTypeEnum<T> *>(&type))
 			return { true };
 
-		/// В других случаях, для неограниченного диапазона не знаем, будет ли функция монотонной.
+		/// In other cases, if range is unbounded, we don't know, whether function is monotonic or not.
 		if (left.isNull() || right.isNull())
 			return {};
 
-		/// Если преобразуем из float, то аргументы должны помещаться в тип результата.
+		/// If converting from float, for monotonicity, arguments must fit in range of result type.
 		if (typeid_cast<const DataTypeFloat32 *>(&type)
 			|| typeid_cast<const DataTypeFloat64 *>(&type))
 		{
@@ -1400,12 +1400,14 @@ struct ToIntMonotonicity
 			return {};
 		}
 
-		/// Если меняем знаковость типа или преобразуем из даты, даты-времени, то аргумент должен быть из одной половинки.
-		/// На всякий случай, в остальных случаях тоже будем этого требовать.
-		if ((left.get<Int64>() >= 0) != (right.get<Int64>() >= 0))
+		/// If signedness of type is changing, or converting from Date, DateTime, then arguments must be from same half,
+		///  and after conversion, resulting values must be from same half.
+		/// Just in case, it is required in rest of cases too.
+		if ((left.get<Int64>() >= 0) != (right.get<Int64>() >= 0)
+			|| (T(left.get<Int64>()) >= 0) != (T(right.get<Int64>()) >= 0))
 			return {};
 
-		/// Если уменьшаем тип, то все биты кроме тех, которые в него помещаются, должны совпадать.
+		/// If type is shrinked, then for monotonicity, all bits other than that fits, must be same.
 		if (divideByRangeOfType(left.get<UInt64>()) != divideByRangeOfType(right.get<UInt64>()))
 			return {};
 
