@@ -1,12 +1,14 @@
-SELECT 
+SELECT
     1 AS DomainID,
-    Domain ANY LEFT JOIN
+    Domain
+FROM system.one
+ANY LEFT JOIN
 (
-    SELECT 
+    SELECT
         1 AS DomainID,
         'abc' AS Domain
-    UNION ALL 
-    SELECT 
+    UNION ALL
+    SELECT
         2 AS DomainID,
         'def' AS Domain
 ) USING DomainID;

@@ -25,10 +25,12 @@ bool ParserTableExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 
 	ws.ignore(pos, end);
 
-	if (ParserSubquery().parse(pos, end, res->subquery, max_parsed_pos, expected))
+	if (ParserWithOptionalAlias(std::make_unique<ParserSubquery>(), true)
+		.parse(pos, end, res->subquery, max_parsed_pos, expected))
 	{
 	}
-	else if (ParserFunction().parse(pos, end, res->table_function, max_parsed_pos, expected))
+	else if (ParserWithOptionalAlias(std::make_unique<ParserFunction>(), true)
+		.parse(pos, end, res->table_function, max_parsed_pos, expected))
 	{
 		static_cast<ASTFunction &>(*res->table_function).kind = ASTFunction::TABLE_FUNCTION;
 	}
@@ -204,6 +206,15 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, Pos end, ASTPtr & no
 				throw Exception("You must not specify ANY or ALL for CROSS JOIN.", ErrorCodes::SYNTAX_ERROR);
 
 			ws.ignore(pos, end);
+
+			/// Optional OUTER keyword for outer joins.
+			if (table_join->kind == ASTTableJoin::Kind::Left
+				|| table_join->kind == ASTTableJoin::Kind::Right
+				|| table_join->kind == ASTTableJoin::Kind::Full)
+			{
+				ParserString("OUTER", true, true).ignore(pos, end)
+					&& ws.ignore(pos, end);
+			}
 
 			if (!ParserString("JOIN", true, true).ignore(pos, end, max_parsed_pos, expected))
 				return false;

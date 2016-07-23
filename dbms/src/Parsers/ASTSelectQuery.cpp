@@ -417,7 +417,7 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
 ASTPtr ASTSelectQuery::database() const
 {
 	const ASTTableExpression * table_expression = getFirstTableExpression(*this);
-	if (!table_expression || !table_expression->database_and_table_name)
+	if (!table_expression || !table_expression->database_and_table_name || table_expression->database_and_table_name->children.empty())
 		return {};
 
 	if (table_expression->database_and_table_name->children.size() != 2)
@@ -532,26 +532,41 @@ void ASTSelectQuery::setDatabaseIfNeeded(const String & database_name)
 	{
 		throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
 	}
-	else
-	{
-		table_expression->database_and_table_name->children[0] = std::make_shared<ASTIdentifier>(
-			StringRange(), database_name, ASTIdentifier::Database);
-	}
 }
 
 
 void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const String & table_name)
 {
 	ASTTableExpression * table_expression = getFirstTableExpression(*this);
-	if (!table_expression)
-		return;
 
-	ASTPtr database = std::make_shared<ASTIdentifier>(StringRange(), database_name, ASTIdentifier::Database);
+	if (!table_expression)
+	{
+		auto tables_list = std::make_shared<ASTTablesInSelectQuery>();
+		auto element = std::make_shared<ASTTablesInSelectQueryElement>();
+		auto table_expr = std::make_shared<ASTTableExpression>();
+		element->table_expression = table_expr;
+		element->children.emplace_back(table_expr);
+		tables_list->children.emplace_back(element);
+		tables = tables_list;
+		children.emplace_back(tables_list);
+		table_expression = table_expr.get();
+	}
+
 	ASTPtr table = std::make_shared<ASTIdentifier>(StringRange(), table_name, ASTIdentifier::Table);
 
-	table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(
-		StringRange(), database_name + "." + table_name, ASTIdentifier::Table);
-	table_expression->database_and_table_name->children = {database, table};
+	if (!database_name.empty())
+	{
+		ASTPtr database = std::make_shared<ASTIdentifier>(StringRange(), database_name, ASTIdentifier::Database);
+
+		table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(
+			StringRange(), database_name + "." + table_name, ASTIdentifier::Table);
+		table_expression->database_and_table_name->children = {database, table};
+	}
+	else
+	{
+		table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(
+			StringRange(), table_name, ASTIdentifier::Table);
+	}
 }
 
 };
