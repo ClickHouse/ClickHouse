@@ -695,7 +695,8 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 		{
 			auto & child = func_node->arguments->children[i];
 
-			if (typeid_cast<const ASTSelectQuery *>(child.get()))
+			if (typeid_cast<const ASTSelectQuery *>(child.get())
+				|| typeid_cast<const ASTTableExpression *>(child.get()))
 				continue;
 
 			normalizeTreeImpl(child, finished_asts, current_asts, current_alias);
@@ -705,7 +706,8 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 	{
 		for (auto & child : ast->children)
 		{
-			if (typeid_cast<const ASTSelectQuery *>(child.get()))
+			if (typeid_cast<const ASTSelectQuery *>(child.get())
+				|| typeid_cast<const ASTTableExpression *>(child.get()))
 				continue;
 
 			normalizeTreeImpl(child, finished_asts, current_asts, current_alias);
@@ -779,7 +781,7 @@ void ExpressionAnalyzer::executeScalarSubqueries()
 		for (auto & child : ast->children)
 		{
 			/// Не опускаемся в FROM, JOIN, UNION.
-			if (!typeid_cast<const ASTTablesInSelectQuery *>(child.get())
+			if (!typeid_cast<const ASTTableExpression *>(child.get())
 				&& child.get() != select_query->next_union_all.get())
 			{
 				executeScalarSubqueriesImpl(child);
@@ -886,9 +888,7 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 	{
 		/** Don't descend into subqueries in FROM section.
 		  */
-		ASTTablesInSelectQuery * tables = typeid_cast<ASTTablesInSelectQuery *>(ast.get());
-
-		if (!tables)
+		if (!typeid_cast<ASTTableExpression *>(ast.get()))
 		{
 			/** Don't descend into subqueries in arguments of IN operator.
 			  * But if an argument is not subquery, than deeper may be scalar subqueries and we need to descend in them.
