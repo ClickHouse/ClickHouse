@@ -680,6 +680,24 @@ void BaseDaemon::closeLogs()
 
 void BaseDaemon::initialize(Application& self)
 {
+	task_manager.reset(new Poco::TaskManager);
+	ServerApplication::initialize(self);
+
+	bool is_daemon = config().getBool("application.runAsDaemon", false);
+
+	if (is_daemon)
+	{
+		/** При создании pid файла и поиске конфигурации, будем интерпретировать относительные пути
+		  * от директории запуска программы.
+		  */
+		std::string path = Poco::Path(config().getString("application.path")).setFileName("").toString();
+		if (0 != chdir(path.c_str()))
+			throw Poco::Exception("Cannot change directory to " + path);
+	}
+
+	/// Считаем конфигурацию
+	reloadConfiguration();
+
 	/// В случае падения - сохраняем коры
 	{
 		struct rlimit rlim;
@@ -698,24 +716,6 @@ void BaseDaemon::initialize(Application& self)
 		#endif
 		}
 	}
-
-	task_manager.reset(new Poco::TaskManager);
-	ServerApplication::initialize(self);
-
-	bool is_daemon = config().getBool("application.runAsDaemon", false);
-
-	if (is_daemon)
-	{
-		/** При создании pid файла и поиске конфигурации, будем интерпретировать относительные пути
-		  * от директории запуска программы.
-		  */
-		std::string path = Poco::Path(config().getString("application.path")).setFileName("").toString();
-		if (0 != chdir(path.c_str()))
-			throw Poco::Exception("Cannot change directory to " + path);
-	}
-
-	/// Считаем конфигурацию
-	reloadConfiguration();
 
 	std::string log_path = config().getString("logger.log", "");
 	if (!log_path.empty())
