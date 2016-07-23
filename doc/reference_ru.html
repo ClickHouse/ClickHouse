@@ -408,7 +408,7 @@ YT позволяет хранить группы столбцов по отде
 Для проверки наличия SSE 4.2, выполните:
 %%grep -q sse4_2 /proc/cpuinfo &amp;&amp; echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"%%
 
-Рекомендуется использовать Ubuntu Trusty или Ubuntu Precise.
+Рекомендуется использовать Ubuntu Trusty или Ubuntu Xenial или Ubuntu Precise.
 Терминал должен работать в кодировке UTF-8 (как по умолчанию в Ubuntu).
 
 
@@ -427,11 +427,7 @@ YT позволяет хранить группы столбцов по отде
 deb http://repo.yandex.ru/clickhouse/trusty stable main
 %%
 
-На Ubuntu Precise (12.04):
-
-%%
-deb http://repo.yandex.ru/clickhouse/precise stable main
-%%
+На других версиях Ubuntu, замените %%trusty%% на %%xenial%% или %%precise%%.
 
 
 Затем выполните:
@@ -444,6 +440,7 @@ sudo apt-get install clickhouse-client clickhouse-server-common
 
 Также можно скачать и установить пакеты вручную, отсюда:
 <a href="http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/">http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/</a>,
+<a href="http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/">http://repo.yandex.ru/clickhouse/xenial/pool/main/c/clickhouse/</a>,
 <a href="http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/">http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/</a>.
 
 ClickHouse содержит настройки ограничения доступа. Они расположены в файле users.xml (рядом с config.xml).

@@ -394,7 +394,7 @@
 		<p>System requirements: Linux, x86_64 with SSE 4.2.</p>
 
 		<p>Install packages for
-			<span class="distributive_selected" id="ubuntu_trusty">Ubuntu 14.04 (Trusty)</span> or <span class="distributive_not_selected" id="ubuntu_precise">Ubuntu 12.04 (Precise)</span>:
+			<span class="distributive_not_selected" id="ubuntu_xenial">Ubuntu 16.04 (Xenial)</span> or <span class="distributive_selected" id="ubuntu_trusty">Ubuntu 14.04 (Trusty)</span> or <span class="distributive_not_selected" id="ubuntu_precise">Ubuntu 12.04 (Precise)</span>:
 		</p>
 
 		<code>
@@ -481,16 +481,19 @@ clickhouse-client
 		block_visible[class_name] ? hideBlock(class_name) : showBlock(class_name);
 	}
 
+	var available_distributives = ['xenial', 'trusty', 'precise'];
+
 	function selectDistributive(name) {
-		var selected = name == 'precise' ? 'precise' : 'trusty';
-		var other = name == 'precise' ? 'trusty' : 'precise';
-		document.getElementById('ubuntu_' + selected).className = 'distributive_selected';
-		document.getElementById('ubuntu_' + other).className = 'distributive_not_selected';
-		document.getElementById('distributive').innerHTML = selected;
+		console.log(name);
+		document.getElementById('distributive').innerHTML = name;
+		available_distributives.forEach(function(distr) {
+			document.getElementById('ubuntu_' + distr).className = (name == distr) ? 'distributive_selected' : 'distributive_not_selected';
+		});
 	}
 
-	document.getElementById('ubuntu_precise').addEventListener('click', function(e) { selectDistributive('precise'); });
-	document.getElementById('ubuntu_trusty').addEventListener('click', function(e) { selectDistributive('trusty'); });
+	available_distributives.forEach(function(distr) {
+		document.getElementById('ubuntu_' + distr).addEventListener('click', function(e) { selectDistributive(distr); });
+	});
 
 	</script>
 
