@@ -46,12 +46,7 @@ public:
 		else
 		{
 			/// Since no element is nullable, create a zero-filled null map.
-			ColumnPtr holder = std::make_shared<ColumnUInt8>();
-			ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*(holder.get()));
-			NullValuesByteMap & null_map = content.getData();
-
-			null_map.resize_fill(elem.column.get()->size());
-			block.getByPosition(result).column = holder;
+			block.getByPosition(result).column = std::make_shared<ColumnConstUInt8>(elem.column.get()->size(), 0);
 		}
 	}
 };
