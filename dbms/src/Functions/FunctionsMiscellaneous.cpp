@@ -372,7 +372,7 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
 		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(rows, 10);
 	}
 	else if (typeid_cast<const ColumnNull *>(&*column) != nullptr)
-		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(rows, NullSymbol::Quoted::length);
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(rows, NullSymbol::Escaped::length);
 	else
 	   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
 			+ " of argument of function " + getName(),

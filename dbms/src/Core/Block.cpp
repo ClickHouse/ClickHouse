@@ -262,10 +262,11 @@ bool Block::hasNullColumns() const
 }
 
 
-bool Block::hasNullableColumns() const
+bool Block::hasNullableColumns(const ColumnNumbers & arguments) const
 {
-	for (const auto & elem : data)
+	for (const auto & arg : arguments)
 	{
+		const auto & elem = unsafeGetByPosition(arg);
 		if (elem.column && elem.type)
 		{
 			if (elem.type.get()->isNullable())

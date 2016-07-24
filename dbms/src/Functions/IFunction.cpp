@@ -177,7 +177,7 @@ void IFunction::execute(Block & block, const ColumnNumbers & arguments, size_t r
 		return;
 	}
 
-	if (!hasSpecialSupportForNulls() && block.hasNullableColumns())
+	if (!hasSpecialSupportForNulls() && block.hasNullableColumns(arguments))
 	{
 		Block non_nullable_block = block.extractNonNullableBlock();
 		executeImpl(non_nullable_block, arguments, result);
@@ -199,7 +199,7 @@ void IFunction::execute(Block & block, const ColumnNumbers & arguments, const Co
 		return;
 	}
 
-	if (!hasSpecialSupportForNulls() && block.hasNullableColumns())
+	if (!hasSpecialSupportForNulls() && block.hasNullableColumns(arguments))
 	{
 		Block non_nullable_block = block.extractNonNullableBlock();
 		executeImpl(non_nullable_block, arguments, prerequisites, result);

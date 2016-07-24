@@ -5,11 +5,12 @@
 #include <list>
 #include <initializer_list>
 
+#include <DB/Common/Exception.h>
 #include <DB/Core/BlockInfo.h>
 #include <DB/Core/ColumnWithTypeAndName.h>
 #include <DB/Core/NamesAndTypes.h>
-#include <DB/Common/Exception.h>
 #include <DB/Core/ColumnsWithTypeAndName.h>
+#include <DB/Core/ColumnNumbers.h>
 
 
 namespace DB
@@ -78,7 +79,7 @@ public:
 
 	bool has(const std::string & name) const;
 	bool hasNullColumns() const;
-	bool hasNullableColumns() const;
+	bool hasNullableColumns(const ColumnNumbers & arguments) const;
 
 	size_t getPositionByName(const std::string & name) const;
 
