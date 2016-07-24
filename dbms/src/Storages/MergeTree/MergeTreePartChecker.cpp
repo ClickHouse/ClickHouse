@@ -29,23 +29,26 @@ namespace ErrorCodes
 namespace
 {
 
+constexpr auto DATA_FILE_EXTENSION = ".bin";
+constexpr auto NULL_MAP_EXTENSION = ".null";
+constexpr auto MARKS_FILE_EXTENSION = ".mrk";
+constexpr auto NULL_MARKS_FILE_EXTENSION = ".null_mrk";
+
+/// bin / mrk
+/// null / null_mrk
+
 struct Stream
 {
-	String path;
-	String name;
-	DataTypePtr type;
-
-	ReadBufferFromFile file_buf;
-	HashingReadBuffer compressed_hashing_buf;
-	CompressedReadBuffer uncompressing_buf;
-	HashingReadBuffer uncompressed_hashing_buf;
-
-	ReadBufferFromFile mrk_file_buf;
-	HashingReadBuffer mrk_hashing_buf;
-
-	Stream(const String & path, const String & name, const DataTypePtr & type) : path(path), name(name), type(type),
-		file_buf(path + name + ".bin"), compressed_hashing_buf(file_buf), uncompressing_buf(compressed_hashing_buf),
-		uncompressed_hashing_buf(uncompressing_buf), mrk_file_buf(path + name + ".mrk"), mrk_hashing_buf(mrk_file_buf)
+public:
+	Stream(const String & path, const String & name, const DataTypePtr & type,
+	       const std::string & extension_, const std::string & mrk_extension_)
+		: path(path), name(name), type(type),
+		extension{extension_}, mrk_extension{mrk_extension_},
+		file_buf(path + name + extension), compressed_hashing_buf(file_buf),
+		uncompressing_buf(compressed_hashing_buf),
+		uncompressed_hashing_buf(uncompressing_buf),
+		mrk_file_buf(path + name + mrk_extension),
+		mrk_hashing_buf(mrk_file_buf)
 	{
 		/// Stream создаётся для типа - внутренностей массива. Случай, когда внутренность массива - массив - не поддерживается.
 		if (typeid_cast<const DataTypeArray *>(type.get()))
@@ -117,7 +120,7 @@ struct Stream
 		if (mrk_mark != data_mark)
 			throw Exception("Incorrect mark: " + data_mark.toString() +
 				(has_alternative_mark ? " or " + alternative_data_mark.toString() : "") + " in data, " +
-				mrk_mark.toString() + " in .mrk file", ErrorCodes::INCORRECT_MARK);
+				mrk_mark.toString() + " in " + mrk_extension + " file", ErrorCodes::INCORRECT_MARK);
 	}
 
 	void assertEnd(MergeTreeData::DataPart::Checksums & checksums)
@@ -127,17 +130,68 @@ struct Stream
 		if (!mrk_hashing_buf.eof())
 			throw Exception("EOF expected in .mrk file", ErrorCodes::CORRUPTED_DATA);
 
-		checksums.files[name + ".bin"] = MergeTreeData::DataPart::Checksums::Checksum(
+		checksums.files[name + extension] = MergeTreeData::DataPart::Checksums::Checksum(
 			compressed_hashing_buf.count(), compressed_hashing_buf.getHash(),
 			uncompressed_hashing_buf.count(), uncompressed_hashing_buf.getHash());
-		checksums.files[name + ".mrk"] = MergeTreeData::DataPart::Checksums::Checksum(
+		checksums.files[name + mrk_extension] = MergeTreeData::DataPart::Checksums::Checksum(
 			mrk_hashing_buf.count(), mrk_hashing_buf.getHash());
 	}
+
+public:
+	String path;
+	String name;
+	DataTypePtr type;
+	std::string extension;
+	std::string mrk_extension;
+
+	ReadBufferFromFile file_buf;
+	HashingReadBuffer compressed_hashing_buf;
+	CompressedReadBuffer uncompressing_buf;
+	HashingReadBuffer uncompressed_hashing_buf;
+
+	ReadBufferFromFile mrk_file_buf;
+	HashingReadBuffer mrk_hashing_buf;
 };
 
+/// Returns the number of rows. Updates the "checksums" variable with the checksum of
+/// each column's null byte map file.
+size_t checkNullableColumn(const String & path,
+	const String & name,
+	const MergeTreePartChecker::Settings & settings,
+	MergeTreeData::DataPart::Checksums & checksums,
+	volatile bool * is_cancelled)
+{
+	size_t rows = 0;
 
-/// Возвращает количество строк. Добавляет в checksums чексуммы всех файлов столбца.
-static size_t checkColumn(
+	DataTypePtr type = std::make_shared<DataTypeUInt8>();
+	Stream data_stream(path, escapeForFileName(name), type,
+		NULL_MAP_EXTENSION, NULL_MARKS_FILE_EXTENSION);
+
+	while (true)
+	{
+		if (is_cancelled && *is_cancelled)
+			return 0;
+
+		if (data_stream.marksEOF())
+			break;
+
+		data_stream.assertMark();
+
+		size_t cur_rows = data_stream.read(settings.index_granularity);
+
+		rows += cur_rows;
+		if (cur_rows < settings.index_granularity)
+			break;
+	}
+
+	data_stream.assertEnd(checksums);
+
+	return rows;
+}
+
+/// Returns the number of rows. Updates the "checksums" variable with the checksum of
+/// each column's bin file.
+size_t checkColumn(
 	const String & path,
 	const String & name,
 	DataTypePtr type,
@@ -152,8 +206,10 @@ static size_t checkColumn(
 		if (auto array = typeid_cast<const DataTypeArray *>(type.get()))
 		{
 			String sizes_name = DataTypeNested::extractNestedTableName(name);
-			Stream sizes_stream(path, escapeForFileName(sizes_name) + ".size0", std::make_shared<DataTypeUInt64>());
-			Stream data_stream(path, escapeForFileName(name), array->getNestedType());
+			Stream sizes_stream(path, escapeForFileName(sizes_name) + ".size0", std::make_shared<DataTypeUInt64>(),
+				DATA_FILE_EXTENSION, MARKS_FILE_EXTENSION);
+			Stream data_stream(path, escapeForFileName(name), array->getNestedType(),
+				DATA_FILE_EXTENSION, MARKS_FILE_EXTENSION);
 
 			ColumnUInt64::Container_t sizes;
 			while (true)
@@ -192,7 +248,8 @@ static size_t checkColumn(
 		}
 		else
 		{
-			Stream data_stream(path, escapeForFileName(name), type);
+			Stream data_stream(path, escapeForFileName(name), type,
+				DATA_FILE_EXTENSION, MARKS_FILE_EXTENSION);
 
 			size_t rows = 0;
 			while (true)
@@ -335,6 +392,15 @@ void MergeTreePartChecker::checkDataPart(
 			{
 				throw Exception("Different number of rows in columns " + any_column_name + " and " + column.name,
 								ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+			}
+
+			if (column.type.get()->isNullable())
+			{
+				size_t row_count_from_null_map = checkNullableColumn(path,
+					column.name, settings, checksums_data, is_cancelled);
+				if (row_count_from_null_map != rows)
+					throw Exception{"Inconsistent number of rows in null byte map for column " + column.name,
+									ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH};
 			}
 
 			ok = true;

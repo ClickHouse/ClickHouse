@@ -16,6 +16,7 @@
 #include <DB/DataTypes/DataTypeEnum.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/Common/localBackup.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <Poco/DirectoryIterator.h>
@@ -109,13 +110,19 @@ void MergeTreeData::initPrimaryKey()
 
 	size_t primary_key_size = primary_key_sample.columns();
 
-	/// Primary key cannot contain constants. It is meaningless.
+	/// A primary key cannot contain constants. It is meaningless.
 	///  (And also couldn't work because primary key is serialized with method of IDataType that doesn't support constants).
+	/// Also a primary key must not contain any nullable column.
 	for (size_t i = 0; i < primary_key_size; ++i)
 	{
-		const ColumnPtr & column = primary_key_sample.unsafeGetByPosition(i).column;
+		const auto & element = primary_key_sample.unsafeGetByPosition(i);
+
+		const ColumnPtr & column = element.column;
 		if (column && column->isConst())
-			throw Exception("Primary key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN);
+				throw Exception{"Primary key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN};
+
+		if (element.type->isNullable())
+			throw Exception{"Primary key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN};
 	}
 
 	primary_key_data_types.resize(primary_key_size);
@@ -604,18 +611,34 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 	for (const NameAndTypePair & column : old_columns)
 	{
+		bool is_nullable = column.type.get()->isNullable();
+
 		if (!new_types.count(column.name))
 		{
 			if (!part || part->hasColumnFiles(column.name))
 			{
 				/// Столбец нужно удалить.
+				DataTypePtr observed_type;
+				if (is_nullable)
+				{
+					const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(column.type.get()));
+					observed_type = nullable_type.getNestedType();
+				}
+				else
+					observed_type = column.type;
 
 				String escaped_column = escapeForFileName(column.name);
 				out_rename_map[escaped_column + ".bin"] = "";
 				out_rename_map[escaped_column + ".mrk"] = "";
 
+				if (is_nullable)
+				{
+					out_rename_map[escaped_column + ".null"] = "";
+					out_rename_map[escaped_column + ".null_mrk"] = "";
+				}
+
 				/// Если это массив или последний столбец вложенной структуры, нужно удалить файлы с размерами.
-				if (typeid_cast<const DataTypeArray *>(&*column.type))
+				if (typeid_cast<const DataTypeArray *>(observed_type.get()))
 				{
 					String nested_table = DataTypeNested::extractNestedTableName(column.name);
 					/// Если это был последний столбец, относящийся к этим файлам .size0, удалим файлы.
@@ -671,6 +694,12 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 				const String escaped_column = escapeForFileName(column.name);
 				out_rename_map[escaped_expr + ".bin"] = escaped_column + ".bin";
 				out_rename_map[escaped_expr + ".mrk"] = escaped_column + ".mrk";
+
+				if (is_nullable)
+				{
+					out_rename_map[escaped_expr + ".null"] = escaped_column + ".null";
+					out_rename_map[escaped_expr + ".null_mrk"] = escaped_column + ".null_mrk";
+				}
 			}
 		}
 	}
@@ -1359,6 +1388,9 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 		const auto escaped_name = escapeForFileName(column.name);
 		const auto bin_file_name = escaped_name + ".bin";
 		const auto mrk_file_name = escaped_name + ".mrk";
+		/// For nullable columns.
+		const auto null_file_name = escaped_name + ".null";
+		const auto null_mrk_file_name = escaped_name + ".null_mrk";
 
 		auto & column_size = column_sizes[column.name];
 
@@ -1367,6 +1399,12 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 
 		if (files.count(mrk_file_name))
 			column_size += files.find(mrk_file_name)->second.file_size;
+
+		if (files.count(null_file_name))
+			column_size += files.at(null_file_name).file_size;
+
+		if (files.count(null_mrk_file_name))
+			column_size += files.at(null_mrk_file_name).file_size;
 	}
 }
 
@@ -1379,6 +1417,9 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 		const auto escaped_name = escapeForFileName(column.name);
 		const auto bin_file_name = escaped_name + ".bin";
 		const auto mrk_file_name = escaped_name + ".mrk";
+		/// For nullable columns.
+		const auto null_file_name = escaped_name + ".null";
+		const auto null_mrk_file_name = escaped_name + ".null_mrk";
 
 		auto & column_size = column_sizes[column.name];
 
@@ -1387,6 +1428,12 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 
 		if (files.count(mrk_file_name))
 			column_size -= files.find(mrk_file_name)->second.file_size;
+
+		if (files.count(null_file_name))
+			column_size -= files.at(null_file_name).file_size;
+
+		if (files.count(null_mrk_file_name))
+			column_size -= files.at(null_mrk_file_name).file_size;
 	}
 }
 

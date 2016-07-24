@@ -88,6 +88,7 @@ namespace ErrorCodes
 	extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
 	extern const int UNFINISHED;
 	extern const int METADATA_MISMATCH;
+	extern const int RESHARDING_NULLABLE_SHARDING_KEY;
 }
 
 
@@ -3317,6 +3318,10 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 
 		if (has_coordinator)
 			block_number = resharding_worker.subscribe(coordinator_id, queryToString(query));
+
+		NameAndTypePair column_desc = ITableDeclaration::getColumn(sharding_key_expr->getColumnName());
+		if (column_desc.type.get()->isNullable())
+			throw Exception{"Sharding key must not be nullable", ErrorCodes::RESHARDING_NULLABLE_SHARDING_KEY};
 
 		for (const auto & weighted_path : weighted_zookeeper_paths)
 		{
