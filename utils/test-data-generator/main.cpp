@@ -4,6 +4,7 @@
 
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/IO/ReadBufferFromFile.h>
 #include <DB/Common/HashTable/Hash.h>
 
 #include "MarkovModel.h"
@@ -17,10 +18,82 @@
 using namespace DB;
 
 
+struct Models
+{
+	MarkovModel Title;
+	MarkovModel URLDomain;
+	MarkovModel URLPath;
+	MarkovModel RefererDomain;
+	MarkovModel RefererPath;
+	MarkovModel SearchRefererDomain;
+	MarkovModel SearchRefererPath;
+	MarkovModel MobilePhoneModel;
+	MarkovModel Params;
+	MarkovModel NotEmptySearchPhrase;
+	MarkovModel PageCharset;
+	MarkovModel OriginalURL;
+	MarkovModel BrowserLanguage;
+	MarkovModel BrowserCountry;
+	MarkovModel SocialNetwork;
+	MarkovModel SocialAction;
+	MarkovModel SocialSourcePage;
+	MarkovModel ParamCurrency;
+	MarkovModel OpenstatServiceName;
+	MarkovModel OpenstatCampaignID;
+	MarkovModel OpenstatAdID;
+	MarkovModel OpenstatSourceID;
+	MarkovModel UTMSource;
+	MarkovModel UTMMedium;
+	MarkovModel UTMCampaign;
+	MarkovModel UTMContent;
+	MarkovModel UTMTerm;
+	MarkovModel FromTag;
+
+	static void read(MarkovModel & model, const String & path)
+	{
+		ReadBufferFromFile in(path);
+		model.read(path);
+	}
+
+	Models()
+	{
+		read(Title, "Title.model");
+		read(URLDomain, "URLDomain.model");
+		read(URLPath, "URLPath.model");
+		read(RefererDomain, "RefererDomain.model");
+		read(RefererPath, "RefererPath.model");
+		read(SearchRefererDomain, "SearchRefererDomain.model");
+		read(SearchRefererPath, "SearchRefererPath.model");
+		read(MobilePhoneModel, "MobilePhoneModel.model");
+		read(Params, "Params.model");
+		read(NotEmptySearchPhrase, "NotEmptySearchPhrase.model");
+		read(PageCharset, "PageCharset.model");
+		read(OriginalURL, "OriginalURL.model");
+		read(BrowserLanguage, "BrowserLanguage.model");
+		read(BrowserCountry, "BrowserCountry.model");
+		read(SocialNetwork, "SocialNetwork.model");
+		read(SocialAction, "SocialAction.model");
+		read(SocialSourcePage, "SocialSourcePage.model");
+		read(ParamCurrency, "ParamCurrency.model");
+		read(OpenstatServiceName, "OpenstatServiceName.model");
+		read(OpenstatCampaignID, "OpenstatCampaignID.model");
+		read(OpenstatAdID, "OpenstatAdID.model");
+		read(OpenstatSourceID, "OpenstatSourceID.model");
+		read(UTMSource, "UTMSource.model");
+		read(UTMMedium, "UTMMedium.model");
+		read(UTMCampaign, "UTMCampaign.model");
+		read(UTMContent, "UTMContent.model");
+		read(UTMTerm, "UTMTerm.model");
+		read(FromTag, "FromTag.model");
+	}
+};
+
+
 struct Generator
 {
 	WriteBufferFromFileDescriptor out;
 	std::mt19937_64 random;
+	Models models;
 
 	UInt64 WatchID = random();
 	String Title;
@@ -28,6 +101,27 @@ struct Generator
 	String Referer;
 	String FlashMinor2;
 	String UserAgentMinor;
+	String MobilePhoneModel;
+	String Params;
+	String SearchPhrase;
+	String PageCharset;
+	String OriginalURL;
+	String BrowserLanguage;
+	String BrowserCountry;
+	String SocialNetwork;
+	String SocialAction;
+	String SocialSourcePage;
+	String ParamCurrency;
+	String OpenstatServiceName;
+	String OpenstatCampaignID;
+	String OpenstatAdID;
+	String OpenstatSourceID;
+	String UTMSource;
+	String UTMMedium;
+	String UTMCampaign;
+	String UTMContent;
+	String UTMTerm;
+	String FromTag;
 
 	Generator() : out(STDOUT_FILENO) {}
 
@@ -36,6 +130,8 @@ struct Generator
 
 	void generateRow()
 	{
+		auto gen_random64 = [&]{ return random(); };
+
 		/// Unique identifier of event.
 		WatchID += std::uniform_int_distribution<UInt64>(0, 10000000000)(random);
 		writeText(WatchID, out);
@@ -45,7 +141,10 @@ struct Generator
 		writeText(JavaEnable, out);
 		writeChar('\t', out);
 
-		/// Title
+		Title.resize(10000);
+		Title.resize(models.Title.generate(&Title[0], Title.size(), gen_random64));
+		writeText(Title, out);
+		writeChar('\t', out);
 
 		bool GoodEvent = 1;
 		writeText(GoodEvent, out);
@@ -67,6 +166,9 @@ struct Generator
 		writeText(EventDate, out);
 		writeChar('\t', out);
 
+		UInt64 UserID = hash(4, powerLaw(5000, 1.1));
+		UserID = UserID / 10000000000ULL * 10000000000ULL + static_cast<time_t>(EventTime) + UserID % 1000000;
+
 		UInt32 CounterID = hash(1, powerLaw(20, 1.1)) % 10000000;
 		writeText(CounterID, out);
 		writeChar('\t', out);
@@ -79,8 +181,6 @@ struct Generator
 		writeText(RegionID, out);
 		writeChar('\t', out);
 
-		UInt64 UserID = hash(4, powerLaw(5000, 1.1));
-		UserID = UserID / 10000000000ULL * 10000000000ULL + static_cast<time_t>(EventTime) + UserID % 1000000;
 		writeText(UserID, out);
 		writeChar('\t', out);
 
@@ -96,7 +196,11 @@ struct Generator
 		writeText(UserAgent, out);
 		writeChar('\t', out);
 
-		/// URL
+		URL.resize(10000);
+		size_t protocol_size = models.URLProtocol.generate(&URL[0], 100, gen_random64);
+		URL[protocol_size]
+		writeText(MobilePhoneModel, out);
+		writeChar('\t', out);
 
 		/// Referer
 
@@ -206,6 +310,69 @@ struct Generator
 		writeText(JavascriptEnable, out);
 		writeChar('\t', out);
 
+		bool IsMobile = std::bernoulli_distribution(0.15)(random);
+		writeText(IsMobile, out);
+		writeChar('\t', out);
+
+		UInt8 MobilePhone = IsMobile ? hash(16, powerLaw(10, 4)) % 100 : 0;
+		writeText(MobilePhone, out);
+		writeChar('\t', out);
+
+		MobilePhoneModel.resize(100);
+		MobilePhoneModel.resize(models.MobilePhoneModel.generate(&MobilePhoneModel[0], MobilePhoneModel.size(), gen_random64));
+		writeText(MobilePhoneModel, out);
+		writeChar('\t', out);
+
+		Params.resize(10000);
+		Params.resize(models.Params.generate(&Params[0], Params.size(), gen_random64));
+		writeText(Params, out);
+		writeChar('\t', out);
+
+		UInt32 IPNetworkID = hash(17, powerLaw(15, 1.1)) % 5000;
+		writeText(IPNetworkID, out);
+		writeChar('\t', out);
+
+		Int8 TraficSourceID = weightedSelect<Int8>(
+			{-1, 0, 1, 2, 3, 4, 5, 6, 7, 8}, {2000000, 300000, 200000, 600000, 50000, 700, 30000, 40000, 500, 2500});
+		writeText(TraficSourceID, out);
+		writeChar('\t', out);
+
+		UInt16 SearchEngineID = TraficSourceID == 2
+			? hash(18, powerLaw(10, 4)) % 100
+			: (TraficSourceID == 3
+				? (std::bernoulli_distribution(0.5)(random)
+					? hash(19, powerLaw(10, 4)) % 10
+					: 0)
+				: 0);
+
+		if (!SearchEngineID)
+			SearchPhrase.clear();
+		else
+		{
+			SearchPhrase.resize(1000);
+			SearchPhrase.resize(models.NotEmptySearchPhrase.generate(&SearchPhrase[0], SearchPhrase.size(), gen_random64));
+		}
+		writeText(SearchPhrase, out);
+		writeChar('\t', out);
+
+		UInt8 AdvEngineID = weightedSelect<UInt8>(
+			{0, 2, 12, 17, 18, 27, 34, 36}, {3000000, 30000, 3000, 30000, 1, 100, 40, 30});
+		writeText(AdvEngineID, out);
+		writeChar('\t', out);
+
+		bool IsArtificial = std::bernoulli_distribution(0.07)(random);
+		writeText(IsArtificial, out);
+		writeChar('\t', out);
+
+		UInt16 WindowClientWidth = std::max(3000, ResolutionWidth - hash(20, UserID) % 100);
+		UInt16 WindowClientHeight = std::max(3000, ResolutionHeight - hash(21, UserID) % 100);
+
+		writeText(WindowClientWidth, out);
+		writeChar('\t', out);
+
+		writeText(WindowClientHeight, out);
+		writeChar('\t', out);
+
 
 
 		writeChar('\n', out);
@@ -243,20 +410,9 @@ struct Generator
 int main(int argc, char ** argv)
 try
 {
-/*	Generator generator;
+	Generator generator;
 	while (true)
-		generator.generateRow();*/
-
-	std::mt19937 random;
-	MarkovModel model(3);
-
-	model.consume(src.data(), src.size());
-
-	std::string dst;
-	dst.resize(src.size());
-	dst.resize(model.generate(&dst[0], dst.size(), [&]{ return random(); }));
-
-	std::cerr << dst << "\n";
+		generator.generateRow();
 
 	return 0;
 }

@@ -1,6 +1,8 @@
 #include <iostream>
 #include <random>
 
+#include <boost/program_options.hpp>
+
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFile.h>
@@ -13,34 +15,93 @@ using namespace DB;
 int main(int argc, char ** argv)
 try
 {
-	size_t n = parse<size_t>(argv[1]);
-	size_t results = parse<size_t>(argv[2]);
+	boost::program_options::options_description desc("Allowed options");
+	desc.add_options()
+		("help,h", "produce help message")
+		("create", "create model")
+		("order", boost::program_options::value<unsigned>(), "order of model to create")
+		("noise", boost::program_options::value<double>(), "relative random noise to apply to created model")
+		("generate", "generate random strings with model")
+		("max-string-size", boost::program_options::value<UInt64>()->default_value(10000), "maximum size of generated string")
+		("limit", boost::program_options::value<UInt64>(), "stop after specified count of generated strings")
+		("seed", boost::program_options::value<UInt64>(), "seed passed to random number generator")
+	;
+
+	boost::program_options::variables_map options;
+	boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+
+	auto show_usage = [&]
+	{
+		std::cout << "Usage: \n"
+			<< argv[0] << " --create --order=N < strings.tsv > model\n"
+			<< argv[0] << " --generate < model > strings.tsv\n\n";
+		std::cout << desc << std::endl;
+	};
+
+	if (options.count("help"))
+	{
+		show_usage();
+		return 1;
+	}
+
 	ReadBufferFromFileDescriptor in(STDIN_FILENO);
+	WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 
 	std::mt19937 random;
-	MarkovModel model(n);
 
-	String s;
-	while (!in.eof())
+	if (options.count("seed"))
+		random.seed(options["seed"].as<UInt64>());
+
+	if (options.count("create"))
 	{
-		readText(s, in);
-		assertChar('\n', in);
+		MarkovModel model(options["order"].as<unsigned>());
 
-		model.consume(s.data(), s.size());
+		String s;
+		while (!in.eof())
+		{
+			readText(s, in);
+			assertChar('\n', in);
+
+			model.consume(s.data(), s.size());
+		}
+
+		if (options.count("noise"))
+		{
+			double noise = options["noise"].as<double>();
+			model.modifyCounts([&](UInt32 count)
+			{
+				double modified = std::normal_distribution<double>(count, count * noise)(random);
+				if (modified < 1)
+					modified = 1;
+
+				return std::round(modified);
+			});
+		}
+
+		model.write(out);
 	}
-
-	std::string dst;
-
-	for (size_t i = 0; i < results; ++i)
+	else if (options.count("generate"))
 	{
-		dst.resize(10000);
-		dst.resize(model.generate(&dst[0], dst.size(), [&]{ return random(); }));
+		MarkovModel model(in);
+		String s;
 
-		std::cerr << dst << "\n";
+		UInt64 limit = options.count("limit") ? options["limit"].as<UInt64>() : 0;
+		UInt64 max_string_size = options["max-string-size"].as<UInt64>();
+
+		for (size_t i = 0; limit == 0 || i < limit; ++i)
+		{
+			s.resize(max_string_size);
+			s.resize(model.generate(&s[0], s.size(), [&]{ return random(); }));
+
+			writeText(s, out);
+			writeChar('\n', out);
+		}
 	}
-
-	WriteBufferFromFile dump("dump.bin");
-	model.write(dump);
+	else
+	{
+		show_usage();
+		return 1;
+	}
 
 	return 0;
 }

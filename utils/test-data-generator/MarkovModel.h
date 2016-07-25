@@ -64,12 +64,6 @@ private:
 	size_t n;
 
 
-	void setN(size_t n_)
-	{
-		n = n_;
-	}
-
-
 	NGramHash hashContext(const char * pos, const char * data, size_t size) const
 	{
 		if (pos >= data + n)
@@ -79,11 +73,8 @@ private:
 	}
 
 public:
-	MarkovModel(size_t n_)
-	{
-		setN(n_);
-	}
-
+	MarkovModel(size_t n_) : n(n_) {}
+	MarkovModel() {}
 
 	void consume(const char * data, size_t size)
 	{
@@ -96,7 +87,7 @@ public:
 			++pos;
 		}
 
-		/// Mark end of string with special ngram.
+		/// Mark end of string as zero byte.
 		table[hashContext(pos, data, size)].add(0);
 	}
 
@@ -126,6 +117,23 @@ public:
 	}
 
 
+	/// Allows to add random noise to frequencies.
+	template <typename Transform>
+	void modifyCounts(Transform && transform)
+	{
+		for (auto & elem : table)
+		{
+			UInt32 new_total = 0;
+			for (auto & frequency : elem.second.data)
+			{
+				frequency.count = transform(frequency.count);
+				new_total += frequency.count;
+			}
+			elem.second.total = new_total;
+		}
+	}
+
+
 	void write(WriteBuffer & out) const
 	{
 		writeBinary(UInt8(n), out);
@@ -151,7 +159,7 @@ public:
 
 		UInt8 read_n = 0;
 		readBinary(read_n, in);
-		setN(read_n);
+		n = read_n;
 
 		size_t read_size = 0;
 		readVarUInt(read_size, in);
