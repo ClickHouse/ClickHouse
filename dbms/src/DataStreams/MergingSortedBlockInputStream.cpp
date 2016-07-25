@@ -81,13 +81,21 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 		size_t dst_columns = merged_block.columns();
 
 		if (src_columns != dst_columns)
-			throw Exception("Merging blocks has different number of columns", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+			throw Exception("Merging blocks has different number of columns ("
+				+ toString(src_columns) + " and " + toString(dst_columns) + ")",
+				ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
 
 		for (size_t i = 0; i < src_columns; ++i)
+		{
 			if (shared_block_ptr->getByPosition(i).name != merged_block.getByPosition(i).name
 				|| shared_block_ptr->getByPosition(i).type->getName() != merged_block.getByPosition(i).type->getName()
 				|| shared_block_ptr->getByPosition(i).column->getName() != merged_block.getByPosition(i).column->getName())
-				throw Exception("Merging blocks has different names or types of columns", ErrorCodes::BLOCKS_HAS_DIFFERENT_STRUCTURE);
+			{
+				throw Exception("Merging blocks has different names or types of columns:\n"
+					+ shared_block_ptr->dumpStructure() + "\nand\n" + merged_block.dumpStructure(),
+					ErrorCodes::BLOCKS_HAS_DIFFERENT_STRUCTURE);
+			}
+		}
 	}
 
 	for (size_t i = 0; i < num_columns; ++i)
