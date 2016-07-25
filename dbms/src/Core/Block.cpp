@@ -12,6 +12,7 @@
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeNull.h>
 #include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 
 #include <DB/Parsers/ASTExpressionList.h>
 #include <memory>
@@ -254,7 +255,7 @@ bool Block::hasNullColumns() const
 	{
 		if (elem.column && elem.type)
 		{
-			if (elem.type.get()->isNull())
+			if (elem.column.get()->isNull())
 				return true;
 		}
 	}
@@ -269,7 +270,7 @@ bool Block::hasNullableColumns(const ColumnNumbers & arguments) const
 		const auto & elem = unsafeGetByPosition(arg);
 		if (elem.column && elem.type)
 		{
-			if (elem.type.get()->isNullable())
+			if (elem.column.get()->isNullable())
 				return true;
 		}
 	}
@@ -384,22 +385,38 @@ Block Block::sortColumns() const
 }
 
 
-Block Block::extractNonNullableBlock() const
+Block Block::extractNonNullableBlock(const ColumnNumbers & arguments) const
 {
 	Block non_nullable_block;
 	non_nullable_block.reserve(columns());
+
+	ColumnNumbers args2 = arguments;
+	std::sort(args2.begin(), args2.end());
 
 	size_t pos = 0;
 	for (const auto & col_it : index_by_position)
 	{
 		const auto & col = *col_it;
 
-		if (col.column && col.type && (col.type.get()->isNullable()))
+		if (std::binary_search(args2.begin(), args2.end(), pos)
+			&& col.column && col.type && col.column.get()->isNullable())
 		{
 			auto nullable_col = static_cast<const ColumnNullable *>(col.column.get());
 			ColumnPtr nested_col = nullable_col->getNestedColumn();
-			auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
-			DataTypePtr nested_type = nullable_type->getNestedType();
+
+			DataTypePtr nested_type;
+
+			if (col.type.get()->isNull())
+			{
+				/// A ColumnNull that is converted to a full column has the type DataTypeUInt8.
+				nested_type = std::make_shared<DataTypeUInt8>();
+			}
+			else
+			{
+				auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
+				nested_type = nullable_type->getNestedType();
+
+			}
 
 			non_nullable_block.insert(pos, {nested_col, nested_type, col.name});
 		}

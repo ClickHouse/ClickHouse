@@ -3,10 +3,18 @@
 
 #include <DB/DataStreams/PrettyCompactBlockOutputStream.h>
 #include <DB/DataTypes/NullSymbol.h>
+#include <DB/Columns/ColumnNullable.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+
+extern const int ILLEGAL_COLUMN;
+
+}
 
 void PrettyCompactBlockOutputStream::writeHeader(
 	const Block & block,
@@ -73,6 +81,20 @@ void PrettyCompactBlockOutputStream::writeRow(
 	const Widths_t & max_widths,
 	const Widths_t & name_widths)
 {
+	auto has_null_value = [](const ColumnPtr & col, size_t row)
+	{
+		if (col.get()->isNullable())
+		{
+			const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*(col.get()));
+			if (nullable_col.isNullAt(row))
+				return true;
+		}
+		else if (col.get()->isNull())
+			return true;
+
+		return false;
+	};
+
 	size_t columns = max_widths.size();
 
 	writeCString("│ ", ostr);
@@ -86,11 +108,34 @@ void PrettyCompactBlockOutputStream::writeRow(
 
 		size_t width;
 
-		Field f = (*(block.getByPosition(columns + j).column))[row_id];
-		if (f.isNull())
+		if (has_null_value(col.column, row_id))
 			width = NullSymbol::Escaped::length;
 		else
-			width = get<UInt64>(f);
+		{
+			ColumnPtr res_col = block.getByPosition(columns + j).column;
+
+			IColumn * observed_col;
+			if (res_col.get()->isNullable())
+			{
+				ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(res_col.get()));
+				observed_col = nullable_col.getNestedColumn().get();
+			}
+			else
+				observed_col = res_col.get();
+
+			if (const ColumnUInt64 * concrete_col = typeid_cast<const ColumnUInt64 *>(observed_col))
+			{
+				const ColumnUInt64::Container_t & res = concrete_col->getData();
+				width = res[row_id];
+			}
+			else if (const ColumnConstUInt64 * concrete_col = typeid_cast<const ColumnConstUInt64 *>(observed_col))
+			{
+				UInt64 res = concrete_col->getData();
+				width = res;
+			}
+			else
+				throw Exception{"Illegal column " + observed_col->getName(), ErrorCodes::ILLEGAL_COLUMN};
+		}
 
 		if (col.type->isNumeric())
 		{

@@ -21,7 +21,7 @@ void createNullValuesByteMap(Block & block, size_t result)
 			continue;
 
 		const ColumnWithTypeAndName & elem = block.unsafeGetByPosition(i);
-		if (elem.column && elem.type && (elem.type.get()->isNullable()))
+		if (elem.column && elem.column.get()->isNullable())
 		{
 			const ColumnNullable & concrete_col = static_cast<const ColumnNullable &>(*(elem.column.get()));
 			res_col.updateNullValuesByteMap(concrete_col);
@@ -170,7 +170,7 @@ void IFunction::getLambdaArgumentTypes(DataTypes & arguments) const
 
 void IFunction::execute(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-	if (!hasSpecialSupportForNulls() && !hasSpecialSupportForNullValues() && block.hasNullColumns())
+	if (!hasSpecialSupportForNulls() && block.hasNullColumns())
 	{
 		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
 		dest_col.column =  std::make_shared<ColumnNull>(block.rowsInFirstColumn());
@@ -179,7 +179,7 @@ void IFunction::execute(Block & block, const ColumnNumbers & arguments, size_t r
 
 	if (!hasSpecialSupportForNulls() && block.hasNullableColumns(arguments))
 	{
-		Block non_nullable_block = block.extractNonNullableBlock();
+		Block non_nullable_block = block.extractNonNullableBlock(arguments);
 		executeImpl(non_nullable_block, arguments, result);
 		const ColumnWithTypeAndName & source_col = non_nullable_block.getByPosition(result);
 		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
@@ -192,7 +192,7 @@ void IFunction::execute(Block & block, const ColumnNumbers & arguments, size_t r
 
 void IFunction::execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result)
 {
-	if (!hasSpecialSupportForNulls() && !hasSpecialSupportForNullValues() && block.hasNullColumns())
+	if (!hasSpecialSupportForNulls() && block.hasNullColumns())
 	{
 		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
 		dest_col.column =  std::make_shared<ColumnNull>(block.rowsInFirstColumn());
@@ -201,7 +201,7 @@ void IFunction::execute(Block & block, const ColumnNumbers & arguments, const Co
 
 	if (!hasSpecialSupportForNulls() && block.hasNullableColumns(arguments))
 	{
-		Block non_nullable_block = block.extractNonNullableBlock();
+		Block non_nullable_block = block.extractNonNullableBlock(arguments);
 		executeImpl(non_nullable_block, arguments, prerequisites, result);
 		const ColumnWithTypeAndName & source_col = non_nullable_block.getByPosition(result);
 		ColumnWithTypeAndName & dest_col = block.getByPosition(result);

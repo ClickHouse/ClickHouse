@@ -1,4 +1,6 @@
 #include <DB/Columns/ColumnNull.h>
+#include <DB/Columns/ColumnNullable.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/Common/Arena.h>
 
 namespace DB
@@ -26,9 +28,14 @@ bool ColumnNull::isConst() const
 	return true;
 }
 
+bool ColumnNull::isNull() const
+{
+	return true;
+}
+
 ColumnPtr ColumnNull::convertToFullColumnIfConst() const
 {
-	return std::make_shared<ColumnNull>(count);
+	return std::make_shared<ColumnNullable>(std::make_shared<ColumnUInt8>(count, 0), true);
 }
 
 size_t ColumnNull::sizeOfField() const

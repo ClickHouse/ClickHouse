@@ -12,6 +12,7 @@ public:
 	ColumnNull(size_t size);
 	std::string getName() const override;
 	bool isConst() const override;
+	bool isNull() const override;
 	ColumnPtr convertToFullColumnIfConst() const override;
 	size_t sizeOfField() const override;
 	ColumnPtr cloneResized(size_t size) const override;

@@ -117,7 +117,7 @@ public:
 
 	/// Returns a block in which all the nullable columns are replaced by
 	/// their non-nullable counterparts.
-	Block extractNonNullableBlock() const;
+	Block extractNonNullableBlock(const ColumnNumbers & arguments) const;
 
 	/** Заменяет столбцы смещений внутри вложенных таблиц на один общий для таблицы.
 	 *  Кидает исключение, если эти смещения вдруг оказались неодинаковы.

@@ -10,7 +10,7 @@ extern const int LOGICAL_ERROR;
 
 }
 
-ColumnNullable::ColumnNullable(ColumnPtr nested_column_)
+ColumnNullable::ColumnNullable(ColumnPtr nested_column_, bool fill_with_nulls)
 	: nested_column{nested_column_},
 	null_map{std::make_shared<ColumnUInt8>()}
 {
@@ -19,7 +19,7 @@ ColumnNullable::ColumnNullable(ColumnPtr nested_column_)
 
 	size_t n = nested_column.get()->size();
 	if (n > 0)
-		getNullMapContent().getData().resize_fill(n, 0);
+		getNullMapContent().getData().resize_fill(n, (fill_with_nulls ? 1 : 0));
 }
 
 std::string ColumnNullable::getName() const

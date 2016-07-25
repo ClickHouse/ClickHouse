@@ -54,6 +54,9 @@ public:
 	/// Is this column a container for nullable values?
 	virtual bool isNullable() const { return false; }
 
+	/// Is this a null column?
+	virtual bool isNull() const { return false; }
+
 	/** Если столбец не константа - возвращает nullptr (либо может вернуть самого себя).
 	  * Если столбец константа, то превращает его в полноценный столбец (если тип столбца предполагает такую возможность) и возвращает его.
 	  * Отдельный случай:

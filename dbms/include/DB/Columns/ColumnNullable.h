@@ -9,7 +9,7 @@ namespace DB
 class ColumnNullable final : public IColumn
 {
 public:
-	ColumnNullable(ColumnPtr nested_column_);
+	ColumnNullable(ColumnPtr nested_column_, bool fill_with_nulls = false);
 	std::string getName() const override;
 	bool isNumeric() const override;
 	bool isConst() const override;

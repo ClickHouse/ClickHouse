@@ -108,8 +108,6 @@ public:
 
 	virtual bool hasSpecialSupportForNulls() const { return false; }
 
-	virtual bool hasSpecialSupportForNullValues() const { return false; }
-
 	/** Позволяет узнать, является ли функция монотонной в некотором диапазоне значений.
 	  * Это используется для работы с индексом в сортированном куске данных.
 	  * И позволяет использовать индекс не только, когда написано, например date >= const, но и, например, toMonth(date) >= 11.

@@ -47,6 +47,20 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 
 		column.column = block.getByPosition(i + columns).column;
 
+		auto has_null_value = [](const ColumnPtr & col, size_t row)
+		{
+			if (col.get()->isNullable())
+			{
+				const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*(col.get()));
+				if (nullable_col.isNullAt(row))
+					return true;
+			}
+			else if (col.get()->isNull())
+				return true;
+
+			return false;
+		};
+
 		IColumn * observed_col;
 		if (column.column.get()->isNullable())
 		{
@@ -61,10 +75,8 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 			const ColumnUInt64::Container_t & res = col->getData();
 			for (size_t j = 0; j < rows; ++j)
 			{
-				Field f = (*(block.getByPosition(columns + i).column))[j];
-
 				size_t cur_width;
-				if (f.isNull())
+				if (has_null_value(block.getByPosition(i).column, j))
 					cur_width = NullSymbol::Escaped::length;
 				else
 					cur_width = res[j];

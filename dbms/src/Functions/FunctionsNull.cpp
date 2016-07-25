@@ -8,6 +8,7 @@ void registerFunctionsNull(FunctionFactory & factory)
 {
 	factory.registerFunction<FunctionIsNull>();
 	factory.registerFunction<FunctionIsNotNull>();
+	factory.registerFunction<FunctionCoalesce>();
 }
 
 }
