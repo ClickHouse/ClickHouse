@@ -306,7 +306,18 @@ public:
 						}
 					};
 
-					FunctionCast(context).execute(temporary_block, {0, 1}, 2);
+					FunctionCast func_cast(context);
+
+					{
+						DataTypePtr unused_return_type;
+						ColumnsWithTypeAndName arguments{ temporary_block.unsafeGetByPosition(0), temporary_block.unsafeGetByPosition(1) };
+						std::vector<ExpressionAction> unused_prerequisites;
+
+						/// Prepares function to execution. TODO It is not obvious.
+						func_cast.getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
+					}
+
+					func_cast.execute(temporary_block, {0, 1}, 2);
 					preprocessed_column = temporary_block.unsafeGetByPosition(2).column;
 				}
 
