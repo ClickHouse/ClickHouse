@@ -78,7 +78,7 @@ public:
 	const ColumnWithTypeAndName & getByName(const std::string & name) const;
 
 	bool has(const std::string & name) const;
-	bool hasNullColumns() const;
+	bool hasNullColumns(const ColumnNumbers & arguments) const;
 	bool hasNullableColumns(const ColumnNumbers & arguments) const;
 
 	size_t getPositionByName(const std::string & name) const;

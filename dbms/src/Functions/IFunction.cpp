@@ -170,7 +170,7 @@ void IFunction::getLambdaArgumentTypes(DataTypes & arguments) const
 
 void IFunction::execute(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-	if (!hasSpecialSupportForNulls() && block.hasNullColumns())
+	if (!hasSpecialSupportForNulls() && block.hasNullColumns(arguments))
 	{
 		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
 		dest_col.column =  std::make_shared<ColumnNull>(block.rowsInFirstColumn());
@@ -192,7 +192,7 @@ void IFunction::execute(Block & block, const ColumnNumbers & arguments, size_t r
 
 void IFunction::execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result)
 {
-	if (!hasSpecialSupportForNulls() && block.hasNullColumns())
+	if (!hasSpecialSupportForNulls() && block.hasNullColumns(arguments))
 	{
 		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
 		dest_col.column =  std::make_shared<ColumnNull>(block.rowsInFirstColumn());

@@ -9,6 +9,7 @@ namespace ErrorCodes
 {
 
 extern const int INVALID_FUNCTION_GENUS;
+extern const int LOGICAL_ERROR;
 
 }
 
@@ -69,6 +70,12 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 	if ((genus == Genus::CASE_WITH_EXPR) || (genus == Genus::CASE_WITHOUT_EXPR))
 	{
 		formatCase(settings, state, frame);
+		return;
+	}
+
+	if (genus == Genus::NULLITY_CHECK_OPERATOR)
+	{
+		formatNullityCheckOperator(settings, state, frame);
 		return;
 	}
 
@@ -342,6 +349,32 @@ void ASTFunction::formatCase(const FormatSettings & settings, FormatState & stat
 	settings.ostr << settings.nl_or_ws;
 
 	settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << s_end;
+}
+
+void ASTFunction::formatNullityCheckOperator(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+	static constexpr auto s_is = "IS";
+	static constexpr auto s_not = "NOT";
+	static constexpr auto s_null = "NULL";
+	static constexpr auto s_ws = " ";
+
+	const ASTExpressionList * expr_list = static_cast<const ASTExpressionList *>(&*arguments);
+	const ASTs & args = expr_list->children;
+
+	args[0]->formatImpl(settings, state, frame);
+	settings.ostr << (settings.hilite ? hilite_operator : "") << s_ws << s_is << s_ws;
+
+	if (name == "isNull")
+	{
+		settings.ostr << s_null << (settings.hilite ? hilite_none : "");
+	}
+	else if (name == "isNotNull")
+	{
+		settings.ostr << s_not << s_ws;
+		settings.ostr << s_null << (settings.hilite ? hilite_none : "");
+	}
+	else
+		throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 }
 
 }

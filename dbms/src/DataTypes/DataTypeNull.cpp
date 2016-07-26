@@ -102,7 +102,8 @@ Field DataTypeNull::getDefault() const
 
 size_t DataTypeNull::getSizeOfField() const
 {
-	return 0;
+	/// NULL has the size of the smallest non-null type.
+	return sizeof(UInt8);
 }
 
 void DataTypeNull::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const

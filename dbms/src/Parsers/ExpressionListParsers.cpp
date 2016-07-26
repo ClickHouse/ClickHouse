@@ -626,6 +626,7 @@ bool ParserNullityChecking::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 
 		auto function = std::make_shared<ASTFunction>(StringRange{pos, end});
 		function->name = is_not ? "isNotNull" : "isNull";
+		function->genus = ASTFunction::Genus::NULLITY_CHECK_OPERATOR;
 		function->arguments = args;
 		function->children.push_back(function->arguments);
 

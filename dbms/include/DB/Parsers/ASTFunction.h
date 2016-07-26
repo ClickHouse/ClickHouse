@@ -34,12 +34,14 @@ public:
 
 	FunctionKind kind{UNKNOWN};
 
+	/// Context-dependent information.
 	enum class Genus
 	{
 		ORDINARY = 0,
 		CASE_WITH_EXPR,
 		CASE_WITHOUT_EXPR,
-		CASE_ARRAY
+		CASE_ARRAY,
+		NULLITY_CHECK_OPERATOR
 	};
 
 	Genus genus{Genus::ORDINARY};
@@ -60,6 +62,7 @@ protected:
 
 private:
 	void formatCase(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
+	void formatNullityCheckOperator(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
 };
 
 

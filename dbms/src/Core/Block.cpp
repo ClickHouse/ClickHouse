@@ -249,15 +249,13 @@ bool Block::has(const std::string & name) const
 }
 
 
-bool Block::hasNullColumns() const
+bool Block::hasNullColumns(const ColumnNumbers & arguments) const
 {
-	for (const auto & elem : data)
+	for (const auto & arg : arguments)
 	{
-		if (elem.column && elem.type)
-		{
-			if (elem.column.get()->isNull())
-				return true;
-		}
+		const auto & elem = unsafeGetByPosition(arg);
+		if (elem.column && elem.column.get()->isNull())
+			return true;
 	}
 	return false;
 }
@@ -268,11 +266,8 @@ bool Block::hasNullableColumns(const ColumnNumbers & arguments) const
 	for (const auto & arg : arguments)
 	{
 		const auto & elem = unsafeGetByPosition(arg);
-		if (elem.column && elem.type)
-		{
-			if (elem.column.get()->isNullable())
-				return true;
-		}
+		if (elem.column && elem.column.get()->isNullable())
+			return true;
 	}
 	return false;
 }
