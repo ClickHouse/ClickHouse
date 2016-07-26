@@ -74,6 +74,7 @@ private:
 
 public:
 	MarkovModel(size_t n_) : n(n_) {}
+	MarkovModel(ReadBuffer & in) { read(in); }
 	MarkovModel() {}
 
 	void consume(const char * data, size_t size)
