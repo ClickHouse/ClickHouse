@@ -1,7 +1,8 @@
 #pragma once
 
 #include <DB/Columns/ColumnConst.h>
-
+#include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
@@ -41,7 +42,15 @@ protected:
 			auto & src = res.getByPosition(i).column;
 			ColumnPtr converted = src->convertToFullColumnIfConst();
 			if (converted)
+			{
 				src = converted;
+				auto & type = res.getByPosition(i).type;
+				if (type.get()->isNull())
+				{
+					/// A ColumnNull that is converted to a full column has the type DataTypeUInt8.
+					type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+				}
+			}
 		}
 
 		return res;

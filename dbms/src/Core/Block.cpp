@@ -404,19 +404,8 @@ Block Block::extractNonNullableBlock(const ColumnNumbers & arguments) const
 			auto nullable_col = static_cast<const ColumnNullable *>(col.column.get());
 			ColumnPtr nested_col = nullable_col->getNestedColumn();
 
-			DataTypePtr nested_type;
-
-			if (col.type.get()->isNull())
-			{
-				/// A ColumnNull that is converted to a full column has the type DataTypeUInt8.
-				nested_type = std::make_shared<DataTypeUInt8>();
-			}
-			else
-			{
-				auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
-				nested_type = nullable_type->getNestedType();
-
-			}
+			auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
+			DataTypePtr nested_type = nullable_type->getNestedType();
 
 			non_nullable_block.insert(pos, {nested_col, nested_type, col.name});
 		}
