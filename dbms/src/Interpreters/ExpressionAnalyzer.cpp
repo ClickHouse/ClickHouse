@@ -72,6 +72,7 @@ namespace ErrorCodes
 	extern const int DUPLICATE_COLUMN;
 	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 	extern const int ILLEGAL_AGGREGATION;
+	extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -346,13 +347,7 @@ void ExpressionAnalyzer::initGlobalSubqueries(ASTPtr & ast)
 		/// Для GLOBAL JOIN.
 		if (do_global && node->table_join
 			&& static_cast<const ASTTableJoin &>(*node->table_join).locality == ASTTableJoin::Locality::Global)
-		{
-			auto & table_expression = static_cast<ASTTableExpression &>(*node->table_expression);
-
-			addExternalStorage(table_expression.database_and_table_name
-				? table_expression.database_and_table_name
-				: table_expression.subquery);
-		}
+			addExternalStorage(node->table_expression);
 	}
 }
 
@@ -377,16 +372,47 @@ static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
 	ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_columns);
 
 
-void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
+void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_table_expression)
 {
 	/// При нераспределённых запросах, создание временных таблиц не имеет смысла.
 	if (!(storage && storage->isRemote()))
 		return;
 
-	if (const ASTIdentifier * table = typeid_cast<const ASTIdentifier *>(subquery_or_table_name.get()))
+	ASTPtr subquery;
+	ASTPtr table_name;
+	ASTPtr subquery_or_table_name;
+
+	if (typeid_cast<const ASTIdentifier *>(subquery_or_table_name_or_table_expression.get()))
+	{
+		table_name = subquery_or_table_name_or_table_expression;
+		subquery_or_table_name = table_name;
+	}
+	else if (auto ast_table_expr = typeid_cast<const ASTTableExpression *>(subquery_or_table_name_or_table_expression.get()))
+	{
+		if (ast_table_expr->database_and_table_name)
+		{
+			table_name = ast_table_expr->database_and_table_name;
+			subquery_or_table_name = table_name;
+		}
+		else if (ast_table_expr->subquery)
+		{
+			subquery = ast_table_expr->subquery;
+			subquery_or_table_name = subquery;
+		}
+	}
+	else if (typeid_cast<const ASTSubquery *>(subquery_or_table_name_or_table_expression.get()))
+	{
+		subquery = subquery_or_table_name_or_table_expression;
+		subquery_or_table_name = subquery;
+	}
+
+	if (!subquery_or_table_name)
+		throw Exception("Logical error: unknown AST element passed to ExpressionAnalyzer::addExternalStorage method", ErrorCodes::LOGICAL_ERROR);
+
+	if (table_name)
 	{
 		/// Если это уже внешняя таблица, ничего заполять не нужно. Просто запоминаем ее наличие.
-		if (external_tables.end() != external_tables.find(table->name))
+		if (external_tables.end() != external_tables.find(static_cast<const ASTIdentifier &>(*table_name).name))
 			return;
 	}
 
@@ -428,10 +454,24 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 		  *  вместо выполнения подзапроса, надо будет просто из неё прочитать.
 		  */
 
-		subquery_or_table_name = std::make_shared<ASTIdentifier>(StringRange(), external_table_name, ASTIdentifier::Table);
+		auto database_and_table_name = std::make_shared<ASTIdentifier>(StringRange(), external_table_name, ASTIdentifier::Table);
+
+		if (auto ast_table_expr = typeid_cast<ASTTableExpression *>(subquery_or_table_name_or_table_expression.get()))
+		{
+			ast_table_expr->subquery.reset();
+			ast_table_expr->database_and_table_name = database_and_table_name;
+
+			ast_table_expr->children.clear();
+			ast_table_expr->children.emplace_back(database_and_table_name);
+		}
+		else
+			subquery_or_table_name_or_table_expression = database_and_table_name;
 	}
 	else if (settings.global_subqueries_method == GlobalSubqueriesMethod::PULL)
 	{
+		throw Exception("Support for 'pull' method of execution of global subqueries is disabled.", ErrorCodes::SUPPORT_IS_DISABLED);
+
+		/// TODO
 /*		String host_port = getFQDNOrHostName() + ":" + toString(context.getTCPPort());
 		String database = "_query_" + context.getCurrentQueryId();
 
