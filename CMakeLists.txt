@@ -26,7 +26,11 @@ IF(NOT CMAKE_BUILD_TYPE)
 ENDIF()
 MESSAGE( STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE} )
 
+# ASan - build type with address sanitizer
+# TSan - build type with thread sanitizer
+# UBSan - build type with undefined behaviour sanitizer
 set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
+
 
 IF (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*)")
 	SET(AARCH64 1)
@@ -55,10 +59,18 @@ SET(CMAKE_BUILD_COLOR_MAKEFILE          ON)
 SET(CMAKE_CXX_FLAGS "-std=gnu++1y ${COMMON_WARNING_FLAGS} -Wnon-virtual-dtor ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
 SET(CMAKE_CXX_FLAGS_RELEASE             "-O3 -DNDEBUG")
 SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO      "-O3 -g")
+
 SET(CMAKE_C_FLAGS                       "${COMMON_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
 SET(CMAKE_C_FLAGS_RELEASE               "-O3 -DNDEBUG")
 SET(CMAKE_C_FLAGS_RELWITHDEBINFO        "-O3 -g")
 SET(CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++ ${GLIBC_COMPATIBILITY_LINK_FLAGS}")
+
+SET(CMAKE_CXX_FLAGS_ASAN                "-O3 -g -fsanitize=address -fno-omit-frame-pointer")
+SET(CMAKE_CXX_FLAGS_TSAN                "-O3 -g -fsanitize=thread -fno-omit-frame-pointer")
+SET(CMAKE_CXX_FLAGS_UBSAN               "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer")
+SET(CMAKE_C_FLAGS_ASAN                  "-O3 -g -fsanitize=address -fno-omit-frame-pointer")
+SET(CMAKE_C_FLAGS_TSAN                  "-O3 -g -fsanitize=thread -fno-omit-frame-pointer")
+SET(CMAKE_C_FLAGS_UBSAN                 "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer")
 
 # cmake -DCMAKE_BUILD_TYPE=Debug ..
 SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
