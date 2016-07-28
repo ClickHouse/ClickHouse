@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/optional.hpp>
 #include <string>
 #include <time.h>
 #include <Poco/Net/StreamSocket.h>
@@ -34,7 +35,9 @@ public:
 
 	/// Для облачных демонов удобней использовать
 	/// путь вида prefix.environment.layer.daemon_name.metrica
-	static std::string getPerLayerPath(const std::string & prefix = "one_min");
+	static std::string getPerLayerPath(
+		const std::string & prefix = "one_min",
+		const boost::optional<std::size_t> layer = {});
 	
 	/// возвращает путь root_path.server_name
 	static std::string getPerServerPath(const std::string & server_name, const std::string & root_path = "one_min");

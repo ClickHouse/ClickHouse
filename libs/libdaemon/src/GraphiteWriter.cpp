@@ -49,7 +49,7 @@ GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::strin
 		root_path += "." + sub_path;
 }
 
-std::string getPostfix()
+std::string getPostfix(const boost::optional<std::size_t> layer)
 {
 	/// Угадываем имя среды по имени машинки
 	/// машинки имеют имена вида example01dt.yandex.ru
@@ -73,7 +73,9 @@ std::string getPostfix()
 
 	const BaseDaemon & daemon = BaseDaemon::instance();
 
-	if (daemon.getLayer())
+	if (layer)
+		path_full << "layer" << std::setfill('0') << std::setw(3) << *layer << ".";
+	else if (daemon.getLayer())
 		path_full << "layer" << std::setfill('0') << std::setw(3) << *daemon.getLayer() << ".";
 
 	/// Когда несколько демонов запускается на одной машине
@@ -88,9 +90,11 @@ std::string getPostfix()
 	return path_full.str();
 }
 
-std::string GraphiteWriter::getPerLayerPath(const std::string & prefix)
+std::string GraphiteWriter::getPerLayerPath(
+	const std::string & prefix,
+	const boost::optional<std::size_t> layer)
 {
-	const std::string static postfix = getPostfix();
+	const std::string static postfix = getPostfix(layer);
 	return prefix + "." + postfix;
 }
 
