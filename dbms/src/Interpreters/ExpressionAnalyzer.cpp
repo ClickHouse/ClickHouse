@@ -1641,7 +1641,8 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 	else
 	{
 		for (auto & child : ast->children)
-			if (!typeid_cast<const ASTSubquery *>(child.get()))
+			if (!typeid_cast<const ASTSubquery *>(child.get())
+				&& !typeid_cast<const ASTSelectQuery *>(child.get()))
 				getArrayJoinedColumnsImpl(child);
 	}
 }
@@ -1976,7 +1977,8 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
 	else
 	{
 		for (const auto & child : ast->children)
-			if (!typeid_cast<const ASTSubquery *>(child.get()))
+			if (!typeid_cast<const ASTSubquery *>(child.get())
+				&& !typeid_cast<const ASTSelectQuery *>(child.get()))
 				getAggregates(child, actions);
 	}
 }
@@ -1991,7 +1993,8 @@ void ExpressionAnalyzer::assertNoAggregates(const ASTPtr & ast, const char * des
 			+ " is found " + String(description) + " in query", ErrorCodes::ILLEGAL_AGGREGATION);
 
 	for (const auto & child : ast->children)
-		if (!typeid_cast<const ASTSubquery *>(child.get()))
+		if (!typeid_cast<const ASTSubquery *>(child.get())
+			&& !typeid_cast<const ASTSelectQuery *>(child.get()))
 			assertNoAggregates(child, description);
 }
 
