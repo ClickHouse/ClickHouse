@@ -519,7 +519,7 @@ SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType
 ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
 
 
-For further info please read the documentation: https://clickhouse.yandex-team.ru/
+For further info please read the documentation: https://clickhouse.yandex/
 )";
 
 		String name_part = name.substr(0, name.size() - strlen("MergeTree"));
