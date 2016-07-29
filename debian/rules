@@ -38,8 +38,6 @@ clean:
 	find ./debian/ -name "*.init" -type l -delete
 	# Удалим созданные для dh_installcron файлы
 	find ./debian/ -name "*.cron.d" -type f -delete
-	# Удалим созданные для dh_installlogrotate файлы
-	find ./debian/ -name "*.logrotate" -type f -delete
 	# Удалим созданные ссылки на файлы документации
 	find ./debian/ -name "*.docs" -type l -delete
 	rm -f ./debian/copyright
@@ -63,7 +61,6 @@ install: build
 
 	# создаем дефолтный cron, если нет крон-файла созданного пользователем
 	# cron_name имеет вид daemonname-metrika-yandex
-	# logrotate_name имеет вид daemonname
 	# Для ClickHouse не должно быть лишних зависимостей.
 	for I in debian/tmp/etc/init.d/*; \
 	do \
@@ -73,14 +70,6 @@ install: build
 		fi; \
 		if [ ! -f debian/tmp/etc/cron.d/$$cron_name ]; then \
 			echo "#*/10 * * * * root /etc/init.d/$$cron_name condstart 1>/dev/null 2>&1" > debian/tmp/etc/cron.d/$$cron_name; \
-			logrotate_name=`basename $$I | sed 's/-metrika-yandex//'`; \
-			if [ -f debian/tmp/etc/logrotate.d/$$logrotate_name.logrt ]; then \
-				if [ -e debian/tmp/etc/init.d/clickhouse-server ]; then \
-					echo "#23 * * * * root flock -w 200 /var/run/lock/metrika-logrotate -c '/usr/sbin/logrotate /etc/logrotate.d/$$logrotate_name.logrt'" >> debian/tmp/etc/cron.d/$$cron_name; \
-				else \
-					echo "#23 * * * * root /usr/local/bin/metrika-logrotate /etc/logrotate.d/$$logrotate_name.logrt" >> debian/tmp/etc/cron.d/$$cron_name; \
-				fi; \
-			fi; \
 		fi; \
 	done; \
 	# Создаём нужные *.install файлы
@@ -90,7 +79,6 @@ install: build
 			echo "# automatically created" > debian/$$DAEMON_PKG-metrika-yandex.install; \
 			echo "/etc/$$DAEMON_PKG/config.xml" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
 			echo "/usr/bin/$$DAEMON_PKG" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
-			echo "/etc/logrotate.d/$$DAEMON_PKG.logrt" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
 			echo "/etc/cron.d/$$DAEMON_PKG-metrika-yandex" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
 			if [ -e "debian/tmp/etc/monrun/conf.d/$$DAEMON_PKG.conf" ]; then \
 				echo "/etc/monrun/conf.d/$$DAEMON_PKG.conf" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
