@@ -37,7 +37,7 @@ public:
 	/// путь вида prefix.environment.layer.daemon_name.metrica
 	static std::string getPerLayerPath(
 		const std::string & prefix = "one_min",
-		const boost::optional<std::size_t> layer = {});
+		const boost::optional<std::size_t> & layer = {});
 	
 	/// возвращает путь root_path.server_name
 	static std::string getPerServerPath(const std::string & server_name, const std::string & root_path = "one_min");

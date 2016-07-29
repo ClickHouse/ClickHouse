@@ -75,19 +75,22 @@ std::string getEnvironment()
 	}
 }
 
-std::string getPostfix(const boost::optional<std::size_t> layer)
+std::string GraphiteWriter::getPerLayerPath(
+	const std::string & prefix,
+	const boost::optional<std::size_t> & layer)
 {
 	static const std::string environment = getEnvironment();
 
 	std::stringstream path_full;
-	path_full << environment << ".";
+	path_full << prefix << "." << environment << ".";
 
 	const BaseDaemon & daemon = BaseDaemon::instance();
 
-	if (layer)
-		path_full << "layer" << std::setfill('0') << std::setw(3) << *layer << ".";
-	else if (daemon.getLayer())
-		path_full << "layer" << std::setfill('0') << std::setw(3) << *daemon.getLayer() << ".";
+	const boost::optional<std::size_t> layer_ = layer.is_initialized()
+	    ? layer
+	    : daemon.getLayer();
+	if (layer_)
+		path_full << "layer" << std::setfill('0') << std::setw(3) << *layer_ << ".";
 
 	/// Когда несколько демонов запускается на одной машине
 	/// к имени демона добавляется цифра.
@@ -99,13 +102,6 @@ std::string getPostfix(const boost::optional<std::size_t> layer)
 	path_full << command_name;
 
 	return path_full.str();
-}
-
-std::string GraphiteWriter::getPerLayerPath(
-	const std::string & prefix,
-	const boost::optional<std::size_t> layer)
-{
-	return prefix + "." + getPostfix(layer);
 }
 
 std::string GraphiteWriter::getPerServerPath(const std::string & server_name, const std::string & root_path)
