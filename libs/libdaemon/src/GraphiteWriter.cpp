@@ -49,27 +49,38 @@ GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::strin
 		root_path += "." + sub_path;
 }
 
-std::string getPostfix(const boost::optional<std::size_t> layer)
+/// Угадываем имя среды по имени машинки
+/// машинки имеют имена вида example01dt.yandex.ru
+/// t - test
+/// dev - development
+/// никакого суффикса - production
+std::string getEnvironment()
 {
-	/// Угадываем имя среды по имени машинки
-	/// машинки имеют имена вида example01dt.yandex.ru
-	/// t - test
-	/// dev - development
-	/// никакого суффикса - production
-
-	std::stringstream path_full;
-
 	std::string hostname = Poco::Net::DNS::hostName();
 	hostname = hostname.substr(0, hostname.find('.'));
 
 	const std::string development_suffix = "dev";
 	if (hostname.back() == 't')
-		path_full << "test.";
+	{
+		return "test";
+	}
 	else if (hostname.size() > development_suffix.size() &&
 			hostname.substr(hostname.size() - development_suffix.size()) == development_suffix)
-		path_full << "development.";
+	{
+		return "development";
+	}
 	else
-		path_full << "production.";
+	{
+		return "production";
+	}
+}
+
+std::string getPostfix(const boost::optional<std::size_t> layer)
+{
+	static const std::string environment = getEnvironment();
+
+	std::stringstream path_full;
+	path_full << environment << ".";
 
 	const BaseDaemon & daemon = BaseDaemon::instance();
 
@@ -94,8 +105,7 @@ std::string GraphiteWriter::getPerLayerPath(
 	const std::string & prefix,
 	const boost::optional<std::size_t> layer)
 {
-	const std::string static postfix = getPostfix(layer);
-	return prefix + "." + postfix;
+	return prefix + "." + getPostfix(layer);
 }
 
 std::string GraphiteWriter::getPerServerPath(const std::string & server_name, const std::string & root_path)
