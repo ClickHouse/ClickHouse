@@ -34,13 +34,13 @@ namespace ErrorCodes
 	extern const int CANNOT_PARSE_NUMBER;
 }
 
-/** Функции преобразования типов.
-  * toType - преобразование "естественным образом";
+/** Type conversion functions.
+  * toType - conversion in "natural way";
   */
 
 
-/** Преобразование чисел друг в друга, перечислений в числа, дат/дат-с-временем в числа и наоборот: делается обычным присваиванием.
-  *  (дата внутри хранится как количество дней с какого-то, дата-с-временем - как unix timestamp)
+/** Conversion of number types to each other, enums to numbers, dates and datetimes to numbers and back: done by straight assignment.
+  *  (Date is represented internally as number of days from some day; DateTime - as unix timestamp)
   */
 template <typename FromDataType, typename ToDataType, typename Name>
 struct ConvertImpl
@@ -64,7 +64,8 @@ struct ConvertImpl
 			for (size_t i = 0; i < size; ++i)
 				vec_to[i] = vec_from[i];
 		}
-		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(block.getByPosition(arguments[0]).column.get()))
+		else if (const ColumnConst<FromFieldType> * col_from
+			= typeid_cast<const ColumnConst<FromFieldType> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(col_from->size(), col_from->getData());
 		}
@@ -76,7 +77,7 @@ struct ConvertImpl
 };
 
 
-/** Преобразование даты в дату-с-временем: добавление нулевого времени.
+/** Conversion of Date to DateTime: adding 00:00:00 time component.
   */
 template <typename Name>
 struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
@@ -104,7 +105,8 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 				vec_to[i] = date_lut.fromDayNum(DayNum_t(vec_from[i]));
 			}
 		}
-		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(block.getByPosition(arguments[0]).column.get()))
+		else if (const ColumnConst<FromFieldType> * col_from
+			= typeid_cast<const ColumnConst<FromFieldType> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(
 				col_from->size(), date_lut.fromDayNum(DayNum_t(col_from->getData())));
@@ -116,7 +118,7 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 	}
 };
 
-/// Реализация функции toDate.
+/// Implementation of toDate function.
 
 namespace details
 {
@@ -198,8 +200,8 @@ public:
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
-		const auto * sources = typeid_cast<const ColumnVector<FromFieldType> *>(&*source_col);
-		const auto * const_source = typeid_cast<const ColumnConst<FromFieldType> *>(&*source_col);
+		const auto * sources = typeid_cast<const ColumnVector<FromFieldType> *>(source_col.get());
+		const auto * const_source = typeid_cast<const ColumnConst<FromFieldType> *>(source_col.get());
 
 		if (arguments.size() == 1)
 		{
@@ -229,8 +231,8 @@ public:
 		else if (arguments.size() == 2)
 		{
 			const ColumnPtr time_zone_col = block.getByPosition(arguments[1]).column;
-			const auto * time_zones = typeid_cast<const ColumnString *>(&*time_zone_col);
-			const auto * const_time_zone = typeid_cast<const ColumnConstString *>(&*time_zone_col);
+			const auto * time_zones = typeid_cast<const ColumnString *>(time_zone_col.get());
+			const auto * const_time_zone = typeid_cast<const ColumnConstString *>(time_zone_col.get());
 
 			if (sources)
 			{
@@ -303,25 +305,32 @@ struct ToDateTransform32Or64
 
 }
 
-/** Преобразование даты-с-временем в дату: отбрасывание времени.
+/** Conversion of DateTime to Date: throw off time component.
   */
-template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name> : details::ToDateConverter<DataTypeDateTime, details::ToDateTransform, Name> {};
+template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
+	: details::ToDateConverter<DataTypeDateTime, details::ToDateTransform, Name> {};
 
-/** Отдельный случай для преобразования (U)Int32 или (U)Int64 в Date.
-  * Если число меньше 65536, то оно понимается, как DayNum, а если больше или равно - как unix timestamp.
-  * Немного нелогично, что мы, по сути, помещаем две разные функции в одну.
-  * Но зато это позволяет поддержать распространённый случай,
-  *  когда пользователь пишет toDate(UInt32), ожидая, что это - перевод unix timestamp в дату
-  *  (иначе такое использование было бы распространённой ошибкой).
+/** Special case of converting (U)Int32 or (U)Int64 to Date.
+  * If number is less than 65536, then it is treated as DayNum, and if greater or equals, then as unix timestamp.
+  * It's a bit illogical, as we actually have two functions in one.
+  * But allows to support frequent case,
+  *  when user write toDate(UInt32), expecting conversion of unix timestamp to Date.
+  *  (otherwise such usage would be frequent mistake).
   */
-template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name> : details::ToDateConverter<DataTypeUInt32, details::ToDateTransform32Or64, Name> {};
-template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name> : details::ToDateConverter<DataTypeUInt64, details::ToDateTransform32Or64, Name> {};
-template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name> : details::ToDateConverter<DataTypeInt32, details::ToDateTransform32Or64, Name> {};
-template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name> : details::ToDateConverter<DataTypeInt64, details::ToDateTransform32Or64, Name> {};
+template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name>
+	: details::ToDateConverter<DataTypeUInt32, details::ToDateTransform32Or64, Name> {};
+template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name>
+	: details::ToDateConverter<DataTypeUInt64, details::ToDateTransform32Or64, Name> {};
+template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name>
+	: details::ToDateConverter<DataTypeInt32, details::ToDateTransform32Or64, Name> {};
+template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name>
+	: details::ToDateConverter<DataTypeInt64, details::ToDateTransform32Or64, Name> {};
 
-/** Преобразование чисел, дат, дат-с-временем в строки: через форматирование.
+
+/** Transformation of numbers, dates, datetimes to strings: through formatting.
   */
-template <typename DataType> struct FormatImpl
+template <typename DataType>
+struct FormatImpl
 {
 	static void execute(const typename DataType::FieldType x, WriteBuffer & wb, const DataType & type = DataType{})
 	{
@@ -329,7 +338,8 @@ template <typename DataType> struct FormatImpl
 	}
 };
 
-template <> struct FormatImpl<DataTypeDate>
+template <>
+struct FormatImpl<DataTypeDate>
 {
 	static void execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate & type = DataTypeDate{})
 	{
@@ -337,7 +347,8 @@ template <> struct FormatImpl<DataTypeDate>
 	}
 };
 
-template <> struct FormatImpl<DataTypeDateTime>
+template <>
+struct FormatImpl<DataTypeDateTime>
 {
 	static void execute(const DataTypeDateTime::FieldType x, WriteBuffer & wb, const DataTypeDateTime &type = DataTypeDateTime{})
 	{
@@ -345,7 +356,8 @@ template <> struct FormatImpl<DataTypeDateTime>
 	}
 };
 
-template <typename FieldType> struct FormatImpl<DataTypeEnum<FieldType>>
+template <typename FieldType>
+struct FormatImpl<DataTypeEnum<FieldType>>
 {
 	static void execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> & type)
 	{
@@ -372,10 +384,10 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		const auto & col_with_name_and_type = block.getByPosition(arguments[0]);
-		const auto & type = static_cast<const FromDataType &>(*col_with_name_and_type.type);
+		const auto & col_with_type_and_name = block.getByPosition(arguments[0]);
+		const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
 
-		if (const auto col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*col_with_name_and_type.column))
+		if (const auto col_from = typeid_cast<const ColumnVector<FromFieldType> *>(col_with_type_and_name.column.get()))
 		{
 			auto col_to = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_to;
@@ -395,9 +407,10 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 				writeChar(0, write_buffer);
 				offsets_to[i] = write_buffer.count();
 			}
+
 			data_to.resize(write_buffer.count());
 		}
-		else if (const auto col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*col_with_name_and_type.column))
+		else if (const auto col_from = typeid_cast<const ColumnConst<FromFieldType> *>(col_with_type_and_name.column.get()))
 		{
 			std::vector<char> buf;
 			WriteBufferFromVector<std::vector<char> > write_buffer(buf);
@@ -410,6 +423,56 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
+
+
+/// Generic conversion of any type to String.
+struct ConvertImplGenericToString
+{
+	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const auto & col_with_type_and_name = block.getByPosition(arguments[0]);
+		const IDataType & type = *col_with_type_and_name.type;
+		const IColumn & col_from = *col_with_type_and_name.column;
+
+		size_t size = col_from.size();
+
+		if (!col_from.isConst())
+		{
+			auto col_to = std::make_shared<ColumnString>();
+			block.getByPosition(result).column = col_to;
+
+			ColumnString::Chars_t & data_to = col_to->getChars();
+			ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+
+			data_to.resize(size * 2);	/// Using coefficient 2 for initial size is arbitary.
+			offsets_to.resize(size);
+
+			WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
+
+			for (size_t i = 0; i < size; ++i)
+			{
+				type.serializeText(col_from, i, write_buffer);
+				writeChar(0, write_buffer);
+				offsets_to[i] = write_buffer.count();
+			}
+
+			data_to.resize(write_buffer.count());
+		}
+		else
+		{
+			String res;
+
+			if (size)
+			{
+				WriteBufferFromString write_buffer(res);
+				type.serializeText(*col_from.cut(0, 1)->convertToFullColumnIfConst(), 0, write_buffer);
+			}
+
+			block.getByPosition(result).column = std::make_shared<ColumnConstString>(size, res);
+		}
+	}
+};
+
 
 namespace details { namespace {
 
@@ -575,8 +638,8 @@ struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
-		const auto * sources = typeid_cast<const ColumnVector<FromFieldType> *>(&*source_col);
-		const auto * const_source = typeid_cast<const ColumnConst<FromFieldType> *>(&*source_col);
+		const auto * sources = typeid_cast<const ColumnVector<FromFieldType> *>(source_col.get());
+		const auto * const_source = typeid_cast<const ColumnConst<FromFieldType> *>(source_col.get());
 
 		if (arguments.size() == 1)
 		{
@@ -606,8 +669,8 @@ struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
 		else if (arguments.size() == 2)
 		{
 			const ColumnPtr time_zone_col = block.getByPosition(arguments[1]).column;
-			const auto * time_zones = typeid_cast<const ColumnString *>(&*time_zone_col);
-			const auto * const_time_zone = typeid_cast<const ColumnConstString *>(&*time_zone_col);
+			const auto * time_zones = typeid_cast<const ColumnString *>(time_zone_col.get());
+			const auto * const_time_zone = typeid_cast<const ColumnConstString *>(time_zone_col.get());
 
 			if (sources)
 			{
@@ -657,7 +720,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
 	}
 };
 
-/** Преобразование строк в числа, даты, даты-с-временем: через парсинг.
+/** Conversion of strings to numbers, dates, datetimes: through parsing.
   */
 template <typename DataType> void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb) { readText(x,rb); }
 
@@ -851,8 +914,8 @@ struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
-		const auto * sources = typeid_cast<const ColumnString *>(&*source_col);
-		const auto * const_source = typeid_cast<const ColumnConstString *>(&*source_col);
+		const auto * sources = typeid_cast<const ColumnString *>(source_col.get());
+		const auto * const_source = typeid_cast<const ColumnConstString *>(source_col.get());
 
 		if (arguments.size() == 1)
 		{
@@ -884,8 +947,8 @@ struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
 		else if (arguments.size() == 2)
 		{
 			const ColumnPtr time_zone_col = block.getByPosition(arguments[1]).column;
-			const auto * time_zones = typeid_cast<const ColumnString *>(&*time_zone_col);
-			const auto * const_time_zone = typeid_cast<const ColumnConstString *>(&*time_zone_col);
+			const auto * time_zones = typeid_cast<const ColumnString *>(time_zone_col.get());
+			const auto * const_time_zone = typeid_cast<const ColumnConstString *>(time_zone_col.get());
 
 			if (sources)
 			{
@@ -1018,7 +1081,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 			ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
 			size_t size = col_from->size();
 			size_t n = col_from->getN();
-			data_to.resize(size * (n + 1));		/// + 1 - нулевой байт
+			data_to.resize(size * (n + 1));		/// + 1 - zero terminator
 			offsets_to.resize(size);
 
 			size_t offset_from = 0;
@@ -1058,6 +1121,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 
 /// Предварительное объявление.
 struct NameToDate			{ static constexpr auto name = "toDate"; };
+
 
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
 class FunctionConvert : public IFunction
@@ -1102,8 +1166,16 @@ public:
 		else if (typeid_cast<const DataTypeEnum8 *>(from_type))		  ConvertImpl<DataTypeEnum8, ToDataType, Name>::execute(block, arguments, result);
 		else if (typeid_cast<const DataTypeEnum16 *>(from_type))	  ConvertImpl<DataTypeEnum16, ToDataType, Name>::execute(block, arguments, result);
 		else
-			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		{
+			/// Generic conversion of any type to String.
+			if (std::is_same<ToDataType, DataTypeString>::value)
+			{
+				ConvertImplGenericToString::execute(block, arguments, result);
+			}
+			else
+				throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		}
 	}
 
 	bool hasInformationAboutMonotonicity() const override
@@ -1131,6 +1203,8 @@ private:
 		return std::make_shared<ToDataType>();
 	}
 
+	/** Conversion of anything to String. For DateTime, it allows second optional argument - time zone.
+	  */
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
 		typename std::enable_if<std::is_same<ToDataType2, DataTypeString>::value>::type * = nullptr) const
@@ -1140,14 +1214,14 @@ private:
 				+ toString(arguments.size()) + ", should be 1 or 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (typeid_cast<const DataTypeDateTime *>(&*arguments[0]) == nullptr)
+		if (typeid_cast<const DataTypeDateTime *>(arguments[0].get()) == nullptr)
 		{
 			if (arguments.size() != 1)
 				throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
 					+ toString(arguments.size()) + ", should be 1.",
 					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
-		else if ((arguments.size() == 2) && (typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr))
+		else if ((arguments.size() == 2) && (typeid_cast<const DataTypeString *>(arguments[1].get()) == nullptr))
 		{
 			throw Exception{
 				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
@@ -1167,14 +1241,14 @@ private:
 				+ toString(arguments.size()) + ", should be 1 or 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (typeid_cast<const DataTypeString *>(&*arguments[0]) == nullptr)
+		if (typeid_cast<const DataTypeString *>(arguments[0].get()) == nullptr)
 		{
 			if (arguments.size() != 1)
 				throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
 					+ toString(arguments.size()) + ", should be 1.",
 					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
-		else if ((arguments.size() == 2) && (typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr))
+		else if ((arguments.size() == 2) && (typeid_cast<const DataTypeString *>(arguments[1].get()) == nullptr))
 		{
 			throw Exception{
 				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
@@ -1194,7 +1268,7 @@ private:
 				+ toString(arguments.size()) + ", should be 1 or 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if ((arguments.size() == 2) && (typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr))
+		if ((arguments.size() == 2) && (typeid_cast<const DataTypeString *>(arguments[1].get()) == nullptr))
 		{
 			throw Exception{
 				"Illegal type " + arguments[1]->getName() + " of 2nd argument of function " + getName(),
@@ -1207,7 +1281,7 @@ private:
 };
 
 
-/** Преобразование в строку фиксированной длины реализовано только из строк.
+/** Conversion to fixed string is implemented only for strings.
   */
 class FunctionToFixedString : public IFunction
 {
@@ -1255,7 +1329,7 @@ public:
 	{
 		const auto & column = block.getByPosition(arguments[0]).column;
 
-		if (const auto column_const = typeid_cast<const ColumnConstString *>(&*column))
+		if (const auto column_const = typeid_cast<const ColumnConstString *>(column.get()))
 		{
 			if (column_const->getData().size() > n)
 				throw Exception("String too long for type FixedString(" + toString(n) + ")",
@@ -1267,7 +1341,7 @@ public:
 			block.getByPosition(result).column = std::make_shared<ColumnConst<String>>(
 				column_const->size(), std::move(resized_string), std::make_shared<DataTypeFixedString>(n));
 		}
-		else if (const auto column_string = typeid_cast<const ColumnString *>(&*column))
+		else if (const auto column_string = typeid_cast<const ColumnString *>(column.get()))
 		{
 			const auto column_fixed = std::make_shared<ColumnFixedString>(n);
 			ColumnPtr result_ptr = column_fixed;
@@ -1318,9 +1392,9 @@ private:
 	template <typename T>
 	bool getSizeTyped(const ColumnWithTypeAndName & column, size_t & out_size)
 	{
-		if (!typeid_cast<const typename DataTypeFromFieldType<T>::Type *>(&*column.type))
+		if (!typeid_cast<const typename DataTypeFromFieldType<T>::Type *>(column.type.get()))
 			return false;
-		const ColumnConst<T> * column_const = typeid_cast<const ColumnConst<T> *>(&*column.column);
+		const ColumnConst<T> * column_const = typeid_cast<const ColumnConst<T> *>(column.column.get());
 		if (!column_const)
 			throw Exception("Unexpected type of column for FixedString length: " + column.column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 		T s = column_const->getData();

@@ -861,10 +861,10 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const auto & col_with_name_and_type_left = block.getByPosition(arguments[0]);
-		const auto & col_with_name_and_type_right = block.getByPosition(arguments[1]);
-		const IColumn * col_left_untyped = col_with_name_and_type_left.column.get();
-		const IColumn * col_right_untyped = col_with_name_and_type_right.column.get();
+		const auto & col_with_type_and_name_left = block.getByPosition(arguments[0]);
+		const auto & col_with_type_and_name_right = block.getByPosition(arguments[1]);
+		const IColumn * col_left_untyped = col_with_type_and_name_left.column.get();
+		const IColumn * col_right_untyped = col_with_type_and_name_right.column.get();
 
 		const bool left_is_num = col_left_untyped->isNumeric();
 		const bool right_is_num = col_right_untyped->isNumeric();
@@ -885,14 +885,14 @@ public:
 					+ " of first argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
-		else if (typeid_cast<const DataTypeTuple *>(col_with_name_and_type_left.type.get()))
+		else if (typeid_cast<const DataTypeTuple *>(col_with_type_and_name_left.type.get()))
 			executeTuple(block, result, col_left_untyped, col_right_untyped);
 		else if (!left_is_num && !right_is_num)
 			executeString(block, result, col_left_untyped, col_right_untyped);
 		else
 			executeDateOrDateTimeOrEnumWithConstString(
 				block, result, col_left_untyped, col_right_untyped,
-				col_with_name_and_type_left.type, col_with_name_and_type_right.type,
+				col_with_type_and_name_left.type, col_with_type_and_name_right.type,
 				left_is_num, right_is_num);
 }
 };

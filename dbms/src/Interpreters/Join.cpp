@@ -1010,17 +1010,17 @@ private:
 
 		for (size_t i = 0; i < num_columns_left; ++i)
 		{
-			auto & column_with_name_and_type = block.getByPosition(column_numbers_left[i]);
-			column_with_name_and_type.column = column_with_name_and_type.type->createColumn();
-			columns_left[i] = column_with_name_and_type.column.get();
+			auto & column_with_type_and_name = block.getByPosition(column_numbers_left[i]);
+			column_with_type_and_name.column = column_with_type_and_name.type->createColumn();
+			columns_left[i] = column_with_type_and_name.column.get();
 		}
 
 		for (size_t i = 0; i < num_columns_right; ++i)
 		{
-			auto & column_with_name_and_type = block.getByPosition(column_numbers_keys_and_right[i]);
-			column_with_name_and_type.column = column_with_name_and_type.type->createColumn();
-			columns_keys_and_right[i] = column_with_name_and_type.column.get();
-			columns_keys_and_right[i]->reserve(column_with_name_and_type.column->size());
+			auto & column_with_type_and_name = block.getByPosition(column_numbers_keys_and_right[i]);
+			column_with_type_and_name.column = column_with_type_and_name.type->createColumn();
+			columns_keys_and_right[i] = column_with_type_and_name.column.get();
+			columns_keys_and_right[i]->reserve(column_with_type_and_name.column->size());
 		}
 
 		size_t rows_added = 0;
