@@ -6,7 +6,7 @@
 
 #define DBMS_DEFAULT_HOST 										"localhost"
 #define DBMS_DEFAULT_PORT 										9000
-#define DBMS_DEFAULT_PORT_STR 									"9000"
+#define DBMS_DEFAULT_PORT_STR 									#DBMS_DEFAULT_PORT
 #define DBMS_DEFAULT_HTTP_PORT 									8123
 #define DBMS_DEFAULT_CONNECT_TIMEOUT_SEC						10
 #define DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS			50
@@ -53,9 +53,9 @@
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 	3
 /// каждый период уменьшаем счетчик ошибок в 2 раза
 /// слишком маленький период может приводить, что ошибки исчезают сразу после создания.
-#define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD 	(2*DBMS_DEFAULT_SEND_TIMEOUT_SEC)
+#define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD 	(2 * DBMS_DEFAULT_SEND_TIMEOUT_SEC)
 #define DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS 						5000	/// Максимальное время ожидания в очереди запросов.
-#define DBMS_DEFAULT_BACKGROUND_POOL_SIZE					6
+#define DBMS_DEFAULT_BACKGROUND_POOL_SIZE						6
 
 /// Используется в методе reserve, когда известно число строк, но неизвестны их размеры.
 #define DBMS_APPROX_STRING_SIZE 64
