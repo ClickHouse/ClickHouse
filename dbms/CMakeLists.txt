@@ -16,14 +16,10 @@ else()
 endif()
 
 add_library (dbms
-	src/Server/OLAPAttributesMetadata.h
 	src/Server/InterserverIOHTTPHandler.h
-	src/Server/OLAPHTTPHandler.h
-	src/Server/OLAPQueryConverter.h
 	src/Server/Server.h
 	src/Server/TCPHandler.h
 	src/Server/HTTPHandler.h
-	src/Server/OLAPQueryParser.h
 	src/Server/MetricsTransmitter.h
 	src/Server/UsersConfigReloader.h
 	src/Server/StatusFile.h

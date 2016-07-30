@@ -3,9 +3,6 @@ add_executable(clickhouse-server
 	HTTPHandler.cpp
 	TCPHandler.cpp
 	InterserverIOHTTPHandler.cpp
-	OLAPHTTPHandler.cpp
-	OLAPQueryParser.cpp
-	OLAPQueryConverter.cpp
 	MetricsTransmitter.cpp
 	UsersConfigReloader.cpp
 	StatusFile.cpp

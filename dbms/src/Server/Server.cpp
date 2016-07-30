@@ -48,7 +48,6 @@
 #include "HTTPHandler.h"
 #include "ReplicasStatusHandler.h"
 #include "InterserverIOHTTPHandler.h"
-#include "OLAPHTTPHandler.h"
 #include "TCPHandler.h"
 #include "MetricsTransmitter.h"
 #include "UsersConfigReloader.h"
@@ -424,30 +423,10 @@ int Server::main(const std::vector<std::string> & args)
 				http_params);
 		}
 
-		/// OLAP HTTP
-		std::experimental::optional<Poco::Net::HTTPServer> olap_http_server;
-		bool use_olap_server = config().has("olap_compatibility.port");
-		if (use_olap_server)
-		{
-			olap_parser = std::make_unique<OLAP::QueryParser>();
-			olap_converter = std::make_unique<OLAP::QueryConverter>(config());
-
-			Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("olap_compatibility.port")));
-			olap_http_socket.setReceiveTimeout(settings.receive_timeout);
-			olap_http_socket.setSendTimeout(settings.send_timeout);
-			olap_http_server.emplace(
-				new HTTPRequestHandlerFactory<OLAPHTTPHandler>(*this, "OLAPHTTPHandler-factory"),
-				server_pool,
-				olap_http_socket,
-				http_params);
-		}
-
 		http_server.start();
 		tcp_server.start();
 		if (interserver_io_http_server)
 			interserver_io_http_server->start();
-		if (olap_http_server)
-			olap_http_server->start();
 
 		LOG_INFO(log, "Ready for connections.");
 
@@ -471,8 +450,6 @@ int Server::main(const std::vector<std::string> & args)
 
 			http_server.stop();
 			tcp_server.stop();
-			if (use_olap_server)
-				olap_http_server->stop();
 		);
 
 		/// try to load dictionaries immediately, throw on error and die
