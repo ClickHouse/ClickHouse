@@ -91,11 +91,19 @@
 	#error PLATFORM_NOT_SUPPORTED
 #endif
 
-/// Проверка наличия address sanitizer
+/// Check for presence of address sanitizer
 #if defined(__has_feature)
 	#if __has_feature(address_sanitizer)
 		#define ADDRESS_SANITIZER 1
 	#endif
 #elif defined(__SANITIZE_ADDRESS__)
 	#define ADDRESS_SANITIZER 1
+#endif
+
+#if defined(__has_feature)
+	#if __has_feature(thread_sanitizer)
+		#define THREAD_SANITIZER 1
+	#endif
+#elif defined(__SANITIZE_THREAD__)
+	#define THREAD_SANITIZER 1
 #endif

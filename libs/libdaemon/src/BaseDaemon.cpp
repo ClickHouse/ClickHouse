@@ -708,10 +708,10 @@ void BaseDaemon::initialize(Application& self)
 
 		if (setrlimit(RLIMIT_CORE, &rlim))
 		{
-		#ifndef ADDRESS_SANITIZER
+		#if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER)
 			throw Poco::Exception("Cannot setrlimit");
 		#else
-			/// Не работает под address sanitizer. http://lists.llvm.org/pipermail/llvm-bugs/2013-April/027880.html
+			/// Не работает под address/thread sanitizer. http://lists.llvm.org/pipermail/llvm-bugs/2013-April/027880.html
 			std::cerr << "Cannot setrlimit\n";
 		#endif
 		}
