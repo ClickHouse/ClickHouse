@@ -429,6 +429,7 @@ add_library (dbms
 	include/DB/Common/BlockFilterCreator.h
 	include/DB/Common/StringUtils.h
 	include/DB/Common/randomSeed.h
+	include/DB/Common/unaligned.h
 	include/DB/IO/CompressedStream.h
 	include/DB/IO/ReadBufferFromFileDescriptor.h
 	include/DB/IO/CompressedWriteBuffer.h

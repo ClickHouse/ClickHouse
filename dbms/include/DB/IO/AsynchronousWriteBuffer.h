@@ -55,7 +55,7 @@ public:
 	AsynchronousWriteBuffer(WriteBuffer & out_) : WriteBuffer(nullptr, 0), out(out_), memory(out.buffer().size()), pool(1), started(false)
 	{
 		/// Данные пишутся в дублирующий буфер.
-		set(&memory[0], memory.size());
+		set(memory.data(), memory.size());
 	}
 
 	~AsynchronousWriteBuffer()
