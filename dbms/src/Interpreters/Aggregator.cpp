@@ -651,7 +651,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		aggregate_functions_instructions[i].that = aggregate_functions[i];
 		aggregate_functions_instructions[i].func = aggregate_functions[i]->getAddressOfAddFunction();
 		aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
-		aggregate_functions_instructions[i].arguments = &aggregate_columns[i][0];
+		aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
 	}
 
 	if (isCancelled())
