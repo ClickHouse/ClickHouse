@@ -37,7 +37,7 @@ private:
 	Logger * log;
 
 	zkutil::EventPtr wakeup_event { std::make_shared<Poco::Event>() };
-	volatile bool need_stop { false };
+	std::atomic<bool> need_stop { false };
 
 	std::thread thread;
 };

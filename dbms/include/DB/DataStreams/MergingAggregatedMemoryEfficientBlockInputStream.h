@@ -91,8 +91,8 @@ private:
 
 	bool started = false;
 	bool all_read = false;
-	volatile bool has_two_level = false;
-	volatile bool has_overflows = false;
+	std::atomic<bool> has_two_level {false};
+	std::atomic<bool> has_overflows {false};
 	int current_bucket_num = -1;
 
 	Logger * log = &Logger::get("MergingAggregatedMemoryEfficientBlockInputStream");

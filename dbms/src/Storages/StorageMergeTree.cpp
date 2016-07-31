@@ -47,8 +47,7 @@ StorageMergeTree::StorageMergeTree(
 		 settings_, database_name_ + "." + table_name, false),
 	reader(data), writer(data), merger(data),
 	increment(0),
-	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)")),
-	shutdown_called(false)
+	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
 	data.loadDataParts(false);
 	data.clearOldParts();

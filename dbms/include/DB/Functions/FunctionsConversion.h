@@ -720,6 +720,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
 	}
 };
 
+
 /** Conversion of strings to numbers, dates, datetimes: through parsing.
   */
 template <typename DataType> void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb) { readText(x,rb); }
@@ -781,9 +782,10 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 	}
 };
 
+
 namespace details { namespace {
 
-/** Функции для преобразования строк в timestamp.
+/** Conversion of strings to timestamp. It allows optional second parameter - time zone.
   */
 struct StringToTimestampConverter
 {
@@ -905,7 +907,7 @@ struct StringToTimestampConverter
 
 struct NameToUnixTimestamp	{ static constexpr auto name = "toUnixTimestamp"; };
 
-template<>
+template <>
 struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
 {
 	using Op = details::StringToTimestampConverter;
@@ -1003,7 +1005,7 @@ struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
 };
 
 
-/** Если типы совпадают - просто скопируем ссылку на столбец.
+/** If types are identical, just take reference to column.
   */
 template <typename Name>
 struct ConvertImpl<DataTypeString, DataTypeString, Name>
@@ -1015,7 +1017,7 @@ struct ConvertImpl<DataTypeString, DataTypeString, Name>
 };
 
 
-/** Преобразование из FixedString.
+/** Conversion from FixedString through parsing.
   */
 template <typename ToDataType, typename Name>
 struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
@@ -1063,8 +1065,9 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 	}
 };
 
-/** Преобразование из FixedString в String.
-  * При этом, вырезаются последовательности нулевых байт с конца строк.
+
+/** Conversion from FixedString to String.
+  * Cutting sequences of zero bytes from end of strings.
   */
 template <typename Name>
 struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
@@ -1119,7 +1122,8 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 	}
 };
 
-/// Предварительное объявление.
+
+/// Declared early because used below.
 struct NameToDate			{ static constexpr auto name = "toDate"; };
 
 

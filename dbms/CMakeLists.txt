@@ -428,6 +428,7 @@ add_library (dbms
 	include/DB/Common/BitHelpers.h
 	include/DB/Common/BlockFilterCreator.h
 	include/DB/Common/StringUtils.h
+	include/DB/Common/randomSeed.h
 	include/DB/IO/CompressedStream.h
 	include/DB/IO/ReadBufferFromFileDescriptor.h
 	include/DB/IO/CompressedWriteBuffer.h
@@ -598,6 +599,7 @@ add_library (dbms
 	src/Common/isLocalAddress.cpp
 	src/Common/getNumberOfPhysicalCPUCores.cpp
 	src/Common/StringUtils.cpp
+	src/Common/randomSeed.cpp
 
 	src/Core/Field.cpp
 	src/Core/FieldVisitors.cpp

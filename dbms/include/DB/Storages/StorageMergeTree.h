@@ -123,7 +123,7 @@ private:
 
 	Logger * log;
 
-	volatile bool shutdown_called;
+	std::atomic<bool> shutdown_called {false};
 
 	BackgroundProcessingPool::TaskHandle merge_task_handle;
 

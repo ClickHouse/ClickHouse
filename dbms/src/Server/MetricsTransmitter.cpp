@@ -57,9 +57,9 @@ void MetricsTransmitter::transmit()
 
 	for (size_t i = 0; i < ProfileEvents::END; ++i)
 	{
-		const auto counter = ProfileEvents::counters[i];
-		const auto counter_increment = counter - prev_counters[i];
-		prev_counters[i] = counter;
+		const auto counter = ProfileEvents::counters[i].load(std::memory_order_relaxed);
+		const auto counter_increment = counter - prev_counters[i].load(std::memory_order_relaxed);
+		prev_counters[i].store(counter, std::memory_order_relaxed);
 
 		std::string key {ProfileEvents::getDescription(static_cast<ProfileEvents::Event>(i))};
 		key_vals.emplace_back(event_path_prefix + key, counter_increment);
@@ -67,7 +67,7 @@ void MetricsTransmitter::transmit()
 
 	for (size_t i = 0; i < CurrentMetrics::END; ++i)
 	{
-		const auto value = CurrentMetrics::values[i];
+		const auto value = CurrentMetrics::values[i].load(std::memory_order_relaxed);
 
 		std::string key {CurrentMetrics::getDescription(static_cast<CurrentMetrics::Metric>(i))};
 		key_vals.emplace_back(metrics_path_prefix + key, value);

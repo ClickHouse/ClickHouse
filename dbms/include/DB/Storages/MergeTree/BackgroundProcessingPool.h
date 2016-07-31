@@ -69,8 +69,8 @@ public:
 
 		/// При выполнении задачи, держится read lock.
 		Poco::RWLock rwlock;
-		volatile bool removed = false;
-		volatile time_t next_time_to_execute = 0;	/// Приоритет задачи. Для совпадающего времени в секундах берётся первая по списку задача.
+		std::atomic<bool> removed {false};
+		std::atomic<time_t> next_time_to_execute {0};	/// Приоритет задачи. Для совпадающего времени в секундах берётся первая по списку задача.
 
 		std::list<std::shared_ptr<TaskInfo>>::iterator iterator;
 
@@ -108,7 +108,7 @@ private:
 
 	Threads threads;
 
-	volatile bool shutdown = false;
+	std::atomic<bool> shutdown {false};
 	std::condition_variable wake_event;
 
 

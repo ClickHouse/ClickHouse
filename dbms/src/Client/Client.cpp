@@ -981,7 +981,7 @@ private:
 
 	void onProgress(const Progress & value)
 	{
-		progress.increment(value);
+		progress.incrementPiecewiseAtomically(value);
 		writeProgress();
 	}
 

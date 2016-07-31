@@ -135,7 +135,7 @@ void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * t
 	String data_path = context.getPath() + "/data/" + escapeForFileName(name) + "/";
 
 	StopwatchWithLock watch;
-	size_t tables_processed = 0;
+	std::atomic<size_t> tables_processed {0};
 
 	auto task_function = [&](FileNames::const_iterator begin, FileNames::const_iterator end)
 	{
@@ -144,7 +144,7 @@ void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * t
 			const String & table = *it;
 
 			/// Сообщения, чтобы было не скучно ждать, когда сервер долго загружается.
-			if (__sync_add_and_fetch(&tables_processed, 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
+			if ((++tables_processed) % PRINT_MESSAGE_EACH_N_TABLES == 0
 				|| watch.lockTestAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
 			{
 				LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");

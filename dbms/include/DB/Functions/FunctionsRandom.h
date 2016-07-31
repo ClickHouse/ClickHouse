@@ -1,19 +1,13 @@
 #pragma once
 
-#include <time.h>
-
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Common/HashTable/Hash.h>
+#include <DB/Common/randomSeed.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-	extern const int CANNOT_CLOCK_GETTIME;
-}
 
 /** Функции генерации псевдослучайных чисел.
   * Функция может быть вызвана без аргументов или с одним аргументом.
@@ -37,6 +31,12 @@ namespace ErrorCodes
 
 namespace detail
 {
+	/// NOTE Probably
+	///    http://www.pcg-random.org/
+	/// or http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/SFMT/
+	/// or http://docs.yeppp.info/c/group__yep_random___w_e_l_l1024a.html
+	/// could go better.
+
 	struct LinearCongruentialGenerator
 	{
 		/// Константы из man lrand48_r.
@@ -63,11 +63,7 @@ namespace detail
 
 	void seed(LinearCongruentialGenerator & generator, intptr_t additional_seed)
 	{
-		struct timespec times;
-		if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
-			throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
-
-		generator.seed(intHash64(times.tv_nsec ^ intHash64(additional_seed)));
+		generator.seed(intHash64(randomSeed() ^ intHash64(additional_seed)));
 	}
 }
 

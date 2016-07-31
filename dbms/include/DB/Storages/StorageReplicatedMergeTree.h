@@ -269,7 +269,7 @@ private:
 	std::mutex unreplicated_mutex; /// Для мерджей и удаления нереплицируемых кусков.
 
 	/// Нужно ли завершить фоновые потоки (кроме restarting_thread).
-	volatile bool shutdown_called = false;
+	std::atomic<bool> shutdown_called {false};
 	Poco::Event shutdown_event;
 
 	/// Потоки:

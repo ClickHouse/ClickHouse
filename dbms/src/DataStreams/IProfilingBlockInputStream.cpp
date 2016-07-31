@@ -258,7 +258,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 		size_t rows_processed = process_list_elem->progress.rows;
 		size_t bytes_processed = process_list_elem->progress.bytes;
 
-		size_t total_rows_estimate = std::max(rows_processed, process_list_elem->progress.total_rows);
+		size_t total_rows_estimate = std::max(rows_processed, process_list_elem->progress.total_rows.load(std::memory_order_relaxed));
 
 		/** Проверяем ограничения на объём данных для чтения, скорость выполнения запроса, квоту на объём данных для чтения.
 			* NOTE: Может быть, имеет смысл сделать, чтобы они проверялись прямо в ProcessList?

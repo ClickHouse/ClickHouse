@@ -16,6 +16,7 @@
 #include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Common/SipHash.h>
 #include <DB/Common/StringUtils.h>
+#include <DB/Common/randomSeed.h>
 
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/Context.h>
@@ -1400,11 +1401,7 @@ void ReshardingWorker::executeAttach(LogRecord & log_record)
 	{
 		ShardTaskInfo()
 		{
-			struct timespec times;
-			if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
-				throwFromErrno("Cannot clock_gettime.", DB::ErrorCodes::CANNOT_CLOCK_GETTIME);
-
-			(void) srand48_r(reinterpret_cast<intptr_t>(this) ^ times.tv_nsec, &rand_state);
+			(void) srand48_r(randomSeed(), &rand_state);
 		}
 
 		ShardTaskInfo(const ShardTaskInfo &) = delete;

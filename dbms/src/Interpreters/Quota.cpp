@@ -21,7 +21,8 @@ namespace ErrorCodes
 }
 
 
-void QuotaValues::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
+template <typename Counter>
+void QuotaValues<Counter>::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
 {
 	queries 		= parse<UInt64>(config.getString(config_elem + ".queries", 		"0"));
 	errors 			= parse<UInt64>(config.getString(config_elem + ".errors", 		"0"));
@@ -29,8 +30,11 @@ void QuotaValues::initFromConfig(const String & config_elem, Poco::Util::Abstrac
 	result_bytes 	= parse<UInt64>(config.getString(config_elem + ".result_bytes",	"0"));
 	read_rows 		= parse<UInt64>(config.getString(config_elem + ".read_rows", 	"0"));
 	read_bytes 		= parse<UInt64>(config.getString(config_elem + ".read_bytes", 	"0"));
-	execution_time = Poco::Timespan(config.getInt(config_elem + ".execution_time", 0), 0);
+	execution_time_usec = config.getInt(config_elem + ".execution_time", 0) * 1000000;
 }
+
+template void QuotaValues<size_t>::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
+template void QuotaValues<std::atomic<size_t>>::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
 
 
 void QuotaForInterval::initFromConfig(const String & config_elem, time_t duration_, time_t offset_, Poco::Util::AbstractConfiguration & config)
@@ -50,7 +54,7 @@ void QuotaForInterval::checkExceeded(time_t current_time, const String & quota_n
 	check(max.result_bytes, used.result_bytes, current_time, quota_name, "Total result bytes");
 	check(max.read_rows, used.read_rows, current_time, quota_name, "Total rows read");
 	check(max.read_bytes, used.read_bytes, current_time, quota_name, "Total bytes read");
-	check(max.execution_time.totalSeconds(), used.execution_time.totalSeconds(), current_time, quota_name, "Total execution time");
+	check(max.execution_time_usec / 1000000, used.execution_time_usec / 1000000, current_time, quota_name, "Total execution time");
 }
 
 String QuotaForInterval::toString() const
@@ -65,39 +69,39 @@ String QuotaForInterval::toString() const
 		<< "Result bytes:   " << used.result_bytes 	<< ".\n"
 		<< "Read rows:      " << used.read_rows 	<< ".\n"
 		<< "Read bytes:     " << used.read_bytes 	<< ".\n"
-		<< "Execution time: " << used.execution_time.totalMilliseconds() / 1000.0 << " sec.\n";
+		<< "Execution time: " << used.execution_time_usec / 1000000.0 << " sec.\n";
 
 	return res.str();
 }
 
 void QuotaForInterval::addQuery(time_t current_time, const String & quota_name)
 {
-	__sync_fetch_and_add(&used.queries, 1);
+	++used.queries;
 }
 
 void QuotaForInterval::addError(time_t current_time, const String & quota_name) noexcept
 {
-	__sync_fetch_and_add(&used.errors, 1);
+	++used.errors;
 }
 
 void QuotaForInterval::checkAndAddResultRowsBytes(time_t current_time, const String & quota_name, size_t rows, size_t bytes)
 {
-	__sync_fetch_and_add(&used.result_rows, rows);
-	__sync_fetch_and_add(&used.result_bytes, bytes);
+	used.result_rows += rows;
+	used.result_bytes += bytes;
 	checkExceeded(current_time, quota_name);
 }
 
 void QuotaForInterval::checkAndAddReadRowsBytes(time_t current_time, const String & quota_name, size_t rows, size_t bytes)
 {
-	__sync_fetch_and_add(&used.read_rows, rows);
-	__sync_fetch_and_add(&used.read_bytes, bytes);
+	used.read_rows += rows;
+	used.read_bytes += bytes;
 	checkExceeded(current_time, quota_name);
 }
 
 void QuotaForInterval::checkAndAddExecutionTime(time_t current_time, const String & quota_name, Poco::Timespan amount)
 {
 	/// Используется информация о внутреннем представлении Poco::Timespan.
-	__sync_fetch_and_add(reinterpret_cast<Int64 *>(&used.execution_time), amount.totalMicroseconds());
+	used.execution_time_usec += amount.totalMicroseconds();
 	checkExceeded(current_time, quota_name);
 }
 
@@ -236,7 +240,7 @@ void Quota::loadFromConfig(const String & config_elem, const String & name_, Poc
 	{
 		keyed_by_ip = new_keyed_by_ip;
 		is_keyed = new_is_keyed;
-		/// Смысл ключей поменялся. Выбросим накопленные значения.
+		/// Meaning of keys has been changed. Throw away accumulated values.
 		quota_for_keys.clear();
 	}
 
@@ -246,9 +250,7 @@ void Quota::loadFromConfig(const String & config_elem, const String & name_, Poc
 	{
 		max = new_max;
 		for (auto & quota : quota_for_keys)
-		{
 			quota.second->setMax(max);
-		}
 	}
 }
 
@@ -257,10 +259,10 @@ QuotaForIntervalsPtr Quota::get(const String & quota_key, const String & user_na
 	if (!quota_key.empty() && (!is_keyed || keyed_by_ip))
 		throw Exception("Quota " + name + " doesn't allow client supplied keys.", ErrorCodes::QUOTA_DOESNT_ALLOW_KEYS);
 
-	/** Квота считается отдельно:
-	  * - для каждого IP-адреса, если keyed_by_ip;
-	  * - иначе для каждого quota_key, если он есть;
-	  * - иначе для каждого пользователя.
+	/** Quota is calculated separately:
+	  * - for each IP-address, if 'keyed_by_ip';
+	  * - otherwise for each 'quota_key', if present;
+	  * - otherwise for each 'user_name'.
 	  */
 
 	UInt64 quota_key_hashed = sipHash64(
@@ -274,9 +276,7 @@ QuotaForIntervalsPtr Quota::get(const String & quota_key, const String & user_na
 
 	Container::iterator it = quota_for_keys.find(quota_key_hashed);
 	if (quota_for_keys.end() == it)
-	{
-		it = quota_for_keys.insert(std::make_pair(quota_key_hashed, std::make_shared<QuotaForIntervals>(max))).first;
-	}
+		it = quota_for_keys.emplace(quota_key_hashed, std::make_shared<QuotaForIntervals>(max)).first;
 
 	return it->second;
 }
@@ -289,7 +289,7 @@ void Quotas::loadFromConfig(Poco::Util::AbstractConfiguration & config)
 	Poco::Util::AbstractConfiguration::Keys config_keys;
 	config.keys("quotas", config_keys);
 
-	/// Удалим ключи, которых больше нет в кофиге.
+	/// Remove keys, that now absent in config.
 	std::set<std::string> keys_set(config_keys.begin(), config_keys.end());
 	for (Container::iterator it = cont.begin(); it != cont.end();)
 	{

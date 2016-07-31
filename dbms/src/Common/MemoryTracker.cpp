@@ -38,13 +38,13 @@ void MemoryTracker::logPeakMemoryUsage() const
 
 void MemoryTracker::alloc(Int64 size)
 {
-	Int64 will_be = __sync_add_and_fetch(&amount, size);
+	Int64 will_be = amount += size;
 
 	if (!next)
 		CurrentMetrics::add(CurrentMetrics::MemoryTracking, size);
 
-	/// Используется непотокобезопасный генератор случайных чисел. Совместное распределение в разных потоках не будет равномерным.
-	/// В данном случае, это нормально.
+	/// Using non-thread-safe random number generator. Joint distribution in different threads would not be uniform.
+	/// In this case, it doesn't matter.
 	if (unlikely(fault_probability && drand48() < fault_probability))
 	{
 		free(size);
@@ -75,8 +75,8 @@ void MemoryTracker::alloc(Int64 size)
 		throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
 	}
 
-	if (will_be > peak)
-		peak = will_be;
+	if (will_be > peak.load(std::memory_order_relaxed))		/// Races doesn't matter. Could rewrite with CAS, but not worth.
+		peak.store(will_be, std::memory_order_relaxed);
 
 	if (next)
 		next->alloc(size);
@@ -85,7 +85,7 @@ void MemoryTracker::alloc(Int64 size)
 
 void MemoryTracker::free(Int64 size)
 {
-	__sync_sub_and_fetch(&amount, size);
+	amount -= size;
 
 	if (next)
 		next->free(size);

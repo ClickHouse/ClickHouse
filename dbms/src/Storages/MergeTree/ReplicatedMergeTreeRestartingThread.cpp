@@ -4,6 +4,7 @@
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/randomSeed.h>
 
 
 namespace DB
@@ -11,7 +12,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int CANNOT_CLOCK_GETTIME;
 	extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
 
@@ -19,10 +19,7 @@ namespace ErrorCodes
 /// Используется для проверки, выставили ли ноду is_active мы, или нет.
 static String generateActiveNodeIdentifier()
 {
-	struct timespec times;
-	if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
-		throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
-	return "pid: " + toString(getpid()) + ", random: " + toString(times.tv_nsec + times.tv_sec + getpid());
+	return "pid: " + toString(getpid()) + ", random: " + toString(randomSeed());
 }
 
 

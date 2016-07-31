@@ -3,5 +3,5 @@
 
 namespace CurrentMetrics
 {
-	Value values[END];	/// Глобальная переменная - инициализируется нулями.
+	std::atomic<Value> values[END] {};	/// Глобальная переменная - инициализируется нулями.
 }

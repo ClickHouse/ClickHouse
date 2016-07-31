@@ -1,4 +1,5 @@
 #include <DB/Dictionaries/ComplexKeyCacheDictionary.h>
+#include <DB/Common/randomSeed.h>
 
 
 namespace DB
@@ -26,12 +27,6 @@ static inline std::size_t round_up_to_power_of_two(std::size_t n)
 	return n;
 }
 
-static inline std::uint64_t getSeed()
-{
-	timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return ts.tv_nsec ^ getpid();
-}
 
 inline std::uint64_t ComplexKeyCacheDictionary::getCellIdx(const StringRef key) const
 {
@@ -45,7 +40,7 @@ ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(const std::string & name, c
 	DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime,
 	const std::size_t size)
 	: name{name}, dict_struct(dict_struct), source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
-	size{round_up_to_power_of_two(size)}, rnd_engine{getSeed()}
+	size{round_up_to_power_of_two(size)}, rnd_engine{randomSeed()}
 {
 	if (!this->source_ptr->supportsSelectiveLoad())
 		throw Exception{
