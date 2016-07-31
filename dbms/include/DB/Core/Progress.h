@@ -32,9 +32,9 @@ struct Progress
 
 	void read(ReadBuffer & in, UInt64 server_revision)
 	{
-		size_t new_rows;
-		size_t new_bytes;
-		size_t new_total_rows;
+		size_t new_rows = 0;
+		size_t new_bytes = 0;
+		size_t new_total_rows = 0;
 
 		readVarUInt(new_rows, in);
 		readVarUInt(new_bytes, in);
