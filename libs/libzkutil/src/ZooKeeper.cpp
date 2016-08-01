@@ -1,6 +1,5 @@
 #include <functional>
 #include <zkutil/ZooKeeper.h>
-#include <boost/make_shared.hpp>
 #include <common/logger_useful.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/StringUtils.h>
