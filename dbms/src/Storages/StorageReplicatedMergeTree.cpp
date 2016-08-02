@@ -1100,7 +1100,27 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			do_fetch = true;
 			LOG_DEBUG(log, "Don't have all parts for merge " << entry.new_part_name << "; will try to fetch it instead");
 		}
-		else
+		else if (entry.create_time + data.settings.prefer_fetch_merged_part_time_threshold <= time(nullptr))
+		{
+			/// If entry is old enough, and have enough size, and part are exists in any replica,
+			///  then prefer fetching of merged part from replica.
+
+			size_t sum_parts_size_in_bytes = 0;
+			for (const auto & part : parts)
+				sum_parts_size_in_bytes += part->size_in_bytes;
+
+			if (sum_parts_size_in_bytes >= data.settings.prefer_fetch_merged_part_size_threshold)
+			{
+				String replica = findReplicaHavingPart(entry.new_part_name, true);	/// NOTE excessive ZK requests for same data later, may remove.
+				if (!replica.empty())
+				{
+					do_fetch = true;
+					LOG_DEBUG(log, "Preffering to fetch " << entry.new_part_name << " from replica");
+				}
+			}
+		}
+
+		if (!do_fetch)
 		{
 			/// Если собираемся сливать большие куски, увеличим счетчик потоков, сливающих большие куски.
 			for (const auto & part : parts)
