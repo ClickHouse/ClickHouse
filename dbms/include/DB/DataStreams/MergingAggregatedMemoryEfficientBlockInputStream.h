@@ -1,9 +1,9 @@
 #pragma once
 
-#include <threadpool.hpp>
 #include <DB/Interpreters/Aggregator.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Common/ConcurrentBoundedQueue.h>
+#include <DB/Common/ThreadPool.h>
 #include <condition_variable>
 
 
@@ -118,13 +118,13 @@ private:
 	/// Получить блоки, которые можно мерджить. Это позволяет мерджить их параллельно в отдельных потоках.
 	BlocksToMerge getNextBlocksToMerge();
 
-	std::unique_ptr<boost::threadpool::pool> reading_pool;
+	std::unique_ptr<ThreadPool> reading_pool;
 
 	/// Для параллельного мерджа.
 
 	struct ParallelMergeData
 	{
-		boost::threadpool::pool pool;
+		ThreadPool pool;
 		/// Сейчас один из мерджащих потоков получает следующие блоки для мерджа. Эта операция должна делаться последовательно.
 		std::mutex get_next_blocks_mutex;
 		bool exhausted = false;	/// Данных больше нет.

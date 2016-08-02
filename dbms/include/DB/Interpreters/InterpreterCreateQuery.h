@@ -1,11 +1,10 @@
 #pragma once
 
-#include <threadpool.hpp>
-
 #include <DB/Storages/IStorage.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/IInterpreter.h>
 #include <DB/Storages/ColumnDefault.h>
+#include <DB/Common/ThreadPool.h>
 
 
 namespace DB
@@ -31,7 +30,7 @@ public:
 		const NamesAndTypesList & alias_columns,
 		const ColumnDefaults & column_defaults);
 
-	void setDatabaseLoadingThreadpool(boost::threadpool::pool & thread_pool_)
+	void setDatabaseLoadingThreadpool(ThreadPool & thread_pool_)
 	{
 		thread_pool = &thread_pool_;
 	}
@@ -59,7 +58,7 @@ private:
 	Context context;
 
 	/// Используется при загрузке базы данных.
-	boost::threadpool::pool * thread_pool = nullptr;
+	ThreadPool * thread_pool = nullptr;
 };
 
 

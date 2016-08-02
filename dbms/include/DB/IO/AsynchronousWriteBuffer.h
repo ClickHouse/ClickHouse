@@ -4,10 +4,7 @@
 
 #include <vector>
 
-#include <Poco/Net/NetException.h>
-
-#include <threadpool.hpp>
-
+#include <DB/Common/ThreadPool.h>
 #include <DB/IO/WriteBuffer.h>
 
 
@@ -22,7 +19,7 @@ class AsynchronousWriteBuffer : public WriteBuffer
 private:
 	WriteBuffer & out;				/// Основной буфер, отвечает за запись данных.
 	std::vector<char> memory;		/// Кусок памяти для дублирования буфера.
-	boost::threadpool::pool pool;	/// Для асинхронной записи данных.
+	ThreadPool pool;				/// Для асинхронной записи данных.
 	bool started;					/// Была ли запущена асинхронная запись данных.
 
 	/// Менять местами основной и дублирующий буферы.
@@ -41,9 +38,6 @@ private:
 			pool.wait();
 		else
 			started = true;
-
-		if (exception)
-			std::rethrow_exception(exception);
 
 		swapBuffers();
 
@@ -74,19 +68,10 @@ public:
 		}
 	}
 
-	std::exception_ptr exception;
-
 	/// То, что выполняется в отдельном потоке
 	void thread()
 	{
-		try
-		{
-			out.next();
-		}
-		catch (...)
-		{
-			exception = std::current_exception();
-		}
+		out.next();
 	}
 };
 

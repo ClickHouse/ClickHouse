@@ -36,7 +36,7 @@
 
 #include <Poco/DirectoryIterator.h>
 
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 
 #include <ext/range.hpp>
 #include <cfenv>
@@ -3602,7 +3602,7 @@ StorageReplicatedMergeTree::gatherReplicaSpaceInfo(const WeightedZooKeeperPaths 
 		}
 	}
 
-	boost::threadpool::pool pool(task_info_list.size());
+	ThreadPool pool(task_info_list.size());
 
 	using Tasks = std::vector<std::packaged_task<size_t()> >;
 	Tasks tasks(task_info_list.size());

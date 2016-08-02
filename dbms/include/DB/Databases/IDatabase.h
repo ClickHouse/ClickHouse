@@ -1,6 +1,6 @@
 #pragma once
 
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 #include <DB/Core/Types.h>
 #include <DB/Parsers/IAST.h>
 #include <DB/Storages/IStorage.h>
@@ -43,7 +43,7 @@ public:
 
 	/// Загрузить множество существующих таблиц. Если задан thread_pool - использовать его.
 	/// Можно вызывать только один раз, сразу после создания объекта.
-	virtual void loadTables(Context & context, boost::threadpool::pool * thread_pool) = 0;
+	virtual void loadTables(Context & context, ThreadPool * thread_pool) = 0;
 
 	/// Проверить существование таблицы.
 	virtual bool isTableExist(const String & name) const = 0;

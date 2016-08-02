@@ -16,7 +16,7 @@
 #include <DB/IO/CompressedReadBuffer.h>
 
 #include <DB/Common/Stopwatch.h>
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 
 
 using Key = UInt64;
@@ -253,7 +253,7 @@ int main(int argc, char ** argv)
 
 	std::cerr << std::fixed << std::setprecision(2);
 
-	boost::threadpool::pool pool(num_threads);
+	ThreadPool pool(num_threads);
 
 	Source data(n);
 

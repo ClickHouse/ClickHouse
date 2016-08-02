@@ -22,7 +22,7 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/Cluster.h>
 
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 
 #include <zkutil/ZooKeeper.h>
 
@@ -954,7 +954,7 @@ void ReshardingWorker::publishShardedPartitions()
 
 	size_t remote_count = task_info_list.size() - local_count;
 
-	boost::threadpool::pool pool(remote_count);
+	ThreadPool pool(remote_count);
 
 	using Tasks = std::vector<std::packaged_task<bool()> >;
 	Tasks tasks(remote_count);
@@ -1109,7 +1109,7 @@ void ReshardingWorker::commit()
 	/// Execute all the remaining log records.
 
 	size_t pool_size = operation_count;
-	boost::threadpool::pool pool(pool_size);
+	ThreadPool pool(pool_size);
 
 	using Tasks = std::vector<std::packaged_task<void()> >;
 	Tasks tasks(pool_size);
@@ -1294,7 +1294,7 @@ bool ReshardingWorker::checkAttachLogRecord(LogRecord & log_record)
 		}
 	}
 
-	boost::threadpool::pool pool(task_info_list.size());
+	ThreadPool pool(task_info_list.size());
 
 	using Tasks = std::vector<std::packaged_task<RemotePartChecker::Status()> >;
 	Tasks tasks(task_info_list.size());

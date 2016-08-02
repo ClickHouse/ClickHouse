@@ -13,7 +13,7 @@
 #include <Poco/Util/Application.h>
 
 #include <DB/Common/Stopwatch.h>
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 #include <DB/AggregateFunctions/ReservoirSampler.h>
 
 #include <boost/program_options.hpp>
@@ -138,7 +138,7 @@ private:
 
 	std::mutex mutex;
 
-	boost::threadpool::pool pool;
+	ThreadPool pool;
 
 
 	void readQueries()

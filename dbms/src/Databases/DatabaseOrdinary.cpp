@@ -89,7 +89,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 }
 
 
-void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * thread_pool)
+void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool)
 {
 	log = &Logger::get("DatabaseOrdinary (" + name + ")");
 
@@ -161,7 +161,6 @@ void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * t
 
 	const size_t bunch_size = TABLES_PARALLEL_LOAD_BUNCH_SIZE;
 	size_t num_bunches = (total_tables + bunch_size - 1) / bunch_size;
-	std::vector<std::packaged_task<void()>> tasks(num_bunches);
 
 	for (size_t i = 0; i < num_bunches; ++i)
 	{
@@ -170,19 +169,16 @@ void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * t
 			? file_names.end()
 			: (file_names.begin() + (i + 1) * bunch_size);
 
-		tasks[i] = std::packaged_task<void()>(std::bind(task_function, begin, end));
+		auto task = std::bind(task_function, begin, end);
 
 		if (thread_pool)
-			thread_pool->schedule([i, &tasks]{ tasks[i](); });
+			thread_pool->schedule(task);
 		else
-			tasks[i]();
+			task();
 	}
 
 	if (thread_pool)
 		thread_pool->wait();
-
-	for (auto & task : tasks)
-		task.get_future().get();
 }
 
 
