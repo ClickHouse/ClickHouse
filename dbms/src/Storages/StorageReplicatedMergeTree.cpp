@@ -1162,7 +1162,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			if (!do_fetch)
 			{
 				merger.renameMergedTemporaryPart(parts, part, entry.new_part_name, &transaction);
-				zookeeper->multi(ops);
+				getZooKeeper()->multi(ops);		/// After long merge, get fresh ZK handle, because previous session may be expired.
 
 				/** Удаление старых кусков из ZK и с диска делается отложенно - см. ReplicatedMergeTreeCleanupThread, clearOldParts.
 				  */
