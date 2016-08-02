@@ -756,6 +756,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 			size_t size = col_from->size();
 			vec_to.resize(size);
 
+			/// Maybe unsafe, because, while parsing, we may read next values from column. Should be Ok for primitive types.
 			ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(&data_from[0])), data_from.size(), 0);
 
 			char zero = 0;
@@ -778,6 +779,63 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
 					+ " of first argument of function " + Name::name,
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+
+/// Generic conversion of any type from String. Used for complex types: Array and Tuple.
+struct ConvertImplGenericFromString
+{
+	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const IColumn & col_from = *block.getByPosition(arguments[0]).column;
+		size_t size = col_from.size();
+
+		ColumnWithTypeAndName & column_type_name_to = block.getByPosition(result);
+		const IDataType & data_type_to = *column_type_name_to.type;
+
+		if (const ColumnString * col_from_string = typeid_cast<const ColumnString *>(&col_from))
+		{
+			column_type_name_to.column = data_type_to.createColumn();
+
+			if (!size)
+				return;
+
+			IColumn & column_to = *column_type_name_to.column;
+			column_to.reserve(size);
+
+			const ColumnString::Chars_t & chars = col_from_string->getChars();
+			const IColumn::Offsets_t & offsets = col_from_string->getOffsets();
+
+			size_t current_offset = 0;
+
+			for (size_t i = 0; i < size; ++i)
+			{
+				ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(
+					&chars[current_offset])), offsets[i] - current_offset - 1, 0);
+
+				data_type_to.deserializeTextEscaped(column_to, read_buffer);
+
+				if (!read_buffer.eof())
+					throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_READ_ALL_DATA);
+
+				current_offset = offsets[i];
+			}
+		}
+		else if (const ColumnConstString * col_from_const_string = typeid_cast<const ColumnConstString *>(&col_from))
+		{
+			const String & s = col_from_const_string->getData();
+			ReadBufferFromString read_buffer(s);
+
+			auto tmp_col = data_type_to.createColumn();
+			data_type_to.deserializeTextEscaped(*tmp_col, read_buffer);
+
+			block.getByPosition(result).column = data_type_to.createConstColumn(size, (*tmp_col)[0]);
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+					+ " of first argument of conversion function from string",
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
@@ -1548,20 +1606,20 @@ struct NameToFloat64		{ static constexpr auto name = "toFloat64"; };
 struct NameToDateTime		{ static constexpr auto name = "toDateTime"; };
 struct NameToString			{ static constexpr auto name = "toString"; };
 
-using FunctionToUInt8 = FunctionConvert<DataTypeUInt8,		NameToUInt8,	ToIntMonotonicity<UInt8>> ;
-using FunctionToUInt16 = FunctionConvert<DataTypeUInt16,		NameToUInt16,	ToIntMonotonicity<UInt16>>;
-using FunctionToUInt32 = FunctionConvert<DataTypeUInt32,		NameToUInt32,	ToIntMonotonicity<UInt32>>;
-using FunctionToUInt64 = FunctionConvert<DataTypeUInt64,		NameToUInt64,	ToIntMonotonicity<UInt64>>;
-using FunctionToInt8 = FunctionConvert<DataTypeInt8,		NameToInt8,		ToIntMonotonicity<Int8>> ;
-using FunctionToInt16 = FunctionConvert<DataTypeInt16,		NameToInt16,	ToIntMonotonicity<Int16>> ;
-using FunctionToInt32 = FunctionConvert<DataTypeInt32,		NameToInt32,	ToIntMonotonicity<Int32>> ;
-using FunctionToInt64 = FunctionConvert<DataTypeInt64,		NameToInt64,	ToIntMonotonicity<Int64>> ;
-using FunctionToFloat32 = FunctionConvert<DataTypeFloat32,	NameToFloat32,	PositiveMonotonicity> 	;
-using FunctionToFloat64 = FunctionConvert<DataTypeFloat64,	NameToFloat64,	PositiveMonotonicity> 	;
-using FunctionToDate = FunctionConvert<DataTypeDate,		NameToDate,		ToIntMonotonicity<UInt16>>;
-using FunctionToDateTime = FunctionConvert<DataTypeDateTime,	NameToDateTime,	ToIntMonotonicity<UInt32>>;
-using FunctionToString = FunctionConvert<DataTypeString,		NameToString, 	ToStringMonotonicity> 	;
-using FunctionToUnixTimestamp = FunctionConvert<DataTypeInt32,		NameToUnixTimestamp, ToIntMonotonicity<UInt32>>;
+using FunctionToUInt8 		= FunctionConvert<DataTypeUInt8,	NameToUInt8,	ToIntMonotonicity<UInt8>>;
+using FunctionToUInt16 		= FunctionConvert<DataTypeUInt16,	NameToUInt16,	ToIntMonotonicity<UInt16>>;
+using FunctionToUInt32 		= FunctionConvert<DataTypeUInt32,	NameToUInt32,	ToIntMonotonicity<UInt32>>;
+using FunctionToUInt64 		= FunctionConvert<DataTypeUInt64,	NameToUInt64,	ToIntMonotonicity<UInt64>>;
+using FunctionToInt8 		= FunctionConvert<DataTypeInt8,		NameToInt8,		ToIntMonotonicity<Int8>>;
+using FunctionToInt16 		= FunctionConvert<DataTypeInt16,	NameToInt16,	ToIntMonotonicity<Int16>>;
+using FunctionToInt32 		= FunctionConvert<DataTypeInt32,	NameToInt32,	ToIntMonotonicity<Int32>>;
+using FunctionToInt64 		= FunctionConvert<DataTypeInt64,	NameToInt64,	ToIntMonotonicity<Int64>>;
+using FunctionToFloat32 	= FunctionConvert<DataTypeFloat32,	NameToFloat32,	PositiveMonotonicity>;
+using FunctionToFloat64 	= FunctionConvert<DataTypeFloat64,	NameToFloat64,	PositiveMonotonicity>;
+using FunctionToDate 		= FunctionConvert<DataTypeDate,		NameToDate,		ToIntMonotonicity<UInt16>>;
+using FunctionToDateTime 	= FunctionConvert<DataTypeDateTime,	NameToDateTime,	ToIntMonotonicity<UInt32>>;
+using FunctionToString 		= FunctionConvert<DataTypeString,	NameToString, 	ToStringMonotonicity>;
+using FunctionToUnixTimestamp = FunctionConvert<DataTypeInt32,	NameToUnixTimestamp, ToIntMonotonicity<UInt32>>;
 
 template <typename DataType> struct FunctionTo;
 template <> struct FunctionTo<DataTypeUInt8> { using Type = FunctionToUInt8; };
@@ -1595,7 +1653,8 @@ public:
 	FunctionCast(const Context & context) : context(context) {}
 private:
 
-	template <typename DataType> auto createWrapper(const DataTypePtr & from_type, const DataType * const)
+	template <typename DataType>
+	WrapperType createWrapper(const DataTypePtr & from_type, const DataType * const)
 	{
 		using FunctionType = typename FunctionTo<DataType>::Type;
 
@@ -1609,7 +1668,7 @@ private:
 		};
 	}
 
-	static auto createFixedStringWrapper(const DataTypePtr & from_type, const size_t N)
+	static WrapperType createFixedStringWrapper(const DataTypePtr & from_type, const size_t N)
 	{
 		if (!typeid_cast<const DataTypeString *>(from_type.get()) &&
 			!typeid_cast<const DataTypeFixedString *>(from_type.get()))
@@ -1624,8 +1683,17 @@ private:
 		};
 	}
 
-	auto createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray * to_type)
+	WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray * to_type)
 	{
+		/// Conversion from String through parsing.
+		if (typeid_cast<const DataTypeString *>(from_type_untyped.get()))
+		{
+			return [] (Block & block, const ColumnNumbers & arguments, const size_t result)
+			{
+				ConvertImplGenericFromString::execute(block, arguments, result);
+			};
+		}
+
 		DataTypePtr from_nested_type, to_nested_type;
 		auto from_type = typeid_cast<const DataTypeArray *>(from_type_untyped.get());
 
@@ -1642,7 +1710,7 @@ private:
 		/// both from_type and to_type should be nullptr now is array types had same dimensions
 		if (from_type || to_type)
 			throw Exception{
-				"CAST AS Array can only be performed between same-dimensional array types",
+				"CAST AS Array can only be performed between same-dimensional array types or from String",
 				ErrorCodes::TYPE_MISMATCH
 			};
 
@@ -1693,19 +1761,28 @@ private:
 		};
 	}
 
-	auto createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type)
+	WrapperType createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type)
 	{
+		/// Conversion from String through parsing.
+		if (typeid_cast<const DataTypeString *>(from_type_untyped.get()))
+		{
+			return [] (Block & block, const ColumnNumbers & arguments, const size_t result)
+			{
+				ConvertImplGenericFromString::execute(block, arguments, result);
+			};
+		}
+
 		const auto from_type = typeid_cast<const DataTypeTuple *>(from_type_untyped.get());
 		if (!from_type)
 			throw Exception{
-				"CAST AS Tuple can only be performed between tuple types.\nLeft type: " + from_type_untyped->getName() +
+				"CAST AS Tuple can only be performed between tuple types or from String.\nLeft type: " + from_type_untyped->getName() +
 					", right type: " + to_type->getName(),
 				ErrorCodes::TYPE_MISMATCH
 			};
 
 		if (from_type->getElements().size() != to_type->getElements().size())
 			throw Exception{
-				"CAST AS Tuple can only be performed between tuple types with the same number of elements.\n"
+				"CAST AS Tuple can only be performed between tuple types with the same number of elements or from String.\n"
 					"Left type: " + from_type->getName() + ", right type: " + to_type->getName(),
 				 ErrorCodes::TYPE_MISMATCH
 			};
@@ -1824,7 +1901,7 @@ private:
 	};
 
 	template <typename ColumnStringType, typename EnumType>
-	auto createStringToEnumWrapper()
+	WrapperType createStringToEnumWrapper()
 	{
 		return [] (Block & block, const ColumnNumbers & arguments, const size_t result)
 		{
@@ -1899,6 +1976,9 @@ private:
 			return createEnumWrapper(from_type, type_enum);
 		else if (const auto type_enum = typeid_cast<const DataTypeEnum16 *>(to_type))
 			return createEnumWrapper(from_type, type_enum);
+
+		/// It's possible to use ConvertImplGenericFromString to convert from String to AggregateFunction,
+		///  but it is disabled because deserializing aggregate functions state might be unsafe.
 
 		throw Exception{
 			"Conversion from " + from_type->getName() + " to " + to_type->getName() +
