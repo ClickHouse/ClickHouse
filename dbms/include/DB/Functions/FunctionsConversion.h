@@ -739,6 +739,7 @@ template <> inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType 
 	x = tmp;
 }
 
+
 template <typename ToDataType, typename Name>
 struct ConvertImpl<DataTypeString, ToDataType, Name>
 {
@@ -751,21 +752,26 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 			auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
 			block.getByPosition(result).column = col_to;
 
-			const ColumnString::Chars_t & data_from = col_from->getChars();
 			typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
 			size_t size = col_from->size();
 			vec_to.resize(size);
 
-			/// Maybe unsafe, because, while parsing, we may read next values from column. Should be Ok for primitive types.
-			ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(&data_from[0])), data_from.size(), 0);
+			const ColumnString::Chars_t & chars = col_from->getChars();
+			const IColumn::Offsets_t & offsets = col_from->getOffsets();
 
-			char zero = 0;
+			size_t current_offset = 0;
+
 			for (size_t i = 0; i < size; ++i)
 			{
+				ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(
+					&chars[current_offset])), offsets[i] - current_offset - 1, 0);
+
 				parseImpl<ToDataType>(vec_to[i], read_buffer);
-				readChar(zero, read_buffer);
-				if (zero != 0)
+
+				if (!read_buffer.eof())
 					throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
+
+				current_offset = offsets[i];
 			}
 		}
 		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[0]).column.get()))
@@ -774,6 +780,77 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 			ReadBufferFromString read_buffer(s);
 			ToFieldType x = 0;
 			parseImpl<ToDataType>(x, read_buffer);
+
+			if (!read_buffer.eof())
+				throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
+
+			block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(col_from->size(), x);
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+					+ " of first argument of function " + Name::name,
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+
+template <typename DataType>
+typename std::enable_if<std::is_integral<typename DataType::FieldType>::value, bool>::type
+tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb)
+{
+	return tryReadIntText(x, rb);
+}
+
+template <typename DataType>
+typename std::enable_if<std::is_floating_point<typename DataType::FieldType>::value, bool>::type
+tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb)
+{
+	return tryReadFloatText(x, rb);
+}
+
+
+/** Conversion from String through parsing, which returns default value instead of throwing an exception.
+  */
+template <typename ToDataType, typename Name>
+struct ConvertOrZeroImpl
+{
+	using ToFieldType = typename ToDataType::FieldType;
+
+	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.getByPosition(arguments[0]).column.get()))
+		{
+			auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
+			block.getByPosition(result).column = col_to;
+
+			typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
+			size_t size = col_from->size();
+			vec_to.resize(size);
+
+			const ColumnString::Chars_t & chars = col_from->getChars();
+			const IColumn::Offsets_t & offsets = col_from->getOffsets();
+
+			size_t current_offset = 0;
+
+			for (size_t i = 0; i < size; ++i)
+			{
+				ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(
+					&chars[current_offset])), offsets[i] - current_offset - 1, 0);
+
+				/// NOTE Need to implement for Date and DateTime too.
+				if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer) || !read_buffer.eof())
+					vec_to[i] = 0;
+
+				current_offset = offsets[i];
+			}
+		}
+		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[0]).column.get()))
+		{
+			const String & s = col_from->getData();
+			ReadBufferFromString read_buffer(s);
+			ToFieldType x = 0;
+			if (!tryParseImpl<ToDataType>(x, read_buffer) || !read_buffer.eof())
+				x = 0;
 			block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(col_from->size(), x);
 		}
 		else
@@ -1343,6 +1420,52 @@ private:
 };
 
 
+/** Functions tryToT (where T is number of date or datetime type):
+  *  try to convert from String to type T through parsing,
+  *  if cannot parse, return default value instead of throwing exception.
+  * NOTE Also need implement tryToUnixTimestamp with timezone.
+  */
+template <typename ToDataType, typename Name>
+class FunctionConvertOrZero : public IFunction
+{
+public:
+	static constexpr auto name = Name::name;
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionConvertOrZero>(); }
+
+	String getName() const override
+	{
+		return name;
+	}
+
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		return getReturnTypeImpl(arguments);
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+
+		if (typeid_cast<const DataTypeString *>(from_type)) ConvertOrZeroImpl<ToDataType, Name>::execute(block, arguments, result);
+		else
+			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName()
+				+ ". Only String argument is accepted for try-conversion function. For other arguments, use function without 'try'.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+
+private:
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return std::make_shared<ToDataType>();
+	}
+};
+
+
 /** Conversion to fixed string is implemented only for strings.
   */
 class FunctionToFixedString : public IFunction
@@ -1640,6 +1763,28 @@ template <typename FieldType> struct FunctionTo<DataTypeEnum<FieldType>>
 	: FunctionTo<typename DataTypeFromFieldType<FieldType>::Type>
 {
 };
+
+struct NameToUInt8OrZero 		{ static constexpr auto name = "toUInt8OrZero"; };
+struct NameToUInt16OrZero 		{ static constexpr auto name = "toUInt16OrZero"; };
+struct NameToUInt32OrZero 		{ static constexpr auto name = "toUInt32OrZero"; };
+struct NameToUInt64OrZero 		{ static constexpr auto name = "toUInt64OrZero"; };
+struct NameToInt8OrZero 		{ static constexpr auto name = "toInt8OrZero"; };
+struct NameToInt16OrZero	 	{ static constexpr auto name = "toInt16OrZero"; };
+struct NameToInt32OrZero		{ static constexpr auto name = "toInt32OrZero"; };
+struct NameToInt64OrZero		{ static constexpr auto name = "toInt64OrZero"; };
+struct NameToFloat32OrZero		{ static constexpr auto name = "toFloat32OrZero"; };
+struct NameToFloat64OrZero		{ static constexpr auto name = "toFloat64OrZero"; };
+
+using FunctionToUInt8OrZero 	= FunctionConvertOrZero<DataTypeUInt8,		NameToUInt8OrZero>;
+using FunctionToUInt16OrZero 	= FunctionConvertOrZero<DataTypeUInt16,		NameToUInt16OrZero>;
+using FunctionToUInt32OrZero 	= FunctionConvertOrZero<DataTypeUInt32,		NameToUInt32OrZero>;
+using FunctionToUInt64OrZero 	= FunctionConvertOrZero<DataTypeUInt64,		NameToUInt64OrZero>;
+using FunctionToInt8OrZero 		= FunctionConvertOrZero<DataTypeInt8,		NameToInt8OrZero>;
+using FunctionToInt16OrZero 	= FunctionConvertOrZero<DataTypeInt16,		NameToInt16OrZero>;
+using FunctionToInt32OrZero 	= FunctionConvertOrZero<DataTypeInt32,		NameToInt32OrZero>;
+using FunctionToInt64OrZero 	= FunctionConvertOrZero<DataTypeInt64,		NameToInt64OrZero>;
+using FunctionToFloat32OrZero 	= FunctionConvertOrZero<DataTypeFloat32,	NameToFloat32OrZero>;
+using FunctionToFloat64OrZero 	= FunctionConvertOrZero<DataTypeFloat64,	NameToFloat64OrZero>;
 
 
 class FunctionCast final : public IFunction
