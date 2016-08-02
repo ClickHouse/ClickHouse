@@ -180,15 +180,13 @@ public:
 				new_top_continent[i] = i;
 			}
 
-			static constexpr size_t max_depth = 1000;	/// To avoid infinite loop for bad hierarchy.
-
 			RegionDepth depth = 0;
 			RegionID current = i;
 			while (true)
 			{
 				++depth;
 
-				if (depth > max_depth)
+				if (depth == std::numeric_limits<RegionDepth>::max())
 					throw Poco::Exception("Logical error in regions hierarchy: region " + DB::toString(current) + " possible is inside infinite loop");
 
 				current = new_parents[current];
