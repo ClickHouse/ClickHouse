@@ -768,7 +768,9 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 
 				parseImpl<ToDataType>(vec_to[i], read_buffer);
 
-				if (!read_buffer.eof())
+				if (!read_buffer.eof()
+					&& !(std::is_same<ToDataType, DataTypeDate>::value /// Special exception, that allows to parse string with DateTime as Date.
+						&& offsets[i] - current_offset - 1 == strlen("YYYY-MM-DD hh:mm:ss")))
 					throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
 
 				current_offset = offsets[i];
@@ -781,7 +783,9 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 			ToFieldType x = 0;
 			parseImpl<ToDataType>(x, read_buffer);
 
-			if (!read_buffer.eof())
+			if (!read_buffer.eof()
+				&& !(std::is_same<ToDataType, DataTypeDate>::value /// Special exception, that allows to parse string with DateTime as Date.
+					&& s.size() == strlen("YYYY-MM-DD hh:mm:ss")))
 				throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
 
 			block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(col_from->size(), x);
