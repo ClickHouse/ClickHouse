@@ -130,7 +130,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
 	if (num_found_blocks == part_length_in_blocks)
 	{
 		/// На совокупности живых или мёртвых реплик есть все куски, из которых можно составить нужный кусок. Ничего делать не будем.
-		LOG_WARNING(log, "Found all blocks for missing part. Will wait for them to be merged.");
+		LOG_WARNING(log, "Found all blocks for missing part " << part_name << ". Will wait for them to be merged.");
 		return;
 	}
 
