@@ -37,6 +37,32 @@ bool hasNullableBranches(const Block & block, const ColumnNumbers & args)
 	return false;
 }
 
+bool hasNullableArgs(const DataTypes & args)
+{
+	size_t else_arg = Conditional::elseArg(args);
+
+	for (size_t i = Conditional::firstThen(); i < else_arg; i = Conditional::nextThen(i))
+	{
+		if (args[i].get()->isNullable())
+			return true;
+	}
+
+	return args[else_arg].get()->isNullable();
+}
+
+bool hasNullArgs(const DataTypes & args)
+{
+	size_t else_arg = Conditional::elseArg(args);
+
+	for (size_t i = Conditional::firstThen(); i < else_arg; i = Conditional::nextThen(i))
+	{
+		if (args[i].get()->isNull())
+			return true;
+	}
+
+	return args[else_arg].get()->isNull();
+}
+
 }
 
 void registerFunctionsConditional(FunctionFactory & factory)
@@ -81,11 +107,9 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
 	return data_type;
 }
 
-/// If block has nullable columns, extract block, append to it a ColumnUInt8,
-/// and call with flag with_nullable_args.
 void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
 {
-	auto handler = [&](Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
+	auto perform_multi_if = [&](Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
 	{
 		if (performTrivialCase(block, args, result, tracker))
 			return;
@@ -109,7 +133,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 	{
 		if (!hasNullableBranches(block, args))
 		{
-			handler(block, args, result, result);
+			perform_multi_if(block, args, result, result);
 			return;
 		}
 
@@ -143,7 +167,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 		non_nullable_block.insert(elem);
 
 		/// Really perform multiIf.
-		handler(non_nullable_block, args, result, tracker);
+		perform_multi_if(non_nullable_block, args, result, tracker);
 
 		/// Store the result.
 		const ColumnWithTypeAndName & source_col = non_nullable_block.unsafeGetByPosition(result);
@@ -151,21 +175,16 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 
 		if (source_col.column.get()->isNull())
 		{
-			/// Degenerate case: we've got a null column.
+			/// Degenerate case: the result is a null column.
 			dest_col.column = source_col.column;
 			return;
 		}
 
 		dest_col.column = std::make_shared<ColumnNullable>(source_col.column);
-		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(dest_col.column.get()));
-
-		/// Create a null byte map for the result column.
-		auto null_map = std::make_shared<ColumnUInt8>(row_count);
-		nullable_col.getNullValuesByteMap() = null_map;
-		auto & null_map_data = null_map.get()->getData();
 
 		/// Setup the null byte map of the result column by using the branch tracker column values.
 		ColumnPtr tracker_holder = non_nullable_block.unsafeGetByPosition(tracker).column;
+		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(dest_col.column.get()));
 
 		auto is_null_at = [](const IColumn & col, size_t row)
 		{
@@ -176,16 +195,28 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 		{
 			auto pos = col->getData();
 			const IColumn & origin = *(block.unsafeGetByPosition(pos).column.get());
-			bool origin_is_null = origin.isNull();
-			for (size_t row = 0; row < row_count; ++row)
+
+			ColumnPtr null_map;
+
+			if (origin.isNull())
+				null_map = std::make_shared<ColumnUInt8>(row_count, 1);
+			else if (origin.isNullable())
 			{
-				bool is_null = origin_is_null || is_null_at(origin, row);
-				null_map_data[row] = is_null ? 1 : 0;
+				const ColumnNullable & origin_nullable = static_cast<const ColumnNullable &>(origin);
+				null_map = origin_nullable.getNullValuesByteMap().get()->clone();
 			}
+			else
+				null_map = std::make_shared<ColumnUInt8>(row_count, 0);
+
+			nullable_col.getNullValuesByteMap() = null_map;
 		}
 		else if (auto col = typeid_cast<ColumnUInt64 *>(tracker_holder.get()))
 		{
-			auto & data = col->getData();
+			auto null_map = std::make_shared<ColumnUInt8>(row_count);
+			nullable_col.getNullValuesByteMap() = null_map;
+			auto & null_map_data = null_map.get()->getData();
+
+			const auto & data = col->getData();
 			for (size_t row = 0; row < row_count; ++row)
 			{
 				const IColumn & origin = *(block.unsafeGetByPosition(data[row]).column.get());
@@ -204,26 +235,6 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 
 DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 {
-	bool has_nullable_args = false;
-	for (const auto & arg : args)
-	{
-		if (arg.get()->isNullable())
-		{
-			has_nullable_args = true;
-			break;
-		}
-	}
-
-	bool has_null_args = false;
-	for (const auto & arg : args)
-	{
-		if (arg.get()->isNull())
-		{
-			has_null_args = true;
-			break;
-		}
-	}
-
 	if (!Conditional::hasValidArgCount(args))
 	{
 		if (is_case_mode)
@@ -257,6 +268,9 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 		}
 	}
+
+	bool has_nullable_args = hasNullableArgs(args);
+	bool has_null_args = hasNullArgs(args);
 
 	if (Conditional::hasArithmeticBranches(args))
 		return Conditional::getReturnTypeForArithmeticArgs(args);
@@ -298,6 +312,10 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 
 		push_branch_arg(Conditional::elseArg(args));
 
+		/// NOTE: in a future release, this code will be rewritten. Indeed
+		/// the current approach is flawed since it cannot appropriately
+		/// deal with null arguments and arrays that contain null elements.
+		/// For now we assume that arrays do not contain any such elements.
 		DataTypePtr elt_type = getReturnTypeImpl(new_args);
 		if (elt_type.get()->isNullable())
 		{
@@ -358,37 +376,39 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 	}
 	else
 	{
+		/// Return the type of the first non-null branch.
+		/// Make it nullable if there is at least one nullable branch
+		/// or one null branch.
+
+		auto get_type_to_return = [has_nullable_args, has_null_args](const DataTypePtr & arg) -> DataTypePtr
+		{
+			if (arg.get()->isNullable())
+				return arg;
+			else if (has_nullable_args || has_null_args)
+				return std::make_shared<DataTypeNullable>(arg);
+			else
+				return arg;
+		};
+
 		for (size_t i = Conditional::firstThen(); i < Conditional::elseArg(args); i = Conditional::nextThen(i))
 		{
 			if (!args[i].get()->isNull())
-			{
-				if (args[i].get()->isNullable())
-					return args[i];
-				else if (has_nullable_args || has_null_args)
-					return std::make_shared<DataTypeNullable>(args[i]);
-				else
-					return args[i];
-			}
+				return get_type_to_return(args[i]);
 		}
 
 		size_t i = Conditional::elseArg(args);
 		if (!args[i].get()->isNull())
-		{
-			if (args[i].get()->isNullable())
-				return args[i];
-			else if (has_nullable_args || has_null_args)
-				return std::make_shared<DataTypeNullable>(args[i]);
-			else
-				return args[i];
-		}
+			return get_type_to_return(args[i]);
 
+		/// All the branches are null.
 		return std::make_shared<DataTypeNull>();
 	}
 }
 
 bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
 {
-	/// Check that we have only one type + 0 or more nulls.
+	/// Check that all the branches have the same type. Moreover
+	/// some or all these branches may be null.
 	std::string first_type_name;
 	DataTypePtr type;
 	Field sample;
@@ -428,15 +448,17 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 		}
 	}
 
+	size_t row_count = block.rowsInFirstColumn();
 	auto & res_col = block.getByPosition(result).column;
 
 	if (!type)
 	{
-		/// Degenerate case: all branches are nulls.
-		res_col = DataTypeNull{}.createConstColumn(block.rowsInFirstColumn(), Field{});
+		/// Degenerate case: all the branches are null.
+		res_col = DataTypeNull{}.createConstColumn(row_count, Field{});
 		return true;
 	}
 
+	/// Check that all the conditions are constants.
 	for (size_t i = Conditional::firstCond(); i < else_arg; i = Conditional::nextCond(i))
 	{
 		const IColumn * col = block.getByPosition(args[i]).column.get();
@@ -444,39 +466,39 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 			return false;
 	}
 
+	/// Initialize readers for the conditions.
 	Conditional::CondSources conds;
 	conds.reserve(Conditional::getCondCount(args));
 
 	for (size_t i = Conditional::firstCond(); i < else_arg; i = Conditional::nextCond(i))
 		conds.emplace_back(block, args, i);
 
+	/// Perform multiIf.
+
+	auto make_result = [&](size_t index)
+	{
+		res_col = block.getByPosition(index).column;
+		if (res_col.get()->isNull())
+			res_col = type.get()->createConstColumn(row_count, sample);
+		if (tracker != result)
+		{
+			ColumnPtr & col = block.getByPosition(tracker).column;
+			col = std::make_shared<ColumnConstUInt64>(row_count, index);
+		}
+	};
+
 	size_t i = Conditional::firstCond();
 	for (const auto & cond : conds)
 	{
 		if (cond.get(0))
 		{
-			res_col = block.getByPosition(args[Conditional::thenFromCond(i)]).column;
-			if (res_col.get()->isNull())
-				res_col = type.get()->createConstColumn(block.rowsInFirstColumn(), sample);
-			if (tracker != result)
-			{
-				ColumnPtr & col = block.getByPosition(tracker).column;
-				col = std::make_shared<ColumnConstUInt64>(block.rowsInFirstColumn(), args[Conditional::thenFromCond(i)]);
-			}
+			make_result(args[Conditional::thenFromCond(i)]);
 			return true;
 		}
 		i = Conditional::nextCond(i);
 	}
 
-	res_col = block.getByPosition(args[else_arg]).column;
-	if (res_col.get()->isNull())
-		res_col = type.get()->createConstColumn(block.rowsInFirstColumn(), sample);
-	if (tracker != result)
-	{
-		ColumnPtr & col = block.getByPosition(tracker).column;
-		col = std::make_shared<ColumnConstUInt64>(block.rowsInFirstColumn(), args[else_arg]);
-	}
-
+	make_result(args[else_arg]);
 	return true;
 }
 
