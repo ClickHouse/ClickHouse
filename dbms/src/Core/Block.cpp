@@ -273,19 +273,6 @@ bool Block::hasNullableColumns(const ColumnNumbers & arguments) const
 }
 
 
-bool Block::supportsNullValues(const ColumnNumbers & arguments) const
-{
-	for (const auto & arg : arguments)
-	{
-		const auto & elem = unsafeGetByPosition(arg);
-		if (elem.column &&
-			(elem.column.get()->isNullable() || elem.column.get()->isNull()))
-			return true;
-	}
-	return false;
-}
-
-
 size_t Block::getPositionByName(const std::string & name) const
 {
 	IndexByName_t::const_iterator it = index_by_name.find(name);
@@ -427,46 +414,6 @@ Block Block::extractNonNullableBlock(const ColumnNumbers & arguments) const
 	return non_nullable_block;
 }
 
-
-Block Block::extractBlockWithoutNullValues(const ColumnNumbers & arguments) const
-{
-	Block non_nullable_block;
-	non_nullable_block.reserve(columns());
-
-	ColumnNumbers args2 = arguments;
-	std::sort(args2.begin(), args2.end());
-
-	size_t pos = 0;
-	for (const auto & col_it : index_by_position)
-	{
-		const auto & col = *col_it;
-
-		bool found = std::binary_search(args2.begin(), args2.end(), pos) && col.column && col.type;
-
-		if (found && col.column.get()->isNullable())
-		{
-			auto nullable_col = static_cast<const ColumnNullable *>(col.column.get());
-			ColumnPtr nested_col = nullable_col->getNestedColumn();
-
-			auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
-			DataTypePtr nested_type = nullable_type->getNestedType();
-
-			non_nullable_block.insert(pos, {nested_col, nested_type, col.name});
-		}
-		else if (found && col.column.get()->isNull())
-		{
-			ColumnPtr new_col = std::make_shared<ColumnConstUInt8>(rowsInFirstColumn(), UInt8());
-			DataTypePtr new_type = std::make_shared<DataTypeUInt8>();
-			non_nullable_block.insert(pos, {new_col, new_type, col.name});
-		}
-		else
-			non_nullable_block.insert(pos, col);
-
-		++pos;
-	}
-
-	return non_nullable_block;
-}
 
 ColumnsWithTypeAndName Block::getColumns() const
 {
