@@ -29,21 +29,21 @@ namespace Conditional
 namespace
 {
 
+struct Category
+{
+	static const auto NONE = 0;
+	static const auto NUMERIC = UINT8_C(1) << 0;
+	static const auto NUMERIC_ARRAY = UINT8_C(1) << 1;
+	static const auto NULL_VALUE = UINT8_C(1) << 2;
+};
+
 /// This class provides a means to collect type information on a branch
 /// (then or else) of a multiIf function.
 template <typename TType>
 struct PredicateBase
 {
 protected:
-	enum Category
-	{
-		NONE = 0,
-		NUMERIC,
-		NUMERIC_ARRAY
-	};
-
-protected:
-	static Category appendBranchInfo(size_t index, const Block & block,
+	static bool appendBranchInfo(size_t index, const Block & block,
 		const ColumnNumbers & args, Branches & branches)
 	{
 		const IColumn * col = block.getByPosition(args[index]).column.get();
@@ -74,7 +74,7 @@ protected:
 					if (arr_vec_col != nullptr)
 						branch.is_const = false;
 					else
-						return NONE;
+						return false;
 				}
 				else
 				{
@@ -91,12 +91,12 @@ protected:
 						using ElementType = typename DataTypeFromFieldType<TType>::Type;
 
 						if (typeid_cast<const ElementType *>(nested_type) == nullptr)
-							return NONE;
+							return false;
 
 						branch.is_const = true;
 					}
 					else
-						return NONE;
+						return false;
 				}
 			}
 		}
@@ -104,14 +104,41 @@ protected:
 		branch.index = index;
 		branch.type = DataTypeTraits::DataTypeFromFieldTypeOrError<TType>::getDataType();
 
-		branches.push_back(branch);
-
 		if ((vec_col != nullptr) || (const_col != nullptr))
-			return NUMERIC;
+			branch.category = Category::NUMERIC;
 		else if ((arr_vec_col != nullptr) || (arr_const_col != nullptr))
-			return NUMERIC_ARRAY;
+			branch.category = Category::NUMERIC_ARRAY;
 		else
 			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+
+		branches.push_back(branch);
+
+		return true;
+	}
+};
+
+template <>
+struct PredicateBase<Null>
+{
+protected:
+	static bool appendBranchInfo(size_t index, const Block & block,
+		const ColumnNumbers & args, Branches & branches)
+	{
+		const IColumn * col = block.getByPosition(args[index]).column.get();
+		const ColumnNull * const_col = typeid_cast<const ColumnNull *>(col);
+
+		if (const_col == nullptr)
+			return false;
+
+		Branch branch;
+		branch.is_const = true;
+		branch.index = index;
+		branch.type = DataTypeTraits::DataTypeFromFieldTypeOrError<Null>::getDataType();
+		branch.category = Category::NULL_VALUE;
+
+		branches.push_back(branch);
+
+		return true;
 	}
 };
 
@@ -128,24 +155,45 @@ struct ElsePredicate final : public PredicateBase<TType>
 	>::Type;
 
 	using TFinal = typename NumberTraits::ToOrdinaryType<TCombined>::Type;
+	using TFinal2 = typename RemoveNullable<TFinal>::Type;
 
+	/// TFinal may be void or Nullable<void>, thus TFinal2 may be void.
+
+	template <typename T = TFinal2>
 	static bool execute(size_t index, Block & block, const ColumnNumbers & args,
-		size_t result, Branches & branches)
+		size_t result, size_t tracker, Branches & branches,
+		typename std::enable_if<!std::is_same<T, void>::value>::type * = nullptr)
 	{
-		auto category = Base::appendBranchInfo(index, block, args, branches);
+		if (!Base::appendBranchInfo(index, block, args, branches))
+			return false;
 
 		/// We have collected all the information we need.
 		/// Now perform the multiIf.
-		if (category == Base::NONE)
-			return false;
-		else if (category == Base::NUMERIC)
-			NumericEvaluator<TFinal>::perform(branches, block, args, result);
-		else if (category == Base::NUMERIC_ARRAY)
-			ArrayEvaluator<TFinal>::perform(branches, block, args, result);
+
+		UInt8 category = Category::NONE;
+		for (const auto & branch : branches)
+			category |= branch.category;
+
+		if (category & Category::NUMERIC)
+		{
+			if (category & Category::NUMERIC_ARRAY)
+				throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+			NumericEvaluator<TFinal2>::perform(branches, block, args, result, tracker);
+		}
+		else if (category & Category::NUMERIC_ARRAY)
+			ArrayEvaluator<TFinal2>::perform(branches, block, args, result, tracker);
 		else
 			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 
 		return true;
+	}
+
+	template <typename T = TFinal2>
+	static bool execute(size_t index, Block & block, const ColumnNumbers & args,
+		size_t result, size_t tracker, Branches & branches,
+		typename std::enable_if<std::is_same<T, void>::value>::type * = nullptr)
+	{
+		throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 	}
 };
 
@@ -154,7 +202,7 @@ template <typename TResult>
 struct ElsePredicate<TResult, NumberTraits::Error>
 {
 	static bool execute(size_t index, Block & block, const ColumnNumbers & args,
-		size_t result, Branches & branches)
+		size_t result, size_t tracker, Branches & branches)
 	{
 		throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 	}
@@ -165,7 +213,7 @@ template <typename TType>
 struct ElsePredicate<NumberTraits::Error, TType>
 {
 	static bool execute(size_t index, Block & block, const ColumnNumbers & args,
-		size_t result, Branches & branches)
+		size_t result, size_t tracker, Branches & branches)
 	{
 		throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 	}
@@ -184,11 +232,9 @@ struct ThenPredicate final : public PredicateBase<TType>
 	>::Type;
 
 	static bool execute(size_t index, Block & block, const ColumnNumbers & args,
-		size_t result, Branches & branches)
+		size_t result, size_t tracker, Branches & branches)
 	{
-		auto category = Base::appendBranchInfo(index, block, args, branches);
-
-		if (category == Base::NONE)
+		if (!Base::appendBranchInfo(index, block, args, branches))
 			return false;
 
 		/// Guess what comes after Then.
@@ -197,34 +243,34 @@ struct ThenPredicate final : public PredicateBase<TType>
 		if (index2 != elseArg(args))
 		{
 			/// We have a pair Cond-Then. Process the next Then.
-			if (! (ThenPredicate<TCombined, UInt8>::execute(index2 + 1, block, args, result, branches)
-				|| ThenPredicate<TCombined, UInt16>::execute(index2 + 1, block, args, result, branches)
-				|| ThenPredicate<TCombined, UInt32>::execute(index2 + 1, block, args, result, branches)
-				|| ThenPredicate<TCombined, UInt64>::execute(index2 + 1, block, args, result, branches)
-				|| ThenPredicate<TCombined, Int8>::execute(index2 + 1, block, args, result, branches)
-				|| ThenPredicate<TCombined, Int16>::execute(index2 + 1, block, args, result, branches)
-				|| ThenPredicate<TCombined, Int32>::execute(index2 + 1, block, args, result, branches)
-				|| ThenPredicate<TCombined, Int64>::execute(index2 + 1, block, args, result, branches)
-				|| ThenPredicate<TCombined, Float32>::execute(index2 + 1, block, args, result, branches)
-				|| ThenPredicate<TCombined, Float64>::execute(index2 + 1, block, args, result, branches)))
-				throw CondException{CondErrorCodes::NUMERIC_PERFORMER_ILLEGAL_COLUMN,
-					toString(index2 + 1)};
+			if (! (ThenPredicate<TCombined, UInt8>::execute(index2 + 1, block, args, result, tracker, branches)
+				|| ThenPredicate<TCombined, UInt16>::execute(index2 + 1, block, args, result, tracker, branches)
+				|| ThenPredicate<TCombined, UInt32>::execute(index2 + 1, block, args, result, tracker, branches)
+				|| ThenPredicate<TCombined, UInt64>::execute(index2 + 1, block, args, result, tracker, branches)
+				|| ThenPredicate<TCombined, Int8>::execute(index2 + 1, block, args, result, tracker, branches)
+				|| ThenPredicate<TCombined, Int16>::execute(index2 + 1, block, args, result, tracker, branches)
+				|| ThenPredicate<TCombined, Int32>::execute(index2 + 1, block, args, result, tracker, branches)
+				|| ThenPredicate<TCombined, Int64>::execute(index2 + 1, block, args, result, tracker, branches)
+				|| ThenPredicate<TCombined, Float32>::execute(index2 + 1, block, args, result, tracker, branches)
+				|| ThenPredicate<TCombined, Float64>::execute(index2 + 1, block, args, result, tracker, branches)
+				|| ThenPredicate<TCombined, Null>::execute(index2 + 1, block, args, result, tracker, branches)))
+				return false;
 		}
 		else
 		{
 			/// We have an Else which ends the multiIf. Process it.
-			if (! (ElsePredicate<TCombined, UInt8>::execute(index2, block, args, result, branches)
-				|| ElsePredicate<TCombined, UInt16>::execute(index2, block, args, result, branches)
-				|| ElsePredicate<TCombined, UInt32>::execute(index2, block, args, result, branches)
-				|| ElsePredicate<TCombined, UInt64>::execute(index2, block, args, result, branches)
-				|| ElsePredicate<TCombined, Int8>::execute(index2, block, args, result, branches)
-				|| ElsePredicate<TCombined, Int16>::execute(index2, block, args, result, branches)
-				|| ElsePredicate<TCombined, Int32>::execute(index2, block, args, result, branches)
-				|| ElsePredicate<TCombined, Int64>::execute(index2, block, args, result, branches)
-				|| ElsePredicate<TCombined, Float32>::execute(index2, block, args, result, branches)
-				|| ElsePredicate<TCombined, Float64>::execute(index2, block, args, result, branches)))
-				throw CondException{CondErrorCodes::NUMERIC_PERFORMER_ILLEGAL_COLUMN,
-					toString(index2)};
+			if (! (ElsePredicate<TCombined, UInt8>::execute(index2, block, args, result, tracker, branches)
+				|| ElsePredicate<TCombined, UInt16>::execute(index2, block, args, result, tracker, branches)
+				|| ElsePredicate<TCombined, UInt32>::execute(index2, block, args, result, tracker, branches)
+				|| ElsePredicate<TCombined, UInt64>::execute(index2, block, args, result, tracker, branches)
+				|| ElsePredicate<TCombined, Int8>::execute(index2, block, args, result, tracker, branches)
+				|| ElsePredicate<TCombined, Int16>::execute(index2, block, args, result, tracker, branches)
+				|| ElsePredicate<TCombined, Int32>::execute(index2, block, args, result, tracker, branches)
+				|| ElsePredicate<TCombined, Int64>::execute(index2, block, args, result, tracker, branches)
+				|| ElsePredicate<TCombined, Float32>::execute(index2, block, args, result, tracker, branches)
+				|| ElsePredicate<TCombined, Float64>::execute(index2, block, args, result, tracker, branches)
+				|| ElsePredicate<TCombined, Null>::execute(index2, block, args, result, tracker, branches)))
+				return false;
 		}
 
 		return true;
@@ -236,7 +282,7 @@ template <typename TResult>
 struct ThenPredicate<TResult, NumberTraits::Error>
 {
 	static bool execute(size_t index, Block & block, const ColumnNumbers & args,
-		size_t result, Branches & branches)
+		size_t result, size_t tracker, Branches & branches)
 	{
 		throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 	}
@@ -247,7 +293,7 @@ template <typename TType>
 struct ThenPredicate<NumberTraits::Error, TType>
 {
 	static bool execute(size_t index, Block & block, const ColumnNumbers & args,
-		size_t result, Branches & branches)
+		size_t result, size_t tracker, Branches & branches)
 	{
 		throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 	}
@@ -256,30 +302,31 @@ struct ThenPredicate<NumberTraits::Error, TType>
 /// First Then
 struct FirstThenPredicate final
 {
-	static bool execute(Block & block, const ColumnNumbers & args, size_t result)
+	static bool execute(Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
 	{
-		using Void = NumberTraits::Enriched::Void;
+		using Void = NumberTraits::Enriched::Void<NumberTraits::HasNoNull>;
 		Branches branches;
 
-		return ThenPredicate<Void, UInt8>::execute(firstThen(), block, args, result, branches)
-			|| ThenPredicate<Void, UInt16>::execute(firstThen(), block, args, result, branches)
-			|| ThenPredicate<Void, UInt32>::execute(firstThen(), block, args, result, branches)
-			|| ThenPredicate<Void, UInt64>::execute(firstThen(), block, args, result, branches)
-			|| ThenPredicate<Void, Int8>::execute(firstThen(), block, args, result, branches)
-			|| ThenPredicate<Void, Int16>::execute(firstThen(), block, args, result, branches)
-			|| ThenPredicate<Void, Int32>::execute(firstThen(), block, args, result, branches)
-			|| ThenPredicate<Void, Int64>::execute(firstThen(), block, args, result, branches)
-			|| ThenPredicate<Void, Float32>::execute(firstThen(), block, args, result, branches)
-			|| ThenPredicate<Void, Float64>::execute(firstThen(), block, args, result, branches);
+		return ThenPredicate<Void, UInt8>::execute(firstThen(), block, args, result, tracker, branches)
+			|| ThenPredicate<Void, UInt16>::execute(firstThen(), block, args, result, tracker, branches)
+			|| ThenPredicate<Void, UInt32>::execute(firstThen(), block, args, result, tracker, branches)
+			|| ThenPredicate<Void, UInt64>::execute(firstThen(), block, args, result, tracker, branches)
+			|| ThenPredicate<Void, Int8>::execute(firstThen(), block, args, result, tracker, branches)
+			|| ThenPredicate<Void, Int16>::execute(firstThen(), block, args, result, tracker, branches)
+			|| ThenPredicate<Void, Int32>::execute(firstThen(), block, args, result, tracker, branches)
+			|| ThenPredicate<Void, Int64>::execute(firstThen(), block, args, result, tracker, branches)
+			|| ThenPredicate<Void, Float32>::execute(firstThen(), block, args, result, tracker, branches)
+			|| ThenPredicate<Void, Float64>::execute(firstThen(), block, args, result, tracker, branches)
+			|| ThenPredicate<Void, Null>::execute(firstThen(), block, args, result, tracker, branches);
 	}
 };
 
 }
 
 bool NumericPerformer::perform(Block & block, const ColumnNumbers & args,
-	size_t result)
+	size_t result, size_t tracker)
 {
-	return FirstThenPredicate::execute(block, args, result);
+	return FirstThenPredicate::execute(block, args, result, tracker);
 }
 
 }

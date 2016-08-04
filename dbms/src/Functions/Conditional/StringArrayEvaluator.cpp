@@ -65,6 +65,7 @@ public:
 	virtual void next() = 0;
 	virtual size_t getDataSize() const = 0;
 	virtual size_t getStringOffsetsSize() const = 0;
+	virtual size_t getIndex() const = 0;
 };
 
 using StringArraySourcePtr = std::unique_ptr<StringArraySource>;
@@ -76,8 +77,10 @@ class VarStringArraySource : public StringArraySource
 public:
 	VarStringArraySource(const ColumnString::Chars_t & data_,
 		const ColumnString::Offsets_t & string_offsets_,
-		const ColumnArray::Offsets_t & array_offsets_)
-		: data{data_}, string_offsets{string_offsets_}, array_offsets{array_offsets_}
+		const ColumnArray::Offsets_t & array_offsets_,
+		size_t index_)
+		: data{data_}, string_offsets{string_offsets_}, array_offsets{array_offsets_},
+		index{index_}
 	{
 	}
 
@@ -115,6 +118,11 @@ public:
 		return string_offsets.size();
 	}
 
+	size_t getIndex() const override
+	{
+		return index;
+	}
+
 private:
 	const ColumnString::Chars_t & data;
 	const ColumnString::Offsets_t & string_offsets;
@@ -122,6 +130,7 @@ private:
 
 	ColumnArray::Offset_t array_prev_offset = 0;
 	ColumnString::Offset_t string_prev_offset = 0;
+	size_t index = 0;
 	size_t i = 0;
 
 	VarCallback var_callback = [&](ColumnString::Chars_t & to_data,
@@ -156,8 +165,8 @@ private:
 class ConstStringArraySource : public StringArraySource
 {
 public:
-	ConstStringArraySource(const Array & data_)
-		: data{data_}
+	ConstStringArraySource(const Array & data_, size_t index_)
+		: data{data_}, index{index_}
 	{
 		data_size = 0;
 		for (const auto & s : data)
@@ -194,9 +203,15 @@ public:
 		return data.size();
 	}
 
+	size_t getIndex() const override
+	{
+		return index;
+	}
+
 private:
 	const Array & data;
 	size_t data_size;
+	size_t index;
 
 	VarCallback var_callback = [&](ColumnString::Chars_t & to_data,
 		ColumnString::Offset_t & to_string_prev_offset,
@@ -275,6 +290,8 @@ CondSources createConds(const Block & block, const ColumnNumbers & args)
 	return conds;
 }
 
+const Array null_array{String()};
+
 /// Create accessors for branch values.
 bool createStringArraySources(StringArraySources & sources, const Block & block,
 	const ColumnNumbers & args)
@@ -286,15 +303,22 @@ bool createStringArraySources(StringArraySources & sources, const Block & block,
 		const ColumnString * var_col = col_arr ? typeid_cast<const ColumnString *>(&col_arr->getData()) : nullptr;
 		const ColumnConstArray * const_col = typeid_cast<const ColumnConstArray *>(col);
 
-		if ((col_arr && var_col) || const_col)
+		if (col->isNull())
+		{
+			StringArraySourcePtr source;
+			source = std::make_unique<ConstStringArraySource>(null_array, args[i]);
+			sources.push_back(std::move(source));
+			return true;
+		}
+		else if ((col_arr && var_col) || const_col)
 		{
 			StringArraySourcePtr source;
 
 			if (var_col != nullptr)
 				source = std::make_unique<VarStringArraySource>(var_col->getChars(),
-					var_col->getOffsets(), col_arr->getOffsets());
+					var_col->getOffsets(), col_arr->getOffsets(), args[i]);
 			else if (const_col)
-				source = std::make_unique<ConstStringArraySource>(const_col->getData());
+				source = std::make_unique<ConstStringArraySource>(const_col->getData(), args[i]);
 			else
 				throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 
@@ -369,7 +393,7 @@ VarStringArraySink createSink(Block & block, const StringArraySources & sources,
 }
 
 /// Process a multiIf.
-bool StringArrayEvaluator::perform(Block & block, const ColumnNumbers & args, size_t result)
+bool StringArrayEvaluator::perform(Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
 {
 	StringArraySources sources;
 	if (!createStringArraySources(sources, block, args))
@@ -378,6 +402,14 @@ bool StringArrayEvaluator::perform(Block & block, const ColumnNumbers & args, si
 	const CondSources conds = createConds(block, args);
 	size_t row_count = conds[0].getSize();
 	VarStringArraySink sink = createSink(block, sources, result, row_count);
+
+	ColumnUInt64 * tracker_col = nullptr;
+	if (tracker != result)
+	{
+		auto & col = block.unsafeGetByPosition(tracker).column;
+		col = std::make_shared<ColumnUInt64>(row_count);
+		tracker_col = static_cast<ColumnUInt64 *>(col.get());
+	}
 
 	for (size_t cur_row = 0; cur_row < row_count; ++cur_row)
 	{
@@ -389,6 +421,11 @@ bool StringArrayEvaluator::perform(Block & block, const ColumnNumbers & args, si
 			if (cond.get(cur_row))
 			{
 				sink.store(sources[cur_source]->get());
+				if (tracker_col != nullptr)
+				{
+					auto & data = tracker_col->getData();
+					data[cur_row] = sources[cur_source]->getIndex();
+				}
 				has_triggered_cond = true;
 				break;
 			}
@@ -396,7 +433,14 @@ bool StringArrayEvaluator::perform(Block & block, const ColumnNumbers & args, si
 		}
 
 		if (!has_triggered_cond)
+		{
 			sink.store(sources.back()->get());
+			if (tracker_col != nullptr)
+			{
+				auto & data = tracker_col->getData();
+				data[cur_row] = sources.back()->getIndex();
+			}
+		}
 
 		for (auto & source : sources)
 			source->next();

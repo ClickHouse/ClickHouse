@@ -12,7 +12,7 @@ namespace Conditional
 class StringArrayEvaluator
 {
 public:
-	static bool perform(Block & block, const ColumnNumbers & args, size_t result);
+	static bool perform(Block & block, const ColumnNumbers & args, size_t result, size_t tracker);
 };
 
 }

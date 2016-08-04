@@ -1,5 +1,7 @@
 #pragma once
 
+#include <DB/Core/Types.h>
+
 namespace DB
 {
 
@@ -15,6 +17,7 @@ struct Branch
 	size_t index;
 	DataTypePtr type;
 	bool is_const;
+	UInt8 category;
 };
 
 using Branches = std::vector<Branch>;

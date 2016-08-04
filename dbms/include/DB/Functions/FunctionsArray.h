@@ -13,6 +13,7 @@
 #include <DB/Columns/ColumnTuple.h>
 
 #include <DB/Functions/IFunction.h>
+#include <DB/Functions/Conditional/CondException.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Common/HashTable/ClearableHashMap.h>
 #include <DB/Interpreters/AggregationCommon.h>

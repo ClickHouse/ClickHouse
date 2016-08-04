@@ -6,7 +6,7 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeNull.h>
 #include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/Columns/ColumnNull.h>
+#include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnNullable.h>
 
 namespace DB
@@ -168,7 +168,7 @@ public:
 
 		/// Append a NULL column to block.
 		ColumnWithTypeAndName elem;
-		elem.column = std::make_shared<ColumnNull>();
+		elem.column = std::make_shared<ColumnNull>(block.rowsInFirstColumn(), Null());
 		elem.type = std::make_shared<DataTypeNull>();
 		elem.name = "NULL";
 

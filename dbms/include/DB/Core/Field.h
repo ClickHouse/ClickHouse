@@ -409,6 +409,7 @@ template <> struct NearestFieldType<String> 	{ using Type = String ; };
 template <> struct NearestFieldType<Array> 		{ using Type = Array ; };
 template <> struct NearestFieldType<Tuple> 		{ using Type = Tuple	; };
 template <> struct NearestFieldType<bool> 		{ using Type = UInt64 ; };
+template <> struct NearestFieldType<Null>	{ using Type = Null; };
 
 
 template <typename T>

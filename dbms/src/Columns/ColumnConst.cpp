@@ -7,6 +7,7 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnTuple.h>
 #include <DB/Columns/ColumnFixedString.h>
+#include <DB/Columns/ColumnNullable.h>
 #include <DB/DataTypes/DataTypeTuple.h>
 #include <ext/enumerate.hpp>
 
@@ -14,6 +15,29 @@
 namespace DB
 {
 
+StringRef
+ColumnConst<Null>::getDataAt(size_t n) const
+{
+	return StringRef{};
+}
+
+StringRef
+ColumnConst<Null>::getDataAtWithTerminatingZero(size_t n) const
+{
+	throw Exception("Method getDataAt is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
+UInt64
+ColumnConst<Null>::get64(size_t n) const
+{
+	throw Exception("Method get64 is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
+ColumnPtr
+ColumnConst<Null>::convertToFullColumn() const
+{
+	return std::make_shared<ColumnNullable>(std::make_shared<ColumnUInt8>(size(), 0), true);
+}
 
 template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const
 {

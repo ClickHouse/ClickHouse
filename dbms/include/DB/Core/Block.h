@@ -80,6 +80,7 @@ public:
 	bool has(const std::string & name) const;
 	bool hasNullColumns(const ColumnNumbers & arguments) const;
 	bool hasNullableColumns(const ColumnNumbers & arguments) const;
+	bool supportsNullValues(const ColumnNumbers & arguments) const;
 
 	size_t getPositionByName(const std::string & name) const;
 
@@ -118,6 +119,7 @@ public:
 	/// Returns a block in which all the nullable columns are replaced by
 	/// their non-nullable counterparts.
 	Block extractNonNullableBlock(const ColumnNumbers & arguments) const;
+	Block extractBlockWithoutNullValues(const ColumnNumbers & arguments) const;
 
 	/** Заменяет столбцы смещений внутри вложенных таблиц на один общий для таблицы.
 	 *  Кидает исключение, если эти смещения вдруг оказались неодинаковы.

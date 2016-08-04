@@ -1,6 +1,6 @@
 #include <DB/DataTypes/DataTypeNull.h>
 #include <DB/DataTypes/NullSymbol.h>
-#include <DB/Columns/ColumnNull.h>
+#include <DB/Columns/ColumnConst.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteBuffer.h>
@@ -22,6 +22,16 @@ std::string DataTypeNull::getName() const
 }
 
 bool DataTypeNull::isNull() const
+{
+	return true;
+}
+
+bool DataTypeNull::isNumeric() const
+{
+	return true;
+}
+
+bool DataTypeNull::behavesAsNumber() const
 {
 	return true;
 }
@@ -87,12 +97,12 @@ void DataTypeNull::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 
 ColumnPtr DataTypeNull::createColumn() const
 {
-	return std::make_shared<ColumnNull>();
+	return std::make_shared<ColumnNull>(0, Null());
 }
 
 ColumnPtr DataTypeNull::createConstColumn(size_t size, const Field & field) const
 {
-	return std::make_shared<ColumnNull>(size);
+	return std::make_shared<ColumnNull>(size, Null());
 }
 
 Field DataTypeNull::getDefault() const

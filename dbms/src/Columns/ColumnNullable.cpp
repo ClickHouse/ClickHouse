@@ -61,11 +61,8 @@ ColumnPtr ColumnNullable::convertToFullColumnIfConst() const
 		new_col_holder = std::make_shared<ColumnNullable>(full_col);
 		ColumnNullable & new_col = static_cast<ColumnNullable &>(*new_col_holder.get());
 
-		/// Create a byte map.
-		if (new_col[0].isNull())
-			new_col.null_map = std::make_shared<ColumnUInt8>(new_col.size(), 1);
-		else
-			new_col.null_map = std::make_shared<ColumnUInt8>(new_col.size(), 0);
+		if (!getNullMapContent().empty())
+			new_col.null_map = null_map.get()->clone();
 	}
 	else
 		new_col_holder = {};
@@ -80,7 +77,12 @@ void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
 
 ColumnPtr ColumnNullable::cloneResized(size_t size) const
 {
-	return std::make_shared<ColumnNullable>(nested_column.get()->cloneResized(size));
+	ColumnPtr new_col_holder = std::make_shared<ColumnNullable>(nested_column.get()->cloneResized(size));
+	auto & new_col = static_cast<ColumnNullable &>(*(new_col_holder.get()));
+	new_col.null_map = null_map.get()->clone();
+	new_col.getNullMapContent().getData().resize_fill(size);
+
+	return new_col_holder;
 }
 
 ColumnPtr ColumnNullable::cloneEmpty() const

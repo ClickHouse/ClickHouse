@@ -8,6 +8,7 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/Core/Types.h>
 
 namespace DB
@@ -53,6 +54,7 @@ public:
 	virtual StringChunk get() const = 0;
 	virtual size_t getSize() const { throw Exception{"Unsupported method", ErrorCodes::LOGICAL_ERROR}; }
 	virtual size_t getDataSize() const = 0;
+	virtual size_t getIndex() const = 0;
 };
 
 using StringSourcePtr = std::unique_ptr<StringSource>;
@@ -62,8 +64,8 @@ using StringSources = std::vector<StringSourcePtr>;
 class ConstStringSource final : public StringSource
 {
 public:
-	ConstStringSource(const std::string & str_, size_t size_)
-		: str{str_}, size{size_},
+	ConstStringSource(const std::string & str_, size_t size_, size_t index_)
+		: str{str_}, size{size_}, index{index_},
 		type{static_cast<UInt64>(StringType::CONSTANT | ((size > 0) ? StringType::FIXED : 0))}
 	{
 	}
@@ -102,9 +104,15 @@ public:
 		return str.length();
 	}
 
+	inline size_t getIndex() const override
+	{
+		return index;
+	}
+
 private:
 	const std::string & str;
 	size_t size;
+	size_t index;
 	UInt64 type;
 };
 
@@ -112,8 +120,8 @@ private:
 class FixedStringSource final : public StringSource
 {
 public:
-	FixedStringSource(const ColumnFixedString::Chars_t & data_, size_t size_)
-		: data{data_}, size{size_}
+	FixedStringSource(const ColumnFixedString::Chars_t & data_, size_t size_, size_t index_)
+		: data{data_}, size{size_}, index{index_}
 	{
 	}
 
@@ -153,9 +161,15 @@ public:
 		return data.size();
 	}
 
+	inline size_t getIndex() const override
+	{
+		return index;
+	}
+
 private:
 	const ColumnFixedString::Chars_t & data;
 	size_t size;
+	size_t index;
 	size_t i = 0;
 };
 
@@ -164,8 +178,8 @@ class VarStringSource final : public StringSource
 {
 public:
 	VarStringSource(const ColumnString::Chars_t & data_,
-		const ColumnString::Offsets_t & offsets_)
-		: data{data_}, offsets{offsets_}
+		const ColumnString::Offsets_t & offsets_, size_t index_)
+		: data{data_}, offsets{offsets_}, index{index_}
 	{
 	}
 
@@ -200,10 +214,16 @@ public:
 		return data.size();
 	}
 
+	inline size_t getIndex() const override
+	{
+		return index;
+	}
+
 private:
 	const ColumnString::Chars_t & data;
 	const ColumnString::Offsets_t & offsets;
 	ColumnString::Offset_t prev_offset = 0;
+	size_t index;
 	size_t i = 0;
 };
 
@@ -324,6 +344,8 @@ CondSources createConds(const Block & block, const ColumnNumbers & args)
 	return conds;
 }
 
+const std::string null_string = "";
+
 /// Create accessors for branch values.
 bool createStringSources(StringSources & sources, const Block & block,
 	const ColumnNumbers & args)
@@ -337,12 +359,14 @@ bool createStringSources(StringSources & sources, const Block & block,
 
 		StringSourcePtr source;
 
-		if (var_col != nullptr)
+		if (col->isNull())
+			source = std::make_unique<ConstStringSource>(null_string, 1, args[i]);
+		else if (var_col != nullptr)
 			source = std::make_unique<VarStringSource>(var_col->getChars(),
-				var_col->getOffsets());
+				var_col->getOffsets(), args[i]);
 		else if (fixed_col != nullptr)
 			source = std::make_unique<FixedStringSource>(fixed_col->getChars(),
-				fixed_col->getN());
+				fixed_col->getN(), args[i]);
 		else if (const_col != nullptr)
 		{
 			/// If we actually have a fixed string, get its capacity.
@@ -355,7 +379,7 @@ bool createStringSources(StringSources & sources, const Block & block,
 					size = fixed->getN();
 			}
 
-			source = std::make_unique<ConstStringSource>(const_col->getData(), size);
+			source = std::make_unique<ConstStringSource>(const_col->getData(), size, args[i]);
 		}
 		else
 			return false;
@@ -412,9 +436,17 @@ template <typename SinkType>
 class SinkUpdater
 {
 public:
-	static void execute(const StringSources & sources, const CondSources & conds,
-		SinkType & sink, size_t row_count)
+	static void execute(Block & block, const StringSources & sources, const CondSources & conds,
+		SinkType & sink, size_t row_count, size_t result, size_t tracker)
 	{
+		ColumnUInt64 * tracker_col = nullptr;
+		if (tracker != result)
+		{
+			auto & col = block.unsafeGetByPosition(tracker).column;
+			col = std::make_shared<ColumnUInt64>(row_count);
+			tracker_col = static_cast<ColumnUInt64 *>(col.get());
+		}
+
 		for (size_t cur_row = 0; cur_row < row_count; ++cur_row)
 		{
 			bool has_triggered_cond = false;
@@ -425,6 +457,11 @@ public:
 				if (cond.get(cur_row))
 				{
 					sink.store(sources[cur_source]->get());
+					if (tracker_col != nullptr)
+					{
+						auto & data = tracker_col->getData();
+						data[cur_row] = sources[cur_source]->getIndex();
+					}
 					has_triggered_cond = true;
 					break;
 				}
@@ -432,7 +469,14 @@ public:
 			}
 
 			if (!has_triggered_cond)
+			{
 				sink.store(sources.back()->get());
+				if (tracker_col != nullptr)
+				{
+					auto & data = tracker_col->getData();
+					data[cur_row] = sources.back()->getIndex();
+				}
+			}
 
 			for (auto & source : sources)
 				source->next();
@@ -449,10 +493,10 @@ class Performer<true>
 {
 public:
 	static void execute(const StringSources & sources, const CondSources & conds,
-		size_t row_count, Block & block, size_t result)
+		size_t row_count, Block & block, size_t result, size_t tracker)
 	{
 		FixedStringSink sink = createSink(block, sources, result, row_count);
-		SinkUpdater<FixedStringSink>::execute(sources, conds, sink, row_count);
+		SinkUpdater<FixedStringSink>::execute(block, sources, conds, sink, row_count, result, tracker);
 	}
 
 private:
@@ -481,10 +525,10 @@ class Performer<false>
 {
 public:
 	static void execute(const StringSources & sources, const CondSources & conds,
-		size_t row_count, Block & block, size_t result)
+		size_t row_count, Block & block, size_t result, size_t tracker)
 	{
 		VarStringSink sink = createSink(block, sources, result, row_count);
-		SinkUpdater<VarStringSink>::execute(sources, conds, sink, row_count);
+		SinkUpdater<VarStringSink>::execute(block, sources, conds, sink, row_count, result, tracker);
 	}
 
 private:
@@ -505,7 +549,7 @@ private:
 }
 
 /// Process a multiIf.
-bool StringEvaluator::perform(Block & block, const ColumnNumbers & args, size_t result)
+bool StringEvaluator::perform(Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
 {
 	StringSources sources;
 	if (!createStringSources(sources, block, args))
@@ -525,9 +569,9 @@ bool StringEvaluator::perform(Block & block, const ColumnNumbers & args, size_t 
 	}
 
 	if (has_only_fixed_sources)
-		Performer<true>::execute(sources, conds, row_count, block, result);
+		Performer<true>::execute(sources, conds, row_count, block, result, tracker);
 	else
-		Performer<false>::execute(sources, conds, row_count, block, result);
+		Performer<false>::execute(sources, conds, row_count, block, result, tracker);
 
 	return true;
 }

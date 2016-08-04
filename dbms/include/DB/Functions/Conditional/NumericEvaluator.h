@@ -141,12 +141,20 @@ template <typename TResult>
 class NumericEvaluator final
 {
 public:
-	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result)
+	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
 	{
 		const CondSources conds = createConds(block, args);
 		const NumericSources<TResult> sources = createNumericSources(block, args, branches);
 		size_t row_count = conds[0].getSize();
 		PaddedPODArray<TResult> & res = createSink(block, result, row_count);
+
+		ColumnUInt64 * tracker_col = nullptr;
+		if (tracker != result)
+		{
+			auto & col = block.unsafeGetByPosition(tracker).column;
+			col = std::make_shared<ColumnUInt64>(row_count);
+			tracker_col = static_cast<ColumnUInt64 *>(col.get());
+		}
 
 		for (size_t cur_row = 0; cur_row < row_count; ++cur_row)
 		{
@@ -158,6 +166,11 @@ public:
 				if (cond.get(cur_row))
 				{
 					res[cur_row] = sources[cur_source]->get(cur_row);
+					if (tracker_col != nullptr)
+					{
+						auto & data = tracker_col->getData();
+						data[cur_row] = args[branches[cur_source].index];
+					}
 					has_triggered_cond = true;
 					break;
 				}
@@ -165,7 +178,14 @@ public:
 			}
 
 			if (!has_triggered_cond)
+			{
 				res[cur_row] = sources.back()->get(cur_row);
+				if (tracker_col != nullptr)
+				{
+					auto & data = tracker_col->getData();
+					data[cur_row] = args[branches.back().index];
+				}
+			}
 		}
 	}
 
@@ -213,7 +233,8 @@ private:
 				|| NumericSourceCreator<TResult, Int32>::execute(source, block, args, br)
 				|| NumericSourceCreator<TResult, Int64>::execute(source, block, args, br)
 				|| NumericSourceCreator<TResult, Float32>::execute(source, block, args, br)
-				|| NumericSourceCreator<TResult, Float64>::execute(source, block, args, br)))
+				|| NumericSourceCreator<TResult, Float64>::execute(source, block, args, br)
+				|| NumericSourceCreator<TResult, Null>::execute(source, block, args, br)))
 				throw CondException{CondErrorCodes::NUMERIC_EVALUATOR_ILLEGAL_ARGUMENT, toString(br.index)};
 
 			sources.push_back(std::move(source));
@@ -228,7 +249,7 @@ template <>
 class NumericEvaluator<NumberTraits::Error>
 {
 public:
-	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result)
+	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
 	{
 		throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 	}

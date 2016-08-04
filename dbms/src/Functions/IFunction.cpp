@@ -1,5 +1,5 @@
 #include <DB/Functions/IFunction.h>
-#include <DB/Columns/ColumnNull.h>
+#include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnNullable.h>
 #include <DB/DataTypes/DataTypeNull.h>
 #include <DB/DataTypes/DataTypeNullable.h>
@@ -173,7 +173,7 @@ void IFunction::execute(Block & block, const ColumnNumbers & arguments, size_t r
 	if (!hasSpecialSupportForNulls() && block.hasNullColumns(arguments))
 	{
 		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
-		dest_col.column =  std::make_shared<ColumnNull>(block.rowsInFirstColumn());
+		dest_col.column =  std::make_shared<ColumnNull>(block.rowsInFirstColumn(), Null());
 		return;
 	}
 
@@ -195,7 +195,7 @@ void IFunction::execute(Block & block, const ColumnNumbers & arguments, const Co
 	if (!hasSpecialSupportForNulls() && block.hasNullColumns(arguments))
 	{
 		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
-		dest_col.column =  std::make_shared<ColumnNull>(block.rowsInFirstColumn());
+		dest_col.column =  std::make_shared<ColumnNull>(block.rowsInFirstColumn(), Null());
 		return;
 	}
 

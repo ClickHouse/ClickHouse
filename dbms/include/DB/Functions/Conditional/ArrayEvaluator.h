@@ -279,6 +279,35 @@ public:
 	}
 };
 
+const Array null_array{Null()};
+
+/// Case for null sources.
+template <typename TResult>
+class ArraySourceCreator<TResult, Null> final
+{
+public:
+	static bool execute(IArraySources<TResult> & sources, const Block & block,
+		const ColumnNumbers & args, const Branch & br)
+	{
+		auto type_name = br.type->getName();
+		if (TypeName<Null>::get() == type_name)
+		{
+			const IColumn * col = block.getByPosition(args[br.index]).column.get();
+			const ColumnNull * null_col = typeid_cast<const ColumnNull *>(col);
+			if (null_col == nullptr)
+				throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+
+			IArraySourcePtr<TResult> source;
+			source = std::make_unique<ConstArraySource<TResult, Null> >(null_array);
+			sources.push_back(std::move(source));
+
+			return true;
+		}
+		else
+			return false;
+	}
+};
+
 }
 
 /// Processing of multiIf in the case of numeric array types.
@@ -286,12 +315,20 @@ template <typename TResult>
 class ArrayEvaluator final
 {
 public:
-	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result)
+	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
 	{
 		const CondSources conds = createConds(block, args);
 		size_t row_count = conds[0].getSize();
 		IArraySources<TResult> sources = createSources(block, args, branches);
 		ArraySink<TResult> sink = createSink(block, sources, result, row_count);
+
+		ColumnUInt64 * tracker_col = nullptr;
+		if (tracker != result)
+		{
+			auto & col = block.unsafeGetByPosition(tracker).column;
+			col = std::make_shared<ColumnUInt64>(row_count);
+			tracker_col = static_cast<ColumnUInt64 *>(col.get());
+		}
 
 		for (size_t cur_row = 0; cur_row < row_count; ++cur_row)
 		{
@@ -303,6 +340,11 @@ public:
 				if (cond.get(cur_row))
 				{
 					sink.store(sources[cur_source]->get());
+					if (tracker_col != nullptr)
+					{
+						auto & data = tracker_col->getData();
+						data[cur_row] = args[branches[cur_source].index];
+					}
 					has_triggered_cond = true;
 					break;
 				}
@@ -310,7 +352,14 @@ public:
 			}
 
 			if (!has_triggered_cond)
+			{
 				sink.store(sources.back()->get());
+				if (tracker_col != nullptr)
+				{
+					auto & data = tracker_col->getData();
+					data[cur_row] = args[branches.back().index];
+				}
+			}
 
 			for (auto & source : sources)
 				source->next();
@@ -347,7 +396,8 @@ private:
 				|| ArraySourceCreator<TResult, Int32>::execute(sources, block, args, br)
 				|| ArraySourceCreator<TResult, Int64>::execute(sources, block, args, br)
 				|| ArraySourceCreator<TResult, Float32>::execute(sources, block, args, br)
-				|| ArraySourceCreator<TResult, Float64>::execute(sources, block, args, br)))
+				|| ArraySourceCreator<TResult, Float64>::execute(sources, block, args, br)
+				|| ArraySourceCreator<TResult, Null>::execute(sources, block, args, br)))
 				throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 		}
 
@@ -396,7 +446,7 @@ template <>
 class ArrayEvaluator<NumberTraits::Error>
 {
 public:
-	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result)
+	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
 	{
 		throw CondException{CondErrorCodes::ARRAY_EVALUATOR_INVALID_TYPES};
 	}

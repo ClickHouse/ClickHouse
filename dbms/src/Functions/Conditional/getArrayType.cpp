@@ -56,7 +56,18 @@ public:
 			|| ResultDataTypeDeducer<TType, DataTypeInt32>::execute(args, i, type_res)
 			|| ResultDataTypeDeducer<TType, DataTypeInt64>::execute(args, i, type_res)
 			|| ResultDataTypeDeducer<TType, DataTypeFloat32>::execute(args, i, type_res)
-			|| ResultDataTypeDeducer<TType, DataTypeFloat64>::execute(args, i, type_res)))
+			|| ResultDataTypeDeducer<TType, DataTypeFloat64>::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<TType, DataTypeNull>::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<TType, Nullable<DataTypeUInt8> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<TType, Nullable<DataTypeUInt16> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<TType, Nullable<DataTypeUInt32> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<TType, Nullable<DataTypeUInt64> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<TType, Nullable<DataTypeInt8> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<TType, Nullable<DataTypeInt16> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<TType, Nullable<DataTypeInt32> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<TType, Nullable<DataTypeInt64> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<TType, Nullable<DataTypeFloat32> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<TType, Nullable<DataTypeFloat64> >::execute(args, i, type_res)))
 			throw CondException{CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE, toString(i)};
 	}
 };
@@ -73,6 +84,31 @@ public:
 	}
 };
 
+template <typename TType>
+struct TypeChecker
+{
+	static bool execute(const DataTypePtr & arg)
+	{
+		if (arg.get()->isNullable())
+			return false;
+		return typeid_cast<const TType *>(arg.get()) != nullptr;
+	}
+};
+
+template <typename TType>
+struct TypeChecker<Nullable<TType>>
+{
+	static bool execute(const DataTypePtr & arg)
+	{
+		if (!arg.get()->isNullable())
+			return false;
+
+		const DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*(arg.get()));
+		const IDataType * nested_type = nullable_type.getNestedType().get();
+		return typeid_cast<const TType *>(nested_type) != nullptr;
+	}
+};
+
 /// Analyze the type of the element currently being processed of an array.
 /// Subsequently perform the same analysis for the remaining elements.
 /// Determine the returned type if all the processed elements are numeric.
@@ -86,7 +122,7 @@ private:
 public:
 	static bool execute(const DataTypes & args, size_t i, DataTypeTraits::EnrichedDataTypePtr & type_res)
 	{
-		if (typeid_cast<const TType *>(&*args[i]) == nullptr)
+		if (!TypeChecker<TType>::execute(args[i]))
 			return false;
 
 		if (i == (args.size() - 1))
@@ -112,7 +148,11 @@ class FirstResultDataTypeDeducer final
 public:
 	static void execute(const DataTypes & args, DataTypeTraits::EnrichedDataTypePtr & type_res)
 	{
-		using Void = typename DataTypeTraits::ToEnrichedDataType<NumberTraits::Enriched::Void>::Type;
+		using Void = typename DataTypeTraits::ToEnrichedDataType<
+			NumberTraits::Enriched::Void<NumberTraits::HasNoNull>
+		>::Type;
+
+		//using Void = typename DataTypeTraits::ToEnrichedDataType<NumberTraits::Enriched::Void>::Type;
 
 		size_t i = 0;
 
@@ -125,7 +165,18 @@ public:
 			|| ResultDataTypeDeducer<Void, DataTypeInt32>::execute(args, i, type_res)
 			|| ResultDataTypeDeducer<Void, DataTypeInt64>::execute(args, i, type_res)
 			|| ResultDataTypeDeducer<Void, DataTypeFloat32>::execute(args, i, type_res)
-			|| ResultDataTypeDeducer<Void, DataTypeFloat64>::execute(args, i, type_res)))
+			|| ResultDataTypeDeducer<Void, DataTypeFloat64>::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<Void, DataTypeNull>::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<Void, Nullable<DataTypeUInt8> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<Void, Nullable<DataTypeUInt16> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<Void, Nullable<DataTypeUInt32> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<Void, Nullable<DataTypeUInt64> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<Void, Nullable<DataTypeInt8> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<Void, Nullable<DataTypeInt16> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<Void, Nullable<DataTypeInt32> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<Void, Nullable<DataTypeInt64> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<Void, Nullable<DataTypeFloat32> >::execute(args, i, type_res)
+			|| ResultDataTypeDeducer<Void, Nullable<DataTypeFloat64> >::execute(args, i, type_res)))
 			throw CondException{CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE, toString(i)};
 	}
 };

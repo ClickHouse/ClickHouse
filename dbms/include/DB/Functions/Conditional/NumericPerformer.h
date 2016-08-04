@@ -13,7 +13,7 @@ struct NumericPerformer
 {
 	/// Perform a multiIf function for numeric branch (then, else) arguments
 	/// that may have either scalar types or array types.
-	static bool perform(Block & block, const ColumnNumbers & args, size_t result);
+	static bool perform(Block & block, const ColumnNumbers & args, size_t result, size_t tracker);
 };
 
 }

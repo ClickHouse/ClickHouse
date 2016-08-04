@@ -2,6 +2,7 @@
 
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/DataTypes/IDataTypeNumberFixed.h>
+#include <DB/DataTypes/DataTypeNull.h>
 
 
 namespace DB
@@ -51,6 +52,11 @@ public:
 template <> struct DataTypeFromFieldType<void>
 {
 	using Type = DataTypeVoid;
+};
+
+template <> struct DataTypeFromFieldType<Null>
+{
+	using Type = DataTypeNull;
 };
 
 }

@@ -499,7 +499,6 @@ add_library (dbms
 	include/DB/Columns/ColumnSet.h
 	include/DB/Columns/ColumnArray.h
 	include/DB/Columns/ColumnsNumber.h
-	include/DB/Columns/ColumnNull.h
 	include/DB/Columns/ColumnNullable.h
 	include/DB/Client/MultiplexedConnections.h
 	include/DB/Client/ConnectionPoolWithFailover.h
@@ -635,7 +634,6 @@ add_library (dbms
 	src/Columns/ColumnArray.cpp
 	src/Columns/ColumnAggregateFunction.cpp
 	src/Columns/ColumnExpression.cpp
-	src/Columns/ColumnNull.cpp
 	src/Columns/ColumnNullable.cpp
 	src/Columns/ColumnsCommon.cpp
 

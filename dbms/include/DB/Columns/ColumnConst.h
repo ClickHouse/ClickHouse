@@ -232,6 +232,39 @@ private:
 	}
 };
 
+template <>
+class ColumnConst<Null> final : public ColumnConstBase<Null, Null, ColumnConst<Null>>
+{
+private:
+	friend class ColumnConstBase<Null, Null, ColumnConst<Null>>;
+
+	Null & getDataFromHolderImpl() { return this->data; }
+	const Null & getDataFromHolderImpl() const { return this->data; }
+
+public:
+	ColumnConst(size_t s_, const Null & data_, DataTypePtr data_type_ = DataTypePtr())
+		: ColumnConstBase<Null, Null, ColumnConst<Null>>(s_, data_, data_type_) {}
+
+	bool isNull() const override { return true; }
+
+	StringRef getDataAt(size_t n) const override;
+	StringRef getDataAtWithTerminatingZero(size_t n) const override;
+	UInt64 get64(size_t n) const override;
+
+	/** Более эффективные методы манипуляции */
+	Null & getData() { return this->data; }
+	const Null & getData() const { return this->data; }
+
+	/** Преобразование из константы в полноценный столбец */
+	ColumnPtr convertToFullColumn() const override;
+
+private:
+	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override
+	{
+		min = FieldType();
+		max = FieldType();
+	}
+};
 
 template <>
 class ColumnConst<Array> final : public ColumnConstBase<Array, std::shared_ptr<Array>, ColumnConst<Array>>
@@ -304,6 +337,7 @@ private:
 };
 
 
+using ColumnNull = ColumnConst<Null>;
 using ColumnConstString = ColumnConst<String>;
 using ColumnConstArray = ColumnConst<Array>;
 using ColumnConstTuple = ColumnConst<Tuple>;

@@ -3,6 +3,7 @@
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/EnrichedDataTypePtr.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -16,6 +17,29 @@ struct DataTypeFromFieldTypeOrError
 	static DataTypePtr getDataType()
 	{
 		return std::make_shared<typename DataTypeFromFieldType<T>::Type>();
+	}
+};
+
+template <typename T>
+struct DataTypeFromFieldTypeOrError<Nullable<T>>
+{
+	static DataTypePtr getDataType()
+	{
+		auto nested_type = DataTypeFromFieldTypeOrError<T>::getDataType();
+		if (nested_type != nullptr)
+			return std::make_shared<DataTypeNullable>(nested_type);
+		else
+			return nullptr;
+	}
+};
+
+/// Special case for the null type.
+template <>
+struct DataTypeFromFieldTypeOrError<Nullable<void>>
+{
+	static DataTypePtr getDataType()
+	{
+		return std::make_shared<DataTypeNull>();
 	}
 };
 
@@ -35,11 +59,13 @@ struct ToEnrichedNumericType
 private:
 	using Type0 = typename std::tuple_element<0, T>::type;
 	using Type1 = typename std::tuple_element<1, T>::type;
+	using Nullability = typename std::tuple_element<2, T>::type;
 
 public:
 	using Type = std::tuple<
 		typename Type0::FieldType,
-		typename Type1::FieldType
+		typename Type1::FieldType,
+		Nullability
 	>;
 };
 
@@ -50,11 +76,13 @@ struct ToEnrichedDataType
 private:
 	using Type0 = typename std::tuple_element<0, T>::type;
 	using Type1 = typename std::tuple_element<1, T>::type;
+	using Nullability = typename std::tuple_element<2, T>::type;
 
 public:
 	using Type = std::tuple<
 		typename DataTypeFromFieldType<Type0>::Type,
-		typename DataTypeFromFieldType<Type1>::Type
+		typename DataTypeFromFieldType<Type1>::Type,
+		Nullability
 	>;
 };
 
@@ -76,14 +104,56 @@ struct ToEnrichedDataTypeObject<TEnrichedType, true>
 	static EnrichedDataTypePtr execute()
 	{
 		using Type0 = typename std::tuple_element<0, TEnrichedType>::type;
-		using DataType0 = typename DataTypeFromFieldType<Type0>::Type;
-
 		using Type1 = typename std::tuple_element<1, TEnrichedType>::type;
-		using DataType1 = typename DataTypeFromFieldType<Type1>::Type;
+		using Nullability = typename std::tuple_element<2, TEnrichedType>::type;
 
-		return std::make_pair(std::make_shared<DataType0>(), std::make_shared<DataType1>());
+		auto obj_type0 = DataTypeFromFieldTypeOrError<
+			typename NumberTraits::AddNullability<Type0, Nullability>::Type
+		>::getDataType();
+
+		auto obj_type1 = DataTypeFromFieldTypeOrError<
+			typename NumberTraits::AddNullability<Type1, Nullability>::Type
+		>::getDataType();
+
+		return std::make_pair(obj_type0, obj_type1);
 	}
 };
+
+namespace
+{
+
+template <typename T, typename Nullability>
+struct CreateDataTypeObject;
+
+template <typename T>
+struct CreateDataTypeObject<T, NumberTraits::HasNull>
+{
+	static DataTypePtr execute()
+	{
+		return std::make_shared<DataTypeNullable>(std::make_shared<T>());
+	}
+};
+
+/// Special case for the null type.
+template <>
+struct CreateDataTypeObject<DataTypeVoid, NumberTraits::HasNull>
+{
+	static DataTypePtr execute()
+	{
+		return std::make_shared<DataTypeNull>();
+	}
+};
+
+template <typename T>
+struct CreateDataTypeObject<T, NumberTraits::HasNoNull>
+{
+	static DataTypePtr execute()
+	{
+		return std::make_shared<T>();
+	}
+};
+
+}
 
 /// Convert an enriched data type into an enriched data type object.
 template <typename TEnrichedType>
@@ -93,8 +163,12 @@ struct ToEnrichedDataTypeObject<TEnrichedType, false>
 	{
 		using DataType0 = typename std::tuple_element<0, TEnrichedType>::type;
 		using DataType1 = typename std::tuple_element<1, TEnrichedType>::type;
+		using Nullability = typename std::tuple_element<2, TEnrichedType>::type;
 
-		return std::make_pair(std::make_shared<DataType0>(), std::make_shared<DataType1>());
+		auto obj_type0 = CreateDataTypeObject<DataType0, Nullability>::execute();
+		auto obj_type1 = CreateDataTypeObject<DataType1, Nullability>::execute();
+
+		return std::make_pair(obj_type0, obj_type1);
 	}
 };
 
@@ -128,6 +202,17 @@ struct DataTypeProduct
 		typename NumberTraits::TypeProduct<
 			typename ToEnrichedNumericType<T1>::Type,
 			typename NumberTraits::EmbedType<typename T2::FieldType>::Type
+		>::Type
+	>::Type;
+};
+
+template <typename T1, typename T2>
+struct DataTypeProduct<T1, Nullable<T2> >
+{
+	using Type = typename ToEnrichedDataType<
+		typename NumberTraits::TypeProduct<
+			typename ToEnrichedNumericType<T1>::Type,
+			typename NumberTraits::EmbedType<Nullable<typename T2::FieldType> >::Type
 		>::Type
 	>::Type;
 };

@@ -135,7 +135,7 @@ void DataTypeNullable::serializeTextEscaped(const IColumn & column, size_t row_n
 	const auto & null_map = content.getData();
 
 	if (isNullValue(&null_map, row_num))
-		writeCString(NullSymbol::Plain::name, ostr);
+		writeCString(NullSymbol::Escaped::name, ostr);
 	else
 		nested_data_type.get()->serializeTextEscaped(*(col->getNestedColumn().get()), row_num, ostr);
 }
