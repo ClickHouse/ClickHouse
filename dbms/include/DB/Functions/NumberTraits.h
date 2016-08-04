@@ -71,7 +71,7 @@ template <> struct ExactNext<Bits64>	{ using Type = BitsTooMany; };
 template <typename T> struct Traits;
 
 template <typename T>
-struct Traits<Nullable<T> >
+struct Traits<Nullable<T>>
 {
 	using Sign = typename Traits<T>::Sign;
 	using Floatness = typename Traits<T>::Floatness;
@@ -80,7 +80,7 @@ struct Traits<Nullable<T> >
 };
 
 template <> struct Traits<void>        { typedef Unsigned Sign;        typedef Integer Floatness;      typedef Bits0 Bits;     typedef HasNoNull Nullity; };
-template <> struct Traits<Null> : Traits<Nullable<void> > {};
+template <> struct Traits<Null> : Traits<Nullable<void>> {};
 template <> struct Traits<UInt8>       { typedef Unsigned Sign;        typedef Integer Floatness;      typedef Bits8 Bits;     typedef HasNoNull Nullity; };
 template <> struct Traits<UInt16>      { typedef Unsigned Sign;        typedef Integer Floatness;      typedef Bits16 Bits;    typedef HasNoNull Nullity; };
 template <> struct Traits<UInt32>      { typedef Unsigned Sign;        typedef Integer Floatness;      typedef Bits32 Bits;    typedef HasNoNull Nullity; };
@@ -137,7 +137,6 @@ template <> struct Construct<Signed, Floating, Bits8, HasNoNull> 		{ using Type 
 template <> struct Construct<Signed, Floating, Bits16, HasNoNull>		{ using Type = Float32 ; };
 template <> struct Construct<Signed, Floating, Bits32, HasNoNull>		{ using Type = Float32 ; };
 template <> struct Construct<Signed, Floating, Bits64, HasNoNull>		{ using Type = Float64 ; };
-//template <typename Sign, typename Floatness, typename Nullity> struct Construct<Sign, Floatness, BitsTooMany, Nullity> { using Type = Error; };
 
 template <typename T>
 inline bool isErrorType()
@@ -150,7 +149,7 @@ inline bool isErrorType<Error>()
 	return true;
 }
 
-/// Returns A with nullity(A) or nullity(B)
+/// Returns the type A augmented with nullity = nullity(A) | nullity(B)
 template <typename A, typename B>
 struct UpdateNullity
 {
@@ -514,90 +513,60 @@ struct ToOrdinaryType<Error>
 	using Type = Error;
 };
 
-/// Compute the product of two enriched numeric types.
-template <typename T1, typename T2, typename Enable = void>
-struct TypeProduct
-{
-	using Type = Error;
-};
-
 namespace
 {
 
+/// The following helper functions and structures are used for the TypeProduct implementation.
+
+/// Check if two types are equal up to nullity.
 template <typename T1, typename T2>
 constexpr bool areSimilarTypes()
 {
-	return std::is_same<typename std::tuple_element<0, T1>::type, typename std::tuple_element<0, T2>::type>::value
-		&& std::is_same<typename std::tuple_element<1, T1>::type, typename std::tuple_element<1, T2>::type>::value;
+	return	std::is_same<
+			typename std::tuple_element<0, T1>::type,
+			typename std::tuple_element<0, T2>::type
+		>::value &&
+		std::is_same<
+			typename std::tuple_element<1, T1>::type,
+			typename std::tuple_element<1, T2>::type
+		>::value;
 }
 
+/// Check if a pair of types {A,B} equals a pair of types {A1,B1} up to nullity.
 template <typename A, typename B, template <typename> class A1, template <typename> class B1>
-constexpr bool fitsWell()
+constexpr bool areSimilarPairs()
 {
-	return (areSimilarTypes<A, A1<HasNoNull> >() && areSimilarTypes<B, B1<HasNoNull> >()) ||
-		(areSimilarTypes<A, B1<HasNoNull> >() && areSimilarTypes<B, A1<HasNoNull> >());
+	/// NOTE: the use of HasNoNull here is a trick. It has no meaning.
+	return (areSimilarTypes<A, A1<HasNoNull>>() && areSimilarTypes<B, B1<HasNoNull>>()) ||
+		(areSimilarTypes<A, B1<HasNoNull>>() && areSimilarTypes<B, A1<HasNoNull>>());
 }
 
+/// Check if a pair of enriched types {A,B} that have straight mappings to ordinary
+/// types must be processed in a special way.
 template <typename A, typename B>
-constexpr bool isExceptional()
+constexpr bool isExceptionalPair()
 {
-	return
-		fitsWell<A, B, Enriched::Int8, Enriched::UInt16>() ||
-		fitsWell<A, B, Enriched::Int8, Enriched::UInt32>() ||
-		fitsWell<A, B, Enriched::Int16, Enriched::UInt16>() ||
-		fitsWell<A, B, Enriched::Int16, Enriched::UInt32>() ||
-		fitsWell<A, B, Enriched::Int32, Enriched::UInt32>();
+	return	areSimilarPairs<A, B, Enriched::Int8, Enriched::UInt16>() ||
+		areSimilarPairs<A, B, Enriched::Int8, Enriched::UInt32>() ||
+		areSimilarPairs<A, B, Enriched::Int16, Enriched::UInt16>() ||
+		areSimilarPairs<A, B, Enriched::Int16, Enriched::UInt32>() ||
+		areSimilarPairs<A, B, Enriched::Int32, Enriched::UInt32>();
 }
 
+/// Check if a pair of enriched types {A,B} is ordinary. Here "ordinary" means
+/// that both types map to ordinary types and that they are not exceptional as
+/// defined in the function above.
 template <typename A, typename B>
-constexpr bool doAccept()
+constexpr bool isOrdinaryPair()
 {
-	return 
-		std::is_same
-		<
-			typename std::tuple_element<1, A>::type,
-			void
-		>::value &&
-		std::is_same
-		<
-			typename std::tuple_element<1, B>::type,
-			void
-		>::value &&
-		!isExceptional<A, B>();
+	return	std::is_same<typename std::tuple_element<1, A>::type, void>::value &&
+		std::is_same<typename std::tuple_element<1, B>::type, void>::value &&
+		!isExceptionalPair<A, B>();
 }
 
-}
-
-/// Compute the product of two enriched numeric types.
-/// Case when both of the source types and the resulting type map to ordinary types.
-
+/// Returns nullity(A) | nullity(B).
 template <typename A, typename B>
-struct TypeProduct
-<
-	A,
-	B,
-	typename std::enable_if
-	<
-		doAccept<A, B>()
-	>::type
->
-{
-private:
-	using Result = typename ResultOfIf<typename ToOrdinaryType<A>::Type, typename ToOrdinaryType<B>::Type>::Type;
-
-public:
-	using Type = typename EmbedType<Result>::Type;
-#if 0
-	using Type = typename std::conditional<
-		std::is_same<Result, Error>::value,
-		Error,
-		typename EmbedType<Result>::Type
-	>::type;
-#endif
-};
-
-template <typename A, typename B>
-struct GetNullityTrait
+struct CombinedNullity
 {
 private:
 	using NullityA = typename Traits<typename ToOrdinaryType<A>::Type>::Nullity;
@@ -607,14 +576,45 @@ public:
 	using Type = typename boost::mpl::or_<NullityA, NullityB>::type;
 };
 
+}
+
+/// Compute the product of two enriched numeric types.
+/// This statement catches all the incorrect combinations.
+template <typename T1, typename T2, typename Enable = void>
+struct TypeProduct
+{
+	using Type = Error;
+};
+
+/// Compute the product of two enriched numeric types.
+/// Case when both these types are ordinary in the meaning defined above.
+template <typename A, typename B>
+struct TypeProduct<A, B, typename std::enable_if<isOrdinaryPair<A, B>()>::type>
+{
+private:
+	using Result = typename ResultOfIf<
+		typename ToOrdinaryType<A>::Type,
+		typename ToOrdinaryType<B>::Type
+	>::Type;
+
+public:
+	using Type = typename EmbedType<Result>::Type;
+};
+
 /// Compute the product of two enriched numeric types.
 /// Case when a source type or the resulting type does not map to any ordinary type.
 
-#define DEFINE_TYPE_PRODUCT_RULE(T1, T2, T3) 						\
-template <typename A, typename B>							\
-struct TypeProduct<A, B, typename std::enable_if<!doAccept<A, B>() && fitsWell<A, B, T1, T2>()>::type>	\
-{											\
-	using Type = typename T3<typename GetNullityTrait<A, B>::Type>;			\
+#define DEFINE_TYPE_PRODUCT_RULE(T1, T2, T3) 					\
+template <typename A, typename B>						\
+struct TypeProduct<								\
+	A, 									\
+	B,									\
+	typename std::enable_if<						\
+		!isOrdinaryPair<A, B>() &&					\
+		areSimilarPairs<A, B, T1, T2>()					\
+	>::type>								\
+{										\
+	using Type = typename T3<typename CombinedNullity<A, B>::Type>;		\
 }
 
 DEFINE_TYPE_PRODUCT_RULE(Enriched::Int8, Enriched::UInt16, Enriched::IntFloat32);

@@ -33,9 +33,11 @@ using Strings = std::vector<String>;
 /// Ordinary types with nullability.
 template <typename T> struct Nullable { using Type = T; };
 
+/// Get a non-nullable type.
 template <typename T> struct RemoveNullable { using Type = T; };
-template <typename T> struct RemoveNullable<Nullable <T> > { using Type = T; };
+template <typename T> struct RemoveNullable<Nullable<T>> { using Type = T; };
 
+/// Check if a type is nullable.
 template <typename T> struct IsNullable { static constexpr bool value = !std::is_same<T, typename RemoveNullable<T>::Type>::value; };
 
 template <typename T> struct IsNumber 	{ static constexpr bool value = false; };
@@ -54,10 +56,10 @@ template <> struct IsNumber<Float64> 	{ static constexpr bool value = true; };
 
 
 template <typename T> struct TypeName;
-template <typename T> struct TypeName<Nullable<T> > { static std::string get() { return "Nullable(" + TypeName<T>::get() + ")"; } };
+template <typename T> struct TypeName<Nullable<T>> { static std::string get() { return "Nullable(" + TypeName<T>::get() + ")"; } };
 
 template <> struct TypeName<Null> 		{ static std::string get() { return "Null"; } };
-template <> struct TypeName<Nullable<void> > : TypeName<Null> {};
+template <> struct TypeName<Nullable<void>> : TypeName<Null> {};
 
 template <> struct TypeName<UInt8> 		{ static std::string get() { return "UInt8";	} };
 template <> struct TypeName<UInt16> 	{ static std::string get() { return "UInt16"; 	} };

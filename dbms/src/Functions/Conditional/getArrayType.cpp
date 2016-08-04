@@ -152,8 +152,6 @@ public:
 			NumberTraits::Enriched::Void<NumberTraits::HasNoNull>
 		>::Type;
 
-		//using Void = typename DataTypeTraits::ToEnrichedDataType<NumberTraits::Enriched::Void>::Type;
-
 		size_t i = 0;
 
 		if (! (ResultDataTypeDeducer<Void, DataTypeUInt8>::execute(args, i, type_res)
