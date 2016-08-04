@@ -142,6 +142,11 @@ protected:
 	}
 };
 
+template <>
+struct PredicateBase<NumberTraits::Error>
+{
+};
+
 /// Collect type information on the unique else branch of a multiIf function.
 /// Determine the returned value type. Perform the multiIf.
 template <typename TResult, typename TType>
@@ -157,12 +162,8 @@ struct ElsePredicate final : public PredicateBase<TType>
 	using TFinal = typename NumberTraits::ToOrdinaryType<TCombined>::Type;
 	using TFinal2 = typename RemoveNullable<TFinal>::Type;
 
-	/// TFinal may be void or Nullable<void>, thus TFinal2 may be void.
-
-	template <typename T = TFinal2>
 	static bool execute(size_t index, Block & block, const ColumnNumbers & args,
-		size_t result, size_t tracker, Branches & branches,
-		typename std::enable_if<!std::is_same<T, void>::value>::type * = nullptr)
+		size_t result, size_t tracker, Branches & branches)
 	{
 		if (!Base::appendBranchInfo(index, block, args, branches))
 			return false;
@@ -187,11 +188,14 @@ struct ElsePredicate final : public PredicateBase<TType>
 
 		return true;
 	}
+};
 
-	template <typename T = TFinal2>
+/// We cannot have only null branches.
+template <typename Nullity>
+struct ElsePredicate<NumberTraits::Enriched::Void<Nullity>, Null> final : public PredicateBase<Null>
+{
 	static bool execute(size_t index, Block & block, const ColumnNumbers & args,
-		size_t result, size_t tracker, Branches & branches,
-		typename std::enable_if<std::is_same<T, void>::value>::type * = nullptr)
+		size_t result, size_t tracker, Branches & branches)
 	{
 		throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 	}
@@ -199,7 +203,7 @@ struct ElsePredicate final : public PredicateBase<TType>
 
 /// Specialization for incorrect type information.
 template <typename TResult>
-struct ElsePredicate<TResult, NumberTraits::Error>
+struct ElsePredicate<TResult, NumberTraits::Error> : public PredicateBase<NumberTraits::Error>
 {
 	static bool execute(size_t index, Block & block, const ColumnNumbers & args,
 		size_t result, size_t tracker, Branches & branches)
