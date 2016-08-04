@@ -103,23 +103,6 @@ inline void readVarInt(Int16 & x, ReadBuffer & istr)
 }
 
 
-inline void writeVarUInt(UInt64 x, std::ostream & ostr)
-{
-	for (size_t i = 0; i < 9; ++i)
-	{
-		uint8_t byte = x & 0x7F;
-		if (byte > 0x7F)
-			x |= 0x80;
-
-		ostr.put(x);
-
-		x >>= 7;
-		if (!x)
-			return;
-	}
-}
-
-
 inline void throwReadAfterEOF()
 {
 	throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
@@ -156,46 +139,6 @@ inline void readVarUInt(UInt64 & x, std::istream & istr)
 	}
 }
 
-
-inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
-{
-	for (size_t i = 0; i < 9; ++i)
-	{
-		uint8_t byte = x & 0x7F;
-		if (byte > 0x7F)
-			x |= 0x80;
-
-		ostr.nextIfAtEnd();
-		*ostr.position() = x;
-		++ostr.position();
-
-		x >>= 7;
-		if (!x)
-			return;
-	}
-}
-
-
-inline char * writeVarUInt(UInt64 x, char * ostr)
-{
-	for (size_t i = 0; i < 9; ++i)
-	{
-		uint8_t byte = x & 0x7F;
-		if (byte > 0x7F)
-			x |= 0x80;
-
-		*ostr = x;
-		++ostr;
-
-		x >>= 7;
-		if (!x)
-			return ostr;
-	}
-
-	return ostr;
-}
-
-
 inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
 {
 	const char * end = istr + size;
@@ -215,6 +158,62 @@ inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
 	}
 
 	return istr;
+}
+
+
+inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
+{
+	for (size_t i = 0; i < 9; ++i)
+	{
+		uint8_t byte = x & 0x7F;
+		if (x > 0x7F)
+			byte |= 0x80;
+
+		ostr.nextIfAtEnd();
+		*ostr.position() = byte;
+		++ostr.position();
+
+		x >>= 7;
+		if (!x)
+			return;
+	}
+}
+
+
+inline void writeVarUInt(UInt64 x, std::ostream & ostr)
+{
+	for (size_t i = 0; i < 9; ++i)
+	{
+		uint8_t byte = x & 0x7F;
+		if (x > 0x7F)
+			byte |= 0x80;
+
+		ostr.put(byte);
+
+		x >>= 7;
+		if (!x)
+			return;
+	}
+}
+
+
+inline char * writeVarUInt(UInt64 x, char * ostr)
+{
+	for (size_t i = 0; i < 9; ++i)
+	{
+		uint8_t byte = x & 0x7F;
+		if (x > 0x7F)
+			byte |= 0x80;
+
+		*ostr = byte;
+		++ostr;
+
+		x >>= 7;
+		if (!x)
+			return ostr;
+	}
+
+	return ostr;
 }
 
 
