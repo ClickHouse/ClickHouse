@@ -32,11 +32,16 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 
 			shared_block_ptr = new detail::SharedBlock(children[i]->read());
 
-			if (shared_block_ptr->rowsInFirstColumn() == 0)
+			const size_t rows = shared_block_ptr->rowsInFirstColumn();
+
+			if (rows == 0)
 				continue;
 
 			if (!num_columns)
 				num_columns = shared_block_ptr->columns();
+
+			if (expected_block_size < rows)
+				expected_block_size = std::min(rows, max_block_size);
 
 			cursors[i] = SortCursorImpl(*shared_block_ptr, description, i);
 			has_collation |= cursors[i].has_collation;
@@ -99,7 +104,10 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 	}
 
 	for (size_t i = 0; i < num_columns; ++i)
+	{
 		merged_columns.emplace_back(merged_block.getByPosition(i).column.get());
+		merged_columns.back()->reserve(expected_block_size);
+	}
 }
 
 
