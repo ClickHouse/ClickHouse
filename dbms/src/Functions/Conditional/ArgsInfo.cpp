@@ -9,8 +9,6 @@
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteHelpers.h>
 
-#include <common/logger_useful.h>
-
 namespace DB
 {
 
