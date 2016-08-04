@@ -137,7 +137,7 @@ Block NativeBlockInputStream::readImpl()
 		if (rows)	/// If no rows, nothing to read.
 			readData(*column.type, *column.column, istr, rows);
 
-		res.insert(column);
+		res.insert(std::move(column));
 
 		if (use_index)
 			++index_column_it;

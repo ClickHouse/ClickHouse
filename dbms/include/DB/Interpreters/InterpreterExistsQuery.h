@@ -37,32 +37,18 @@ private:
 
 	Block getSampleBlock()
 	{
-		ColumnWithTypeAndName col;
-		col.name = "result";
-		col.type = std::make_shared<DataTypeUInt8>();
-		col.column = col.type->createColumn();
-
-		Block block;
-		block.insert(col);
-
-		return block;
+		return {{ std::make_shared<ColumnConstUInt8>(1, 0), std::make_shared<DataTypeUInt8>(), "result" }};
 	}
 
 	BlockInputStreamPtr executeImpl()
 	{
 		const ASTExistsQuery & ast = typeid_cast<const ASTExistsQuery &>(*query_ptr);
-
 		bool res = context.isTableExist(ast.database, ast.table);
 
-		ColumnWithTypeAndName col;
-		col.name = "result";
-		col.type = std::make_shared<DataTypeUInt8>();
-		col.column = std::make_shared<ColumnConstUInt8>(1, res);
-
-		Block block;
-		block.insert(col);
-
-		return std::make_shared<OneBlockInputStream>(block);
+		return std::make_shared<OneBlockInputStream>(Block{{
+			std::make_shared<ColumnConstUInt8>(1, res),
+			std::make_shared<DataTypeUInt8>(),
+			"result" }});
 	}
 };
 

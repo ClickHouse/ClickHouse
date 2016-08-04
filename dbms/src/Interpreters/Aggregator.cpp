@@ -157,7 +157,7 @@ void Aggregator::initialize(const Block & block)
 			col.type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
 			col.column = col.type->createColumn();
 
-			sample.insert(col);
+			sample.insert(std::move(col));
 		}
 	}
 }

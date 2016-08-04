@@ -213,7 +213,7 @@ Block TinyLogBlockInputStream::readImpl()
 		}
 
 		if (column.column->size())
-			res.insert(column);
+			res.insert(std::move(column));
 	}
 
 	if (!res || streams.begin()->second->compressed.eof())

@@ -446,7 +446,7 @@ bool Join::insertFromBlock(const Block & block)
 			size_t pos = stored_block->getPositionByName(name);
 			ColumnWithTypeAndName col = stored_block->getByPosition(pos);
 			stored_block->erase(pos);
-			stored_block->insert(key_num, col);
+			stored_block->insert(key_num, std::move(col));
 			++key_num;
 		}
 	}

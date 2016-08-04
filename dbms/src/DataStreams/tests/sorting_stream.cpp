@@ -132,7 +132,7 @@ try
 	{
 		ColumnWithTypeAndName col;
 		col.type = type;
-		sample.insert(col);
+		sample.insert(std::move(col));
 	}
 
 	SortDescription sort_columns;

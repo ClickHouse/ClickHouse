@@ -121,7 +121,7 @@ public:
 				}
 
 				if (!append && column.column->size())
-					res.insert(column);
+					res.insert(std::move(column));
 			}
 		}
 		catch (Exception & e)

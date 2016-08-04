@@ -39,8 +39,7 @@ protected:
 		if (!res)
 			return res;
 		ColumnPtr column_ptr = ColumnConst<ColumnType>(res.rows(), value, data_type).convertToFullColumn();
-		ColumnWithTypeAndName column(column_ptr, data_type, column_name);
-		res.insert(column);
+		res.insert({column_ptr, data_type, column_name});
 		return res;
 	}
 

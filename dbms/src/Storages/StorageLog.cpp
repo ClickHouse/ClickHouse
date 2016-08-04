@@ -248,7 +248,7 @@ Block LogBlockInputStream::readImpl()
 		}
 
 		if (column.column->size())
-			res.insert(column);
+			res.insert(std::move(column));
 	}
 
 	/// Отдельно обрабатываем виртуальный столбец
@@ -260,8 +260,7 @@ Block LogBlockInputStream::readImpl()
 		if (rows > 0)
 		{
 			ColumnPtr column_ptr = ColumnConst<String>(rows, current_table.first, std::make_shared<DataTypeString>()).convertToFullColumn();
-			ColumnWithTypeAndName column(column_ptr, std::make_shared<DataTypeString>(), storage._table_column_name);
-			res.insert(column);
+			res.insert({column_ptr, std::make_shared<DataTypeString>(), storage._table_column_name});
 		}
 	}
 

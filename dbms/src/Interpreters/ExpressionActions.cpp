@@ -191,7 +191,7 @@ void ExpressionAction::prepare(Block & sample_block)
 				ColumnWithTypeAndName column = sample_block.getByName(name);
 				if (alias != "")
 					column.name = alias;
-				new_block.insert(column);
+				new_block.insert(std::move(column));
 			}
 
 			sample_block.swap(new_block);
@@ -348,7 +348,7 @@ void ExpressionAction::execute(Block & block) const
 				ColumnWithTypeAndName column = block.getByName(name);
 				if (alias != "")
 					column.name = alias;
-				new_block.insert(column);
+				new_block.insert(std::move(column));
 			}
 
 			block.swap(new_block);

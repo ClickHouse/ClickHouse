@@ -36,7 +36,7 @@ protected:
 		while (pos < end)
 			*pos++ = curr++;
 
-		res.insert(column_with_type_and_name);
+		res.insert(std::move(column_with_type_and_name));
 
 		next += step;
 		return res;
