@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-/** Записать UInt64 в формате переменной длины (base128) */
+/** Записать UInt64 в формате переменной длины (base128) NOTE Only up to 2^63 - 1 are supported.*/
 void writeVarUInt(UInt64 x, std::ostream & ostr);
 void writeVarUInt(UInt64 x, WriteBuffer & ostr);
 char * writeVarUInt(UInt64 x, char * ostr);
