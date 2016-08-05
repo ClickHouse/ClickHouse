@@ -55,8 +55,8 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*full_column.get());
 		const ColumnPtr & nested_col = nullable_col.getNestedColumn();
 
-		const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*(nullable_col.getNullValuesByteMap().get()));
-		DataTypeUInt8{}.serializeBinary(content, ostr, offset, limit);
+		const IColumn & null_map = *(nullable_col.getNullValuesByteMap().get());
+		DataTypeUInt8{}.serializeBinary(null_map, ostr, offset, limit);
 
 		writeData(nested_type, nested_col, ostr, offset, limit);
 	}
