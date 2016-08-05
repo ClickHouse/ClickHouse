@@ -97,10 +97,10 @@ void FunctionIsNotNull::executeImpl(Block & block, const ColumnNumbers & argumen
 {
 	ColumnWithTypeAndName temp_res;
 	temp_res.type = std::make_shared<DataTypeUInt8>();
+	temp_res.name = "isNull(" + block.getByPosition(arguments[0]).name + ")";
 
+	size_t temp_res_num = block.columns();
 	block.insert(temp_res);
-
-	size_t temp_res_num = block.columns() - 1;
 
 	FunctionIsNull{}.executeImpl(block, arguments, temp_res_num);
 	FunctionNot{}.executeImpl(block, {temp_res_num}, result);
