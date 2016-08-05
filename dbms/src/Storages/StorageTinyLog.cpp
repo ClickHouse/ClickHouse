@@ -73,7 +73,7 @@ private:
 		CompressedReadBuffer compressed;
 	};
 
-	using FileStreams = std::map<std::string, std::unique_ptr<Stream> >;
+	using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
 	FileStreams streams;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
@@ -128,7 +128,7 @@ private:
 		}
 	};
 
-	using FileStreams = std::map<std::string, std::unique_ptr<Stream> >;
+	using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
 	FileStreams streams;
 
 	using OffsetColumns = std::set<std::string>;
