@@ -8,6 +8,13 @@
 namespace DB
 {
 
+/// Except for functions whose method hasSpecialSupportForNulls() returns true,
+/// such as multiIf, most of them deal with nullable or null arguments according
+/// to the following scheme:
+/// - If at least one argument is null, we return null.
+/// - If at least one argument is nullable, we run the function on non-nullable
+/// columns, then we wrap the result we have obtained into a nullable column.
+
 namespace
 {
 
@@ -29,6 +36,7 @@ void createNullValuesByteMap(Block & block, size_t result)
 	}
 }
 
+/// Check if a block contains at least one null column.
 bool hasNullColumns(const Block & block, const ColumnNumbers & arguments)
 {
 	for (const auto & arg : arguments)
@@ -40,6 +48,7 @@ bool hasNullColumns(const Block & block, const ColumnNumbers & arguments)
 	return false;
 }
 
+/// Check if at least one column is null.
 bool hasNullColumns(const ColumnsWithTypeAndName & args)
 {
 	for (const auto & arg : args)
@@ -51,7 +60,8 @@ bool hasNullColumns(const ColumnsWithTypeAndName & args)
 	return false;
 }
 
-bool hasNullColumns(const DataTypes & args)
+/// Check if at least one argument is null.
+bool hasNullArguments(const DataTypes & args)
 {
 	for (const auto & arg : args)
 	{
@@ -62,6 +72,7 @@ bool hasNullColumns(const DataTypes & args)
 	return false;
 }
 
+/// Check if a block contains at least one nullable column.
 bool hasNullableColumns(const Block & block, const ColumnNumbers & arguments)
 {
 	for (const auto & arg : arguments)
@@ -73,6 +84,7 @@ bool hasNullableColumns(const Block & block, const ColumnNumbers & arguments)
 	return false;
 }
 
+/// Check if at least one column is nullable.
 bool hasNullableColumns(const ColumnsWithTypeAndName & args)
 {
 	for (const auto & arg : args)
@@ -84,7 +96,8 @@ bool hasNullableColumns(const ColumnsWithTypeAndName & args)
 	return false;
 }
 
-bool hasNullableColumns(const DataTypes & args)
+/// Check if at least one argument is nullable.
+bool hasNullableArguments(const DataTypes & args)
 {
 	for (const auto & arg : args)
 	{
@@ -95,6 +108,7 @@ bool hasNullableColumns(const DataTypes & args)
 	return false;
 }
 
+/// Turn the specified set of columns into a set of non-nullable columns.
 ColumnsWithTypeAndName toNonNullableColumns(const ColumnsWithTypeAndName & args)
 {
 	ColumnsWithTypeAndName new_args;
@@ -118,7 +132,8 @@ ColumnsWithTypeAndName toNonNullableColumns(const ColumnsWithTypeAndName & args)
 	return new_args;
 }
 
-DataTypes toNonNullableColumns(const DataTypes & args)
+/// Turn the specified set of data types into a set of non-nullable data types.
+DataTypes toNonNullableArguments(const DataTypes & args)
 {
 	DataTypes new_args;
 	new_args.reserve(args.size());
@@ -142,12 +157,12 @@ DataTypes toNonNullableColumns(const DataTypes & args)
 
 DataTypePtr IFunction::getReturnType(const DataTypes & arguments) const
 {
-	if (!hasSpecialSupportForNulls() && hasNullColumns(arguments))
+	if (!hasSpecialSupportForNulls() && hasNullArguments(arguments))
 		return std::make_shared<DataTypeNull>();
 
-	if (!hasSpecialSupportForNulls() && hasNullableColumns(arguments))
+	if (!hasSpecialSupportForNulls() && hasNullableArguments(arguments))
 	{
-		const DataTypes new_args = toNonNullableColumns(arguments);
+		const DataTypes new_args = toNonNullableArguments(arguments);
 		return getReturnTypeImpl(new_args);
 	}
 	else
@@ -177,12 +192,12 @@ void IFunction::getReturnTypeAndPrerequisites(
 
 void IFunction::getLambdaArgumentTypes(DataTypes & arguments) const
 {
-	if (!hasSpecialSupportForNulls() && hasNullColumns(arguments))
+	if (!hasSpecialSupportForNulls() && hasNullArguments(arguments))
 		return;
 
-	if (!hasSpecialSupportForNulls() && hasNullableColumns(arguments))
+	if (!hasSpecialSupportForNulls() && hasNullableArguments(arguments))
 	{
-		DataTypes new_args = toNonNullableColumns(arguments);
+		DataTypes new_args = toNonNullableArguments(arguments);
 		getLambdaArgumentTypesImpl(new_args);
 		arguments = std::move(new_args);
 	}

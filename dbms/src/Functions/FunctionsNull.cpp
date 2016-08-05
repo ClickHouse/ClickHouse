@@ -172,7 +172,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 	/// For the NULL value.
 	new_args.push_back(block.columns());
 
-	/// Append a NULL column to block.
+	/// Append a NULL column.
 	ColumnWithTypeAndName elem;
 	elem.column = std::make_shared<ColumnNull>(block.rowsInFirstColumn(), Null());
 	elem.type = std::make_shared<DataTypeNull>();
