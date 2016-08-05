@@ -70,4 +70,16 @@ public:
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
+class FunctionAssumeNotNull : public IFunction
+{
+public:
+	static constexpr auto name = "assumeNotNull";
+	static FunctionPtr create(const Context & context);
+
+	std::string getName() const override;
+	bool hasSpecialSupportForNulls() const override;
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+};
+
 }

@@ -19,6 +19,7 @@ void registerFunctionsNull(FunctionFactory & factory)
 	factory.registerFunction<FunctionCoalesce>();
 	factory.registerFunction<FunctionIfNull>();
 	factory.registerFunction<FunctionNullIf>();
+	factory.registerFunction<FunctionAssumeNotNull>();
 }
 
 /// Implementation of isNull.
@@ -272,6 +273,57 @@ void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments,
 	block.insert(null_elem);
 
 	FunctionMultiIf{}.executeImpl(block, {res_pos, null_pos, arguments[0]}, result);
+}
+
+/// Implementation of assumeNotNull.
+
+FunctionPtr FunctionAssumeNotNull::create(const Context & context)
+{
+	return std::make_shared<FunctionAssumeNotNull>();
+}
+
+std::string FunctionAssumeNotNull::getName() const
+{
+	return name;
+}
+
+bool FunctionAssumeNotNull::hasSpecialSupportForNulls() const
+{
+	return true;
+}
+
+DataTypePtr FunctionAssumeNotNull::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	if (arguments.size() != 1)
+		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ toString(arguments.size()) + ", should be 1.",
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+	if (arguments[0].get()->isNull())
+		return std::make_shared<DataTypeUInt8>();
+	else if (arguments[0].get()->isNullable())
+	{
+		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(arguments[0].get()));
+		return nullable_type.getNestedType();
+	}
+	else
+		return arguments[0];
+}
+
+void FunctionAssumeNotNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	const ColumnPtr & col = block.getByPosition(arguments[0]).column;
+	ColumnPtr & res_col = block.getByPosition(result).column;
+
+	if (col.get()->isNull())
+		res_col = std::make_shared<ColumnConstUInt8>(block.rowsInFirstColumn(), 0);
+	else if (col.get()->isNullable())
+	{
+		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*(col.get()));
+		res_col = nullable_col.getNestedColumn();
+	}
+	else
+		res_col = col;
 }
 
 }
