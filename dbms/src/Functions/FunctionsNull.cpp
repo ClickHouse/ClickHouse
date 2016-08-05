@@ -165,14 +165,14 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 	ColumnNumbers new_args;
 	for (size_t i = 0; i < arguments.size(); ++i)
 	{
-		new_args.push_back(result + i);
+		new_args.push_back(result + i + 1);
 		new_args.push_back(arguments[i]);
 	}
 
-	/// For the NULL value.
+	/// Argument corresponding to the fallback NULL value.
 	new_args.push_back(block.columns());
 
-	/// Append a NULL column.
+	/// Append a fallback NULL column.
 	ColumnWithTypeAndName elem;
 	elem.column = std::make_shared<ColumnNull>(block.rowsInFirstColumn(), Null());
 	elem.type = std::make_shared<DataTypeNull>();
