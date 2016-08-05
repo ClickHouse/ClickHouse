@@ -15,7 +15,7 @@
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/DataTypeTraits.h>
 
-/// The following includes is needed for the function multiIf.
+/// The following include is needed for the function multiIf.
 #include <DB/Functions/Conditional/CondException.h>
 
 namespace DB
