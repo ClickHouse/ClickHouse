@@ -80,7 +80,7 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
 					rowsInFirstColumn(), column_to_add.type->getDefault())).convertToFullColumn();
 		}
 
-		insert(column_to_add);
+		insert(std::move(column_to_add));
 	}
 }
 

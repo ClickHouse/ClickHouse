@@ -641,9 +641,9 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	{
 		const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.getByPosition(i);
 		ColumnWithTypeAndName new_column = src_column.cloneEmpty();
-		block.insert(new_column);
 		added_columns[i] = new_column.column.get();
 		added_columns[i]->reserve(src_column.column->size());
+		block.insert(std::move(new_column));
 	}
 
 	size_t rows = block.rowsInFirstColumn();
@@ -776,8 +776,8 @@ void Join::joinBlockImplCross(Block & block) const
 	{
 		const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.unsafeGetByPosition(i);
 		ColumnWithTypeAndName new_column = src_column.cloneEmpty();
-		res.insert(new_column);
 		dst_right_columns[i] = new_column.column.get();
+		res.insert(std::move(new_column));
 	}
 
 	size_t rows_left = block.rowsInFirstColumn();
@@ -939,7 +939,7 @@ public:
 		{
 			const ColumnWithTypeAndName & src_column = parent.sample_block_with_columns_to_add.getByPosition(i);
 			ColumnWithTypeAndName new_column = src_column.cloneEmpty();
-			result_sample_block.insert(new_column);
+			result_sample_block.insert(std::move(new_column));
 		}
 
 		column_numbers_left.reserve(num_columns_left);

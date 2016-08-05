@@ -501,7 +501,7 @@ private:
 							res.rows(), column_to_add.type->getDefault())).convertToFullColumn();
 					}
 
-					res.insert(column_to_add);
+					res.insert(std::move(column_to_add));
 				}
 			}
 

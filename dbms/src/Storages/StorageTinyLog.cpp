@@ -44,7 +44,8 @@ class TinyLogBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
-		: block_size(block_size_), column_names(column_names_), storage(storage_), max_read_buffer_size(max_read_buffer_size_) {}
+		: block_size(block_size_), column_names(column_names_), column_types(column_names.size()),
+		storage(storage_), max_read_buffer_size(max_read_buffer_size_) {}
 
 	String getName() const { return "TinyLog"; }
 
@@ -55,6 +56,7 @@ protected:
 private:
 	size_t block_size;
 	Names column_names;
+	DataTypes column_types;
 	StorageTinyLog & storage;
 	bool finished = false;
 	size_t max_read_buffer_size;
@@ -172,43 +174,51 @@ Block TinyLogBlockInputStream::readImpl()
 
 	/// Если файлы не открыты, то открываем их.
 	if (streams.empty())
-		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
-			addStream(*it, *storage.getDataTypeByName(*it));
+	{
+		for (size_t i = 0, size = column_names.size(); i < size; ++i)
+		{
+			const auto & name = column_names[i];
+			column_types[i] = storage.getDataTypeByName(name);
+			addStream(name, *column_types[i]);
+		}
+	}
 
 	/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
 	using OffsetColumns = std::map<std::string, ColumnPtr>;
 	OffsetColumns offset_columns;
 
-	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
+	for (size_t i = 0, size = column_names.size(); i < size; ++i)
 	{
+		const auto & name = column_names[i];
+
 		ColumnWithTypeAndName column;
-		column.name = *it;
-		column.type = storage.getDataTypeByName(*it);
+		column.name = name;
+		column.type = column_types[i];
 
 		bool read_offsets = true;
 
 		/// Для вложенных структур запоминаем указатели на столбцы со смещениями
 		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&*column.type))
 		{
-			String name = DataTypeNested::extractNestedTableName(column.name);
+			String nested_name = DataTypeNested::extractNestedTableName(column.name);
 
-			if (offset_columns.count(name) == 0)
-				offset_columns[name] = std::make_shared<ColumnArray::ColumnOffsets_t>();
+			if (offset_columns.count(nested_name) == 0)
+				offset_columns[nested_name] = std::make_shared<ColumnArray::ColumnOffsets_t>();
 			else
 				read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
 
-			column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[name]);
+			column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
 		}
 		else
 			column.column = column.type->createColumn();
 
 		try
 		{
-			readData(*it, *column.type, *column.column, block_size, 0, read_offsets);
+			readData(name, *column.type, *column.column, block_size, 0, read_offsets);
 		}
 		catch (Exception & e)
 		{
-			e.addMessage("while reading column " + *it + " at " + storage.full_path());
+			e.addMessage("while reading column " + name + " at " + storage.full_path());
 			throw;
 		}
 

@@ -47,7 +47,7 @@ public:
 	LogBlockInputStream(
 		size_t block_size_, const Names & column_names_, StorageLog & storage_,
 		size_t mark_number_, size_t rows_limit_, size_t max_read_buffer_size_)
-		: block_size(block_size_), column_names(column_names_), storage(storage_),
+		: block_size(block_size_), column_names(column_names_), column_types(column_names.size()), storage(storage_),
 		mark_number(mark_number_), rows_limit(rows_limit_), current_mark(mark_number_), max_read_buffer_size(max_read_buffer_size_) {}
 
 	String getName() const { return "Log"; }
@@ -69,6 +69,7 @@ protected:
 private:
 	size_t block_size;
 	Names column_names;
+	DataTypes column_types;
 	StorageLog & storage;
 	size_t mark_number;		/// С какой засечки читать данные
 	size_t rows_limit;		/// Максимальное количество строк, которых можно прочитать
@@ -177,14 +178,18 @@ Block LogBlockInputStream::readImpl()
 	{
 		Poco::ScopedReadRWLock lock(storage.rwlock);
 
-		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
-			if (*it != storage._table_column_name) /// Для виртуального столбца не надо ничего открывать
-				addStream(*it, *storage.getDataTypeByName(*it));
+		for (size_t i = 0, size = column_names.size(); i < size; ++i)
+		{
+			const auto & name = column_names[i];
+			column_types[i] = storage.getDataTypeByName(name);
+			if (name != storage._table_column_name) /// Для виртуального столбца не надо ничего открывать
+				addStream(name, *column_types[i]);
+		}
 	}
 
 	bool has_virtual_column_table = false;
-	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
-		if (*it == storage._table_column_name)
+	for (const auto & name : column_names)
+		if (name == storage._table_column_name)
 			has_virtual_column_table = true;
 
 	/// Сколько строк читать для следующего блока.
@@ -210,15 +215,17 @@ Block LogBlockInputStream::readImpl()
 	using OffsetColumns = std::map<std::string, ColumnPtr>;
 	OffsetColumns offset_columns;
 
-	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
+	for (size_t i = 0, size = column_names.size(); i < size; ++i)
 	{
+		const auto & name = column_names[i];
+
 		/// Виртуальный столбец не надо считывать с жесткого диска
-		if (*it == storage._table_column_name)
+		if (name == storage._table_column_name)
 			continue;
 
 		ColumnWithTypeAndName column;
-		column.name = *it;
-		column.type = storage.getDataTypeByName(*it);
+		column.name = name;
+		column.type = column_types[i];
 
 		bool read_offsets = true;
 
@@ -239,11 +246,11 @@ Block LogBlockInputStream::readImpl()
 
 		try
 		{
-			readData(*it, *column.type, *column.column, max_rows_to_read, 0, read_offsets);
+			readData(name, *column.type, *column.column, max_rows_to_read, 0, read_offsets);
 		}
 		catch (Exception & e)
 		{
-			e.addMessage("while reading column " + *it + " at " + storage.path + escapeForFileName(storage.name));
+			e.addMessage("while reading column " + name + " at " + storage.path + escapeForFileName(storage.name));
 			throw;
 		}
 
