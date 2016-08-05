@@ -150,6 +150,8 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 	/// coalesce(arg0, arg1, ..., argN) is essentially
 	/// multiIf(isNotNull(arg0), arg0, isNotNull(arg1), arg1, ..., isNotNull(argN), argN, NULL)
 
+	FunctionIsNotNull is_not_null;
+
 	for (size_t i = 0; i < arguments.size(); ++i)
 	{
 		ColumnWithTypeAndName elem;
@@ -159,7 +161,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 		size_t res_pos = block.columns();
 		block.insert(elem);
 
-		FunctionIsNotNull{}.executeImpl(block, { arguments[i] }, res_pos);
+		is_not_null.executeImpl(block, { arguments[i] }, res_pos);
 	}
 
 	ColumnNumbers new_args;
