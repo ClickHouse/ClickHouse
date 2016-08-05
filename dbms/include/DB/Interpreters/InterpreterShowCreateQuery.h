@@ -40,7 +40,7 @@ private:
 
 	Block getSampleBlock()
 	{
-		return {{ std::make_shared<ColumnConstString>(1, String()), std::make_shared<DataTypeString>(), "statement" }};
+		return {{ std::make_shared<ColumnConstString>(0, String()), std::make_shared<DataTypeString>(), "statement" }};
 	}
 
 	BlockInputStreamPtr executeImpl()

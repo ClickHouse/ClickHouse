@@ -37,7 +37,7 @@ private:
 
 	Block getSampleBlock()
 	{
-		return {{ std::make_shared<ColumnConstUInt8>(1, 0), std::make_shared<DataTypeUInt8>(), "result" }};
+		return {{ std::make_shared<ColumnConstUInt8>(0, 0), std::make_shared<DataTypeUInt8>(), "result" }};
 	}
 
 	BlockInputStreamPtr executeImpl()
