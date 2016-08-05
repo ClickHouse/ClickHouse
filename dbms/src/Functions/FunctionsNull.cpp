@@ -144,6 +144,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 	/// multiIf(isNotNull(arg0), arg0, isNotNull(arg1), arg1, ..., isNotNull(argN), argN, NULL)
 
 	FunctionIsNotNull is_not_null;
+	ColumnNumbers multi_if_args;
 
 	for (size_t i = 0; i < arguments.size(); ++i)
 	{
@@ -155,17 +156,13 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 		block.insert(elem);
 
 		is_not_null.executeImpl(block, { arguments[i] }, res_pos);
-	}
 
-	ColumnNumbers new_args;
-	for (size_t i = 0; i < arguments.size(); ++i)
-	{
-		new_args.push_back(result + i + 1);
-		new_args.push_back(arguments[i]);
+		multi_if_args.push_back(res_pos);
+		multi_if_args.push_back(arguments[i]);
 	}
 
 	/// Argument corresponding to the fallback NULL value.
-	new_args.push_back(block.columns());
+	multi_if_args.push_back(block.columns());
 
 	/// Append a fallback NULL column.
 	ColumnWithTypeAndName elem;
@@ -175,7 +172,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 
 	block.insert(elem);
 
-	FunctionMultiIf{}.execute(block, new_args, result);
+	FunctionMultiIf{}.execute(block, multi_if_args, result);
 }
 
 }
