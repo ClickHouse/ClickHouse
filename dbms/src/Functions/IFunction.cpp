@@ -205,7 +205,8 @@ void IFunction::getLambdaArgumentTypes(DataTypes & arguments) const
 		getLambdaArgumentTypesImpl(arguments);
 }
 
-void IFunction::execute(Block & block, const ColumnNumbers & arguments, size_t result)
+template <typename Fun>
+void IFunction::perform(Block & block, const ColumnNumbers & arguments, size_t result, const Fun & performer)
 {
 	if (!hasSpecialSupportForNulls() && hasNullColumns(block, arguments))
 	{
@@ -217,36 +218,34 @@ void IFunction::execute(Block & block, const ColumnNumbers & arguments, size_t r
 	if (!hasSpecialSupportForNulls() && hasNullableColumns(block, arguments))
 	{
 		Block non_nullable_block = block.extractNonNullableBlock(arguments);
-		executeImpl(non_nullable_block, arguments, result);
+		performer(non_nullable_block, arguments, result);
 		const ColumnWithTypeAndName & source_col = non_nullable_block.getByPosition(result);
 		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
 		dest_col.column = std::make_shared<ColumnNullable>(source_col.column);
 		createNullValuesByteMap(block, result);
 	}
 	else
+		performer(block, arguments, result);
+}
+
+void IFunction::execute(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	auto performer = [&](Block & block, const ColumnNumbers & arguments, size_t result)
+	{
 		executeImpl(block, arguments, result);
+	};
+
+	perform(block, arguments, result, performer);
 }
 
 void IFunction::execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result)
 {
-	if (!hasSpecialSupportForNulls() && hasNullColumns(block, arguments))
+	auto performer = [&](Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
-		dest_col.column =  std::make_shared<ColumnNull>(block.rowsInFirstColumn(), Null());
-		return;
-	}
-
-	if (!hasSpecialSupportForNulls() && hasNullableColumns(block, arguments))
-	{
-		Block non_nullable_block = block.extractNonNullableBlock(arguments);
-		executeImpl(non_nullable_block, arguments, prerequisites, result);
-		const ColumnWithTypeAndName & source_col = non_nullable_block.getByPosition(result);
-		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
-		dest_col.column = std::make_shared<ColumnNullable>(source_col.column);
-		createNullValuesByteMap(block, result);
-	}
-	else
 		executeImpl(block, arguments, prerequisites, result);
+	};
+
+	perform(block, arguments, result, performer);
 }
 
 }

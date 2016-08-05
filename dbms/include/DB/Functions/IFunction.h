@@ -134,6 +134,10 @@ public:
 	}
 
 	virtual ~IFunction() {}
+
+private:
+	template <typename Fun>
+	void perform(Block & block, const ColumnNumbers & arguments, size_t result, const Fun & performer);
 };
 
 
