@@ -95,8 +95,6 @@ DataTypePtr FunctionIsNotNull::getReturnTypeImpl(const DataTypes & arguments) co
 
 void FunctionIsNotNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-	FunctionIsNull is_null_func;
-
 	ColumnWithTypeAndName temp_res;
 	temp_res.type = std::make_shared<DataTypeUInt8>();
 
@@ -104,13 +102,8 @@ void FunctionIsNotNull::executeImpl(Block & block, const ColumnNumbers & argumen
 
 	size_t temp_res_num = block.columns() - 1;
 
-	is_null_func.executeImpl(block, arguments, temp_res_num);
-
-	FunctionNot not_func;
-
-	ColumnNumbers new_args;
-	new_args.push_back(temp_res_num);
-	not_func.executeImpl(block, new_args, result);
+	FunctionIsNull{}.executeImpl(block, arguments, temp_res_num);
+	FunctionNot{}.executeImpl(block, {temp_res_num}, result);
 
 	block.erase(temp_res_num);
 }
