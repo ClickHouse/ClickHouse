@@ -203,7 +203,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 			else if (origin.isNullable())
 			{
 				const ColumnNullable & origin_nullable = static_cast<const ColumnNullable &>(origin);
-				null_map = origin_nullable.getNullValuesByteMap().get()->clone();
+				null_map = origin_nullable.getNullValuesByteMap();
 			}
 			else
 				null_map = std::make_shared<ColumnUInt8>(row_count, 0);
