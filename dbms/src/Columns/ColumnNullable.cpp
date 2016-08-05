@@ -62,7 +62,7 @@ ColumnPtr ColumnNullable::convertToFullColumnIfConst() const
 		ColumnNullable & new_col = static_cast<ColumnNullable &>(*new_col_holder.get());
 
 		if (!getNullMapContent().empty())
-			new_col.null_map = null_map.get()->clone();
+			new_col.null_map = null_map;
 	}
 	else
 		new_col_holder = {};
