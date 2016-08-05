@@ -204,7 +204,7 @@ protected:
 		{
 			const auto minimum_size_column_name = owned_data_part->getMinimumSizeColumnName();
 			columns.push_back(minimum_size_column_name);
-			injected_columns.insert(minimum_size_column_name);
+			injected_columns.insert(std::move(minimum_size_column_name));
 		}
 
 		return injected_columns;

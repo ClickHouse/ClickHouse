@@ -46,13 +46,13 @@ AggregateFunctionPtr createAggregateFunctionArgMax(const std::string & name, con
 
 void registerAggregateFunctionsMinMaxAny(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction({"any"}, createAggregateFunctionAny);
-	factory.registerFunction({"anyLast"}, createAggregateFunctionAnyLast);
-	factory.registerFunction({"anyHeavy"}, createAggregateFunctionAnyHeavy);
-	factory.registerFunction({"min"}, createAggregateFunctionMin);
-	factory.registerFunction({"max"}, createAggregateFunctionMax);
-	factory.registerFunction({"argMin"}, createAggregateFunctionArgMin);
-	factory.registerFunction({"argMax"}, createAggregateFunctionArgMax);
+	factory.registerFunction("any", createAggregateFunctionAny);
+	factory.registerFunction("anyLast", createAggregateFunctionAnyLast);
+	factory.registerFunction("anyHeavy", createAggregateFunctionAnyHeavy);
+	factory.registerFunction("min", createAggregateFunctionMin, AggregateFunctionFactory::CaseInsensitive);
+	factory.registerFunction("max", createAggregateFunctionMax, AggregateFunctionFactory::CaseInsensitive);
+	factory.registerFunction("argMin", createAggregateFunctionArgMin);
+	factory.registerFunction("argMax", createAggregateFunctionArgMax);
 }
 
 }

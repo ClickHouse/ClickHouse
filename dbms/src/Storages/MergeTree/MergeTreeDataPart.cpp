@@ -9,6 +9,7 @@
 #include <DB/Core/Defines.h>
 #include <DB/Common/SipHash.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Common/StringUtils.h>
 #include <DB/Storages/MergeTree/MergeTreeDataPart.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 
@@ -225,18 +226,15 @@ void MergeTreeDataPartChecksums::addFile(const String & file_name, size_t file_s
 /// For nullable columns, .null files are taken into account as well.
 void MergeTreeDataPartChecksums::summaryDataChecksum(SipHash & hash) const
 {
-	static constexpr auto bin_len = strlen_constexpr(".bin");
-	static constexpr auto null_len = strlen_constexpr(".null");
-
 	/// Пользуемся тем, что итерирование в детерминированном (лексикографическом) порядке.
 	for (const auto & it : files)
 	{
 		const String & name = it.first;
 		const Checksum & sum = it.second;
 
-		if (name.size() < bin_len || name.substr(name.size() - bin_len) != ".bin")
+		if (!endsWith(name, ".bin"))
 			continue;
-		if (name.size() < null_len || name.substr(name.size() - null_len) != ".null")
+		if (!endsWith(name, ".null"))
 			continue;
 
 		size_t len = name.size();
@@ -335,7 +333,7 @@ MergeTreeDataPart::~MergeTreeDataPart()
 			if (!dir.exists())
 				return;
 
-			if (name.substr(0, strlen("tmp")) != "tmp")
+			if (!startsWith(name,"tmp"))
 			{
 				LOG_ERROR(storage.log, "~DataPart() should remove part " << path
 					<< " but its name doesn't start with tmp. Too suspicious, keeping the part.");

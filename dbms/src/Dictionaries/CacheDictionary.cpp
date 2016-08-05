@@ -1,5 +1,6 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Dictionaries/CacheDictionary.h>
+#include <DB/Common/randomSeed.h>
 
 
 namespace DB
@@ -27,12 +28,6 @@ static inline std::size_t round_up_to_power_of_two(std::size_t n)
 	return n;
 }
 
-static inline std::uint64_t getSeed()
-{
-	timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return ts.tv_nsec ^ getpid();
-}
 
 inline std::uint64_t CacheDictionary::getCellIdx(const id_t id) const
 {
@@ -49,7 +44,7 @@ CacheDictionary::CacheDictionary(const std::string & name, const DictionaryStruc
 		source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
 		size{round_up_to_power_of_two(size)},
 		cells{this->size},
-		rnd_engine{getSeed()}
+		rnd_engine{randomSeed()}
 {
 	if (!this->source_ptr->supportsSelectiveLoad())
 		throw Exception{

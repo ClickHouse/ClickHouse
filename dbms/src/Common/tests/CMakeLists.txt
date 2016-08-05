@@ -45,3 +45,6 @@ target_link_libraries (arena_with_free_lists dbms)
 
 add_executable (pod_array pod_array.cpp)
 target_link_libraries (pod_array dbms)
+
+add_executable (thread_creation_latency thread_creation_latency.cpp)
+target_link_libraries (thread_creation_latency dbms)

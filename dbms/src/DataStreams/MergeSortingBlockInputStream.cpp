@@ -10,26 +10,81 @@ namespace DB
 {
 
 
+/** Remove constant columns from block.
+  */
+static void removeConstantsFromBlock(Block & block)
+{
+	size_t columns = block.columns();
+	size_t i = 0;
+	while (i < columns)
+	{
+		if (block.unsafeGetByPosition(i).column->isConst())
+		{
+			block.erase(i);
+			--columns;
+		}
+		else
+			++i;
+	}
+}
+
+static void removeConstantsFromSortDescription(const Block & sample_block, SortDescription & description)
+{
+	description.erase(std::remove_if(description.begin(), description.end(),
+		[&](const SortColumnDescription & elem)
+		{
+			if (!elem.column_name.empty())
+				return sample_block.getByName(elem.column_name).column->isConst();
+			else
+				return sample_block.getByPosition(elem.column_number).column->isConst();
+		}), description.end());
+}
+
+/** Add into block, whose constant columns was removed by previous function,
+  *  constant columns from sample_block (which must have structure as before removal of constants from block).
+  */
+static void enrichBlockWithConstants(Block & block, const Block & sample_block)
+{
+	size_t rows = block.rowsInFirstColumn();
+	size_t columns = sample_block.columns();
+
+	for (size_t i = 0; i < columns; ++i)
+	{
+		const auto & col_type_name = sample_block.unsafeGetByPosition(i);
+		if (col_type_name.column->isConst())
+			block.insert(i, {col_type_name.column->cloneResized(rows), col_type_name.type, col_type_name.name});
+	}
+}
+
+
 Block MergeSortingBlockInputStream::readImpl()
 {
-	/** Алгоритм:
-	  * - читать в оперативку блоки из источника;
-	  * - когда их становится слишком много и если возможна внешняя сортировка
-	  *   - слить блоки вместе в сортированный поток и записать его во временный файл;
-	  * - в конце, слить вместе все сортированные потоки из временных файлов, а также из накопившихся в оперативке блоков.
+	/** Algorithm:
+	  * - read to memory blocks from source stream;
+	  * - if too much of them and if external sorting is enabled,
+	  *   - merge all blocks to sorted stream and write it to temporary file;
+	  * - at the end, merge all sorted streams from temporary files and also from rest of blocks in memory.
 	  */
 
-	/// Ещё не прочитали блоки.
+	/// If has not read source blocks.
 	if (!impl)
 	{
 		while (Block block = children.back()->read())
 		{
+			if (!sample_block)
+			{
+				sample_block = block.cloneEmpty();
+				removeConstantsFromSortDescription(sample_block, description);
+			}
+
+			removeConstantsFromBlock(block);
+
 			blocks.push_back(block);
 			sum_bytes_in_blocks += block.bytes();
 
-			/** Если блоков стало слишком много и возможна внешняя сортировка,
-			  *  то сольём вместе те блоки, которые успели накопиться, и сбросим сортированный поток во временный (сжатый) файл.
-			  * NOTE. Возможно - проверка наличия свободного места на жёстком диске.
+			/** If too much of them and if external sorting is enabled,
+			  *  will merge blocks that we have in memory at this moment and write merged stream to temporary (compressed) file.
+			  * NOTE. It's possible to check free space in filesystem.
 			  */
 			if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
 			{
@@ -42,7 +97,7 @@ Block MergeSortingBlockInputStream::readImpl()
 
 				LOG_INFO(log, "Sorting and writing part of data into temporary file " + path);
 				ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
-				copyData(block_in, block_out, &is_cancelled);	/// NOTE. Возможно, ограничение на потребление места на дисках.
+				copyData(block_in, block_out, &is_cancelled);	/// NOTE. Possibly limit disk usage.
 				LOG_INFO(log, "Done writing part of data into temporary file " + path);
 
 				blocks.clear();
@@ -59,28 +114,31 @@ Block MergeSortingBlockInputStream::readImpl()
 		}
 		else
 		{
-			/// Если были сброшены временные данные в файлы.
+			/// If there was temporary files.
 			ProfileEvents::increment(ProfileEvents::ExternalSortMerge);
 
 			LOG_INFO(log, "There are " << temporary_files.size() << " temporary sorted parts to merge.");
 
-			/// Сформируем сортированные потоки для слияния.
+			/// Create sorted streams to merge.
 			for (const auto & file : temporary_files)
 			{
 				temporary_inputs.emplace_back(std::make_unique<TemporaryFileStream>(file->path()));
 				inputs_to_merge.emplace_back(temporary_inputs.back()->block_in);
 			}
 
-			/// Оставшиеся в оперативке блоки.
+			/// Rest of blocks in memory.
 			if (!blocks.empty())
 				inputs_to_merge.emplace_back(std::make_shared<MergeSortingBlocksBlockInputStream>(blocks, description, max_merged_block_size, limit));
 
-			/// Будем сливать эти потоки.
+			/// Will merge that sorted streams.
 			impl = std::make_unique<MergingSortedBlockInputStream>(inputs_to_merge, description, max_merged_block_size, limit);
 		}
 	}
 
-	return impl->read();
+	Block res = impl->read();
+	if (res)
+		enrichBlockWithConstants(res, sample_block);
+	return res;
 }
 
 
@@ -142,7 +200,7 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCur
 	for (size_t i = 0; i < num_columns; ++i)	/// TODO: reserve
 		merged_columns.push_back(merged.getByPosition(i).column.get());
 
-	/// Вынимаем строки в нужном порядке и кладём в merged.
+	/// Take rows from queue in right order and push to 'merged'.
 	size_t merged_rows = 0;
 	while (!queue.empty())
 	{

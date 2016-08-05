@@ -59,7 +59,7 @@ inline void WriteBufferValidUTF8::putValid(char *data, size_t len)
 
 void WriteBufferValidUTF8::nextImpl()
 {
-	char *p = &memory[0];
+	char *p = memory.data();
 	char *valid_start = p;
 
 	while (p < pos)
@@ -123,7 +123,7 @@ void WriteBufferValidUTF8::finish()
 	nextImpl();
 
 	/// Если осталась незаконченная последовательность, запишем replacement.
-	if (working_buffer.begin() != &memory[0])
+	if (working_buffer.begin() != memory.data())
 		putReplacement();
 }
 

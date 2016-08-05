@@ -4,6 +4,7 @@
 #include <DB/Databases/DatabaseOrdinary.h>
 #include <DB/Databases/DatabasesCommon.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Common/StringUtils.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
@@ -81,13 +82,6 @@ static void loadTable(
 }
 
 
-static bool endsWith(const String & s, const char * suffix)
-{
-	return s.size() >= strlen(suffix) && 0 == s.compare(s.size() - strlen(suffix), strlen(suffix), suffix);
-}
-
-
-
 DatabaseOrdinary::DatabaseOrdinary(
 	const String & name_, const String & path_)
 	: name(name_), path(path_)
@@ -95,7 +89,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 }
 
 
-void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * thread_pool)
+void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool)
 {
 	log = &Logger::get("DatabaseOrdinary (" + name + ")");
 
@@ -141,7 +135,7 @@ void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * t
 	String data_path = context.getPath() + "/data/" + escapeForFileName(name) + "/";
 
 	StopwatchWithLock watch;
-	size_t tables_processed = 0;
+	std::atomic<size_t> tables_processed {0};
 
 	auto task_function = [&](FileNames::const_iterator begin, FileNames::const_iterator end)
 	{
@@ -150,7 +144,7 @@ void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * t
 			const String & table = *it;
 
 			/// Сообщения, чтобы было не скучно ждать, когда сервер долго загружается.
-			if (__sync_add_and_fetch(&tables_processed, 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
+			if ((++tables_processed) % PRINT_MESSAGE_EACH_N_TABLES == 0
 				|| watch.lockTestAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
 			{
 				LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
@@ -167,7 +161,6 @@ void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * t
 
 	const size_t bunch_size = TABLES_PARALLEL_LOAD_BUNCH_SIZE;
 	size_t num_bunches = (total_tables + bunch_size - 1) / bunch_size;
-	std::vector<std::packaged_task<void()>> tasks(num_bunches);
 
 	for (size_t i = 0; i < num_bunches; ++i)
 	{
@@ -176,19 +169,16 @@ void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * t
 			? file_names.end()
 			: (file_names.begin() + (i + 1) * bunch_size);
 
-		tasks[i] = std::packaged_task<void()>(std::bind(task_function, begin, end));
+		auto task = std::bind(task_function, begin, end);
 
 		if (thread_pool)
-			thread_pool->schedule([i, &tasks]{ tasks[i](); });
+			thread_pool->schedule(task);
 		else
-			tasks[i]();
+			task();
 	}
 
 	if (thread_pool)
 		thread_pool->wait();
-
-	for (auto & task : tasks)
-		task.get_future().get();
 }
 
 

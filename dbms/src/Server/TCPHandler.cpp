@@ -297,11 +297,11 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
 
 void TCPHandler::processOrdinaryQuery()
 {
-	/// Вынимаем результат выполнения запроса, если есть, и пишем его в сеть.
+	/// Pull query execution result, if exists, and send it to network.
 	if (state.io.in)
 	{
-		/// Отправим блок-заголовок, чтобы клиент мог подготовить формат вывода
-		if (state.io.in_sample && client_revision >= DBMS_MIN_REVISION_WITH_HEADER_BLOCK)
+		/// Send header-block, to allow client to prepare output format for data to send.
+		if (state.io.in_sample)
 			sendData(state.io.in_sample);
 
 		AsynchronousBlockInputStream async_in(state.io.in);
@@ -366,9 +366,6 @@ void TCPHandler::processOrdinaryQuery()
 
 void TCPHandler::sendProfileInfo()
 {
-	if (client_revision < DBMS_MIN_REVISION_WITH_PROFILING_PACKET)
-		return;
-
 	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
 	{
 		writeVarUInt(Protocol::Server::ProfileInfo, *out);
@@ -380,9 +377,6 @@ void TCPHandler::sendProfileInfo()
 
 void TCPHandler::sendTotals()
 {
-	if (client_revision < DBMS_MIN_REVISION_WITH_TOTALS_EXTREMES)
-		return;
-
 	if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(&*state.io.in))
 	{
 		const Block & totals = input->getTotals();
@@ -405,9 +399,6 @@ void TCPHandler::sendTotals()
 
 void TCPHandler::sendExtremes()
 {
-	if (client_revision < DBMS_MIN_REVISION_WITH_TOTALS_EXTREMES)
-		return;
-
 	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
 	{
 		const Block & extremes = input->getExtremes();
@@ -448,10 +439,7 @@ void TCPHandler::receiveHello()
 		{
 			writeString("HTTP/1.0 400 Bad Request\r\n\r\n"
 				"Port " + server.config().getString("tcp_port") + " is for clickhouse-client program.\r\n"
-				"You must use port " + server.config().getString("http_port") + " for HTTP"
-				+ (server.config().getBool("use_olap_http_server", false)
-					? "\r\n or port " + server.config().getString("olap_http_port") + " for OLAPServer compatibility layer.\r\n"
-					: ".\r\n"),
+				"You must use port " + server.config().getString("http_port") + " for HTTP.\r\n",
 				*out);
 
 			throw Exception("Client has connected to wrong port", ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT);
@@ -465,12 +453,8 @@ void TCPHandler::receiveHello()
 	readVarUInt(client_version_minor, *in);
 	readVarUInt(client_revision, *in);
 	readStringBinary(default_database, *in);
-
-	if (client_revision >= DBMS_MIN_REVISION_WITH_USER_PASSWORD)
-	{
-		readStringBinary(user, *in);
-		readStringBinary(password, *in);
-	}
+	readStringBinary(user, *in);
+	readStringBinary(password, *in);
 
 	LOG_DEBUG(log, "Connected " << client_name
 		<< " version " << client_version_major
@@ -539,22 +523,12 @@ void TCPHandler::receiveQuery()
 	UInt64 compression = 0;
 
 	state.is_empty = false;
-	if (client_revision < DBMS_MIN_REVISION_WITH_STRING_QUERY_ID)
-	{
-		UInt64 query_id_int;
-		readIntBinary(query_id_int, *in);
-		state.query_id = "";
-	}
-	else
-		readStringBinary(state.query_id, *in);
+	readStringBinary(state.query_id, *in);
 
 	query_context.setCurrentQueryId(state.query_id);
 
-	/// Настройки на отдельный запрос.
-	if (client_revision >= DBMS_MIN_REVISION_WITH_PER_QUERY_SETTINGS)
-	{
-		query_context.getSettingsRef().deserialize(*in);
-	}
+	/// Per query settings.
+	query_context.getSettingsRef().deserialize(*in);
 
 	readVarUInt(stage, *in);
 	state.stage = QueryProcessingStage::Enum(stage);

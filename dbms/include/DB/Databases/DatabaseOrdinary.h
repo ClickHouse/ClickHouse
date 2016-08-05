@@ -25,7 +25,7 @@ public:
 
 	String getEngineName() const override { return "Ordinary"; }
 
-	void loadTables(Context & context, boost::threadpool::pool * thread_pool) override;
+	void loadTables(Context & context, ThreadPool * thread_pool) override;
 
 	bool isTableExist(const String & table_name) const override;
 	StoragePtr tryGetTable(const String & table_name) override;

@@ -71,7 +71,7 @@ private:
   */
 struct SimpleIncrement : private boost::noncopyable
 {
-	UInt64 value;
+	std::atomic<UInt64> value;
 
 	SimpleIncrement(UInt64 start = 0) : value(start) {}
 
@@ -82,6 +82,6 @@ struct SimpleIncrement : private boost::noncopyable
 
 	UInt64 get()
 	{
-		return __sync_add_and_fetch(&value, 1);
+		return ++value;
 	}
 };

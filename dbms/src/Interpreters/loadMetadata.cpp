@@ -2,7 +2,7 @@
 #include <thread>
 #include <future>
 
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/FileStream.h>
@@ -30,7 +30,7 @@ static void executeCreateQuery(
 	Context & context,
 	const String & database,
 	const String & file_name,
-	boost::threadpool::pool & pool)
+	ThreadPool & pool)
 {
 	ParserCreateQuery parser;
 	ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + file_name);
@@ -50,7 +50,7 @@ void loadMetadata(Context & context)
 	String path = context.getPath() + "metadata";
 
 	/// Используется для параллельной загрузки таблиц.
-	boost::threadpool::pool thread_pool(SettingMaxThreads().getAutoValue());
+	ThreadPool thread_pool(SettingMaxThreads().getAutoValue());
 
 	/// Цикл по базам данных
 	Poco::DirectoryIterator dir_end;

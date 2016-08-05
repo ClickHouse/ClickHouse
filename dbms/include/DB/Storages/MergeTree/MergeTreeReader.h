@@ -107,7 +107,7 @@ private:
 		size_t max_mark_range;
 	};
 
-	using FileStreams = std::map<std::string, std::unique_ptr<Stream> >;
+	using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
 
 private:
 	/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.

@@ -134,14 +134,15 @@ void NativeBlockOutputStream::write(const Block & block)
 
 		const ColumnWithTypeAndName & column = block.getByPosition(i);
 
-		/// Имя
+		/// Name
 		writeStringBinary(column.name, ostr);
 
-		/// Тип
+		/// Type
 		writeStringBinary(column.type->getName(), ostr);
 
-		/// Данные
-		writeData(*column.type, column.column, ostr, 0, 0);
+		/// Data
+		if (rows)	/// Zero items of data is always represented as zero number of bytes.
+			writeData(*column.type, column.column, ostr, 0, 0);
 
 		if (index_ostr)
 		{

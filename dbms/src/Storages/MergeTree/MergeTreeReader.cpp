@@ -133,7 +133,7 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
 			}
 
 			if (!append && column.column->size())
-				res.insert(column);
+				res.insert(std::move(column));
 		}
 	}
 	catch (Exception & e)
@@ -419,7 +419,7 @@ void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_
 						res.rows(), column_to_add.type->getDefault())).convertToFullColumn();
 				}
 
-				res.insert(column_to_add);
+				res.insert(std::move(column_to_add));
 			}
 		}
 

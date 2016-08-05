@@ -22,6 +22,16 @@ void registerFunctionsConversion(FunctionFactory & factory)
 	factory.registerFunction<FunctionToFixedString>();
 	factory.registerFunction<FunctionToUnixTimestamp>();
 	factory.registerFunction<FunctionCast>();
+	factory.registerFunction<FunctionToUInt8OrZero>();
+	factory.registerFunction<FunctionToUInt16OrZero>();
+	factory.registerFunction<FunctionToUInt32OrZero>();
+	factory.registerFunction<FunctionToUInt64OrZero>();
+	factory.registerFunction<FunctionToInt8OrZero>();
+	factory.registerFunction<FunctionToInt16OrZero>();
+	factory.registerFunction<FunctionToInt32OrZero>();
+	factory.registerFunction<FunctionToInt64OrZero>();
+	factory.registerFunction<FunctionToFloat32OrZero>();
+	factory.registerFunction<FunctionToFloat64OrZero>();
 }
 
 }

@@ -32,10 +32,11 @@
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Common/formatReadable.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/StringUtils.h>
 
 #include <Poco/DirectoryIterator.h>
 
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 
 #include <ext/range.hpp>
 #include <cfenv>
@@ -1100,7 +1101,27 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			do_fetch = true;
 			LOG_DEBUG(log, "Don't have all parts for merge " << entry.new_part_name << "; will try to fetch it instead");
 		}
-		else
+		else if (entry.create_time + data.settings.prefer_fetch_merged_part_time_threshold <= time(nullptr))
+		{
+			/// If entry is old enough, and have enough size, and part are exists in any replica,
+			///  then prefer fetching of merged part from replica.
+
+			size_t sum_parts_size_in_bytes = 0;
+			for (const auto & part : parts)
+				sum_parts_size_in_bytes += part->size_in_bytes;
+
+			if (sum_parts_size_in_bytes >= data.settings.prefer_fetch_merged_part_size_threshold)
+			{
+				String replica = findReplicaHavingPart(entry.new_part_name, true);	/// NOTE excessive ZK requests for same data later, may remove.
+				if (!replica.empty())
+				{
+					do_fetch = true;
+					LOG_DEBUG(log, "Preffering to fetch " << entry.new_part_name << " from replica");
+				}
+			}
+		}
+
+		if (!do_fetch)
 		{
 			/// Если собираемся сливать большие куски, увеличим счетчик потоков, сливающих большие куски.
 			for (const auto & part : parts)
@@ -1162,7 +1183,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			if (!do_fetch)
 			{
 				merger.renameMergedTemporaryPart(parts, part, entry.new_part_name, &transaction);
-				zookeeper->multi(ops);
+				getZooKeeper()->multi(ops);		/// After long merge, get fresh ZK handle, because previous session may be expired.
 
 				/** Удаление старых кусков из ZK и с диска делается отложенно - см. ReplicatedMergeTreeCleanupThread, clearOldParts.
 				  */
@@ -2090,7 +2111,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 	auto & select = typeid_cast<const ASTSelectQuery &>(*query);
 
 	/// Try transferring some condition from WHERE to PREWHERE if enabled and viable
-	if (settings.optimize_move_to_prewhere && select.where_expression && !select.prewhere_expression && !select.final)
+	if (settings.optimize_move_to_prewhere && select.where_expression && !select.prewhere_expression && !select.final())
 		MergeTreeWhereOptimizer{query, context, data, real_column_names, log};
 
 	Block virtual_columns_block;
@@ -2649,7 +2670,7 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 			String name = it.name();
 			if (!ActiveDataPartSet::isPartDirectory(name))
 				continue;
-			if (0 != name.compare(0, partition.size(), partition))
+			if (!startsWith(name, partition))
 				continue;
 			LOG_DEBUG(log, "Found part " << name);
 			active_parts.add(name);
@@ -2862,7 +2883,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 	  * Для этого проверяем её узел log_pointer - максимальный номер взятого элемента из log плюс единица.
 	  */
 
-	if (0 == entry.znode_name.compare(0, strlen("log-"), "log-"))
+	if (startsWith(entry.znode_name, "log-"))
 	{
 		/** В этом случае просто берём номер из имени ноды log-xxxxxxxxxx.
 		  */
@@ -2884,7 +2905,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 			event->wait();
 		}
 	}
-	else if (0 == entry.znode_name.compare(0, strlen("queue-"), "queue-"))
+	else if (startsWith(entry.znode_name, "queue-"))
 	{
 		/** В этом случае номер log-ноды неизвестен. Нужно просмотреть все от log_pointer до конца,
 		  *  ища ноду с таким же содержимым. И если мы её не найдём - значит реплика уже взяла эту запись в свою queue.
@@ -3119,7 +3140,7 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const S
 	  */
 	Poco::DirectoryIterator dir_end;
 	for (Poco::DirectoryIterator dir_it{data.getFullPath() + "detached/"}; dir_it != dir_end; ++dir_it)
-		if (0 == dir_it.name().compare(0, partition_str.size(), partition_str))
+		if (startsWith(dir_it.name(), partition_str))
 			throw Exception("Detached partition " + partition_str + " already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
 
 	/// Список реплик шарда-источника.
@@ -3202,7 +3223,7 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const S
 			/// Оставляем только куски нужной партиции.
 			Strings parts_to_fetch_partition;
 			for (const String & part : parts_to_fetch)
-				if (0 == part.compare(0, partition_str.size(), partition_str))
+				if (startsWith(part, partition_str))
 					parts_to_fetch_partition.push_back(part);
 
 			parts_to_fetch = std::move(parts_to_fetch_partition);
@@ -3606,7 +3627,7 @@ StorageReplicatedMergeTree::gatherReplicaSpaceInfo(const WeightedZooKeeperPaths 
 		}
 	}
 
-	boost::threadpool::pool pool(task_info_list.size());
+	ThreadPool pool(task_info_list.size());
 
 	using Tasks = std::vector<std::packaged_task<size_t()> >;
 	Tasks tasks(task_info_list.size());

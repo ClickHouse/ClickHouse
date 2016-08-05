@@ -104,13 +104,21 @@ AggregateFunctionPtr createAggregateFunctionCorr(const std::string & name, const
 
 void registerAggregateFunctionsStatistics(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction({"varSamp"}, createAggregateFunctionVarSamp);
-	factory.registerFunction({"varPop"}, createAggregateFunctionVarPop);
-	factory.registerFunction({"stddevSamp"}, createAggregateFunctionStdDevSamp);
-	factory.registerFunction({"stddevPop"}, createAggregateFunctionStdDevPop);
-	factory.registerFunction({"covarSamp"}, createAggregateFunctionCovarSamp);
-	factory.registerFunction({"covarPop"}, createAggregateFunctionCovarPop);
-	factory.registerFunction({"corr"}, createAggregateFunctionCorr);
+	factory.registerFunction("varSamp", createAggregateFunctionVarSamp);
+	factory.registerFunction("varPop", createAggregateFunctionVarPop);
+	factory.registerFunction("stddevSamp", createAggregateFunctionStdDevSamp);
+	factory.registerFunction("stddevPop", createAggregateFunctionStdDevPop);
+	factory.registerFunction("covarSamp", createAggregateFunctionCovarSamp);
+	factory.registerFunction("covarPop", createAggregateFunctionCovarPop);
+	factory.registerFunction("corr", createAggregateFunctionCorr, AggregateFunctionFactory::CaseInsensitive);
+
+	/// Synonims for compatibility.
+	factory.registerFunction("VAR_SAMP", createAggregateFunctionVarSamp, AggregateFunctionFactory::CaseInsensitive);
+	factory.registerFunction("VAR_POP", createAggregateFunctionVarPop, AggregateFunctionFactory::CaseInsensitive);
+	factory.registerFunction("STDDEV_SAMP", createAggregateFunctionStdDevSamp, AggregateFunctionFactory::CaseInsensitive);
+	factory.registerFunction("STDDEV_POP", createAggregateFunctionStdDevPop, AggregateFunctionFactory::CaseInsensitive);
+	factory.registerFunction("COVAR_SAMP", createAggregateFunctionCovarSamp, AggregateFunctionFactory::CaseInsensitive);
+	factory.registerFunction("COVAR_POP", createAggregateFunctionCovarPop, AggregateFunctionFactory::CaseInsensitive);
 }
 
 }

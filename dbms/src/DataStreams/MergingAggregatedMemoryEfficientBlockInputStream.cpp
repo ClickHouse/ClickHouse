@@ -98,29 +98,24 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
 	}
 	else
 	{
-		reading_pool.reset(new boost::threadpool::pool(reading_threads));
+		reading_pool = std::make_unique<ThreadPool>(reading_threads);
 
 		size_t num_children = children.size();
-		std::vector<std::packaged_task<void()>> tasks(num_children);
 		for (size_t i = 0; i < num_children; ++i)
 		{
 			auto & child = children[i];
-			auto & task = tasks[i];
 
 			auto memory_tracker = current_memory_tracker;
-			task = std::packaged_task<void()>([&child, memory_tracker]
+			reading_pool->schedule([&child, memory_tracker]
 			{
 				current_memory_tracker = memory_tracker;
 				setThreadName("MergeAggReadThr");
 				CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 				child->readPrefix();
 			});
-			reading_pool->schedule([&task] { task(); });
 		}
 
 		reading_pool->wait();
-		for (auto & task : tasks)
-			task.get_future().get();
 	}
 
 	if (merging_threads > 1)
@@ -387,30 +382,22 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 	}
 	else
 	{
-		size_t num_inputs = inputs.size();
-		std::vector<std::packaged_task<void()>> tasks;
-		tasks.reserve(num_inputs);
-
 		for (auto & input : inputs)
 		{
 			if (need_that_input(input))
 			{
 				auto memory_tracker = current_memory_tracker;
-				tasks.emplace_back([&input, &read_from_input, memory_tracker]
+				reading_pool->schedule([&input, &read_from_input, memory_tracker]
 				{
 					current_memory_tracker = memory_tracker;
 					setThreadName("MergeAggReadThr");
 					CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 					read_from_input(input);
 				});
-				auto & task = tasks.back();
-				reading_pool->schedule([&task] { task(); });
 			}
 		}
 
 		reading_pool->wait();
-		for (auto & task : tasks)
-			task.get_future().get();
 	}
 
 	while (true)

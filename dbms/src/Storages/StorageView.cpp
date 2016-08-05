@@ -48,11 +48,7 @@ StorageView::StorageView(
 	ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*create.select);
 
 	/// Если во внутреннем запросе не указана база данных, получить ее из контекста и записать в запрос.
-	if (!select.database)
-	{
-		select.database = std::make_shared<ASTIdentifier>(StringRange(), database_name_, ASTIdentifier::Database);
-		select.children.push_back(select.database);
-	}
+	select.setDatabaseIfNeeded(database_name);
 
 	inner_query = select;
 
@@ -67,20 +63,24 @@ StorageView::StorageView(
 
 void StorageView::extractDependentTable(const ASTSelectQuery & query)
 {
-	if (!query.table)
+	auto query_table = query.table();
+
+	if (!query_table)
 		return;
 
-	if (const ASTIdentifier * ast_id = typeid_cast<const ASTIdentifier *>(query.table.get()))
+	if (const ASTIdentifier * ast_id = typeid_cast<const ASTIdentifier *>(query_table.get()))
 	{
-		if (!query.database)
+		auto query_database = query.database();
+
+		if (!query_database)
 			throw Exception("Logical error while creating StorageView."
 				" Could not retrieve database name from select query.",
 				DB::ErrorCodes::LOGICAL_ERROR);
 
-		select_database_name = typeid_cast<const ASTIdentifier &>(*query.database).name;
+		select_database_name = typeid_cast<const ASTIdentifier &>(*query_database).name;
 		select_table_name = ast_id->name;
 	}
-	else if (const ASTSelectQuery * ast_select = typeid_cast<const ASTSelectQuery *>(query.table.get()))
+	else if (const ASTSelectQuery * ast_select = typeid_cast<const ASTSelectQuery *>(query_table.get()))
 	{
 		extractDependentTable(*ast_select);
 	}
@@ -103,10 +103,10 @@ BlockInputStreams StorageView::read(
 	processed_stage = QueryProcessingStage::FetchColumns;
 
 	ASTPtr inner_query_clone = getInnerQuery();
-	ASTSelectQuery & inner_select = static_cast<ASTSelectQuery &>(*inner_query_clone);
+/*	ASTSelectQuery & inner_select = static_cast<ASTSelectQuery &>(*inner_query_clone);
 	const ASTSelectQuery & outer_select = typeid_cast<const ASTSelectQuery &>(*query);
 
-	/// Пробрасываем внутрь SAMPLE и FINAL, если они есть во внешнем запросе и их нет во внутреннем.
+	/// Пробрасываем внутрь SAMPLE и FINAL, если они есть во внешнем запросе и их нет во внутреннем. TODO
 
 	if (outer_select.sample_size && !inner_select.sample_size)
 	{
@@ -117,7 +117,7 @@ BlockInputStreams StorageView::read(
 	}
 
 	if (outer_select.final && !inner_select.final)
-		inner_select.final = outer_select.final;
+		inner_select.final = outer_select.final;*/
 
 	return InterpreterSelectQuery(inner_query_clone, context, column_names).executeWithoutUnion();
 }

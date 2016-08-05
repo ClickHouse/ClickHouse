@@ -94,7 +94,7 @@ DatabaseCloud::DatabaseCloud(
 }
 
 
-void loadTables(Context & context, boost::threadpool::pool * thread_pool)
+void loadTables(Context & context, ThreadPool * thread_pool)
 {
 	/// Ничего не делаем - все таблицы загружаются лениво.
 }

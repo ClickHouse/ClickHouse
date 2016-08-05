@@ -46,14 +46,11 @@ BlockInputStreams StorageSystemFunctions::read(
 		column_is_aggregate.column->insert(UInt64(0));
 	}
 
-	const auto & aggregate_function_factory = context.getAggregateFunctionFactory();
-	for (const auto & details : aggregate_function_factory)
+	const auto & aggregate_functions = context.getAggregateFunctionFactory().aggregate_functions;
+	for (const auto & it : aggregate_functions)
 	{
-		if (!details.is_alias)
-		{
-			column_name.column->insert(details.name);
-			column_is_aggregate.column->insert(UInt64(1));
-		}
+		column_name.column->insert(it.first);
+		column_is_aggregate.column->insert(UInt64(1));
 	}
 
 	return BlockInputStreams{ std::make_shared<OneBlockInputStream>(Block{ column_name, column_is_aggregate }) };

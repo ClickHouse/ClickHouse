@@ -2,6 +2,7 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/isLocalAddress.h>
 #include <DB/Common/SimpleCache.h>
+#include <DB/Common/StringUtils.h>
 #include <DB/IO/HexWriteBuffer.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
@@ -40,13 +41,6 @@ inline std::string addressToDirName(const Cluster::Address & address)
 		(address.password.empty() ? "" : (':' + escapeForFileName(address.password))) + '@' +
 		escapeForFileName(address.resolved_address.host().toString()) + ':' +
 		std::to_string(address.resolved_address.port());
-}
-
-inline bool beginsWith(const std::string & str1, const char * str2)
-{
-	if (str2 == nullptr)
-		throw Exception("Passed null pointer to function beginsWith", ErrorCodes::LOGICAL_ERROR);
-	return 0 == strncmp(str1.data(), str2, strlen(str2));
 }
 
 /// Для кэширования DNS запросов.
@@ -139,7 +133,7 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 
 	for (const auto & key : config_keys)
 	{
-		if (beginsWith(key, "node"))
+		if (startsWith(key, "node"))
 		{
 			/// Шард без реплик.
 
@@ -174,7 +168,7 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 			slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
 			shards_info.push_back(info);
 		}
-		else if (beginsWith(key, "shard"))
+		else if (startsWith(key, "shard"))
 		{
 			/// Шард с репликами.
 
@@ -200,10 +194,10 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 			auto first = true;
 			for (const auto & replica_key : replica_keys)
 			{
-				if (beginsWith(replica_key, "weight") || beginsWith(replica_key, "internal_replication"))
+				if (startsWith(replica_key, "weight") || startsWith(replica_key, "internal_replication"))
 					continue;
 
-				if (beginsWith(replica_key, "replica"))
+				if (startsWith(replica_key, "replica"))
 				{
 					replica_addresses.emplace_back(partial_prefix + replica_key);
 					replica_addresses.back().replica_num = current_replica_num;

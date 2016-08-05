@@ -175,6 +175,13 @@ debian/tmp/
 libs/libcommon/src/tests/json_test
 utils/compressor/zstd_test
 utils/wikistat-loader/wikistat-loader
+dbms/src/Common/tests/pod_array
+debian/clickhouse-benchmark/
+debian/clickhouse-client/
+debian/clickhouse-server-base/
+debian/clickhouse-server-common/
+debian/clickhouse-server-metrika/
+debian/files
 
 dbms/src/Server/data/*
 dbms/src/Server/metadata/*

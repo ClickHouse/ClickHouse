@@ -189,7 +189,7 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 		  * В этом случае, для экономии оперативки, будем говорить, что средний размер значения маленький.
 		  */
 		if (istr.position() + sizeof(UInt32) <= istr.buffer().end()
-			&& *reinterpret_cast<const UInt32 *>(istr.position()) == 0)	/// Первые 4 строки находятся в буфере и являются пустыми.
+			&& unalignedLoad<UInt32>(istr.position()) == 0)	/// Первые 4 строки находятся в буфере и являются пустыми.
 		{
 			avg_chars_size = 1;
 		}

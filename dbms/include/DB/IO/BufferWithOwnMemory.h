@@ -55,6 +55,8 @@ struct Memory : boost::noncopyable, Allocator<false>
 	size_t size() const { return m_size; }
 	const char & operator[](size_t i) const { return m_data[i]; }
 	char & operator[](size_t i) { return m_data[i]; }
+	const char * data() const { return m_data; }
+	char * data() { return m_data; }
 
 	void resize(size_t new_size)
 	{
@@ -127,9 +129,10 @@ protected:
 	Memory memory;
 public:
 	/// Если передать не-NULL existing_memory, то буфер не будет создавать свой кусок памяти, а будет использовать существующий (и не будет им владеть).
-	BufferWithOwnMemory(size_t size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0) : Base(nullptr, 0), memory(existing_memory ? 0 : size, alignment)
+	BufferWithOwnMemory(size_t size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
+		: Base(nullptr, 0), memory(existing_memory ? 0 : size, alignment)
 	{
-		Base::set(existing_memory ? existing_memory : &memory[0], size);
+		Base::set(existing_memory ? existing_memory : memory.data(), size);
 	}
 };
 

@@ -1,6 +1,7 @@
 #include <DB/DataStreams/SummingSortedBlockInputStream.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/Common/StringUtils.h>
 #include <boost/range/iterator_range_core.hpp>
 
 
@@ -35,11 +36,6 @@ void SummingSortedBlockInputStream::insertCurrentRow(ColumnPlainPtrs & merged_co
 
 namespace
 {
-	bool endsWith(const std::string & s, const std::string & suffix)
-	{
-		return s.size() >= suffix.size() && 0 == strncmp(s.data() + s.size() - suffix.size(), suffix.data(), suffix.size());
-	}
-
 	bool isInPrimaryKey(const SortDescription & description, const std::string & name, const size_t number)
 	{
 		for (auto & desc : description)

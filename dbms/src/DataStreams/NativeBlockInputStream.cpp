@@ -132,28 +132,30 @@ Block NativeBlockInputStream::readImpl()
 
 		ColumnWithTypeAndName column;
 
-		/// Имя
+		/// Name
 		readBinary(column.name, istr);
 
-		/// Тип
+		/// Type
 		String type_name;
 		readBinary(type_name, istr);
 		column.type = data_type_factory.get(type_name);
 
 		if (use_index)
 		{
-			/// Индекс позволяет сделать проверки.
+			/// Index allows to do more checks.
 			if (index_column_it->name != column.name)
 				throw Exception("Index points to column with wrong name: corrupted index or data", ErrorCodes::INCORRECT_INDEX);
 			if (index_column_it->type != type_name)
 				throw Exception("Index points to column with wrong type: corrupted index or data", ErrorCodes::INCORRECT_INDEX);
 		}
 
-		/// Данные
+		/// Data
 		column.column = column.type->createColumn();
-		readData(*column.type, *column.column, istr, rows);
 
-		res.insert(column);
+		if (rows)	/// If no rows, nothing to read.
+			readData(*column.type, *column.column, istr, rows);
+
+		res.insert(std::move(column));
 
 		if (use_index)
 			++index_column_it;

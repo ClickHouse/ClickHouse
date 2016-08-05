@@ -16,6 +16,7 @@
 #include <DB/Functions/Conditional/CondException.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Common/HashTable/ClearableHashMap.h>
+#include <DB/Common/StringUtils.h>
 #include <DB/Interpreters/AggregationCommon.h>
 #include <DB/Functions/FunctionsConditional.h>
 #include <DB/Functions/FunctionsConversion.h>
@@ -306,7 +307,18 @@ public:
 						}
 					};
 
-					FunctionCast(context).execute(temporary_block, {0, 1}, 2);
+					FunctionCast func_cast(context);
+
+					{
+						DataTypePtr unused_return_type;
+						ColumnsWithTypeAndName arguments{ temporary_block.unsafeGetByPosition(0), temporary_block.unsafeGetByPosition(1) };
+						std::vector<ExpressionAction> unused_prerequisites;
+
+						/// Prepares function to execution. TODO It is not obvious.
+						func_cast.getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
+					}
+
+					func_cast.execute(temporary_block, {0, 1}, 2);
 					preprocessed_column = temporary_block.unsafeGetByPosition(2).column;
 				}
 
@@ -889,7 +901,7 @@ public:
 			throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		if (!arguments[1]->isNumeric()
-			|| (0 != arguments[1]->getName().compare(0, 4, "UInt") && 0 != arguments[1]->getName().compare(0, 3, "Int")))
+			|| (!startsWith(arguments[1]->getName(), "UInt") && !startsWith(arguments[1]->getName(), "Int")))
 			throw Exception("Second argument for function " + getName() + " must have UInt or Int type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		return array_type->getNestedType();

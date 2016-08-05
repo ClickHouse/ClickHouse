@@ -63,7 +63,7 @@ Block InterpreterInsertQuery::getSampleBlock()
 		col.name = current_name;
 		col.type = table_sample.getByName(current_name).type;
 		col.column = col.type->createColumn();
-		res.insert(col);
+		res.insert(std::move(col));
 	}
 
 	return res;

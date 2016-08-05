@@ -33,7 +33,7 @@ public:
 		const Settings & settings,
 		const DataTypes & primary_key_data_types,	/// Проверять первичный ключ. Если не надо - передайте пустой массив.
 		MergeTreeData::DataPart::Checksums * out_checksums = nullptr,
-		volatile bool * is_cancelled = nullptr);
+		std::atomic<bool> * is_cancelled = nullptr);
 };
 
 }

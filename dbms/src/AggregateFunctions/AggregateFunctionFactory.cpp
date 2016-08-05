@@ -4,6 +4,8 @@
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/Common/StringUtils.h>
+#include <Poco/String.h>
 
 
 namespace DB
@@ -20,47 +22,10 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr size_t strlen_constexpr(const char * in)
-{
-	return (*in == '\0') ? 0 : 1 + strlen_constexpr(in + 1);
-}
-
-struct SuffixState
-{
-	static constexpr auto name = "State";
-	static constexpr auto length = strlen_constexpr(name);
-};
-
-struct SuffixIf
-{
-	static constexpr auto name = "If";
-	static constexpr auto length = strlen_constexpr(name);
-};
-
-struct SuffixArray
-{
-	static constexpr auto name = "Array";
-	static constexpr auto length = strlen_constexpr(name);
-};
-
-struct SuffixMerge
-{
-	static constexpr auto name = "Merge";
-	static constexpr auto length = strlen_constexpr(name);
-};
-
-template <typename Suffix>
-inline bool endsWith(const std::string & in)
-{
-	return (in.length() > Suffix::length)
-		&& (in.compare(in.length() - Suffix::length, Suffix::length, Suffix::name) == 0);
-}
-
 /// Ничего не проверяет.
-template <typename Suffix>
-inline std::string trimRight(const std::string & in)
+std::string trimRight(const std::string & in, const char * suffix)
 {
-	return in.substr(0, in.length() - Suffix::length);
+	return in.substr(0, in.size() - strlen(suffix));
 }
 
 }
@@ -112,29 +77,20 @@ AggregateFunctionFactory::AggregateFunctionFactory()
 }
 
 
-void AggregateFunctionFactory::registerFunction(const std::vector<std::string> & names, Creator creator)
+void AggregateFunctionFactory::registerFunction(const String & name, Creator creator, CaseSensitiveness case_sensitiveness)
 {
-	if (names.empty())
-		throw Exception("AggregateFunctionFactory: no name given for aggregate function", ErrorCodes::LOGICAL_ERROR);
 	if (creator == nullptr)
-		throw Exception("AggregateFunctionFactory: the aggregate function " + names[0] + " has been provided "
+		throw Exception("AggregateFunctionFactory: the aggregate function " + name + " has been provided "
 			" a null constructor", ErrorCodes::LOGICAL_ERROR);
 
-	bool is_first = true;
+	if (!aggregate_functions.emplace(name, creator).second)
+		throw Exception("AggregateFunctionFactory: the aggregate function name " + name + " is not unique",
+			ErrorCodes::LOGICAL_ERROR);
 
-	for (const auto & name : names)
-	{
-		Descriptor desc;
-		desc.creator = creator;
-		desc.is_alias = !is_first;
-
-		auto res = aggregate_functions.emplace(name, desc);
-		if (!res.second)
-			throw Exception("AggregateFunctionFactory: the aggregate function name " + name + " is not unique",
-				ErrorCodes::LOGICAL_ERROR);
-
-		is_first = false;
-	}
+	if (case_sensitiveness == CaseInsensitive
+		&& !case_insensitive_aggregate_functions.emplace(Poco::toLower(name), creator).second)
+		throw Exception("AggregateFunctionFactory: the case insensitive aggregate function name " + name + " is not unique",
+			ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -180,17 +136,26 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(const String & name, cons
 	auto it = aggregate_functions.find(name);
 	if (it != aggregate_functions.end())
 	{
-		const auto & desc = it->second;
-		const auto & creator = desc.creator;
-		return creator(name, argument_types);
+		auto it = aggregate_functions.find(name);
+		if (it != aggregate_functions.end())
+			return it->second(name, argument_types);
 	}
-	else if ((recursion_level == 0) && endsWith<SuffixState>(name))
+
+	if (recursion_level == 0)
+	{
+		auto it = case_insensitive_aggregate_functions.find(Poco::toLower(name));
+		if (it != case_insensitive_aggregate_functions.end())
+			return it->second(name, argument_types);
+	}
+
+	if ((recursion_level == 0) && endsWith(name, "State"))
 	{
 		/// Для агрегатных функций вида aggState, где agg - имя другой агрегатной функции.
-		AggregateFunctionPtr nested = get(trimRight<SuffixState>(name), argument_types, recursion_level + 1);
+		AggregateFunctionPtr nested = get(trimRight(name, "State"), argument_types, recursion_level + 1);
 		return createAggregateFunctionState(nested);
 	}
-	else if ((recursion_level <= 1) && endsWith<SuffixMerge>(name))
+
+	if ((recursion_level <= 1) && endsWith(name, "Merge"))
 	{
 		/// Для агрегатных функций вида aggMerge, где agg - имя другой агрегатной функции.
 		if (argument_types.size() != 1)
@@ -200,7 +165,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(const String & name, cons
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		AggregateFunctionPtr nested = get(trimRight<SuffixMerge>(name), function->getArgumentsDataTypes(), recursion_level + 1);
+		AggregateFunctionPtr nested = get(trimRight(name, "Merge"), function->getArgumentsDataTypes(), recursion_level + 1);
 
 		if (nested->getName() != function->getFunctionName())
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
@@ -208,7 +173,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(const String & name, cons
 
 		return createAggregateFunctionMerge(nested);
 	}
-	else if ((recursion_level <= 2) && endsWith<SuffixIf>(name))
+
+	if ((recursion_level <= 2) && endsWith(name, "If"))
 	{
 		if (argument_types.empty())
 			throw Exception{
@@ -219,10 +185,11 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(const String & name, cons
 		/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции.
 		DataTypes nested_dt = argument_types;
 		nested_dt.pop_back();
-		AggregateFunctionPtr nested = get(trimRight<SuffixIf>(name), nested_dt, recursion_level + 1);
+		AggregateFunctionPtr nested = get(trimRight(name, "If"), nested_dt, recursion_level + 1);
 		return createAggregateFunctionIf(nested);
 	}
-	else if ((recursion_level <= 3) && endsWith<SuffixArray>(name))
+
+	if ((recursion_level <= 3) && endsWith(name, "Array"))
 	{
 		/// Для агрегатных функций вида aggArray, где agg - имя другой агрегатной функции.
 		size_t num_agruments = argument_types.size();
@@ -237,11 +204,11 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(const String & name, cons
 					" for aggregate function " + name + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
 		/// + 3, чтобы ни один другой модификатор не мог идти перед Array
-		AggregateFunctionPtr nested = get(trimRight<SuffixArray>(name), nested_arguments, recursion_level + 3);
+		AggregateFunctionPtr nested = get(trimRight(name, "Array"), nested_arguments, recursion_level + 3);
 		return createAggregateFunctionArray(nested);
 	}
-	else
-		throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+
+	throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 }
 
 
@@ -255,45 +222,32 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(const String & name, const
 
 bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int recursion_level) const
 {
-	if (aggregate_functions.count(name) > 0)
+	if (aggregate_functions.count(name))
 		return true;
+
+	if (recursion_level == 0 && case_insensitive_aggregate_functions.count(Poco::toLower(name)))
+		return true;
+
 	/// Для агрегатных функций вида aggState, где agg - имя другой агрегатной функции.
-	else if ((recursion_level <= 0) && endsWith<SuffixState>(name))
-		return isAggregateFunctionName(trimRight<SuffixState>(name), recursion_level + 1);
+	if ((recursion_level <= 0) && endsWith(name, "State"))
+		return isAggregateFunctionName(trimRight(name, "State"), recursion_level + 1);
+
 	/// Для агрегатных функций вида aggMerge, где agg - имя другой агрегатной функции.
-	else if ((recursion_level <= 1) && endsWith<SuffixMerge>(name))
-		return isAggregateFunctionName(trimRight<SuffixMerge>(name), recursion_level + 1);
+	if ((recursion_level <= 1) && endsWith(name, "Merge"))
+		return isAggregateFunctionName(trimRight(name, "Merge"), recursion_level + 1);
+
 	/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции.
-	else if ((recursion_level <= 2) && endsWith<SuffixIf>(name))
-		return isAggregateFunctionName(trimRight<SuffixIf>(name), recursion_level + 1);
+	if ((recursion_level <= 2) && endsWith(name, "If"))
+		return isAggregateFunctionName(trimRight(name, "If"), recursion_level + 1);
+
 	/// Для агрегатных функций вида aggArray, где agg - имя другой агрегатной функции.
-	else if ((recursion_level <= 3) && endsWith<SuffixArray>(name))
+	if ((recursion_level <= 3) && endsWith(name, "Array"))
 	{
 		/// + 3, чтобы ни один другой модификатор не мог идти перед Array
-		return isAggregateFunctionName(trimRight<SuffixArray>(name), recursion_level + 3);
+		return isAggregateFunctionName(trimRight(name, "Array"), recursion_level + 3);
 	}
-	else
-		return false;
+
+	return false;
 }
-
-
-AggregateFunctionFactory::Details AggregateFunctionFactory::getDetails(const AggregateFunctionFactory::AggregateFunctions::value_type & entry)
-{
-	const auto & desc = entry.second;
-	return {entry.first, desc.is_alias};
-}
-
-
-AggregateFunctionFactory::const_iterator AggregateFunctionFactory::begin() const
-{
-	return boost::make_transform_iterator(aggregate_functions.begin(), getDetails);
-}
-
-
-AggregateFunctionFactory::const_iterator AggregateFunctionFactory::end() const
-{
-	return boost::make_transform_iterator(aggregate_functions.end(), getDetails);
-}
-
 
 }

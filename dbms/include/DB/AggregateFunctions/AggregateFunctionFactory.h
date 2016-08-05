@@ -7,13 +7,16 @@
 namespace DB
 {
 
-/** Позволяет создать агрегатную функцию по её имени.
+/** Creates an aggregate function by name.
   */
 class AggregateFunctionFactory final
 {
+	friend class StorageSystemFunctions;
+
 private:
-	/// Не std::function, так как меньше indirection и размер объекта.
-	using Creator = AggregateFunctionPtr(*)(const std::string & name, const DataTypes & argument_types);
+	/// No std::function, for smaller object size and less indirection.
+	using Creator = AggregateFunctionPtr(*)(const String & name, const DataTypes & argument_types);
+	using AggregateFunctions = std::unordered_map<String, Creator>;
 
 public:
 	AggregateFunctionFactory();
@@ -21,47 +24,27 @@ public:
 	AggregateFunctionPtr tryGet(const String & name, const DataTypes & argument_types) const;
 	bool isAggregateFunctionName(const String & name, int recursion_level = 0) const;
 
-	/// Зарегистрировать агрегатную функцию заданную по одному или нескольким названиям.
-	void registerFunction(const std::vector<std::string> & names, Creator creator);
+	/// For compatibility with SQL, it's possible to specify that certain aggregate function name is case insensitive.
+	enum CaseSensitiveness
+	{
+		CaseSensitive,
+		CaseInsensitive
+	};
+
+	/// Register an aggregate function by its name.
+	void registerFunction(const String & name, Creator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
 	AggregateFunctionFactory(const AggregateFunctionFactory &) = delete;
 	AggregateFunctionFactory & operator=(const AggregateFunctionFactory &) = delete;
 
 private:
-	struct Descriptor
-	{
-		Creator creator;
-		bool is_alias;
-	};
-
-	using AggregateFunctions = std::unordered_map<std::string, Descriptor>;
-
-public:
-	struct Details
-	{
-		std::string name;
-		bool is_alias;
-	};
-
-private:
 	AggregateFunctionPtr getImpl(const String & name, const DataTypes & argument_types, int recursion_level) const;
-
-	/// Вспомогательная функция для реализации итератора (см. ниже).
-	static Details getDetails(const AggregateFunctions::value_type & entry);
-
-public:
-	/** Итератор над агрегатными функциями. Возвращает объект типа Details.
-	  * Этот итератор нужен для таблицы system.functions.
-	  */
-	using const_iterator = boost::transform_iterator<decltype(&AggregateFunctionFactory::getDetails),
-		typename AggregateFunctions::const_iterator>;
-
-public:
-	const_iterator begin() const;
-	const_iterator end() const;
 
 private:
 	AggregateFunctions aggregate_functions;
+
+	/// Case insensitive aggregate functions will be additionally added here with lowercased name.
+	AggregateFunctions case_insensitive_aggregate_functions;
 };
 
 }

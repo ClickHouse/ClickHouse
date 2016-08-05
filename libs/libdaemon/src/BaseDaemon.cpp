@@ -535,7 +535,10 @@ BaseDaemon::~BaseDaemon()
 void BaseDaemon::terminate()
 {
 	getTaskManager().cancelAll();
-	ServerApplication::terminate();
+	if (::kill(Poco::Process::id(), SIGTERM) != 0)
+	{
+		throw Poco::SystemException("cannot terminate process");
+	}
 }
 
 void BaseDaemon::kill()
@@ -677,25 +680,6 @@ void BaseDaemon::closeLogs()
 
 void BaseDaemon::initialize(Application& self)
 {
-	/// В случае падения - сохраняем коры
-	{
-		struct rlimit rlim;
-		if (getrlimit(RLIMIT_CORE, &rlim))
-			throw Poco::Exception("Cannot getrlimit");
-		/// 1 GiB. Если больше - они слишком долго пишутся на диск.
-		rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
-
-		if (setrlimit(RLIMIT_CORE, &rlim))
-		{
-		#ifndef ADDRESS_SANITIZER
-			throw Poco::Exception("Cannot setrlimit");
-		#else
-			/// Не работает под address sanitizer. http://lists.llvm.org/pipermail/llvm-bugs/2013-April/027880.html
-			std::cerr << "Cannot setrlimit\n";
-		#endif
-		}
-	}
-
 	task_manager.reset(new Poco::TaskManager);
 	ServerApplication::initialize(self);
 
@@ -713,6 +697,25 @@ void BaseDaemon::initialize(Application& self)
 
 	/// Считаем конфигурацию
 	reloadConfiguration();
+
+	/// В случае падения - сохраняем коры
+	{
+		struct rlimit rlim;
+		if (getrlimit(RLIMIT_CORE, &rlim))
+			throw Poco::Exception("Cannot getrlimit");
+		/// 1 GiB. Если больше - они слишком долго пишутся на диск.
+		rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
+
+		if (setrlimit(RLIMIT_CORE, &rlim))
+		{
+		#if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER)
+			throw Poco::Exception("Cannot setrlimit");
+		#else
+			/// Не работает под address/thread sanitizer. http://lists.llvm.org/pipermail/llvm-bugs/2013-April/027880.html
+			std::cerr << "Cannot setrlimit\n";
+		#endif
+		}
+	}
 
 	std::string log_path = config().getString("logger.log", "");
 	if (!log_path.empty())

@@ -50,7 +50,7 @@ public:
 			column.name = structure[i].first;
 			column.type = data_type_factory.get(structure[i].second);
 			column.column = column.type->createColumn();
-			sample_block.insert(column);
+			sample_block.insert(std::move(column));
 		}
 	}
 

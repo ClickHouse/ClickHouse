@@ -241,20 +241,23 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
 
-	if (select.sample_size)
+	auto select_sample_size = select.sample_size();
+	auto select_sample_offset = select.sample_offset();
+
+	if (select_sample_size)
 	{
 		relative_sample_size.assign(
-			typeid_cast<const ASTSampleRatio &>(*select.sample_size).ratio.numerator,
-			typeid_cast<const ASTSampleRatio &>(*select.sample_size).ratio.denominator);
+			typeid_cast<const ASTSampleRatio &>(*select_sample_size).ratio.numerator,
+			typeid_cast<const ASTSampleRatio &>(*select_sample_size).ratio.denominator);
 
 		if (relative_sample_size < 0)
 			throw Exception("Negative sample size", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
 		relative_sample_offset = 0;
-		if (select.sample_offset)
+		if (select_sample_offset)
 			relative_sample_offset.assign(
-				typeid_cast<const ASTSampleRatio &>(*select.sample_offset).ratio.numerator,
-				typeid_cast<const ASTSampleRatio &>(*select.sample_offset).ratio.denominator);
+				typeid_cast<const ASTSampleRatio &>(*select_sample_offset).ratio.numerator,
+				typeid_cast<const ASTSampleRatio &>(*select_sample_offset).ratio.denominator);
 
 		if (relative_sample_offset < 0)
 			throw Exception("Negative sample offset", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -266,7 +269,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 		if (relative_sample_size > 1)
 		{
-			relative_sample_size = convertAbsoluteSampleSizeToRelative(select.sample_size, approx_total_rows);
+			relative_sample_size = convertAbsoluteSampleSizeToRelative(select_sample_size, approx_total_rows);
 			LOG_DEBUG(log, "Selected relative sample size: " << relative_sample_size);
 		}
 
@@ -279,7 +282,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 		if (relative_sample_offset > 1)
 		{
-			relative_sample_offset = convertAbsoluteSampleSizeToRelative(select.sample_offset, approx_total_rows);
+			relative_sample_offset = convertAbsoluteSampleSizeToRelative(select_sample_offset, approx_total_rows);
 			LOG_DEBUG(log, "Selected relative sample offset: " << relative_sample_offset);
 		}
 	}
@@ -522,7 +525,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	BlockInputStreams res;
 
-	if (select.final)
+	if (select.final())
 	{
 		/// Добавим столбцы, нужные для вычисления первичного ключа и знака.
 		std::vector<String> add_columns = data.getPrimaryExpression()->getRequiredColumns();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <atomic>
 
 
 /** Позволяет считать количество различных событий, произошедших в программе
@@ -125,13 +126,13 @@ namespace ProfileEvents
 
 
 	/// Счётчики - сколько раз каждое из событий произошло.
-	extern size_t counters[END];
+	extern std::atomic<size_t> counters[END];
 
 
 	/// Увеличить счётчик события. Потокобезопасно.
 	inline void increment(Event event, size_t amount = 1)
 	{
-		__sync_fetch_and_add(&counters[event], amount);
+		counters[event] += amount;
 	}
 }
 

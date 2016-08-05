@@ -13,6 +13,8 @@
 	#include <emmintrin.h>
 #endif
 
+#include <DB/Common/unaligned.h>
+
 
 /// Штука, чтобы не создавать строки для поиска подстроки в хэш таблице.
 struct StringRef
@@ -197,8 +199,8 @@ inline size_t hashLessThan8(const char * data, size_t size)
 
 	if (size >= 4)
 	{
-		uint64 a = *reinterpret_cast<const uint32_t *>(data);;
-		return hashLen16(size + (a << 3), *reinterpret_cast<const uint32_t *>(data + size - 4));
+		uint64 a = unalignedLoad<uint32_t>(data);
+		return hashLen16(size + (a << 3), unalignedLoad<uint32_t>(data + size - 4));
 	}
 
 	if (size > 0)
@@ -218,8 +220,8 @@ inline size_t hashLessThan16(const char * data, size_t size)
 {
 	if (size > 8)
 	{
-		uint64 a = *reinterpret_cast<const uint64_t *>(data);
-		uint64 b = *reinterpret_cast<const uint64_t *>(data + size - 8);
+		uint64 a = unalignedLoad<uint64_t>(data);
+		uint64 b = unalignedLoad<uint64_t>(data + size - 8);
 		return hashLen16(a, rotateByAtLeast1(b + size, size)) ^ b;
 	}
 
@@ -246,13 +248,13 @@ struct CRC32Hash
 
 		do
 		{
-			uint64_t word = *reinterpret_cast<const uint64_t *>(pos);
+			uint64_t word = unalignedLoad<uint64_t>(pos);
 			res = _mm_crc32_u64(res, word);
 
 			pos += 8;
 		} while (pos + 8 < end);
 
-		uint64_t word = *reinterpret_cast<const uint64_t *>(end - 8);	/// Не уверен, что это нормально.
+		uint64_t word = unalignedLoad<uint64_t>(end - 8);	/// Не уверен, что это нормально.
 		res = _mm_crc32_u64(res, word);
 
 		return res;

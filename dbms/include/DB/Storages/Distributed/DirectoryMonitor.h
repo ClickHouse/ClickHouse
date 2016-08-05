@@ -4,6 +4,7 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/setThreadName.h>
 #include <DB/Common/CurrentMetrics.h>
+#include <DB/Common/StringUtils.h>
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/IO/ReadBufferFromFile.h>
 
@@ -157,7 +158,7 @@ private:
 			const auto & file_path_str = it->path();
 			Poco::Path file_path{file_path_str};
 
-			if (!it->isDirectory() && 0 == strncmp(file_path.getExtension().data(), "bin", strlen("bin")))
+			if (!it->isDirectory() && startsWith(file_path.getExtension().data(), "bin"))
 				files[parse<UInt64>(file_path.getBaseName())] = file_path_str;
 		}
 

@@ -15,12 +15,14 @@
 
 #include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Common/SipHash.h>
+#include <DB/Common/StringUtils.h>
+#include <DB/Common/randomSeed.h>
 
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/Cluster.h>
 
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 
 #include <zkutil/ZooKeeper.h>
 
@@ -172,7 +174,7 @@ std::string computeHashFromPartition(const std::string & data_path, const std::s
 		const auto filename = it.name();
 		if (!ActiveDataPartSet::isPartDirectory(filename))
 			continue;
-		if (0 != filename.compare(0, partition_name.size(), partition_name))
+		if (!startsWith(filename, partition_name))
 			continue;
 
 		const auto part_path = it.path().absolute().toString();
@@ -952,7 +954,7 @@ void ReshardingWorker::publishShardedPartitions()
 
 	size_t remote_count = task_info_list.size() - local_count;
 
-	boost::threadpool::pool pool(remote_count);
+	ThreadPool pool(remote_count);
 
 	using Tasks = std::vector<std::packaged_task<bool()> >;
 	Tasks tasks(remote_count);
@@ -1107,7 +1109,7 @@ void ReshardingWorker::commit()
 	/// Execute all the remaining log records.
 
 	size_t pool_size = operation_count;
-	boost::threadpool::pool pool(pool_size);
+	ThreadPool pool(pool_size);
 
 	using Tasks = std::vector<std::packaged_task<void()> >;
 	Tasks tasks(pool_size);
@@ -1292,7 +1294,7 @@ bool ReshardingWorker::checkAttachLogRecord(LogRecord & log_record)
 		}
 	}
 
-	boost::threadpool::pool pool(task_info_list.size());
+	ThreadPool pool(task_info_list.size());
 
 	using Tasks = std::vector<std::packaged_task<RemotePartChecker::Status()> >;
 	Tasks tasks(task_info_list.size());
@@ -1399,11 +1401,7 @@ void ReshardingWorker::executeAttach(LogRecord & log_record)
 	{
 		ShardTaskInfo()
 		{
-			struct timespec times;
-			if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
-				throwFromErrno("Cannot clock_gettime.", DB::ErrorCodes::CANNOT_CLOCK_GETTIME);
-
-			(void) srand48_r(reinterpret_cast<intptr_t>(this) ^ times.tv_nsec, &rand_state);
+			(void) srand48_r(randomSeed(), &rand_state);
 		}
 
 		ShardTaskInfo(const ShardTaskInfo &) = delete;

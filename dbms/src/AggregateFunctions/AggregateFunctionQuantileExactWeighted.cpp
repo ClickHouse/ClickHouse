@@ -41,8 +41,9 @@ AggregateFunctionPtr createAggregateFunctionQuantilesExactWeighted(const std::st
 
 void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction({"quantileExactWeighted", "medianExactWeighted"}, createAggregateFunctionQuantileExactWeighted);
-	factory.registerFunction({"quantilesExactWeighted"}, createAggregateFunctionQuantilesExactWeighted);
+	factory.registerFunction("quantileExactWeighted", createAggregateFunctionQuantileExactWeighted);
+	factory.registerFunction("medianExactWeighted", createAggregateFunctionQuantileExactWeighted);
+	factory.registerFunction("quantilesExactWeighted", createAggregateFunctionQuantilesExactWeighted);
 }
 
 }

@@ -53,11 +53,7 @@ namespace
 	inline ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
 	{
 		auto modified_query_ast = query->clone();
-
-		auto & actual_query = typeid_cast<ASTSelectQuery &>(*modified_query_ast);
-		actual_query.database = std::make_shared<ASTIdentifier>(StringRange(), database, ASTIdentifier::Database);
-		actual_query.table = std::make_shared<ASTIdentifier>(StringRange(), table, ASTIdentifier::Table);
-
+		typeid_cast<ASTSelectQuery &>(*modified_query_ast).replaceDatabaseAndTable(database, table);
 		return modified_query_ast;
 	}
 

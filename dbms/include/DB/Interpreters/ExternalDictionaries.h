@@ -3,6 +3,7 @@
 #include <DB/Dictionaries/IDictionary.h>
 #include <DB/Common/Exception.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/randomSeed.h>
 #include <common/MultiVersion.h>
 #include <common/logger_useful.h>
 #include <Poco/Event.h>
@@ -70,7 +71,7 @@ private:
 	  */
 	std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
 
-	std::mt19937_64 rnd_engine{getSeed()};
+	std::mt19937_64 rnd_engine{randomSeed()};
 
 	Context & context;
 
@@ -95,13 +96,6 @@ private:
 
 			reloadImpl();
 		}
-	}
-
-	static std::uint64_t getSeed()
-	{
-		timespec ts;
-		clock_gettime(CLOCK_MONOTONIC, &ts);
-		return static_cast<std::uint64_t>(ts.tv_nsec ^ getpid());
 	}
 
 public:

@@ -981,7 +981,7 @@ private:
 
 	void onProgress(const Progress & value)
 	{
-		progress.increment(value);
+		progress.incrementPiecewiseAtomically(value);
 		writeProgress();
 	}
 
@@ -1117,7 +1117,6 @@ private:
 public:
 	void init(int argc, char ** argv)
 	{
-
 		/// Останавливаем внутреннюю обработку командной строки
 		stopOptionsProcessing();
 
@@ -1130,7 +1129,7 @@ public:
 		main_description.add_options()
 			("help", "produce help message")
 			("config-file,c", 	boost::program_options::value<std::string>(), 	"config-file path")
-			("host,h", 			boost::program_options::value<std::string>()->implicit_value("")->default_value("localhost"), "server host")
+			("host,h", 			boost::program_options::value<std::string>()->default_value("localhost"), "server host")
 			("port", 			boost::program_options::value<int>()->default_value(9000), "server port")
 			("user,u", 			boost::program_options::value<std::string>(),	"user")
 			("password", 		boost::program_options::value<std::string>(),	"password")
@@ -1165,9 +1164,9 @@ public:
 		boost::program_options::variables_map options;
 		boost::program_options::store(parsed, options);
 
-		/// Демонстрация help message
+		/// Output of help message.
 		if (options.count("help")
-			|| (options.count("host") && (options["host"].as<std::string>().empty() || options["host"].as<std::string>() == "elp")))
+			|| (options.count("host") && options["host"].as<std::string>() == "elp"))	/// If user writes -help instead of --help.
 		{
 			std::cout << main_description << "\n";
 			std::cout << external_description << "\n";

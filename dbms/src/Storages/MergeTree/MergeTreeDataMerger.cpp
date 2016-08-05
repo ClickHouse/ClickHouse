@@ -470,9 +470,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
 		input->setProgressCallback([&merge_entry, rows_total] (const Progress & value)
 		{
-			const auto new_rows_read = __sync_add_and_fetch(&merge_entry->rows_read, value.rows);
+			const auto new_rows_read = merge_entry->rows_read += value.rows;
 			merge_entry->progress = static_cast<Float64>(new_rows_read) / rows_total;
-			__sync_add_and_fetch(&merge_entry->bytes_read_uncompressed, value.bytes);
+			merge_entry->bytes_read_uncompressed += value.bytes;
 
 			ProfileEvents::increment(ProfileEvents::MergedRows, value.rows);
 			ProfileEvents::increment(ProfileEvents::MergedUncompressedBytes, value.bytes);
@@ -686,9 +686,9 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
 		input->setProgressCallback([&merge_entry, rows_total] (const Progress & value)
 			{
-				const auto new_rows_read = __sync_add_and_fetch(&merge_entry->rows_read, value.rows);
+				const auto new_rows_read = merge_entry->rows_read += value.rows;
 				merge_entry->progress = static_cast<Float64>(new_rows_read) / rows_total;
-				__sync_add_and_fetch(&merge_entry->bytes_read_uncompressed, value.bytes);
+				merge_entry->bytes_read_uncompressed += value.bytes;
 			});
 
 		if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)

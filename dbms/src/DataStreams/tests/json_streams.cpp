@@ -46,7 +46,7 @@ try
 		elem.name = name_type.name;
 		elem.type = name_type.type;
 		elem.column = elem.type->createColumn();
-		sample.insert(elem);
+		sample.insert(std::move(elem));
 	}
 
 	{

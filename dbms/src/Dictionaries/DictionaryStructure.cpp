@@ -1,4 +1,5 @@
 #include <DB/Dictionaries/DictionaryStructure.h>
+#include <DB/Common/StringUtils.h>
 
 
 namespace DB
@@ -242,7 +243,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
 	for (const auto & key : keys)
 	{
-		if (0 != strncmp(key.data(), "attribute", strlen("attribute")))
+		if (!startsWith(key.data(), "attribute"))
 			continue;
 
 		const auto prefix = config_prefix + '.' + key + '.';

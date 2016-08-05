@@ -5,6 +5,7 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 
 #include <DB/Common/Stopwatch.h>
+#include <DB/Common/StringUtils.h>
 
 #include <DB/IO/ReadBufferFromIStream.h>
 #include <DB/IO/ReadBufferFromString.h>
@@ -160,7 +161,7 @@ void HTTPHandler::processQuery(
 	std::unique_ptr<ReadBuffer> in;
 
 	/// Поддержка "внешних данных для обработки запроса".
-	if (0 == strncmp(request.getContentType().data(), "multipart/form-data", strlen("multipart/form-data")))
+	if (startsWith(request.getContentType().data(), "multipart/form-data"))
 	{
 		in = std::move(in_param);
 		ExternalTablesHandler handler(context, params);

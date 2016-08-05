@@ -39,10 +39,11 @@ static ColumnWithTypeAndName getFilteredDatabases(ASTPtr query, const Context & 
 	column.type = std::make_shared<DataTypeString>();
 	column.column = std::make_shared<ColumnString>();
 
-	Block block;
-	block.insert(column);
 	for (const auto & db : context.getDatabases())
 		column.column->insert(db.first);
+
+	Block block;
+	block.insert(std::move(column));
 
 	VirtualColumnUtils::filterBlockWithQuery(query, block, context);
 

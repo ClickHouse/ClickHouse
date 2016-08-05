@@ -2,15 +2,16 @@
 
 #include <vector>
 #include <map>
-#include <list>
 #include <initializer_list>
 
 #include <DB/Common/Exception.h>
 #include <DB/Core/BlockInfo.h>
-#include <DB/Core/ColumnWithTypeAndName.h>
 #include <DB/Core/NamesAndTypes.h>
+#include <DB/Core/ColumnWithTypeAndName.h>
 #include <DB/Core/ColumnsWithTypeAndName.h>
 #include <DB/Core/ColumnNumbers.h>
+#include <DB/Common/Exception.h>
+
 
 
 namespace DB
@@ -25,15 +26,12 @@ class Context;
 
 class Block
 {
-public:
-	using Container_t = std::list<ColumnWithTypeAndName>;
-	using IndexByPosition_t = std::vector<Container_t::iterator>;
-	using IndexByName_t = std::map<String, Container_t::iterator>;
-
 private:
-	Container_t data;
-	IndexByPosition_t index_by_position;
-	IndexByName_t index_by_name;
+	using Container = std::vector<ColumnWithTypeAndName>;
+	using IndexByName = std::map<String, size_t>;
+
+	Container data;
+	IndexByName index_by_name;
 
 public:
 	BlockInfo info;
@@ -41,26 +39,23 @@ public:
 	Block() = default;
 	Block(std::initializer_list<ColumnWithTypeAndName> il) : data{il}
 	{
-		index_by_position.reserve(il.size());
-		for (auto it = std::begin(data); it != std::end(data); ++it)
+		size_t i = 0;
+		for (const auto & elem : il)
 		{
-			index_by_name[it->name] = it;
-			index_by_position.push_back(it);
+			index_by_name[elem.name] = i;
+			++i;
 		}
 	}
 
-	/// нужны, чтобы правильно скопировались индексы
-	Block(const Block & other);
-	Block(Block && other) = default;
-	Block & operator= (const Block & other);
-	Block & operator= (Block && other) = default;
-
 	/// вставить столбец в заданную позицию
 	void insert(size_t position, const ColumnWithTypeAndName & elem);
+	void insert(size_t position, ColumnWithTypeAndName && elem);
 	/// вставить столбец в конец
 	void insert(const ColumnWithTypeAndName & elem);
+	void insert(ColumnWithTypeAndName && elem);
 	/// вставить столбец в конец, если столбца с таким именем ещё нет
 	void insertUnique(const ColumnWithTypeAndName & elem);
+	void insertUnique(ColumnWithTypeAndName && elem);
 	/// удалить столбец в заданной позиции
 	void erase(size_t position);
 	/// удалить столбец с заданным именем
@@ -68,11 +63,13 @@ public:
 	/// Добавляет в блок недостающие столбцы со значениями по-умолчанию
 	void addDefaults(const NamesAndTypesList & required_columns);
 
+	/// References are invalidated after calling functions above.
+
 	ColumnWithTypeAndName & getByPosition(size_t position);
 	const ColumnWithTypeAndName & getByPosition(size_t position) const;
 
-	ColumnWithTypeAndName & unsafeGetByPosition(size_t position) { return *index_by_position[position]; }
-	const ColumnWithTypeAndName & unsafeGetByPosition(size_t position) const { return *index_by_position[position]; }
+	ColumnWithTypeAndName & unsafeGetByPosition(size_t position) { return data[position]; }
+	const ColumnWithTypeAndName & unsafeGetByPosition(size_t position) const { return data[position]; }
 
 	ColumnWithTypeAndName & getByName(const std::string & name);
 	const ColumnWithTypeAndName & getByName(const std::string & name) const;
@@ -93,13 +90,13 @@ public:
 	  */
 	size_t rowsInFirstColumn() const;
 
-	size_t columns() const { return index_by_position.size(); }
+	size_t columns() const { return data.size(); }
 
 	/// Приблизительное количество байт в оперативке - для профайлинга.
 	size_t bytes() const;
 
-	operator bool() const { return !index_by_position.empty(); }
-	bool operator!() const { return index_by_position.empty(); }
+	operator bool() const { return !data.empty(); }
+	bool operator!() const { return data.empty(); }
 
 	/** Получить список имён столбцов через запятую. */
 	std::string dumpNames() const;
@@ -128,6 +125,9 @@ public:
 	void swap(Block & other) noexcept;
 
 	void reserve(size_t size);
+
+private:
+	void eraseImpl(size_t position);
 };
 
 using Blocks = std::vector<Block>;

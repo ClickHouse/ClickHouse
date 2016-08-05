@@ -2,7 +2,7 @@
 
 #include <common/logger_useful.h>
 
-#include <DB/Parsers/ASTJoin.h>
+#include <DB/Parsers/ASTTablesInSelectQuery.h>
 
 #include <DB/Interpreters/AggregationCommon.h>
 
@@ -62,7 +62,7 @@ class Join
 {
 public:
 	Join(const Names & key_names_left_, const Names & key_names_right_,
-		 const Limits & limits, ASTJoin::Kind kind_, ASTJoin::Strictness strictness_)
+		 const Limits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_)
 		: kind(kind_), strictness(strictness_),
 		key_names_left(key_names_left_),
 		key_names_right(key_names_right_),
@@ -107,7 +107,7 @@ public:
 	/// Считает суммарный размер в байтах буфферов всех Join'ов + размер string_pool'а
 	size_t getTotalByteCount() const;
 
-	ASTJoin::Kind getKind() const { return kind; }
+	ASTTableJoin::Kind getKind() const { return kind; }
 
 
 	/// Ссылка на строку в блоке.
@@ -188,8 +188,8 @@ public:
 private:
 	friend class NonJoinedBlockInputStream;
 
-	ASTJoin::Kind kind;
-	ASTJoin::Strictness strictness;
+	ASTTableJoin::Kind kind;
+	ASTTableJoin::Strictness strictness;
 
 	/// Имена ключевых столбцов (по которым производится соединение) в "левой" таблице.
 	const Names key_names_left;
@@ -247,10 +247,10 @@ private:
 
 	void init(Type type_);
 
-	template <ASTJoin::Strictness STRICTNESS, typename Maps>
+	template <ASTTableJoin::Strictness STRICTNESS, typename Maps>
 	void insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, Block * stored_block);
 
-	template <ASTJoin::Kind KIND, ASTJoin::Strictness STRICTNESS, typename Maps>
+	template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
 	void joinBlockImpl(Block & block, const Maps & maps) const;
 
 	void joinBlockImplCross(Block & block) const;

@@ -22,6 +22,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <DB/Common/Increment.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Common/StringUtils.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -241,7 +242,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
 	{
 		/// Пропускаем временные директории старше суток.
-		if (0 == it.name().compare(0, strlen("tmp_"), "tmp_"))
+		if (startsWith(it.name(), "tmp_"))
 			continue;
 
 		part_file_names.push_back(it.name());
@@ -432,7 +433,7 @@ void MergeTreeData::clearOldTemporaryDirectories()
 	Poco::DirectoryIterator end;
 	for (Poco::DirectoryIterator it{full_path}; it != end; ++it)
 	{
-		if (0 == it.name().compare(0, strlen("tmp_"), "tmp_"))
+		if (startsWith(it.name(), "tmp_"))
 		{
 			Poco::File tmp_dir(full_path + it.name());
 
@@ -1457,12 +1458,12 @@ void MergeTreeData::freezePartition(const std::string & prefix, const String & w
 	Poco::DirectoryIterator end;
 	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
 	{
-		if (0 == it.name().compare(0, prefix.size(), prefix))
+		if (startsWith(it.name(), prefix))
 		{
 			LOG_DEBUG(log, "Freezing part " << it.name());
 
 			String part_absolute_path = it.path().absolute().toString();
-			if (0 != part_absolute_path.compare(0, clickhouse_path.size(), clickhouse_path))
+			if (!startsWith(part_absolute_path, clickhouse_path))
 				throw Exception("Part path " + part_absolute_path + " is not inside " + clickhouse_path, ErrorCodes::LOGICAL_ERROR);
 
 			String backup_part_absolute_path = part_absolute_path;
@@ -1487,7 +1488,7 @@ size_t MergeTreeData::getPartitionSize(const std::string & partition_name) const
 		const auto filename = it.name();
 		if (!ActiveDataPartSet::isPartDirectory(filename))
 			continue;
-		if (0 != filename.compare(0, partition_name.size(), partition_name))
+		if (!startsWith(filename, partition_name))
 			continue;
 
 		const auto part_path = it.path().absolute().toString();

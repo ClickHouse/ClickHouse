@@ -13,7 +13,7 @@
 #include <Poco/Util/Application.h>
 
 #include <DB/Common/Stopwatch.h>
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 #include <DB/AggregateFunctions/ReservoirSampler.h>
 
 #include <boost/program_options.hpp>
@@ -21,6 +21,7 @@
 #include <DB/Common/ConcurrentBoundedQueue.h>
 
 #include <DB/Common/Exception.h>
+#include <DB/Common/randomSeed.h>
 #include <DB/Core/Types.h>
 
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
@@ -137,7 +138,7 @@ private:
 
 	std::mutex mutex;
 
-	boost::threadpool::pool pool;
+	ThreadPool pool;
 
 
 	void readQueries()
@@ -172,9 +173,7 @@ private:
 
 	void run()
 	{
-		timespec current_clock;
-		clock_gettime(CLOCK_MONOTONIC, &current_clock);
-		std::mt19937 generator(current_clock.tv_nsec);
+		std::mt19937 generator(randomSeed());
 		std::uniform_int_distribution<size_t> distribution(0, queries.size() - 1);
 
 		for (size_t i = 0; i < concurrency; ++i)

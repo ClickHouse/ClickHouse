@@ -135,12 +135,15 @@ protected:
 
 
 	SortDescription description;
-	size_t max_block_size;
+	const size_t max_block_size;
 	size_t limit;
 	size_t total_merged_rows = 0;
 
 	bool first = true;
 	bool has_collation = false;
+
+	/// May be smaller or equal to max_block_size. To do 'reserve' for columns.
+	size_t expected_block_size = 0;
 
 	/// Текущие сливаемые блоки.
 	size_t num_columns = 0;

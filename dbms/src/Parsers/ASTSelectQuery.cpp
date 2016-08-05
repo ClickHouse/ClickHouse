@@ -1,6 +1,7 @@
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Parsers/ASTSetQuery.h>
 #include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ASTTablesInSelectQuery.h>
 
 
 namespace DB
@@ -11,6 +12,7 @@ namespace ErrorCodes
 	extern const int UNION_ALL_COLUMN_ALIAS_MISMATCH;
 	extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
 	extern const int UNKNOWN_IDENTIFIER;
+	extern const int LOGICAL_ERROR;
 }
 
 
@@ -191,12 +193,7 @@ ASTPtr ASTSelectQuery::cloneImpl(bool traverse_union_all) const
 		*  то на разных серверах получатся разные идентификаторы.
 		*/
 	CLONE(select_expression_list)
-	CLONE(database)
-	CLONE(table)
-	CLONE(array_join_expression_list)
-	CLONE(join)
-	CLONE(sample_size)
-	CLONE(sample_offset)
+	CLONE(tables)
 	CLONE(prewhere_expression)
 	CLONE(where_expression)
 	CLONE(group_expression_list)
@@ -244,69 +241,10 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 		? select_expression_list->formatImpl(s, state, frame)
 		: typeid_cast<const ASTExpressionList &>(*select_expression_list).formatImplMultiline(s, state, frame);
 
-	if (table)
+	if (tables)
 	{
 		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FROM " << (s.hilite ? hilite_none : "");
-
-		if (typeid_cast<const ASTSelectQuery *>(&*table))
-		{
-			if (s.one_line)
-				s.ostr << " (";
-			else
-				s.ostr << "\n" << indent_str << "(\n";
-
-			FormatStateStacked frame_with_indent = frame;
-			++frame_with_indent.indent;
-			table->formatImpl(s, state, frame_with_indent);
-
-			if (s.one_line)
-				s.ostr << ")";
-			else
-				s.ostr << "\n" << indent_str << ")";
-		}
-		else
-		{
-			if (database)
-			{
-				database->formatImpl(s, state, frame);
-				s.ostr << ".";
-			}
-
-			table->formatImpl(s, state, frame);
-		}
-	}
-
-	if (final)
-	{
-		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FINAL" << (s.hilite ? hilite_none : "");
-	}
-
-	if (sample_size)
-	{
-		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SAMPLE " << (s.hilite ? hilite_none : "");
-		sample_size->formatImpl(s, state, frame);
-
-		if (sample_offset)
-		{
-			s.ostr << (s.hilite ? hilite_keyword : "") << ' ' << "OFFSET " << (s.hilite ? hilite_none : "");
-			sample_offset->formatImpl(s, state, frame);
-		}
-	}
-
-	if (array_join_expression_list)
-	{
-		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str
-		<< (array_join_is_left ? "LEFT " : "") << "ARRAY JOIN " << (s.hilite ? hilite_none : "");
-
-		s.one_line
-			? array_join_expression_list->formatImpl(s, state, frame)
-			: typeid_cast<const ASTExpressionList &>(*array_join_expression_list).formatImplMultiline(s, state, frame);
-	}
-
-	if (join)
-	{
-		s.ostr << " ";
-		join->formatImpl(s, state, frame);
+		tables->formatImpl(s, state, frame);
 	}
 
 	if (prewhere_expression)
@@ -386,6 +324,248 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 		const ASTSelectQuery & next_ast = static_cast<const ASTSelectQuery &>(*next_union_all);
 
 		next_ast.formatImpl(s, state, frame);
+	}
+}
+
+
+/// Compatibility functions. TODO Remove.
+
+
+static const ASTTableExpression * getFirstTableExpression(const ASTSelectQuery & select)
+{
+	if (!select.tables)
+		return {};
+
+	const ASTTablesInSelectQuery & tables_in_select_query = static_cast<const ASTTablesInSelectQuery &>(*select.tables);
+	if (tables_in_select_query.children.empty())
+		return {};
+
+	const ASTTablesInSelectQueryElement & tables_element = static_cast<const ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[0]);
+	if (!tables_element.table_expression)
+		return {};
+
+	return static_cast<const ASTTableExpression *>(tables_element.table_expression.get());
+}
+
+static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select)
+{
+	if (!select.tables)
+		return {};
+
+	ASTTablesInSelectQuery & tables_in_select_query = static_cast<ASTTablesInSelectQuery &>(*select.tables);
+	if (tables_in_select_query.children.empty())
+		return {};
+
+	ASTTablesInSelectQueryElement & tables_element = static_cast<ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[0]);
+	if (!tables_element.table_expression)
+		return {};
+
+	return static_cast<ASTTableExpression *>(tables_element.table_expression.get());
+}
+
+static const ASTArrayJoin * getFirstArrayJoin(const ASTSelectQuery & select)
+{
+	if (!select.tables)
+		return {};
+
+	const ASTTablesInSelectQuery & tables_in_select_query = static_cast<const ASTTablesInSelectQuery &>(*select.tables);
+	if (tables_in_select_query.children.empty())
+		return {};
+
+	const ASTArrayJoin * array_join = nullptr;
+	for (const auto & child : tables_in_select_query.children)
+	{
+		const ASTTablesInSelectQueryElement & tables_element = static_cast<const ASTTablesInSelectQueryElement &>(*child);
+		if (tables_element.array_join)
+		{
+			if (!array_join)
+				array_join = static_cast<const ASTArrayJoin *>(tables_element.array_join.get());
+			else
+				throw Exception("Support for more than one ARRAY JOIN in query is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+		}
+	}
+
+	return array_join;
+}
+
+static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQuery & select)
+{
+	if (!select.tables)
+		return {};
+
+	const ASTTablesInSelectQuery & tables_in_select_query = static_cast<const ASTTablesInSelectQuery &>(*select.tables);
+	if (tables_in_select_query.children.empty())
+		return {};
+
+	const ASTTablesInSelectQueryElement * joined_table = nullptr;
+	for (const auto & child : tables_in_select_query.children)
+	{
+		const ASTTablesInSelectQueryElement & tables_element = static_cast<const ASTTablesInSelectQueryElement &>(*child);
+		if (tables_element.table_join)
+		{
+			if (!joined_table)
+				joined_table = &tables_element;
+			else
+				throw Exception("Support for more than one JOIN in query is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+		}
+	}
+
+	return joined_table;
+}
+
+
+ASTPtr ASTSelectQuery::database() const
+{
+	const ASTTableExpression * table_expression = getFirstTableExpression(*this);
+	if (!table_expression || !table_expression->database_and_table_name || table_expression->database_and_table_name->children.empty())
+		return {};
+
+	if (table_expression->database_and_table_name->children.size() != 2)
+		throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
+
+	return table_expression->database_and_table_name->children[0];
+}
+
+
+ASTPtr ASTSelectQuery::table() const
+{
+	const ASTTableExpression * table_expression = getFirstTableExpression(*this);
+	if (!table_expression)
+		return {};
+
+	if (table_expression->database_and_table_name)
+	{
+		if (table_expression->database_and_table_name->children.empty())
+			return table_expression->database_and_table_name;
+
+		if (table_expression->database_and_table_name->children.size() != 2)
+			throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
+
+		return table_expression->database_and_table_name->children[1];
+	}
+
+	if (table_expression->table_function)
+		return table_expression->table_function;
+
+	if (table_expression->subquery)
+		return static_cast<const ASTSubquery *>(table_expression->subquery.get())->children.at(0);
+
+	throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
+}
+
+
+ASTPtr ASTSelectQuery::sample_size() const
+{
+	const ASTTableExpression * table_expression = getFirstTableExpression(*this);
+	if (!table_expression)
+		return {};
+
+	return table_expression->sample_size;
+}
+
+
+ASTPtr ASTSelectQuery::sample_offset() const
+{
+	const ASTTableExpression * table_expression = getFirstTableExpression(*this);
+	if (!table_expression)
+		return {};
+
+	return table_expression->sample_offset;
+}
+
+
+bool ASTSelectQuery::final() const
+{
+	const ASTTableExpression * table_expression = getFirstTableExpression(*this);
+	if (!table_expression)
+		return {};
+
+	return table_expression->final;
+}
+
+
+ASTPtr ASTSelectQuery::array_join_expression_list() const
+{
+	const ASTArrayJoin * array_join = getFirstArrayJoin(*this);
+	if (!array_join)
+		return {};
+
+	return array_join->expression_list;
+}
+
+
+bool ASTSelectQuery::array_join_is_left() const
+{
+	const ASTArrayJoin * array_join = getFirstArrayJoin(*this);
+	if (!array_join)
+		return {};
+
+	return array_join->kind == ASTArrayJoin::Kind::Left;
+}
+
+
+const ASTTablesInSelectQueryElement * ASTSelectQuery::join() const
+{
+	return getFirstTableJoin(*this);
+}
+
+
+void ASTSelectQuery::setDatabaseIfNeeded(const String & database_name)
+{
+	ASTTableExpression * table_expression = getFirstTableExpression(*this);
+	if (!table_expression)
+		return;
+
+	if (!table_expression->database_and_table_name)
+		return;
+
+	if (table_expression->database_and_table_name->children.empty())
+	{
+		ASTPtr database = std::make_shared<ASTIdentifier>(StringRange(), database_name, ASTIdentifier::Database);
+		ASTPtr table = table_expression->database_and_table_name;
+
+		const String & old_name = static_cast<ASTIdentifier &>(*table_expression->database_and_table_name).name;
+		table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(StringRange(), database_name + "." + old_name, ASTIdentifier::Table);
+		table_expression->database_and_table_name->children = {database, table};
+	}
+	else if (table_expression->database_and_table_name->children.size() != 2)
+	{
+		throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
+	}
+}
+
+
+void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const String & table_name)
+{
+	ASTTableExpression * table_expression = getFirstTableExpression(*this);
+
+	if (!table_expression)
+	{
+		auto tables_list = std::make_shared<ASTTablesInSelectQuery>();
+		auto element = std::make_shared<ASTTablesInSelectQueryElement>();
+		auto table_expr = std::make_shared<ASTTableExpression>();
+		element->table_expression = table_expr;
+		element->children.emplace_back(table_expr);
+		tables_list->children.emplace_back(element);
+		tables = tables_list;
+		children.emplace_back(tables_list);
+		table_expression = table_expr.get();
+	}
+
+	ASTPtr table = std::make_shared<ASTIdentifier>(StringRange(), table_name, ASTIdentifier::Table);
+
+	if (!database_name.empty())
+	{
+		ASTPtr database = std::make_shared<ASTIdentifier>(StringRange(), database_name, ASTIdentifier::Database);
+
+		table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(
+			StringRange(), database_name + "." + table_name, ASTIdentifier::Table);
+		table_expression->database_and_table_name->children = {database, table};
+	}
+	else
+	{
+		table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(
+			StringRange(), table_name, ASTIdentifier::Table);
 	}
 }
 

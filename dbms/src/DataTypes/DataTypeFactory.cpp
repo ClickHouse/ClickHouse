@@ -37,6 +37,7 @@ namespace ErrorCodes
 	extern const int NESTED_TYPE_TOO_DEEP;
 	extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
 	extern const int SYNTAX_ERROR;
+	extern const int BAD_ARGUMENTS;
 }
 
 
@@ -128,7 +129,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 				throw Exception("Data type AggregateFunction requires parameters: "
 					"name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-			if (ASTFunction * parametric = typeid_cast<ASTFunction *>(&*args_list.children[0]))
+			if (ASTFunction * parametric = typeid_cast<ASTFunction *>(args_list.children[0].get()))
 			{
 				if (parametric->parameters)
 					throw Exception("Unexpected level of parameters to aggregate function", ErrorCodes::SYNTAX_ERROR);
@@ -139,7 +140,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 
 				for (size_t i = 0; i < parameters.size(); ++i)
 				{
-					ASTLiteral * lit = typeid_cast<ASTLiteral *>(&*parameters[i]);
+					ASTLiteral * lit = typeid_cast<ASTLiteral *>(parameters[i].get());
 					if (!lit)
 						throw Exception("Parameters to aggregate functions must be literals",
 							ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
@@ -147,14 +148,25 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 					params_row[i] = lit->value;
 				}
 			}
-			else
+			else if (ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(args_list.children[0].get()))
 			{
-				function_name = args_list.children[0]->getColumnName();
+				function_name = identifier->name;
 			}
+			else if (typeid_cast<ASTLiteral *>(args_list.children[0].get()))
+			{
+				throw Exception("Aggregate function name for data type AggregateFunction must be passed as identifier (without quotes) or function",
+					ErrorCodes::BAD_ARGUMENTS);
+			}
+			else
+				throw Exception("Unexpected AST element passed as aggregate function name for data type AggregateFunction. Must be identifier or function.",
+					ErrorCodes::BAD_ARGUMENTS);
 
 			for (size_t i = 1; i < args_list.children.size(); ++i)
 				argument_types.push_back(get(
 					std::string{args_list.children[i]->range.first, args_list.children[i]->range.second}));
+
+			if (function_name.empty())
+				throw Exception("Logical error: empty name of aggregate function passed", ErrorCodes::LOGICAL_ERROR);
 
 			function = AggregateFunctionFactory().get(function_name, argument_types);
 			if (!params_row.empty())
@@ -176,7 +188,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 				ASTNameTypePair & name_and_type_pair = typeid_cast<ASTNameTypePair &>(**it);
 				StringRange type_range = name_and_type_pair.type->range;
 				DataTypePtr type = get(String(type_range.first, type_range.second - type_range.first));
-				if (typeid_cast<const DataTypeNested *>(&*type))
+				if (typeid_cast<const DataTypeNested *>(type.get()))
 					throw Exception("Nested inside Nested is not allowed", ErrorCodes::NESTED_TYPE_TOO_DEEP);
 				columns->push_back(NameAndTypePair(
 					name_and_type_pair.name,
