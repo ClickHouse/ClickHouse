@@ -99,17 +99,25 @@ DataTypePtr FunctionIsNotNull::getReturnTypeImpl(const DataTypes & arguments) co
 
 void FunctionIsNotNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-	ColumnWithTypeAndName temp_res;
-	temp_res.type = std::make_shared<DataTypeUInt8>();
-	temp_res.name = "isNull(" + block.getByPosition(arguments[0]).name + ")";
+	Block temp_block
+	{
+		block.getByPosition(arguments[0]),
+		{
+			nullptr,
+			std::make_shared<DataTypeUInt8>(),
+			""
+		},
+		{
+			nullptr,
+			std::make_shared<DataTypeUInt8>(),
+			""
+		}
+	};
 
-	size_t temp_res_num = block.columns();
-	block.insert(temp_res);
+	FunctionIsNull{}.executeImpl(temp_block, {0}, 1);
+	FunctionNot{}.executeImpl(temp_block, {1}, 2);
 
-	FunctionIsNull{}.executeImpl(block, arguments, temp_res_num);
-	FunctionNot{}.executeImpl(block, {temp_res_num}, result);
-
-	block.erase(temp_res_num);
+	block.getByPosition(result).column = std::move(temp_block.getByPosition(2).column);
 }
 
 /// Implementation of coalesce.
@@ -150,33 +158,33 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 	FunctionIsNotNull is_not_null;
 	ColumnNumbers multi_if_args;
 
+	Block temp_block = block;
+
 	for (size_t i = 0; i < arguments.size(); ++i)
 	{
-		ColumnWithTypeAndName elem;
-		elem.type = std::make_shared<DataTypeUInt8>();
-		elem.name = "isNotNull(" + block.getByPosition(arguments[i]).name + ")";
+		size_t res_pos = temp_block.columns();
+		temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
 
-		size_t res_pos = block.columns();
-		block.insert(elem);
-
-		is_not_null.executeImpl(block, { arguments[i] }, res_pos);
+		is_not_null.executeImpl(temp_block, {arguments[i]}, res_pos);
 
 		multi_if_args.push_back(res_pos);
 		multi_if_args.push_back(arguments[i]);
 	}
 
 	/// Argument corresponding to the fallback NULL value.
-	multi_if_args.push_back(block.columns());
+	multi_if_args.push_back(temp_block.columns());
 
 	/// Append a fallback NULL column.
 	ColumnWithTypeAndName elem;
-	elem.column = std::make_shared<ColumnNull>(block.rowsInFirstColumn(), Null());
+	elem.column = std::make_shared<ColumnNull>(temp_block.rowsInFirstColumn(), Null());
 	elem.type = std::make_shared<DataTypeNull>();
 	elem.name = "NULL";
 
-	block.insert(elem);
+	temp_block.insert(elem);
 
-	FunctionMultiIf{}.executeImpl(block, multi_if_args, result);
+	FunctionMultiIf{}.executeImpl(temp_block, multi_if_args, result);
+
+	block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
 }
 
 /// Implementation of ifNull.
@@ -210,15 +218,15 @@ void FunctionIfNull::executeImpl(Block & block, const ColumnNumbers & arguments,
 {
 	/// ifNull(col1, col2) == multiIf(isNotNull(col1), col1, col2)
 
-	ColumnWithTypeAndName elem;
-	elem.type = std::make_shared<DataTypeUInt8>();
-	elem.name = "isNotNull(" + block.getByPosition(arguments[0]).name + ")";
+	Block temp_block = block;
 
-	size_t res_pos = block.columns();
-	block.insert(elem);
+	size_t res_pos = temp_block.columns();
+	temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
 
-	FunctionIsNotNull{}.executeImpl(block, {arguments[0]}, res_pos);
-	FunctionMultiIf{}.executeImpl(block, {res_pos, arguments[0], arguments[1]}, result);
+	FunctionIsNotNull{}.executeImpl(temp_block, {arguments[0]}, res_pos);
+	FunctionMultiIf{}.executeImpl(temp_block, {res_pos, arguments[0], arguments[1]}, result);
+
+	block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
 }
 
 /// Implementation of nullIf.
@@ -252,27 +260,27 @@ void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments,
 {
 	/// nullIf(col1, col2) == multiIf(col1 == col2, NULL, col1)
 
-	ColumnWithTypeAndName elem;
-	elem.type = std::make_shared<DataTypeUInt8>();
-	elem.name = "equals(" + block.getByPosition(arguments[0]).name + "," + block.getByPosition(arguments[1]).name + ")";
+	Block temp_block = block;
 
-	size_t res_pos = block.columns();
-	block.insert(elem);
+	size_t res_pos = temp_block.columns();
+	temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
 
-	FunctionEquals{}.execute(block, {arguments[0], arguments[1]}, res_pos);
+	FunctionEquals{}.execute(temp_block, {arguments[0], arguments[1]}, res_pos);
 
 	/// Argument corresponding to the NULL value.
-	size_t null_pos = block.columns();
+	size_t null_pos = temp_block.columns();
 
 	/// Append a NULL column.
 	ColumnWithTypeAndName null_elem;
-	null_elem.column = std::make_shared<ColumnNull>(block.rowsInFirstColumn(), Null());
+	null_elem.column = std::make_shared<ColumnNull>(temp_block.rowsInFirstColumn(), Null());
 	null_elem.type = std::make_shared<DataTypeNull>();
 	null_elem.name = "NULL";
 
-	block.insert(null_elem);
+	temp_block.insert(null_elem);
 
-	FunctionMultiIf{}.executeImpl(block, {res_pos, null_pos, arguments[0]}, result);
+	FunctionMultiIf{}.executeImpl(temp_block, {res_pos, null_pos, arguments[0]}, result);
+
+	block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
 }
 
 /// Implementation of assumeNotNull.

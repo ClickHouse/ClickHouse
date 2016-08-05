@@ -160,8 +160,6 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 		/// of the originating column.
 		ColumnWithTypeAndName elem;
 		elem.type = std::make_shared<DataTypeUInt64>();
-		/// A pretty far-fetched name to make sure no conflict may occur.
-		elem.name = "BranchTracker(" + block.dumpStructure() + ")";
 
 		size_t tracker = non_nullable_block.columns();
 		non_nullable_block.insert(elem);
