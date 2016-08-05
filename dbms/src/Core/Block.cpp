@@ -249,30 +249,6 @@ bool Block::has(const std::string & name) const
 }
 
 
-bool Block::hasNullColumns(const ColumnNumbers & arguments) const
-{
-	for (const auto & arg : arguments)
-	{
-		const auto & elem = unsafeGetByPosition(arg);
-		if (elem.column && elem.column.get()->isNull())
-			return true;
-	}
-	return false;
-}
-
-
-bool Block::hasNullableColumns(const ColumnNumbers & arguments) const
-{
-	for (const auto & arg : arguments)
-	{
-		const auto & elem = unsafeGetByPosition(arg);
-		if (elem.column && elem.column.get()->isNullable())
-			return true;
-	}
-	return false;
-}
-
-
 size_t Block::getPositionByName(const std::string & name) const
 {
 	IndexByName_t::const_iterator it = index_by_name.find(name);

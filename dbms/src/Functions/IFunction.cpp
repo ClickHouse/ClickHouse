@@ -29,6 +29,17 @@ void createNullValuesByteMap(Block & block, size_t result)
 	}
 }
 
+bool hasNullColumns(const Block & block, const ColumnNumbers & arguments) const
+{
+	for (const auto & arg : arguments)
+	{
+		const auto & elem = block.unsafeGetByPosition(arg);
+		if (elem.column && elem.column.get()->isNull())
+			return true;
+	}
+	return false;
+}
+
 bool hasNullColumns(const ColumnsWithTypeAndName & args)
 {
 	for (const auto & arg : args)
@@ -48,6 +59,17 @@ bool hasNullColumns(const DataTypes & args)
 			return true;
 	}
 
+	return false;
+}
+
+bool hasNullableColumns(const Block & block, const ColumnNumbers & arguments) const
+{
+	for (const auto & arg : arguments)
+	{
+		const auto & elem = block.unsafeGetByPosition(arg);
+		if (elem.column && elem.column.get()->isNullable())
+			return true;
+	}
 	return false;
 }
 
@@ -170,14 +192,14 @@ void IFunction::getLambdaArgumentTypes(DataTypes & arguments) const
 
 void IFunction::execute(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-	if (!hasSpecialSupportForNulls() && block.hasNullColumns(arguments))
+	if (!hasSpecialSupportForNulls() && hasNullColumns(block, arguments))
 	{
 		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
 		dest_col.column =  std::make_shared<ColumnNull>(block.rowsInFirstColumn(), Null());
 		return;
 	}
 
-	if (!hasSpecialSupportForNulls() && block.hasNullableColumns(arguments))
+	if (!hasSpecialSupportForNulls() && hasNullableColumns(block, arguments))
 	{
 		Block non_nullable_block = block.extractNonNullableBlock(arguments);
 		executeImpl(non_nullable_block, arguments, result);
@@ -192,14 +214,14 @@ void IFunction::execute(Block & block, const ColumnNumbers & arguments, size_t r
 
 void IFunction::execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result)
 {
-	if (!hasSpecialSupportForNulls() && block.hasNullColumns(arguments))
+	if (!hasSpecialSupportForNulls() && hasNullColumns(block, arguments))
 	{
 		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
 		dest_col.column =  std::make_shared<ColumnNull>(block.rowsInFirstColumn(), Null());
 		return;
 	}
 
-	if (!hasSpecialSupportForNulls() && block.hasNullableColumns(arguments))
+	if (!hasSpecialSupportForNulls() && hasNullableColumns(block, arguments))
 	{
 		Block non_nullable_block = block.extractNonNullableBlock(arguments);
 		executeImpl(non_nullable_block, arguments, prerequisites, result);
