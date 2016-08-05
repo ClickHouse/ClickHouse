@@ -91,6 +91,10 @@ void Block::insert(size_t position, const ColumnWithTypeAndName & elem)
 		throw Exception("Position out of bound in Block::insert(), max position = "
 			+ toString(data.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
 
+	for (auto & name_pos : index_by_name)
+		if (name_pos.second >= position)
+			++name_pos.second;
+
 	index_by_name[elem.name] = position;
 	data.emplace(data.begin() + position, elem);
 }
@@ -100,6 +104,10 @@ void Block::insert(size_t position, ColumnWithTypeAndName && elem)
 	if (position > data.size())
 		throw Exception("Position out of bound in Block::insert(), max position = "
 		+ toString(data.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
+
+	for (auto & name_pos : index_by_name)
+		if (name_pos.second >= position)
+			++name_pos.second;
 
 	index_by_name[elem.name] = position;
 	data.emplace(data.begin() + position, std::move(elem));
