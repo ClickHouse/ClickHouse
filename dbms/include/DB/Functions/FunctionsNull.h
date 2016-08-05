@@ -46,4 +46,28 @@ public:
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
+class FunctionIfNull : public IFunction
+{
+public:
+	static constexpr auto name = "ifNull";
+	static FunctionPtr create(const Context & context);
+
+	std::string getName() const override;
+	bool hasSpecialSupportForNulls() const override;
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+};
+
+class FunctionNullIf : public IFunction
+{
+public:
+	static constexpr auto name = "nullIf";
+	static FunctionPtr create(const Context & context);
+
+	std::string getName() const override;
+	bool hasSpecialSupportForNulls() const override;
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+};
+
 }

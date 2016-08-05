@@ -1,5 +1,6 @@
 #include <DB/Functions/FunctionsNull.h>
 #include <DB/Functions/FunctionsLogical.h>
+#include <DB/Functions/FunctionsComparison.h>
 #include <DB/Functions/FunctionsConditional.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
@@ -16,6 +17,8 @@ void registerFunctionsNull(FunctionFactory & factory)
 	factory.registerFunction<FunctionIsNull>();
 	factory.registerFunction<FunctionIsNotNull>();
 	factory.registerFunction<FunctionCoalesce>();
+	factory.registerFunction<FunctionIfNull>();
+	factory.registerFunction<FunctionNullIf>();
 }
 
 /// Implementation of isNull.
@@ -135,7 +138,7 @@ DataTypePtr FunctionCoalesce::getReturnTypeImpl(const DataTypes & arguments) con
 	}
 	new_args.push_back(std::make_shared<DataTypeNull>());
 
-	return FunctionMultiIf{}.getReturnType(new_args);
+	return FunctionMultiIf{}.getReturnTypeImpl(new_args);
 }
 
 void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -172,7 +175,103 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 
 	block.insert(elem);
 
-	FunctionMultiIf{}.execute(block, multi_if_args, result);
+	FunctionMultiIf{}.executeImpl(block, multi_if_args, result);
+}
+
+/// Implementation of ifNull.
+
+FunctionPtr FunctionIfNull::create(const Context & context)
+{
+	return std::make_shared<FunctionIfNull>();
+}
+
+std::string FunctionIfNull::getName() const
+{
+	return name;
+}
+
+bool FunctionIfNull::hasSpecialSupportForNulls() const
+{
+	return true;
+}
+
+DataTypePtr FunctionIfNull::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	if (arguments.size() != 2)
+		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ toString(arguments.size()) + ", should be 2.",
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+	return FunctionMultiIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), arguments[0], arguments[1]});
+}
+
+void FunctionIfNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	/// ifNull(col1, col2) == multiIf(isNotNull(col1), col1, col2)
+
+	ColumnWithTypeAndName elem;
+	elem.type = std::make_shared<DataTypeUInt8>();
+	elem.name = "isNotNull(" + block.getByPosition(arguments[0]).name + ")";
+
+	size_t res_pos = block.columns();
+	block.insert(elem);
+
+	FunctionIsNotNull{}.executeImpl(block, {arguments[0]}, res_pos);
+	FunctionMultiIf{}.executeImpl(block, {res_pos, arguments[0], arguments[1]}, result);
+}
+
+/// Implementation of nullIf.
+
+FunctionPtr FunctionNullIf::create(const Context & context)
+{
+	return std::make_shared<FunctionNullIf>();
+}
+
+std::string FunctionNullIf::getName() const
+{
+	return name;
+}
+
+bool FunctionNullIf::hasSpecialSupportForNulls() const
+{
+	return true;
+}
+
+DataTypePtr FunctionNullIf::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	if (arguments.size() != 2)
+		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ toString(arguments.size()) + ", should be 2.",
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+	return FunctionMultiIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), std::make_shared<DataTypeNull>(), arguments[0]});
+}
+
+void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	/// nullIf(col1, col2) == multiIf(col1 == col2, NULL, col1)
+
+	ColumnWithTypeAndName elem;
+	elem.type = std::make_shared<DataTypeUInt8>();
+	elem.name = "equals(" + block.getByPosition(arguments[0]).name + "," + block.getByPosition(arguments[1]).name + ")";
+
+	size_t res_pos = block.columns();
+	block.insert(elem);
+
+	FunctionEquals{}.execute(block, {arguments[0], arguments[1]}, res_pos);
+
+	/// Argument corresponding to the NULL value.
+	size_t null_pos = block.columns();
+
+	/// Append a NULL column.
+	ColumnWithTypeAndName null_elem;
+	null_elem.column = std::make_shared<ColumnNull>(block.rowsInFirstColumn(), Null());
+	null_elem.type = std::make_shared<DataTypeNull>();
+	null_elem.name = "NULL";
+
+	block.insert(null_elem);
+
+	FunctionMultiIf{}.executeImpl(block, {res_pos, null_pos, arguments[0]}, result);
 }
 
 }
