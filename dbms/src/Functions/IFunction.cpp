@@ -29,7 +29,7 @@ void createNullValuesByteMap(Block & block, size_t result)
 	}
 }
 
-bool hasNullColumns(const Block & block, const ColumnNumbers & arguments) const
+bool hasNullColumns(const Block & block, const ColumnNumbers & arguments)
 {
 	for (const auto & arg : arguments)
 	{
@@ -62,7 +62,7 @@ bool hasNullColumns(const DataTypes & args)
 	return false;
 }
 
-bool hasNullableColumns(const Block & block, const ColumnNumbers & arguments) const
+bool hasNullableColumns(const Block & block, const ColumnNumbers & arguments)
 {
 	for (const auto & arg : arguments)
 	{
