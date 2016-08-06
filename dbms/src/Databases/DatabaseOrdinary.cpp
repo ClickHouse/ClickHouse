@@ -12,7 +12,6 @@
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/copyData.h>
 
 
 namespace DB
@@ -51,8 +50,7 @@ static void loadTable(
 	{
 		char in_buf[METADATA_FILE_BUFFER_SIZE];
 		ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
-		WriteBufferFromString out(s);
-		copyData(in, out);
+		readStringUntilEOF(s, in);
 	}
 
 	/** Пустые файлы с метаданными образуются после грубого перезапуска сервера.
@@ -356,8 +354,7 @@ static ASTPtr getCreateQueryImpl(const String & path, const String & table_name)
 	String query;
 	{
 		ReadBufferFromFile in(table_metadata_path, 4096);
-		WriteBufferFromString out(query);
-		copyData(in, out);
+		readStringUntilEOF(query, in);
 	}
 
 	ParserCreateQuery parser;
@@ -451,8 +448,7 @@ void DatabaseOrdinary::alterTable(
 	{
 		char in_buf[METADATA_FILE_BUFFER_SIZE];
 		ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
-		WriteBufferFromString out(statement);
-		copyData(in, out);
+		readStringUntilEOF(statement, in);
 	}
 
 	ParserCreateQuery parser;

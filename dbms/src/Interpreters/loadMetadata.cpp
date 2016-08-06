@@ -15,8 +15,6 @@
 #include <DB/Interpreters/loadMetadata.h>
 
 #include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/copyData.h>
 #include <DB/Common/escapeForFileName.h>
 
 #include <DB/Common/Stopwatch.h>
@@ -74,8 +72,7 @@ void loadMetadata(Context & context)
 		if (Poco::File(database_metadata_file).exists())
 		{
 			ReadBufferFromFile in(database_metadata_file, 1024);
-			WriteBufferFromString out(database_attach_query);
-			copyData(in, out);
+			readStringUntilEOF(database_attach_query, in);
 		}
 		else
 			database_attach_query = "ATTACH DATABASE " + backQuoteIfNeed(database);

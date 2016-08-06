@@ -28,8 +28,6 @@
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
-#include <DB/IO/copyData.h>
-#include <DB/IO/ReadBufferFromIStream.h>
 
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
@@ -525,8 +523,7 @@ private:
 			  */
 
 			ReadBufferFromFileDescriptor in(STDIN_FILENO);
-			WriteBufferFromString out(line);
-			copyData(in, out);
+			readStringUntilEOF(line, in);
 		}
 
 		process(line);
