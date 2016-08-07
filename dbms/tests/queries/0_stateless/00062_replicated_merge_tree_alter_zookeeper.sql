@@ -63,10 +63,6 @@ DESC TABLE test.replicated_alter2;
 SHOW CREATE TABLE test.replicated_alter2;
 SELECT * FROM test.replicated_alter1 ORDER BY k;
 
-OPTIMIZE TABLE test.replicated_alter1;
-
-SELECT * FROM test.replicated_alter1 ORDER BY k;
-
 ALTER TABLE test.replicated_alter1 DROP COLUMN n.ui8, DROP COLUMN n.d;
 
 DESC TABLE test.replicated_alter1;
