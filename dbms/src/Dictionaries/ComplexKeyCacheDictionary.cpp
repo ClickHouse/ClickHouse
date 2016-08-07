@@ -495,7 +495,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 
 				if (!cell.isDefault())
-					map[key] = String{string_ref};
+					map[key] = string_ref;
 
 				total_length += string_ref.size + 1;
 			}
@@ -515,7 +515,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 		update(key_columns, keys_array, required_rows,
 			[&] (const StringRef key, const size_t cell_idx)
 			{
-				const auto attribute_value = attribute_array[cell_idx];
+				const StringRef attribute_value = attribute_array[cell_idx];
 
 				/// We must copy key and value to own memory, because it may be replaced with another
 				///  in next iterations of inner loop of update.
