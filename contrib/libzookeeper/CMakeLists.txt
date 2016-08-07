@@ -1,7 +1,8 @@
-add_definitions(
-    -DHAVE_CONFIG_H -DTHREADED
-    -Wno-unused-but-set-variable
-)
+add_definitions(-DHAVE_CONFIG_H -DTHREADED)
+
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+	add_definitions(-Wno-unused-but-set-variable)
+endif()
 
 include_directories (include/zookeeper src)
 
