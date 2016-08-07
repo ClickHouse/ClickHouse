@@ -238,7 +238,7 @@ void ComplexKeyCacheDictionary::createAttributes()
 	const auto size = dict_struct.attributes.size();
 	attributes.reserve(size);
 
-	bytes_allocated += size * sizeof(cell_metadata_t);
+	bytes_allocated += size * sizeof(CellMetadata);
 	bytes_allocated += size * sizeof(attributes.front());
 
 	for (const auto & attribute : dict_struct.attributes)
@@ -253,9 +253,9 @@ void ComplexKeyCacheDictionary::createAttributes()
 	}
 }
 
-ComplexKeyCacheDictionary::attribute_t ComplexKeyCacheDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
+ComplexKeyCacheDictionary::Attribute ComplexKeyCacheDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-	attribute_t attr{type};
+	Attribute attr{type};
 
 	switch (type)
 	{
@@ -323,7 +323,7 @@ ComplexKeyCacheDictionary::attribute_t ComplexKeyCacheDictionary::createAttribut
 
 template <typename OutputType, typename DefaultGetter>
 void ComplexKeyCacheDictionary::getItemsNumber(
-	attribute_t & attribute,
+	Attribute & attribute,
 	const ConstColumnPlainPtrs & key_columns,
 	PaddedPODArray<OutputType> & out,
 	DefaultGetter && get_default) const
@@ -349,7 +349,7 @@ void ComplexKeyCacheDictionary::getItemsNumber(
 
 template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void ComplexKeyCacheDictionary::getItemsNumberImpl(
-	attribute_t & attribute,
+	Attribute & attribute,
 	const ConstColumnPlainPtrs & key_columns,
 	PaddedPODArray<OutputType> & out,
 	DefaultGetter && get_default) const
@@ -415,7 +415,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 
 template <typename DefaultGetter>
 void ComplexKeyCacheDictionary::getItemsString(
-	attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, ColumnString * out,
+	Attribute & attribute, const ConstColumnPlainPtrs & key_columns, ColumnString * out,
 	DefaultGetter && get_default) const
 {
 	const auto rows = key_columns.front()->size();
@@ -683,7 +683,7 @@ void ComplexKeyCacheDictionary::update(
 }
 
 
-void ComplexKeyCacheDictionary::setDefaultAttributeValue(attribute_t & attribute, const size_t idx) const
+void ComplexKeyCacheDictionary::setDefaultAttributeValue(Attribute & attribute, const size_t idx) const
 {
 	switch (attribute.type)
 	{
@@ -715,7 +715,7 @@ void ComplexKeyCacheDictionary::setDefaultAttributeValue(attribute_t & attribute
 	}
 }
 
-void ComplexKeyCacheDictionary::setAttributeValue(attribute_t & attribute, const size_t idx, const Field & value) const
+void ComplexKeyCacheDictionary::setAttributeValue(Attribute & attribute, const size_t idx, const Field & value) const
 {
 	switch (attribute.type)
 	{
@@ -754,7 +754,7 @@ void ComplexKeyCacheDictionary::setAttributeValue(attribute_t & attribute, const
 	}
 }
 
-ComplexKeyCacheDictionary::attribute_t & ComplexKeyCacheDictionary::getAttribute(const std::string & attribute_name) const
+ComplexKeyCacheDictionary::Attribute & ComplexKeyCacheDictionary::getAttribute(const std::string & attribute_name) const
 {
 	const auto it = attribute_index_by_name.find(attribute_name);
 	if (it == std::end(attribute_index_by_name))

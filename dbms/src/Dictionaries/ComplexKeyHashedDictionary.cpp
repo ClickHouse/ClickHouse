@@ -279,7 +279,7 @@ void ComplexKeyHashedDictionary::loadData()
 }
 
 template <typename T>
-void ComplexKeyHashedDictionary::addAttributeSize(const attribute_t & attribute)
+void ComplexKeyHashedDictionary::addAttributeSize(const Attribute & attribute)
 {
 	const auto & map_ref = std::get<ContainerPtrType<T>>(attribute.maps);
 	bytes_allocated += sizeof(ContainerType<T>) + map_ref->getBufferSizeInBytes();
@@ -318,15 +318,15 @@ void ComplexKeyHashedDictionary::calculateBytesAllocated()
 }
 
 template <typename T>
-void ComplexKeyHashedDictionary::createAttributeImpl(attribute_t & attribute, const Field & null_value)
+void ComplexKeyHashedDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
 	std::get<T>(attribute.null_values) = null_value.get<typename NearestFieldType<T>::Type>();
 	std::get<ContainerPtrType<T>>(attribute.maps) = std::make_unique<ContainerType<T>>();
 }
 
-ComplexKeyHashedDictionary::attribute_t ComplexKeyHashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
+ComplexKeyHashedDictionary::Attribute ComplexKeyHashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-	attribute_t attr{type};
+	Attribute attr{type};
 
 	switch (type)
 	{
@@ -355,7 +355,7 @@ ComplexKeyHashedDictionary::attribute_t ComplexKeyHashedDictionary::createAttrib
 
 template <typename OutputType, typename ValueSetter, typename DefaultGetter>
 void ComplexKeyHashedDictionary::getItemsNumber(
-	const attribute_t & attribute,
+	const Attribute & attribute,
 	const ConstColumnPlainPtrs & key_columns,
 	ValueSetter && set_value,
 	DefaultGetter && get_default) const
@@ -381,7 +381,7 @@ void ComplexKeyHashedDictionary::getItemsNumber(
 
 template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
 void ComplexKeyHashedDictionary::getItemsImpl(
-	const attribute_t & attribute,
+	const Attribute & attribute,
 	const ConstColumnPlainPtrs & key_columns,
 	ValueSetter && set_value,
 	DefaultGetter && get_default) const
@@ -410,14 +410,14 @@ void ComplexKeyHashedDictionary::getItemsImpl(
 
 
 template <typename T>
-bool ComplexKeyHashedDictionary::setAttributeValueImpl(attribute_t & attribute, const StringRef key, const T value)
+bool ComplexKeyHashedDictionary::setAttributeValueImpl(Attribute & attribute, const StringRef key, const T value)
 {
 	auto & map = *std::get<ContainerPtrType<T>>(attribute.maps);
 	const auto pair = map.insert({ key, value });
 	return pair.second;
 }
 
-bool ComplexKeyHashedDictionary::setAttributeValue(attribute_t & attribute, const StringRef key, const Field & value)
+bool ComplexKeyHashedDictionary::setAttributeValue(Attribute & attribute, const StringRef key, const Field & value)
 {
 	switch (attribute.type)
 	{
@@ -444,7 +444,7 @@ bool ComplexKeyHashedDictionary::setAttributeValue(attribute_t & attribute, cons
 	return {};
 }
 
-const ComplexKeyHashedDictionary::attribute_t & ComplexKeyHashedDictionary::getAttribute(const std::string & attribute_name) const
+const ComplexKeyHashedDictionary::Attribute & ComplexKeyHashedDictionary::getAttribute(const std::string & attribute_name) const
 {
 	const auto it = attribute_index_by_name.find(attribute_name);
 	if (it == std::end(attribute_index_by_name))
@@ -479,7 +479,7 @@ StringRef ComplexKeyHashedDictionary::placeKeysInPool(
 }
 
 template <typename T>
-void ComplexKeyHashedDictionary::has(const attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, PaddedPODArray<UInt8> & out) const
+void ComplexKeyHashedDictionary::has(const Attribute & attribute, const ConstColumnPlainPtrs & key_columns, PaddedPODArray<UInt8> & out) const
 {
 	const auto & attr = *std::get<ContainerPtrType<T>>(attribute.maps);
 	const auto keys_size = key_columns.size();

@@ -61,7 +61,7 @@ public:
 
 #define DECLARE_MULTIPLE_GETTER(TYPE)\
 	void get##TYPE(\
-		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const PaddedPODArray<UInt16> & dates,\
+		const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,\
 		PaddedPODArray<TYPE> & out) const;
 	DECLARE_MULTIPLE_GETTER(UInt8)
 	DECLARE_MULTIPLE_GETTER(UInt16)
@@ -76,11 +76,11 @@ public:
 #undef DECLARE_MULTIPLE_GETTER
 
 	void getString(
-		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const PaddedPODArray<UInt16> & dates,
+		const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,
 		ColumnString * out) const;
 
 private:
-	struct range_t : std::pair<UInt16, UInt16>
+	struct Range : std::pair<UInt16, UInt16>
 	{
 		using std::pair<UInt16, UInt16>::pair;
 
@@ -103,17 +103,17 @@ private:
 	};
 
 	template <typename T>
-	struct value_t final
+	struct Value final
 	{
-		range_t range;
+		Range range;
 		T value;
 	};
 
-	template <typename T> using values_t = std::vector<value_t<T>>;
-	template <typename T> using collection_t = HashMap<UInt64, values_t<T>>;
-	template <typename T> using ptr_t = std::unique_ptr<collection_t<T>>;
+	template <typename T> using Values = std::vector<Value<T>>;
+	template <typename T> using Collection = HashMap<UInt64, Values<T>>;
+	template <typename T> using Ptr = std::unique_ptr<Collection<T>>;
 
-	struct attribute_t final
+	struct Attribute final
 	{
 	public:
 		AttributeUnderlyingType type;
@@ -121,9 +121,9 @@ private:
 				   Int8, Int16, Int32, Int64,
 				   Float32, Float64,
 				   String> null_values;
-		std::tuple<ptr_t<UInt8>, ptr_t<UInt16>, ptr_t<UInt32>, ptr_t<UInt64>,
-				   ptr_t<Int8>, ptr_t<Int16>, ptr_t<Int32>, ptr_t<Int64>,
-				   ptr_t<Float32>, ptr_t<Float64>, ptr_t<StringRef>> maps;
+		std::tuple<Ptr<UInt8>, Ptr<UInt16>, Ptr<UInt32>, Ptr<UInt64>,
+				   Ptr<Int8>, Ptr<Int16>, Ptr<Int32>, Ptr<Int64>,
+				   Ptr<Float32>, Ptr<Float64>, Ptr<StringRef>> maps;
 		std::unique_ptr<Arena> string_arena;
 	};
 
@@ -132,39 +132,39 @@ private:
 	void loadData();
 
 	template <typename T>
-	void addAttributeSize(const attribute_t & attribute);
+	void addAttributeSize(const Attribute & attribute);
 
 	void calculateBytesAllocated();
 
 	template <typename T>
-	void createAttributeImpl(attribute_t & attribute, const Field & null_value);
+	void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-	attribute_t createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+	Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
 
 	template <typename OutputType>
 	void getItems(
-		const attribute_t & attribute,
-		const PaddedPODArray<id_t> & ids,
+		const Attribute & attribute,
+		const PaddedPODArray<Key> & ids,
 		const PaddedPODArray<UInt16> & dates,
 		PaddedPODArray<OutputType> & out) const;
 
 	template <typename AttributeType, typename OutputType>
 	void getItemsImpl(
-		const attribute_t & attribute,
-		const PaddedPODArray<id_t> & ids,
+		const Attribute & attribute,
+		const PaddedPODArray<Key> & ids,
 		const PaddedPODArray<UInt16> & dates,
 		PaddedPODArray<OutputType> & out) const;
 
 
 	template <typename T>
-	void setAttributeValueImpl(attribute_t & attribute, const id_t id, const range_t & range, const T value);
+	void setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const T value);
 
-	void setAttributeValue(attribute_t & attribute, const id_t id, const range_t & range, const Field & value);
+	void setAttributeValue(Attribute & attribute, const Key id, const Range & range, const Field & value);
 
-	const attribute_t & getAttribute(const std::string & attribute_name) const;
+	const Attribute & getAttribute(const std::string & attribute_name) const;
 
-	const attribute_t & getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const;
+	const Attribute & getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const;
 
 	const std::string name;
 	const DictionaryStructure dict_struct;
@@ -173,7 +173,7 @@ private:
 	const bool require_nonempty;
 
 	std::map<std::string, std::size_t> attribute_index_by_name;
-	std::vector<attribute_t> attributes;
+	std::vector<Attribute> attributes;
 
 	std::size_t bytes_allocated = 0;
 	std::size_t element_count = 0;
