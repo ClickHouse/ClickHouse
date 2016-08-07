@@ -1,5 +1,5 @@
 /// Совместимость с clang, в котором std::numeric_limits (из libstdc++ из gcc) почему-то не специализируется для __uint128_t.
-#if __clang__
+#if __clang__ && __clang_major__ < 4
 	#include <limits>
 
 	namespace std
