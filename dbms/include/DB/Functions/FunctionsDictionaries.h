@@ -2151,7 +2151,7 @@ private:
 			/// used for storing and handling result of ::toParent call
 			auto out_array = std::make_unique<PaddedPODArray<UInt64>>(size);
 			/// resulting hierarchies
-			std::vector<std::vector<IDictionary::id_t>> hierarchies(size);
+			std::vector<std::vector<IDictionary::Key>> hierarchies(size);
 
 			/// total number of non-zero elements, used for allocating all the required memory upfront
 			std::size_t total_count = 0;
