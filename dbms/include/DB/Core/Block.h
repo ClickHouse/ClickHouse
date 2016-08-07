@@ -117,6 +117,13 @@ public:
 	void clear();
 	void swap(Block & other) noexcept;
 
+	/** Some column implementations (ColumnArray) may have shared parts between different columns
+	  * (common array sizes of elements of nested data structures).
+	  * Before doing mutating operations on such columns, you must unshare that parts.
+	  * Also unsharing columns, if whole columns are shared_ptrs pointing to same instances.
+	  */
+	void unshareColumns();
+
 private:
 	void eraseImpl(size_t position);
 };

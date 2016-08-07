@@ -450,4 +450,25 @@ void Block::swap(Block & other) noexcept
 	index_by_name.swap(other.index_by_name);
 }
 
+
+void Block::unshareColumns()
+{
+	std::unordered_set<void*> pointers;
+
+	for (auto & elem : data)
+	{
+		if (!pointers.insert(elem.column.get()).second)
+		{
+			elem.column = elem.column->clone();
+		}
+		else if (ColumnArray * arr = typeid_cast<ColumnArray *>(elem.column.get()))
+		{
+			ColumnPtr & offsets = arr->getOffsetsColumn();
+			if (!pointers.insert(offsets.get()).second)
+				offsets = offsets->clone();
+		}
+	}
+}
+
+
 }
