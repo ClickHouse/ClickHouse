@@ -1,9 +1,6 @@
 #include <iomanip>
 #include <random>
 
-/*#include <mutex>
-#include <Poco/Ext/ThreadNumber.h>*/
-
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Interpreters/Quota.h>
 #include <DB/Interpreters/ProcessList.h>
@@ -47,25 +44,6 @@ Block IProfilingBlockInputStream::read()
 
 	if (!limit_exceeded_need_break)
 		res = readImpl();
-
-/*	if (res)
-	{
-		static std::mutex mutex;
-		std::lock_guard<std::mutex> lock(mutex);
-
-		std::cerr << std::endl;
-		std::cerr << "[ " << Poco::ThreadNumber::get() << " ]\t" << getName() << std::endl;
-		std::cerr << "[ " << Poco::ThreadNumber::get() << " ]\t";
-
-		for (size_t i = 0; i < res.columns(); ++i)
-		{
-			if (i != 0)
-				std::cerr << ", ";
-			std::cerr << res.getByPosition(i).name << " (" << res.getByPosition(i).column->size() << ")";
-		}
-
-		std::cerr << std::endl;
-	}*/
 
 	if (res)
 	{
