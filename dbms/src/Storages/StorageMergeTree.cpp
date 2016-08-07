@@ -200,6 +200,9 @@ void StorageMergeTree::alter(
 	if (primary_key_is_modified && data.merging_params.mode == MergeTreeData::MergingParams::Unsorted)
 		throw Exception("UnsortedMergeTree cannot have primary key", ErrorCodes::BAD_ARGUMENTS);
 
+	if (primary_key_is_modified && supportsSampling())
+		throw Exception("MODIFY PRIMARY KEY only supported for tables without sampling key", ErrorCodes::BAD_ARGUMENTS);
+
 	MergeTreeData::DataParts parts = data.getAllDataParts();
 	for (const MergeTreeData::DataPartPtr & part : parts)
 		if (auto transaction = data.alterDataPart(part, columns_for_parts, new_primary_key_ast, false))
