@@ -495,7 +495,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 
 				if (!cell.isDefault())
-					map[key] = string_ref;
+					map[key] = copyIntoArena(string_ref, temporary_keys_pool);
 
 				total_length += string_ref.size + 1;
 			}
