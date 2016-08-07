@@ -1,5 +1,6 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Dictionaries/CacheDictionary.h>
+#include <DB/Common/BitHelpers.h>
 #include <DB/Common/randomSeed.h>
 
 
@@ -11,21 +12,6 @@ namespace ErrorCodes
 	extern const int TYPE_MISMATCH;
 	extern const int BAD_ARGUMENTS;
 	extern const int UNSUPPORTED_METHOD;
-}
-
-
-static inline std::size_t round_up_to_power_of_two(std::size_t n)
-{
-	--n;
-	n |= n >> 1;
-	n |= n >> 2;
-	n |= n >> 4;
-	n |= n >> 8;
-	n |= n >> 16;
-	n |= n >> 32;
-	++n;
-
-	return n;
 }
 
 
@@ -42,7 +28,7 @@ CacheDictionary::CacheDictionary(const std::string & name, const DictionaryStruc
 	const std::size_t size)
 	: name{name}, dict_struct(dict_struct),
 		source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
-		size{round_up_to_power_of_two(size)},
+		size{roundUpToPowerOfTwoOrZero(size)},
 		cells{this->size},
 		rnd_engine{randomSeed()}
 {

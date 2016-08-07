@@ -13,6 +13,7 @@
 
 #include <DB/Common/Allocator.h>
 #include <DB/Common/Exception.h>
+#include <DB/Common/BitHelpers.h>
 
 
 namespace DB
@@ -60,23 +61,9 @@ private:
 	/// Минимальное количество памяти, которое нужно выделить для num_elements элементов, включая padding.
 	static size_t minimum_memory_for_elements(size_t num_elements) { return byte_size(num_elements) + pad_right; }
 
-	static size_t round_up_to_power_of_two(size_t n)
-	{
-		--n;
-		n |= n >> 1;
-		n |= n >> 2;
-		n |= n >> 4;
-		n |= n >> 8;
-		n |= n >> 16;
-		n |= n >> 32;
-		++n;
-
-		return n;
-	}
-
 	void alloc_for_num_elements(size_t num_elements)
 	{
-		alloc(round_up_to_power_of_two(minimum_memory_for_elements(num_elements)));
+		alloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(num_elements)));
 	}
 
 	void alloc(size_t bytes)
@@ -200,7 +187,7 @@ public:
 	void reserve(size_t n)
 	{
 		if (n > capacity())
-			realloc(round_up_to_power_of_two(minimum_memory_for_elements(n)));
+			realloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(n)));
 	}
 
 	void reserve()
@@ -280,7 +267,7 @@ public:
 	{
 		size_t required_capacity = size() + (from_end - from_begin);
 		if (required_capacity > capacity())
-			reserve(round_up_to_power_of_two(required_capacity));
+			reserve(roundUpToPowerOfTwoOrZero(required_capacity));
 
 		insert_assume_reserved(from_begin, from_end);
 	}
@@ -290,7 +277,7 @@ public:
 	{
 		size_t required_capacity = size() + (from_end - from_begin);
 		if (required_capacity > capacity())
-			reserve(round_up_to_power_of_two(required_capacity));
+			reserve(roundUpToPowerOfTwoOrZero(required_capacity));
 
 		size_t bytes_to_copy = byte_size(from_end - from_begin);
 		size_t bytes_to_move = (end() - it) * sizeof(T);
@@ -426,7 +413,7 @@ public:
 	{
 		size_t required_capacity = from_end - from_begin;
 		if (required_capacity > capacity())
-			reserve(round_up_to_power_of_two(required_capacity));
+			reserve(roundUpToPowerOfTwoOrZero(required_capacity));
 
 		size_t bytes_to_copy = byte_size(required_capacity);
 		memcpy(c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);

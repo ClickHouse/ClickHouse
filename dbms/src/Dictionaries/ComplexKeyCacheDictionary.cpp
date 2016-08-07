@@ -1,4 +1,5 @@
 #include <DB/Dictionaries/ComplexKeyCacheDictionary.h>
+#include <DB/Common/BitHelpers.h>
 #include <DB/Common/randomSeed.h>
 
 
@@ -13,21 +14,6 @@ namespace ErrorCodes
 }
 
 
-static inline std::size_t round_up_to_power_of_two(std::size_t n)
-{
-	--n;
-	n |= n >> 1;
-	n |= n >> 2;
-	n |= n >> 4;
-	n |= n >> 8;
-	n |= n >> 16;
-	n |= n >> 32;
-	++n;
-
-	return n;
-}
-
-
 inline std::uint64_t ComplexKeyCacheDictionary::getCellIdx(const StringRef key) const
 {
 	const auto hash = StringRefHash{}(key);
@@ -38,9 +24,9 @@ inline std::uint64_t ComplexKeyCacheDictionary::getCellIdx(const StringRef key) 
 
 ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(const std::string & name, const DictionaryStructure & dict_struct,
 	DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime,
-	const std::size_t size)
+	const size_t size)
 	: name{name}, dict_struct(dict_struct), source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
-	size{round_up_to_power_of_two(size)}, rnd_engine{randomSeed()}
+	size{roundUpToPowerOfTwoOrZero(size)}, rnd_engine{randomSeed()}
 {
 	if (!this->source_ptr->supportsSelectiveLoad())
 		throw Exception{
@@ -70,7 +56,7 @@ void ComplexKeyCacheDictionary::get##TYPE(\
 	\
 	const auto null_value = std::get<TYPE>(attribute.null_values);\
 	\
-	getItemsNumber<TYPE>(attribute, key_columns, out, [&] (const std::size_t) { return null_value; });\
+	getItemsNumber<TYPE>(attribute, key_columns, out, [&] (const size_t) { return null_value; });\
 }
 DECLARE(UInt8)
 DECLARE(UInt16)
@@ -98,7 +84,7 @@ void ComplexKeyCacheDictionary::getString(
 
 	const auto null_value = StringRef{std::get<String>(attribute.null_values)};
 
-	getItemsString(attribute, key_columns, out, [&] (const std::size_t) { return null_value; });
+	getItemsString(attribute, key_columns, out, [&] (const size_t) { return null_value; });
 }
 
 #define DECLARE(TYPE)\
@@ -114,7 +100,7 @@ void ComplexKeyCacheDictionary::get##TYPE(\
 			name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
 			ErrorCodes::TYPE_MISMATCH};\
 	\
-	getItemsNumber<TYPE>(attribute, key_columns, out, [&] (const std::size_t row) { return def[row]; });\
+	getItemsNumber<TYPE>(attribute, key_columns, out, [&] (const size_t row) { return def[row]; });\
 }
 DECLARE(UInt8)
 DECLARE(UInt16)
@@ -140,7 +126,7 @@ void ComplexKeyCacheDictionary::getString(
 			name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
 			ErrorCodes::TYPE_MISMATCH};
 
-	getItemsString(attribute, key_columns, out, [&] (const std::size_t row) { return def->getDataAt(row); });
+	getItemsString(attribute, key_columns, out, [&] (const size_t row) { return def->getDataAt(row); });
 }
 
 #define DECLARE(TYPE)\
@@ -156,7 +142,7 @@ void ComplexKeyCacheDictionary::get##TYPE(\
 			name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
 			ErrorCodes::TYPE_MISMATCH};\
 	\
-	getItemsNumber<TYPE>(attribute, key_columns, out, [&] (const std::size_t) { return def; });\
+	getItemsNumber<TYPE>(attribute, key_columns, out, [&] (const size_t) { return def; });\
 }
 DECLARE(UInt8)
 DECLARE(UInt16)
@@ -182,7 +168,7 @@ void ComplexKeyCacheDictionary::getString(
 			name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
 			ErrorCodes::TYPE_MISMATCH};
 
-	getItemsString(attribute, key_columns, out, [&] (const std::size_t) { return StringRef{def}; });
+	getItemsString(attribute, key_columns, out, [&] (const size_t) { return StringRef{def}; });
 }
 
 void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const
@@ -190,7 +176,7 @@ void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, co
 	dict_struct.validateKeyTypes(key_types);
 
 	/// Mapping: <key> -> { all indices `i` of `key_columns` such that `key_columns[i]` = <key> }
-	MapType<std::vector<std::size_t>> outdated_keys;
+	MapType<std::vector<size_t>> outdated_keys;
 
 	const auto rows = key_columns.front()->size();
 	const auto keys_size = dict_struct.key.value().size();
@@ -205,10 +191,10 @@ void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, co
 		/// fetch up-to-date values, decide which ones require update
 		for (const auto row : ext::range(0, rows))
 		{
-			const auto key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
+			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
 			keys_array[row] = key;
 			const auto hash = StringRefHash{}(key);
-			const auto cell_idx = hash & (size - 1);
+			const size_t cell_idx = hash & (size - 1);
 			const auto & cell = cells[cell_idx];
 
 			/** cell should be updated if either:
@@ -228,18 +214,22 @@ void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, co
 	if (outdated_keys.empty())
 		return;
 
-	std::vector<std::size_t> required_rows(outdated_keys.size());
+	std::vector<size_t> required_rows(outdated_keys.size());
 	std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows),
 		[] (auto & pair) { return pair.second.front(); });
 
 	/// request new values
-	update(key_columns, keys_array, required_rows, [&] (const auto key, const auto) {
-		for (const auto out_idx : outdated_keys[key])
-			out[out_idx] = true;
-	}, [&] (const auto key, const auto) {
-		for (const auto out_idx : outdated_keys[key])
-			out[out_idx] = false;
-	});
+	update(key_columns, keys_array, required_rows,
+		[&] (const StringRef key, const auto)
+		{
+			for (const auto out_idx : outdated_keys[key])
+				out[out_idx] = true;
+		},
+		[&] (const StringRef key, const auto)
+		{
+			for (const auto out_idx : outdated_keys[key])
+				out[out_idx] = false;
+		});
 }
 
 
@@ -365,7 +355,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 	DefaultGetter && get_default) const
 {
 	/// Mapping: <key> -> { all indices `i` of `key_columns` such that `key_columns[i]` = <key> }
-	MapType<std::vector<std::size_t>> outdated_keys;
+	MapType<std::vector<size_t>> outdated_keys;
 	auto & attribute_array = std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
 
 	const auto rows = key_columns.front()->size();
@@ -381,10 +371,10 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 		/// fetch up-to-date values, decide which ones require update
 		for (const auto row : ext::range(0, rows))
 		{
-			const auto key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
+			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
 			keys_array[row] = key;
 			const auto hash = StringRefHash{}(key);
-			const auto cell_idx = hash & (size - 1);
+			const size_t cell_idx = hash & (size - 1);
 			const auto & cell = cells[cell_idx];
 
 			/** cell should be updated if either:
@@ -404,18 +394,22 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 	if (outdated_keys.empty())
 		return;
 
-	std::vector<std::size_t> required_rows(outdated_keys.size());
+	std::vector<size_t> required_rows(outdated_keys.size());
 	std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows),
 		[] (auto & pair) { return pair.second.front(); });
 
 	/// request new values
-	update(key_columns, keys_array, required_rows, [&] (const auto key, const auto cell_idx) {
-		for (const auto row : outdated_keys[key])
-			out[row] = attribute_array[cell_idx];
-	}, [&] (const auto key, const auto cell_idx) {
-		for (const auto row : outdated_keys[key])
-			out[row] = get_default(row);
-	});
+	update(key_columns, keys_array, required_rows,
+		[&] (const StringRef key, const size_t cell_idx)
+		{
+			for (const auto row : outdated_keys[key])
+				out[row] = attribute_array[cell_idx];
+		},
+		[&] (const StringRef key, const size_t cell_idx)
+		{
+			for (const auto row : outdated_keys[key])
+				out[row] = get_default(row);
+		});
 }
 
 template <typename DefaultGetter>
@@ -443,10 +437,10 @@ void ComplexKeyCacheDictionary::getItemsString(
 		/// fetch up-to-date values, discard on fail
 		for (const auto row : ext::range(0, rows))
 		{
-			const auto key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
+			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
 			SCOPE_EXIT(temporary_keys_pool.rollback(key.size));
 			const auto hash = StringRefHash{}(key);
-			const auto cell_idx = hash & (size - 1);
+			const size_t cell_idx = hash & (size - 1);
 			const auto & cell = cells[cell_idx];
 
 			if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
@@ -475,22 +469,22 @@ void ComplexKeyCacheDictionary::getItemsString(
 	out->getOffsets().resize_assume_reserved(0);
 
 	/// Mapping: <key> -> { all indices `i` of `key_columns` such that `key_columns[i]` = <key> }
-	MapType<std::vector<std::size_t>> outdated_keys;
+	MapType<std::vector<size_t>> outdated_keys;
 	/// we are going to store every string separately
 	MapType<String> map;
 	PODArray<StringRef> keys_array(rows);
 
-	std::size_t total_length = 0;
+	size_t total_length = 0;
 	{
 		const Poco::ScopedReadRWLock read_lock{rw_lock};
 
 		const auto now = std::chrono::system_clock::now();
 		for (const auto row : ext::range(0, rows))
 		{
-			const auto key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
+			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
 			keys_array[row] = key;
 			const auto hash = StringRefHash{}(key);
-			const auto cell_idx = hash & (size - 1);
+			const size_t cell_idx = hash & (size - 1);
 			const auto & cell = cells[cell_idx];
 
 			if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
@@ -513,26 +507,36 @@ void ComplexKeyCacheDictionary::getItemsString(
 	/// request new values
 	if (!outdated_keys.empty())
 	{
-		std::vector<std::size_t> required_rows(outdated_keys.size());
+		std::vector<size_t> required_rows(outdated_keys.size());
 		std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows),
 			[] (auto & pair) { return pair.second.front(); });
 
-		update(key_columns, keys_array, required_rows, [&] (const auto key, const auto cell_idx) {
-			const auto attribute_value = attribute_array[cell_idx];
+		update(key_columns, keys_array, required_rows,
+			[&] (const StringRef key, const size_t cell_idx)
+			{
+				const auto attribute_value = attribute_array[cell_idx];
 
-			map[key] = String{attribute_value};
-			total_length += (attribute_value.size + 1) * outdated_keys[key].size();
-		}, [&] (const auto key, const auto cell_idx) {
-			for (const auto row : outdated_keys[key])
-				total_length += get_default(row).size + 1;
-		});
+				/// We must copy key to own memory, because it may be replaced with another
+				///  in next iterations of inner loop of update.
+				char * allocated = temporary_keys_pool.alloc(key.size);
+				memcpy(allocated, key.data, key.size);
+				const StringRef copied_key{ allocated, key.size };
+
+				map[copied_key] = String{attribute_value};
+				total_length += (attribute_value.size + 1) * outdated_keys[key].size();
+			},
+			[&] (const StringRef key, const size_t cell_idx)
+			{
+				for (const auto row : outdated_keys[key])
+					total_length += get_default(row).size + 1;
+			});
 	}
 
 	out->getChars().reserve(total_length);
 
 	for (const auto row : ext::range(0, ext::size(keys_array)))
 	{
-		const auto key = keys_array[row];
+		const StringRef key = keys_array[row];
 		const auto it = map.find(key);
 		const auto string_ref = it != std::end(map) ? StringRef{it->second} : get_default(row);
 		out->insertData(string_ref.data, string_ref.size);
@@ -542,7 +546,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 template <typename PresentKeyHandler, typename AbsentKeyHandler>
 void ComplexKeyCacheDictionary::update(
 	const ConstColumnPlainPtrs & in_key_columns, const PODArray<StringRef> & in_keys,
-	const std::vector<std::size_t> & in_requested_rows, PresentKeyHandler && on_cell_updated,
+	const std::vector<size_t> & in_requested_rows, PresentKeyHandler && on_cell_updated,
 	AbsentKeyHandler && on_key_not_found) const
 {
 	MapType<bool> remaining_keys{in_requested_rows.size()};
@@ -567,13 +571,17 @@ void ComplexKeyCacheDictionary::update(
 	while (const auto block = stream->read())
 	{
 		/// cache column pointers
-		const auto key_columns = ext::map<ConstColumnPlainPtrs>(ext::range(0, keys_size),
-			[&] (const std::size_t attribute_idx) {
+		const auto key_columns = ext::map<ConstColumnPlainPtrs>(
+			ext::range(0, keys_size),
+			[&] (const size_t attribute_idx)
+			{
 				return block.getByPosition(attribute_idx).column.get();
 			});
 
-		const auto attribute_columns = ext::map<ConstColumnPlainPtrs>(ext::range(0, attributes_size),
-			[&] (const std::size_t attribute_idx) {
+		const auto attribute_columns = ext::map<ConstColumnPlainPtrs>(
+			ext::range(0, attributes_size),
+			[&] (const size_t attribute_idx)
+			{
 				return block.getByPosition(keys_size + attribute_idx).column.get();
 			});
 
@@ -583,7 +591,7 @@ void ComplexKeyCacheDictionary::update(
 		{
 			auto key = allocKey(row, key_columns, keys);
 			const auto hash = StringRefHash{}(key);
-			const auto cell_idx = hash & (size - 1);
+			const size_t cell_idx = hash & (size - 1);
 			auto & cell = cells[cell_idx];
 
 			for (const auto attribute_idx : ext::range(0, attributes.size()))
@@ -637,7 +645,7 @@ void ComplexKeyCacheDictionary::update(
 
 		auto key = key_found_pair.first;
 		const auto hash = StringRefHash{}(key);
-		const auto cell_idx = hash & (size - 1);
+		const size_t cell_idx = hash & (size - 1);
 		auto & cell = cells[cell_idx];
 
 		/// Set null_value for each attribute
@@ -675,7 +683,7 @@ void ComplexKeyCacheDictionary::update(
 }
 
 
-void ComplexKeyCacheDictionary::setDefaultAttributeValue(attribute_t & attribute, const std::size_t idx) const
+void ComplexKeyCacheDictionary::setDefaultAttributeValue(attribute_t & attribute, const size_t idx) const
 {
 	switch (attribute.type)
 	{
@@ -707,7 +715,7 @@ void ComplexKeyCacheDictionary::setDefaultAttributeValue(attribute_t & attribute
 	}
 }
 
-void ComplexKeyCacheDictionary::setAttributeValue(attribute_t & attribute, const std::size_t idx, const Field & value) const
+void ComplexKeyCacheDictionary::setAttributeValue(attribute_t & attribute, const size_t idx, const Field & value) const
 {
 	switch (attribute.type)
 	{
@@ -757,7 +765,7 @@ ComplexKeyCacheDictionary::attribute_t & ComplexKeyCacheDictionary::getAttribute
 	return attributes[it->second];
 }
 
-StringRef ComplexKeyCacheDictionary::allocKey(const std::size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys) const
+StringRef ComplexKeyCacheDictionary::allocKey(const size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys) const
 {
 	if (key_size_is_fixed)
 		return placeKeysInFixedSizePool(row, key_columns);
@@ -775,7 +783,7 @@ void ComplexKeyCacheDictionary::freeKey(const StringRef key) const
 
 template <typename Arena>
 StringRef ComplexKeyCacheDictionary::placeKeysInPool(
-	const std::size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool)
+	const size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool)
 {
 	const auto keys_size = key_columns.size();
 	size_t sum_keys_size{};
@@ -798,14 +806,14 @@ StringRef ComplexKeyCacheDictionary::placeKeysInPool(
 }
 
 StringRef ComplexKeyCacheDictionary::placeKeysInFixedSizePool(
-	const std::size_t row, const ConstColumnPlainPtrs & key_columns) const
+	const size_t row, const ConstColumnPlainPtrs & key_columns) const
 {
 	const auto res = fixed_size_keys_pool->alloc();
 	auto place = res;
 
 	for (const auto & key_column : key_columns)
 	{
-		const auto key = key_column->getDataAt(row);
+		const StringRef key = key_column->getDataAt(row);
 		memcpy(place, key.data, key.size);
 		place += key.size;
 	}
