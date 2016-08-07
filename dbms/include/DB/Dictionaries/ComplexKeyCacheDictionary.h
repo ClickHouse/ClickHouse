@@ -240,6 +240,7 @@ private:
 	StringRef placeKeysInFixedSizePool(
 		const std::size_t row, const ConstColumnPlainPtrs & key_columns) const;
 
+	static StringRef copyIntoArena(StringRef src, Arena & arena);
 	StringRef copyKey(const StringRef key) const;
 
 	const std::string name;

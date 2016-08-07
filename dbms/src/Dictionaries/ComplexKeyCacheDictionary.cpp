@@ -412,6 +412,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 		});
 }
 
+
 template <typename DefaultGetter>
 void ComplexKeyCacheDictionary::getItemsString(
 	attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, ColumnString * out,
@@ -471,7 +472,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 	/// Mapping: <key> -> { all indices `i` of `key_columns` such that `key_columns[i]` = <key> }
 	MapType<std::vector<size_t>> outdated_keys;
 	/// we are going to store every string separately
-	MapType<String> map;
+	MapType<StringRef> map;
 	PODArray<StringRef> keys_array(rows);
 
 	size_t total_length = 0;
@@ -516,13 +517,12 @@ void ComplexKeyCacheDictionary::getItemsString(
 			{
 				const auto attribute_value = attribute_array[cell_idx];
 
-				/// We must copy key to own memory, because it may be replaced with another
+				/// We must copy key and value to own memory, because it may be replaced with another
 				///  in next iterations of inner loop of update.
-				char * allocated = temporary_keys_pool.alloc(key.size);
-				memcpy(allocated, key.data, key.size);
-				const StringRef copied_key{ allocated, key.size };
+				const StringRef copied_key = copyIntoArena(key, temporary_keys_pool);
+				const StringRef copied_value = copyIntoArena(attribute_value, temporary_keys_pool);
 
-				map[copied_key] = String{attribute_value};
+				map[copied_key] = copied_value;
 				total_length += (attribute_value.size + 1) * outdated_keys[key].size();
 			},
 			[&] (const StringRef key, const size_t cell_idx)
@@ -538,7 +538,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 	{
 		const StringRef key = keys_array[row];
 		const auto it = map.find(key);
-		const auto string_ref = it != std::end(map) ? StringRef{it->second} : get_default(row);
+		const auto string_ref = it != std::end(map) ? it->second : get_default(row);
 		out->insertData(string_ref.data, string_ref.size);
 	}
 }
@@ -819,6 +819,13 @@ StringRef ComplexKeyCacheDictionary::placeKeysInFixedSizePool(
 	}
 
 	return { res, key_size };
+}
+
+StringRef ComplexKeyCacheDictionary::copyIntoArena(StringRef src, Arena & arena)
+{
+	char * allocated = arena.alloc(src.size);
+	memcpy(allocated, src.data, src.size);
+	return { allocated, src.size };
 }
 
 StringRef ComplexKeyCacheDictionary::copyKey(const StringRef key) const
