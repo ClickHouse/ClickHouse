@@ -234,8 +234,6 @@ int mainImpl(int argc, char ** argv)
 	if (-1 == fd)
 		throwFromErrno("Cannot open file");
 
-	using Exceptions = std::vector<std::exception_ptr>;
-
 	ThreadPool pool(threads_count);
 
 	Stopwatch watch;
