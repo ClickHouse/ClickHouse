@@ -419,6 +419,13 @@ private:
 	  */
 	String findReplicaHavingPart(const String & part_name, bool active);
 
+	/** Find replica having specified part or any part that covers it.
+	  * If active = true, consider only active replicas.
+	  * If found, returns replica name and set 'out_covering_part_name' to name of found largest covering part.
+	  * If not found, returns empty string.
+	  */
+	String findReplicaHavingCoveringPart(const String & part_name, bool active, String & out_covering_part_name);
+
 	/** Скачать указанный кусок с указанной реплики.
 	  * Если to_detached, то кусок помещается в директорию detached.
 	  * Если quorum != 0, то обновляется узел для отслеживания кворума.
