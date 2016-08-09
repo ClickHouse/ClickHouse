@@ -84,7 +84,6 @@ private:
 			}
 		}
 
-
 		if (config.has(RegionsHierarchies::required_key))
 		{
 			try
