@@ -36,6 +36,7 @@ StorageMergeTree::StorageMergeTree(
 	const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 	size_t index_granularity_,
 	const MergeTreeData::MergingParams & merging_params_,
+	bool has_force_restore_data_flag,
 	const MergeTreeSettings & settings_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
@@ -49,7 +50,7 @@ StorageMergeTree::StorageMergeTree(
 	increment(0),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
-	data.loadDataParts(false);
+	data.loadDataParts(has_force_restore_data_flag);
 	data.clearOldParts();
 	data.clearOldTemporaryDirectories();
 	increment.set(data.getMaxDataPartIndex());
@@ -86,13 +87,14 @@ StoragePtr StorageMergeTree::create(
 	const ASTPtr & sampling_expression_,
 	size_t index_granularity_,
 	const MergeTreeData::MergingParams & merging_params_,
+	bool has_force_restore_data_flag_,
 	const MergeTreeSettings & settings_)
 {
 	auto res = new StorageMergeTree{
 		path_, database_name_, table_name_,
 		columns_, materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
-		sampling_expression_, index_granularity_, merging_params_, settings_
+		sampling_expression_, index_granularity_, merging_params_, has_force_restore_data_flag_, settings_
 	};
 	StoragePtr res_ptr = res->thisPtr();
 

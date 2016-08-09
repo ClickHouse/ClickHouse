@@ -87,6 +87,7 @@ public:
 		const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 		size_t index_granularity_,
 		const MergeTreeData::MergingParams & merging_params_,
+		bool has_force_restore_data_flag,
 		const MergeTreeSettings & settings_);
 
 	void shutdown() override;
@@ -318,6 +319,7 @@ private:
 		const ASTPtr & sampling_expression_,
 		size_t index_granularity_,
 		const MergeTreeData::MergingParams & merging_params_,
+		bool has_force_restore_data_flag,
 		const MergeTreeSettings & settings_);
 
 	/// Инициализация.

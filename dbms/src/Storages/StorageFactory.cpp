@@ -218,7 +218,8 @@ StoragePtr StorageFactory::get(
 	const NamesAndTypesList & materialized_columns,
 	const NamesAndTypesList & alias_columns,
 	const ColumnDefaults & column_defaults,
-	bool attach) const
+	bool attach,
+	bool has_force_restore_data_flag) const
 {
 	if (name == "Log")
 	{
@@ -739,6 +740,7 @@ For further info please read the documentation: https://clickhouse.yandex/
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, merging_params,
+				has_force_restore_data_flag,
 				context.getMergeTreeSettings());
 		else
 			return StorageMergeTree::create(
@@ -746,6 +748,7 @@ For further info please read the documentation: https://clickhouse.yandex/
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, merging_params,
+				has_force_restore_data_flag,
 				context.getMergeTreeSettings());
 	}
 	else

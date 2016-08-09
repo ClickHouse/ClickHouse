@@ -13,7 +13,8 @@ namespace DB
 class ASTCreateQuery;
 
 
-/** Позволяет создать новую таблицу, или создать объект уже существующей таблицы, или создать БД, или создать объект уже существующей БД.
+/** Allows to create new table or database,
+  *  or create an object for existing table or database.
   */
 class InterpreterCreateQuery : public IInterpreter
 {
@@ -22,7 +23,7 @@ public:
 
 	BlockIO execute() override;
 
-	/// Список столбцов с типами в AST.
+	/// List of columns and their types in AST.
 	static ASTPtr formatColumns(const NamesAndTypesList & columns);
 	static ASTPtr formatColumns(
 		NamesAndTypesList columns,
@@ -35,6 +36,11 @@ public:
 		thread_pool = &thread_pool_;
 	}
 
+	void setForceRestoreData(bool has_force_restore_data_flag_)
+	{
+		has_force_restore_data_flag = has_force_restore_data_flag_;
+	}
+
 	struct ColumnsInfo
 	{
 		NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>();
@@ -43,22 +49,25 @@ public:
 		ColumnDefaults column_defaults;
 	};
 
-	/// Получить информацию о столбцах и типах их default-ов, для случая, когда столбцы в запросе create указаны явно.
+	/// Obtain information about columns, their types and default values, for case when columns in CREATE query is specified explicitly.
 	static ColumnsInfo getColumnsInfo(const ASTPtr & columns, const Context & context);
 
 private:
 	void createDatabase(ASTCreateQuery & create);
 	BlockIO createTable(ASTCreateQuery & create);
 
-	/// Вычислить список столбцов таблицы и вернуть его.
+	/// Calculate list of columns of table and return it.
 	ColumnsInfo setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
 	String setEngine(ASTCreateQuery & create, const StoragePtr & as_storage) const;
 
 	ASTPtr query_ptr;
 	Context context;
 
-	/// Используется при загрузке базы данных.
+	/// Using while loading database.
 	ThreadPool * thread_pool = nullptr;
+
+	/// Skip safety threshold when loading tables.
+	bool has_force_restore_data_flag = false;
 };
 
 

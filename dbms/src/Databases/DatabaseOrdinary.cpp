@@ -40,7 +40,8 @@ static void loadTable(
 	DatabaseOrdinary & database,
 	const String & database_name,
 	const String & database_data_path,
-	const String & file_name)
+	const String & file_name,
+	bool has_force_restore_data_flag)
 {
 	Logger * log = &Logger::get("loadTable");
 
@@ -68,7 +69,7 @@ static void loadTable(
 		String table_name;
 		StoragePtr table;
 		std::tie(table_name, table) = createTableFromDefinition(
-			s, database_name, database_data_path, context, "in file " + table_metadata_path);
+			s, database_name, database_data_path, context, has_force_restore_data_flag, "in file " + table_metadata_path);
 		database.attachTable(table_name, table);
 	}
 	catch (const Exception & e)
@@ -87,7 +88,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 }
 
 
-void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool)
+void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag)
 {
 	log = &Logger::get("DatabaseOrdinary (" + name + ")");
 
@@ -97,7 +98,7 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool)
 	Poco::DirectoryIterator dir_end;
 	for (Poco::DirectoryIterator dir_it(path); dir_it != dir_end; ++dir_it)
 	{
-		/// Для директории .svn и файла .gitignore
+		/// For '.svn', '.gitignore' directory and similar.
 		if (dir_it.name().at(0) == '.')
 			continue;
 
@@ -149,7 +150,7 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool)
 				watch.restart();
 			}
 
-			loadTable(context, path, *this, name, data_path, table);
+			loadTable(context, path, *this, name, data_path, table, has_force_restore_data_flag);
 		}
 	};
 

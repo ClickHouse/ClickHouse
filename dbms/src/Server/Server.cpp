@@ -292,7 +292,7 @@ int Server::main(const std::vector<std::string> & args)
 	loadMetadata(*global_context);
 	LOG_DEBUG(log, "Loaded metadata.");
 
-	/// Создаём системные таблицы.
+	/// Create system tables.
 	if (!global_context->isDatabaseExist("system"))
 	{
 		Poco::File(path + "data/system").createDirectories();
@@ -300,7 +300,9 @@ int Server::main(const std::vector<std::string> & args)
 
 		auto system_database = std::make_shared<DatabaseOrdinary>("system", path + "metadata/system/");
 		global_context->addDatabase("system", system_database);
-		system_database->loadTables(*global_context, nullptr);
+
+		/// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
+		system_database->loadTables(*global_context, nullptr, true);
 	}
 
 	DatabasePtr system_database = global_context->getDatabase("system");

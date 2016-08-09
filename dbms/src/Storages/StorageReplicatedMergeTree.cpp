@@ -192,6 +192,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	const ASTPtr & sampling_expression_,
 	size_t index_granularity_,
 	const MergeTreeData::MergingParams & merging_params_,
+	bool has_force_restore_data_flag,
 	const MergeTreeSettings & settings_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
 	current_zookeeper(context.getZooKeeper()), database_name(database_name_),
@@ -223,6 +224,12 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
 			LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag "
 				<< replica_path << "/flags/force_restore_data).");
+		}
+		else if (has_force_restore_data_flag)
+		{
+			skip_sanity_checks = true;
+
+			LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag force_restore_data).");
 		}
 	}
 	catch (const zkutil::KeeperException & e)
@@ -333,6 +340,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 	const ASTPtr & sampling_expression_,
 	size_t index_granularity_,
 	const MergeTreeData::MergingParams & merging_params_,
+	bool has_force_restore_data_flag_,
 	const MergeTreeSettings & settings_)
 {
 	auto res = new StorageReplicatedMergeTree{
@@ -341,7 +349,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 		columns_, materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_,
-		merging_params_, settings_};
+		merging_params_, has_force_restore_data_flag_, settings_};
 
 	StoragePtr res_ptr = res->thisPtr();
 
