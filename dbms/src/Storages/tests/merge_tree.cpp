@@ -47,7 +47,7 @@ try
 		"./", "default", "test",
 		names_and_types, {}, {}, ColumnDefaults{},
 		context, primary_expr, "d",
-		nullptr, 101, params, {});
+		nullptr, 101, params, {}, false);
 
 	/// пишем в неё
 	{
