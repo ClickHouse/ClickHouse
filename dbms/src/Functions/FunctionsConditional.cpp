@@ -185,11 +185,6 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 		ColumnPtr tracker_holder = non_nullable_block.unsafeGetByPosition(tracker).column;
 		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*dest_col.column);
 
-		auto is_null_at = [](const IColumn & col, size_t row)
-		{
-			return col.isNullable() && static_cast<const ColumnNullable &>(col).isNullAt(row);
-		};
-
 		if (auto col = typeid_cast<ColumnConstUInt16 *>(tracker_holder.get()))
 		{
 			auto pos = col->getData();
@@ -211,6 +206,26 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 		}
 		else if (auto col = typeid_cast<ColumnUInt16 *>(tracker_holder.get()))
 		{
+			/// Keep track of which columns are nullable.
+			std::vector<UInt8> nullable_cols_map;
+			nullable_cols_map.reserve(args.size());
+			for (const auto & arg : args)
+			{
+				const auto & col = block.unsafeGetByPosition(arg).column;
+				bool may_have_null = col->isNullable();
+				nullable_cols_map.push_back(static_cast<UInt8>(may_have_null));
+			}
+
+			/// Keep track of which columns are null.
+			std::vector<UInt8> null_cols_map;
+			null_cols_map.reserve(args.size());
+			for (const auto & arg : args)
+			{
+				const auto & col = block.unsafeGetByPosition(arg).column;
+				bool has_null = col->isNull();
+				null_cols_map.push_back(static_cast<UInt8>(has_null));
+			}
+
 			auto null_map = std::make_shared<ColumnUInt8>(row_count);
 			nullable_col.getNullValuesByteMap() = null_map;
 			auto & null_map_data = null_map.get()->getData();
@@ -218,8 +233,20 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 			const auto & data = col->getData();
 			for (size_t row = 0; row < row_count; ++row)
 			{
-				const IColumn & origin = *block.unsafeGetByPosition(data[row]).column;
-				bool is_null = origin.isNull() || is_null_at(origin, row);
+				size_t pos = data[row];
+				bool is_null;
+
+				if (null_cols_map[pos] != 0)
+					is_null = true;
+				else if (nullable_cols_map[pos] != 0)
+				{
+					const IColumn & origin = *block.unsafeGetByPosition(pos).column;
+					const auto & nullable_col = static_cast<const ColumnNullable &>(origin);
+					is_null = nullable_col.isNullAt(row);
+				}
+				else
+					is_null = false;
+
 				null_map_data[row] = is_null ? 1 : 0;
 			}
 		}
