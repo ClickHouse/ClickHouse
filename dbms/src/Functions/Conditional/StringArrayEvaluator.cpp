@@ -403,12 +403,12 @@ bool StringArrayEvaluator::perform(Block & block, const ColumnNumbers & args, si
 	size_t row_count = conds[0].getSize();
 	VarStringArraySink sink = createSink(block, sources, result, row_count);
 
-	ColumnUInt64 * tracker_col = nullptr;
+	ColumnUInt16 * tracker_col = nullptr;
 	if (tracker != result)
 	{
 		auto & col = block.unsafeGetByPosition(tracker).column;
-		col = std::make_shared<ColumnUInt64>(row_count);
-		tracker_col = static_cast<ColumnUInt64 *>(col.get());
+		col = std::make_shared<ColumnUInt16>(row_count);
+		tracker_col = static_cast<ColumnUInt16 *>(col.get());
 	}
 
 	for (size_t cur_row = 0; cur_row < row_count; ++cur_row)

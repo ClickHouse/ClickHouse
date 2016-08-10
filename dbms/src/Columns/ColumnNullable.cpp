@@ -348,25 +348,25 @@ size_t ColumnNullable::byteSize() const
 
 void ColumnNullable::getExtremes(Field & min, Field & max) const
 {
-	if (auto col = typeid_cast<ColumnInt8 *>(&*nested_column))
+	if (auto col = typeid_cast<ColumnInt8 *>(nested_column.get()))
 		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnInt16 *>(&*nested_column))
+	else if (auto col = typeid_cast<ColumnInt16 *>(nested_column.get()))
 		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnInt32 *>(&*nested_column))
+	else if (auto col = typeid_cast<ColumnInt32 *>(nested_column.get()))
 		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnInt64 *>(&*nested_column))
+	else if (auto col = typeid_cast<ColumnInt64 *>(nested_column.get()))
 		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnUInt8 *>(&*nested_column))
+	else if (auto col = typeid_cast<ColumnUInt8 *>(nested_column.get()))
 		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnUInt16 *>(&*nested_column))
+	else if (auto col = typeid_cast<ColumnUInt16 *>(nested_column.get()))
 		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnUInt32 *>(&*nested_column))
+	else if (auto col = typeid_cast<ColumnUInt32 *>(nested_column.get()))
 		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnUInt64 *>(&*nested_column))
+	else if (auto col = typeid_cast<ColumnUInt64 *>(nested_column.get()))
 		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnFloat32 *>(&*nested_column))
+	else if (auto col = typeid_cast<ColumnFloat32 *>(nested_column.get()))
 		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnFloat64 *>(&*nested_column))
+	else if (auto col = typeid_cast<ColumnFloat64 *>(nested_column.get()))
 		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
 	else
 		nested_column.get()->getExtremes(min, max);

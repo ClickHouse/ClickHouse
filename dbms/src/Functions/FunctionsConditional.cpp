@@ -160,7 +160,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 		/// Append a column that tracks, for each result of multiIf, the index
 		/// of the originating column.
 		ColumnWithTypeAndName elem;
-		elem.type = std::make_shared<DataTypeUInt64>();
+		elem.type = std::make_shared<DataTypeUInt16>();
 
 		size_t tracker = non_nullable_block.columns();
 		non_nullable_block.insert(elem);
@@ -190,7 +190,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 			return col.isNullable() && static_cast<const ColumnNullable &>(col).isNullAt(row);
 		};
 
-		if (auto col = typeid_cast<ColumnConstUInt64 *>(tracker_holder.get()))
+		if (auto col = typeid_cast<ColumnConstUInt16 *>(tracker_holder.get()))
 		{
 			auto pos = col->getData();
 			const IColumn & origin = *block.unsafeGetByPosition(pos).column;
@@ -209,7 +209,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 
 			nullable_col.getNullValuesByteMap() = null_map;
 		}
-		else if (auto col = typeid_cast<ColumnUInt64 *>(tracker_holder.get()))
+		else if (auto col = typeid_cast<ColumnUInt16 *>(tracker_holder.get()))
 		{
 			auto null_map = std::make_shared<ColumnUInt8>(row_count);
 			nullable_col.getNullValuesByteMap() = null_map;
@@ -485,7 +485,7 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 		if (tracker != result)
 		{
 			ColumnPtr & col = block.getByPosition(tracker).column;
-			col = std::make_shared<ColumnConstUInt64>(row_count, index);
+			col = std::make_shared<ColumnConstUInt16>(row_count, index);
 		}
 	};
 
