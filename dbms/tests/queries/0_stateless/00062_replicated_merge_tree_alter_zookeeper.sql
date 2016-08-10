@@ -38,7 +38,7 @@ DESC TABLE test.replicated_alter2;
 SHOW CREATE TABLE test.replicated_alter2;
 SELECT * FROM test.replicated_alter1 ORDER BY k;
 
-ALTER TABLE test.replicated_alter1 ADD COLUMN s String;
+ALTER TABLE test.replicated_alter1 ADD COLUMN s String DEFAULT '0';
 INSERT INTO test.replicated_alter1 VALUES ('2015-01-01', 6,38,'2014-07-15 13:26:50',[10,20,30],['asd','qwe','qwe'],['2000-01-01','2000-01-01','2000-01-03'],'100500');
 
 DESC TABLE test.replicated_alter1;
