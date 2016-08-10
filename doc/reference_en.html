@@ -4514,6 +4514,28 @@ Conversion between a date and date with time is performed the natural way: by ad
 
 Conversion between numeric types uses the same rules as assignments between different numeric types in C++.
 
+To do transformations on DateTime in given time zone, pass second argument with time zone name:
+%%
+SELECT
+    toDateTime('2016-06-15 23:00:00') AS time,
+    toDate(time) AS date_local,
+    toDate(time, 'Asia/Yekaterinburg') AS date_yekat,
+    toString(time, 'US/Samoa') AS time_samoa
+
+┌────────────────time─┬─date_local─┬─date_yekat─┬─time_samoa──────────┐
+│ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-16 │ 2016-06-15 09:00:00 │
+└─────────────────────┴────────────┴────────────┴─────────────────────┘
+%%
+
+To format DateTime in given time zone:
+%%
+toString(now(), 'Asia/Yekaterinburg')
+%%
+To get unix timestamp for string with datetime in specified time zone:
+%%
+toUnixTimestamp('2000-01-01 00:00:00', 'Asia/Yekaterinburg')
+%%
+
 ===toFixedString(s, N)===
 
 Converts a String type argument to a FixedString(N) type (a string with fixed length N). N must be a constant. If the string has fewer bytes than N, it is passed with null bytes to the right. If the string has more bytes than N, an exception is thrown.
