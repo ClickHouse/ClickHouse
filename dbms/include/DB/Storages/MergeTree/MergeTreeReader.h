@@ -525,6 +525,7 @@ private:
 		{
 			/// Более хорошая диагностика.
 			e.addMessage("(while reading from part " + path + ")");
+			throw;
 		}
 	}
 };
