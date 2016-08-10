@@ -221,13 +221,13 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->setGlobalContext(*global_context);
 	global_context->setPath(path);
 
-	/// Директория для временных файлов при обработке тяжёлых запросов.
+	/// Directory with temporary data for processing of hard queries.
 	{
 		std::string tmp_path = config().getString("tmp_path", path + "tmp/");
 		global_context->setTemporaryPath(tmp_path);
 		Poco::File(tmp_path).createDirectories();
 
-		/// Очистка временных файлов.
+		/// Clearing old temporary files.
 		Poco::DirectoryIterator dir_end;
 		for (Poco::DirectoryIterator it(tmp_path); it != dir_end; ++it)
 		{
@@ -238,6 +238,12 @@ int Server::main(const std::vector<std::string> & args)
 			}
 		}
 	}
+
+	/** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
+	  * Flags may be cleared automatically after being applied by the server.
+	  * Examples: do repair of local data; clone all replicated tables from replica.
+	  */
+	Poco::File(path + "flags/").createDirectories();
 
 	bool has_zookeeper = false;
 	if (config().has("zookeeper"))
