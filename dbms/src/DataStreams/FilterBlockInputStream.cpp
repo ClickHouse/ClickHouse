@@ -80,7 +80,7 @@ Block FilterBlockInputStream::readImpl()
 		{
 			if (column.get()->isNullable())
 			{
-				ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(column.get()));
+				ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column);
 				column = nullable_col.getNestedColumn();
 			}
 
@@ -165,14 +165,14 @@ Block FilterBlockInputStream::readImpl()
 			/// Exclude the entries of the filter column that actually are NULL values.
 
 			/// Access the filter content.
-			ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(column.get()));
+			ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column);
 			auto & nested_col = nullable_col.getNestedColumn();
-			auto & actual_col = static_cast<ColumnUInt8 &>(*(nested_col.get()));
+			auto & actual_col = static_cast<ColumnUInt8 &>(*nested_col);
 			auto & filter_col = actual_col.getData();
 
 			/// Access the null values byte map content.
 			ColumnPtr & null_map = nullable_col.getNullValuesByteMap();
-			ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*(null_map.get()));
+			ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*null_map);
 			auto & data = content.getData();
 
 			for (size_t i = 0; i < data.size(); ++i)

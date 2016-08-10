@@ -5,13 +5,13 @@
 namespace DB
 {
 
+/// This the data type of the NULL value.
 class DataTypeNull : public IDataType
 {
 public:
 	using FieldType = Null;
 
 public:
-	DataTypeNull() = default;
 	std::string getName() const override;
 	bool isNull() const override;
 	bool isNumeric() const override;

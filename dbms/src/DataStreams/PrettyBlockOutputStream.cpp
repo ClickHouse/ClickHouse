@@ -51,7 +51,7 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 		{
 			if (col.get()->isNullable())
 			{
-				const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*(col.get()));
+				const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
 				if (nullable_col.isNullAt(row))
 					return true;
 			}
@@ -64,7 +64,7 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 		IColumn * observed_col;
 		if (column.column.get()->isNullable())
 		{
-			ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(column.column.get()));
+			ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column.column);
 			observed_col = nullable_col.getNestedColumn().get();
 		}
 		else

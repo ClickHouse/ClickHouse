@@ -337,7 +337,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		DataTypePtr observed_type;
 		if (type.get()->isNullable())
 		{
-			const DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*(type.get()));
+			const DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*type);
 			observed_type = nullable_type.getNestedType();
 		}
 		else

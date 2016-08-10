@@ -125,10 +125,6 @@ protected:
 	/// Нельзя вызывать с залоченным на запись rwlock.
 	void loadMarks();
 
-	/// Можно вызывать при любом состоянии rwlock.
-	size_t marksCount();
-	size_t nullMarksCount();
-
 	BlockInputStreams read(
 		size_t from_mark,
 		size_t to_mark,
@@ -143,23 +139,23 @@ protected:
 
 private:
 	Files_t files; /// name -> data
-	Files_t null_files;
 
 	Names column_names; /// column_index -> name
 
 	Poco::File marks_file;
 	Poco::File null_marks_file;
 
-	void loadMarksImpl(Files_t & files_descs, Poco::File & marks_file_handle);
+	void loadMarksImpl(bool load_null_marks);
 
 	/// Порядок добавления файлов не должен меняться: он соответствует порядку столбцов в файле с засечками.
 	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
-	void addNullFile(const String & colun_name);
 
 	bool loaded_marks;
 	bool has_nullable_columns = false;
 
 	size_t max_compress_block_size;
+	size_t file_count = 0;
+	size_t null_file_count = 0;
 
 protected:
 	FileChecker file_checker;

@@ -400,22 +400,15 @@ public:
 		return res;
 	}
 
-	/** Более эффективные методы манипуляции */
-	Container_t & getData()
+	void getExtremes(Field & min, Field & max) const override
 	{
-		return data;
+		getExtremesFromNullableContent(min, max, nullptr);
 	}
 
-	const Container_t & getData() const
-	{
-		return data;
-	}
-
-protected:
-	Container_t data;
-
-private:
-	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override
+	/// The following method implements a slightly more general version of getExtremes().
+	/// It takes into account the possible presence of nullable values if a non-null pointer
+	/// to a null byte map is specified.
+	void getExtremesFromNullableContent(Field & min, Field & max, const PaddedPODArray<UInt8> * null_map_) const
 	{
 		size_t size = data.size();
 
@@ -479,6 +472,21 @@ private:
 		min = typename NearestFieldType<T>::Type(cur_min);
 		max = typename NearestFieldType<T>::Type(cur_max);
 	}
+
+
+	/** Более эффективные методы манипуляции */
+	Container_t & getData()
+	{
+		return data;
+	}
+
+	const Container_t & getData() const
+	{
+		return data;
+	}
+
+protected:
+	Container_t data;
 };
 
 

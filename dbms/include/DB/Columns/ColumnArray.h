@@ -299,13 +299,13 @@ public:
 		return std::make_shared<ColumnArray>(new_data, new_offsets);
 	}
 
-private:
-	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override
+	void getExtremes(Field & min, Field & max) const override
 	{
 		min = Array();
 		max = Array();
 	}
 
+private:
 	ColumnPtr data;
 	ColumnPtr offsets;	/// Смещения могут быть разделяемыми для нескольких столбцов - для реализации вложенных структур данных.
 

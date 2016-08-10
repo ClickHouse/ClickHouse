@@ -213,6 +213,7 @@ public:
 	ColumnConst(size_t s_, const T & data_, DataTypePtr data_type_ = DataTypePtr())
 		: ColumnConstBase<T, T, ColumnConst<T>>(s_, data_, data_type_) {}
 
+	bool isNull() const override { return false; };
 	StringRef getDataAt(size_t n) const override;
 	StringRef getDataAtWithTerminatingZero(size_t n) const override;
 	UInt64 get64(size_t n) const override;
@@ -224,47 +225,13 @@ public:
 	/** Преобразование из константы в полноценный столбец */
 	ColumnPtr convertToFullColumn() const override;
 
-private:
-	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override
+	void getExtremes(Field & min, Field & max) const override
 	{
 		min = typename ColumnConstBase<T, T, ColumnConst<T>>::FieldType(this->data);
 		max = typename ColumnConstBase<T, T, ColumnConst<T>>::FieldType(this->data);
 	}
 };
 
-template <>
-class ColumnConst<Null> final : public ColumnConstBase<Null, Null, ColumnConst<Null>>
-{
-private:
-	friend class ColumnConstBase<Null, Null, ColumnConst<Null>>;
-
-	Null & getDataFromHolderImpl() { return this->data; }
-	const Null & getDataFromHolderImpl() const { return this->data; }
-
-public:
-	ColumnConst(size_t s_, const Null & data_, DataTypePtr data_type_ = DataTypePtr())
-		: ColumnConstBase<Null, Null, ColumnConst<Null>>(s_, data_, data_type_) {}
-
-	bool isNull() const override { return true; }
-
-	StringRef getDataAt(size_t n) const override;
-	StringRef getDataAtWithTerminatingZero(size_t n) const override;
-	UInt64 get64(size_t n) const override;
-
-	/** Более эффективные методы манипуляции */
-	Null & getData() { return this->data; }
-	const Null & getData() const { return this->data; }
-
-	/** Преобразование из константы в полноценный столбец */
-	ColumnPtr convertToFullColumn() const override;
-
-private:
-	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override
-	{
-		min = FieldType();
-		max = FieldType();
-	}
-};
 
 template <>
 class ColumnConst<Array> final : public ColumnConstBase<Array, std::shared_ptr<Array>, ColumnConst<Array>>
@@ -293,8 +260,7 @@ public:
 	/** Преобразование из константы в полноценный столбец */
 	ColumnPtr convertToFullColumn() const override;
 
-private:
-	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override
+	void getExtremes(Field & min, Field & max) const override
 	{
 		min = FieldType();
 		max = FieldType();
@@ -332,8 +298,7 @@ public:
 	/** Create ColumnTuple of constant columns as elements. */
 	ColumnPtr convertToTupleOfConstants() const;
 
-private:
-	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override;
+	void getExtremes(Field & min, Field & max) const override;
 };
 
 

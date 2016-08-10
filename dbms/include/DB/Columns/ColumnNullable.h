@@ -6,16 +6,18 @@
 namespace DB
 {
 
+using NullValuesByteMap = PaddedPODArray<UInt8>;
+
 class ColumnNullable final : public IColumn
 {
 public:
-	ColumnNullable(ColumnPtr nested_column_, bool fill_with_nulls = false);
+	ColumnNullable(ColumnPtr nested_column_);
+	ColumnNullable(ColumnPtr nested_column_, bool fill_with_nulls);
 	std::string getName() const override;
 	bool isNumeric() const override;
 	bool isConst() const override;
 	bool isFixed() const override;
 	bool isNullable() const override;
-	size_t sizeOfField() const override;
 	ColumnPtr cloneResized(size_t size) const override;
 	ColumnPtr cloneEmpty() const override;
 	size_t size() const override;
@@ -40,6 +42,7 @@ public:
 	ColumnPtr replicate(const Offsets_t & replicate_offsets) const override;
 	ColumnPtr convertToFullColumnIfConst() const override;
 	void updateHashWithValue(size_t n, SipHash & hash) const override;
+	void getExtremes(Field & min, Field & max) const override;
 
 	ColumnPtr & getNestedColumn();
 	const ColumnPtr & getNestedColumn() const;
@@ -49,7 +52,6 @@ public:
 	void updateNullValuesByteMap(const ColumnNullable & other);
 
 private:
-	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override;
 	ColumnUInt8 & getNullMapContent();
 	const ColumnUInt8 & getNullMapContent() const;
 

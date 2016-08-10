@@ -86,8 +86,7 @@ public:
 		return cloneDummy(s == 0 ? 0 : offsets.back());
 	}
 
-private:
-	void getExtremesImpl(Field & min, Field & max, const PaddedPODArray<UInt8> * null_map_) const override
+	void getExtremes(Field & min, Field & max) const override
 	{
 		throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}

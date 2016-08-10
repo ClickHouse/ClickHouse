@@ -264,8 +264,7 @@ public:
 	const Columns & getColumns() const { return columns; }
 	Columns & getColumns() { return columns; }
 
-private:
-	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override
+	void getExtremes(Field & min, Field & max) const override
 	{
 		const size_t tuple_size = columns.size();
 
@@ -276,7 +275,7 @@ private:
 		auto & max_backend = max.get<Tuple &>().t;
 
 		for (const auto i : ext::range(0, tuple_size))
-			columns[i]->getExtremes(min_backend[i], max_backend[i], null_map_);
+			columns[i]->getExtremes(min_backend[i], max_backend[i]);
 	}
 };
 

@@ -46,9 +46,21 @@ void IMergedBlockOutputStream::addStream(const String & path, const String & nam
 
 	if (type.isNullable())
 	{
+		/// First create the stream that handles the null map of the given column.
 		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-		const IDataType & nested_type = *(nullable_type.getNestedType().get());
-		addNullStream(path, name, estimated_size, filename);
+		const IDataType & nested_type = *nullable_type.getNestedType();
+
+		std::string null_map_name = name + NULL_MAP_EXTENSION;
+		column_streams[null_map_name] = std::make_unique<ColumnStream>(
+			escaped_column_name,
+			path + escaped_column_name, NULL_MAP_EXTENSION,
+			path + escaped_column_name, NULL_MARKS_FILE_EXTENSION,
+			max_compress_block_size,
+			compression_method,
+			estimated_size,
+			aio_threshold);
+
+		/// Then create the stream that handles the data of the given column.
 		addStream(path, name, nested_type, estimated_size, level, filename);
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
@@ -82,25 +94,6 @@ void IMergedBlockOutputStream::addStream(const String & path, const String & nam
 }
 
 
-void IMergedBlockOutputStream::addNullStream(const String & path, const String & name, size_t estimated_size, String filename)
-{
-	String escaped_column_name;
-	if (filename.size())
-		escaped_column_name = escapeForFileName(filename);
-	else
-		escaped_column_name = escapeForFileName(name);
-
-	null_streams[name] = std::make_unique<ColumnStream>(
-		escaped_column_name,
-		path + escaped_column_name, NULL_MAP_EXTENSION,
-		path + escaped_column_name, NULL_MARKS_FILE_EXTENSION,
-		max_compress_block_size,
-		compression_method,
-		estimated_size,
-		aio_threshold);
-}
-
-
 /// Записать данные одного столбца.
 void IMergedBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns, size_t level)
 {
@@ -108,13 +101,15 @@ void IMergedBlockOutputStream::writeData(const String & name, const IDataType & 
 
 	if (type.isNullable())
 	{
+		/// First write to the null map.
 		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-		const IDataType & nested_type = *(nullable_type.getNestedType().get());
+		const IDataType & nested_type = *(nullable_type.getNestedType());
 
 		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(column);
-		const IColumn & nested_col = *(nullable_col.getNestedColumn().get());
+		const IColumn & nested_col = *(nullable_col.getNestedColumn());
 
-		ColumnStream & stream = *null_streams[name];
+		std::string filename = name + NULL_MAP_EXTENSION;
+		ColumnStream & stream = *column_streams[filename];
 
 		size_t prev_mark = 0;
 		while (prev_mark < size)
@@ -138,7 +133,7 @@ void IMergedBlockOutputStream::writeData(const String & name, const IDataType & 
 				writeIntBinary(stream.compressed.offset(), stream.marks);
 			}
 
-			DataTypeUInt8{}.serializeBinary(*(nullable_col.getNullValuesByteMap().get()), stream.compressed);
+			DataTypeUInt8{}.serializeBinary(*(nullable_col.getNullValuesByteMap()), stream.compressed);
 
 			/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
 			stream.compressed.nextIfAtEnd();
@@ -146,6 +141,7 @@ void IMergedBlockOutputStream::writeData(const String & name, const IDataType & 
 			prev_mark += limit;
 		}
 
+		/// Then write data.
 		writeData(name, nested_type, nested_col, offset_columns, level);
 		return;
 	}
@@ -368,14 +364,6 @@ MergeTreeData::DataPart::Checksums MergedBlockOutputStream::writeSuffixAndGetChe
 
 	column_streams.clear();
 
-	for (ColumnStreams::iterator it = null_streams.begin(); it != null_streams.end(); ++it)
-	{
-		it->second->finalize();
-		it->second->addToChecksums(checksums);
-	}
-
-	null_streams.clear();
-
 	if (marks_count == 0)
 	{
 		/// Кусок пустой - все записи удалились.
@@ -525,7 +513,6 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
 {
 	if (!initialized)
 	{
-		null_streams.clear();
 		column_streams.clear();
 		for (size_t i = 0; i < block.columns(); ++i)
 		{
@@ -557,14 +544,6 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
 {
 	MergeTreeData::DataPart::Checksums checksums;
 
-	for (auto & stream : null_streams)
-	{
-		stream.second->finalize();
-		if (sync)
-			stream.second->sync();
-		std::string column = escapeForFileName(stream.first);
-		stream.second->addToChecksums(checksums, column);
-	}
 	for (auto & column_stream : column_streams)
 	{
 		column_stream.second->finalize();
@@ -574,7 +553,6 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
 		column_stream.second->addToChecksums(checksums, column);
 	}
 
-	null_streams.clear();
 	column_streams.clear();
 	initialized = false;
 

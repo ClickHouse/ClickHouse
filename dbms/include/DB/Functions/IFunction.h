@@ -106,6 +106,8 @@ public:
 		executeImpl(block, arguments, result);
 	}
 
+	/// Returns true if the function implementation directly handles the arguments
+	/// that correspond to nullable columns and null columns.
 	virtual bool hasSpecialSupportForNulls() const { return false; }
 
 	/** Позволяет узнать, является ли функция монотонной в некотором диапазоне значений.
@@ -135,7 +137,23 @@ public:
 
 	virtual ~IFunction() {}
 
+protected:
+	/// Returns the copy of a given block in which each column specified in
+	/// the "arguments" parameter is replaced with its respective nested
+	/// column if it is nullable.
+	static Block extractNonNullableBlock(const Block & block, const ColumnNumbers & arguments);
+
 private:
+	/// Internal method used for implementing both the execute() methods.
+	/// The "performer" argument specifies which version of executeImpl() must be used.
+	/// Except for functions, such as multiIf, whose method hasSpecialSupportForNulls()
+	/// returns true, we deal with nullable and null arguments as follows:
+	/// - if at least one argument is NULL, we return NULL;
+	/// - if at least one argument is nullable, we call the function implementation
+	/// with a block in which nullable columns that correspond to function arguments
+	/// have been replaced with their respective nested columns;
+	/// - if at least one function argument is nullable, the result column is wrapped
+	/// into a nullable column.
 	template <typename Fun>
 	void perform(Block & block, const ColumnNumbers & arguments, size_t result, const Fun & performer);
 };

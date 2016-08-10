@@ -103,7 +103,7 @@ struct TypeChecker<Nullable<TType>>
 		if (!arg.get()->isNullable())
 			return false;
 
-		const DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*(arg.get()));
+		const DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*arg);
 		const IDataType * nested_type = nullable_type.getNestedType().get();
 		return typeid_cast<const TType *>(nested_type) != nullptr;
 	}

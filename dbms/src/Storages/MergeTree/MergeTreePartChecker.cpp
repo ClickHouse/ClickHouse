@@ -34,9 +34,6 @@ constexpr auto NULL_MAP_EXTENSION = ".null";
 constexpr auto MARKS_FILE_EXTENSION = ".mrk";
 constexpr auto NULL_MARKS_FILE_EXTENSION = ".null_mrk";
 
-/// bin / mrk
-/// null / null_mrk
-
 struct Stream
 {
 public:
@@ -159,7 +156,7 @@ size_t checkNullableColumn(const String & path,
 	const String & name,
 	const MergeTreePartChecker::Settings & settings,
 	MergeTreeData::DataPart::Checksums & checksums,
-	volatile bool * is_cancelled)
+	std::atomic<bool> * is_cancelled)
 {
 	size_t rows = 0;
 

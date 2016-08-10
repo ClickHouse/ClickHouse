@@ -262,7 +262,6 @@ public:
 	/// Создать кэш засечек указанного размера. Это можно сделать только один раз.
 	void setMarkCache(size_t cache_size_in_bytes);
 	std::shared_ptr<MarkCache> getMarkCache() const;
-	std::shared_ptr<MarkCache> getNullMarkCache() const;
 
 	BackgroundProcessingPool & getBackgroundPool();
 

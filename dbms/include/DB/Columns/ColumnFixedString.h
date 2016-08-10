@@ -301,8 +301,7 @@ public:
 
 	size_t getN() const { return n; }
 
-private:
-	void getExtremesImpl(Field & min, Field & max, const PaddedPODArray<UInt8> * null_map_) const override
+	void getExtremes(Field & min, Field & max) const override
 	{
 		min = String();
 		max = String();

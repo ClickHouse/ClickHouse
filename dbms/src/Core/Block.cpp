@@ -7,11 +7,8 @@
 #include <DB/Storages/ColumnDefault.h>
 
 #include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnNullable.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeNull.h>
-#include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
 #include <DB/Parsers/ASTExpressionList.h>
@@ -343,41 +340,6 @@ Block Block::sortColumns() const
 }
 
 
-Block Block::extractNonNullableBlock(const ColumnNumbers & arguments) const
-{
-	Block non_nullable_block;
-	non_nullable_block.reserve(columns());
-
-	ColumnNumbers args2 = arguments;
-	std::sort(args2.begin(), args2.end());
-
-	size_t pos = 0;
-	for (const auto & col_it : index_by_position)
-	{
-		const auto & col = *col_it;
-
-		bool found = std::binary_search(args2.begin(), args2.end(), pos) && col.column && col.type;
-
-		if (found && col.column.get()->isNullable())
-		{
-			auto nullable_col = static_cast<const ColumnNullable *>(col.column.get());
-			ColumnPtr nested_col = nullable_col->getNestedColumn();
-
-			auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
-			DataTypePtr nested_type = nullable_type->getNestedType();
-
-			non_nullable_block.insert(pos, {nested_col, nested_type, col.name});
-		}
-		else
-			non_nullable_block.insert(pos, col);
-
-		++pos;
-	}
-
-	return non_nullable_block;
-}
-
-
 ColumnsWithTypeAndName Block::getColumns() const
 {
 	return ColumnsWithTypeAndName(data.begin(), data.end());
@@ -479,11 +441,6 @@ void Block::swap(Block & other) noexcept
 	std::swap(info, other.info);
 	data.swap(other.data);
 	index_by_name.swap(other.index_by_name);
-}
-
-void Block::reserve(size_t size)
-{
-	index_by_position.reserve(size);
 }
 
 }

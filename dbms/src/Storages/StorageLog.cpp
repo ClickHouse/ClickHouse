@@ -1,6 +1,7 @@
 #include <DB/Storages/StorageLog.h>
 
 #include <DB/Common/Exception.h>
+#include <DB/Common/StringUtils.h>
 
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/WriteBufferFromFile.h>
@@ -55,6 +56,7 @@ public:
 		column_types(column_names.size()),
 		storage(storage_),
 		mark_number(mark_number_),
+		null_mark_number(0),
 		rows_limit(rows_limit_),
 		current_mark(mark_number_),
 		max_read_buffer_size(max_read_buffer_size_),
@@ -123,10 +125,8 @@ private:
 
 	using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
 	FileStreams streams;
-	FileStreams null_streams;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
-	void addNullStream(const String & name);
 	void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read, size_t level = 0, bool read_offsets = true);
 };
 
@@ -190,7 +190,6 @@ private:
 
 	using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
 	FileStreams streams;
-	FileStreams null_streams;
 
 	using OffsetColumns = std::set<std::string>;
 
@@ -204,7 +203,8 @@ private:
 		OffsetColumns & offset_columns, size_t level = 0);
 	void writeMarks(MarksForColumns marks);
 	void writeNullMarks(MarksForColumns marks);
-	void writeMarksImpl(MarksForColumns marks, WriteBufferFromFile & stream, StorageLog::Files_t & files_descs);
+	void writeMarksImpl(MarksForColumns marks, WriteBufferFromFile & stream,
+		const std::string & extension, size_t count);
 };
 
 
@@ -279,7 +279,7 @@ Block LogBlockInputStream::readImpl()
 		const IDataType * observed_type;
 		if (column.type.get()->isNullable())
 		{
-			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(column.type.get()));
+			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*column.type);
 			observed_type = nullable_type.getNestedType().get();
 		}
 		else
@@ -337,8 +337,6 @@ Block LogBlockInputStream::readImpl()
 		  *  буферы не висели в памяти.
 		  */
 		streams.clear();
-		if (has_null_marks)
-			null_streams.clear();
 	}
 
 	return res;
@@ -349,9 +347,21 @@ void LogBlockInputStream::addStream(const String & name, const IDataType & type,
 {
 	if (type.isNullable())
 	{
+		/// First create the stream that handles the null map of the given column.
 		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-		const IDataType & nested_type = *(nullable_type.getNestedType().get());
-		addNullStream(name);
+		const IDataType & nested_type = *nullable_type.getNestedType();
+
+		std::string filename = name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION;
+
+		streams.emplace(filename, std::make_unique<Stream>(
+			storage.files[filename].data_file.path(),
+			null_mark_number
+				? storage.files[filename].marks[null_mark_number].offset
+				: 0,
+			max_read_buffer_size));
+
+
+		/// Then create the stream that handles the data of the given column.
 		addStream(name, nested_type, level);
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
@@ -378,29 +388,21 @@ void LogBlockInputStream::addStream(const String & name, const IDataType & type,
 }
 
 
-void LogBlockInputStream::addNullStream(const String & name)
-{
-	null_streams[name].reset(new Stream{
-		storage.null_files[name].data_file.path(),
-		null_mark_number
-			? storage.null_files[name].marks[null_mark_number].offset
-			: 0,
-		max_read_buffer_size});
-}
-
-
 void LogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read,
 									size_t level, bool read_offsets)
 {
 	if (type.isNullable())
 	{
+		/// First read from the null map.
 		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-		const IDataType & nested_type = *(nullable_type.getNestedType().get());
+		const IDataType & nested_type = *nullable_type.getNestedType();
 
 		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(column);
-		IColumn & nested_col = *(nullable_col.getNestedColumn().get());
+		IColumn & nested_col = *nullable_col.getNestedColumn();
 
-		DataTypeUInt8{}.deserializeBinary(*(nullable_col.getNullValuesByteMap().get()), null_streams[name]->compressed, max_rows_to_read, 0);
+		DataTypeUInt8{}.deserializeBinary(*nullable_col.getNullValuesByteMap(),
+			streams[name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION]->compressed, max_rows_to_read, 0);
+		/// Then read data.
 		readData(name, nested_type, nested_col, max_rows_to_read, level, read_offsets);
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
@@ -435,19 +437,21 @@ void LogBlockOutputStream::write(const Block & block)
 	OffsetColumns offset_columns;
 
 	MarksForColumns marks;
-	marks.reserve(storage.files.size());
+	marks.reserve(storage.file_count);
 
 	MarksForColumns null_marks;
 	if (null_marks_stream)
-		null_marks.reserve(storage.null_files.size());
+		null_marks.reserve(storage.null_file_count);
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		const ColumnWithTypeAndName & column = block.getByPosition(i);
 		writeData(column.name, *column.type, *column.column, marks, null_marks, offset_columns);
 	}
+
 	writeMarks(marks);
-	writeNullMarks(null_marks);
+	if (null_marks_stream)
+		writeNullMarks(null_marks);
 }
 
 
@@ -465,12 +469,6 @@ void LogBlockOutputStream::writeSuffix()
 	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		it->second->finalize();
 
-	if (null_marks_stream)
-	{
-		for (FileStreams::iterator it = null_streams.begin(); it != null_streams.end(); ++it)
-			it->second->finalize();
-	}
-
 	std::vector<Poco::File> column_files;
 	for (auto & pair : streams)
 		column_files.push_back(storage.files[pair.first].data_file);
@@ -479,8 +477,6 @@ void LogBlockOutputStream::writeSuffix()
 	storage.file_checker.update(column_files.begin(), column_files.end());
 
 	streams.clear();
-	if (null_marks_stream)
-		null_streams.clear();
 }
 
 
@@ -488,9 +484,15 @@ void LogBlockOutputStream::addStream(const String & name, const IDataType & type
 {
 	if (type.isNullable())
 	{
+		/// First create the stream that handles the null map of the given column.
 		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-		const IDataType & nested_type = *(nullable_type.getNestedType().get());
-		addNullStream(name);
+		const IDataType & nested_type = *nullable_type.getNestedType();
+
+		std::string filename = name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION;
+		streams.emplace(filename, std::make_unique<Stream>(storage.files[filename].data_file.path(),
+			storage.max_compress_block_size));
+
+		/// Then create the stream that handles the data of the given column.
 		addStream(name, nested_type, level);
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
@@ -508,33 +510,32 @@ void LogBlockOutputStream::addStream(const String & name, const IDataType & type
 }
 
 
-void LogBlockOutputStream::addNullStream(const String & name)
-{
-	null_streams[name].reset(new Stream{storage.null_files[name].data_file.path(), storage.max_compress_block_size});
-}
-
-
 void LogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column,
 	MarksForColumns & out_marks, MarksForColumns & out_null_marks,
 	OffsetColumns & offset_columns, size_t level)
 {
 	if (type.isNullable())
 	{
+		/// First write to the null map.
 		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-		const IDataType & nested_type = *(nullable_type.getNestedType().get());
+		const IDataType & nested_type = *nullable_type.getNestedType();
 
 		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(column);
-		const IColumn & nested_col = *(nullable_col.getNestedColumn().get());
+		const IColumn & nested_col = *nullable_col.getNestedColumn();
+
+		std::string filename = name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION;
 
 		Mark mark;
-		mark.rows = (storage.null_files[name].marks.empty() ? 0 : storage.null_files[name].marks.back().rows) + column.size();
-		mark.offset = null_streams[name]->plain_offset + null_streams[name]->plain.count();
+		mark.rows = (storage.files[filename].marks.empty() ? 0 : storage.files[filename].marks.back().rows) + column.size();
+		mark.offset = streams[filename]->plain_offset + streams[filename]->plain.count();
 
-		out_null_marks.emplace_back(storage.null_files[name].column_index, mark);
+		out_null_marks.emplace_back(storage.files[filename].column_index, mark);
 
-		DataTypeUInt8{}.serializeBinary(*(nullable_col.getNullValuesByteMap().get()), null_streams[name]->compressed);
-		null_streams[name]->compressed.next();
+		DataTypeUInt8{}.serializeBinary(*nullable_col.getNullValuesByteMap(),
+			streams[filename]->compressed);
+		streams[filename]->compressed.next();
 
+		/// Then write data.
 		writeData(name, nested_type, nested_col, out_marks, out_null_marks, offset_columns, level);
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
@@ -579,20 +580,19 @@ static bool ColumnIndexLess(const std::pair<size_t, Mark> & a, const std::pair<s
 
 void LogBlockOutputStream::writeMarks(MarksForColumns marks)
 {
-	writeMarksImpl(marks, marks_stream, storage.files);
+	writeMarksImpl(marks, marks_stream, "", storage.file_count);
 }
-
 
 void LogBlockOutputStream::writeNullMarks(MarksForColumns marks)
 {
-	if (null_marks_stream)
-		writeMarksImpl(marks, *null_marks_stream, storage.null_files);
+	writeMarksImpl(marks, *null_marks_stream, DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION,
+		storage.null_file_count);
 }
 
-
-void LogBlockOutputStream::writeMarksImpl(MarksForColumns marks, WriteBufferFromFile & stream, StorageLog::Files_t & files_descs)
+void LogBlockOutputStream::writeMarksImpl(MarksForColumns marks, WriteBufferFromFile & stream,
+	const std::string & extension, size_t count)
 {
-	if (marks.size() != storage.files.size())
+	if (marks.size() != count)
 		throw Exception("Wrong number of marks generated from block. Makes no sense.", ErrorCodes::LOGICAL_ERROR);
 
 	sort(marks.begin(), marks.end(), ColumnIndexLess);
@@ -607,7 +607,7 @@ void LogBlockOutputStream::writeMarksImpl(MarksForColumns marks, WriteBufferFrom
 		writeIntBinary(mark.rows, stream);
 		writeIntBinary(mark.offset, stream);
 
-		files_descs[storage.column_names[i]].marks.push_back(mark);
+		storage.files[storage.column_names[i] + extension].marks.push_back(mark);
 	}
 }
 
@@ -678,12 +678,22 @@ void StorageLog::addFile(const String & column_name, const IDataType & type, siz
 
 	if (type.isNullable())
 	{
+		/// First add the file describing the null map of the column.
 		has_nullable_columns = true;
 
 		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-		const IDataType & actual_type = *(nullable_type.getNestedType().get());
+		const IDataType & actual_type = *nullable_type.getNestedType();
 
-		addNullFile(column_name);
+		std::string filename = column_name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION;
+		ColumnData & column_data = files.emplace(filename, ColumnData{}).first->second;
+		++null_file_count;
+
+		column_data.column_index = column_names.size();
+		column_data.data_file = Poco::File{
+			path + escapeForFileName(name) + '/' + escapeForFileName(column_name)
+			+ DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION};
+
+		/// Then add the file describing the column data.
 		addFile(column_name, actual_type, level);
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
@@ -694,9 +704,12 @@ void StorageLog::addFile(const String & column_name, const IDataType & type, siz
 		if (files.end() == files.find(size_name))
 		{
 			ColumnData & column_data = files.insert(std::make_pair(size_name, ColumnData())).first->second;
+			++file_count;
 			column_data.column_index = column_names.size();
-			column_data.data_file = Poco::File(
-				path + escapeForFileName(name) + '/' + escapeForFileName(DataTypeNested::extractNestedTableName(column_name)) + size_column_suffix + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
+			column_data.data_file = Poco::File{
+				path + escapeForFileName(name) + '/'
+				+ escapeForFileName(DataTypeNested::extractNestedTableName(column_name))
+				+ size_column_suffix + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION};
 
 			column_names.push_back(size_name);
 		}
@@ -706,22 +719,16 @@ void StorageLog::addFile(const String & column_name, const IDataType & type, siz
 	else
 	{
 		ColumnData & column_data = files.insert(std::make_pair(column_name, ColumnData())).first->second;
+		++file_count;
 		column_data.column_index = column_names.size();
-		column_data.data_file = Poco::File(
-			path + escapeForFileName(name) + '/' + escapeForFileName(column_name) + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
+		column_data.data_file = Poco::File{
+			path + escapeForFileName(name) + '/'
+			+ escapeForFileName(column_name) + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION};
 
 		column_names.push_back(column_name);
 	}
 }
 
-void StorageLog::addNullFile(const String & column_name)
-{
-	ColumnData & column_data = null_files.emplace(column_name, ColumnData{}).first->second;
-
-	column_data.column_index = column_names.size();
-	column_data.data_file = Poco::File{
-		path + escapeForFileName(name) + '/' + escapeForFileName(column_name) + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION};
-}
 
 void StorageLog::loadMarks()
 {
@@ -730,34 +737,43 @@ void StorageLog::loadMarks()
 	if (loaded_marks)
 		return;
 
-	loadMarksImpl(files, marks_file);
+	loadMarksImpl(false);
 	if (has_nullable_columns)
-		loadMarksImpl(null_files, null_marks_file);
+		loadMarksImpl(true);
 
 	loaded_marks = true;
 }
 
-void StorageLog::loadMarksImpl(Files_t & files_descs, Poco::File & marks_file_handle)
+
+void StorageLog::loadMarksImpl(bool load_null_marks)
 {
 	using FilesByIndex = std::vector<Files_t::iterator>;
-	FilesByIndex files_by_index(files_descs.size());
-	for (Files_t::iterator it = files_descs.begin(); it != files_descs.end(); ++it)
+
+	size_t count = load_null_marks ? null_file_count : file_count;
+	Poco::File & marks_file_handle = load_null_marks ? null_marks_file : marks_file;
+
+	FilesByIndex files_by_index(count);
+	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 	{
+		bool has_null_extension = endsWith(it->first, DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION);
+		if (!load_null_marks && has_null_extension)
+			continue;
+		if (load_null_marks && !has_null_extension)
+			continue;
+
 		files_by_index[it->second.column_index] = it;
 	}
 
 	if (marks_file_handle.exists())
 	{
 		size_t file_size = marks_file_handle.getSize();
-		if (file_size % (files_descs.size() * sizeof(Mark)) != 0)
+		if (file_size % (count * sizeof(Mark)) != 0)
 			throw Exception("Size of marks file is inconsistent", ErrorCodes::SIZES_OF_MARKS_FILES_ARE_INCONSISTENT);
 
-		int marks_count = file_size / (files_descs.size() * sizeof(Mark));
+		int marks_count = file_size / (count * sizeof(Mark));
 
 		for (size_t i = 0; i < files_by_index.size(); ++i)
-		{
 			files_by_index[i]->second.marks.reserve(marks_count);
-		}
 
 		ReadBufferFromFile marks_rb(marks_file_handle.path(), 32768);
 		while (!marks_rb.eof())
@@ -773,15 +789,6 @@ void StorageLog::loadMarksImpl(Files_t & files_descs, Poco::File & marks_file_ha
 	}
 }
 
-size_t StorageLog::marksCount()
-{
-	return files.begin()->second.marks.size();
-}
-
-size_t StorageLog::nullMarksCount()
-{
-	return null_files.begin()->second.marks.size();
-}
 
 void StorageLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
@@ -795,21 +802,11 @@ void StorageLog::rename(const String & new_path_to_db, const String & new_databa
 	file_checker.setPath(path + escapeForFileName(name) + '/' + "sizes.json");
 
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
-	{
 		it->second.data_file = Poco::File(path + escapeForFileName(name) + '/' + Poco::Path(it->second.data_file.path()).getFileName());
-	}
 
 	marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
-
 	if (has_nullable_columns)
-	{
-		for (Files_t::iterator it = null_files.begin(); it != null_files.end(); ++it)
-		{
-			it->second.data_file = Poco::File(path + escapeForFileName(name) + '/' + Poco::Path(it->second.data_file.path()).getFileName());
-		}
-
 		null_marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_NULL_MARKS_FILE_NAME);
-	}
 }
 
 
@@ -828,24 +825,20 @@ const Marks & StorageLog::getMarksWithRealRowCount() const
 
 	const String & column_name = columns->front().name;
 	const IDataType & column_type = *init_column_type();
-	String file_name;
+	String filename;
 
 	/** Засечки достаём из первого столбца.
 	  * Если это - массив, то берём засечки, соответствующие размерам, а не внутренностям массивов.
 	  */
 
 	if (typeid_cast<const DataTypeArray *>(&column_type))
-	{
-		file_name = DataTypeNested::extractNestedTableName(column_name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX "0";
-	}
+		filename = DataTypeNested::extractNestedTableName(column_name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX "0";
 	else
-	{
-		file_name = column_name;
-	}
+		filename = column_name;
 
-	Files_t::const_iterator it = files.find(file_name);
+	Files_t::const_iterator it = files.find(filename);
 	if (files.end() == it)
-		throw Exception("Cannot find file " + file_name, ErrorCodes::LOGICAL_ERROR);
+		throw Exception("Cannot find file " + filename, ErrorCodes::LOGICAL_ERROR);
 
 	return it->second.marks;
 }

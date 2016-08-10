@@ -88,7 +88,8 @@ public:
 	  */
 	virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
 
-	/** delimiter - the delimiter we expect when reading a value that is not double-quoted.
+	/** delimiter - the delimiter we expect when reading a string value that is not double-quoted
+	  * (the delimiter is not consumed).
 	  */
 	virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const = 0;
 

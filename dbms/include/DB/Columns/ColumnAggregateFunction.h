@@ -332,8 +332,7 @@ public:
 		return data;
 	}
 
-private:
-	void getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const override
+	void getExtremes(Field & min, Field & max) const override
 	{
 		throw Exception("Method getExtremes is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
 	}

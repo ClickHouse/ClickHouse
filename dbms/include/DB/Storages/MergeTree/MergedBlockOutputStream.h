@@ -61,8 +61,6 @@ protected:
 	using ColumnStreams = std::map<String, std::unique_ptr<ColumnStream>>;
 
 	void addStream(const String & path, const String & name, const IDataType & type, size_t estimated_size = 0, size_t level = 0, String filename = "");
-	void addNullStream(const String & path, const String & name, size_t estimated_size, String filename);
-
 
 	/// Записать данные одного столбца.
 	void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns, size_t level = 0);
@@ -70,7 +68,6 @@ protected:
 	MergeTreeData & storage;
 
 	ColumnStreams column_streams;
-	ColumnStreams null_streams;
 
 	/// Смещение до первой строчки блока, для которой надо записать индекс.
 	size_t index_offset = 0;

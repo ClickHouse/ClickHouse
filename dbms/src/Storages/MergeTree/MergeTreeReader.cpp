@@ -37,14 +37,14 @@ extern const int MEMORY_LIMIT_EXCEEDED;
 
 MergeTreeReader::MergeTreeReader(const String & path, /// Путь к куску
 	const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
-	UncompressedCache * uncompressed_cache, MarkCache * mark_cache, MarkCache * null_mark_cache_,
+	UncompressedCache * uncompressed_cache, MarkCache * mark_cache,
 	bool save_marks_in_cache,
 	MergeTreeData & storage, const MarkRanges & all_mark_ranges,
 	size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints,
 	const ReadBufferFromFileBase::ProfileCallback & profile_callback,
 	clockid_t clock_type)
 	: avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns),
-		uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), null_mark_cache{null_mark_cache_},
+		uncompressed_cache(uncompressed_cache), mark_cache(mark_cache),
 		save_marks_in_cache(save_marks_in_cache), storage(storage),
 		all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
 {
@@ -99,7 +99,7 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
 			const IDataType * observed_type;
 			if (column.type.get()->isNullable())
 			{
-				const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(column.type.get()));
+				const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*column.type);
 				observed_type = nullable_type.getNestedType().get();
 			}
 			else
@@ -179,9 +179,17 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 
 	if (type.isNullable())
 	{
+		/// First create the stream that handles the null map of the given column.
 		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-		const IDataType & nested_type = *(nullable_type.getNestedType().get());
-		addNullStream(name, all_mark_ranges, profile_callback, clock_type);
+		const IDataType & nested_type = *nullable_type.getNestedType();
+
+		std::string filename = name + NULL_MAP_EXTENSION;
+
+		streams.emplace(filename, std::make_unique<Stream>(
+			path + escaped_column_name, NULL_MAP_EXTENSION, uncompressed_cache, mark_cache, save_marks_in_cache,
+			all_mark_ranges, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+
+		/// Then create the stream that handles the data of the given column.
 		addStream(name, nested_type, all_mark_ranges, profile_callback, clock_type, level);
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
@@ -206,35 +214,26 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 }
 
 
-void MergeTreeReader::addNullStream(const String & name, const MarkRanges & all_mark_ranges,
-	const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
-{
-	String escaped_column_name = escapeForFileName(name);
-
-	/** Если файла с данными нет - то не будем пытаться открыть его.
-	  * Это нужно, чтобы можно было добавлять новые столбцы к структуре таблицы без создания файлов для старых кусков.
-	  */
-	if (!Poco::File(path + escaped_column_name + NULL_MAP_EXTENSION).exists())
-		return;
-
-	null_streams.emplace(name, std::make_unique<Stream>(
-		path + escaped_column_name, NULL_MAP_EXTENSION, uncompressed_cache, null_mark_cache, save_marks_in_cache,
-		all_mark_ranges, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
-}
-
-
 void MergeTreeReader::readData(const String & name, const IDataType & type, IColumn & column, size_t from_mark, size_t max_rows_to_read,
 	size_t level, bool read_offsets)
 {
 	if (type.isNullable())
 	{
+		/// First read from the null map.
 		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-		const IDataType & nested_type = *(nullable_type.getNestedType().get());
+		const IDataType & nested_type = *nullable_type.getNestedType();
 
 		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(column);
-		IColumn & nested_col = *(nullable_col.getNestedColumn().get());
+		IColumn & nested_col = *nullable_col.getNestedColumn();
 
-		readNullData(name, nullable_col, from_mark, max_rows_to_read);
+		std::string filename = name + NULL_MAP_EXTENSION;
+
+		Stream & stream = *(streams.at(filename));
+		stream.seekToMark(from_mark);
+		IColumn & col8 = *(nullable_col.getNullValuesByteMap());
+		DataTypeUInt8{}.deserializeBinary(col8, *stream.data_buffer, max_rows_to_read, 0);
+
+		/// Then read data.
 		readData(name, nested_type, nested_col, from_mark, max_rows_to_read, level, read_offsets);
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
@@ -310,29 +309,6 @@ void MergeTreeReader::readData(const String & name, const IDataType & type, ICol
 }
 
 
-void MergeTreeReader::readNullData(const String & name, ColumnNullable & nullable_col, size_t from_mark, size_t max_rows_to_read)
-{
-	Stream & stream = *null_streams.at(name);
-	double & avg_value_size_hint = avg_value_size_hints[name];
-	stream.seekToMark(from_mark);
-	IColumn & col8 = *(nullable_col.getNullValuesByteMap().get());
-	DataTypeUInt8{}.deserializeBinary(col8, *stream.data_buffer, max_rows_to_read, avg_value_size_hint);
-
-	/// Вычисление подсказки о среднем размере значения.
-	size_t column_size = col8.size();
-	if (column_size)
-	{
-		double current_avg_value_size = static_cast<double>(col8.byteSize()) / column_size;
-
-		/// Эвристика, чтобы при изменениях, значение avg_value_size_hint быстро росло, но медленно уменьшалось.
-		if (current_avg_value_size > avg_value_size_hint)
-			avg_value_size_hint = current_avg_value_size;
-		else if (current_avg_value_size * 2 < avg_value_size_hint)
-			avg_value_size_hint = (current_avg_value_size + avg_value_size_hint * 3) / 4;
-	}
-}
-
-
 void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder)
 {
 	if (!res)
@@ -353,21 +329,21 @@ void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_
 		{
 			const ColumnWithTypeAndName & column = res.getByPosition(i);
 
-			ColumnPtr observed_column;
+			IColumn * observed_column;
 			std::string column_name;
-			if (column.column.get()->isNullable())
+			if (column.column->isNullable())
 			{
-				ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(column.column.get()));
-				observed_column = nullable_col.getNestedColumn();
-				column_name = observed_column.get()->getName();
+				ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(column.column));
+				observed_column = nullable_col.getNestedColumn().get();
+				column_name = observed_column->getName();
 			}
 			else
 			{
-				observed_column = column.column;
+				observed_column = column.column.get();
 				column_name = column.name;
 			}
 
-			if (const ColumnArray * array = typeid_cast<const ColumnArray *>(observed_column.get()))
+			if (const ColumnArray * array = typeid_cast<const ColumnArray *>(observed_column))
 			{
 				String offsets_name = DataTypeNested::extractNestedTableName(column_name);
 				auto & offsets_column = offset_columns[offsets_name];
@@ -570,9 +546,7 @@ void MergeTreeReader::Stream::seekToMark(size_t index)
 	try
 	{
 		if (cached_buffer)
-		{
 			cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
-		}
 		if (non_cached_buffer)
 			non_cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
 	}

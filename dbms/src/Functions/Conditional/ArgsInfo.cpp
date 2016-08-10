@@ -112,7 +112,7 @@ struct TypeChecker<Nullable<TType>>
 		if (!arg.get()->isNullable())
 			return false;
 
-		const DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*(arg.get()));
+		const DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*arg);
 		const IDataType * nested_type = nullable_type.getNestedType().get();
 		return typeid_cast<const TType *>(nested_type) != nullptr;
 	}
@@ -224,7 +224,7 @@ bool hasArrayBranches(const DataTypes & args)
 		const IDataType * observed_type;
 		if (args[i].get()->isNullable())
 		{
-			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(args[i].get()));
+			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
 			observed_type = nullable_type.getNestedType().get();
 		}
 		else
@@ -255,7 +255,7 @@ bool hasIdenticalTypes(const DataTypes & args)
 			const IDataType * observed_type;
 			if (args[i].get()->isNullable())
 			{
-				const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(args[i].get()));
+				const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
 				observed_type = nullable_type.getNestedType().get();
 			}
 			else
@@ -278,7 +278,7 @@ bool hasIdenticalTypes(const DataTypes & args)
 		const IDataType * observed_type;
 		if (args[else_arg].get()->isNullable())
 		{
-			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(args[else_arg].get()));
+			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[else_arg]);
 			observed_type = nullable_type.getNestedType().get();
 		}
 		else
@@ -304,7 +304,7 @@ bool hasFixedStrings(const DataTypes & args)
 		const IDataType * observed_type;
 		if (args[i].get()->isNullable())
 		{
-			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(args[i].get()));
+			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
 			observed_type = nullable_type.getNestedType().get();
 		}
 		else
@@ -343,7 +343,7 @@ bool hasFixedStringsOfIdenticalLength(const DataTypes & args)
 		const IDataType * observed_type;
 		if (!args[i].get()->isNullable())
 		{
-			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(args[i].get()));
+			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
 			observed_type = nullable_type.getNestedType().get();
 		}
 		else
@@ -368,7 +368,7 @@ bool hasFixedStringsOfIdenticalLength(const DataTypes & args)
 		const IDataType * observed_type;
 		if (args[else_arg].get()->isNullable())
 		{
-			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(args[else_arg].get()));
+			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[else_arg]);
 			observed_type = nullable_type.getNestedType().get();
 		}
 		else
@@ -394,7 +394,7 @@ bool hasStrings(const DataTypes & args)
 		const IDataType * observed_type;
 		if (args[i].get()->isNullable())
 		{
-			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(args[i].get()));
+			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
 			observed_type = nullable_type.getNestedType().get();
 		}
 		else

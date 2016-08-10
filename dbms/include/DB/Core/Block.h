@@ -110,10 +110,6 @@ public:
 	/** Получить блок со столбцами, переставленными в порядке их имён. */
 	Block sortColumns() const;
 
-	/// Returns a block in which all the nullable columns are replaced by
-	/// their non-nullable counterparts.
-	Block extractNonNullableBlock(const ColumnNumbers & arguments) const;
-
 	/** Заменяет столбцы смещений внутри вложенных таблиц на один общий для таблицы.
 	 *  Кидает исключение, если эти смещения вдруг оказались неодинаковы.
 	 */
@@ -123,8 +119,6 @@ public:
 
 	void clear();
 	void swap(Block & other) noexcept;
-
-	void reserve(size_t size);
 
 private:
 	void eraseImpl(size_t position);

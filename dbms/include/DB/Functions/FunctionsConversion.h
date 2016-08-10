@@ -1441,12 +1441,12 @@ public:
 		return name;
 	}
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		return getReturnTypeImpl(arguments);
+		return getReturnTypeInternal(arguments);
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
@@ -1458,7 +1458,7 @@ public:
 	}
 
 private:
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const
+	DataTypePtr getReturnTypeInternal(const DataTypes & arguments) const
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "

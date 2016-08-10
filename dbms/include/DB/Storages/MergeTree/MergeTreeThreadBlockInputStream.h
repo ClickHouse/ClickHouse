@@ -114,19 +114,16 @@ private:
 				owned_uncompressed_cache = storage.context.getUncompressedCache();
 
 			owned_mark_cache = storage.context.getMarkCache();
-			owned_null_mark_cache = storage.context.getNullMarkCache();
 
 			reader = std::make_unique<MergeTreeReader>(
 				path, task->data_part, task->columns, owned_uncompressed_cache.get(),
-				owned_mark_cache.get(), owned_null_mark_cache.get(),
-				true,
+				owned_mark_cache.get(), true,
 				storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size, MergeTreeReader::ValueSizeMap{}, profile_callback);
 
 			if (prewhere_actions)
 				pre_reader = std::make_unique<MergeTreeReader>(
 					path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(),
-					owned_mark_cache.get(), owned_null_mark_cache.get(),
-					true,
+					owned_mark_cache.get(), true,
 					storage, task->mark_ranges, min_bytes_to_use_direct_io,
 					max_read_buffer_size, MergeTreeReader::ValueSizeMap{}, profile_callback);
 		}
@@ -135,16 +132,14 @@ private:
 			/// retain avg_value_size_hints
 			reader = std::make_unique<MergeTreeReader>(
 				path, task->data_part, task->columns, owned_uncompressed_cache.get(),
-				owned_mark_cache.get(), owned_null_mark_cache.get(),
-				true,
+				owned_mark_cache.get(), true,
 				storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size,
 				reader->getAvgValueSizeHints(), profile_callback);
 
 			if (prewhere_actions)
 				pre_reader = std::make_unique<MergeTreeReader>(
 					path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(),
-					owned_mark_cache.get(), owned_null_mark_cache.get(),
-					true,
+					owned_mark_cache.get(), true,
 					storage, task->mark_ranges, min_bytes_to_use_direct_io,
 					max_read_buffer_size, pre_reader->getAvgValueSizeHints(), profile_callback);
 		}
@@ -197,7 +192,7 @@ private:
 				ColumnPtr observed_column;
 				if (column.get()->isNullable())
 				{
-					ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(column.get()));
+					ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column);
 					observed_column = nullable_col.getNestedColumn();
 				}
 				else
@@ -379,7 +374,6 @@ private:
 
 	UncompressedCachePtr owned_uncompressed_cache;
 	MarkCachePtr owned_mark_cache;
-	MarkCachePtr owned_null_mark_cache;
 
 	MergeTreeReadTaskPtr task;
 	MergeTreeReaderPtr reader;

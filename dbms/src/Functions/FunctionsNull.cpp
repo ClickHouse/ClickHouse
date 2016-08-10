@@ -311,7 +311,7 @@ DataTypePtr FunctionAssumeNotNull::getReturnTypeImpl(const DataTypes & arguments
 		return std::make_shared<DataTypeUInt8>();
 	else if (arguments[0].get()->isNullable())
 	{
-		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(arguments[0].get()));
+		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arguments[0]);
 		return nullable_type.getNestedType();
 	}
 	else
@@ -327,7 +327,7 @@ void FunctionAssumeNotNull::executeImpl(Block & block, const ColumnNumbers & arg
 		res_col = std::make_shared<ColumnConstUInt8>(block.rowsInFirstColumn(), 0);
 	else if (col.get()->isNullable())
 	{
-		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*(col.get()));
+		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
 		res_col = nullable_col.getNestedColumn();
 	}
 	else

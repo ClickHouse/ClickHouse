@@ -15,26 +15,32 @@
 namespace DB
 {
 
-StringRef
-ColumnConst<Null>::getDataAt(size_t n) const
+template <>
+bool ColumnConst<Null>::isNull() const
+{
+	return true;
+}
+
+template <>
+StringRef ColumnConst<Null>::getDataAt(size_t n) const
 {
 	return StringRef{};
 }
 
-StringRef
-ColumnConst<Null>::getDataAtWithTerminatingZero(size_t n) const
+template <>
+StringRef ColumnConst<Null>::getDataAtWithTerminatingZero(size_t n) const
 {
-	throw Exception("Method getDataAt is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
+	throw Exception("Method getDataAtWithTerminatingZero is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-UInt64
-ColumnConst<Null>::get64(size_t n) const
+template <>
+UInt64 ColumnConst<Null>::get64(size_t n) const
 {
 	throw Exception("Method get64 is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-ColumnPtr
-ColumnConst<Null>::convertToFullColumn() const
+template <>
+ColumnPtr ColumnConst<Null>::convertToFullColumn() const
 {
 	return std::make_shared<ColumnNullable>(std::make_shared<ColumnUInt8>(size(), 0), true);
 }
@@ -159,7 +165,7 @@ ColumnPtr ColumnConst<Tuple>::convertToTupleOfConstants() const
 	return std::make_shared<ColumnTuple>(block);
 }
 
-void ColumnConst<Tuple>::getExtremesImpl(Field & min, Field & max, const NullValuesByteMap * null_map_) const
+void ColumnConst<Tuple>::getExtremes(Field & min, Field & max) const
 {
 	min = *data;
 	max = *data;

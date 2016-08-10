@@ -32,7 +32,7 @@ public:
 	MergeTreeReader(const String & path, /// Путь к куску
 		const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
 		UncompressedCache * uncompressed_cache,
-		MarkCache * mark_cache, MarkCache * null_mark_cache_,
+		MarkCache * mark_cache,
 		bool save_marks_in_cache,
 		MergeTreeData & storage, const MarkRanges & all_mark_ranges,
 		size_t aio_threshold, size_t max_read_buffer_size,
@@ -67,13 +67,8 @@ private:
 		const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
 		size_t level = 0);
 
-	void addNullStream(const String & name, const MarkRanges & all_mark_ranges,
-		const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
-
 	void readData(const String & name, const IDataType & type, IColumn & column, size_t from_mark, size_t max_rows_to_read,
 		size_t level = 0, bool read_offsets = true);
-
-	void readNullData(const String & name, ColumnNullable & nullable_col, size_t from_mark, size_t max_rows_to_read);
 
 	void fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder);
 
@@ -115,14 +110,12 @@ private:
 	String path;
 	MergeTreeData::DataPartPtr data_part;
 	FileStreams streams;
-	FileStreams null_streams;
 
 	/// Запрашиваемые столбцы.
 	NamesAndTypesList columns;
 
 	UncompressedCache * uncompressed_cache;
 	MarkCache * mark_cache;
-	MarkCache * null_mark_cache;
 	/// Если выставлено в false - при отсутствии засечек в кэше, считавать засечки, но не сохранять их в кэш, чтобы не вымывать оттуда другие данные.
 	bool save_marks_in_cache;
 

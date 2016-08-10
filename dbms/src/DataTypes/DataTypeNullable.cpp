@@ -85,7 +85,7 @@ void DataTypeNullable::serializeBinary(const IColumn & column, WriteBuffer & ost
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	nested_data_type.get()->serializeBinary(*(col->getNestedColumn().get()), ostr, offset, limit);
+	nested_data_type.get()->serializeBinary(*col->getNestedColumn(), ostr, offset, limit);
 }
 
 void DataTypeNullable::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
@@ -94,7 +94,7 @@ void DataTypeNullable::deserializeBinary(IColumn & column, ReadBuffer & istr, si
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	nested_data_type.get()->deserializeBinary(*(col->getNestedColumn().get()), istr, limit, avg_value_size_hint);
+	nested_data_type.get()->deserializeBinary(*col->getNestedColumn(), istr, limit, avg_value_size_hint);
 }
 
 void DataTypeNullable::serializeBinary(const Field & field, WriteBuffer & ostr) const
@@ -113,7 +113,7 @@ void DataTypeNullable::serializeBinary(const IColumn & column, size_t row_num, W
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	nested_data_type.get()->serializeBinary(*(col->getNestedColumn().get()), row_num, ostr);
+	nested_data_type.get()->serializeBinary(*col->getNestedColumn(), row_num, ostr);
 }
 
 void DataTypeNullable::deserializeBinary(IColumn & column, ReadBuffer & istr) const
@@ -122,7 +122,7 @@ void DataTypeNullable::deserializeBinary(IColumn & column, ReadBuffer & istr) co
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	nested_data_type.get()->deserializeBinary(*(col->getNestedColumn().get()), istr);
+	nested_data_type.get()->deserializeBinary(*col->getNestedColumn(), istr);
 }
 
 void DataTypeNullable::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -131,13 +131,13 @@ void DataTypeNullable::serializeTextEscaped(const IColumn & column, size_t row_n
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
+	const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*col->getNullValuesByteMap());
 	const auto & null_map = content.getData();
 
 	if (isNullValue(&null_map, row_num))
 		writeCString(NullSymbol::Escaped::name, ostr);
 	else
-		nested_data_type.get()->serializeTextEscaped(*(col->getNestedColumn().get()), row_num, ostr);
+		nested_data_type.get()->serializeTextEscaped(*col->getNestedColumn(), row_num, ostr);
 }
 
 void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
@@ -146,7 +146,7 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
+	ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*col->getNullValuesByteMap());
 	auto & null_map = content.getData();
 
 	if (Deserializer<NullSymbol::Escaped>::execute(column, istr, &null_map))
@@ -155,7 +155,7 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
 		nested_col.get()->insertDefault();
 	}
 	else
-		nested_data_type.get()->deserializeTextEscaped(*(col->getNestedColumn().get()), istr);
+		nested_data_type.get()->deserializeTextEscaped(*col->getNestedColumn(), istr);
 }
 
 void DataTypeNullable::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -164,13 +164,13 @@ void DataTypeNullable::serializeTextQuoted(const IColumn & column, size_t row_nu
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
+	const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*col->getNullValuesByteMap());
 	const auto & null_map = content.getData();
 
 	if (isNullValue(&null_map, row_num))
 		writeCString(NullSymbol::Quoted::name, ostr);
 	else
-		nested_data_type.get()->serializeTextQuoted(*(col->getNestedColumn().get()), row_num, ostr);
+		nested_data_type.get()->serializeTextQuoted(*col->getNestedColumn(), row_num, ostr);
 }
 
 void DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
@@ -179,7 +179,7 @@ void DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
+	ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*col->getNullValuesByteMap());
 	auto & null_map = content.getData();
 
 	if (Deserializer<NullSymbol::Quoted>::execute(column, istr, &null_map))
@@ -188,7 +188,7 @@ void DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
 		nested_col.get()->insertDefault();
 	}
 	else
-		nested_data_type.get()->deserializeTextQuoted(*(col->getNestedColumn().get()), istr);
+		nested_data_type.get()->deserializeTextQuoted(*col->getNestedColumn(), istr);
 }
 
 void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -197,13 +197,13 @@ void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, 
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
+	const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*col->getNullValuesByteMap());
 	const auto & null_map = content.getData();
 
 	if (isNullValue(&null_map, row_num))
 		writeCString(NullSymbol::Quoted::name, ostr);
 	else
-		nested_data_type.get()->serializeTextCSV(*(col->getNestedColumn().get()), row_num, ostr);
+		nested_data_type.get()->serializeTextCSV(*col->getNestedColumn(), row_num, ostr);
 }
 
 void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
@@ -212,7 +212,7 @@ void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
+	ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*col->getNullValuesByteMap());
 	auto & null_map = content.getData();
 
 	if (Deserializer<NullSymbol::Quoted>::execute(column, istr, &null_map))
@@ -221,7 +221,7 @@ void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
 		nested_col.get()->insertDefault();
 	}
 	else
-		nested_data_type.get()->deserializeTextCSV(*(col->getNestedColumn().get()), istr, delimiter);
+		nested_data_type.get()->deserializeTextCSV(*col->getNestedColumn(), istr, delimiter);
 }
 
 void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -230,13 +230,13 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
+	const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*col->getNullValuesByteMap());
 	const auto & null_map = content.getData();
 
 	if (isNullValue(&null_map, row_num))
 		writeCString(NullSymbol::Plain::name, ostr);
 	else
-		nested_data_type.get()->serializeText(*(col->getNestedColumn().get()), row_num, ostr);
+		nested_data_type.get()->serializeText(*col->getNestedColumn(), row_num, ostr);
 }
 
 void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -245,13 +245,13 @@ void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num,
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
+	const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*col->getNullValuesByteMap());
 	const auto & null_map = content.getData();
 
 	if (isNullValue(&null_map, row_num))
 		writeCString(NullSymbol::JSON::name, ostr);
 	else
-		nested_data_type.get()->serializeTextJSON(*(col->getNestedColumn().get()), row_num, ostr);
+		nested_data_type.get()->serializeTextJSON(*col->getNestedColumn(), row_num, ostr);
 }
 
 void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
@@ -260,7 +260,7 @@ void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr) 
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
+	ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*col->getNullValuesByteMap());
 	auto & null_map = content.getData();
 
 	if (Deserializer<NullSymbol::JSON>::execute(column, istr, &null_map))
@@ -269,7 +269,7 @@ void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr) 
 		nested_col.get()->insertDefault();
 	}
 	else
-		nested_data_type.get()->deserializeTextJSON(*(col->getNestedColumn().get()), istr);
+		nested_data_type.get()->deserializeTextJSON(*col->getNestedColumn(), istr);
 }
 
 void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -278,23 +278,29 @@ void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, 
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*(col->getNullValuesByteMap().get()));
+	const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*col->getNullValuesByteMap());
 	auto & null_map = content.getData();
 
 	if (isNullValue(&null_map, row_num))
 		writeCString(NullSymbol::XML::name, ostr);
 	else
-		nested_data_type.get()->serializeTextXML(*(col->getNestedColumn().get()), row_num, ostr);
+		nested_data_type.get()->serializeTextXML(*col->getNestedColumn(), row_num, ostr);
 }
 
 ColumnPtr DataTypeNullable::createColumn() const
 {
-	return std::make_shared<ColumnNullable>(nested_data_type.get()->createColumn());
+	ColumnPtr new_col_holder = std::make_shared<ColumnNullable>(nested_data_type.get()->createColumn());
+	ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*new_col_holder);
+	nullable_col.getNullValuesByteMap() = std::make_shared<ColumnUInt8>();
+	return new_col_holder;
 }
 
 ColumnPtr DataTypeNullable::createConstColumn(size_t size, const Field & field) const
 {
-	return std::make_shared<ColumnNullable>(nested_data_type.get()->createConstColumn(size, field));
+	ColumnPtr new_col_holder = std::make_shared<ColumnNullable>(nested_data_type.get()->createConstColumn(size, field));
+	ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*new_col_holder);
+	nullable_col.getNullValuesByteMap() = std::make_shared<ColumnUInt8>(size);
+	return new_col_holder;
 }
 
 Field DataTypeNullable::getDefault() const

@@ -1,11 +1,6 @@
 #pragma once
 
-#include <DB/Columns/ColumnConst.h>
-#include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
-#include <ext/range.hpp>
-
 
 namespace DB
 {
@@ -15,48 +10,21 @@ namespace DB
 class MaterializingBlockOutputStream : public IBlockOutputStream
 {
 public:
-	MaterializingBlockOutputStream(const BlockOutputStreamPtr & output)
-		: output{output} {}
+	MaterializingBlockOutputStream(const BlockOutputStreamPtr & output);
+	void write(const Block & block) override;
+	void flush();
+	void writePrefix();
+	void writeSuffix();
+	void setRowsBeforeLimit(size_t rows_before_limit);
+	void setTotals(const Block & totals);
+	void setExtremes(const Block & extremes);
+	String getContentType() const;
 
-	void write(const Block & block) override
-	{
-		output->write(materialize(block));
-	}
-
-	void flush() 										override { output->flush(); }
-	void writePrefix() 									override { output->writePrefix(); }
-	void writeSuffix() 									override { output->writeSuffix(); }
-	void setRowsBeforeLimit(size_t rows_before_limit) 	override { output->setRowsBeforeLimit(rows_before_limit); }
-	void setTotals(const Block & totals) 				override { output->setTotals(materialize(totals)); }
-	void setExtremes(const Block & extremes) 			override { output->setExtremes(materialize(extremes)); }
-	String getContentType() const 						override { return output->getContentType(); }
+private:
+	static Block materialize(const Block & original_block);
 
 private:
 	BlockOutputStreamPtr output;
-
-	static Block materialize(const Block & original_block)
-	{
-		/// copy block to get rid of const
-		auto block = original_block;
-
-		for (const auto i : ext::range(0, block.columns()))
-		{
-			auto & src = block.getByPosition(i).column;
-			ColumnPtr converted = src->convertToFullColumnIfConst();
-			if (converted)
-			{
-				src = converted;
-				auto & type = block.getByPosition(i).type;
-				if (type.get()->isNull())
-				{
-					/// A ColumnNull that is converted to a full column has the type DataTypeUInt8.
-					type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
-				}
-			}
-		}
-
-		return block;
-	}
 };
 
 }

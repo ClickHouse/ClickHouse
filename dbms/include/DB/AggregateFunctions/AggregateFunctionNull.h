@@ -14,6 +14,10 @@ extern const int LOGICAL_ERROR;
 
 }
 
+/// This class implements a wrapper around an aggregate function. Despite its name,
+/// this is an adapter. It is used to handle aggregate functions that are called with
+/// at least one nullable argument. It implements the logic according to which any
+/// row that contains at least one NULL is skipped.
 class AggregateFunctionNull : public IAggregateFunction
 {
 public:
@@ -36,31 +40,24 @@ public:
 		{
 			bool res = arg.get()->isNullable();
 			is_nullable.push_back(res);
-			if (res)
-				has_nullable_columns = true;
 		}
 
-		if (has_nullable_columns)
+		DataTypes new_args;
+		new_args.reserve(arguments.size());
+
+		for (const auto & arg : arguments)
 		{
-			DataTypes new_args;
-			new_args.reserve(arguments.size());
-
-			for (const auto & arg : arguments)
+			if (arg.get()->isNullable())
 			{
-				if (arg.get()->isNullable())
-				{
-					const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(arg.get()));
-					const DataTypePtr & nested_type = nullable_type.getNestedType();
-					new_args.push_back(nested_type);
-				}
-				else
-					new_args.push_back(arg);
+				const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg);
+				const DataTypePtr & nested_type = nullable_type.getNestedType();
+				new_args.push_back(nested_type);
 			}
-
-			nested_function.get()->setArguments(new_args);
+			else
+				new_args.push_back(arg);
 		}
-		else
-			nested_function.get()->setArguments(arguments);
+
+		nested_function.get()->setArguments(new_args);
 	}
 
 	void setParameters(const Array & params)
@@ -100,48 +97,27 @@ public:
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
 	{
-		auto init = [&]() -> std::unique_ptr<std::vector<const IColumn *> >
-		{
-			std::unique_ptr<std::vector<const IColumn *> > res;
-
-			if (!has_nullable_columns)
-				return nullptr;
-
-			return std::move(std::make_unique<std::vector<const IColumn *> >(argument_count));
-		};
-
 		/// This container stores the columns we really pass to the nested function.
-		/// We use thread local storage in order to minimize allocations since add()
-		/// may be called millions of times by a few threads.
-		thread_local std::unique_ptr<std::vector<const IColumn *> > passed_columns_holder = init();
+		const IColumn * passed_columns[argument_count];
 
-		if (!has_nullable_columns)
-			nested_function.get()->add(place, columns, row_num);
-		else
+		for (size_t i = 0; i < argument_count; ++i)
 		{
-			std::vector<const IColumn *> & passed_columns = *passed_columns_holder;
-
-			for (size_t i = 0; i < argument_count; ++i)
+			if (is_nullable[i])
 			{
-				if (is_nullable[i])
+				const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*columns[i]);
+				if (nullable_col.isNullAt(row_num))
 				{
-					const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*columns[i]);
-					if (nullable_col.isNullAt(row_num))
-					{
-						/// If at least one column has a null value in the current row,
-						/// we don't process this row.
-						return;
-					}
-					passed_columns[i] = nullable_col.getNestedColumn().get();
+					/// If at least one column has a null value in the current row,
+					/// we don't process this row.
+					return;
 				}
-				else
-				{
-					passed_columns[i] = columns[i];
-				}
+				passed_columns[i] = nullable_col.getNestedColumn().get();
 			}
-
-			nested_function.get()->add(place, passed_columns.data(), row_num);
+			else
+				passed_columns[i] = columns[i];
 		}
+
+		nested_function.get()->add(place, passed_columns, row_num);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
@@ -178,7 +154,6 @@ private:
 	AggregateFunctionPtr nested_function;
 	std::vector<bool> is_nullable;
 	size_t argument_count = 0;
-	bool has_nullable_columns = false;
 };
 
 }

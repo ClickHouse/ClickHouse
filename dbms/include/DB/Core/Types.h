@@ -38,7 +38,8 @@ template <typename T> struct RemoveNullable { using Type = T; };
 template <typename T> struct RemoveNullable<Nullable<T>> { using Type = T; };
 
 /// Check if a type is nullable.
-template <typename T> struct IsNullable { static constexpr bool value = !std::is_same<T, typename RemoveNullable<T>::Type>::value; };
+template <typename T> struct IsNullable { static constexpr bool value = false; };
+template <typename T> struct IsNullable<Nullable<T>> { static constexpr bool value = true; };
 
 template <typename T> struct IsNumber 	{ static constexpr bool value = false; };
 template <typename T> struct IsNumber<Nullable<T> > { static constexpr bool value = IsNumber<T>::value; };

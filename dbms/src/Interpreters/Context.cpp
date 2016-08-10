@@ -97,7 +97,6 @@ struct ContextShared
 	Quotas quotas;											/// Известные квоты на использование ресурсов.
 	mutable UncompressedCachePtr uncompressed_cache;		/// Кэш разжатых блоков.
 	mutable MarkCachePtr mark_cache;						/// Кэш засечек в сжатых файлах.
-	mutable MarkCachePtr null_mark_cache;				/// Cache that stores marks for compressed byte maps of null values.
 	ProcessList process_list;								/// Исполняющиеся в данный момент запросы.
 	MergeList merge_list;									/// Список выполняемых мерджей (для (Replicated)?MergeTree)
 	ViewDependencies view_dependencies;						/// Текущие зависимости
@@ -829,12 +828,6 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
 }
 
 MarkCachePtr Context::getMarkCache() const
-{
-	auto lock = getLock();
-	return shared->mark_cache;
-}
-
-MarkCachePtr Context::getNullMarkCache() const
 {
 	auto lock = getLock();
 	return shared->mark_cache;

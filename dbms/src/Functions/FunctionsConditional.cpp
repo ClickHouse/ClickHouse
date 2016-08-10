@@ -137,11 +137,12 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 			return;
 		}
 
-		/// The adopted approach is quite similar to how functions
-		/// deal with nullable arguments. From the original block,
-		/// we create a new block that contains only non-nullable
-		/// types. Then we run multiIf on this block. Finally, we
-		/// create a null byte map for the result.
+		/// The adopted approach is quite similar to how ordinary functions deal
+		/// with nullable arguments. From the original block, we create a new block
+		/// that contains only non-nullable types and an extra column, namely a "tracker"
+		/// column that tracks the originating column of each row of the result column.
+		/// This way, after having run multiIf on this new block, we can create
+		/// a correct null byte map for the result column.
 
 		size_t row_count = block.rowsInFirstColumn();
 
@@ -154,7 +155,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 			args_to_transform.push_back(args[i]);
 		args_to_transform.push_back(args[else_arg]);
 
-		Block non_nullable_block = block.extractNonNullableBlock(args_to_transform);
+		Block non_nullable_block = extractNonNullableBlock(block, args_to_transform);
 
 		/// Append a column that tracks, for each result of multiIf, the index
 		/// of the originating column.
@@ -182,7 +183,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 
 		/// Setup the null byte map of the result column by using the branch tracker column values.
 		ColumnPtr tracker_holder = non_nullable_block.unsafeGetByPosition(tracker).column;
-		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(dest_col.column.get()));
+		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*dest_col.column);
 
 		auto is_null_at = [](const IColumn & col, size_t row)
 		{
@@ -192,7 +193,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 		if (auto col = typeid_cast<ColumnConstUInt64 *>(tracker_holder.get()))
 		{
 			auto pos = col->getData();
-			const IColumn & origin = *(block.unsafeGetByPosition(pos).column.get());
+			const IColumn & origin = *block.unsafeGetByPosition(pos).column;
 
 			ColumnPtr null_map;
 
@@ -217,7 +218,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 			const auto & data = col->getData();
 			for (size_t row = 0; row < row_count; ++row)
 			{
-				const IColumn & origin = *(block.unsafeGetByPosition(data[row]).column.get());
+				const IColumn & origin = *block.unsafeGetByPosition(data[row]).column;
 				bool is_null = origin.isNull() || is_null_at(origin, row);
 				null_map_data[row] = is_null ? 1 : 0;
 			}
@@ -249,7 +250,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 		const IDataType * observed_type;
 		if (args[i].get()->isNullable())
 		{
-			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(args[i].get()));
+			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
 			observed_type = nullable_type.getNestedType().get();
 		}
 		else
@@ -287,7 +288,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 				const IDataType * observed_type;
 				if (args[i].get()->isNullable())
 				{
-					const auto & nullable_type = static_cast<const DataTypeNullable &>(*(args[i].get()));
+					const auto & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
 					observed_type = nullable_type.getNestedType().get();
 				}
 				else
@@ -317,7 +318,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 		DataTypePtr elt_type = getReturnTypeImpl(new_args);
 		if (elt_type.get()->isNullable())
 		{
-			DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*(elt_type.get()));
+			DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*elt_type);
 			elt_type = nullable_type.getNestedType();
 		}
 
@@ -403,6 +404,9 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 	}
 }
 
+/// The tracker parameter is an index to a column that tracks the originating column of each value of
+/// the result column. Calling this function with result == tracker means that no such tracking is
+/// required, which happens if multiIf is called with no nullable parameters.
 bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
 {
 	/// Check that all the branches have the same type. Moreover

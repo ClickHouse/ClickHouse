@@ -49,12 +49,12 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
 	if (type.isNullable())
 	{
 		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-		const IDataType & nested_type = *(nullable_type.getNestedType().get());
+		const IDataType & nested_type = *nullable_type.getNestedType();
 
 		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(column);
-		IColumn & nested_col = *(nullable_col.getNestedColumn().get());
+		IColumn & nested_col = *nullable_col.getNestedColumn();
 
-		IColumn & null_map = *(nullable_col.getNullValuesByteMap().get());
+		IColumn & null_map = *nullable_col.getNullValuesByteMap();
 		DataTypeUInt8{}.deserializeBinary(null_map, istr, rows, 0);
 
 		readData(nested_type, nested_col, istr, rows);

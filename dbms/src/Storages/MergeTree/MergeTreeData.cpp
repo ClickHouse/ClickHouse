@@ -622,7 +622,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 				DataTypePtr observed_type;
 				if (is_nullable)
 				{
-					const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*(column.type.get()));
+					const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*column.type);
 					observed_type = nullable_type.getNestedType();
 				}
 				else

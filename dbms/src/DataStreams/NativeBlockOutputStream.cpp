@@ -50,12 +50,12 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 	if (type.isNullable())
 	{
 		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-		const IDataType & nested_type = *(nullable_type.getNestedType().get());
+		const IDataType & nested_type = *nullable_type.getNestedType();
 
 		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*full_column.get());
 		const ColumnPtr & nested_col = nullable_col.getNestedColumn();
 
-		const IColumn & null_map = *(nullable_col.getNullValuesByteMap().get());
+		const IColumn & null_map = *nullable_col.getNullValuesByteMap();
 		DataTypeUInt8{}.serializeBinary(null_map, ostr, offset, limit);
 
 		writeData(nested_type, nested_col, ostr, offset, limit);

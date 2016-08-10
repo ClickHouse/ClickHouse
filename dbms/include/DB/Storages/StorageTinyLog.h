@@ -75,7 +75,6 @@ private:
 	size_t max_compress_block_size;
 
 	Files_t files;
-	Files_t null_files;
 
 	FileChecker file_checker;
 
@@ -92,7 +91,6 @@ private:
 		size_t max_compress_block_size_);
 
 	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
-	void addNullFile(const String & column_name);
 };
 
 }
