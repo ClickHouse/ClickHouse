@@ -431,8 +431,12 @@ private:
 	/** Скачать указанный кусок с указанной реплики.
 	  * Если to_detached, то кусок помещается в директорию detached.
 	  * Если quorum != 0, то обновляется узел для отслеживания кворума.
+	  * Returns false if part is already fetching right now.
 	  */
-	void fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum);
+	bool fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum);
+
+	std::unordered_set<String> currently_fetching_parts;
+	std::mutex currently_fetching_parts_mutex;
 
 	/** При отслеживаемом кворуме - добавить реплику в кворум для куска.
 	  */

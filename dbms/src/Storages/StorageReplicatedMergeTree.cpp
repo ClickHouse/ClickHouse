@@ -39,6 +39,8 @@
 #include <DB/Common/ThreadPool.h>
 
 #include <ext/range.hpp>
+#include <ext/scope_guard.hpp>
+
 #include <cfenv>
 #include <ctime>
 #include <thread>
@@ -1364,7 +1366,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 				}
 			}
 
-			fetchPart(covering_part, zookeeper_path + "/replicas/" + replica, false, entry.quorum);
+			if (!fetchPart(covering_part, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
+				return false;
 
 			if (entry.type == LogEntry::MERGE_PARTS)
 				ProfileEvents::increment(ProfileEvents::ReplicatedPartFetchesOfMerged);
@@ -2022,8 +2025,23 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
 }
 
 
-void StorageReplicatedMergeTree::fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum)
+bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum)
 {
+	{
+		std::lock_guard<std::mutex> lock(currently_fetching_parts_mutex);
+		if (!currently_fetching_parts.insert(part_name).second)
+		{
+			LOG_DEBUG(log, "Part " << part_name << " is already fetching right now");
+			return false;
+		}
+	}
+
+	SCOPE_EXIT
+	(
+		std::lock_guard<std::mutex> lock(currently_fetching_parts_mutex);
+		currently_fetching_parts.erase(part_name);
+	);
+
 	auto zookeeper = getZooKeeper();
 
 	LOG_DEBUG(log, "Fetching part " << part_name << " from " << replica_path);
@@ -2076,6 +2094,7 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	ProfileEvents::increment(ProfileEvents::ReplicatedPartFetches);
 
 	LOG_DEBUG(log, "Fetched part " << part_name << " from " << replica_path << (to_detached ? " (to 'detached' directory)" : ""));
+	return true;
 }
 
 
