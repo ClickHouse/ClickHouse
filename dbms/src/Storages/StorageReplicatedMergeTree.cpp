@@ -1886,11 +1886,15 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
 
 	for (const String & replica : replicas)
 	{
+		/// We don't interested in ourself.
+		if (replica == replica_name)
+			continue;
+
 		if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name) &&
 			(!active || zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active")))
 			return replica;
 
-		/// Конечно, реплика может перестать быть активной или даже перестать существовать после возврата из этой функции.
+		/// Obviously, replica could become inactive or even vanish after return from this method.
 	}
 
 	return {};
@@ -1907,6 +1911,9 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(const String & 
 
 	for (const String & replica : replicas)
 	{
+		if (replica == replica_name)
+			continue;
+
 		if (active && !zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
 			continue;
 
@@ -1927,7 +1934,7 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(const String & 
 		if (!largest_part_found.empty())
 		{
 			out_covering_part_name = largest_part_found;
-			return replica_name;
+			return replica;
 		}
 	}
 
