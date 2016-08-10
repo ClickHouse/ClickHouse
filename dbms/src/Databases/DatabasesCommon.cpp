@@ -42,6 +42,7 @@ std::pair<String, StoragePtr> createTableFromDefinition(
 	const String & database_name,
 	const String & database_data_path,
 	Context & context,
+	bool has_force_restore_data_flag,
 	const String & description_for_error_message)
 {
 	ParserCreateQuery parser;
@@ -73,7 +74,7 @@ std::pair<String, StoragePtr> createTableFromDefinition(
 			storage_name, database_data_path, ast_create_query.table, database_name, context,
 			context.getGlobalContext(), ast, columns_info.columns,
 			columns_info.materialized_columns, columns_info.alias_columns, columns_info.column_defaults,
-			true)
+			true, has_force_restore_data_flag)
 	};
 }
 

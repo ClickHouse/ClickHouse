@@ -7,7 +7,6 @@
 
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteBufferFromString.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>

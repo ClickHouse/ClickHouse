@@ -33,8 +33,6 @@
 #include <DB/Interpreters/QueryLog.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/copyData.h>
 #include <DB/IO/UncompressedCache.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>

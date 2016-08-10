@@ -591,7 +591,7 @@ void ExpressionAnalyzer::normalizeTree()
 {
 	SetOfASTs tmp_set;
 	MapOfASTs tmp_map;
-	normalizeTreeImpl(ast, tmp_map, tmp_set, "");
+	normalizeTreeImpl(ast, tmp_map, tmp_set, "", 0);
 }
 
 
@@ -599,8 +599,11 @@ void ExpressionAnalyzer::normalizeTree()
 /// current_asts - вершины в текущем стеке вызовов этого метода
 /// current_alias - алиас, повешенный на предка ast (самого глубокого из предков с алиасами)
 void ExpressionAnalyzer::normalizeTreeImpl(
-	ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias)
+	ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, size_t level)
 {
+	if (level > settings.limits.max_ast_depth)
+		throw Exception("Normalized AST is too deep. Maximum: " + toString(settings.limits.max_ast_depth), ErrorCodes::TOO_DEEP_AST);
+
 	if (finished_asts.count(ast))
 	{
 		ast = finished_asts[ast];
@@ -717,7 +720,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 	/// Если заменили корень поддерева вызовемся для нового корня снова - на случай, если алиас заменился на алиас.
 	if (replaced)
 	{
-		normalizeTreeImpl(ast, finished_asts, current_asts, current_alias);
+		normalizeTreeImpl(ast, finished_asts, current_asts, current_alias, level + 1);
 		current_asts.erase(initial_ast.get());
 		current_asts.erase(ast.get());
 		finished_asts[initial_ast] = ast;
@@ -739,7 +742,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 				|| typeid_cast<const ASTTableExpression *>(child.get()))
 				continue;
 
-			normalizeTreeImpl(child, finished_asts, current_asts, current_alias);
+			normalizeTreeImpl(child, finished_asts, current_asts, current_alias, level + 1);
 		}
 	}
 	else
@@ -750,7 +753,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 				|| typeid_cast<const ASTTableExpression *>(child.get()))
 				continue;
 
-			normalizeTreeImpl(child, finished_asts, current_asts, current_alias);
+			normalizeTreeImpl(child, finished_asts, current_asts, current_alias, level + 1);
 		}
 	}
 
@@ -758,11 +761,11 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 	if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(ast.get()))
 	{
 		if (select->prewhere_expression)
-			normalizeTreeImpl(select->prewhere_expression, finished_asts, current_asts, current_alias);
+			normalizeTreeImpl(select->prewhere_expression, finished_asts, current_asts, current_alias, level + 1);
 		if (select->where_expression)
-			normalizeTreeImpl(select->where_expression, finished_asts, current_asts, current_alias);
+			normalizeTreeImpl(select->where_expression, finished_asts, current_asts, current_alias, level + 1);
 		if (select->having_expression)
-			normalizeTreeImpl(select->having_expression, finished_asts, current_asts, current_alias);
+			normalizeTreeImpl(select->having_expression, finished_asts, current_asts, current_alias, level + 1);
 	}
 
 	/// Действия, выполняемые снизу вверх.

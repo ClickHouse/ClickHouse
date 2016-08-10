@@ -1,5 +1,6 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Dictionaries/CacheDictionary.h>
+#include <DB/Common/BitHelpers.h>
 #include <DB/Common/randomSeed.h>
 
 
@@ -14,22 +15,7 @@ namespace ErrorCodes
 }
 
 
-static inline std::size_t round_up_to_power_of_two(std::size_t n)
-{
-	--n;
-	n |= n >> 1;
-	n |= n >> 2;
-	n |= n >> 4;
-	n |= n >> 8;
-	n |= n >> 16;
-	n |= n >> 32;
-	++n;
-
-	return n;
-}
-
-
-inline std::uint64_t CacheDictionary::getCellIdx(const id_t id) const
+inline std::uint64_t CacheDictionary::getCellIdx(const Key id) const
 {
 	const auto hash = intHash64(id);
 	const auto idx = hash & (size - 1);
@@ -42,7 +28,7 @@ CacheDictionary::CacheDictionary(const std::string & name, const DictionaryStruc
 	const std::size_t size)
 	: name{name}, dict_struct(dict_struct),
 		source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
-		size{round_up_to_power_of_two(size)},
+		size{roundUpToPowerOfTwoOrZero(size)},
 		cells{this->size},
 		rnd_engine{randomSeed()}
 {
@@ -59,7 +45,7 @@ CacheDictionary::CacheDictionary(const CacheDictionary & other)
 {}
 
 
-void CacheDictionary::toParent(const PaddedPODArray<id_t> & ids, PaddedPODArray<id_t> & out) const
+void CacheDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {
 	const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
 
@@ -68,7 +54,7 @@ void CacheDictionary::toParent(const PaddedPODArray<id_t> & ids, PaddedPODArray<
 
 
 #define DECLARE(TYPE)\
-void CacheDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, PaddedPODArray<TYPE> & out) const\
+void CacheDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const\
 {\
 	auto & attribute = getAttribute(attribute_name);\
 	if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
@@ -92,7 +78,7 @@ DECLARE(Float32)
 DECLARE(Float64)
 #undef DECLARE
 
-void CacheDictionary::getString(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, ColumnString * out) const
+void CacheDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
 {
 	auto & attribute = getAttribute(attribute_name);
 	if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
@@ -107,7 +93,7 @@ void CacheDictionary::getString(const std::string & attribute_name, const Padded
 
 #define DECLARE(TYPE)\
 void CacheDictionary::get##TYPE(\
-	const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const PaddedPODArray<TYPE> & def,\
+	const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<TYPE> & def,\
 	PaddedPODArray<TYPE> & out) const\
 {\
 	auto & attribute = getAttribute(attribute_name);\
@@ -131,7 +117,7 @@ DECLARE(Float64)
 #undef DECLARE
 
 void CacheDictionary::getString(
-	const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const ColumnString * const def,
+	const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def,
 	ColumnString * const out) const
 {
 	auto & attribute = getAttribute(attribute_name);
@@ -145,7 +131,7 @@ void CacheDictionary::getString(
 
 #define DECLARE(TYPE)\
 void CacheDictionary::get##TYPE(\
-	const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const TYPE def, PaddedPODArray<TYPE> & out) const\
+	const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, PaddedPODArray<TYPE> & out) const\
 {\
 	auto & attribute = getAttribute(attribute_name);\
 	if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
@@ -168,7 +154,7 @@ DECLARE(Float64)
 #undef DECLARE
 
 void CacheDictionary::getString(
-	const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const String & def,
+	const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def,
 	ColumnString * const out) const
 {
 	auto & attribute = getAttribute(attribute_name);
@@ -181,7 +167,7 @@ void CacheDictionary::getString(
 }
 
 
-void CacheDictionary::has(const PaddedPODArray<id_t> & ids, PaddedPODArray<UInt8> & out) const
+void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
 {
 	/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
 	MapType<std::vector<std::size_t>> outdated_ids;
@@ -215,7 +201,7 @@ void CacheDictionary::has(const PaddedPODArray<id_t> & ids, PaddedPODArray<UInt8
 	if (outdated_ids.empty())
 		return;
 
-	std::vector<id_t> required_ids(outdated_ids.size());
+	std::vector<Key> required_ids(outdated_ids.size());
 	std::transform(std::begin(outdated_ids), std::end(outdated_ids), std::begin(required_ids),
 		[] (auto & pair) { return pair.first; });
 
@@ -235,7 +221,7 @@ void CacheDictionary::createAttributes()
 	const auto size = dict_struct.attributes.size();
 	attributes.reserve(size);
 
-	bytes_allocated += size * sizeof(cell_metadata_t);
+	bytes_allocated += size * sizeof(CellMetadata);
 	bytes_allocated += size * sizeof(attributes.front());
 
 	for (const auto & attribute : dict_struct.attributes)
@@ -255,9 +241,9 @@ void CacheDictionary::createAttributes()
 	}
 }
 
-CacheDictionary::attribute_t CacheDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
+CacheDictionary::Attribute CacheDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-	attribute_t attr{type};
+	Attribute attr{type};
 
 	switch (type)
 	{
@@ -326,8 +312,8 @@ CacheDictionary::attribute_t CacheDictionary::createAttributeWithType(const Attr
 
 template <typename OutputType, typename DefaultGetter>
 void CacheDictionary::getItemsNumber(
-	attribute_t & attribute,
-	const PaddedPODArray<id_t> & ids,
+	Attribute & attribute,
+	const PaddedPODArray<Key> & ids,
 	PaddedPODArray<OutputType> & out,
 	DefaultGetter && get_default) const
 {
@@ -352,8 +338,8 @@ void CacheDictionary::getItemsNumber(
 
 template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void CacheDictionary::getItemsNumberImpl(
-	attribute_t & attribute,
-	const PaddedPODArray<id_t> & ids,
+	Attribute & attribute,
+	const PaddedPODArray<Key> & ids,
 	PaddedPODArray<OutputType> & out,
 	DefaultGetter && get_default) const
 {
@@ -390,7 +376,7 @@ void CacheDictionary::getItemsNumberImpl(
 	if (outdated_ids.empty())
 		return;
 
-	std::vector<id_t> required_ids(outdated_ids.size());
+	std::vector<Key> required_ids(outdated_ids.size());
 	std::transform(std::begin(outdated_ids), std::end(outdated_ids), std::begin(required_ids),
 		[] (auto & pair) { return pair.first; });
 
@@ -408,8 +394,8 @@ void CacheDictionary::getItemsNumberImpl(
 
 template <typename DefaultGetter>
 void CacheDictionary::getItemsString(
-	attribute_t & attribute,
-	const PaddedPODArray<id_t> & ids,
+	Attribute & attribute,
+	const PaddedPODArray<Key> & ids,
 	ColumnString * out,
 	DefaultGetter && get_default) const
 {
@@ -495,7 +481,7 @@ void CacheDictionary::getItemsString(
 	/// request new values
 	if (!outdated_ids.empty())
 	{
-		std::vector<id_t> required_ids(outdated_ids.size());
+		std::vector<Key> required_ids(outdated_ids.size());
 		std::transform(std::begin(outdated_ids), std::end(outdated_ids), std::begin(required_ids),
 			[] (auto & pair) { return pair.first; });
 
@@ -524,7 +510,7 @@ void CacheDictionary::getItemsString(
 
 template <typename PresentIdHandler, typename AbsentIdHandler>
 void CacheDictionary::update(
-	const std::vector<id_t> & requested_ids, PresentIdHandler && on_cell_updated,
+	const std::vector<Key> & requested_ids, PresentIdHandler && on_cell_updated,
 	AbsentIdHandler && on_id_not_found) const
 {
 	MapType<UInt8> remaining_ids{requested_ids.size()};
@@ -621,7 +607,7 @@ void CacheDictionary::update(
 }
 
 
-void CacheDictionary::setDefaultAttributeValue(attribute_t & attribute, const id_t idx) const
+void CacheDictionary::setDefaultAttributeValue(Attribute & attribute, const Key idx) const
 {
 	switch (attribute.type)
 	{
@@ -653,7 +639,7 @@ void CacheDictionary::setDefaultAttributeValue(attribute_t & attribute, const id
 	}
 }
 
-void CacheDictionary::setAttributeValue(attribute_t & attribute, const id_t idx, const Field & value) const
+void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, const Field & value) const
 {
 	switch (attribute.type)
 	{
@@ -692,7 +678,7 @@ void CacheDictionary::setAttributeValue(attribute_t & attribute, const id_t idx,
 	}
 }
 
-CacheDictionary::attribute_t & CacheDictionary::getAttribute(const std::string & attribute_name) const
+CacheDictionary::Attribute & CacheDictionary::getAttribute(const std::string & attribute_name) const
 {
 	const auto it = attribute_index_by_name.find(attribute_name);
 	if (it == std::end(attribute_index_by_name))

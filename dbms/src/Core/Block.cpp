@@ -92,6 +92,10 @@ void Block::insert(size_t position, const ColumnWithTypeAndName & elem)
 		throw Exception("Position out of bound in Block::insert(), max position = "
 			+ toString(data.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
 
+	for (auto & name_pos : index_by_name)
+		if (name_pos.second >= position)
+			++name_pos.second;
+
 	index_by_name[elem.name] = position;
 	data.emplace(data.begin() + position, elem);
 }
@@ -101,6 +105,10 @@ void Block::insert(size_t position, ColumnWithTypeAndName && elem)
 	if (position > data.size())
 		throw Exception("Position out of bound in Block::insert(), max position = "
 		+ toString(data.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
+
+	for (auto & name_pos : index_by_name)
+		if (name_pos.second >= position)
+			++name_pos.second;
 
 	index_by_name[elem.name] = position;
 	data.emplace(data.begin() + position, std::move(elem));
@@ -442,5 +450,26 @@ void Block::swap(Block & other) noexcept
 	data.swap(other.data);
 	index_by_name.swap(other.index_by_name);
 }
+
+
+void Block::unshareColumns()
+{
+	std::unordered_set<void*> pointers;
+
+	for (auto & elem : data)
+	{
+		if (!pointers.insert(elem.column.get()).second)
+		{
+			elem.column = elem.column->clone();
+		}
+		else if (ColumnArray * arr = typeid_cast<ColumnArray *>(elem.column.get()))
+		{
+			ColumnPtr & offsets = arr->getOffsetsColumn();
+			if (!pointers.insert(offsets.get()).second)
+				offsets = offsets->clone();
+		}
+	}
+}
+
 
 }

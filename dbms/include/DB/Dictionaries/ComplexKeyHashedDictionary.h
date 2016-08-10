@@ -129,7 +129,7 @@ private:
 	template <typename Value> using ContainerType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
 	template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
 
-	struct attribute_t final
+	struct Attribute final
 	{
 		AttributeUnderlyingType type;
 		std::tuple<
@@ -150,43 +150,43 @@ private:
 	void loadData();
 
 	template <typename T>
-	void addAttributeSize(const attribute_t & attribute);
+	void addAttributeSize(const Attribute & attribute);
 
 	void calculateBytesAllocated();
 
 	template <typename T>
-	void createAttributeImpl(attribute_t & attribute, const Field & null_value);
+	void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-	attribute_t createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+	Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
 
 	template <typename OutputType, typename ValueSetter, typename DefaultGetter>
 	void getItemsNumber(
-		const attribute_t & attribute,
+		const Attribute & attribute,
 		const ConstColumnPlainPtrs & key_columns,
 		ValueSetter && set_value,
 		DefaultGetter && get_default) const;
 
 	template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
 	void getItemsImpl(
-		const attribute_t & attribute,
+		const Attribute & attribute,
 		const ConstColumnPlainPtrs & key_columns,
 		ValueSetter && set_value,
 		DefaultGetter && get_default) const;
 
 
 	template <typename T>
-	bool setAttributeValueImpl(attribute_t & attribute, const StringRef key, const T value);
+	bool setAttributeValueImpl(Attribute & attribute, const StringRef key, const T value);
 
-	bool setAttributeValue(attribute_t & attribute, const StringRef key, const Field & value);
+	bool setAttributeValue(Attribute & attribute, const StringRef key, const Field & value);
 
-	const attribute_t & getAttribute(const std::string & attribute_name) const;
+	const Attribute & getAttribute(const std::string & attribute_name) const;
 
 	static StringRef placeKeysInPool(
 		const std::size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool);
 
 	template <typename T>
-	void has(const attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, PaddedPODArray<UInt8> & out) const;
+	void has(const Attribute & attribute, const ConstColumnPlainPtrs & key_columns, PaddedPODArray<UInt8> & out) const;
 
 	const std::string name;
 	const DictionaryStructure dict_struct;
@@ -196,7 +196,7 @@ private:
 	const std::string key_description{dict_struct.getKeyDescription()};
 
 	std::map<std::string, std::size_t> attribute_index_by_name;
-	std::vector<attribute_t> attributes;
+	std::vector<Attribute> attributes;
 	Arena keys_pool;
 
 	std::size_t bytes_allocated = 0;

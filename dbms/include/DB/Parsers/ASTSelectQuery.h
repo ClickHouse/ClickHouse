@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class ASTTablesInSelectQueryElement;
+struct ASTTablesInSelectQueryElement;
 
 
 /** SELECT query

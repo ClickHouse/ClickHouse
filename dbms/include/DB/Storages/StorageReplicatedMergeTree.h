@@ -87,6 +87,7 @@ public:
 		const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 		size_t index_granularity_,
 		const MergeTreeData::MergingParams & merging_params_,
+		bool has_force_restore_data_flag,
 		const MergeTreeSettings & settings_);
 
 	void shutdown() override;
@@ -318,6 +319,7 @@ private:
 		const ASTPtr & sampling_expression_,
 		size_t index_granularity_,
 		const MergeTreeData::MergingParams & merging_params_,
+		bool has_force_restore_data_flag,
 		const MergeTreeSettings & settings_);
 
 	/// Инициализация.
@@ -419,11 +421,22 @@ private:
 	  */
 	String findReplicaHavingPart(const String & part_name, bool active);
 
+	/** Find replica having specified part or any part that covers it.
+	  * If active = true, consider only active replicas.
+	  * If found, returns replica name and set 'out_covering_part_name' to name of found largest covering part.
+	  * If not found, returns empty string.
+	  */
+	String findReplicaHavingCoveringPart(const String & part_name, bool active, String & out_covering_part_name);
+
 	/** Скачать указанный кусок с указанной реплики.
 	  * Если to_detached, то кусок помещается в директорию detached.
 	  * Если quorum != 0, то обновляется узел для отслеживания кворума.
+	  * Returns false if part is already fetching right now.
 	  */
-	void fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum);
+	bool fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum);
+
+	std::unordered_set<String> currently_fetching_parts;
+	std::mutex currently_fetching_parts_mutex;
 
 	/** При отслеживаемом кворуме - добавить реплику в кворум для куска.
 	  */

@@ -59,7 +59,7 @@ public:
     ~BaseDaemon();
 
 	/// Загружает конфигурацию и "строит" логгеры на запись в файлы
-	void initialize(Poco::Util::Application &);
+	void initialize(Poco::Util::Application &) override;
 
 	/// Читает конфигурацию
 	void reloadConfiguration();
@@ -68,7 +68,7 @@ public:
 	void buildLoggers();
 
 	/// Определяет параметр командной строки
-	void defineOptions(Poco::Util::OptionSet& _options);
+	void defineOptions(Poco::Util::OptionSet& _options) override;
 
 	/// Заставляет демон завершаться, если хотя бы одна задача завершилась неудачно
 	void exitOnTaskError();

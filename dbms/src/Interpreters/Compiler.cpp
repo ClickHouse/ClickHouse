@@ -7,10 +7,8 @@
 #include <DB/Common/StringUtils.h>
 
 #include <DB/IO/Operators.h>
-#include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/copyData.h>
 #include <DB/IO/WriteBufferFromFile.h>
 
 #include <DB/Interpreters/Compiler.h>
@@ -205,12 +203,7 @@ void Compiler::compile(
 
 	{
 		auto process = ShellCommand::execute(command.str());
-
-		{
-			WriteBufferFromString res(compile_result);
-			copyData(process->out, res);
-		}
-
+		readStringUntilEOF(compile_result, process->out);
 		process->wait();
 	}
 

@@ -43,7 +43,7 @@ public:
 	}
 
 private:
-	using value_type_t = ExternalResultDescription::value_type_t;
+	using ValueType = ExternalResultDescription::ValueType;
 
 	Block readImpl() override
 	{
@@ -84,11 +84,11 @@ private:
 	}
 
 	static void insertValue(
-		IColumn * const column, const value_type_t type, const mongo::BSONElement & value, const std::string & name)
+		IColumn * const column, const ValueType type, const mongo::BSONElement & value, const std::string & name)
 	{
 		switch (type)
 		{
-			case value_type_t::UInt8:
+			case ValueType::UInt8:
 			{
 				if (!value.isNumber() && value.type() != mongo::Bool)
 					throw Exception{
@@ -98,7 +98,7 @@ private:
 				static_cast<ColumnUInt8 *>(column)->insert(value.isNumber() ? value.numberInt() : value.boolean());
 				break;
 			}
-			case value_type_t::UInt16:
+			case ValueType::UInt16:
 			{
 				if (!value.isNumber())
 					throw Exception{
@@ -108,7 +108,7 @@ private:
 				static_cast<ColumnUInt16 *>(column)->insert(value.numberInt());
 				break;
 			}
-			case value_type_t::UInt32:
+			case ValueType::UInt32:
 			{
 				if (!value.isNumber())
 					throw Exception{
@@ -118,7 +118,7 @@ private:
 				static_cast<ColumnUInt32 *>(column)->insert(value.numberLong());
 				break;
 			}
-			case value_type_t::UInt64:
+			case ValueType::UInt64:
 			{
 				if (!value.isNumber())
 					throw Exception{
@@ -128,7 +128,7 @@ private:
 				static_cast<ColumnUInt64 *>(column)->insert(value.numberLong());
 				break;
 			}
-			case value_type_t::Int8:
+			case ValueType::Int8:
 			{
 				if (!value.isNumber() && value.type() != mongo::Bool)
 					throw Exception{
@@ -138,7 +138,7 @@ private:
 				static_cast<ColumnInt8 *>(column)->insert(value.isNumber() ? value.numberInt() : value.numberInt());
 				break;
 			}
-			case value_type_t::Int16:
+			case ValueType::Int16:
 			{
 				if (!value.isNumber())
 					throw Exception{
@@ -148,7 +148,7 @@ private:
 				static_cast<ColumnInt16 *>(column)->insert(value.numberInt());
 				break;
 			}
-			case value_type_t::Int32:
+			case ValueType::Int32:
 			{
 				if (!value.isNumber())
 					throw Exception{
@@ -158,7 +158,7 @@ private:
 				static_cast<ColumnInt32 *>(column)->insert(value.numberInt());
 				break;
 			}
-			case value_type_t::Int64:
+			case ValueType::Int64:
 			{
 				if (!value.isNumber())
 					throw Exception{
@@ -168,7 +168,7 @@ private:
 				static_cast<ColumnInt64 *>(column)->insert(value.numberLong());
 				break;
 			}
-			case value_type_t::Float32:
+			case ValueType::Float32:
 			{
 				if (!value.isNumber())
 					throw Exception{
@@ -178,7 +178,7 @@ private:
 				static_cast<ColumnFloat32 *>(column)->insert(value.number());
 				break;
 			}
-			case value_type_t::Float64:
+			case ValueType::Float64:
 			{
 				if (!value.isNumber())
 					throw Exception{
@@ -188,7 +188,7 @@ private:
 				static_cast<ColumnFloat64 *>(column)->insert(value.number());
 				break;
 			}
-			case value_type_t::String:
+			case ValueType::String:
 			{
 				if (value.type() != mongo::String)
 					throw Exception{
@@ -199,7 +199,7 @@ private:
 				static_cast<ColumnString *>(column)->insertDataWithTerminatingZero(string.data(), string.size() + 1);
 				break;
 			}
-			case value_type_t::Date:
+			case ValueType::Date:
 			{
 				if (value.type() != mongo::Date)
 					throw Exception{
@@ -210,7 +210,7 @@ private:
 					UInt16{DateLUT::instance().toDayNum(value.date().toTimeT())});
 				break;
 			}
-			case value_type_t::DateTime:
+			case ValueType::DateTime:
 			{
 				if (value.type() != mongo::Date)
 					throw Exception{

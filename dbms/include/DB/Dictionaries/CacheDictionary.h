@@ -78,10 +78,10 @@ public:
 
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
-	void toParent(const PaddedPODArray<id_t> & ids, PaddedPODArray<id_t> & out) const override;
+	void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const override;
 
 #define DECLARE(TYPE)\
-	void get##TYPE(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, PaddedPODArray<TYPE> & out) const;
+	void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const;
 	DECLARE(UInt8)
 	DECLARE(UInt16)
 	DECLARE(UInt32)
@@ -94,11 +94,11 @@ public:
 	DECLARE(Float64)
 #undef DECLARE
 
-	void getString(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, ColumnString * out) const;
+	void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const;
 
 #define DECLARE(TYPE)\
 	void get##TYPE(\
-		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const PaddedPODArray<TYPE> & def,\
+		const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<TYPE> & def,\
 		PaddedPODArray<TYPE> & out) const;
 	DECLARE(UInt8)
 	DECLARE(UInt16)
@@ -113,12 +113,12 @@ public:
 #undef DECLARE
 
 	void getString(
-		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const ColumnString * const def,
+		const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def,
 		ColumnString * const out) const;
 
 #define DECLARE(TYPE)\
 	void get##TYPE(\
-		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const TYPE def, PaddedPODArray<TYPE> & out) const;
+		const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, PaddedPODArray<TYPE> & out) const;
 	DECLARE(UInt8)
 	DECLARE(UInt16)
 	DECLARE(UInt32)
@@ -132,17 +132,17 @@ public:
 #undef DECLARE
 
 	void getString(
-		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const String & def,
+		const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def,
 		ColumnString * const out) const;
 
-	void has(const PaddedPODArray<id_t> & ids, PaddedPODArray<UInt8> & out) const override;
+	void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
 private:
-	template <typename Value> using MapType = HashMap<id_t, Value>;
+	template <typename Value> using MapType = HashMap<Key, Value>;
 	template <typename Value> using ContainerType = Value[];
 	template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
 
-	struct cell_metadata_t final
+	struct CellMetadata final
 	{
 		using time_point_t = std::chrono::system_clock::time_point;
 		using time_point_rep_t = time_point_t::rep;
@@ -163,7 +163,7 @@ private:
 		void setDefault() { data |= IS_DEFAULT_MASK; }
 	};
 
-	struct attribute_t final
+	struct Attribute final
 	{
 		AttributeUnderlyingType type;
 		std::tuple<
@@ -180,42 +180,42 @@ private:
 
 	void createAttributes();
 
-	attribute_t createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+	Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
 
 	template <typename OutputType, typename DefaultGetter>
 	void getItemsNumber(
-		attribute_t & attribute,
-		const PaddedPODArray<id_t> & ids,
+		Attribute & attribute,
+		const PaddedPODArray<Key> & ids,
 		PaddedPODArray<OutputType> & out,
 		DefaultGetter && get_default) const;
 
 	template <typename AttributeType, typename OutputType, typename DefaultGetter>
 	void getItemsNumberImpl(
-		attribute_t & attribute,
-		const PaddedPODArray<id_t> & ids,
+		Attribute & attribute,
+		const PaddedPODArray<Key> & ids,
 		PaddedPODArray<OutputType> & out,
 		DefaultGetter && get_default) const;
 
 	template <typename DefaultGetter>
 	void getItemsString(
-		attribute_t & attribute,
-		const PaddedPODArray<id_t> & ids,
+		Attribute & attribute,
+		const PaddedPODArray<Key> & ids,
 		ColumnString * out,
 		DefaultGetter && get_default) const;
 
 	template <typename PresentIdHandler, typename AbsentIdHandler>
 	void update(
-		const std::vector<id_t> & requested_ids, PresentIdHandler && on_cell_updated,
+		const std::vector<Key> & requested_ids, PresentIdHandler && on_cell_updated,
 		AbsentIdHandler && on_id_not_found) const;
 
-	std::uint64_t getCellIdx(const id_t id) const;
+	std::uint64_t getCellIdx(const Key id) const;
 
-	void setDefaultAttributeValue(attribute_t & attribute, const id_t idx) const;
+	void setDefaultAttributeValue(Attribute & attribute, const Key idx) const;
 
-	void setAttributeValue(attribute_t & attribute, const id_t idx, const Field & value) const;
+	void setAttributeValue(Attribute & attribute, const Key idx, const Field & value) const;
 
-	attribute_t & getAttribute(const std::string & attribute_name) const;
+	Attribute & getAttribute(const std::string & attribute_name) const;
 
 	const std::string name;
 	const DictionaryStructure dict_struct;
@@ -226,9 +226,9 @@ private:
 	const std::size_t size;
 	const std::uint64_t zero_cell_idx{getCellIdx(0)};
 	std::map<std::string, std::size_t> attribute_index_by_name;
-	mutable std::vector<attribute_t> attributes;
-	mutable std::vector<cell_metadata_t> cells;
-	attribute_t * hierarchical_attribute = nullptr;
+	mutable std::vector<Attribute> attributes;
+	mutable std::vector<CellMetadata> cells;
+	Attribute * hierarchical_attribute = nullptr;
 	std::unique_ptr<ArenaWithFreeLists> string_arena;
 
 	mutable std::mt19937_64 rnd_engine;

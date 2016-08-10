@@ -43,7 +43,7 @@ public:
 
 	/// Загрузить множество существующих таблиц. Если задан thread_pool - использовать его.
 	/// Можно вызывать только один раз, сразу после создания объекта.
-	virtual void loadTables(Context & context, ThreadPool * thread_pool) = 0;
+	virtual void loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag) = 0;
 
 	/// Проверить существование таблицы.
 	virtual bool isTableExist(const String & name) const = 0;

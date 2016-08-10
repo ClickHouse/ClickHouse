@@ -16,7 +16,7 @@ namespace ErrorCodes
   */
 struct ExternalResultDescription
 {
-	enum struct value_type_t
+	enum struct ValueType
 	{
 		UInt8,
 		UInt16,
@@ -34,7 +34,7 @@ struct ExternalResultDescription
 	};
 
 	Block sample_block;
-	std::vector<value_type_t> types;
+	std::vector<ValueType> types;
 	std::vector<std::string> names;
 	ConstColumnPlainPtrs sample_columns;
 
@@ -53,31 +53,31 @@ struct ExternalResultDescription
 			const auto type = column.type.get();
 
 			if (typeid_cast<const DataTypeUInt8 *>(type))
-				types.push_back(value_type_t::UInt8);
+				types.push_back(ValueType::UInt8);
 			else if (typeid_cast<const DataTypeUInt16 *>(type))
-				types.push_back(value_type_t::UInt16);
+				types.push_back(ValueType::UInt16);
 			else if (typeid_cast<const DataTypeUInt32 *>(type))
-				types.push_back(value_type_t::UInt32);
+				types.push_back(ValueType::UInt32);
 			else if (typeid_cast<const DataTypeUInt64 *>(type))
-				types.push_back(value_type_t::UInt64);
+				types.push_back(ValueType::UInt64);
 			else if (typeid_cast<const DataTypeInt8 *>(type))
-				types.push_back(value_type_t::Int8);
+				types.push_back(ValueType::Int8);
 			else if (typeid_cast<const DataTypeInt16 *>(type))
-				types.push_back(value_type_t::Int16);
+				types.push_back(ValueType::Int16);
 			else if (typeid_cast<const DataTypeInt32 *>(type))
-				types.push_back(value_type_t::Int32);
+				types.push_back(ValueType::Int32);
 			else if (typeid_cast<const DataTypeInt64 *>(type))
-				types.push_back(value_type_t::Int64);
+				types.push_back(ValueType::Int64);
 			else if (typeid_cast<const DataTypeFloat32 *>(type))
-				types.push_back(value_type_t::Float32);
+				types.push_back(ValueType::Float32);
 			else if (typeid_cast<const DataTypeFloat64 *>(type))
-				types.push_back(value_type_t::Float64);
+				types.push_back(ValueType::Float64);
 			else if (typeid_cast<const DataTypeString *>(type))
-				types.push_back(value_type_t::String);
+				types.push_back(ValueType::String);
 			else if (typeid_cast<const DataTypeDate *>(type))
-				types.push_back(value_type_t::Date);
+				types.push_back(ValueType::Date);
 			else if (typeid_cast<const DataTypeDateTime *>(type))
-				types.push_back(value_type_t::DateTime);
+				types.push_back(ValueType::DateTime);
 			else
 				throw Exception{
 					"Unsupported type " + type->getName(),

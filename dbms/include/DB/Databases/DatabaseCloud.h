@@ -83,7 +83,7 @@ public:
 
 	String getEngineName() const override { return "Cloud"; }
 
-	void loadTables(Context & context, ThreadPool * thread_pool) override;
+	void loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag) override;
 
 	bool isTableExist(const String & table_name) const override;
 	StoragePtr tryGetTable(const String & table_name) override;

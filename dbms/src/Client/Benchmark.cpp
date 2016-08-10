@@ -26,10 +26,8 @@
 
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
-#include <DB/IO/copyData.h>
 
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 

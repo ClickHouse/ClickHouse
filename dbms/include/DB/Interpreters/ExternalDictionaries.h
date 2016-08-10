@@ -43,15 +43,15 @@ private:
 
 	mutable std::mutex dictionaries_mutex;
 
-	using dictionary_ptr_t = std::shared_ptr<MultiVersion<IDictionaryBase>>;
-	struct dictionary_info final
+	using DictionaryPtr = std::shared_ptr<MultiVersion<IDictionaryBase>>;
+	struct DictionaryInfo final
 	{
-		dictionary_ptr_t dict;
+		DictionaryPtr dict;
 		std::string origin;
 		std::exception_ptr exception;
 	};
 
-	struct failed_dictionary_info final
+	struct FailedDictionaryInfo final
 	{
 		std::unique_ptr<IDictionaryBase> dict;
 		std::chrono::system_clock::time_point next_attempt_time;
@@ -60,12 +60,12 @@ private:
 
 	/** Имя словаря -> словарь.
 	  */
-	std::unordered_map<std::string, dictionary_info> dictionaries;
+	std::unordered_map<std::string, DictionaryInfo> dictionaries;
 
 	/** Здесь находятся словари, которых ещё ни разу не удалось загрузить.
 	  * В dictionaries они тоже присутствуют, но с нулевым указателем dict.
 	  */
-	std::unordered_map<std::string, failed_dictionary_info> failed_dictionaries;
+	std::unordered_map<std::string, FailedDictionaryInfo> failed_dictionaries;
 
 	/** И для обычных и для failed_dictionaries.
 	  */
