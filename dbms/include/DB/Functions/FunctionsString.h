@@ -605,7 +605,8 @@ struct SubstringImpl
 		ColumnString::Offset_t res_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			if (start + prev_offset >= offsets[i] + 1)
+			size_t string_size = offsets[i] - prev_offset;
+			if (start >= string_size + 1)
 			{
 				res_data.resize(res_data.size() + 1);
 				res_data[res_offset] = 0;
@@ -1502,14 +1503,23 @@ public:
 		if (!column_start->isConst() || !column_length->isConst())
 			throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
 
-		FieldVisitorConvertToNumber<UInt64> converter;
 		Field start_field = (*block.getByPosition(arguments[1]).column)[0];
 		Field length_field = (*block.getByPosition(arguments[2]).column)[0];
-		UInt64 start = apply_visitor(converter, start_field);
-		UInt64 length = apply_visitor(converter, length_field);
+
+		if (start_field.getType() != Field::Types::UInt64
+			|| length_field.getType() != Field::Types::UInt64)
+			throw Exception("2nd and 3rd arguments of function " + getName() + " must be non-negative and must have UInt type.");
+
+		UInt64 start = start_field.get<UInt64>();
+		UInt64 length = length_field.get<UInt64>();
 
 		if (start == 0)
 			throw Exception("Second argument of function substring must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+		/// Otherwise may lead to overflow and pass bounds check inside inner loop.
+		if (start >= 0x8000000000000000ULL
+			|| length >= 0x8000000000000000ULL)
+			throw Exception("Too large values of 2nd or 3rd argument provided for function substring.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column_string))
 		{
