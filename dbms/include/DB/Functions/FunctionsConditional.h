@@ -15,9 +15,6 @@
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/DataTypeTraits.h>
 
-/// The following include is needed for the function multiIf.
-#include <DB/Functions/Conditional/CondException.h>
-
 namespace DB
 {
 
@@ -1458,6 +1455,12 @@ public:
 	}
 };
 
+namespace Conditional
+{
+
+class CondException;
+
+}
 
 /// Function multiIf, which generalizes the function if.
 ///
@@ -1471,6 +1474,9 @@ public:
 ///    - dates with time;
 ///    - strings;
 ///    - arrays of such types.
+///
+/// Additionally the arguments, conditions or branches, support nullable types
+/// and the NULL value.
 class FunctionMultiIf final : public IFunction
 {
 public:

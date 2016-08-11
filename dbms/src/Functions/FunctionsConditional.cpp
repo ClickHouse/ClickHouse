@@ -6,6 +6,7 @@
 #include <DB/Functions/Conditional/NumericPerformer.h>
 #include <DB/Functions/Conditional/StringEvaluator.h>
 #include <DB/Functions/Conditional/StringArrayEvaluator.h>
+#include <DB/Functions/Conditional/CondException.h>
 #include <DB/Columns/ColumnNullable.h>
 
 namespace DB

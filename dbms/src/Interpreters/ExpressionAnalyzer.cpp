@@ -255,7 +255,7 @@ void ExpressionAnalyzer::analyzeAggregation()
 		{
 			NameSet unique_keys;
 			ASTs & group_asts = select_query->group_expression_list->children;
-			for (ssize_t i = 0; i < group_asts.size(); ++i)
+			for (ssize_t i = 0; i < static_cast<ssize_t>(group_asts.size()); ++i)
 			{
 				size_t size = group_asts.size();
 				getRootActions(group_asts[i], true, false, temp_actions);
@@ -274,7 +274,7 @@ void ExpressionAnalyzer::analyzeAggregation()
 					/// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
 					if (!aggregate_descriptions.empty() || size > 1)
 					{
-						if (i + 1 < size)
+						if (i + 1 < static_cast<ssize_t>(size))
 							group_asts[i] = std::move(group_asts.back());
 
 						group_asts.pop_back();

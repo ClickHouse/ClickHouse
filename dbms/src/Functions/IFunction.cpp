@@ -11,6 +11,11 @@ namespace DB
 namespace
 {
 
+/// Suppose a function which has no special support for nullable arguments
+/// has been called with arguments, one or more of them being nullable.
+/// Then the method below endows the result, which is nullable, with a null
+/// byte map that is determined by OR-ing the null byte maps of the nullable
+/// arguments.
 void createNullValuesByteMap(Block & block, const ColumnNumbers & args, size_t result)
 {
 	ColumnNullable & res_col = static_cast<ColumnNullable &>(*block.unsafeGetByPosition(result).column);
