@@ -141,7 +141,7 @@ protected:
 	/// Returns the copy of a given block in which each column specified in
 	/// the "arguments" parameter is replaced with its respective nested
 	/// column if it is nullable.
-	static Block extractNonNullableBlock(const Block & block, const ColumnNumbers & arguments);
+	static Block extractNonNullableBlock(const Block & block, const ColumnNumbers args);
 
 private:
 	/// Internal method used for implementing both the execute() methods.

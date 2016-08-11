@@ -11,20 +11,20 @@ namespace DB
 namespace
 {
 
-void createNullValuesByteMap(Block & block, size_t result)
+void createNullValuesByteMap(Block & block, const ColumnNumbers & args, size_t result)
 {
 	ColumnNullable & res_col = static_cast<ColumnNullable &>(*block.unsafeGetByPosition(result).column);
 
-	for (size_t i = 0; i < block.columns(); ++i)
+	for (const auto & arg : args)
 	{
-		if (i == result)
+		if (arg == result)
 			continue;
 
-		const ColumnWithTypeAndName & elem = block.unsafeGetByPosition(i);
+		const ColumnWithTypeAndName & elem = block.unsafeGetByPosition(arg);
 		if (elem.column && elem.column.get()->isNullable())
 		{
-			const ColumnNullable & concrete_col = static_cast<const ColumnNullable &>(*elem.column);
-			res_col.updateNullValuesByteMap(concrete_col);
+			const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
+			res_col.updateNullValuesByteMap(nullable_col);
 		}
 	}
 }
@@ -198,19 +198,19 @@ void IFunction::getLambdaArgumentTypes(DataTypes & arguments) const
 		getLambdaArgumentTypesImpl(arguments);
 }
 
-Block IFunction::extractNonNullableBlock(const Block & block, const ColumnNumbers & arguments)
+/// Return a copy of a given block in which the specified columns are replaced by
+/// their respective nested columns if they are nullable.
+Block IFunction::extractNonNullableBlock(const Block & block, const ColumnNumbers args)
 {
+	std::sort(args.begin(), args.end());
+
 	Block non_nullable_block;
 
-	ColumnNumbers args2 = arguments;
-	std::sort(args2.begin(), args2.end());
-
-	size_t pos = 0;
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		const auto & col = block.unsafeGetByPosition(i);
 
-		bool found = std::binary_search(args2.begin(), args2.end(), pos) && col.column && col.type;
+		bool found = std::binary_search(args.begin(), args.end(), i) && col.column && col.type;
 
 		if (found && col.column.get()->isNullable())
 		{
@@ -220,12 +220,10 @@ Block IFunction::extractNonNullableBlock(const Block & block, const ColumnNumber
 			auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
 			DataTypePtr nested_type = nullable_type->getNestedType();
 
-			non_nullable_block.insert(pos, {nested_col, nested_type, col.name});
+			non_nullable_block.insert(i, {nested_col, nested_type, col.name});
 		}
 		else
-			non_nullable_block.insert(pos, col);
-
-		++pos;
+			non_nullable_block.insert(i, col);
 	}
 
 	return non_nullable_block;
@@ -249,8 +247,8 @@ void IFunction::perform(Block & block, const ColumnNumbers & arguments, size_t r
 		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
 		dest_col.column = std::make_shared<ColumnNullable>(source_col.column);
 		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*dest_col.column);
-		nullable_col.getNullValuesByteMap() = std::make_shared<ColumnUInt8>(dest_col.column->size());
-		createNullValuesByteMap(block, result);
+		nullable_col.getNullValuesByteMap() = std::make_shared<ColumnUInt8>(dest_col.column->size(), 0);
+		createNullValuesByteMap(block, arguments, result);
 	}
 	else
 		performer(block, arguments, result);

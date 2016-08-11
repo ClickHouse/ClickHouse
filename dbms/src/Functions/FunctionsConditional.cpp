@@ -208,22 +208,22 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 		{
 			/// Keep track of which columns are nullable.
 			std::vector<UInt8> nullable_cols_map;
-			nullable_cols_map.reserve(args.size());
+			nullable_cols_map.resize(args.size());
 			for (const auto & arg : args)
 			{
 				const auto & col = block.unsafeGetByPosition(arg).column;
 				bool may_have_null = col->isNullable();
-				nullable_cols_map.push_back(static_cast<UInt8>(may_have_null));
+				nullable_cols_map[arg] = may_have_null ? 1 : 0;
 			}
 
 			/// Keep track of which columns are null.
 			std::vector<UInt8> null_cols_map;
-			null_cols_map.reserve(args.size());
+			null_cols_map.resize(args.size());
 			for (const auto & arg : args)
 			{
 				const auto & col = block.unsafeGetByPosition(arg).column;
 				bool has_null = col->isNull();
-				null_cols_map.push_back(static_cast<UInt8>(has_null));
+				null_cols_map[arg] = has_null ? 1 : 0;
 			}
 
 			auto null_map = std::make_shared<ColumnUInt8>(row_count);
