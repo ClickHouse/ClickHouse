@@ -419,6 +419,7 @@ void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_
 	{
 		/// Более хорошая диагностика.
 		e.addMessage("(while reading from part " + path + ")");
+		throw;
 	}
 }
 
