@@ -250,13 +250,14 @@ void ExpressionAnalyzer::analyzeAggregation()
 	{
 		assertSelect();
 
-		/// Найдем ключи агрегации.
+		/// Find out aggregation keys.
 		if (select_query->group_expression_list)
 		{
 			NameSet unique_keys;
-			auto & group_asts = select_query->group_expression_list->children;
-			for (size_t i = 0; i < group_asts.size(); ++i)
+			ASTs & group_asts = select_query->group_expression_list->children;
+			for (ssize_t i = 0; i < group_asts.size(); ++i)
 			{
+				size_t size = group_asts.size();
 				getRootActions(group_asts[i], true, false, temp_actions);
 
 				const auto & column_name = group_asts[i]->getColumnName();
@@ -267,31 +268,31 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 				const auto & col = block.getByName(column_name);
 
-				/// constant expressions have non-null column pointer at this stage
+				/// Constant expressions have non-null column pointer at this stage.
 				if (const auto is_constexpr = col.column)
 				{
-					/// but don't remove last key column if no aggregate functions, otherwise aggregation will not work
-					if (!aggregate_descriptions.empty() || group_asts.size() > 1)
+					/// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
+					if (!aggregate_descriptions.empty() || size > 1)
 					{
-						if (i < group_asts.size() - 1)
+						if (i + 1 < size)
 							group_asts[i] = std::move(group_asts.back());
 
 						group_asts.pop_back();
-						i -= 1;
 
+						--i;
 						continue;
 					}
 				}
 
 				NameAndTypePair key{column_name, col.type};
 
-				/// Ключи агрегации уникализируются.
+				/// Aggregation keys are uniqued.
 				if (!unique_keys.count(key.name))
 				{
 					unique_keys.insert(key.name);
 					aggregation_keys.push_back(key);
 
-					/// key is no longer needed, therefore we can save a little by moving it
+					/// Key is no longer needed, therefore we can save a little by moving it.
 					aggregated_columns.push_back(std::move(key));
 				}
 			}
