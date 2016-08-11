@@ -200,7 +200,7 @@ void IFunction::getLambdaArgumentTypes(DataTypes & arguments) const
 
 /// Return a copy of a given block in which the specified columns are replaced by
 /// their respective nested columns if they are nullable.
-Block IFunction::extractNonNullableBlock(const Block & block, const ColumnNumbers args)
+Block IFunction::extractNonNullableBlock(const Block & block, ColumnNumbers args)
 {
 	std::sort(args.begin(), args.end());
 
