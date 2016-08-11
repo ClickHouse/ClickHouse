@@ -645,6 +645,9 @@ DEFINE_TYPE_PRODUCT_RULE(Enriched::IntFloat64, Enriched::UInt16, Enriched::IntFl
 DEFINE_TYPE_PRODUCT_RULE(Enriched::IntFloat64, Enriched::UInt32, Enriched::IntFloat64);
 DEFINE_TYPE_PRODUCT_RULE(Enriched::IntFloat64, Enriched::IntFloat64, Enriched::IntFloat64);
 
+DEFINE_TYPE_PRODUCT_RULE(Enriched::IntFloat32, Enriched::Void, Enriched::IntFloat32);
+DEFINE_TYPE_PRODUCT_RULE(Enriched::IntFloat64, Enriched::Void, Enriched::IntFloat64);
+
 #undef DEFINE_TYPE_PRODUCT_RULE
 
 }
