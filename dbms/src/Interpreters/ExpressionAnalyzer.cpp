@@ -255,9 +255,9 @@ void ExpressionAnalyzer::analyzeAggregation()
 		{
 			NameSet unique_keys;
 			ASTs & group_asts = select_query->group_expression_list->children;
-			for (ssize_t i = 0; i < group_asts.size(); ++i)
+			for (ssize_t i = 0; i < ssize_t(group_asts.size()); ++i)
 			{
-				size_t size = group_asts.size();
+				ssize_t size = group_asts.size();
 				getRootActions(group_asts[i], true, false, temp_actions);
 
 				const auto & column_name = group_asts[i]->getColumnName();
