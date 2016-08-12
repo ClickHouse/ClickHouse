@@ -42,9 +42,9 @@ bool FunctionIsNull::hasSpecialSupportForNulls() const
 DataTypePtr FunctionIsNull::getReturnTypeImpl(const DataTypes & arguments) const
 {
 	if (arguments.size() != 1)
-		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+		throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed "
 			+ toString(arguments.size()) + ", should be 1.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 	return std::make_shared<DataTypeUInt8>();
 }
@@ -55,7 +55,7 @@ void FunctionIsNull::executeImpl(Block & block, const ColumnNumbers & arguments,
 	if (elem.column->isNull())
 	{
 		/// Trivial case.
-		block.getByPosition(result).column = std::make_shared<ColumnConstUInt8>(elem.column.get()->size(), 1);
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt8>(elem.column->size(), 1);
 	}
 	else if (elem.column->isNullable())
 	{
@@ -65,8 +65,9 @@ void FunctionIsNull::executeImpl(Block & block, const ColumnNumbers & arguments,
 	}
 	else
 	{
-		/// Since no element is nullable, create a zero-filled null map.
-		block.getByPosition(result).column = std::make_shared<ColumnConstUInt8>(elem.column.get()->size(), 0);
+		/// Since no element is nullable, return a zero-constant column representing
+		/// a zero-filled null map.
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt8>(elem.column->size(), 0);
 	}
 }
 
@@ -90,9 +91,9 @@ bool FunctionIsNotNull::hasSpecialSupportForNulls() const
 DataTypePtr FunctionIsNotNull::getReturnTypeImpl(const DataTypes & arguments) const
 {
 	if (arguments.size() != 1)
-		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+		throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed "
 			+ toString(arguments.size()) + ", should be 1.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 	return std::make_shared<DataTypeUInt8>();
 }
@@ -207,9 +208,9 @@ bool FunctionIfNull::hasSpecialSupportForNulls() const
 DataTypePtr FunctionIfNull::getReturnTypeImpl(const DataTypes & arguments) const
 {
 	if (arguments.size() != 2)
-		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+		throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed "
 			+ toString(arguments.size()) + ", should be 2.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 	return FunctionMultiIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), arguments[0], arguments[1]});
 }
@@ -249,9 +250,9 @@ bool FunctionNullIf::hasSpecialSupportForNulls() const
 DataTypePtr FunctionNullIf::getReturnTypeImpl(const DataTypes & arguments) const
 {
 	if (arguments.size() != 2)
-		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+		throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed "
 			+ toString(arguments.size()) + ", should be 2.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 	return FunctionMultiIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), std::make_shared<DataTypeNull>(), arguments[0]});
 }
@@ -303,12 +304,12 @@ bool FunctionAssumeNotNull::hasSpecialSupportForNulls() const
 DataTypePtr FunctionAssumeNotNull::getReturnTypeImpl(const DataTypes & arguments) const
 {
 	if (arguments.size() != 1)
-		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+		throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed "
 			+ toString(arguments.size()) + ", should be 1.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 	if (arguments[0].get()->isNull())
-		return std::make_shared<DataTypeUInt8>();
+		throw Exception{"NULL is an invalid value for function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 	else if (arguments[0].get()->isNullable())
 	{
 		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arguments[0]);
@@ -324,7 +325,7 @@ void FunctionAssumeNotNull::executeImpl(Block & block, const ColumnNumbers & arg
 	ColumnPtr & res_col = block.getByPosition(result).column;
 
 	if (col.get()->isNull())
-		res_col = std::make_shared<ColumnConstUInt8>(block.rowsInFirstColumn(), 0);
+		throw Exception{"NULL is an invalid value for function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 	else if (col.get()->isNullable())
 	{
 		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);

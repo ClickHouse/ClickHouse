@@ -85,8 +85,8 @@ public:
 
 /// Implements the function assumeNotNull which takes 1 argument and works as follows:
 /// - if the argument is a nullable column, return its embedded column;
-/// - if the argument is NULL, return 0;
 /// - otherwise return the original argument.
+/// NOTE: assumeNotNull may not be called with the NULL value.
 class FunctionAssumeNotNull : public IFunction
 {
 public:
