@@ -6,7 +6,6 @@
 #include <DB/Columns/ColumnConst.h>
 
 #include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/DataTypes/NullSymbol.h>
 
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
@@ -112,8 +111,6 @@ void DataTypeFixedString::serializeTextEscaped(const IColumn & column, size_t ro
 	writeAnyEscapedString<'\''>(pos, pos + n, ostr);
 }
 
-namespace
-{
 
 template <typename Reader>
 static inline void read(const DataTypeFixedString & self, IColumn & column, Reader && reader)
@@ -141,7 +138,6 @@ static inline void read(const DataTypeFixedString & self, IColumn & column, Read
 	}
 }
 
-}
 
 void DataTypeFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {

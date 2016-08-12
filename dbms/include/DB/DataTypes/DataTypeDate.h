@@ -20,28 +20,32 @@ public:
 	std::string getName() const override { return "Date"; }
 	DataTypePtr clone() const override { return std::make_shared<DataTypeDate>(); }
 
-private:
 	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
 		writeDateText(DayNum_t(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 	}
 
-	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
-	{
-		writeDateText(DayNum_t(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
-	}
-
-	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override
+	static void deserializeText(IColumn & column, ReadBuffer & istr)
 	{
 		DayNum_t x;
 		readDateText(x, istr);
 		static_cast<ColumnType &>(column).getData().push_back(x);
 	}
 
+	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
+	{
+		serializeText(column, row_num, ostr);
+	}
+
+	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override
+	{
+		deserializeText(column, istr);
+	}
+
 	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
 		writeChar('\'', ostr);
-		writeDateText(DayNum_t(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+		serializeText(column, row_num, ostr);
 		writeChar('\'', ostr);
 	}
 
@@ -57,7 +61,7 @@ private:
 	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
 		writeChar('"', ostr);
-		writeDateText(DayNum_t(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+		serializeText(column, row_num, ostr);
 		writeChar('"', ostr);
 	}
 
@@ -73,7 +77,7 @@ private:
 	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
 		writeChar('"', ostr);
-		writeDateText(DayNum_t(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+		serializeText(column, row_num, ostr);
 		writeChar('"', ostr);
 	}
 

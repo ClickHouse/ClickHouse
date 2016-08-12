@@ -3,7 +3,6 @@
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
 #include <DB/DataTypes/DataTypeTuple.h>
-#include <DB/DataTypes/NullSymbol.h>
 
 #include <ext/map.hpp>
 #include <ext/enumerate.hpp>

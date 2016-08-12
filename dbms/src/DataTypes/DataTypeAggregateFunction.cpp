@@ -164,10 +164,12 @@ void DataTypeAggregateFunction::serializeText(const IColumn & column, size_t row
 	writeString(serializeToString(function, column, row_num), ostr);
 }
 
+
 void DataTypeAggregateFunction::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeEscapedString(serializeToString(function, column, row_num), ostr);
 }
+
 
 void DataTypeAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
@@ -176,10 +178,12 @@ void DataTypeAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuf
 	deserializeFromString(function, column, s);
 }
 
+
 void DataTypeAggregateFunction::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeQuotedString(serializeToString(function, column, row_num), ostr);
 }
+
 
 void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
@@ -188,10 +192,12 @@ void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuff
 	deserializeFromString(function, column, s);
 }
 
+
 void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeJSONString(serializeToString(function, column, row_num), ostr);
 }
+
 
 void DataTypeAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
@@ -200,15 +206,18 @@ void DataTypeAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer
 	deserializeFromString(function, column, s);
 }
 
+
 void DataTypeAggregateFunction::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeXMLString(serializeToString(function, column, row_num), ostr);
 }
 
+
 void DataTypeAggregateFunction::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeCSV(serializeToString(function, column, row_num), ostr);
 }
+
 
 void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
 {
@@ -216,6 +225,7 @@ void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer 
 	readCSV(s, istr, delimiter);
 	deserializeFromString(function, column, s);
 }
+
 
 ColumnPtr DataTypeAggregateFunction::createColumn() const
 {
@@ -226,6 +236,7 @@ ColumnPtr DataTypeAggregateFunction::createConstColumn(size_t size, const Field 
 {
 	throw Exception("Const column with aggregate function is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
+
 
 }
 

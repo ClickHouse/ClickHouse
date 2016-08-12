@@ -3,7 +3,6 @@
 #include <cmath> /// std::isfinite
 
 #include <DB/DataTypes/IDataType.h>
-#include <DB/DataTypes/NullSymbol.h>
 
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
@@ -30,40 +29,31 @@ public:
 	bool isNumeric() const override { return true; }
 	bool behavesAsNumber() const override { return true; }
 
-	size_t getSizeOfField() const override { return sizeof(FieldType); }
-
-	Field getDefault() const override
-	{
-		return typename NearestFieldType<FieldType>::Type();
-	}
-
-private:
-	template <typename Null> inline void deserializeText(IColumn & column, ReadBuffer & istr) const;
-
-protected:
 	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
 		writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
 	}
 
+	static inline void deserializeText(IColumn & column, ReadBuffer & istr);
+
 	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
+		serializeText(column, row_num, ostr);
 	}
 
 	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override
 	{
-		deserializeText<NullSymbol::Escaped>(column, istr);
+		deserializeText(column, istr);
 	}
 
 	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
+		serializeText(column, row_num, ostr);
 	}
 
 	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override
 	{
-		deserializeText<NullSymbol::Quoted>(column, istr);
+		deserializeText(column, istr);
 	}
 
 	inline void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -80,10 +70,10 @@ protected:
 		FieldType x;
 
 		/// null
-		if (!has_quote && !istr.eof() && *istr.position() == NullSymbol::JSON::prefix)
+		if (!has_quote && !istr.eof() && *istr.position() == 'n')
 		{
 			++istr.position();
-			assertString(NullSymbol::JSON::suffix, istr);
+			assertString("ull", istr);
 
 			x = valueForJSONNull();
 		}
@@ -100,7 +90,7 @@ protected:
 
 	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
+		serializeText(column, row_num, ostr);
 	}
 
 	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override
@@ -108,6 +98,13 @@ protected:
 		FieldType x;
 		readCSV(x, istr);
 		static_cast<ColumnType &>(column).getData().push_back(x);
+	}
+
+	size_t getSizeOfField() const override { return sizeof(FieldType); }
+
+	Field getDefault() const override
+	{
+		return typename NearestFieldType<FieldType>::Type();
 	}
 };
 
@@ -119,8 +116,7 @@ public:
 
 	bool isNumeric() const override { return true; }
 	bool behavesAsNumber() const override { return true; }
-	size_t getSizeOfField() const override { return 0; }
-	Field getDefault() const override { return {}; }
+	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
 	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
 	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override {}
 	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
@@ -129,74 +125,64 @@ public:
 	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override {}
 	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
 	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override {}
-	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
+	size_t getSizeOfField() const override { return 0; }
+	Field getDefault() const override { return {}; }
 };
 
-template <typename FType>
-inline void IDataTypeNumber<FType>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+template <typename FType> inline void IDataTypeNumber<FType>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
+	serializeText(column, row_num, ostr);
 }
 
-template <>
-inline void IDataTypeNumber<Int64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+template <> inline void IDataTypeNumber<Int64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	writeChar('"', ostr);
-	writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
-	writeChar('"', ostr);
-}
-
-template <>
-inline void IDataTypeNumber<UInt64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-	writeChar('"', ostr);
-	writeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
+	serializeText(column, row_num, ostr);
 	writeChar('"', ostr);
 }
 
-template <>
-inline void IDataTypeNumber<Float32>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+template <> inline void IDataTypeNumber<UInt64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+	writeChar('"', ostr);
+	serializeText(column, row_num, ostr);
+	writeChar('"', ostr);
+}
+
+template <> inline void IDataTypeNumber<Float32>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	auto x = static_cast<const ColumnType &>(column).getData()[row_num];
 	if (likely(std::isfinite(x)))
 		writeText(x, ostr);
 	else
-		writeCString(NullSymbol::JSON::name, ostr);
+		writeCString("null", ostr);
 }
 
-template <>
-inline void IDataTypeNumber<Float64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+template <> inline void IDataTypeNumber<Float64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	auto x = static_cast<const ColumnType &>(column).getData()[row_num];
 	if (likely(std::isfinite(x)))
 		writeText(x, ostr);
 	else
-		writeCString(NullSymbol::JSON::name, ostr);
+		writeCString("null", ostr);
 }
 
-template <typename FType>
-template <typename Null>
-inline void IDataTypeNumber<FType>::deserializeText(IColumn & column, ReadBuffer & istr) const
+template <typename FType> inline void IDataTypeNumber<FType>::deserializeText(IColumn & column, ReadBuffer & istr)
 {
 	FieldType x;
 	readIntTextUnsafe(x, istr);
 	static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
-template <>
-template <typename Null>
-inline void IDataTypeNumber<Float64>::deserializeText(IColumn & column, ReadBuffer & istr) const
+template <> inline void IDataTypeNumber<Float64>::deserializeText(IColumn & column, ReadBuffer & istr)
 {
-	FieldType x;
+	Float64 x;
 	readText(x, istr);
 	static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
-template <>
-template <typename Null>
-inline void IDataTypeNumber<Float32>::deserializeText(IColumn & column, ReadBuffer & istr) const
+template <> inline void IDataTypeNumber<Float32>::deserializeText(IColumn & column, ReadBuffer & istr)
 {
-	FieldType x;
+	Float64 x;
 	readText(x, istr);
 	static_cast<ColumnType &>(column).getData().push_back(x);
 }

@@ -48,19 +48,16 @@ public:
 	void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
 	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override;
 	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
-
-	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const;
-	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr)const;
-	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const;
-	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const;
-
+	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override;
+	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
 	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
+	void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
-
-	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-	void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 
 	ColumnPtr createColumn() const override;
 	ColumnPtr createConstColumn(size_t size, const Field & field) const override;
@@ -69,8 +66,6 @@ public:
 	{
 		throw Exception("There is no default value for AggregateFunction data type", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 	}
-
-private:
 };
 
 

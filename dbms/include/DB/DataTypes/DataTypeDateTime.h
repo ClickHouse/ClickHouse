@@ -20,10 +20,16 @@ public:
 	std::string getName() const override { return "DateTime"; }
 	DataTypePtr clone() const override { return std::make_shared<DataTypeDateTime>(); }
 
-private:
 	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
 		writeDateTimeText(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
+	}
+
+	static void deserializeText(IColumn & column, ReadBuffer & istr)
+	{
+		time_t x;
+		readDateTimeText(x, istr);
+		static_cast<ColumnType &>(column).getData().push_back(x);
 	}
 
 	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
@@ -33,9 +39,7 @@ private:
 
 	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override
 	{
-		time_t x;
-		readDateTimeText(x, istr);
-		static_cast<ColumnType &>(column).getData().push_back(x);
+		deserializeText(column, istr);
 	}
 
 	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override

@@ -1,6 +1,5 @@
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/DataTypes/DataTypeEnum.h>
-#include <DB/DataTypes/NullSymbol.h>
 
 
 namespace DB

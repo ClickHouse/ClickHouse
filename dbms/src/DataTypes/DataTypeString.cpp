@@ -5,7 +5,6 @@
 #include <DB/Columns/ColumnConst.h>
 
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/NullSymbol.h>
 
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
@@ -223,8 +222,6 @@ void DataTypeString::serializeTextEscaped(const IColumn & column, size_t row_num
 	writeEscapedString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
-namespace
-{
 
 template <typename Reader>
 static inline void read(IColumn & column, ReadBuffer & istr, Reader && reader)
@@ -250,7 +247,6 @@ static inline void read(IColumn & column, ReadBuffer & istr, Reader && reader)
 	}
 }
 
-}
 
 void DataTypeString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {

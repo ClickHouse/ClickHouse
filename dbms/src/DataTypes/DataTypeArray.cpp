@@ -187,7 +187,8 @@ void DataTypeArray::deserializeOffsets(IColumn & column, ReadBuffer & istr, size
 	offsets.resize(i);
 }
 
-void DataTypeArray::serializeTextInternal(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+
+void DataTypeArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
 	const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
 	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
@@ -207,16 +208,9 @@ void DataTypeArray::serializeTextInternal(const IColumn & column, size_t row_num
 	writeChar(']', ostr);
 }
 
-void DataTypeArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-	serializeTextInternal(column, row_num, ostr);
-}
-
-namespace
-{
 
 template <typename Reader>
-void deserializeTextInternal(IColumn & column, ReadBuffer & istr, Reader && read_nested)
+static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && read_nested)
 {
 	ColumnArray & column_array = static_cast<ColumnArray &>(column);
 	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
@@ -255,29 +249,24 @@ void deserializeTextInternal(IColumn & column, ReadBuffer & istr, Reader && read
 	}
 	catch (...)
 	{
-		nested_column.popBack(size);
+		if (size)
+			nested_column.popBack(size);
 		throw;
 	}
 
 	offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
 }
 
-}
-
-void DataTypeArray::deserializeTextQuotedInternal(IColumn & column, ReadBuffer & istr) const
-{
-	deserializeTextInternal(column, istr, [&](IColumn & nested_column) { nested->deserializeTextQuoted(nested_column, istr); });
-}
 
 void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr) const
 {
-	deserializeTextQuotedInternal(column, istr);
+	deserializeTextImpl(column, istr, [&](IColumn & nested_column) { nested->deserializeTextQuoted(nested_column, istr); });
 }
 
 
 void DataTypeArray::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	serializeTextInternal(column, row_num, ostr);
+	serializeText(column, row_num, ostr);
 }
 
 
@@ -289,7 +278,7 @@ void DataTypeArray::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) 
 
 void DataTypeArray::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	serializeTextInternal(column, row_num, ostr);
+	serializeText(column, row_num, ostr);
 }
 
 
@@ -322,7 +311,7 @@ void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, Wr
 
 void DataTypeArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
-	deserializeTextInternal(column, istr, [&](IColumn & nested_column) { nested->deserializeTextJSON(nested_column, istr); });
+	deserializeTextImpl(column, istr, [&](IColumn & nested_column) { nested->deserializeTextJSON(nested_column, istr); });
 }
 
 
@@ -353,7 +342,7 @@ void DataTypeArray::serializeTextCSV(const IColumn & column, size_t row_num, Wri
 	String s;
 	{
 		WriteBufferFromString wb(s);
-		serializeTextInternal(column, row_num, wb);
+		serializeText(column, row_num, wb);
 	}
 	writeCSV(s, ostr);
 }
@@ -364,7 +353,7 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
 	String s;
 	readCSV(s, istr, delimiter);
 	ReadBufferFromString rb(s);
-	deserializeTextQuotedInternal(column, rb);
+	deserializeText(column, rb);
 }
 
 
