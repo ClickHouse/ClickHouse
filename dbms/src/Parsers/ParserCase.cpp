@@ -93,45 +93,18 @@ bool ParserCase::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 		ASTPtr case_expr;
 		if (!p_expr.parse(pos, end, case_expr, max_parsed_pos, expected))
 			return false;
+		args.push_back(case_expr);
 
 		ws.ignore(pos, end);
 
 		if (!parse_branches())
 			return false;
 
-		/// Hand-craft a transform() function.
-		auto src_expr_list = std::make_shared<ASTExpressionList>(StringRange{begin, pos});
-		auto dst_expr_list = std::make_shared<ASTExpressionList>(StringRange{begin, pos});
-
-		for (size_t i = 0; i < (args.size() - 1); ++i)
-		{
-			if ((i % 2) == 0)
-				src_expr_list->children.push_back(args[i]);
-			else
-				dst_expr_list->children.push_back(args[i]);
-		}
-
-		auto src_array_function = std::make_shared<ASTFunction>(StringRange{begin, pos});
-		src_array_function->name = "array";
-		src_array_function->genus = ASTFunction::Genus::CASE_ARRAY;
-		src_array_function->arguments = src_expr_list;
-		src_array_function->children.push_back(src_array_function->arguments);
-
-		auto dst_array_function = std::make_shared<ASTFunction>(StringRange{begin, pos});
-		dst_array_function->name = "array";
-		dst_array_function->genus = ASTFunction::Genus::CASE_ARRAY;
-		dst_array_function->arguments = dst_expr_list;
-		dst_array_function->children.push_back(dst_array_function->arguments);
-
 		auto function_args = std::make_shared<ASTExpressionList>(StringRange{begin, pos});
-		function_args->children.push_back(case_expr);
-		function_args->children.push_back(src_array_function);
-		function_args->children.push_back(dst_array_function);
-		function_args->children.emplace_back(args.back());
+		function_args->children = std::move(args);
 
 		auto function = std::make_shared<ASTFunction>(StringRange{begin, pos});
-		function->name = "transform";
-		function->genus = ASTFunction::Genus::CASE_WITH_EXPR;
+		function->name = "caseWithExpr";
 		function->arguments = function_args;
 		function->children.push_back(function->arguments);
 
@@ -142,13 +115,11 @@ bool ParserCase::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 		if (!parse_branches())
 			return false;
 
-		/// Hand-craft a multiIf() function.
 		auto function_args = std::make_shared<ASTExpressionList>(StringRange{begin, pos});
 		function_args->children = std::move(args);
 
 		auto function = std::make_shared<ASTFunction>(StringRange{begin, pos});
-		function->name = "multiIf";
-		function->genus = ASTFunction::Genus::CASE_WITHOUT_EXPR;
+		function->name = "caseWithoutExpr";
 		function->arguments = function_args;
 		function->children.push_back(function->arguments);
 

@@ -34,18 +34,6 @@ public:
 
 	FunctionKind kind{UNKNOWN};
 
-	/// Context-dependent information.
-	enum class Genus
-	{
-		ORDINARY = 0,
-		CASE_WITH_EXPR,
-		CASE_WITHOUT_EXPR,
-		CASE_ARRAY,
-		NULLITY_CHECK_OPERATOR
-	};
-
-	Genus genus{Genus::ORDINARY};
-
 public:
 	ASTFunction() = default;
 	ASTFunction(const StringRange range_) : ASTWithAlias(range_) {}
@@ -59,10 +47,6 @@ public:
 
 protected:
 	void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-
-private:
-	void formatCase(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
-	void formatNullityCheckOperator(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
 };
 
 

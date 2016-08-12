@@ -1,4 +1,6 @@
 #include <DB/Functions/FunctionsConditional.h>
+#include <DB/Functions/FunctionsArray.h>
+#include <DB/Functions/FunctionsTransform.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/Conditional/common.h>
 #include <DB/Functions/Conditional/ArgsInfo.h>
@@ -70,7 +72,11 @@ void registerFunctionsConditional(FunctionFactory & factory)
 {
 	factory.registerFunction<FunctionIf>();
 	factory.registerFunction<FunctionMultiIf>();
+	factory.registerFunction<FunctionCaseWithExpr>();
+	factory.registerFunction<FunctionCaseWithoutExpr>();
 }
+
+/// Implementation of FunctionMultiIf.
 
 FunctionPtr FunctionMultiIf::create(const Context & context)
 {
@@ -611,6 +617,143 @@ void FunctionMultiIf::rethrowContextually(const Conditional::CondException & ex)
 			throw Exception{"An unexpected error has occurred while performing multiIf",
 				ErrorCodes::LOGICAL_ERROR};
 	}
+}
+
+/// Implementation of FunctionCaseWithExpr.
+
+FunctionPtr FunctionCaseWithExpr::create(const Context & context_)
+{
+	return std::make_shared<FunctionCaseWithExpr>(context_);
+}
+
+FunctionCaseWithExpr::FunctionCaseWithExpr(const Context & context_)
+	: context{context_}
+{
+}
+
+String FunctionCaseWithExpr::getName() const
+{
+	return name;
+}
+
+DataTypePtr FunctionCaseWithExpr::getReturnTypeImpl(const DataTypes & args) const
+{
+	/// See the comments in executeImpl() to understand why we actually have to
+	/// get the return type of a transform function.
+
+	/// Get the return types of the arrays that we pass to the transform function.
+	DataTypes src_array_types;
+	DataTypes dst_array_types;
+
+	for (size_t i = 1; i < (args.size() - 1); ++i)
+	{
+		if ((i % 2) != 0)
+			src_array_types.push_back(args[i]);
+		else
+			dst_array_types.push_back(args[i]);
+	}
+
+	FunctionArray fun_array{context};
+	fun_array.setCaseMode();
+
+	DataTypePtr src_array_type = fun_array.getReturnTypeImpl(src_array_types);
+	DataTypePtr dst_array_type = fun_array.getReturnTypeImpl(dst_array_types);
+
+	/// Finally get the return type of the transform function.
+	FunctionTransform fun_transform;
+	fun_transform.setCaseMode();
+	return fun_transform.getReturnTypeImpl({args.front(), src_array_type, dst_array_type, args.back()});
+}
+
+void FunctionCaseWithExpr::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
+{
+	/// In the following code, we turn the construction:
+	/// CASE expr WHEN val[0] THEN branch[0] ... WHEN val[N-1] then branch[N-1] ELSE branchN
+	/// into the construction transform(expr, src, dest, branchN)
+	/// where:
+	/// src  = [val[0], val[1], ..., val[N-1]]
+	/// dest = [branch[0], ..., branch[N-1]]
+	/// then we perform it.
+
+	/// Create the arrays required by the transform function.
+	ColumnNumbers src_array_args;
+	DataTypes src_array_types;
+
+	ColumnNumbers dst_array_args;
+	DataTypes dst_array_types;
+
+	for (size_t i = 1; i < (args.size() - 1); ++i)
+	{
+		if ((i % 2) != 0)
+		{
+			src_array_args.push_back(args[i]);
+			src_array_types.push_back(block.getByPosition(args[i]).type);
+		}
+		else
+		{
+			dst_array_args.push_back(args[i]);
+			dst_array_types.push_back(block.getByPosition(args[i]).type);
+		}
+	}
+
+	FunctionArray fun_array{context};
+	fun_array.setCaseMode();
+
+	DataTypePtr src_array_type = fun_array.getReturnTypeImpl(src_array_types);
+	DataTypePtr dst_array_type = fun_array.getReturnTypeImpl(dst_array_types);
+
+	Block temp_block = block;
+
+	size_t src_array_pos = temp_block.columns();
+	temp_block.insert({nullptr, src_array_type, ""});
+
+	size_t dst_array_pos = temp_block.columns();
+	temp_block.insert({nullptr, dst_array_type, ""});
+
+	fun_array.executeImpl(temp_block, src_array_args, src_array_pos);
+	fun_array.executeImpl(temp_block, dst_array_args, dst_array_pos);
+
+	/// Execute transform.
+	FunctionTransform fun_transform;
+	fun_transform.setCaseMode();
+
+	ColumnNumbers transform_args{args.front(), src_array_pos, dst_array_pos, args.back()};
+	fun_transform.executeImpl(temp_block, transform_args, result);
+
+	/// Put the result into the original block.
+	block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
+}
+
+/// Implementation of FunctionCaseWithoutExpr.
+
+FunctionPtr FunctionCaseWithoutExpr::create(const Context & context_)
+{
+	return std::make_shared<FunctionCaseWithoutExpr>();
+}
+
+String FunctionCaseWithoutExpr::getName() const
+{
+	return name;
+}
+
+bool FunctionCaseWithoutExpr::hasSpecialSupportForNulls() const
+{
+	return true;
+}
+
+DataTypePtr FunctionCaseWithoutExpr::getReturnTypeImpl(const DataTypes & args) const
+{
+	FunctionMultiIf fun_multi_if;
+	fun_multi_if.setCaseMode();
+	return fun_multi_if.getReturnTypeImpl(args);
+}
+
+void FunctionCaseWithoutExpr::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
+{
+	/// A CASE construction without any expression is a mere multiIf.
+	FunctionMultiIf fun_multi_if;
+	fun_multi_if.setCaseMode();
+	fun_multi_if.executeImpl(block, args, result);
 }
 
 }

@@ -67,18 +67,6 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 	nested_need_parens.need_parens = true;
 	nested_dont_need_parens.need_parens = false;
 
-	if ((genus == Genus::CASE_WITH_EXPR) || (genus == Genus::CASE_WITHOUT_EXPR))
-	{
-		formatCase(settings, state, frame);
-		return;
-	}
-
-	if (genus == Genus::NULLITY_CHECK_OPERATOR)
-	{
-		formatNullityCheckOperator(settings, state, frame);
-		return;
-	}
-
 	/// Стоит ли записать эту функцию в виде оператора?
 	bool written = false;
 	if (arguments && !parameters)
@@ -269,112 +257,6 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
 		settings.ostr << (settings.hilite ? hilite_none : "");
 	}
-}
-
-void ASTFunction::formatCase(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-	static constexpr auto s_case = "CASE";
-	static constexpr auto s_when = "WHEN";
-	static constexpr auto s_then = "THEN";
-	static constexpr auto s_else = "ELSE";
-	static constexpr auto s_end = "END";
-	static constexpr auto s_ws = " ";
-
-	const ASTExpressionList * expr_list = static_cast<const ASTExpressionList *>(&*arguments);
-	const ASTs & args = expr_list->children;
-
-	frame.need_parens = false;
-
-	std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-	std::string indent_str2 = settings.one_line ? "" : std::string(4 * (frame.indent + 1), ' ');
-
-	settings.ostr << (settings.hilite ? hilite_keyword : "") << s_case << s_ws
-		<< (settings.hilite ? hilite_none : "");
-
-	if (genus == Genus::CASE_WITH_EXPR)
-	{
-		args[0]->formatImpl(settings, state, frame);
-		settings.ostr << settings.nl_or_ws;
-
-		const ASTFunction * src_array_function = static_cast<const ASTFunction *>(&*args[1]);
-		const ASTExpressionList * src_expr_list = static_cast<const ASTExpressionList *>(&*src_array_function->arguments);
-
-		const ASTFunction * dst_array_function = static_cast<const ASTFunction *>(&*args[2]);
-		const ASTExpressionList * dst_expr_list = static_cast<const ASTExpressionList *>(&*dst_array_function->arguments);
-
-		size_t size = src_expr_list->children.size();
-
-		for (size_t i = 0; i < size; ++i)
-		{
-			settings.ostr << (settings.hilite ? hilite_keyword : "")
-				<< indent_str2 << s_when << s_ws;
-			src_expr_list->children[i]->formatImpl(settings, state, frame);
-			settings.ostr << s_ws;
-
-			settings.ostr << (settings.hilite ? hilite_keyword : "") << s_then << s_ws;
-			settings.ostr << hilite_none;
-			dst_expr_list->children[i]->formatImpl(settings, state, frame);
-			settings.ostr << settings.nl_or_ws;
-		}
-	}
-	else if (genus == Genus::CASE_WITHOUT_EXPR)
-	{
-		settings.ostr << settings.nl_or_ws;
-
-		for (size_t i = 0; i < (args.size() - 1); ++i)
-		{
-			if ((i % 2) == 0)
-			{
-				settings.ostr << (settings.hilite ? hilite_keyword : "")
-					<< indent_str2 << s_when << s_ws;
-				args[i]->formatImpl(settings, state, frame);
-				settings.ostr << " ";
-			}
-			else
-			{
-				settings.ostr << (settings.hilite ? hilite_keyword : "") << s_then << s_ws;
-				settings.ostr << hilite_none;
-				args[i]->formatImpl(settings, state, frame);
-				settings.ostr << settings.nl_or_ws;
-			}
-		}
-	}
-	else
-		throw Exception{"Invalid function genus", ErrorCodes::INVALID_FUNCTION_GENUS};
-
-	settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str2
-		<< s_else << s_ws;
-	settings.ostr << hilite_none;
-	args.back()->formatImpl(settings, state, frame);
-	settings.ostr << settings.nl_or_ws;
-
-	settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << s_end;
-}
-
-void ASTFunction::formatNullityCheckOperator(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-	static constexpr auto s_is = "IS";
-	static constexpr auto s_not = "NOT";
-	static constexpr auto s_null = "NULL";
-	static constexpr auto s_ws = " ";
-
-	const ASTExpressionList * expr_list = static_cast<const ASTExpressionList *>(&*arguments);
-	const ASTs & args = expr_list->children;
-
-	args[0]->formatImpl(settings, state, frame);
-	settings.ostr << (settings.hilite ? hilite_operator : "") << s_ws << s_is << s_ws;
-
-	if (name == "isNull")
-	{
-		settings.ostr << s_null << (settings.hilite ? hilite_none : "");
-	}
-	else if (name == "isNotNull")
-	{
-		settings.ostr << s_not << s_ws;
-		settings.ostr << s_null << (settings.hilite ? hilite_none : "");
-	}
-	else
-		throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 }
 
 }

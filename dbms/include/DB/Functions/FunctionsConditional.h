@@ -1506,4 +1506,37 @@ private:
 	bool is_case_mode = false;
 };
 
+/// Function caseWithExpr which implements the CASE construction when it is
+/// provided an expression. Users should not call this function.
+class FunctionCaseWithExpr : public IFunction
+{
+public:
+	static constexpr auto name = "caseWithExpr";
+	static FunctionPtr create(const Context & context_);
+
+public:
+	FunctionCaseWithExpr(const Context & context_);
+	String getName() const override;
+	DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
+	void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
+
+private:
+	const Context & context;
+};
+
+/// Function caseWithoutExpr which implements the CASE construction when it
+/// isn't provided any expression. Users should not call this function.
+class FunctionCaseWithoutExpr : public IFunction
+{
+public:
+	static constexpr auto name = "caseWithoutExpr";
+	static FunctionPtr create(const Context & context_);
+
+public:
+	String getName() const override;
+	bool hasSpecialSupportForNulls() const override;
+	DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
+	void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
+};
+
 }
