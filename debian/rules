@@ -160,7 +160,7 @@ binary-arch: build install
 	dh_shlibdeps --exclude=clang --exclude=stdc --exclude=ld
 	dh_gencontrol
 	dh_md5sums
-	dh_builddeb -- -z3
+	dh_builddeb -- -Zgzip -z3
 
 binary: binary-indep binary-arch
 .PHONY: build clean binary-indep binary-arch binary install
