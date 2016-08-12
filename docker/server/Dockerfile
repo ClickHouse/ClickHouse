@@ -11,7 +11,6 @@ RUN chown -R metrika /etc/clickhouse-server/
 USER metrika
 EXPOSE 9000 8123 9009
 
-ENV FILE_DESCRIPTORS_LIMIT 262144
 ENV CLICKHOUSE_CONFIG /etc/clickhouse-server/config.xml
 
-CMD ["sh", "-c", "ulimit -n ${FILE_DESCRIPTORS_LIMIT} && /usr/bin/clickhouse-server --config=${CLICKHOUSE_CONFIG}"]
+CMD ["sh", "-c", "/usr/bin/clickhouse-server --config=${CLICKHOUSE_CONFIG}"]

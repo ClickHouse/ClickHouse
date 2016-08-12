@@ -12,7 +12,7 @@ For more information and documentation see https://clickhouse.yandex/.
 
 ### start server instance
 ```bash
-$ docker run -d --name some-clickhouse-server yandex/clickhouse-server
+$ docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 yandex/clickhouse-server
 ```
 
 ### connect to it from a native client
@@ -30,7 +30,7 @@ ClickHouse configuration represented with a file "config.xml" ([documentation](h
 
 ### start server instance with custom configuration
 ```bash
-$ docker run -d --name some-clickhouse-server -v /path/to/your/config.xml:/etc/clickhouse-server/config.xml yandex/clickhouse-server
+$ docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 -v /path/to/your/config.xml:/etc/clickhouse-server/config.xml yandex/clickhouse-server
 ```
 
 ## License
