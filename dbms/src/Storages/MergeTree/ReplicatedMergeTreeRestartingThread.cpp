@@ -354,7 +354,6 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 {
 	ProfileEvents::increment(ProfileEvents::ReplicaPartialShutdown);
 
-	storage.leader_election = nullptr;
 	storage.shutdown_called = true;
 	storage.shutdown_event.set();
 	storage.merge_selecting_event.set();
@@ -379,6 +378,10 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 	if (storage.queue_task_handle)
 		storage.context.getBackgroundPool().removeTask(storage.queue_task_handle);
 	storage.queue_task_handle.reset();
+
+	/// Yielding leadership only after finish of merge_selecting_thread.
+	/// Otherwise race condition with parallel run of merge selecting thread on different servers is possible.
+	storage.leader_election = nullptr;
 
 	LOG_TRACE(log, "Threads finished");
 }
