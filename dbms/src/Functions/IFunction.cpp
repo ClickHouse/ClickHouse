@@ -26,7 +26,7 @@ void createNullValuesByteMap(Block & block, const ColumnNumbers & args, size_t r
 			continue;
 
 		const ColumnWithTypeAndName & elem = block.unsafeGetByPosition(arg);
-		if (elem.column && elem.column.get()->isNullable())
+		if (elem.column && elem.column->isNullable())
 		{
 			const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
 			res_col.updateNullValuesByteMap(nullable_col);
@@ -40,7 +40,7 @@ bool hasNullColumns(const Block & block, const ColumnNumbers & arguments)
 	for (const auto & arg : arguments)
 	{
 		const auto & elem = block.unsafeGetByPosition(arg);
-		if (elem.column && elem.column.get()->isNull())
+		if (elem.column && elem.column->isNull())
 			return true;
 	}
 	return false;
@@ -76,7 +76,7 @@ bool hasNullableColumns(const Block & block, const ColumnNumbers & arguments)
 	for (const auto & arg : arguments)
 	{
 		const auto & elem = block.unsafeGetByPosition(arg);
-		if (elem.column && elem.column.get()->isNullable())
+		if (elem.column && elem.column->isNullable())
 			return true;
 	}
 	return false;
@@ -217,7 +217,7 @@ Block IFunction::extractNonNullableBlock(const Block & block, ColumnNumbers args
 
 		bool found = std::binary_search(args.begin(), args.end(), i) && col.column && col.type;
 
-		if (found && col.column.get()->isNullable())
+		if (found && col.column->isNullable())
 		{
 			auto nullable_col = static_cast<const ColumnNullable *>(col.column.get());
 			ColumnPtr nested_col = nullable_col->getNestedColumn();
@@ -239,6 +239,7 @@ void IFunction::perform(Block & block, const ColumnNumbers & arguments, size_t r
 {
 	if (!hasSpecialSupportForNulls() && hasNullColumns(block, arguments))
 	{
+		/// We have found at least one NULL argument. Therefore we return NULL.
 		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
 		dest_col.column =  std::make_shared<ColumnNull>(block.rowsInFirstColumn(), Null());
 		return;
@@ -248,9 +249,11 @@ void IFunction::perform(Block & block, const ColumnNumbers & arguments, size_t r
 	{
 		Block non_nullable_block = extractNonNullableBlock(block, arguments);
 		performer(non_nullable_block, arguments, result);
+
 		const ColumnWithTypeAndName & source_col = non_nullable_block.getByPosition(result);
 		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
 		dest_col.column = std::make_shared<ColumnNullable>(source_col.column);
+
 		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*dest_col.column);
 		nullable_col.getNullValuesByteMap() = std::make_shared<ColumnUInt8>(dest_col.column->size(), 0);
 		createNullValuesByteMap(block, arguments, result);

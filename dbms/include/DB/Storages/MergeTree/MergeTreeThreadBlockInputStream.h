@@ -190,7 +190,7 @@ private:
 				const auto pre_bytes = res.bytes();
 
 				ColumnPtr observed_column;
-				if (column.get()->isNullable())
+				if (column->isNullable())
 				{
 					ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column);
 					observed_column = nullable_col.getNestedColumn();

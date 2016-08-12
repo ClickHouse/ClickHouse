@@ -24,7 +24,7 @@ bool hasNullableBranches(const Block & block, const ColumnNumbers & args)
 	auto check = [](const Block & block, size_t arg)
 	{
 		const auto & elem = block.unsafeGetByPosition(arg);
-		return (elem.column && (elem.column.get()->isNullable() || elem.column.get()->isNull()));
+		return (elem.column && (elem.column->isNullable() || elem.column->isNull()));
 	};
 
 	size_t else_arg = Conditional::elseArg(args);
@@ -179,7 +179,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 		const ColumnWithTypeAndName & source_col = non_nullable_block.unsafeGetByPosition(result);
 		ColumnWithTypeAndName & dest_col = block.unsafeGetByPosition(result);
 
-		if (source_col.column.get()->isNull())
+		if (source_col.column->isNull())
 		{
 			/// Degenerate case: the result is a null column.
 			dest_col.column = source_col.column;
@@ -459,7 +459,7 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 			{
 				first_type_name = name;
 				type = block.getByPosition(args[i]).type;
-				block.getByPosition(args[i]).column.get()->get(0, sample);
+				block.getByPosition(args[i]).column->get(0, sample);
 			}
 			else
 			{
@@ -474,7 +474,7 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 		if (first_type_name.empty())
 		{
 			type = block.getByPosition(args[else_arg]).type;
-			block.getByPosition(args[else_arg]).column.get()->get(0, sample);
+			block.getByPosition(args[else_arg]).column->get(0, sample);
 		}
 		else
 		{

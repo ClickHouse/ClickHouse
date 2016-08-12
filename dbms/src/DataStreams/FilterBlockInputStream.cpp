@@ -78,7 +78,7 @@ Block FilterBlockInputStream::readImpl()
 
 		if (column)
 		{
-			if (column.get()->isNullable())
+			if (column->isNullable())
 			{
 				ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column);
 				column = nullable_col.getNestedColumn();
@@ -117,7 +117,7 @@ Block FilterBlockInputStream::readImpl()
 
 		size_t columns = res.columns();
 		ColumnPtr column = res.getByPosition(filter_column).column;
-		bool is_nullable_column = column.get()->isNullable();
+		bool is_nullable_column = column->isNullable();
 
 		auto init_observed_column = [&column, &is_nullable_column]()
 		{

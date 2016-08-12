@@ -62,7 +62,7 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 		};
 
 		IColumn * observed_col;
-		if (column.column.get()->isNullable())
+		if (column.column->isNullable())
 		{
 			ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column.column);
 			observed_col = nullable_col.getNestedColumn().get();
