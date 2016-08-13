@@ -1,5 +1,5 @@
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
-#include <DB/DataStreams/JSONRowOutputStream.h>
+
 
 namespace DB
 {

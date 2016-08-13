@@ -27,7 +27,7 @@ public:
 		WriteBuffer * index_ostr_ = nullptr, size_t initial_size_of_file_ = 0);
 
 	void write(const Block & block) override;
-	void flush() override { ostr.next(); }
+	void flush() override;
 
 	static void writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, size_t offset, size_t limit);
 

@@ -1,49 +1,48 @@
 #pragma once
 
 #include <boost/noncopyable.hpp>
-
-#include <DB/Core/Block.h>
-#include <DB/Core/Row.h>
 #include <DB/Storages/IStorage.h>
 
 
 namespace DB
 {
 
+class Block;
 
-/** Интерфейс потока для записи данных в БД или в сеть, или в консоль и т. п.
+
+/** Interface of stream for writing data (into table, filesystem, network, terminal, etc.)
   */
 class IBlockOutputStream : private boost::noncopyable
 {
 public:
 	IBlockOutputStream() {}
 
-	/** Записать блок.
+	/** Write block.
 	  */
 	virtual void write(const Block & block) = 0;
 
-	/** Записать что-нибудь перед началом всех данных или после конца всех данных.
+	/** Write or do something before all data or after all data.
 	  */
 	virtual void writePrefix() {}
 	virtual void writeSuffix() {}
 
-	/** Сбросить имеющиеся буферы для записи.
+	/** Flush output buffers if any.
 	  */
 	virtual void flush() {}
 
-	/** Методы для установки дополнительной информации для вывода в поддерживающих её форматах.
+	/** Methods to set additional information for output in formats, that support it.
 	  */
 	virtual void setRowsBeforeLimit(size_t rows_before_limit) {}
 	virtual void setTotals(const Block & totals) {}
 	virtual void setExtremes(const Block & extremes) {}
 
-	/** Выставлять такой Content-Type при отдаче по HTTP.
+	/** Content-Type to set when sending HTTP response.
 	  */
 	virtual String getContentType() const { return "text/plain; charset=UTF-8"; }
 
 	virtual ~IBlockOutputStream() {}
 
-	/** Не давать изменить таблицу, пока жив поток блоков.
+	/** Don't let to alter table while instance of stream is alive.
 	  */
 	void addTableLock(const IStorage::TableStructureReadLockPtr & lock) { table_locks.push_back(lock); }
 

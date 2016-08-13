@@ -58,7 +58,7 @@ size_t IBlockInputStream::checkDepthImpl(size_t max_depth, size_t level) const
 	return res + 1;
 }
 
-	
+
 void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t multiplier)
 {
 	/// Не будем отображать в дереве обёртку потока блоков в AsynchronousBlockInputStream.

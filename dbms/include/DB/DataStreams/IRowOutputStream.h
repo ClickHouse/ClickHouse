@@ -1,46 +1,52 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <memory>
-#include <DB/Core/Block.h>
+#include <cstdint>
+#include <boost/noncopyable.hpp>
+#include <DB/Core/Types.h>
 
 
 namespace DB
 {
 
-/** Интерфейс потока для записи данных по строкам (например, для вывода в консоль).
+class Block;
+class IColumn;
+class IDataType;
+
+
+/** Interface of stream for writing data by rows (for example: for output to terminal).
   */
 class IRowOutputStream : private boost::noncopyable
 {
 public:
 
-	/** Записать строку.
-	  * Есть реализация по умолчанию, которая использует методы для записи одиночных значений и разделителей
-	  * (кроме разделителя между строк (writeRowBetweenDelimiter())).
+	/** Write a row.
+	  * Default implementation calls methods to write single values and delimiters
+	  * (except delimiter between rows (writeRowBetweenDelimiter())).
 	  */
 	virtual void write(const Block & block, size_t row_num);
 
-	/** Записать значение. */
+	/** Write single value. */
 	virtual void writeField(const IColumn & column, const IDataType & type, size_t row_num) = 0;
 
-	/** Записать разделитель. */
-	virtual void writeFieldDelimiter() {};		/// разделитель между значениями
-	virtual void writeRowStartDelimiter() {};	/// разделитель перед каждой строкой
-	virtual void writeRowEndDelimiter() {};		/// разделитель после каждой строки
-	virtual void writeRowBetweenDelimiter() {};	/// разделитель между строками
-	virtual void writePrefix() {};				/// разделитель перед началом результата
-	virtual void writeSuffix() {};				/// разделитель после конца результата
+	/** Write delimiter. */
+	virtual void writeFieldDelimiter() {};		/// delimiter between values
+	virtual void writeRowStartDelimiter() {};	/// delimiter before each row
+	virtual void writeRowEndDelimiter() {};		/// delimiter after each row
+	virtual void writeRowBetweenDelimiter() {};	/// delimiter between rows
+	virtual void writePrefix() {};				/// delimiter before resultset
+	virtual void writeSuffix() {};				/// delimiter after resultset
 
-	/** Сбросить имеющиеся буферы для записи. */
+	/** Flush output buffers if any. */
 	virtual void flush() {}
 
-	/** Методы для установки дополнительной информации для вывода в поддерживающих её форматах.
+	/** Methods to set additional information for output in formats, that support it.
 	  */
 	virtual void setRowsBeforeLimit(size_t rows_before_limit) {}
 	virtual void setTotals(const Block & totals) {}
 	virtual void setExtremes(const Block & extremes) {}
 
-	/** Выставлять такой Content-Type при отдаче по HTTP. */
+	/** Content-Type to set when sending HTTP response. */
 	virtual String getContentType() const { return "text/plain; charset=UTF-8"; }
 
 	virtual ~IRowOutputStream() {}
