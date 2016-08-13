@@ -369,7 +369,7 @@ void TCPHandler::sendProfileInfo()
 	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
 	{
 		writeVarUInt(Protocol::Server::ProfileInfo, *out);
-		input->getInfo().write(*out);
+		input->getProfileInfo().write(*out);
 		out->next();
 	}
 }

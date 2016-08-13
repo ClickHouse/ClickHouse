@@ -554,8 +554,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 		rows_written += block.rows();
 		to.write(block);
 
-		merge_entry->rows_written = merged_stream->getInfo().rows;
-		merge_entry->bytes_written_uncompressed = merged_stream->getInfo().bytes;
+		merge_entry->rows_written = merged_stream->getProfileInfo().rows;
+		merge_entry->bytes_written_uncompressed = merged_stream->getProfileInfo().bytes;
 
 		if (disk_reservation)
 			disk_reservation->update(static_cast<size_t>((1 - std::min(1., 1. * rows_written / sum_rows_approx)) * initial_reservation));
@@ -832,8 +832,8 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 			if (block_with_dates.max_date > data_part->right_date)
 				data_part->right_date = block_with_dates.max_date;
 
-			merge_entry->rows_written = merged_stream->getInfo().rows;
-			merge_entry->bytes_written_uncompressed = merged_stream->getInfo().bytes;
+			merge_entry->rows_written = merged_stream->getProfileInfo().rows;
+			merge_entry->bytes_written_uncompressed = merged_stream->getProfileInfo().bytes;
 
 			if (disk_reservation)
 				disk_reservation->update(static_cast<size_t>((1 - std::min(1., 1. * rows_written / sum_rows_approx)) * initial_reservation));

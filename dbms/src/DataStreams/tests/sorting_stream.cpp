@@ -154,13 +154,6 @@ try
 
 	copyData(*in, out);
 
-/*		std::cerr << std::endl << "Reading: " << std::endl;
-	profiling1->getInfo().print(std::cerr);
-	std::cerr << std::endl << "Sorting: " << std::endl;
-	profiling2->getInfo().print(std::cerr);
-	std::cerr << std::endl << "Merging: " << std::endl;
-	profiling3->getInfo().print(std::cerr);*/
-
 	return 0;
 }
 catch (const Exception & e)

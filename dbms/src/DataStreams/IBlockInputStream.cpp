@@ -114,7 +114,7 @@ void IBlockInputStream::getLeafRowsBytes(size_t & rows, size_t & bytes)
 	{
 		if (const IProfilingBlockInputStream * profiling = dynamic_cast<const IProfilingBlockInputStream *>(&**it))
 		{
-			const BlockStreamProfileInfo & info = profiling->getInfo();
+			const BlockStreamProfileInfo & info = profiling->getProfileInfo();
 			rows += info.rows;
 			bytes += info.bytes;
 		}

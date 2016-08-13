@@ -295,7 +295,7 @@ private:
 			;
 		stream.readSuffix();
 
-		const BlockStreamProfileInfo & info = stream.getInfo();
+		const BlockStreamProfileInfo & info = stream.getProfileInfo();
 
 		double seconds = watch.elapsedSeconds();
 

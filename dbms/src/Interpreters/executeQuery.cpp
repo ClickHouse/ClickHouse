@@ -225,7 +225,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 				{
 					if (IProfilingBlockInputStream * profiling_stream = dynamic_cast<IProfilingBlockInputStream *>(stream))
 					{
-						const BlockStreamProfileInfo & info = profiling_stream->getInfo();
+						const BlockStreamProfileInfo & info = profiling_stream->getProfileInfo();
 
 						elem.result_rows = info.rows;
 						elem.result_bytes = info.bytes;
