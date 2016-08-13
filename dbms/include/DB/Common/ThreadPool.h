@@ -32,7 +32,7 @@ public:
 	{
 		{
 			std::unique_lock<std::mutex> lock(mutex);
-			has_free_thread.wait(lock, [this] { return active_jobs < m_size; });
+			has_free_thread.wait(lock, [this] { return active_jobs < m_size || shutdown; });
 			if (shutdown)
 				return;
 
@@ -46,7 +46,7 @@ public:
 	{
 		{
 			std::unique_lock<std::mutex> lock(mutex);
-			has_free_thread.wait(lock, [this] { return active_jobs == 0; });
+			has_free_thread.wait(lock, [this] { return active_jobs == 0 || shutdown; });
 
 			if (!exceptions.empty())
 				std::rethrow_exception(exceptions.front());
@@ -103,10 +103,11 @@ private:
 					job = std::move(jobs.front());
 					jobs.pop();
 				}
+				else
+				{
+					return;
+				}
 			}
-
-			if (!job)
-				return;	/// shutdown
 
 			try
 			{
