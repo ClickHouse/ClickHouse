@@ -128,8 +128,8 @@ private:
 
 	BackgroundProcessingPool::TaskHandle merge_task_handle;
 
-	/// Пока существует, помечает части как currently_merging и держит резерв места.
-	/// Вероятно, что части будут помечены заранее.
+	/// While exists, marks parts as 'currently_merging' and reserves free space on filesystem.
+	/// It's possible to mark parts before.
 	struct CurrentlyMergingPartsTagger
 	{
 		MergeTreeData::DataPartsVector parts;
@@ -139,8 +139,8 @@ private:
 		CurrentlyMergingPartsTagger(const MergeTreeData::DataPartsVector & parts_, size_t total_size, StorageMergeTree & storage_)
 			: parts(parts_), storage(storage_)
 		{
-			/// Здесь не лочится мьютекс, так как конструктор вызывается внутри mergeTask, где он уже залочен.
-			reserved_space = DiskSpaceMonitor::reserve(storage.full_path, total_size); /// Может бросить исключение.
+			/// Assume mutex is already locked, because this method is called from mergeTask.
+			reserved_space = DiskSpaceMonitor::reserve(storage.full_path, total_size); /// May throw.
 			for (const auto & part : parts)
 			{
 				if (storage.currently_merging.count(part))
@@ -181,7 +181,7 @@ private:
 		Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,
-		const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
+		const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
 		size_t index_granularity_,
 		const MergeTreeData::MergingParams & merging_params_,
 		bool has_force_restore_data_flag,
@@ -194,9 +194,6 @@ private:
 	bool merge(size_t aio_threshold, bool aggressive, BackgroundProcessingPool::Context * context, const String & partition, bool final);
 
 	bool mergeTask(BackgroundProcessingPool::Context & context);
-
-	/// Вызывается во время выбора кусков для слияния.
-	bool canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right);
 };
 
 }

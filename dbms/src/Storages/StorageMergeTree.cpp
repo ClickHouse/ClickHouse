@@ -276,7 +276,12 @@ bool StorageMergeTree::merge(
 		std::lock_guard<std::mutex> lock(currently_merging_mutex);
 
 		MergeTreeData::DataPartsVector parts;
-		auto can_merge = std::bind(&StorageMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
+
+		auto can_merge = [this] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
+		{
+			return !currently_merging.count(left) && !currently_merging.count(right);
+		};
+
 		/// Если слияние запущено из пула потоков, и хотя бы половина потоков сливает большие куски,
 		///  не будем сливать большие куски.
 		size_t big_merges = background_pool.getCounter("big merges");
@@ -345,12 +350,6 @@ bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & background_
 
 		throw;
 	}
-}
-
-
-bool StorageMergeTree::canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
-{
-	return !currently_merging.count(left) && !currently_merging.count(right);
 }
 
 
