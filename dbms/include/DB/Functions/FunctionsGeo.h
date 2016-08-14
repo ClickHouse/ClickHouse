@@ -5,21 +5,28 @@
 #include <ext/range.hpp>
 #include <math.h>
 
-#define D_R (M_PI / 180.0)
+#define DEGREES_IN_RADIANS (M_PI / 180.0)
 
 namespace DB{
 
 const Float64 EARTH_RADIUS_IN_METERS = 6372797.560856;
 
-static inline Float64 deg_rad(Float64 ang) { return ang * D_R; }
-static inline Float64 rad_deg(Float64 ang) { return ang / D_R; }
+static inline Float64 degToRad(Float64 angle) { return angle * DEGREES_IN_RADIANS; }
+static inline Float64 radToDeg(Float64 angle) { return angle / DEGREES_IN_RADIANS; }
   
-class FunctionGeoDistance : public IFunction
+/**
+ *  The function calculates distance in meters between two points on Earth specified by longitude and latitude in degrees.
+ *  The function uses great circle distance formula https://en.wikipedia.org/wiki/Great-circle_distance. 
+ *  Throws exception when one or several input values are not within reasonable bounds. 
+ *  Latitude must be in [-90, 90], longitude must be [-180, 180]
+ * 
+ */
+class FunctionGreatCircleDistance : public IFunction
 {
 public:
 	
-	static constexpr auto name = "distance";
-	static FunctionPtr create(const Context &) { return std::make_shared<FunctionGeoDistance>(); }
+	static constexpr auto name = "greatCircleDistance";
+	static FunctionPtr create(const Context &) { return std::make_shared<FunctionGreatCircleDistance>(); }
 	
 private:
 
@@ -47,7 +54,7 @@ private:
 			const auto arg = arguments[arg_idx].get();
 			if (!typeid_cast<const DataTypeFloat64 *>(arg))
 				throw Exception(
-					"Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName(),
+					"Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be Float64",
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
 
@@ -57,8 +64,7 @@ private:
 	instrs_t getInstructions(const Block & block, const ColumnNumbers & arguments, bool & out_const)
 	{
 		instrs_t result{};
-		result.reserve(arguments.size());
-
+		
 		out_const = true;
 
 		for (const auto arg_pos : arguments)
@@ -68,13 +74,10 @@ private:
 			if (const auto col = typeid_cast<const ColumnVector<Float64> *>(column))
 			{
 				out_const = false;
-
 				result.emplace_back(instr_type::get_float_64, col);
 			}
 			else if (const auto col = typeid_cast<const ColumnConst<Float64> *>(column))
 			{
-				out_const = out_const && true;
-
 				result.emplace_back(instr_type::get_const_float_64, col);
 			}
 			else
@@ -85,17 +88,24 @@ private:
 		return result;
 	}
 	
-	
-	Float64 geohashGetDistance(Float64 lon1d, Float64 lat1d, Float64 lon2d, Float64 lat2d) {
-		Float64 lat1r, lon1r, lat2r, lon2r, u, v;
-		lat1r = deg_rad(lat1d);
-		lon1r = deg_rad(lon1d);
-		lat2r = deg_rad(lat2d);
-		lon2r = deg_rad(lon2d);
-		u = sin((lat2r - lat1r) / 2);
-		v = sin((lon2r - lon1r) / 2);
-		return 2.0 * EARTH_RADIUS_IN_METERS *
-			asin(sqrt(u * u + cos(lat1r) * cos(lat2r) * v * v));
+	/// https://en.wikipedia.org/wiki/Great-circle_distance 
+	Float64 greatCircleDistance(Float64 lon1Deg, Float64 lat1Deg, Float64 lon2Deg, Float64 lat2Deg) {
+		if (lon1Deg < -180 || lon1Deg > 180 ||
+			lon2Deg < -180 || lon2Deg > 180 ||
+			lat1Deg < -90 || lat1Deg > 90 ||
+			lat2Deg < -90 || lat2Deg > 90
+		) 
+		{
+			throw Exception("Illegal values of columns. Must be within bounds.");
+		}
+		
+		Float64 lon1Rad = degToRad(lon1Deg);
+		Float64 lat1Rad = degToRad(lat1Deg);
+		Float64 lon2Rad = degToRad(lon2Deg);
+		Float64 lat2Rad = degToRad(lat2Deg);
+		Float64 u = sin((lat2Rad - lat1Rad) / 2);
+		Float64 v = sin((lon2Rad - lon1Rad) / 2);
+		return 2.0 * EARTH_RADIUS_IN_METERS * asin(sqrt(u * u + cos(lat1Rad) * cos(lat2Rad) * v * v));
 	}
 	
 	
@@ -113,7 +123,7 @@ private:
 			const auto & colLon2 = static_cast<const ColumnConst<Float64> *>(block.getByPosition(arguments[2]).column.get())->getData();
 			const auto & colLat2 = static_cast<const ColumnConst<Float64> *>(block.getByPosition(arguments[3]).column.get())->getData();
 
-			Float64 res = geohashGetDistance(colLon1, colLat1, colLon2, colLat2);
+			Float64 res = greatCircleDistance(colLon1, colLat1, colLon2, colLat2);
 			block.getByPosition(result).column = std::make_shared<ColumnConst<Float64>>(size, res);
 		}
 		else 
@@ -134,9 +144,11 @@ private:
 					else 
 						throw std::logic_error{"unknown instr_type"};
 				}
-				dst_data[row] = geohashGetDistance(vals[0], vals[1], vals[2], vals[3]);
+				dst_data[row] = greatCircleDistance(vals[0], vals[1], vals[2], vals[3]);
 			}
 		}
 	}
 };
 }
+
+#undef DEGREES_IN_RADIANS
