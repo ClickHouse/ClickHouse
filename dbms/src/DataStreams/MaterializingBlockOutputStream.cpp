@@ -66,7 +66,7 @@ Block MaterializingBlockOutputStream::materialize(const Block & original_block)
 		{
 			src = converted;
 			auto & type = element.type;
-			if (type.get()->isNull())
+			if (type->isNull())
 			{
 				/// A ColumnNull that is converted to a full column
 				/// has the type DataTypeNullable(DataTypeUInt8).

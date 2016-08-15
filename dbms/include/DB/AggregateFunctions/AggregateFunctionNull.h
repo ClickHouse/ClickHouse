@@ -28,7 +28,7 @@ public:
 
 	String getName() const override
 	{
-		return nested_function.get()->getName();
+		return nested_function->getName();
 	}
 
 	void setArguments(const DataTypes & arguments) override
@@ -38,7 +38,7 @@ public:
 
 		for (const auto & arg : arguments)
 		{
-			bool res = arg.get()->isNullable();
+			bool res = arg->isNullable();
 			is_nullable.push_back(res);
 		}
 
@@ -47,7 +47,7 @@ public:
 
 		for (const auto & arg : arguments)
 		{
-			if (arg.get()->isNullable())
+			if (arg->isNullable())
 			{
 				const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg);
 				const DataTypePtr & nested_type = nullable_type.getNestedType();
@@ -57,42 +57,42 @@ public:
 				new_args.push_back(arg);
 		}
 
-		nested_function.get()->setArguments(new_args);
+		nested_function->setArguments(new_args);
 	}
 
 	void setParameters(const Array & params)
 	{
-		nested_function.get()->setParameters(params);
+		nested_function->setParameters(params);
 	}
 
 	DataTypePtr getReturnType() const override
 	{
-		return nested_function.get()->getReturnType();
+		return nested_function->getReturnType();
 	}
 
 	void create(AggregateDataPtr place) const override
 	{
-		nested_function.get()->create(place);
+		nested_function->create(place);
 	}
 
 	void destroy(AggregateDataPtr place) const noexcept override
 	{
-		nested_function.get()->destroy(place);
+		nested_function->destroy(place);
 	}
 
 	bool hasTrivialDestructor() const override
 	{
-		return nested_function.get()->hasTrivialDestructor();
+		return nested_function->hasTrivialDestructor();
 	}
 
 	size_t sizeOfData() const override
 	{
-		return nested_function.get()->sizeOfData();
+		return nested_function->sizeOfData();
 	}
 
 	size_t alignOfData() const override
 	{
-		return nested_function.get()->alignOfData();
+		return nested_function->alignOfData();
 	}
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
@@ -117,27 +117,27 @@ public:
 				passed_columns[i] = columns[i];
 		}
 
-		nested_function.get()->add(place, passed_columns, row_num);
+		nested_function->add(place, passed_columns, row_num);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
-		nested_function.get()->merge(place, rhs);
+		nested_function->merge(place, rhs);
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
-		nested_function.get()->serialize(place, buf);
+		nested_function->serialize(place, buf);
 	}
 
 	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
-		nested_function.get()->deserialize(place, buf);
+		nested_function->deserialize(place, buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
-		nested_function.get()->insertResultInto(place, to);
+		nested_function->insertResultInto(place, to);
 	}
 
 	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num)

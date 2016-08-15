@@ -56,7 +56,7 @@ DataTypeNullable::DataTypeNullable(DataTypePtr nested_data_type_)
 
 std::string DataTypeNullable::getName() const
 {
-	return "Nullable(" + nested_data_type.get()->getName() + ")";
+	return "Nullable(" + nested_data_type->getName() + ")";
 }
 
 bool DataTypeNullable::isNullable() const
@@ -66,17 +66,17 @@ bool DataTypeNullable::isNullable() const
 
 bool DataTypeNullable::isNumeric() const
 {
-	return nested_data_type.get()->isNumeric();
+	return nested_data_type->isNumeric();
 }
 
 bool DataTypeNullable::behavesAsNumber() const
 {
-	return nested_data_type.get()->behavesAsNumber();
+	return nested_data_type->behavesAsNumber();
 }
 
 DataTypePtr DataTypeNullable::clone() const
 {
-	return std::make_shared<DataTypeNullable>(nested_data_type.get()->clone());
+	return std::make_shared<DataTypeNullable>(nested_data_type->clone());
 }
 
 void DataTypeNullable::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
@@ -85,7 +85,7 @@ void DataTypeNullable::serializeBinary(const IColumn & column, WriteBuffer & ost
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	nested_data_type.get()->serializeBinary(*col->getNestedColumn(), ostr, offset, limit);
+	nested_data_type->serializeBinary(*col->getNestedColumn(), ostr, offset, limit);
 }
 
 void DataTypeNullable::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
@@ -94,17 +94,17 @@ void DataTypeNullable::deserializeBinary(IColumn & column, ReadBuffer & istr, si
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	nested_data_type.get()->deserializeBinary(*col->getNestedColumn(), istr, limit, avg_value_size_hint);
+	nested_data_type->deserializeBinary(*col->getNestedColumn(), istr, limit, avg_value_size_hint);
 }
 
 void DataTypeNullable::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-	nested_data_type.get()->serializeBinary(field, ostr);
+	nested_data_type->serializeBinary(field, ostr);
 }
 
 void DataTypeNullable::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
-	nested_data_type.get()->deserializeBinary(field, istr);
+	nested_data_type->deserializeBinary(field, istr);
 }
 
 void DataTypeNullable::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -113,7 +113,7 @@ void DataTypeNullable::serializeBinary(const IColumn & column, size_t row_num, W
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	nested_data_type.get()->serializeBinary(*col->getNestedColumn(), row_num, ostr);
+	nested_data_type->serializeBinary(*col->getNestedColumn(), row_num, ostr);
 }
 
 void DataTypeNullable::deserializeBinary(IColumn & column, ReadBuffer & istr) const
@@ -122,7 +122,7 @@ void DataTypeNullable::deserializeBinary(IColumn & column, ReadBuffer & istr) co
 	if (col == nullptr)
 		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
 
-	nested_data_type.get()->deserializeBinary(*col->getNestedColumn(), istr);
+	nested_data_type->deserializeBinary(*col->getNestedColumn(), istr);
 }
 
 void DataTypeNullable::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -137,7 +137,7 @@ void DataTypeNullable::serializeTextEscaped(const IColumn & column, size_t row_n
 	if (isNullValue(&null_map, row_num))
 		writeCString(NullSymbol::Escaped::name, ostr);
 	else
-		nested_data_type.get()->serializeTextEscaped(*col->getNestedColumn(), row_num, ostr);
+		nested_data_type->serializeTextEscaped(*col->getNestedColumn(), row_num, ostr);
 }
 
 void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
@@ -152,10 +152,10 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
 	if (Deserializer<NullSymbol::Escaped>::execute(column, istr, &null_map))
 	{
 		ColumnPtr & nested_col = col->getNestedColumn();
-		nested_col.get()->insertDefault();
+		nested_col->insertDefault();
 	}
 	else
-		nested_data_type.get()->deserializeTextEscaped(*col->getNestedColumn(), istr);
+		nested_data_type->deserializeTextEscaped(*col->getNestedColumn(), istr);
 }
 
 void DataTypeNullable::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -170,7 +170,7 @@ void DataTypeNullable::serializeTextQuoted(const IColumn & column, size_t row_nu
 	if (isNullValue(&null_map, row_num))
 		writeCString(NullSymbol::Quoted::name, ostr);
 	else
-		nested_data_type.get()->serializeTextQuoted(*col->getNestedColumn(), row_num, ostr);
+		nested_data_type->serializeTextQuoted(*col->getNestedColumn(), row_num, ostr);
 }
 
 void DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
@@ -185,10 +185,10 @@ void DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
 	if (Deserializer<NullSymbol::Quoted>::execute(column, istr, &null_map))
 	{
 		ColumnPtr & nested_col = col->getNestedColumn();
-		nested_col.get()->insertDefault();
+		nested_col->insertDefault();
 	}
 	else
-		nested_data_type.get()->deserializeTextQuoted(*col->getNestedColumn(), istr);
+		nested_data_type->deserializeTextQuoted(*col->getNestedColumn(), istr);
 }
 
 void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -203,7 +203,7 @@ void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, 
 	if (isNullValue(&null_map, row_num))
 		writeCString(NullSymbol::Quoted::name, ostr);
 	else
-		nested_data_type.get()->serializeTextCSV(*col->getNestedColumn(), row_num, ostr);
+		nested_data_type->serializeTextCSV(*col->getNestedColumn(), row_num, ostr);
 }
 
 void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
@@ -218,10 +218,10 @@ void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
 	if (Deserializer<NullSymbol::Quoted>::execute(column, istr, &null_map))
 	{
 		ColumnPtr & nested_col = col->getNestedColumn();
-		nested_col.get()->insertDefault();
+		nested_col->insertDefault();
 	}
 	else
-		nested_data_type.get()->deserializeTextCSV(*col->getNestedColumn(), istr, delimiter);
+		nested_data_type->deserializeTextCSV(*col->getNestedColumn(), istr, delimiter);
 }
 
 void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -236,7 +236,7 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
 	if (isNullValue(&null_map, row_num))
 		writeCString(NullSymbol::Plain::name, ostr);
 	else
-		nested_data_type.get()->serializeText(*col->getNestedColumn(), row_num, ostr);
+		nested_data_type->serializeText(*col->getNestedColumn(), row_num, ostr);
 }
 
 void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -251,7 +251,7 @@ void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num,
 	if (isNullValue(&null_map, row_num))
 		writeCString(NullSymbol::JSON::name, ostr);
 	else
-		nested_data_type.get()->serializeTextJSON(*col->getNestedColumn(), row_num, ostr);
+		nested_data_type->serializeTextJSON(*col->getNestedColumn(), row_num, ostr);
 }
 
 void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
@@ -266,10 +266,10 @@ void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr) 
 	if (Deserializer<NullSymbol::JSON>::execute(column, istr, &null_map))
 	{
 		ColumnPtr & nested_col = col->getNestedColumn();
-		nested_col.get()->insertDefault();
+		nested_col->insertDefault();
 	}
 	else
-		nested_data_type.get()->deserializeTextJSON(*col->getNestedColumn(), istr);
+		nested_data_type->deserializeTextJSON(*col->getNestedColumn(), istr);
 }
 
 void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -284,12 +284,12 @@ void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, 
 	if (isNullValue(&null_map, row_num))
 		writeCString(NullSymbol::XML::name, ostr);
 	else
-		nested_data_type.get()->serializeTextXML(*col->getNestedColumn(), row_num, ostr);
+		nested_data_type->serializeTextXML(*col->getNestedColumn(), row_num, ostr);
 }
 
 ColumnPtr DataTypeNullable::createColumn() const
 {
-	ColumnPtr new_col_holder = std::make_shared<ColumnNullable>(nested_data_type.get()->createColumn());
+	ColumnPtr new_col_holder = std::make_shared<ColumnNullable>(nested_data_type->createColumn());
 	ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*new_col_holder);
 	nullable_col.getNullValuesByteMap() = std::make_shared<ColumnUInt8>();
 	return new_col_holder;
@@ -297,7 +297,7 @@ ColumnPtr DataTypeNullable::createColumn() const
 
 ColumnPtr DataTypeNullable::createConstColumn(size_t size, const Field & field) const
 {
-	ColumnPtr new_col_holder = std::make_shared<ColumnNullable>(nested_data_type.get()->createConstColumn(size, field));
+	ColumnPtr new_col_holder = std::make_shared<ColumnNullable>(nested_data_type->createConstColumn(size, field));
 	ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*new_col_holder);
 	nullable_col.getNullValuesByteMap() = std::make_shared<ColumnUInt8>(size);
 	return new_col_holder;
@@ -305,12 +305,12 @@ ColumnPtr DataTypeNullable::createConstColumn(size_t size, const Field & field) 
 
 Field DataTypeNullable::getDefault() const
 {
-	return nested_data_type.get()->getDefault();
+	return nested_data_type->getDefault();
 }
 
 size_t DataTypeNullable::getSizeOfField() const
 {
-	return nested_data_type.get()->getSizeOfField();
+	return nested_data_type->getSizeOfField();
 }
 
 DataTypePtr & DataTypeNullable::getNestedType()

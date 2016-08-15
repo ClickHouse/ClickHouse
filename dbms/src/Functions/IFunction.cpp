@@ -22,11 +22,8 @@ void createNullValuesByteMap(Block & block, const ColumnNumbers & args, size_t r
 
 	for (const auto & arg : args)
 	{
-		if (arg == result)
-			continue;
-
 		const ColumnWithTypeAndName & elem = block.unsafeGetByPosition(arg);
-		if (elem.column && elem.column->isNullable())
+		if (elem.column->isNullable())
 		{
 			const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
 			res_col.updateNullValuesByteMap(nullable_col);
@@ -34,87 +31,105 @@ void createNullValuesByteMap(Block & block, const ColumnNumbers & args, size_t r
 	}
 }
 
-/// Check if a block contains at least one null column.
-bool blockHasNullColumns(const Block & block, const ColumnNumbers & arguments)
+/// In a set of objects (columns of a block / set of columns / set of data types),
+/// are there any "special" (i.e. nullable or null) objects?
+enum class Category
 {
-	for (const auto & arg : arguments)
+	/// No nullable objects. No null objects.
+	IS_ORDINARY = 0,
+	/// At least one nullable object. No null objects.
+	IS_NULLABLE,
+	/// At least one null object.
+	IS_NULL
+};
+
+/// Check if a block contains at least one special column, in the sense
+/// defined above, among the specified columns.
+Category blockHasSpecialColumns(const Block & block, const ColumnNumbers & args)
+{
+	bool found_nullable = false;
+	bool found_null = false;
+
+	for (const auto & arg : args)
 	{
 		const auto & elem = block.unsafeGetByPosition(arg);
-		if (elem.column && elem.column->isNull())
-			return true;
+
+		if (!found_null && elem.column->isNull())
+		{
+			found_null = true;
+			break;
+		}
+		else if (!found_nullable & elem.column->isNullable())
+			found_nullable = true;
 	}
-	return false;
+
+	if (found_null)
+		return Category::IS_NULL;
+	else if (found_nullable)
+		return Category::IS_NULLABLE;
+	else
+		return Category::IS_ORDINARY;
 }
 
-/// Check if at least one column is null.
-bool hasNullColumns(const ColumnsWithTypeAndName & args)
+/// Check if at least one column is special in the sense defined above.
+Category hasSpecialColumns(const ColumnsWithTypeAndName & args)
 {
+	bool found_nullable = false;
+	bool found_null = false;
+
 	for (const auto & arg : args)
 	{
-		if (arg.type.get()->isNull())
-			return true;
+		if (!found_null && arg.type->isNull())
+		{
+			found_null = true;
+			break;
+		}
+		else if (!found_nullable & arg.type->isNullable())
+			found_nullable = true;
 	}
 
-	return false;
+	if (found_null)
+		return Category::IS_NULL;
+	else if (found_nullable)
+		return Category::IS_NULLABLE;
+	else
+		return Category::IS_ORDINARY;
 }
 
-/// Check if at least one argument is null.
-bool hasNullArguments(const DataTypes & args)
+/// Check if at least one data type is special in the sense defined above.
+Category hasSpecialDataTypes(const DataTypes & args)
 {
+	bool found_nullable = false;
+	bool found_null = false;
+
 	for (const auto & arg : args)
 	{
-		if (arg.get()->isNull())
-			return true;
+		if (!found_null && arg->isNull())
+		{
+			found_null = true;
+			break;
+		}
+		else if (!found_nullable & arg->isNullable())
+			found_nullable = true;
 	}
 
-	return false;
+	if (found_null)
+		return Category::IS_NULL;
+	else if (found_nullable)
+		return Category::IS_NULLABLE;
+	else
+		return Category::IS_ORDINARY;
 }
 
-/// Check if a block contains at least one nullable column.
-bool blockHasNullableColumns(const Block & block, const ColumnNumbers & arguments)
-{
-	for (const auto & arg : arguments)
-	{
-		const auto & elem = block.unsafeGetByPosition(arg);
-		if (elem.column && elem.column->isNullable())
-			return true;
-	}
-	return false;
-}
-
-/// Check if at least one column is nullable.
-bool hasNullableColumns(const ColumnsWithTypeAndName & args)
-{
-	for (const auto & arg : args)
-	{
-		if (arg.type.get()->isNullable())
-			return true;
-	}
-
-	return false;
-}
-
-/// Check if at least one argument is nullable.
-bool hasNullableArguments(const DataTypes & args)
-{
-	for (const auto & arg : args)
-	{
-		if (arg.get()->isNullable())
-			return true;
-	}
-
-	return false;
-}
-
-/// Turn the specified set of columns into a set of non-nullable columns.
-ColumnsWithTypeAndName toNonNullableColumns(const ColumnsWithTypeAndName & args)
+/// Turn the specified set of columns into their respective nested columns.
+ColumnsWithTypeAndName toNestedColumns(const ColumnsWithTypeAndName & args)
 {
 	ColumnsWithTypeAndName new_args;
 	new_args.reserve(args.size());
 
 	for (const auto & arg : args)
 	{
-		if (arg.type.get()->isNullable())
+		if (arg.type->isNullable())
 		{
 			auto nullable_col = static_cast<const ColumnNullable *>(arg.column.get());
 			ColumnPtr nested_col = (nullable_col != nullptr) ? nullable_col->getNestedColumn() : nullptr;
@@ -130,15 +145,15 @@ ColumnsWithTypeAndName toNonNullableColumns(const ColumnsWithTypeAndName & args)
 	return new_args;
 }
 
-/// Turn the specified set of data types into a set of non-nullable data types.
-DataTypes toNonNullableArguments(const DataTypes & args)
+/// Turn the specified set of data types into their respective nested data types.
+DataTypes toNestedDataTypes(const DataTypes & args)
 {
 	DataTypes new_args;
 	new_args.reserve(args.size());
 
 	for (const auto & arg : args)
 	{
-		if (arg.get()->isNullable())
+		if (arg->isNullable())
 		{
 			auto nullable_type = static_cast<const DataTypeNullable *>(arg.get());
 			DataTypePtr nested_type = nullable_type->getNestedType();
@@ -155,16 +170,28 @@ DataTypes toNonNullableArguments(const DataTypes & args)
 
 DataTypePtr IFunction::getReturnType(const DataTypes & arguments) const
 {
-	if (!hasSpecialSupportForNulls() && hasNullArguments(arguments))
-		return std::make_shared<DataTypeNull>();
+	auto category = hasSpecialDataTypes(arguments);
 
-	if (!hasSpecialSupportForNulls() && hasNullableArguments(arguments))
+	if (category == Category::IS_ORDINARY)
 	{
-		const DataTypes new_args = toNonNullableArguments(arguments);
-		return getReturnTypeImpl(new_args);
+	}
+	else if (category == Category::IS_NULL)
+	{
+		if (!hasSpecialSupportForNulls())
+			return std::make_shared<DataTypeNull>();
+	}
+	else if (category == Category::IS_NULLABLE)
+	{
+		if (!hasSpecialSupportForNulls())
+		{
+			const DataTypes new_args = toNestedDataTypes(arguments);
+			return getReturnTypeImpl(new_args);
+		}
 	}
 	else
-		return getReturnTypeImpl(arguments);
+		throw Exception{"IFunction: internal error", ErrorCodes::LOGICAL_ERROR};
+
+	return getReturnTypeImpl(arguments);
 }
 
 void IFunction::getReturnTypeAndPrerequisites(
@@ -172,50 +199,168 @@ void IFunction::getReturnTypeAndPrerequisites(
 	DataTypePtr & out_return_type,
 	std::vector<ExpressionAction> & out_prerequisites)
 {
-	if (!hasSpecialSupportForNulls() && hasNullColumns(arguments))
-	{
-		out_return_type = std::make_shared<DataTypeNull>();
-		return;
-	}
+	auto category = hasSpecialColumns(arguments);
 
-	if (!hasSpecialSupportForNulls() && hasNullableColumns(arguments))
+	if (category == Category::IS_ORDINARY)
 	{
-		const ColumnsWithTypeAndName new_args = toNonNullableColumns(arguments);
-		getReturnTypeAndPrerequisitesImpl(new_args, out_return_type, out_prerequisites);
-		out_return_type = std::make_shared<DataTypeNullable>(out_return_type);
+	}
+	else if (category == Category::IS_NULL)
+	{
+		if (!hasSpecialSupportForNulls())
+			out_return_type = std::make_shared<DataTypeNull>();
+	}
+	else if (category == Category::IS_NULLABLE)
+	{
+		if (!hasSpecialSupportForNulls())
+		{
+			const ColumnsWithTypeAndName new_args = toNestedColumns(arguments);
+			getReturnTypeAndPrerequisitesImpl(new_args, out_return_type, out_prerequisites);
+			out_return_type = std::make_shared<DataTypeNullable>(out_return_type);
+		}
 	}
 	else
-		getReturnTypeAndPrerequisitesImpl(arguments, out_return_type, out_prerequisites);
+		throw Exception{"IFunction: internal error", ErrorCodes::LOGICAL_ERROR};
+
+	getReturnTypeAndPrerequisitesImpl(arguments, out_return_type, out_prerequisites);
 }
 
 void IFunction::getLambdaArgumentTypes(DataTypes & arguments) const
 {
-	if (!hasSpecialSupportForNulls() && hasNullArguments(arguments))
-		return;
+	auto category = hasSpecialDataTypes(arguments);
 
-	if (!hasSpecialSupportForNulls() && hasNullableArguments(arguments))
+	if (category == Category::IS_ORDINARY)
 	{
-		DataTypes new_args = toNonNullableArguments(arguments);
-		getLambdaArgumentTypesImpl(new_args);
-		arguments = std::move(new_args);
+	}
+	else if (category == Category::IS_NULL)
+	{
+		if (!hasSpecialSupportForNulls())
+			return;
+	}
+	else if (category == Category::IS_NULLABLE)
+	{
+		if (!hasSpecialSupportForNulls())
+		{
+			DataTypes new_args = toNestedDataTypes(arguments);
+			getLambdaArgumentTypesImpl(new_args);
+			arguments = std::move(new_args);
+		}
 	}
 	else
-		getLambdaArgumentTypesImpl(arguments);
+		throw Exception{"IFunction: internal error", ErrorCodes::LOGICAL_ERROR};
+
+	getLambdaArgumentTypesImpl(arguments);
+}
+
+void IFunction::execute(Block & block, const ColumnNumbers & args, size_t result)
+{
+	auto strategy = chooseStrategy(block, args);
+	Block processed_block = preProcessBlock(strategy, block, args);
+
+	if (strategy != RETURN_NULL)
+	{
+		Block & src = processed_block ? processed_block : block;
+		executeImpl(src, args, result);
+	}
+
+	postProcessResult(strategy, block, processed_block, args, result);
+}
+
+void IFunction::execute(Block & block, const ColumnNumbers & args, const ColumnNumbers & prerequisites, size_t result)
+{
+	auto strategy = chooseStrategy(block, args);
+	Block processed_block = preProcessBlock(strategy, block, args);
+
+	if (strategy != RETURN_NULL)
+	{
+		Block & src = processed_block ? processed_block : block;
+		executeImpl(src, args, prerequisites, result);
+	}
+
+	postProcessResult(strategy, block, processed_block, args, result);
+}
+
+IFunction::Strategy IFunction::chooseStrategy(const Block & block, const ColumnNumbers & args)
+{
+	auto category = blockHasSpecialColumns(block, args);
+
+	if (category == Category::IS_ORDINARY)
+	{
+	}
+	else if (category == Category::IS_NULL)
+	{
+		if (!hasSpecialSupportForNulls())
+			return RETURN_NULL;
+	}
+	else if (category == Category::IS_NULLABLE)
+	{
+		if (!hasSpecialSupportForNulls())
+			return PROCESS_NULLABLE_COLUMNS;
+	}
+	else
+		throw Exception{"IFunction: internal error", ErrorCodes::LOGICAL_ERROR};
+
+	return DIRECTLY_EXECUTE;
+}
+
+Block IFunction::preProcessBlock(Strategy strategy, const Block & block, const ColumnNumbers & args)
+{
+	if (strategy == DIRECTLY_EXECUTE)
+		return {};
+	else if (strategy == RETURN_NULL)
+		return {};
+	else if (strategy == PROCESS_NULLABLE_COLUMNS)
+	{
+		/// Run the function on a block whose nullable columns have been replaced
+		/// with their respective nested columns.
+		return createBlockWithNestedColumns(block, args);
+	}
+	else
+		throw Exception{"IFunction: internal error", ErrorCodes::LOGICAL_ERROR};
+}
+
+void IFunction::postProcessResult(Strategy strategy, Block & block, const Block & processed_block,
+	const ColumnNumbers & args, size_t result)
+{
+	if (strategy == DIRECTLY_EXECUTE)
+	{
+	}
+	else if (strategy == RETURN_NULL)
+	{
+		/// We have found at least one NULL argument. Therefore we return NULL.
+		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
+		dest_col.column =  std::make_shared<ColumnNull>(block.rowsInFirstColumn(), Null());
+	}
+	else if (strategy == PROCESS_NULLABLE_COLUMNS)
+	{
+		/// Initialize the result column.
+		const ColumnWithTypeAndName & source_col = processed_block.getByPosition(result);
+		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
+		dest_col.column = std::make_shared<ColumnNullable>(source_col.column);
+
+		/// Make a null map for the result.
+		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*dest_col.column);
+		nullable_col.getNullValuesByteMap() = std::make_shared<ColumnUInt8>(dest_col.column->size(), 0);
+		createNullValuesByteMap(block, args, result);
+	}
+	else
+		throw Exception{"IFunction: internal error", ErrorCodes::LOGICAL_ERROR};
 }
 
 /// Return a copy of a given block in which the specified columns are replaced by
 /// their respective nested columns if they are nullable.
-Block IFunction::extractNonNullableBlock(const Block & block, ColumnNumbers args)
+Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers args)
 {
 	std::sort(args.begin(), args.end());
 
-	Block non_nullable_block;
+	Block res;
 
+	size_t j = 0;
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		const auto & col = block.unsafeGetByPosition(i);
 
-		bool found = std::binary_search(args.begin(), args.end(), i) && col.column && col.type;
+		bool found = (i == args[j]);
+		//bool found = std::binary_search(args.begin(), args.end(), i);
 
 		if (found && col.column->isNullable())
 		{
@@ -225,65 +370,13 @@ Block IFunction::extractNonNullableBlock(const Block & block, ColumnNumbers args
 			auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
 			DataTypePtr nested_type = nullable_type->getNestedType();
 
-			non_nullable_block.insert(i, {nested_col, nested_type, col.name});
+			res.insert(i, {nested_col, nested_type, col.name});
 		}
 		else
-			non_nullable_block.insert(i, col);
+			res.insert(i, col);
 	}
 
-	return non_nullable_block;
-}
-
-template <typename Fun>
-void IFunction::perform(Block & block, const ColumnNumbers & arguments, size_t result, const Fun & performer)
-{
-	if (!hasSpecialSupportForNulls() && blockHasNullColumns(block, arguments))
-	{
-		/// We have found at least one NULL argument. Therefore we return NULL.
-		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
-		dest_col.column =  std::make_shared<ColumnNull>(block.rowsInFirstColumn(), Null());
-		return;
-	}
-
-	if (!hasSpecialSupportForNulls() && blockHasNullableColumns(block, arguments))
-	{
-		/// Run the function on a block whose nullable columns have been replaced
-		/// with their respective nested columns.
-		Block non_nullable_block = extractNonNullableBlock(block, arguments);
-		performer(non_nullable_block, arguments, result);
-
-		/// Initialize the result column.
-		const ColumnWithTypeAndName & source_col = non_nullable_block.getByPosition(result);
-		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
-		dest_col.column = std::make_shared<ColumnNullable>(source_col.column);
-
-		/// Make a null map for the result.
-		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*dest_col.column);
-		nullable_col.getNullValuesByteMap() = std::make_shared<ColumnUInt8>(dest_col.column->size(), 0);
-		createNullValuesByteMap(block, arguments, result);
-	}
-	else
-		performer(block, arguments, result);
-}
-
-void IFunction::execute(Block & block, const ColumnNumbers & arguments, size_t result)
-{
-	auto performer = [&](Block & block, const ColumnNumbers & arguments, size_t result)
-	{
-		executeImpl(block, arguments, result);
-	};
-
-	perform(block, arguments, result, performer);
-}
-
-void IFunction::execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result)
-{
-	auto performer = [&](Block & block, const ColumnNumbers & arguments, size_t result)
-	{
-		executeImpl(block, arguments, prerequisites, result);
-	};
-
-	perform(block, arguments, result, performer);
+	return res;
 }
 
 }

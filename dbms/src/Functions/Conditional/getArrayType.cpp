@@ -89,7 +89,7 @@ struct TypeChecker
 {
 	static bool execute(const DataTypePtr & arg)
 	{
-		if (arg.get()->isNullable())
+		if (arg->isNullable())
 			return false;
 		return typeid_cast<const TType *>(arg.get()) != nullptr;
 	}
@@ -100,7 +100,7 @@ struct TypeChecker<Nullable<TType>>
 {
 	static bool execute(const DataTypePtr & arg)
 	{
-		if (!arg.get()->isNullable())
+		if (!arg->isNullable())
 			return false;
 
 		const DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*arg);

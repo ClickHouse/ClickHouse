@@ -308,9 +308,9 @@ DataTypePtr FunctionAssumeNotNull::getReturnTypeImpl(const DataTypes & arguments
 			+ toString(arguments.size()) + ", should be 1.",
 			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-	if (arguments[0].get()->isNull())
+	if (arguments[0]->isNull())
 		throw Exception{"NULL is an invalid value for function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-	else if (arguments[0].get()->isNullable())
+	else if (arguments[0]->isNullable())
 	{
 		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arguments[0]);
 		return nullable_type.getNestedType();
@@ -324,9 +324,9 @@ void FunctionAssumeNotNull::executeImpl(Block & block, const ColumnNumbers & arg
 	const ColumnPtr & col = block.getByPosition(arguments[0]).column;
 	ColumnPtr & res_col = block.getByPosition(result).column;
 
-	if (col.get()->isNull())
+	if (col->isNull())
 		throw Exception{"NULL is an invalid value for function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-	else if (col.get()->isNullable())
+	else if (col->isNullable())
 	{
 		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
 		res_col = nullable_col.getNestedColumn();

@@ -141,21 +141,34 @@ protected:
 	/// Returns the copy of a given block in which each column specified in
 	/// the "arguments" parameter is replaced with its respective nested
 	/// column if it is nullable.
-	static Block extractNonNullableBlock(const Block & block, ColumnNumbers args);
+	static Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args);
 
 private:
-	/// Internal method used for implementing both the execute() methods.
-	/// The "performer" argument specifies which version of executeImpl() must be used.
-	/// Except for functions, such as multiIf, whose method hasSpecialSupportForNulls()
-	/// returns true, we deal with nullable and null arguments as follows:
-	/// - if at least one argument is NULL, we return NULL;
-	/// - if at least one argument is nullable, we call the function implementation
-	/// with a block in which nullable columns that correspond to function arguments
-	/// have been replaced with their respective nested columns;
-	/// - if at least one function argument is nullable, the result column is wrapped
-	/// into a nullable column.
-	template <typename Fun>
-	void perform(Block & block, const ColumnNumbers & arguments, size_t result, const Fun & performer);
+	/// Strategy to apply when executing a function.
+	enum Strategy
+	{
+		/// Merely perform the function on its columns.
+		DIRECTLY_EXECUTE = 0,
+		/// If at least one argument is nullable, call the function implementation
+		/// with a block in which nullable columns that correspond to function arguments
+		/// have been replaced with their respective nested columns. Subsequently, the
+		/// result column is wrapped into a nullable column.
+		PROCESS_NULLABLE_COLUMNS,
+		/// If at least one argument is NULL, return NULL.
+		RETURN_NULL
+	};
+
+private:
+	/// Choose the strategy for performing the function.
+	Strategy chooseStrategy(const Block & block, const ColumnNumbers & args);
+
+	/// If required by the specified strategy, process the given block, then
+	/// return the processed block. Otherwise return an empty block.
+	Block preProcessBlock(Strategy strategy, const Block & block, const ColumnNumbers & args);
+
+	/// If required by the specified strategy, post-process the result column.
+	void postProcessResult(Strategy strategy, Block & block, const Block & processed_block,
+		const ColumnNumbers & args, size_t result);
 };
 
 

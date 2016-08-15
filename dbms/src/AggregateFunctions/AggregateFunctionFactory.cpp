@@ -99,7 +99,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 	bool has_nullable_types = false;
 	for (const auto & arg_type : argument_types)
 	{
-		if (arg_type.get()->isNullable())
+		if (arg_type->isNullable())
 		{
 			has_nullable_types = true;
 			break;
@@ -113,7 +113,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 
 		for (const auto & arg_type : argument_types)
 		{
-			if (arg_type.get()->isNullable())
+			if (arg_type->isNullable())
 			{
 				const DataTypeNullable & actual_type = static_cast<const DataTypeNullable &>(*arg_type.get());
 				const DataTypePtr & nested_type = actual_type.getNestedType();

@@ -3414,7 +3414,7 @@ void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & 
 			block_number = resharding_worker.subscribe(coordinator_id, queryToString(query));
 
 		NameAndTypePair column_desc = ITableDeclaration::getColumn(sharding_key_expr->getColumnName());
-		if (column_desc.type.get()->isNullable())
+		if (column_desc.type->isNullable())
 			throw Exception{"Sharding key must not be nullable", ErrorCodes::RESHARDING_NULLABLE_SHARDING_KEY};
 
 		for (const auto & weighted_path : weighted_zookeeper_paths)

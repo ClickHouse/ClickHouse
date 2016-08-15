@@ -103,7 +103,7 @@ ColumnPtr ColumnNullable::cloneResized(size_t size) const
 
 	/// Create a new null byte map for the cloned column.
 	/// Resize it if required.
-	new_col.null_map = null_map.get()->clone();
+	new_col.null_map = null_map->clone();
 	if (size != this->size())
 		new_col.getNullMapContent().getData().resize_fill(size, 0);
 
@@ -114,7 +114,7 @@ ColumnPtr ColumnNullable::cloneEmpty() const
 {
 	ColumnPtr new_col_holder = std::make_shared<ColumnNullable>(nested_column->cloneEmpty());
 	auto & new_col = static_cast<ColumnNullable &>(*new_col_holder);
-	new_col.null_map = null_map.get()->cloneEmpty();
+	new_col.null_map = null_map->cloneEmpty();
 	return new_col_holder;
 }
 

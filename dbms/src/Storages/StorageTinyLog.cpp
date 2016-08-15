@@ -202,7 +202,7 @@ Block TinyLogBlockInputStream::readImpl()
 		bool read_offsets = true;
 
 		const IDataType * observed_type;
-		if (column.type.get()->isNullable())
+		if (column.type->isNullable())
 		{
 			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*column.type);
 			observed_type = nullable_type.getNestedType().get();

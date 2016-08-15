@@ -98,7 +98,7 @@ struct TypeChecker
 {
 	static bool execute(const DataTypePtr & arg)
 	{
-		if (arg.get()->isNullable())
+		if (arg->isNullable())
 			return false;
 		return typeid_cast<const TType *>(arg.get()) != nullptr;
 	}
@@ -109,7 +109,7 @@ struct TypeChecker<Nullable<TType>>
 {
 	static bool execute(const DataTypePtr & arg)
 	{
-		if (!arg.get()->isNullable())
+		if (!arg->isNullable())
 			return false;
 
 		const DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*arg);
@@ -203,7 +203,7 @@ bool hasArithmeticBranches(const DataTypes & args)
 
 	auto check = [&](size_t i)
 	{
-		return args[i].get()->behavesAsNumber();
+		return args[i]->behavesAsNumber();
 	};
 
 	for (size_t i = firstThen(); i < else_arg; i = nextThen(i))
@@ -222,7 +222,7 @@ bool hasArrayBranches(const DataTypes & args)
 	auto check = [&](size_t i)
 	{
 		const IDataType * observed_type;
-		if (args[i].get()->isNullable())
+		if (args[i]->isNullable())
 		{
 			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
 			observed_type = nullable_type.getNestedType().get();
@@ -230,7 +230,7 @@ bool hasArrayBranches(const DataTypes & args)
 		else
 			observed_type = args[i].get();
 
-		return (typeid_cast<const DataTypeArray *>(observed_type) != nullptr) || args[i].get()->isNull();
+		return (typeid_cast<const DataTypeArray *>(observed_type) != nullptr) || args[i]->isNull();
 	};
 
 	for (size_t i = firstThen(); i < elseArg(args); i = nextThen(i))
@@ -250,10 +250,10 @@ bool hasIdenticalTypes(const DataTypes & args)
 
 	for (size_t i = firstThen(); i < else_arg; i = nextThen(i))
 	{
-		if (!args[i].get()->isNullable())
+		if (!args[i]->isNullable())
 		{
 			const IDataType * observed_type;
-			if (args[i].get()->isNullable())
+			if (args[i]->isNullable())
 			{
 				const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
 				observed_type = nullable_type.getNestedType().get();
@@ -273,10 +273,10 @@ bool hasIdenticalTypes(const DataTypes & args)
 		}
 	}
 
-	if (!args[else_arg].get()->isNull())
+	if (!args[else_arg]->isNull())
 	{
 		const IDataType * observed_type;
-		if (args[else_arg].get()->isNullable())
+		if (args[else_arg]->isNullable())
 		{
 			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[else_arg]);
 			observed_type = nullable_type.getNestedType().get();
@@ -302,7 +302,7 @@ bool hasFixedStrings(const DataTypes & args)
 	auto check = [&](size_t i)
 	{
 		const IDataType * observed_type;
-		if (args[i].get()->isNullable())
+		if (args[i]->isNullable())
 		{
 			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
 			observed_type = nullable_type.getNestedType().get();
@@ -310,7 +310,7 @@ bool hasFixedStrings(const DataTypes & args)
 		else
 			observed_type = args[i].get();
 
-		return (typeid_cast<const DataTypeFixedString *>(observed_type) != nullptr) || (args[i].get()->isNull());
+		return (typeid_cast<const DataTypeFixedString *>(observed_type) != nullptr) || (args[i]->isNull());
 	};
 
 	for (size_t i = firstThen(); i < elseArg(args); i = nextThen(i))
@@ -341,7 +341,7 @@ bool hasFixedStringsOfIdenticalLength(const DataTypes & args)
 	for (size_t i = firstThen(); i < else_arg; i = nextThen(i))
 	{
 		const IDataType * observed_type;
-		if (!args[i].get()->isNullable())
+		if (!args[i]->isNullable())
 		{
 			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
 			observed_type = nullable_type.getNestedType().get();
@@ -363,10 +363,10 @@ bool hasFixedStringsOfIdenticalLength(const DataTypes & args)
 		}
 	}
 
-	if (!args[else_arg].get()->isNull())
+	if (!args[else_arg]->isNull())
 	{
 		const IDataType * observed_type;
-		if (args[else_arg].get()->isNullable())
+		if (args[else_arg]->isNullable())
 		{
 			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[else_arg]);
 			observed_type = nullable_type.getNestedType().get();
@@ -392,7 +392,7 @@ bool hasStrings(const DataTypes & args)
 	auto check = [&](size_t i)
 	{
 		const IDataType * observed_type;
-		if (args[i].get()->isNullable())
+		if (args[i]->isNullable())
 		{
 			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
 			observed_type = nullable_type.getNestedType().get();
@@ -401,7 +401,7 @@ bool hasStrings(const DataTypes & args)
 			observed_type = args[i].get();
 
 		return (typeid_cast<const DataTypeFixedString *>(observed_type) != nullptr) ||
-			(typeid_cast<const DataTypeString *>(observed_type) != nullptr) || args[i].get()->isNull();
+			(typeid_cast<const DataTypeString *>(observed_type) != nullptr) || args[i]->isNull();
 	};
 
 	for (size_t i = firstThen(); i < elseArg(args); i = nextThen(i))

@@ -83,13 +83,13 @@ void PrettyCompactBlockOutputStream::writeRow(
 {
 	auto has_null_value = [](const ColumnPtr & col, size_t row)
 	{
-		if (col.get()->isNullable())
+		if (col->isNullable())
 		{
 			const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
 			if (nullable_col.isNullAt(row))
 				return true;
 		}
-		else if (col.get()->isNull())
+		else if (col->isNull())
 			return true;
 
 		return false;
@@ -115,7 +115,7 @@ void PrettyCompactBlockOutputStream::writeRow(
 			ColumnPtr res_col = block.getByPosition(columns + j).column;
 
 			IColumn * observed_col;
-			if (res_col.get()->isNullable())
+			if (res_col->isNullable())
 			{
 				ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*res_col);
 				observed_col = nullable_col.getNestedColumn().get();

@@ -17,9 +17,9 @@ namespace DB
 namespace
 {
 
-/// Check whether at least one of the specified columns is either nullable
-/// or null inside its block.
-bool hasNullableBranches(const Block & block, const ColumnNumbers & args)
+/// Check whether at least one of the specified branches of the function multiIf
+/// is either a nullable column or a null column inside a given block.
+bool blockHasNullableBranches(const Block & block, const ColumnNumbers & args)
 {
 	auto check = [](const Block & block, size_t arg)
 	{
@@ -40,30 +40,30 @@ bool hasNullableBranches(const Block & block, const ColumnNumbers & args)
 	return false;
 }
 
-bool hasNullableArgs(const DataTypes & args)
+bool hasNullableDataTypes(const DataTypes & args)
 {
 	size_t else_arg = Conditional::elseArg(args);
 
 	for (size_t i = Conditional::firstThen(); i < else_arg; i = Conditional::nextThen(i))
 	{
-		if (args[i].get()->isNullable())
+		if (args[i]->isNullable())
 			return true;
 	}
 
-	return args[else_arg].get()->isNullable();
+	return args[else_arg]->isNullable();
 }
 
-bool hasNullArgs(const DataTypes & args)
+bool hasNullDataTypes(const DataTypes & args)
 {
 	size_t else_arg = Conditional::elseArg(args);
 
 	for (size_t i = Conditional::firstThen(); i < else_arg; i = Conditional::nextThen(i))
 	{
-		if (args[i].get()->isNull())
+		if (args[i]->isNull())
 			return true;
 	}
 
-	return args[else_arg].get()->isNull();
+	return args[else_arg]->isNull();
 }
 
 }
@@ -138,7 +138,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 
 	try
 	{
-		if (!hasNullableBranches(block, args))
+		if (!blockHasNullableBranches(block, args))
 		{
 			perform_multi_if(block, args, result, result);
 			return;
@@ -162,21 +162,21 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 			args_to_transform.push_back(args[i]);
 		args_to_transform.push_back(args[else_arg]);
 
-		Block non_nullable_block = extractNonNullableBlock(block, args_to_transform);
+		Block block_with_nested_cols = createBlockWithNestedColumns(block, args_to_transform);
 
 		/// Append a column that tracks, for each result of multiIf, the index
 		/// of the originating column.
 		ColumnWithTypeAndName elem;
 		elem.type = std::make_shared<DataTypeUInt16>();
 
-		size_t tracker = non_nullable_block.columns();
-		non_nullable_block.insert(elem);
+		size_t tracker = block_with_nested_cols.columns();
+		block_with_nested_cols.insert(elem);
 
 		/// Really perform multiIf.
-		perform_multi_if(non_nullable_block, args, result, tracker);
+		perform_multi_if(block_with_nested_cols, args, result, tracker);
 
 		/// Store the result.
-		const ColumnWithTypeAndName & source_col = non_nullable_block.unsafeGetByPosition(result);
+		const ColumnWithTypeAndName & source_col = block_with_nested_cols.unsafeGetByPosition(result);
 		ColumnWithTypeAndName & dest_col = block.unsafeGetByPosition(result);
 
 		if (source_col.column->isNull())
@@ -189,7 +189,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 		dest_col.column = std::make_shared<ColumnNullable>(source_col.column);
 
 		/// Setup the null byte map of the result column by using the branch tracker column values.
-		ColumnPtr tracker_holder = non_nullable_block.unsafeGetByPosition(tracker).column;
+		ColumnPtr tracker_holder = block_with_nested_cols.unsafeGetByPosition(tracker).column;
 		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*dest_col.column);
 
 		if (auto col = typeid_cast<ColumnConstUInt16 *>(tracker_holder.get()))
@@ -213,29 +213,30 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 		}
 		else if (auto col = typeid_cast<ColumnUInt16 *>(tracker_holder.get()))
 		{
-			/// Keep track of which columns are nullable.
+			/// Remember which columns are nullable. This avoids us many costly
+			/// calls to virtual functions.
 			std::vector<UInt8> nullable_cols_map;
 			nullable_cols_map.resize(args.size());
 			for (const auto & arg : args)
 			{
 				const auto & col = block.unsafeGetByPosition(arg).column;
-				bool may_have_null = col->isNullable();
-				nullable_cols_map[arg] = may_have_null ? 1 : 0;
+				bool is_nullable = col->isNullable();
+				nullable_cols_map[arg] = is_nullable ? 1 : 0;
 			}
 
-			/// Keep track of which columns are null.
+			/// Remember which columns are null. The same remark as above applies.
 			std::vector<UInt8> null_cols_map;
 			null_cols_map.resize(args.size());
 			for (const auto & arg : args)
 			{
 				const auto & col = block.unsafeGetByPosition(arg).column;
-				bool has_null = col->isNull();
-				null_cols_map[arg] = has_null ? 1 : 0;
+				bool is_null = col->isNull();
+				null_cols_map[arg] = is_null ? 1 : 0;
 			}
 
 			auto null_map = std::make_shared<ColumnUInt8>(row_count);
 			nullable_col.getNullValuesByteMap() = null_map;
-			auto & null_map_data = null_map.get()->getData();
+			auto & null_map_data = null_map->getData();
 
 			const auto & data = col->getData();
 			for (size_t row = 0; row < row_count; ++row)
@@ -278,11 +279,11 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 	}
 
-	/// Check conditions types.
+	/// Check that conditions have valid types.
 	for (size_t i = Conditional::firstCond(); i < Conditional::elseArg(args); i = Conditional::nextCond(i))
 	{
 		const IDataType * observed_type;
-		if (args[i].get()->isNullable())
+		if (args[i]->isNullable())
 		{
 			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
 			observed_type = nullable_type.getNestedType().get();
@@ -302,8 +303,8 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 		}
 	}
 
-	bool has_nullable_args = hasNullableArgs(args);
-	bool has_null_args = hasNullArgs(args);
+	bool has_nullable_types = hasNullableDataTypes(args);
+	bool has_null_types = hasNullDataTypes(args);
 
 	if (Conditional::hasArithmeticBranches(args))
 		return Conditional::getReturnTypeForArithmeticArgs(args);
@@ -315,12 +316,12 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 
 		auto push_branch_arg = [&args, &new_args](size_t i)
 		{
-			if (args[i].get()->isNull())
+			if (args[i]->isNull())
 				new_args.push_back(args[i]);
 			else
 			{
 				const IDataType * observed_type;
-				if (args[i].get()->isNullable())
+				if (args[i]->isNullable())
 				{
 					const auto & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
 					observed_type = nullable_type.getNestedType().get();
@@ -350,14 +351,14 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 		/// deal with null arguments and arrays that contain null elements.
 		/// For now we assume that arrays do not contain any such elements.
 		DataTypePtr elt_type = getReturnTypeImpl(new_args);
-		if (elt_type.get()->isNullable())
+		if (elt_type->isNullable())
 		{
 			DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*elt_type);
 			elt_type = nullable_type.getNestedType();
 		}
 
 		DataTypePtr type = std::make_shared<DataTypeArray>(elt_type);
-		if (has_nullable_args || has_null_args)
+		if (has_nullable_types || has_null_types)
 			type = std::make_shared<DataTypeNullable>(type);
 		return type;
 	}
@@ -384,14 +385,14 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 				throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 
 			DataTypePtr type = std::make_shared<DataTypeFixedString>(fixed_str->getN());
-			if (has_nullable_args || has_null_args)
+			if (has_nullable_types || has_null_types)
 				type = std::make_shared<DataTypeNullable>(type);
 			return type;
 		}
 		else if (Conditional::hasStrings(args))
 		{
 			DataTypePtr type = std::make_shared<DataTypeString>();
-			if (has_nullable_args || has_null_args)
+			if (has_nullable_types || has_null_types)
 				type = std::make_shared<DataTypeNullable>(type);
 			return type;
 		}
@@ -413,11 +414,11 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 		/// Make it nullable if there is at least one nullable branch
 		/// or one null branch.
 
-		auto get_type_to_return = [has_nullable_args, has_null_args](const DataTypePtr & arg) -> DataTypePtr
+		auto get_type_to_return = [has_nullable_types, has_null_types](const DataTypePtr & arg) -> DataTypePtr
 		{
-			if (arg.get()->isNullable())
+			if (arg->isNullable())
 				return arg;
-			else if (has_nullable_args || has_null_args)
+			else if (has_nullable_types || has_null_types)
 				return std::make_shared<DataTypeNullable>(arg);
 			else
 				return arg;
@@ -425,12 +426,12 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 
 		for (size_t i = Conditional::firstThen(); i < Conditional::elseArg(args); i = Conditional::nextThen(i))
 		{
-			if (!args[i].get()->isNull())
+			if (!args[i]->isNull())
 				return get_type_to_return(args[i]);
 		}
 
 		size_t i = Conditional::elseArg(args);
-		if (!args[i].get()->isNull())
+		if (!args[i]->isNull())
 			return get_type_to_return(args[i]);
 
 		/// All the branches are null.
@@ -452,9 +453,9 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 	size_t else_arg = Conditional::elseArg(args);
 	for (size_t i = Conditional::firstThen(); i < else_arg; i = Conditional::nextThen(i))
 	{
-		if (!block.getByPosition(args[i]).type.get()->isNull())
+		if (!block.getByPosition(args[i]).type->isNull())
 		{
-			const auto & name = block.getByPosition(args[i]).type.get()->getName();
+			const auto & name = block.getByPosition(args[i]).type->getName();
 			if (first_type_name.empty())
 			{
 				first_type_name = name;
@@ -469,7 +470,7 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 		}
 	}
 
-	if (!block.getByPosition(args[else_arg]).type.get()->isNull())
+	if (!block.getByPosition(args[else_arg]).type->isNull())
 	{
 		if (first_type_name.empty())
 		{
@@ -478,7 +479,7 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 		}
 		else
 		{
-			const auto & name = block.getByPosition(args[else_arg]).type.get()->getName();
+			const auto & name = block.getByPosition(args[else_arg]).type->getName();
 			if (name != first_type_name)
 				return false;
 		}
@@ -514,8 +515,8 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 	auto make_result = [&](size_t index)
 	{
 		res_col = block.getByPosition(index).column;
-		if (res_col.get()->isNull())
-			res_col = type.get()->createConstColumn(row_count, sample);
+		if (res_col->isNull())
+			res_col = type->createConstColumn(row_count, sample);
 		if (tracker != result)
 		{
 			ColumnPtr & col = block.getByPosition(tracker).column;
