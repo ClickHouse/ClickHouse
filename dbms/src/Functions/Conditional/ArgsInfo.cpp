@@ -203,7 +203,7 @@ bool hasArithmeticBranches(const DataTypes & args)
 
 	auto check = [&](size_t i)
 	{
-		return args[i]->behavesAsNumber();
+		return args[i]->behavesAsNumber() || args[i]->isNull();
 	};
 
 	for (size_t i = firstThen(); i < else_arg; i = nextThen(i))

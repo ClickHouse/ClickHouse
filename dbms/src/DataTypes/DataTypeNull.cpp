@@ -26,16 +26,6 @@ bool DataTypeNull::isNull() const
 	return true;
 }
 
-bool DataTypeNull::isNumeric() const
-{
-	return true;
-}
-
-bool DataTypeNull::behavesAsNumber() const
-{
-	return true;
-}
-
 DataTypePtr DataTypeNull::clone() const
 {
 	return std::make_shared<DataTypeNull>();
@@ -45,28 +35,19 @@ void DataTypeNull::serializeBinary(const IColumn & column, WriteBuffer & ostr, s
 {
 	size_t size = column.size();
 
-	if ((limit == 0) || (offset + limit) > size)
+	if ((limit == 0) || ((offset + limit) > size))
 		limit = size - offset;
 
-	UInt8 x = 0 ;
-	for (size_t i = 0; i < limit; ++i)
-		ostr.write(reinterpret_cast<const char *>(&x), sizeof(UInt8) * 1);
+	UInt8 x = 0;
+	writeBinary(x, limit, ostr);
 }
 
 void DataTypeNull::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
-	ColumnNull * col = typeid_cast<ColumnNull *>(&column);
-	if (col == nullptr)
-		throw Exception{"Discrepancy between data type and column type", ErrorCodes::LOGICAL_ERROR};
+	ColumnNull & null_col = static_cast<ColumnNull &>(column);
 
-	ColumnNull & col_ref = *col;
-
-	UInt8 x;
-	for (size_t i = 0; i < limit; ++i)
-	{
-		istr.readBig(reinterpret_cast<char *>(&x), sizeof(UInt8) * 1);
-		col_ref.insertDefault();
-	}
+	istr.ignore(sizeof(UInt8) * limit);
+	null_col.insertRangeFrom(ColumnNull{0, Null()}, 0, limit);
 }
 
 void DataTypeNull::serializeBinary(const Field & field, WriteBuffer & ostr) const

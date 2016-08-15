@@ -804,4 +804,12 @@ inline String toString(const T & x)
 	return res;
 }
 
+/// Write a specified number of times a given value into a write buffer.
+template <typename T>
+inline void writeBinary(const T & x, size_t count, WriteBuffer & buf)
+{
+	for (size_t i = 0; i < count; ++i)
+		writeBinary(x, buf);
+}
+
 }
