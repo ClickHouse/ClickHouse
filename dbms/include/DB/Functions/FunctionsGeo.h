@@ -9,6 +9,11 @@
 
 namespace DB{
 
+namespace ErrorCodes
+{
+	extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
 const Float64 EARTH_RADIUS_IN_METERS = 6372797.560856;
 
 static inline Float64 degToRad(Float64 angle) { return angle * DEGREES_IN_RADIANS; }
@@ -37,7 +42,7 @@ private:
 	};
   
 	using instr_t = std::pair<instr_type, const IColumn *>;
-	using instrs_t = std::vector<instr_t>;
+	using instrs_t = std::array<instr_t, 4>;
   
 	String getName() const override { return name; }
 
@@ -63,9 +68,10 @@ private:
 	
 	instrs_t getInstructions(const Block & block, const ColumnNumbers & arguments, bool & out_const)
 	{
-		instrs_t result{};
+		instrs_t result;
 		
 		out_const = true;
+		int arg_idx = 0;
 
 		for (const auto arg_pos : arguments)
 		{
@@ -74,15 +80,19 @@ private:
 			if (const auto col = typeid_cast<const ColumnVector<Float64> *>(column))
 			{
 				out_const = false;
-				result.emplace_back(instr_type::get_float_64, col);
+				result[arg_idx] = instr_t{instr_type::get_float_64, col};
 			}
 			else if (const auto col = typeid_cast<const ColumnConst<Float64> *>(column))
 			{
-				result.emplace_back(instr_type::get_const_float_64, col);
+				result[arg_idx] = instr_t{instr_type::get_const_float_64, col};
 			}
 			else
+			{
 				throw Exception("Illegal column " + column->getName() + " of argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
+			}
+			
+			++arg_idx;
 		}
 
 		return result;
@@ -96,7 +106,7 @@ private:
 			lat2Deg < -90 || lat2Deg > 90
 		) 
 		{
-			throw Exception("Illegal values of columns. Must be within bounds.");
+			throw Exception("Arguments values out of bounds for function " + getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 		}
 		
 		Float64 lon1Rad = degToRad(lon1Deg);
