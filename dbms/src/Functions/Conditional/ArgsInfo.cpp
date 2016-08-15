@@ -387,9 +387,6 @@ bool hasFixedStringsOfIdenticalLength(const DataTypes & args)
 		}
 	}
 
-	if (!has_length)
-		throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-
 	return true;
 }
 

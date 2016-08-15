@@ -19,12 +19,12 @@ namespace
 
 /// Check whether at least one of the specified branches of the function multiIf
 /// is either a nullable column or a null column inside a given block.
-bool blockHasNullableBranches(const Block & block, const ColumnNumbers & args)
+bool blockHasSpecialBranches(const Block & block, const ColumnNumbers & args)
 {
 	auto check = [](const Block & block, size_t arg)
 	{
 		const auto & elem = block.unsafeGetByPosition(arg);
-		return (elem.column && (elem.column->isNullable() || elem.column->isNull()));
+		return elem.column->isNullable() || elem.column->isNull();
 	};
 
 	size_t else_arg = Conditional::elseArg(args);
@@ -40,42 +40,30 @@ bool blockHasNullableBranches(const Block & block, const ColumnNumbers & args)
 	return false;
 }
 
-bool hasNullableDataTypes(const DataTypes & args)
+/// Check whether at least one of the specified datatypes is either nullable or null.
+bool hasSpecialDataTypes(const DataTypes & args)
 {
 	size_t else_arg = Conditional::elseArg(args);
 
 	for (size_t i = Conditional::firstThen(); i < else_arg; i = Conditional::nextThen(i))
 	{
-		if (args[i]->isNullable())
+		if (args[i]->isNullable() || args[i]->isNull())
 			return true;
 	}
 
-	return args[else_arg]->isNullable();
-}
-
-bool hasNullDataTypes(const DataTypes & args)
-{
-	size_t else_arg = Conditional::elseArg(args);
-
-	for (size_t i = Conditional::firstThen(); i < else_arg; i = Conditional::nextThen(i))
-	{
-		if (args[i]->isNull())
-			return true;
-	}
-
-	return args[else_arg]->isNull();
+	return args[else_arg]->isNullable() || args[else_arg]->isNull();
 }
 
 /// Return the type of the first non-null branch. Make it nullable
 /// if there is at least one nullable branch or one null branch.
 /// This function is used in a very few number of cases in getReturnTypeImpl().
-DataTypePtr getReturnTypeFromFirstNonNullBranch(const DataTypes & args, bool has_nullable_types, bool has_null_types)
+DataTypePtr getReturnTypeFromFirstNonNullBranch(const DataTypes & args, bool has_special_types)
 {
-	auto get_type_to_return = [has_nullable_types, has_null_types](const DataTypePtr & arg) -> DataTypePtr
+	auto get_type_to_return = [has_special_types](const DataTypePtr & arg) -> DataTypePtr
 	{
 		if (arg->isNullable())
 			return arg;
-		else if (has_nullable_types || has_null_types)
+		else if (has_special_types)
 			return std::make_shared<DataTypeNullable>(arg);
 		else
 			return arg;
@@ -166,7 +154,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 
 	try
 	{
-		if (!blockHasNullableBranches(block, args))
+		if (!blockHasSpecialBranches(block, args))
 		{
 			perform_multi_if(block, args, result, result);
 			return;
@@ -331,8 +319,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 		}
 	}
 
-	bool has_nullable_types = hasNullableDataTypes(args);
-	bool has_null_types = hasNullDataTypes(args);
+	bool has_special_types = hasSpecialDataTypes(args);
 
 	if (Conditional::hasArithmeticBranches(args))
 		return Conditional::getReturnTypeForArithmeticArgs(args);
@@ -386,7 +373,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 		}
 
 		DataTypePtr type = std::make_shared<DataTypeArray>(elt_type);
-		if (has_nullable_types || has_null_types)
+		if (has_special_types)
 			type = std::make_shared<DataTypeNullable>(type);
 		return type;
 	}
@@ -406,7 +393,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 			}
 
-			auto type = getReturnTypeFromFirstNonNullBranch(args, has_nullable_types, has_null_types);
+			auto type = getReturnTypeFromFirstNonNullBranch(args, has_special_types);
 			if (type)
 				return type;
 			else
@@ -418,7 +405,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 		else if (Conditional::hasStrings(args))
 		{
 			DataTypePtr type = std::make_shared<DataTypeString>();
-			if (has_nullable_types || has_null_types)
+			if (has_special_types)
 				type = std::make_shared<DataTypeNullable>(type);
 			return type;
 		}
@@ -436,7 +423,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 	}
 	else
 	{
-		auto type = getReturnTypeFromFirstNonNullBranch(args, has_nullable_types, has_null_types);
+		auto type = getReturnTypeFromFirstNonNullBranch(args, has_special_types);
 		if (type)
 			return type;
 
