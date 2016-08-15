@@ -17,7 +17,7 @@ void evaluateMissingDefaults(Block & block,
 	if (column_defaults.empty())
 		return;
 
-	ASTPtr default_expr_list{std::make_unique<ASTExpressionList>().release()};
+	ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
 
 	for (const auto & column : required_columns)
 	{
@@ -40,7 +40,12 @@ void evaluateMissingDefaults(Block & block,
 	  * we are going to operate on a copy instead of the original block */
 	Block copy_block{block};
 	/// evaluate default values for defaulted columns
-	ExpressionAnalyzer{default_expr_list, context, {}, required_columns}.getActions(true)->execute(copy_block);
+
+	NamesAndTypesList available_columns;
+	for (size_t i = 0, size = block.columns(); i < size; ++i)
+		available_columns.emplace_back(block.unsafeGetByPosition(i).name, block.unsafeGetByPosition(i).type);
+
+	ExpressionAnalyzer{default_expr_list, context, {}, available_columns}.getActions(true)->execute(copy_block);
 
 	/// move evaluated columns to the original block, materializing them at the same time
 	for (auto & column_name_type : copy_block.getColumns())
