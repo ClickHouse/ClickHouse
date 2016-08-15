@@ -830,6 +830,20 @@ You can also specify any settings that will be used for processing queries. For 
 The client can be used in interactive and non-interactive (batch) mode.
 To use batch mode, specify the &#39;query&#39; parameter, or send data to &#39;stdin&#39; (it verifies that &#39;stdin&#39; is not a terminal), or both.
 Similar to the HTTP interface, when using the &#39;query&#39; parameter and sending data to &#39;stdin&#39;, the request is a concatenation of the &#39;query&#39; parameter, a line break, and the data in &#39;stdin&#39;. This is convenient for large INSERT queries.
+
+Examples for insert data via clickhouse-client:
+
+%%
+echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+
+cat &lt;&lt;_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+3, 'some text', '2016-08-14 00:00:00'
+4, 'some more text', '2016-08-14 00:00:01'
+_EOF
+
+cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+%%
+
 In batch mode, the default data format is TabSeparated. You can set the format in the FORMAT clause of the query.
 
 By default, you can only process a single query in batch mode. To make multiple queries from a &quot;script,&quot; use the &#39;multiquery&#39; parameter. This works for all queries except INSERT. Query results are output consecutively without additional separators.
