@@ -66,6 +66,34 @@ bool hasNullDataTypes(const DataTypes & args)
 	return args[else_arg]->isNull();
 }
 
+/// Return the type of the first non-null branch. Make it nullable
+/// if there is at least one nullable branch or one null branch.
+/// This function is used in a very few number of cases in getReturnTypeImpl().
+DataTypePtr getReturnTypeFromFirstNonNullBranch(const DataTypes & args, bool has_nullable_types, bool has_null_types)
+{
+	auto get_type_to_return = [has_nullable_types, has_null_types](const DataTypePtr & arg) -> DataTypePtr
+	{
+		if (arg->isNullable())
+			return arg;
+		else if (has_nullable_types || has_null_types)
+			return std::make_shared<DataTypeNullable>(arg);
+		else
+			return arg;
+	};
+
+	for (size_t i = Conditional::firstThen(); i < Conditional::elseArg(args); i = Conditional::nextThen(i))
+	{
+		if (!args[i]->isNull())
+			return get_type_to_return(args[i]);
+	}
+
+	size_t i = Conditional::elseArg(args);
+	if (!args[i]->isNull())
+		return get_type_to_return(args[i]);
+
+	return {};
+}
+
 }
 
 void registerFunctionsConditional(FunctionFactory & factory)
@@ -378,16 +406,14 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 			}
 
-			const IDataType * data = args[Conditional::firstThen()].get();
-			const auto * fixed_str = typeid_cast<const DataTypeFixedString *>(data);
-
-			if (fixed_str == nullptr)
+			auto type = getReturnTypeFromFirstNonNullBranch(args, has_nullable_types, has_null_types);
+			if (type)
+				return type;
+			else
+			{
+				/// This cannot happen: at least one fixed string is not null.
 				throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-
-			DataTypePtr type = std::make_shared<DataTypeFixedString>(fixed_str->getN());
-			if (has_nullable_types || has_null_types)
-				type = std::make_shared<DataTypeNullable>(type);
-			return type;
+			}
 		}
 		else if (Conditional::hasStrings(args))
 		{
@@ -410,29 +436,9 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 	}
 	else
 	{
-		/// Return the type of the first non-null branch.
-		/// Make it nullable if there is at least one nullable branch
-		/// or one null branch.
-
-		auto get_type_to_return = [has_nullable_types, has_null_types](const DataTypePtr & arg) -> DataTypePtr
-		{
-			if (arg->isNullable())
-				return arg;
-			else if (has_nullable_types || has_null_types)
-				return std::make_shared<DataTypeNullable>(arg);
-			else
-				return arg;
-		};
-
-		for (size_t i = Conditional::firstThen(); i < Conditional::elseArg(args); i = Conditional::nextThen(i))
-		{
-			if (!args[i]->isNull())
-				return get_type_to_return(args[i]);
-		}
-
-		size_t i = Conditional::elseArg(args);
-		if (!args[i]->isNull())
-			return get_type_to_return(args[i]);
+		auto type = getReturnTypeFromFirstNonNullBranch(args, has_nullable_types, has_null_types);
+		if (type)
+			return type;
 
 		/// All the branches are null.
 		return std::make_shared<DataTypeNull>();

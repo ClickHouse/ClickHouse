@@ -340,8 +340,11 @@ bool hasFixedStringsOfIdenticalLength(const DataTypes & args)
 
 	for (size_t i = firstThen(); i < else_arg; i = nextThen(i))
 	{
+		if (args[i]->isNull())
+			continue;
+
 		const IDataType * observed_type;
-		if (!args[i]->isNullable())
+		if (args[i]->isNullable())
 		{
 			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
 			observed_type = nullable_type.getNestedType().get();
@@ -374,13 +377,18 @@ bool hasFixedStringsOfIdenticalLength(const DataTypes & args)
 		else
 			observed_type = args[else_arg].get();
 
-		if (has_length)
+		if (!has_length)
+			has_length = true;
+		else
 		{
 			size_t length = get_length(observed_type, else_arg);
 			if (length != first_length)
 				return false;
 		}
 	}
+
+	if (!has_length)
+		throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 
 	return true;
 }
