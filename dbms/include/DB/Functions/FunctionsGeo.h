@@ -7,7 +7,8 @@
 
 #define DEGREES_IN_RADIANS (M_PI / 180.0)
 
-namespace DB{
+namespace DB
+{
 
 namespace ErrorCodes
 {
@@ -40,10 +41,10 @@ private:
 		get_float_64,
 		get_const_float_64
 	};
-  
+
 	using instr_t = std::pair<instr_type, const IColumn *>;
 	using instrs_t = std::array<instr_t, 4>;
-  
+
 	String getName() const override { return name; }
 
 	DataTypePtr getReturnType(const DataTypes & arguments) const override
@@ -65,12 +66,12 @@ private:
 
 		return std::make_shared<DataTypeFloat64>();
 	}
-	
+
 	instrs_t getInstructions(const Block & block, const ColumnNumbers & arguments, bool & out_const)
 	{
 		instrs_t result;
 		out_const = true;
-		
+
 		for (const auto arg_idx : ext::range(0, arguments.size()))
 		{
 			const auto column = block.getByPosition(arguments[arg_idx]).column.get();
@@ -91,18 +92,18 @@ private:
 
 		return result;
 	}
-	
+
 	/// https://en.wikipedia.org/wiki/Great-circle_distance 
-	Float64 greatCircleDistance(Float64 lon1Deg, Float64 lat1Deg, Float64 lon2Deg, Float64 lat2Deg) {
+	Float64 greatCircleDistance(Float64 lon1Deg, Float64 lat1Deg, Float64 lon2Deg, Float64 lat2Deg)
+	{
 		if (lon1Deg < -180 || lon1Deg > 180 ||
 			lon2Deg < -180 || lon2Deg > 180 ||
 			lat1Deg < -90 || lat1Deg > 90 ||
-			lat2Deg < -90 || lat2Deg > 90
-		) 
+			lat2Deg < -90 || lat2Deg > 90)
 		{
 			throw Exception("Arguments values out of bounds for function " + getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 		}
-		
+
 		Float64 lon1Rad = degToRad(lon1Deg);
 		Float64 lat1Rad = degToRad(lat1Deg);
 		Float64 lon2Rad = degToRad(lon2Deg);
@@ -111,8 +112,8 @@ private:
 		Float64 v = sin((lon2Rad - lon1Rad) / 2);
 		return 2.0 * EARTH_RADIUS_IN_METERS * asin(sqrt(u * u + cos(lat1Rad) * cos(lat2Rad) * v * v));
 	}
-	
-	
+
+
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto size = block.rowsInFirstColumn();
