@@ -56,6 +56,7 @@ add_library (dbms
 	include/DB/Functions/FunctionsComparison.h
 	include/DB/Functions/FunctionsHashing.h
 	include/DB/Functions/FunctionsMath.h
+	include/DB/Functions/FunctionsGeo.h
 	include/DB/Functions/FunctionsMiscellaneous.h
 	include/DB/Functions/FunctionsDateTime.h
 	include/DB/Functions/IFunction.h
@@ -871,6 +872,7 @@ add_library (dbms
 	src/Functions/FunctionsURL.cpp
 	src/Functions/FunctionsVisitParam.cpp
 	src/Functions/FunctionsMath.cpp
+	src/Functions/FunctionsGeo.cpp
 	src/Functions/FunctionsMiscellaneous.cpp
 	src/Functions/FunctionsTransform.cpp
 	src/Functions/Conditional/getArrayType.cpp
@@ -936,6 +938,7 @@ SET_SOURCE_FILES_PROPERTIES(
 	src/Functions/FunctionsURL.cpp
 	src/Functions/FunctionsVisitParam.cpp
 	src/Functions/FunctionsMath.cpp
+	src/Functions/FunctionsGeo.cpp
 	src/Functions/FunctionsMiscellaneous.cpp
 	src/Functions/FunctionsTransform.cpp
 	src/Dictionaries/FlatDictionary.cpp
