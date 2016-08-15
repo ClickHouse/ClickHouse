@@ -358,21 +358,27 @@ Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		const auto & col = block.unsafeGetByPosition(i);
+		bool is_inserted = false;
 
-		bool found = (i == args[j]);
-		//bool found = std::binary_search(args.begin(), args.end(), i);
-
-		if (found && col.column->isNullable())
+		if (i == args[j])
 		{
-			auto nullable_col = static_cast<const ColumnNullable *>(col.column.get());
-			ColumnPtr nested_col = nullable_col->getNestedColumn();
+			++j;
 
-			auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
-			DataTypePtr nested_type = nullable_type->getNestedType();
+			if (col.column->isNullable())
+			{
+				auto nullable_col = static_cast<const ColumnNullable *>(col.column.get());
+				ColumnPtr nested_col = nullable_col->getNestedColumn();
 
-			res.insert(i, {nested_col, nested_type, col.name});
+				auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
+				DataTypePtr nested_type = nullable_type->getNestedType();
+
+				res.insert(i, {nested_col, nested_type, col.name});
+
+				is_inserted = true;
+			}
 		}
-		else
+
+		if (!is_inserted)
 			res.insert(i, col);
 	}
 
