@@ -59,7 +59,7 @@ Category blockHasSpecialColumns(const Block & block, const ColumnNumbers & args)
 			found_null = true;
 			break;
 		}
-		else if (!found_nullable & elem.column->isNullable())
+		else if (!found_nullable && elem.column->isNullable())
 			found_nullable = true;
 	}
 
@@ -84,7 +84,7 @@ Category hasSpecialColumns(const ColumnsWithTypeAndName & args)
 			found_null = true;
 			break;
 		}
-		else if (!found_nullable & arg.type->isNullable())
+		else if (!found_nullable && arg.type->isNullable())
 			found_nullable = true;
 	}
 
@@ -109,7 +109,7 @@ Category hasSpecialDataTypes(const DataTypes & args)
 			found_null = true;
 			break;
 		}
-		else if (!found_nullable & arg->isNullable())
+		else if (!found_nullable && arg->isNullable())
 			found_nullable = true;
 	}
 
@@ -207,7 +207,10 @@ void IFunction::getReturnTypeAndPrerequisites(
 	else if (category == Category::IS_NULL)
 	{
 		if (!hasSpecialSupportForNulls())
+		{
 			out_return_type = std::make_shared<DataTypeNull>();
+			return;
+		}
 	}
 	else if (category == Category::IS_NULLABLE)
 	{
@@ -216,6 +219,7 @@ void IFunction::getReturnTypeAndPrerequisites(
 			const ColumnsWithTypeAndName new_args = toNestedColumns(arguments);
 			getReturnTypeAndPrerequisitesImpl(new_args, out_return_type, out_prerequisites);
 			out_return_type = std::make_shared<DataTypeNullable>(out_return_type);
+			return;
 		}
 	}
 	else
@@ -243,6 +247,7 @@ void IFunction::getLambdaArgumentTypes(DataTypes & arguments) const
 			DataTypes new_args = toNestedDataTypes(arguments);
 			getLambdaArgumentTypesImpl(new_args);
 			arguments = std::move(new_args);
+			return;
 		}
 	}
 	else
