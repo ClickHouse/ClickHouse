@@ -69,13 +69,11 @@ private:
 	instrs_t getInstructions(const Block & block, const ColumnNumbers & arguments, bool & out_const)
 	{
 		instrs_t result;
-		
 		out_const = true;
-		int arg_idx = 0;
-
-		for (const auto arg_pos : arguments)
+		
+		for (const auto arg_idx : ext::range(0, arguments.size()))
 		{
-			const auto column = block.getByPosition(arg_pos).column.get();
+			const auto column = block.getByPosition(arguments[arg_idx]).column.get();
 
 			if (const auto col = typeid_cast<const ColumnVector<Float64> *>(column))
 			{
@@ -87,12 +85,8 @@ private:
 				result[arg_idx] = instr_t{instr_type::get_const_float_64, col};
 			}
 			else
-			{
 				throw Exception("Illegal column " + column->getName() + " of argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
-			}
-			
-			++arg_idx;
 		}
 
 		return result;
@@ -148,9 +142,9 @@ private:
 				for (const auto idx : ext::range(0, instrs.size()))
 				{
 					if (instr_type::get_float_64 == instrs[idx].first)
-						vals[idx] = static_cast<const ColumnVector<Float64> *>(block.getByPosition(arguments[idx]).column.get())->getData()[row];
+						vals[idx] = static_cast<const ColumnVector<Float64> *>(instrs[idx].second)->getData()[row];
 					else if (instr_type::get_const_float_64 == instrs[idx].first)
-						vals[idx] = static_cast<const ColumnConst<Float64> *>(block.getByPosition(arguments[idx]).column.get())->getData();
+						vals[idx] = static_cast<const ColumnConst<Float64> *>(instrs[idx].second)->getData();
 					else 
 						throw std::logic_error{"unknown instr_type"};
 				}
