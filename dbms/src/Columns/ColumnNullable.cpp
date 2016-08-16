@@ -47,18 +47,7 @@ ColumnPtr ColumnNullable::convertToFullColumnIfConst() const
 	{
 		new_col_holder = std::make_shared<ColumnNullable>(full_col);
 		ColumnNullable & new_col = static_cast<ColumnNullable &>(*new_col_holder);
-
-		if (!getNullMapContent().empty())
-			new_col.null_map = null_map;
-		else
-		{
-			size_t n = nested_column->size();
-			if (n > 0)
-			{
-				new_col.null_map = std::make_shared<ColumnUInt8>();
-				new_col.getNullMapContent().getData().resize_fill(n, 0);
-			}
-		}
+		new_col.null_map = null_map;
 	}
 
 	return new_col_holder;
