@@ -25,7 +25,7 @@ toFloat64OrZero('NANo'),
 toFloat64OrZero('-NANo'),
 toFloat64OrZero('NaN+'),
 toFloat64OrZero('-NaNa'),
-toFloat64OrZero('+Na')
+toFloat64OrZero('+Na'),
 
 toFloat32('inf'),
 toFloat32('-inf'),
