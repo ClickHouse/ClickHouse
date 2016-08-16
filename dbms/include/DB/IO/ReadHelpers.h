@@ -306,7 +306,7 @@ bool exceptionPolicySelector(ExcepFun && excep_f, NoExcepFun && no_excep_f, Args
 };
 
 
-/// грубо
+/// Rough: not exactly nearest machine representable number is returned.
 template <typename T, typename ReturnType, char point_symbol = '.'>
 ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 {
@@ -327,8 +327,8 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 
 	auto parse_special_value = [&buf, &x, &negative](const char * str, T value)
 	{
-		auto assert_str_lambda = [](const char * str, ReadBuffer & buf){ assertString(str, buf); };
-		auto check_str_lambda = [](const char * str, ReadBuffer & buf){ return checkString(str, buf); };
+		auto assert_str_lambda = [](const char * str, ReadBuffer & buf) { assertString(str, buf); };
+		auto check_str_lambda = [](const char * str, ReadBuffer & buf) { return checkString(str, buf); };
 
 		++buf.position();
 		bool result = exceptionPolicySelector<throw_exception>(assert_str_lambda, check_str_lambda, str, buf);
