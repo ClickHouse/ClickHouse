@@ -26,7 +26,7 @@ void createNullValuesByteMap(Block & block, const ColumnNumbers & args, size_t r
 		if (elem.column->isNullable())
 		{
 			const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
-			res_col.updateNullValuesByteMap(nullable_col);
+			res_col.applyNullValuesByteMap(nullable_col);
 		}
 	}
 }

@@ -8,6 +8,15 @@ namespace DB
 
 using NullValuesByteMap = PaddedPODArray<UInt8>;
 
+/// Class that specifies nullable columns. A nullable column represents
+/// a column, which may have any type, provided with the possibility of
+/// storing NULL values. For this purpose, a ColumNullable object stores
+/// an ordinary column along with a special column, namely a byte map,
+/// whose type is ColumnUInt8. The latter column indicates whether the
+/// value of a given row is a NULL or not. Such a design is preferred
+/// over a bitmap because columns are usually stored on disk as compressed
+/// files. In this regard, using a bitmap instead of a byte map would
+/// greatly complicate the implementation with little to no benefits.
 class ColumnNullable final : public IColumn
 {
 public:
@@ -40,14 +49,23 @@ public:
 	void updateHashWithValue(size_t n, SipHash & hash) const override;
 	void getExtremes(Field & min, Field & max) const override;
 
+	/// Return the column that represents values.
 	ColumnPtr & getNestedColumn();
 	const ColumnPtr & getNestedColumn() const;
+
+	/// Return the column that represents the byte map.
 	ColumnPtr & getNullValuesByteMap();
 	const ColumnPtr & getNullValuesByteMap() const;
 
-	void updateNullValuesByteMap(const ColumnNullable & other);
+	/// Apply the null byte map of a specified nullable column onto the
+	/// null byte map of the current column by performing an element-wise OR
+	/// between both byte maps. This method is used to determine the null byte
+	/// map of the result column of a function taking one or more nullable
+	/// columns.
+	void applyNullValuesByteMap(const ColumnNullable & other);
 
 private:
+	/// Convenience methods which make the implementation easier to read.
 	ColumnUInt8 & getNullMapContent();
 	const ColumnUInt8 & getNullMapContent() const;
 

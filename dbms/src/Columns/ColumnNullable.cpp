@@ -392,7 +392,7 @@ const ColumnPtr & ColumnNullable::getNullValuesByteMap() const
 	return null_map;
 }
 
-void ColumnNullable::updateNullValuesByteMap(const ColumnNullable & other)
+void ColumnNullable::applyNullValuesByteMap(const ColumnNullable & other)
 {
 	NullValuesByteMap & arr1 = getNullMapContent().getData();
 	const NullValuesByteMap & arr2 = other.getNullMapContent().getData();
