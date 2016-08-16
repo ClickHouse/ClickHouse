@@ -315,6 +315,7 @@ void assertNaN(ReadBuffer & buf);
 
 
 /// Rough: not exactly nearest machine representable number is returned.
+/// Some garbage may be successfully parsed, examples: '.' parsed as 0; 123Inf parsed as inf.
 template <typename T, typename ReturnType, char point_symbol = '.'>
 ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 {
