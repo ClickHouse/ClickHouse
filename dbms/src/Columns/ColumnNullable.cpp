@@ -110,37 +110,29 @@ void ColumnNullable::insertData(const char * pos, size_t length)
 
 StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-	if (isNullAt(n))
-	{
-		const UInt8 tag = 1;
-		auto pos = arena.allocContinue(sizeof(tag), begin);
-		memcpy(pos, &tag, sizeof(tag));
-		return StringRef{pos, sizeof(tag)};
-	}
-	else
-	{
-		const UInt8 tag = 0;
-		auto pos = arena.allocContinue(sizeof(tag), begin);
-		memcpy(pos, &tag, sizeof(tag));
+	const auto & arr = getNullMapContent().getData();
+	static constexpr auto s = sizeof(arr[0]);
+
+	auto pos = arena.allocContinue(s, begin);
+	memcpy(pos, &arr[n], s);
+
+	if (arr[n] == 0)
 		return nested_column->serializeValueIntoArena(n, arena, begin);
-	}
+	else
+		return StringRef{pos, s};
 }
 
 const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
 {
-	UInt8 tag = *reinterpret_cast<const UInt8 *>(pos);
-	const auto next_pos = pos + sizeof(tag);
-	if (tag == 1)
-	{
-		/// Apppend a null.
-		getNullMapContent().insert(1);
-		return next_pos;
-	}
-	else
-	{
-		getNullMapContent().insert(0);
+	UInt8 val = *reinterpret_cast<const UInt8 *>(pos);
+	const auto next_pos = pos + sizeof(val);
+
+	getNullMapContent().insert(val);
+
+	if (val == 0)
 		return nested_column->deserializeAndInsertFromArena(pos + sizeof(next_pos));
-	}
+	else
+		return next_pos;
 }
 
 void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)
