@@ -55,17 +55,10 @@ ColumnPtr ColumnNullable::convertToFullColumnIfConst() const
 
 void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
 {
-	if (isNullAt(n))
-	{
-		UInt8 tag = 1;
-		hash.update(reinterpret_cast<const char *>(&tag), sizeof(tag));
-	}
-	else
-	{
-		UInt8 tag = 0;
-		hash.update(reinterpret_cast<const char *>(&tag), sizeof(tag));
+	const auto & arr = getNullMapContent().getData();
+	hash.update(reinterpret_cast<const char *>(&arr[n]), sizeof(arr[0]));
+	if (arr[n] == 0)
 		nested_column->updateHashWithValue(n, hash);
-	}
 }
 
 ColumnPtr ColumnNullable::cloneResized(size_t size) const
