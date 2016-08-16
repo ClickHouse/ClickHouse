@@ -6,7 +6,7 @@ namespace DB
 {
 
 /// This the data type of the NULL value.
-class DataTypeNull : public IDataType
+class DataTypeNull final : public IDataType
 {
 public:
 	using FieldType = Null;

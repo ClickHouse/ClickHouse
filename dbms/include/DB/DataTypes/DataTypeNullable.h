@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class DataTypeNullable : public IDataType
+class DataTypeNullable final : public IDataType
 {
 public:
 	DataTypeNullable(DataTypePtr nested_data_type_);
