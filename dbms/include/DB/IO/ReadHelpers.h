@@ -306,6 +306,14 @@ bool exceptionPolicySelector(ExcepFun && excep_f, NoExcepFun && no_excep_f, Args
 };
 
 
+/// Returns true, iff parsed.
+bool parseInfinity(ReadBuffer & buf);
+bool parseNaN(ReadBuffer & buf);
+
+void assertInfinity(ReadBuffer & buf);
+void assertNaN(ReadBuffer & buf);
+
+
 /// Rough: not exactly nearest machine representable number is returned.
 template <typename T, typename ReturnType, char point_symbol = '.'>
 ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
@@ -324,22 +332,6 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 		else
 			return ReturnType(false);
 	}
-
-	auto parse_special_value = [&buf, &x, &negative](const char * str, T value)
-	{
-		auto assert_str_lambda = [](const char * str, ReadBuffer & buf) { assertString(str, buf); };
-		auto check_str_lambda = [](const char * str, ReadBuffer & buf) { return checkString(str, buf); };
-
-		++buf.position();
-		bool result = exceptionPolicySelector<throw_exception>(assert_str_lambda, check_str_lambda, str, buf);
-		if (result)
-		{
-			x = value;
-			if (negative)
-				x = -x;
-		}
-		return result;
-	};
 
 	while (!buf.eof())
 	{
@@ -388,25 +380,43 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 				}
 				return ReturnType(res);
 			}
-			case 'i':
-				return ReturnType(parse_special_value("nf", std::numeric_limits<T>::infinity()));
 
+			case 'i':
 			case 'I':
-				return ReturnType(parse_special_value("NF", std::numeric_limits<T>::infinity()));
+			{
+				bool res = exceptionPolicySelector<throw_exception>(assertInfinity, parseInfinity, buf);
+				if (res)
+				{
+					x = std::numeric_limits<T>::infinity();
+					if (negative)
+						x = -x;
+				}
+				return ReturnType(res);
+			}
 
 			case 'n':
-				return ReturnType(parse_special_value("an", std::numeric_limits<T>::quiet_NaN()));
-
 			case 'N':
-				return ReturnType(parse_special_value("AN", std::numeric_limits<T>::quiet_NaN()));
+			{
+				bool res = exceptionPolicySelector<throw_exception>(assertNaN, parseNaN, buf);
+				if (res)
+				{
+					x = std::numeric_limits<T>::quiet_NaN();
+					if (negative)
+						x = -x;
+				}
+				return ReturnType(res);
+			}
 
 			default:
+			{
 				if (negative)
 					x = -x;
 				return ReturnType(true);
+			}
 		}
 		++buf.position();
 	}
+
 	if (negative)
 		x = -x;
 

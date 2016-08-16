@@ -81,8 +81,8 @@ public:
 	/// Получить следующий токен, если есть, или вернуть false.
 	bool get(Pos & token_begin, Pos & token_end)
 	{
-		/// Пропускаем мусор
-		while (pos < end && !((*pos >= 'a' && *pos <= 'z') || (*pos >= 'A' && *pos <= 'Z')))
+		/// Skip garbage
+		while (pos < end && !isAlphaASCII(*pos))
 			++pos;
 
 		if (pos == end)
@@ -90,7 +90,7 @@ public:
 
 		token_begin = pos;
 
-		while (pos < end && ((*pos >= 'a' && *pos <= 'z') || (*pos >= 'A' && *pos <= 'Z')))
+		while (pos < end && isAlphaASCII(*pos))
 			++pos;
 
 		token_end = pos;

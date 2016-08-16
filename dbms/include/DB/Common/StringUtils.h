@@ -32,3 +32,50 @@ inline bool endsWith(const std::string & s, const char * suffix)
 {
 	return detail::endsWith(s, suffix, strlen(suffix));
 }
+
+
+/// More efficient than libc, because doesn't respect locale.
+
+inline bool isASCII(char c)
+{
+	return static_cast<unsigned char>(c) < 0x80;
+}
+
+inline bool isAlphaASCII(char c)
+{
+	return (c >= 'a' && c <= 'z')
+		|| (c >= 'A' && c <= 'Z');
+}
+
+inline bool isNumericASCII(char c)
+{
+	return (c >= '0' && c <= '9');
+}
+
+inline bool isAlphaNumericASCII(char c)
+{
+	return isAlphaASCII(c)
+		|| isNumericASCII(c);
+}
+
+inline bool isWordCharASCII(char c)
+{
+	return isAlphaNumericASCII(c)
+		|| c == '_';
+}
+
+/// Works assuming isAlphaASCII.
+inline char toLowerIfAlphaASCII(char c)
+{
+	return c | 0x20;
+}
+
+inline char toUpperIfAlphaASCII(char c)
+{
+	return c & (~0x20);
+}
+
+inline char alternateCaseIfAlphaASCII(char c)
+{
+	return c ^ 0x20;
+}

@@ -8,6 +8,7 @@
 
 #include <DB/Core/Defines.h>
 #include <DB/Common/PODArray.h>
+#include <DB/Common/StringUtils.h>
 #include <DB/IO/ReadHelpers.h>
 #include <common/find_first_symbols.h>
 
@@ -46,6 +47,24 @@ bool checkString(const char * s, ReadBuffer & buf)
 	}
 	return true;
 }
+
+
+static bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf)
+{
+	for (; *s; ++s)
+	{
+		if (buf.eof())
+			return false;
+
+		char c = *buf.position();
+		if (!(*s == c || (isAlphaASCII(*s) && alternateCaseIfAlphaASCII(*s) == c)))
+			return false;
+
+		++buf.position();
+	}
+	return true;
+}
+
 
 void assertString(const char * s, ReadBuffer & buf)
 {
@@ -514,7 +533,7 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf)
 	char * s_pos = s;
 
 	/// Кусок, похожий на unix timestamp.
-	while (s_pos < s + UNIX_TIMESTAMP_MAX_LENGTH && !buf.eof() && *buf.position() >= '0' && *buf.position() <= '9')
+	while (s_pos < s + UNIX_TIMESTAMP_MAX_LENGTH && !buf.eof() && isNumericASCII(*buf.position()))
 	{
 		*s_pos = *buf.position();
 		++s_pos;
@@ -590,6 +609,45 @@ void readAndThrowException(ReadBuffer & buf, const String & additional_message)
 	Exception e;
 	readException(e, buf, additional_message);
 	e.rethrow();
+}
+
+
+/** Must successfully parse inf, INF and Infinity.
+  * All other variants in different cases are also parsed for simplicity.
+  */
+bool parseInfinity(ReadBuffer & buf)
+{
+	if (!checkStringCaseInsensitive("inf", buf))
+		return false;
+
+	/// Just inf.
+	if (buf.eof() || !isWordCharASCII(*buf.position()))
+		return true;
+
+	/// If word characters after inf, it should be infinity.
+	return checkStringCaseInsensitive("inity", buf);
+}
+
+
+/** Must successfully parse nan, NAN and NaN.
+  * All other variants in different cases are also parsed for simplicity.
+  */
+bool parseNaN(ReadBuffer & buf)
+{
+	return checkStringCaseInsensitive("nan", buf);
+}
+
+
+void assertInfinity(ReadBuffer & buf)
+{
+	if (!parseInfinity(buf))
+		throw Exception("Cannot parse infinity.", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+}
+
+void assertNaN(ReadBuffer & buf)
+{
+	if (!parseNaN(buf))
+		throw Exception("Cannot parse NaN.", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
 }
 
 }

@@ -152,10 +152,9 @@ bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 	else
 	{
 		while (pos != end
-			&& ((*pos >= 'a' && *pos <= 'z')
-				|| (*pos >= 'A' && *pos <= 'Z')
+			&& (isAlphaASCII(*pos)
 				|| (*pos == '_')
-				|| (pos != begin && *pos >= '0' && *pos <= '9')))
+				|| (pos != begin && isNumericASCII(*pos))))
 			++pos;
 
 		if (pos != begin)
@@ -457,10 +456,7 @@ bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed
 
 	/// excessive "word" symbols after number
 	if (pos_double < buf + bytes_to_copy
-		&& ((*pos_double >= 'a' && *pos_double <= 'z')
-			|| (*pos_double >= 'A' && *pos_double <= 'Z')
-			|| (*pos_double == '_')
-			|| (*pos_double >= '0' && *pos_double <= '9')))
+		&& isWordCharASCII(*pos_double))
 	{
 		expected = "number";
 		return false;

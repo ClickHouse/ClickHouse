@@ -27,9 +27,8 @@ XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample
 		for (const char * pos = begin; pos != end; ++pos)
 		{
 			char c = *pos;
-			if (!( (c >= 'a' && c <= 'z')
-				|| (c >= 'A' && c <= 'Z')
-				|| (pos != begin && c >= '0' && c <= '9')
+			if (!( isAlphaASCII(c)
+				|| (pos != begin && isNumericASCII(c))
 				|| c == '_'
 				|| c == '-'
 				|| c == '.'))
