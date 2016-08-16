@@ -64,6 +64,16 @@ bool DataTypeNullable::isNullable() const
 	return true;
 }
 
+bool DataTypeNullable::isNumeric() const
+{
+	return nested_data_type->isNumeric();
+}
+
+bool DataTypeNullable::behavesAsNumber() const
+{
+	return nested_data_type->behavesAsNumber();
+}
+
 DataTypePtr DataTypeNullable::clone() const
 {
 	return std::make_shared<DataTypeNullable>(nested_data_type->clone());

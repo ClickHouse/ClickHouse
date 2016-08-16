@@ -11,6 +11,8 @@ public:
 	DataTypeNullable(DataTypePtr nested_data_type_);
 	std::string getName() const override;
 	bool isNullable() const override;
+	bool isNumeric() const override;
+	bool behavesAsNumber() const override;
 	DataTypePtr clone() const override;
 	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override;
 	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
