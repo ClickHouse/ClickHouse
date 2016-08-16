@@ -39,12 +39,43 @@ static void checkLimits(const IAST & ast, const Limits & limits)
 }
 
 
-/// Логгировать запрос в обычный лог (не в таблицу).
+static String joinLines(const String & query)
+{
+	String res = query;
+	std::replace(res.begin(), res.end(), '\n', ' ');
+	return res;
+}
+
+
+/// Log query into text log (not into system table).
 static void logQuery(const String & query, const Context & context)
 {
-	String logged_query = query;
-	std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
-	LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getIPAddress().toString() << ") " << logged_query);
+	LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getIPAddress().toString() << ") " << joinLines(query));
+}
+
+
+/// Call this inside catch block.
+static void setExceptionStackTrace(QueryLogElement & elem)
+{
+	try
+	{
+		throw;
+	}
+	catch (const Exception & e)
+	{
+		elem.stack_trace = e.getStackTrace().toString();
+	}
+	catch (...) {}
+}
+
+
+/// Log exception (with query info) into text log (not into system table).
+static void logException(Context & context, QueryLogElement & elem)
+{
+	LOG_ERROR(&Logger::get("executeQuery"), elem.exception
+		<< " (from " << context.getIPAddress().toString() << ")"
+		<< " (in query: " << joinLines(elem.query) << ")"
+		<< (!elem.stack_trace.empty() ? ", Stack trace:\n\n" + elem.stack_trace : ""));
 }
 
 
@@ -79,16 +110,8 @@ static void onExceptionBeforeStart(const String & query, Context & context, time
 		elem.exception = getCurrentExceptionMessage(false);
 
 		setClientInfo(elem, context);
-
-		try
-		{
-			throw;
-		}
-		catch (const Exception & e)
-		{
-			elem.stack_trace = e.getStackTrace().toString();
-		}
-		catch (...) {}
+		setExceptionStackTrace(elem);
+		logException(context, elem);
 
 		context.getQueryLog().add(elem);
 	}
@@ -270,21 +293,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 					elem.memory_usage = memory_usage > 0 ? memory_usage : 0;
 				}
 
-				/// Достаём стек трейс, если возможно.
-				try
-				{
-					throw;
-				}
-				catch (const Exception & e)
-				{
-					elem.stack_trace = e.getStackTrace().toString();
-
-					LOG_ERROR(&Logger::get("executeQuery"), elem.exception << ", Stack trace:\n\n" << elem.stack_trace);
-				}
-				catch (...)
-				{
-					LOG_ERROR(&Logger::get("executeQuery"), elem.exception);
-				}
+				setExceptionStackTrace(elem);
+				logException(context, elem);
 
 				if (log_queries)
 					context.getQueryLog().add(elem);
