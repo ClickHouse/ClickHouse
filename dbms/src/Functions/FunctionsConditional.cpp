@@ -181,7 +181,8 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 		Block block_with_nested_cols = createBlockWithNestedColumns(block, args_to_transform);
 
 		/// Append a column that tracks, for each result of multiIf, the index
-		/// of the originating column.
+		/// of the originating column. UInt16 is enough for 65536 columns.
+		/// A table with such a big number of columns is highly unlikely to appear.
 		ColumnWithTypeAndName elem;
 		elem.type = std::make_shared<DataTypeUInt16>();
 
@@ -202,18 +203,14 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 			return;
 		}
 
-		dest_col.column = std::make_shared<ColumnNullable>(source_col.column);
-
 		/// Setup the null byte map of the result column by using the branch tracker column values.
 		ColumnPtr tracker_holder = block_with_nested_cols.unsafeGetByPosition(tracker).column;
-		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*dest_col.column);
+		ColumnPtr null_map;
 
 		if (auto col = typeid_cast<ColumnConstUInt16 *>(tracker_holder.get()))
 		{
 			auto pos = col->getData();
 			const IColumn & origin = *block.unsafeGetByPosition(pos).column;
-
-			ColumnPtr null_map;
 
 			if (origin.isNull())
 				null_map = std::make_shared<ColumnUInt8>(row_count, 1);
@@ -224,8 +221,6 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 			}
 			else
 				null_map = std::make_shared<ColumnUInt8>(row_count, 0);
-
-			nullable_col.getNullValuesByteMap() = null_map;
 		}
 		else if (auto col = typeid_cast<ColumnUInt16 *>(tracker_holder.get()))
 		{
@@ -250,9 +245,8 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 				null_cols_map[arg] = is_null ? 1 : 0;
 			}
 
-			auto null_map = std::make_shared<ColumnUInt8>(row_count);
-			nullable_col.getNullValuesByteMap() = null_map;
-			auto & null_map_data = null_map->getData();
+			null_map = std::make_shared<ColumnUInt8>(row_count);
+			auto & null_map_data = static_cast<ColumnUInt8 &>(*null_map).getData();
 
 			const auto & data = col->getData();
 			for (size_t row = 0; row < row_count; ++row)
@@ -276,6 +270,9 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 		}
 		else
 			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+
+		/// Store the result.
+		dest_col.column = std::make_shared<ColumnNullable>(source_col.column, null_map);
 	}
 	catch (const Conditional::CondException & ex)
 	{

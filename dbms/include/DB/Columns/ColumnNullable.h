@@ -20,8 +20,7 @@ using NullValuesByteMap = PaddedPODArray<UInt8>;
 class ColumnNullable final : public IColumn
 {
 public:
-	ColumnNullable(ColumnPtr nested_column_);
-	ColumnNullable(ColumnPtr nested_column_, bool fill_with_nulls);
+	ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_);
 	std::string getName() const override;
 	bool isNumeric() const override;
 	bool isConst() const override;

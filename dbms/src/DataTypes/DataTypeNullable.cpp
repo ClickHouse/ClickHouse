@@ -289,18 +289,14 @@ void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, 
 
 ColumnPtr DataTypeNullable::createColumn() const
 {
-	ColumnPtr new_col_holder = std::make_shared<ColumnNullable>(nested_data_type->createColumn());
-	ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*new_col_holder);
-	nullable_col.getNullValuesByteMap() = std::make_shared<ColumnUInt8>();
-	return new_col_holder;
+	ColumnPtr new_col = nested_data_type->createColumn();
+	return std::make_shared<ColumnNullable>(new_col, std::make_shared<ColumnUInt8>());
 }
 
 ColumnPtr DataTypeNullable::createConstColumn(size_t size, const Field & field) const
 {
-	ColumnPtr new_col_holder = std::make_shared<ColumnNullable>(nested_data_type->createConstColumn(size, field));
-	ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*new_col_holder);
-	nullable_col.getNullValuesByteMap() = std::make_shared<ColumnUInt8>(size);
-	return new_col_holder;
+	ColumnPtr new_col = nested_data_type->createConstColumn(size, field);
+	return std::make_shared<ColumnNullable>(new_col, std::make_shared<ColumnUInt8>(size));
 }
 
 Field DataTypeNullable::getDefault() const

@@ -10,23 +10,11 @@ extern const int LOGICAL_ERROR;
 
 }
 
-ColumnNullable::ColumnNullable(ColumnPtr nested_column_)
-	: nested_column{nested_column_}
+ColumnNullable::ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_)
+	: nested_column{nested_column_}, null_map{null_map_}
 {
 	if (nested_column->isNullable())
 		throw Exception{"A nullable column cannot contain another nullable column", ErrorCodes::LOGICAL_ERROR};
-}
-
-ColumnNullable::ColumnNullable(ColumnPtr nested_column_, bool fill_with_nulls)
-	: nested_column{nested_column_},
-	null_map{std::make_shared<ColumnUInt8>()}
-{
-	if (nested_column->isNullable())
-		throw Exception{"A nullable column cannot contain another nullable column", ErrorCodes::LOGICAL_ERROR};
-
-	size_t n = nested_column->size();
-	if (n > 0)
-		getNullMapContent().getData().resize_fill(n, (fill_with_nulls ? 1 : 0));
 }
 
 std::string ColumnNullable::getName() const
@@ -59,11 +47,7 @@ ColumnPtr ColumnNullable::convertToFullColumnIfConst() const
 	ColumnPtr new_col_holder;
 
 	if (auto full_col = nested_column->convertToFullColumnIfConst())
-	{
-		new_col_holder = std::make_shared<ColumnNullable>(full_col);
-		ColumnNullable & new_col = static_cast<ColumnNullable &>(*new_col_holder);
-		new_col.null_map = null_map;
-	}
+		new_col_holder = std::make_shared<ColumnNullable>(full_col, null_map);
 
 	return new_col_holder;
 }
@@ -78,10 +62,9 @@ void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
 
 ColumnPtr ColumnNullable::cloneResized(size_t size) const
 {
-	ColumnPtr new_col_holder = std::make_shared<ColumnNullable>(nested_column->cloneResized(size));
-	auto & new_col = static_cast<ColumnNullable &>(*new_col_holder);
-	new_col.null_map = getNullMapContent().cloneResized(size);
-	return new_col_holder;
+	ColumnPtr new_nested_col = nested_column->cloneResized(size);
+	ColumnPtr new_null_map = getNullMapContent().cloneResized(size);
+	return std::make_shared<ColumnNullable>(new_nested_col, new_null_map);
 }
 
 size_t ColumnNullable::size() const
@@ -185,20 +168,16 @@ void ColumnNullable::popBack(size_t n)
 
 ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-	ColumnPtr new_data = nested_column->filter(filt, result_size_hint);
-	ColumnPtr filtered_col_holder = std::make_shared<ColumnNullable>(new_data);
-	ColumnNullable & filtered_col = static_cast<ColumnNullable &>(*filtered_col_holder);
-	filtered_col.null_map = getNullMapContent().filter(filt, result_size_hint);
-	return filtered_col_holder;
+	ColumnPtr filtered_data = nested_column->filter(filt, result_size_hint);
+	ColumnPtr filtered_null_map = getNullMapContent().filter(filt, result_size_hint);
+	return std::make_shared<ColumnNullable>(filtered_data, filtered_null_map);
 }
 
 ColumnPtr ColumnNullable::permute(const Permutation & perm, size_t limit) const
 {
-	ColumnPtr new_data = nested_column->permute(perm, limit);
-	ColumnPtr permuted_col_holder = std::make_shared<ColumnNullable>(new_data);
-	ColumnNullable & permuted_col = static_cast<ColumnNullable &>(*permuted_col_holder);
-	permuted_col.null_map = getNullMapContent().permute(perm, limit);
-	return permuted_col_holder;
+	ColumnPtr permuted_data = nested_column->permute(perm, limit);
+	ColumnPtr permuted_null_map = getNullMapContent().permute(perm, limit);
+	return std::make_shared<ColumnNullable>(permuted_data, permuted_null_map);
 }
 
 int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
@@ -381,10 +360,9 @@ void ColumnNullable::getExtremes(Field & min, Field & max) const
 
 ColumnPtr ColumnNullable::replicate(const Offsets_t & offsets) const
 {
-	ColumnPtr replicated_col_holder = std::make_shared<ColumnNullable>(nested_column->replicate(offsets));
-	ColumnNullable & replicated_col = static_cast<ColumnNullable &>(*replicated_col_holder);
-	replicated_col.null_map = getNullMapContent().replicate(offsets);
-	return replicated_col_holder;
+	ColumnPtr replicated_data = nested_column->replicate(offsets);
+	ColumnPtr replicated_null_map = getNullMapContent().replicate(offsets);
+	return std::make_shared<ColumnNullable>(replicated_data, replicated_null_map);
 }
 
 ColumnPtr & ColumnNullable::getNestedColumn()

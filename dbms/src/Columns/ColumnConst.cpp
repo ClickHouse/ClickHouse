@@ -42,7 +42,10 @@ UInt64 ColumnConst<Null>::get64(size_t n) const
 template <>
 ColumnPtr ColumnConst<Null>::convertToFullColumn() const
 {
-	return std::make_shared<ColumnNullable>(std::make_shared<ColumnUInt8>(size(), 0), true);
+	/// We basically create a column whose rows have NULL values.
+	ColumnPtr full_col = std::make_shared<ColumnUInt8>(size(), 0);
+	ColumnPtr null_map = std::make_shared<ColumnUInt8>(size(), 1);
+	return std::make_shared<ColumnNullable>(full_col, null_map);
 }
 
 template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const

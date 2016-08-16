@@ -337,14 +337,15 @@ void IFunction::postProcessResult(Strategy strategy, Block & block, const Block 
 	}
 	else if (strategy == PROCESS_NULLABLE_COLUMNS)
 	{
-		/// Initialize the result column.
 		const ColumnWithTypeAndName & source_col = processed_block.getByPosition(result);
 		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
-		dest_col.column = std::make_shared<ColumnNullable>(source_col.column);
 
-		/// Make a null map for the result.
-		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*dest_col.column);
-		nullable_col.getNullValuesByteMap() = std::make_shared<ColumnUInt8>(dest_col.column->size(), 0);
+		/// Initialize the result column.
+		ColumnPtr null_map = std::make_shared<ColumnUInt8>(block.rowsInFirstColumn(), 0);
+		dest_col.column = std::make_shared<ColumnNullable>(source_col.column, null_map);
+
+		/// Deduce the null map of the result from the null maps of the
+		/// nullable columns.
 		createNullValuesByteMap(block, args, result);
 	}
 	else
