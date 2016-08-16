@@ -34,21 +34,6 @@ std::string ColumnNullable::getName() const
 	return "ColumnNullable(" + nested_column->getName() + ")";
 }
 
-bool ColumnNullable::isNumeric() const
-{
-	return nested_column->isNumeric();
-}
-
-bool ColumnNullable::isConst() const
-{
-	return nested_column->isConst();
-}
-
-bool ColumnNullable::isFixed() const
-{
-	return nested_column->isFixed();
-}
-
 bool ColumnNullable::isNullable() const
 {
 	return true;

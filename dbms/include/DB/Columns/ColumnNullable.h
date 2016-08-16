@@ -14,9 +14,6 @@ public:
 	ColumnNullable(ColumnPtr nested_column_);
 	ColumnNullable(ColumnPtr nested_column_, bool fill_with_nulls);
 	std::string getName() const override;
-	bool isNumeric() const override;
-	bool isConst() const override;
-	bool isFixed() const override;
 	bool isNullable() const override;
 	ColumnPtr cloneResized(size_t size) const override;
 	size_t size() const override;
