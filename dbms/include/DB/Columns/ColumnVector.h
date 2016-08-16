@@ -250,9 +250,23 @@ public:
 
 	std::string getName() const override { return "ColumnVector<" + TypeName<T>::get() + ">"; }
 
-	ColumnPtr cloneEmpty() const override
+	ColumnPtr cloneResized(size_t size) const override
 	{
-		return std::make_shared<ColumnVector<T>>();
+		ColumnPtr new_col_holder = std::make_shared<Self>();
+
+		if (size > 0)
+		{
+			auto & new_col = static_cast<Self &>(*new_col_holder);
+			new_col.data.resize(size);
+
+			size_t count = std::min(this->size(), size);
+			memcpy(&new_col.data[0], &data[0], count * sizeof(data[0]));
+
+			if (size > count)
+				memset(&new_col.data[count], value_type(), size - count);
+		}
+
+		return new_col_holder;
 	}
 
 	Field operator[](size_t n) const override
@@ -402,14 +416,6 @@ public:
 
 	void getExtremes(Field & min, Field & max) const override
 	{
-		getExtremesFromNullableContent(min, max, nullptr);
-	}
-
-	/// The following method implements a slightly more general version of getExtremes().
-	/// It takes into account the possible presence of nullable values if a non-null pointer
-	/// to a null byte map is specified.
-	void getExtremesFromNullableContent(Field & min, Field & max, const PaddedPODArray<UInt8> * null_map_) const
-	{
 		size_t size = data.size();
 
 		if (size == 0)
@@ -419,54 +425,16 @@ public:
 			return;
 		}
 
-		size_t min_i = 0;
-		if (null_map_ != nullptr)
+		T cur_min = data[0];
+		T cur_max = data[0];
+
+		for (size_t i = 1; i < size; ++i)
 		{
-			const auto & null_map_ref = *null_map_;
+			if (data[i] < cur_min)
+				cur_min = data[i];
 
-			for (; min_i < size; ++min_i)
-			{
-				if (null_map_ref[min_i]  == 0)
-					break;
-			}
-
-			if (min_i == size)
-			{
-				min = Field{};
-				max = Field{};
-				return;
-			}
-		}
-
-		T cur_min = data[min_i];
-		T cur_max = data[min_i];
-
-		if (null_map_ != nullptr)
-		{
-			const auto & null_map_ref = *null_map_;
-
-			for (size_t i = min_i + 1; i < size; ++i)
-			{
-				if (null_map_ref[i] != 0)
-					continue;
-
-				if (data[i] < cur_min)
-					cur_min = data[i];
-
-				if (data[i] > cur_max)
-					cur_max = data[i];
-			}
-		}
-		else
-		{
-			for (size_t i = min_i + 1; i < size; ++i)
-			{
-				if (data[i] < cur_min)
-					cur_min = data[i];
-
-				if (data[i] > cur_max)
-					cur_max = data[i];
-			}
+			if (data[i] > cur_max)
+				cur_max = data[i];
 		}
 
 		min = typename NearestFieldType<T>::Type(cur_min);

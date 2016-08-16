@@ -19,7 +19,6 @@ public:
 	bool isFixed() const override;
 	bool isNullable() const override;
 	ColumnPtr cloneResized(size_t size) const override;
-	ColumnPtr cloneEmpty() const override;
 	size_t size() const override;
 	bool isNullAt(size_t n) const;
 	Field operator[](size_t n) const override;
@@ -35,7 +34,7 @@ public:
 	void popBack(size_t n) override;
 	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 	ColumnPtr permute(const Permutation & perm, size_t limit) const override;
-	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
+	int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
 	void getPermutation(bool reverse, size_t limit, Permutation & res) const override;
 	void reserve(size_t n) override;
 	size_t byteSize() const override;

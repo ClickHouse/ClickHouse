@@ -75,8 +75,6 @@ ColumnPtr ColumnNullable::convertToFullColumnIfConst() const
 			}
 		}
 	}
-	else
-		new_col_holder = {};
 
 	return new_col_holder;
 }
@@ -100,21 +98,7 @@ ColumnPtr ColumnNullable::cloneResized(size_t size) const
 {
 	ColumnPtr new_col_holder = std::make_shared<ColumnNullable>(nested_column->cloneResized(size));
 	auto & new_col = static_cast<ColumnNullable &>(*new_col_holder);
-
-	/// Create a new null byte map for the cloned column.
-	/// Resize it if required.
-	new_col.null_map = null_map->clone();
-	if (size != this->size())
-		new_col.getNullMapContent().getData().resize_fill(size, 0);
-
-	return new_col_holder;
-}
-
-ColumnPtr ColumnNullable::cloneEmpty() const
-{
-	ColumnPtr new_col_holder = std::make_shared<ColumnNullable>(nested_column->cloneEmpty());
-	auto & new_col = static_cast<ColumnNullable &>(*new_col_holder);
-	new_col.null_map = null_map->cloneEmpty();
+	new_col.null_map = getNullMapContent().cloneResized(size);
 	return new_col_holder;
 }
 
@@ -144,7 +128,7 @@ void ColumnNullable::get(size_t n, Field & res) const
 
 UInt64 ColumnNullable::get64(size_t n) const
 {
-	throw Exception{"Method get64 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED};
+	return nested_column->get64(n);
 }
 
 StringRef ColumnNullable::getDataAt(size_t n) const
@@ -194,20 +178,9 @@ const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
 
 void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-	if (length == 0)
-		return;
-
-	const ColumnNullable & concrete_src = static_cast<const ColumnNullable &>(src);
-
-	if (start > (std::numeric_limits<size_t>::max() - length))
-		throw Exception{"ColumnNullable: overflow", ErrorCodes::LOGICAL_ERROR};
-
-	if ((start + length) > concrete_src.size())
-		throw Exception{"Parameter out of bound in ColumNullable::insertRangeFrom method.",
-			ErrorCodes::PARAMETER_OUT_OF_BOUND};
-
-	getNullMapContent().insertRangeFrom(*concrete_src.null_map, start, length);
-	nested_column->insertRangeFrom(*concrete_src.nested_column, start, length);
+	const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(src);
+	getNullMapContent().insertRangeFrom(*nullable_col.null_map, start, length);
+	nested_column->insertRangeFrom(*nullable_col.nested_column, start, length);
 }
 
 void ColumnNullable::insert(const Field & x)
@@ -254,7 +227,7 @@ ColumnPtr ColumnNullable::permute(const Permutation & perm, size_t limit) const
 	return permuted_col_holder;
 }
 
-int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
 {
 	const ColumnNullable & nullable_rhs = static_cast<const ColumnNullable &>(rhs_);
 
@@ -272,7 +245,7 @@ int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_
 		return 1;
 
 	const IColumn & nested_rhs = *(nullable_rhs.getNestedColumn());
-	return nested_column->compareAt(n, m, nested_rhs, nan_direction_hint);
+	return nested_column->compareAt(n, m, nested_rhs, null_direction_hint);
 }
 
 void ColumnNullable::getPermutation(bool reverse, size_t limit, Permutation & res) const
@@ -351,28 +324,83 @@ size_t ColumnNullable::byteSize() const
 	return nested_column->byteSize() + getNullMapContent().byteSize();
 }
 
+namespace
+{
+
+/// The following function implements a slightly more general version
+/// of getExtremes() than the implementation from ColumnVector.
+/// It takes into account the possible presence of nullable values.
+template <typename T>
+void getExtremesFromNullableContent(const ColumnVector<T> & col, const NullValuesByteMap & null_map, Field & min, Field & max)
+{
+	const auto & data = col.getData();
+	size_t size = data.size();
+
+	if (size == 0)
+	{
+		min = typename NearestFieldType<T>::Type(0);
+		max = typename NearestFieldType<T>::Type(0);
+		return;
+	}
+
+	size_t min_i = 0;
+
+	for (; min_i < size; ++min_i)
+	{
+		if (null_map[min_i] == 0)
+			break;
+	}
+
+	if (min_i == size)
+	{
+		min = Field{};
+		max = Field{};
+		return;
+	}
+
+	T cur_min = data[min_i];
+	T cur_max = data[min_i];
+
+	for (size_t i = min_i + 1; i < size; ++i)
+	{
+		if (null_map[i] != 0)
+			continue;
+
+		if (data[i] < cur_min)
+			cur_min = data[i];
+
+		if (data[i] > cur_max)
+			cur_max = data[i];
+	}
+
+	min = typename NearestFieldType<T>::Type(cur_min);
+	max = typename NearestFieldType<T>::Type(cur_max);
+}
+
+}
+
 void ColumnNullable::getExtremes(Field & min, Field & max) const
 {
-	if (auto col = typeid_cast<ColumnInt8 *>(nested_column.get()))
-		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnInt16 *>(nested_column.get()))
-		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnInt32 *>(nested_column.get()))
-		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnInt64 *>(nested_column.get()))
-		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnUInt8 *>(nested_column.get()))
-		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnUInt16 *>(nested_column.get()))
-		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnUInt32 *>(nested_column.get()))
-		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnUInt64 *>(nested_column.get()))
-		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnFloat32 *>(nested_column.get()))
-		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
-	else if (auto col = typeid_cast<ColumnFloat64 *>(nested_column.get()))
-		col->getExtremesFromNullableContent(min, max, &getNullMapContent().getData());
+	if (const auto col = typeid_cast<const ColumnInt8 *>(nested_column.get()))
+		getExtremesFromNullableContent<Int8>(*col, getNullMapContent().getData(), min, max);
+	else if (const auto col = typeid_cast<const ColumnInt16 *>(nested_column.get()))
+		getExtremesFromNullableContent<Int16>(*col, getNullMapContent().getData(), min, max);
+	else if (const auto col = typeid_cast<const ColumnInt32 *>(nested_column.get()))
+		getExtremesFromNullableContent<Int32>(*col, getNullMapContent().getData(), min, max);
+	else if (const auto col = typeid_cast<const ColumnInt64 *>(nested_column.get()))
+		getExtremesFromNullableContent<Int64>(*col, getNullMapContent().getData(), min, max);
+	else if (const auto col = typeid_cast<const ColumnUInt8 *>(nested_column.get()))
+		getExtremesFromNullableContent<UInt8>(*col, getNullMapContent().getData(), min, max);
+	else if (const auto col = typeid_cast<const ColumnUInt16 *>(nested_column.get()))
+		getExtremesFromNullableContent<UInt16>(*col, getNullMapContent().getData(), min, max);
+	else if (const auto col = typeid_cast<const ColumnUInt32 *>(nested_column.get()))
+		getExtremesFromNullableContent<UInt32>(*col, getNullMapContent().getData(), min, max);
+	else if (const auto col = typeid_cast<const ColumnUInt64 *>(nested_column.get()))
+		getExtremesFromNullableContent<UInt64>(*col, getNullMapContent().getData(), min, max);
+	else if (const auto col = typeid_cast<const ColumnFloat32 *>(nested_column.get()))
+		getExtremesFromNullableContent<Float32>(*col, getNullMapContent().getData(), min, max);
+	else if (const auto col = typeid_cast<const ColumnFloat64 *>(nested_column.get()))
+		getExtremesFromNullableContent<Float64>(*col, getNullMapContent().getData(), min, max);
 	else
 		nested_column->getExtremes(min, max);
 }
