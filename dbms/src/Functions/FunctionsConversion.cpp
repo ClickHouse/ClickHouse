@@ -11,7 +11,7 @@ void throwExceptionForIncompletelyParsedValue(
 	{
 		const IDataType & to_type = *block.getByPosition(result).type;
 
-		ReadBufferFromString message_buf(message);
+		WriteBufferFromString message_buf(message);
 		message_buf << "Cannot parse string " << quote << String(read_buffer.buffer().begin(), read_buffer.buffer().size())
 			<< " as " << to_type.getName()
 			<< ": syntax error";
