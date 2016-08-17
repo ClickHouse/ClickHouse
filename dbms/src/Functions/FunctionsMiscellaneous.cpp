@@ -232,7 +232,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 	}
 	else if (const ColumnArray * col = typeid_cast<const ColumnArray *>(column.get()))
 	{
-		/// Вычисляем видимую ширину для значений массива.
+		/// Calculate visible width of elements of array.
 		Block nested_block;
 		ColumnWithTypeAndName nested_values;
 		nested_values.type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
@@ -246,16 +246,18 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 		ColumnNumbers nested_argument_numbers(1, 0);
 		execute(nested_block, nested_argument_numbers, 1);
 
-		/// Теперь суммируем и кладём в результат.
+		/// Then accumulate and place into result.
 		auto res = std::make_shared<ColumnUInt64>(rows);
 		block.getByPosition(result).column = res;
 		ColumnUInt64::Container_t & vec = res->getData();
 
-		size_t additional_symbols = 0;	/// Кавычки.
+		size_t additional_symbols = 0;	/// Quotes.
 		if (typeid_cast<const DataTypeDate *>(nested_values.type.get())
 			|| typeid_cast<const DataTypeDateTime *>(nested_values.type.get())
 			|| typeid_cast<const DataTypeString *>(nested_values.type.get())
-			|| typeid_cast<const DataTypeFixedString *>(nested_values.type.get()))
+			|| typeid_cast<const DataTypeFixedString *>(nested_values.type.get())
+			|| typeid_cast<const DataTypeEnum8 *>(nested_values.type.get())
+			|| typeid_cast<const DataTypeEnum16 *>(nested_values.type.get()))
 			additional_symbols = 2;
 
 		if (ColumnUInt64 * nested_result_column = typeid_cast<ColumnUInt64 *>(nested_block.getByPosition(1).column.get()))
@@ -265,8 +267,8 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 			size_t j = 0;
 			for (size_t i = 0; i < rows; ++i)
 			{
-				/** Если пустой массив - то два символа: [];
-				  * если непустой - то сначала один символ [, и по одному лишнему символу на значение: , или ].
+				/** If empty array - then two characters: [];
+				  * if not - then character '[', and one excessive character for each element: either ',' or ']'.
 				  */
 				vec[i] = j == col->getOffsets()[i] ? 2 : 1;
 
@@ -284,7 +286,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 	}
 	else if (const ColumnTuple * col = typeid_cast<const ColumnTuple *>(column.get()))
 	{
-		/// Посчитаем видимую ширину для каждого вложенного столбца по отдельности, и просуммируем.
+		/// Calculate visible width for each nested column separately, and then accumulate.
 		Block nested_block = col->getData();
 		size_t columns = nested_block.columns();
 
@@ -294,7 +296,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 		{
 			nested_block.getByPosition(i).type = static_cast<const DataTypeTuple &>(*type).getElements()[i];
 
-			/** nested_block будет состоять из следующих столбцов:
+			/** nested_block will consist of following columns:
 			  * x1, x2, x3... , width1, width2, width1 + width2, width3, width1 + width2 + width3, ...
 			  */
 
@@ -318,16 +320,18 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 			}
 		}
 
-		/// Прибавим ещё количество символов на кавычки и запятые.
+		/// Add also number of characters for quotes and commas.
 
-		size_t additional_symbols = columns - 1;	/// Запятые.
+		size_t additional_symbols = columns - 1;	/// Commas.
 		for (size_t i = 0; i < columns; ++i)
 		{
 			if (typeid_cast<const DataTypeDate *>(nested_block.getByPosition(i).type.get())
 				|| typeid_cast<const DataTypeDateTime *>(nested_block.getByPosition(i).type.get())
 				|| typeid_cast<const DataTypeString *>(nested_block.getByPosition(i).type.get())
-				|| typeid_cast<const DataTypeFixedString *>(nested_block.getByPosition(i).type.get()))
-				additional_symbols += 2;			/// Кавычки.
+				|| typeid_cast<const DataTypeFixedString *>(nested_block.getByPosition(i).type.get())
+				|| typeid_cast<const DataTypeEnum8 *>(nested_block.getByPosition(i).type.get())
+				|| typeid_cast<const DataTypeEnum16 *>(nested_block.getByPosition(i).type.get()))
+				additional_symbols += 2;			/// Quotes.
 		}
 
 		ColumnPtr & nested_result_column = nested_block.getByPosition(nested_block.columns() - 1).column;
