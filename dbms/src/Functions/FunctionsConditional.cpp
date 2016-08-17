@@ -14,6 +14,14 @@
 namespace DB
 {
 
+void registerFunctionsConditional(FunctionFactory & factory)
+{
+	factory.registerFunction<FunctionIf>();
+	factory.registerFunction<FunctionMultiIf>();
+	factory.registerFunction<FunctionCaseWithExpr>();
+	factory.registerFunction<FunctionCaseWithoutExpr>();
+}
+
 namespace
 {
 
@@ -84,14 +92,6 @@ DataTypePtr getReturnTypeFromFirstNonNullBranch(const DataTypes & args, bool has
 
 }
 
-void registerFunctionsConditional(FunctionFactory & factory)
-{
-	factory.registerFunction<FunctionIf>();
-	factory.registerFunction<FunctionMultiIf>();
-	factory.registerFunction<FunctionCaseWithExpr>();
-	factory.registerFunction<FunctionCaseWithoutExpr>();
-}
-
 /// Implementation of FunctionMultiIf.
 
 FunctionPtr FunctionMultiIf::create(const Context & context)
@@ -132,31 +132,12 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
 
 void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
 {
-	auto perform_multi_if = [&](Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
-	{
-		if (performTrivialCase(block, args, result, tracker))
-			return;
-		if (Conditional::NumericPerformer::perform(block, args, result, tracker))
-			return;
-		if (Conditional::StringEvaluator::perform(block, args, result, tracker))
-			return;
-		if (Conditional::StringArrayEvaluator::perform(block, args, result, tracker))
-			return;
-
-		if (is_case_mode)
-			throw Exception{"Some THEN/ELSE clauses in CASE construction have "
-				"illegal or incompatible types", ErrorCodes::ILLEGAL_COLUMN};
-		else
-			throw Exception{"One or more branch (then, else) columns of function "
-				+ getName() + " have illegal or incompatible types",
-				ErrorCodes::ILLEGAL_COLUMN};
-	};
-
 	try
 	{
 		if (!blockHasSpecialBranches(block, args))
 		{
-			perform_multi_if(block, args, result, result);
+			/// All the branch types are ordinary. No special processing required.
+			perform(block, args, result, result);
 			return;
 		}
 
@@ -189,10 +170,9 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 		size_t tracker = block_with_nested_cols.columns();
 		block_with_nested_cols.insert(elem);
 
-		/// Really perform multiIf.
-		perform_multi_if(block_with_nested_cols, args, result, tracker);
+		/// Now perform multiIf.
+		perform(block_with_nested_cols, args, result, tracker);
 
-		/// Store the result.
 		const ColumnWithTypeAndName & source_col = block_with_nested_cols.unsafeGetByPosition(result);
 		ColumnWithTypeAndName & dest_col = block.unsafeGetByPosition(result);
 
@@ -231,8 +211,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 			for (const auto & arg : args)
 			{
 				const auto & col = block.unsafeGetByPosition(arg).column;
-				bool is_nullable = col->isNullable();
-				nullable_cols_map[arg] = is_nullable ? 1 : 0;
+				nullable_cols_map[arg] = col->isNullable() ? 1 : 0;
 			}
 
 			/// Remember which columns are null. The same remark as above applies.
@@ -241,8 +220,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 			for (const auto & arg : args)
 			{
 				const auto & col = block.unsafeGetByPosition(arg).column;
-				bool is_null = col->isNull();
-				null_cols_map[arg] = is_null ? 1 : 0;
+				null_cols_map[arg] = col->isNull() ? 1 : 0;
 			}
 
 			null_map = std::make_shared<ColumnUInt8>(row_count);
@@ -429,9 +407,26 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 	}
 }
 
-/// The tracker parameter is an index to a column that tracks the originating column of each value of
-/// the result column. Calling this function with result == tracker means that no such tracking is
-/// required, which happens if multiIf is called with no nullable parameters.
+void FunctionMultiIf::perform(Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
+{
+	if (performTrivialCase(block, args, result, tracker))
+		return;
+	if (Conditional::NumericPerformer::perform(block, args, result, tracker))
+		return;
+	if (Conditional::StringEvaluator::perform(block, args, result, tracker))
+		return;
+	if (Conditional::StringArrayEvaluator::perform(block, args, result, tracker))
+		return;
+
+	if (is_case_mode)
+		throw Exception{"Some THEN/ELSE clauses in CASE construction have "
+			"illegal or incompatible types", ErrorCodes::ILLEGAL_COLUMN};
+	else
+		throw Exception{"One or more branch (then, else) columns of function "
+			+ getName() + " have illegal or incompatible types",
+			ErrorCodes::ILLEGAL_COLUMN};
+}
+
 bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
 {
 	/// Check that all the branches have the same type. Moreover
@@ -741,7 +736,7 @@ DataTypePtr FunctionCaseWithoutExpr::getReturnTypeImpl(const DataTypes & args) c
 
 void FunctionCaseWithoutExpr::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
 {
-	/// A CASE construction without any expression is a mere multiIf.
+	/// A CASE construction without any expression is a straightforward multiIf.
 	FunctionMultiIf fun_multi_if;
 	fun_multi_if.setCaseMode();
 	fun_multi_if.executeImpl(block, args, result);

@@ -1485,18 +1485,23 @@ public:
 
 public:
 	String getName() const override;
-
-	void setCaseMode();
-
 	bool hasSpecialSupportForNulls() const override;
-
 	DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
-
 	void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
+	void setCaseMode();
 
 private:
 	DataTypePtr getReturnTypeInternal(const DataTypes & args) const;
 
+	/// Internal version of multiIf.
+	/// The tracker parameter is an index to a column that tracks the originating column of each value of
+	/// the result column. The condition result == tracker means that no such tracking is
+	/// required, which happens if multiIf is called with no nullable parameters.
+	void perform(Block & block, const ColumnNumbers & args, size_t result, size_t tracker);
+
+	/// Perform multiIf in the case where all the non-null branches have the same type and all
+	/// the conditions are constant. The same remark as above applies with regards to
+	/// the tracker parameter.
 	bool performTrivialCase(Block & block, const ColumnNumbers & args, size_t result, size_t tracker);
 
 	/// Translate a context-free error into a contextual error.
