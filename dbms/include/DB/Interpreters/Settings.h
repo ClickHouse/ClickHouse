@@ -217,6 +217,9 @@ struct Settings
 	\
 	/** What aggregate function to use for implementation of count(DISTINCT ...) */ \
 	M(SettingString, count_distinct_implementation, "uniq") \
+	\
+	/** When aggregating without keys (without GROUP BY), return empty result for empty data instead of single row with default values. */ \
+	M(SettingBool, return_empty_result_when_aggregating_empty_data_without_keys, 0) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

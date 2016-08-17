@@ -14,6 +14,7 @@
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
+#include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 
@@ -1248,6 +1249,21 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 }
 
 
+static Block createResultWithDefaultValues(const Block & sample)
+{
+	Block res = sample.cloneEmpty();
+
+	std::cerr << res.dumpStructure() << ", " << sample.dumpStructure() << "\n";
+
+	/// Insert default value for each column.
+	size_t columns = res.columns();
+	for (size_t i = 0; i < columns; ++i)
+		res.unsafeGetByPosition(i).column->insertDefault();
+
+	return res;
+}
+
+
 BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads) const
 {
 	if (isCancelled())
@@ -1261,7 +1277,16 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 
 	/// В какой структуре данных агрегированы данные?
 	if (data_variants.empty())
+	{
+		/// If aggregate without keys, in case of empty data, we must return result with one row contains default states of aggregate functions.
+		/// For example, "SELECT count() FROM empty_table" should return one row with 0 value.
+		if (!params.empty_result_for_empty_data && params.keys_size == 0)
+		{
+			blocks.push_back(createResultWithDefaultValues(sample));
+		}
+
 		return blocks;
+	}
 
 	std::unique_ptr<ThreadPool> thread_pool;
 	if (max_threads > 1 && data_variants.sizeWithoutOverflowRow() > 100000	/// TODO Сделать настраиваемый порог.
@@ -1684,7 +1709,18 @@ std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
 			non_empty_data.push_back(data);
 
 	if (non_empty_data.empty())
-		return std::make_unique<NullBlockInputStream>();
+	{
+		std::cerr << params.empty_result_for_empty_data << ", " << params.keys_size << "\n";
+
+		/// If aggregate without keys, in case of empty data, we must return result with one row contains default states of aggregate functions.
+		/// For example, "SELECT count() FROM empty_table" should return one row with 0 value.
+		if (!params.empty_result_for_empty_data && params.keys_size == 0)
+		{
+			return std::make_unique<OneBlockInputStream>(createResultWithDefaultValues(sample));
+		}
+		else
+			return std::make_unique<NullBlockInputStream>();
+	}
 
 	if (non_empty_data.size() > 1)
 	{

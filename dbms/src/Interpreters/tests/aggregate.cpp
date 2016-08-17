@@ -73,7 +73,7 @@ int main(int argc, char ** argv)
 		DataTypes empty_list_of_types;
 		aggregate_descriptions[0].function = factory.get("count", empty_list_of_types);
 
-		Aggregator::Params params(key_column_names, aggregate_descriptions, false);
+		Aggregator::Params params(key_column_names, aggregate_descriptions, false, false);
 		Aggregator aggregator(params);
 
 		{

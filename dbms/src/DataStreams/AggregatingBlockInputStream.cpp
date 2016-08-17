@@ -57,10 +57,13 @@ Block AggregatingBlockInputStream::readImpl()
 	}
 
 	Block res;
+	std::cerr << (isCancelled() || !impl) << ", " << impl->getName() << "\n";
 	if (isCancelled() || !impl)
 		return res;
 
-	return impl->read();
+	res = impl->read();
+	std::cerr << res.dumpStructure() << "\n";
+	return res;
 }
 
 

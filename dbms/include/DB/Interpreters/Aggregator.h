@@ -767,39 +767,43 @@ using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
   */
 
 
-/** Агрегирует источник блоков.
+/** Aggregates stream of blocks.
   */
 class Aggregator
 {
 public:
 	struct Params
 	{
-		/// Что считать.
+		/// What to calculate.
 		Names key_names;
-		ColumnNumbers keys;			/// Номера столбцов - вычисляются позже.
+		ColumnNumbers keys;			/// Column numbers calculated later.
 		AggregateDescriptions aggregates;
 		size_t keys_size;
 		size_t aggregates_size;
 
-		/// Настройки приближённого вычисления GROUP BY.
-		const bool overflow_row;	/// Нужно ли класть в AggregatedDataVariants::without_key агрегаты для ключей, не попавших в max_rows_to_group_by.
+		/// Settings of approximate calculation of GROUP BY.
+		/// Should accumulate aggregates for keys that wasn't in first 'max_rows_to_group_by' into AggregatedDataVariants::without_key.
+		const bool overflow_row;
 		const size_t max_rows_to_group_by;
 		const OverflowMode group_by_overflow_mode;
 
-		/// Для динамической компиляции.
+		/// Should return empty result instead single row for queries like SELECT count() FROM empty_table.
+		bool empty_result_for_empty_data = false;
+
+		/// For runtime compilation.
 		Compiler * compiler;
 		const UInt32 min_count_to_compile;
 
-		/// Настройки двухуровневой агрегации (используется для большого количества ключей).
-		/** При каком количестве ключей или размере состояния агрегации в байтах,
-		  *  начинает использоваться двухуровневая агрегация. Достаточно срабатывания хотя бы одного из порогов.
-		  * 0 - соответствующий порог не задан.
+		/// Settings for two-level aggregation (used in case of large amount of values of keys).
+		/** At what number of keys OR size of aggregation state in bytes,
+		  *  start to use two-level aggregation.
+		  * 0 means threshold is not set.
 		  */
 		const size_t group_by_two_level_threshold;
 		const size_t group_by_two_level_threshold_bytes;
 
-		/// Настройки для сброса временных данных в файловую систему (внешняя агрегация).
-		const size_t max_bytes_before_external_group_by;		/// 0 - не использовать внешнюю агрегацию.
+		/// Settings for storing temporary data in filesystem (aggregation in external memory).
+		const size_t max_bytes_before_external_group_by;		/// 0 - don't use aggregation in external memory.
 		const std::string tmp_path;
 
 		Params(
@@ -807,9 +811,11 @@ public:
 			bool overflow_row_, size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
 			Compiler * compiler_, UInt32 min_count_to_compile_,
 			size_t group_by_two_level_threshold_, size_t group_by_two_level_threshold_bytes_,
-			size_t max_bytes_before_external_group_by_, const std::string & tmp_path_)
+			size_t max_bytes_before_external_group_by_, const std::string & tmp_path_,
+			bool empty_result_for_empty_data_)
 			: key_names(key_names_), aggregates(aggregates_), aggregates_size(aggregates.size()),
 			overflow_row(overflow_row_), max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
+			empty_result_for_empty_data(empty_result_for_empty_data_),
 			compiler(compiler_), min_count_to_compile(min_count_to_compile_),
 			group_by_two_level_threshold(group_by_two_level_threshold_), group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_),
 			max_bytes_before_external_group_by(max_bytes_before_external_group_by_), tmp_path(tmp_path_)
@@ -819,11 +825,11 @@ public:
 			keys_size = key_names.size();
 		}
 
-		/// Только параметры, имеющие значение при мердже.
-		Params(const Names & key_names_, const AggregateDescriptions & aggregates_, bool overflow_row_)
-			: Params(key_names_, aggregates_, overflow_row_, 0, OverflowMode::THROW, nullptr, 0, 0, 0, 0, "") {}
+		/// Only params meaningful for merging states.
+		Params(const Names & key_names_, const AggregateDescriptions & aggregates_, bool overflow_row_, bool empty_result_for_empty_data_)
+			: Params(key_names_, aggregates_, overflow_row_, 0, OverflowMode::THROW, nullptr, 0, 0, 0, 0, "", empty_result_for_empty_data_) {}
 
-		/// Вычислить номера столбцов в keys и aggregates.
+		/// Calculate column numbers from its names into 'keys' and 'aggregates'.
 		void calculateColumnNumbers(const Block & block);
 	};
 

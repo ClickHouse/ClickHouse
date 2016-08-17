@@ -892,7 +892,8 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 		settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
 		allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
 		allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
-		settings.limits.max_bytes_before_external_group_by, context.getTemporaryPath());
+		settings.limits.max_bytes_before_external_group_by, context.getTemporaryPath(),
+		settings.return_empty_result_when_aggregating_empty_data_without_keys);
 
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
@@ -946,7 +947,7 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
 	  *  но при этом может работать медленнее.
 	  */
 
-	Aggregator::Params params(key_names, aggregates, overflow_row);
+	Aggregator::Params params(key_names, aggregates, overflow_row, settings.return_empty_result_when_aggregating_empty_data_without_keys);
 
 	if (!settings.distributed_aggregation_memory_efficient)
 	{

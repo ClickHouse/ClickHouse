@@ -89,7 +89,7 @@ int main(int argc, char ** argv)
 			sample.insert(std::move(col));
 		}
 
-		Aggregator::Params params(key_column_names, aggregate_descriptions, false);
+		Aggregator::Params params(key_column_names, aggregate_descriptions, false, false);
 
 		BlockInputStreamPtr stream = std::make_shared<OneBlockInputStream>(block);
 		stream = std::make_shared<AggregatingBlockInputStream>(stream, params, true);
