@@ -119,6 +119,7 @@ void XMLRowOutputStream::writeSuffix()
 	writeCString("</rows>\n", *ostr);
 
 	writeRowsBeforeLimitAtLeast();
+	writeStatistics();
 
 	writeCString("</result>\n", *ostr);
 	ostr->next();
@@ -193,6 +194,22 @@ void XMLRowOutputStream::writeExtremes()
 		writeExtremesElement("max", extremes, 1, field_tag_names, *ostr);
 		writeCString("\t</extremes>\n", *ostr);
 	}
+}
+
+
+void XMLRowOutputStream::writeStatistics()
+{
+	writeCString("\t<statistics>\n", *ostr);
+	writeCString("\t\t<elapsed>", *ostr);
+	writeText(watch.elapsedSeconds(), *ostr);
+	writeCString("</elapsed>\n", *ostr);
+	writeCString("\t\t<rows_read>", *ostr);
+	writeText(progress.rows.load(), *ostr);
+	writeCString("</rows_read>\n", *ostr);
+	writeCString("\t\t<bytes_read>", *ostr);
+	writeText(progress.bytes.load(), *ostr);
+	writeCString("</bytes_read>\n", *ostr);
+	writeCString("\t</statistics>", *ostr);
 }
 
 }
