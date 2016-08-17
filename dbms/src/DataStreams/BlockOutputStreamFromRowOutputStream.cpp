@@ -50,4 +50,9 @@ void BlockOutputStreamFromRowOutputStream::setExtremes(const Block & extremes)
 	row_output->setExtremes(extremes);
 }
 
+void BlockOutputStreamFromRowOutputStream::onProgress(const Progress & progress)
+{
+	row_output->onProgress(progress);
+}
+
 }

@@ -1,7 +1,9 @@
 #pragma once
 
 #include <DB/Core/Block.h>
+#include <DB/Core/Progress.h>
 #include <DB/IO/WriteBuffer.h>
+#include <DB/Common/Stopwatch.h>
 #include <DB/DataStreams/IRowOutputStream.h>
 
 
@@ -39,6 +41,8 @@ public:
 	void setTotals(const Block & totals_) override { totals = totals_; }
 	void setExtremes(const Block & extremes_) override { extremes = extremes_; }
 
+	void onProgress(const Progress & value) override;
+
 	String getContentType() const override { return "application/json; charset=UTF-8"; }
 
 protected:
@@ -46,6 +50,7 @@ protected:
 	void writeRowsBeforeLimitAtLeast();
 	virtual void writeTotals();
 	virtual void writeExtremes();
+	void writeStatistics();
 
 	WriteBuffer & dst_ostr;
 	std::unique_ptr<WriteBuffer> validating_ostr;	/// Валидирует UTF-8 последовательности.
@@ -58,6 +63,9 @@ protected:
 	NamesAndTypes fields;
 	Block totals;
 	Block extremes;
+
+	Progress progress;
+	Stopwatch watch;
 };
 
 }

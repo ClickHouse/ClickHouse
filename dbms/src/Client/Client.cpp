@@ -990,6 +990,7 @@ private:
 	void onProgress(const Progress & value)
 	{
 		progress.incrementPiecewiseAtomically(value);
+		block_std_out->onProgress(value);
 		writeProgress();
 	}
 
@@ -1125,7 +1126,7 @@ private:
 public:
 	void init(int argc, char ** argv)
 	{
-		/// Останавливаем внутреннюю обработку командной строки
+		/// Don't parse options with Poco library. We need more sophisticated processing.
 		stopOptionsProcessing();
 
 #define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")

@@ -12,6 +12,7 @@ namespace DB
 class Block;
 class IColumn;
 class IDataType;
+struct Progress;
 
 
 /** Interface of stream for writing data by rows (for example: for output to terminal).
@@ -45,6 +46,11 @@ public:
 	virtual void setRowsBeforeLimit(size_t rows_before_limit) {}
 	virtual void setTotals(const Block & totals) {}
 	virtual void setExtremes(const Block & extremes) {}
+
+	/** Notify about progress. Method could be called from different threads.
+	  * Passed value are delta, that must be summarized.
+	  */
+	virtual void onProgress(const Progress & progress) {}
 
 	/** Content-Type to set when sending HTTP response. */
 	virtual String getContentType() const { return "text/plain; charset=UTF-8"; }

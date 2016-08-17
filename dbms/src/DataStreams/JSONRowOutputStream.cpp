@@ -113,6 +113,7 @@ void JSONRowOutputStream::writeSuffix()
 	writeIntText(row_count, *ostr);
 
 	writeRowsBeforeLimitAtLeast();
+	writeStatistics();
 
 	writeChar('\n', *ostr);
 	writeCString("}\n", *ostr);
@@ -199,6 +200,32 @@ void JSONRowOutputStream::writeExtremes()
 		writeChar('\n', *ostr);
 		writeCString("\t}", *ostr);
 	}
+}
+
+
+void JSONRowOutputStream::onProgress(const Progress & value)
+{
+	progress.incrementPiecewiseAtomically(value);
+}
+
+
+void JSONRowOutputStream::writeStatistics()
+{
+	writeCString(",\n\n", *ostr);
+	writeCString("\t\"statistics\":\n", *ostr);
+	writeCString("\t{\n", *ostr);
+
+	writeCString("\t\t\"elapsed\": ", *ostr);
+	writeText(watch.elapsedSeconds(), *ostr);
+	writeCString(",\n", *ostr);
+	writeCString("\t\t\"rows_read\": ", *ostr);
+	writeText(progress.rows.load(), *ostr);
+	writeCString(",\n", *ostr);
+	writeCString("\t\t\"bytes_read\": ", *ostr);
+	writeText(progress.bytes.load(), *ostr);
+	writeChar('\n', *ostr);
+
+	writeCString("\t}", *ostr);
 }
 
 }
