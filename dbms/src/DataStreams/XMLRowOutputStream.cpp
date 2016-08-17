@@ -197,6 +197,12 @@ void XMLRowOutputStream::writeExtremes()
 }
 
 
+void XMLRowOutputStream::onProgress(const Progress & value)
+{
+	progress.incrementPiecewiseAtomically(value);
+}
+
+
 void XMLRowOutputStream::writeStatistics()
 {
 	writeCString("\t<statistics>\n", *ostr);
