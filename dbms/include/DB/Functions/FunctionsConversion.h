@@ -31,7 +31,14 @@ namespace DB
 
 namespace ErrorCodes
 {
+	extern const int ATTEMPT_TO_READ_AFTER_EOF;
 	extern const int CANNOT_PARSE_NUMBER;
+	extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+	extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+	extern const int CANNOT_PARSE_QUOTED_STRING;
+	extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
+	extern const int CANNOT_PARSE_DATE;
+	extern const int CANNOT_PARSE_DATETIME;
 }
 
 /** Type conversion functions.
@@ -1275,7 +1282,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionConvert>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -1287,8 +1293,51 @@ public:
 		return getReturnTypeImpl(arguments);
 	}
 
-	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		try
+		{
+			executeImpl(block, arguments, result);
+		}
+		catch (const Exception & e)
+		{
+			/// More convenient error message.
+			if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+			{
+				e.addMessage("Cannot parse "
+					+ block.unsafeGetByPosition(result).type->getName() + " from "
+					+ block.unsafeGetByPosition(arguments[0]).type->getName()
+					+ ", because value is too short");
+			}
+			else if (e.code() == ErrorCodes::CANNOT_PARSE_NUMBER
+				|| e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
+				|| e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
+				|| e.code() == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
+				|| e.code() == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE
+				|| e.code() == ErrorCodes::CANNOT_PARSE_DATE
+				|| e.code() == ErrorCodes::CANNOT_PARSE_DATETIME)
+			{
+				e.addMessage("Cannot parse "
+					+ block.unsafeGetByPosition(result).type->getName() + " from "
+					+ block.unsafeGetByPosition(arguments[0]).type->getName());
+			}
+
+			throw;
+		}
+	}
+
+	bool hasInformationAboutMonotonicity() const override
+	{
+		return Monotonic::has();
+	}
+
+	Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+	{
+		return Monotonic::get(type, left, right);
+	}
+
+private:
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
@@ -1321,17 +1370,6 @@ public:
 		}
 	}
 
-	bool hasInformationAboutMonotonicity() const override
-	{
-		return Monotonic::has();
-	}
-
-	Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
-	{
-		return Monotonic::get(type, left, right);
-	}
-
-private:
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
 		typename std::enable_if<!(std::is_same<ToDataType2, DataTypeString>::value ||
