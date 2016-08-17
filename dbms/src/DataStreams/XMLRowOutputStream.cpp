@@ -215,7 +215,7 @@ void XMLRowOutputStream::writeStatistics()
 	writeCString("\t\t<bytes_read>", *ostr);
 	writeText(progress.bytes.load(), *ostr);
 	writeCString("</bytes_read>\n", *ostr);
-	writeCString("\t</statistics>", *ostr);
+	writeCString("\t</statistics>\n", *ostr);
 }
 
 }
