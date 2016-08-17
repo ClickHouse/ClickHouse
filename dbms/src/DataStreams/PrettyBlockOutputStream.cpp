@@ -3,8 +3,6 @@
 
 #include <DB/Functions/FunctionsMiscellaneous.h>
 #include <DB/DataStreams/PrettyBlockOutputStream.h>
-#include <DB/Columns/ColumnNullable.h>
-#include <DB/DataTypes/NullSymbol.h>
 
 
 namespace DB
@@ -47,51 +45,20 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 
 		column.column = block.getByPosition(i + columns).column;
 
-		auto has_null_value = [](const ColumnPtr & col, size_t row)
-		{
-			if (col->isNullable())
-			{
-				const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
-				if (nullable_col.isNullAt(row))
-					return true;
-			}
-			else if (col->isNull())
-				return true;
-
-			return false;
-		};
-
-		IColumn * observed_col;
-		if (column.column->isNullable())
-		{
-			ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column.column);
-			observed_col = nullable_col.getNestedColumn().get();
-		}
-		else
-			observed_col = column.column.get();
-
-		if (const ColumnUInt64 * col = typeid_cast<const ColumnUInt64 *>(observed_col))
+		if (const ColumnUInt64 * col = typeid_cast<const ColumnUInt64 *>(&*column.column))
 		{
 			const ColumnUInt64::Container_t & res = col->getData();
 			for (size_t j = 0; j < rows; ++j)
-			{
-				size_t cur_width;
-				if (has_null_value(block.getByPosition(i).column, j))
-					cur_width = NullSymbol::Escaped::length;
-				else
-					cur_width = res[j];
-
-				if (cur_width > max_widths[i])
-					max_widths[i] = cur_width;
-			}
+				if (res[j] > max_widths[i])
+					max_widths[i] = res[j];
 		}
-		else if (const ColumnConstUInt64 * col = typeid_cast<const ColumnConstUInt64 *>(observed_col))
+		else if (const ColumnConstUInt64 * col = typeid_cast<const ColumnConstUInt64 *>(&*column.column))
 		{
 			UInt64 res = col->getData();
 			max_widths[i] = res;
 		}
 		else
-			throw Exception("Illegal column " + observed_col->getName()
+			throw Exception("Illegal column " + column.column->getName()
 				+ " of result of function " + visible_width_func.getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 

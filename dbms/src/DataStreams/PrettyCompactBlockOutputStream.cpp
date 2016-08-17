@@ -2,8 +2,6 @@
 #include <unistd.h>
 
 #include <DB/DataStreams/PrettyCompactBlockOutputStream.h>
-#include <DB/DataTypes/NullSymbol.h>
-#include <DB/Columns/ColumnNullable.h>
 
 
 namespace DB
@@ -81,20 +79,6 @@ void PrettyCompactBlockOutputStream::writeRow(
 	const Widths_t & max_widths,
 	const Widths_t & name_widths)
 {
-	auto has_null_value = [](const ColumnPtr & col, size_t row)
-	{
-		if (col->isNullable())
-		{
-			const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
-			if (nullable_col.isNullAt(row))
-				return true;
-		}
-		else if (col->isNull())
-			return true;
-
-		return false;
-	};
-
 	size_t columns = max_widths.size();
 
 	writeCString("│ ", ostr);
@@ -106,46 +90,19 @@ void PrettyCompactBlockOutputStream::writeRow(
 
 		const ColumnWithTypeAndName & col = block.getByPosition(j);
 
-		size_t width;
-
-		if (has_null_value(col.column, row_id))
-			width = NullSymbol::Escaped::length;
-		else
-		{
-			ColumnPtr res_col = block.getByPosition(columns + j).column;
-
-			IColumn * observed_col;
-			if (res_col->isNullable())
-			{
-				ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*res_col);
-				observed_col = nullable_col.getNestedColumn().get();
-			}
-			else
-				observed_col = res_col.get();
-
-			if (const ColumnUInt64 * concrete_col = typeid_cast<const ColumnUInt64 *>(observed_col))
-			{
-				const ColumnUInt64::Container_t & res = concrete_col->getData();
-				width = res[row_id];
-			}
-			else if (const ColumnConstUInt64 * concrete_col = typeid_cast<const ColumnConstUInt64 *>(observed_col))
-			{
-				UInt64 res = concrete_col->getData();
-				width = res;
-			}
-			else
-				throw Exception{"Illegal column " + observed_col->getName(), ErrorCodes::ILLEGAL_COLUMN};
-		}
-
 		if (col.type->isNumeric())
 		{
+			size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[row_id]);
 			for (size_t k = 0; k < max_widths[j] - width; ++k)
 				writeChar(' ', ostr);
+
 			col.type->serializeTextEscaped(*col.column.get(), row_id, ostr);
 		}
 		else
 		{
 			col.type->serializeTextEscaped(*col.column.get(), row_id, ostr);
+
+			size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[row_id]);
 			for (size_t k = 0; k < max_widths[j] - width; ++k)
 				writeChar(' ', ostr);
 		}

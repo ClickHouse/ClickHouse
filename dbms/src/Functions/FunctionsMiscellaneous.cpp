@@ -4,6 +4,9 @@
 #include <DB/Functions/FunctionsArithmetic.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
 #include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/DataTypes/NullSymbol.h>
+#include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/Columns/ColumnNullable.h>
 #include <ext/enumerate.hpp>
 
 
@@ -173,6 +176,73 @@ namespace VisibleWidth
 
 
 void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	auto & element = block.getByPosition(arguments[0]);
+
+	auto & res_element = block.getByPosition(result);
+	auto & res_col = res_element.column;
+
+	size_t row_count = block.rowsInFirstColumn();
+
+	if (element.column->isNull())
+	{
+		/// The input column has the Null type.
+		res_col = std::make_shared<ColumnConstUInt64>(row_count, NullSymbol::Escaped::length);
+	}
+	else if (element.column->isNullable())
+	{
+		/// Perform visibleWidth on a block that holds the nested column
+		/// of the input column.
+		auto & nullable_col = static_cast<ColumnNullable &>(*element.column);
+		auto & nested_col = nullable_col.getNestedColumn();
+
+		auto & nullable_type = static_cast<DataTypeNullable &>(*element.type);
+		auto & nested_type = nullable_type.getNestedType();
+
+		Block block_with_nested_col =
+		{
+			{
+				nested_col,
+				nested_type,
+				element.name
+			},
+
+			{
+				nullptr,
+				res_element.type,
+				""
+			}
+		};
+
+		perform(block_with_nested_col, {0, 1}, 1);
+
+		/// Create the result. If any row of the input column holds a NULL value,
+		/// we assign the corresponding row of the result the length of the NULL
+		/// symbol.
+		res_col = std::make_shared<ColumnUInt64>(row_count);
+		auto & res_data = static_cast<ColumnUInt64 &>(*res_col).getData();
+
+		const auto & src = static_cast<const ColumnUInt64 &>(
+			*block_with_nested_col.unsafeGetByPosition(1).column
+		).getData();
+
+		for (size_t row = 0; row < row_count; ++row)
+		{
+			if (nullable_col.isNullAt(row))
+				res_data[row] = NullSymbol::Escaped::length;
+			else
+				res_data[row] = src[row];
+		}
+	}
+	else
+	{
+		/// The input column has an ordinary type.
+		perform(block, arguments, result);
+	}
+}
+
+
+void FunctionVisibleWidth::perform(Block & block, const ColumnNumbers & arguments, size_t result)
 {
 	const ColumnPtr column = block.getByPosition(arguments[0]).column;
 	const DataTypePtr type = block.getByPosition(arguments[0]).type;

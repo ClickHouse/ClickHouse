@@ -165,6 +165,11 @@ public:
 	static constexpr auto name = "visibleWidth";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionVisibleWidth>(); }
 
+	bool hasSpecialSupportForNulls() const override
+	{
+		return true;
+	}
+
 	/// Получить имя функции.
 	String getName() const override
 	{
@@ -184,6 +189,10 @@ public:
 
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+
+private:
+	/// Internal version of visibleWidth.
+	void perform(Block & block, const ColumnNumbers & arguments, size_t result);
 };
 
 
