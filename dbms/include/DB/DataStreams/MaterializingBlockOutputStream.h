@@ -27,6 +27,7 @@ public:
 	void setRowsBeforeLimit(size_t rows_before_limit) 	override { output->setRowsBeforeLimit(rows_before_limit); }
 	void setTotals(const Block & totals) 				override { output->setTotals(materialize(totals)); }
 	void setExtremes(const Block & extremes) 			override { output->setExtremes(materialize(extremes)); }
+	void onProgress(const Progress & progress) 			override { output->onProgress(progress); }
 	String getContentType() const 						override { return output->getContentType(); }
 
 private:

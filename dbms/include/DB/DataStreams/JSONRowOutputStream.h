@@ -10,7 +10,7 @@
 namespace DB
 {
 
-/** Поток для вывода данных в формате JSON.
+/** Stream for output data in JSON format.
   */
 class JSONRowOutputStream : public IRowOutputStream
 {
@@ -53,7 +53,7 @@ protected:
 	void writeStatistics();
 
 	WriteBuffer & dst_ostr;
-	std::unique_ptr<WriteBuffer> validating_ostr;	/// Валидирует UTF-8 последовательности.
+	std::unique_ptr<WriteBuffer> validating_ostr;	/// Validates UTF-8 sequences, replaces bad sequences with replacement character.
 	WriteBuffer * ostr;
 
 	size_t field_number = 0;
