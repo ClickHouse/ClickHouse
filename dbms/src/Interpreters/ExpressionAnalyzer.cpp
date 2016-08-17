@@ -2452,10 +2452,7 @@ void ExpressionAnalyzer::collectUsedColumns()
 		unknown_required_columns.erase(it->name);
 
 		if (!required.count(it->name))
-		{
-			required.erase(it->name);
 			columns.erase(it++);
-		}
 		else
 			++it;
 	}
