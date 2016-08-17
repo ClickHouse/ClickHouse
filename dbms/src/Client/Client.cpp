@@ -717,7 +717,7 @@ private:
 		if (receiveSampleBlock(sample))
 		{
 			/// If structure was received (thus, server has not thrown an exception),
-			/// send this structure as structure for our data.
+			/// send our data with that structure.
 			sendData(sample);
 			receivePacket();
 		}
