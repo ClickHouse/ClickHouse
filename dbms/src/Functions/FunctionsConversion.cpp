@@ -22,7 +22,7 @@ void throwExceptionForIncompletelyParsedValue(
 		else
 			message_buf << " at begin of string";
 
-		if (to_type.isNumeric())
+		if (to_type.behavesAsNumber())
 			message_buf << ". Note: there are to" << to_type.getName() << "OrZero function, which returns zero instead of throwing exception.";
 	}
 
