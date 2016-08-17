@@ -549,7 +549,7 @@ private:
 			while (begin < end)
 			{
 				const char * pos = begin;
-				ASTPtr ast = parseQuery(pos, end);
+				ASTPtr ast = parseQuery(pos, end, true);
 				if (!ast)
 					return true;
 
@@ -607,7 +607,7 @@ private:
 		if (!parsed_query)
 		{
 			const char * begin = query.data();
-			parsed_query = parseQuery(begin, begin + query.size());
+			parsed_query = parseQuery(begin, begin + query.size(), false);
 		}
 
 		if (!parsed_query)
@@ -697,10 +697,10 @@ private:
 	}
 
 
-	/// Обработать запрос, который требует передачи блоков данных на сервер.
+	/// Process query, which require sending blocks of data to the server.
 	void processInsertQuery()
 	{
-		/// Отправляем часть запроса - без данных, так как данные будут отправлены отдельно.
+		/// Send part of query without data, because data will be sent separately.
 		const ASTInsertQuery & parsed_insert_query = typeid_cast<const ASTInsertQuery &>(*parsed_query);
 		String query_without_data = parsed_insert_query.data
 			? query.substr(0, parsed_insert_query.data - query.data())
@@ -712,19 +712,19 @@ private:
 		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, &context.getSettingsRef(), true);
 		sendExternalTables();
 
-		/// Получаем структуру таблицы.
+		/// Receive description of table structure.
 		Block sample;
 		if (receiveSampleBlock(sample))
 		{
-			/// Если была получена структура, т.е. сервер не выкинул исключения,
-			/// отправляем эту структуру вместе с данными.
+			/// If structure was received (thus, server has not thrown an exception),
+			/// send this structure as structure for our data.
 			sendData(sample);
 			receivePacket();
 		}
 	}
 
 
-	ASTPtr parseQuery(IParser::Pos & pos, const char * end)
+	ASTPtr parseQuery(IParser::Pos & pos, const char * end, bool allow_multi_statements)
 	{
 		ParserQuery parser;
 		ASTPtr res;
@@ -732,7 +732,7 @@ private:
 		if (is_interactive)
 		{
 			String message;
-			res = tryParseQuery(parser, pos, end, message, true, "");
+			res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements);
 
 			if (!res)
 			{
@@ -741,7 +741,7 @@ private:
 			}
 		}
 		else
-			res = DB::parseQueryAndMovePosition(parser, pos, end, "");
+			res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements);
 
 		if (is_interactive)
 		{

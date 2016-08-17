@@ -15,6 +15,7 @@
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
+#include <DB/Common/StringUtils.h>
 
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/VarInt.h>
@@ -805,12 +806,7 @@ void readText(std::vector<T> & x, ReadBuffer & buf)
 /// Пропустить пробельные символы.
 inline void skipWhitespaceIfAny(ReadBuffer & buf)
 {
-	while (!buf.eof()
-			&& (*buf.position() == ' '
-			|| *buf.position() == '\t'
-			|| *buf.position() == '\n'
-			|| *buf.position() == '\r'
-			|| *buf.position() == '\f'))
+	while (!buf.eof() && isWhitespaceASCII(*buf.position()))
 		++buf.position();
 }
 
