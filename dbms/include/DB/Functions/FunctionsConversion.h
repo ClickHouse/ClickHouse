@@ -7,6 +7,7 @@
 
 #include <DB/IO/WriteBufferFromVector.h>
 #include <DB/IO/ReadBufferFromString.h>
+#include <DB/IO/Operators.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -39,6 +40,7 @@ namespace ErrorCodes
 	extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
 	extern const int CANNOT_PARSE_DATE;
 	extern const int CANNOT_PARSE_DATETIME;
+	extern const int CANNOT_PARSE_TEXT;
 }
 
 /** Type conversion functions.
@@ -747,6 +749,12 @@ template <> inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType 
 }
 
 
+/** Throw exception with verbose message when string value is not parsed completely.
+  */
+void throwExceptionForIncompletelyParsedValue(
+	ReadBuffer & read_buffer, Block & block, const ColumnNumbers & arguments, size_t result);
+
+
 template <typename ToDataType, typename Name>
 struct ConvertImpl<DataTypeString, ToDataType, Name>
 {
@@ -778,7 +786,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 				if (!read_buffer.eof()
 					&& !(std::is_same<ToDataType, DataTypeDate>::value /// Special exception, that allows to parse string with DateTime as Date.
 						&& offsets[i] - current_offset - 1 == strlen("YYYY-MM-DD hh:mm:ss")))
-					throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
+					throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
 
 				current_offset = offsets[i];
 			}
@@ -906,7 +914,7 @@ struct ConvertImplGenericFromString
 				data_type_to.deserializeTextEscaped(column_to, read_buffer);
 
 				if (!read_buffer.eof())
-					throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_READ_ALL_DATA);
+					throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
 
 				current_offset = offsets[i];
 			}
@@ -1196,7 +1204,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 						++read_buffer.position();
 
 					if (read_buffer.position() < end)
-						throw Exception("Cannot parse from fixed string.", ErrorCodes::CANNOT_PARSE_NUMBER);
+						throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
 				}
 			}
 		}

@@ -4,6 +4,32 @@
 namespace DB
 {
 
+void throwExceptionForIncompletelyParsedValue(
+	ReadBuffer & read_buffer, Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	std::string message;
+	{
+		const IDataType & to_type = *block.getByPosition(result).type;
+
+		ReadBufferFromString message_buf(message);
+		message_buf << "Cannot parse string " << quote << String(read_buffer.buffer().begin(), read_buffer.buffer().size())
+			<< " as " << to_type.getName()
+			<< ": syntax error";
+
+		if (read_buffer.offset())
+			message_buf << " at position " << read_buffer.offset()
+				<< " (parsed just " << quote << String(read_buffer.buffer().begin(), read_buffer.offset()) << ")";
+		else
+			message_buf << " at begin of string";
+
+		if (to_type.isNumeric())
+			message_buf << ". Note: there are to" << to_type.getName() << "OrZero function, which returns zero instead throwing exception.";
+	}
+
+	throw Exception(message, ErrorCodes::CANNOT_PARSE_TEXT);
+}
+
+
 void registerFunctionsConversion(FunctionFactory & factory)
 {
 	factory.registerFunction<FunctionToUInt8>();
