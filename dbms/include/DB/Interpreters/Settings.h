@@ -217,6 +217,10 @@ struct Settings
 	\
 	/** What aggregate function to use for implementation of count(DISTINCT ...) */ \
 	M(SettingString, count_distinct_implementation, "uniq") \
+	\
+	/** Write statistics about read rows, bytes, time elapsed in suitable output formats */ \
+	M(SettingBool, output_format_write_statistics, true) \
+
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

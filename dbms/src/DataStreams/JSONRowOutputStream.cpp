@@ -7,8 +7,8 @@ namespace DB
 {
 
 
-JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
-	: dst_ostr(ostr_)
+JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_)
+	: dst_ostr(ostr_), write_statistics(write_statistics_)
 {
 	NamesAndTypesList columns(sample_.getColumnsList());
 	fields.assign(columns.begin(), columns.end());
@@ -113,7 +113,9 @@ void JSONRowOutputStream::writeSuffix()
 	writeIntText(row_count, *ostr);
 
 	writeRowsBeforeLimitAtLeast();
-	writeStatistics();
+
+	if (write_statistics)
+		writeStatistics();
 
 	writeChar('\n', *ostr);
 	writeCString("}\n", *ostr);

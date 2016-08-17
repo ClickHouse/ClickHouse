@@ -15,7 +15,8 @@ namespace DB
 class XMLRowOutputStream : public IRowOutputStream
 {
 public:
-	XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
+	XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample_,
+		bool write_statistics_);
 
 	void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
 	void writeRowStartDelimiter() override;
@@ -66,6 +67,7 @@ protected:
 
 	Progress progress;
 	Stopwatch watch;
+	bool write_statistics;
 };
 
 }

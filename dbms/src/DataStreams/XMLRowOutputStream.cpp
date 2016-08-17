@@ -6,8 +6,8 @@
 namespace DB
 {
 
-XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
-	: dst_ostr(ostr_)
+XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_)
+	: dst_ostr(ostr_), write_statistics(write_statistics_)
 {
 	NamesAndTypesList columns(sample_.getColumnsList());
 	fields.assign(columns.begin(), columns.end());
@@ -119,7 +119,9 @@ void XMLRowOutputStream::writeSuffix()
 	writeCString("</rows>\n", *ostr);
 
 	writeRowsBeforeLimitAtLeast();
-	writeStatistics();
+
+	if (write_statistics)
+		writeStatistics();
 
 	writeCString("</result>\n", *ostr);
 	ostr->next();
