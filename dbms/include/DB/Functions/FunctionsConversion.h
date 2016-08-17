@@ -1299,7 +1299,7 @@ public:
 		{
 			executeImpl(block, arguments, result);
 		}
-		catch (const Exception & e)
+		catch (Exception & e)
 		{
 			/// More convenient error message.
 			if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
