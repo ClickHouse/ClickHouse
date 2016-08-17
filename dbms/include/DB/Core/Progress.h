@@ -11,18 +11,18 @@ namespace DB
 {
 
 
-/** Прогресс выполнения запроса.
-  * Передаваемые по сети значения представляют собой разницу - сколько было сделано после предыдущего отправленного значения.
-  * Тот же объект используется для суммирования полученных значений.
+/** Progress of query execution.
+  * Values, transferred over network are deltas - how much was done after previously sent value.
+  * The same struct is also used for summarized values.
   */
 struct Progress
 {
-	std::atomic<size_t> rows {0};		/// Строк обработано.
-	std::atomic<size_t> bytes {0};		/// Байт обработано.
+	std::atomic<size_t> rows {0};		/// Rows (source) processed.
+	std::atomic<size_t> bytes {0};		/// Bytes (uncompressed, source) processed.
 
-	/** Сколько ещё строк надо обработать, приблизительно. Передаётся не ноль, когда возникает информация о какой-то новой части работы.
-	  * Полученные значения надо суммровать, чтобы получить оценку общего количества строк для обработки.
-	  * Используется для отображения прогресс-бара на клиенте.
+	/** How much rows must be processed, in total, approximately. Non-zero value is sent when there is information about some new part of job.
+	  * Received values must be summed to get estimate of total rows to process.
+	  * Used for rendering progress bar on client.
 	  */
 	std::atomic<size_t> total_rows {0};
 
@@ -56,7 +56,7 @@ struct Progress
 			writeVarUInt(total_rows, out);
 	}
 
-	/// Каждое значение по-отдельности изменяется атомарно.
+	/// Each value separately is changed atomically (but not whole object).
 	void incrementPiecewiseAtomically(const Progress & rhs)
 	{
 		rows += rhs.rows;
