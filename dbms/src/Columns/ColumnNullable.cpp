@@ -17,31 +17,6 @@ ColumnNullable::ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_)
 		throw Exception{"A nullable column cannot contain another nullable column", ErrorCodes::LOGICAL_ERROR};
 }
 
-std::string ColumnNullable::getName() const
-{
-	return "ColumnNullable(" + nested_column->getName() + ")";
-}
-
-bool ColumnNullable::isNumeric() const
-{
-	return nested_column->isNumeric();
-}
-
-bool ColumnNullable::isConst() const
-{
-	return nested_column->isConst();
-}
-
-bool ColumnNullable::isFixed() const
-{
-	return nested_column->isFixed();
-}
-
-bool ColumnNullable::isNullable() const
-{
-	return true;
-}
-
 ColumnPtr ColumnNullable::convertToFullColumnIfConst() const
 {
 	ColumnPtr new_col_holder;
@@ -67,11 +42,6 @@ ColumnPtr ColumnNullable::cloneResized(size_t size) const
 	return std::make_shared<ColumnNullable>(new_nested_col, new_null_map);
 }
 
-size_t ColumnNullable::size() const
-{
-	return nested_column->size();
-}
-
 Field ColumnNullable::operator[](size_t n) const
 {
 	if (isNullAt(n))
@@ -89,11 +59,6 @@ void ColumnNullable::get(size_t n, Field & res) const
 		res = Field{};
 	else
 		nested_column->get(n, res);
-}
-
-UInt64 ColumnNullable::get64(size_t n) const
-{
-	return nested_column->get64(n);
 }
 
 StringRef ColumnNullable::getDataAt(size_t n) const
@@ -365,26 +330,6 @@ ColumnPtr ColumnNullable::replicate(const Offsets_t & offsets) const
 	return std::make_shared<ColumnNullable>(replicated_data, replicated_null_map);
 }
 
-ColumnPtr & ColumnNullable::getNestedColumn()
-{
-	return nested_column;
-}
-
-const ColumnPtr & ColumnNullable::getNestedColumn() const
-{
-	return nested_column;
-}
-
-ColumnPtr & ColumnNullable::getNullValuesByteMap()
-{
-	return null_map;
-}
-
-const ColumnPtr & ColumnNullable::getNullValuesByteMap() const
-{
-	return null_map;
-}
-
 void ColumnNullable::applyNullValuesByteMap(const ColumnNullable & other)
 {
 	NullValuesByteMap & arr1 = getNullMapContent().getData();
@@ -395,22 +340,6 @@ void ColumnNullable::applyNullValuesByteMap(const ColumnNullable & other)
 
 	for (size_t i = 0; i < arr1.size(); ++i)
 		arr1[i] |= arr2[i];
-}
-
-bool ColumnNullable::isNullAt(size_t n) const
-{
-	auto & arr = getNullMapContent().getData();
-	return arr[n] != 0;
-}
-
-ColumnUInt8 & ColumnNullable::getNullMapContent()
-{
-	return static_cast<ColumnUInt8 &>(*null_map);
-}
-
-const ColumnUInt8 & ColumnNullable::getNullMapContent() const
-{
-	return static_cast<const ColumnUInt8 &>(*null_map);
 }
 
 }

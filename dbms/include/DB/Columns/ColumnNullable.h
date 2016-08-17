@@ -21,17 +21,17 @@ class ColumnNullable final : public IColumn
 {
 public:
 	ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_);
-	std::string getName() const override;
-	bool isNumeric() const override;
-	bool isConst() const override;
-	bool isFixed() const override;
-	bool isNullable() const override;
+	std::string getName() const override { 	return "ColumnNullable(" + nested_column->getName() + ")"; }
+	bool isNumeric() const override { return nested_column->isNumeric(); }
+	bool isConst() const override { return nested_column->isConst(); }
+	bool isFixed() const override { return nested_column->isFixed(); }
+	bool isNullable() const override { return true; }
 	ColumnPtr cloneResized(size_t size) const override;
-	size_t size() const override;
-	bool isNullAt(size_t n) const;
+	size_t size() const override { return nested_column->size(); }
+	bool isNullAt(size_t n) const { return static_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
 	Field operator[](size_t n) const override;
 	void get(size_t n, Field & res) const override;
-	UInt64 get64(size_t n) const override;
+	UInt64 get64(size_t n) const override { return nested_column->get64(n); }
 	StringRef getDataAt(size_t n) const override;
 	void insertData(const char * pos, size_t length) override;
 	StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -52,12 +52,12 @@ public:
 	void getExtremes(Field & min, Field & max) const override;
 
 	/// Return the column that represents values.
-	ColumnPtr & getNestedColumn();
-	const ColumnPtr & getNestedColumn() const;
+	ColumnPtr & getNestedColumn() { return nested_column; }
+	const ColumnPtr & getNestedColumn() const { return nested_column; }
 
 	/// Return the column that represents the byte map.
-	ColumnPtr & getNullValuesByteMap();
-	const ColumnPtr & getNullValuesByteMap() const;
+	ColumnPtr & getNullValuesByteMap() { return null_map; }
+	const ColumnPtr & getNullValuesByteMap() const { return null_map; }
 
 	/// Apply the null byte map of a specified nullable column onto the
 	/// null byte map of the current column by performing an element-wise OR
@@ -68,8 +68,8 @@ public:
 
 private:
 	/// Convenience methods which make the implementation easier to read.
-	ColumnUInt8 & getNullMapContent();
-	const ColumnUInt8 & getNullMapContent() const;
+	ColumnUInt8 & getNullMapContent() { return static_cast<ColumnUInt8 &>(*null_map); }
+	const ColumnUInt8 & getNullMapContent() const { return static_cast<const ColumnUInt8 &>(*null_map); }
 
 private:
 	ColumnPtr nested_column;

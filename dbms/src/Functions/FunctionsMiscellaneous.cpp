@@ -187,7 +187,7 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
 	if (element.column->isNull())
 	{
 		/// The input column has the Null type.
-		res_col = std::make_shared<ColumnConstUInt64>(row_count, NullSymbol::Escaped::length);
+		res_col = std::make_shared<ColumnConstUInt64>(row_count, strlen(NullSymbol::Escaped::name));
 	}
 	else if (element.column->isNullable())
 	{
@@ -229,7 +229,7 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
 		for (size_t row = 0; row < row_count; ++row)
 		{
 			if (nullable_col.isNullAt(row))
-				res_data[row] = NullSymbol::Escaped::length;
+				res_data[row] = strlen(NullSymbol::Escaped::name);
 			else
 				res_data[row] = src[row];
 		}
