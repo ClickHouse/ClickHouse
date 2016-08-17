@@ -801,7 +801,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 			if (!read_buffer.eof()
 				&& !(std::is_same<ToDataType, DataTypeDate>::value /// Special exception, that allows to parse string with DateTime as Date.
 					&& s.size() == strlen("YYYY-MM-DD hh:mm:ss")))
-				throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
+				throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
 
 			block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(col_from->size(), x);
 		}
@@ -926,6 +926,9 @@ struct ConvertImplGenericFromString
 
 			auto tmp_col = data_type_to.createColumn();
 			data_type_to.deserializeTextEscaped(*tmp_col, read_buffer);
+
+			if (!read_buffer.eof())
+				throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
 
 			block.getByPosition(result).column = data_type_to.createConstColumn(size, (*tmp_col)[0]);
 		}
