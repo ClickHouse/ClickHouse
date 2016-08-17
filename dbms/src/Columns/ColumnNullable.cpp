@@ -147,20 +147,24 @@ ColumnPtr ColumnNullable::permute(const Permutation & perm, size_t limit) const
 
 int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
 {
+	/// NULL values share the properties of NaN values.
+	/// Here the last parameter of compareAt is called null_direction_hint
+	/// instead of the usual nan_direction_hint and is used to implement
+	/// the ordering specified by either NULLS FIRST or NULLS LAST in the
+	/// ORDER BY construction.
+
 	const ColumnNullable & nullable_rhs = static_cast<const ColumnNullable &>(rhs_);
 
 	bool lval_is_null = isNullAt(n);
 	bool rval_is_null = nullable_rhs.isNullAt(m);
 
-	/// Two null values are equal.
-	if (lval_is_null && rval_is_null)
-		return 0;
-	/// The null value is always lesser than any value.
-	if (lval_is_null)
-		return -1;
-	/// A non-null value is always greater than the null value.
-	if (rval_is_null)
-		return 1;
+	if (unlikely(lval_is_null || rval_is_null))
+	{
+		if (lval_is_null && rval_is_null)
+			return 0;
+		else
+			return lval_is_null ? null_direction_hint : -null_direction_hint;
+	}
 
 	const IColumn & nested_rhs = *(nullable_rhs.getNestedColumn());
 	return nested_column->compareAt(n, m, nested_rhs, null_direction_hint);
