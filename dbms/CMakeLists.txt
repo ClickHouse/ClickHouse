@@ -15,6 +15,11 @@ else()
 	set (LINK_MONGOCLIENT libmongoclient.a libssl.a libcrypto.a libboost_thread.a)
 endif()
 
+
+add_library(string_utils
+	include/DB/Common/StringUtils.h
+	src/Common/StringUtils.cpp)
+
 add_library (dbms
 	src/Server/InterserverIOHTTPHandler.h
 	src/Server/Server.h
@@ -428,7 +433,6 @@ add_library (dbms
 	include/DB/Common/getNumberOfPhysicalCPUCores.h
 	include/DB/Common/BitHelpers.h
 	include/DB/Common/BlockFilterCreator.h
-	include/DB/Common/StringUtils.h
 	include/DB/Common/randomSeed.h
 	include/DB/Common/unaligned.h
 	include/DB/Common/ThreadPool.h
@@ -601,7 +605,6 @@ add_library (dbms
 	src/Common/ShellCommand.cpp
 	src/Common/isLocalAddress.cpp
 	src/Common/getNumberOfPhysicalCPUCores.cpp
-	src/Common/StringUtils.cpp
 	src/Common/randomSeed.cpp
 	src/Common/ThreadPool.cpp
 
@@ -959,6 +962,7 @@ target_link_libraries(dbms
 	mysqlxx
 	cityhash farmhash metrohash
 	lz4 zstd
+	string_utils
 	double-conversion
 	${LINK_LIBRARIES_ONLY_ON_X86_64}
 	re2 re2_st
