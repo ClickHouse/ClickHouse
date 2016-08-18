@@ -223,7 +223,6 @@ void MergeTreeDataPartChecksums::addFile(const String & file_name, size_t file_s
 }
 
 /// Control sum computed from the set of control sums of .bin files.
-/// For nullable columns, .null files are taken into account as well.
 void MergeTreeDataPartChecksums::summaryDataChecksum(SipHash & hash) const
 {
 	/// Пользуемся тем, что итерирование в детерминированном (лексикографическом) порядке.
@@ -233,8 +232,6 @@ void MergeTreeDataPartChecksums::summaryDataChecksum(SipHash & hash) const
 		const Checksum & sum = it.second;
 
 		if (!endsWith(name, ".bin"))
-			continue;
-		if (!endsWith(name, ".null"))
 			continue;
 
 		size_t len = name.size();
@@ -515,13 +512,8 @@ void MergeTreeDataPart::loadColumns(bool require)
 		/// Если нет файла со списком столбцов, запишем его.
 		for (const NameAndTypePair & column : *storage.columns)
 		{
-			const auto prefix = storage.full_path + name + "/" + escapeForFileName(column.name);
-			if (Poco::File(prefix + ".bin").exists())
-			{
-				if (!column.type.get()->isNullable()
-					|| Poco::File(prefix + ".null").exists())
-					columns.push_back(column);
-			}
+			if (Poco::File(storage.full_path + name + "/" + escapeForFileName(column.name) + ".bin").exists())
+				columns.push_back(column);
 		}
 
 		if (columns.empty())
@@ -557,12 +549,6 @@ void MergeTreeDataPart::checkNotBroken(bool require_part_metadata)
 				if (!checksums.files.count(name + ".mrk") ||
 					!checksums.files.count(name + ".bin"))
 					throw Exception("No .mrk or .bin file checksum for column " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
-				if (it.type.get()->isNullable())
-				{
-					if (!checksums.files.count(name + ".null_mrk") ||
-						!checksums.files.count(name + ".null"))
-						throw Exception("No .null_mrk or .mrk file checksum for column " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
-				}
 			}
 		}
 

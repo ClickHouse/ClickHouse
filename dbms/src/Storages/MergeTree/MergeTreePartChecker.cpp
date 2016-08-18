@@ -151,42 +151,6 @@ public:
 };
 
 /// Returns the number of rows. Updates the "checksums" variable with the checksum of
-/// each column's null byte map file.
-size_t checkNullableColumn(const String & path,
-	const String & name,
-	const MergeTreePartChecker::Settings & settings,
-	MergeTreeData::DataPart::Checksums & checksums,
-	std::atomic<bool> * is_cancelled)
-{
-	size_t rows = 0;
-
-	DataTypePtr type = std::make_shared<DataTypeUInt8>();
-	Stream data_stream(path, escapeForFileName(name), type,
-		NULL_MAP_EXTENSION, NULL_MARKS_FILE_EXTENSION);
-
-	while (true)
-	{
-		if (is_cancelled && *is_cancelled)
-			return 0;
-
-		if (data_stream.marksEOF())
-			break;
-
-		data_stream.assertMark();
-
-		size_t cur_rows = data_stream.read(settings.index_granularity);
-
-		rows += cur_rows;
-		if (cur_rows < settings.index_granularity)
-			break;
-	}
-
-	data_stream.assertEnd(checksums);
-
-	return rows;
-}
-
-/// Returns the number of rows. Updates the "checksums" variable with the checksum of
 /// each column's bin file.
 size_t checkColumn(
 	const String & path,
@@ -389,15 +353,6 @@ void MergeTreePartChecker::checkDataPart(
 			{
 				throw Exception("Different number of rows in columns " + any_column_name + " and " + column.name,
 								ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-			}
-
-			if (column.type.get()->isNullable())
-			{
-				size_t row_count_from_null_map = checkNullableColumn(path,
-					column.name, settings, checksums_data, is_cancelled);
-				if (row_count_from_null_map != rows)
-					throw Exception{"Inconsistent number of rows in null byte map for column " + column.name,
-									ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH};
 			}
 
 			ok = true;

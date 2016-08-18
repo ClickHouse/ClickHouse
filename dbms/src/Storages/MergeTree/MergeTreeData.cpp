@@ -1389,9 +1389,6 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 		const auto escaped_name = escapeForFileName(column.name);
 		const auto bin_file_name = escaped_name + ".bin";
 		const auto mrk_file_name = escaped_name + ".mrk";
-		/// For nullable columns.
-		const auto null_file_name = escaped_name + ".null";
-		const auto null_mrk_file_name = escaped_name + ".null_mrk";
 
 		auto & column_size = column_sizes[column.name];
 
@@ -1400,12 +1397,6 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 
 		if (files.count(mrk_file_name))
 			column_size += files.find(mrk_file_name)->second.file_size;
-
-		if (files.count(null_file_name))
-			column_size += files.at(null_file_name).file_size;
-
-		if (files.count(null_mrk_file_name))
-			column_size += files.at(null_mrk_file_name).file_size;
 	}
 }
 
@@ -1418,9 +1409,6 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 		const auto escaped_name = escapeForFileName(column.name);
 		const auto bin_file_name = escaped_name + ".bin";
 		const auto mrk_file_name = escaped_name + ".mrk";
-		/// For nullable columns.
-		const auto null_file_name = escaped_name + ".null";
-		const auto null_mrk_file_name = escaped_name + ".null_mrk";
 
 		auto & column_size = column_sizes[column.name];
 
@@ -1429,12 +1417,6 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 
 		if (files.count(mrk_file_name))
 			column_size -= files.find(mrk_file_name)->second.file_size;
-
-		if (files.count(null_file_name))
-			column_size -= files.at(null_file_name).file_size;
-
-		if (files.count(null_mrk_file_name))
-			column_size -= files.at(null_mrk_file_name).file_size;
 	}
 }
 
