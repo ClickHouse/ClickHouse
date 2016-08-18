@@ -7,6 +7,7 @@
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/HashingReadBuffer.h>
@@ -32,7 +33,6 @@ namespace
 constexpr auto DATA_FILE_EXTENSION = ".bin";
 constexpr auto NULL_MAP_EXTENSION = ".null";
 constexpr auto MARKS_FILE_EXTENSION = ".mrk";
-constexpr auto NULL_MARKS_FILE_EXTENSION = ".null_mrk";
 
 struct Stream
 {
@@ -164,7 +164,13 @@ size_t checkColumn(
 
 	try
 	{
-		if (auto array = typeid_cast<const DataTypeArray *>(type.get()))
+		if (type->isNullable())
+		{
+			const auto & nullable_type = static_cast<const DataTypeNullable &>(*type);
+			auto nested_type = nullable_type.getNestedType();
+			return checkColumn(path, name, nested_type, settings, checksums, is_cancelled);
+		}
+		else if (auto array = typeid_cast<const DataTypeArray *>(type.get()))
 		{
 			String sizes_name = DataTypeNested::extractNestedTableName(name);
 			Stream sizes_stream(path, escapeForFileName(sizes_name) + ".size0", std::make_shared<DataTypeUInt64>(),
