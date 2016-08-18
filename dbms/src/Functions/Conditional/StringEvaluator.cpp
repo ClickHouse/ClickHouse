@@ -1,5 +1,6 @@
 #include <DB/Functions/Conditional/StringEvaluator.h>
 #include <DB/Functions/Conditional/common.h>
+#include <DB/Functions/Conditional/NullMapBuilder.h>
 #include <DB/Functions/Conditional/CondSource.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -437,15 +438,11 @@ class SinkUpdater
 {
 public:
 	static void execute(Block & block, const StringSources & sources, const CondSources & conds,
-		SinkType & sink, size_t row_count, size_t result, size_t tracker)
+		SinkType & sink, size_t row_count, const ColumnNumbers & args, size_t result,
+		NullMapBuilder & builder)
 	{
-		ColumnUInt16 * tracker_col = nullptr;
-		if (tracker != result)
-		{
-			auto & col = block.unsafeGetByPosition(tracker).column;
-			col = std::make_shared<ColumnUInt16>(row_count);
-			tracker_col = static_cast<ColumnUInt16 *>(col.get());
-		}
+		if (builder)
+			builder.init(args);
 
 		for (size_t cur_row = 0; cur_row < row_count; ++cur_row)
 		{
@@ -457,11 +454,8 @@ public:
 				if (cond.get(cur_row))
 				{
 					sink.store(sources[cur_source]->get());
-					if (tracker_col != nullptr)
-					{
-						auto & data = tracker_col->getData();
-						data[cur_row] = sources[cur_source]->getIndex();
-					}
+					if (builder)
+						builder.update(sources[cur_source]->getIndex(), cur_row);
 					has_triggered_cond = true;
 					break;
 				}
@@ -471,11 +465,8 @@ public:
 			if (!has_triggered_cond)
 			{
 				sink.store(sources.back()->get());
-				if (tracker_col != nullptr)
-				{
-					auto & data = tracker_col->getData();
-					data[cur_row] = sources.back()->getIndex();
-				}
+				if (builder)
+					builder.update(sources.back()->getIndex(), cur_row);
 			}
 
 			for (auto & source : sources)
@@ -493,10 +484,12 @@ class Performer<true>
 {
 public:
 	static void execute(const StringSources & sources, const CondSources & conds,
-		size_t row_count, Block & block, size_t result, size_t tracker)
+		size_t row_count, Block & block, const ColumnNumbers & args, size_t result,
+		NullMapBuilder & builder)
 	{
 		FixedStringSink sink = createSink(block, sources, result, row_count);
-		SinkUpdater<FixedStringSink>::execute(block, sources, conds, sink, row_count, result, tracker);
+		SinkUpdater<FixedStringSink>::execute(block, sources, conds, sink, row_count,
+			args, result, builder);
 	}
 
 private:
@@ -525,10 +518,12 @@ class Performer<false>
 {
 public:
 	static void execute(const StringSources & sources, const CondSources & conds,
-		size_t row_count, Block & block, size_t result, size_t tracker)
+		size_t row_count, Block & block, const ColumnNumbers & args, size_t result,
+		NullMapBuilder & builder)
 	{
 		VarStringSink sink = createSink(block, sources, result, row_count);
-		SinkUpdater<VarStringSink>::execute(block, sources, conds, sink, row_count, result, tracker);
+		SinkUpdater<VarStringSink>::execute(block, sources, conds, sink, row_count,
+			args, result, builder);
 	}
 
 private:
@@ -549,7 +544,7 @@ private:
 }
 
 /// Process a multiIf.
-bool StringEvaluator::perform(Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
+bool StringEvaluator::perform(Block & block, const ColumnNumbers & args, size_t result, NullMapBuilder & builder)
 {
 	StringSources sources;
 	if (!createStringSources(sources, block, args))
@@ -569,9 +564,9 @@ bool StringEvaluator::perform(Block & block, const ColumnNumbers & args, size_t 
 	}
 
 	if (has_only_fixed_sources)
-		Performer<true>::execute(sources, conds, row_count, block, result, tracker);
+		Performer<true>::execute(sources, conds, row_count, block, args, result, builder);
 	else
-		Performer<false>::execute(sources, conds, row_count, block, result, tracker);
+		Performer<false>::execute(sources, conds, row_count, block, args, result, builder);
 
 	return true;
 }

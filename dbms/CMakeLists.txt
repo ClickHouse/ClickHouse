@@ -39,6 +39,7 @@ add_library (dbms
 	include/DB/Functions/FunctionsTransform.h
 	include/DB/Functions/Conditional/CondException.h
 	include/DB/Functions/Conditional/common.h
+	include/DB/Functions/Conditional/NullMapBuilder.h
 	include/DB/Functions/Conditional/getArrayType.h
 	include/DB/Functions/Conditional/ArgsInfo.h
 	include/DB/Functions/Conditional/CondSource.h
@@ -891,6 +892,7 @@ add_library (dbms
 	src/Functions/Conditional/getArrayType.cpp
 	src/Functions/Conditional/ArgsInfo.cpp
 	src/Functions/Conditional/CondSource.cpp
+	src/Functions/Conditional/NullMapBuilder.cpp
 	src/Functions/Conditional/NumericPerformer.cpp
 	src/Functions/Conditional/StringEvaluator.cpp
 	src/Functions/Conditional/StringArrayEvaluator.cpp

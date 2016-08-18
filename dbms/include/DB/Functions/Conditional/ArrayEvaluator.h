@@ -2,6 +2,7 @@
 
 #include <DB/Functions/Conditional/CondException.h>
 #include <DB/Functions/Conditional/common.h>
+#include <DB/Functions/Conditional/NullMapBuilder.h>
 #include <DB/Functions/Conditional/CondSource.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Columns/ColumnVector.h>
@@ -315,20 +316,15 @@ template <typename TResult>
 class ArrayEvaluator final
 {
 public:
-	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
+	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, NullMapBuilder & builder)
 	{
 		const CondSources conds = createConds(block, args);
 		size_t row_count = conds[0].getSize();
 		IArraySources<TResult> sources = createSources(block, args, branches);
 		ArraySink<TResult> sink = createSink(block, sources, result, row_count);
 
-		ColumnUInt16 * tracker_col = nullptr;
-		if (tracker != result)
-		{
-			auto & col = block.unsafeGetByPosition(tracker).column;
-			col = std::make_shared<ColumnUInt16>(row_count);
-			tracker_col = static_cast<ColumnUInt16 *>(col.get());
-		}
+		if (builder)
+			builder.init(args);
 
 		for (size_t cur_row = 0; cur_row < row_count; ++cur_row)
 		{
@@ -340,11 +336,8 @@ public:
 				if (cond.get(cur_row))
 				{
 					sink.store(sources[cur_source]->get());
-					if (tracker_col != nullptr)
-					{
-						auto & data = tracker_col->getData();
-						data[cur_row] = args[branches[cur_source].index];
-					}
+					if (builder)
+						builder.update(args[branches[cur_source].index], cur_row);
 					has_triggered_cond = true;
 					break;
 				}
@@ -354,11 +347,8 @@ public:
 			if (!has_triggered_cond)
 			{
 				sink.store(sources.back()->get());
-				if (tracker_col != nullptr)
-				{
-					auto & data = tracker_col->getData();
-					data[cur_row] = args[branches.back().index];
-				}
+				if (builder)
+					builder.update(args[branches.back().index], cur_row);
 			}
 
 			for (auto & source : sources)
@@ -446,10 +436,8 @@ template <>
 class ArrayEvaluator<NumberTraits::Error>
 {
 public:
-	/// The tracker parameter is an index to a column that tracks the originating column of each value of
-	/// the result column. Calling this function with result == tracker means that no such tracking is
-	/// required, which happens if multiIf is called with no nullable parameters.
-	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
+	/// For the meaning of the builder parameter, see the FunctionMultiIf::perform() declaration.
+	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, NullMapBuilder & builder)
 	{
 		throw CondException{CondErrorCodes::ARRAY_EVALUATOR_INVALID_TYPES};
 	}

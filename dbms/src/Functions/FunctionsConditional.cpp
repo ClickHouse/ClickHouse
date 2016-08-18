@@ -3,6 +3,7 @@
 #include <DB/Functions/FunctionsTransform.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/Conditional/common.h>
+#include <DB/Functions/Conditional/NullMapBuilder.h>
 #include <DB/Functions/Conditional/ArgsInfo.h>
 #include <DB/Functions/Conditional/CondSource.h>
 #include <DB/Functions/Conditional/NumericPerformer.h>
@@ -137,18 +138,10 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 		if (!blockHasSpecialBranches(block, args))
 		{
 			/// All the branch types are ordinary. No special processing required.
-			perform(block, args, result, result);
+			Conditional::NullMapBuilder builder;
+			perform(block, args, result, builder);
 			return;
 		}
-
-		/// The adopted approach is quite similar to how ordinary functions deal
-		/// with nullable arguments. From the original block, we create a new block
-		/// that contains only non-nullable types and an extra column, namely a "tracker"
-		/// column that tracks the originating column of each row of the result column.
-		/// This way, after having run multiIf on this new block, we can create
-		/// a correct null byte map for the result column.
-
-		size_t row_count = block.rowsInFirstColumn();
 
 		/// From the block to be processed, deduce a block whose specified
 		/// columns are not nullable. We accept null columns because they
@@ -161,96 +154,21 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 
 		Block block_with_nested_cols = createBlockWithNestedColumns(block, args_to_transform);
 
-		/// Append a column that tracks, for each result of multiIf, the index
-		/// of the originating column. UInt16 is enough for 65536 columns.
-		/// A table with such a big number of columns is highly unlikely to appear.
-		ColumnWithTypeAndName elem;
-		elem.type = std::make_shared<DataTypeUInt16>();
-
-		size_t tracker = block_with_nested_cols.columns();
-		block_with_nested_cols.insert(elem);
+		/// Create an object that will incrementally build the null map of the
+		/// result column to be returned.
+		Conditional::NullMapBuilder builder{block};
 
 		/// Now perform multiIf.
-		perform(block_with_nested_cols, args, result, tracker);
+		perform(block_with_nested_cols, args, result, builder);
 
+		/// Store the result.
 		const ColumnWithTypeAndName & source_col = block_with_nested_cols.unsafeGetByPosition(result);
 		ColumnWithTypeAndName & dest_col = block.unsafeGetByPosition(result);
 
 		if (source_col.column->isNull())
-		{
-			/// Degenerate case: the result is a null column.
 			dest_col.column = source_col.column;
-			return;
-		}
-
-		/// Setup the null byte map of the result column by using the branch tracker column values.
-		ColumnPtr tracker_holder = block_with_nested_cols.unsafeGetByPosition(tracker).column;
-		ColumnPtr null_map;
-
-		if (auto col = typeid_cast<ColumnConstUInt16 *>(tracker_holder.get()))
-		{
-			auto pos = col->getData();
-			const IColumn & origin = *block.unsafeGetByPosition(pos).column;
-
-			if (origin.isNull())
-				null_map = std::make_shared<ColumnUInt8>(row_count, 1);
-			else if (origin.isNullable())
-			{
-				const ColumnNullable & origin_nullable = static_cast<const ColumnNullable &>(origin);
-				null_map = origin_nullable.getNullValuesByteMap();
-			}
-			else
-				null_map = std::make_shared<ColumnUInt8>(row_count, 0);
-		}
-		else if (auto col = typeid_cast<ColumnUInt16 *>(tracker_holder.get()))
-		{
-			/// Remember which columns are nullable. This avoids us many costly
-			/// calls to virtual functions.
-			std::vector<UInt8> nullable_cols_map;
-			nullable_cols_map.resize(args.size());
-			for (const auto & arg : args)
-			{
-				const auto & col = block.unsafeGetByPosition(arg).column;
-				nullable_cols_map[arg] = col->isNullable() ? 1 : 0;
-			}
-
-			/// Remember which columns are null. The same remark as above applies.
-			std::vector<UInt8> null_cols_map;
-			null_cols_map.resize(args.size());
-			for (const auto & arg : args)
-			{
-				const auto & col = block.unsafeGetByPosition(arg).column;
-				null_cols_map[arg] = col->isNull() ? 1 : 0;
-			}
-
-			null_map = std::make_shared<ColumnUInt8>(row_count);
-			auto & null_map_data = static_cast<ColumnUInt8 &>(*null_map).getData();
-
-			const auto & data = col->getData();
-			for (size_t row = 0; row < row_count; ++row)
-			{
-				size_t pos = data[row];
-				bool is_null;
-
-				if (null_cols_map[pos] != 0)
-					is_null = true;
-				else if (nullable_cols_map[pos] != 0)
-				{
-					const IColumn & origin = *block.unsafeGetByPosition(pos).column;
-					const auto & nullable_col = static_cast<const ColumnNullable &>(origin);
-					is_null = nullable_col.isNullAt(row);
-				}
-				else
-					is_null = false;
-
-				null_map_data[row] = is_null ? 1 : 0;
-			}
-		}
 		else
-			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-
-		/// Store the result.
-		dest_col.column = std::make_shared<ColumnNullable>(source_col.column, null_map);
+			dest_col.column = std::make_shared<ColumnNullable>(source_col.column, builder.getNullMap());
 	}
 	catch (const Conditional::CondException & ex)
 	{
@@ -407,15 +325,15 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 	}
 }
 
-void FunctionMultiIf::perform(Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
+void FunctionMultiIf::perform(Block & block, const ColumnNumbers & args, size_t result, Conditional::NullMapBuilder & builder)
 {
-	if (performTrivialCase(block, args, result, tracker))
+	if (performTrivialCase(block, args, result, builder))
 		return;
-	if (Conditional::NumericPerformer::perform(block, args, result, tracker))
+	if (Conditional::NumericPerformer::perform(block, args, result, builder))
 		return;
-	if (Conditional::StringEvaluator::perform(block, args, result, tracker))
+	if (Conditional::StringEvaluator::perform(block, args, result, builder))
 		return;
-	if (Conditional::StringArrayEvaluator::perform(block, args, result, tracker))
+	if (Conditional::StringArrayEvaluator::perform(block, args, result, builder))
 		return;
 
 	if (is_case_mode)
@@ -427,13 +345,13 @@ void FunctionMultiIf::perform(Block & block, const ColumnNumbers & args, size_t 
 			ErrorCodes::ILLEGAL_COLUMN};
 }
 
-bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
+bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & args,
+	size_t result, Conditional::NullMapBuilder & builder)
 {
 	/// Check that all the branches have the same type. Moreover
 	/// some or all these branches may be null.
 	std::string first_type_name;
 	DataTypePtr type;
-	Field sample;
 
 	size_t else_arg = Conditional::elseArg(args);
 	for (size_t i = Conditional::firstThen(); i < else_arg; i = Conditional::nextThen(i))
@@ -445,7 +363,6 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 			{
 				first_type_name = name;
 				type = block.getByPosition(args[i]).type;
-				block.getByPosition(args[i]).column->get(0, sample);
 			}
 			else
 			{
@@ -458,10 +375,7 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 	if (!block.getByPosition(args[else_arg]).type->isNull())
 	{
 		if (first_type_name.empty())
-		{
 			type = block.getByPosition(args[else_arg]).type;
-			block.getByPosition(args[else_arg]).column->get(0, sample);
-		}
 		else
 		{
 			const auto & name = block.getByPosition(args[else_arg]).type->getName();
@@ -476,7 +390,7 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 	if (!type)
 	{
 		/// Degenerate case: all the branches are null.
-		res_col = DataTypeNull{}.createConstColumn(row_count, Field{});
+		res_col = std::make_shared<ColumnNull>(row_count, Null());
 		return true;
 	}
 
@@ -501,12 +415,14 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 	{
 		res_col = block.getByPosition(index).column;
 		if (res_col->isNull())
-			res_col = type->createConstColumn(row_count, sample);
-		if (tracker != result)
 		{
-			ColumnPtr & col = block.getByPosition(tracker).column;
-			col = std::make_shared<ColumnConstUInt16>(row_count, index);
+			/// The return type of multiIf is Nullable(T). Therefore we create
+			/// a constant column whose type is T with a default value.
+			/// Subsequently the null map builder will mark it as null.
+			res_col = type->createConstColumn(row_count, type->getDefault());
 		}
+		if (builder)
+			builder.build(index);
 	};
 
 	size_t i = Conditional::firstCond();

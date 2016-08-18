@@ -1,6 +1,7 @@
 #include <DB/Functions/Conditional/StringArrayEvaluator.h>
 #include <DB/Functions/Conditional/CondSource.h>
 #include <DB/Functions/Conditional/common.h>
+#include <DB/Functions/Conditional/NullMapBuilder.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
@@ -393,7 +394,7 @@ VarStringArraySink createSink(Block & block, const StringArraySources & sources,
 }
 
 /// Process a multiIf.
-bool StringArrayEvaluator::perform(Block & block, const ColumnNumbers & args, size_t result, size_t tracker)
+bool StringArrayEvaluator::perform(Block & block, const ColumnNumbers & args, size_t result, NullMapBuilder & builder)
 {
 	StringArraySources sources;
 	if (!createStringArraySources(sources, block, args))
@@ -403,13 +404,8 @@ bool StringArrayEvaluator::perform(Block & block, const ColumnNumbers & args, si
 	size_t row_count = conds[0].getSize();
 	VarStringArraySink sink = createSink(block, sources, result, row_count);
 
-	ColumnUInt16 * tracker_col = nullptr;
-	if (tracker != result)
-	{
-		auto & col = block.unsafeGetByPosition(tracker).column;
-		col = std::make_shared<ColumnUInt16>(row_count);
-		tracker_col = static_cast<ColumnUInt16 *>(col.get());
-	}
+	if (builder)
+		builder.init(args);
 
 	for (size_t cur_row = 0; cur_row < row_count; ++cur_row)
 	{
@@ -421,11 +417,8 @@ bool StringArrayEvaluator::perform(Block & block, const ColumnNumbers & args, si
 			if (cond.get(cur_row))
 			{
 				sink.store(sources[cur_source]->get());
-				if (tracker_col != nullptr)
-				{
-					auto & data = tracker_col->getData();
-					data[cur_row] = sources[cur_source]->getIndex();
-				}
+				if (builder)
+					builder.update(sources[cur_source]->getIndex(), cur_row);
 				has_triggered_cond = true;
 				break;
 			}
@@ -435,11 +428,8 @@ bool StringArrayEvaluator::perform(Block & block, const ColumnNumbers & args, si
 		if (!has_triggered_cond)
 		{
 			sink.store(sources.back()->get());
-			if (tracker_col != nullptr)
-			{
-				auto & data = tracker_col->getData();
-				data[cur_row] = sources.back()->getIndex();
-			}
+			if (builder)
+				builder.update(sources.back()->getIndex(), cur_row);
 		}
 
 		for (auto & source : sources)

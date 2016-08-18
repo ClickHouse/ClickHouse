@@ -1458,6 +1458,7 @@ public:
 namespace Conditional
 {
 
+class NullMapBuilder;
 class CondException;
 
 }
@@ -1494,15 +1495,15 @@ private:
 	DataTypePtr getReturnTypeInternal(const DataTypes & args) const;
 
 	/// Internal version of multiIf.
-	/// The tracker parameter is an index to a column that tracks the originating column of each value of
-	/// the result column. The condition result == tracker means that no such tracking is
-	/// required, which happens if multiIf is called with no nullable parameters.
-	void perform(Block & block, const ColumnNumbers & args, size_t result, size_t tracker);
+	/// The builder parameter is an object that incrementally builds the null map
+	/// of the result column if it is nullable. When no builder is necessary,
+	/// just pass a default parameter.
+	void perform(Block & block, const ColumnNumbers & args, size_t result, Conditional::NullMapBuilder & builder);
 
 	/// Perform multiIf in the case where all the non-null branches have the same type and all
 	/// the conditions are constant. The same remark as above applies with regards to
-	/// the tracker parameter.
-	bool performTrivialCase(Block & block, const ColumnNumbers & args, size_t result, size_t tracker);
+	/// the builder parameter.
+	bool performTrivialCase(Block & block, const ColumnNumbers & args, size_t result, Conditional::NullMapBuilder & builder);
 
 	/// Translate a context-free error into a contextual error.
 	void rethrowContextually(const Conditional::CondException & ex) const;
