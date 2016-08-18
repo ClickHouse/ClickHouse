@@ -390,7 +390,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 		return AggregatedDataVariants::Type::without_key;
 
 	/// Если есть один числовой ключ, который помещается в 64 бита
-	if (params.keys_size == 1 && key_columns[0]->isNumeric())
+	if (params.keys_size == 1 && key_columns[0]->isNumericNotNullable())
 	{
 		size_t size_of_field = key_columns[0]->sizeOfField();
 		if (size_of_field == 1)

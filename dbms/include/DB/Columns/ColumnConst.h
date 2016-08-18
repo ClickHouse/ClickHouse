@@ -307,6 +307,17 @@ using ColumnConstString = ColumnConst<String>;
 using ColumnConstArray = ColumnConst<Array>;
 using ColumnConstTuple = ColumnConst<Tuple>;
 
+template <>
+inline bool ColumnConst<Null>::isNull() const
+{
+	return true;
+}
+
+template <>
+inline StringRef ColumnConst<Null>::getDataAt(size_t n) const
+{
+	return {};
+}
 
 template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const
 {

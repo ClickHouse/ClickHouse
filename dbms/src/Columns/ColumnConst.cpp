@@ -16,30 +16,6 @@ namespace DB
 {
 
 template <>
-bool ColumnConst<Null>::isNull() const
-{
-	return true;
-}
-
-template <>
-StringRef ColumnConst<Null>::getDataAt(size_t n) const
-{
-	return StringRef{};
-}
-
-template <>
-StringRef ColumnConst<Null>::getDataAtWithTerminatingZero(size_t n) const
-{
-	throw Exception("Method getDataAtWithTerminatingZero is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
-}
-
-template <>
-UInt64 ColumnConst<Null>::get64(size_t n) const
-{
-	throw Exception("Method get64 is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
-}
-
-template <>
 ColumnPtr ColumnConst<Null>::convertToFullColumn() const
 {
 	/// We basically create a column whose rows have NULL values.

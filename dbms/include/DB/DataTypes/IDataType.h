@@ -33,11 +33,14 @@ public:
 	/// Is this type nullable?
 	virtual bool isNullable() const { return false; }
 
-	/// Является ли тип числовым. Дата и дата-с-временем тоже считаются такими.
+	/// Is this type numeric? Date and DateTime types are considered as such.
 	virtual bool isNumeric() const { return false; }
 
-	/// Если тип числовой, уместны ли с ним все арифметические операции и приведение типов.
-	/// true для чисел, false для даты и даты-с-временем.
+	/// Is this type numeric and not nullable?
+	virtual bool isNumericNotNullable() const { return isNumeric(); }
+
+	/// If this type is numeric, are all the arithmetic operations and type casting
+	/// relevant for it? True for numbers. False for Date and DateTime types.
 	virtual bool behavesAsNumber() const { return false; }
 
 	/// Клонировать

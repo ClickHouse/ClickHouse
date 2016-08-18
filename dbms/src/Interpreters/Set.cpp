@@ -116,7 +116,7 @@ SetVariants::Type SetVariants::chooseMethod(const ConstColumnPlainPtrs & key_col
 	}
 
 	/// Если есть один числовой ключ, который помещается в 64 бита
-	if (keys_size == 1 && key_columns[0]->isNumeric())
+	if (keys_size == 1 && key_columns[0]->isNumericNotNullable())
 	{
 		size_t size_of_field = key_columns[0]->sizeOfField();
 		if (size_of_field == 1)

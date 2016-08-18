@@ -45,6 +45,9 @@ public:
 	  */
 	virtual bool isNumeric() const { return false; }
 
+	/// Is this column numeric and not nullable?
+	virtual bool isNumericNotNullable() const { return isNumeric(); }
+
 	/** Столбец представляет собой константу.
 	  */
 	virtual bool isConst() const { return false; }

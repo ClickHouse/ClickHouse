@@ -15,6 +15,7 @@ public:
 	std::string getName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
 	bool isNullable() const override { return true; }
 	bool isNumeric() const override { return nested_data_type->isNumeric(); }
+	bool isNumericNotNullable() const override { return false; }
 	bool behavesAsNumber() const override { return nested_data_type->behavesAsNumber(); }
 	DataTypePtr clone() const override { return std::make_shared<DataTypeNullable>(nested_data_type->clone()); }
 	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override;
