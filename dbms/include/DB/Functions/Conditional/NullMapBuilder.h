@@ -64,7 +64,7 @@ private:
 	/// Remember for each column representing an argument whether it is
 	/// nullable, null, or neither of them. This avoids us many costly
 	/// calls to virtual functions.
-	std::vector<Property> cols_properties;
+	PaddedPODArray<Property> cols_properties;
 
 	ColumnPtr null_map;
 	size_t row_count;
