@@ -1129,6 +1129,43 @@ public:
 		/// Don't parse options with Poco library. We need more sophisticated processing.
 		stopOptionsProcessing();
 
+		/** We allow different groups of arguments:
+		  * - common arguments;
+		  * - arguments for any number of external tables each in form "--external args...",
+		  *   where possible args are file, name, format, structure, types.
+		  * Split these groups before processing.
+		  */
+		using Arguments = std::vector<const char *>;
+
+		Arguments common_arguments{""};		/// 0th argument is ignored.
+		std::vector<Arguments> external_tables_arguments;
+
+		bool in_external_group = false;
+		for (int arg_num = 1; arg_num < argc; ++arg_num)
+		{
+			const char * arg = argv[arg_num];
+
+			if (0 == strcmp(arg, "--external"))
+			{
+				in_external_group = true;
+				external_tables_arguments.emplace_back(Arguments{""});
+			}
+			else if (in_external_group
+				&& (0 == strncmp(arg, "--file", 		strlen("--file"))	/// slightly inaccurate because --filesuffix is also matched.
+				 || 0 == strncmp(arg, "--name", 		strlen("--name"))
+				 || 0 == strncmp(arg, "--format", 		strlen("--format"))
+				 || 0 == strncmp(arg, "--structure", 	strlen("--structure"))
+				 || 0 == strncmp(arg, "--types", 		strlen("--types"))))
+			{
+				external_tables_arguments.back().emplace_back(arg);
+			}
+			else
+			{
+				in_external_group = false;
+				common_arguments.emplace_back(arg);
+			}
+		}
+
 #define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
 #define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
 
@@ -1170,7 +1207,8 @@ public:
 		;
 
 		/// Парсим основные опции командной строки
-		boost::program_options::parsed_options parsed = boost::program_options::command_line_parser(argc, argv).options(main_description).allow_unregistered().run();
+		boost::program_options::parsed_options parsed = boost::program_options::command_line_parser(
+			common_arguments.size(), common_arguments.data()).options(main_description).run();
 		boost::program_options::variables_map options;
 		boost::program_options::store(parsed, options);
 
@@ -1183,39 +1221,12 @@ public:
 			exit(0);
 		}
 
-		std::vector<std::string> to_pass_further = boost::program_options::collect_unrecognized(parsed.options, boost::program_options::include_positional);
-
-		/// Опции командной строки, составленные только из аргументов, не перечисленных в main_description.
-		char newargc = to_pass_further.size() + 1;
-		const char * new_argv[newargc];
-
-		new_argv[0] = "";
-		for (size_t i = 0; i < to_pass_further.size(); ++i)
-			new_argv[i + 1] = to_pass_further[i].c_str();
-
-		/// Разбиваем на интервалы внешних таблиц.
-		std::vector<int> positions;
-		positions.push_back(0);
-		for (int i = 1; i < newargc; ++i)
-			if (strcmp(new_argv[i], "--external") == 0)
-				positions.push_back(i);
-		positions.push_back(newargc);
-
-		size_t cnt = positions.size();
-
-		if (cnt == 2 && newargc > 1)
-		{
-			Exception e("Unknown option " + to_pass_further[0] + ". Maybe missed --external flag in front of it.", ErrorCodes::BAD_ARGUMENTS);
-			std::string text = e.displayText();
-			std::cerr << "Code: " << e.code() << ". " << text << std::endl;
-			exit(e.code());
-		}
-
-		size_t stdin_count = 0;
-		for (size_t i = 1; i + 1 < cnt; ++i)
+		size_t number_of_external_tables_with_stdin_source = 0;
+		for (size_t i = 0; i < external_tables_arguments.size(); ++i)
 		{
 			/// Парсим основные опции командной строки
-			boost::program_options::parsed_options parsed = boost::program_options::command_line_parser(positions[i + 1] - positions[i], &new_argv[positions[i]]).options(external_description).run();
+			boost::program_options::parsed_options parsed = boost::program_options::command_line_parser(
+				external_tables_arguments[i].size(), external_tables_arguments[i].data()).options(external_description).run();
 			boost::program_options::variables_map external_options;
 			boost::program_options::store(parsed, external_options);
 
@@ -1223,8 +1234,8 @@ public:
 			{
 				external_tables.emplace_back(external_options);
 				if (external_tables.back().file == "-")
-					++stdin_count;
-				if (stdin_count > 1)
+					++number_of_external_tables_with_stdin_source;
+				if (number_of_external_tables_with_stdin_source > 1)
 					throw Exception("Two or more external tables has stdin (-) set as --file field", ErrorCodes::BAD_ARGUMENTS);
 			}
 			catch (const Exception & e)
