@@ -4,6 +4,7 @@
 
 #include <DB/Common/Exception.h>
 #include <DB/Common/Arena.h>
+#include <DB/Common/SipHash.h>
 
 #include <DB/Columns/IColumn.h>
 #include <DB/Columns/ColumnsNumber.h>
@@ -149,6 +150,16 @@ public:
 		return pos;
 	}
 
+	void updateHashWithValue(size_t n, SipHash & hash) const override
+	{
+		size_t array_size = sizeAt(n);
+		size_t offset = offsetAt(n);
+
+		hash.update(reinterpret_cast<const char *>(&array_size), sizeof(array_size));
+		for (size_t i = 0; i < array_size; ++i)
+			getData().updateHashWithValue(offset + i, hash);
+	}
+
 	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
 	void insert(const Field & x) override
@@ -179,7 +190,8 @@ public:
 	{
 		auto & offsets = getOffsets();
 		size_t nested_n = offsets.back() - offsetAt(offsets.size() - n);
-		getData().popBack(nested_n);
+		if (nested_n)
+			getData().popBack(nested_n);
 		offsets.resize_assume_reserved(offsets.size() - n);
 	}
 

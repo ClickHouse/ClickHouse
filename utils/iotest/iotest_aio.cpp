@@ -13,7 +13,7 @@
 
 #include <DB/Common/Exception.h>
 
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 #include <DB/Common/Stopwatch.h>
 
 #include <stdlib.h>
@@ -111,101 +111,94 @@ struct AioContext
 };
 
 
-void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t buffers_count, size_t count, std::exception_ptr & exception)
+void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t buffers_count, size_t count)
 {
-	try
-	{
-		AioContext ctx;
+	AioContext ctx;
 
-		std::vector<AlignedBuffer> buffers(buffers_count);
+	std::vector<AlignedBuffer> buffers(buffers_count);
+	for (size_t i = 0; i < buffers_count; ++i)
+	{
+		buffers[i].init(block_size);
+	}
+
+	drand48_data rand_data;
+	timespec times;
+	clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times);
+	srand48_r(times.tv_nsec, &rand_data);
+
+	size_t in_progress = 0;
+	size_t blocks_sent = 0;
+	std::vector<bool> buffer_used(buffers_count, false);
+	std::vector<iocb> iocbs(buffers_count);
+	std::vector<iocb*> query_cbs;
+	std::vector<io_event> events(buffers_count);
+
+	while (blocks_sent < count || in_progress > 0)
+	{
+		/// Составим запросы.
+		query_cbs.clear();
 		for (size_t i = 0; i < buffers_count; ++i)
 		{
-			buffers[i].init(block_size);
+			if (blocks_sent >= count || in_progress >= buffers_count)
+				break;
+
+			if (buffer_used[i])
+				continue;
+
+			buffer_used[i] = true;
+			++blocks_sent;
+			++in_progress;
+
+			char * buf = buffers[i].data;
+
+			long rand_result1 = 0;
+			long rand_result2 = 0;
+			long rand_result3 = 0;
+			lrand48_r(&rand_data, &rand_result1);
+			lrand48_r(&rand_data, &rand_result2);
+			lrand48_r(&rand_data, &rand_result3);
+
+			size_t rand_result = rand_result1 ^ (rand_result2 << 22) ^ (rand_result3 << 43);
+			size_t offset = min_offset + rand_result % ((max_offset - min_offset) / block_size) * block_size;
+
+			iocb & cb = iocbs[i];
+			memset(&cb, 0, sizeof(cb));
+			cb.aio_buf = reinterpret_cast<uint64_t>(buf);
+			cb.aio_fildes = fd;
+			cb.aio_nbytes = block_size;
+			cb.aio_offset = offset;
+			cb.aio_data = static_cast<uint64_t>(i);
+
+			if (mode == MODE_READ)
+			{
+				cb.aio_lio_opcode = IOCB_CMD_PREAD;
+			}
+			else
+			{
+				cb.aio_lio_opcode = IOCB_CMD_PWRITE;
+			}
+
+			query_cbs.push_back(&cb);
 		}
 
-		drand48_data rand_data;
-		timespec times;
-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times);
-		srand48_r(times.tv_nsec, &rand_data);
+		/// Отправим запросы.
+		if  (io_submit(ctx.ctx, query_cbs.size(), &query_cbs[0]) < 0)
+			throwFromErrno("io_submit failed");
 
-		size_t in_progress = 0;
-		size_t blocks_sent = 0;
-		std::vector<bool> buffer_used(buffers_count, false);
-		std::vector<iocb> iocbs(buffers_count);
-		std::vector<iocb*> query_cbs;
-		std::vector<io_event> events(buffers_count);
+		/// Получим ответы. Если еще есть что отправлять, получим хотя бы один ответ (после этого пойдем отправлять), иначе дождемся всех ответов.
+		memset(&events[0], 0, buffers_count * sizeof(events[0]));
+		int evs = io_getevents(ctx.ctx, (blocks_sent < count ? 1 : in_progress), buffers_count, &events[0], nullptr);
+		if (evs < 0)
+			throwFromErrno("io_getevents failed");
 
-		while (blocks_sent < count || in_progress > 0)
+		for (int i = 0; i < evs; ++i)
 		{
-			/// Составим запросы.
-			query_cbs.clear();
-			for (size_t i = 0; i < buffers_count; ++i)
-			{
-				if (blocks_sent >= count || in_progress >= buffers_count)
-					break;
-
-				if (buffer_used[i])
-					continue;
-
-				buffer_used[i] = true;
-				++blocks_sent;
-				++in_progress;
-
-				char * buf = buffers[i].data;
-
-				long rand_result1 = 0;
-				long rand_result2 = 0;
-				long rand_result3 = 0;
-				lrand48_r(&rand_data, &rand_result1);
-				lrand48_r(&rand_data, &rand_result2);
-				lrand48_r(&rand_data, &rand_result3);
-
-				size_t rand_result = rand_result1 ^ (rand_result2 << 22) ^ (rand_result3 << 43);
-				size_t offset = min_offset + rand_result % ((max_offset - min_offset) / block_size) * block_size;
-
-				iocb & cb = iocbs[i];
-				memset(&cb, 0, sizeof(cb));
-				cb.aio_buf = reinterpret_cast<uint64_t>(buf);
-				cb.aio_fildes = fd;
-				cb.aio_nbytes = block_size;
-				cb.aio_offset = offset;
-				cb.aio_data = static_cast<uint64_t>(i);
-
-				if (mode == MODE_READ)
-				{
-					cb.aio_lio_opcode = IOCB_CMD_PREAD;
-				}
-				else
-				{
-					cb.aio_lio_opcode = IOCB_CMD_PWRITE;
-				}
-
-				query_cbs.push_back(&cb);
-			}
-
-			/// Отправим запросы.
-			if  (io_submit(ctx.ctx, query_cbs.size(), &query_cbs[0]) < 0)
-				throwFromErrno("io_submit failed");
-
-			/// Получим ответы. Если еще есть что отправлять, получим хотя бы один ответ (после этого пойдем отправлять), иначе дождемся всех ответов.
-			memset(&events[0], 0, buffers_count * sizeof(events[0]));
-			int evs = io_getevents(ctx.ctx, (blocks_sent < count ? 1 : in_progress), buffers_count, &events[0], nullptr);
-			if (evs < 0)
-				throwFromErrno("io_getevents failed");
-
-			for (int i = 0; i < evs; ++i)
-			{
-				int b = static_cast<int>(events[i].data);
-				if (events[i].res != static_cast<int>(block_size))
-					throw Poco::Exception("read/write error");
-				--in_progress;
-				buffer_used[b] = false;
-			}
+			int b = static_cast<int>(events[i].data);
+			if (events[i].res != static_cast<int>(block_size))
+				throw Poco::Exception("read/write error");
+			--in_progress;
+			buffer_used[b] = false;
 		}
-	}
-	catch (...)
-	{
-		exception = std::current_exception();
 	}
 }
 
@@ -241,22 +234,15 @@ int mainImpl(int argc, char ** argv)
 	if (-1 == fd)
 		throwFromErrno("Cannot open file");
 
-	using Exceptions = std::vector<std::exception_ptr>;
-
-	boost::threadpool::pool pool(threads_count);
-	Exceptions exceptions(threads_count);
+	ThreadPool pool(threads_count);
 
 	Stopwatch watch;
 
 	for (size_t i = 0; i < threads_count; ++i)
-		pool.schedule(std::bind(thread, fd, mode, min_offset, max_offset, block_size, buffers_count, count, std::ref(exceptions[i])));
+		pool.schedule(std::bind(thread, fd, mode, min_offset, max_offset, block_size, buffers_count, count));
 	pool.wait();
 
 	watch.stop();
-
-	for (size_t i = 0; i < threads_count; ++i)
-		if (exceptions[i])
-			std::rethrow_exception(exceptions[i]);
 
 	if (0 != close(fd))
 		throwFromErrno("Cannot close file");

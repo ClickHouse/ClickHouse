@@ -10,8 +10,8 @@ namespace ErrorCodes
 }
 
 
-/** Из позиции в (возможно многострочном) запросе получить номер строки и номер столбца в строке.
-  * Используется в сообщении об ошибках.
+/** From position in (possible multiline) query, get line number and column number in line.
+  * Used in syntax error message.
   */
 static std::pair<size_t, size_t> getLineAndCol(IParser::Pos begin, IParser::Pos pos)
 {
@@ -24,7 +24,7 @@ static std::pair<size_t, size_t> getLineAndCol(IParser::Pos begin, IParser::Pos 
 		begin = nl + 1;
 	}
 
-	/// Нумеруются с единицы.
+	/// Lines numbered from 1.
 	return { line + 1, pos - begin + 1 };
 }
 
@@ -55,7 +55,7 @@ static std::string getSyntaxErrorMessage(
 	{
 		message << ": failed at position " << (max_parsed_pos - begin + 1);
 
-		/// Если запрос многострочный.
+		/// If query is multiline.
 		IParser::Pos nl = reinterpret_cast<IParser::Pos>(memchr(begin, '\n', end - begin));
 		if (nullptr != nl && nl + 1 != end)
 		{
@@ -66,6 +66,7 @@ static std::string getSyntaxErrorMessage(
 			message << " (line " << line << ", col " << col << ")";
 		}
 
+		/// Hilite place of syntax error.
 		if (hilite)
 		{
 			message << ":\n\n";
@@ -77,7 +78,7 @@ static std::string getSyntaxErrorMessage(
 				&& static_cast<unsigned char>(max_parsed_pos[bytes_to_hilite]) <= 0xBF)
 				++bytes_to_hilite;
 
-			message << "\033[41;1m" << std::string(max_parsed_pos, bytes_to_hilite) << "\033[0m";		/// Ярко-красный фон.
+			message << "\033[41;1m" << std::string(max_parsed_pos, bytes_to_hilite) << "\033[0m";		/// Bright red background.
 			message.write(max_parsed_pos + bytes_to_hilite, end - max_parsed_pos - bytes_to_hilite);
 			message << "\n\n";
 
@@ -103,7 +104,8 @@ ASTPtr tryParseQuery(
 	IParser::Pos end,
 	std::string & out_error_message,
 	bool hilite,
-	const std::string & description)
+	const std::string & description,
+	bool allow_multi_statements)
 {
 	if (pos == end || *pos == ';')
 	{
@@ -118,11 +120,26 @@ ASTPtr tryParseQuery(
 	ASTPtr res;
 	bool parse_res = parser.parse(pos, end, res, max_parsed_pos, expected);
 
-	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
+	/// Parsed query must end with end of data or semicolon.
 	if (!parse_res || (pos != end && *pos != ';'))
 	{
 		out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, description);
 		return nullptr;
+	}
+
+	/// If multi-statements are not allowed, then after semicolon, there must be no non-space characters.
+	if (!allow_multi_statements && pos < end && *pos == ';')
+	{
+		++pos;
+		while (pos < end && isWhitespaceASCII(*pos))
+			++pos;
+
+		if (pos < end)
+		{
+			out_error_message = getSyntaxErrorMessage(begin, end, pos, nullptr, hilite,
+				(description.empty() ? std::string() : std::string(". ")) + "Multi-statements are not allowed");
+			return nullptr;
+		}
 	}
 
 	return res;
@@ -133,10 +150,11 @@ ASTPtr parseQueryAndMovePosition(
 	IParser & parser,
 	IParser::Pos & pos,
 	IParser::Pos end,
-	const std::string & description)
+	const std::string & description,
+	bool allow_multi_statements)
 {
 	std::string error_message;
-	ASTPtr res = tryParseQuery(parser, pos, end, error_message, false, description);
+	ASTPtr res = tryParseQuery(parser, pos, end, error_message, false, description, allow_multi_statements);
 
 	if (res)
 		return res;
@@ -152,7 +170,7 @@ ASTPtr parseQuery(
 	const std::string & description)
 {
 	auto pos = begin;
-	return parseQueryAndMovePosition(parser, pos, end, description);
+	return parseQueryAndMovePosition(parser, pos, end, description, false);
 }
 
 }

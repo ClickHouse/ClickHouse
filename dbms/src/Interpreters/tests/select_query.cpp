@@ -9,7 +9,6 @@
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/System/StorageSystemNumbers.h>
 #include <DB/Storages/System/StorageSystemOne.h>
-#include <DB/Storages/StorageFactory.h>
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/executeQuery.h>
@@ -35,9 +34,9 @@ try
 
 	loadMetadata(context);
 
-	DatabasePtr system = std::make_shared<DatabaseOrdinary>("system", "./metadata/system/", context, nullptr);
-
+	DatabasePtr system = std::make_shared<DatabaseOrdinary>("system", "./metadata/system/");
 	context.addDatabase("system", system);
+	system->loadTables(context, nullptr, false);
 	system->attachTable("one", 	StorageSystemOne::create("one"));
 	system->attachTable("numbers", StorageSystemNumbers::create("numbers"));
 	context.setCurrentDatabase("default");

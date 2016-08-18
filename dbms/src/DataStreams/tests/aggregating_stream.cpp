@@ -86,7 +86,7 @@ int main(int argc, char ** argv)
 		{
 			ColumnWithTypeAndName col;
 			col.type = *it;
-			sample.insert(col);
+			sample.insert(std::move(col));
 		}
 
 		Aggregator::Params params(key_column_names, aggregate_descriptions, false);

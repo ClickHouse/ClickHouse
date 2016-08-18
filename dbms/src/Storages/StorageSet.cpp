@@ -3,6 +3,7 @@
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Common/StringUtils.h>
 #include <Poco/DirectoryIterator.h>
 
 
@@ -93,8 +94,7 @@ void StorageSetOrJoinBase::restore()
 		const auto & name = dir_it.name();
 
 		if (dir_it->isFile()
-			&& name.size() > file_suffix_size
-			&& 0 == name.compare(name.size() - file_suffix_size, file_suffix_size, file_suffix)
+			&& endsWith(name, file_suffix)
 			&& dir_it->getSize() > 0)
 		{
 			/// Вычисляем максимальный номер имеющихся файлов с бэкапом, чтобы добавлять следующие файлы с большими номерами.
@@ -122,8 +122,8 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 	/// TODO Добавить скорость, сжатые байты, объём данных в памяти, коэффициент сжатия... Обобщить всё логгирование статистики в проекте.
 	LOG_INFO(&Logger::get("StorageSetOrJoinBase"), std::fixed << std::setprecision(2)
 		<< "Loaded from backup file " << file_path << ". "
-		<< backup_stream.getInfo().rows << " rows, "
-		<< backup_stream.getInfo().bytes / 1048576.0 << " MiB. "
+		<< backup_stream.getProfileInfo().rows << " rows, "
+		<< backup_stream.getProfileInfo().bytes / 1048576.0 << " MiB. "
 		<< "State has " << getSize() << " unique rows.");
 }
 

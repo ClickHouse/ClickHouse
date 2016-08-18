@@ -72,12 +72,12 @@ try
 		{
 			ColumnWithTypeAndName col;
 			col.type = std::make_shared<DataTypeUInt64>();
-			sample.insert(col);
+			sample.insert(std::move(col));
 		}
 		{
 			ColumnWithTypeAndName col;
 			col.type = std::make_shared<DataTypeUInt8>();
-			sample.insert(col);
+			sample.insert(std::move(col));
 		}
 
 		WriteBufferFromOStream out_buf(std::cout);

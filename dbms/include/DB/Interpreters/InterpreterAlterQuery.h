@@ -35,10 +35,10 @@ private:
 		Type type;
 
 		Field partition;
-		bool detach; /// true для DETACH PARTITION.
+		bool detach = false; /// true для DETACH PARTITION.
 
-		bool unreplicated;
-		bool part;
+		bool unreplicated = false;
+		bool part = false;
 
 		String from; /// Для FETCH PARTITION - путь в ZK к шарду, с которого скачивать партицию.
 
@@ -46,27 +46,48 @@ private:
 		Field last_partition;
 		WeightedZooKeeperPaths weighted_zookeeper_paths;
 		ASTPtr sharding_key_expr;
-		bool do_copy;
+		bool do_copy = false;
 		Field coordinator;
+
+		/// For FREEZE PARTITION
+		String with_name;
 
 		static PartitionCommand dropPartition(const Field & partition, bool detach, bool unreplicated)
 		{
-			return {DROP_PARTITION, partition, detach, unreplicated};
+			PartitionCommand res;
+			res.type = DROP_PARTITION;
+			res.partition = partition;
+			res.detach = detach;
+			res.unreplicated = unreplicated;
+			return res;
 		}
 
 		static PartitionCommand attachPartition(const Field & partition, bool unreplicated, bool part)
 		{
-			return {ATTACH_PARTITION, partition, false, unreplicated, part};
+			PartitionCommand res;
+			res.type = ATTACH_PARTITION;
+			res.partition = partition;
+			res.unreplicated = unreplicated;
+			res.part = part;
+			return res;
 		}
 
 		static PartitionCommand fetchPartition(const Field & partition, const String & from)
 		{
-			return {FETCH_PARTITION, partition, false, false, false, from};
+			PartitionCommand res;
+			res.type = FETCH_PARTITION;
+			res.partition = partition;
+			res.from = from;
+			return res;
 		}
 
-		static PartitionCommand freezePartition(const Field & partition)
+		static PartitionCommand freezePartition(const Field & partition, const String & with_name)
 		{
-			return {FREEZE_PARTITION, partition};
+			PartitionCommand res;
+			res.type = FREEZE_PARTITION;
+			res.partition = partition;
+			res.with_name = with_name;
+			return res;
 		}
 
 		static PartitionCommand reshardPartitions(const Field & first_partition_, const Field & last_partition_,

@@ -78,14 +78,14 @@ class AIOContextPool : public Singleton<AIOContextPool>
 
 	AIOContext aio_context{max_concurrent_events};
 
-	using id_t = size_t;
-	using bytes_read_t = ssize_t;
+	using ID = size_t;
+	using BytesRead = ssize_t;
 
 	/// Autoincremental id used to identify completed requests
-	id_t id{};
+	ID id{};
 	mutable std::mutex mutex;
 	mutable std::condition_variable have_resources;
-	std::map<id_t, std::promise<bytes_read_t>> promises;
+	std::map<ID, std::promise<BytesRead>> promises;
 
 	std::atomic<bool> cancelled{false};
 	std::thread io_completion_monitor{&AIOContextPool::doMonitor, this};
@@ -188,7 +188,7 @@ class AIOContextPool : public Singleton<AIOContextPool>
 
 public:
 	/// Request AIO read operation for iocb, returns a future with number of bytes read
-	std::future<bytes_read_t> post(struct iocb & iocb)
+	std::future<BytesRead> post(struct iocb & iocb)
 	{
 		std::unique_lock<std::mutex> lock{mutex};
 
@@ -196,7 +196,7 @@ public:
 		const auto request_id = id++;
 
 		/// create a promise and put request in "queue"
-		promises.emplace(request_id, std::promise<bytes_read_t>{});
+		promises.emplace(request_id, std::promise<BytesRead>{});
 		/// store id in AIO request for further identification
 		iocb.aio_data = request_id;
 

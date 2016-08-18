@@ -27,10 +27,6 @@ function add_daemon_impl {
 	echo " $description_full" >> $control;
 }
 
-function add_daemon {
-	add_daemon_impl "$DAEMON_PKG-metrika-yandex" "$1" "$2"
-}
-
 # Создаём файл control из control.in.
 # добавляет в файл CONTROL секции для демонов из DAEMONS
 function make_control {
@@ -48,6 +44,12 @@ function make_control {
 		;;
 		'clickhouse-client' )
 			add_daemon_impl clickhouse-client
+		;;
+		'clickhouse-benchmark' )
+			add_daemon_impl clickhouse-benchmark
+		;;
+		* )
+			add_daemon_impl "${DAEMON_PKG}-metrika-yandex"
 		;;
 		esac
 	done

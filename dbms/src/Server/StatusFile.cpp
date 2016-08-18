@@ -10,10 +10,8 @@
 #include <common/ClickHouseRevision.h>
 #include <common/LocalDateTime.h>
 
-#include <DB/IO/copyData.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/LimitReadBuffer.h>
-#include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/Operators.h>
 
@@ -32,8 +30,7 @@ StatusFile::StatusFile(const std::string & path_)
 		{
 			ReadBufferFromFile in(path, 1024);
 			LimitReadBuffer limit_in(in, 1024);
-			WriteBufferFromString out(contents);
-			copyData(limit_in, out);
+			readStringUntilEOF(contents, limit_in);
 		}
 
 		if (!contents.empty())

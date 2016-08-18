@@ -21,11 +21,6 @@ private:
 	bool word_boundary;
 	bool case_insensitive;
 
-	inline bool is_word(char c)
-	{
-		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || (c == '_');
-	}
-
 public:
 	ParserString(const char * s_, bool word_boundary_ = false, bool case_insensitive_ = false)
 		: s(s_), s_size(strlen(s)), word_boundary(word_boundary_), case_insensitive(case_insensitive_) {}
@@ -39,8 +34,8 @@ protected:
 			return false;
 		else
 		{
-			if (word_boundary && s_size && is_word(s[s_size - 1])
-				&& pos + s_size != end && is_word(pos[s_size]))
+			if (word_boundary && s_size && isWordCharASCII(s[s_size - 1])
+				&& pos + s_size != end && isWordCharASCII(pos[s_size]))
 				return false;
 
 			pos += s_size;

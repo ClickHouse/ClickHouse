@@ -5,6 +5,7 @@
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/NetException.h>
 #include <DB/Common/Exception.h>
+#include <DB/Common/randomSeed.h>
 #include <DB/Interpreters/Settings.h>
 
 
@@ -13,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int ALL_CONNECTION_TRIES_FAILED;
-	extern const int CANNOT_CLOCK_GETTIME;
 	extern const int LOGICAL_ERROR;
 }
 }
@@ -154,11 +154,7 @@ protected:
 	public:
 		PoolWithErrorCount(const NestedPoolPtr & pool_) : pool(pool_)
 		{
-			struct timespec times;
-			if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
-				DB::throwFromErrno("Cannot clock_gettime.", DB::ErrorCodes::CANNOT_CLOCK_GETTIME);
-
-			srand48_r(reinterpret_cast<intptr_t>(this) ^ times.tv_nsec, &rand_state);
+			srand48_r(randomSeed(), &rand_state);
 		}
 
 		void randomize()
@@ -173,13 +169,20 @@ protected:
 		{
 			static bool compare(const State & lhs, const State & rhs)
 			{
-				return std::tie(lhs.priority, lhs.error_count, lhs.random)
-					< std::tie(rhs.priority, rhs.error_count, rhs.random);
+				return std::forward_as_tuple(lhs.priority, lhs.error_count.load(std::memory_order_relaxed), lhs.random)
+					< std::forward_as_tuple(rhs.priority, rhs.error_count.load(std::memory_order_relaxed), rhs.random);
 			}
 
-			Int64 priority = 0;
-			UInt64 error_count = 0;
-			UInt32 random = 0;
+			Int64 priority {0};
+			std::atomic<UInt64> error_count {0};
+			UInt32 random {0};
+
+			State() {}
+
+			State(const State & other)
+				: priority(other.priority),
+				error_count(other.error_count.load(std::memory_order_relaxed)),
+				random(other.random) {}
 		};
 
 	public:
@@ -237,7 +240,9 @@ protected:
 						else if (shift_amount)
 						{
 							for (auto & pool : *this)
-								pool.state.error_count >>= shift_amount;
+								pool.state.error_count.store(
+									pool.state.error_count.load(std::memory_order_relaxed) >> shift_amount,
+									std::memory_order_relaxed);
 						}
 					}
 				}
@@ -319,7 +324,7 @@ private:
 
 				fail_messages << fail_message.str() << std::endl;
 
-				__sync_fetch_and_add(&pool_ptrs[i].pool->state.error_count, 1);
+				++pool_ptrs[i].pool->state.error_count;
 			}
 		}
 

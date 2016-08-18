@@ -22,17 +22,15 @@
 #include <DB/Common/HTMLForm.h>
 
 #include <DB/Interpreters/Context.h>
-#include "OLAPQueryParser.h"
-#include "OLAPQueryConverter.h"
 
-/** Сервер предоставляет три интерфейса:
-  * 1. HTTP - простой интерфейс для доступа из любых приложений.
-  * 2. TCP - интерфейс для доступа из родной библиотеки, родного клиента, и для межсерверного взаимодействия.
-  *    Более эффективен, так как
-  *     - данные передаются по столбцам;
-  *     - данные передаются со сжатием;
-  *    Позволяет тонко управлять настройками и получать более подробную информацию в ответах.
-  * 3. OLAP-server HTTP - интерфейс для совместимости с устаревшим демоном OLAP-server.
+/** Server provides three interfaces:
+  * 1. HTTP - simple interface for any applications.
+  * 2. TCP - interface for native clickhouse-client and for server to server internal communications.
+  *    More rich and efficient, but less compatible
+  *     - data is transferred by columns;
+  *     - data is transferred compressed;
+  *    Allows to get more information in response.
+  * 3. Interserver HTTP - for replication.
   */
 
 
@@ -42,11 +40,8 @@ namespace DB
 class Server : public BaseDaemon
 {
 public:
-	/// Глобальные настройки севрера
+	/// Global settings of server.
 	std::unique_ptr<Context> global_context;
-
-	std::unique_ptr<OLAP::QueryParser> olap_parser;
-	std::unique_ptr<OLAP::QueryConverter> olap_converter;
 
 protected:
 	void initialize(Application & self)

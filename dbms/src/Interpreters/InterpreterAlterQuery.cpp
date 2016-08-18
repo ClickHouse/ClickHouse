@@ -63,7 +63,7 @@ BlockIO InterpreterAlterQuery::execute()
 				break;
 
 			case PartitionCommand::FREEZE_PARTITION:
-				table->freezePartition(command.partition, context.getSettingsRef());
+				table->freezePartition(command.partition, command.with_name, context.getSettingsRef());
 				break;
 
 			case PartitionCommand::RESHARD_PARTITION:
@@ -176,7 +176,7 @@ void InterpreterAlterQuery::parseAlter(
 		else if (params.type == ASTAlterQuery::FREEZE_PARTITION)
 		{
 			const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-			out_partition_commands.emplace_back(PartitionCommand::freezePartition(partition));
+			out_partition_commands.emplace_back(PartitionCommand::freezePartition(partition, params.with_name));
 		}
 		else if (params.type == ASTAlterQuery::RESHARD_PARTITION)
 		{

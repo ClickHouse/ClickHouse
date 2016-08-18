@@ -58,7 +58,7 @@ size_t IBlockInputStream::checkDepthImpl(size_t max_depth, size_t level) const
 	return res + 1;
 }
 
-	
+
 void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t multiplier)
 {
 	/// Не будем отображать в дереве обёртку потока блоков в AsynchronousBlockInputStream.
@@ -114,7 +114,7 @@ void IBlockInputStream::getLeafRowsBytes(size_t & rows, size_t & bytes)
 	{
 		if (const IProfilingBlockInputStream * profiling = dynamic_cast<const IProfilingBlockInputStream *>(&**it))
 		{
-			const BlockStreamProfileInfo & info = profiling->getInfo();
+			const BlockStreamProfileInfo & info = profiling->getProfileInfo();
 			rows += info.rows;
 			bytes += info.bytes;
 		}

@@ -67,10 +67,12 @@ AggregateFunctionPtr createAggregateFunctionQuantilesTimingWeighted(const std::s
 
 void registerAggregateFunctionsQuantileTiming(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction({"quantileTiming", "medianTiming"}, createAggregateFunctionQuantileTiming);
-	factory.registerFunction({"quantilesTiming"}, createAggregateFunctionQuantilesTiming);
-	factory.registerFunction({"quantileTimingWeighted", "medianTimingWeighted"}, createAggregateFunctionQuantileTimingWeighted);
-	factory.registerFunction({"quantilesTimingWeighted"}, createAggregateFunctionQuantilesTimingWeighted);
+	factory.registerFunction("quantileTiming", createAggregateFunctionQuantileTiming);
+	factory.registerFunction("medianTiming", createAggregateFunctionQuantileTiming);
+	factory.registerFunction("quantilesTiming", createAggregateFunctionQuantilesTiming);
+	factory.registerFunction("quantileTimingWeighted", createAggregateFunctionQuantileTimingWeighted);
+	factory.registerFunction("medianTimingWeighted", createAggregateFunctionQuantileTimingWeighted);
+	factory.registerFunction("quantilesTimingWeighted", createAggregateFunctionQuantilesTimingWeighted);
 }
 
 }

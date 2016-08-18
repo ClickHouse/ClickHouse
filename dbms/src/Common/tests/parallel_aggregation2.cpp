@@ -16,7 +16,7 @@
 #include <DB/IO/CompressedReadBuffer.h>
 
 #include <DB/Common/Stopwatch.h>
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 
 
 using Key = UInt64;
@@ -30,7 +30,7 @@ struct AggregateIndependent
 	template <typename Creator, typename Updater>
 	static void NO_INLINE execute(const Source & data, size_t num_threads, std::vector<std::unique_ptr<Map>> & results,
 						Creator && creator, Updater && updater,
-						boost::threadpool::pool & pool)
+						ThreadPool & pool)
 	{
 		results.reserve(num_threads);
 		for (size_t i = 0; i < num_threads; ++i)
@@ -73,7 +73,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
 	template <typename Creator, typename Updater>
 	static void NO_INLINE execute(const Source & data, size_t num_threads, std::vector<std::unique_ptr<Map>> & results,
 						Creator && creator, Updater && updater,
-						boost::threadpool::pool & pool)
+						ThreadPool & pool)
 	{
 		results.reserve(num_threads);
 		for (size_t i = 0; i < num_threads; ++i)
@@ -124,7 +124,7 @@ struct MergeSequential
 	template <typename Merger>
 	static void NO_INLINE execute(Map ** source_maps, size_t num_maps, Map *& result_map,
 						Merger && merger,
-						boost::threadpool::pool & pool)
+						ThreadPool & pool)
 	{
 		for (size_t i = 1; i < num_maps; ++i)
 		{
@@ -144,7 +144,7 @@ struct MergeSequentialTransposed	/// На практике не лучше об�
 	template <typename Merger>
 	static void NO_INLINE execute(Map ** source_maps, size_t num_maps, Map *& result_map,
 						Merger && merger,
-						boost::threadpool::pool & pool)
+						ThreadPool & pool)
 	{
 		std::vector<typename Map::iterator> iterators(num_maps);
 		for (size_t i = 1; i < num_maps; ++i)
@@ -177,7 +177,7 @@ struct MergeParallelForTwoLevelTable
 	template <typename Merger>
 	static void NO_INLINE execute(Map ** source_maps, size_t num_maps, Map *& result_map,
 						Merger && merger,
-						boost::threadpool::pool & pool)
+						ThreadPool & pool)
 	{
 		for (size_t bucket = 0; bucket < Map::NUM_BUCKETS; ++bucket)
 			pool.schedule([&, bucket, num_maps]
@@ -202,7 +202,7 @@ struct Work
 	template <typename Creator, typename Updater, typename Merger>
 	static void NO_INLINE execute(const Source & data, size_t num_threads,
 						Creator && creator, Updater && updater, Merger && merger,
-						boost::threadpool::pool & pool)
+						ThreadPool & pool)
 	{
 		std::vector<std::unique_ptr<Map>> intermediate_results;
 
@@ -292,7 +292,7 @@ int main(int argc, char ** argv)
 
 	std::cerr << std::fixed << std::setprecision(2);
 
-	boost::threadpool::pool pool(num_threads);
+	ThreadPool pool(num_threads);
 
 	Source data(n);
 

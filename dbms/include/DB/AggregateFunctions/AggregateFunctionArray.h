@@ -19,7 +19,7 @@ class AggregateFunctionArray final : public IAggregateFunction
 private:
 	AggregateFunctionPtr nested_func_owner;
 	IAggregateFunction * nested_func;
-	int num_agruments;
+	size_t num_agruments;
 
 public:
 	AggregateFunctionArray(AggregateFunctionPtr nested_) : nested_func_owner(nested_), nested_func(nested_func_owner.get()) {}
@@ -42,7 +42,7 @@ public:
 			throw Exception("Array aggregate functions requires at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		DataTypes nested_arguments;
-		for (int i = 0; i < num_agruments; ++i)
+		for (size_t i = 0; i < num_agruments; ++i)
 		{
 			if (const DataTypeArray * array = typeid_cast<const DataTypeArray *>(&*arguments[i]))
 				nested_arguments.push_back(array->getNestedType());
@@ -87,7 +87,7 @@ public:
 	{
 		const IColumn * nested[num_agruments];
 
-		for (int i = 0; i < num_agruments; ++i)
+		for (size_t i = 0; i < num_agruments; ++i)
 			nested[i] = &static_cast<const ColumnArray &>(*columns[i]).getData();
 
 		const ColumnArray & first_array_column = static_cast<const ColumnArray &>(*columns[0]);

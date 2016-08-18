@@ -143,7 +143,7 @@ static size_t checkColumn(
 	DataTypePtr type,
 	const MergeTreePartChecker::Settings & settings,
 	MergeTreeData::DataPart::Checksums & checksums,
-	volatile bool * is_cancelled)
+	std::atomic<bool> * is_cancelled)
 {
 	size_t rows = 0;
 
@@ -232,7 +232,7 @@ void MergeTreePartChecker::checkDataPart(
 	const Settings & settings,
 	const DataTypes & primary_key_data_types,
 	MergeTreeData::DataPart::Checksums * out_checksums,
-	volatile bool * is_cancelled)
+	std::atomic<bool> * is_cancelled)
 {
 	CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedChecks};
 

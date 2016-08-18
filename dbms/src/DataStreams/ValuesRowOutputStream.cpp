@@ -1,6 +1,8 @@
 #include <DB/DataStreams/ValuesRowOutputStream.h>
 
 #include <DB/IO/WriteHelpers.h>
+#include <DB/Columns/IColumn.h>
+#include <DB/DataTypes/IDataType.h>
 
 
 namespace DB
@@ -10,6 +12,11 @@ namespace DB
 ValuesRowOutputStream::ValuesRowOutputStream(WriteBuffer & ostr_)
 	: ostr(ostr_)
 {
+}
+
+void ValuesRowOutputStream::flush()
+{
+	ostr.next();
 }
 
 void ValuesRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)

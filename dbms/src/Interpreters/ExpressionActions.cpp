@@ -140,7 +140,7 @@ void ExpressionAction::prepare(Block & sample_block)
 				ColumnWithTypeAndName new_column;
 				new_column.name = result_name;
 				new_column.type = result_type;
-				sample_block.insert(new_column);
+				sample_block.insert(std::move(new_column));
 
 				function->execute(sample_block, arguments, prerequisites, result_position);
 
@@ -151,7 +151,7 @@ void ExpressionAction::prepare(Block & sample_block)
 			}
 			else
 			{
-				sample_block.insert(ColumnWithTypeAndName(nullptr, result_type, result_name));
+				sample_block.insert({nullptr, result_type, result_name});
 			}
 
 			break;
@@ -191,7 +191,7 @@ void ExpressionAction::prepare(Block & sample_block)
 				ColumnWithTypeAndName column = sample_block.getByName(name);
 				if (alias != "")
 					column.name = alias;
-				new_block.insert(column);
+				new_block.insert(std::move(column));
 			}
 
 			sample_block.swap(new_block);
@@ -258,13 +258,11 @@ void ExpressionAction::execute(Block & block) const
 				prerequisites[i] = block.getPositionByName(prerequisite_names[i]);
 			}
 
-			ColumnWithTypeAndName new_column;
-			new_column.name = result_name;
-			new_column.type = result_type;
-			block.insert(new_column);
+			size_t num_columns_without_result = block.columns();
+			block.insert({ nullptr, result_type, result_name});
 
 			ProfileEvents::increment(ProfileEvents::FunctionExecute);
-			function->execute(block, arguments, prerequisites, block.getPositionByName(result_name));
+			function->execute(block, arguments, prerequisites, num_columns_without_result);
 
 			break;
 		}
@@ -348,7 +346,7 @@ void ExpressionAction::execute(Block & block) const
 				ColumnWithTypeAndName column = block.getByName(name);
 				if (alias != "")
 					column.name = alias;
-				new_block.insert(column);
+				new_block.insert(std::move(column));
 			}
 
 			block.swap(new_block);
@@ -361,11 +359,11 @@ void ExpressionAction::execute(Block & block) const
 			break;
 
 		case ADD_COLUMN:
-			block.insert(ColumnWithTypeAndName(added_column->cloneResized(block.rowsInFirstColumn()), result_type, result_name));
+			block.insert({ added_column->cloneResized(block.rowsInFirstColumn()), result_type, result_name });
 			break;
 
 		case COPY_COLUMN:
-			block.insert(ColumnWithTypeAndName(block.getByName(source_name).column, result_type, result_name));
+			block.insert({ block.getByName(source_name).column, result_type, result_name });
 			break;
 
 		default:
@@ -612,7 +610,7 @@ void ExpressionActions::executeOnTotals(Block & block) const
 			{
 				ColumnWithTypeAndName elem(name_and_type.type->createColumn(), name_and_type.type, name_and_type.name);
 				elem.column->insertDefault();
-				block.insert(elem);
+				block.insert(std::move(elem));
 			}
 		}
 		else
@@ -650,7 +648,7 @@ void ExpressionActions::finalize(const Names & output_columns)
 	NameSet final_columns;
 	for (size_t i = 0; i < output_columns.size(); ++i)
 	{
-		const std::string name = output_columns[i];
+		const std::string & name = output_columns[i];
 		if (!sample_block.has(name))
 			throw Exception("Unknown column: " + name + ", there are only columns "
 							+ sample_block.dumpNames(), ErrorCodes::UNKNOWN_IDENTIFIER);
@@ -993,11 +991,11 @@ BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRigh
 {
 	for (const auto & action : actions)
 	{
-		if (action.join && (action.join->getKind() == ASTJoin::Full || action.join->getKind() == ASTJoin::Right))
+		if (action.join && (action.join->getKind() == ASTTableJoin::Kind::Full || action.join->getKind() == ASTTableJoin::Kind::Right))
 		{
 			Block left_sample_block;
 			for (const auto & input_elem : input_columns)
-				left_sample_block.insert(ColumnWithTypeAndName(nullptr, input_elem.type, input_elem.name));
+				left_sample_block.insert({ nullptr, input_elem.type, input_elem.name });
 
 			return action.join->createStreamWithNonJoinedRows(left_sample_block, max_block_size);
 		}

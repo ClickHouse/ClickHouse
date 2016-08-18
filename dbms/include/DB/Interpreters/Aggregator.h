@@ -7,12 +7,12 @@
 #include <Poco/TemporaryFile.h>
 
 #include <common/logger_useful.h>
-#include <threadpool.hpp>
 
 #include <DB/Core/StringRef.h>
 #include <DB/Common/Arena.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Common/HashTable/TwoLevelHashMap.h>
+#include <DB/Common/ThreadPool.h>
 
 #include <DB/DataStreams/IBlockInputStream.h>
 
@@ -25,7 +25,6 @@
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnAggregateFunction.h>
 #include <DB/Columns/ColumnVector.h>
-
 
 
 namespace DB
@@ -1136,14 +1135,14 @@ protected:
 
 	BlocksList prepareBlocksAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
 	BlocksList prepareBlocksAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
-	BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, boost::threadpool::pool * thread_pool) const;
+	BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, ThreadPool * thread_pool) const;
 
 	template <typename Method>
 	BlocksList prepareBlocksAndFillTwoLevelImpl(
 		AggregatedDataVariants & data_variants,
 		Method & method,
 		bool final,
-		boost::threadpool::pool * thread_pool) const;
+		ThreadPool * thread_pool) const;
 
 	template <bool no_more_keys, typename Method, typename Table>
 	void mergeStreamsImplCase(

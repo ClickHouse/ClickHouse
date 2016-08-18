@@ -1,6 +1,5 @@
 #include <DB/Common/OptimizedRegularExpression.h>
 
-#include <DB/Storages/StorageFactory.h>
 #include <DB/Storages/StorageMerge.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTIdentifier.h>

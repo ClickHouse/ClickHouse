@@ -154,6 +154,34 @@ libs/libzkutil/src/tests/zkutil_zookeeper_holder
 utils/zookeeper-create-entry-to-download-part/zookeeper-create-entry-to-download-part
 utils/zookeeper-dump-tree/zookeeper-dump-tree
 utils/zookeeper-remove-by-list/zookeeper-remove-by-list
+dbms/src/Storages/tests/remove_symlink_directory
+dbms/tests/queries/1_stateful
+debian/clickhouse-benchmark-metrika-yandex.postinst
+debian/clickhouse-benchmark.docs
+debian/clickhouse-client-metrika-yandex.postinst
+debian/clickhouse-client.docs
+debian/clickhouse-server-base.docs
+debian/clickhouse-server-common.docs
+debian/clickhouse-server-metrika-yandex.postinst
+debian/clickhouse-server-metrika.docs
+debian/clickhouse-server.docs
+debian/compressor-metrika-yandex.postinst
+debian/compressor.docs
+debian/config-processor-metrika-yandex.postinst
+debian/config-processor.docs
+debian/control
+debian/copyright
+debian/tmp/
+libs/libcommon/src/tests/json_test
+utils/compressor/zstd_test
+utils/wikistat-loader/wikistat-loader
+dbms/src/Common/tests/pod_array
+debian/clickhouse-benchmark/
+debian/clickhouse-client/
+debian/clickhouse-server-base/
+debian/clickhouse-server-common/
+debian/clickhouse-server-metrika/
+debian/files
 
 dbms/src/Server/data/*
 dbms/src/Server/metadata/*
@@ -195,3 +223,6 @@ config-preprocessed.xml
 # Protobuf
 *.pb.cpp
 *.pb.h
+
+# Ignore symlink to private repository
+/private

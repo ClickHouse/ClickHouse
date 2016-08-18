@@ -6,19 +6,19 @@
 #include <Poco/URI.h>
 
 
-/** Почему-то при методе POST, Poco::Net::HTMLForm не считывает параметры из URL, а считывает только из тела.
- * Этот помошник позволяет считывать параметры только из URL.
- */
+/** Somehow, in case of POST, Poco::Net::HTMLForm doesn't read parameters from URL, only from body.
+  * This helper allows to read parameters just from URL.
+  */
 struct HTMLForm : public Poco::Net::HTMLForm
 {
-	HTMLForm(Poco::Net::HTTPRequest & request)
+	HTMLForm(const Poco::Net::HTTPRequest & request)
 	{
 		Poco::URI uri(request.getURI());
 		std::istringstream istr(uri.getRawQuery());
 		readUrl(istr);
 	}
 
-	HTMLForm(Poco::URI & uri)
+	HTMLForm(const Poco::URI & uri)
 	{
 		std::istringstream istr(uri.getRawQuery());
 		readUrl(istr);

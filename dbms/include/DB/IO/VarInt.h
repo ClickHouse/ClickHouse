@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-/** Записать UInt64 в формате переменной длины (base128) */
+/** Записать UInt64 в формате переменной длины (base128) NOTE Only up to 2^63 - 1 are supported.*/
 void writeVarUInt(UInt64 x, std::ostream & ostr);
 void writeVarUInt(UInt64 x, WriteBuffer & ostr);
 char * writeVarUInt(UInt64 x, char * ostr);
@@ -103,87 +103,6 @@ inline void readVarInt(Int16 & x, ReadBuffer & istr)
 }
 
 
-inline void writeVarUInt(UInt64 x, std::ostream & ostr)
-{
-	char buf[9];
-
-	buf[0] = static_cast<UInt8>(x | 0x80);
-	if (x >= (1ULL << 7))
-	{
-		buf[1] = static_cast<UInt8>((x >> 7) | 0x80);
-		if (x >= (1ULL << 14))
-		{
-			buf[2] = static_cast<UInt8>((x >> 14) | 0x80);
-			if (x >= (1ULL << 21))
-			{
-				buf[3] = static_cast<UInt8>((x >> 21) | 0x80);
-				if (x >= (1ULL << 28))
-				{
-					buf[4] = static_cast<UInt8>((x >> 28) | 0x80);
-					if (x >= (1ULL << 35))
-					{
-						buf[5] = static_cast<UInt8>((x >> 35) | 0x80);
-						if (x >= (1ULL << 42))
-						{
-							buf[6] = static_cast<UInt8>((x >> 42) | 0x80);
-							if (x >= (1ULL << 49))
-							{
-								buf[7] = static_cast<UInt8>((x >> 49) | 0x80);
-								if (x >= (1ULL << 56))
-								{
-									buf[8] = static_cast<UInt8>(x >> 56);
-									ostr.write(buf, 9);
-								}
-								else
-								{
-									buf[7] &= 0x7F;
-									ostr.write(buf, 8);
-								}
-							}
-							else
-							{
-								buf[6] &= 0x7F;
-								ostr.write(buf, 7);
-							}
-						}
-						else
-						{
-							buf[5] &= 0x7F;
-							ostr.write(buf, 6);
-						}
-					}
-					else
-					{
-						buf[4] &= 0x7F;
-						ostr.write(buf, 5);
-					}
-				}
-				else
-				{
-					buf[3] &= 0x7F;
-					ostr.write(buf, 4);
-				}
-			}
-			else
-			{
-				buf[2] &= 0x7F;
-				ostr.write(buf, 3);
-			}
-		}
-		else
-		{
-			buf[1] &= 0x7F;
-			ostr.write(buf, 2);
-		}
-	}
-	else
-	{
-		buf[0] &= 0x7F;
-		ostr.write(buf, 1);
-	}
-}
-
-
 inline void throwReadAfterEOF()
 {
 	throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
@@ -197,9 +116,9 @@ inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 		if (istr.eof())
 			throwReadAfterEOF();
 
-		int byte = *istr.position();
+		uint64_t byte = *istr.position();
 		++istr.position();
-		x |= (static_cast<uint64_t>(byte) & 0x7F) << (7 * i);
+		x |= (byte & 0x7F) << (7 * i);
 
 		if (!(byte & 0x80))
 			return;
@@ -209,229 +128,92 @@ inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 
 inline void readVarUInt(UInt64 & x, std::istream & istr)
 {
-	int byte;
-
-	byte = istr.get();
-	x = static_cast<UInt64>(byte) & 0x7F;
-	if (byte & 0x80)
+	x = 0;
+	for (size_t i = 0; i < 9; ++i)
 	{
-		byte = istr.get();
-		x |= (static_cast<UInt64>(byte) & 0x7F) << 7;
-		if (byte & 0x80)
-		{
-			byte = istr.get();
-			x |= (static_cast<UInt64>(byte) & 0x7F) << 14;
-			if (byte & 0x80)
-			{
-				byte = istr.get();
-				x |= (static_cast<UInt64>(byte) & 0x7F) << 21;
-				if (byte & 0x80)
-				{
-					byte = istr.get();
-					x |= (static_cast<UInt64>(byte) & 0x7F) << 28;
-					if (byte & 0x80)
-					{
-						byte = istr.get();
-						x |= (static_cast<UInt64>(byte) & 0x7F) << 35;
-						if (byte & 0x80)
-						{
-							byte = istr.get();
-							x |= (static_cast<UInt64>(byte) & 0x7F) << 42;
-							if (byte & 0x80)
-							{
-								byte = istr.get();
-								x |= (static_cast<UInt64>(byte) & 0x7F) << 49;
-								if (byte & 0x80)
-								{
-									byte = istr.get();
-									x |= static_cast<UInt64>(byte) << 56;
-								}
-							}
-						}
-					}
-				}
-			}
-		}
+		uint64_t byte = istr.get();
+		x |= (byte & 0x7F) << (7 * i);
+
+		if (!(byte & 0x80))
+			return;
 	}
+}
+
+inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
+{
+	const char * end = istr + size;
+
+	x = 0;
+	for (size_t i = 0; i < 9; ++i)
+	{
+		if (istr == end)
+			throwReadAfterEOF();
+
+		uint64_t byte = *istr;
+		++istr;
+		x |= (byte & 0x7F) << (7 * i);
+
+		if (!(byte & 0x80))
+			return istr;
+	}
+
+	return istr;
 }
 
 
 inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
 {
-	char buf[9];
+	for (size_t i = 0; i < 9; ++i)
+	{
+		uint8_t byte = x & 0x7F;
+		if (x > 0x7F)
+			byte |= 0x80;
 
-	buf[0] = static_cast<UInt8>(x | 0x80);
-	if (x >= (1ULL << 7))
-	{
-		buf[1] = static_cast<UInt8>((x >> 7) | 0x80);
-		if (x >= (1ULL << 14))
-		{
-			buf[2] = static_cast<UInt8>((x >> 14) | 0x80);
-			if (x >= (1ULL << 21))
-			{
-				buf[3] = static_cast<UInt8>((x >> 21) | 0x80);
-				if (x >= (1ULL << 28))
-				{
-					buf[4] = static_cast<UInt8>((x >> 28) | 0x80);
-					if (x >= (1ULL << 35))
-					{
-						buf[5] = static_cast<UInt8>((x >> 35) | 0x80);
-						if (x >= (1ULL << 42))
-						{
-							buf[6] = static_cast<UInt8>((x >> 42) | 0x80);
-							if (x >= (1ULL << 49))
-							{
-								buf[7] = static_cast<UInt8>((x >> 49) | 0x80);
-								if (x >= (1ULL << 56))
-								{
-									buf[8] = static_cast<UInt8>(x >> 56);
-									ostr.write(buf, 9);
-								}
-								else
-								{
-									buf[7] &= 0x7F;
-									ostr.write(buf, 8);
-								}
-							}
-							else
-							{
-								buf[6] &= 0x7F;
-								ostr.write(buf, 7);
-							}
-						}
-						else
-						{
-							buf[5] &= 0x7F;
-							ostr.write(buf, 6);
-						}
-					}
-					else
-					{
-						buf[4] &= 0x7F;
-						ostr.write(buf, 5);
-					}
-				}
-				else
-				{
-					buf[3] &= 0x7F;
-					ostr.write(buf, 4);
-				}
-			}
-			else
-			{
-				buf[2] &= 0x7F;
-				ostr.write(buf, 3);
-			}
-		}
-		else
-		{
-			buf[1] &= 0x7F;
-			ostr.write(buf, 2);
-		}
+		ostr.nextIfAtEnd();
+		*ostr.position() = byte;
+		++ostr.position();
+
+		x >>= 7;
+		if (!x)
+			return;
 	}
-	else
+}
+
+
+inline void writeVarUInt(UInt64 x, std::ostream & ostr)
+{
+	for (size_t i = 0; i < 9; ++i)
 	{
-		buf[0] &= 0x7F;
-		ostr.write(buf, 1);
+		uint8_t byte = x & 0x7F;
+		if (x > 0x7F)
+			byte |= 0x80;
+
+		ostr.put(byte);
+
+		x >>= 7;
+		if (!x)
+			return;
 	}
 }
 
 
 inline char * writeVarUInt(UInt64 x, char * ostr)
 {
-	*ostr = static_cast<UInt8>(x | 0x80);
-	if (x >= (1ULL << 7))
+	for (size_t i = 0; i < 9; ++i)
 	{
-		*++ostr = static_cast<UInt8>((x >> 7) | 0x80);
-		if (x >= (1ULL << 14))
-		{
-			*++ostr = static_cast<UInt8>((x >> 14) | 0x80);
-			if (x >= (1ULL << 21))
-			{
-				*++ostr = static_cast<UInt8>((x >> 21) | 0x80);
-				if (x >= (1ULL << 28))
-				{
-					*++ostr = static_cast<UInt8>((x >> 28) | 0x80);
-					if (x >= (1ULL << 35))
-					{
-						*++ostr = static_cast<UInt8>((x >> 35) | 0x80);
-						if (x >= (1ULL << 42))
-						{
-							*++ostr = static_cast<UInt8>((x >> 42) | 0x80);
-							if (x >= (1ULL << 49))
-							{
-								*++ostr = static_cast<UInt8>((x >> 49) | 0x80);
-								if (x >= (1ULL << 56))
-								{
-									*++ostr = static_cast<UInt8>(x >> 56);
-								}
-								else
-									*ostr &= 0x7F;
-							}
-							else
-								*ostr &= 0x7F;
-						}
-						else
-							*ostr &= 0x7F;
-					}
-					else
-						*ostr &= 0x7F;
-				}
-				else
-					*ostr &= 0x7F;
-			}
-			else
-				*ostr &= 0x7F;
-		}
-		else
-			*ostr &= 0x7F;
-	}
-	else
-		*ostr &= 0x7F;
+		uint8_t byte = x & 0x7F;
+		if (x > 0x7F)
+			byte |= 0x80;
 
-	return ++ostr;
-}
+		*ostr = byte;
+		++ostr;
 
-
-inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
-{
-	const char * end = istr + size;
-
-	x = static_cast<UInt64>(*istr) & 0x7F;
-	if (*istr & 0x80 && ++istr < end)
-	{
-		x |= (static_cast<UInt64>(*istr) & 0x7F) << 7;
-		if (*istr & 0x80 && ++istr < end)
-		{
-			x |= (static_cast<UInt64>(*istr) & 0x7F) << 14;
-			if (*istr & 0x80 && ++istr < end)
-			{
-				x |= (static_cast<UInt64>(*istr) & 0x7F) << 21;
-				if (*istr & 0x80 && ++istr < end)
-				{
-					x |= (static_cast<UInt64>(*istr) & 0x7F) << 28;
-					if (*istr & 0x80 && ++istr < end)
-					{
-						x |= (static_cast<UInt64>(*istr) & 0x7F) << 35;
-						if (*istr & 0x80 && ++istr < end)
-						{
-							x |= (static_cast<UInt64>(*istr) & 0x7F) << 42;
-							if (*istr & 0x80 && ++istr < end)
-							{
-								x |= (static_cast<UInt64>(*istr) & 0x7F) << 49;
-								if (*istr & 0x80 && ++istr < end)
-								{
-									x |= static_cast<UInt64>(*istr) << 56;
-								}
-							}
-						}
-					}
-				}
-			}
-		}
+		x >>= 7;
+		if (!x)
+			return ostr;
 	}
 
-	return ++istr;
+	return ostr;
 }
 
 

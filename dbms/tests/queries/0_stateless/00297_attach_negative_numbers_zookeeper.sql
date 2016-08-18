@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS test.r2;
 
 CREATE TABLE test.r1 (d Date DEFAULT '2016-01-01', x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/01/r/', 'r1', d, x, 111);
 
+SET min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 SET max_block_size = 1;
 
 INSERT INTO test.r1 (x) SELECT number + 1000 AS x FROM system.numbers LIMIT 10;

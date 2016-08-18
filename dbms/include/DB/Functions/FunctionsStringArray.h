@@ -81,8 +81,8 @@ public:
 	/// Получить следующий токен, если есть, или вернуть false.
 	bool get(Pos & token_begin, Pos & token_end)
 	{
-		/// Пропускаем мусор
-		while (pos < end && !((*pos >= 'a' && *pos <= 'z') || (*pos >= 'A' && *pos <= 'Z')))
+		/// Skip garbage
+		while (pos < end && !isAlphaASCII(*pos))
 			++pos;
 
 		if (pos == end)
@@ -90,7 +90,7 @@ public:
 
 		token_begin = pos;
 
-		while (pos < end && ((*pos >= 'a' && *pos <= 'z') || (*pos >= 'A' && *pos <= 'Z')))
+		while (pos < end && isAlphaASCII(*pos))
 			++pos;
 
 		token_end = pos;
@@ -130,7 +130,7 @@ public:
 
 	void init(Block & block, const ColumnNumbers & arguments)
 	{
-		const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnConstString * col = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[0]).column.get());
 
 		if (!col)
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -197,7 +197,7 @@ public:
 
 	void init(Block & block, const ColumnNumbers & arguments)
 	{
-		const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnConstString * col = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[0]).column.get());
 
 		if (!col)
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -264,7 +264,7 @@ public:
 	/// Инициализировать по аргументам функции.
 	void init(Block & block, const ColumnNumbers & arguments)
 	{
-		const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column);
+		const ColumnConstString * col = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[1]).column.get());
 
 		if (!col)
 			throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -337,9 +337,9 @@ public:
 		generator.init(block, arguments);
 		size_t arrayArgumentPosition = arguments[generator.getStringsArgumentPosition()];
 
-		const ColumnString * col_str = typeid_cast<const ColumnString *>(&*block.getByPosition(arrayArgumentPosition).column);
+		const ColumnString * col_str = typeid_cast<const ColumnString *>(block.getByPosition(arrayArgumentPosition).column.get());
 		const ColumnConstString * col_const_str =
-				typeid_cast<const ColumnConstString *>(&*block.getByPosition(arrayArgumentPosition).column);
+				typeid_cast<const ColumnConstString *>(block.getByPosition(arrayArgumentPosition).column.get());
 
 		auto col_res = std::make_shared<ColumnArray>(std::make_shared<ColumnString>());
 		ColumnPtr col_res_holder = col_res;

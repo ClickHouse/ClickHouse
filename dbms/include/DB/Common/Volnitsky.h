@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Common/StringSearcher.h>
+#include <DB/Common/StringUtils.h>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
 #include <ext/range.hpp>
@@ -55,35 +56,6 @@ protected:
 	/// min haystack size to use main algorithm instead of fallback
 	static constexpr auto min_haystack_size_for_algorithm = 20000;
 	const bool fallback;				/// Нужно ли использовать fallback алгоритм.
-
-
-	/// Эти функции эффективнее, чем соответствующие из libc, так как не учитывают локаль (что нам и надо).
-	bool isascii(char c)
-	{
-		return static_cast<unsigned char>(c) < 0x80;
-	}
-
-	bool isalpha(char c)
-	{
-		return (c >= 'a' && c <= 'z')
-			|| (c >= 'A' && c <= 'Z');
-	}
-
-	/// Работает корректно только при условии isalpha.
-	char tolower(char c)
-	{
-		return c | 0x20;
-	}
-
-	char toupper(char c)
-	{
-		return c & (~0x20);
-	}
-
-	char alternate(char c)
-	{
-		return c ^ 0x20;
-	}
 
 public:
 	/** haystack_size_hint - ожидаемый суммарный размер haystack при вызовах search. Можно не указывать.
@@ -179,32 +151,32 @@ protected:
 
 		n = toNGram(pos);
 
-		const auto c0_al = isalpha(chars.c0);
-		const auto c1_al = isalpha(chars.c1);
+		const auto c0_al = isAlphaASCII(chars.c0);
+		const auto c1_al = isAlphaASCII(chars.c1);
 
 		if (c0_al && c1_al)
 		{
 			/// 4 combinations: AB, aB, Ab, ab
 			putNGramBase(n, offset);
-			chars.c0 = alternate(chars.c0);
+			chars.c0 = alternateCaseIfAlphaASCII(chars.c0);
 			putNGramBase(n, offset);
-			chars.c1 = alternate(chars.c1);
+			chars.c1 = alternateCaseIfAlphaASCII(chars.c1);
 			putNGramBase(n, offset);
-			chars.c0 = alternate(chars.c0);
+			chars.c0 = alternateCaseIfAlphaASCII(chars.c0);
 			putNGramBase(n, offset);
 		}
 		else if (c0_al)
 		{
 			/// 2 combinations: A1, a1
 			putNGramBase(n, offset);
-			chars.c0 = alternate(chars.c0);
+			chars.c0 = alternateCaseIfAlphaASCII(chars.c0);
 			putNGramBase(n, offset);
 		}
 		else if (c1_al)
 		{
 			/// 2 combinations: 0B, 0b
 			putNGramBase(n, offset);
-			chars.c1 = alternate(chars.c1);
+			chars.c1 = alternateCaseIfAlphaASCII(chars.c1);
 			putNGramBase(n, offset);
 		}
 		else

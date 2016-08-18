@@ -23,12 +23,12 @@ try
 	{
 		ColumnWithTypeAndName col;
 		col.type = std::make_shared<DataTypeUInt64>();
-		sample.insert(col);
+		sample.insert(std::move(col));
 	}
 	{
 		ColumnWithTypeAndName col;
 		col.type = std::make_shared<DataTypeString>();
-		sample.insert(col);
+		sample.insert(std::move(col));
 	}
 
 	ReadBufferFromFile in_buf("test_in");

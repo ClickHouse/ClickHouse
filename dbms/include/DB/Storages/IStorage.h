@@ -239,7 +239,7 @@ public:
 
 	/** Выполнить запрос FREEZE PARTITION. То есть, создать локальный бэкап (снэпшот) данных с помощью функции localBackup (см. localBackup.h)
 	  */
-	virtual void freezePartition(const Field & partition, const Settings & settings)
+	virtual void freezePartition(const Field & partition, const String & with_name, const Settings & settings)
 	{
 		throw Exception("Method freezePartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}

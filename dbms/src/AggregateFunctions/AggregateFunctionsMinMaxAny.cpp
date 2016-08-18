@@ -17,6 +17,11 @@ AggregateFunctionPtr createAggregateFunctionAnyLast(const std::string & name, co
 	return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyLastData>(name, argument_types));
 }
 
+AggregateFunctionPtr createAggregateFunctionAnyHeavy(const std::string & name, const DataTypes & argument_types)
+{
+	return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyHeavyData>(name, argument_types));
+}
+
 AggregateFunctionPtr createAggregateFunctionMin(const std::string & name, const DataTypes & argument_types)
 {
 	return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionMinData>(name, argument_types));
@@ -41,12 +46,13 @@ AggregateFunctionPtr createAggregateFunctionArgMax(const std::string & name, con
 
 void registerAggregateFunctionsMinMaxAny(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction({"any"}, createAggregateFunctionAny);
-	factory.registerFunction({"anyLast"}, createAggregateFunctionAnyLast);
-	factory.registerFunction({"min"}, createAggregateFunctionMin);
-	factory.registerFunction({"max"}, createAggregateFunctionMax);
-	factory.registerFunction({"argMin"}, createAggregateFunctionArgMin);
-	factory.registerFunction({"argMax"}, createAggregateFunctionArgMax);
+	factory.registerFunction("any", createAggregateFunctionAny);
+	factory.registerFunction("anyLast", createAggregateFunctionAnyLast);
+	factory.registerFunction("anyHeavy", createAggregateFunctionAnyHeavy);
+	factory.registerFunction("min", createAggregateFunctionMin, AggregateFunctionFactory::CaseInsensitive);
+	factory.registerFunction("max", createAggregateFunctionMax, AggregateFunctionFactory::CaseInsensitive);
+	factory.registerFunction("argMin", createAggregateFunctionArgMin);
+	factory.registerFunction("argMax", createAggregateFunctionArgMax);
 }
 
 }

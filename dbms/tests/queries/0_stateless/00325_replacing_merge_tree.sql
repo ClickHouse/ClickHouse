@@ -57,9 +57,7 @@ INSERT INTO test.replacing VALUES ('2000-01-01', 2, 'def', 1);
 INSERT INTO test.replacing VALUES ('2000-01-01', 2, 'ghi', 0);
 SELECT * FROM test.replacing FINAL ORDER BY k, v, _part_index;
 
-OPTIMIZE TABLE test.replacing;
-OPTIMIZE TABLE test.replacing;
-OPTIMIZE TABLE test.replacing;
+OPTIMIZE TABLE test.replacing PARTITION 200001 FINAL;
 SELECT _part_index, * FROM test.replacing ORDER BY k, v, _part_index;
 SELECT _part_index, * FROM test.replacing FINAL ORDER BY k, v, _part_index;
 
@@ -91,9 +89,7 @@ INSERT INTO test.replacing VALUES ('2000-01-01', 2, 'def');
 INSERT INTO test.replacing VALUES ('2000-01-01', 2, 'ghi');
 SELECT * FROM test.replacing FINAL ORDER BY k, _part_index;
 
-OPTIMIZE TABLE test.replacing;
-OPTIMIZE TABLE test.replacing;
-OPTIMIZE TABLE test.replacing;
+OPTIMIZE TABLE test.replacing PARTITION 200001 FINAL;
 SELECT _part_index, * FROM test.replacing ORDER BY k, _part_index;
 SELECT _part_index, * FROM test.replacing FINAL ORDER BY k, _part_index;
 

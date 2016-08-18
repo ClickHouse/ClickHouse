@@ -30,13 +30,13 @@ struct MergeTreeSettings
 	size_t max_parts_to_merge_at_once_if_small = 100;
 
 	/// Куски настолько большого размера объединять нельзя вообще.
-	size_t max_bytes_to_merge_parts = 10ul * 1024 * 1024 * 1024;
+	size_t max_bytes_to_merge_parts = 10ULL * 1024 * 1024 * 1024;
 
 	/// Не больше половины потоков одновременно могут выполнять слияния, в которых участвует хоть один кусок хотя бы такого размера.
 	size_t max_bytes_to_merge_parts_small = 250 * 1024 * 1024;
 
 	/// Куски настолько большого размера в сумме, объединять нельзя вообще.
-	size_t max_sum_bytes_to_merge_parts = 25ul * 1024 * 1024 * 1024;
+	size_t max_sum_bytes_to_merge_parts = 25ULL * 1024 * 1024 * 1024;
 
 	/// Во столько раз ночью увеличиваем коэффициент.
 	size_t merge_parts_at_night_inc = 10;
@@ -67,6 +67,13 @@ struct MergeTreeSettings
 	/// Хранить примерно столько последних записей в логе в ZooKeeper, даже если они никому уже не нужны.
 	/// Не влияет на работу таблиц; используется только чтобы успеть посмотреть на лог в ZooKeeper глазами прежде, чем его очистят.
 	size_t replicated_logs_to_keep = 100;
+
+	/// After specified amount of time passed after replication log entry creation
+	///  and sum size of parts is greater than threshold,
+	///  prefer fetching merged part from replica instead of doing merge locally.
+	/// To speed up very long merges.
+	time_t prefer_fetch_merged_part_time_threshold = 3600;
+	size_t prefer_fetch_merged_part_size_threshold = 10ULL * 1024 * 1024 * 1024;
 
 	/// Настройки минимального количества битых данных, при котором отказываться автоматически их удалять.
 	size_t max_suspicious_broken_parts = 10;
@@ -123,6 +130,8 @@ struct MergeTreeSettings
 		SET_DOUBLE(insert_delay_step);
 		SET_SIZE_T(replicated_deduplication_window);
 		SET_SIZE_T(replicated_logs_to_keep);
+		SET_SIZE_T(prefer_fetch_merged_part_time_threshold);
+		SET_SIZE_T(prefer_fetch_merged_part_size_threshold);
 		SET_SIZE_T(max_suspicious_broken_parts);
 		SET_SIZE_T(max_files_to_modify_in_alter_columns);
 		SET_SIZE_T(max_files_to_remove_in_alter_columns);

@@ -125,7 +125,24 @@ BlockInputStreams StorageSystemColumns::read(
 
 		{
 			StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-			auto table_lock = storage->lockStructure(false);
+			IStorage::TableStructureReadLockPtr table_lock;
+
+			try
+			{
+				table_lock = storage->lockStructure(false);
+			}
+			catch (const Exception & e)
+			{
+				/** There are case when IStorage::drop was called,
+				  *  but we still own the object.
+				  * Then table will throw exception at attempt to lock it.
+				  * Just skip the table.
+				  */
+				if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+					continue;
+				else
+					throw;
+			}
 
 			columns = storage->getColumnsList();
 			columns.insert(std::end(columns), std::begin(storage->alias_columns), std::end(storage->alias_columns));

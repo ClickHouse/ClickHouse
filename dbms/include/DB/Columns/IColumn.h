@@ -10,6 +10,9 @@
 #include <DB/Core/StringRef.h>
 
 
+class SipHash;
+
+
 namespace DB
 {
 
@@ -162,7 +165,8 @@ public:
 	/** Удалить одно или несколько значений с конца.
 	  * Используется, чтобы сделать некоторые операции exception-safe,
 	  *  когда после вставки значения сделать что-то ещё не удалось, и нужно откатить вставку.
-	  * Если столбец пуст - поведение не определено.
+	  * Если столбец имеет меньше n значений - поведение не определено.
+	  * Если n == 0 - поведение не определено.
 	  */
 	virtual void popBack(size_t n) = 0;
 
@@ -180,10 +184,11 @@ public:
 	  */
 	virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
 
-	/** Соединить столбец с одним или несколькими другими.
-	  * Используется при склейке маленьких блоков.
+	/** Update state of hash function with value at index n.
+	  * On subsequent calls of this method for sequence of column values of arbitary types,
+	  *  passed bytes to hash must identify sequence of values unambiguously.
 	  */
-	//virtual void merge(const Columns & columns) = 0;
+	virtual void updateHashWithValue(size_t n, SipHash & hash) const = 0;
 
 	/** Оставить только значения, соответствующие фильтру.
 	  * Используется для операции WHERE / HAVING.

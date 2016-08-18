@@ -17,6 +17,7 @@
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Common/SimpleCache.h>
+#include <DB/Common/StringUtils.h>
 
 #include <openssl/sha.h>
 
@@ -265,11 +266,11 @@ public:
 			Container::value_type pattern;
 			String value = config.getString(config_elem + "." + *it);
 
-			if (0 == it->compare(0, strlen("ip"), "ip"))
+			if (startsWith(*it, "ip"))
 				pattern.reset(new IPAddressPattern(value));
-			else if (0 == it->compare(0, strlen("host_regexp"), "host_regexp"))
+			else if (startsWith(*it, "host_regexp"))
 				pattern.reset(new HostRegexpPattern(value));
-			else if (0 == it->compare(0, strlen("host"), "host"))
+			else if (startsWith(*it, "host"))
 				pattern.reset(new HostExactPattern(value));
 			else
 				throw Exception("Unknown address pattern type: " + *it, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);

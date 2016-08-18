@@ -157,7 +157,7 @@ void Aggregator::initialize(const Block & block)
 			col.type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
 			col.column = col.type->createColumn();
 
-			sample.insert(col);
+			sample.insert(std::move(col));
 		}
 	}
 }
@@ -651,7 +651,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		aggregate_functions_instructions[i].that = aggregate_functions[i];
 		aggregate_functions_instructions[i].func = aggregate_functions[i]->getAddressOfAddFunction();
 		aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
-		aggregate_functions_instructions[i].arguments = &aggregate_columns[i][0];
+		aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
 	}
 
 	if (isCancelled())
@@ -1176,7 +1176,7 @@ BlocksList Aggregator::prepareBlocksAndFillSingleLevel(AggregatedDataVariants & 
 }
 
 
-BlocksList Aggregator::prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, boost::threadpool::pool * thread_pool) const
+BlocksList Aggregator::prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, ThreadPool * thread_pool) const
 {
 #define M(NAME) \
 	else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
@@ -1195,7 +1195,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 	AggregatedDataVariants & data_variants,
 	Method & method,
 	bool final,
-	boost::threadpool::pool * thread_pool) const
+	ThreadPool * thread_pool) const
 {
 	auto converter = [&](size_t bucket, MemoryTracker * memory_tracker)
 	{
@@ -1263,10 +1263,10 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 	if (data_variants.empty())
 		return blocks;
 
-	std::unique_ptr<boost::threadpool::pool> thread_pool;
+	std::unique_ptr<ThreadPool> thread_pool;
 	if (max_threads > 1 && data_variants.sizeWithoutOverflowRow() > 100000	/// TODO Сделать настраиваемый порог.
 		&& data_variants.isTwoLevel())						/// TODO Использовать общий тред-пул с функцией merge.
-		thread_pool.reset(new boost::threadpool::pool(max_threads));
+		thread_pool.reset(new ThreadPool(max_threads));
 
 	if (isCancelled())
 		return BlocksList();
@@ -1602,7 +1602,7 @@ private:
 
 	struct ParallelMergeData
 	{
-		boost::threadpool::pool pool;
+		ThreadPool pool;
 		std::map<Int32, Block> ready_blocks;
 		std::exception_ptr exception;
 		std::mutex mutex;
@@ -1971,14 +1971,10 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 			}
 		};
 
-		/// packaged_task используются, чтобы исключения автоматически прокидывались в основной поток.
-
-		std::vector<std::packaged_task<void()>> tasks(max_bucket + 1);
-
-		std::unique_ptr<boost::threadpool::pool> thread_pool;
+		std::unique_ptr<ThreadPool> thread_pool;
 		if (max_threads > 1 && total_input_rows > 100000	/// TODO Сделать настраиваемый порог.
 			&& has_two_level)
-			thread_pool.reset(new boost::threadpool::pool(max_threads));
+			thread_pool.reset(new ThreadPool(max_threads));
 
 		for (const auto & bucket_blocks : bucket_to_blocks)
 		{
@@ -1990,20 +1986,16 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 			result.aggregates_pools.push_back(std::make_shared<Arena>());
 			Arena * aggregates_pool = result.aggregates_pools.back().get();
 
-			tasks[bucket] = std::packaged_task<void()>(std::bind(merge_bucket, bucket, aggregates_pool, current_memory_tracker));
+			auto task = std::bind(merge_bucket, bucket, aggregates_pool, current_memory_tracker);
 
 			if (thread_pool)
-				thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
+				thread_pool->schedule(task);
 			else
-				tasks[bucket]();
+				task();
 		}
 
 		if (thread_pool)
 			thread_pool->wait();
-
-		for (auto & task : tasks)
-			if (task.valid())
-				task.get_future().get();
 
 		LOG_TRACE(log, "Merged partially aggregated two-level data.");
 	}

@@ -5,6 +5,7 @@
 
 #include <DB/Common/Exception.h>
 #include <DB/Common/Arena.h>
+#include <DB/Common/SipHash.h>
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteHelpers.h>
@@ -180,6 +181,11 @@ public:
 	{
 		data.push_back(*reinterpret_cast<const T *>(pos));
 		return pos + sizeof(T);
+	}
+
+	void updateHashWithValue(size_t n, SipHash & hash) const override
+	{
+		hash.update(reinterpret_cast<const char *>(&data[n]), sizeof(T));
 	}
 
 	size_t byteSize() const override

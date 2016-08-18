@@ -33,8 +33,6 @@
 #include <DB/Interpreters/QueryLog.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/copyData.h>
 #include <DB/IO/UncompressedCache.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
@@ -486,8 +484,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 	/** Возможность обратиться к временным таблицам другого запроса в виде _query_QUERY_ID.table
 	  * NOTE В дальнейшем может потребоваться подумать об изоляции.
 	  */
-	if (database_name.size() > strlen("_query_")
-		&& database_name.compare(0, strlen("_query_"), "_query_") == 0)
+	if (startsWith(database_name, "_query_"))
 	{
 		String requested_query_id = database_name.substr(strlen("_query_"));
 

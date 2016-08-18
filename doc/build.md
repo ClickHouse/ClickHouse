@@ -59,8 +59,8 @@ hash gcc g++
 gcc --version
 sudo ln -s /usr/local/bin/gcc /usr/local/bin/gcc-5
 sudo ln -s /usr/local/bin/g++ /usr/local/bin/g++-5
-sudo ln -s /usr/local/bin/cc /usr/local/bin/gcc-5
-sudo ln -s /usr/local/bin/c++ /usr/local/bin/g++-5
+sudo ln -s /usr/local/bin/gcc /usr/local/bin/cc
+sudo ln -s /usr/local/bin/g++ /usr/local/bin/c++
 # /usr/local/bin/ should be in $PATH
 ```
 
@@ -82,7 +82,7 @@ export CXX=g++-5
 ## Install required libraries from packages
 
 ```
-sudo apt-get install libicu-dev libglib2.0-dev libreadline-dev libzookeeper-mt-dev libmysqlclient-dev libssl-dev unixodbc-dev
+sudo apt-get install libicu-dev libglib2.0-dev libreadline-dev libmysqlclient-dev libssl-dev unixodbc-dev
 ```
 
 ## Install recent version of boost

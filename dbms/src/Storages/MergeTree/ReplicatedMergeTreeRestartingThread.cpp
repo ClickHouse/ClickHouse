@@ -4,6 +4,7 @@
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/randomSeed.h>
 
 
 namespace DB
@@ -11,7 +12,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int CANNOT_CLOCK_GETTIME;
 	extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
 
@@ -19,10 +19,7 @@ namespace ErrorCodes
 /// Используется для проверки, выставили ли ноду is_active мы, или нет.
 static String generateActiveNodeIdentifier()
 {
-	struct timespec times;
-	if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
-		throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
-	return "pid: " + toString(getpid()) + ", random: " + toString(times.tv_nsec + times.tv_sec + getpid());
+	return "pid: " + toString(getpid()) + ", random: " + toString(randomSeed());
 }
 
 
@@ -174,6 +171,10 @@ void ReplicatedMergeTreeRestartingThread::run()
 		storage.remote_part_checker_endpoint_holder->cancel();
 		storage.remote_part_checker_endpoint_holder = nullptr;
 
+		storage.merger.cancel();
+		if (storage.unreplicated_merger)
+			storage.unreplicated_merger->cancel();
+
 		partialShutdown();
 	}
 	catch (...)
@@ -213,10 +214,6 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 		storage.queue_task_handle = storage.context.getBackgroundPool().addTask(
 			std::bind(&StorageReplicatedMergeTree::queueTask, &storage, std::placeholders::_1));
 		storage.queue_task_handle->wake();
-
-		storage.merger.uncancel();
-		if (storage.unreplicated_merger)
-			storage.unreplicated_merger->uncancel();
 
 		return true;
 	}
@@ -357,17 +354,12 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 {
 	ProfileEvents::increment(ProfileEvents::ReplicaPartialShutdown);
 
-	storage.leader_election = nullptr;
 	storage.shutdown_called = true;
 	storage.shutdown_event.set();
 	storage.merge_selecting_event.set();
 	storage.queue_updating_event->set();
 	storage.alter_query_event->set();
 	storage.replica_is_active_node = nullptr;
-
-	storage.merger.cancel();
-	if (storage.unreplicated_merger)
-		storage.unreplicated_merger->cancel();
 
 	LOG_TRACE(log, "Waiting for threads to finish");
 	if (storage.is_leader_node)
@@ -386,6 +378,10 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 	if (storage.queue_task_handle)
 		storage.context.getBackgroundPool().removeTask(storage.queue_task_handle);
 	storage.queue_task_handle.reset();
+
+	/// Yielding leadership only after finish of merge_selecting_thread.
+	/// Otherwise race condition with parallel run of merge selecting thread on different servers is possible.
+	storage.leader_election = nullptr;
 
 	LOG_TRACE(log, "Threads finished");
 }

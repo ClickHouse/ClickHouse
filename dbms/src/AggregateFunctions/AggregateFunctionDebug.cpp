@@ -84,7 +84,7 @@ AggregateFunctionPtr createAggregateFunctionDebug(const std::string & name, cons
 
 void registerAggregateFunctionDebug(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction({"debug"}, createAggregateFunctionDebug);
+	factory.registerFunction("debug", createAggregateFunctionDebug);
 }
 
 }

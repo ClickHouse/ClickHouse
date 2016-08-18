@@ -217,7 +217,7 @@ public:
 		ColumnPlainPtrs in(arguments.size());
 		for (size_t i = 0; i < arguments.size(); ++i)
 		{
-			in[i] = &*block.getByPosition(arguments[i]).column;
+			in[i] = block.getByPosition(arguments[i]).column.get();
 		}
 		size_t n = in[0]->size();
 

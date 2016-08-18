@@ -1,6 +1,7 @@
 #include <DB/IO/CompressedStream.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/Common/Exception.h>
+#include <DB/Common/StringUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 
@@ -81,7 +82,7 @@ public:
 
 		for (const auto & name : keys)
 		{
-			if (0 != strncmp(name.data(), "case", strlen("case")))
+			if (!startsWith(name.data(), "case"))
 				throw Exception("Unknown element in config: " + config_prefix + "." + name + ", must be 'case'", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 
 			elements.emplace_back(config, config_prefix + "." + name);

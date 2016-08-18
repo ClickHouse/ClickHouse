@@ -2,6 +2,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <DB/Core/FieldVisitors.h>
+#include <DB/Common/StringUtils.h>
 
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -45,16 +46,6 @@ namespace ErrorCodes
 	extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-
-static bool endsWith(const std::string & s, const std::string & suffix)
-{
-	return s.size() >= suffix.size() && 0 == strncmp(s.data() + s.size() - suffix.size(), suffix.data(), suffix.size());
-}
-
-static bool startsWith(const std::string & s, const std::string & prefix)
-{
-	return s.size() >= prefix.size() && 0 == strncmp(s.data(), prefix.data(), prefix.size());
-}
 
 /** Для StorageMergeTree: достать первичный ключ в виде ASTExpressionList.
   * Он может быть указан в кортеже: (CounterID, Date),
@@ -227,7 +218,8 @@ StoragePtr StorageFactory::get(
 	const NamesAndTypesList & materialized_columns,
 	const NamesAndTypesList & alias_columns,
 	const ColumnDefaults & column_defaults,
-	bool attach) const
+	bool attach,
+	bool has_force_restore_data_flag) const
 {
 	if (name == "Log")
 	{
@@ -290,11 +282,11 @@ StoragePtr StorageFactory::get(
 			throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
 		const String strictness_str = Poco::toLower(strictness_id->name);
-		ASTJoin::Strictness strictness;
+		ASTTableJoin::Strictness strictness;
 		if (strictness_str == "any")
-			strictness = ASTJoin::Strictness::Any;
+			strictness = ASTTableJoin::Strictness::Any;
 		else if (strictness_str == "all")
-			strictness = ASTJoin::Strictness::All;
+			strictness = ASTTableJoin::Strictness::All;
 		else
 			throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
@@ -303,15 +295,15 @@ StoragePtr StorageFactory::get(
 			throw Exception("Second parameter of storage Join must be LEFT or INNER (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
 		const String kind_str = Poco::toLower(kind_id->name);
-		ASTJoin::Kind kind;
+		ASTTableJoin::Kind kind;
 		if (kind_str == "left")
-			kind = ASTJoin::Kind::Left;
+			kind = ASTTableJoin::Kind::Left;
 		else if (kind_str == "inner")
-			kind = ASTJoin::Kind::Inner;
+			kind = ASTTableJoin::Kind::Inner;
 		else if (kind_str == "right")
-			kind = ASTJoin::Kind::Right;
+			kind = ASTTableJoin::Kind::Right;
 		else if (kind_str == "full")
-			kind = ASTJoin::Kind::Full;
+			kind = ASTTableJoin::Kind::Full;
 		else
 			throw Exception("Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
@@ -528,7 +520,7 @@ SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType
 ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
 
 
-For further info please read the documentation: https://clickhouse.yandex-team.ru/
+For further info please read the documentation: https://clickhouse.yandex/
 )";
 
 		String name_part = name.substr(0, name.size() - strlen("MergeTree"));
@@ -748,6 +740,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, merging_params,
+				has_force_restore_data_flag,
 				context.getMergeTreeSettings());
 		else
 			return StorageMergeTree::create(
@@ -755,6 +748,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, merging_params,
+				has_force_restore_data_flag,
 				context.getMergeTreeSettings());
 	}
 	else

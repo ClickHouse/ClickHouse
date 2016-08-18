@@ -155,7 +155,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 	size_t head_rows = 0;
 	if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*subquery.source))
 	{
-		head_rows = profiling_in->getInfo().rows;
+		head_rows = profiling_in->getProfileInfo().rows;
 
 		if (subquery.join)
 			subquery.join->setTotals(profiling_in->getTotals());

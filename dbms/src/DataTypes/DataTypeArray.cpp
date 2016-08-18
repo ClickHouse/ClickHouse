@@ -87,7 +87,8 @@ void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 	}
 	catch (...)
 	{
-		nested_column.popBack(i);
+		if (i)
+			nested_column.popBack(i);
 		throw;
 	}
 
@@ -248,7 +249,8 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
 	}
 	catch (...)
 	{
-		nested_column.popBack(size);
+		if (size)
+			nested_column.popBack(size);
 		throw;
 	}
 

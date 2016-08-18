@@ -8,6 +8,9 @@
 namespace DB
 {
 
+class WriteBuffer;
+
+
 /** Выводит результат в виде красивых таблиц.
   */
 class PrettyBlockOutputStream : public IBlockOutputStream
@@ -19,7 +22,7 @@ public:
 	void write(const Block & block) override;
 	void writeSuffix() override;
 
-	void flush() override { ostr.next(); }
+	void flush() override;
 
 	void setTotals(const Block & totals_) override { totals = totals_; }
 	void setExtremes(const Block & extremes_) override { extremes = extremes_; }
