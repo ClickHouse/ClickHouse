@@ -264,7 +264,6 @@ MergeTreeDataPartChecksums MergeTreeDataPartChecksums::parse(const String & s)
 
 
 /// Returns the size of .bin file for column `name` if found, zero otherwise.
-/// If this column is nullable, take into account the size of the .null file as well.
 std::size_t MergeTreeDataPart::getColumnSize(const String & name) const
 {
 	if (checksums.empty())
@@ -277,14 +276,7 @@ std::size_t MergeTreeDataPart::getColumnSize(const String & name) const
 	if (0 == files.count(bin_file_name))
 		return {};
 
-	const auto null_file_name = escapeForFileName(name) + ".null";
-	size_t null_size;
-	if (0 == files.count(null_file_name))
-		null_size = 0;
-	else
-		null_size = files.at(null_file_name).file_size;
-
-	return files.at(bin_file_name).file_size + null_size;
+	return files.at(bin_file_name).file_size;
 }
 
 /** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
