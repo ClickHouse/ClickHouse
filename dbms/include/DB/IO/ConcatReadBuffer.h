@@ -19,7 +19,7 @@ protected:
 	ReadBuffers buffers;
 	ReadBuffers::iterator current;
 
-	bool nextImpl()
+	bool nextImpl() override
 	{
 		if (buffers.end() == current)
 			return false;
