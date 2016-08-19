@@ -70,8 +70,7 @@ DatabaseCloud::DatabaseCloud(
 	const String & zookeeper_path_,
 	size_t replication_factor_,
 	const String & datacenter_name_,
-	Context & context_,
-	boost::threadpool::pool * thread_pool)
+	Context & context_)
 	:
 	name(name_),
 	zookeeper_path(context_.getMacros().expand(zookeeper_path_)),
@@ -92,6 +91,12 @@ DatabaseCloud::DatabaseCloud(
 
 	if (!attach)
 		createZookeeperNodes();
+}
+
+
+void loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag)
+{
+	/// Ничего не делаем - все таблицы загружаются лениво.
 }
 
 
@@ -406,7 +411,7 @@ StoragePtr DatabaseCloud::tryGetTable(const String & table_name)
 			String table_name;
 			StoragePtr table;
 			std::tie(table_name, table) = createTableFromDefinition(
-				definition, name, data_path, context,
+				definition, name, data_path, context, false,
 				"in zookeeper node " + zookeeper_path + "/table_definitions/" + hashToHex(table_hash));
 
 			local_tables_cache.emplace(table_name, table);

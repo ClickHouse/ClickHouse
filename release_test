@@ -1,28 +1,3 @@
 #!/bin/bash -ex
 
-source release_lib.sh
-
-CONTROL=debian/control
-CHLOG=debian/changelog
-CHDATE=$(LC_ALL=C date -R | sed -e 's/,/\\,/g') # Заменим запятую на '\,'
-
-# Собирать пакет с конфигурационными файлами для Яндекс.Метрики.
-BUILD_PACKAGE_FOR_METRIKA=$([ -f 'private/Server/metrika/config.xml' ] && echo 'yes')
-
-# Список демонов для сборки может быть указан в аргументах командной строки.
-if [ $# -gt 0 ]
-then
-	DAEMONS="$@"
-else
-	DAEMONS="$(echo `cat debian/daemons`)"
-fi
-
-REVISION="99999"
-echo -e "\nCurrent revision is $REVISION"
-
-make_control "$CONTROL" "$DAEMONS"
-
-gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" "$CHLOG" "$DAEMONS"
-
-# Сборка (только бинарных пакетов).
-debuild -e THREADS_COUNT=7 -e DAEMONS="${DAEMONS}" -b -uc -us
+./release --test $@

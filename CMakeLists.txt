@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 2.6)
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     # require at least gcc 5
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5)
-        message(FATAL_ERROR "GCC version must be at least 5!")
+        message(FATAL_ERROR "GCC version must be at least 5! For example, if GCC 5 is available under gcc-5, g++-5 names, do the following: export CC=gcc-5 CXX=g++-5; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
     endif()
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     # require at least clang 3.8
@@ -36,14 +36,29 @@ IF (NOT AARCH64)
 	SET(MACHINE_FLAGS "-msse4 -mpopcnt")
 ENDIF()
 
+SET(COMMON_WARNING_FLAGS "-Wall -Werror")
+
+
+set (GLIBC_COMPATIBILITY FALSE CACHE BOOL "Set to TRUE to enable compatibility with older glibc libraries")
+
+if ($ENV{GLIBC_COMPATIBILITY})
+	set (GLIBC_COMPATIBILITY TRUE)
+endif()
+
+if (GLIBC_COMPATIBILITY)
+	SET(GLIBC_COMPATIBILITY_COMPILE_FLAGS   "-include ${ClickHouse_SOURCE_DIR}/libs/libcommon/include/common/glibc_compatibility.h")
+	SET(GLIBC_COMPATIBILITY_LINK_FLAGS      "-Wl,--wrap=memcpy")
+endif()
+
+
 SET(CMAKE_BUILD_COLOR_MAKEFILE          ON)
-SET(CMAKE_CXX_FLAGS                     "-std=gnu++1y -Wall -Werror -Wnon-virtual-dtor ${MACHINE_FLAGS}")
+SET(CMAKE_CXX_FLAGS "-std=gnu++1y ${COMMON_WARNING_FLAGS} -Wnon-virtual-dtor ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
 SET(CMAKE_CXX_FLAGS_RELEASE             "-O3 -DNDEBUG")
 SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO      "-O3 -g")
-SET(CMAKE_C_FLAGS                       "-Wall -Werror ${MACHINE_FLAGS}")
+SET(CMAKE_C_FLAGS                       "${COMMON_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
 SET(CMAKE_C_FLAGS_RELEASE               "-O3 -DNDEBUG")
 SET(CMAKE_C_FLAGS_RELWITHDEBINFO        "-O3 -g")
-SET(CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++")
+SET(CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++ ${GLIBC_COMPATIBILITY_LINK_FLAGS}")
 
 # cmake -DCMAKE_BUILD_TYPE=Debug ..
 SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
@@ -68,9 +83,6 @@ ENDIF(TESTS)
 # Префикс для установки
 SET(CMAKE_INSTALL_PREFIX /usr)
 
-# Директория для файлов, специфичных для Яндекса
-SET(CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)
-
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libcityhash/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/liblz4/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libdivide/)
@@ -82,7 +94,7 @@ include_directories (${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libsparsehash/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libre2/)
 include_directories (${ClickHouse_BINARY_DIR}/contrib/libre2/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libboost-threadpool/)
+include_directories (${ClickHouse_SOURCE_DIR}/contrib/libzookeeper/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Foundation/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Util/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Net/include/)
@@ -120,8 +132,17 @@ include_directories (/usr/local/include/)
 
 link_directories (/usr/local/lib)
 
+# Directory for Yandex specific files
+SET(CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)
+
 add_subdirectory (contrib)
 add_subdirectory (libs)
 add_subdirectory (utils)
 add_subdirectory (dbms)
-add_subdirectory (private)
+
+IF (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
+	add_subdirectory (private)
+ENDIF()
+
+message(STATUS "C_FLAGS:  =${CMAKE_C_FLAGS}")
+message(STATUS "CXX_FLAGS:=${CMAKE_CXX_FLAGS}")

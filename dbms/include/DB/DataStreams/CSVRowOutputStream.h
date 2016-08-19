@@ -1,11 +1,14 @@
 #pragma once
 
-#include <DB/IO/WriteBuffer.h>
+#include <DB/Core/Block.h>
 #include <DB/DataStreams/IRowOutputStream.h>
 
 
 namespace DB
 {
+
+class WriteBuffer;
+
 
 /** Поток для вывода данных в формате csv.
   * Не соответствует https://tools.ietf.org/html/rfc4180 потому что использует LF, а не CR LF.
@@ -24,7 +27,7 @@ public:
 	void writePrefix() override;
 	void writeSuffix() override;
 
-	void flush() override { ostr.next(); }
+	void flush() override;
 
 	void setTotals(const Block & totals_) override { totals = totals_; }
 	void setExtremes(const Block & extremes_) override { extremes = extremes_; }

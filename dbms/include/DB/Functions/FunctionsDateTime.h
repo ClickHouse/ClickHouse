@@ -615,7 +615,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		IDataType * from_type = &*block.getByPosition(arguments[0]).type;
+		IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
 		if (typeid_cast<const DataTypeDate *>(from_type))
 			DateTimeTransformImpl<DataTypeDate::FieldType, typename ToDataType::FieldType, Transform, Name>::execute(block, arguments, result);
@@ -794,7 +794,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		if (const ColumnUInt32 * times = typeid_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnUInt32 * times = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			auto res = std::make_shared<ColumnUInt32>();
 			ColumnPtr res_holder = res;
@@ -809,7 +809,7 @@ public:
 
 			block.getByPosition(result).column = res_holder;
 		}
-		else if (const ColumnConstUInt32 * const_times = typeid_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConstUInt32 * const_times = typeid_cast<const ColumnConstUInt32 *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			block.getByPosition(result).column = std::make_shared<ColumnConstUInt32>(block.rowsInFirstColumn(), const_times->getData() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
 		}
@@ -934,11 +934,11 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const ColumnUInt32 * starts = typeid_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[0]).column);
-		const ColumnConstUInt32 * const_starts = typeid_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnUInt32 * starts = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get());
+		const ColumnConstUInt32 * const_starts = typeid_cast<const ColumnConstUInt32 *>(block.getByPosition(arguments[0]).column.get());
 
-		const ColumnUInt32 * durations = typeid_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[1]).column);
-		const ColumnConstUInt32 * const_durations = typeid_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[1]).column);
+		const ColumnUInt32 * durations = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[1]).column.get());
+		const ColumnConstUInt32 * const_durations = typeid_cast<const ColumnConstUInt32 *>(block.getByPosition(arguments[1]).column.get());
 
 		auto res = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt32>());
 		ColumnPtr res_holder = res;

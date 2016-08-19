@@ -10,6 +10,7 @@
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
+#include <DB/Columns/ColumnString.h>
 
 
 namespace DB
@@ -39,15 +40,7 @@ private:
 
 	Block getSampleBlock()
 	{
-		ColumnWithTypeAndName col;
-		col.name = "statement";
-		col.type = std::make_shared<DataTypeString>();
-		col.column = col.type->createColumn();
-
-		Block block;
-		block.insert(col);
-
-		return block;
+		return {{ std::make_shared<ColumnConstString>(0, String()), std::make_shared<DataTypeString>(), "statement" }};
 	}
 
 	BlockInputStreamPtr executeImpl()
@@ -58,15 +51,10 @@ private:
 		formatAST(*context.getCreateQuery(ast.database, ast.table), stream, 0, false, true);
 		String res = stream.str();
 
-		ColumnWithTypeAndName col;
-		col.name = "statement";
-		col.type = std::make_shared<DataTypeString>();
-		col.column = std::make_shared<ColumnConstString>(1, res);
-
-		Block block;
-		block.insert(col);
-
-		return std::make_shared<OneBlockInputStream>(block);
+		return std::make_shared<OneBlockInputStream>(Block{{
+			std::make_shared<ColumnConstString>(1, res),
+			std::make_shared<DataTypeString>(),
+			"statement"}});
 	}
 };
 

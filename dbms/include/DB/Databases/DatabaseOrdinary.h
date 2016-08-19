@@ -1,6 +1,5 @@
 #pragma once
 
-#include <threadpool.hpp>
 #include <DB/Databases/IDatabase.h>
 
 
@@ -22,9 +21,11 @@ private:
 	Logger * log;
 
 public:
-	DatabaseOrdinary(const String & name_, const String & path_, Context & context, boost::threadpool::pool * thread_pool);
+	DatabaseOrdinary(const String & name_, const String & path_);
 
 	String getEngineName() const override { return "Ordinary"; }
+
+	void loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag) override;
 
 	bool isTableExist(const String & table_name) const override;
 	StoragePtr tryGetTable(const String & table_name) override;

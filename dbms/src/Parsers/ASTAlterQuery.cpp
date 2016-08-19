@@ -138,6 +138,12 @@ void ASTAlterQuery::formatImpl(const FormatSettings & settings, FormatState & st
 		{
 			settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FREEZE PARTITION " << (settings.hilite ? hilite_none : "");
 			p.partition->formatImpl(settings, state, frame);
+
+			if (!p.with_name.empty())
+			{
+				settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "")
+					<< " " << mysqlxx::quote << p.with_name;
+			}
 		}
 		else if (p.type == ASTAlterQuery::RESHARD_PARTITION)
 		{

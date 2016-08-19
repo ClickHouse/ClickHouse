@@ -39,6 +39,10 @@ struct Settings
 	M(SettingUInt64, max_block_size, DEFAULT_BLOCK_SIZE) \
 	/** Максимальный размер блока для вставки, если мы управляем формированием блоков для вставки. */ \
 	M(SettingUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE) \
+	/** Squash blocks passed to INSERT query to specified size in rows, if blocks are not big enough. */ \
+	M(SettingUInt64, min_insert_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE) \
+	/** Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough. */ \
+	M(SettingUInt64, min_insert_block_size_bytes, (DEFAULT_INSERT_BLOCK_SIZE * 256)) \
 	/** Максимальное количество потоков выполнения запроса. По-умолчанию - определять автоматически. */ \
 	M(SettingMaxThreads, max_threads, 0) \
 	/** Максимальный размер буфера для чтения из файловой системы. */ \
@@ -162,6 +166,11 @@ struct Settings
 	/** Логгировать запросы и писать лог в системную таблицу. */ \
 	M(SettingBool, log_queries, 0) \
 	\
+	/** If query length is greater than specified threshold (in bytes), then cut query when writing to query log. \
+	  * Also limit length of printed query in ordinary text log. \
+	  */ \
+	M(SettingUInt64, log_queries_cut_to_length, 100000) \
+	\
 	/** Как выполняются распределённые подзапросы внутри секций IN или JOIN? */ \
 	M(SettingDistributedProductMode, distributed_product_mode, DistributedProductMode::DENY) \
 	\
@@ -205,6 +214,13 @@ struct Settings
 	\
 	/** Таймаут в секундах */ \
 	M(SettingUInt64, resharding_barrier_timeout, 300) \
+	\
+	/** What aggregate function to use for implementation of count(DISTINCT ...) */ \
+	M(SettingString, count_distinct_implementation, "uniq") \
+	\
+	/** Write statistics about read rows, bytes, time elapsed in suitable output formats */ \
+	M(SettingBool, output_format_write_statistics, true) \
+
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

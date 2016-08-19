@@ -1,4 +1,5 @@
 #include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
+#include <DB/Common/StringUtils.h>
 
 
 namespace DB
@@ -31,7 +32,7 @@ Block AggregatingSortedBlockInputStream::readImpl()
 			ColumnWithTypeAndName & column = merged_block.getByPosition(i);
 
 			/// Оставляем только состояния аггрегатных функций.
-			if (strncmp(column.type->getName().data(), "AggregateFunction", strlen("AggregateFunction")) != 0)
+			if (!startsWith(column.type->getName(), "AggregateFunction"))
 			{
 				column_numbers_not_to_aggregate.push_back(i);
 				continue;

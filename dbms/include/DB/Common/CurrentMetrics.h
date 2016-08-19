@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <utility>
+#include <atomic>
 
 
 /** Позволяет считать количество одновременно происходящих событий или текущее значение какой-либо метрики.
@@ -65,7 +66,7 @@ namespace CurrentMetrics
 	using Value = int64_t;
 
 	/// Счётчики - текущие значения метрик.
-	extern Value values[END];
+	extern std::atomic<Value> values[END];
 
 
 	/// Выставить значение указанной метрики.
@@ -77,7 +78,7 @@ namespace CurrentMetrics
 	/// Прибавить величину к значению указанной метрики. Вы затем должны вычесть величину самостоятельно. Или см. ниже class Increment.
 	inline void add(Metric metric, Value value = 1)
 	{
-		__sync_fetch_and_add(&values[metric], value);
+		values[metric] += value;
 	}
 
 	inline void sub(Metric metric, Value value = 1)
@@ -89,13 +90,13 @@ namespace CurrentMetrics
 	class Increment
 	{
 	private:
-		Value * what;
+		std::atomic<Value> * what;
 		Value amount;
 
-		Increment(Value * what, Value amount)
+		Increment(std::atomic<Value> * what, Value amount)
 			: what(what), amount(amount)
 		{
-			__sync_fetch_and_add(what, amount);
+			*what += amount;
 		}
 
 	public:
@@ -105,7 +106,7 @@ namespace CurrentMetrics
 		~Increment()
 		{
 			if (what)
-				__sync_fetch_and_sub(what, amount);
+				*what -= amount;
 		}
 
 		Increment(Increment && old)
@@ -123,14 +124,14 @@ namespace CurrentMetrics
 
 		void changeTo(Value new_amount)
 		{
-			__sync_fetch_and_add(what, new_amount - amount);
+			*what += new_amount - amount;
 			amount = new_amount;
 		}
 
 		/// Уменьшить значение раньше вызова деструктора.
 		void destroy()
 		{
-			__sync_fetch_and_sub(what, amount);
+			*what -= amount;
 			what = nullptr;
 		}
 	};

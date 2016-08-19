@@ -12,6 +12,12 @@ TabSeparatedRowOutputStream::TabSeparatedRowOutputStream(WriteBuffer & ostr_, co
 }
 
 
+void TabSeparatedRowOutputStream::flush()
+{
+	ostr.next();
+}
+
+
 void TabSeparatedRowOutputStream::writePrefix()
 {
 	size_t columns = sample.columns();

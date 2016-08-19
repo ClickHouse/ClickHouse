@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/optional.hpp>
 #include <string>
 #include <time.h>
 #include <Poco/Net/StreamSocket.h>

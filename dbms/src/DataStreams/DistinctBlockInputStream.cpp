@@ -61,23 +61,18 @@ Block DistinctBlockInputStream::readImpl()
 
 		for (size_t i = 0; i < rows; ++i)
 		{
-			/** Уникальность строк будем отслеживать с помощью множества значений SipHash128.
-				* Делается несколько допущений.
-				* 1. Допускается неточная работа в случае коллизий SipHash128.
-				* 2. Допускается неточная работа, если строковые поля содержат нулевые байты.
-				* 3. Не поддерживаются массивы.
-				*
-				* Для оптимизации, можно добавить другие методы из Set.h.
-				*/
+			/** Uniqueness of rows are checked with set of SipHash128 values.
+			  * Following assumptions are made:
+			  * 1. Inaccurate work is allowed in case of SipHash128 collisions.
+			  *
+			  * NOTE For optimization, it's possible to add another more efficient methods, see Set.h.
+			  */
 
 			UInt128 key;
 			SipHash hash;
 
 			for (size_t j = 0; j < columns; ++j)
-			{
-				StringRef data = column_ptrs[j]->getDataAtWithTerminatingZero(i);
-				hash.update(data.data, data.size);
-			}
+				column_ptrs[j]->updateHashWithValue(i, hash);
 
 			hash.get128(key.first, key.second);
 

@@ -4,12 +4,11 @@
 
 #include <DB/Common/SipHash.h>
 #include <DB/Common/ShellCommand.h>
+#include <DB/Common/StringUtils.h>
 
 #include <DB/IO/Operators.h>
-#include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/copyData.h>
 #include <DB/IO/WriteBufferFromFile.h>
 
 #include <DB/Interpreters/Compiler.h>
@@ -28,7 +27,7 @@ Compiler::Compiler(const std::string & path_, size_t threads)
 	for (Poco::DirectoryIterator dir_it(path); dir_end != dir_it; ++dir_it)
 	{
 		std::string name = dir_it.name();
-		if (name.length() > strlen(".so") && 0 == name.compare(name.size() - 3, 3, ".so"))
+		if (endsWith(name, ".so"))
 		{
 			files.insert(name.substr(0, name.size() - 3));
 		}
@@ -166,6 +165,7 @@ void Compiler::compile(
 	std::string prefix = path + "/" + file_name;
 	std::string cpp_file_path = prefix + ".cpp";
 	std::string so_file_path = prefix + ".so";
+	std::string so_tmp_file_path = prefix + ".so.tmp";
 
 	{
 		WriteBufferFromFile out(cpp_file_path);
@@ -179,7 +179,7 @@ void Compiler::compile(
 		"LD_LIBRARY_PATH=/usr/share/clickhouse/bin/"
 		" /usr/share/clickhouse/bin/clang"
 		" -B /usr/share/clickhouse/bin/"
-		" -x c++ -std=gnu++1y -O3 -g -Wall -Werror -Wnon-virtual-dtor -march=native -D NDEBUG"
+		" -x c++ -std=gnu++1y -O3 -g -Wall -Werror -Wnon-virtual-dtor -march=native -msse4 -mpopcnt -D NDEBUG"
 		" -shared -fPIC -fvisibility=hidden -fno-implement-inlines"
 		" -isystem /usr/share/clickhouse/headers/usr/local/include/"
 		" -isystem /usr/share/clickhouse/headers/usr/include/"
@@ -196,19 +196,14 @@ void Compiler::compile(
 		" -I /usr/share/clickhouse/headers/libs/libcommon/include/"
 		" -I /usr/share/clickhouse/headers/libs/libmysqlxx/include/"
 		" " << additional_compiler_flags <<
-		" -o " << so_file_path << " " << cpp_file_path
+		" -o " << so_tmp_file_path << " " << cpp_file_path
 		<< " 2>&1 || echo Exit code: $?";
 
 	std::string compile_result;
 
 	{
 		auto process = ShellCommand::execute(command.str());
-
-		{
-			WriteBufferFromString res(compile_result);
-			copyData(process->out, res);
-		}
-
+		readStringUntilEOF(compile_result, process->out);
 		process->wait();
 	}
 
@@ -218,6 +213,7 @@ void Compiler::compile(
 	/// Если до этого была ошибка, то файл с кодом остаётся для возможности просмотра.
 	Poco::File(cpp_file_path).remove();
 
+	Poco::File(so_tmp_file_path).renameTo(so_file_path);
 	SharedLibraryPtr lib(new SharedLibrary(so_file_path));
 
 	{

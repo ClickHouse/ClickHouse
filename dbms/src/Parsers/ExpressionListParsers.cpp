@@ -94,6 +94,8 @@ bool ParserList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 		}
 		else
 		{
+			auto prev_pos = pos;
+
 			ws.ignore(pos, end);
 			if (!separator_parser->ignore(pos, end, max_parsed_pos, expected))
 				break;
@@ -101,7 +103,10 @@ bool ParserList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 
 			ASTPtr elem;
 			if (!elem_parser->parse(pos, end, elem, max_parsed_pos, expected))
-				return false;
+			{
+				pos = prev_pos;
+				break;
+			}
 
 			list->children.push_back(elem);
 		}

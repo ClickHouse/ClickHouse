@@ -91,13 +91,17 @@ AggregateFunctionPtr createAggregateFunctionQuantileTDigestWeighted(const std::s
 
 void registerAggregateFunctionsQuantileTDigest(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction({"quantileTDigest", "medianTDigest"},
+	factory.registerFunction("quantileTDigest",
 		createAggregateFunctionQuantileTDigest<AggregateFunctionQuantileTDigest>);
-	factory.registerFunction({"quantilesTDigest"},
+	factory.registerFunction("medianTDigest",
+		createAggregateFunctionQuantileTDigest<AggregateFunctionQuantileTDigest>);
+	factory.registerFunction("quantilesTDigest",
 		createAggregateFunctionQuantileTDigest<AggregateFunctionQuantilesTDigest>);
-	factory.registerFunction({"quantileTDigestWeighted", "medianTDigestWeighted"},
+	factory.registerFunction("quantileTDigestWeighted",
 		createAggregateFunctionQuantileTDigestWeighted<AggregateFunctionQuantileTDigestWeighted>);
-	factory.registerFunction({"quantilesTDigestWeighted"},
+	factory.registerFunction("medianTDigestWeighted",
+		createAggregateFunctionQuantileTDigestWeighted<AggregateFunctionQuantileTDigestWeighted>);
+	factory.registerFunction("quantilesTDigestWeighted",
 		createAggregateFunctionQuantileTDigestWeighted<AggregateFunctionQuantilesTDigestWeighted>);
 }
 

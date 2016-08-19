@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS test.sample;
 
+SET min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 SET max_block_size = 10;
 
 CREATE TABLE test.sample (d Date DEFAULT '2000-01-01', x UInt8) ENGINE = MergeTree(d, x, x, 10);
@@ -51,12 +52,12 @@ SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 0.0
 SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 0.05 OFFSET 0.4;
 
 SELECT count()
-FROM 
+FROM
 (
-    SELECT 
-        x, 
+    SELECT
+        x,
         count() AS c
-    FROM 
+    FROM
     (
                   SELECT * FROM test.sample SAMPLE 0.01 OFFSET 0.00
         UNION ALL SELECT * FROM test.sample SAMPLE 0.01 OFFSET 0.01
@@ -172,12 +173,12 @@ CREATE TABLE test.sample (d Date DEFAULT '2000-01-01', x UInt16) ENGINE = MergeT
 INSERT INTO test.sample (x) SELECT toUInt16(number) AS x FROM system.numbers LIMIT 65536;
 
 SELECT count()
-FROM 
+FROM
 (
-    SELECT 
-        x, 
+    SELECT
+        x,
         count() AS c
-    FROM 
+    FROM
     (
                   SELECT * FROM test.sample SAMPLE 0.01 OFFSET 0.00
         UNION ALL SELECT * FROM test.sample SAMPLE 0.01 OFFSET 0.01

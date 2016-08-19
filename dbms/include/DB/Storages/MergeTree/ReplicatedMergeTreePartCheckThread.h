@@ -5,6 +5,7 @@
 #include <list>
 #include <mutex>
 #include <thread>
+#include <atomic>
 #include <Poco/Event.h>
 #include <DB/Core/Types.h>
 #include <common/logger_useful.h>
@@ -66,7 +67,7 @@ private:
 	PartsToCheckQueue parts_queue;
 	mutable std::mutex mutex;
 	Poco::Event wakeup_event;
-	volatile bool need_stop { false };
+	std::atomic<bool> need_stop { false };
 
 	std::thread thread;
 };

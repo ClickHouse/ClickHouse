@@ -17,17 +17,17 @@
 namespace DB
 {
 
-/** Соединяет поток сортированных по отдельности блоков в сортированный целиком поток.
-  * Если данных для сортировки слишком много - может использовать внешнюю сортировку, с помощью временных файлов.
+/** Merges stream of sorted each-separately blocks to sorted as-a-whole stream of blocks.
+  * If data to sort is too much, could use external sorting, with temporary files.
   */
 
-/** Часть реализации. Сливает набор готовых (уже прочитанных откуда-то) блоков.
-  * Возвращает результат слияния в виде потока блоков не более max_merged_block_size строк.
+/** Part of implementation. Merging array of ready (already read from somewhere) blocks.
+  * Returns result of merge as stream of blocks, not more than 'max_merged_block_size' rows in each.
   */
 class MergeSortingBlocksBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	/// limit - если не 0, то можно выдать только первые limit строк в сортированном порядке.
+	/// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
 	MergeSortingBlocksBlockInputStream(Blocks & blocks_, SortDescription & description_,
 		size_t max_merged_block_size_, size_t limit_ = 0);
 
@@ -52,8 +52,8 @@ private:
 	std::priority_queue<SortCursor> queue;
 	std::priority_queue<SortCursorWithCollation> queue_with_collation;
 
-	/** Делаем поддержку двух разных курсоров - с Collation и без.
-	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
+	/** Two different cursors are supported - with and without Collation.
+	 *  Templates are used (instead of virtual functions in SortCursor) for zero-overhead.
 	 */
 	template <typename TSortCursor>
 	Block mergeImpl(std::priority_queue<TSortCursor> & queue);
@@ -63,7 +63,7 @@ private:
 class MergeSortingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	/// limit - если не 0, то можно выдать только первые limit строк в сортированном порядке.
+	/// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
 	MergeSortingBlockInputStream(BlockInputStreamPtr input_, SortDescription & description_,
 		size_t max_merged_block_size_, size_t limit_,
 		size_t max_bytes_before_external_sort_, const std::string & tmp_path_)
@@ -104,10 +104,15 @@ private:
 	size_t sum_bytes_in_blocks = 0;
 	std::unique_ptr<IBlockInputStream> impl;
 
-	/// Всё ниже - для внешней сортировки.
+	/// Before operation, will remove constant columns from blocks. And after, place constant columns back.
+	/// (to avoid excessive virtual function calls and because constants cannot be serialized in Native format for temporary files)
+	/// Save original block structure here.
+	Block sample_block;
+
+	/// Everything below is for external sorting.
 	std::vector<std::unique_ptr<Poco::TemporaryFile>> temporary_files;
 
-	/// Для чтения сброшенных во временный файл данных.
+	/// For reading data from temporary file.
 	struct TemporaryFileStream
 	{
 		ReadBufferFromFile file_in;

@@ -283,7 +283,13 @@ void ConfigProcessor::doIncludes(DocumentPtr config, DocumentPtr include_from)
 
 XMLDocumentPtr ConfigProcessor::processConfig(const std::string & path_str)
 {
-	DocumentPtr config = DOMParser().parse(path_str);
+	/// We need larger name pool to allow to support vast amount of users in users.xml files for ClickHouse.
+	/// Size is prime because Poco::XML::NamePool uses bad (inefficient, low quality)
+	///  hash function internally, and its size was prime by default.
+	Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool(65521));
+	Poco::XML::DOMParser dom_parser(name_pool);
+
+	DocumentPtr config = dom_parser.parse(path_str);
 
 	std::vector<std::string> contributing_files;
 	contributing_files.push_back(path_str);
@@ -309,7 +315,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(const std::string & path_str)
 				if (file.isFile() && (endsWith(file.path(), ".xml") || endsWith(file.path(), ".conf")))
 				{
 					contributing_files.push_back(file.path());
-					DocumentPtr with = DOMParser().parse(file.path());
+					DocumentPtr with = dom_parser.parse(file.path());
 					merge(config, with);
 				}
 			}
@@ -338,7 +344,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(const std::string & path_str)
 		if (!include_from_path.empty())
 		{
 			contributing_files.push_back(include_from_path);
-			include_from = DOMParser().parse(include_from_path);
+			include_from = dom_parser.parse(include_from_path);
 		}
 
 		doIncludes(config, include_from);

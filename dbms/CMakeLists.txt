@@ -12,18 +12,19 @@ endif()
 if (${DISABLE_MONGODB})
 	add_definitions(-D DISABLE_MONGODB)
 else()
-	set (LINK_MONGOCLIENT libmongoclient.a libssl.a libcrypto.a)
+	set (LINK_MONGOCLIENT libmongoclient.a libssl.a libcrypto.a libboost_thread.a)
 endif()
 
+
+add_library(string_utils
+	include/DB/Common/StringUtils.h
+	src/Common/StringUtils.cpp)
+
 add_library (dbms
-	src/Server/OLAPAttributesMetadata.h
 	src/Server/InterserverIOHTTPHandler.h
-	src/Server/OLAPHTTPHandler.h
-	src/Server/OLAPQueryConverter.h
 	src/Server/Server.h
 	src/Server/TCPHandler.h
 	src/Server/HTTPHandler.h
-	src/Server/OLAPQueryParser.h
 	src/Server/MetricsTransmitter.h
 	src/Server/UsersConfigReloader.h
 	src/Server/StatusFile.h
@@ -60,6 +61,7 @@ add_library (dbms
 	include/DB/Functions/FunctionsComparison.h
 	include/DB/Functions/FunctionsHashing.h
 	include/DB/Functions/FunctionsMath.h
+	include/DB/Functions/FunctionsGeo.h
 	include/DB/Functions/FunctionsMiscellaneous.h
 	include/DB/Functions/FunctionsDateTime.h
 	include/DB/Functions/IFunction.h
@@ -82,7 +84,6 @@ add_library (dbms
 	include/DB/Parsers/ASTExpressionList.h
 	include/DB/Parsers/ASTQueryWithOutput.h
 	include/DB/Parsers/ParserSelectQuery.h
-	include/DB/Parsers/ParserTableExpression.h
 	include/DB/Parsers/ParserUseQuery.h
 	include/DB/Parsers/ASTShowTablesQuery.h
 	include/DB/Parsers/ASTFunction.h
@@ -95,9 +96,7 @@ add_library (dbms
 	include/DB/Parsers/ASTSubquery.h
 	include/DB/Parsers/ASTUseQuery.h
 	include/DB/Parsers/ASTIdentifier.h
-	include/DB/Parsers/ParserJoin.h
 	include/DB/Parsers/ParserTablePropertiesQuery.h
-	include/DB/Parsers/ASTJoin.h
 	include/DB/Parsers/ParserCheckQuery.h
 	include/DB/Parsers/ParserRenameQuery.h
 	include/DB/Parsers/ParserInsertQuery.h
@@ -132,6 +131,8 @@ add_library (dbms
 	include/DB/Parsers/ASTSampleRatio.h
 	include/DB/Parsers/ParserSampleRatio.h
 	include/DB/Parsers/ParserCase.h
+	include/DB/Parsers/ASTTablesInSelectQuery.h
+	include/DB/Parsers/ParserTablesInSelectQuery.h
 	include/DB/AggregateFunctions/AggregateFunctionMerge.h
 	include/DB/AggregateFunctions/AggregateFunctionUniqUpTo.h
 	include/DB/AggregateFunctions/AggregateFunctionIf.h
@@ -265,6 +266,10 @@ add_library (dbms
 	include/DB/DataStreams/MarkInCompressedFile.h
 	include/DB/DataStreams/CSVRowOutputStream.h
 	include/DB/DataStreams/CSVRowInputStream.h
+	include/DB/DataStreams/verbosePrintString.h
+	include/DB/DataStreams/SquashingTransform.h
+	include/DB/DataStreams/SquashingBlockInputStream.h
+	include/DB/DataStreams/SquashingBlockOutputStream.h
 	include/DB/DataTypes/IDataType.h
 	include/DB/DataTypes/IDataTypeDummy.h
 	include/DB/DataTypes/DataTypeSet.h
@@ -428,6 +433,9 @@ add_library (dbms
 	include/DB/Common/getNumberOfPhysicalCPUCores.h
 	include/DB/Common/BitHelpers.h
 	include/DB/Common/BlockFilterCreator.h
+	include/DB/Common/randomSeed.h
+	include/DB/Common/unaligned.h
+	include/DB/Common/ThreadPool.h
 	include/DB/IO/CompressedStream.h
 	include/DB/IO/ReadBufferFromFileDescriptor.h
 	include/DB/IO/CompressedWriteBuffer.h
@@ -597,6 +605,8 @@ add_library (dbms
 	src/Common/ShellCommand.cpp
 	src/Common/isLocalAddress.cpp
 	src/Common/getNumberOfPhysicalCPUCores.cpp
+	src/Common/randomSeed.cpp
+	src/Common/ThreadPool.cpp
 
 	src/Core/Field.cpp
 	src/Core/FieldVisitors.cpp
@@ -742,6 +752,10 @@ add_library (dbms
 	src/DataStreams/DistinctBlockInputStream.cpp
 	src/DataStreams/RemoteBlockInputStream.cpp
 	src/DataStreams/BlockIO.cpp
+	src/DataStreams/verbosePrintString.cpp
+	src/DataStreams/SquashingTransform.cpp
+	src/DataStreams/SquashingBlockInputStream.cpp
+	src/DataStreams/SquashingBlockOutputStream.cpp
 
 	src/DataTypes/DataTypeString.cpp
 	src/DataTypes/DataTypeFixedString.cpp
@@ -771,6 +785,7 @@ add_library (dbms
 	src/Parsers/ASTWithAlias.cpp
 	src/Parsers/ASTIdentifier.cpp
 	src/Parsers/ASTSampleRatio.cpp
+	src/Parsers/ASTTablesInSelectQuery.cpp
 	src/Parsers/IAST.cpp
 	src/Parsers/IParserBase.cpp
 	src/Parsers/ExpressionElementParsers.cpp
@@ -778,8 +793,6 @@ add_library (dbms
 	src/Parsers/ParserQueryWithOutput.cpp
 	src/Parsers/ParserCreateQuery.cpp
 	src/Parsers/ParserSelectQuery.cpp
-	src/Parsers/ParserTableExpression.cpp
-	src/Parsers/ParserJoin.cpp
 	src/Parsers/ParserInsertQuery.cpp
 	src/Parsers/ParserDropQuery.cpp
 	src/Parsers/ParserRenameQuery.cpp
@@ -792,6 +805,7 @@ add_library (dbms
 	src/Parsers/ParserCheckQuery.cpp
 	src/Parsers/ParserSampleRatio.cpp
 	src/Parsers/ParserCase.cpp
+	src/Parsers/ParserTablesInSelectQuery.cpp
 	src/Parsers/formatAST.cpp
 	src/Parsers/parseQuery.cpp
 	src/Parsers/queryToString.cpp
@@ -861,6 +875,7 @@ add_library (dbms
 	src/Functions/FunctionsURL.cpp
 	src/Functions/FunctionsVisitParam.cpp
 	src/Functions/FunctionsMath.cpp
+	src/Functions/FunctionsGeo.cpp
 	src/Functions/FunctionsMiscellaneous.cpp
 	src/Functions/FunctionsTransform.cpp
 	src/Functions/Conditional/getArrayType.cpp
@@ -926,6 +941,7 @@ SET_SOURCE_FILES_PROPERTIES(
 	src/Functions/FunctionsURL.cpp
 	src/Functions/FunctionsVisitParam.cpp
 	src/Functions/FunctionsMath.cpp
+	src/Functions/FunctionsGeo.cpp
 	src/Functions/FunctionsMiscellaneous.cpp
 	src/Functions/FunctionsTransform.cpp
 	src/Dictionaries/FlatDictionary.cpp
@@ -946,11 +962,11 @@ target_link_libraries(dbms
 	mysqlxx
 	cityhash farmhash metrohash
 	lz4 zstd
+	string_utils
 	double-conversion
 	${LINK_LIBRARIES_ONLY_ON_X86_64}
 	re2 re2_st
 	libcrypto.a
-	libboost_thread.a
 	libboost_system.a
 	${LINK_MONGOCLIENT}
 	libboost_regex.a

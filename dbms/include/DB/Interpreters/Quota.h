@@ -29,54 +29,83 @@ namespace DB
   * Квота распространяется только на один сервер.
   */
 
-/// Используется как для максимальных значений, так и в качестве счётчика накопившихся значений.
+/// Used both for maximum allowed values and for counters of current accumulated values.
+template <typename Counter>		/// either size_t or std::atomic<size_t>
 struct QuotaValues
 {
-	/// Нули в качестве ограничений означают "не ограничено".
-	size_t queries;					/// Количество запросов.
-	size_t errors;					/// Количество запросов с эксепшенами.
-	size_t result_rows;				/// Количество строк, отданных в качестве результата.
-	size_t result_bytes;			/// Количество байт, отданных в качестве результата.
-	size_t read_rows;				/// Количество строк, прочитанных из таблиц.
-	size_t read_bytes;				/// Количество байт, прочитанных из таблиц.
-	Poco::Timespan execution_time;	/// Суммарное время выполнения запросов.
+	/// Zero values (for maximums) means no limit.
+	Counter queries;				/// Количество запросов.
+	Counter errors;					/// Количество запросов с эксепшенами.
+	Counter result_rows;			/// Количество строк, отданных в качестве результата.
+	Counter result_bytes;			/// Количество байт, отданных в качестве результата.
+	Counter read_rows;				/// Количество строк, прочитанных из таблиц.
+	Counter read_bytes;				/// Количество байт, прочитанных из таблиц.
+	Counter execution_time_usec;	/// Суммарное время выполнения запросов в микросекундах.
 
 	QuotaValues()
 	{
 		clear();
 	}
 
+	QuotaValues(const QuotaValues & rhs)
+	{
+		tuple() = rhs.tuple();
+	}
+
+	QuotaValues & operator=(const QuotaValues & rhs)
+	{
+		tuple() = rhs.tuple();
+		return *this;
+	}
+
 	void clear()
 	{
-		memset(this, 0, sizeof(*this));
+		tuple() = std::make_tuple(0, 0, 0, 0, 0, 0, 0);
 	}
 
 	void initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
 
 	bool operator== (const QuotaValues & rhs) const
 	{
-		return
-			queries			== rhs.queries &&
-			errors			== rhs.errors &&
-			result_rows		== rhs.result_rows &&
-			result_bytes	== rhs.result_bytes &&
-			read_rows		== rhs.read_rows &&
-			read_bytes		== rhs.read_bytes &&
-			execution_time	== rhs.execution_time;
+		return tuple() == rhs.tuple();
+	}
+
+private:
+	auto tuple()
+	{
+		return std::forward_as_tuple(queries, errors, result_rows, result_bytes, read_rows, read_bytes, execution_time_usec);
+	}
+
+	auto tuple() const
+	{
+		return std::make_tuple(queries, errors, result_rows, result_bytes, read_rows, read_bytes, execution_time_usec);
 	}
 };
+
+template <>
+inline auto QuotaValues<std::atomic<size_t>>::tuple() const
+{
+	return std::make_tuple(
+		queries.load(std::memory_order_relaxed),
+		errors.load(std::memory_order_relaxed),
+		result_rows.load(std::memory_order_relaxed),
+		result_bytes.load(std::memory_order_relaxed),
+		read_rows.load(std::memory_order_relaxed),
+		read_bytes.load(std::memory_order_relaxed),
+		execution_time_usec.load(std::memory_order_relaxed));
+}
 
 
 /// Время, округлённое до границы интервала, квота за интервал и накопившиеся за этот интервал значения.
 struct QuotaForInterval
 {
-	time_t rounded_time;
-	size_t duration;
-	time_t offset;		/// Смещение интервала, для рандомизации.
-	QuotaValues max;
-	QuotaValues used;
+	time_t rounded_time = 0;
+	size_t duration = 0;
+	time_t offset = 0;		/// Offset of interval for randomization (to avoid DoS if intervals for many users end at one time).
+	QuotaValues<size_t> max;
+	QuotaValues<std::atomic<size_t>> used;
 
-	QuotaForInterval() : rounded_time() {}
+	QuotaForInterval() {}
 	QuotaForInterval(time_t duration_) : duration(duration_) {}
 
 	void initFromConfig(const String & config_elem, time_t duration_, time_t offset_, Poco::Util::AbstractConfiguration & config);
@@ -113,11 +142,12 @@ private:
 
 struct Quota;
 
-/// Длина интервала -> квота и накопившиеся за текущий интервал такой длины значения (например, 3600 -> значения за текущий час).
+/// Length of interval -> quota: maximum allowed and currently accumulated values for that interval (example: 3600 -> values for current hour).
 class QuotaForIntervals
 {
 private:
-	/// При проверке, будем обходить интервалы в порядке, обратном величине - от самого большого до самого маленького.
+	/// While checking, will walk through intervals in order of decreasing size - from largest to smallest.
+	/// To report first about largest interval on what quota was exceeded.
 	using Container = std::map<size_t, QuotaForInterval>;
 	Container cont;
 
@@ -126,7 +156,7 @@ private:
 public:
 	QuotaForIntervals(const std::string & name_ = "") : name(name_) {}
 
-	/// Есть ли хотя бы один интервал, за который считается квота?
+	/// Is there at least one interval for counting quota?
 	bool empty() const
 	{
 		return cont.empty();
@@ -147,7 +177,7 @@ public:
 	void checkAndAddReadRowsBytes(time_t current_time, size_t rows, size_t bytes);
 	void checkAndAddExecutionTime(time_t current_time, Poco::Timespan amount);
 
-	/// Получить текст, описывающий, какая часть квоты израсходована.
+	/// Get text, describing what part of quota has been exceeded.
 	String toString() const;
 
 	bool operator== (const QuotaForIntervals & rhs) const
@@ -159,24 +189,22 @@ public:
 using QuotaForIntervalsPtr = std::shared_ptr<QuotaForIntervals>;
 
 
-/// Ключ квоты -> квоты за интервалы. Если квота не допускает ключей, то накопленные значения хранятся по ключу 0.
+/// Quota key -> quotas (max and current values) for intervals. If quota doesn't have keys, then values stored at key 0.
 struct Quota
 {
 	using Container = std::unordered_map<UInt64, QuotaForIntervalsPtr>;
 
 	String name;
 
-	/// Максимальные значения из конфига.
+	/// Maximum values from config.
 	QuotaForIntervals max;
-	/// Максимальные и накопленные значения для разных ключей.
-	/// Для всех ключей максимальные значения одинаковы и взяты из max.
+	/// Maximum and accumulated values for different keys.
+	/// For all keys, maximum values are the same and taken from 'max'.
 	Container quota_for_keys;
 	std::mutex mutex;
 
-	bool is_keyed;
-	bool keyed_by_ip;
-
-	Quota() : is_keyed(false), keyed_by_ip(false) {}
+	bool is_keyed = false;
+	bool keyed_by_ip = false;
 
 	void loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config, std::mt19937 & rng);
 	QuotaForIntervalsPtr get(const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip);
@@ -186,7 +214,7 @@ struct Quota
 class Quotas
 {
 private:
-	/// Имя квоты -> квоты.
+	/// Name of quota -> quota.
 	using Container = std::unordered_map<String, std::unique_ptr<Quota>>;
 	Container cont;
 

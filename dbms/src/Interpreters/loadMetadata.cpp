@@ -2,7 +2,7 @@
 #include <thread>
 #include <future>
 
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/FileStream.h>
@@ -15,8 +15,6 @@
 #include <DB/Interpreters/loadMetadata.h>
 
 #include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/copyData.h>
 #include <DB/Common/escapeForFileName.h>
 
 #include <DB/Common/Stopwatch.h>
@@ -30,7 +28,8 @@ static void executeCreateQuery(
 	Context & context,
 	const String & database,
 	const String & file_name,
-	boost::threadpool::pool & pool)
+	ThreadPool & pool,
+	bool has_force_restore_data_flag)
 {
 	ParserCreateQuery parser;
 	ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + file_name);
@@ -41,6 +40,7 @@ static void executeCreateQuery(
 
 	InterpreterCreateQuery interpreter(ast, context);
 	interpreter.setDatabaseLoadingThreadpool(pool);
+	interpreter.setForceRestoreData(has_force_restore_data_flag);
 	interpreter.execute();
 }
 
@@ -49,24 +49,32 @@ void loadMetadata(Context & context)
 {
 	String path = context.getPath() + "metadata";
 
-	/// Используется для параллельной загрузки таблиц.
-	boost::threadpool::pool thread_pool(SettingMaxThreads().getAutoValue());
+	/** There may exist 'force_restore_data' file, that means,
+	  *  skip safety threshold on difference of data parts while initializing tables.
+	  * This file is deleted after successful loading of tables.
+	  * (flag is "one-shot")
+	  */
+	Poco::File force_restore_data_flag_file(context.getPath() + "flags/force_restore_data");
+	bool has_force_restore_data_flag = force_restore_data_flag_file.exists();
 
-	/// Цикл по базам данных
+	/// For parallel tables loading.
+	ThreadPool thread_pool(SettingMaxThreads().getAutoValue());
+
+	/// Loop over databases.
 	Poco::DirectoryIterator dir_end;
 	for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
 	{
 		if (!it->isDirectory())
 			continue;
 
-		/// Для директории .svn
+		/// For '.svn', '.gitignore' directory and similar.
 		if (it.name().at(0) == '.')
 			continue;
 
 		String database = unescapeForFileName(it.name());
 
-		/// Для базы данных может быть расположен .sql файл, где описан запрос на её создание.
-		/// А если такого файла нет, то создаётся база данных с движком по-умолчанию.
+		/// There may exist .sql file with database creation statement.
+		/// Or, if it is absent, then database with default engine is created.
 
 		String database_attach_query;
 		String database_metadata_file = it->path() + ".sql";
@@ -74,16 +82,18 @@ void loadMetadata(Context & context)
 		if (Poco::File(database_metadata_file).exists())
 		{
 			ReadBufferFromFile in(database_metadata_file, 1024);
-			WriteBufferFromString out(database_attach_query);
-			copyData(in, out);
+			readStringUntilEOF(database_attach_query, in);
 		}
 		else
 			database_attach_query = "ATTACH DATABASE " + backQuoteIfNeed(database);
 
-		executeCreateQuery(database_attach_query, context, database, it->path(), thread_pool);
+		executeCreateQuery(database_attach_query, context, database, it->path(), thread_pool, has_force_restore_data_flag);
 	}
 
 	thread_pool.wait();
+
+	if (has_force_restore_data_flag)
+		force_restore_data_flag_file.remove();
 }
 
 }

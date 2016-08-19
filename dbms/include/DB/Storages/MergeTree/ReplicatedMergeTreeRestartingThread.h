@@ -49,7 +49,7 @@ private:
 	StorageReplicatedMergeTree & storage;
 	Logger * log;
 	Poco::Event wakeup_event;
-	volatile bool need_stop = false;
+	std::atomic<bool> need_stop {false};
 
 	/// Случайные данные, которые мы записали в /replicas/me/is_active.
 	String active_node_identifier;

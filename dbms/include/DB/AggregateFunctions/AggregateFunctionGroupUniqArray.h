@@ -36,7 +36,8 @@ struct AggregateFunctionGroupUniqArrayData
 
 /// Складывает все значения в хэш-множество. Возвращает массив уникальных значений. Реализована для числовых типов.
 template <typename T>
-class AggregateFunctionGroupUniqArray : public IUnaryAggregateFunction<AggregateFunctionGroupUniqArrayData<T>, AggregateFunctionGroupUniqArray<T> >
+class AggregateFunctionGroupUniqArray
+	: public IUnaryAggregateFunction<AggregateFunctionGroupUniqArrayData<T>, AggregateFunctionGroupUniqArray<T>>
 {
 private:
 	using State = AggregateFunctionGroupUniqArrayData<T>;

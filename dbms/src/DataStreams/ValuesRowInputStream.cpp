@@ -26,6 +26,8 @@ namespace ErrorCodes
 ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Context & context_)
 	: istr(istr_), context(context_)
 {
+	/// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
+	skipBOMIfExists(istr);
 }
 
 

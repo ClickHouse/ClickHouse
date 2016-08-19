@@ -18,6 +18,12 @@ PrettyBlockOutputStream::PrettyBlockOutputStream(WriteBuffer & ostr_, bool no_es
 }
 
 
+void PrettyBlockOutputStream::flush()
+{
+	ostr.next();
+}
+
+
 void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widths, Widths_t & name_widths)
 {
 	size_t rows = block.rows();

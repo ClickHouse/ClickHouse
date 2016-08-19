@@ -27,7 +27,7 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & n
 
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction({"groupUniqArray"}, createAggregateFunctionGroupUniqArray);
+	factory.registerFunction("groupUniqArray", createAggregateFunctionGroupUniqArray);
 }
 
 }

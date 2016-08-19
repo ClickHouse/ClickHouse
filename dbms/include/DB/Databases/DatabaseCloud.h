@@ -1,6 +1,5 @@
 #pragma once
 
-#include <threadpool.hpp>
 #include <DB/Databases/IDatabase.h>
 #include <DB/Common/UInt128.h>
 
@@ -80,10 +79,11 @@ public:
 		const String & zookeeper_path_,
 		size_t replication_factor_,
 		const String & datacenter_name_,
-		Context & context_,
-		boost::threadpool::pool * thread_pool);
+		Context & context_);
 
 	String getEngineName() const override { return "Cloud"; }
+
+	void loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag) override;
 
 	bool isTableExist(const String & table_name) const override;
 	StoragePtr tryGetTable(const String & table_name) override;

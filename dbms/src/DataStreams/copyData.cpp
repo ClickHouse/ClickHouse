@@ -35,8 +35,8 @@ void copyData(IBlockInputStream & from, IBlockOutputStream & to, std::atomic<boo
 	/// Для вывода дополнительной информации в некоторых форматах.
 	if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(&from))
 	{
-		if (input->getInfo().hasAppliedLimit())
-			to.setRowsBeforeLimit(input->getInfo().getRowsBeforeLimit());
+		if (input->getProfileInfo().hasAppliedLimit())
+			to.setRowsBeforeLimit(input->getProfileInfo().getRowsBeforeLimit());
 
 		to.setTotals(input->getTotals());
 		to.setExtremes(input->getExtremes());

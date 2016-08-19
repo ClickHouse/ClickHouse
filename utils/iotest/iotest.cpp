@@ -13,7 +13,7 @@
 
 #include <DB/Common/Exception.h>
 
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 #include <DB/Common/Stopwatch.h>
 
 #include <stdlib.h>
@@ -54,56 +54,49 @@ struct AlignedBuffer
 	}
 };
 
-void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t count, std::exception_ptr & exception)
+void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t count)
 {
-	try
-	{
-		AlignedBuffer direct_buf(block_size);
-		std::vector<char> simple_buf(block_size);
+	AlignedBuffer direct_buf(block_size);
+	std::vector<char> simple_buf(block_size);
 
-		char * buf;
-		if ((mode & MODE_DIRECT))
-			buf = direct_buf.data;
+	char * buf;
+	if ((mode & MODE_DIRECT))
+		buf = direct_buf.data;
+	else
+		buf = &simple_buf[0];
+
+	drand48_data rand_data;
+
+	timespec times;
+	clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times);
+	srand48_r(times.tv_nsec, &rand_data);
+
+	for (size_t i = 0; i < count; ++i)
+	{
+		long rand_result1 = 0;
+		long rand_result2 = 0;
+		long rand_result3 = 0;
+		lrand48_r(&rand_data, &rand_result1);
+		lrand48_r(&rand_data, &rand_result2);
+		lrand48_r(&rand_data, &rand_result3);
+
+		size_t rand_result = rand_result1 ^ (rand_result2 << 22) ^ (rand_result3 << 43);
+		size_t offset;
+		if ((mode & MODE_DIRECT) || (mode & MODE_ALIGNED))
+			offset = min_offset + rand_result % ((max_offset - min_offset) / block_size) * block_size;
 		else
-			buf = &simple_buf[0];
+			offset = min_offset + rand_result % (max_offset - min_offset - block_size + 1);
 
-		drand48_data rand_data;
-
-		timespec times;
-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times);
-		srand48_r(times.tv_nsec, &rand_data);
-
-		for (size_t i = 0; i < count; ++i)
+		if (mode & MODE_READ)
 		{
-			long rand_result1 = 0;
-			long rand_result2 = 0;
-			long rand_result3 = 0;
-			lrand48_r(&rand_data, &rand_result1);
-			lrand48_r(&rand_data, &rand_result2);
-			lrand48_r(&rand_data, &rand_result3);
-
-			size_t rand_result = rand_result1 ^ (rand_result2 << 22) ^ (rand_result3 << 43);
-			size_t offset;
-			if ((mode & MODE_DIRECT) || (mode & MODE_ALIGNED))
-				offset = min_offset + rand_result % ((max_offset - min_offset) / block_size) * block_size;
-			else
-				offset = min_offset + rand_result % (max_offset - min_offset - block_size + 1);
-
-			if (mode & MODE_READ)
-			{
-				if (static_cast<int>(block_size) != pread(fd, buf, block_size, offset))
-					throwFromErrno("Cannot read");
-			}
-			else
-			{
-				if (static_cast<int>(block_size) != pwrite(fd, buf, block_size, offset))
-					throwFromErrno("Cannot write");
-			}
+			if (static_cast<int>(block_size) != pread(fd, buf, block_size, offset))
+				throwFromErrno("Cannot read");
 		}
-	}
-	catch (...)
-	{
-		exception = std::current_exception();
+		else
+		{
+			if (static_cast<int>(block_size) != pwrite(fd, buf, block_size, offset))
+				throwFromErrno("Cannot write");
+		}
 	}
 }
 
@@ -157,26 +150,19 @@ int mainImpl(int argc, char ** argv)
 		}
 	}
 
-	boost::threadpool::pool pool(threads);
+	ThreadPool pool(threads);
 
 	int fd = open(file_name, ((mode & MODE_READ) ? O_RDONLY : O_WRONLY) | ((mode & MODE_DIRECT) ? O_DIRECT : 0) | ((mode & MODE_SYNC) ? O_SYNC : 0));
 	if (-1 == fd)
 		throwFromErrno("Cannot open file");
 
-	using Exceptions = std::vector<std::exception_ptr>;
-	Exceptions exceptions(threads);
-
 	Stopwatch watch;
 
 	for (size_t i = 0; i < threads; ++i)
-		pool.schedule(std::bind(thread, fd, mode, min_offset, max_offset, block_size, count, std::ref(exceptions[i])));
+		pool.schedule(std::bind(thread, fd, mode, min_offset, max_offset, block_size, count));
 	pool.wait();
 
 	fsync(fd);
-
-	for (size_t i = 0; i < threads; ++i)
-		if (exceptions[i])
-			std::rethrow_exception(exceptions[i]);
 
 	watch.stop();
 

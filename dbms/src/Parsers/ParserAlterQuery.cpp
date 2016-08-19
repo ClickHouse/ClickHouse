@@ -37,6 +37,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 	ParserString s_using(		"USING", true, true);
 	ParserString s_coordinate(	"COORDINATE", true, true);
 	ParserString s_with(		"WITH", true, true);
+	ParserString s_name(		"NAME", true, true);
 
 	ParserString s_dot(".");
 	ParserString s_comma(",");
@@ -239,6 +240,25 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 				return false;
 
 			ws.ignore(pos, end);
+
+			/// WITH NAME 'name' - place local backup to directory with specified name
+			if (s_with.ignore(pos, end, max_parsed_pos, expected))
+			{
+				ws.ignore(pos, end);
+
+				if (!s_name.ignore(pos, end, max_parsed_pos, expected))
+					return false;
+
+				ws.ignore(pos, end);
+
+				ASTPtr ast_with_name;
+				if (!parser_string_literal.parse(pos, end, ast_with_name, max_parsed_pos, expected))
+					return false;
+
+				params.with_name = typeid_cast<const ASTLiteral &>(*ast_with_name).value.get<const String &>();
+
+				ws.ignore(pos, end);
+			}
 
 			params.type = ASTAlterQuery::FREEZE_PARTITION;
 		}

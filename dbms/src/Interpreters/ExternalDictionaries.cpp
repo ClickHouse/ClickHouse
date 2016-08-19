@@ -2,6 +2,7 @@
 #include <DB/Dictionaries/DictionaryFactory.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/IDictionarySource.h>
+#include <DB/Common/StringUtils.h>
 #include <ext/scope_guard.hpp>
 #include <Poco/Util/Application.h>
 #include <Poco/Glob.h>
@@ -223,9 +224,9 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 			{
 				std::string name;
 
-				if (0 != strncmp(key.data(), "dictionary", strlen("dictionary")))
+				if (!startsWith(key, "dictionary"))
 				{
-					if (0 != strncmp(key.data(), "comment", strlen("comment")))
+					if (!startsWith(key.data(), "comment"))
 						LOG_WARNING(log,
 							config_path << ": unknown node in dictionaries file: '" << key + "', 'dictionary'");
 
@@ -254,13 +255,13 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 						const auto failed_dict_it = failed_dictionaries.find(name);
 						if (failed_dict_it != std::end(failed_dictionaries))
 						{
-							failed_dict_it->second = failed_dictionary_info{
+							failed_dict_it->second = FailedDictionaryInfo{
 								std::move(dict_ptr),
 								std::chrono::system_clock::now() + std::chrono::seconds{backoff_initial_sec}
 							};
 						}
 						else
-							failed_dictionaries.emplace(name, failed_dictionary_info{
+							failed_dictionaries.emplace(name, FailedDictionaryInfo{
 								std::move(dict_ptr),
 								std::chrono::system_clock::now() + std::chrono::seconds{backoff_initial_sec}
 							});
@@ -286,7 +287,7 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 
 					/// add new dictionary or update an existing version
 					if (dict_it == std::end(dictionaries))
-						dictionaries.emplace(name, dictionary_info{
+						dictionaries.emplace(name, DictionaryInfo{
 							std::make_shared<MultiVersion<IDictionaryBase>>(dict_ptr.release()),
 							config_path
 						});
@@ -314,7 +315,7 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 						const auto exception_ptr = std::current_exception();
 						const auto dict_it = dictionaries.find(name);
 						if (dict_it == std::end(dictionaries))
-							dictionaries.emplace(name, dictionary_info{nullptr, config_path, exception_ptr});
+							dictionaries.emplace(name, DictionaryInfo{nullptr, config_path, exception_ptr});
 						else
 							dict_it->second.exception = exception_ptr;
 					}

@@ -9,7 +9,10 @@
 namespace DB
 {
 
-/** SELECT запрос
+struct ASTTablesInSelectQueryElement;
+
+
+/** SELECT query
   */
 class ASTSelectQuery : public ASTQueryWithOutput
 {
@@ -48,14 +51,7 @@ private:
 public:
 	bool distinct = false;
 	ASTPtr select_expression_list;
-	ASTPtr database;
-	ASTPtr table;	/// Имя таблицы, табличная функция или подзапрос (рекурсивно ASTSelectQuery)
-	bool array_join_is_left = false;	/// LEFT ARRAY JOIN
-	ASTPtr array_join_expression_list;	/// ARRAY JOIN
-	ASTPtr join;						/// Обычный (не ARRAY) JOIN.
-	bool final = false;
-	ASTPtr sample_size;
-	ASTPtr sample_offset;
+	ASTPtr tables;
 	ASTPtr prewhere_expression;
 	ASTPtr where_expression;
 	ASTPtr group_expression_list;
@@ -66,14 +62,25 @@ public:
 	ASTPtr limit_length;
 	ASTPtr settings;
 
+	/// Compatibility with old parser of tables list. TODO remove
+	ASTPtr database() const;
+	ASTPtr table() const;
+	ASTPtr sample_size() const;
+	ASTPtr sample_offset() const;
+	ASTPtr array_join_expression_list() const;
+	const ASTTablesInSelectQueryElement * join() const;
+	bool array_join_is_left() const;
+	bool final() const;
+	void setDatabaseIfNeeded(const String & database_name);
+	void replaceDatabaseAndTable(const String & database_name, const String & table_name);
+
 	/// Двусвязный список запросов SELECT внутри запроса UNION ALL.
 
 	/// Следующий запрос SELECT в цепочке UNION ALL, если такой есть
 	ASTPtr next_union_all;
 	/// Предыдущий запрос SELECT в цепочке UNION ALL (не вставляется в children и не клонируется)
-	/// Указатель голый по следующим двум причинам:
+	/// Указатель голый по следующим причинам:
 	/// 1. чтобы предотвратить появление циклических зависимостей и, значит, утечки памяти;
-	/// 2. библиотека Poco не поддерживает указателей наподобие std::weak_ptr.
 	IAST * prev_union_all = nullptr;
 
 protected:

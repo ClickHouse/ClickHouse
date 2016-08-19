@@ -26,7 +26,6 @@ fi
 MSG_FAIL="${COLOR_WHITE}[ ${COLOR_FAIL}FAIL${COLOR_WHITE} ]${COLOR_RESET}"
 MSG_UNKNOWN="${COLOR_WHITE}[ ${COLOR_UNKNOWN}UNKNOWN${COLOR_WHITE} ]${COLOR_RESET}"
 MSG_OK="${COLOR_WHITE}[ ${COLOR_OK}OK${COLOR_WHITE} ]${COLOR_RESET}"
-MSG_GENERATED="${COLOR_WHITE}[ ${COLOR_UNKNOWN}GENERATED${COLOR_WHITE} ]${COLOR_RESET}"
 MSG_SKIPPED="${COLOR_WHITE}[ ${COLOR_SKIPPED}SKIPPED${COLOR_WHITE} ]${COLOR_RESET}"
 
 ERRORS=0
@@ -42,14 +41,6 @@ elif grep -q '<zookeeper' /etc/clickhouse-server/config-preprocessed.xml; then
 	ZOOKEEPER=1
 else
 	ZOOKEEPER=0
-fi
-
-
-if [ "$1" == "--generate" ]; then
-	GENERATE=1
-	shift
-else
-	GENERATE=0
 fi
 
 
@@ -76,15 +67,15 @@ do
 		continue
 	fi
 
-	for query_file in $QUERIES_DIR/$dir/*.{sql,sh}
+	for query_file in $QUERIES_DIR/$dir/*$1*.{sql,sh}
 	do
-		extension=$(echo $query_file | sed -r 's/^.+\.(sql|sh)$/\1/')
-		test_name=$(basename $query_file .$extension)
-
-		# нет файлов типа .sql или .sh
-		if [[ "$test_name" == '*' ]]; then
+		# No corresponding files
+		if [[ ! -e "$query_file" ]]; then
 			continue
 		fi
+
+		extension=$(echo $query_file | sed -r 's/^.+\.(sql|sh)$/\1/')
+		test_name=$(basename $query_file .$extension)
 
 		printf "%-70s" "$test_name: "
 
@@ -125,13 +116,7 @@ do
 			echo -e "$MSG_FAIL - having exception:"
 			cat $result_file
 		elif [ ! -e "$reference_file" ]; then
-			# надо сгенерировать эталонный результат
-			if [[ $GENERATE -eq 1 && ( -z "$1" || "$@" =~ "$test_name") ]]; then
-				cp $result_file $reference_file
-				echo -e "$MSG_GENERATED - generated reference file"
-			else
-				echo -e "$MSG_UNKNOWN - no reference file (use --generate [test_name]... to create)"
-			fi
+			echo -e "$MSG_UNKNOWN - no reference file"
 		else
 			diff $reference_file $result_file > $diff_file
 			if [ -s "$diff_file" ]; then

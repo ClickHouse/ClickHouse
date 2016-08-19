@@ -43,8 +43,8 @@ public:
 	  */
 	void readSuffix() override;
 
-	/// Получить информацию о скорости выполнения.
-	const BlockStreamProfileInfo & getInfo() const { return info; }
+	/// Get information about execution speed.
+	const BlockStreamProfileInfo & getProfileInfo() const { return info; }
 
 	/** Получить "тотальные" значения.
 	  * Реализация по-умолчанию берёт их из себя или из первого дочернего источника, в котором они есть.

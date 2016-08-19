@@ -172,16 +172,16 @@ void ITableDeclaration::check(const Names & column_names) const
 	UniqueStrings unique_names;
 	unique_names.set_empty_key(StringRef());
 
-	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
+	for (const auto & name : column_names)
 	{
-		if (columns_map.end() == columns_map.find(*it))
-			throw Exception("There is no column with name " + *it + " in table. There are columns: " + listOfColumns(available_columns),
+		if (columns_map.end() == columns_map.find(name))
+			throw Exception("There is no column with name " + name + " in table. There are columns: " + listOfColumns(available_columns),
 				ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
-		if (unique_names.end() != unique_names.find(*it))
-			throw Exception("Column " + *it + " queried more than once",
+		if (unique_names.end() != unique_names.find(name))
+			throw Exception("Column " + name + " queried more than once",
 				ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE);
-		unique_names.insert(*it);
+		unique_names.insert(name);
 	}
 }
 

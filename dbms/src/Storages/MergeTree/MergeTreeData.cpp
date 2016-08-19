@@ -18,6 +18,7 @@
 #include <DB/Functions/FunctionFactory.h>
 #include <Poco/DirectoryIterator.h>
 #include <DB/Common/Increment.h>
+#include <DB/Common/StringUtils.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -77,7 +78,7 @@ MergeTreeData::MergeTreeData(
 
 	merging_params.check(*columns);
 
-	/// создаём директорию, если её нет
+	/// Creating directories, if not exist.
 	Poco::File(full_path).createDirectories();
 	Poco::File(full_path + "detached").createDirectory();
 
@@ -90,7 +91,7 @@ MergeTreeData::MergeTreeData(
 
 void MergeTreeData::initPrimaryKey()
 {
-	/// инициализируем описание сортировки
+	/// Initialize description of sorting.
 	sort_descr.clear();
 	sort_descr.reserve(primary_expr_ast->children.size());
 	for (const ASTPtr & ast : primary_expr_ast->children)
@@ -105,6 +106,16 @@ void MergeTreeData::initPrimaryKey()
 	primary_key_sample = projected_expr->getSampleBlock();
 
 	size_t primary_key_size = primary_key_sample.columns();
+
+	/// Primary key cannot contain constants. It is meaningless.
+	///  (And also couldn't work because primary key is serialized with method of IDataType that doesn't support constants).
+	for (size_t i = 0; i < primary_key_size; ++i)
+	{
+		const ColumnPtr & column = primary_key_sample.unsafeGetByPosition(i).column;
+		if (column && column->isConst())
+			throw Exception("Primary key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN);
+	}
+
 	primary_key_data_types.resize(primary_key_size);
 	for (size_t i = 0; i < primary_key_size; ++i)
 		primary_key_data_types[i] = primary_key_sample.unsafeGetByPosition(i).type;
@@ -221,7 +232,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
 	{
 		/// Пропускаем временные директории старше суток.
-		if (0 == it.name().compare(0, strlen("tmp_"), "tmp_"))
+		if (startsWith(it.name(), "tmp_"))
 			continue;
 
 		part_file_names.push_back(it.name());
@@ -412,7 +423,7 @@ void MergeTreeData::clearOldTemporaryDirectories()
 	Poco::DirectoryIterator end;
 	for (Poco::DirectoryIterator it{full_path}; it != end; ++it)
 	{
-		if (0 == it.name().compare(0, strlen("tmp_"), "tmp_"))
+		if (startsWith(it.name(), "tmp_"))
 		{
 			Poco::File tmp_dir(full_path + it.name());
 
@@ -1378,14 +1389,18 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 }
 
 
-void MergeTreeData::freezePartition(const std::string & prefix)
+void MergeTreeData::freezePartition(const std::string & prefix, const String & with_name)
 {
 	LOG_DEBUG(log, "Freezing parts with prefix " + prefix);
 
 	String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
 	String shadow_path = clickhouse_path + "shadow/";
 	Poco::File(shadow_path).createDirectories();
-	String backup_path = shadow_path + toString(Increment(shadow_path + "increment.txt").get(true)) + "/";
+	String backup_path = shadow_path
+		+ (!with_name.empty()
+			? escapeForFileName(with_name)
+			: toString(Increment(shadow_path + "increment.txt").get(true)))
+		+ "/";
 
 	LOG_DEBUG(log, "Snapshot will be placed at " + backup_path);
 
@@ -1393,12 +1408,12 @@ void MergeTreeData::freezePartition(const std::string & prefix)
 	Poco::DirectoryIterator end;
 	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
 	{
-		if (0 == it.name().compare(0, prefix.size(), prefix))
+		if (startsWith(it.name(), prefix))
 		{
 			LOG_DEBUG(log, "Freezing part " << it.name());
 
 			String part_absolute_path = it.path().absolute().toString();
-			if (0 != part_absolute_path.compare(0, clickhouse_path.size(), clickhouse_path))
+			if (!startsWith(part_absolute_path, clickhouse_path))
 				throw Exception("Part path " + part_absolute_path + " is not inside " + clickhouse_path, ErrorCodes::LOGICAL_ERROR);
 
 			String backup_part_absolute_path = part_absolute_path;
@@ -1423,7 +1438,7 @@ size_t MergeTreeData::getPartitionSize(const std::string & partition_name) const
 		const auto filename = it.name();
 		if (!ActiveDataPartSet::isPartDirectory(filename))
 			continue;
-		if (0 != filename.compare(0, partition_name.size(), partition_name))
+		if (!startsWith(filename, partition_name))
 			continue;
 
 		const auto part_path = it.path().absolute().toString();

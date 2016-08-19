@@ -21,7 +21,7 @@ class ColumnString;
 
 struct IDictionaryBase
 {
-	using id_t = std::uint64_t;
+	using Key = std::uint64_t;
 
 	virtual std::exception_ptr getCreationException() const = 0;
 
@@ -59,12 +59,12 @@ struct IDictionary : IDictionaryBase
 {
 	virtual bool hasHierarchy() const = 0;
 
-	virtual void toParent(const PaddedPODArray<id_t> & ids, PaddedPODArray<id_t> & out) const = 0;
+	virtual void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const = 0;
 
-	virtual void has(const PaddedPODArray<id_t> & ids, PaddedPODArray<UInt8> & out) const = 0;
+	virtual void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const = 0;
 
 	/// do not call unless you ensure that hasHierarchy() returns true
-	id_t toParent(id_t id) const
+	Key toParent(Key id) const
 	{
 		const PaddedPODArray<UInt64> ids(1, id);
 		PaddedPODArray<UInt64> out(1);
@@ -74,7 +74,7 @@ struct IDictionary : IDictionaryBase
 		return out.front();
 	}
 
-	bool in(id_t child_id, const id_t ancestor_id) const
+	bool in(Key child_id, const Key ancestor_id) const
 	{
 		while (child_id != 0 && child_id != ancestor_id)
 			child_id = toParent(child_id);

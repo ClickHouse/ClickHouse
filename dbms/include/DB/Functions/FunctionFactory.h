@@ -10,24 +10,25 @@ namespace DB
 class Context;
 
 
-/** Позволяет получить функцию по имени.
-  * Функция при создании также может использовать для инициализации (например, захватить shared_ptr)
-  *  какие-нибудь справочники, находящиеся в Context-е.
+/** Creates function by name.
+  * Function could use for initialization (take ownership of shared_ptr, for example)
+  *  some dictionaries from Context.
   */
 class FunctionFactory : public Singleton<FunctionFactory>
 {
 	friend class StorageSystemFunctions;
 
 private:
-	typedef FunctionPtr (*Creator)(const Context & context);	/// Не std::function, так как меньше indirection и размер объекта.
+	typedef FunctionPtr (*Creator)(const Context & context);	/// Not std::function, for lower object size and less indirection.
 	std::unordered_map<String, Creator> functions;
 
 public:
 	FunctionFactory();
 
-	FunctionPtr get(const String & name, const Context & context) const;	/// Кидает исключение, если не нашлось.
-	FunctionPtr tryGet(const String & name, const Context & context) const;	/// Возвращает nullptr, если не нашлось.
+	FunctionPtr get(const String & name, const Context & context) const;	/// Throws an exception if not found.
+	FunctionPtr tryGet(const String & name, const Context & context) const;	/// Returns nullptr if not found.
 
+	/// No locking, you must register all functions before usage of get, tryGet.
 	template <typename F> void registerFunction()
 	{
 		static_assert(std::is_same<decltype(&F::create), Creator>::value, "F::create has incorrect type");

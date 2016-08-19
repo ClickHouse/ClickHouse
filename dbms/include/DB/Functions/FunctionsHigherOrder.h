@@ -675,7 +675,7 @@ public:
 		}
 		else
 		{
-			ColumnExpression * column_expression = typeid_cast<ColumnExpression *>(&*block.getByPosition(arguments[0]).column);
+			ColumnExpression * column_expression = typeid_cast<ColumnExpression *>(block.getByPosition(arguments[0]).column.get());
 
 			ColumnPtr offsets_column;
 
@@ -749,7 +749,7 @@ public:
 				replicated_column.name = name;
 				replicated_column.column = typeid_cast<ColumnArray &>(*replicated_column.column).getDataPtr();
 				replicated_column.type = typeid_cast<const DataTypeArray &>(*replicated_column.type).getNestedType(),
-				temp_block.insert(replicated_column);
+				temp_block.insert(std::move(replicated_column));
 
 				++prerequisite_index;
 			}

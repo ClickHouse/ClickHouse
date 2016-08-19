@@ -6,6 +6,10 @@ namespace DB
 ODBCDriverBlockOutputStream::ODBCDriverBlockOutputStream(WriteBuffer & out_)
 	: out(out_) {}
 
+void ODBCDriverBlockOutputStream::flush()
+{
+	out.next();
+}
 
 void ODBCDriverBlockOutputStream::write(const Block & block)
 {

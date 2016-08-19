@@ -121,7 +121,7 @@ public:
 				}
 
 				if (!append && column.column->size())
-					res.insert(column);
+					res.insert(std::move(column));
 			}
 		}
 		catch (Exception & e)
@@ -299,7 +299,7 @@ private:
 		}
 	};
 
-	using FileStreams = std::map<std::string, std::unique_ptr<Stream> >;
+	using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
 
 	/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
 	ValueSizeMap avg_value_size_hints;
@@ -501,7 +501,7 @@ private:
 							res.rows(), column_to_add.type->getDefault())).convertToFullColumn();
 					}
 
-					res.insert(column_to_add);
+					res.insert(std::move(column_to_add));
 				}
 			}
 
@@ -525,6 +525,7 @@ private:
 		{
 			/// Более хорошая диагностика.
 			e.addMessage("(while reading from part " + path + ")");
+			throw;
 		}
 	}
 };

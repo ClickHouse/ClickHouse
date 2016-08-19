@@ -81,8 +81,9 @@ int main(int argc, char ** argv)
 		Context context;
 
 		context.setPath("./");
-		context.addDatabase("test", std::make_shared<DatabaseOrdinary>(
-			"test", "./metadata/test/", context, nullptr));
+		auto database = std::make_shared<DatabaseOrdinary>("test", "./metadata/test/");
+		context.addDatabase("test", database);
+		database->loadTables(context, nullptr, false);
 		context.setCurrentDatabase("test");
 
 		InterpreterCreateQuery interpreter(ast, context);

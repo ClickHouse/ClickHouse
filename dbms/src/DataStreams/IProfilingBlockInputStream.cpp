@@ -1,9 +1,6 @@
 #include <iomanip>
 #include <random>
 
-/*#include <mutex>
-#include <Poco/Ext/ThreadNumber.h>*/
-
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Interpreters/Quota.h>
 #include <DB/Interpreters/ProcessList.h>
@@ -47,25 +44,6 @@ Block IProfilingBlockInputStream::read()
 
 	if (!limit_exceeded_need_break)
 		res = readImpl();
-
-/*	if (res)
-	{
-		static std::mutex mutex;
-		std::lock_guard<std::mutex> lock(mutex);
-
-		std::cerr << std::endl;
-		std::cerr << "[ " << Poco::ThreadNumber::get() << " ]\t" << getName() << std::endl;
-		std::cerr << "[ " << Poco::ThreadNumber::get() << " ]\t";
-
-		for (size_t i = 0; i < res.columns(); ++i)
-		{
-			if (i != 0)
-				std::cerr << ", ";
-			std::cerr << res.getByPosition(i).name << " (" << res.getByPosition(i).column->size() << ")";
-		}
-
-		std::cerr << std::endl;
-	}*/
 
 	if (res)
 	{
@@ -258,7 +236,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 		size_t rows_processed = process_list_elem->progress.rows;
 		size_t bytes_processed = process_list_elem->progress.bytes;
 
-		size_t total_rows_estimate = std::max(rows_processed, process_list_elem->progress.total_rows);
+		size_t total_rows_estimate = std::max(rows_processed, process_list_elem->progress.total_rows.load(std::memory_order_relaxed));
 
 		/** Проверяем ограничения на объём данных для чтения, скорость выполнения запроса, квоту на объём данных для чтения.
 			* NOTE: Может быть, имеет смысл сделать, чтобы они проверялись прямо в ProcessList?

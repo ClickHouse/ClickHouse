@@ -39,7 +39,11 @@ private:
 	Logger * log;
 
 	/// Функция также инициализирует used_output.
-	void processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, Output & used_output);
+	void processQuery(
+		Poco::Net::HTTPServerRequest & request,
+		HTMLForm & params,
+		Poco::Net::HTTPServerResponse & response,
+		Output & used_output);
 };
 
 }

@@ -2,6 +2,7 @@
 
 #include <string>
 #include <DB/IO/ReadHelpers.h>
+#include <DB/Common/StringUtils.h>
 
 
 namespace DB
@@ -19,7 +20,7 @@ inline std::string escapeForFileName(const std::string & s)
 	{
 		char c = *pos;
 
-		if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || (c == '_'))
+		if (isWordCharASCII(c))
 			res += c;
 		else
 		{

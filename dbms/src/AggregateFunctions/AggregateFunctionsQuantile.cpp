@@ -63,8 +63,9 @@ AggregateFunctionPtr createAggregateFunctionQuantiles(const std::string & name, 
 
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction({"quantile", "median"}, createAggregateFunctionQuantile);
-	factory.registerFunction({"quantiles"}, createAggregateFunctionQuantiles);
+	factory.registerFunction("quantile", createAggregateFunctionQuantile);
+	factory.registerFunction("median", createAggregateFunctionQuantile);
+	factory.registerFunction("quantiles", createAggregateFunctionQuantiles);
 }
 
 }

@@ -134,8 +134,6 @@ int main(int argc, char ** argv)
 		BlockOutputStreamFromRowOutputStream out(out_);
 
 		copyData(*in, out);
-
-		//profiling->getInfo().print(std::cerr);
 	}
 	catch (const Exception & e)
 	{

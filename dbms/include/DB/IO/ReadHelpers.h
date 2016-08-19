@@ -15,6 +15,7 @@
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
+#include <DB/Common/StringUtils.h>
 
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/VarInt.h>
@@ -39,6 +40,8 @@ inline char parseEscapeSequence(char c)
 {
 	switch(c)
 	{
+		case 'a':
+			return '\a';
 		case 'b':
 			return '\b';
 		case 'f':
@@ -49,6 +52,8 @@ inline char parseEscapeSequence(char c)
 			return '\r';
 		case 't':
 			return '\t';
+		case 'v':
+			return '\v';
 		case '0':
 			return '\0';
 		default:
@@ -302,7 +307,16 @@ bool exceptionPolicySelector(ExcepFun && excep_f, NoExcepFun && no_excep_f, Args
 };
 
 
-/// грубо
+/// Returns true, iff parsed.
+bool parseInfinity(ReadBuffer & buf);
+bool parseNaN(ReadBuffer & buf);
+
+void assertInfinity(ReadBuffer & buf);
+void assertNaN(ReadBuffer & buf);
+
+
+/// Rough: not exactly nearest machine representable number is returned.
+/// Some garbage may be successfully parsed, examples: '.' parsed as 0; 123Inf parsed as inf.
 template <typename T, typename ReturnType, char point_symbol = '.'>
 ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 {
@@ -320,22 +334,6 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 		else
 			return ReturnType(false);
 	}
-
-	auto parse_special_value = [&buf, &x, &negative](const char * str, T value)
-	{
-		auto assert_str_lambda = [](const char * str, ReadBuffer & buf){ assertString(str, buf); };
-		auto check_str_lambda = [](const char * str, ReadBuffer & buf){ return checkString(str, buf); };
-
-		++buf.position();
-		bool result = exceptionPolicySelector<throw_exception>(assert_str_lambda, check_str_lambda, str, buf);
-		if (result)
-		{
-			x = value;
-			if (negative)
-				x = -x;
-		}
-		return result;
-	};
 
 	while (!buf.eof())
 	{
@@ -384,25 +382,43 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 				}
 				return ReturnType(res);
 			}
-			case 'i':
-				return ReturnType(parse_special_value("nf", std::numeric_limits<T>::infinity()));
 
+			case 'i':
 			case 'I':
-				return ReturnType(parse_special_value("NF", std::numeric_limits<T>::infinity()));
+			{
+				bool res = exceptionPolicySelector<throw_exception>(assertInfinity, parseInfinity, buf);
+				if (res)
+				{
+					x = std::numeric_limits<T>::infinity();
+					if (negative)
+						x = -x;
+				}
+				return ReturnType(res);
+			}
 
 			case 'n':
-				return ReturnType(parse_special_value("an", std::numeric_limits<T>::quiet_NaN()));
-
 			case 'N':
-				return ReturnType(parse_special_value("AN", std::numeric_limits<T>::quiet_NaN()));
+			{
+				bool res = exceptionPolicySelector<throw_exception>(assertNaN, parseNaN, buf);
+				if (res)
+				{
+					x = std::numeric_limits<T>::quiet_NaN();
+					if (negative)
+						x = -x;
+				}
+				return ReturnType(res);
+			}
 
 			default:
+			{
 				if (negative)
 					x = -x;
 				return ReturnType(true);
+			}
 		}
 		++buf.position();
 	}
+
 	if (negative)
 		x = -x;
 
@@ -790,12 +806,7 @@ void readText(std::vector<T> & x, ReadBuffer & buf)
 /// Пропустить пробельные символы.
 inline void skipWhitespaceIfAny(ReadBuffer & buf)
 {
-	while (!buf.eof()
-			&& (*buf.position() == ' '
-			|| *buf.position() == '\t'
-			|| *buf.position() == '\n'
-			|| *buf.position() == '\r'
-			|| *buf.position() == '\f'))
+	while (!buf.eof() && isWhitespaceASCII(*buf.position()))
 		++buf.position();
 }
 
@@ -877,6 +888,23 @@ template <typename T>
 inline T parse(const String & s)
 {
 	return parse<T>(s.data(), s.size());
+}
+
+
+/** Skip UTF-8 BOM if it is under cursor.
+  * As BOM is usually located at start of stream, and buffer size is usually larger than three bytes,
+  *  the function expects, that all three bytes of BOM is fully in buffer (otherwise it don't skip anything).
+  */
+inline void skipBOMIfExists(ReadBuffer & buf)
+{
+	if (!buf.eof()
+		&& buf.position() + 3 < buf.buffer().end()
+		&& buf.position()[0] == '\xEF'
+		&& buf.position()[1] == '\xBB'
+		&& buf.position()[2] == '\xBF')
+	{
+		buf.position() += 3;
+	}
 }
 
 }

@@ -7,8 +7,8 @@ namespace DB
 {
 
 
-JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
-	: dst_ostr(ostr_)
+JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_)
+	: dst_ostr(ostr_), write_statistics(write_statistics_)
 {
 	NamesAndTypesList columns(sample_.getColumnsList());
 	fields.assign(columns.begin(), columns.end());
@@ -114,6 +114,9 @@ void JSONRowOutputStream::writeSuffix()
 
 	writeRowsBeforeLimitAtLeast();
 
+	if (write_statistics)
+		writeStatistics();
+
 	writeChar('\n', *ostr);
 	writeCString("}\n", *ostr);
 	ostr->next();
@@ -199,6 +202,32 @@ void JSONRowOutputStream::writeExtremes()
 		writeChar('\n', *ostr);
 		writeCString("\t}", *ostr);
 	}
+}
+
+
+void JSONRowOutputStream::onProgress(const Progress & value)
+{
+	progress.incrementPiecewiseAtomically(value);
+}
+
+
+void JSONRowOutputStream::writeStatistics()
+{
+	writeCString(",\n\n", *ostr);
+	writeCString("\t\"statistics\":\n", *ostr);
+	writeCString("\t{\n", *ostr);
+
+	writeCString("\t\t\"elapsed\": ", *ostr);
+	writeText(watch.elapsedSeconds(), *ostr);
+	writeCString(",\n", *ostr);
+	writeCString("\t\t\"rows_read\": ", *ostr);
+	writeText(progress.rows.load(), *ostr);
+	writeCString(",\n", *ostr);
+	writeCString("\t\t\"bytes_read\": ", *ostr);
+	writeText(progress.bytes.load(), *ostr);
+	writeChar('\n', *ostr);
+
+	writeCString("\t}", *ostr);
 }
 
 }

@@ -14,6 +14,7 @@
 #include <DB/Common/PODArray.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/Exception.h>
+#include <DB/Common/unaligned.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <DB/IO/CompressedStream.h>
@@ -79,8 +80,8 @@ protected:
 		}
 		else if (method == static_cast<UInt8>(CompressionMethodByte::LZ4) || method == static_cast<UInt8>(CompressionMethodByte::ZSTD))
 		{
-			size_compressed = *reinterpret_cast<const UInt32 *>(&own_compressed_buffer[1]);
-			size_decompressed = *reinterpret_cast<const UInt32 *>(&own_compressed_buffer[5]);
+			size_compressed = unalignedLoad<UInt32>(&own_compressed_buffer[1]);
+			size_decompressed = unalignedLoad<UInt32>(&own_compressed_buffer[5]);
 		}
 		else
 			throw Exception("Unknown compression method: " + toString(method), ErrorCodes::UNKNOWN_COMPRESSION_METHOD);

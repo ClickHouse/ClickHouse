@@ -238,7 +238,7 @@ ColumnPtr DataTypeTuple::createColumn() const
 		ColumnWithTypeAndName col;
 		col.column = elems[i]->createColumn();
 		col.type = elems[i]->clone();
-		tuple_block.insert(col);
+		tuple_block.insert(std::move(col));
 	}
 	return std::make_shared<ColumnTuple>(tuple_block);
 }

@@ -28,8 +28,6 @@
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
-#include <DB/IO/copyData.h>
-#include <DB/IO/ReadBufferFromIStream.h>
 
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
@@ -131,6 +129,7 @@ private:
 
 	bool is_interactive = true;			/// Использовать readline интерфейс или batch режим.
 	bool need_render_progress = true;	/// Рисовать прогресс выполнения запроса.
+	bool echo_queries = false;			/// Print queries before execution in batch mode.
 	bool print_time_to_stderr = false;	/// В неинтерактивном режиме, выводить время выполнения в stderr.
 	bool stdin_is_not_tty = false;		/// stdin - не терминал.
 
@@ -231,8 +230,8 @@ private:
 
 			std::string text = e.displayText();
 
-			/** Если эксепшен пришёл с сервера, то стек трейс будет расположен внутри текста.
-			  * Если эксепшен на клиенте, то стек трейс расположен отдельно.
+			/** If exception is received from server, then stack trace is embedded in message.
+			  * If exception is thrown on client, then stack trace is in separate field.
 			  */
 
 			auto embedded_stack_trace_pos = text.find("Stack trace");
@@ -319,7 +318,10 @@ private:
 		insert_format_max_block_size = config().getInt("insert_format_max_block_size", context.getSettingsRef().max_insert_block_size);
 
 		if (!is_interactive)
+		{
 			need_render_progress = config().getBool("progress", false);
+			echo_queries = config().getBool("echo", false);
+		}
 
 		connect();
 
@@ -525,8 +527,7 @@ private:
 			  */
 
 			ReadBufferFromFileDescriptor in(STDIN_FILENO);
-			WriteBufferFromString out(line);
-			copyData(in, out);
+			readStringUntilEOF(line, in);
 		}
 
 		process(line);
@@ -548,7 +549,7 @@ private:
 			while (begin < end)
 			{
 				const char * pos = begin;
-				ASTPtr ast = parseQuery(pos, end);
+				ASTPtr ast = parseQuery(pos, end, true);
 				if (!ast)
 					return true;
 
@@ -589,6 +590,13 @@ private:
 		resetOutput();
 		got_exception = false;
 
+		if (echo_queries)
+		{
+			writeString(line, std_out);
+			writeChar('\n', std_out);
+			std_out.next();
+		}
+
 		watch.restart();
 
 		query = line;
@@ -599,7 +607,7 @@ private:
 		if (!parsed_query)
 		{
 			const char * begin = query.data();
-			parsed_query = parseQuery(begin, begin + query.size());
+			parsed_query = parseQuery(begin, begin + query.size(), false);
 		}
 
 		if (!parsed_query)
@@ -689,10 +697,10 @@ private:
 	}
 
 
-	/// Обработать запрос, который требует передачи блоков данных на сервер.
+	/// Process query, which require sending blocks of data to the server.
 	void processInsertQuery()
 	{
-		/// Отправляем часть запроса - без данных, так как данные будут отправлены отдельно.
+		/// Send part of query without data, because data will be sent separately.
 		const ASTInsertQuery & parsed_insert_query = typeid_cast<const ASTInsertQuery &>(*parsed_query);
 		String query_without_data = parsed_insert_query.data
 			? query.substr(0, parsed_insert_query.data - query.data())
@@ -704,19 +712,19 @@ private:
 		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, &context.getSettingsRef(), true);
 		sendExternalTables();
 
-		/// Получаем структуру таблицы.
+		/// Receive description of table structure.
 		Block sample;
 		if (receiveSampleBlock(sample))
 		{
-			/// Если была получена структура, т.е. сервер не выкинул исключения,
-			/// отправляем эту структуру вместе с данными.
+			/// If structure was received (thus, server has not thrown an exception),
+			/// send our data with that structure.
 			sendData(sample);
 			receivePacket();
 		}
 	}
 
 
-	ASTPtr parseQuery(IParser::Pos & pos, const char * end)
+	ASTPtr parseQuery(IParser::Pos & pos, const char * end, bool allow_multi_statements)
 	{
 		ParserQuery parser;
 		ASTPtr res;
@@ -724,7 +732,7 @@ private:
 		if (is_interactive)
 		{
 			String message;
-			res = tryParseQuery(parser, pos, end, message, true, "");
+			res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements);
 
 			if (!res)
 			{
@@ -733,7 +741,7 @@ private:
 			}
 		}
 		else
-			res = DB::parseQueryAndMovePosition(parser, pos, end, "");
+			res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements);
 
 		if (is_interactive)
 		{
@@ -981,7 +989,8 @@ private:
 
 	void onProgress(const Progress & value)
 	{
-		progress.increment(value);
+		progress.incrementPiecewiseAtomically(value);
+		block_std_out->onProgress(value);
 		writeProgress();
 	}
 
@@ -1117,8 +1126,7 @@ private:
 public:
 	void init(int argc, char ** argv)
 	{
-
-		/// Останавливаем внутреннюю обработку командной строки
+		/// Don't parse options with Poco library. We need more sophisticated processing.
 		stopOptionsProcessing();
 
 #define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
@@ -1130,7 +1138,7 @@ public:
 		main_description.add_options()
 			("help", "produce help message")
 			("config-file,c", 	boost::program_options::value<std::string>(), 	"config-file path")
-			("host,h", 			boost::program_options::value<std::string>()->implicit_value("")->default_value("localhost"), "server host")
+			("host,h", 			boost::program_options::value<std::string>()->default_value("localhost"), "server host")
 			("port", 			boost::program_options::value<int>()->default_value(9000), "server port")
 			("user,u", 			boost::program_options::value<std::string>(),	"user")
 			("password", 		boost::program_options::value<std::string>(),	"password")
@@ -1143,6 +1151,8 @@ public:
 			("time,t",			"print query execution time to stderr in non-interactive mode (for benchmarks)")
 			("stacktrace",		"print stack traces of exceptions")
 			("progress",		"print progress even in non-interactive mode")
+			("echo",			"in batch mode, print query before execution")
+			("compression",		boost::program_options::value<bool>(),			"enable or disable compression")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
 			APPLY_FOR_LIMITS(DECLARE_LIMIT)
 		;
@@ -1164,9 +1174,9 @@ public:
 		boost::program_options::variables_map options;
 		boost::program_options::store(parsed, options);
 
-		/// Демонстрация help message
+		/// Output of help message.
 		if (options.count("help")
-			|| (options.count("host") && (options["host"].as<std::string>().empty() || options["host"].as<std::string>() == "elp")))
+			|| (options.count("host") && options["host"].as<std::string>() == "elp"))	/// If user writes -help instead of --help.
 		{
 			std::cout << main_description << "\n";
 			std::cout << external_description << "\n";
@@ -1263,8 +1273,12 @@ public:
 			config().setBool("stacktrace", true);
 		if (options.count("progress"))
 			config().setBool("progress", true);
+		if (options.count("echo"))
+			config().setBool("echo", true);
 		if (options.count("time"))
 			print_time_to_stderr = true;
+		if (options.count("compression"))
+			config().setBool("compression", options["compression"].as<bool>());
 	}
 };
 

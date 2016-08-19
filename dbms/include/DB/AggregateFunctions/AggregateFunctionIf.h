@@ -19,7 +19,7 @@ class AggregateFunctionIf final : public IAggregateFunction
 private:
 	AggregateFunctionPtr nested_func_owner;
 	IAggregateFunction * nested_func;
-	int num_agruments;
+	size_t num_agruments;
 public:
 	AggregateFunctionIf(AggregateFunctionPtr nested_) : nested_func_owner(nested_), nested_func(nested_func_owner.get()) {}
 
@@ -42,7 +42,7 @@ public:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		DataTypes nested_arguments;
-		for (int i = 0; i < num_agruments - 1; i ++)
+		for (size_t i = 0; i < num_agruments - 1; i ++)
 			nested_arguments.push_back(arguments[i]);
 		nested_func->setArguments(nested_arguments);
 	}
