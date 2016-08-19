@@ -11,6 +11,8 @@
 #endif
 
 #include <regex>
+#include <iostream>
+
 #include <DB/Common/StackTrace.h>
 #include <DB/IO/WriteBufferFromString.h>
 
