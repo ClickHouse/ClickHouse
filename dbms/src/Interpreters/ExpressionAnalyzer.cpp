@@ -160,10 +160,24 @@ FunctionPtr getFunctionFromFactory(const String & name, const ASTFunction::Genus
 	return function;
 }
 
+void removeDuplicateColumns(NamesAndTypesList & columns)
+{
+	std::set<String> names;
+	for (auto it = columns.begin(); it != columns.end();)
+	{
+		if (names.emplace(it->name).second)
+			++it;
+		else
+			columns.erase(it++);
+	}
+}
+
 }
 
 void ExpressionAnalyzer::init()
 {
+	removeDuplicateColumns(columns);
+
 	select_query = typeid_cast<ASTSelectQuery *>(ast.get());
 
 	/// В зависимости от профиля пользователя проверить наличие прав на выполнение
