@@ -1,4 +1,5 @@
 #include <Poco/URI.h>
+#include <Poco/Net/DNS.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 
@@ -21,7 +22,7 @@ namespace ErrorCodes
 
 static Poco::Net::IPAddress resolveHostImpl(const String & host)
 {
-	return Poco::Net::IPAddress{host};
+	return Poco::Net::DNS::resolveOne(host);
 }
 
 static Poco::Net::IPAddress resolveHost(const String & host)
