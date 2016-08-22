@@ -360,8 +360,16 @@ StoragePtr StorageFactory::get(
 	}
 	else if (name == "Distributed")
 	{
-		/** В запросе в качестве аргумента для движка указано имя конфигурационной секции,
-		  *  в которой задан список удалённых серверов, а также имя удалённой БД и имя удалённой таблицы.
+		/** Arguments of engine is following:
+		  * - name of cluster in configuration;
+		  * - name of remote database;
+		  * - name of remote table;
+		  *
+		  * Remote database may be specified in following form:
+		  * - identifier;
+		  * - constant expression with string result, like currentDatabase();
+		  * -- string literal as specific case;
+		  * - empty string means 'use default database from cluster'.
 		  */
 		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
 
@@ -380,7 +388,7 @@ StoragePtr StorageFactory::get(
 		String cluster_name = getClusterName(*args[0]);
 
 		String remote_database 	= reinterpretAsIdentifier(args[1], local_context).name;
-		String remote_table 	= typeid_cast<ASTIdentifier &>(*args[2]).name;
+		String remote_table 	= reinterpretAsIdentifier(args[2], local_context).name;
 
 		const auto & sharding_key = args.size() == 4 ? args[3] : nullptr;
 

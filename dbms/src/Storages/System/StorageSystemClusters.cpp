@@ -22,7 +22,8 @@ StorageSystemClusters::StorageSystemClusters(const std::string & name_, Context 
 		{ "host_address", std::make_shared<DataTypeString>() },
 		{ "port",         std::make_shared<DataTypeUInt16>() },
 		{ "is_local",     std::make_shared<DataTypeUInt8>() },
-		{ "user",         std::make_shared<DataTypeString>() }
+		{ "user",         std::make_shared<DataTypeString>() },
+		{ "default_database", std::make_shared<DataTypeString>() }
 	}
 	, context(context_)
 {
@@ -54,6 +55,7 @@ BlockInputStreams StorageSystemClusters::read(
 	ColumnPtr port_column = std::make_shared<ColumnUInt16>();
 	ColumnPtr is_local_column = std::make_shared<ColumnUInt8>();
 	ColumnPtr user_column = std::make_shared<ColumnString>();
+	ColumnPtr default_database_column = std::make_shared<ColumnString>();
 
 	auto updateColumns = [&](const std::string & cluster_name, const Cluster::ShardInfo & shard_info,
 							 const Cluster::Address & address)
@@ -68,6 +70,7 @@ BlockInputStreams StorageSystemClusters::read(
 		port_column->insert(static_cast<UInt64>(address.port));
 		is_local_column->insert(static_cast<UInt64>(shard_info.isLocal()));
 		user_column->insert(address.user);
+		default_database_column->insert(address.default_database);
 	};
 
 	const auto & clusters = context.getClusters();
@@ -114,17 +117,19 @@ BlockInputStreams StorageSystemClusters::read(
 		}
 	}
 
-	Block block;
-
-	block.insert(ColumnWithTypeAndName(cluster_column, std::make_shared<DataTypeString>(), "cluster"));
-	block.insert(ColumnWithTypeAndName(shard_num_column, std::make_shared<DataTypeUInt32>(), "shard_num"));
-	block.insert(ColumnWithTypeAndName(shard_weight_column, std::make_shared<DataTypeUInt32>(), "shard_weight"));
-	block.insert(ColumnWithTypeAndName(replica_num_column, std::make_shared<DataTypeUInt32>(), "replica_num"));
-	block.insert(ColumnWithTypeAndName(host_name_column, std::make_shared<DataTypeString>(), "host_name"));
-	block.insert(ColumnWithTypeAndName(host_address_column, std::make_shared<DataTypeString>(), "host_address"));
-	block.insert(ColumnWithTypeAndName(port_column, std::make_shared<DataTypeUInt16>(), "port"));
-	block.insert(ColumnWithTypeAndName(is_local_column, std::make_shared<DataTypeUInt8>(), "is_local"));
-	block.insert(ColumnWithTypeAndName(user_column, std::make_shared<DataTypeString>(), "user"));
+	Block block
+	{
+		{cluster_column, std::make_shared<DataTypeString>(), "cluster"},
+		{shard_num_column, std::make_shared<DataTypeUInt32>(), "shard_num"},
+		{shard_weight_column, std::make_shared<DataTypeUInt32>(), "shard_weight"},
+		{replica_num_column, std::make_shared<DataTypeUInt32>(), "replica_num"},
+		{host_name_column, std::make_shared<DataTypeString>(), "host_name"},
+		{host_address_column, std::make_shared<DataTypeString>(), "host_address"},
+		{port_column, std::make_shared<DataTypeUInt16>(), "port"},
+		{is_local_column, std::make_shared<DataTypeUInt8>(), "is_local"},
+		{user_column, std::make_shared<DataTypeString>(), "user"},
+		{default_database_column, std::make_shared<DataTypeString>(), "default_database"}
+	};
 
 	return BlockInputStreams{ 1, std::make_shared<OneBlockInputStream>(block) };
 }

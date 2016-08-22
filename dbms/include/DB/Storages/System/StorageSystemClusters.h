@@ -7,8 +7,9 @@ namespace DB
 
 class Context;
 
-/** Реализует системную таблицу columns, которая позволяет получить информацию
-  * о столбцах каждой таблицы для всех баз данных.
+/** Implements system table 'clusters'
+  *  that allows to obtain information about available clusters
+  *  (which may be specified in Distributed tables).
   */
 class StorageSystemClusters : public IStorage
 {
