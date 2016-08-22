@@ -124,7 +124,7 @@ public:
 		set(impl->buffer().begin(), impl->buffer().size());
 	}
 
-	void nextImpl()
+	void nextImpl() override
 	{
 		if (!offset() || finalized)
 			return;

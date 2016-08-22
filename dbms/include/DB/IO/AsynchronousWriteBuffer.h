@@ -29,7 +29,7 @@ private:
 		std::swap(position(), out.position());
 	}
 
-	void nextImpl()
+	void nextImpl() override
 	{
 		if (!offset())
 			return;
@@ -52,7 +52,7 @@ public:
 		set(memory.data(), memory.size());
 	}
 
-	~AsynchronousWriteBuffer()
+	~AsynchronousWriteBuffer() override
 	{
 		try
 		{

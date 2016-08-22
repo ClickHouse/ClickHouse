@@ -9,7 +9,7 @@
 namespace DB
 {
 
-	
+
 /** Записывает данные в формат, состоящий из чанков
   * (идентификатор запроса, признак последнего чанка, размер чанка, часть данных со сжатием или без).
   * Нельзя использовать out напрямую.
@@ -28,12 +28,12 @@ protected:
 			throw Exception("Too small remaining buffer size to write chunked data", ErrorCodes::TOO_SMALL_BUFFER_SIZE);
 	}
 
-	void nextImpl()
+	void nextImpl() override
 	{
 /*		std::cerr << out.offset() << std::endl;
 		std::cerr << query_id << std::endl;
 		std::cerr << offset() << std::endl;*/
-		
+
 		checkBufferSize();
 
 		writeIntBinary(query_id, out);

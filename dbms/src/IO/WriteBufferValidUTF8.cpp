@@ -1,3 +1,4 @@
+#include <Poco/UTF8Encoding.h>
 #include <DB/IO/WriteBufferValidUTF8.h>
 
 #ifdef __x86_64__

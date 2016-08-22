@@ -70,7 +70,7 @@ private:
 		}
 	}
 
-	void nextImpl()
+	void nextImpl() override
 	{
 		if (!offset())
 			return;

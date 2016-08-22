@@ -11,3 +11,9 @@ inline T unalignedLoad(const void * address)
 	memcpy(&res, address, sizeof(res));
 	return res;
 }
+
+template <typename T>
+inline void unalignedStore(void * address, const T & src)
+{
+	memcpy(address, &src, sizeof(src));
+}

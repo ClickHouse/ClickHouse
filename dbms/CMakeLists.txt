@@ -629,6 +629,7 @@ add_library (dbms
 	src/IO/ReadBufferFromFileBase.cpp
 	src/IO/WriteBufferFromFileBase.cpp
 	src/IO/InterserverWriteBuffer.cpp
+	src/IO/ReadBufferFromHTTP.cpp
 
 	src/Columns/ColumnConst.cpp
 	src/Columns/ColumnArray.cpp
