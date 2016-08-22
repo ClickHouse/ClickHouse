@@ -7,8 +7,6 @@
 #include <mutex>
 #include <iomanip>
 
-#include <statdaemons/EnvironmentDetector.h>
-
 
 GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::string & sub_path)
 {

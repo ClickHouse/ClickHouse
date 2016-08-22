@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/optional.hpp>
 #include <string>
 #include <time.h>
 #include <Poco/Net/StreamSocket.h>
@@ -8,7 +7,6 @@
 #include <Poco/Util/Application.h>
 #include <common/logger_useful.h>
 
-#include <boost/optional.hpp>
 
 /// пишет в Graphite данные в формате
 /// path value timestamp\n
