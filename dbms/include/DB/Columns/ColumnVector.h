@@ -265,12 +265,12 @@ public:
 		res = typename NearestFieldType<T>::Type(data[n]);
 	}
 
-	const T & get(size_t n) const
+	const T & getElement(size_t n) const
 	{
 		return data[n];
 	}
 
-	T & get(size_t n)
+	T & getElement(size_t n)
 	{
 		return data[n];
 	}
