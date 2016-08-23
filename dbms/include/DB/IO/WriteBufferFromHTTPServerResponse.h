@@ -35,7 +35,7 @@ class WriteBufferFromHTTPServerResponse : public BufferWithOwnMemory<WriteBuffer
 {
 private:
 	Poco::Net::HTTPServerResponse & response;
-
+	bool add_cors_header;
 	bool compress;
 	Poco::DeflatingStreamBuf::StreamType compression_method;
 	int compression_level = Z_DEFAULT_COMPRESSION;
@@ -48,6 +48,11 @@ private:
 	{
 		if (!ostr)
 		{
+			if (add_cors_header)
+			{
+				response.set("Access-Control-Allow-Origin","*");
+			}
+
 			if (compress && offset())	/// Пустой ответ сжимать не нужно.
 			{
 				if (compression_method == Poco::DeflatingStreamBuf::STREAM_GZIP)
@@ -118,6 +123,15 @@ public:
 	void setCompressionLevel(int level)
 	{
 		compression_level = level;
+	}
+
+	/** Включить или отключить CORS.
+	  * Работает только перед тем, как были отправлены HTTP заголовки.
+	  * Иначе - не имеет эффекта.
+	  */
+	void addHeaderCORS(bool enable_cors)
+	{
+		add_cors_header = enable_cors;
 	}
 
 	~WriteBufferFromHTTPServerResponse()
