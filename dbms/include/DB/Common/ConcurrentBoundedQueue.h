@@ -8,6 +8,35 @@
 
 #include <DB/Core/Types.h>
 
+namespace detail
+{
+	template <class T, bool is_nothrow_move_assignable = std::is_nothrow_move_assignable<T>::value>
+	struct MoveOrCopyIfThrow;
+
+	template <class T>
+	struct MoveOrCopyIfThrow<T, true>
+	{
+		void operator()(T && src, T & dst) const
+		{
+			dst = std::forward<T>(src);
+		}
+	};
+
+	template <class T>
+	struct MoveOrCopyIfThrow<T, false>
+	{
+		void operator()(T && src, T & dst) const
+		{
+			dst = src;
+		}
+	};
+
+	template <class T>
+	void moveOrCopyIfThrow(T && src, T & dst)
+	{
+		MoveOrCopyIfThrow<T>()(std::forward<T>(src), dst);
+	}
+};
 
 /** Очень простая thread-safe очередь ограниченной длины.
   * Если пытаться вынуть элемент из пустой очереди, то поток блокируется, пока очередь не станет непустой.
@@ -53,10 +82,7 @@ public:
 		fill_count.wait();
 		{
 			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-			if (std::is_nothrow_move_assignable<T>::value)
-				x = std::move(queue.front());
-			else
-				x = queue.front();
+			detail::moveOrCopyIfThrow(std::move(queue.front()), x);
 			queue.pop();
 		}
 		empty_count.set();
@@ -97,10 +123,7 @@ public:
 		{
 			{
 				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-				if (std::is_nothrow_move_assignable<T>::value)
-					x = std::move(queue.front());
-				else
-					x = queue.front();
+				detail::moveOrCopyIfThrow(std::move(queue.front()), x);
 				queue.pop();
 			}
 			empty_count.set();
