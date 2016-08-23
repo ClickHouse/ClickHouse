@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 #include <sstream>
+#include <iostream>
 
 /// Часть функциональности - только для сборки из репозитория Метрики.
 #ifndef NO_METRIKA

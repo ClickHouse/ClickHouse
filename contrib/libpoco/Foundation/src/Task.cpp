@@ -17,7 +17,7 @@
 #include "Poco/Task.h"
 #include "Poco/TaskManager.h"
 #include "Poco/Exception.h"
-
+#include <array>
 
 namespace Poco {
 
@@ -61,8 +61,17 @@ void Task::run()
 		pOwner->taskStarted(this);		
 	try
 	{
-		_state = TASK_RUNNING;
-		runTask();
+		/** Task can be already cancelled.
+		 *  To prevent endless executing already cancelled task _state is assigned to TASK_RUNNING only if _state != TASK_CANCELLING
+		 */
+		std::array<TaskState, 3> allowed_states{TASK_IDLE, TASK_STARTING, TASK_FINISHED};
+		for (auto & expected : allowed_states)
+			if (_state.compare_exchange_strong(expected, TASK_RUNNING))
+				break;
+
+		if (_state == TASK_RUNNING)
+			runTask();
+
 	}
 	catch (Exception& exc)
 	{

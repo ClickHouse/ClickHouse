@@ -43,13 +43,3 @@ using ClickID_t = UInt64;
 
 /** Идентификатор цели */
 using GoalID_t = UInt32;
-
-
-namespace std
-{
-	template<>
-	struct hash<VisitID_t> : public unary_function<VisitID_t, size_t>
-	{
-		size_t operator()(VisitID_t x) const { return x; }
-	};
-}
