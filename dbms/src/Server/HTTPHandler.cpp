@@ -246,6 +246,9 @@ void HTTPHandler::processQuery(
 	if (in_post_compressed && context.getSettingsRef().http_native_compression_disable_checksumming_on_decompress)
 		static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
+	/// Добавить CORS header выставлена настройка, и если клиент передал заголовок Origin
+	used_output.out->addHeaderCORS( context.getSettingsRef().add_http_cors_header && !request.get("Origin", "").empty() );
+
 	context.setInterface(Context::Interface::HTTP);
 
 	Context::HTTPMethod http_method = Context::HTTPMethod::UNKNOWN;

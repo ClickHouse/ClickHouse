@@ -220,8 +220,10 @@ struct Settings
 	\
 	/** Write statistics about read rows, bytes, time elapsed in suitable output formats */ \
 	M(SettingBool, output_format_write_statistics, true) \
-
-
+	\
+	/** Write add http CORS header */ \
+	M(SettingBool, add_http_cors_header, false) \
+	
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
 
