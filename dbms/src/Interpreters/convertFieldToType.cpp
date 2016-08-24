@@ -8,6 +8,7 @@
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/DataTypes/DataTypeNullable.h>
 
 #include <DB/Interpreters/convertFieldToType.h>
 
@@ -30,6 +31,9 @@ namespace ErrorCodes
   * Если попадает в диапазон, то from конвертируется в Field ближайшего к To типа.
   * Если не попадает - возвращается Field(Null).
   */
+
+namespace
+{
 
 template <typename From, typename To>
 static Field convertNumericTypeImpl(const Field & from)
@@ -57,7 +61,7 @@ static Field convertNumericType(const Field & from, const IDataType & type)
 }
 
 
-Field convertFieldToType(const Field & src, const IDataType & type)
+Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
 {
 	if (type.isNumeric())
 	{
@@ -162,5 +166,20 @@ Field convertFieldToType(const Field & src, const IDataType & type)
 
 	return src;
 }
+
+}
+
+Field convertFieldToType(const Field & src, const IDataType & type)
+{
+	if (type.isNullable())
+	{
+		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
+		const DataTypePtr & nested_type = nullable_type.getNestedType();
+		return convertFieldToTypeImpl(src, *nested_type);
+	}
+	else
+		return convertFieldToTypeImpl(src, type);
+}
+
 
 }

@@ -7,6 +7,7 @@
 #include <DB/Storages/ColumnDefault.h>
 
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnNullable.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
@@ -373,7 +374,16 @@ void Block::checkNestedArraysOffsets() const
 
 	for (const auto & elem : data)
 	{
-		if (const ColumnArray * column_array = typeid_cast<const ColumnArray *>(&*elem.column))
+		const IColumn * observed_col;
+		if (elem.column->isNullable())
+		{
+			const auto & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
+			observed_col = nullable_col.getNestedColumn().get();
+		}
+		else
+			observed_col = elem.column.get();
+
+		if (const ColumnArray * column_array = typeid_cast<const ColumnArray *>(observed_col))
 		{
 			String name = DataTypeNested::extractNestedTableName(elem.name);
 
@@ -398,7 +408,16 @@ void Block::optimizeNestedArraysOffsets()
 
 	for (auto & elem : data)
 	{
-		if (ColumnArray * column_array = typeid_cast<ColumnArray *>(&*elem.column))
+		IColumn * observed_col;
+		if (elem.column->isNullable())
+		{
+			auto & nullable_col = static_cast<ColumnNullable &>(*elem.column);
+			observed_col = nullable_col.getNestedColumn().get();
+		}
+		else
+			observed_col = elem.column.get();
+
+		if (ColumnArray * column_array = typeid_cast<ColumnArray *>(observed_col))
 		{
 			String name = DataTypeNested::extractNestedTableName(elem.name);
 
