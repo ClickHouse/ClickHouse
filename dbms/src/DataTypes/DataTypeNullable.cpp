@@ -17,11 +17,13 @@ namespace
 /// we use for the binary deserialization. They are used as follows:
 ///
 /// auto action = NullDeserializer<NullSymbol::XXX>::execute(col, istr);
-/// if (action != Action::NONE)
-/// {
+///
+/// if (action == Action::NONE) /// eof
+///    return;
+/// else if (action == Action::ADD_ORDINARY) /// add an ordinary value
 ///    ... deserialize the nested column ...
-///    updateNullMap(col, action);
-/// }
+///
+/// updateNullMap(col, action);
 ///
 /// This two-step process is required because when we perform an INSERT query
 /// whose values are expressions, ValuesRowInputStream attempts to deserialize
@@ -135,11 +137,13 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
 	ColumnNullable & col = static_cast<ColumnNullable &>(column);
 
 	auto action = NullDeserializer<NullSymbol::Escaped>::execute(col, istr);
-	if (action != Action::NONE)
-	{
+
+	if (action == Action::NONE)
+		return;
+	else if (action == Action::ADD_ORDINARY)
 		nested_data_type->deserializeTextEscaped(*col.getNestedColumn(), istr);
-		updateNullMap(col, action);
-	}
+
+	updateNullMap(col, action);
 }
 
 void DataTypeNullable::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -157,11 +161,14 @@ void DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
 	ColumnNullable & col = static_cast<ColumnNullable &>(column);
 
 	auto action = NullDeserializer<NullSymbol::Quoted>::execute(col, istr);
-	if (action != Action::NONE)
-	{
+
+	if (action == Action::NONE)
+		return;
+	else if (action == Action::ADD_ORDINARY)
 		nested_data_type->deserializeTextQuoted(*col.getNestedColumn(), istr);
-		updateNullMap(col, action);
-	}
+
+	updateNullMap(col, action);
+
 }
 
 void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -179,11 +186,13 @@ void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
 	ColumnNullable & col = static_cast<ColumnNullable &>(column);
 
 	auto action = NullDeserializer<NullSymbol::Quoted>::execute(col, istr);
-	if (action != Action::NONE)
-	{
+
+	if (action == Action::NONE)
+		return;
+	else if (action == Action::ADD_ORDINARY)
 		nested_data_type->deserializeTextCSV(*col.getNestedColumn(), istr, delimiter);
-		updateNullMap(col, action);
-	}
+
+	updateNullMap(col, action);
 }
 
 void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -211,11 +220,13 @@ void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr) 
 	ColumnNullable & col = static_cast<ColumnNullable &>(column);
 
 	auto action = NullDeserializer<NullSymbol::JSON>::execute(col, istr);
-	if (action != Action::NONE)
-	{
+
+	if (action == Action::NONE)
+		return;
+	else if (action == Action::ADD_ORDINARY)
 		nested_data_type->deserializeTextJSON(*col.getNestedColumn(), istr);
-		updateNullMap(col, action);
-	}
+
+	updateNullMap(col, action);
 }
 
 void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
