@@ -1,7 +1,7 @@
 # фильтрует теги, не являющиеся релизными тегами
 function tag_filter
 {
-    grep -E "^[0-9]{5,8}$"
+    grep -E "^v1\.1\.[0-9]{5}-testing$"
 }
 
 function add_daemon_impl {
@@ -60,15 +60,11 @@ function make_control {
 function gen_revision_author {
 	# GIT
 	git fetch --tags
-	IS_IT_GITHUB=$( git config --get remote.origin.url | grep 'github')
 
-	REVISION=$( git tag | tag_filter | tail -1 )
-	REVISION_FULL_NAME=$REVISION
+	REVISION=$(git tag | tag_filter | tail -1 | sed 's/^v1\.1\.\(.*\)-testing$/\1/')
 
 	if [[ $STANDALONE != 'yes' ]]
 	then
-		MAX_REVISION=$(($REVISION + 10))	# Максимальное количество попыток отправить тег в Git.
-
 		# Создадим номер ревизии и попытаемся залить на сервер.
 		succeeded=0
 		attempts=0
@@ -78,37 +74,30 @@ function gen_revision_author {
 			REVISION=$(($REVISION + 1))
 			attempts=$(($attempts + 1))
 
-			[ "$REVISION" -ge "$MAX_REVISION" ] && exit 1
+			tag="v1.1.$REVISION-testing"
 
-			REVISION_FULL_NAME=$REVISION
-
-			if [[ "$IS_IT_GITHUB" = "" ]]
+			echo -e "\nTrying to create tag: $tag"
+			if git tag -a "$tag" -m "$tag"
 			then
-				REVISION_FULL_NAME=$REVISION_FULL_NAME-mobmet
-			fi
-
-			echo -e "\nTrying to create revision:" $REVISION_FULL_NAME
-			if git tag $REVISION_FULL_NAME
-			then
-				echo -e "\nTrying to push revision to origin:" $REVISION_FULL_NAME
-					git push origin $REVISION_FULL_NAME
-				if [ $? -ne 0 ];
+				echo -e "\nTrying to push tag to origin: $tag"
+				git push origin "$tag"
+				if [ $? -ne 0 ]
 				then
-					git tag -d $REVISION_FULL_NAME
+					git tag -d "$tag"
 				else
 					succeeded=1
 				fi
 			fi
 		done
 
-		if [ $succeeded -eq 0 ]; then
+		if [ $succeeded -eq 0 ]
+		then
 			echo "Fail to create tag"
 			exit 1
 		fi
 	fi
 
 	AUTHOR=$(git config --get user.name)
-	REVISION=$REVISION_FULL_NAME
 	export REVISION
 	export AUTHOR
 }
