@@ -141,6 +141,7 @@ private:
 	Files_t files; /// name -> data
 
 	Names column_names; /// column_index -> name
+	Names null_map_filenames;
 
 	Poco::File marks_file;
 	Poco::File null_marks_file;

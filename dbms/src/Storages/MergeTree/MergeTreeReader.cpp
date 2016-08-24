@@ -97,13 +97,19 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
 			bool read_offsets = true;
 
 			const IDataType * observed_type;
+			bool is_nullable;
+
 			if (column.type.get()->isNullable())
 			{
 				const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*column.type);
 				observed_type = nullable_type.getNestedType().get();
+				is_nullable = true;
 			}
 			else
+			{
 				observed_type = column.type.get();
+				is_nullable = false;
+			}
 
 			/// Для вложенных структур запоминаем указатели на столбцы со смещениями
 			if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(observed_type))
@@ -116,7 +122,11 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
 					read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
 
 				if (!append)
+				{
 					column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[name]);
+					if (is_nullable)
+						column.column = std::make_shared<ColumnNullable>(column.column, std::make_shared<ColumnUInt8>());
+				}
 			}
 			else if (!append)
 				column.column = column.type->createColumn();

@@ -202,13 +202,19 @@ Block TinyLogBlockInputStream::readImpl()
 		bool read_offsets = true;
 
 		const IDataType * observed_type;
+		bool is_nullable;
+
 		if (column.type->isNullable())
 		{
 			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*column.type);
 			observed_type = nullable_type.getNestedType().get();
+			is_nullable = true;
 		}
 		else
+		{
 			observed_type = column.type.get();
+			is_nullable = false;
+		}
 
 		/// Для вложенных структур запоминаем указатели на столбцы со смещениями
 		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(observed_type))
@@ -221,6 +227,8 @@ Block TinyLogBlockInputStream::readImpl()
 				read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
 
 			column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
+			if (is_nullable)
+				column.column = std::make_shared<ColumnNullable>(column.column, std::make_shared<ColumnUInt8>());
 		}
 		else
 			column.column = column.type->createColumn();

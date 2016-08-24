@@ -32,7 +32,7 @@ struct NullDeserializer
 				++istr.position();
 				static constexpr auto length = strlen(Null::name);
 				if (length > 1)
-					assertString(&Null::name[length - 1], istr);
+					assertString(&Null::name[1], istr);
 				null_map.push_back(1);
 
 				ColumnPtr & nested_col = col.getNestedColumn();

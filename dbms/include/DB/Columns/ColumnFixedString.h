@@ -45,9 +45,23 @@ public:
 
 	std::string getName() const override { return "ColumnFixedString"; }
 
-	ColumnPtr cloneEmpty() const override
+	ColumnPtr cloneResized(size_t size) const override
 	{
-		return std::make_shared<ColumnFixedString>(n);
+		ColumnPtr new_col_holder = std::make_shared<ColumnFixedString>(n);
+
+		if (size > 0)
+		{
+			auto & new_col = static_cast<ColumnFixedString &>(*new_col_holder);
+			new_col.chars.resize(size * n);
+
+			size_t count = std::min(this->size(), size);
+			memcpy(&(new_col.chars[0]), &chars[0], count * n * sizeof(chars[0]));
+
+			if (size > count)
+				memset(&(new_col.chars[count * n]), '\0', (size - count) * n);
+		}
+
+		return new_col_holder;
 	}
 
 	size_t size() const override

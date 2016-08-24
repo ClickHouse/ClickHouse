@@ -48,9 +48,32 @@ public:
 
 	std::string getName() const override { return "ColumnArray(" + getData().getName() + ")"; }
 
-	ColumnPtr cloneEmpty() const override
+	ColumnPtr cloneResized(size_t size) const override
 	{
-		return std::make_shared<ColumnArray>(getData().cloneEmpty());
+		ColumnPtr new_col_holder = std::make_shared<ColumnArray>(getData().cloneEmpty());
+
+		if (size > 0)
+		{
+			auto & new_col = static_cast<ColumnArray &>(*new_col_holder);
+			size_t count = std::min(this->size(), size);
+
+			/// First create the offsets.
+			const auto & from_offsets = getOffsets();
+			auto & new_offsets = new_col.getOffsets();
+			new_offsets.resize(size);
+			new_offsets.assign(from_offsets.begin(), from_offsets.begin() + count);
+
+			if (size > count)
+			{
+				for (size_t i = count; i < size; ++i)
+					new_offsets[i] = new_offsets[i - 1];
+			}
+
+			/// Then store the data.
+			new_col.getData().insertRangeFrom(getData(), 0, count);
+		}
+
+		return new_col_holder;
 	}
 
 	size_t size() const override
