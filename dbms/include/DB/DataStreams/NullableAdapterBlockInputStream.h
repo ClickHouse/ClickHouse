@@ -7,6 +7,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+
+extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
+
+};
+
 /// This streams allows perfoming INSERT requests in which the types of
 /// the target and source blocks are compatible up to nullability:
 ///
@@ -71,21 +78,18 @@ protected:
 				const auto & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
 				const auto & nullable_type = static_cast<const DataTypeNullable &>(*elem.type);
 
-				/// For performance reasons, if the source column contains a NULL,
-				/// we follow a non-strict approach. We rely on the fact that most
-				/// users will write something such as:
-				///
-				/// INSERT INTO foo(col) SELECT col FROM bar WHERE col IS NOT NULL
-				///
-				/// If required, in a future release we could add a server parameter
-				/// so that customers would be able to decide whether inserting
-				/// a NULL value into a non-nullable column is semantically correct
-				/// or not.
-				res.insert({
-					nullable_col.getNestedColumn(),
-					nullable_type.getNestedType(),
-					elem.name
-				});
+				const auto & null_map = static_cast<const ColumnUInt8 &>(*nullable_col.getNullValuesByteMap()).getData();
+				bool has_nulls = std::any_of(null_map.begin(), null_map.end(), [](UInt8 val){ return val == 1; });
+
+				if (has_nulls)
+					throw Exception{"Cannot insert NULL value into non-nullable column",
+						ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
+				else
+					res.insert({
+						nullable_col.getNestedColumn(),
+						nullable_type.getNestedType(),
+						elem.name
+					});
 			}
 			else if (actions[i] == TO_NULLABLE)
 			{
