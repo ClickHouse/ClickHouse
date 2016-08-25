@@ -119,29 +119,46 @@ private:
 
 	/// Determine the actions to be taken using the source sample block,
 	/// which describes the columns from which we fetch data inside an INSERT
-	/// query, and the target sample block, which describes the columns to
-	/// which we insert data inside the INSERT query.
+	/// query, and the target sample block which contains the columns
+	/// we insert data into.
 	Actions getActions(const Block & in_sample, const Block & out_sample)
 	{
-		size_t s = in_sample.columns();
-
-		if (s != out_sample.columns())
-			throw Exception{"NullableAdapterBlockInputStream: internal error", ErrorCodes::LOGICAL_ERROR};
+		size_t in_size = in_sample.columns();
+		size_t out_size = out_sample.columns();
 
 		Actions actions;
-		actions.reserve(s);
+		actions.reserve(in_size);
 
-		for (size_t i = 0; i < s; ++i)
+		size_t j = 0;
+		for (size_t i = 0; i < in_size; ++i)
 		{
-			bool is_in_nullable = in_sample.unsafeGetByPosition(i).type->isNullable();
-			bool is_out_nullable = out_sample.unsafeGetByPosition(i).type->isNullable();
+			const auto & in_elem = in_sample.unsafeGetByPosition(i);
+			while (j < out_size)
+			{
+				const auto & out_elem = out_sample.unsafeGetByPosition(j);
+				if (in_elem.name == out_elem.name)
+				{
+					bool is_in_nullable = in_elem.type->isNullable();
+					bool is_out_nullable = out_elem.type->isNullable();
 
-			if (is_in_nullable && !is_out_nullable)
-				actions.push_back(TO_ORDINARY);
-			else if (!is_in_nullable && is_out_nullable)
-				actions.push_back(TO_NULLABLE);
-			else
-				actions.push_back(NONE);
+					if (is_in_nullable && !is_out_nullable)
+						actions.push_back(TO_ORDINARY);
+					else if (!is_in_nullable && is_out_nullable)
+						actions.push_back(TO_NULLABLE);
+					else
+						actions.push_back(NONE);
+
+					++j;
+					break;
+				}
+				else
+				{
+					++j;
+					if (j == out_size)
+						throw Exception{"NullableAdapterBlockInputStream: internal error",
+							ErrorCodes::LOGICAL_ERROR};
+				}
+			}
 		}
 
 		return actions;
