@@ -65,7 +65,7 @@ SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO      "-O3 -g")
 SET(CMAKE_CXX_FLAGS_DEBUG               "-O0 -g3 -ggdb3 -fno-inline -fno-omit-frame-pointer")
 
 SET(CMAKE_C_FLAGS                       "${COMMON_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI}")
-SET(CMAKE_C_FLAGS_RELEASE               "-O3 -DNDEBUG -fimot-frame-pointer")
+SET(CMAKE_C_FLAGS_RELEASE               "-O3 -DNDEBUG -fomit-frame-pointer")
 SET(CMAKE_C_FLAGS_RELWITHDEBINFO        "-O3 -g")
 SET(CMAKE_C_FLAGS_DEBUG                 "-O0 -g3 -ggdb3 -fno-inline -fno-omit-frame-pointer")
 
