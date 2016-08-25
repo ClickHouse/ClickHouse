@@ -13,9 +13,7 @@ namespace DB
 /// - if a target column is nullable while the corresponding source
 /// column is not, we embed the source column into a nullable column;
 /// - if a source column is nullable while the corresponding target
-/// column is not, we extract the nested column from the source.
-/// Moreover all the NULL values are replaced by the default value
-/// for the nested column;
+/// column is not, we extract the nested column from the source;
 /// - otherwise we just perform an identity mapping.
 class NullableAdapterBlockInputStream : public IProfilingBlockInputStream
 {
@@ -26,7 +24,7 @@ private:
 	{
 		/// Do nothing.
 		NONE = 0,
-		/// Convert nullable column to ordinary column. Convert NULLs to default values.
+		/// Convert nullable column to ordinary column.
 		TO_ORDINARY,
 		/// Convert non-nullable column to nullable column.
 		TO_NULLABLE
@@ -71,63 +69,33 @@ protected:
 			if (actions[i] == TO_ORDINARY)
 			{
 				const auto & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
-				const auto & nested_col = *nullable_col.getNestedColumn();
-
 				const auto & nullable_type = static_cast<const DataTypeNullable &>(*elem.type);
 
-				const auto & null_map = static_cast<const ColumnUInt8 &>(*nullable_col.getNullValuesByteMap()).getData();
-				bool has_nulls = std::any_of(null_map.begin(), null_map.end(), [](UInt8 val){ return val == 1; });
-
-				if (has_nulls)
-				{
-					/// Slow path: since we have NULL values that must be replaced,
-					/// we have to build a new column.
-					ColumnPtr new_col_holder = nullable_col.getNestedColumn()->cloneEmpty();
-					IColumn & new_col = *new_col_holder;
-					new_col.reserve(nullable_col.size());
-
-					for (size_t i = 0; i < nullable_col.size(); ++i)
-					{
-						if (nullable_col.isNullAt(i))
-							new_col.insertDefault();
-						else
-							new_col.insertFrom(nested_col, i);
-					}
-
-					new_elem =
-					{
-						new_col_holder,
-						nullable_type.getNestedType(),
-						elem.name
-					};
-
-				}
-				else
-				{
-					/// Fast path: there are no NULL values.
-					/// Just return the nested column.
-					new_elem =
-					{
-						nullable_col.getNestedColumn(),
-						nullable_type.getNestedType(),
-						elem.name
-					};
-				}
-
-				res.insert(new_elem);
+				/// For performance reasons, if the source column contains a NULL,
+				/// we follow a non-strict approach. We rely on the fact that most
+				/// users will write something such as:
+				///
+				/// INSERT INTO foo(col) SELECT col FROM bar WHERE col IS NOT NULL
+				///
+				/// If required, in a future release we could add a server parameter
+				/// so that customers would be able to decide whether inserting
+				/// a NULL value into an non-nullable column is semantically correct
+				/// or not.
+				res.insert({
+					nullable_col.getNestedColumn(),
+					nullable_type.getNestedType(),
+					elem.name
+				});
 			}
 			else if (actions[i] == TO_NULLABLE)
 			{
 				auto null_map = std::make_shared<ColumnUInt8>(elem.column->size(), 0);
 
-				ColumnWithTypeAndName new_elem
-				{
+				res.insert({
 					std::make_shared<ColumnNullable>(elem.column, null_map),
 					std::make_shared<DataTypeNullable>(elem.type),
 					elem.name
-				};
-
-				res.insert(new_elem);
+				});
 			}
 			else if (actions[i] == NONE)
 				res.insert(elem);
