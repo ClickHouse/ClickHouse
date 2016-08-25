@@ -91,7 +91,7 @@ inline int PooledSessionHolder::idle() const
 {
 	Poco::FastMutex::ScopedLock lock(_mutex);
 
-	return (int) (_lastUsed.elapsed()/Poco::Timestamp::resolution());
+	return static_cast<int>(_lastUsed.elapsed()/Poco::Timestamp::resolution());
 }
 
 
