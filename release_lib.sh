@@ -1,4 +1,8 @@
-source "$(dirname "$0")/libs/libcommon/src/get_revision_lib.sh"
+# фильтрует теги, не являющиеся релизными тегами
+function tag_filter
+{
+    grep -E "^v1\.1\.[0-9]{5}-testing$"
+}
 
 function add_daemon_impl {
 	local daemon=$1
@@ -54,7 +58,10 @@ function make_control {
 # Генерируем номер ревизии.
 # выставляются переменные окружения REVISION, AUTHOR
 function gen_revision_author {
-	REVISION=$(get_revision)
+	# GIT
+	git fetch --tags
+
+	REVISION=$(git tag | tag_filter | tail -1 | sed 's/^v1\.1\.\(.*\)-testing$/\1/')
 
 	if [[ $STANDALONE != 'yes' ]]
 	then
