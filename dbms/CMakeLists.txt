@@ -267,6 +267,7 @@ add_library (dbms
 	include/DB/DataStreams/SquashingTransform.h
 	include/DB/DataStreams/SquashingBlockInputStream.h
 	include/DB/DataStreams/SquashingBlockOutputStream.h
+	include/DB/DataStreams/NullableAdapterBlockInputStream.h
 	include/DB/DataTypes/NullSymbol.h
 	include/DB/DataTypes/IDataType.h
 	include/DB/DataTypes/IDataTypeDummy.h
