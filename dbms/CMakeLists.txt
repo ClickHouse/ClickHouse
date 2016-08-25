@@ -321,7 +321,6 @@ add_library (dbms
 	include/DB/Interpreters/AggregationCommon.h
 	include/DB/Interpreters/ProcessList.h
 	include/DB/Interpreters/AggregateDescription.h
-	include/DB/Interpreters/reinterpretAsIdentifier.h
 	include/DB/Interpreters/Cluster.h
 	include/DB/Interpreters/loadMetadata.h
 	include/DB/Interpreters/ExternalDictionaries.h
@@ -837,7 +836,6 @@ add_library (dbms
 	src/Interpreters/evaluateMissingDefaults.cpp
 	src/Interpreters/evaluateConstantExpression.cpp
 	src/Interpreters/convertFieldToType.cpp
-	src/Interpreters/reinterpretAsIdentifier.cpp
 	src/Interpreters/Set.cpp
 	src/Interpreters/Join.cpp
 	src/Interpreters/Quota.cpp
