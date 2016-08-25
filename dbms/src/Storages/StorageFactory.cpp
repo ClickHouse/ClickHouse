@@ -9,7 +9,7 @@
 #include <DB/Parsers/ASTLiteral.h>
 
 #include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/reinterpretAsIdentifier.h>
+#include <DB/Interpreters/evaluateConstantExpression.h>
 #include <DB/Interpreters/getClusterName.h>
 
 #include <DB/Storages/StorageLog.h>
@@ -350,8 +350,11 @@ StoragePtr StorageFactory::get(
 				" - name of source database and regexp for table names.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String source_database 		= reinterpretAsIdentifier(args[0], local_context).name;
-		String table_name_regexp	= safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[1]).value);
+		args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], local_context);
+		args[1] = evaluateConstantExpressionAsLiteral(args[1], local_context);
+
+		String source_database 		= static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+		String table_name_regexp	= static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 
 		return StorageMerge::create(
 			table_name, columns,
@@ -387,8 +390,11 @@ StoragePtr StorageFactory::get(
 
 		String cluster_name = getClusterName(*args[0]);
 
-		String remote_database 	= reinterpretAsIdentifier(args[1], local_context).name;
-		String remote_table 	= reinterpretAsIdentifier(args[2], local_context).name;
+		args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
+		args[2] = evaluateConstantExpressionOrIdentidierAsLiteral(args[2], local_context);
+
+		String remote_database 	= static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+		String remote_table 	= static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
 
 		const auto & sharding_key = args.size() == 4 ? args[3] : nullptr;
 
@@ -421,8 +427,11 @@ StoragePtr StorageFactory::get(
 				" destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String destination_database = reinterpretAsIdentifier(args[0], local_context).name;
-		String destination_table 	= typeid_cast<ASTIdentifier &>(*args[1]).name;
+		args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
+		args[2] = evaluateConstantExpressionOrIdentidierAsLiteral(args[2], local_context);
+
+		String destination_database = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+		String destination_table 	= static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
 
 		size_t num_buckets = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[2]).value);
 

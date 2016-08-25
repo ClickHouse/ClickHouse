@@ -5,7 +5,7 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/TableFunctions/ITableFunction.h>
-#include <DB/Interpreters/reinterpretAsIdentifier.h>
+#include <DB/Interpreters/evaluateConstantExpression.h>
 #include <DB/Databases/IDatabase.h>
 #include <DB/TableFunctions/TableFunctionMerge.h>
 
@@ -66,8 +66,11 @@ StoragePtr TableFunctionMerge::execute(ASTPtr ast_function, Context & context) c
 			" - name of source database and regexp for table names.",
 			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-	String source_database 		= reinterpretAsIdentifier(args[0], context).name;
-	String table_name_regexp	= safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[1]).value);
+	args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], context);
+	args[1] = evaluateConstantExpressionAsLiteral(args[2], context);
+
+	String source_database 		= static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+	String table_name_regexp	= static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 
 	/// В InterpreterSelectQuery будет создан ExpressionAnalzyer, который при обработке запроса наткнется на этот Identifier.
 	/// Нам необходимо его пометить как имя базы данных, поскольку по умолчанию стоит значение column
