@@ -79,7 +79,7 @@ protected:
 				///
 				/// If required, in a future release we could add a server parameter
 				/// so that customers would be able to decide whether inserting
-				/// a NULL value into an non-nullable column is semantically correct
+				/// a NULL value into a non-nullable column is semantically correct
 				/// or not.
 				res.insert({
 					nullable_col.getNestedColumn(),
