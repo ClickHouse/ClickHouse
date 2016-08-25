@@ -60,21 +60,21 @@ endif()
 
 SET(CMAKE_BUILD_COLOR_MAKEFILE          ON)
 SET(CMAKE_CXX_FLAGS "-std=gnu++1y ${COMMON_WARNING_FLAGS} -Wnon-virtual-dtor ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI}")
-SET(CMAKE_CXX_FLAGS_RELEASE             "-O3 -DNDEBUG ${CXX11_ABI}")
-SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO      "-O3 -g ${CXX11_ABI}")
+SET(CMAKE_CXX_FLAGS_RELEASE             "-O3 -DNDEBUG -fomit-frame-pointer")
+SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO      "-O3 -g")
+SET(CMAKE_CXX_FLAGS_DEBUG               "-O0 -g3 -ggdb3 -fno-inline -fno-omit-frame-pointer")
 
 SET(CMAKE_C_FLAGS                       "${COMMON_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI}")
-SET(CMAKE_C_FLAGS_RELEASE               "-O3 -DNDEBUG ${CXX11_ABI}")
-SET(CMAKE_C_FLAGS_RELWITHDEBINFO        "-O3 -g ${CXX11_ABI}")
+SET(CMAKE_C_FLAGS_RELEASE               "-O3 -DNDEBUG -fimot-frame-pointer")
+SET(CMAKE_C_FLAGS_RELWITHDEBINFO        "-O3 -g")
+SET(CMAKE_C_FLAGS_DEBUG                 "-O0 -g3 -ggdb3 -fno-inline -fno-omit-frame-pointer")
+
 SET(CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++ ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI}")
 
 SET(CMAKE_CXX_FLAGS_ASAN                "-O3 -g -fsanitize=address -fno-omit-frame-pointer ${CXX11_ABI}")
 SET(CMAKE_CXX_FLAGS_UBSAN               "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI}")
 SET(CMAKE_C_FLAGS_ASAN                  "-O3 -g -fsanitize=address -fno-omit-frame-pointer ${CXX11_ABI}")
 SET(CMAKE_C_FLAGS_UBSAN                 "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI}")
-
-# cmake -DCMAKE_BUILD_TYPE=Debug ..
-SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g ${CXX11_ABI}")
 
 # Флаги для test coverage
 SET(TEST_COVERAGE TRUE CACHE BOOL "Add compliler flags for test coverage")
