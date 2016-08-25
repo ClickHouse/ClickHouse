@@ -69,6 +69,7 @@ add_library (dbms
 	include/DB/Functions/NumberTraits.h
 	include/DB/Functions/DataTypeTraits.h
 	include/DB/Functions/EnrichedDataTypePtr.h
+	include/DB/Functions/ObjectPool.h
 	include/DB/TableFunctions/TableFunctionRemote.h
 	include/DB/TableFunctions/TableFunctionFactory.h
 	include/DB/TableFunctions/TableFunctionMerge.h
@@ -877,6 +878,7 @@ add_library (dbms
 	src/Functions/FunctionsGeo.cpp
 	src/Functions/FunctionsMiscellaneous.cpp
 	src/Functions/FunctionsTransform.cpp
+	src/Functions/FunctionsCharset.cpp
 	src/Functions/Conditional/getArrayType.cpp
 	src/Functions/Conditional/ArgsInfo.cpp
 	src/Functions/Conditional/CondSource.cpp

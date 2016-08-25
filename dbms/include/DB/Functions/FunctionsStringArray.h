@@ -244,7 +244,7 @@ public:
 class ExtractAllImpl
 {
 private:
-	Regexps::Pointer re;
+	Regexps::Pool::Pointer re;
 	OptimizedRegularExpression::MatchVec matches;
 	size_t capture;
 

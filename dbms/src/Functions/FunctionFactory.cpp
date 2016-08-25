@@ -37,6 +37,7 @@ void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
 void registerFunctionsTransform(FunctionFactory &);
 void registerFunctionsGeo(FunctionFactory &);
+void registerFunctionsCharset(FunctionFactory &);
 
 
 FunctionFactory::FunctionFactory()
@@ -65,6 +66,7 @@ FunctionFactory::FunctionFactory()
 	registerFunctionsMath(*this);
 	registerFunctionsTransform(*this);
 	registerFunctionsGeo(*this);
+	registerFunctionsCharset(*this);
 }
 
 
