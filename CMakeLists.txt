@@ -77,7 +77,6 @@ SET(CMAKE_C_FLAGS_ASAN                  "-O3 -g -fsanitize=address -fno-omit-fra
 SET(CMAKE_C_FLAGS_UBSAN                 "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI}")
 
 # Флаги для test coverage
-SET(TEST_COVERAGE TRUE CACHE BOOL "Add compliler flags for test coverage")
 IF (TEST_COVERAGE)
     SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -fprofile-arcs -ftest-coverage -fPIC -DIS_DEBUG ${CXX11_ABI}")
 ENDIF(TEST_COVERAGE)
