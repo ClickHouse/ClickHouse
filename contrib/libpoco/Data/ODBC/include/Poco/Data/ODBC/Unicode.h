@@ -357,7 +357,7 @@ inline SQLINTEGER stringLength(SQLPOINTER pValue, SQLINTEGER length)
 {
 	if (SQL_NTS != length) return length;
 
-	return (SQLINTEGER) std::strlen((const char*) pValue);
+	return static_cast<SQLINTEGER>(std::strlen(static_cast<const char*>(pValue)));
 }
 
 

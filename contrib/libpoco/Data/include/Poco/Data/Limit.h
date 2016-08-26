@@ -35,7 +35,7 @@ public:
 
 	enum Type
 	{
-		LIMIT_UNLIMITED = ~((SizeT) 0)
+		LIMIT_UNLIMITED = ~(static_cast<SizeT>(0))
 	};
 	
 	Limit(SizeT value, bool hardLimit = false, bool isLowerLimit = false);

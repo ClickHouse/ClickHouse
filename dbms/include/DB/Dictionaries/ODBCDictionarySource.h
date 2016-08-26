@@ -5,6 +5,7 @@
 #include <DB/Dictionaries/ExternalQueryBuilder.h>
 #include <ext/range.hpp>
 #include <mysqlxx/Pool.h>
+
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Data/SessionPool.h>
 

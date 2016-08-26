@@ -41,6 +41,7 @@ IF (NOT AARCH64)
 ENDIF()
 
 SET(COMMON_WARNING_FLAGS "-Wall -Werror")
+SET(CXX_WARNING_FLAGS "-Wnon-virtual-dtor -Wold-style-cast")
 
 
 set (GLIBC_COMPATIBILITY FALSE CACHE BOOL "Set to TRUE to enable compatibility with older glibc libraries")
@@ -59,7 +60,7 @@ if (DISABLE_CXX11_ABI)
 endif()
 
 SET(CMAKE_BUILD_COLOR_MAKEFILE          ON)
-SET(CMAKE_CXX_FLAGS                     "-std=gnu++1y -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} -Wnon-virtual-dtor ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI}")
+SET(CMAKE_CXX_FLAGS                     "-std=gnu++1y -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI}")
 SET(CMAKE_CXX_FLAGS_RELEASE             "-O3 -DNDEBUG")
 SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO      "-O3 -g")
 SET(CMAKE_CXX_FLAGS_DEBUG               "-O0 -g3 -ggdb3 -fno-inline")

@@ -1,10 +1,13 @@
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#include <glib.h>
+#pragma GCC diagnostic pop
+
 #include <common/DateLUTImpl.h>
 #include <Poco/Exception.h>
 
 #include <memory>
 #include <cstring>
-#include <glib.h>
-
 namespace details { namespace {
 
 struct GTimeZoneUnref

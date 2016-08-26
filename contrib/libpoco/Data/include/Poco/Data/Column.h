@@ -390,7 +390,7 @@ public:
 		/// to start iteration from beginning or end,
 		/// depending on the position requested.
 	{
-		if (row <= (std::size_t) (_pData->size() / 2))
+		if (row <= static_cast<std::size_t>(_pData->size() / 2))
 		{
 			Iterator it = _pData->begin();
 			Iterator end = _pData->end();

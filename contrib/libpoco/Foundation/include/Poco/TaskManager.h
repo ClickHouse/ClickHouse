@@ -129,7 +129,7 @@ inline int TaskManager::count() const
 {
 	FastMutex::ScopedLock lock(_mutex);
 
-	return (int) _taskList.size();
+	return static_cast<int>(_taskList.size());
 }
 
 
