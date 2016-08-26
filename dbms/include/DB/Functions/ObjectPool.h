@@ -11,6 +11,11 @@ namespace DB
 /** Pool for objects that cannot be used from different threads simultaneously.
   * Allows to create an object for each thread.
   * Pool has unbounded size and objects are not destroyed before destruction of pool.
+  *
+  * Use it in cases when thread local storage is not appropriate
+  *  (when maximum number of simultaneously used objects is less
+  *   than number of running/sleeping threads, that has ever used object,
+  *   and creation/destruction of objects is expensive).
   */
 template <typename T, typename Key>
 class ObjectPool
