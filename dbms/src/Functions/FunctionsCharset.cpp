@@ -41,7 +41,7 @@ private:
 
 		IConv(const CharsetsFromTo & charsets)
 		{
-			impl = iconv_open(charsets.first.data(), charsets.second.data());
+			impl = iconv_open(charsets.second.data(), charsets.first.data());
 			if (impl == reinterpret_cast<iconv_t>(-1))
 				throwFromErrno("Cannot iconv_open with charsets " + charsets.first + " and " + charsets.second,
 					ErrorCodes::BAD_ARGUMENTS);
@@ -87,31 +87,32 @@ private:
 			if (0 != from_string_size)
 			{
 				/// reset state of iconv
-				iconv(iconv_state, nullptr, nullptr, nullptr, nullptr);
+				size_t res = iconv(iconv_state, nullptr, nullptr, nullptr, nullptr);
+				if (static_cast<size_t>(-1) == res)
+					throwFromErrno("Cannot reset iconv", ErrorCodes::CANNOT_ICONV);
 
 				/// perform conversion; resize output buffer and continue if required
 
 				char * in_buf = const_cast<char *>(reinterpret_cast<const char *>(&from_chars[current_from_offset]));
-				size_t in_bytes_left = from_offsets[i] - current_from_offset - 1;
+				size_t in_bytes_left = from_string_size;
 
 				char * out_buf = reinterpret_cast<char *>(&to_chars[current_to_offset]);
-				size_t out_bytes_left = to_chars.size() - current_to_offset - 1;
+				size_t out_bytes_left = to_chars.size() - current_to_offset;
 
 				while (in_bytes_left)
 				{
-					if (to_chars.size() < current_to_offset + 2)	/// no room for one byte plus zero terminator
-					{
-						to_chars.resize(to_chars.size() * 2);
-						out_buf = reinterpret_cast<char *>(&to_chars[current_to_offset]);
-					}
-
 					size_t res = iconv(iconv_state, &in_buf, &in_bytes_left, &out_buf, &out_bytes_left);
 					current_to_offset = to_chars.size() - out_bytes_left;
 
 					if (static_cast<size_t>(-1) == res)
 					{
 						if (E2BIG == errno)
+						{
+							to_chars.resize(to_chars.size() * 2);
+							out_buf = reinterpret_cast<char *>(&to_chars[current_to_offset]);
+							out_bytes_left = to_chars.size() - current_to_offset;
 							continue;
+						}
 
 						throwFromErrno("Cannot convert charset", ErrorCodes::CANNOT_ICONV);
 					}
@@ -125,6 +126,8 @@ private:
 
 			++current_to_offset;
 			to_offsets[i] = current_to_offset;
+
+			current_from_offset = from_offsets[i];
 		}
 
 		to_chars.resize(current_to_offset);
@@ -158,7 +161,7 @@ public:
 	{
 		const ColumnWithTypeAndName & arg_from = block.unsafeGetByPosition(arguments[0]);
 		const ColumnWithTypeAndName & arg_charset_from = block.unsafeGetByPosition(arguments[1]);
-		const ColumnWithTypeAndName & arg_charset_to = block.unsafeGetByPosition(arguments[1]);
+		const ColumnWithTypeAndName & arg_charset_to = block.unsafeGetByPosition(arguments[2]);
 		ColumnWithTypeAndName & res = block.unsafeGetByPosition(result);
 
 		const ColumnConstString * col_charset_from = typeid_cast<const ColumnConstString *>(arg_charset_from.column.get());
