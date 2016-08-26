@@ -427,11 +427,11 @@ StoragePtr StorageFactory::get(
 				" destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+		args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], local_context);
 		args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
-		args[2] = evaluateConstantExpressionOrIdentidierAsLiteral(args[2], local_context);
 
-		String destination_database = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
-		String destination_table 	= static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
+		String destination_database = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+		String destination_table 	= static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 
 		size_t num_buckets = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[2]).value);
 
