@@ -812,13 +812,13 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
 	while (Block block = merged_stream->read())
 	{
-		abortIfRequested();
+		abortReshardPartitionIfRequested();
 
 		ShardedBlocksWithDateIntervals blocks = sharder.shardBlock(block);
 
 		for (ShardedBlockWithDateInterval & block_with_dates : blocks)
 		{
-			abortIfRequested();
+			abortReshardPartitionIfRequested();
 
 			size_t shard_no = block_with_dates.shard_no;
 			MergeTreeData::MutableDataPartPtr & data_part = per_shard_data_parts.at(shard_no);
@@ -845,7 +845,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 	/// Завершить инициализацию куски новых партиций.
 	for (size_t shard_no = 0; shard_no < job.paths.size(); ++shard_no)
 	{
-		abortIfRequested();
+		abortReshardPartitionIfRequested();
 
 		MergedBlockOutputStreamPtr & output_stream = per_shard_output.at(shard_no);
 		if (0 == output_stream->marksCount())
@@ -896,9 +896,9 @@ size_t MergeTreeDataMerger::estimateDiskSpaceForMerge(const MergeTreeData::DataP
 	return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }
 
-void MergeTreeDataMerger::abortIfRequested()
+void MergeTreeDataMerger::abortReshardPartitionIfRequested()
 {
-	if (cancelled)
+	if (isCancelled())
 		throw Exception("Cancelled partition resharding", ErrorCodes::ABORTED);
 
 	if (cancellation_hook)

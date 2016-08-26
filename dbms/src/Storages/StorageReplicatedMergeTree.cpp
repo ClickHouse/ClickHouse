@@ -2383,9 +2383,9 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	assertNotReadonly();
 
 	auto zookeeper = getZooKeeper();
-	const MergeTreeMergeBlocker merge_blocker{merger};
-	const auto unreplicated_merge_blocker = unreplicated_merger ?
-		std::make_unique<MergeTreeMergeBlocker>(*unreplicated_merger) : nullptr;
+	auto merge_blocker = merger.cancel();
+	auto unreplicated_merge_blocker = unreplicated_merger ?
+		unreplicated_merger->cancel() : MergeTreeDataMerger::Blocker();
 
 	LOG_DEBUG(log, "Doing ALTER");
 
@@ -2576,7 +2576,7 @@ void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partiti
 
 	/// Просит завершить мерджи и не позволяет им начаться.
 	/// Это защищает от "оживания" данных за удалённую партицию после завершения мерджа.
-	const MergeTreeMergeBlocker merge_blocker{*unreplicated_merger};
+	auto merge_blocker = unreplicated_merger->cancel();
 	auto structure_lock = lockStructure(true);
 
 	const DayNum_t month = MergeTreeData::getMonthDayNum(partition);

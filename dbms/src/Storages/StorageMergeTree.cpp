@@ -109,7 +109,7 @@ void StorageMergeTree::shutdown()
 	if (shutdown_called)
 		return;
 	shutdown_called = true;
-	merger.cancel();
+	merger.cancelForever();
 	background_pool.removeTask(merge_task_handle);
 }
 
@@ -168,7 +168,7 @@ void StorageMergeTree::alter(
 	const Context & context)
 {
 	/// NOTE: Здесь так же как в ReplicatedMergeTree можно сделать ALTER, не блокирующий запись данных надолго.
-	const MergeTreeMergeBlocker merge_blocker{merger};
+	auto merge_blocker = merger.cancel();
 
 	auto table_soft_lock = lockDataForAlter();
 
@@ -360,7 +360,7 @@ void StorageMergeTree::dropPartition(ASTPtr query, const Field & partition, bool
 
 	/// Просит завершить мерджи и не позволяет им начаться.
 	/// Это защищает от "оживания" данных за удалённую партицию после завершения мерджа.
-	const MergeTreeMergeBlocker merge_blocker{merger};
+	auto merge_blocker = merger.cancel();
 	/// Дожидается завершения мерджей и не даёт начаться новым.
 	auto lock = lockForAlter();
 
