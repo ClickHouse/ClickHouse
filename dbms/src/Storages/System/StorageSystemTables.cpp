@@ -28,7 +28,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
 
 StoragePtr StorageSystemTables::create(const std::string & name_)
 {
-	return (new StorageSystemTables(name_))->thisPtr();
+	return make_shared(name_);
 }
 
 

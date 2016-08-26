@@ -25,10 +25,10 @@ StoragePtr StorageView::create(
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_)
 {
-	return (new StorageView{
+	return make_shared(
 		table_name_, database_name_, context_, query_,
 		columns_, materialized_columns_, alias_columns_, column_defaults_
-	})->thisPtr();
+	);
 }
 
 

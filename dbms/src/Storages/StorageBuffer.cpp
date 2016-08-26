@@ -30,9 +30,9 @@ StoragePtr StorageBuffer::create(const std::string & name_, NamesAndTypesListPtr
 	size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
 	const String & destination_database_, const String & destination_table_)
 {
-	return (new StorageBuffer{
+	return make_shared(
 		name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
-		context_, num_shards_, min_thresholds_, max_thresholds_, destination_database_, destination_table_})->thisPtr();
+		context_, num_shards_, min_thresholds_, max_thresholds_, destination_database_, destination_table_);;
 }
 
 

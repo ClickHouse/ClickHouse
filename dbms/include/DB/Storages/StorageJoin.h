@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/share_ptr_helper.hpp>
+
 #include <DB/Storages/StorageSet.h>
 #include <DB/Interpreters/Join.h>
 
@@ -14,8 +16,10 @@ namespace DB
   *
   * При использовании, JOIN должен быть соответствующего типа (ANY|ALL LEFT|INNER ...).
   */
-class StorageJoin : public StorageSetOrJoinBase
+class StorageJoin : private ext::share_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
 {
+friend class ext::share_ptr_helper<StorageJoin>;
+
 public:
 	static StoragePtr create(
 		const String & path_,
@@ -27,11 +31,10 @@ public:
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_)
 	{
-		return (new StorageJoin{
-			path_, name_,
-			key_names_, kind_, strictness_,
-			columns_,
-			materialized_columns_, alias_columns_, column_defaults_})->thisPtr();
+		return ext::share_ptr_helper<StorageJoin>::make_shared(
+			path_, name_, key_names_, kind_, strictness_,
+			columns_, materialized_columns_, alias_columns_, column_defaults_
+		);
 	}
 
 	String getName() const override { return "Join"; }

@@ -21,7 +21,7 @@ StorageSystemSettings::StorageSystemSettings(const std::string & name_)
 
 StoragePtr StorageSystemSettings::create(const std::string & name_)
 {
-	return (new StorageSystemSettings(name_))->thisPtr();
+	return make_shared(name_);
 }
 
 

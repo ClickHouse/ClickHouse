@@ -1,12 +1,16 @@
 #pragma once
 
+#include <ext/share_ptr_helper.hpp>
+
 #include <DB/Storages/StorageView.h>
 
 
 namespace DB
 {
 
-class StorageMaterializedView : public StorageView {
+class StorageMaterializedView : private ext::share_ptr_helper<StorageMaterializedView>, public StorageView
+{
+friend class ext::share_ptr_helper<StorageMaterializedView>;
 
 public:
 	static StoragePtr create(

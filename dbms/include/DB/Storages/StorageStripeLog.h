@@ -1,6 +1,9 @@
 #pragma once
 
 #include <map>
+
+#include <ext/share_ptr_helper.hpp>
+
 #include <Poco/File.h>
 
 #include <DB/Storages/IStorage.h>
@@ -14,8 +17,9 @@ namespace DB
 /** Реализует хранилище, подходящее для маленьких кусочков лога.
   * При этом, хранит все столбцы в одном файле формата Native, с расположенным рядом индексом.
   */
-class StorageStripeLog : public IStorage
+class StorageStripeLog : private ext::share_ptr_helper<StorageStripeLog>, public IStorage
 {
+friend class ext::share_ptr_helper<StorageStripeLog>;
 friend class StripeLogBlockInputStream;
 friend class StripeLogBlockOutputStream;
 

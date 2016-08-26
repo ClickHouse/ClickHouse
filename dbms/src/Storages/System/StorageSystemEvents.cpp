@@ -22,7 +22,7 @@ StorageSystemEvents::StorageSystemEvents(const std::string & name_)
 
 StoragePtr StorageSystemEvents::create(const std::string & name_)
 {
-	return (new StorageSystemEvents(name_))->thisPtr();
+	return make_shared(name_);
 }
 
 

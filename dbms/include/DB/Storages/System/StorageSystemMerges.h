@@ -1,12 +1,16 @@
 #pragma once
 
+#include <ext/share_ptr_helper.hpp>
+
 #include <DB/Storages/IStorage.h>
 
 namespace DB
 {
 
-class StorageSystemMerges : public IStorage
+class StorageSystemMerges : private ext::share_ptr_helper<StorageSystemMerges>, public IStorage
 {
+friend class ext::share_ptr_helper<StorageSystemMerges>;
+
 public:
 	static StoragePtr create(const std::string & name);
 

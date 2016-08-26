@@ -345,15 +345,14 @@ StoragePtr StorageReplicatedMergeTree::create(
 	bool has_force_restore_data_flag_,
 	const MergeTreeSettings & settings_)
 {
-	auto res = new StorageReplicatedMergeTree{
+	auto res = make_shared(
 		zookeeper_path_, replica_name_, attach,
 		path_, database_name_, name_,
 		columns_, materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_,
-		merging_params_, has_force_restore_data_flag_, settings_};
-
-	StoragePtr res_ptr = res->thisPtr();
+		merging_params_, has_force_restore_data_flag_, settings_);
+	StoragePtr res_ptr = res;
 
 	auto get_endpoint_holder = [&res](InterserverIOEndpointPtr endpoint)
 	{
@@ -393,7 +392,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 		}
 	}
 
-	return res_ptr;
+	return res;
 }
 
 

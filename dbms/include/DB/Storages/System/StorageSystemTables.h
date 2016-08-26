@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/share_ptr_helper.hpp>
+
 #include <DB/Storages/IStorage.h>
 #include <DB/Interpreters/Context.h>
 
@@ -9,8 +11,10 @@ namespace DB
 
 /** Реализует системную таблицу tables, которая позволяет получить информацию о всех таблицах.
   */
-class StorageSystemTables : public IStorage
+class StorageSystemTables : private ext::share_ptr_helper<StorageSystemTables>, public IStorage
 {
+friend class ext::share_ptr_helper<StorageSystemTables>;
+
 public:
 	static StoragePtr create(const std::string & name_);
 

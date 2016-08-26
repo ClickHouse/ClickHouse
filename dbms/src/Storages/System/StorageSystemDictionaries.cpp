@@ -40,7 +40,7 @@ StorageSystemDictionaries::StorageSystemDictionaries(const std::string & name)
 
 StoragePtr StorageSystemDictionaries::create(const std::string & name)
 {
-	return (new StorageSystemDictionaries{name})->thisPtr();
+	return make_shared(name);
 }
 
 BlockInputStreams StorageSystemDictionaries::read(

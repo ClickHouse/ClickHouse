@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/share_ptr_helper.hpp>
+
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
@@ -14,8 +16,9 @@ namespace DB
 
 /** Общая часть StorageSet и StorageJoin.
   */
-class StorageSetOrJoinBase : public IStorage
+class StorageSetOrJoinBase : private ext::share_ptr_helper<StorageSetOrJoinBase>, public IStorage
 {
+	friend class ext::share_ptr_helper<StorageSetOrJoinBase>;
 	friend class SetOrJoinBlockOutputStream;
 
 public:
@@ -78,8 +81,10 @@ private:
   *  а также записаны в файл-бэкап, для восстановления после перезапуска.
   * Чтение из таблицы напрямую невозможно - возможно лишь указание в правой части оператора IN.
   */
-class StorageSet : public StorageSetOrJoinBase
+class StorageSet : private ext::share_ptr_helper<StorageSet>, public StorageSetOrJoinBase
 {
+friend class ext::share_ptr_helper<StorageSet>;
+
 public:
 	static StoragePtr create(
 		const String & path_,
@@ -89,9 +94,7 @@ public:
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_)
 	{
-		return (new StorageSet{
-			path_, name_, columns_,
-			materialized_columns_, alias_columns_, column_defaults_})->thisPtr();
+		return ext::share_ptr_helper<StorageSet>::make_shared(path_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_);
 	}
 
 	String getName() const override { return "Set"; }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/share_ptr_helper.hpp>
+
 #include <DB/Storages/IStorage.h>
 
 
@@ -8,8 +10,10 @@ namespace DB
 
 /** Реализует системную таблицу events, которая позволяет получить информацию для профайлинга.
   */
-class StorageSystemEvents : public IStorage
+class StorageSystemEvents : private ext::share_ptr_helper<StorageSystemEvents>, public IStorage
 {
+friend class ext::share_ptr_helper<StorageSystemEvents>;
+
 public:
 	static StoragePtr create(const std::string & name_);
 

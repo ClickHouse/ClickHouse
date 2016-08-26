@@ -1,12 +1,16 @@
 #pragma once
 
+#include <ext/share_ptr_helper.hpp>
+
 #include <DB/Storages/IStorage.h>
 
 namespace DB
 {
 
-class StorageSystemDictionaries : public IStorage
+class StorageSystemDictionaries : private ext::share_ptr_helper<StorageSystemDictionaries>, public IStorage
 {
+friend class ext::share_ptr_helper<StorageSystemDictionaries>;
+
 public:
 	static StoragePtr create(const std::string & name);
 

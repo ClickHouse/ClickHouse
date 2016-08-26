@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/share_ptr_helper.hpp>
+
 #include <DB/Storages/IStorage.h>
 #include <DB/Interpreters/Context.h>
 
@@ -9,8 +11,10 @@ namespace DB
 
 /** Реализует системную таблицу settings, которая позволяет получить информацию о текущих настройках.
   */
-class StorageSystemSettings : public IStorage
+class StorageSystemSettings : private ext::share_ptr_helper<StorageSystemSettings>, public IStorage
 {
+friend class ext::share_ptr_helper<StorageSystemSettings>;
+
 public:
 	static StoragePtr create(const std::string & name_);
 

@@ -2,6 +2,8 @@
 
 #include <map>
 
+#include <ext/share_ptr_helper.hpp>
+
 #include <Poco/File.h>
 
 #include <DB/Storages/IStorage.h>
@@ -15,8 +17,9 @@ namespace DB
 /** Реализует хранилище, подходящее для маленьких кусочков лога.
   * Отличается от StorageLog отсутствием файлов с засечками.
   */
-class StorageTinyLog : public IStorage
+class StorageTinyLog : private ext::share_ptr_helper<StorageTinyLog>, public IStorage
 {
+friend class ext::share_ptr_helper<StorageTinyLog>;
 friend class TinyLogBlockInputStream;
 friend class TinyLogBlockOutputStream;
 

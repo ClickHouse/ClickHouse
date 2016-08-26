@@ -496,11 +496,11 @@ StoragePtr StorageLog::create(
 	const ColumnDefaults & column_defaults_,
 	size_t max_compress_block_size_)
 {
-	return (new StorageLog{
+	return make_shared(
 		path_, name_, columns_,
 		materialized_columns_, alias_columns_, column_defaults_,
 		max_compress_block_size_
-	})->thisPtr();
+	);
 }
 
 StoragePtr StorageLog::create(
@@ -509,11 +509,11 @@ StoragePtr StorageLog::create(
 	NamesAndTypesListPtr columns_,
 	size_t max_compress_block_size_)
 {
-	return (new StorageLog{
+	return make_shared(
 		path_, name_, columns_,
-		{}, {}, ColumnDefaults{},
+		NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{},
 		max_compress_block_size_
-	})->thisPtr();
+	);
 }
 
 

@@ -2,6 +2,8 @@
 
 #include <map>
 
+#include <ext/share_ptr_helper.hpp>
+
 #include <Poco/File.h>
 #include <Poco/RWLock.h>
 
@@ -35,8 +37,9 @@ using Marks = std::vector<Mark>;
   * Ключи не поддерживаются.
   * Данные хранятся в сжатом виде.
   */
-class StorageLog : public IStorage
+class StorageLog : private ext::share_ptr_helper<StorageLog>, public IStorage
 {
+friend class ext::share_ptr_helper<StorageLog>;
 friend class LogBlockInputStream;
 friend class LogBlockOutputStream;
 
