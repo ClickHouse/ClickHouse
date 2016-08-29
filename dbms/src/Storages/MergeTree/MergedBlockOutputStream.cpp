@@ -6,6 +6,7 @@
 #include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/Columns/ColumnNullable.h>
 
+#include <DB/Common/StringUtils.h>
 
 namespace DB
 {
@@ -549,7 +550,15 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
 		column_stream.second->finalize();
 		if (sync)
 			column_stream.second->sync();
-		std::string column = escapeForFileName(column_stream.first);
+
+		/// Get the file basename for the given column. If this is an entry
+		/// for a null map, first remove from its key the ".null" extension
+		/// that was used to make this key unique.
+		std::string column = column_stream.first;
+		if (endsWith(column, NULL_MAP_EXTENSION))
+			column = column.substr(0, column.length() - strlen(NULL_MAP_EXTENSION));
+		column = escapeForFileName(column);
+
 		column_stream.second->addToChecksums(checksums, column);
 	}
 

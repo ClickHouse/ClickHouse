@@ -585,8 +585,6 @@ void MergeTreeData::checkAlter(const AlterCommands & params)
 		std::begin(new_materialized_columns), std::end(new_materialized_columns));
 
 	createConvertExpression(nullptr, getColumnsList(), new_columns, unused_expression, unused_map, unused_bool);
-
-
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
@@ -612,10 +610,10 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 	for (const NameAndTypePair & column : old_columns)
 	{
-		bool is_nullable = column.type.get()->isNullable();
-
 		if (!new_types.count(column.name))
 		{
+			bool is_nullable = column.type.get()->isNullable();
+
 			if (!part || part->hasColumnFiles(column.name))
 			{
 				/// Столбец нужно удалить.
@@ -634,6 +632,8 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 				if (is_nullable)
 				{
+					/// It is a nullable column so remove its null map
+					/// and its corresponding marks file.
 					out_rename_map[escaped_column + ".null"] = "";
 					out_rename_map[escaped_column + ".null_mrk"] = "";
 				}
@@ -696,8 +696,10 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 				out_rename_map[escaped_expr + ".bin"] = escaped_column + ".bin";
 				out_rename_map[escaped_expr + ".mrk"] = escaped_column + ".mrk";
 
-				if (is_nullable)
+				if (new_type->isNullable())
 				{
+					/// The original column, whether it be nullable or not,
+					/// is converted to a nullable column.
 					out_rename_map[escaped_expr + ".null"] = escaped_column + ".null";
 					out_rename_map[escaped_expr + ".null_mrk"] = escaped_column + ".null_mrk";
 				}
@@ -878,20 +880,24 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 
 		String path = data_part->storage.full_path + data_part->name + "/";
 
+		/// NOTE: checking that a file exists before renaming or deleting it
+		/// is justified by the fact that, when converting an ordinary column
+		/// to a nullable column, new files are created which did not exist
+		/// before, i.e. they do not have older versions.
+
 		/// 1) Переименуем старые файлы.
 		for (auto it : rename_map)
 		{
 			String name = it.second.empty() ? it.first : it.second;
-			Poco::File(path + name).renameTo(path + name + ".tmp2");
+			if (Poco::File{path + name}.exists())
+				Poco::File(path + name).renameTo(path + name + ".tmp2");
 		}
 
 		/// 2) Переместим на их место новые и обновим метаданные в оперативке.
 		for (auto it : rename_map)
 		{
 			if (!it.second.empty())
-			{
 				Poco::File(path + it.first).renameTo(path + it.second);
-			}
 		}
 
 		DataPart & mutable_part = const_cast<DataPart &>(*data_part);
@@ -902,7 +908,8 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 		for (auto it : rename_map)
 		{
 			String name = it.second.empty() ? it.first : it.second;
-			Poco::File(path + name + ".tmp2").remove();
+			if (Poco::File{path + name + ".tmp2"}.exists())
+				Poco::File(path + name + ".tmp2").remove();
 		}
 
 		mutable_part.size_in_bytes = MergeTreeData::DataPart::calcTotalSize(path);
