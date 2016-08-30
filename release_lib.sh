@@ -126,6 +126,8 @@ function upload_debs {
 		REPO="metrika"
 	elif [ "$DISTRIB_CODENAME" == "trusty" ]; then
 		REPO="metrika-trusty"
+	elif [ "$DISTRIB_CODENAME" == "xenial" ]; then
+		REPO="metrika-xenial"
 	else
 		echo -e "\n\e[0;31mUnknown Ubuntu version $DISTRIB_CODENAME \e[0;0m\n"
 	fi
