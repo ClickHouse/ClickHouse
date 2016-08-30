@@ -7,7 +7,7 @@ namespace ext
 
 /**
  * Class AllocateShared allow to make std::shared_ptr<T> from T with private constructor.
- * Derive you T class from AllocateShared<T>, define him as friend and call allocate_shared()/make_shared() method.
+ * Derive you T class from shared_ptr_helper<T>, define him as friend and call allocate_shared()/make_shared() method.
 **/
 template <class T>
 class shared_ptr_helper
