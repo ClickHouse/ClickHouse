@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/share_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.hpp>
 
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Storages/IStorage.h>
@@ -14,9 +14,9 @@ namespace DB
 /** При записи, ничего не делает.
   * При чтении, возвращает пустоту.
   */
-class StorageNull : private ext::share_ptr_helper<StorageNull>, public IStorage
+class StorageNull : private ext::shared_ptr_helper<StorageNull>, public IStorage
 {
-friend class ext::share_ptr_helper<StorageNull>;
+friend class ext::shared_ptr_helper<StorageNull>;
 
 public:
 	static StoragePtr create(

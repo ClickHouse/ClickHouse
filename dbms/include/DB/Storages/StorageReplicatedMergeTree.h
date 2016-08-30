@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/share_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.hpp>
 
 #include <DB/Storages/IStorage.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
@@ -69,9 +69,9 @@ namespace DB
   * в качестве времени будет браться время создания соответствующего куска на какой-либо из реплик.
   */
 
-class StorageReplicatedMergeTree : private ext::share_ptr_helper<StorageReplicatedMergeTree>, public IStorage
+class StorageReplicatedMergeTree : private ext::shared_ptr_helper<StorageReplicatedMergeTree>, public IStorage
 {
-friend class ext::share_ptr_helper<StorageReplicatedMergeTree>;
+friend class ext::shared_ptr_helper<StorageReplicatedMergeTree>;
 
 public:
 	/** Если !attach, либо создает новую таблицу в ZK, либо добавляет реплику в существующую таблицу.

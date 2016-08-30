@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/share_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.hpp>
 
 #include <DB/Storages/IStorage.h>
 
@@ -13,9 +13,9 @@ class Context;
   *  that allows to obtain information about available clusters
   *  (which may be specified in Distributed tables).
   */
-class StorageSystemClusters : private ext::share_ptr_helper<StorageSystemClusters>, public IStorage
+class StorageSystemClusters : private ext::shared_ptr_helper<StorageSystemClusters>, public IStorage
 {
-friend class ext::share_ptr_helper<StorageSystemClusters>;
+friend class ext::shared_ptr_helper<StorageSystemClusters>;
 
 public:
 	StorageSystemClusters(const std::string & name_, Context & context_);

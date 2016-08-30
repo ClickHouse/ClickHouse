@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/share_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.hpp>
 
 #include <DB/Storages/IStorage.h>
 
@@ -14,9 +14,9 @@ namespace DB
   * Используется, если в запросе не указана таблица.
   * Аналог таблицы DUAL в Oracle и MySQL.
   */
-class StorageSystemOne : private ext::share_ptr_helper<StorageSystemOne>, public IStorage
+class StorageSystemOne : private ext::shared_ptr_helper<StorageSystemOne>, public IStorage
 {
-friend class ext::share_ptr_helper<StorageSystemOne>;
+friend class ext::shared_ptr_helper<StorageSystemOne>;
 
 public:
 	static StoragePtr create(const std::string & name_);

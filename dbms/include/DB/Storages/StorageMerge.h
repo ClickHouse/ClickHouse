@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/share_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.hpp>
 
 #include <DB/Common/OptimizedRegularExpression.h>
 #include <DB/Storages/IStorage.h>
@@ -12,9 +12,9 @@ namespace DB
 /** Таблица, представляющая собой объединение произвольного количества других таблиц.
   * У всех таблиц должна быть одинаковая структура.
   */
-class StorageMerge : private ext::share_ptr_helper<StorageMerge>, public IStorage
+class StorageMerge : private ext::shared_ptr_helper<StorageMerge>, public IStorage
 {
-friend class ext::share_ptr_helper<StorageMerge>;
+friend class ext::shared_ptr_helper<StorageMerge>;
 
 public:
 	static StoragePtr create(

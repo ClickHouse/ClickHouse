@@ -1,4 +1,4 @@
-#include <ext/share_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.hpp>
 
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ParserSelectQuery.h>
@@ -17,9 +17,9 @@
 #include <string>
 
 /// Упрощённый вариант класса StorageDistributed.
-class StorageDistributedFake : private ext::share_ptr_helper<StorageDistributedFake>, public DB::IStorage
+class StorageDistributedFake : private ext::shared_ptr_helper<StorageDistributedFake>, public DB::IStorage
 {
-friend class ext::share_ptr_helper<StorageDistributedFake>;
+friend class ext::shared_ptr_helper<StorageDistributedFake>;
 
 public:
 	static DB::StoragePtr create(const std::string & remote_database_, const std::string & remote_table_, size_t shard_count_)

@@ -28,7 +28,7 @@ StoragePtr StorageMaterializedView::create(
 	const ColumnDefaults & column_defaults_,
 	bool attach_)
 {
-	return ext::share_ptr_helper<StorageMaterializedView>::make_shared(
+	return ext::shared_ptr_helper<StorageMaterializedView>::make_shared(
 		table_name_, database_name_, context_, query_, columns_,
 		materialized_columns_, alias_columns_, column_defaults_, attach_
 	);

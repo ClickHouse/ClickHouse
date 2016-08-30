@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/share_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.hpp>
 
 #include <DB/Storages/IStorage.h>
 #include <DB/Client/ConnectionPool.h>
@@ -20,9 +20,9 @@ namespace DB
   * Можно передать один адрес, а не несколько.
   * В этом случае, таблицу можно считать удалённой, а не распределённой.
   */
-class StorageDistributed : private ext::share_ptr_helper<StorageDistributed>, public IStorage
+class StorageDistributed : private ext::shared_ptr_helper<StorageDistributed>, public IStorage
 {
-	friend class ext::share_ptr_helper<StorageDistributed>;
+	friend class ext::shared_ptr_helper<StorageDistributed>;
 	friend class DistributedBlockOutputStream;
 	friend class DirectoryMonitor;
 

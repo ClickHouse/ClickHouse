@@ -3,7 +3,7 @@
 #include <mutex>
 #include <thread>
 
-#include <ext/share_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.hpp>
 
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Storages/IStorage.h>
@@ -33,9 +33,9 @@ namespace DB
   * При уничтожении таблицы типа Buffer и при завершении работы, все данные сбрасываются.
   * Данные в буфере не реплицируются, не логгируются на диск, не индексируются. При грубом перезапуске сервера, данные пропадают.
   */
-class StorageBuffer : private ext::share_ptr_helper<StorageBuffer>, public IStorage
+class StorageBuffer : private ext::shared_ptr_helper<StorageBuffer>, public IStorage
 {
-friend class ext::share_ptr_helper<StorageBuffer>;
+friend class ext::shared_ptr_helper<StorageBuffer>;
 friend class BufferBlockInputStream;
 friend class BufferBlockOutputStream;
 

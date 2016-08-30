@@ -10,7 +10,7 @@ namespace ext
  * Derive you T class from AllocateShared<T>, define him as friend and call allocate_shared()/make_shared() method.
 **/
 template <class T>
-class share_ptr_helper
+class shared_ptr_helper
 {
 protected:
 typedef typename std::remove_const<T>::type TNoConst;

@@ -2,7 +2,7 @@
 
 #include <mutex>
 
-#include <ext/share_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.hpp>
 
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Storages/IStorage.h>
@@ -20,9 +20,9 @@ class StorageMemory;
   * В нём не поддерживаются ключи.
   * Данные хранятся в виде набора блоков и никуда дополнительно не сохраняются.
   */
-class StorageMemory : private ext::share_ptr_helper<StorageMemory>, public IStorage
+class StorageMemory : private ext::shared_ptr_helper<StorageMemory>, public IStorage
 {
-friend class ext::share_ptr_helper<StorageMemory>;
+friend class ext::shared_ptr_helper<StorageMemory>;
 friend class MemoryBlockInputStream;
 friend class MemoryBlockOutputStream;
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/share_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.hpp>
 
 #include <DB/Storages/IStorage.h>
 #include <DB/Interpreters/Context.h>
@@ -11,9 +11,9 @@ namespace DB
 
 /** Реализует системную таблицу processes, которая позволяет получить информацию о запросах, исполняющихся в данный момент.
   */
-class StorageSystemProcesses : private ext::share_ptr_helper<StorageSystemProcesses>, public IStorage
+class StorageSystemProcesses : private ext::shared_ptr_helper<StorageSystemProcesses>, public IStorage
 {
-friend class ext::share_ptr_helper<StorageSystemProcesses>;
+friend class ext::shared_ptr_helper<StorageSystemProcesses>;
 
 public:
 	static StoragePtr create(const std::string & name_);
