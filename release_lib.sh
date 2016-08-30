@@ -114,7 +114,7 @@ function gen_changelog {
 		< $CHLOG.in > $CHLOG
 }
 
-# Загрузка в репозитории Метрики и БК
+# Загрузка в репозитории Метрики
 # рабочая директория - где лежит сам скрипт
 function upload_debs {
 	REVISION="$1"
@@ -124,10 +124,8 @@ function upload_debs {
 
 	if [ "$DISTRIB_CODENAME" == "precise" ]; then
 		REPO="metrika"
-		REPO_YABS="bs"
 	elif [ "$DISTRIB_CODENAME" == "trusty" ]; then
 		REPO="metrika-trusty"
-		REPO_YABS="bs-trusty"
 	else
 		echo -e "\n\e[0;31mUnknown Ubuntu version $DISTRIB_CODENAME \e[0;0m\n"
 	fi
@@ -138,15 +136,5 @@ function upload_debs {
 	DUPLOAD_CONF=dupload.conf
 	cat src/debian/dupload.conf.in | sed -e "s/[@]AUTHOR[@]/$(whoami)/g" > $DUPLOAD_CONF
 
-
 	dupload metrika-yandex_1.1."$REVISION"_amd64.changes -t $REPO -c --nomail
-
-	# Загрузка в репозиторий баннерной крутилки (только ClickHouse).
-	if [[ -z "$(echo $DAEMONS | tr ' ' '\n' | grep -v clickhouse)" ]];
-	then
-		echo -e "\n\e[0;32mUploading daemons "$DAEMONS" to Banner System \e[0;0m\n "
-		dupload metrika-yandex_1.1."$REVISION"_amd64.changes -t $REPO_YABS -c --nomail
-	else
-		echo -e "\n\e[0;31mWill not upload daemons to Banner System \e[0;0m\n "
-	fi
 }
