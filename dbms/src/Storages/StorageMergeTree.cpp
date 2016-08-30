@@ -90,17 +90,15 @@ StoragePtr StorageMergeTree::create(
 	bool has_force_restore_data_flag_,
 	const MergeTreeSettings & settings_)
 {
-	auto res = new StorageMergeTree{
+	auto res = make_shared(
 		path_, database_name_, table_name_,
 		columns_, materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_, merging_params_, has_force_restore_data_flag_, settings_
-	};
-	StoragePtr res_ptr = res->thisPtr();
+	);
+	res->merge_task_handle = res->background_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res.get(), std::placeholders::_1));
 
-	res->merge_task_handle = res->background_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res, std::placeholders::_1));
-
-	return res_ptr;
+	return res;
 }
 
 

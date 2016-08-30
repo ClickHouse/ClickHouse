@@ -29,7 +29,7 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
 
 StoragePtr StorageSystemColumns::create(const std::string & name_)
 {
-	return (new StorageSystemColumns{name_})->thisPtr();
+	return make_shared(name_);
 }
 
 BlockInputStreams StorageSystemColumns::read(

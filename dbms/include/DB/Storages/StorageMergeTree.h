@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.hpp>
+
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
@@ -14,8 +16,9 @@ namespace DB
 
 /** См. описание структуры данных в MergeTreeData.
   */
-class StorageMergeTree : public IStorage
+class StorageMergeTree : private ext::shared_ptr_helper<StorageMergeTree>, public IStorage
 {
+friend class ext::shared_ptr_helper<StorageMergeTree>;
 friend class MergeTreeBlockOutputStream;
 
 public:

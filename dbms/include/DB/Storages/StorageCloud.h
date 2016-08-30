@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.hpp>
+
 #include <DB/Storages/IStorage.h>
 #include <DB/Databases/IDatabase.h>
 
@@ -13,8 +15,10 @@ class DatabaseCloud;
 /** Облачная таблица. Может находиться только в облачной базе данных.
   * При записи в таблицу, данные записываются в локальные таблицы на нескольких серверах облака.
   */
-class StorageCloud : public IStorage
+class StorageCloud : private ext::shared_ptr_helper<StorageCloud>, public IStorage
 {
+friend class ext::shared_ptr_helper<StorageCloud>;
+
 public:
 	static StoragePtr create(
 		DatabasePtr & database_ptr_,

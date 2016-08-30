@@ -21,7 +21,7 @@ StorageSystemFunctions::StorageSystemFunctions(const std::string & name_)
 
 StoragePtr StorageSystemFunctions::create(const std::string & name_)
 {
-	return (new StorageSystemFunctions{name_})->thisPtr();
+	return make_shared(name_);
 }
 
 BlockInputStreams StorageSystemFunctions::read(

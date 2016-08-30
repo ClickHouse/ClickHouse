@@ -31,7 +31,7 @@ StorageSystemClusters::StorageSystemClusters(const std::string & name_, Context 
 
 StoragePtr StorageSystemClusters::create(const std::string & name_, Context & context_)
 {
-	return (new StorageSystemClusters{name_, context_})->thisPtr();
+	return make_shared(name_, context_);
 }
 
 BlockInputStreams StorageSystemClusters::read(

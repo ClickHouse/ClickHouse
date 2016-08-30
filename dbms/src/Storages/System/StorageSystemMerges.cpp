@@ -31,7 +31,7 @@ StorageSystemMerges::StorageSystemMerges(const std::string & name)
 
 StoragePtr StorageSystemMerges::create(const std::string & name)
 {
-	return (new StorageSystemMerges{name})->thisPtr();
+	return make_shared(name);
 }
 
 BlockInputStreams StorageSystemMerges::read(

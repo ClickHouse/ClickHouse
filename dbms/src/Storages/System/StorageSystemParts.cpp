@@ -43,7 +43,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
 
 StoragePtr StorageSystemParts::create(const std::string & name_)
 {
-	return (new StorageSystemParts(name_))->thisPtr();
+	return make_shared(name_);
 }
 
 

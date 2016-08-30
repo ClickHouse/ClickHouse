@@ -37,7 +37,7 @@ StoragePtr StorageCloud::create(
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_)
 {
-	return (new StorageCloud{database_ptr_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_})->thisPtr();
+	return make_shared(database_ptr_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_);
 }
 
 

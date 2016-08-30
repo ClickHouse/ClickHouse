@@ -98,9 +98,7 @@ StoragePtr StorageMemory::create(
 	const std::string & name_,
 	NamesAndTypesListPtr columns_)
 {
-	return (new StorageMemory{
-		name_, columns_
-	})->thisPtr();
+	return make_shared(name_, columns_);
 }
 
 StoragePtr StorageMemory::create(
@@ -110,10 +108,7 @@ StoragePtr StorageMemory::create(
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_)
 {
-	return (new StorageMemory{
-		name_, columns_,
-		materialized_columns_, alias_columns_, column_defaults_
-	})->thisPtr();
+	return make_shared(name_, columns_, materialized_columns_, alias_columns_, column_defaults_);
 }
 
 

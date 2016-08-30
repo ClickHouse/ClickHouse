@@ -47,7 +47,7 @@ StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
 
 StoragePtr StorageSystemReplicas::create(const std::string & name_)
 {
-	return (new StorageSystemReplicas(name_))->thisPtr();
+	return make_shared(name_);
 }
 
 

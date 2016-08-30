@@ -28,7 +28,7 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
 
 StoragePtr StorageSystemProcesses::create(const std::string & name_)
 {
-	return (new StorageSystemProcesses(name_))->thisPtr();
+	return make_shared(name_);
 }
 
 

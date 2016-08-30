@@ -394,11 +394,11 @@ StoragePtr StorageTinyLog::create(
 	bool attach,
 	size_t max_compress_block_size_)
 {
-	return (new StorageTinyLog{
+	return make_shared(
 		path_, name_, columns_,
 		materialized_columns_, alias_columns_, column_defaults_,
 		attach, max_compress_block_size_
-	})->thisPtr();
+	);
 }
 
 

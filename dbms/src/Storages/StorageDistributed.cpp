@@ -131,13 +131,13 @@ StoragePtr StorageDistributed::create(
 	const ASTPtr & sharding_key_,
 	const String & data_path_)
 {
-	return (new StorageDistributed{
+	return make_shared(
 		name_, columns_,
 		materialized_columns_, alias_columns_, column_defaults_,
 		remote_database_, remote_table_,
 		context_.getCluster(cluster_name), context_,
 		sharding_key_, data_path_
-	})->thisPtr();
+	);
 }
 
 
@@ -149,15 +149,15 @@ StoragePtr StorageDistributed::create(
 	std::shared_ptr<Cluster> & owned_cluster_,
 	Context & context_)
 {
-	auto res = new StorageDistributed{
+	auto res = make_shared(
 		name_, columns_, remote_database_,
 		remote_table_, *owned_cluster_, context_
-	};
+	);
 
 	/// Захватываем владение объектом-кластером.
 	res->owned_cluster = owned_cluster_;
 
-	return res->thisPtr();
+	return res;
 }
 
 BlockInputStreams StorageDistributed::read(
