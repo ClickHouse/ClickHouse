@@ -41,6 +41,22 @@ SingleBarrier::SingleBarrier(GetZooKeeper get_zookeeper_, const std::string & pa
 	if ((code != ZOK) && (code != ZNODEEXISTS))
 		throw KeeperException{code};
 
+	if (code == ZNODEEXISTS)
+	{
+		/// This barrier is already being created by another node.
+		/// Wait until it has been fully created so that it is usable.
+		if (!zookeeper->exists(path + "/lock", nullptr, event))
+		{
+			do
+			{
+				abortIfRequested();
+			}
+			while (!event->tryWait(wait_duration));
+
+			return;
+		}
+	}
+
 	/// List of tokens.
 	code = zookeeper->tryCreate(path + "/tokens", "", CreateMode::Persistent);
 	if ((code != ZOK) && (code != ZNODEEXISTS))
