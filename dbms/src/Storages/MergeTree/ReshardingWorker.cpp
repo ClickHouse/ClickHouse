@@ -77,17 +77,17 @@ public:
 	{
 		Poco::Util::AbstractConfiguration::Keys keys;
 		config.keys(config_name, keys);
+
 		for (const auto & key : keys)
 		{
 			if (key == "task_queue_path")
-			{
 				task_queue_path = config.getString(config_name + "." + key);
-				if (task_queue_path.empty())
-					throw Exception{"Invalid parameter in resharding configuration", ErrorCodes::INVALID_CONFIG_PARAMETER};
-			}
 			else
 				throw Exception{"Unknown parameter in resharding configuration", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
 		}
+
+		if (task_queue_path.empty())
+			throw Exception{"Resharding: missing parameter task_queue_path", ErrorCodes::INVALID_CONFIG_PARAMETER};
 	}
 
 	Arguments(const Arguments &) = delete;
