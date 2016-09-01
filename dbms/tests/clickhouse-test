@@ -1,143 +1,216 @@
-#!/bin/bash
+#!/usr/bin/env python
+import sys
+import os
+import os.path
+import re
+import lxml.etree as et
 
-# Скрипт для тестирования запросов к ClickHouse.
-# Из файлов *.sql в заданной директории, в алфавитном порядке, отправляются все запросы.
-# Результаты сравниваются с эталонами.
+from argparse import ArgumentParser
+from argparse import FileType
+from pprint import pprint
+from subprocess import check_call
+from subprocess import Popen
+from subprocess import PIPE
+from subprocess import CalledProcessError
 
-QUERIES_DIR="./queries"
-CLIENT_PROGRAM="clickhouse-client -n"
+if sys.stdout.isatty():
+	COLORS = {
+		"COLOR_RESET": "\033[0m",
+		"COLOR_WHITE": "\033[1;37m",
+		"COLOR_FAIL": "\033[1;31m",
+		"COLOR_UNKNOWN": "\033[1;30m",
+		"COLOR_OK": "\033[1;32m",
+		"COLOR_SKIPPED": "\033[1;34m" }
+else:
+	COLORS = {
+		"COLOR_RESET": "",
+		"COLOR_WHITE": "",
+		"COLOR_FAIL": "",
+		"COLOR_UNKNOWN": "",
+		"COLOR_OK": "",
+		"COLOR_SKIPPED": "" }
 
-if [ -t 1 ]; then	# stdout - терминал.
-	COLOR_RESET="\033[0m"
-	COLOR_WHITE="\033[1;37m"
-	COLOR_FAIL="\033[1;31m"
-	COLOR_UNKNOWN="\033[1;30m"
-	COLOR_OK="\033[1;32m"
-	COLOR_SKIPPED="\033[1;34m"
-else
-	COLOR_RESET=""
-	COLOR_WHITE=""
-	COLOR_FAIL=""
-	COLOR_UNKNOWN=""
-	COLOR_OK=""
-	COLOR_SKIPPED=""
-fi
+MSG_FAIL = "{COLOR_WHITE}[ {COLOR_FAIL}FAIL{COLOR_WHITE} ]{COLOR_RESET}".format(**COLORS)
+MSG_UNKNOWN = "{COLOR_WHITE}[ {COLOR_UNKNOWN}UNKNOWN{COLOR_WHITE} ]{COLOR_RESET}".format(**COLORS)
+MSG_OK = "{COLOR_WHITE}[ {COLOR_OK}OK{COLOR_WHITE} ]{COLOR_RESET}".format(**COLORS)
+MSG_SKIPPED = "{COLOR_WHITE}[ {COLOR_SKIPPED}SKIPPED{COLOR_WHITE} ]{COLOR_RESET}".format(**COLORS)
 
-MSG_FAIL="${COLOR_WHITE}[ ${COLOR_FAIL}FAIL${COLOR_WHITE} ]${COLOR_RESET}"
-MSG_UNKNOWN="${COLOR_WHITE}[ ${COLOR_UNKNOWN}UNKNOWN${COLOR_WHITE} ]${COLOR_RESET}"
-MSG_OK="${COLOR_WHITE}[ ${COLOR_OK}OK${COLOR_WHITE} ]${COLOR_RESET}"
-MSG_SKIPPED="${COLOR_WHITE}[ ${COLOR_SKIPPED}SKIPPED${COLOR_WHITE} ]${COLOR_RESET}"
+def main(args):
 
-ERRORS=0
+	SERVER_DIED = False
+	
+	def is_data_present():
+		proc = Popen(args.client, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+		(stdout, stderr) = proc.communicate("EXISTS TABLE test.hits")
+		if proc.returncode != 0:
+			raise CalledProcessError(proc.returncode, args.client, stderr)
+		
+		return stdout.startswith('1')
+	
+	if args.zookeeper is None:
+		try:
+			check_call(['grep', '-q', '<zookeeper', '/etc/clickhouse-server/config-preprocessed.xml'], )
+			args.zookeeper = True
+		except CalledProcessError:
+			args.zookeeper = False
+	
+	base_dir = os.path.abspath(args.queries)
+	report = et.Element("testsuites", attrib = {'name': 'ClickHouse Tests'})
+	
+	tests_total = 0
+	failures_total = 0
+	disabled_total = 0
+		
+	for suite in sorted(os.listdir(base_dir)):
+		if SERVER_DIED:
+			break
+		
+		suite_dir = os.path.join(base_dir, suite)
+		suite = re.search('^[0-9]+_(.*)$', suite).group(1)
+		if os.path.isdir(suite_dir):
+			print("\nRunning {} tests.\n".format(suite))
+			
+			report_suite = et.Element("testsuite", attrib = {"name": suite})
+			
+			tests = 0
+			failures = 0
+			disabled = 0
+			if 'stateful' in suite and not is_data_present():
+				print("Won't run stateful tests because test data wasn't loaded. See README.txt.")
+				continue
 
+			for case in sorted(filter(lambda case: re.search(args.test, case) if args.test else True, os.listdir(suite_dir))):
+				if SERVER_DIED:
+					break
+					
+				case_file = os.path.join(suite_dir, case)
+				if os.path.isfile(case_file) and (case.endswith('.sh') or case.endswith('.sql')):
+					(name, ext) = os.path.splitext(case)
+					report_testcase = et.Element("testcase", attrib = {"name": name})
+					
+					print "{0:70}: ".format(name),
+					
+					if not args.zookeeper and 'zookeeper' in name:
+						report_testcase.append(et.Element("skipped", attrib = {"message": "no zookeeper"}))
+						disabled = disabled + 1
+						print(MSG_SKIPPED, " - no zookeeper")
+					else:
+						if ext == '.sql':
+							proc = Popen([args.client, '--multiquery'], stdin=PIPE, stdout = PIPE, stderr = PIPE)
+							with open(case_file, 'r') as query_file:
+								query = query_file.read()
+								(stdout, stderr) = proc.communicate(query)
+						else:
+							proc = Popen(case_file, shell = True, stdout = PIPE, stderr = PIPE)
+							(stdout, stderr) = proc.communicate()
+						
+						reference_file = os.path.join(suite_dir, name) + '.reference'
+						
+						if proc.returncode != 0:
+							failure = et.Element("failure", attrib = {"message": "return code {}".format(proc.returncode)})
+							report_testcase.append(failure)
+							
+							stdout_element = et.Element("system-out")
+							stdout_element.text = et.CDATA(stdout)
+							report_testcase.append(stdout_element)
+							
+							failures = failures + 1
+							print("{0} - return code {1}".format(MSG_FAIL, proc.returncode))
+							
+							if stderr:
+								stderr_element = et.Element("system-err")
+								stderr_element.text = et.CDATA(stderr)
+								report_testcase.append(stderr_element)
+								print(stderr)
+						
+							if 'Connection refused' in stderr or 'Attempt to read after eof' in stderr:
+								SERVER_DIED = True
+								
+						elif stderr:
+							failure = et.Element("failure", attrib = {"message": "having stderror"})
+							report_testcase.append(failure)
+							
+							stderr_element = et.Element("system-err")
+							stderr_element.text = et.CDATA(stderr)
+							report_testcase.append(stderr_element)
+							
+							failures = failures + 1
+							print("{0} - having stderror:\n{1}".format(MSG_FAIL, stderr))
+						elif 'Exception' in stdout:
+							failure = et.Element("error", attrib = {"message": "having exception"})
+							report_testcase.append(failure)
+							
+							stdout_element = et.Element("system-out")
+							stdout_element.text = et.CDATA(stdout)
+							report_testcase.append(stdout_element)
+							
+							failures = failures + 1
+							print("{0} - having exception:\n{1}".format(MSG_FAIL, stdout))
+						elif not os.path.isfile(reference_file):
+							skipped = et.Element("skipped", attrib = {"message": "no reference file"})
+							report_testcase.append(skipped)
+							disabled = disabled + 1
+							print("{0} - no reference file".format(MSG_UNKNOWN))
+						else:
+							result_file = os.path.join(suite_dir, name) + '.result'
+							with open(result_file, 'w') as result:
+								result.write(stdout)
+							
+							(diff, _) = Popen(['diff', reference_file, result_file], stdout = PIPE).communicate()
+							
+							if diff:
+								failure = et.Element("failure", attrib = {"message": "result differs with reference"})
+								report_testcase.append(failure)
+								
+								stdout_element = et.Element("system-out")
+								stdout_element.text = et.CDATA(diff)
+								report_testcase.append(stdout_element)
+						
+								failures = failures + 1
+								print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff))
+							else:
+								print(MSG_OK)
+								os.remove(result_file)
+					
+					tests = tests + 1
+					report_suite.append(report_testcase)
+					
+			report_suite.set("tests", str(tests))
+			report_suite.set("failures", str(failures))
+			report_suite.set("disabled", str(disabled))
+			report_suite.set("skipped", str(disabled))
+			report.append(report_suite)
+			
+			tests_total = tests_total + tests
+			failures_total = failures_total + failures
+			disabled_total = disabled_total + disabled
+	
+	report.set("tests", str(tests_total))
+	report.set("failures", str(failures_total))
+	report.set("disabled", str(disabled_total))
+	
+	if args.output is not None:
+		args.output.write(et.tostring(report, encoding = "UTF-8", xml_declaration=True, pretty_print=True))
 
-if [ "$1" == "--zookeeper" ]; then
-	ZOOKEEPER=1
-	shift
-elif [ "$1" == "--no-zookeeper" ]; then
-	ZOOKEEPER=0
-	shift
-elif grep -q '<zookeeper' /etc/clickhouse-server/config-preprocessed.xml; then
-	ZOOKEEPER=1
-else
-	ZOOKEEPER=0
-fi
+	if failures_total > 0:
+		print("{COLOR_FAIL}Having {0} errors!{COLOR_RESET}".format(failures_total, **COLORS))
+		sys.exit(1)
+	else:
+		print("{COLOR_OK}All tests passed.{COLOR_RESET}".format(**COLORS))
+		sys.exit(0)
+			
 
-
-# Тесты, зависящие от данных Метрики - не публикуются наружу. Создаём симлинки на внутренний репозиторий. Весьма неудобно.
-QUERIES_PRIVATE_DIR="../../private/tests/${QUERIES_DIR}"
-if [ -d "$QUERIES_PRIVATE_DIR" ]; then
-	for dir in $(ls $QUERIES_PRIVATE_DIR)
-	do
-		[ -d "$QUERIES_DIR/$dir" ] || ln -s "../$QUERIES_PRIVATE_DIR/$dir" "$QUERIES_DIR/$dir"
-	done
-fi
-
-
-for dir in $(ls $QUERIES_DIR)
-do
-	tests_name=$(echo $dir | sed -E 's/^[0-9_]+//')
-
-	echo
-	echo "Running $tests_name tests."
-	echo
-
-	if [[ "$tests_name" =~ "stateful" && 0 -eq $(echo "EXISTS TABLE test.hits" | $CLIENT_PROGRAM) ]]; then
-		echo "Won't run stateful tests because test data wasn't loaded. See README.txt."
-		continue
-	fi
-
-	for query_file in $QUERIES_DIR/$dir/*$1*.{sql,sh}
-	do
-		# No corresponding files
-		if [[ ! -e "$query_file" ]]; then
-			continue
-		fi
-
-		extension=$(echo $query_file | sed -r 's/^.+\.(sql|sh)$/\1/')
-		test_name=$(basename $query_file .$extension)
-
-		printf "%-70s" "$test_name: "
-
-		if [ $ZOOKEEPER -eq 0 ] && (echo "$test_name" | grep -q 'zookeeper'); then
-			echo -e "$MSG_SKIPPED - no zookeeper"
-			continue
-		fi
-
-		result_file=$QUERIES_DIR/$dir/$test_name.result
-		error_file=$QUERIES_DIR/$dir/$test_name.error
-		reference_file=$QUERIES_DIR/$dir/$test_name.reference
-		diff_file=$QUERIES_DIR/$dir/$test_name.diff
-
-		if [[ "$extension" == "sql" ]]; then
-			$CLIENT_PROGRAM < $query_file > $result_file 2> $error_file
-			ret_code=$?
-		else
-			$query_file > $result_file 2> $error_file
-			ret_code=$?
-		fi
-
-		if [ $ret_code -ne 0 ]; then
-			ERRORS=$(($ERRORS + 1))
-			echo -e "$MSG_FAIL - return code $ret_code"
-			if [ -s "$error_file" ]; then
-				cat $error_file
-			fi
-			# разорвано соединение с сервером
-			if grep -q -E "Connection refused|Attempt to read after eof" $error_file; then
-				exit 1;
-			fi
-		elif [ -s "$error_file" ]; then
-			ERRORS=$(($ERRORS + 1))
-			echo -e "$MSG_FAIL - having stderror:"
-			cat $error_file
-		elif grep -q "Exception" $result_file; then
-			ERRORS=$(($ERRORS + 1))
-			echo -e "$MSG_FAIL - having exception:"
-			cat $result_file
-		elif [ ! -e "$reference_file" ]; then
-			echo -e "$MSG_UNKNOWN - no reference file"
-		else
-			diff $reference_file $result_file > $diff_file
-			if [ -s "$diff_file" ]; then
-				ERRORS=$(($ERRORS + 1))
-				echo -e "$MSG_FAIL - result differs with reference:"
-				cat $diff_file
-			else
-				echo -e "$MSG_OK"
-				rm $error_file $result_file $diff_file
-			fi
-		fi
-	done
-done
-
-
-echo
-
-if [ $ERRORS -gt 0 ]; then
-	echo -e "${COLOR_FAIL}Having $ERRORS errors!${COLOR_RESET}"
-	exit 1
-else
-	echo -e "${COLOR_OK}All tests passed.${COLOR_RESET}"
-	exit 0
-fi
+if __name__ == '__main__':
+	parser = ArgumentParser(description = 'ClickHouse functional tests')
+	parser.add_argument('-q', '--queries', default = 'queries', help = 'Path to queries dir')
+	parser.add_argument('-c', '--client', default = 'clickhouse-client', help = 'Client program')
+	parser.add_argument('-o', '--output', type = FileType('w'), help = 'Output xUnit compliant test report file')
+	parser.add_argument('test', nargs = '?', help = 'Optional test case name regex')
+	
+	group = parser.add_mutually_exclusive_group(required = False)
+	group.add_argument('--zookeeper', action = 'store_true', default = None, dest = 'zookeeper', help = 'Run zookeeper related tests')
+	group.add_argument('--no-zookeeper', action = 'store_false', default = None, dest = 'zookeeper', help = 'Do not run zookeeper related tests')
+	
+	args = parser.parse_args()
+	
+	main(args)
