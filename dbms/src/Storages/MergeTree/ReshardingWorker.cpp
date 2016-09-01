@@ -160,6 +160,7 @@ std::string computeHashFromString(const std::string & in)
 	return {out, hash_size};
 }
 
+#if 0
 /// Compute the value value from the checksum files of a given partition.
 /// The hash function we use is SipHash.
 std::string computeHashFromPartition(const std::string & data_path, const std::string & partition_name)
@@ -205,6 +206,7 @@ std::string computeHashFromPartition(const std::string & data_path, const std::s
 
 	return {out, hash_size};
 }
+#endif
 
 }
 
@@ -1187,6 +1189,18 @@ void ReshardingWorker::repairLogRecord(LogRecord & log_record)
 			found = false;
 		else
 		{
+			/// XXX Disabled this check because, in order to make it reliable,
+			/// we should disable merging for this partition. This is not a good
+			/// idea anyway.
+			/// In a a future release, we should implement a fence that would,
+			/// for a given partition, separate the data that are to be resharded,
+			/// from the data that are not to be touched. The tricky part is to
+			/// get it consistent on *each* replica (e.g. imagine that a resharding
+			/// operation starts while an INSERT operation is not fully replicated
+			/// on all the replicas).
+			/// For now we make the assumption that no write operations happen
+			/// while resharding a partition.
+#if 0
 			auto current_hash = computeHashFromPartition(storage.data.getFullPath(),
 				current_job.partition);
 			if (current_hash != log_record.partition_hash)
@@ -1196,6 +1210,7 @@ void ReshardingWorker::repairLogRecord(LogRecord & log_record)
 					" time we were online");
 				found = false;
 			}
+#endif
 		}
 	}
 	else if (log_record.operation == LogRecord::OP_ATTACH)
@@ -1537,7 +1552,7 @@ void ReshardingWorker::createLog()
 {
 	LOG_DEBUG(log, "Creating log");
 
-	auto & storage = *(current_job.storage);
+	//auto & storage = *(current_job.storage);
 	auto zookeeper = context.getZooKeeper();
 
 	auto log_path = getLocalJobPath() + "/log";
@@ -1558,8 +1573,11 @@ void ReshardingWorker::createLog()
 		LogRecord log_record{zookeeper};
 		log_record.operation = LogRecord::OP_DROP;
 		log_record.partition = current_job.partition;
+		/// Disabled. See comment in repairLogRecord().
+#if 0
 		log_record.partition_hash = computeHashFromPartition(storage.data.getFullPath(),
 			current_job.partition);
+#endif
 		log_record.state = LogRecord::READY;
 
 		log_record.enqueue(log_path);
