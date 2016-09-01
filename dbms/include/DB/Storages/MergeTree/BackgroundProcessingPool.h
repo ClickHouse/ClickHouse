@@ -37,7 +37,7 @@ public:
 	public:
 		void incrementCounter(const String & name, int value = 1)
 		{
-			std::unique_lock<std::mutex> lock(pool.mutex);
+			std::unique_lock<std::mutex> lock(pool.counters_mutex);
 			local_counters[name] += value;
 			pool.counters[name] += value;
 		}
@@ -103,8 +103,10 @@ private:
 	static constexpr double sleep_seconds_random_part = 1.0;
 
 	Tasks tasks; 		/// Задачи в порядке, в котором мы планируем их выполнять.
+	std::mutex tasks_mutex;
+
 	Counters counters;
-	std::mutex mutex;	/// Для работы со списком tasks, а также с counters (когда threads не пустой).
+	std::mutex counters_mutex;
 
 	Threads threads;
 
