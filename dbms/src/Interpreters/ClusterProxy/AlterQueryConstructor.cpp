@@ -1,7 +1,7 @@
 #include <DB/Interpreters/ClusterProxy/AlterQueryConstructor.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/DataStreams/RemoteBlockInputStream.h>
-#include <DB/DataStreams/DeferredExecutionBlockInputStream.h>
+#include <DB/DataStreams/LazyBlockInputStream.h>
 
 namespace DB
 {
@@ -23,7 +23,11 @@ BlockInputStreamPtr AlterQueryConstructor::createLocal(ASTPtr query_ast, const C
 	/// nodes, it is very important to defer the execution of a local query so as
 	/// to prevent any deadlock.
 	auto interpreter = std::make_shared<InterpreterAlterQuery>(query_ast, context);
-	auto stream = std::make_shared<DeferredExecutionBlockInputStream>(interpreter);
+	auto stream = std::make_shared<LazyBlockInputStream>(
+		[interpreter]() mutable
+		{
+			return interpreter->execute().in;
+		});
 	return stream;
 }
 
