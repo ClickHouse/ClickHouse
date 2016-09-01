@@ -46,7 +46,7 @@ public:
 
 	operator bool() const;
 
-	/// Register a function that checks whether lock acquisition should be cancelled.
+	/// Register a function that cancels lock operations if requested.
 	void setCancellationHook(CancellationHook cancellation_hook_);
 
 	/// Get a read lock.
@@ -65,12 +65,15 @@ public:
 	template <Type, Mode = Blocking> class Guard;
 
 private:
+	/// Cancel any ongoing operation if requested.
 	template <RWLock::Type lock_type> void acquireImpl(RWLock::Mode mode);
 	void abortIfRequested();
 
 private:
+	/// Helper that acquires an alive ZooKeeper session.
 	GetZooKeeper get_zookeeper;
 	EventPtr event = std::make_shared<Poco::Event>();
+	/// Function that cancels barrier operations if requested.
 	CancellationHook cancellation_hook;
 	/// Path to the lock request queue.
 	std::string path;
