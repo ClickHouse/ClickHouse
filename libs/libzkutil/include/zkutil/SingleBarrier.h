@@ -7,8 +7,16 @@
 namespace zkutil
 {
 
-/** Single distributed barrier for ZooKeeper.
-  */
+/// Implementation of a distributed single barrier for ZooKeeper.
+/// Consider a barrier with N slots. A node that wants to enter this barrier
+/// creates a uniquely identified token and puts it in a free slot, then waits
+/// until all of the N slots have been taken.
+/// This implementation allows entering a barrier more than once. This is done
+/// by prefixing tokens with a tag which is an integer number representing the
+/// number of times this barrier has already been crossed. When a node attempts
+/// to puts its token into a slot, first it looks for lingering obsolete tokens,
+/// then, if found, deletes them. If a node has put its token into the last free
+/// slot, it increments the tag value.
 class SingleBarrier final
 {
 public:
