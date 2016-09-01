@@ -66,7 +66,7 @@ StoragePtr TableFunctionMerge::execute(ASTPtr ast_function, Context & context) c
 			" - name of source database and regexp for table names.",
 			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-	args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], context);
+	args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], context);
 	args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
 
 	String source_database 		= static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
