@@ -34,6 +34,11 @@ static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 static constexpr size_t TABLES_PARALLEL_LOAD_BUNCH_SIZE = 100;
 
 
+static String getTableMetadataPath(const String & base_path, const String & table_name)
+{
+	return base_path + (endsWith(base_path, "/") ? "" : "/") + escapeForFileName(table_name) + ".sql";
+}
+
 static void loadTable(
 	Context & context,
 	const String & database_metadata_path,
@@ -274,9 +279,8 @@ void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr &
 			throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 	}
 
-	String table_name_escaped = escapeForFileName(table_name);
-	String table_metadata_tmp_path = path + "/" + table_name_escaped + ".sql.tmp";
-	String table_metadata_path = path + "/" + table_name_escaped + ".sql";
+	String table_metadata_path = getTableMetadataPath(path, table_name);
+	String table_metadata_tmp_path = table_metadata_path + ".tmp";
 	String statement;
 
 	{
@@ -332,8 +336,7 @@ void DatabaseOrdinary::removeTable(const String & table_name)
 {
 	StoragePtr res = detachTable(table_name);
 
-	String table_name_escaped = escapeForFileName(table_name);
-	String table_metadata_path = path + "/" + table_name_escaped + ".sql";
+	String table_metadata_path = getTableMetadataPath(path, table_name);
 
 	try
 	{
@@ -349,8 +352,7 @@ void DatabaseOrdinary::removeTable(const String & table_name)
 
 static ASTPtr getCreateQueryImpl(const String & path, const String & table_name)
 {
-	String table_name_escaped = escapeForFileName(table_name);
-	String table_metadata_path = path + "/" + table_name_escaped + ".sql";
+	String table_metadata_path = getTableMetadataPath(path, table_name);
 
 	String query;
 	{
@@ -396,6 +398,22 @@ void DatabaseOrdinary::renameTable(
 	/// NOTE Неатомарно.
 	to_database_concrete->createTable(to_table_name, table, ast, table->getName());
 	removeTable(table_name);
+}
+
+
+time_t DatabaseOrdinary::getTableMetadataModificationTime(const String & table_name)
+{
+	String table_metadata_path = getTableMetadataPath(path, table_name);
+	Poco::File meta_file(table_metadata_path);
+
+	if (meta_file.exists())
+	{
+		return meta_file.getLastModified().epochTime();
+	}
+	else
+	{
+		return static_cast<time_t>(0);
+	}
 }
 
 
