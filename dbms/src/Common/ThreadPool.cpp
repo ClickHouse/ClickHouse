@@ -27,10 +27,14 @@ void ThreadPool::wait()
 {
 	{
 		std::unique_lock<std::mutex> lock(mutex);
-		has_free_thread.wait(lock, [this] { return active_jobs == 0 || shutdown; });
+		has_free_thread.wait(lock, [this] { return active_jobs == 0; });
 
-		if (!exceptions.empty())
-			std::rethrow_exception(exceptions.front());
+		if (first_exception)
+		{
+			std::exception_ptr exception;
+			std::swap(exception, first_exception);
+			std::rethrow_exception(exception);
+		}
 	}
 }
 
@@ -59,12 +63,14 @@ void ThreadPool::worker()
 	while (true)
 	{
 		Job job;
+		bool need_shutdown = false;
 
 		{
 			std::unique_lock<std::mutex> lock(mutex);
 			has_new_job_or_shutdown.wait(lock, [this] { return shutdown || !jobs.empty(); });
+			need_shutdown = shutdown;
 
-			if (!shutdown)
+			if (!jobs.empty())
 			{
 				job = std::move(jobs.front());
 				jobs.pop();
@@ -75,21 +81,25 @@ void ThreadPool::worker()
 			}
 		}
 
-		try
+		if (!need_shutdown)
 		{
-			job();
-		}
-		catch (...)
-		{
+			try
 			{
-				std::unique_lock<std::mutex> lock(mutex);
-				exceptions.push_back(std::current_exception());
-				shutdown = true;
-				--active_jobs;
+				job();
 			}
-			has_free_thread.notify_one();
-			has_new_job_or_shutdown.notify_all();
-			return;
+			catch (...)
+			{
+				{
+					std::unique_lock<std::mutex> lock(mutex);
+					if (!first_exception)
+						first_exception = std::current_exception();
+					shutdown = true;
+					--active_jobs;
+				}
+				has_free_thread.notify_one();
+				has_new_job_or_shutdown.notify_all();
+				return;
+			}
 		}
 
 		{
