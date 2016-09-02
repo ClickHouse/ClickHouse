@@ -88,7 +88,7 @@ def main(args):
 					(name, ext) = os.path.splitext(case)
 					report_testcase = et.Element("testcase", attrib = {"name": name})
 					
-					print "{0:70}: ".format(name),
+					print "{0:70}".format(name + ": "),
 					
 					if not args.zookeeper and 'zookeeper' in name:
 						report_testcase.append(et.Element("skipped", attrib = {"message": "no zookeeper"}))
@@ -193,10 +193,10 @@ def main(args):
 		args.output.write(et.tostring(report, encoding = "UTF-8", xml_declaration=True, pretty_print=True))
 
 	if failures_total > 0:
-		print("{COLOR_FAIL}Having {0} errors!{COLOR_RESET}".format(failures_total, **COLORS))
+		print("\n{COLOR_FAIL}Having {0} errors!{COLOR_RESET}".format(failures_total, **COLORS))
 		sys.exit(1)
 	else:
-		print("{COLOR_OK}All tests passed.{COLOR_RESET}".format(**COLORS))
+		print("\n{COLOR_OK}All tests passed.{COLOR_RESET}".format(**COLORS))
 		sys.exit(0)
 			
 
