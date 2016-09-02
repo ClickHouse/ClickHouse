@@ -120,7 +120,17 @@ void BackgroundProcessingPool::threadFunction()
 
 				if (!tasks.empty())
 				{
-					/// O(n), n - число задач. По сути, количество таблиц. Обычно их мало.
+					/** Number of tasks is about number of tables of MergeTree family.
+					  * Select task with minimal 'next_time_to_execute', and place to end of queue.
+					  * Remind that one task could be selected and executed simultaneously from many threads.
+					  *
+					  * Tasks is like priority queue,
+					  *  but we must have ability to change priority of any task in queue.
+					  *
+					  * If there is too much tasks, select from first 100.
+					  * TODO Change list to multimap.
+					  */
+					size_t i = 0;
 					for (const auto & handle : tasks)
 					{
 						if (handle->removed)
@@ -133,6 +143,10 @@ void BackgroundProcessingPool::threadFunction()
 							min_time = next_time_to_execute;
 							task = handle;
 						}
+
+						++i;
+						if (i > 100)
+							break;
 					}
 
 					if (task)	/// Переложим в конец очереди (уменьшим приоритет среди задач с одинаковым next_time_to_execute).
