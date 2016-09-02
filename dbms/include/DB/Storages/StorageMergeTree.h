@@ -131,47 +131,7 @@ private:
 
 	BackgroundProcessingPool::TaskHandle merge_task_handle;
 
-	/// While exists, marks parts as 'currently_merging' and reserves free space on filesystem.
-	/// It's possible to mark parts before.
-	struct CurrentlyMergingPartsTagger
-	{
-		MergeTreeData::DataPartsVector parts;
-		DiskSpaceMonitor::ReservationPtr reserved_space;
-		StorageMergeTree & storage;
-
-		CurrentlyMergingPartsTagger(const MergeTreeData::DataPartsVector & parts_, size_t total_size, StorageMergeTree & storage_)
-			: parts(parts_), storage(storage_)
-		{
-			/// Assume mutex is already locked, because this method is called from mergeTask.
-			reserved_space = DiskSpaceMonitor::reserve(storage.full_path, total_size); /// May throw.
-			for (const auto & part : parts)
-			{
-				if (storage.currently_merging.count(part))
-					throw Exception("Tagging alreagy tagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
-			}
-			storage.currently_merging.insert(parts.begin(), parts.end());
-		}
-
-		~CurrentlyMergingPartsTagger()
-		{
-			try
-			{
-				std::lock_guard<std::mutex> lock(storage.currently_merging_mutex);
-				for (const auto & part : parts)
-				{
-					if (!storage.currently_merging.count(part))
-						throw Exception("Untagging already untagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
-					storage.currently_merging.erase(part);
-				}
-			}
-			catch (...)
-			{
-				tryLogCurrentException("~CurrentlyMergingPartsTagger");
-			}
-		}
-	};
-
-	using CurrentlyMergingPartsTaggerPtr = std::shared_ptr<CurrentlyMergingPartsTagger>;
+	friend struct CurrentlyMergingPartsTagger;
 
 	StorageMergeTree(
 		const String & path_,
