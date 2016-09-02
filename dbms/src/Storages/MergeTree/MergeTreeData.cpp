@@ -597,16 +597,12 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 	using NameToType = std::map<String, DataTypePtr>;
 	NameToType new_types;
 	for (const NameAndTypePair & column : new_columns)
-	{
-		new_types[column.name] = column.type;
-	}
+		new_types.emplace(column.name, column.type);
 
 	/// Сколько столбцов сейчас в каждой вложенной структуре. Столбцы не из вложенных структур сюда тоже попадут и не помешают.
-	std::map<String, int> nested_table_counts;
+	std::map<String, size_t> nested_table_counts;
 	for (const NameAndTypePair & column : old_columns)
-	{
 		++nested_table_counts[DataTypeNested::extractNestedTableName(column.name)];
-	}
 
 	for (const NameAndTypePair & column : old_columns)
 	{
@@ -617,14 +613,14 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 			if (!part || part->hasColumnFiles(column.name))
 			{
 				/// Столбец нужно удалить.
-				DataTypePtr observed_type;
+				const IDataType * observed_type;
 				if (is_nullable)
 				{
 					const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*column.type);
-					observed_type = nullable_type.getNestedType();
+					observed_type = nullable_type.getNestedType().get();
 				}
 				else
-					observed_type = column.type;
+					observed_type = column.type.get();
 
 				String escaped_column = escapeForFileName(column.name);
 				out_rename_map[escaped_column + ".bin"] = "";
@@ -632,14 +628,12 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 				if (is_nullable)
 				{
-					/// It is a nullable column so remove its null map
-					/// and its corresponding marks file.
 					out_rename_map[escaped_column + ".null"] = "";
 					out_rename_map[escaped_column + ".null_mrk"] = "";
 				}
 
 				/// Если это массив или последний столбец вложенной структуры, нужно удалить файлы с размерами.
-				if (typeid_cast<const DataTypeArray *>(observed_type.get()))
+				if (typeid_cast<const DataTypeArray *>(observed_type))
 				{
 					String nested_table = DataTypeNested::extractNestedTableName(column.name);
 					/// Если это был последний столбец, относящийся к этим файлам .size0, удалим файлы.
@@ -660,10 +654,20 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 			if (new_type_name != old_type->getName() && (!part || part->hasColumnFiles(column.name)))
 			{
+				bool is_nullable = new_type->isNullable();
+				const IDataType * observed_type;
+				if (is_nullable)
+				{
+					const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*new_type);
+					observed_type = nullable_type.getNestedType().get();
+				}
+				else
+					observed_type = new_type;
+
 				// При ALTER между Enum с одинаковым подлежащим типом столбцы не трогаем, лишь просим обновить columns.txt
 				if (part
-					&& ((typeid_cast<const DataTypeEnum8 *>(new_type) && typeid_cast<const DataTypeEnum8 *>(old_type))
-						|| (typeid_cast<const DataTypeEnum16 *>(new_type) && typeid_cast<const DataTypeEnum16 *>(old_type))))
+					&& ((typeid_cast<const DataTypeEnum8 *>(observed_type) && typeid_cast<const DataTypeEnum8 *>(old_type))
+						|| (typeid_cast<const DataTypeEnum16 *>(observed_type) && typeid_cast<const DataTypeEnum16 *>(old_type))))
 				{
 					out_force_update_metadata = true;
 					continue;
@@ -693,13 +697,31 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 				const String escaped_expr = escapeForFileName(out_names[0]);
 				const String escaped_column = escapeForFileName(column.name);
+
+				/// Information on how to update the column data.
 				out_rename_map[escaped_expr + ".bin"] = escaped_column + ".bin";
 				out_rename_map[escaped_expr + ".mrk"] = escaped_column + ".mrk";
 
-				if (new_type->isNullable())
+				/// Information on how to update the sizes if the column is an array.
+				auto array_type = typeid_cast<const DataTypeArray *>(observed_type);
+				if (array_type != nullptr)
 				{
-					/// The original column, whether it be nullable or not,
-					/// is converted to a nullable column.
+					size_t level = 1;
+					while ((array_type = typeid_cast<const DataTypeArray *>(
+						array_type->getNestedType().get())) != nullptr)
+						++level;
+
+					for (size_t i = 0; i < level; ++i)
+					{
+						const auto suffix = ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(i);
+						out_rename_map[escaped_expr + suffix + ".bin"] = escaped_column + suffix + ".bin";
+						out_rename_map[escaped_expr + suffix + ".mrk"] = escaped_column + suffix + ".mrk";
+					}
+				}
+
+				/// Information on how to update the null map if it is a nullable column.
+				if (is_nullable)
+				{
 					out_rename_map[escaped_expr + ".null"] = escaped_column + ".null";
 					out_rename_map[escaped_expr + ".null_mrk"] = escaped_column + ".null_mrk";
 				}
@@ -841,7 +863,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 		if (it.second == "")
 			new_checksums.files.erase(it.first);
 		else
-			new_checksums.files[it.second] = add_checksums.files[it.first];
+			new_checksums.files[it.second] = add_checksums.files.at(it.first);
 	}
 
 	if (new_primary_key_file_size)
@@ -889,15 +911,16 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 		for (auto it : rename_map)
 		{
 			String name = it.second.empty() ? it.first : it.second;
-			if (Poco::File{path + name}.exists())
-				Poco::File(path + name).renameTo(path + name + ".tmp2");
+			Poco::File file{path + name};
+			if (file.exists())
+				file.renameTo(path + name + ".tmp2");
 		}
 
 		/// 2) Переместим на их место новые и обновим метаданные в оперативке.
 		for (auto it : rename_map)
 		{
 			if (!it.second.empty())
-				Poco::File(path + it.first).renameTo(path + it.second);
+				Poco::File{path + it.first}.renameTo(path + it.second);
 		}
 
 		DataPart & mutable_part = const_cast<DataPart &>(*data_part);
@@ -908,8 +931,9 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 		for (auto it : rename_map)
 		{
 			String name = it.second.empty() ? it.first : it.second;
-			if (Poco::File{path + name + ".tmp2"}.exists())
-				Poco::File(path + name + ".tmp2").remove();
+			Poco::File file{path + name + ".tmp2"};
+			if (file.exists())
+				file.remove();
 		}
 
 		mutable_part.size_in_bytes = MergeTreeData::DataPart::calcTotalSize(path);
