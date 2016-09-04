@@ -12,6 +12,9 @@ from subprocess import check_call
 from subprocess import Popen
 from subprocess import PIPE
 from subprocess import CalledProcessError
+from datetime import datetime
+from time import sleep
+from errno import ESRCH
 
 if sys.stdout.isatty():
 	COLORS = {
@@ -88,90 +91,108 @@ def main(args):
 					(name, ext) = os.path.splitext(case)
 					report_testcase = et.Element("testcase", attrib = {"name": name})
 					
-					print "{0:70}: ".format(name),
+					print "{0:70}".format(name + ": "),
 					
 					if not args.zookeeper and 'zookeeper' in name:
 						report_testcase.append(et.Element("skipped", attrib = {"message": "no zookeeper"}))
 						disabled = disabled + 1
 						print(MSG_SKIPPED, " - no zookeeper")
 					else:
-						if ext == '.sql':
-							proc = Popen([args.client, '--multiquery'], stdin=PIPE, stdout = PIPE, stderr = PIPE)
-							with open(case_file, 'r') as query_file:
-								query = query_file.read()
-								(stdout, stderr) = proc.communicate(query)
-						else:
-							proc = Popen(case_file, shell = True, stdout = PIPE, stderr = PIPE)
-							(stdout, stderr) = proc.communicate()
-						
 						reference_file = os.path.join(suite_dir, name) + '.reference'
+						stdout_file = os.path.join(suite_dir, name) + '.stdout'
+						stderr_file = os.path.join(suite_dir, name) + '.stderr'
 						
-						if proc.returncode != 0:
-							failure = et.Element("failure", attrib = {"message": "return code {}".format(proc.returncode)})
-							report_testcase.append(failure)
-							
-							stdout_element = et.Element("system-out")
-							stdout_element.text = et.CDATA(stdout)
-							report_testcase.append(stdout_element)
-							
-							failures = failures + 1
-							print("{0} - return code {1}".format(MSG_FAIL, proc.returncode))
-							
-							if stderr:
-								stderr_element = et.Element("system-err")
-								stderr_element.text = et.CDATA(stderr)
-								report_testcase.append(stderr_element)
-								print(stderr)
-						
-							if 'Connection refused' in stderr or 'Attempt to read after eof' in stderr:
-								SERVER_DIED = True
-								
-						elif stderr:
-							failure = et.Element("failure", attrib = {"message": "having stderror"})
-							report_testcase.append(failure)
-							
-							stderr_element = et.Element("system-err")
-							stderr_element.text = et.CDATA(stderr)
-							report_testcase.append(stderr_element)
-							
-							failures = failures + 1
-							print("{0} - having stderror:\n{1}".format(MSG_FAIL, stderr))
-						elif 'Exception' in stdout:
-							failure = et.Element("error", attrib = {"message": "having exception"})
-							report_testcase.append(failure)
-							
-							stdout_element = et.Element("system-out")
-							stdout_element.text = et.CDATA(stdout)
-							report_testcase.append(stdout_element)
-							
-							failures = failures + 1
-							print("{0} - having exception:\n{1}".format(MSG_FAIL, stdout))
-						elif not os.path.isfile(reference_file):
-							skipped = et.Element("skipped", attrib = {"message": "no reference file"})
-							report_testcase.append(skipped)
-							disabled = disabled + 1
-							print("{0} - no reference file".format(MSG_UNKNOWN))
+						if ext == '.sql':
+							command = "{0} --multiquery < {1} > {2} 2> {3}".format(args.client, case_file, stdout_file, stderr_file)
 						else:
-							result_file = os.path.join(suite_dir, name) + '.result'
-							with open(result_file, 'w') as result:
-								result.write(stdout)
+							command = "{0} > {1} 2> {2}".format(case_file, stdout_file, stderr_file)
+						
+						proc = Popen(command, shell = True)
+						start_time = datetime.now()
+						while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
+							sleep(0)
+						
+						if proc.returncode is None:
+							try:
+								proc.kill()
+							except OSError as e:
+								if e.errno != ESRCH:
+									raise
 							
-							(diff, _) = Popen(['diff', reference_file, result_file], stdout = PIPE).communicate()
+							failure = et.Element("failure", attrib = {"message": "Timeout"})
+							report_testcase.append(failure)
 							
-							if diff:
-								failure = et.Element("failure", attrib = {"message": "result differs with reference"})
+							failures = failures + 1
+							print("{0} - Timeout!".format(MSG_FAIL))
+						else:
+							stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
+							stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
+							
+							if proc.returncode != 0:
+								failure = et.Element("failure", attrib = {"message": "return code {}".format(proc.returncode)})
 								report_testcase.append(failure)
 								
 								stdout_element = et.Element("system-out")
-								stdout_element.text = et.CDATA(diff)
+								stdout_element.text = et.CDATA(stdout)
 								report_testcase.append(stdout_element)
-						
+								
 								failures = failures + 1
-								print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff))
+								print("{0} - return code {1}".format(MSG_FAIL, proc.returncode))
+								
+								if stderr:
+									stderr_element = et.Element("system-err")
+									stderr_element.text = et.CDATA(stderr)
+									report_testcase.append(stderr_element)
+									print(stderr)
+							
+								if 'Connection refused' in stderr or 'Attempt to read after eof' in stderr:
+									SERVER_DIED = True
+									
+							elif stderr:
+								failure = et.Element("failure", attrib = {"message": "having stderror"})
+								report_testcase.append(failure)
+								
+								stderr_element = et.Element("system-err")
+								stderr_element.text = et.CDATA(stderr)
+								report_testcase.append(stderr_element)
+								
+								failures = failures + 1
+								print("{0} - having stderror:\n{1}".format(MSG_FAIL, stderr))
+							elif 'Exception' in stdout:
+								failure = et.Element("error", attrib = {"message": "having exception"})
+								report_testcase.append(failure)
+								
+								stdout_element = et.Element("system-out")
+								stdout_element.text = et.CDATA(stdout)
+								report_testcase.append(stdout_element)
+								
+								failures = failures + 1
+								print("{0} - having exception:\n{1}".format(MSG_FAIL, stdout))
+							elif not os.path.isfile(reference_file):
+								skipped = et.Element("skipped", attrib = {"message": "no reference file"})
+								report_testcase.append(skipped)
+								disabled = disabled + 1
+								print("{0} - no reference file".format(MSG_UNKNOWN))
 							else:
-								print(MSG_OK)
-								os.remove(result_file)
-					
+								(diff, _) = Popen(['diff', reference_file, stdout_file], stdout = PIPE).communicate()
+								
+								if diff:
+									failure = et.Element("failure", attrib = {"message": "result differs with reference"})
+									report_testcase.append(failure)
+									
+									stdout_element = et.Element("system-out")
+									stdout_element.text = et.CDATA(diff)
+									report_testcase.append(stdout_element)
+							
+									failures = failures + 1
+									print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff))
+								else:
+									print(MSG_OK)
+									if os.path.exists(stdout_file):
+										os.remove(stdout_file)
+									if os.path.exists(stderr_file):
+										os.remove(stderr_file)
+						
 					tests = tests + 1
 					report_suite.append(report_testcase)
 					
@@ -193,10 +214,10 @@ def main(args):
 		args.output.write(et.tostring(report, encoding = "UTF-8", xml_declaration=True, pretty_print=True))
 
 	if failures_total > 0:
-		print("{COLOR_FAIL}Having {0} errors!{COLOR_RESET}".format(failures_total, **COLORS))
+		print("\n{COLOR_FAIL}Having {0} errors!{COLOR_RESET}".format(failures_total, **COLORS))
 		sys.exit(1)
 	else:
-		print("{COLOR_OK}All tests passed.{COLOR_RESET}".format(**COLORS))
+		print("\n{COLOR_OK}All tests passed.{COLOR_RESET}".format(**COLORS))
 		sys.exit(0)
 			
 
@@ -205,6 +226,7 @@ if __name__ == '__main__':
 	parser.add_argument('-q', '--queries', default = 'queries', help = 'Path to queries dir')
 	parser.add_argument('-c', '--client', default = 'clickhouse-client', help = 'Client program')
 	parser.add_argument('-o', '--output', type = FileType('w'), help = 'Output xUnit compliant test report file')
+	parser.add_argument('-t', '--timeout', type = int, default = 600, help = 'Timeout for each test case in seconds')
 	parser.add_argument('test', nargs = '?', help = 'Optional test case name regex')
 	
 	group = parser.add_mutually_exclusive_group(required = False)
