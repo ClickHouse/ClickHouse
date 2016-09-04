@@ -129,37 +129,6 @@ bool functionIsInOrGlobalInOperator(const String & name)
 	return name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn";
 }
 
-/// Create a function uniquely identified by the first two parameters. If this
-/// function actually is a CASE expression, record this information.
-FunctionPtr getFunctionFromFactory(const String & name, const ASTFunction::Genus genus, const Context & context)
-{
-	FunctionPtr function = FunctionFactory::instance().get(name, context);
-
-	if (genus == ASTFunction::Genus::CASE_WITH_EXPR)
-	{
-		FunctionTransform * fun_transform = typeid_cast<FunctionTransform *>(&*function);
-		if (fun_transform == nullptr)
-			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-		fun_transform->setCaseMode();
-	}
-	else if (genus == ASTFunction::Genus::CASE_WITHOUT_EXPR)
-	{
-		FunctionMultiIf * fun_multi_if = typeid_cast<FunctionMultiIf *>(&*function);
-		if (fun_multi_if == nullptr)
-			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-		fun_multi_if->setCaseMode();
-	}
-	else if (genus == ASTFunction::Genus::CASE_ARRAY)
-	{
-		FunctionArray * fun_array = typeid_cast<FunctionArray *>(&*function);
-		if (fun_array == nullptr)
-			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-		fun_array->setCaseMode();
-	}
-
-	return function;
-}
-
 void removeDuplicateColumns(NamesAndTypesList & columns)
 {
 	std::set<String> names;
@@ -1753,7 +1722,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				return;
 			}
 
-			const FunctionPtr & function = getFunctionFromFactory(node->name, node->genus, context);
+			const FunctionPtr & function = FunctionFactory::instance().get(node->name, context);
 
 			Names argument_names;
 			DataTypes argument_types;
