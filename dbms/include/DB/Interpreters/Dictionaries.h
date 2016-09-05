@@ -23,8 +23,14 @@ private:
 	MultiVersion<TechDataHierarchy> tech_data_hierarchy;
 	MultiVersion<RegionsNames> regions_names;
 
-	/// Периодичность обновления справочников, в секундах.
+	/// Directories' updating periodicity (in seconds).
 	int reload_period;
+
+	/** If all dictionaries were not load at least once try reload them with exponential delay (1, 2, ... reload_period).
+	 * If all dictionaries were load update them using constant reload_period delay.
+	 */
+	bool was_load_once;
+	int cur_reload_period;
 
 	std::thread reloading_thread;
 	Poco::Event destroy;
@@ -55,7 +61,7 @@ private:
 	}
 
 
-	/// Обновляет справочники.
+	/// Updates directories (dictionaries).
 	void reloadImpl(const bool throw_on_error = false)
 	{
 		/** Если не удаётся обновить справочники, то несмотря на это, не кидаем исключение (используем старые справочники).
@@ -115,29 +121,39 @@ private:
 		}
 
 		if (!was_exception)
+		{
 			LOG_INFO(log, "Loaded dictionaries.");
+
+			was_load_once = true;
+			cur_reload_period = reload_period;
+		}
 	}
 
 
-
-	/// Обновляет каждые reload_period секунд.
+	/// Updates directories (dictionaries) every reload_period seconds.
 	void reloadPeriodically()
 	{
 		setThreadName("DictReload");
 
 		while (true)
 		{
-			if (destroy.tryWait(reload_period * 1000))
+			if (destroy.tryWait(cur_reload_period * 1000))
 				return;
 
 			reloadImpl();
+
+			if (!was_load_once)
+				cur_reload_period = std::min(reload_period, 2*cur_reload_period); /// exponentially increase delay
 		}
 	}
 
 public:
-	/// Справочники будут обновляться в отдельном потоке, каждые reload_period секунд.
+	/// Every reload_period seconds directories are updated inside a separate thread.
 	Dictionaries(const bool throw_on_error, const int reload_period_)
-		: reload_period(reload_period_), log(&Logger::get("Dictionaries"))
+		: reload_period(reload_period_),
+		was_load_once(false),
+		cur_reload_period(1),
+		log(&Logger::get("Dictionaries"))
 	{
 		reloadImpl(throw_on_error);
 		reloading_thread = std::thread([this] { reloadPeriodically(); });
