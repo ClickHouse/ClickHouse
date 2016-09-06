@@ -14,7 +14,7 @@ namespace DB
 
 class Context;
 
-/// Словари Метрики, которые могут использоваться в функциях.
+/// Metrica's Dictionaries which can be used in functions.
 
 class Dictionaries
 {
@@ -25,12 +25,8 @@ private:
 
 	/// Directories' updating periodicity (in seconds).
 	int reload_period;
-
-	/** If all dictionaries were not load at least once try reload them with exponential delay (1, 2, ... reload_period).
-	 * If all dictionaries were load update them using constant reload_period delay.
-	 */
-	bool was_load_once;
-	int cur_reload_period;
+	int cur_reload_period = 1;
+	bool is_fast_start_stage = true;
 
 	std::thread reloading_thread;
 	Poco::Event destroy;
@@ -62,7 +58,7 @@ private:
 
 
 	/// Updates directories (dictionaries).
-	void reloadImpl(const bool throw_on_error = false)
+	bool reloadImpl(const bool throw_on_error = false)
 	{
 		/** Если не удаётся обновить справочники, то несмотря на это, не кидаем исключение (используем старые справочники).
 		  * Если старых корректных справочников нет, то при использовании функций, которые от них зависят,
@@ -76,7 +72,7 @@ private:
 
 		bool was_exception = false;
 
-		if (config.has(TechDataHierarchy::required_key))
+		if (config.has(TechDataHierarchy::required_key) && (!is_fast_start_stage || !tech_data_hierarchy.get()))
 		{
 			try
 			{
@@ -90,7 +86,7 @@ private:
 			}
 		}
 
-		if (config.has(RegionsHierarchies::required_key))
+		if (config.has(RegionsHierarchies::required_key) && (!is_fast_start_stage || !regions_hierarchies.get()))
 		{
 			try
 			{
@@ -105,7 +101,7 @@ private:
 			}
 		}
 
-		if (config.has(RegionsNames::required_key))
+		if (config.has(RegionsNames::required_key) && (!is_fast_start_stage || !regions_names.get()))
 		{
 			try
 			{
@@ -121,16 +117,16 @@ private:
 		}
 
 		if (!was_exception)
-		{
 			LOG_INFO(log, "Loaded dictionaries.");
 
-			was_load_once = true;
-			cur_reload_period = reload_period;
-		}
+		return !was_exception;
 	}
 
 
-	/// Updates directories (dictionaries) every reload_period seconds.
+	/** Updates directories (dictionaries) every reload_period seconds.
+	 * If all dictionaries are not loaded at least once, try reload them with exponential delay (1, 2, ... reload_period).
+	 * If all dictionaries are loaded, update them using constant reload_period delay.
+	 */
 	void reloadPeriodically()
 	{
 		setThreadName("DictReload");
@@ -140,10 +136,18 @@ private:
 			if (destroy.tryWait(cur_reload_period * 1000))
 				return;
 
-			reloadImpl();
+			if (reloadImpl())
+			{
+				/// Success
+				cur_reload_period = reload_period;
+				is_fast_start_stage = false;
+			}
 
-			if (!was_load_once)
-				cur_reload_period = std::min(reload_period, 2*cur_reload_period); /// exponentially increase delay
+			if (is_fast_start_stage)
+			{
+				cur_reload_period = std::min(reload_period, 2 * cur_reload_period); /// exponentially increase delay
+				is_fast_start_stage = cur_reload_period < reload_period; /// leave fast start state
+			}
 		}
 	}
 
@@ -151,8 +155,6 @@ public:
 	/// Every reload_period seconds directories are updated inside a separate thread.
 	Dictionaries(const bool throw_on_error, const int reload_period_)
 		: reload_period(reload_period_),
-		was_load_once(false),
-		cur_reload_period(1),
 		log(&Logger::get("Dictionaries"))
 	{
 		reloadImpl(throw_on_error);
