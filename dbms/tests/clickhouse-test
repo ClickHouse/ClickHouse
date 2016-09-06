@@ -42,6 +42,7 @@ def main(args):
 
 	SERVER_DIED = False
 	
+	
 	def is_data_present():
 		proc = Popen(args.client, stdin=PIPE, stdout=PIPE, stderr=PIPE)
 		(stdout, stderr) = proc.communicate("EXISTS TABLE test.hits")
@@ -49,6 +50,21 @@ def main(args):
 			raise CalledProcessError(proc.returncode, args.client, stderr)
 		
 		return stdout.startswith('1')
+	
+	
+	def dump_report(destination, suite, test_case, report):
+		if destination is not None:
+			destination_file = os.path.join(destination, suite, test_case + ".xml")
+			destination_dir = os.path.dirname(destination_file)
+			if not os.path.exists(destination_dir):
+				os.makedirs(destination_dir)
+			with open(destination_file, 'w') as report_file:
+				report_root = et.Element("testsuites", attrib = {'name': 'ClickHouse Tests'})
+				report_suite = et.Element("testsuite", attrib = {"name": suite})
+				report_suite.append(report)
+				report_root.append(report_suite)
+				report_file.write(et.tostring(report_root, encoding = "UTF-8", xml_declaration=True, pretty_print=True))
+	
 	
 	if args.zookeeper is None:
 		try:
@@ -58,12 +74,9 @@ def main(args):
 			args.zookeeper = False
 	
 	base_dir = os.path.abspath(args.queries)
-	report = et.Element("testsuites", attrib = {'name': 'ClickHouse Tests'})
 	
-	tests_total = 0
 	failures_total = 0
-	disabled_total = 0
-		
+	
 	for suite in sorted(os.listdir(base_dir)):
 		if SERVER_DIED:
 			break
@@ -73,11 +86,7 @@ def main(args):
 		if os.path.isdir(suite_dir):
 			print("\nRunning {} tests.\n".format(suite))
 			
-			report_suite = et.Element("testsuite", attrib = {"name": suite})
-			
-			tests = 0
 			failures = 0
-			disabled = 0
 			if 'stateful' in suite and not is_data_present():
 				print("Won't run stateful tests because test data wasn't loaded. See README.txt.")
 				continue
@@ -95,7 +104,6 @@ def main(args):
 					
 					if not args.zookeeper and 'zookeeper' in name:
 						report_testcase.append(et.Element("skipped", attrib = {"message": "no zookeeper"}))
-						disabled = disabled + 1
 						print(MSG_SKIPPED, " - no zookeeper")
 					else:
 						reference_file = os.path.join(suite_dir, name) + '.reference'
@@ -171,7 +179,6 @@ def main(args):
 							elif not os.path.isfile(reference_file):
 								skipped = et.Element("skipped", attrib = {"message": "no reference file"})
 								report_testcase.append(skipped)
-								disabled = disabled + 1
 								print("{0} - no reference file".format(MSG_UNKNOWN))
 							else:
 								(diff, _) = Popen(['diff', reference_file, stdout_file], stdout = PIPE).communicate()
@@ -193,26 +200,10 @@ def main(args):
 									if os.path.exists(stderr_file):
 										os.remove(stderr_file)
 						
-					tests = tests + 1
-					report_suite.append(report_testcase)
-					
-			report_suite.set("tests", str(tests))
-			report_suite.set("failures", str(failures))
-			report_suite.set("disabled", str(disabled))
-			report_suite.set("skipped", str(disabled))
-			report.append(report_suite)
+					dump_report(args.output, suite, name, report_testcase)
 			
-			tests_total = tests_total + tests
 			failures_total = failures_total + failures
-			disabled_total = disabled_total + disabled
 	
-	report.set("tests", str(tests_total))
-	report.set("failures", str(failures_total))
-	report.set("disabled", str(disabled_total))
-	
-	if args.output is not None:
-		args.output.write(et.tostring(report, encoding = "UTF-8", xml_declaration=True, pretty_print=True))
-
 	if failures_total > 0:
 		print("\n{COLOR_FAIL}Having {0} errors!{COLOR_RESET}".format(failures_total, **COLORS))
 		sys.exit(1)
@@ -225,7 +216,7 @@ if __name__ == '__main__':
 	parser = ArgumentParser(description = 'ClickHouse functional tests')
 	parser.add_argument('-q', '--queries', default = 'queries', help = 'Path to queries dir')
 	parser.add_argument('-c', '--client', default = 'clickhouse-client', help = 'Client program')
-	parser.add_argument('-o', '--output', type = FileType('w'), help = 'Output xUnit compliant test report file')
+	parser.add_argument('-o', '--output', help = 'Output xUnit compliant test report directory')
 	parser.add_argument('-t', '--timeout', type = int, default = 600, help = 'Timeout for each test case in seconds')
 	parser.add_argument('test', nargs = '?', help = 'Optional test case name regex')
 	
