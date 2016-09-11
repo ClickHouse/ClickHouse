@@ -530,6 +530,11 @@ public:
 		return name;
 	}
 
+	bool hasSpecialSupportForNulls() const override
+	{
+		return true;
+	}
+
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
@@ -542,10 +547,40 @@ public:
 		if (!array_type)
 			throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		if (!(array_type->getNestedType()->behavesAsNumber() && arguments[1]->behavesAsNumber())
-			&& array_type->getNestedType()->getName() != arguments[1]->getName())
-			throw Exception("Type of array elements and second argument for function " + getName() + " must be same."
-				" Passed: " + arguments[0]->getName() + " and " + arguments[1]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		const auto & nested_type = array_type->getNestedType();
+
+		/// XXX Incorrect.
+		if (!nested_type->isNullable() && (arguments[1]->isNullable() || arguments[1]->isNull()))
+			throw Exception{"The 2nd argument cannot have the NULL value since the "
+				"1st argument is not nullable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+		if (!arguments[1]->isNull())
+		{
+			IDataType * observed_type0;
+			if (nested_type->isNullable())
+			{
+				const auto & nullable_type = static_cast<const DataTypeNullable &>(*nested_type);
+				observed_type0 = nullable_type.getNestedType().get();
+			}
+			else
+				observed_type0 = nested_type.get();
+
+			IDataType * observed_type1;
+			if (arguments[1]->isNullable())
+			{
+				const auto & nullable_type = static_cast<const DataTypeNullable &>(*arguments[1]);
+				observed_type1 = nullable_type.getNestedType().get();
+			}
+			else
+				observed_type1 = arguments[1].get();
+
+			if (!(observed_type0->behavesAsNumber() && observed_type1->behavesAsNumber())
+				&& observed_type0->getName() != observed_type1->getName())
+				throw Exception("Type of array elements and second argument for function "
+					+ getName() + " must be identical. Passed: "
+					+ arguments[0]->getName() + " and " + arguments[1]->getName() + ".",
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		}
 
 		return std::make_shared<typename DataTypeFromFieldType<typename IndexConv::ResultType>::Type>();
 	}
