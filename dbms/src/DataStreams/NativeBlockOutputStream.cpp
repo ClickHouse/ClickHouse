@@ -63,7 +63,7 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
 		/** Для массивов требуется сначала сериализовать смещения, а потом значения.
-		*/
+		  */
 		const ColumnArray & column_array = typeid_cast<const ColumnArray &>(*full_column);
 		type_arr->getOffsetsType()->serializeBinary(*column_array.getOffsetsColumn(), ostr, offset, limit);
 
@@ -89,8 +89,19 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 				? offsets[end - 1] - nested_offset
 				: 0;
 
+			const DataTypePtr & nested_type = type_arr->getNestedType();
+
+			DataTypePtr actual_type;
+			if (nested_type->isNull())
+			{
+				/// Special case: an array of Null is actually an array of Nullable(UInt8).
+				actual_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+			}
+			else
+				actual_type = nested_type;
+
 			if (limit == 0 || nested_limit)
-				writeData(*type_arr->getNestedType(), typeid_cast<const ColumnArray &>(*full_column).getDataPtr(), ostr, nested_offset, nested_limit);
+				writeData(*actual_type, typeid_cast<const ColumnArray &>(*full_column).getDataPtr(), ostr, nested_offset, nested_limit);
 		}
 	}
 	else

@@ -507,7 +507,7 @@ void FunctionMultiIf::rethrowContextually(const Conditional::CondException & ex)
 				ErrorCodes::ILLEGAL_COLUMN};
 		else if (ex.getCode() == Conditional::CondErrorCodes::COND_SOURCE_ILLEGAL_COLUMN)
 			throw Exception{"Illegal column " + ex.getMsg1() + " of argument "
-				+ ex.getMsg2() + " of function multiIf"
+				+ ex.getMsg2() + " of function multiIf. "
 				"Must be ColumnUInt8 or ColumnConstUInt8.", ErrorCodes::ILLEGAL_COLUMN};
 		else if (ex.getCode() == Conditional::CondErrorCodes::NUMERIC_EVALUATOR_ILLEGAL_ARGUMENT)
 			throw Exception{"Illegal type of argument " + ex.getMsg1() + " of function multiIf",

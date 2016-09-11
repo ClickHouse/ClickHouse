@@ -80,6 +80,8 @@ public:
 
 	void setCaseMode();
 
+	bool hasSpecialSupportForNulls() const override { return true; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -99,7 +101,12 @@ private:
 	bool is_case_mode = false;
 };
 
+namespace ArrayImpl
+{
 
+class NullMapBuilder;
+
+}
 
 class FunctionArrayElement : public IFunction
 {
@@ -110,6 +117,8 @@ public:
 	/// Получить имя функции.
 	String getName() const override;
 
+	bool hasSpecialSupportForNulls() const override { return true; }
+
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -117,29 +126,39 @@ public:
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 private:
+	void perform(Block & block, const ColumnNumbers & arguments, size_t result, ArrayImpl::NullMapBuilder & builder);
+
 	template <typename DataType>
-	bool executeNumberConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index);
+	bool executeNumberConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
+		ArrayImpl::NullMapBuilder & builder);
 
 	template <typename IndexType, typename DataType>
-	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices);
+	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
+		ArrayImpl::NullMapBuilder & builder);
 
-	bool executeStringConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index);
-
-	template <typename IndexType>
-	bool executeString(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices);
-
-	bool executeGenericConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index);
+	bool executeStringConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
+		ArrayImpl::NullMapBuilder & builder);
 
 	template <typename IndexType>
-	bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices);
+	bool executeString(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
+		ArrayImpl::NullMapBuilder & builder);
 
-	bool executeConstConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index);
+	bool executeGenericConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
+		ArrayImpl::NullMapBuilder & builder);
 
 	template <typename IndexType>
-	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices);
+	bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
+		ArrayImpl::NullMapBuilder & builder);
+
+	bool executeConstConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
+		ArrayImpl::NullMapBuilder & builder);
 
 	template <typename IndexType>
-	bool executeArgument(Block & block, const ColumnNumbers & arguments, size_t result);
+	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
+		ArrayImpl::NullMapBuilder & builder);
+
+	template <typename IndexType>
+	bool executeArgument(Block & block, const ColumnNumbers & arguments, size_t result, ArrayImpl::NullMapBuilder & builder);
 
 	/** Для массива кортежей функция вычисляется покомпонентно - для каждого элемента кортежа.
 	  */

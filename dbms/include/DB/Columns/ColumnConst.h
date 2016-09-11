@@ -326,6 +326,7 @@ template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const
 	return res;
 }
 
+template <> ColumnPtr ColumnConst<Null>::convertToFullColumn() const;
 
 template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const;
 

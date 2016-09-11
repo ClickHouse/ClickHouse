@@ -83,7 +83,18 @@ ColumnPtr ColumnConst<Array>::convertToFullColumn() const
 
 	const Array & array = getDataFromHolderImpl();
 	size_t array_size = array.size();
-	ColumnPtr nested_column = type->getNestedType()->createColumn();
+
+	const auto & nested_type = type->getNestedType();
+	ColumnPtr nested_column;
+
+	if (nested_type->isNull())
+	{
+		/// Special case: an array of Null is actually an array of Nullable(UInt8).
+		nested_column = std::make_shared<ColumnNullable>(
+			std::make_shared<ColumnUInt8>(), std::make_shared<ColumnUInt8>());
+	}
+	else
+		nested_column = type->getNestedType()->createColumn();
 
 	auto res = std::make_shared<ColumnArray>(nested_column);
 	ColumnArray::Offsets_t & offsets = res->getOffsets();

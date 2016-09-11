@@ -112,7 +112,17 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			return std::make_shared<DataTypeNullable>(get(parameters));
 
 		if (base_name == "Array")
-			return std::make_shared<DataTypeArray>(get(parameters));
+		{
+			if (parameters == "Null")
+			{
+				/// Special case: Array(Null) is actually Array(Nullable(UInt8)).
+				return std::make_shared<DataTypeArray>(
+					std::make_shared<DataTypeNullable>(
+						std::make_shared<DataTypeUInt8>()));
+			}
+			else
+				return std::make_shared<DataTypeArray>(get(parameters));
+		}
 
 		if (base_name == "AggregateFunction")
 		{

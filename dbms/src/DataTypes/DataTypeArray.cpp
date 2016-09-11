@@ -1,5 +1,6 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Columns/ColumnNullable.h>
 
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
@@ -188,7 +189,8 @@ void DataTypeArray::deserializeOffsets(IColumn & column, ReadBuffer & istr, size
 }
 
 
-void DataTypeArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+template <typename Writer>
+static void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, Writer && write_nested)
 {
 	const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
 	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
@@ -203,7 +205,7 @@ void DataTypeArray::serializeText(const IColumn & column, size_t row_num, WriteB
 	{
 		if (i != offset)
 			writeChar(',', ostr);
-		nested->serializeTextQuoted(nested_column, i, ostr);
+		write_nested(nested_column, i);
 	}
 	writeChar(']', ostr);
 }
@@ -258,21 +260,43 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
 }
 
 
+void DataTypeArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+	serializeTextImpl(column, row_num, ostr,
+					[&](const IColumn & nested_column, size_t i)
+					{
+						nested->serializeTextQuoted(nested_column, i, ostr);
+					});
+}
+
+
 void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr) const
 {
-	deserializeTextImpl(column, istr, [&](IColumn & nested_column) { nested->deserializeTextQuoted(nested_column, istr); });
+	deserializeTextImpl(column, istr,
+					[&](IColumn & nested_column)
+					{
+						nested->deserializeTextQuoted(nested_column, istr);
+					});
 }
 
 
 void DataTypeArray::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	serializeText(column, row_num, ostr);
+	serializeTextImpl(column, row_num, ostr,
+					[&](const IColumn & nested_column, size_t i)
+					{
+						nested->serializeTextEscaped(nested_column, i, ostr);
+					});
 }
 
 
 void DataTypeArray::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
-	deserializeText(column, istr);
+	deserializeTextImpl(column, istr,
+					[&](IColumn & nested_column)
+					{
+						nested->deserializeTextEscaped(nested_column, istr);
+					});
 }
 
 
@@ -359,7 +383,16 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
 
 ColumnPtr DataTypeArray::createColumn() const
 {
-	return std::make_shared<ColumnArray>(nested->createColumn());
+	if (nested->isNull())
+	{
+		ColumnPtr col = std::make_shared<ColumnUInt8>();
+		ColumnPtr null_map = std::make_shared<ColumnUInt8>();
+		ColumnPtr nullable_col = std::make_shared<ColumnNullable>(col, null_map);
+
+		return std::make_shared<ColumnArray>(nullable_col);
+	}
+	else
+		return std::make_shared<ColumnArray>(nested->createColumn());
 }
 
 

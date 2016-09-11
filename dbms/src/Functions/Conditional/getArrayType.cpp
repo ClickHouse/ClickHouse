@@ -1,4 +1,4 @@
-#include <DB/Functions/Conditional/ArgsInfo.h>
+#include <DB/Functions/Conditional/getArrayType.h>
 #include <DB/Functions/Conditional/CondException.h>
 #include <DB/Functions/Conditional/common.h>
 #include <DB/Functions/DataTypeTraits.h>

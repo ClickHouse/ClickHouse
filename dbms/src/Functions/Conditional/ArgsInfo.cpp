@@ -199,12 +199,12 @@ DataTypePtr getReturnTypeForArithmeticArgs(const DataTypes & args)
 
 bool hasArithmeticBranches(const DataTypes & args)
 {
-	size_t else_arg = elseArg(args);
-
-	auto check = [&](size_t i)
+	auto check = [&args](size_t i)
 	{
 		return args[i]->behavesAsNumber() || args[i]->isNull();
 	};
+
+	size_t else_arg = elseArg(args);
 
 	for (size_t i = firstThen(); i < else_arg; i = nextThen(i))
 	{
@@ -217,9 +217,7 @@ bool hasArithmeticBranches(const DataTypes & args)
 
 bool hasArrayBranches(const DataTypes & args)
 {
-	size_t else_arg = elseArg(args);
-
-	auto check = [&](size_t i)
+	auto check = [&args](size_t i)
 	{
 		const IDataType * observed_type;
 		if (args[i]->isNullable())
@@ -233,6 +231,8 @@ bool hasArrayBranches(const DataTypes & args)
 		return (typeid_cast<const DataTypeArray *>(observed_type) != nullptr) || args[i]->isNull();
 	};
 
+	size_t else_arg = elseArg(args);
+
 	for (size_t i = firstThen(); i < elseArg(args); i = nextThen(i))
 	{
 		if (!check(i))
@@ -244,13 +244,9 @@ bool hasArrayBranches(const DataTypes & args)
 
 bool hasIdenticalTypes(const DataTypes & args)
 {
-	size_t else_arg = elseArg(args);
-
-	std::string first_type_name;
-
-	for (size_t i = firstThen(); i < else_arg; i = nextThen(i))
+	auto check = [&args](size_t i, std::string & first_type_name)
 	{
-		if (!args[i]->isNullable())
+		if (!args[i]->isNull())
 		{
 			const IDataType * observed_type;
 			if (args[i]->isNullable())
@@ -265,41 +261,28 @@ bool hasIdenticalTypes(const DataTypes & args)
 
 			if (first_type_name.empty())
 				first_type_name = name;
-			else
-			{
-				if (name != first_type_name)
-					return false;
-			}
-		}
-	}
-
-	if (!args[else_arg]->isNull())
-	{
-		const IDataType * observed_type;
-		if (args[else_arg]->isNullable())
-		{
-			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[else_arg]);
-			observed_type = nullable_type.getNestedType().get();
-		}
-		else
-			observed_type = args[else_arg].get();
-
-		if (!first_type_name.empty())
-		{
-			const std::string & name = observed_type->getName();
-			if (name != first_type_name)
+			else if (name != first_type_name)
 				return false;
 		}
+
+		return true;
+	};
+
+	size_t else_arg = elseArg(args);
+	std::string first_type_name;
+
+	for (size_t i = firstThen(); i < else_arg; i = nextThen(i))
+	{
+		if (!check(i, first_type_name))
+			return false;
 	}
 
-	return true;
+	return check(else_arg, first_type_name);
 }
 
 bool hasFixedStrings(const DataTypes & args)
 {
-	size_t else_arg = elseArg(args);
-
-	auto check = [&](size_t i)
+	auto check = [&args](size_t i)
 	{
 		const IDataType * observed_type;
 		if (args[i]->isNullable())
@@ -313,6 +296,8 @@ bool hasFixedStrings(const DataTypes & args)
 		return (typeid_cast<const DataTypeFixedString *>(observed_type) != nullptr) || (args[i]->isNull());
 	};
 
+	size_t else_arg = elseArg(args);
+
 	for (size_t i = firstThen(); i < elseArg(args); i = nextThen(i))
 	{
 		if (!check(i))
@@ -324,77 +309,53 @@ bool hasFixedStrings(const DataTypes & args)
 
 bool hasFixedStringsOfIdenticalLength(const DataTypes & args)
 {
-	auto get_length = [&](const IDataType * type, size_t i)
+	auto check = [&args](size_t i, bool & has_length, size_t & first_length)
 	{
-		auto fixed_str = typeid_cast<const DataTypeFixedString *>(type);
-		if (fixed_str == nullptr)
-			throw CondException{CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE, toString(i)};
+		if (!args[i]->isNull())
+		{
+			const IDataType * observed_type;
+			if (args[i]->isNullable())
+			{
+				const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
+				observed_type = nullable_type.getNestedType().get();
+			}
+			else
+				observed_type = args[i].get();
 
-		return fixed_str->getN();
+			/// Get the length of the fixed string currently being checked.
+			auto fixed_str = typeid_cast<const DataTypeFixedString *>(observed_type);
+			if (fixed_str == nullptr)
+				throw CondException{CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE, toString(i)};
+			size_t length = fixed_str->getN();
+
+			if (!has_length)
+			{
+				has_length = true;
+				first_length = length;
+			}
+			else if (length != first_length)
+				return false;
+		}
+
+		return true;
 	};
 
 	size_t else_arg = elseArg(args);
-
 	bool has_length = false;
-	size_t first_length;
+	size_t first_length = 0;
 
 	for (size_t i = firstThen(); i < else_arg; i = nextThen(i))
 	{
-		if (args[i]->isNull())
-			continue;
-
-		const IDataType * observed_type;
-		if (args[i]->isNullable())
-		{
-			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
-			observed_type = nullable_type.getNestedType().get();
-		}
-		else
-			observed_type = args[i].get();
-
-		size_t length = get_length(observed_type, i);
-
-		if (!has_length)
-		{
-			has_length = true;
-			first_length = length;
-		}
-		else
-		{
-			if (length != first_length)
-				return false;
-		}
+		if (!check(i, has_length, first_length))
+			return false;
 	}
 
-	if (!args[else_arg]->isNull())
-	{
-		const IDataType * observed_type;
-		if (args[else_arg]->isNullable())
-		{
-			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[else_arg]);
-			observed_type = nullable_type.getNestedType().get();
-		}
-		else
-			observed_type = args[else_arg].get();
-
-		if (!has_length)
-			has_length = true;
-		else
-		{
-			size_t length = get_length(observed_type, else_arg);
-			if (length != first_length)
-				return false;
-		}
-	}
-
-	return true;
+	return check(else_arg, has_length, first_length);
 }
 
 bool hasStrings(const DataTypes & args)
 {
-	size_t else_arg = elseArg(args);
-
-	auto check = [&](size_t i)
+	auto check = [&args](size_t i)
 	{
 		const IDataType * observed_type;
 		if (args[i]->isNullable())
@@ -408,6 +369,8 @@ bool hasStrings(const DataTypes & args)
 		return (typeid_cast<const DataTypeFixedString *>(observed_type) != nullptr) ||
 			(typeid_cast<const DataTypeString *>(observed_type) != nullptr) || args[i]->isNull();
 	};
+
+	size_t else_arg = elseArg(args);
 
 	for (size_t i = firstThen(); i < elseArg(args); i = nextThen(i))
 	{
