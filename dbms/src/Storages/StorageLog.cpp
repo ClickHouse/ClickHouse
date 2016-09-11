@@ -59,8 +59,7 @@ public:
 		null_mark_number(0),
 		rows_limit(rows_limit_),
 		current_mark(mark_number_),
-		max_read_buffer_size(max_read_buffer_size_),
-		has_null_marks(false)
+		max_read_buffer_size(max_read_buffer_size_)
 	{
 	}
 
@@ -75,8 +74,7 @@ public:
 		null_mark_number(null_mark_number_),
 		rows_limit(rows_limit_),
 		current_mark(mark_number_),
-		max_read_buffer_size(max_read_buffer_size_),
-		has_null_marks(true)
+		max_read_buffer_size(max_read_buffer_size_)
 	{
 	}
 
@@ -108,7 +106,6 @@ private:
 	size_t rows_read = 0;
 	size_t current_mark;
 	size_t max_read_buffer_size;
-	bool has_null_marks;
 
 	struct Stream
 	{

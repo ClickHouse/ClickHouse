@@ -213,7 +213,7 @@ protected:
 class ParserNullityChecking : public IParserBase
 {
 protected:
-	const char * getName() const { return "nullity checking"; }
+	const char * getName() const override { return "nullity checking"; }
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) override;
 };
 

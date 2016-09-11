@@ -60,7 +60,7 @@ public:
 		nested_function->setArguments(new_args);
 	}
 
-	void setParameters(const Array & params)
+	void setParameters(const Array & params) override
 	{
 		nested_function->setParameters(params);
 	}

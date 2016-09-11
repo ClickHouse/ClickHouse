@@ -58,7 +58,7 @@ struct NullDeserializer
 			if (*istr.position() == Null::name[0])
 			{
 				++istr.position();
-				static constexpr auto length = strlen(Null::name);
+				static constexpr auto length = __builtin_strlen(Null::name);
 				if (length > 1)
 					assertString(&Null::name[1], istr);
 

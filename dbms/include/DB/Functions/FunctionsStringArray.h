@@ -419,7 +419,7 @@ public:
 class FunctionArrayStringConcat : public IFunction
 {
 private:
-	void executeImpl(
+	void executeInternal(
 		const ColumnString::Chars_t & src_chars,
 		const ColumnString::Offsets_t & src_string_offsets,
 		const ColumnArray::Offsets_t & src_array_offsets,
@@ -541,7 +541,7 @@ public:
 			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 
-			executeImpl(
+			executeInternal(
 				col_string.getChars(), col_string.getOffsets(), col_arr.getOffsets(),
 				delimiter.data(), delimiter.size(),
 				col_res->getChars(), col_res->getOffsets());

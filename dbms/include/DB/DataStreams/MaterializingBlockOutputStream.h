@@ -12,13 +12,13 @@ class MaterializingBlockOutputStream : public IBlockOutputStream
 public:
 	MaterializingBlockOutputStream(const BlockOutputStreamPtr & output);
 	void write(const Block & block) override;
-	void flush();
-	void writePrefix();
-	void writeSuffix();
-	void setRowsBeforeLimit(size_t rows_before_limit);
-	void setTotals(const Block & totals);
-	void setExtremes(const Block & extremes);
-	String getContentType() const;
+	void flush() override;
+	void writePrefix() override;
+	void writeSuffix() override;
+	void setRowsBeforeLimit(size_t rows_before_limit) override;
+	void setTotals(const Block & totals) override;
+	void setExtremes(const Block & extremes) override;
+	String getContentType() const override;
 
 private:
 	static Block materialize(const Block & original_block);

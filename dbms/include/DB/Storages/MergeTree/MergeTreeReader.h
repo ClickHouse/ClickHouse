@@ -99,7 +99,6 @@ private:
 		std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
 		std::string path_prefix;
 		std::string extension;
-		size_t max_mark_range;
 	};
 
 	using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
