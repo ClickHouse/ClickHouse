@@ -36,14 +36,14 @@ private:
 	/** Объект с флагом, используется ли он сейчас. */
 	struct PooledObject
 	{
-		PooledObject(std::condition_variable & available_, ObjectPtr object_)
-			: object(object_), available(available_)
+		PooledObject(ObjectPtr object_, PoolBase & pool_)
+			: object(object_), pool(pool_)
 		{
 		}
 
 		ObjectPtr object;
 		bool in_use = false;
-		std::condition_variable & available;
+		PoolBase & pool;
 	};
 
 	using Objects = std::vector<std::shared_ptr<PooledObject>>;
@@ -54,7 +54,12 @@ private:
 	struct PoolEntryHelper
 	{
 		PoolEntryHelper(PooledObject & data_) : data(data_) { data.in_use = true; }
-		~PoolEntryHelper() { data.in_use = false; data.available.notify_one(); }
+		~PoolEntryHelper()
+		{
+			std::unique_lock<std::mutex> lock(data.pool.mutex);
+			data.in_use = false;
+			data.pool.available.notify_one();
+		}
 
 		PooledObject & data;
 	};
@@ -86,6 +91,11 @@ public:
 
 		bool isNull() const { return data == nullptr; }
 
+		PoolBase * getPool() const
+		{
+			return &data->data.pool;
+		}
+
 	private:
 		std::shared_ptr<PoolEntryHelper> data;
 
@@ -108,7 +118,7 @@ public:
 			if (items.size() < max_items)
 			{
 				ObjectPtr object = allocObject();
-				items.emplace_back(std::make_shared<PooledObject>(available, object));
+				items.emplace_back(std::make_shared<PooledObject>(object, *this));
 				return Entry(*items.back());
 			}
 
@@ -126,7 +136,7 @@ public:
 		std::lock_guard<std::mutex> lock(mutex);
 
 		while (items.size() < count)
-			items.emplace_back(std::make_shared<PooledObject>(available, allocObject()));
+			items.emplace_back(std::make_shared<PooledObject>(allocObject(), *this));
 	}
 
 private:
