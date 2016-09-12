@@ -202,8 +202,18 @@ struct ArrayIndexNumImpl
 
 #pragma GCC diagnostic pop
 
+	static bool hasNull(const PaddedPODArray<U> & value, const PaddedPODArray<UInt8> & null_map, size_t i)
+	{
+		return null_map[i] == 1;
+	}
+
+	static bool hasNull(const U & value, const PaddedPODArray<UInt8> & null_map, size_t i)
+	{
+		throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+	}
+
 	template <typename ScalarOrVector>
-	static void vector(
+	static void vectorCase1(
 		const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
 		const ScalarOrVector & value,
 		PaddedPODArray<typename IndexConv::ResultType> & result)
@@ -218,9 +228,194 @@ struct ArrayIndexNumImpl
 			typename IndexConv::ResultType current = 0;
 
 			for (size_t j = 0; j < array_size; ++j)
+			{
 				if (compare(data[current_offset + j], value, i))
+				{
 					if (!IndexConv::apply(j, current))
 						break;
+				}
+			}
+
+			result[i] = current;
+			current_offset = offsets[i];
+		}
+	}
+
+	template <typename ScalarOrVector>
+	static void vectorCase2(
+		const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+		const ScalarOrVector & value,
+		PaddedPODArray<typename IndexConv::ResultType> & result,
+		const PaddedPODArray<UInt8> & null_map_item)
+	{
+		size_t size = offsets.size();
+		result.resize(size);
+
+		ColumnArray::Offset_t current_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t array_size = offsets[i] - current_offset;
+			typename IndexConv::ResultType current = 0;
+
+			for (size_t j = 0; j < array_size; ++j)
+			{
+				if (!hasNull(value, null_map_item, i) && compare(data[current_offset + j], value, i))
+				{
+					if (!IndexConv::apply(j, current))
+						break;
+				}
+			}
+
+			result[i] = current;
+			current_offset = offsets[i];
+		}
+	}
+
+	template <typename ScalarOrVector>
+	static void vectorCase3(
+		const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+		const ScalarOrVector & value,
+		PaddedPODArray<typename IndexConv::ResultType> & result,
+		const PaddedPODArray<UInt8> & null_map_data)
+	{
+		size_t size = offsets.size();
+		result.resize(size);
+
+		ColumnArray::Offset_t current_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t array_size = offsets[i] - current_offset;
+			typename IndexConv::ResultType current = 0;
+
+			for (size_t j = 0; j < array_size; ++j)
+			{
+				bool hit = false;
+				if (null_map_data[current_offset + j] == 1)
+				{
+				}
+				else if (compare(data[current_offset + j], value, i))
+					hit = true;
+
+				if (hit)
+				{
+					if (!IndexConv::apply(j, current))
+						break;
+				}
+			}
+
+			result[i] = current;
+			current_offset = offsets[i];
+		}
+	}
+
+	template <typename ScalarOrVector>
+	static void vectorCase4(
+		const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+		const ScalarOrVector & value,
+		PaddedPODArray<typename IndexConv::ResultType> & result,
+		const PaddedPODArray<UInt8> & null_map_data,
+		const PaddedPODArray<UInt8> & null_map_item)
+	{
+		size_t size = offsets.size();
+		result.resize(size);
+
+		ColumnArray::Offset_t current_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t array_size = offsets[i] - current_offset;
+			typename IndexConv::ResultType current = 0;
+
+			for (size_t j = 0; j < array_size; ++j)
+			{
+				bool hit = false;
+				if (null_map_data[current_offset + j] == 1)
+				{
+					if (hasNull(value, null_map_item, i))
+						hit = true;
+				}
+				else if (compare(data[current_offset + j], value, i))
+					hit = true;
+
+				if (hit)
+				{
+					if (!IndexConv::apply(j, current))
+						break;
+				}
+			}
+
+			result[i] = current;
+			current_offset = offsets[i];
+		}
+	}
+
+	template <typename ScalarOrVector>
+	static void vector(
+		const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+		const ScalarOrVector & value,
+		PaddedPODArray<typename IndexConv::ResultType> & result,
+		const PaddedPODArray<UInt8> * null_map_data,
+		const PaddedPODArray<UInt8> * null_map_item)
+	{
+		if ((null_map_data == nullptr) && (null_map_item == nullptr))
+			vectorCase1(data, offsets, value, result);
+		else if ((null_map_data == nullptr) && (null_map_item != nullptr))
+			vectorCase2(data, offsets, value, result, *null_map_item);
+		else if ((null_map_data != nullptr) && (null_map_item == nullptr))
+			vectorCase3(data, offsets, value, result, *null_map_data);
+		else
+			vectorCase4(data, offsets, value, result, *null_map_data, *null_map_item);
+	}
+};
+
+template <typename T, typename IndexConv>
+struct ArrayIndexNumImpl<T, Null, IndexConv>
+{
+	template <typename ScalarOrVector>
+	static void vector(
+		const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+		const ScalarOrVector & value,
+		PaddedPODArray<typename IndexConv::ResultType> & result,
+		const PaddedPODArray<UInt8> * null_map_data,
+		const PaddedPODArray<UInt8> * null_map_item)
+	{
+		throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+	}
+};
+
+template <typename T, typename IndexConv>
+struct ArrayIndexNumNullImpl
+{
+	static void vector(
+		const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+		PaddedPODArray<typename IndexConv::ResultType> & result,
+		const PaddedPODArray<UInt8> * null_map_data)
+	{
+		size_t size = offsets.size();
+		result.resize(size);
+
+		if (null_map_data == nullptr)
+		{
+			for (size_t i = 0; i < size; ++i)
+				result[i] = 0;
+			return;
+		}
+
+		const auto & null_map_ref = *null_map_data;
+
+		ColumnArray::Offset_t current_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t array_size = offsets[i] - current_offset;
+			typename IndexConv::ResultType current = 0;
+
+			for (size_t j = 0; j < array_size; ++j)
+			{
+				if (null_map_ref[current_offset + j] == 1)
+				{
+					if (!IndexConv::apply(j, current))
+						break;
+				}
+			}
 
 			result[i] = current;
 			current_offset = offsets[i];
@@ -360,7 +555,8 @@ private:
 			|| executeNumberNumber<T, Int32>(block, arguments, result)
 			|| executeNumberNumber<T, Int64>(block, arguments, result)
 			|| executeNumberNumber<T, Float32>(block, arguments, result)
-			|| executeNumberNumber<T, Float64>(block, arguments, result);
+			|| executeNumberNumber<T, Float64>(block, arguments, result)
+			|| executeNumberNumber<T, Null>(block, arguments, result);
 	}
 
 	template <typename T, typename U>
@@ -376,6 +572,14 @@ private:
 		if (!col_nested)
 			return false;
 
+		const PaddedPODArray<UInt8> * null_map_data = nullptr;
+
+		if (arguments.size() > 2)
+		{
+			const auto & null_map = block.getByPosition(arguments[2]).column;
+			null_map_data = &static_cast<const ColumnUInt8 &>(*null_map).getData();
+		}
+
 		const auto item_arg = block.getByPosition(arguments[1]).column.get();
 
 		if (const auto item_arg_const = typeid_cast<const ColumnConst<U> *>(item_arg))
@@ -383,16 +587,28 @@ private:
 			const auto col_res = std::make_shared<ResultColumnType>();
 			block.getByPosition(result).column = col_res;
 
-			ArrayIndexNumImpl<T, U, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
-				item_arg_const->getData(), col_res->getData());
+			if (item_arg->isNull())
+				ArrayIndexNumNullImpl<T, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
+					col_res->getData(), null_map_data);
+			else
+				ArrayIndexNumImpl<T, U, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
+					item_arg_const->getData(), col_res->getData(), null_map_data, nullptr);
 		}
 		else if (const auto item_arg_vector = typeid_cast<const ColumnVector<U> *>(item_arg))
 		{
 			const auto col_res = std::make_shared<ResultColumnType>();
 			block.getByPosition(result).column = col_res;
 
+			const PaddedPODArray<UInt8> * null_map_item = nullptr;
+
+			if (arguments.size() > 3)
+			{
+				const auto & null_map = block.getByPosition(arguments[3]).column;
+				null_map_item = &static_cast<const ColumnUInt8 &>(*null_map).getData();
+			}
+
 			ArrayIndexNumImpl<T, U, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
-				item_arg_vector->getData(), col_res->getData());
+				item_arg_vector->getData(), col_res->getData(), null_map_data, null_map_item);
 		}
 		else
 			return false;
@@ -547,32 +763,10 @@ public:
 		if (!array_type)
 			throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		const auto & nested_type = array_type->getNestedType();
-
-		/// XXX Incorrect.
-		if (!nested_type->isNullable() && (arguments[1]->isNullable() || arguments[1]->isNull()))
-			throw Exception{"The 2nd argument cannot have the NULL value since the "
-				"1st argument is not nullable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
 		if (!arguments[1]->isNull())
 		{
-			IDataType * observed_type0;
-			if (nested_type->isNullable())
-			{
-				const auto & nullable_type = static_cast<const DataTypeNullable &>(*nested_type);
-				observed_type0 = nullable_type.getNestedType().get();
-			}
-			else
-				observed_type0 = nested_type.get();
-
-			IDataType * observed_type1;
-			if (arguments[1]->isNullable())
-			{
-				const auto & nullable_type = static_cast<const DataTypeNullable &>(*arguments[1]);
-				observed_type1 = nullable_type.getNestedType().get();
-			}
-			else
-				observed_type1 = arguments[1].get();
+			const IDataType * observed_type0 = DataTypeTraits::removeNullable(array_type->getNestedType()).get();
+			const IDataType * observed_type1 = DataTypeTraits::removeNullable(arguments[1]).get();
 
 			if (!(observed_type0->behavesAsNumber() && observed_type1->behavesAsNumber())
 				&& observed_type0->getName() != observed_type1->getName())
@@ -587,6 +781,61 @@ public:
 
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		/// Check data nullability.
+		bool is_nullable;
+
+		const ColumnArray * col_array = nullptr;
+		col_array = typeid_cast<const ColumnArray *>(block.getByPosition(arguments[0]).column.get());
+		if (col_array)
+			is_nullable = col_array->getData().isNullable();
+
+		bool is_arg_nullable = block.getByPosition(arguments[1]).column->isNullable();
+
+		if (!is_nullable && !is_arg_nullable)
+			perform(block, arguments, result);
+		else
+		{
+			Block source_block;
+
+			const auto & input_type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[0]).type).getNestedType();
+			const auto & nullable_col = static_cast<const ColumnNullable &>(col_array->getData());
+			const auto & nested_col = nullable_col.getNestedColumn();
+			const auto & null_map = nullable_col.getNullValuesByteMap();
+
+			source_block =
+			{
+				{
+					std::make_shared<ColumnArray>(nested_col, col_array->getOffsetsColumn()),
+					input_type,
+					""
+				},
+
+				block.getByPosition(arguments[1]),
+
+				{
+					null_map,
+					std::make_shared<DataTypeUInt8>(),
+					""
+				},
+
+				{
+					nullptr,
+					block.getByPosition(result).type,
+					""
+				}
+			};
+
+			perform(source_block, {0, 1, 2}, 3);
+
+			const ColumnWithTypeAndName & source_col = source_block.unsafeGetByPosition(3);
+			ColumnWithTypeAndName & dest_col = block.unsafeGetByPosition(result);
+			dest_col.column = source_col.column;
+		}
+	}
+
+private:
+	void perform(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		if (!(executeNumber<UInt8>(block, arguments, result)
 			|| executeNumber<UInt16>(block, arguments, result)

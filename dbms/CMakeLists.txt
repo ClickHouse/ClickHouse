@@ -864,6 +864,7 @@ add_library (dbms
 	src/Interpreters/ClusterProxy/AlterQueryConstructor.cpp
 	src/Interpreters/ClusterProxy/Query.cpp
 
+	src/Functions/DataTypeTraits.cpp
 	src/Functions/IFunction.cpp
 	src/Functions/FunctionFactory.cpp
 	src/Functions/FunctionsArithmetic.cpp

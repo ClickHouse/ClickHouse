@@ -52,17 +52,6 @@ String FunctionArray::getName() const
 namespace
 {
 
-const DataTypePtr & getNestedTypeInNullable(const DataTypePtr & type)
-{
-	if (type->isNullable())
-	{
-		const auto & nullable_type = static_cast<const DataTypeNullable &>(*type);
-		return nullable_type.getNestedType();
-	}
-	else
-		return type;
-}
-
 /// Is there at least one numeric argument among the specified ones?
 bool foundNumericType(const DataTypes & args)
 {
@@ -101,7 +90,7 @@ bool hasArrayIdenticalTypes(const DataTypes & args)
 	{
 		if (!args[i]->isNull())
 		{
-			const IDataType * observed_type = getNestedTypeInNullable(args[i]).get();
+			const IDataType * observed_type = DataTypeTraits::removeNullable(args[i]).get();
 			const std::string & name = observed_type->getName();
 
 			if (first_type_name.empty())
@@ -281,14 +270,14 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
 
 	if (is_const)
 	{
-		const DataTypePtr & observed_type = getNestedTypeInNullable(result_type);
+		const DataTypePtr & observed_type = DataTypeTraits::removeNullable(result_type);
 
 		Array arr;
 		for (const auto arg_num : arguments)
 		{
 			const auto & elem = block.getByPosition(arg_num);
 
-			if (getNestedTypeInNullable(elem.type)->getName() == observed_type->getName())
+			if (DataTypeTraits::removeNullable(elem.type)->getName() == observed_type->getName())
 			{
 				/// Если элемент такого же типа как результат, просто добавляем его в ответ
 				arr.push_back((*elem.column)[0]);
