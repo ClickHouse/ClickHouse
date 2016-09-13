@@ -6,6 +6,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <common/logger_useful.h>
+#include <DB/Common/Exception.h>
 
 /// This type specifies the possible behaviors of an object pool allocator.
 enum class PoolMode
@@ -93,6 +94,8 @@ public:
 
 		PoolBase * getPool() const
 		{
+			if (!data)
+				throw DB::Exception("attempt to get pool from uninitialized entry");
 			return &data->data.pool;
 		}
 
