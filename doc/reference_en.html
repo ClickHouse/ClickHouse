@@ -4664,7 +4664,7 @@ This function is specific to Yandex.Metrica, since half an hour is the minimum a
 
 ===timeSlots(StartTime, Duration)===
 - For a time interval starting at &#39;StartTime&#39; and continuing for &#39;Duration&#39; seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the half hour.
-For example, %%timeSlots(toDateTime(&#39;2012-01-01 12:20:00&#39;), 600) = [toDateTime(&#39;2012-01-01 12:00:00&#39;), toDateTime(&#39;2012-01-01 12:30:00&#39;)]%%.
+For example, %%timeSlots(toDateTime(&#39;2012-01-01 12:20:00&#39;), toUInt32(600)) = [toDateTime(&#39;2012-01-01 12:00:00&#39;), toDateTime(&#39;2012-01-01 12:30:00&#39;)]%%.
 This is necessary for searching for pageviews in the corresponding session.
 
 
