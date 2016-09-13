@@ -5,6 +5,7 @@
 #include <DB/Core/Row.h>
 #include <DB/DataTypes/IDataType.h>
 #include <DB/Common/typeid_cast.h>
+#include <DB/Common/Arena.h>
 
 
 namespace DB
@@ -20,6 +21,14 @@ namespace ErrorCodes
 
 using AggregateDataPtr = char *;
 using ConstAggregateDataPtr = const char *;
+
+
+struct IAggregateDataWithArena
+{
+	Arena * arena = nullptr;
+
+	inline Arena * getArena() { return arena; }
+};
 
 
 /** Интерфейс для агрегатных функций.
@@ -96,6 +105,12 @@ public:
 	  */
 	virtual bool isState() const { return false; }
 
+	/** Возвращает true если при агрегации необходимо использовать "кучу", представленной Arena.
+	  * В этом случае структура данных для агррегации должна быть унаследована от IAggregateDataWithArena.
+	  * Указатель на необходимую Arena можно будет получить с помощью IAggregateDataWithArena::getArena().
+	  */
+	virtual bool needArena() const { return false; }
+
 
 	/** Внутренний цикл, использующий указатель на функцию, получается лучше, чем использующий виртуальную функцию.
 	  * Причина в том, что в случае виртуальных функций, GCC 5.1.2 генерирует код,
@@ -143,6 +158,11 @@ public:
 	size_t alignOfData() const override
 	{
 		return __alignof__(Data);
+	}
+
+	bool needArena() const override
+	{
+		return std::is_base_of<IAggregateDataWithArena, T>();
 	}
 };
 

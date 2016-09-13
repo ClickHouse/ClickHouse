@@ -5,6 +5,7 @@
 
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeString.h>
 
 #include <DB/Columns/ColumnArray.h>
 
@@ -23,12 +24,12 @@ template <typename T>
 struct AggregateFunctionGroupUniqArrayData
 {
 	/// При создании, хэш-таблица должна быть небольшой.
-	typedef HashSet<
+	using Set = HashSet<
 		T,
 		DefaultHash<T>,
 		HashTableGrower<4>,
 		HashTableAllocatorWithStackMemory<sizeof(T) * (1 << 4)>
-	> Set;
+	>;
 
 	Set value;
 };
@@ -70,7 +71,7 @@ public:
 		const typename State::Set & set = this->data(place).value;
 		size_t size = set.size();
 		writeVarUInt(size, buf);
-		for (typename State::Set::const_iterator it = set.begin(); it != set.end(); ++it)
+		for (auto it = set.begin(); it != set.end(); ++it)
 			writeIntBinary(*it, buf);
 	}
 
@@ -94,10 +95,11 @@ public:
 		data_to.resize(old_size + size);
 
 		size_t i = 0;
-		for (typename State::Set::const_iterator it = set.begin(); it != set.end(); ++it, ++i)
+		for (auto it = set.begin(); it != set.end(); ++it, ++i)
 			data_to[old_size + i] = *it;
 	}
 };
+
 
 #undef AGGREGATE_FUNCTION_GROUP_ARRAY_UNIQ_MAX_SIZE
 

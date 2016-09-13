@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iomanip>
 #include <random>
+#include <limits.h>
 
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
@@ -58,11 +59,11 @@ public:
 	Benchmark(unsigned concurrency_, double delay_,
 			const String & host_, UInt16 port_, const String & default_database_,
 			const String & user_, const String & password_, const String & stage,
-			bool randomize_,
+			bool randomize_, size_t num_repetions_, double max_time_,
 			const Settings & settings_)
 		: concurrency(concurrency_), delay(delay_), queue(concurrency),
 		connections(concurrency, host_, port_, default_database_, user_, password_),
-		randomize(randomize_),
+		randomize(randomize_), num_repetions(num_repetions_), max_time(max_time_),
 		settings(settings_), pool(concurrency)
 	{
 		std::cerr << std::fixed << std::setprecision(3);
@@ -94,6 +95,8 @@ private:
 
 	ConnectionPool connections;
 	bool randomize;
+	size_t num_repetions;
+	double max_time;
 	Settings settings;
 	QueryProcessingStage::Enum query_processing_stage;
 
@@ -183,7 +186,7 @@ private:
 		Stopwatch watch;
 
 		/// В цикле, кладём все запросы в очередь.
-		for (size_t i = 0; !interrupt_listener.check(); ++i)
+		for (size_t i = 0; !interrupt_listener.check() && (!(num_repetions > 0) || i < num_repetions); ++i)
 		{
 			if (i >= queries.size())
 				i = 0;
@@ -194,7 +197,7 @@ private:
 
 			queue.push(queries[query_index]);
 
-			if (watch.elapsedSeconds() > delay)
+			if (delay > 0 && watch.elapsedSeconds() > delay)
 			{
 				auto total_queries = 0;
 				{
@@ -205,6 +208,18 @@ private:
 
 				report(info_per_interval);
 				watch.restart();
+			}
+
+			if (num_repetions > 0 && info_total.queries >= num_repetions)
+			{
+				std::cout << "The execution is broken since request number of loops is reached\n";
+				break;
+			}
+
+			if (max_time > 0 && info_total.watch.elapsedSeconds() >= max_time)
+			{
+				std::cout << "The execution is broken since requested time limit is reached\n";
+				break;
 			}
 		}
 
@@ -346,13 +361,15 @@ int main(int argc, char ** argv)
 		desc.add_options()
 			("help", "produce help message")
 			("concurrency,c", boost::program_options::value<unsigned>()->default_value(1), "number of parallel queries")
-			("delay,d", boost::program_options::value<double>()->default_value(1), "delay between reports in seconds")
+			("delay,d", boost::program_options::value<double>()->default_value(1), "delay between reports in seconds (set 0 to disable)")
 			("host,h", boost::program_options::value<std::string>()->default_value("localhost"), "")
 			("port", boost::program_options::value<UInt16>()->default_value(9000), "")
 			("user", boost::program_options::value<std::string>()->default_value("default"), "")
 			("password", boost::program_options::value<std::string>()->default_value(""), "")
 			("database", boost::program_options::value<std::string>()->default_value("default"), "")
 			("stage", boost::program_options::value<std::string>()->default_value("complete"), "request query processing up to specified stage")
+			("loops,l", boost::program_options::value<size_t>()->default_value(0), "number of tests repetions")
+			("timelimit,t", boost::program_options::value<double>()->default_value(0.), "stop repeating after specified time limit")
 			("randomize,r", boost::program_options::value<bool>()->default_value(false), "randomize order of execution")
 		#define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
 		#define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
@@ -392,6 +409,8 @@ int main(int argc, char ** argv)
 			options["password"].as<std::string>(),
 			options["stage"].as<std::string>(),
 			options["randomize"].as<bool>(),
+			options["loops"].as<size_t>(),
+			options["timelimit"].as<double>(),
 			settings);
 	}
 	catch (const Exception & e)

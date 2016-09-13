@@ -986,7 +986,7 @@ protected:
 
 	/** Создать состояния агрегатных функций для одного ключа.
 	  */
-	void createAggregateStates(AggregateDataPtr & aggregate_data) const;
+	void createAggregateStates(AggregateDataPtr & aggregate_data, Arena * arena) const;
 
 	/** Вызвать методы destroy для состояний агрегатных функций.
 	  * Используется в обработчике исключений при агрегации, так как RAII в данном случае не применим.

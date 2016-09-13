@@ -431,7 +431,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 }
 
 
-void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
+void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data, Arena * arena) const
 {
 	for (size_t j = 0; j < params.aggregates_size; ++j)
 	{
@@ -441,7 +441,15 @@ void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
 			  * Для того, чтобы потом всё правильно уничтожилось, "откатываем" часть созданных состояний.
 			  * Код не очень удобный.
 			  */
+			char * data_cur = aggregate_data + offsets_of_aggregate_states[j];
 			aggregate_functions[j]->create(aggregate_data + offsets_of_aggregate_states[j]);
+
+			/// Прописываем указатель на Arena после создания, до этого она не валидна.
+			if (aggregate_functions[j]->needArena())
+			{
+				//LOG_DEBUG(&Logger::get("Aggregator"), "set arena=" << arena << " for func " << aggregate_functions[j]->getName());
+				reinterpret_cast<IAggregateDataWithArena *>(data_cur)->arena = arena;
+			}
 		}
 		catch (...)
 		{
@@ -557,7 +565,7 @@ void NO_INLINE Aggregator::executeImplCase(
 			method.onNewKey(*it, params.keys_size, i, keys, *aggregates_pool);
 
 			AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
-			createAggregateStates(place);
+			createAggregateStates(place, aggregates_pool);
 			aggregate_data = place;
 		}
 		else
@@ -677,7 +685,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 	if ((params.overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
 	{
 		AggregateDataPtr place = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-		createAggregateStates(place);
+		createAggregateStates(place, result.aggregates_pool);
 		result.without_key = place;
 	}
 
@@ -1003,6 +1011,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
 	ColumnPlainPtrs & final_aggregate_columns,
 	const Sizes & key_sizes) const
 {
+	//LOG_DEBUG(log, "convertToBlockImplFinal start");
 	for (const auto & value : data)
 	{
 		method.insertKeyIntoColumns(value, key_columns, params.keys_size, key_sizes);
@@ -1014,6 +1023,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
 	}
 
 	destroyImpl(method, data);		/// NOTE Можно сделать лучше.
+	//LOG_DEBUG(log, "convertToBlockImplFinal exit");
 }
 
 template <typename Method, typename Table>
@@ -1024,6 +1034,8 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
 	AggregateColumnsData & aggregate_columns,
 	const Sizes & key_sizes) const
 {
+	//LOG_DEBUG(log, "convertToBlockImplFinal start");
+
 	for (auto & value : data)
 	{
 		method.insertKeyIntoColumns(value, key_columns, params.keys_size, key_sizes);
@@ -1034,6 +1046,7 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
 
 		Method::getAggregateData(value.second) = nullptr;
 	}
+	//LOG_DEBUG(log, "convertToBlockImplFinal exit");
 }
 
 
@@ -1158,6 +1171,7 @@ BlocksList Aggregator::prepareBlocksAndFillSingleLevel(AggregatedDataVariants & 
 		const Sizes & key_sizes,
 		bool final)
 	{
+		//LOG_DEBUG(log, "prepareBlocksAndFillSingleLevel start");
 	#define M(NAME) \
 		else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
 			convertToBlockImpl(*data_variants.NAME, data_variants.NAME->data, \
@@ -1168,6 +1182,7 @@ BlocksList Aggregator::prepareBlocksAndFillSingleLevel(AggregatedDataVariants & 
 	#undef M
 		else
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+		//LOG_DEBUG(log, "prepareBlocksAndFillSingleLevel exit");
 	};
 
 	BlocksList blocks;
@@ -1337,6 +1352,8 @@ void NO_INLINE Aggregator::mergeDataImpl(
 			for (size_t i = 0; i < params.aggregates_size; ++i)
 				aggregate_functions[i]->destroy(
 					Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
+
+			//LOG_DEBUG(log, "mergeDataImpl");
 		}
 		else
 		{
@@ -1373,6 +1390,8 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
 			aggregate_functions[i]->destroy(
 				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
 
+		//LOG_DEBUG(log, "mergeDataNoMoreKeysImpl");
+
 		Method::getAggregateData(it->second) = nullptr;
 	}
 
@@ -1402,6 +1421,8 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
 			aggregate_functions[i]->destroy(
 				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
 
+		//LOG_DEBUG(log, "mergeDataOnlyExistingKeysImpl");
+
 		Method::getAggregateData(it->second) = nullptr;
 	}
 
@@ -1426,6 +1447,8 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
 		for (size_t i = 0; i < params.aggregates_size; ++i)
 			aggregate_functions[i]->destroy(current_data + offsets_of_aggregate_states[i]);
 
+		//LOG_DEBUG(log, "mergeWithoutKeyDataImpl");
+
 		current_data = nullptr;
 	}
 }
@@ -1441,6 +1464,8 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 	/// Все результаты агрегации соединяем с первым.
 	for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
 	{
+		//LOG_DEBUG(log, "mergeSingleLevelDataImpl for_begin " << i << "/" << size-1);
+
 		if (!checkLimits(res->sizeWithoutOverflowRow(), no_more_keys))
 			break;
 
@@ -1462,7 +1487,10 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 
 		/// current не будет уничтожать состояния агрегатных функций в деструкторе
 		current.aggregator = nullptr;
+
+		//LOG_DEBUG(log, "mergeSingleLevelDataImpl for_end " << i << "/" << size-1);
 	}
+	//LOG_DEBUG(log, "mergeSingleLevelDataImpl exit");
 }
 
 
@@ -1795,7 +1823,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 			method.onNewKey(*it, params.keys_size, i, keys, *aggregates_pool);
 
 			AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
-			createAggregateStates(place);
+			createAggregateStates(place, aggregates_pool);
 			aggregate_data = place;
 		}
 		else
@@ -1808,6 +1836,8 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 			aggregate_functions[j]->merge(
 				value + offsets_of_aggregate_states[j],
 				(*aggregate_columns[j])[i]);
+
+		LOG_DEBUG(log, "mergeStreamsImplCase");
 	}
 
 	/// Пораньше освобождаем память.
@@ -1845,7 +1875,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
 	if (!res)
 	{
 		AggregateDataPtr place = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-		createAggregateStates(place);
+		createAggregateStates(place, result.aggregates_pool);
 		res = place;
 	}
 
@@ -2284,6 +2314,8 @@ void NO_INLINE Aggregator::destroyImpl(
 	Method & method,
 	Table & table) const
 {
+	//LOG_DEBUG(log, "destroyImpl start");
+
 	for (auto elem : table)
 	{
 		AggregateDataPtr & data = Method::getAggregateData(elem.second);
@@ -2301,6 +2333,8 @@ void NO_INLINE Aggregator::destroyImpl(
 
 		data = nullptr;
 	}
+
+	//LOG_DEBUG(log, "destroyImpl start");
 }
 
 
