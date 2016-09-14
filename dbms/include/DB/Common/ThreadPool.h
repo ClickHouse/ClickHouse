@@ -29,8 +29,8 @@ public:
 
 	/// Wait for all currently active jobs to be done.
 	/// You may call schedule and wait many times in arbitary order.
-	/// If any thread was throw an exception, it will be rethrown from this method.
-	/// List of exceptions is not cleared: on subsequent calls to wait, same exception will be rethrown.
+	/// If any thread was throw an exception, first exception will be rethrown from this method,
+	///  and exception will be cleared.
 	void wait();
 
 	/// Waits for all threads. Doesn't rethrow exceptions (use 'wait' method to rethrow exceptions).
@@ -53,7 +53,7 @@ private:
 
 	std::queue<Job> jobs;
 	std::vector<std::thread> threads;
-	std::vector<std::exception_ptr> exceptions;		/// NOTE Saving many exceptions but we rethrow just first one.
+	std::exception_ptr first_exception;
 
 
 	void worker();

@@ -17,7 +17,7 @@ StorageSystemOne::StorageSystemOne(const std::string & name_)
 
 StoragePtr StorageSystemOne::create(const std::string & name_)
 {
-	return (new StorageSystemOne(name_))->thisPtr();
+	return make_shared(name_);
 }
 
 

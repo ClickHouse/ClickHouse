@@ -87,7 +87,10 @@ private:
 			{
 				static constexpr size_t header_size = 1 + sizeof(UInt32) + sizeof(UInt32);
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
 				compressed_buffer.resize(header_size + LZ4_COMPRESSBOUND(uncompressed_size));
+#pragma GCC diagnostic pop
 
 				compressed_buffer[0] = static_cast<UInt8>(CompressionMethodByte::LZ4);
 

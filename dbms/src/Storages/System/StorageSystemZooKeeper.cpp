@@ -37,7 +37,7 @@ StorageSystemZooKeeper::StorageSystemZooKeeper(const std::string & name_)
 
 StoragePtr StorageSystemZooKeeper::create(const std::string & name_)
 {
-	return (new StorageSystemZooKeeper(name_))->thisPtr();
+	return make_shared(name_);
 }
 
 

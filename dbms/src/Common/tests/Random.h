@@ -17,7 +17,7 @@ struct Rand
 
   Rand()
   {
-    reseed(uint32_t(0));
+    reseed(static_cast<uint32_t>(0));
   }
 
   Rand( uint32_t seed )
@@ -37,8 +37,8 @@ struct Rand
 
   void reseed ( uint64_t seed )
   {
-    x = 0x498b3bc5 ^ (uint32_t)(seed >>  0);
-    y = 0x5a05089a ^ (uint32_t)(seed >> 32);
+    x = 0x498b3bc5 ^ static_cast<uint32_t>(seed >>  0);
+    y = 0x5a05089a ^ static_cast<uint32_t>(seed >> 32);
     z = 0;
     w = 0;
 
@@ -86,7 +86,7 @@ struct Rand
 
     for(int i = 0; i < bytes; i++)
     {
-      tail[i] = (uint8_t)rand_u32();
+      tail[i] = static_cast<uint8_t>(rand_u32());
     }
   }
 };
@@ -100,7 +100,7 @@ inline uint64_t rand_u64 ( void ) { return g_rand1.rand_u64(); }
 
 inline void rand_p ( void * blob, int bytes )
 {
-  uint32_t * blocks = (uint32_t*)blob;
+  uint32_t * blocks = static_cast<uint32_t*>(blob);
 
   while(bytes >= 4)
   {
@@ -108,11 +108,11 @@ inline void rand_p ( void * blob, int bytes )
     bytes -= 4;
   }
 
-  uint8_t * tail = (uint8_t*)blocks;
+  uint8_t * tail = reinterpret_cast<uint8_t*>(blocks);
 
   for(int i = 0; i < bytes; i++)
   {
-    tail[i] = (uint8_t)rand_u32();
+    tail[i] = static_cast<uint8_t>(rand_u32());
   }
 }
 

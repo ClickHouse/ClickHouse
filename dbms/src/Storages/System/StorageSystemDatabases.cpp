@@ -21,7 +21,7 @@ StorageSystemDatabases::StorageSystemDatabases(const std::string & name_)
 
 StoragePtr StorageSystemDatabases::create(const std::string & name_)
 {
-	return (new StorageSystemDatabases(name_))->thisPtr();
+	return make_shared(name_);
 }
 
 

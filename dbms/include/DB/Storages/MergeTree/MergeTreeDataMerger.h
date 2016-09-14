@@ -83,22 +83,41 @@ public:
 	/// Примерное количество места на диске, нужное для мерджа. С запасом.
 	static size_t estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts);
 
-	/** Отменяет все мерджи. Все выполняющиеся сейчас вызовы mergeParts скоро бросят исключение.
-	  * Все новые вызовы будут бросать исключения, пока не будет вызван uncancel().
-	  */
-	void cancel() 	{ cancelled = true; }
-	void uncancel() { cancelled = false; }
-	bool isCancelled() const { return cancelled; }
-
-	void abortIfRequested();
-
 private:
 	/** Выбрать все куски принадлежащие одной партиции.
 	  */
 	MergeTreeData::DataPartsVector selectAllPartsFromPartition(DayNum_t partition);
 
-private:
-	using FrozenPartitions = std::unordered_set<DayNum_t>;
+	/** Temporarily cancel merges.
+	  */
+	class BlockerImpl
+	{
+	public:
+		BlockerImpl(MergeTreeDataMerger * merger_) : merger(merger_)
+		{
+			++merger->cancelled;
+		}
+
+		~BlockerImpl()
+		{
+			--merger->cancelled;
+		}
+	private:
+		MergeTreeDataMerger * merger;
+	};
+
+public:
+	/** Cancel all merges. All currently running 'mergeParts' methods will throw exception soon.
+	  * All new calls to 'mergeParts' will throw exception till all 'Blocker' objects will be destroyed.
+	  */
+	using Blocker = std::unique_ptr<BlockerImpl>;
+	Blocker cancel() { return std::make_unique<BlockerImpl>(this); }
+
+	/** Cancel all merges forever.
+	  */
+	void cancelForever() { ++cancelled; }
+
+	bool isCancelled() const { return cancelled > 0; }
 
 private:
 	MergeTreeData & data;
@@ -110,28 +129,10 @@ private:
 
 	CancellationHook cancellation_hook;
 
-	std::atomic<bool> cancelled {false};
+	std::atomic<int> cancelled {0};
+
+	void abortReshardPartitionIfRequested();
 };
 
-
-/** Временно приостанавливает мерджи.
-  */
-class MergeTreeMergeBlocker
-{
-public:
-	MergeTreeMergeBlocker(MergeTreeDataMerger & merger_)
-		: merger(merger_)
-	{
-		merger.cancel();
-	}
-
-	~MergeTreeMergeBlocker()
-	{
-		merger.uncancel();
-	}
-
-private:
-	MergeTreeDataMerger & merger;
-};
 
 }

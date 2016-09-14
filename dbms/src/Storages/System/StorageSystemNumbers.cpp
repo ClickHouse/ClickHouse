@@ -55,7 +55,7 @@ StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multi
 
 StoragePtr StorageSystemNumbers::create(const std::string & name_, bool multithreaded_)
 {
-	return (new StorageSystemNumbers(name_, multithreaded_))->thisPtr();
+	return make_shared(name_, multithreaded_);
 }
 
 

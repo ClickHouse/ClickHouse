@@ -171,9 +171,9 @@ void ReplicatedMergeTreeRestartingThread::run()
 		storage.remote_part_checker_endpoint_holder->cancel();
 		storage.remote_part_checker_endpoint_holder = nullptr;
 
-		storage.merger.cancel();
+		storage.merger.cancelForever();
 		if (storage.unreplicated_merger)
-			storage.unreplicated_merger->cancel();
+			storage.unreplicated_merger->cancelForever();
 
 		partialShutdown();
 	}

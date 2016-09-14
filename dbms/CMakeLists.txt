@@ -69,6 +69,7 @@ add_library (dbms
 	include/DB/Functions/NumberTraits.h
 	include/DB/Functions/DataTypeTraits.h
 	include/DB/Functions/EnrichedDataTypePtr.h
+	include/DB/Functions/ObjectPool.h
 	include/DB/TableFunctions/TableFunctionRemote.h
 	include/DB/TableFunctions/TableFunctionFactory.h
 	include/DB/TableFunctions/TableFunctionMerge.h
@@ -321,7 +322,6 @@ add_library (dbms
 	include/DB/Interpreters/AggregationCommon.h
 	include/DB/Interpreters/ProcessList.h
 	include/DB/Interpreters/AggregateDescription.h
-	include/DB/Interpreters/reinterpretAsIdentifier.h
 	include/DB/Interpreters/Cluster.h
 	include/DB/Interpreters/loadMetadata.h
 	include/DB/Interpreters/ExternalDictionaries.h
@@ -837,7 +837,6 @@ add_library (dbms
 	src/Interpreters/evaluateMissingDefaults.cpp
 	src/Interpreters/evaluateConstantExpression.cpp
 	src/Interpreters/convertFieldToType.cpp
-	src/Interpreters/reinterpretAsIdentifier.cpp
 	src/Interpreters/Set.cpp
 	src/Interpreters/Join.cpp
 	src/Interpreters/Quota.cpp
@@ -879,6 +878,7 @@ add_library (dbms
 	src/Functions/FunctionsGeo.cpp
 	src/Functions/FunctionsMiscellaneous.cpp
 	src/Functions/FunctionsTransform.cpp
+	src/Functions/FunctionsCharset.cpp
 	src/Functions/Conditional/getArrayType.cpp
 	src/Functions/Conditional/ArgsInfo.cpp
 	src/Functions/Conditional/CondSource.cpp
@@ -918,40 +918,42 @@ add_library (dbms
 	src/Client/MultiplexedConnections.cpp
 )
 
-# Не генерируем отладочную информацию для файлов с большим количеством инстанцирований шаблонов
-# - для более быстрой линковки и меньшего размера бинарника.
-SET_SOURCE_FILES_PROPERTIES(
-	src/Functions/FunctionsArithmetic.cpp
-	src/Functions/FunctionsArray.cpp
-	src/Functions/FunctionsCoding.cpp
-	src/Functions/FunctionsComparison.cpp
-	src/Functions/FunctionsConditional.cpp
-	src/Functions/FunctionsConversion.cpp
-	src/Functions/FunctionsDateTime.cpp
-	src/Functions/FunctionsDictionaries.cpp
-	src/Functions/FunctionsFormatting.cpp
-	src/Functions/FunctionsHashing.cpp
-	src/Functions/FunctionsHigherOrder.cpp
-	src/Functions/FunctionsLogical.cpp
-	src/Functions/FunctionsRandom.cpp
-	src/Functions/FunctionsReinterpret.cpp
-	src/Functions/FunctionsRound.cpp
-	src/Functions/FunctionsString.cpp
-	src/Functions/FunctionsStringArray.cpp
-	src/Functions/FunctionsStringSearch.cpp
-	src/Functions/FunctionsURL.cpp
-	src/Functions/FunctionsVisitParam.cpp
-	src/Functions/FunctionsMath.cpp
-	src/Functions/FunctionsGeo.cpp
-	src/Functions/FunctionsMiscellaneous.cpp
-	src/Functions/FunctionsTransform.cpp
-	src/Dictionaries/FlatDictionary.cpp
-	src/Dictionaries/HashedDictionary.cpp
-	src/Dictionaries/CacheDictionary.cpp
-	src/Dictionaries/RangeHashedDictionary.cpp
-	src/Dictionaries/ComplexKeyHashedDictionary.cpp
-	src/Dictionaries/ComplexKeyCacheDictionary.cpp
-	PROPERTIES COMPILE_FLAGS -g0)
+if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    # Не генерируем отладочную информацию для файлов с большим количеством инстанцирований шаблонов
+    # - для более быстрой линковки и меньшего размера бинарника.
+    SET_SOURCE_FILES_PROPERTIES(
+        src/Functions/FunctionsArithmetic.cpp
+        src/Functions/FunctionsArray.cpp
+        src/Functions/FunctionsCoding.cpp
+        src/Functions/FunctionsComparison.cpp
+        src/Functions/FunctionsConditional.cpp
+        src/Functions/FunctionsConversion.cpp
+        src/Functions/FunctionsDateTime.cpp
+        src/Functions/FunctionsDictionaries.cpp
+        src/Functions/FunctionsFormatting.cpp
+        src/Functions/FunctionsHashing.cpp
+        src/Functions/FunctionsHigherOrder.cpp
+        src/Functions/FunctionsLogical.cpp
+        src/Functions/FunctionsRandom.cpp
+        src/Functions/FunctionsReinterpret.cpp
+        src/Functions/FunctionsRound.cpp
+        src/Functions/FunctionsString.cpp
+        src/Functions/FunctionsStringArray.cpp
+        src/Functions/FunctionsStringSearch.cpp
+        src/Functions/FunctionsURL.cpp
+        src/Functions/FunctionsVisitParam.cpp
+        src/Functions/FunctionsMath.cpp
+        src/Functions/FunctionsGeo.cpp
+        src/Functions/FunctionsMiscellaneous.cpp
+        src/Functions/FunctionsTransform.cpp
+        src/Dictionaries/FlatDictionary.cpp
+        src/Dictionaries/HashedDictionary.cpp
+        src/Dictionaries/CacheDictionary.cpp
+        src/Dictionaries/RangeHashedDictionary.cpp
+        src/Dictionaries/ComplexKeyHashedDictionary.cpp
+        src/Dictionaries/ComplexKeyCacheDictionary.cpp
+        PROPERTIES COMPILE_FLAGS -g0)
+endif()
 
 IF (NOT AARCH64)
 	SET(LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)

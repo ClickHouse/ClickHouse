@@ -100,6 +100,8 @@ public:
 
 	void renameTable(const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name) override;
 
+	time_t getTableMetadataModificationTime(const String & name) override;
+
 	ASTPtr getCreateQuery(const String & table_name) const override;
 
 	void shutdown() override;

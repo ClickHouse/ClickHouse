@@ -14,7 +14,7 @@
 #include <cstdint>
 #include <cstddef>
 
-#define ROTL(x,b) (u64)( ((x) << (b)) | ( (x) >> (64 - (b))) )
+#define ROTL(x,b) static_cast<u64>( ((x) << (b)) | ( (x) >> (64 - (b))) )
 
 #define SIPROUND											\
 	do 														\

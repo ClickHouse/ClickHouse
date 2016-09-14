@@ -115,7 +115,7 @@ inline const XMLString& CharacterData::getData() const
 
 inline unsigned long CharacterData::length() const
 {
-	return (unsigned long) _data.length();
+	return static_cast<unsigned long>(_data.length());
 }
 
 

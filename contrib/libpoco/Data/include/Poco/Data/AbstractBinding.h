@@ -124,7 +124,7 @@ inline const std::string& AbstractBinding::name() const
 
 inline AbstractBinder::Direction AbstractBinding::getDirection() const
 {
-	return (AbstractBinder::Direction) _direction;
+	return static_cast<AbstractBinder::Direction>(_direction);
 }
 
 

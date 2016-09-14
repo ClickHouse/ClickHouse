@@ -88,7 +88,7 @@ public:
 		CurrentMetrics::Increment metric_increment;
 	};
 
-	using ReservationPtr = std::shared_ptr<Reservation>;
+	using ReservationPtr = std::unique_ptr<Reservation>;
 
 	static size_t getUnreservedFreeSpace(const std::string & path)
 	{
@@ -131,7 +131,7 @@ public:
 		if (free_bytes < size)
 			throw Exception("Not enough free disk space to reserve: " + formatReadableSizeWithBinarySuffix(free_bytes) + " available, "
 				+ formatReadableSizeWithBinarySuffix(size) + " requested", ErrorCodes::NOT_ENOUGH_SPACE);
-		return std::make_shared<Reservation>(size);
+		return std::make_unique<Reservation>(size);
 	}
 
 private:

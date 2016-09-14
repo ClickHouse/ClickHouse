@@ -319,7 +319,7 @@ struct ToDateTransform32Or64
 template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
 	: details::ToDateConverter<DataTypeDateTime, details::ToDateTransform, Name> {};
 
-/** Special case of converting (U)Int32 or (U)Int64 to Date.
+/** Special case of converting (U)Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to Date.
   * If number is less than 65536, then it is treated as DayNum, and if greater or equals, then as unix timestamp.
   * It's a bit illogical, as we actually have two functions in one.
   * But allows to support frequent case,
@@ -334,6 +334,10 @@ template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name>
 	: details::ToDateConverter<DataTypeInt32, details::ToDateTransform32Or64, Name> {};
 template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name>
 	: details::ToDateConverter<DataTypeInt64, details::ToDateTransform32Or64, Name> {};
+template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate, Name>
+	: details::ToDateConverter<DataTypeUInt32, details::ToDateTransform32Or64, Name> {};
+template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name>
+	: details::ToDateConverter<DataTypeUInt64, details::ToDateTransform32Or64, Name> {};
 
 
 /** Transformation of numbers, dates, datetimes to strings: through formatting.

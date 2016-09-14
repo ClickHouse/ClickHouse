@@ -755,6 +755,12 @@ void DatabaseCloud::renameTable(const Context & context, const String & table_na
 }
 
 
+time_t DatabaseCloud::getTableMetaModTime(const String & table_name)
+{
+	return static_cast<time_t>(0);
+}
+
+
 void DatabaseCloud::shutdown()
 {
 	/// Нельзя удерживать блокировку во время shutdown.

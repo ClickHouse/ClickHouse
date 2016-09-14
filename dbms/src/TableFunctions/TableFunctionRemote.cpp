@@ -2,7 +2,7 @@
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
-#include <DB/Interpreters/reinterpretAsIdentifier.h>
+#include <DB/Interpreters/evaluateConstantExpression.h>
 #include <DB/Interpreters/Cluster.h>
 
 #include <DB/TableFunctions/TableFunctionRemote.h>
@@ -210,7 +210,8 @@ StoragePtr TableFunctionRemote::execute(ASTPtr ast_function, Context & context) 
 	description = getStringLiteral(*args[arg_num], "Hosts pattern");
 	++arg_num;
 
-	remote_database = reinterpretAsIdentifier(args[arg_num], context).name;
+	args[arg_num] = evaluateConstantExpressionOrIdentidierAsLiteral(args[arg_num], context);
+	remote_database = static_cast<const ASTLiteral &>(*args[arg_num]).value.safeGet<String>();
 	++arg_num;
 
 	size_t dot = remote_database.find('.');
@@ -225,7 +226,8 @@ StoragePtr TableFunctionRemote::execute(ASTPtr ast_function, Context & context) 
 		if (arg_num >= args.size())
 			throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		remote_table = reinterpretAsIdentifier(args[arg_num], context).name;
+		args[arg_num] = evaluateConstantExpressionOrIdentidierAsLiteral(args[arg_num], context);
+		remote_table = static_cast<const ASTLiteral &>(*args[arg_num]).value.safeGet<String>();
 		++arg_num;
 	}
 

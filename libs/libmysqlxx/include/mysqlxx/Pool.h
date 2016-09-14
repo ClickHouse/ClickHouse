@@ -296,7 +296,7 @@ public:
 					return Entry(*it, this);
 			}
 
-			if (connections.size() < (size_t)max_connections)
+			if (connections.size() < static_cast<size_t>(max_connections))
 			{
 				Connection * conn = allocConnection();
 				if (conn)

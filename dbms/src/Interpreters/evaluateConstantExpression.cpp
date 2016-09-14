@@ -17,7 +17,7 @@ namespace ErrorCodes
 	extern const int BAD_ARGUMENTS;
 }
 
-/** Выполнить константное выражение (для элемента множества в IN). Весьма неоптимально. */
+
 Field evaluateConstantExpression(ASTPtr & node, const Context & context)
 {
 	ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(
@@ -42,6 +42,25 @@ Field evaluateConstantExpression(ASTPtr & node, const Context & context)
 		throw Exception("Element of set in IN or VALUES is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
 
 	return result_column[0];
+}
+
+
+ASTPtr evaluateConstantExpressionAsLiteral(ASTPtr & node, const Context & context)
+{
+	if (typeid_cast<const ASTLiteral *>(node.get()))
+		return node;
+
+	return std::make_shared<ASTLiteral>(node->range,
+		evaluateConstantExpression(node, context));
+}
+
+
+ASTPtr evaluateConstantExpressionOrIdentidierAsLiteral(ASTPtr & node, const Context & context)
+{
+	if (const ASTIdentifier * id = typeid_cast<const ASTIdentifier *>(node.get()))
+		return std::make_shared<ASTLiteral>(node->range, Field(id->name));
+
+	return evaluateConstantExpressionAsLiteral(node, context);
 }
 
 }
