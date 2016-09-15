@@ -357,6 +357,7 @@ struct ArrayIndexNumImpl
 		const PaddedPODArray<UInt8> * null_map_data,
 		const PaddedPODArray<UInt8> * null_map_item)
 	{
+		/// Processing is split into 4 cases.
 		if ((null_map_data == nullptr) && (null_map_item == nullptr))
 			vectorCase1(data, offsets, value, result);
 		else if ((null_map_data == nullptr) && (null_map_item != nullptr))
@@ -368,7 +369,7 @@ struct ArrayIndexNumImpl
 	}
 };
 
-/// Specialization that catches developer errors.
+/// Specialization that catches internal errors.
 template <typename T, typename IndexConv>
 struct ArrayIndexNumImpl<T, Null, IndexConv>
 {
@@ -398,11 +399,7 @@ struct ArrayIndexNumNullImpl
 		result.resize(size);
 
 		if (null_map_data == nullptr)
-		{
-			for (size_t i = 0; i < size; ++i)
-				result[i] = 0;
 			return;
-		}
 
 		const auto & null_map_ref = *null_map_data;
 
@@ -440,6 +437,11 @@ struct ArrayIndexStringNullImpl
 		const auto size = offsets.size();
 		result.resize(size);
 
+		if (null_map_data == nullptr)
+			return;
+
+		const auto & null_map_ref = *null_map_data;
+
 		ColumnArray::Offset_t current_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -449,7 +451,7 @@ struct ArrayIndexStringNullImpl
 			for (size_t j = 0; j < array_size; ++j)
 			{
 				size_t k = (current_offset == 0 && j == 0) ? 0 : current_offset + j - 1;
-				if (null_map_data && ((*null_map_data)[k] == 1))
+				if (null_map_ref[k] == 1)
 				{
 					if (!IndexConv::apply(j, current))
 						break;
@@ -1069,20 +1071,22 @@ private:
 	static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
 	template <typename T>
-	bool executeNumber(const ColumnArray * array, ColumnUInt32::Container_t & res_values);
+	bool executeNumber(const ColumnArray * array,  const IColumn * null_map, ColumnUInt32::Container_t & res_values);
 
-	bool executeString(const ColumnArray * array, ColumnUInt32::Container_t & res_values);
+	bool executeString(const ColumnArray * array,  const IColumn * null_map, ColumnUInt32::Container_t & res_values);
 
 	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result);
 
 	bool execute128bit(
 		const ColumnArray::Offsets_t & offsets,
 		const ConstColumnPlainPtrs & columns,
+		const ConstColumnPlainPtrs & null_maps,
 		ColumnUInt32::Container_t & res_values);
 
 	void executeHashed(
 		const ColumnArray::Offsets_t & offsets,
 		const ConstColumnPlainPtrs & columns,
+		const ConstColumnPlainPtrs & null_maps,
 		ColumnUInt32::Container_t & res_values);
 };
 
