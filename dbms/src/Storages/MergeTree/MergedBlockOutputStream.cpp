@@ -4,6 +4,7 @@
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnNullable.h>
 
 #include <DB/Common/StringUtils.h>
@@ -144,12 +145,10 @@ void IMergedBlockOutputStream::writeData(const String & name, const IDataType & 
 
 		/// Then write data.
 		writeData(name, nested_type, nested_col, offset_columns, level);
-		return;
 	}
-
-	/// Для массивов требуется сначала сериализовать размеры, а потом значения.
-	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
+		/// Для массивов требуется сначала сериализовать размеры, а потом значения.
 		String size_name = DataTypeNested::extractNestedTableName(name)
 			+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
@@ -189,8 +188,10 @@ void IMergedBlockOutputStream::writeData(const String & name, const IDataType & 
 				prev_mark += limit;
 			}
 		}
-	}
 
+		writeData(name, *type_arr->getNestedType(), typeid_cast<const ColumnArray &>(column).getData(), offset_columns, level + 1);
+	}
+	else
 	{
 		ColumnStream & stream = *column_streams[name];
 
