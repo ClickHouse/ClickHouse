@@ -1525,6 +1525,19 @@ bool FunctionArrayUniq::execute128bit(
 	typedef ClearableHashSet<UInt128, UInt128HashCRC32, HashTableGrower<INITIAL_SIZE_DEGREE>,
 		HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)> > Set;
 
+	/// Suppose that, for a given row, each of the N columns has an array whose length is M.
+	/// Denote arr_i each of these arrays (1 <= i <= N). Then the following is performed:
+	///
+	/// col1      ...  colN
+	///
+	/// arr_1[1], ..., arr_N[1] -> pack into a binary blob b1
+	/// .
+	/// .
+	/// .
+	/// arr_1[M], ..., arr_N[M] -> pack into a binary blob bM
+	///
+	/// Each binary blob is inserted into a hash table.
+	///
 	Set set;
 	size_t prev_off = 0;
 	for (size_t i = 0; i < offsets.size(); ++i)
