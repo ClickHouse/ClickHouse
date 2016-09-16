@@ -1557,10 +1557,10 @@ bool FunctionArrayUniq::execute128bit(
 		size_t off = offsets[i];
 		for (size_t j = prev_off; j < off; ++j)
 		{
-			KeysNullMap<UInt128> bitmap{};
-
 			if (has_nullable_columns)
 			{
+				KeysNullMap<UInt128> bitmap{};
+
 				for (size_t i = 0; i < columns.size(); ++i)
 				{
 					if (null_maps[i] != nullptr)
@@ -1570,9 +1570,10 @@ bool FunctionArrayUniq::execute128bit(
 							bitmap[i / 8] |= UINT8_C(1) << (i % 8);
 					}
 				}
+				set.insert(packFixed<UInt128>(j, count, columns, key_sizes, bitmap));
 			}
-
-			set.insert(packFixed<UInt128>(j, count, columns, key_sizes, bitmap));
+			else
+				set.insert(packFixed<UInt128>(j, count, columns, key_sizes));
 		}
 
 		res_values[i] = set.size();
