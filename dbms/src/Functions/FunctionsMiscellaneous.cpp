@@ -421,6 +421,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 	factory.registerFunction<FunctionUptime>();
 
 	factory.registerFunction<FunctionRunningAccumulate>();
+	factory.registerFunction<FunctionRunningDifference>();
 	factory.registerFunction<FunctionFinalizeAggregation>();
 }
 

@@ -24,6 +24,7 @@
 #include <DB/Columns/ColumnAggregateFunction.h>
 #include <DB/Common/UnicodeBar.h>
 #include <DB/Functions/IFunction.h>
+#include <DB/Functions/NumberTraits.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <ext/range.hpp>
 
@@ -1247,6 +1248,105 @@ public:
 			agg_func.merge(place.get(), state_to_add);
 			agg_func.insertResultInto(place.get(), result_column);
 		}
+	}
+};
+
+
+/** Calculate difference of consecutive values in block.
+  * So, result of function depends on partition of data to blocks and on order of data in block.
+  */
+class FunctionRunningDifference : public IFunction
+{
+private:
+	/// It is possible to track value from previous block, to calculate continuously across all blocks. Not implemented.
+
+	template <typename Src, typename Dst>
+	static void process(const PaddedPODArray<Src> & src, PaddedPODArray<Dst> & dst)
+	{
+		size_t size = src.size();
+		dst.resize(size);
+
+		if (size == 0)
+			return;
+
+		/// It is possible to SIMD optimize this loop. By no need for that in practice.
+
+		dst[0] = 0;
+		Src prev = src[0];
+		for (size_t i = 1; i < size; ++i)
+		{
+			auto cur = src[i];
+			dst[i] = static_cast<Dst>(cur) - prev;
+			prev = cur;
+		}
+	}
+
+	/// Result type is same as result of subtraction of argument types.
+	template <typename SrcFieldType>
+	using DstFieldType = typename NumberTraits::ResultOfSubtraction<SrcFieldType, SrcFieldType>::Type;
+
+	/// Call polymorphic lambda with tag argument of concrete field type of src_type.
+	template <typename F>
+	void dispatchForSourceType(const IDataType & src_type, F && f) const
+	{
+			 if (auto src_type_concrete = typeid_cast<const DataTypeUInt8  *>(&src_type)) f(UInt8());
+		else if (auto src_type_concrete = typeid_cast<const DataTypeUInt16 *>(&src_type)) f(UInt16());
+		else if (auto src_type_concrete = typeid_cast<const DataTypeUInt32 *>(&src_type)) f(UInt32());
+		else if (auto src_type_concrete = typeid_cast<const DataTypeUInt64 *>(&src_type)) f(UInt64());
+		else if (auto src_type_concrete = typeid_cast<const DataTypeInt8 *>(&src_type)) f(Int8());
+		else if (auto src_type_concrete = typeid_cast<const DataTypeInt16 *>(&src_type)) f(Int16());
+		else if (auto src_type_concrete = typeid_cast<const DataTypeInt32 *>(&src_type)) f(Int32());
+		else if (auto src_type_concrete = typeid_cast<const DataTypeInt64 *>(&src_type)) f(Int64());
+		else if (auto src_type_concrete = typeid_cast<const DataTypeFloat32 *>(&src_type)) f(Float32());
+		else if (auto src_type_concrete = typeid_cast<const DataTypeFloat64 *>(&src_type)) f(Float64());
+		else if (auto src_type_concrete = typeid_cast<const DataTypeDate *>(&src_type)) f(DataTypeDate::FieldType());
+		else if (auto src_type_concrete = typeid_cast<const DataTypeDateTime *>(&src_type)) f(DataTypeDateTime::FieldType());
+		else
+			throw Exception("Argument for function " + getName() + " must have numeric type.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+
+public:
+	static constexpr auto name = "runningDifference";
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRunningDifference>(); }
+
+	String getName() const override { return name; }
+
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (arguments.size() != 1)
+			throw Exception("Function " + getName() + " requires exactly one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		DataTypePtr res;
+		dispatchForSourceType(*arguments[0], [&] (auto field_type_tag)
+		{
+			res = std::make_shared<typename DataTypeFromFieldType<DstFieldType<decltype(field_type_tag)>>::Type>();
+		});
+
+		return res;
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		auto & src = block.getByPosition(arguments.at(0));
+		auto & res = block.getByPosition(result);
+
+		/// When column is constant, its difference is zero.
+		if (src.column->isConst())
+		{
+			res.column = res.type->createConstColumn(block.rowsInFirstColumn(), res.type->getDefault());
+			return;
+		}
+
+		res.column = res.type->createColumn();
+
+		dispatchForSourceType(*src.type, [&] (auto field_type_tag)
+		{
+			using SrcFieldType = decltype(field_type_tag);
+			process(
+				static_cast<const ColumnVector<SrcFieldType> &>(*src.column).getData(),
+				static_cast<ColumnVector<DstFieldType<SrcFieldType>> &>(*res.column).getData());
+		});
 	}
 };
 
