@@ -22,8 +22,45 @@ namespace DB
 
 using Sizes = std::vector<size_t>;
 
+/// When packing the values of nullable columns at a given row, we have to
+/// store the fact that these values are nullable or not. This is achieved
+/// by encoding this information as a bitmap. Let S be the size in bytes of
+/// a packed values binary blob and T the number of bytes we may place into
+/// this blob, the size that the bitmap shall occupy in the blob is equal to:
+/// ceil(T/8). Thus we must have: S = T + ceil(T/8). Below we indicate for
+/// each value of S, the corresponding value of T, and the bitmap size:
+///
+/// 16,14,2
+/// 8,7,1
+/// 4,3,1
+/// 2,1,1
+///
 
-/// Записать набор ключей фиксированной длины в T, уложив их подряд (при допущении, что они помещаются).
+namespace
+{
+
+template <typename T>
+constexpr auto getBitmapSize()
+{
+	return
+		(sizeof(T) == 16) ?
+			2 :
+		((sizeof(T) == 8) ?
+			1 :
+		((sizeof(T) == 4) ?
+			1 :
+		((sizeof(T) == 2) ?
+			1 :
+		0)));
+}
+
+}
+
+template <typename T>
+using KeysNullMap = std::array<UInt8, getBitmapSize<T>()>;
+
+/// Pack into a binary blob of type T a set of fixed-size keys. Granted that all the keys fit into the
+/// binary blob, they are disposed in it consecutively.
 template <typename T>
 static inline T ALWAYS_INLINE packFixed(
 	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, const Sizes & key_sizes)
@@ -31,11 +68,11 @@ static inline T ALWAYS_INLINE packFixed(
 	union
 	{
 		T key;
-		char bytes[sizeof(key)];
+		char bytes[sizeof(key)] = {};
 	};
 
-	memset(bytes, 0, sizeof(key));
 	size_t offset = 0;
+
 	for (size_t j = 0; j < keys_size; ++j)
 	{
 		switch (key_sizes[j])
@@ -65,8 +102,64 @@ static inline T ALWAYS_INLINE packFixed(
 	return key;
 }
 
+/// Similar as above but supports nullable values.
+template <typename T>
+static inline T ALWAYS_INLINE packFixed(
+	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, const Sizes & key_sizes,
+	const KeysNullMap<T> & bitmap)
+{
+	union
+	{
+		T key;
+		char bytes[sizeof(key)] = {};
+	};
 
-/// Хэшировать набор ключей в UInt128.
+	size_t offset = 0;
+
+	static constexpr auto bitmap_size = std::tuple_size<KeysNullMap<T>>::value;
+	bool has_bitmap = bitmap_size > 0;
+
+	if (has_bitmap)
+	{
+		memcpy(bytes + offset, bitmap.data(), bitmap_size * sizeof(UInt8));
+		offset += bitmap_size;
+	}
+
+	for (size_t j = 0; j < keys_size; ++j)
+	{
+		bool is_null = has_bitmap && (bitmap[j % 8] & (UINT8_C(1) << (j % 8)));
+		if (is_null)
+			continue;
+
+		switch (key_sizes[j])
+		{
+			case 1:
+				memcpy(bytes + offset, &static_cast<const ColumnUInt8 *>(key_columns[j])->getData()[i], 1);
+				offset += 1;
+				break;
+			case 2:
+				memcpy(bytes + offset, &static_cast<const ColumnUInt16 *>(key_columns[j])->getData()[i], 2);
+				offset += 2;
+				break;
+			case 4:
+				memcpy(bytes + offset, &static_cast<const ColumnUInt32 *>(key_columns[j])->getData()[i], 4);
+				offset += 4;
+				break;
+			case 8:
+				memcpy(bytes + offset, &static_cast<const ColumnUInt64 *>(key_columns[j])->getData()[i], 8);
+				offset += 8;
+				break;
+			default:
+				memcpy(bytes + offset, &static_cast<const ColumnFixedString *>(key_columns[j])->getChars()[i * key_sizes[j]], key_sizes[j]);
+				offset += key_sizes[j];
+		}
+	}
+
+	return key;
+}
+
+
+/// Hash a set of keys into a UInt128 value.
 static inline UInt128 ALWAYS_INLINE hash128(
 	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, StringRefs & keys)
 {
@@ -86,7 +179,7 @@ static inline UInt128 ALWAYS_INLINE hash128(
 }
 
 
-/// Почти то же самое, но без возврата ссылок на данные ключей.
+/// Almost the same as above but it doesn't return any reference to key data.
 static inline UInt128 ALWAYS_INLINE hash128(
 	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns)
 {

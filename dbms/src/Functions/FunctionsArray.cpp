@@ -1335,7 +1335,10 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
 	Columns array_columns(arguments.size());
 	const ColumnArray::Offsets_t * offsets = nullptr;
 	ConstColumnPlainPtrs data_columns(arguments.size());
+	ConstColumnPlainPtrs original_data_columns(arguments.size());
 	ConstColumnPlainPtrs null_maps(arguments.size());
+
+	bool has_nullable_columns = false;
 
 	for (size_t i = 0; i < arguments.size(); ++i)
 	{
@@ -1363,8 +1366,11 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
 				ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
 		data_columns[i] = &array->getData();
+		original_data_columns[i] = data_columns[i];
+
 		if (data_columns[i]->isNullable())
 		{
+			has_nullable_columns = true;
 			const auto & nullable_col = static_cast<const ColumnNullable &>(*data_columns[i]);
 			data_columns[i] = nullable_col.getNestedColumn().get();
 			null_maps[i] = nullable_col.getNullValuesByteMap().get();
@@ -1400,8 +1406,8 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
 	}
 	else
 	{
-		if (!execute128bit(*offsets, data_columns, null_maps, res_values))
-			executeHashed(*offsets, data_columns, null_maps, res_values);
+		if (!execute128bit(*offsets, data_columns, null_maps, res_values, has_nullable_columns))
+			executeHashed(*offsets, original_data_columns, res_values);
 	}
 }
 
@@ -1507,11 +1513,13 @@ bool FunctionArrayUniq::execute128bit(
 	const ColumnArray::Offsets_t & offsets,
 	const ConstColumnPlainPtrs & columns,
 	const ConstColumnPlainPtrs & null_maps,
-	ColumnUInt32::Container_t & res_values)
+	ColumnUInt32::Container_t & res_values,
+	bool has_nullable_columns)
 {
 	size_t count = columns.size();
 	size_t keys_bytes = 0;
 	Sizes key_sizes(count);
+
 	for (size_t j = 0; j < count; ++j)
 	{
 		if (!columns[j]->isFixed())
@@ -1519,6 +1527,9 @@ bool FunctionArrayUniq::execute128bit(
 		key_sizes[j] = columns[j]->sizeOfField();
 		keys_bytes += key_sizes[j];
 	}
+	if (has_nullable_columns)
+		keys_bytes += std::tuple_size<KeysNullMap<UInt128>>::value;
+
 	if (keys_bytes > 16)
 		return false;
 
@@ -1545,7 +1556,24 @@ bool FunctionArrayUniq::execute128bit(
 		set.clear();
 		size_t off = offsets[i];
 		for (size_t j = prev_off; j < off; ++j)
-			set.insert(packFixed<UInt128>(j, count, columns, key_sizes));
+		{
+			KeysNullMap<UInt128> bitmap{};
+
+			if (has_nullable_columns)
+			{
+				for (size_t i = 0; i < columns.size(); ++i)
+				{
+					if (null_maps[i] != nullptr)
+					{
+						const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[i]).getData();
+						if (null_map[j] == 1)
+							bitmap[i / 8] |= UINT8_C(1) << (i % 8);
+					}
+				}
+			}
+
+			set.insert(packFixed<UInt128>(j, count, columns, key_sizes, bitmap));
+		}
 
 		res_values[i] = set.size();
 		prev_off = off;
@@ -1557,7 +1585,6 @@ bool FunctionArrayUniq::execute128bit(
 void FunctionArrayUniq::executeHashed(
 	const ColumnArray::Offsets_t & offsets,
 	const ConstColumnPlainPtrs & columns,
-	const ConstColumnPlainPtrs & null_maps,
 	ColumnUInt32::Container_t & res_values)
 {
 	size_t count = columns.size();

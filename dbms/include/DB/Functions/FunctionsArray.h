@@ -1081,12 +1081,12 @@ private:
 		const ColumnArray::Offsets_t & offsets,
 		const ConstColumnPlainPtrs & columns,
 		const ConstColumnPlainPtrs & null_maps,
-		ColumnUInt32::Container_t & res_values);
+		ColumnUInt32::Container_t & res_values,
+		bool has_nullable_columns);
 
 	void executeHashed(
 		const ColumnArray::Offsets_t & offsets,
 		const ConstColumnPlainPtrs & columns,
-		const ConstColumnPlainPtrs & null_maps,
 		ColumnUInt32::Container_t & res_values);
 };
 
