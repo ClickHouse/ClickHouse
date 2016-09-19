@@ -1024,7 +1024,8 @@ protected:
 	void executeWithoutKeyImpl(
 		AggregatedDataWithoutKey & res,
 		size_t rows,
-		AggregateFunctionInstruction * aggregate_instructions) const;
+		AggregateFunctionInstruction * aggregate_instructions,
+		Arena * arena) const;
 
 	template <typename Method>
 	void writeToTemporaryFileImpl(

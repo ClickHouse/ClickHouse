@@ -74,7 +74,7 @@ public:
 		level = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const
 	{
 		this->data(place)
 			.map[static_cast<const ColumnVector<ValueType> &>(column_value).getData()[row_num]]
@@ -189,7 +189,7 @@ public:
 		levels.set(params);
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const
 	{
 		this->data(place)
 			.map[static_cast<const ColumnVector<ValueType> &>(column_value).getData()[row_num]]

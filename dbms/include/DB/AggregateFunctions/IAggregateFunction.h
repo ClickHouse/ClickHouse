@@ -86,7 +86,7 @@ public:
 	virtual size_t alignOfData() const = 0;
 
 	/// Добавить значение. columns - столбцы, содержащие аргументы, row_num - номер строки в столбцах.
-	virtual void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const = 0;
+	virtual void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const = 0;
 
 	/// Объединить состояние с другим состоянием.
 	virtual void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const = 0;
@@ -109,7 +109,7 @@ public:
 	  * В этом случае структура данных для агррегации должна быть унаследована от IAggregateDataWithArena.
 	  * Указатель на необходимую Arena можно будет получить с помощью IAggregateDataWithArena::getArena().
 	  */
-	virtual bool needArena() const { return false; }
+	//virtual bool needArena() const { return false; }
 
 
 	/** Внутренний цикл, использующий указатель на функцию, получается лучше, чем использующий виртуальную функцию.
@@ -118,7 +118,7 @@ public:
 	  * Это даёт падение производительности на простых запросах в районе 12%.
 	  * После появления более хороших компиляторов, код можно будет убрать.
 	  */
-	using AddFunc = void (*)(const IAggregateFunction *, AggregateDataPtr, const IColumn **, size_t);
+	using AddFunc = void (*)(const IAggregateFunction *, AggregateDataPtr, const IColumn **, size_t, Arena *);
 	virtual AddFunc getAddressOfAddFunction() const = 0;
 };
 
@@ -160,10 +160,10 @@ public:
 		return __alignof__(Data);
 	}
 
-	bool needArena() const override
-	{
-		return std::is_base_of<IAggregateDataWithArena, T>();
-	}
+// 	bool needArena() const override
+// 	{
+// 		return std::is_base_of<IAggregateDataWithArena, T>();
+// 	}
 };
 
 

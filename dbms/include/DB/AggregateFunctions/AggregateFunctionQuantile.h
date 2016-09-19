@@ -68,7 +68,7 @@ public:
 	}
 
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
@@ -145,7 +145,7 @@ public:
 	}
 
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}

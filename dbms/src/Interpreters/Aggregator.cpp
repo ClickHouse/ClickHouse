@@ -441,14 +441,14 @@ void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data, Arena 
 			  * Для того, чтобы потом всё правильно уничтожилось, "откатываем" часть созданных состояний.
 			  * Код не очень удобный.
 			  */
-			char * data_cur = aggregate_data + offsets_of_aggregate_states[j];
 			aggregate_functions[j]->create(aggregate_data + offsets_of_aggregate_states[j]);
 
-			/// Прописываем указатель на Arena после создания, до этого она не валидна.
-			if (aggregate_functions[j]->needArena())
-			{
-				reinterpret_cast<IAggregateDataWithArena *>(data_cur)->arena = arena;
-			}
+// 			/// Прописываем указатель на Arena после создания, до этого она не валидна.
+// 			char * data_cur = aggregate_data + offsets_of_aggregate_states[j];
+// 			if (aggregate_functions[j]->needArena())
+// 			{
+// 				reinterpret_cast<IAggregateDataWithArena *>(data_cur)->arena = arena;
+// 			}
 		}
 		catch (...)
 		{
@@ -526,7 +526,7 @@ void NO_INLINE Aggregator::executeImplCase(
 					/// Добавляем значения в агрегатные функции.
 					AggregateDataPtr value = Method::getAggregateData(it->second);
 					for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-						(*inst->func)(inst->that, value + inst->state_offset, inst->arguments, i);
+						(*inst->func)(inst->that, value + inst->state_offset, inst->arguments, i, aggregates_pool);
 
 					method.onExistingKey(key, keys, *aggregates_pool);
 					continue;
@@ -574,7 +574,7 @@ void NO_INLINE Aggregator::executeImplCase(
 
 		/// Добавляем значения в агрегатные функции.
 		for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-			(*inst->func)(inst->that, value + inst->state_offset, inst->arguments, i);
+			(*inst->func)(inst->that, value + inst->state_offset, inst->arguments, i, aggregates_pool);
 	}
 }
 
@@ -585,7 +585,8 @@ void NO_INLINE Aggregator::executeImplCase(
 void NO_INLINE Aggregator::executeWithoutKeyImpl(
 	AggregatedDataWithoutKey & res,
 	size_t rows,
-	AggregateFunctionInstruction * aggregate_instructions) const
+	AggregateFunctionInstruction * aggregate_instructions,
+	Arena * arena) const
 {
 	/// Оптимизация в случае единственной агрегатной функции count.
 	AggregateFunctionCount * agg_count = params.aggregates_size == 1
@@ -600,7 +601,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 		{
 			/// Добавляем значения
 			for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-				(*inst->func)(inst->that, res + inst->state_offset, inst->arguments, i);
+				(*inst->func)(inst->that, res + inst->state_offset, inst->arguments, i, arena);
 		}
 	}
 }
@@ -701,7 +702,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 					(compiled_data->compiled_method_ptr)(*this, result.without_key, rows, aggregate_columns);
 		}
 		else
-			executeWithoutKeyImpl(result.without_key, rows, &aggregate_functions_instructions[0]);
+			executeWithoutKeyImpl(result.without_key, rows, &aggregate_functions_instructions[0], result.aggregates_pool);
 	}
 	else
 	{

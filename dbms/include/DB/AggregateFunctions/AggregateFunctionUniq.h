@@ -340,7 +340,7 @@ public:
 	{
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		detail::OneAdder<T, Data>::addImpl(this->data(place), column, row_num);
 	}
@@ -395,7 +395,7 @@ public:
 			num_args = arguments.size();
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
 	{
 		this->data(place).set.insert(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num));
 	}
@@ -420,9 +420,9 @@ public:
 		static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
 	}
 
-	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num)
+	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
 	{
-		return static_cast<const AggregateFunctionUniqVariadic &>(*that).add(place, columns, row_num);
+		static_cast<const AggregateFunctionUniqVariadic &>(*that).add(place, columns, row_num, arena);
 	}
 
 	IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }

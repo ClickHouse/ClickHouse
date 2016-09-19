@@ -51,7 +51,7 @@ public:
 	{
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		this->data(place).value.push_back(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
 	}
@@ -128,7 +128,7 @@ public:
 	}
 
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		data(place).value.push_back(Array::value_type());
 		column.get(row_num, data(place).value.back());

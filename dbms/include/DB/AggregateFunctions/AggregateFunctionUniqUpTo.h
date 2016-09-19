@@ -151,7 +151,7 @@ public:
 		threshold = threshold_param;
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		this->data(place).addImpl(column, row_num, threshold);
 	}
@@ -224,7 +224,7 @@ public:
 		threshold = threshold_param;
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
 	{
 		this->data(place).insert(UniqVariadicHash<false, argument_is_tuple>::apply(num_args, columns, row_num), threshold);
 	}
@@ -249,9 +249,9 @@ public:
 		static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
 	}
 
-	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num)
+	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *arena)
 	{
-		return static_cast<const AggregateFunctionUniqUpToVariadic &>(*that).add(place, columns, row_num);
+		static_cast<const AggregateFunctionUniqUpToVariadic &>(*that).add(place, columns, row_num, arena);
 	}
 
 	IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }

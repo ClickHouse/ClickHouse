@@ -42,7 +42,7 @@ public:
 	}
 
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		this->data(place).sum += static_cast<const ColumnVector<T> &>(column).getData()[row_num];
 		++this->data(place).count;

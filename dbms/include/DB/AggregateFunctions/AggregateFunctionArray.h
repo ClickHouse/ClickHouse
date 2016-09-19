@@ -83,7 +83,7 @@ public:
 		return nested_func->alignOfData();
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
 	{
 		const IColumn * nested[num_agruments];
 
@@ -97,7 +97,7 @@ public:
 		size_t end = offsets[row_num];
 
 		for (size_t i = begin; i < end; ++i)
-			nested_func->add(place, nested, i);
+			nested_func->add(place, nested, i, nullptr);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
@@ -120,9 +120,9 @@ public:
 		nested_func->insertResultInto(place, to);
 	}
 
-	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num)
+	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
 	{
-		return static_cast<const AggregateFunctionArray &>(*that).add(place, columns, row_num);
+		static_cast<const AggregateFunctionArray &>(*that).add(place, columns, row_num, arena);
 	}
 
 	IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }

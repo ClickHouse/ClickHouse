@@ -223,7 +223,7 @@ template <class TSortCursor>
 void GraphiteRollupSortedBlockInputStream::accumulateRow(TSortCursor & cursor)
 {
 	if (current_pattern)
-		current_pattern->function->add(place_for_aggregate_state.data(), &cursor->all_columns[value_column_num], cursor->pos);
+		current_pattern->function->add(place_for_aggregate_state.data(), &cursor->all_columns[value_column_num], cursor->pos, nullptr);
 }
 
 }

@@ -73,7 +73,7 @@ public:
 		return std::make_shared<DataTypeArray>(input_data_type->clone());
 	}
 
-		void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		throw Exception(ErrorCodes::NOT_IMPLEMENTED);
 
@@ -103,9 +103,8 @@ public:
 		}
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
 	{
-		auto arena = this->data(place).arena;
 		auto & set = this->data(place).value;
 
 		bool inserted;
@@ -164,7 +163,6 @@ static IAggregateFunction * createWithExtraTypes(const IDataType & argument_type
 	else
 	{
 		/// Check that we can use plain version of AggreagteFunctionGroupUniqArrayGeneric
-
 		if (typeid_cast<const DataTypeString*>(&argument_type))
 			return new AggreagteFunctionGroupUniqArrayGeneric<true>;
 
