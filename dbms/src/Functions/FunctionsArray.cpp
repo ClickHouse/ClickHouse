@@ -1461,7 +1461,18 @@ bool FunctionArrayUniq::executeNumber(const ColumnArray * array, const IColumn *
 
 bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values)
 {
-	const ColumnString * nested = typeid_cast<const ColumnString *>(&array->getData());
+	const IColumn * inner_col;
+
+	const auto & array_data = array->getData();
+	if (array_data.isNullable())
+	{
+		const auto & nullable_col = static_cast<const ColumnNullable &>(array_data);
+		inner_col = nullable_col.getNestedColumn().get();
+	}
+	else
+		inner_col = &array_data;
+
+	const ColumnString * nested = typeid_cast<const ColumnString *>(inner_col);
 	if (!nested)
 		return false;
 	const ColumnArray::Offsets_t & offsets = array->getOffsets();
