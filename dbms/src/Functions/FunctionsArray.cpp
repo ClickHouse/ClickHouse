@@ -1847,7 +1847,8 @@ bool FunctionArrayEnumerateUniq::execute128bit(
 	const ColumnArray::Offsets_t & offsets,
 	const ConstColumnPlainPtrs & columns,
 	const ConstColumnPlainPtrs & null_maps,
-	ColumnUInt32::Container_t & res_values)
+	ColumnUInt32::Container_t & res_values,
+	bool has_nullable_columns)
 {
 	size_t count = columns.size();
 	size_t keys_bytes = 0;
@@ -1877,7 +1878,23 @@ bool FunctionArrayEnumerateUniq::execute128bit(
 		size_t off = offsets[i];
 		for (size_t j = prev_off; j < off; ++j)
 		{
-			res_values[j] = ++indices[packFixed<UInt128>(j, count, columns, key_sizes)];
+			if (has_nullable_columns)
+			{
+				KeysNullMap<UInt128> bitmap{};
+
+				for (size_t i = 0; i < columns.size(); ++i)
+				{
+					if (null_maps[i] != nullptr)
+					{
+						const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[i]).getData();
+						if (null_map[j] == 1)
+							bitmap[i / 8] |= UINT8_C(1) << (i % 8);
+					}
+				}
+				res_values[j] = ++indices[packFixed<UInt128>(j, count, columns, key_sizes, bitmap)];
+			}
+			else
+				res_values[j] = ++indices[packFixed<UInt128>(j, count, columns, key_sizes)];
 		}
 		prev_off = off;
 	}

@@ -1121,16 +1121,18 @@ private:
 	static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
 	template <typename T>
-	bool executeNumber(const ColumnArray * array, ColumnUInt32::Container_t & res_values);
+	bool executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values);
 
-	bool executeString(const ColumnArray * array, ColumnUInt32::Container_t & res_values);
+	bool executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values);
 
 	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result);
 
 	bool execute128bit(
 		const ColumnArray::Offsets_t & offsets,
 		const ConstColumnPlainPtrs & columns,
-		ColumnUInt32::Container_t & res_values);
+		const ConstColumnPlainPtrs & null_maps,
+		ColumnUInt32::Container_t & res_values,
+		bool has_nullable_columns);
 
 	void executeHashed(
 		const ColumnArray::Offsets_t & offsets,
