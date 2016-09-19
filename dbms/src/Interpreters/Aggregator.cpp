@@ -447,7 +447,6 @@ void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data, Arena 
 			/// Прописываем указатель на Arena после создания, до этого она не валидна.
 			if (aggregate_functions[j]->needArena())
 			{
-				//LOG_DEBUG(&Logger::get("Aggregator"), "set arena=" << arena << " for func " << aggregate_functions[j]->getName());
 				reinterpret_cast<IAggregateDataWithArena *>(data_cur)->arena = arena;
 			}
 		}
@@ -1055,7 +1054,7 @@ Block Aggregator::prepareBlockAndFill(
 	AggregatedDataVariants & data_variants,
 	bool final,
 	size_t rows,
- 	Filler && filler) const
+	Filler && filler) const
 {
 	Block res = sample.cloneEmpty();
 
