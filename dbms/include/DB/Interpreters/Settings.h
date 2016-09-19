@@ -103,9 +103,9 @@ struct Settings
 	M(SettingUInt64, group_by_two_level_threshold_bytes, 100000000) \
 	/** Включён ли экономный по памяти режим распределённой агрегации. */ \
 	M(SettingBool, distributed_aggregation_memory_efficient, false) \
-	/** Сколько потоков использовать для мерджа результатов в режиме, экономном по памяти. Чем больше, чем больше памяти расходуется. \
-	  * 0, означает - столько же, сколько max_threads. Временно выставленно в 1, так как реализация некорректна. */ \
-	M(SettingUInt64, aggregation_memory_efficient_merge_threads, 1) \
+	/** Number of threads to use for merge intermediate aggregation results in memory efficient mode. When bigger, then more memory is consumed. \
+	  * 0 means - same as 'max_threads'. */ \
+	M(SettingUInt64, aggregation_memory_efficient_merge_threads, 0) \
 	\
 	/** Максимальное количество используемых реплик каждого шарда при выполнении запроса */ \
 	M(SettingUInt64, max_parallel_replicas, 1) \
@@ -223,7 +223,7 @@ struct Settings
 	\
 	/** Write add http CORS header */ \
 	M(SettingBool, add_http_cors_header, false) \
-	
+
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
 
