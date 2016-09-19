@@ -30,6 +30,7 @@ void registerFunctionsArray(FunctionFactory & factory)
 	factory.registerFunction<FunctionEmptyArrayToSingle>();
 	factory.registerFunction<FunctionRange>();
 	factory.registerFunction<FunctionArrayReduce>();
+	factory.registerFunction<FunctionArrayReverse>();
 }
 
 /// Implementation of FunctionArray.
@@ -2394,18 +2395,38 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
 	IColumn & res_data = res.getData();
 	res.getOffsetsColumn() = array->getOffsetsColumn();
 
-	if (!(	executeNumber<UInt8>	(src_data, offsets, res_data)
-		||	executeNumber<UInt16>	(src_data, offsets, res_data)
-		||	executeNumber<UInt32>	(src_data, offsets, res_data)
-		||	executeNumber<UInt64>	(src_data, offsets, res_data)
-		||	executeNumber<Int8>		(src_data, offsets, res_data)
-		||	executeNumber<Int16>	(src_data, offsets, res_data)
-		||	executeNumber<Int32>	(src_data, offsets, res_data)
-		||	executeNumber<Int64>	(src_data, offsets, res_data)
-		||	executeNumber<Float32>	(src_data, offsets, res_data)
-		||	executeNumber<Float64>	(src_data, offsets, res_data)
-		||	executeString			(src_data, offsets, res_data)
-		||	executeFixedString		(src_data, offsets, res_data)))
+	const ColumnNullable * nullable_col = nullptr;
+	ColumnNullable * nullable_res_col = nullptr;
+
+	const IColumn * inner_col;
+	IColumn * inner_res_col;
+
+	if (src_data.isNullable())
+	{
+		nullable_col = static_cast<const ColumnNullable *>(&src_data);
+		inner_col = nullable_col->getNestedColumn().get();
+
+		nullable_res_col = static_cast<ColumnNullable *>(&res_data);
+		inner_res_col = nullable_res_col->getNestedColumn().get();
+	}
+	else
+	{
+		inner_col = &src_data;
+		inner_res_col = &res_data;
+	}
+
+	if (!(	executeNumber<UInt8>	(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+		||	executeNumber<UInt16>	(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+		||	executeNumber<UInt32>	(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+		||	executeNumber<UInt64>	(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+		||	executeNumber<Int8>		(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+		||	executeNumber<Int16>	(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+		||	executeNumber<Int32>	(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+		||	executeNumber<Int64>	(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+		||	executeNumber<Float32>	(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+		||	executeNumber<Float64>	(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+		||	executeString			(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+		||	executeFixedString		(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)))
 		throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
 			+ " of first argument of function " + getName(),
 			ErrorCodes::ILLEGAL_COLUMN);
@@ -2437,7 +2458,9 @@ bool FunctionArrayReverse::executeConst(Block & block, const ColumnNumbers & arg
 template <typename T>
 bool FunctionArrayReverse::executeNumber(
 	const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
-	IColumn & res_data_col)
+	IColumn & res_data_col,
+	const ColumnNullable * nullable_col,
+	ColumnNullable * nullable_res_col)
 {
 	if (const ColumnVector<T> * src_data_concrete = typeid_cast<const ColumnVector<T> *>(&src_data))
 	{
@@ -2468,6 +2491,36 @@ bool FunctionArrayReverse::executeNumber(
 			src_prev_offset = src_offsets[i];
 		}
 
+		/// XXX Refactor the code below.
+		if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
+		{
+			const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullValuesByteMap()).getData();
+			auto & res_null_map = static_cast<ColumnUInt8 &>(*nullable_res_col->getNullValuesByteMap()).getData();
+			res_null_map.resize(src_data.size());
+
+			ColumnArray::Offset_t src_prev_offset = 0;
+
+			for (size_t i = 0; i < size; ++i)
+			{
+				const UInt8 * src = &src_null_map[src_prev_offset];
+				const UInt8 * src_end = &src_null_map[src_offsets[i]];
+
+				if (src == src_end)
+					continue;
+
+				UInt8 * dst = &res_null_map[src_offsets[i] - 1];
+
+				while (src < src_end)
+				{
+					*dst = *src;
+					++src;
+					--dst;
+				}
+
+				src_prev_offset = src_offsets[i];
+			}
+		}
+
 		return true;
 	}
 	else
@@ -2476,7 +2529,9 @@ bool FunctionArrayReverse::executeNumber(
 
 bool FunctionArrayReverse::executeFixedString(
 	const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
-	IColumn & res_data_col)
+	IColumn & res_data_col,
+	const ColumnNullable * nullable_col,
+	ColumnNullable * nullable_res_col)
 {
 	if (const ColumnFixedString * src_data_concrete = typeid_cast<const ColumnFixedString *>(&src_data))
 	{
@@ -2516,7 +2571,9 @@ bool FunctionArrayReverse::executeFixedString(
 
 bool FunctionArrayReverse::executeString(
 	const IColumn & src_data, const ColumnArray::Offsets_t & src_array_offsets,
-	IColumn & res_data_col)
+	IColumn & res_data_col,
+	const ColumnNullable * nullable_col,
+	ColumnNullable * nullable_res_col)
 {
 	if (const ColumnString * src_data_concrete = typeid_cast<const ColumnString *>(&src_data))
 	{

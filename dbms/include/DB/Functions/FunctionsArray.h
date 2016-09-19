@@ -1266,15 +1266,21 @@ private:
 	template <typename T>
 	bool executeNumber(
 		const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
-		IColumn & res_data_col);
+		IColumn & res_data_col,
+		const ColumnNullable * nullable_col,
+		ColumnNullable * nullable_res_col);
 
 	bool executeFixedString(
 		const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
-		IColumn & res_data_col);
+		IColumn & res_data_col,
+		const ColumnNullable * nullable_col,
+		ColumnNullable * nullable_res_col);
 
 	bool executeString(
 		const IColumn & src_data, const ColumnArray::Offsets_t & src_array_offsets,
-		IColumn & res_data_col);
+		IColumn & res_data_col,
+		const ColumnNullable * nullable_col,
+		ColumnNullable * nullable_res_col);
 };
 
 
