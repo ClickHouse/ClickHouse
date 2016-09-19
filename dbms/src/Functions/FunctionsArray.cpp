@@ -67,11 +67,11 @@ bool foundNumericType(const DataTypes & args)
 }
 
 /// Is there at least one numeric column among the columns of the specified block?
-bool foundNumericTypeInBlock(const Block & block)
+bool foundNumericTypeInBlock(const Block & block, const ColumnNumbers & arguments)
 {
-	for (size_t i = 0; i < block.columns(); ++i)
+	for (size_t i = 0; i < arguments.size(); ++i)
 	{
-		const auto & type = block.unsafeGetByPosition(i).type;
+		const auto & type = block.unsafeGetByPosition(arguments[i]).type;
 		if (type->behavesAsNumber())
 			return true;
 		else if (!type->isNull())
@@ -255,7 +255,7 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
 	DataTypePtr result_type = first_arg.type;
 	DataTypeTraits::EnrichedDataTypePtr enriched_result_type;
 
-	if (foundNumericTypeInBlock(block))
+	if (foundNumericTypeInBlock(block, arguments))
 	{
 		/// If type is numeric, calculate least common type.
 		DataTypes types;
