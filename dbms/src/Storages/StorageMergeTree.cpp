@@ -282,8 +282,8 @@ struct CurrentlyMergingPartsTagger
 
 		for (const auto & part : parts)
 		{
-			if (!storage->currently_merging.count(part))	/// leads to std::terminate, that's Ok.
-				throw Exception("Untagging already untagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+			if (!storage->currently_merging.count(part))
+				std::terminate();
 			storage->currently_merging.erase(part);
 		}
 	}

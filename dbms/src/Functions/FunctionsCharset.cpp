@@ -49,9 +49,8 @@ private:
 
 		~IConv()
 		{
-			if (-1 == iconv_close(impl))	/// throwing exception leads to std::terminate and it's ok.
-				throwFromErrno("Cannot iconv_close",
-					ErrorCodes::LOGICAL_ERROR);
+			if (-1 == iconv_close(impl))
+				std::terminate();
 		}
 	};
 
