@@ -1656,6 +1656,10 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
 	Columns array_columns(arguments.size());
 	const ColumnArray::Offsets_t * offsets = nullptr;
 	ConstColumnPlainPtrs data_columns(arguments.size());
+	ConstColumnPlainPtrs original_data_columns(arguments.size());
+	ConstColumnPlainPtrs null_maps(arguments.size());
+
+	bool has_nullable_columns = false;
 
 	for (size_t i = 0; i < arguments.size(); ++i)
 	{
@@ -1674,15 +1678,28 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
 		}
 		array_columns[i] = array_ptr;
 		const ColumnArray::Offsets_t & offsets_i = array->getOffsets();
-		if (!i)
+		if (i == 0)
 			offsets = &offsets_i;
 		else if (offsets_i != *offsets)
 			throw Exception("Lengths of all arrays passsed to " + getName() + " must be equal.",
 				ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+
 		data_columns[i] = &array->getData();
+		original_data_columns[i] = data_columns[i];
+
+		if (data_columns[i]->isNullable())
+		{
+			has_nullable_columns = true;
+			const auto & nullable_col = static_cast<const ColumnNullable &>(*data_columns[i]);
+			data_columns[i] = nullable_col.getNestedColumn().get();
+			null_maps[i] = nullable_col.getNullValuesByteMap().get();
+		}
+		else
+			null_maps[i] = nullptr;
 	}
 
 	const ColumnArray * first_array = typeid_cast<const ColumnArray *>(array_columns[0].get());
+	const IColumn * first_null_map = null_maps[0];
 	auto res_nested = std::make_shared<ColumnUInt32>();
 	auto res_array = std::make_shared<ColumnArray>(res_nested, first_array->getOffsetsColumn());
 	block.getByPosition(result).column = res_array;
@@ -1693,32 +1710,43 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
 
 	if (arguments.size() == 1)
 	{
-		if (!(	executeNumber<UInt8>	(first_array, res_values)
-			||	executeNumber<UInt16>	(first_array, res_values)
-			||	executeNumber<UInt32>	(first_array, res_values)
-			||	executeNumber<UInt64>	(first_array, res_values)
-			||	executeNumber<Int8>		(first_array, res_values)
-			||	executeNumber<Int16>	(first_array, res_values)
-			||	executeNumber<Int32>	(first_array, res_values)
-			||	executeNumber<Int64>	(first_array, res_values)
-			||	executeNumber<Float32>	(first_array, res_values)
-			||	executeNumber<Float64>	(first_array, res_values)
-			||	executeString			(first_array, res_values)))
+		if (!(	executeNumber<UInt8>	(first_array, first_null_map, res_values)
+			||	executeNumber<UInt16>	(first_array, first_null_map, res_values)
+			||	executeNumber<UInt32>	(first_array, first_null_map, res_values)
+			||	executeNumber<UInt64>	(first_array, first_null_map, res_values)
+			||	executeNumber<Int8>		(first_array, first_null_map, res_values)
+			||	executeNumber<Int16>	(first_array, first_null_map, res_values)
+			||	executeNumber<Int32>	(first_array, first_null_map, res_values)
+			||	executeNumber<Int64>	(first_array, first_null_map, res_values)
+			||	executeNumber<Float32>	(first_array, first_null_map, res_values)
+			||	executeNumber<Float64>	(first_array, first_null_map, res_values)
+			||	executeString			(first_array, first_null_map, res_values)))
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
 					+ " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 	else
 	{
-		if (!execute128bit(*offsets, data_columns, res_values))
-			executeHashed(*offsets, data_columns, res_values);
+		if (!execute128bit(*offsets, data_columns, null_maps, res_values, has_nullable_columns))
+			executeHashed(*offsets, original_data_columns, res_values);
 	}
 }
 
 template <typename T>
-bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, ColumnUInt32::Container_t & res_values)
+bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values)
 {
-	const ColumnVector<T> * nested = typeid_cast<const ColumnVector<T> *>(&array->getData());
+	const IColumn * inner_col;
+
+	const auto & array_data = array->getData();
+	if (array_data.isNullable())
+	{
+		const auto & nullable_col = static_cast<const ColumnNullable &>(array_data);
+		inner_col = nullable_col.getNestedColumn().get();
+	}
+	else
+		inner_col = &array_data;
+
+	const ColumnVector<T> * nested = typeid_cast<const ColumnVector<T> *>(inner_col);
 	if (!nested)
 		return false;
 	const ColumnArray::Offsets_t & offsets = array->getOffsets();
@@ -1727,24 +1755,43 @@ bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, Column
 	typedef ClearableHashMap<T, UInt32, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
 		HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(T)> > ValuesToIndices;
 
+	const PaddedPODArray<UInt8> * null_map_data = nullptr;
+	if (null_map)
+		null_map_data = &static_cast<const ColumnUInt8 *>(null_map)->getData();
+
 	ValuesToIndices indices;
 	size_t prev_off = 0;
 	for (size_t i = 0; i < offsets.size(); ++i)
 	{
 		indices.clear();
+		UInt32 null_count = 0;
 		size_t off = offsets[i];
 		for (size_t j = prev_off; j < off; ++j)
 		{
-			res_values[j] = ++indices[values[j]];
+			if (null_map_data && ((*null_map_data)[j] == 1))
+				res_values[j] = ++null_count;
+			else
+				res_values[j] = ++indices[values[j]];
 		}
 		prev_off = off;
 	}
 	return true;
 }
 
-bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, ColumnUInt32::Container_t & res_values)
+bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values)
 {
-	const ColumnString * nested = typeid_cast<const ColumnString *>(&array->getData());
+	const IColumn * inner_col;
+
+	const auto & array_data = array->getData();
+	if (array_data.isNullable())
+	{
+		const auto & nullable_col = static_cast<const ColumnNullable &>(array_data);
+		inner_col = nullable_col.getNestedColumn().get();
+	}
+	else
+		inner_col = &array_data;
+
+	const ColumnString * nested = typeid_cast<const ColumnString *>(inner_col);
 	if (!nested)
 		return false;
 	const ColumnArray::Offsets_t & offsets = array->getOffsets();
@@ -1753,14 +1800,22 @@ bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, Column
 	typedef ClearableHashMap<StringRef, UInt32, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
 		HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(StringRef)> > ValuesToIndices;
 
+	const PaddedPODArray<UInt8> * null_map_data = nullptr;
+	if (null_map)
+		null_map_data = &static_cast<const ColumnUInt8 *>(null_map)->getData();
+
 	ValuesToIndices indices;
 	for (size_t i = 0; i < offsets.size(); ++i)
 	{
 		indices.clear();
+		UInt32 null_count = 0;
 		size_t off = offsets[i];
 		for (size_t j = prev_off; j < off; ++j)
 		{
-			res_values[j] = ++indices[nested->getDataAt(j)];
+			if (null_map_data && ((*null_map_data)[j] == 1))
+				res_values[j] = ++null_count;
+			else
+				res_values[j] = ++indices[nested->getDataAt(j)];
 		}
 		prev_off = off;
 	}
@@ -1790,11 +1845,13 @@ bool FunctionArrayEnumerateUniq::executeConst(Block & block, const ColumnNumbers
 bool FunctionArrayEnumerateUniq::execute128bit(
 	const ColumnArray::Offsets_t & offsets,
 	const ConstColumnPlainPtrs & columns,
+	const ConstColumnPlainPtrs & null_maps,
 	ColumnUInt32::Container_t & res_values)
 {
 	size_t count = columns.size();
 	size_t keys_bytes = 0;
 	Sizes key_sizes(count);
+
 	for (size_t j = 0; j < count; ++j)
 	{
 		if (!columns[j]->isFixed())
@@ -1802,6 +1859,9 @@ bool FunctionArrayEnumerateUniq::execute128bit(
 		key_sizes[j] = columns[j]->sizeOfField();
 		keys_bytes += key_sizes[j];
 	}
+	if (has_nullable_columns)
+		keys_bytes += std::tuple_size<KeysNullMap<UInt128>>::value;
+
 	if (keys_bytes > 16)
 		return false;
 
