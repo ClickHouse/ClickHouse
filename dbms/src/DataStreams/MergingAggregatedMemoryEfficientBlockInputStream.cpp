@@ -378,10 +378,11 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
 		{
 			std::lock_guard<std::mutex> lock(parallel_merge_data->merged_blocks_mutex);
 			parallel_merge_data->exception = std::current_exception();
+			parallel_merge_data->finish = true;
 		}
 
 		parallel_merge_data->merged_blocks_changed.notify_one();
-		cancel();
+		parallel_merge_data->have_space.notify_all();
 	}
 }
 
