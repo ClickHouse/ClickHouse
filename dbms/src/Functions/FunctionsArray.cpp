@@ -1969,18 +1969,38 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
 	IColumn & res_data = res.getData();
 	ColumnArray::Offsets_t & res_offsets = res.getOffsets();
 
-	if (!(	executeNumber<UInt8>	(src_data, src_offsets, res_data, res_offsets)
-		||	executeNumber<UInt16>	(src_data, src_offsets, res_data, res_offsets)
-		||	executeNumber<UInt32>	(src_data, src_offsets, res_data, res_offsets)
-		||	executeNumber<UInt64>	(src_data, src_offsets, res_data, res_offsets)
-		||	executeNumber<Int8>		(src_data, src_offsets, res_data, res_offsets)
-		||	executeNumber<Int16>	(src_data, src_offsets, res_data, res_offsets)
-		||	executeNumber<Int32>	(src_data, src_offsets, res_data, res_offsets)
-		||	executeNumber<Int64>	(src_data, src_offsets, res_data, res_offsets)
-		||	executeNumber<Float32>	(src_data, src_offsets, res_data, res_offsets)
-		||	executeNumber<Float64>	(src_data, src_offsets, res_data, res_offsets)
-		||	executeString			(src_data, src_offsets, res_data, res_offsets)
-		||	executeFixedString		(src_data, src_offsets, res_data, res_offsets)))
+	const ColumnNullable * nullable_col = nullptr;
+	ColumnNullable * nullable_res_col = nullptr;
+
+	const IColumn * inner_col;
+	IColumn * inner_res_col;
+
+	if (src_data.isNullable())
+	{
+		nullable_col = static_cast<const ColumnNullable *>(&src_data);
+		inner_col = nullable_col->getNestedColumn().get();
+
+		nullable_res_col = static_cast<ColumnNullable *>(&res_data);
+		inner_res_col = nullable_res_col->getNestedColumn().get();
+	}
+	else
+	{
+		inner_col = &src_data;
+		inner_res_col = &res_data;
+	}
+
+	if (!(	executeNumber<UInt8>	(*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+		||	executeNumber<UInt16>	(*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+		||	executeNumber<UInt32>	(*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+		||	executeNumber<UInt64>	(*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+		||	executeNumber<Int8>		(*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+		||	executeNumber<Int16>	(*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+		||	executeNumber<Int32>	(*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+		||	executeNumber<Int64>	(*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+		||	executeNumber<Float32>	(*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+		||	executeNumber<Float64>	(*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+		||	executeString			(*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+		||	executeFixedString		(*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)))
 		throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
 			+ " of first argument of function " + getName(),
 			ErrorCodes::ILLEGAL_COLUMN);
@@ -2011,15 +2031,25 @@ bool FunctionEmptyArrayToSingle::executeConst(Block & block, const ColumnNumbers
 template <typename T>
 bool FunctionEmptyArrayToSingle::executeNumber(
 	const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
-	IColumn & res_data_col, ColumnArray::Offsets_t & res_offsets)
+	IColumn & res_data_col, ColumnArray::Offsets_t & res_offsets,
+	const ColumnNullable * nullable_col,
+	ColumnNullable * nullable_res_col)
 {
 	if (const ColumnVector<T> * src_data_concrete = typeid_cast<const ColumnVector<T> *>(&src_data))
 	{
 		const PaddedPODArray<T> & src_data = src_data_concrete->getData();
-		PaddedPODArray<T> & res_data = typeid_cast<ColumnVector<T> &>(res_data_col).getData();
+
+		auto concrete_res_data = typeid_cast<ColumnVector<T> *>(&res_data_col);
+		if (concrete_res_data == nullptr)
+			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+
+		PaddedPODArray<T> & res_data = concrete_res_data->getData();
 		size_t size = src_offsets.size();
 		res_offsets.resize(size);
 		res_data.reserve(src_data.size());
+
+		if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
+			nullable_res_col->getNullValuesByteMap() = nullable_col->getNullValuesByteMap();
 
 		ColumnArray::Offset_t src_prev_offset = 0;
 		ColumnArray::Offset_t res_prev_offset = 0;
@@ -2053,16 +2083,26 @@ bool FunctionEmptyArrayToSingle::executeNumber(
 
 bool FunctionEmptyArrayToSingle::executeFixedString(
 	const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
-	IColumn & res_data_col, ColumnArray::Offsets_t & res_offsets)
+	IColumn & res_data_col, ColumnArray::Offsets_t & res_offsets,
+	const ColumnNullable * nullable_col,
+	ColumnNullable * nullable_res_col)
 {
 	if (const ColumnFixedString * src_data_concrete = typeid_cast<const ColumnFixedString *>(&src_data))
 	{
 		const size_t n = src_data_concrete->getN();
 		const ColumnFixedString::Chars_t & src_data = src_data_concrete->getChars();
-		ColumnFixedString::Chars_t & res_data = typeid_cast<ColumnFixedString &>(res_data_col).getChars();
+
+		auto concrete_res_data = typeid_cast<ColumnFixedString *>(&res_data_col);
+		if (concrete_res_data == nullptr)
+			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+
+		ColumnFixedString::Chars_t & res_data = concrete_res_data->getChars();
 		size_t size = src_offsets.size();
 		res_offsets.resize(size);
 		res_data.reserve(src_data.size());
+
+		if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
+			nullable_res_col->getNullValuesByteMap() = nullable_col->getNullValuesByteMap();
 
 		ColumnArray::Offset_t src_prev_offset = 0;
 		ColumnArray::Offset_t res_prev_offset = 0;
@@ -2098,20 +2138,33 @@ bool FunctionEmptyArrayToSingle::executeFixedString(
 
 bool FunctionEmptyArrayToSingle::executeString(
 	const IColumn & src_data, const ColumnArray::Offsets_t & src_array_offsets,
-	IColumn & res_data_col, ColumnArray::Offsets_t & res_array_offsets)
+	IColumn & res_data_col, ColumnArray::Offsets_t & res_array_offsets,
+	const ColumnNullable * nullable_col,
+	ColumnNullable * nullable_res_col)
 {
 	if (const ColumnString * src_data_concrete = typeid_cast<const ColumnString *>(&src_data))
 	{
 		const ColumnString::Offsets_t & src_string_offsets = src_data_concrete->getOffsets();
-		ColumnString::Offsets_t & res_string_offsets = typeid_cast<ColumnString &>(res_data_col).getOffsets();
+
+		auto concrete_res_string_offsets = typeid_cast<ColumnString *>(&res_data_col);
+		if (concrete_res_string_offsets == nullptr)
+			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+		ColumnString::Offsets_t & res_string_offsets = concrete_res_string_offsets->getOffsets();
 
 		const ColumnString::Chars_t & src_data = src_data_concrete->getChars();
-		ColumnString::Chars_t & res_data = typeid_cast<ColumnString &>(res_data_col).getChars();
+
+		auto concrete_res_data = typeid_cast<ColumnString *>(&res_data_col);
+		if (concrete_res_data == nullptr)
+			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+		ColumnString::Chars_t & res_data = concrete_res_data->getChars();
 
 		size_t size = src_array_offsets.size();
 		res_array_offsets.resize(size);
 		res_string_offsets.reserve(src_string_offsets.size());
 		res_data.reserve(src_data.size());
+
+		if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
+			nullable_res_col->getNullValuesByteMap() = nullable_col->getNullValuesByteMap();
 
 		ColumnArray::Offset_t src_array_prev_offset = 0;
 		ColumnArray::Offset_t res_array_prev_offset = 0;
@@ -2166,6 +2219,133 @@ bool FunctionEmptyArrayToSingle::executeString(
 	}
 	else
 		return false;
+}
+
+/// Implementation of FunctionRange.
+
+DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	if (arguments.size() != 1)
+		throw Exception{
+			"Number of arguments for function " + getName() + " doesn't match: passed "
+			+ toString(arguments.size()) + ", should be 1.",
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+		};
+
+	const auto arg = arguments.front().get();
+
+	if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
+		!typeid_cast<const DataTypeUInt16 *>(arg) &&
+		!typeid_cast<const DataTypeUInt32 *>(arg) &
+		!typeid_cast<const DataTypeUInt64 *>(arg))
+	{
+		throw Exception{
+			"Illegal type " + arg->getName() + " of argument of function " + getName(),
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+		};
+	}
+
+	return std::make_shared<DataTypeArray>(arg->clone());
+}
+
+template <typename T>
+bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, const size_t result)
+{
+	if (const auto in = typeid_cast<const ColumnVector<T> *>(arg))
+	{
+		const auto & in_data = in->getData();
+		const auto total_values = std::accumulate(std::begin(in_data), std::end(in_data), std::size_t{},
+			[this] (const std::size_t lhs, const std::size_t rhs) {
+				const auto sum = lhs + rhs;
+				if (sum < lhs)
+					throw Exception{
+						"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+						ErrorCodes::ARGUMENT_OUT_OF_BOUND
+					};
+
+				return sum;
+			});
+
+		if (total_values > max_elements)
+			throw Exception{
+				"A call to function " + getName() + " would produce " + std::to_string(total_values) +
+					" array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
+				ErrorCodes::ARGUMENT_OUT_OF_BOUND
+			};
+
+		const auto data_col = std::make_shared<ColumnVector<T>>(total_values);
+		const auto out = std::make_shared<ColumnArray>(
+			data_col,
+			std::make_shared<ColumnArray::ColumnOffsets_t>(in->size()));
+		block.getByPosition(result).column = out;
+
+		auto & out_data = data_col->getData();
+		auto & out_offsets = out->getOffsets();
+
+		IColumn::Offset_t offset{};
+		for (const auto i : ext::range(0, in->size()))
+		{
+			std::copy(ext::make_range_iterator(T{}), ext::make_range_iterator(in_data[i]), &out_data[offset]);
+			offset += in_data[i];
+			out_offsets[i] = offset;
+		}
+
+		return true;
+	}
+	else if (const auto in = typeid_cast<const ColumnConst<T> *>(arg))
+	{
+		const auto & in_data = in->getData();
+		if ((in_data != 0) && (in->size() > std::numeric_limits<std::size_t>::max() / in_data))
+			throw Exception{
+				"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+				ErrorCodes::ARGUMENT_OUT_OF_BOUND
+			};
+
+		const std::size_t total_values = in->size() * in_data;
+		if (total_values > max_elements)
+			throw Exception{
+				"A call to function " + getName() + " would produce " + std::to_string(total_values) +
+					" array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
+				ErrorCodes::ARGUMENT_OUT_OF_BOUND
+			};
+
+		const auto data_col = std::make_shared<ColumnVector<T>>(total_values);
+		const auto out = std::make_shared<ColumnArray>(
+			data_col,
+			std::make_shared<ColumnArray::ColumnOffsets_t>(in->size()));
+		block.getByPosition(result).column = out;
+
+		auto & out_data = data_col->getData();
+		auto & out_offsets = out->getOffsets();
+
+		IColumn::Offset_t offset{};
+		for (const auto i : ext::range(0, in->size()))
+		{
+			std::copy(ext::make_range_iterator(T{}), ext::make_range_iterator(in_data), &out_data[offset]);
+			offset += in_data;
+			out_offsets[i] = offset;
+		}
+
+		return true;
+	}
+	else
+		return false;
+}
+
+void FunctionRange::executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result)
+{
+	const auto col = block.getByPosition(arguments[0]).column.get();
+
+	if (!executeInternal<UInt8>(block, col, result) &&
+		!executeInternal<UInt16>(block, col, result) &&
+		!executeInternal<UInt32>(block, col, result) &&
+		!executeInternal<UInt64>(block, col, result))
+	{
+		throw Exception{
+			"Illegal column " + col->getName() + " of argument of function " + getName(),
+			ErrorCodes::ILLEGAL_COLUMN
+		};
+	}
 }
 
 /// Implementation of FunctionArrayReverse.
