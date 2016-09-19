@@ -125,10 +125,12 @@ private:
 	struct ParallelMergeData
 	{
 		ThreadPool pool;
+
 		/// Сейчас один из мерджащих потоков получает следующие блоки для мерджа. Эта операция должна делаться последовательно.
 		std::mutex get_next_blocks_mutex;
-		bool exhausted = false;	/// Данных больше нет.
-		bool finish = false;	/// Нужно завершить работу раньше, чем данные закончились.
+
+		std::atomic<bool> exhausted {false};	/// No more source data.
+		std::atomic<bool> finish {false};		/// Need to terminate early.
 
 		std::exception_ptr exception;
 		/// Следует отдавать блоки стого в порядке ключа (bucket_num).
