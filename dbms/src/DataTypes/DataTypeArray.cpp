@@ -402,6 +402,7 @@ ColumnPtr DataTypeArray::createConstColumn(size_t size, const Field & field) con
 	return std::make_shared<ColumnConstArray>(size, get<const Array &>(field), std::make_shared<DataTypeArray>(nested));
 }
 
+
 const DataTypePtr & DataTypeArray::getMostNestedType() const
 {
 	const DataTypeArray * array = this;
