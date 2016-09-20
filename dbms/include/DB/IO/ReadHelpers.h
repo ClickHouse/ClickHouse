@@ -810,6 +810,9 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf)
 		++buf.position();
 }
 
+/// Skip json value (except array and object).
+void skipJSONFieldPlain(ReadBuffer & buf, const String & name_of_filed = "");
+
 
 /** Прочитать сериализованный эксепшен.
   * При сериализации/десериализации часть информации теряется

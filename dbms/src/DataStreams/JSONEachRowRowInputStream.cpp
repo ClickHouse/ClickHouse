@@ -12,8 +12,8 @@ namespace ErrorCodes
 }
 
 
-JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & sample_)
-	: istr(istr_), sample(sample_), name_map(sample.columns())
+JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & sample_, bool skip_unknown_)
+	: istr(istr_), sample(sample_), skip_unknown(skip_unknown_), name_map(sample.columns())
 {
 	/// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
 	skipBOMIfExists(istr);
@@ -47,6 +47,14 @@ static StringRef readName(ReadBuffer & buf, String & tmp)
 
 	readJSONString(tmp, buf);
 	return tmp;
+}
+
+
+static void skipColonDelimeter(ReadBuffer & istr)
+{
+	skipWhitespaceIfAny(istr);
+	assertChar(':', istr);
+	skipWhitespaceIfAny(istr);
 }
 
 
@@ -93,16 +101,21 @@ bool JSONEachRowRowInputStream::read(Block & block)
 
 		auto it = name_map.find(name_ref);
 		if (name_map.end() == it)
-			throw Exception("Unknown field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
+		{
+			if (!skip_unknown)
+				throw Exception("Unknown field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
+
+			skipColonDelimeter(istr);
+			skipJSONFieldPlain(istr, name_ref.toString());
+			continue;
+		}
 
 		size_t index = it->second;
 
 		if (read_columns[index])
 			throw Exception("Duplicate field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 
-		skipWhitespaceIfAny(istr);
-		assertChar(':', istr);
-		skipWhitespaceIfAny(istr);
+		skipColonDelimeter(istr);
 
 		read_columns[index] = true;
 
