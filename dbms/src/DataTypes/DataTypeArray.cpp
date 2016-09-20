@@ -282,21 +282,13 @@ void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr) const
 
 void DataTypeArray::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	serializeTextImpl(column, row_num, ostr,
-					[&](const IColumn & nested_column, size_t i)
-					{
-						nested->serializeTextEscaped(nested_column, i, ostr);
-					});
+	serializeText(column, row_num, ostr);
 }
 
 
 void DataTypeArray::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
-	deserializeTextImpl(column, istr,
-					[&](IColumn & nested_column)
-					{
-						nested->deserializeTextEscaped(nested_column, istr);
-					});
+	deserializeText(column, istr);
 }
 
 

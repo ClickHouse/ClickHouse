@@ -151,7 +151,12 @@ void DataTypeNullable::serializeTextQuoted(const IColumn & column, size_t row_nu
 	const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
 	if (col.isNullAt(row_num))
-		writeCString(NullSymbol::Quoted::name, ostr);
+	{
+		/// This is not a typo. We really mean "Escaped" and not "Quoted".
+		/// The reason is that, when displaying an array of nullable strings,
+		/// we want to see \N instead of NULL.
+		writeCString(NullSymbol::Escaped::name, ostr);
+	}
 	else
 		nested_data_type->serializeTextQuoted(*col.getNestedColumn(), row_num, ostr);
 }
