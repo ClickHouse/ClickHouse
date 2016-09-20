@@ -3,6 +3,7 @@
 #include <DB/Interpreters/convertFieldToType.h>
 #include <DB/Parsers/ExpressionListParsers.h>
 #include <DB/DataStreams/ValuesRowInputStream.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Core/Block.h>
 
@@ -108,12 +109,33 @@ bool ValuesRowInputStream::read(Block & block)
 
 				Field value = convertFieldToType(evaluateConstantExpression(ast, context), type);
 
-				/// TODO После добавления поддержки NULL, добавить сюда проверку на data type is nullable.
 				if (value.isNull())
-					throw Exception("Expression returns value " + apply_visitor(FieldVisitorToString(), value)
-						+ ", that is out of range of type " + type.getName()
-						+ ", at: " + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
-						ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE);
+				{
+					/// Check that we are indeed allowed to insert a NULL.
+					bool is_null_allowed = false;
+
+					if (type.isNullable())
+						is_null_allowed = true;
+					else
+					{
+						/// XXX For now we support only one level of null values, i.e.
+						/// XXX there are not yet such things as Array(Nullable(Array(Nullable(T))).
+						/// XXX Therefore the code below is valid.
+						const auto array_type = typeid_cast<const DataTypeArray *>(&type);
+						if (array_type != nullptr)
+						{
+							const auto & nested_type = array_type->getMostNestedType();
+							if (nested_type->isNullable())
+								is_null_allowed = true;
+						}
+					}
+
+					if (!is_null_allowed)
+						throw Exception{"Expression returns value " + apply_visitor(FieldVisitorToString(), value)
+							+ ", that is out of range of type " + type.getName()
+							+ ", at: " + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
+							ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
+				}
 
 				col.column->insert(value);
 

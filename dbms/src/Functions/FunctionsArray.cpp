@@ -67,22 +67,8 @@ bool foundNumericType(const DataTypes & args)
 	return false;
 }
 
-/// Is there at least one numeric column among the columns of the specified block?
-bool foundNumericTypeInBlock(const Block & block, const ColumnNumbers & arguments)
-{
-	for (size_t i = 0; i < arguments.size(); ++i)
-	{
-		const auto & type = block.unsafeGetByPosition(arguments[i]).type;
-		if (type->behavesAsNumber())
-			return true;
-		else if (!type->isNull())
-			return false;
-	}
 
-	return false;
-}
-
-/// Do the specified arguments have the same type up to nullity?
+/// Check if the specified arguments have the same type up to nullability or nullity.
 bool hasArrayIdenticalTypes(const DataTypes & args)
 {
 	std::string first_type_name;
@@ -102,6 +88,51 @@ bool hasArrayIdenticalTypes(const DataTypes & args)
 	}
 
 	return true;
+}
+
+/// Given a set, 'args', of types that have been deemed to be identical by the
+/// function hasArrayIdenticalTypes(), deduce the element type of an array that
+/// would be constructed from a set of values V, such that, for each i, the
+/// type of V[i] is args[i].
+DataTypePtr getArrayElementType(const DataTypes & args)
+{
+	bool found_null = false;
+	bool found_nullable = false;
+
+	const DataTypePtr * ret = nullptr;
+
+	for (size_t i = 0; i < args.size(); ++i)
+	{
+		const auto & type = args[i];
+
+		if (type->isNull())
+			found_null = true;
+		else if (type->isNullable())
+		{
+			ret = &type;
+			found_nullable = true;
+			break;
+		}
+		else
+			ret = &type;
+	}
+
+	if (found_nullable)
+		return *ret;
+	else if (found_null)
+	{
+		if (ret != nullptr)
+			return std::make_shared<DataTypeNullable>(*ret);
+		else
+			return std::make_shared<DataTypeNull>();
+	}
+	else
+	{
+		if (ret == nullptr)
+			throw Exception{"getArrayElementType: internal error", ErrorCodes::LOGICAL_ERROR};
+		else
+			return *ret;
+	}
 }
 
 template <typename T0, typename T1>
@@ -223,7 +254,7 @@ DataTypePtr FunctionArray::getReturnTypeImpl(const DataTypes & arguments) const
 	}
 	else
 	{
-		/// Otherwise all the arguments must have the same type.
+		/// Otherwise all the arguments must have the same type up to nullability or nullity.
 		if (!hasArrayIdenticalTypes(arguments))
 		{
 			if (is_case_mode)
@@ -234,7 +265,7 @@ DataTypePtr FunctionArray::getReturnTypeImpl(const DataTypes & arguments) const
 				throw Exception{"Arguments for function array must have same type or behave as number.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 		}
 
-		return std::make_shared<DataTypeArray>(arguments[0]);
+		return std::make_shared<DataTypeArray>(getArrayElementType(arguments));
 	}
 }
 
@@ -252,26 +283,12 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
 		}
 	}
 
-	const auto first_arg = block.getByPosition(arguments[0]);
-	DataTypePtr result_type = first_arg.type;
-	DataTypeTraits::EnrichedDataTypePtr enriched_result_type;
-
-	if (foundNumericTypeInBlock(block, arguments))
-	{
-		/// If type is numeric, calculate least common type.
-		DataTypes types;
-		types.reserve(num_elements);
-
-		for (const auto & argument : arguments)
-			types.push_back(block.getByPosition(argument).type);
-
-		enriched_result_type = getLeastCommonType(types);
-		result_type = enriched_result_type.first;
-	}
+	const DataTypePtr & return_type = block.getByPosition(result).type;
+	const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*return_type).getNestedType();
 
 	if (is_const)
 	{
-		const DataTypePtr & observed_type = DataTypeTraits::removeNullable(result_type);
+		const DataTypePtr & observed_type = DataTypeTraits::removeNullable(elem_type);
 
 		Array arr;
 		for (const auto arg_num : arguments)
@@ -283,6 +300,8 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
 				/// Если элемент такого же типа как результат, просто добавляем его в ответ
 				arr.push_back((*elem.column)[0]);
 			}
+			else if (elem.type->isNull())
+				arr.emplace_back();
 			else
 			{
 				/// Иначе необходимо привести его к типу результата
@@ -290,8 +309,9 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
 			}
 		}
 
+		const auto first_arg = block.getByPosition(arguments[0]);
 		block.getByPosition(result).column = std::make_shared<ColumnConstArray>(
-			first_arg.column->size(), arr, std::make_shared<DataTypeArray>(result_type));
+			first_arg.column->size(), arr, return_type);
 	}
 	else
 	{
@@ -310,10 +330,10 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
 		{
 			const auto & arg = block.getByPosition(arguments[i]);
 
-			String result_type_name = result_type->getName();
+			String elem_type_name = elem_type->getName();
 			ColumnPtr preprocessed_column = arg.column;
 
-			if (arg.type->getName() != result_type_name)
+			if (arg.type->getName() != elem_type_name)
 			{
 				Block temporary_block
 				{
@@ -323,13 +343,13 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
 						arg.name
 					},
 					{
-						std::make_shared<ColumnConstString>(block_size, result_type_name),
+						std::make_shared<ColumnConstString>(block_size, elem_type_name),
 						std::make_shared<DataTypeString>(),
 						""
 					},
 					{
 						nullptr,
-						result_type,
+						elem_type,
 						""
 					}
 				};
@@ -359,7 +379,7 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
 		/** Create and fill the result array.
 		  */
 
-		auto out = std::make_shared<ColumnArray>(result_type->createColumn());
+		auto out = std::make_shared<ColumnArray>(elem_type->createColumn());
 		IColumn & out_data = out->getData();
 		IColumn::Offsets_t & out_offsets = out->getOffsets();
 
@@ -2497,6 +2517,7 @@ bool FunctionArrayReverse::executeNumber(
 
 		if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
 		{
+			/// Make a reverted null map.
 			const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullValuesByteMap()).getData();
 			auto & res_null_map = static_cast<ColumnUInt8 &>(*nullable_res_col->getNullValuesByteMap()).getData();
 			res_null_map.resize(src_data.size());
@@ -2515,6 +2536,32 @@ bool FunctionArrayReverse::executeFixedString(
 	const ColumnNullable * nullable_col,
 	ColumnNullable * nullable_res_col)
 {
+	auto do_reverse = [](const auto & src_data, const auto & src_offsets, auto & res_data)
+	{
+		size_t size = src_offsets.size();
+		ColumnArray::Offset_t src_prev_offset = 0;
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			const auto * src = &src_data[src_prev_offset];
+			const auto * src_end = &src_data[src_offsets[i]];
+
+			if (src == src_end)
+				continue;
+
+			auto dst = &res_data[src_offsets[i] - 1];
+
+			while (src < src_end)
+			{
+				*dst = *src;
+				++src;
+				--dst;
+			}
+
+			src_prev_offset = src_offsets[i];
+		}
+	};
+
 	if (const ColumnFixedString * src_data_concrete = typeid_cast<const ColumnFixedString *>(&src_data))
 	{
 		const size_t n = src_data_concrete->getN();
@@ -2543,6 +2590,15 @@ bool FunctionArrayReverse::executeFixedString(
 			}
 
 			src_prev_offset = src_offsets[i];
+		}
+
+		if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
+		{
+			/// Make a reverted null map.
+			const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullValuesByteMap()).getData();
+			auto & res_null_map = static_cast<ColumnUInt8 &>(*nullable_res_col->getNullValuesByteMap()).getData();
+			res_null_map.resize(src_data.size());
+			do_reverse(src_null_map, src_offsets, res_null_map);
 		}
 
 		return true;
@@ -2593,6 +2649,37 @@ bool FunctionArrayReverse::executeString(
 			}
 
 			src_array_prev_offset = src_array_offsets[i];
+		}
+
+		if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
+		{
+			/// Make a reverted null map.
+			const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullValuesByteMap()).getData();
+			auto & res_null_map = static_cast<ColumnUInt8 &>(*nullable_res_col->getNullValuesByteMap()).getData();
+			res_null_map.resize(src_string_offsets.size());
+
+			size_t size = src_string_offsets.size();
+			ColumnArray::Offset_t src_prev_offset = 0;
+
+			for (size_t i = 0; i < size; ++i)
+			{
+				const auto * src = &src_null_map[src_prev_offset];
+				const auto * src_end = &src_null_map[src_array_offsets[i]];
+
+				if (src == src_end)
+					continue;
+
+				auto dst = &res_null_map[src_array_offsets[i] - 1];
+
+				while (src < src_end)
+				{
+					*dst = *src;
+					++src;
+					--dst;
+				}
+
+				src_prev_offset = src_array_offsets[i];
+			}
 		}
 
 		return true;

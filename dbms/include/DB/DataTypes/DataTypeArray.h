@@ -86,6 +86,9 @@ public:
 	const DataTypePtr & getNestedType() const { return nested; }
 	const DataTypeTraits::EnrichedDataTypePtr & getEnrichedNestedType() const { return enriched_nested; }
 	const DataTypePtr & getOffsetsType() const { return offsets; }
+
+	/// Returns the data type found at the most nested level.
+	const DataTypePtr & getMostNestedType() const;
 };
 
 }
