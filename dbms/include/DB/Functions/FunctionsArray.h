@@ -2033,7 +2033,7 @@ private:
 		else if (const auto in = typeid_cast<const ColumnConst<T> *>(arg))
 		{
 			const auto & in_data = in->getData();
-			if (in->size() > std::numeric_limits<std::size_t>::max() / in_data)
+			if ((in_data != 0) && (in->size() > (std::numeric_limits<std::size_t>::max() / in_data)))
 				throw Exception{
 					"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
 					ErrorCodes::ARGUMENT_OUT_OF_BOUND
