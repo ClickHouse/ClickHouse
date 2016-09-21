@@ -3,6 +3,7 @@
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/FunctionsArithmetic.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
+#include <DB/Functions/DataTypeTraits.h>
 #include <DB/DataTypes/DataTypeEnum.h>
 #include <DB/DataTypes/NullSymbol.h>
 #include <DB/DataTypes/DataTypeNullable.h>
@@ -313,19 +314,29 @@ void FunctionVisibleWidth::perform(Block & block, const ColumnNumbers & argument
 		nested_result.type = std::make_shared<DataTypeUInt64>();
 		nested_block.insert(nested_result);
 
-		ColumnNumbers nested_argument_numbers(1, 0);
-		execute(nested_block, nested_argument_numbers, 1);
+		executeImpl(nested_block, {0}, 1);
 
 		/// Теперь суммируем и кладём в результат.
 		auto res = std::make_shared<ColumnUInt64>(rows);
 		block.getByPosition(result).column = res;
 		ColumnUInt64::Container_t & vec = res->getData();
 
+		/// If the elements of the array are nullable, we have to check whether
+		/// an element is a NULL for it is not surrounded by a pair of quotes.
+		const PaddedPODArray<UInt8> * null_map = nullptr;
+		if (nested_values.type->isNullable())
+		{
+			const auto & nullable_col = static_cast<const ColumnNullable &>(col->getData());
+			null_map = &static_cast<const ColumnUInt8 &>(*nullable_col.getNullValuesByteMap()).getData();
+		}
+
+		const auto & observed_type = DataTypeTraits::removeNullable(nested_values.type);
+
 		size_t additional_symbols = 0;	/// Кавычки.
-		if (typeid_cast<const DataTypeDate *>(nested_values.type.get())
-			|| typeid_cast<const DataTypeDateTime *>(nested_values.type.get())
-			|| typeid_cast<const DataTypeString *>(nested_values.type.get())
-			|| typeid_cast<const DataTypeFixedString *>(nested_values.type.get()))
+		if (typeid_cast<const DataTypeDate *>(observed_type.get())
+			|| typeid_cast<const DataTypeDateTime *>(observed_type.get())
+			|| typeid_cast<const DataTypeString *>(observed_type.get())
+			|| typeid_cast<const DataTypeFixedString *>(observed_type.get()))
 			additional_symbols = 2;
 
 		if (ColumnUInt64 * nested_result_column = typeid_cast<ColumnUInt64 *>(nested_block.getByPosition(1).column.get()))
@@ -338,18 +349,46 @@ void FunctionVisibleWidth::perform(Block & block, const ColumnNumbers & argument
 				/** Если пустой массив - то два символа: [];
 				  * если непустой - то сначала один символ [, и по одному лишнему символу на значение: , или ].
 				  */
-				vec[i] = j == col->getOffsets()[i] ? 2 : 1;
+				vec[i] = (j == col->getOffsets()[i]) ? 2 : 1;
 
 				for (; j < col->getOffsets()[i]; ++j)
-					vec[i] += 1 + additional_symbols + nested_res[j];
+				{
+					size_t effective_additional_symbols;
+					if ((null_map != nullptr) && ((*null_map)[j] == 1))
+					{
+						/// The NULL value is not quoted.
+						effective_additional_symbols = 0;
+					}
+					else
+						effective_additional_symbols = additional_symbols;
+
+					vec[i] += 1 + effective_additional_symbols + nested_res[j];
+				}
 			}
 		}
 		else if (ColumnConstUInt64 * nested_result_column = typeid_cast<ColumnConstUInt64 *>(nested_block.getByPosition(1).column.get()))
 		{
-			size_t nested_length = nested_result_column->getData() + additional_symbols + 1;
+			size_t j = 0;
 			for (size_t i = 0; i < rows; ++i)
-				vec[i] = 1 + std::max(static_cast<size_t>(1),
-					(i == 0 ? col->getOffsets()[0] : (col->getOffsets()[i] - col->getOffsets()[i - 1])) * nested_length);
+			{
+				size_t width = 0;
+
+				for (; j < col->getOffsets()[i]; ++j)
+				{
+					size_t effective_additional_symbols;
+					if ((null_map != nullptr) && ((*null_map)[j] == 1))
+					{
+						/// The NULL value is not quoted.
+						effective_additional_symbols = 0;
+					}
+					else
+						effective_additional_symbols = additional_symbols;
+
+					width += 1 + effective_additional_symbols + nested_result_column->getData();
+				}
+
+				vec[i] = 1 + std::max(static_cast<size_t>(1), width);
+			}
 		}
 	}
 	else if (const ColumnTuple * col = typeid_cast<const ColumnTuple *>(column.get()))

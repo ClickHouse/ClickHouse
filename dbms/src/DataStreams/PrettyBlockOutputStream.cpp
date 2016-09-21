@@ -38,19 +38,17 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 		size_t result_number = block.columns();
 		block.insert(column);
 
-		ColumnNumbers arguments;
-		arguments.push_back(i);
-
-		visible_width_func.execute(block, arguments, result_number);
-
-		column.column = block.getByPosition(i + columns).column;
+		visible_width_func.execute(block, {i}, result_number);
+		column.column = block.getByPosition(result_number).column;
 
 		if (const ColumnUInt64 * col = typeid_cast<const ColumnUInt64 *>(&*column.column))
 		{
 			const ColumnUInt64::Container_t & res = col->getData();
 			for (size_t j = 0; j < rows; ++j)
+			{
 				if (res[j] > max_widths[i])
 					max_widths[i] = res[j];
+			}
 		}
 		else if (const ColumnConstUInt64 * col = typeid_cast<const ColumnConstUInt64 *>(&*column.column))
 		{
