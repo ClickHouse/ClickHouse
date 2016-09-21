@@ -57,6 +57,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int NO_ELEMENTS_IN_CONFIG;
+}
+
 
 /// Отвечает "Ok.\n". Используется для проверки живости.
 class PingRequestHandler : public Poco::Net::HTTPRequestHandler
@@ -379,43 +384,57 @@ int Server::main(const std::vector<std::string> & args)
 		http_params->setTimeout(settings.receive_timeout);
 		http_params->setKeepAliveTimeout(keep_alive_timeout);
 
-		/// HTTP
-		Poco::Net::SocketAddress http_socket_address;
+		/// For testing purposes, user may omit tcp_port or http_port in configuration file.
 
-		try
+		/// HTTP
+		std::experimental::optional<Poco::Net::HTTPServer> http_server;
+		if (config().has("http_port"))
 		{
-			http_socket_address = Poco::Net::SocketAddress(listen_host, config().getInt("http_port"));
-		}
-		catch (const Poco::Net::DNSException & e)
-		{
-			/// Better message when IPv6 is disabled on host.
-			if (e.code() == EAI_ADDRFAMILY)
+			Poco::Net::SocketAddress http_socket_address;
+
+			try
 			{
-				LOG_ERROR(log, "Cannot resolve listen_host (" << listen_host + "), error: " << e.message() << ". "
-					"If it is an IPv6 address and your host has disabled IPv6, then consider to specify IPv4 address to listen in <listen_host> element of configuration file. Example: <listen_host>0.0.0.0</listen_host>");
+				http_socket_address = Poco::Net::SocketAddress(listen_host, config().getInt("http_port"));
+			}
+			catch (const Poco::Net::DNSException & e)
+			{
+				/// Better message when IPv6 is disabled on host.
+				if (e.code() == EAI_ADDRFAMILY)
+				{
+					LOG_ERROR(log, "Cannot resolve listen_host (" << listen_host + "), error: " << e.message() << ". "
+						"If it is an IPv6 address and your host has disabled IPv6, then consider to specify IPv4 address to listen in <listen_host> element of configuration file. Example: <listen_host>0.0.0.0</listen_host>");
+				}
+
+				throw;
 			}
 
-			throw;
+			Poco::Net::ServerSocket http_socket(http_socket_address);
+			http_socket.setReceiveTimeout(settings.receive_timeout);
+			http_socket.setSendTimeout(settings.send_timeout);
+			http_server.emplace(
+				new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"),
+				server_pool,
+				http_socket,
+				http_params);
 		}
 
-		Poco::Net::ServerSocket http_socket(http_socket_address);
-		http_socket.setReceiveTimeout(settings.receive_timeout);
-		http_socket.setSendTimeout(settings.send_timeout);
-		Poco::Net::HTTPServer http_server(
-			new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"),
-			server_pool,
-			http_socket,
-			http_params);
-
 		/// TCP
-		Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress(listen_host, config().getInt("tcp_port")));
-		tcp_socket.setReceiveTimeout(settings.receive_timeout);
-		tcp_socket.setSendTimeout(settings.send_timeout);
-		Poco::Net::TCPServer tcp_server(
-			new TCPConnectionFactory(*this),
-			server_pool,
-			tcp_socket,
-			new Poco::Net::TCPServerParams);
+		std::experimental::optional<Poco::Net::TCPServer> tcp_server;
+		if (config().has("tcp_port"))
+		{
+			Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress(listen_host, config().getInt("tcp_port")));
+			tcp_socket.setReceiveTimeout(settings.receive_timeout);
+			tcp_socket.setSendTimeout(settings.send_timeout);
+			tcp_server.emplace(
+				new TCPConnectionFactory(*this),
+				server_pool,
+				tcp_socket,
+				new Poco::Net::TCPServerParams);
+		}
+
+		/// At least one of TCP and HTTP servers must be created.
+		if (!http_server && !tcp_server)
+			throw Exception("No 'tcp_port' and 'http_port' is specified in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
 		/// Interserver IO HTTP
 		std::experimental::optional<Poco::Net::HTTPServer> interserver_io_http_server;
@@ -431,8 +450,8 @@ int Server::main(const std::vector<std::string> & args)
 				http_params);
 		}
 
-		http_server.start();
-		tcp_server.start();
+		http_server->start();
+		tcp_server->start();
 		if (interserver_io_http_server)
 			interserver_io_http_server->start();
 
@@ -456,8 +475,8 @@ int Server::main(const std::vector<std::string> & args)
 
 			is_cancelled = true;
 
-			http_server.stop();
-			tcp_server.stop();
+			http_server->stop();
+			tcp_server->stop();
 		);
 
 		/// try to load dictionaries immediately, throw on error and die
