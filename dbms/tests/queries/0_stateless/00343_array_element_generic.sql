@@ -1,3 +1,5 @@
+SELECT range(0)[-1];
+SELECT range(0)[1];
 SELECT range(number)[2] FROM system.numbers LIMIT 10;
 SELECT range(number)[-1] FROM system.numbers LIMIT 10;
 SELECT range(number)[number] FROM system.numbers LIMIT 10;
