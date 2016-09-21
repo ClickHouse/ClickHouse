@@ -23,14 +23,6 @@ using AggregateDataPtr = char *;
 using ConstAggregateDataPtr = const char *;
 
 
-struct IAggregateDataWithArena
-{
-	Arena * arena = nullptr;
-
-	inline Arena * getArena() { return arena; }
-};
-
-
 /** Интерфейс для агрегатных функций.
   * Экземпляры классов с этим интерфейсом не содержат самих данных для агрегации,
   *  а содержат лишь метаданные (описание) агрегатной функции,
@@ -104,12 +96,6 @@ public:
 	  * Они выполняются как другие агрегатные функции, но не финализируются (возвращают состояние агрегации, которое может быть объединено с другим).
 	  */
 	virtual bool isState() const { return false; }
-
-	/** Возвращает true если при агрегации необходимо использовать "кучу", представленной Arena.
-	  * В этом случае структура данных для агррегации должна быть унаследована от IAggregateDataWithArena.
-	  * Указатель на необходимую Arena можно будет получить с помощью IAggregateDataWithArena::getArena().
-	  */
-	//virtual bool needArena() const { return false; }
 
 
 	/** Внутренний цикл, использующий указатель на функцию, получается лучше, чем использующий виртуальную функцию.

@@ -104,7 +104,7 @@ public:
 
 	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
 	{
-		return static_cast<const AggregateFunctionState &>(*that).add(place, columns, row_num, arena);
+		static_cast<const AggregateFunctionState &>(*that).add(place, columns, row_num, arena);
 	}
 
 	IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }

@@ -74,8 +74,8 @@ struct AggregateFunctionsUpdater
 		const Sizes & offsets_of_aggregate_states_,
 		Aggregator::AggregateColumns & aggregate_columns_,
 		AggregateDataPtr & value_,
-		size_t row_num_
-		Arena * arena_ = nullptr)
+		size_t row_num_,
+		Arena * arena_)
 		: aggregate_functions(aggregate_functions_),
 		offsets_of_aggregate_states(offsets_of_aggregate_states_),
 		aggregate_columns(aggregate_columns_),
@@ -266,7 +266,8 @@ template <typename AggregateFunctionsList>
 void NO_INLINE Aggregator::executeSpecializedWithoutKey(
 	AggregatedDataWithoutKey & res,
 	size_t rows,
-	AggregateColumns & aggregate_columns) const
+	AggregateColumns & aggregate_columns,
+	Arena * arena) const
 {
 	/// Оптимизация в случае единственной агрегатной функции count.
 	AggregateFunctionCount * agg_count = params.aggregates_size == 1
@@ -280,7 +281,7 @@ void NO_INLINE Aggregator::executeSpecializedWithoutKey(
 		for (size_t i = 0; i < rows; ++i)
 		{
 			AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
-				aggregate_functions, offsets_of_aggregate_states, aggregate_columns, res, i, nullptr));
+				aggregate_functions, offsets_of_aggregate_states, aggregate_columns, res, i, arena));
 		}
 	}
 }

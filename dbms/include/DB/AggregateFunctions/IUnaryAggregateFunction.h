@@ -32,22 +32,9 @@ public:
 		getDerived().addImpl(place, *columns[0], row_num, arena);
 	}
 
-// 	template <typename TFunc>
-// 	static void addFreeWrapper(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *)
-// 	{
-// 		static_cast<const Derived &>(*that).addImpl(place, *columns[0], row_num);
-// 	}
-//
-// 	template <>
-// 	static void addFreeWrapper<IAggregateFunction::AddFunc>(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
-// 	{
-// 		static_cast<const Derived &>(*that).addImpl(place, *columns[0], row_num, arena);
-// 	}
-
 	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
 	{
 		static_cast<const Derived &>(*that).addImpl(place, *columns[0], row_num, arena);
-		//addFreeWrapper<decltype(Derived::addImpl)>(that, place, columns, row_num, arena);
 	}
 
 	IAggregateFunction::AddFunc getAddressOfAddFunction() const override { return &addFree; }

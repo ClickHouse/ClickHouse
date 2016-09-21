@@ -283,17 +283,18 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 			code <<
 				"template void Aggregator::executeSpecializedWithoutKey<\n"
 					"\t" << "TypeList<" << aggregate_functions_typenames << ">>(\n"
-					"\tAggregatedDataWithoutKey &, size_t, AggregateColumns &) const;\n"
+					"\tAggregatedDataWithoutKey &, size_t, AggregateColumns &, Arena *) const;\n"
 				"\n"
 				"static void wrapper(\n"
 					"\tconst Aggregator & aggregator,\n"
 					"\tAggregatedDataWithoutKey & method,\n"
 					"\tsize_t rows,\n"
-					"\tAggregator::AggregateColumns & aggregate_columns)\n"
+					"\tAggregator::AggregateColumns & aggregate_columns,\n"
+					"\tArena * arena)\n"
 				"{\n"
 					"\taggregator.executeSpecializedWithoutKey<\n"
 						"\t\tTypeList<" << aggregate_functions_typenames << ">>(\n"
-						"\t\tmethod, rows, aggregate_columns);\n"
+						"\t\tmethod, rows, aggregate_columns, arena);\n"
 				"}\n"
 				"\n"
 				"void * getPtr() __attribute__((__visibility__(\"default\")));\n"
@@ -442,13 +443,6 @@ void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data, Arena 
 			  * Код не очень удобный.
 			  */
 			aggregate_functions[j]->create(aggregate_data + offsets_of_aggregate_states[j]);
-
-// 			/// Прописываем указатель на Arena после создания, до этого она не валидна.
-// 			char * data_cur = aggregate_data + offsets_of_aggregate_states[j];
-// 			if (aggregate_functions[j]->needArena())
-// 			{
-// 				reinterpret_cast<IAggregateDataWithArena *>(data_cur)->arena = arena;
-// 			}
 		}
 		catch (...)
 		{
@@ -698,8 +692,8 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		if (compiled_data->compiled_method_ptr)
 		{
 			reinterpret_cast<
-				void (*)(const Aggregator &, AggregatedDataWithoutKey &, size_t, AggregateColumns &)>
-					(compiled_data->compiled_method_ptr)(*this, result.without_key, rows, aggregate_columns);
+				void (*)(const Aggregator &, AggregatedDataWithoutKey &, size_t, AggregateColumns &, Arena *)>
+					(compiled_data->compiled_method_ptr)(*this, result.without_key, rows, aggregate_columns, result.aggregates_pool);
 		}
 		else
 			executeWithoutKeyImpl(result.without_key, rows, &aggregate_functions_instructions[0], result.aggregates_pool);
