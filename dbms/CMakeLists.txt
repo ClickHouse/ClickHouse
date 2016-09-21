@@ -764,6 +764,7 @@ add_library (dbms
 	src/DataStreams/SquashingBlockOutputStream.cpp
 	src/DataStreams/MaterializingBlockInputStream.cpp
 	src/DataStreams/MaterializingBlockOutputStream.cpp
+	src/DataStreams/NullableAdapterBlockInputStream.cpp
 
 	src/DataTypes/DataTypeString.cpp
 	src/DataTypes/DataTypeFixedString.cpp
