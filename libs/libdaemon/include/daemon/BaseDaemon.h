@@ -91,6 +91,8 @@ public:
 		return dynamic_cast<BaseDaemon &>(Poco::Util::Application::instance());
 	}
 
+	static boost::optional<BaseDaemon &> tryGetInstance() { return tryGetInstance<BaseDaemon>(); }
+
 	/// Спит заданное количество секунд или до события wakeup
 	void sleep(double seconds);
 
@@ -141,6 +143,9 @@ protected:
 	void waitForTerminationRequest() override;
 	/// thread safe
 	virtual void onInterruptSignals(int signal_id);
+
+	template <class Daemon>
+	static boost::optional<Daemon &> tryGetInstance();
 
 	std::unique_ptr<Poco::TaskManager> task_manager;
 
@@ -194,3 +199,22 @@ protected:
 	std::atomic_size_t terminate_signals_counter{0};
 	std::atomic_size_t sigint_signals_counter{0};
 };
+
+
+template <class Daemon>
+boost::optional<Daemon &> BaseDaemon::tryGetInstance()
+{
+	Daemon * ptr = nullptr;
+	try
+	{
+		ptr = dynamic_cast<Daemon *>(&Poco::Util::Application::instance());
+	}
+	catch (const Poco::NullPointerException &)
+	{
+	}
+
+	if (ptr)
+		return boost::optional<Daemon &>(*ptr);
+	else
+		return boost::none;
+}

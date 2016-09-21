@@ -2,7 +2,6 @@
 
 #include <DB/Parsers/IAST.h>
 #include <DB/Storages/IStorage.h>
-#include <DB/Client/ConnectionPool.h>
 
 namespace DB
 {

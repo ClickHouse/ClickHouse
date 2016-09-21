@@ -37,8 +37,6 @@
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/parseQuery.h>
-#include <DB/Client/ConnectionPool.h>
-#include <DB/Client/ConnectionPoolWithFailover.h>
 #include <DB/Databases/IDatabase.h>
 
 #include <DB/Common/ConfigProcessor.h>
