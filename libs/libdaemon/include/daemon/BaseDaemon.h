@@ -91,6 +91,7 @@ public:
 		return dynamic_cast<BaseDaemon &>(Poco::Util::Application::instance());
 	}
 
+	/// return none if daemon doesn't exist, reference to the daemon otherwise
 	static boost::optional<BaseDaemon &> tryGetInstance() { return tryGetInstance<BaseDaemon>(); }
 
 	/// Спит заданное количество секунд или до события wakeup
@@ -211,6 +212,7 @@ boost::optional<Daemon &> BaseDaemon::tryGetInstance()
 	}
 	catch (const Poco::NullPointerException &)
 	{
+		/// if daemon doesn't exist than instance() throw NullPointerException
 	}
 
 	if (ptr)
