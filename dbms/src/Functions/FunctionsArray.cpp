@@ -2538,27 +2538,6 @@ bool FunctionArrayReverse::executeFixedString(
 {
 	if (const ColumnFixedString * src_data_concrete = typeid_cast<const ColumnFixedString *>(&src_data))
 	{
-		/// XXX The original implementation, i.e. everything but the new code
-		/// XXX for nullable support is buggy. Example with a table with one column
-		/// XXX whose type is Array(FixedString(3))):
-		/// │ ['a\0\0','bc\0','def'] │
-		/// │ ['a\0\0','bc\0','def'] │
-		/// │ ['a\0\0','bc\0','def'] │
-		/// │ ['a\0\0','bc\0','def'] │
-		/// │ ['a\0\0','bc\0','def'] │
-		/// │ ['a\0\0','bc\0','def'] │
-		/// │ ['a\0\0','bc\0','def'] │
-		///
-		/// XXX SELECT reverse(col) FROM table gives the following output:
-		///
-		/// │ ['def','a\0\0','bc\0']    │
-		/// │ ['def','a\0\0','bc\0']    │
-		/// │ ['def','a\0\0','bc\0']    │
-		/// │ ['def','a\0\0','bc\0']    │
-		/// │ ['def','a\0\0','bc\0']    │
-		/// │ ['def','a\0\0','bc\0']    │
-		/// │ ['def','\0\0\0','\0\0\0'] │
-
 		const size_t n = src_data_concrete->getN();
 		const ColumnFixedString::Chars_t & src_data = src_data_concrete->getChars();
 		ColumnFixedString::Chars_t & res_data = typeid_cast<ColumnFixedString &>(res_data_col).getChars();
@@ -2579,7 +2558,8 @@ bool FunctionArrayReverse::executeFixedString(
 
 			while (src < src_end)
 			{
-				memcpySmallAllowReadWriteOverflow15(dst, src, n);
+				/// NOTE: memcpySmallAllowReadWriteOverflow15 doesn't work correctly here.
+				memcpy(dst, src, n);
 				src += n;
 				dst -= n;
 			}
