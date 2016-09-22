@@ -178,7 +178,7 @@ public:
 		getData().push_back(arena.alloc(function->sizeOfData()));
 		function->create(getData().back());
 		ReadBufferFromString read_buffer(x.get<const String &>());
-		function->deserialize(getData().back(), read_buffer);
+		function->deserialize(getData().back(), read_buffer, &arena);
 	}
 
 	void insertDefault() override

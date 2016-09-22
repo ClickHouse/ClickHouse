@@ -69,7 +69,7 @@ public:
 		buf.write(reinterpret_cast<const char *>(&value[0]), size * sizeof(value[0]));
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		size_t size = 0;
 		readVarUInt(size, buf);
@@ -148,7 +148,7 @@ public:
 			type->serializeBinary(value[i], buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		size_t size = 0;
 		readVarUInt(size, buf);

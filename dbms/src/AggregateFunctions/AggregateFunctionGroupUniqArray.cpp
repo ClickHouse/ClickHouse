@@ -1,7 +1,6 @@
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/AggregateFunctions/AggregateFunctionGroupUniqArray.h>
 #include <DB/AggregateFunctions/Helpers.h>
-#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -11,12 +10,12 @@ namespace
 
 static IAggregateFunction * createWithExtraTypes(const IDataType & argument_type)
 {
-		 if (typeid_cast<const DataTypeDateTime *>(&argument_type))	return new AggregateFunctionGroupUniqArray<UInt32>;
-	else if (typeid_cast<const DataTypeDate *>(&argument_type)) 	return new AggregateFunctionGroupUniqArray<UInt16>;
+		 if (typeid_cast<const DataTypeDateTime *>(&argument_type))	return new AggregateFunctionGroupUniqArray<DataTypeDateTime::FieldType>;
+	else if (typeid_cast<const DataTypeDate *>(&argument_type)) 	return new AggregateFunctionGroupUniqArray<DataTypeDate::FieldType>;
 	else
 	{
 		/// Check that we can use plain version of AggreagteFunctionGroupUniqArrayGeneric
-		if (typeid_cast<const DataTypeString*>(&argument_type))
+		if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
 			return new AggreagteFunctionGroupUniqArrayGeneric<true>;
 
 		auto * array_type = typeid_cast<const DataTypeArray *>(&argument_type);

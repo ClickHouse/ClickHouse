@@ -144,7 +144,7 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).deserialize(buf);
 	}
@@ -412,7 +412,7 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).deserialize(buf);
 	}

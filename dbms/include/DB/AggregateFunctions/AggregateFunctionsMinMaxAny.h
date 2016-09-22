@@ -664,7 +664,7 @@ public:
 		this->data(place).write(buf, *type.get());
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).read(buf, *type.get());
 	}

@@ -95,7 +95,7 @@ public:
 		this->data(place).map.write(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		typename AggregateFunctionQuantileExactWeightedData<ValueType>::Map::Reader reader(buf);
 
@@ -210,7 +210,7 @@ public:
 		this->data(place).map.write(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		typename AggregateFunctionQuantileExactWeightedData<ValueType>::Map::Reader reader(buf);
 

@@ -397,7 +397,7 @@ public:
 		this->data(const_cast<AggregateDataPtr>(place)).digest.write(params, buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).digest.read(params, buf);
 	}
@@ -466,7 +466,7 @@ public:
 		this->data(const_cast<AggregateDataPtr>(place)).digest.write(params, buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).digest.read(params, buf);
 	}
@@ -528,7 +528,7 @@ public:
 		this->data(const_cast<AggregateDataPtr>(place)).digest.write(params, buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).digest.read(params, buf);
 	}
@@ -610,7 +610,7 @@ public:
 		this->data(const_cast<AggregateDataPtr>(place)).digest.write(params, buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).digest.read(params, buf);
 	}

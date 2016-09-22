@@ -87,7 +87,7 @@ public:
 		buf.write(reinterpret_cast<const char *>(&array[0]), size * sizeof(array[0]));
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		auto & array = this->data(place).array;
 
@@ -169,7 +169,7 @@ public:
 		buf.write(reinterpret_cast<const char *>(&array[0]), size * sizeof(array[0]));
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		auto & array = this->data(place).array;
 

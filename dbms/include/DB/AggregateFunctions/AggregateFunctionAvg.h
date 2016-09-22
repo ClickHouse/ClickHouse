@@ -60,7 +60,7 @@ public:
 		writeVarUInt(this->data(place).count, buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		readBinary(this->data(place).sum, buf);
 		readVarUInt(this->data(place).count, buf);

@@ -216,7 +216,7 @@ public:
 		data(place).serialize(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		data(place).deserialize(buf);
 	}

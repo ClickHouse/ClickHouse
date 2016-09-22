@@ -68,14 +68,14 @@ public:
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
-		const typename State::Set & set = this->data(place).value;
+		auto & set = this->data(place).value;
 		size_t size = set.size();
 		writeVarUInt(size, buf);
-		for (auto it = set.begin(); it != set.end(); ++it)
-			writeIntBinary(*it, buf);
+		for (auto & elem : set)
+			writeIntBinary(elem, buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).value.read(buf);
 	}
@@ -108,10 +108,13 @@ struct AggreagteFunctionGroupUniqArrayGenericData
 	Set value;
 };
 
-template <bool is_plain_column=false>
+/** Template parameter with true value should be used for columns that store their elements in memory continuously.
+ *  For such columns groupUniqArray() can be implemented more efficently (especially for small numeric arrays).
+ */
+template <bool is_plain_column = false>
 class AggreagteFunctionGroupUniqArrayGeneric : public IUnaryAggregateFunction<AggreagteFunctionGroupUniqArrayGenericData, AggreagteFunctionGroupUniqArrayGeneric<is_plain_column>>
 {
-	mutable DataTypePtr input_data_type;
+	DataTypePtr input_data_type;
 
 	using State = AggreagteFunctionGroupUniqArrayGenericData;
 
@@ -138,24 +141,24 @@ public:
 		auto & set = this->data(place).value;
 		writeVarUInt(set.size(), buf);
 
-		for (auto & elem: set)
+		for (const auto & elem : set)
 		{
 			writeStringBinary(elem, buf);
 		}
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
 	{
-		State::Set & set = this->data(place).value;
+		auto & set = this->data(place).value;
 		size_t size;
 		readVarUInt(size, buf);
 		//TODO: set.reserve(size);
 
-		std::string str_buf;
+		arena = new Arena(size * 10);
+
 		for (size_t i = 0; i < size; i++)
 		{
-			readStringBinary(str_buf, buf);
-			set.insert(StringRef(str_buf));
+			set.insert(readStringBinaryInto(*arena, buf));
 		}
 	}
 
@@ -171,12 +174,12 @@ public:
 
 		if (!is_plain_column)
 		{
-			if (!likely(inserted))
+			if (!inserted)
 				arena->rollback(str_serialized.size);
 		}
 		else
 		{
-			if (likely(inserted))
+			if (inserted)
 				it->data = arena->insert(str_serialized.data, str_serialized.size);
 		}
 	}

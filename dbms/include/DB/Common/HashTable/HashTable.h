@@ -70,10 +70,6 @@ bool check(const T x) { return x == 0; }
 template <typename T>
 void set(T & x) { x = 0; }
 
-bool check(const std::string & x);
-
-void set(std::string & x);
-
 };
 
 

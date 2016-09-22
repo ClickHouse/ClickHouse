@@ -55,7 +55,7 @@ public:
 		writeBinary(this->data(place).sum, buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		readBinary(this->data(place).sum, buf);
 	}

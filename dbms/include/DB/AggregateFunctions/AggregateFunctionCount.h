@@ -46,7 +46,7 @@ public:
 		writeVarUInt(data(place).count, buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		readVarUInt(data(place).count, buf);
 	}
