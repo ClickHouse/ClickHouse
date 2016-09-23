@@ -2095,8 +2095,8 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 		M(serialized)		\
 
 #define M(NAME) \
-	if (method == Type::NAME) \
-		method = Type::NAME ## _hash64; \
+	if (method == AggregatedDataVariants::Type::NAME) \
+		method = AggregatedDataVariants::Type::NAME ## _hash64; \
 
 	APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M)
 #undef M
