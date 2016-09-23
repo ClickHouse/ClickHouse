@@ -304,12 +304,12 @@ void LogBlockInputStream::addStream(const String & name, const IDataType & type,
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
 	else
-		streams[name].reset(new Stream(
+		streams[name] = std::make_unique<Stream>(
 			storage.files[name].data_file.path(),
 			mark_number
 				? storage.files[name].marks[mark_number].offset
 				: 0,
-			max_read_buffer_size));
+			max_read_buffer_size);
 }
 
 
@@ -394,7 +394,7 @@ void LogBlockOutputStream::addStream(const String & name, const IDataType & type
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
 	else
-		streams[name].reset(new Stream(storage.files[name].data_file.path(), storage.max_compress_block_size));
+		streams[name] = std::make_unique<Stream>(storage.files[name].data_file.path(), storage.max_compress_block_size);
 }
 
 

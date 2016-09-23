@@ -266,7 +266,7 @@ OptimizedRegularExpressionImpl<b>::OptimizedRegularExpressionImpl(const std::str
 		if (is_dot_nl)
 			options.set_dot_nl(true);
 
-		re2.reset(new RegexType(regexp_, options));
+		re2 = std::make_unique<RegexType>(regexp_, options);
 		if (!re2->ok())
 			throw Poco::Exception("OptimizedRegularExpression: cannot compile re2: " + regexp_ + ", error: " + re2->error());
 

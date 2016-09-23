@@ -34,10 +34,10 @@ BlockInputStreams Query::execute()
 	/// Ограничение сетевого трафика, если нужно.
 	ThrottlerPtr throttler;
 	if (settings.limits.max_network_bandwidth || settings.limits.max_network_bytes)
-		throttler.reset(new Throttler(
+		throttler = std::make_shared<Throttler>(
 			settings.limits.max_network_bandwidth,
 			settings.limits.max_network_bytes,
-			"Limit for bytes to send or receive over network exceeded."));
+			"Limit for bytes to send or receive over network exceeded.");
 
 	/// Распределить шарды равномерно по потокам.
 

@@ -280,11 +280,11 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	String unreplicated_path = full_path + "unreplicated/";
 	if (Poco::File(unreplicated_path).exists())
 	{
-		unreplicated_data.reset(new MergeTreeData(unreplicated_path, columns_,
+		unreplicated_data = std::make_unique<MergeTreeData>(unreplicated_path, columns_,
 			materialized_columns_, alias_columns_, column_defaults_,
 			context_, primary_expr_ast_,
 			date_column_name_, sampling_expression_, index_granularity_, merging_params_, settings_,
-			database_name_ + "." + table_name + "[unreplicated]", false));
+			database_name_ + "." + table_name + "[unreplicated]", false);
 
 		unreplicated_data->loadDataParts(skip_sanity_checks);
 
@@ -295,8 +295,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		else
 		{
 			LOG_INFO(log, "Have unreplicated data");
-			unreplicated_reader.reset(new MergeTreeDataSelectExecutor(*unreplicated_data));
-			unreplicated_merger.reset(new MergeTreeDataMerger(*unreplicated_data));
+			unreplicated_reader = std::make_unique<MergeTreeDataSelectExecutor>(*unreplicated_data);
+			unreplicated_merger = std::make_unique<MergeTreeDataMerger>(*unreplicated_data);
 		}
 	}
 
@@ -308,7 +308,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	queue.pullLogsToQueue(current_zookeeper, nullptr);
 
 	/// В этом потоке реплика будет активирована.
-	restarting_thread.reset(new ReplicatedMergeTreeRestartingThread(*this));
+	restarting_thread = std::make_unique<ReplicatedMergeTreeRestartingThread>(*this);
 }
 
 

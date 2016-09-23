@@ -248,7 +248,7 @@ void TinyLogBlockInputStream::addStream(const String & name, const IDataType & t
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
 	else
-		streams[name].reset(new Stream(storage.files[name].data_file.path(), max_read_buffer_size));
+		streams[name] = std::make_unique<Stream>(storage.files[name].data_file.path(), max_read_buffer_size);
 }
 
 
@@ -292,7 +292,7 @@ void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & 
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
 	else
-		streams[name].reset(new Stream(storage.files[name].data_file.path(), storage.max_compress_block_size));
+		streams[name] = std::make_unique<Stream>(storage.files[name].data_file.path(), storage.max_compress_block_size);
 }
 
 

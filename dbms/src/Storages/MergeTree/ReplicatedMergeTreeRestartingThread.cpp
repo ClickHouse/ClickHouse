@@ -208,8 +208,8 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 		storage.shutdown_event.reset();
 
 		storage.queue_updating_thread = std::thread(&StorageReplicatedMergeTree::queueUpdatingThread, &storage);
-		storage.alter_thread.reset(new ReplicatedMergeTreeAlterThread(storage));
-		storage.cleanup_thread.reset(new ReplicatedMergeTreeCleanupThread(storage));
+		storage.alter_thread = std::make_unique<ReplicatedMergeTreeAlterThread>(storage);
+		storage.cleanup_thread = std::make_unique<ReplicatedMergeTreeCleanupThread>(storage);
 		storage.part_check_thread.start();
 		storage.queue_task_handle = storage.context.getBackgroundPool().addTask(
 			std::bind(&StorageReplicatedMergeTree::queueTask, &storage, std::placeholders::_1));

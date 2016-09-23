@@ -650,7 +650,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 			case Type::without_key:	break;
 
 		#define M(NAME, IS_TWO_LEVEL) \
-			case Type::NAME: NAME.reset(new decltype(NAME)::element_type); break;
+			case Type::NAME: NAME = std::make_unique<decltype(NAME)::element_type>(); break;
 			APPLY_FOR_AGGREGATED_VARIANTS(M)
 		#undef M
 

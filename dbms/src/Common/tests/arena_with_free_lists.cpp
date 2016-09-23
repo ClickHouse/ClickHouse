@@ -287,7 +287,7 @@ int main(int argc, char ** argv)
 	}
 
 	Dictionary dictionary;
-	dictionary.string_arena.reset(new ArenaWithFreeLists);
+	dictionary.string_arena = std::make_unique<ArenaWithFreeLists>();
 
 	constexpr size_t cache_size = 1024;
 

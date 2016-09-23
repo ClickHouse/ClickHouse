@@ -29,7 +29,7 @@ JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & samp
 
 	if (have_non_numeric_columns)
 	{
-		validating_ostr.reset(new WriteBufferValidUTF8(dst_ostr));
+		validating_ostr = std::make_unique<WriteBufferValidUTF8>(dst_ostr);
 		ostr = validating_ostr.get();
 	}
 	else

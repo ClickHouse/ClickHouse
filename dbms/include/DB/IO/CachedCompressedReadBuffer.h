@@ -61,7 +61,7 @@ private:
 			initInput();
 			file_in->seek(file_pos);
 
-			owned_cell.reset(new UncompressedCacheCell);
+			owned_cell = std::make_shared<UncompressedCacheCell>();
 
 			size_t size_decompressed;
 			size_t size_compressed_without_checksum;

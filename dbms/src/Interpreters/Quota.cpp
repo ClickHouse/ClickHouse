@@ -302,7 +302,7 @@ void Quotas::loadFromConfig(Poco::Util::AbstractConfiguration & config)
 	for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
 	{
 		if (!cont[*it])
-			cont[*it].reset(new Quota());
+			cont[*it] = std::make_unique<Quota>();
 		cont[*it]->loadFromConfig("quotas." + *it, *it, config, rng);
 	}
 }

@@ -917,14 +917,14 @@ private:
 
 		if (from[0].getType() != Field::Types::String && to[0].getType() != Field::Types::String)
 		{
-			table_num_to_num.reset(new NumToNum);
+			table_num_to_num = std::make_unique<NumToNum>();
 			auto & table = *table_num_to_num;
 			for (size_t i = 0; i < size; ++i)
 				table[from[i].get<UInt64>()] = (*used_to)[i].get<UInt64>();
 		}
 		else if (from[0].getType() != Field::Types::String && to[0].getType() == Field::Types::String)
 		{
-			table_num_to_string.reset(new NumToString);
+			table_num_to_string = std::make_unique<NumToString>();
 			auto & table = *table_num_to_string;
 			for (size_t i = 0; i < size; ++i)
 			{
@@ -935,7 +935,7 @@ private:
 		}
 		else if (from[0].getType() == Field::Types::String && to[0].getType() != Field::Types::String)
 		{
-			table_string_to_num.reset(new StringToNum);
+			table_string_to_num = std::make_unique<StringToNum>();
 			auto & table = *table_string_to_num;
 			for (size_t i = 0; i < size; ++i)
 			{
@@ -946,7 +946,7 @@ private:
 		}
 		else if (from[0].getType() == Field::Types::String && to[0].getType() == Field::Types::String)
 		{
-			table_string_to_string.reset(new StringToString);
+			table_string_to_string = std::make_unique<StringToString>();
 			auto & table = *table_string_to_string;
 			for (size_t i = 0; i < size; ++i)
 			{

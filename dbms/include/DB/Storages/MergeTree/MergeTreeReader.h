@@ -257,7 +257,7 @@ private:
 					return;
 			}
 
-			marks.reset(new MarksInCompressedFile);
+			marks = std::make_shared<MarksInCompressedFile>();
 
 			ReadBufferFromFile buffer(path);
 			while (!buffer.eof())

@@ -51,7 +51,7 @@ public:
 		connection.session.sendRequest(request) << query;
 
 		LOG("Receiving !");
-		response.reset(new Poco::Net::HTTPResponse);
+		response = std::make_unique<Poco::Net::HTTPResponse>();
 		in = &connection.session.receiveResponse(*response);
 		LOG("Receiving !!");
 
