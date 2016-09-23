@@ -62,6 +62,7 @@ struct SingleValueDataFixed
 		value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
 	}
 
+	/// Assuming to.has()
 	void change(const Self & to)
 	{
 		has_value = true;
@@ -81,7 +82,24 @@ struct SingleValueDataFixed
 
 	bool changeFirstTime(const Self & to)
 	{
-		if (!has())
+		if (!has() && to.has())
+		{
+			change(to);
+			return true;
+		}
+		else
+			return false;
+	}
+
+	bool changeEveryTime(const IColumn & column, size_t row_num)
+	{
+		change(column, row_num);
+		return true;
+	}
+
+	bool changeEveryTime(const Self & to)
+	{
+		if (to.has())
 		{
 			change(to);
 			return true;
@@ -239,7 +257,7 @@ struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
 		}
 	}
 
-
+	/// Assuming to.has()
 	void changeImpl(StringRef value)
 	{
 		Int32 value_size = value.size;
@@ -292,7 +310,24 @@ struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
 
 	bool changeFirstTime(const Self & to)
 	{
-		if (!has())
+		if (!has() && to.has())
+		{
+			change(to);
+			return true;
+		}
+		else
+			return false;
+	}
+
+	bool changeEveryTime(const IColumn & column, size_t row_num)
+	{
+		change(column, row_num);
+		return true;
+	}
+
+	bool changeEveryTime(const Self & to)
+	{
+		if (to.has())
 		{
 			change(to);
 			return true;
@@ -424,7 +459,24 @@ struct SingleValueDataGeneric
 
 	bool changeFirstTime(const Self & to)
 	{
-		if (!has())
+		if (!has() && to.has())
+		{
+			change(to);
+			return true;
+		}
+		else
+			return false;
+	}
+
+	bool changeEveryTime(const IColumn & column, size_t row_num)
+	{
+		change(column, row_num);
+		return true;
+	}
+
+	bool changeEveryTime(const Self & to)
+	{
+		if (to.has())
 		{
 			change(to);
 			return true;
@@ -552,8 +604,8 @@ struct AggregateFunctionAnyLastData : Data
 {
 	using Self = AggregateFunctionAnyLastData<Data>;
 
-	bool changeIfBetter(const IColumn & column, size_t row_num) { this->change(column, row_num); return true; }
-	bool changeIfBetter(const Self & to) 						{ this->change(to); return true; }
+	bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeEveryTime(column, row_num); }
+	bool changeIfBetter(const Self & to) 						{ return this->changeEveryTime(to); }
 
 	static const char * name() { return "anyLast"; }
 };
