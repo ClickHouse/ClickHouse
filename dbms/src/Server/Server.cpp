@@ -218,7 +218,7 @@ int Server::main(const std::vector<std::string> & args)
 	DateLUT::instance();
 	LOG_TRACE(log, "Initialized DateLUT.");
 
-	global_context = std::make_shared<Context>();
+	global_context = std::make_unique<Context>();
 
 	/** Контекст содержит всё, что влияет на обработку запроса:
 	  *  настройки, набор функций, типов данных, агрегатных функций, баз данных...
