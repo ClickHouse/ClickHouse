@@ -1245,7 +1245,7 @@ public:
 		const auto & states = column_with_states->getData();
 		for (const auto & state_to_add : states)
 		{
-			agg_func.merge(place.get(), state_to_add);
+			agg_func.merge(place.get(), state_to_add, nullptr); /// Empty arena!
 			agg_func.insertResultInto(place.get(), result_column);
 		}
 	}

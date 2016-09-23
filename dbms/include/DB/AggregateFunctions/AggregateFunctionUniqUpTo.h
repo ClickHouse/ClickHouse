@@ -156,7 +156,7 @@ public:
 		this->data(place).addImpl(column, row_num, threshold);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).merge(this->data(rhs), threshold);
 	}
@@ -229,7 +229,7 @@ public:
 		this->data(place).insert(UniqVariadicHash<false, argument_is_tuple>::apply(num_args, columns, row_num), threshold);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).merge(this->data(rhs), threshold);
 	}

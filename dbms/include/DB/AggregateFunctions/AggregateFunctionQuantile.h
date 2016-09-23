@@ -73,7 +73,7 @@ public:
 		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).sample.merge(this->data(rhs).sample);
 	}
@@ -150,7 +150,7 @@ public:
 		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).sample.merge(this->data(rhs).sample);
 	}

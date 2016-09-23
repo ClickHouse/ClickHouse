@@ -345,7 +345,7 @@ public:
 		detail::OneAdder<T, Data>::addImpl(this->data(place), column, row_num);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).set.merge(this->data(rhs).set);
 	}
@@ -400,7 +400,7 @@ public:
 		this->data(place).set.insert(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num));
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).set.merge(this->data(rhs).set);
 	}

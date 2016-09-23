@@ -820,7 +820,7 @@ public:
 		this->data(place).insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
@@ -880,7 +880,7 @@ public:
 			static_cast<const ColumnVector<WeightFieldType> &>(column_weight).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
@@ -935,7 +935,7 @@ public:
 		this->data(place).insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
@@ -998,7 +998,7 @@ public:
 			static_cast<const ColumnVector<WeightFieldType> &>(column_weight).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}

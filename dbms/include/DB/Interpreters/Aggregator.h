@@ -1073,20 +1073,23 @@ protected:
 	template <typename Method, typename Table>
 	void mergeDataImpl(
 		Table & table_dst,
-		Table & table_src) const;
+		Table & table_src,
+		Arena * arena) const;
 
 	/// Слить данные из хэш-таблицы src в dst, но только для ключей, которые уже есть в dst. В остальных случаях, слить данные в overflows.
 	template <typename Method, typename Table>
 	void mergeDataNoMoreKeysImpl(
 		Table & table_dst,
 		AggregatedDataWithoutKey & overflows,
-		Table & table_src) const;
+		Table & table_src,
+		Arena * arena) const;
 
 	/// То же самое, но игнорирует остальные ключи.
 	template <typename Method, typename Table>
 	void mergeDataOnlyExistingKeysImpl(
 		Table & table_dst,
-		Table & table_src) const;
+		Table & table_src,
+		Arena * arena) const;
 
 	void mergeWithoutKeyDataImpl(
 		ManyAggregatedDataVariants & non_empty_data) const;

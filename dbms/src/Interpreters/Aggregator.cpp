@@ -1322,7 +1322,8 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataImpl(
 	Table & table_dst,
-	Table & table_src) const
+	Table & table_src,
+	Arena * arena) const
 {
 	for (auto it = table_src.begin(); it != table_src.end(); ++it)
 	{
@@ -1335,7 +1336,8 @@ void NO_INLINE Aggregator::mergeDataImpl(
 			for (size_t i = 0; i < params.aggregates_size; ++i)
 				aggregate_functions[i]->merge(
 					Method::getAggregateData(res_it->second) + offsets_of_aggregate_states[i],
-					Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
+					Method::getAggregateData(it->second) + offsets_of_aggregate_states[i],
+					arena);
 
 			for (size_t i = 0; i < params.aggregates_size; ++i)
 				aggregate_functions[i]->destroy(
@@ -1357,7 +1359,8 @@ template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
 	Table & table_dst,
 	AggregatedDataWithoutKey & overflows,
-	Table & table_src) const
+	Table & table_src,
+	Arena * arena) const
 {
 	for (auto it = table_src.begin(); it != table_src.end(); ++it)
 	{
@@ -1370,7 +1373,8 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
 		for (size_t i = 0; i < params.aggregates_size; ++i)
 			aggregate_functions[i]->merge(
 				res_data + offsets_of_aggregate_states[i],
-				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
+				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i],
+				arena);
 
 		for (size_t i = 0; i < params.aggregates_size; ++i)
 			aggregate_functions[i]->destroy(
@@ -1385,7 +1389,8 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
 	Table & table_dst,
-	Table & table_src) const
+	Table & table_src,
+	Arena * arena) const
 {
 	for (auto it = table_src.begin(); it != table_src.end(); ++it)
 	{
@@ -1399,7 +1404,8 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
 		for (size_t i = 0; i < params.aggregates_size; ++i)
 			aggregate_functions[i]->merge(
 				res_data + offsets_of_aggregate_states[i],
-				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
+				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i],
+				arena);
 
 		for (size_t i = 0; i < params.aggregates_size; ++i)
 			aggregate_functions[i]->destroy(
@@ -1424,7 +1430,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
 		AggregatedDataWithoutKey & current_data = non_empty_data[i]->without_key;
 
 		for (size_t i = 0; i < params.aggregates_size; ++i)
-			aggregate_functions[i]->merge(res_data + offsets_of_aggregate_states[i], current_data + offsets_of_aggregate_states[i]);
+			aggregate_functions[i]->merge(res_data + offsets_of_aggregate_states[i], current_data + offsets_of_aggregate_states[i], res->aggregates_pool);
 
 		for (size_t i = 0; i < params.aggregates_size; ++i)
 			aggregate_functions[i]->destroy(current_data + offsets_of_aggregate_states[i]);
@@ -1452,16 +1458,19 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 		if (!no_more_keys)
 			mergeDataImpl<Method>(
 				getDataVariant<Method>(*res).data,
-				getDataVariant<Method>(current).data);
+				getDataVariant<Method>(current).data,
+				res->aggregates_pool);
 		else if (res->without_key)
 			mergeDataNoMoreKeysImpl<Method>(
 				getDataVariant<Method>(*res).data,
 				res->without_key,
-				getDataVariant<Method>(current).data);
+				getDataVariant<Method>(current).data,
+				res->aggregates_pool);
 		else
 			mergeDataOnlyExistingKeysImpl<Method>(
 				getDataVariant<Method>(*res).data,
-				getDataVariant<Method>(current).data);
+				getDataVariant<Method>(current).data,
+				res->aggregates_pool);
 
 		/// current не будет уничтожать состояния агрегатных функций в деструкторе
 		current.aggregator = nullptr;
@@ -1479,9 +1488,13 @@ void NO_INLINE Aggregator::mergeBucketImpl(
 	{
 		AggregatedDataVariants & current = *data[i];
 
+		/// Select Arena to avoid race conditions
+		Arena * arena = res->aggregates_pools.at(static_cast<size_t>(bucket) % size).get();
+
 		mergeDataImpl<Method>(
 			getDataVariant<Method>(*res).data.impls[bucket],
-			getDataVariant<Method>(current).data.impls[bucket]);
+			getDataVariant<Method>(current).data.impls[bucket],
+			arena);
 	}
 }
 
@@ -1810,7 +1823,8 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 		for (size_t j = 0; j < params.aggregates_size; ++j)
 			aggregate_functions[j]->merge(
 				value + offsets_of_aggregate_states[j],
-				(*aggregate_columns[j])[i]);
+				(*aggregate_columns[j])[i],
+				aggregates_pool);
 	}
 
 	/// Пораньше освобождаем память.
@@ -1854,7 +1868,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
 
 	/// Добавляем значения
 	for (size_t i = 0; i < params.aggregates_size; ++i)
-		aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns[i])[0]);
+		aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns[i])[0], result.aggregates_pool);
 
 	/// Пораньше освобождаем память.
 	block.clear();

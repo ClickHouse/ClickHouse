@@ -56,7 +56,7 @@ public:
 		this->data(place).value.push_back(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).value.insert(this->data(rhs).value.begin(), this->data(rhs).value.end());
 	}
@@ -134,7 +134,7 @@ public:
 		column.get(row_num, data(place).value.back());
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		data(place).value.insert(data(place).value.end(), data(rhs).value.begin(), data(rhs).value.end());
 	}

@@ -654,7 +654,7 @@ public:
 		this->data(place).changeIfBetter(column, row_num);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).changeIfBetter(this->data(rhs));
 	}

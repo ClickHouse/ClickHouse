@@ -85,7 +85,7 @@ public:
 	virtual void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const = 0;
 
 	/// Merges state (on which place points to) with other state of current aggregation function.
-	virtual void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const = 0;
+	virtual void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
 
 	/// Serializes state (to transmit it over the network, for example).
 	virtual void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const = 0;

@@ -79,14 +79,14 @@ public:
 		return nested_func->alignOfData();
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
 	{
-		nested_func->merge(place, static_cast<const ColumnAggregateFunction &>(*columns[0]).getData()[row_num]);
+		nested_func->merge(place, static_cast<const ColumnAggregateFunction &>(*columns[0]).getData()[row_num], arena);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
-		nested_func->merge(place, rhs);
+		nested_func->merge(place, rhs, arena);
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override

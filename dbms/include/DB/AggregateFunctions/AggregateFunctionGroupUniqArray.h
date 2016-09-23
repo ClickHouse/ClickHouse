@@ -61,7 +61,7 @@ public:
 		this->data(place).value.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).value.merge(this->data(rhs).value);
 	}
@@ -101,7 +101,7 @@ public:
 };
 
 
-/// Generic implementation
+/// Generic implementation, it uses serialized representation as object descriptor.
 struct AggreagteFunctionGroupUniqArrayGenericData
 {
 	using Set = HashSetWithSavedHash<StringRef, StringRefHash, HashTableGrower<4>, HashTableAllocatorWithStackMemory<16>>;
@@ -154,8 +154,6 @@ public:
 		readVarUInt(size, buf);
 		//TODO: set.reserve(size);
 
-		arena = new Arena(size * 10);
-
 		for (size_t i = 0; i < size; i++)
 		{
 			set.insert(readStringBinaryInto(*arena, buf));
@@ -184,11 +182,19 @@ public:
 		}
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		auto & cur_set = this->data(place).value;
 		auto & rhs_set = this->data(rhs).value;
-		cur_set.merge(rhs_set);
+
+		bool inserted;
+		State::Set::iterator it;
+		for (auto & rhs_elem : rhs_set)
+		{
+			cur_set.emplace(rhs_elem, it, inserted);
+			if (inserted)
+				it->data = arena->insert(it->data, it->size);
+		}
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

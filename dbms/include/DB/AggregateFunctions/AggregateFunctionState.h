@@ -77,9 +77,9 @@ public:
 		nested_func->add(place, columns, row_num, arena);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
-		nested_func->merge(place, rhs);
+		nested_func->merge(place, rhs, arena);
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
