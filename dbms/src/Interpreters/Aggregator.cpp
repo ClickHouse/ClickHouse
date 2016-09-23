@@ -59,7 +59,7 @@ void AggregatedDataVariants::convertToTwoLevel()
 	{
 	#define M(NAME) \
 		case Type::NAME: \
-			NAME ## _two_level.reset(new decltype(NAME ## _two_level)::element_type(*NAME)); \
+			NAME ## _two_level = std::make_unique<decltype(NAME ## _two_level)::element_type>(*NAME); \
 			NAME.reset(); \
 			type = Type::NAME ## _two_level; \
 			break;
@@ -349,7 +349,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 }
 
 
-AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes)
+AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes) const
 {
 	/** Returns ordinary (not two-level) methods, because we start from them.
 	  * Later, during aggregation process, data may be converted (partitioned) to two-level structure, if cardinality is high.
@@ -1284,7 +1284,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 	std::unique_ptr<ThreadPool> thread_pool;
 	if (max_threads > 1 && data_variants.sizeWithoutOverflowRow() > 100000	/// TODO Сделать настраиваемый порог.
 		&& data_variants.isTwoLevel())						/// TODO Использовать общий тред-пул с функцией merge.
-		thread_pool.reset(new ThreadPool(max_threads));
+		thread_pool = std::make_unique<ThreadPool>(max_threads);
 
 	if (isCancelled())
 		return BlocksList();
@@ -1572,7 +1572,7 @@ protected:
 		{
 			if (!parallel_merge_data)
 			{
-				parallel_merge_data.reset(new ParallelMergeData(threads));
+				parallel_merge_data = std::make_unique<ParallelMergeData>(threads);
 				for (size_t i = 0; i < threads; ++i)
 					scheduleThreadForNextBucket();
 			}
@@ -1992,7 +1992,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 		std::unique_ptr<ThreadPool> thread_pool;
 		if (max_threads > 1 && total_input_rows > 100000	/// TODO Сделать настраиваемый порог.
 			&& has_two_level)
-			thread_pool.reset(new ThreadPool(max_threads));
+			thread_pool = std::make_unique<ThreadPool>(max_threads);
 
 		for (const auto & bucket_blocks : bucket_to_blocks)
 		{
@@ -2079,6 +2079,29 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
 	Sizes key_sizes;
 	AggregatedDataVariants::Type method = chooseAggregationMethod(key_columns, key_sizes);
+
+	/** If possible, change 'method' to some_hash64. Otherwise, leave as is.
+	  * Better hash function is needed because during external aggregation,
+	  *  we may merge partitions of data with total number of keys far greater than 4 billion.
+	  */
+
+#define APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M) \
+		M(key64) 			\
+		M(key_string) 		\
+		M(key_fixed_string) \
+		M(keys128) 			\
+		M(keys256) 			\
+		M(concat) 			\
+		M(serialized)		\
+
+#define M(NAME) \
+	if (method == Type::NAME) \
+		method = Type::NAME ## _hash64; \
+
+	APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M)
+#undef M
+
+#undef APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION
 
 	/// Временные данные для агрегации.
 	AggregatedDataVariants result;

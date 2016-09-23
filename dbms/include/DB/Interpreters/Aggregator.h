@@ -54,7 +54,11 @@ namespace ErrorCodes
   * PS. Существует много различных подходов к эффективной реализации параллельной и распределённой агрегации,
   *  лучшим образом подходящих для разных случаев, и этот подход - всего лишь один из них, выбранный по совокупности причин.
   */
+
 using AggregatedDataWithoutKey = AggregateDataPtr;
+
+using AggregatedDataWithUInt8Key = HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<8>>;
+using AggregatedDataWithUInt16Key = HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<16>>;
 
 using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
 using AggregatedDataWithStringKey = HashMapWithSavedHash<StringRef, AggregateDataPtr>;
@@ -68,8 +72,17 @@ using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateData
 using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
 using AggregatedDataHashedTwoLevel = TwoLevelHashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash>;
 
-using AggregatedDataWithUInt8Key = HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<8>>;
-using AggregatedDataWithUInt16Key = HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<16>>;
+/** Variants with better hash function, using more than 32 bits for hash.
+  * Using for merging phase of external aggregation, where number of keys may be far greater than 4 billion,
+  *  but we keep in memory and merge only sub-partition of them simultaneously.
+  * TODO We need to switch for better hash function not only for external aggregation,
+  *  but also for huge aggregation results on machines with terabytes of RAM.
+  */
+
+using AggregatedDataWithUInt64KeyHash64 = HashMap<UInt64, AggregateDataPtr, DefaultHash<UInt64>>;
+using AggregatedDataWithStringKeyHash64 = HashMapWithSavedHash<StringRef, AggregateDataPtr, StringRefHash64>;
+using AggregatedDataWithKeys128Hash64 = HashMap<UInt128, AggregateDataPtr, UInt128Hash>;
+using AggregatedDataWithKeys256Hash64 = HashMap<UInt256, AggregateDataPtr, UInt256Hash>;
 
 
 /// Для случая, когда есть один числовой ключ.
@@ -574,6 +587,14 @@ struct AggregatedDataVariants : private boost::noncopyable
 	std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKeyTwoLevel>> 				concat_two_level;
 	std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>> 			serialized_two_level;
 
+	std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyHash64>>	key64_hash64;
+	std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKeyHash64>> 			key_string_hash64;
+	std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKeyHash64>> 		key_fixed_string_hash64;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128Hash64>> 			keys128_hash64;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256Hash64>> 			keys256_hash64;
+	std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKeyHash64>> 			concat_hash64;
+	std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyHash64>> 		serialized_hash64;
+
 	/// В этом и подобных макросах, вариант without_key не учитывается.
 	#define APPLY_FOR_AGGREGATED_VARIANTS(M) \
 		M(key8,					false) \
@@ -596,6 +617,13 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(hashed_two_level,				true) \
 		M(concat_two_level,				true) \
 		M(serialized_two_level,			true) \
+		M(key64_hash64,				false) \
+		M(key_string_hash64,		false) \
+		M(key_fixed_string_hash64,	false) \
+		M(keys128_hash64,			false) \
+		M(keys256_hash64,			false) \
+		M(concat_hash64,			false) \
+		M(serialized_hash64,		false) \
 
 	enum class Type
 	{
@@ -717,6 +745,13 @@ struct AggregatedDataVariants : private boost::noncopyable
 	#define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
 		M(key8)				\
 		M(key16)			\
+		M(key64_hash64) 	\
+		M(key_string_hash64) \
+		M(key_fixed_string_hash64) \
+		M(keys128_hash64) 	\
+		M(keys256_hash64) 	\
+		M(concat_hash64) 	\
+		M(serialized_hash64) \
 
 	#define APPLY_FOR_VARIANTS_SINGLE_LEVEL(M) \
 		APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
@@ -740,15 +775,15 @@ struct AggregatedDataVariants : private boost::noncopyable
 	void convertToTwoLevel();
 
 	#define APPLY_FOR_VARIANTS_TWO_LEVEL(M) \
-			M(key32_two_level)				\
-			M(key64_two_level)				\
-			M(key_string_two_level)			\
-			M(key_fixed_string_two_level)	\
-			M(keys128_two_level)			\
-			M(keys256_two_level)			\
-			M(hashed_two_level)				\
-			M(concat_two_level)				\
-			M(serialized_two_level)
+		M(key32_two_level)				\
+		M(key64_two_level)				\
+		M(key_string_two_level)			\
+		M(key_fixed_string_two_level)	\
+		M(keys128_two_level)			\
+		M(keys256_two_level)			\
+		M(hashed_two_level)				\
+		M(concat_two_level)				\
+		M(serialized_two_level)
 };
 
 using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
@@ -982,7 +1017,7 @@ protected:
 	void setSampleBlock(const Block & block);
 
 	/** Выбрать способ агрегации на основе количества и типов ключей. */
-	AggregatedDataVariants::Type chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes);
+	AggregatedDataVariants::Type chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes) const;
 
 	/** Создать состояния агрегатных функций для одного ключа.
 	  */

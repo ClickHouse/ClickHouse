@@ -161,6 +161,14 @@ inline bool operator> (StringRef lhs, StringRef rhs)
   * Подробнее см. hash_map_string_3.cpp
   */
 
+struct StringRefHash64
+{
+	size_t operator() (StringRef x) const
+	{
+		return CityHash64(x.data, x.size);
+	}
+};
+
 #if defined(__x86_64__)
 
 #ifdef __SSE4_1__
@@ -265,13 +273,7 @@ struct StringRefHash : CRC32Hash {};
 
 #else
 
-struct StringRefHash
-{
-	size_t operator() (StringRef x) const
-	{
-		return CityHash64(x.data, x.size);
-	}
-};
+struct StringRefHash : StringRefHash64 {};
 
 #endif
 
