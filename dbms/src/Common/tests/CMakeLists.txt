@@ -48,3 +48,6 @@ target_link_libraries (pod_array dbms)
 
 add_executable (thread_creation_latency thread_creation_latency.cpp)
 target_link_libraries (thread_creation_latency dbms)
+
+add_executable (thread_pool thread_pool.cpp)
+target_link_libraries (thread_pool dbms)

@@ -1,4 +1,5 @@
 #include <DB/Common/ThreadPool.h>
+#include <iostream>
 
 
 ThreadPool::ThreadPool(size_t m_size)
@@ -96,7 +97,7 @@ void ThreadPool::worker()
 					shutdown = true;
 					--active_jobs;
 				}
-				has_free_thread.notify_one();
+				has_free_thread.notify_all();
 				has_new_job_or_shutdown.notify_all();
 				return;
 			}
@@ -107,7 +108,7 @@ void ThreadPool::worker()
 			--active_jobs;
 		}
 
-		has_free_thread.notify_one();
+		has_free_thread.notify_all();
 	}
 }
 
