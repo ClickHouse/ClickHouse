@@ -104,7 +104,10 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggreagteFunctionGroupUniqArrayGenericData
 {
-	using Set = HashSetWithSavedHash<StringRef, StringRefHash, HashTableGrower<4>, HashTableAllocatorWithStackMemory<16>>;
+	static constexpr size_t INIT_ELEMS = 2; /// adjustable
+	static constexpr size_t ELEM_SIZE = sizeof(HashSetCellWithSavedHash<StringRef, StringRefHash>);
+	using Set = HashSetWithSavedHash<StringRef, StringRefHash, HashTableGrower<INIT_ELEMS>, HashTableAllocatorWithStackMemory<INIT_ELEMS * ELEM_SIZE>>;
+
 	Set value;
 };
 
@@ -134,6 +137,11 @@ public:
 	DataTypePtr getReturnType() const override
 	{
 		return std::make_shared<DataTypeArray>(input_data_type->clone());
+	}
+
+	bool allocatesMemoryInArena() const override
+	{
+		return true;
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override

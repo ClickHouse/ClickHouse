@@ -25,6 +25,7 @@
 #include <DB/Common/UnicodeBar.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/NumberTraits.h>
+#include <DB/Functions/ObjectPool.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <ext/range.hpp>
 
@@ -1242,13 +1243,22 @@ public:
 		IColumn & result_column = *result_column_ptr;
 		result_column.reserve(column_with_states->size());
 
+		auto arena = (agg_func.allocatesMemoryInArena()) ?
+						arenas_pool.get(0, []{ return new Arena(); }) :
+						nullptr;
+
 		const auto & states = column_with_states->getData();
 		for (const auto & state_to_add : states)
 		{
-			agg_func.merge(place.get(), state_to_add, nullptr); /// Empty arena!
+			/// Will pass empty arena if agg_func does not allocate memory in arena
+			agg_func.merge(place.get(), state_to_add, arena.get());
 			agg_func.insertResultInto(place.get(), result_column);
 		}
 	}
+
+private:
+
+	ObjectPool<Arena, int> arenas_pool; /// Used only for complex functions
 };
 
 

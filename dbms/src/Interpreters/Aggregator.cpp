@@ -1480,16 +1480,13 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 
 template <typename Method>
 void NO_INLINE Aggregator::mergeBucketImpl(
-	ManyAggregatedDataVariants & data, Int32 bucket) const
+	ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena) const
 {
 	/// Все результаты агрегации соединяем с первым.
 	AggregatedDataVariantsPtr & res = data[0];
 	for (size_t i = 1, size = data.size(); i < size; ++i)
 	{
 		AggregatedDataVariants & current = *data[i];
-
-		/// Select Arena to avoid race conditions
-		Arena * arena = res->aggregates_pools.at(static_cast<size_t>(bucket) % size).get();
 
 		mergeDataImpl<Method>(
 			getDataVariant<Method>(*res).data.impls[bucket],
@@ -1511,7 +1508,16 @@ public:
 	  *  которые все либо являются одноуровневыми, либо являются двухуровневыми.
 	  */
 	MergingAndConvertingBlockInputStream(const Aggregator & aggregator_, ManyAggregatedDataVariants & data_, bool final_, size_t threads_)
-		: aggregator(aggregator_), data(data_), final(final_), threads(threads_) {}
+		: aggregator(aggregator_), data(data_), final(final_), threads(threads_)
+	{
+		/// At least we need one arena in first data item per thread
+		if (!data.empty() && threads > data[0]->aggregates_pools.size())
+		{
+			Arenas & first_pool = data[0]->aggregates_pools;
+			for (size_t j = first_pool.size(); j < threads; j++)
+				first_pool.emplace_back(std::make_shared<Arena>());
+		}
+	}
 
 	String getName() const override { return "MergingAndConverting"; }
 
@@ -1653,17 +1659,21 @@ private:
 
 		try
 		{
-			/// TODO Возможно, поддержать no_more_keys
+			/// TODO: add no_more_keys support maybe
 
 			auto & merged_data = *data[0];
 			auto method = merged_data.type;
 			Block block;
 
+			/// Select Arena to avoid race conditions
+			size_t thread_number = static_cast<size_t>(bucket_num) % threads;
+			Arena * arena = merged_data.aggregates_pools.at(thread_number).get();
+
 			if (false) {}
 		#define M(NAME) \
 			else if (method == AggregatedDataVariants::Type::NAME) \
 			{ \
-				aggregator.mergeBucketImpl<decltype(merged_data.NAME)::element_type>(data, bucket_num); \
+				aggregator.mergeBucketImpl<decltype(merged_data.NAME)::element_type>(data, bucket_num, arena); \
 				block = aggregator.convertOneBucketToBlock(merged_data, *merged_data.NAME, final, bucket_num); \
 			}
 

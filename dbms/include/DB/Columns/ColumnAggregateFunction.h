@@ -159,7 +159,8 @@ public:
 	/// Объединить состояние в последней строке с заданным
 	void insertMergeFrom(const IColumn & src, size_t n)
 	{
-		func->merge(getData().back(), static_cast<const ColumnAggregateFunction &>(src).getData()[n], &createOrGetArena());
+		Arena & arena = createOrGetArena();
+		func->merge(getData().back(), static_cast<const ColumnAggregateFunction &>(src).getData()[n], &arena);
 	}
 
 	Arena & createOrGetArena()
