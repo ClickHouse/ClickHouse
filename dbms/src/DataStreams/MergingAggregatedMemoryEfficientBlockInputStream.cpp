@@ -69,6 +69,17 @@ MergingAggregatedMemoryEfficientBlockInputStream::MergingAggregatedMemoryEfficie
 	inputs(inputs_.begin(), inputs_.end())
 {
 	children = inputs_;
+
+	/** Create threads that will request and read data from remote servers.
+	  */
+	if (reading_threads > 1)
+		reading_pool = std::make_unique<ThreadPool>(reading_threads);
+
+	/** Create threads. Each of them will pull next set of blocks to merge in a loop,
+	  *  then merge them and place result in a queue (in fact, ordered map), from where we will read ready result blocks.
+	  */
+	if (merging_threads > 1)
+		parallel_merge_data = std::make_unique<ParallelMergeData>(merging_threads);
 }
 
 
@@ -104,7 +115,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::readSuffix()
 void MergingAggregatedMemoryEfficientBlockInputStream::cancel()
 {
 	bool old_val = false;
-	if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
+	if (!is_cancelled.compare_exchange_strong(old_val, true))
 		return;
 
 	if (parallel_merge_data)
@@ -127,9 +138,9 @@ void MergingAggregatedMemoryEfficientBlockInputStream::cancel()
 			}
 			catch (...)
 			{
-				/** Если не удалось попросить остановиться одного или несколько источников.
-				  * (например, разорвано соединение при распределённой обработке запроса)
-				  * - то пофиг.
+				/** If failed to ask to stop processing one or more sources.
+				  * (example: connection reset during distributed query execution)
+				  * - then don't care.
 				  */
 				LOG_ERROR(log, "Exception while cancelling " << child->getName());
 			}
@@ -145,7 +156,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
 
 	started = true;
 
-	/// Если child - RemoteBlockInputStream, то child->readPrefix() отправляет запрос на удалённый сервер, инициируя вычисления.
+	/// If child is RemoteBlockInputStream, then child->readPrefix() will send query to remote server, initiating calculations.
 
 	if (reading_threads == 1)
 	{
@@ -154,8 +165,6 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
 	}
 	else
 	{
-		reading_pool = std::make_unique<ThreadPool>(reading_threads);
-
 		size_t num_children = children.size();
 		for (size_t i = 0; i < num_children; ++i)
 		{
@@ -176,11 +185,6 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
 
 	if (merging_threads > 1)
 	{
-		/** Create several threads. Each of them will pull next set of blocks to merge in a loop,
-		  *  then merge them and place result in a queue (in fact, ordered map), from where we will read ready result blocks.
-		  */
-		parallel_merge_data = std::make_unique<ParallelMergeData>(merging_threads);
-
 		auto & pool = parallel_merge_data->pool;
 
 		/** Create threads that will receive and merge blocks.
@@ -197,7 +201,7 @@ Block MergingAggregatedMemoryEfficientBlockInputStream::readImpl()
 {
 	start();
 
-	if (merging_threads == 1)
+	if (!parallel_merge_data)
 	{
 		if (BlocksToMerge blocks_to_merge = getNextBlocksToMerge())
 			return aggregator.mergeBlocks(*blocks_to_merge, final);
@@ -277,9 +281,6 @@ void MergingAggregatedMemoryEfficientBlockInputStream::finalize()
 
 	LOG_TRACE(log, "Waiting for threads to finish");
 
-	if (reading_pool)
-		reading_pool->wait();
-
 	if (parallel_merge_data)
 		parallel_merge_data->pool.wait();
 
@@ -297,12 +298,12 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
 	{
 		while (!parallel_merge_data->finish)
 		{
-			/** Получение следующих блоков делается в одном пуле потоков, а мердж - в другом.
-			  * Это весьма сложное взаимодействие.
-			  * Каждый раз,
-			  * - reading_threads читают по одному следующему блоку из каждого источника;
-			  * - из этих блоков составляется группа блоков для слияния;
-			  * - один из merging_threads выполняет слияние этой группы блоков;
+			/** Receiving next blocks is processing by one thread pool, and merge is in another.
+			  * This is quite complex interaction.
+			  * Each time:
+			  * - 'reading_threads' will read one next block from each source;
+			  * - group of blocks for merge is created from them;
+			  * - one of 'merging_threads' will do merge this group of blocks;
 			  */
 			BlocksToMerge blocks_to_merge;
 			int output_order = -1;
@@ -389,27 +390,28 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
 
 MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregatedMemoryEfficientBlockInputStream::getNextBlocksToMerge()
 {
-	/** Имеем несколько источников.
-		* Из каждого из них могут приходить следующие данные:
-		*
-		* 1. Блок, с указанным bucket_num.
-		* Это значит, что на удалённом сервере, данные были разрезаны по корзинам.
-		* И данные для одного bucket_num с разных серверов можно независимо объединять.
-		* При этом, даннные для разных bucket_num будут идти по возрастанию.
-		*
-		* 2. Блок без указания bucket_num.
-		* Это значит, что на удалённом сервере, данные не были разрезаны по корзинам.
-		* В случае, когда со всех серверов прийдут такие данные, их можно всех объединить.
-		* А если с другой части серверов прийдут данные, разрезанные по корзинам,
-		*  то данные, не разрезанные по корзинам, нужно сначала разрезать, а потом объединять.
-		*
-		* 3. Блоки с указанием is_overflows.
-		* Это дополнительные данные для строк, не прошедших через max_rows_to_group_by.
-		* Они должны объединяться друг с другом отдельно.
-		*/
+	/** There are several input sources.
+	  * From each of them, data may be received in one of following forms:
+	  *
+	  * 1. Block with specified 'bucket_num'.
+	  * It means, that on remote server, data was partitioned by buckets.
+	  * And data for each 'bucket_num' from different servers may be merged independently.
+	  * Because data in different buckets will contain different aggregation keys.
+	  * Data for different 'bucket_num's will be received in increasing order of 'bucket_num'.
+	  *
+	  * 2. Block without specified 'bucket_num'.
+	  * It means, that on remote server, data was not partitioned by buckets.
+	  * If all servers will send non-partitioned data, we may just merge it.
+	  * But if some other servers will send partitioned data,
+	  *  then we must first partition non-partitioned data, and then merge data in each partition.
+	  *
+	  * 3. Blocks with 'is_overflows' = true.
+	  * It is additional data, that was not passed 'max_rows_to_group_by' threshold.
+	  * It must be merged together independently of ordinary data.
+	  */
 	++current_bucket_num;
 
-	/// Получить из источника следующий блок с номером корзины не больше current_bucket_num.
+	/// Read from source next block with bucket number not greater than 'current_bucket_num'.
 
 	auto need_that_input = [this] (Input & input)
 	{
@@ -419,7 +421,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 
 	auto read_from_input = [this] (Input & input)
 	{
-		/// Если придёт блок не с основными данными, а с overflows, то запомним его и повторим чтение.
+		/// If block with 'overflows' (not ordinary data) will be received, then remember that block and repeat.
 		while (true)
 		{
 //			std::cerr << "reading block\n";
@@ -434,7 +436,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 
 			if (block.info.bucket_num != -1)
 			{
-				/// Один из разрезанных блоков для двухуровневых данных.
+				/// One of partitioned blocks for two-level data.
 //				std::cerr << "block for bucket " << block.info.bucket_num << "\n";
 
 				has_two_level = true;
@@ -451,7 +453,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 			}
 			else
 			{
-				/// Блок для неразрезанных (одноуровневых) данных.
+				/// Block for non-partitioned (single-level) data.
 //				std::cerr << "block without bucket\n";
 
 				input.block = block;
@@ -491,7 +493,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 	{
 		if (current_bucket_num == NUM_BUCKETS)
 		{
-			/// Обработали все основные данные. Остались, возможно, только overflows-блоки.
+			/// All ordinary data was processed. Maybe, there are also 'overflows'-blocks.
 //			std::cerr << "at end\n";
 
 			if (has_overflows)
@@ -512,22 +514,22 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 		}
 		else if (has_two_level)
 		{
-			/** Есть двухуровневые данные.
-				* Будем обрабатывать номера корзин по возрастанию.
-				* Найдём минимальный номер корзины, для которой есть данные,
-				*  затем померджим эти данные.
-				*/
+			/** Having two-level (partitioned) data.
+			  * Will process by bucket numbers in increasing order.
+			  * Find minimum bucket number, for which there is data
+			  *  - this will be data for merge.
+			  */
 //			std::cerr << "has two level\n";
 
 			int min_bucket_num = NUM_BUCKETS;
 
 			for (auto & input : inputs)
 			{
-				/// Изначально разрезанные (двухуровневые) блоки.
+				/// Blocks for already partitioned (two-level) data.
 				if (input.block.info.bucket_num != -1 && input.block.info.bucket_num < min_bucket_num)
 					min_bucket_num = input.block.info.bucket_num;
 
-				/// Ещё не разрезанный по корзинам блок. Разрезаем его и кладём результат в splitted_blocks.
+				/// Not yet partitioned (splitted to buckets) block. Will partition it and place result to 'splitted_blocks'.
 				if (input.block.info.bucket_num == -1 && input.block && input.splitted_blocks.empty())
 				{
 					LOG_TRACE(&Logger::get("MergingAggregatedMemoryEfficient"), "Having block without bucket: will split.");
@@ -536,7 +538,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 					input.block = Block();
 				}
 
-				/// Блоки, которые мы получили разрезанием одноуровневых блоков.
+				/// Blocks we got by splitting non-partitioned blocks.
 				if (!input.splitted_blocks.empty())
 				{
 					for (const auto & block : input.splitted_blocks)
@@ -554,11 +556,11 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 
 //			std::cerr << "current_bucket_num = " << current_bucket_num << "\n";
 
-			/// Блоков с основными данными больше нет.
+			/// No more blocks with ordinary data.
 			if (current_bucket_num == NUM_BUCKETS)
 				continue;
 
-			/// Теперь собираем блоки для current_bucket_num, чтобы их померджить.
+			/// Collect all blocks for 'current_bucket_num' to do merge.
 			BlocksToMerge blocks_to_merge = std::make_unique<BlocksList>();
 
 			for (auto & input : inputs)
@@ -583,7 +585,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 		}
 		else
 		{
-			/// Есть только одноуровневые данные. Просто мерджим их.
+			/// There are only non-partitioned (single-level) data. Just merge them.
 //			std::cerr << "don't have two level\n";
 
 			BlocksToMerge blocks_to_merge = std::make_unique<BlocksList>();
