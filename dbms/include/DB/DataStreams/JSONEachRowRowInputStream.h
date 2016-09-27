@@ -19,7 +19,7 @@ class ReadBuffer;
 class JSONEachRowRowInputStream : public IRowInputStream
 {
 public:
-	JSONEachRowRowInputStream(ReadBuffer& istr_, const Block& sample_, bool skip_unknown_);
+	JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & sample_, bool skip_unknown_);
 
 	bool read(Block & block) override;
 

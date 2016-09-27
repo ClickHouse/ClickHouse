@@ -6616,6 +6616,12 @@ Allows setting a default sampling coefficient for all SELECT queries.
 (For tables that don&#39;t support sampling, an exception will be thrown.)
 If set to 1, default sampling is not performed.
 
+====input_format_skip_unknown_fields==
+
+If the parameter is true, INSERT operation will skip columns with unknown names from input.
+Otherwise, an exception will be generated.
+The parameter works only for JSONEachRow and TSKV input formats.
+
 
 ==Restrictions on query complexity==
 
