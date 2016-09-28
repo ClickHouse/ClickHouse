@@ -61,9 +61,15 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 	else if (name == "CSVWithNames")
 		return std::make_shared<BlockInputStreamFromRowInputStream>(std::make_shared<CSVRowInputStream>(buf, sample, ',', true), sample, max_block_size);
 	else if (name == "TSKV")
-		return std::make_shared<BlockInputStreamFromRowInputStream>(std::make_shared<TSKVRowInputStream>(buf, sample, false), sample, max_block_size);
+	{
+		auto row_stream = std::make_shared<TSKVRowInputStream>(buf, sample, context.getSettingsRef().input_format_skip_unknown_fields);
+		return std::make_shared<BlockInputStreamFromRowInputStream>(std::move(row_stream), sample, max_block_size);
+	}
 	else if (name == "JSONEachRow")
-		return std::make_shared<BlockInputStreamFromRowInputStream>(std::make_shared<JSONEachRowRowInputStream>(buf, sample), sample, max_block_size);
+	{
+		auto row_stream = std::make_shared<JSONEachRowRowInputStream>(buf, sample, context.getSettingsRef().input_format_skip_unknown_fields);
+		return std::make_shared<BlockInputStreamFromRowInputStream>(std::move(row_stream), sample, max_block_size);
+	}
 	else if (name == "TabSeparatedRaw"
 		|| name == "BlockTabSeparated"
 		|| name == "Pretty"

@@ -223,6 +223,9 @@ struct Settings
 	\
 	/** Write add http CORS header */ \
 	M(SettingBool, add_http_cors_header, false) \
+	\
+	/** Skip columns with unknown names from input data (it works for JSONEachRow and TSKV formats). */ \
+	M(SettingBool, input_format_skip_unknown_fields, false)
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
