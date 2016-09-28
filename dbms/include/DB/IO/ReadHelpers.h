@@ -14,6 +14,7 @@
 #include <common/LocalDateTime.h>
 
 #include <DB/Core/Types.h>
+#include <DB/Core/StringRef.h>
 #include <DB/Common/Exception.h>
 #include <DB/Common/StringUtils.h>
 
@@ -811,7 +812,7 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf)
 }
 
 /// Skips json value. If the value contains objects (i.e. {...} sequence), an exception will be thrown.
-void skipJSONFieldPlain(ReadBuffer & buf, const String & name_of_filed = "");
+void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed);
 
 
 /** Прочитать сериализованный эксепшен.

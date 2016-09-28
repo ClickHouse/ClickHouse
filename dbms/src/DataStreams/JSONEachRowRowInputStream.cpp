@@ -106,7 +106,7 @@ bool JSONEachRowRowInputStream::read(Block & block)
 				throw Exception("Unknown field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 
 			skipColonDelimeter(istr);
-			skipJSONFieldPlain(istr, name_ref.toString());
+			skipJSONFieldPlain(istr, name_ref);
 			continue;
 		}
 

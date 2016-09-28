@@ -572,20 +572,20 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf)
 }
 
 
-void skipJSONFieldPlain(ReadBuffer & buf, const String & name_of_filed)
+void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
 {
 	if (buf.eof())
-		throw Exception("Unexpected EOF for key '" + name_of_filed + "'", ErrorCodes::INCORRECT_DATA);
+		throw Exception("Unexpected EOF for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
 	else if (*buf.position() == '"') /// skip double-quoted string
 	{
 		NullSink sink;
 		readJSONStringInto(sink, buf);
 	}
-	else if (isdigit(*buf.position())) /// skip number
+	else if (isNumericASCII(*buf.position())) /// skip number
 	{
 		double v;
 		if (!tryReadFloatText(v, buf))
-			throw Exception("Expected a number field for key '" + name_of_filed + "'", ErrorCodes::INCORRECT_DATA);
+			throw Exception("Expected a number field for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
 	}
 	else if (*buf.position() == 'n') /// skip null
 	{
@@ -626,16 +626,16 @@ void skipJSONFieldPlain(ReadBuffer & buf, const String & name_of_filed)
 				break;
 			}
 			else
-				throw Exception("Unexpected symbol for key '" + name_of_filed + "'", ErrorCodes::INCORRECT_DATA);
+				throw Exception("Unexpected symbol for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
 		}
 	}
 	else if (*buf.position() == '{') /// fail on objects
 	{
-		throw Exception("Unexpected nested field for key '" + name_of_filed + "'", ErrorCodes::INCORRECT_DATA);
+		throw Exception("Unexpected nested field for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
 	}
 	else
 	{
-		throw Exception("Unexpected symbol for key '" + name_of_filed + "'", ErrorCodes::INCORRECT_DATA);
+		throw Exception("Unexpected symbol for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
 	}
 }
 
