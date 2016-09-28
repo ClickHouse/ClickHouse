@@ -153,6 +153,10 @@
 	-->
 	</compression>
 
+	<resharding>
+		<task_queue_path>/clickhouse/task_queue</task_queue_path>
+	</resharding>
+
 	<!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
 	<!--
 	<merge_tree>
