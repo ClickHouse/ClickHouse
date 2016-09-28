@@ -810,7 +810,7 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf)
 		++buf.position();
 }
 
-/// Skip json value (except array and object).
+/// Skips json value. If the value contains objects (i.e. {...} sequence), an exception will be thrown.
 void skipJSONFieldPlain(ReadBuffer & buf, const String & name_of_filed = "");
 
 

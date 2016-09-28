@@ -595,11 +595,41 @@ void skipJSONFieldPlain(ReadBuffer & buf, const String & name_of_filed)
 	{
 		assertString("true", buf);
 	}
-	else if (*buf.position() == 'f')/// skip false
+	else if (*buf.position() == 'f') /// skip false
 	{
 		assertString("false", buf);
 	}
-	else if (*buf.position() == '{' || *buf.position() == '[') /// fail on nested objects
+	else if (*buf.position() == '[')
+	{
+		++buf.position();
+		skipWhitespaceIfAny(buf);
+
+		if (!buf.eof() && *buf.position() == ']') /// skip empty array
+		{
+			++buf.position();
+			return;
+		}
+
+		while (true)
+		{
+			skipJSONFieldPlain(buf, name_of_filed);
+			skipWhitespaceIfAny(buf);
+
+			if (!buf.eof() && *buf.position() == ',')
+			{
+				++buf.position();
+				skipWhitespaceIfAny(buf);
+			}
+			else if (!buf.eof() && *buf.position() == ']')
+			{
+				++buf.position();
+				break;
+			}
+			else
+				throw Exception("Unexpected symbol for key '" + name_of_filed + "'", ErrorCodes::INCORRECT_DATA);
+		}
+	}
+	else if (*buf.position() == '{') /// fail on objects
 	{
 		throw Exception("Unexpected nested field for key '" + name_of_filed + "'", ErrorCodes::INCORRECT_DATA);
 	}
