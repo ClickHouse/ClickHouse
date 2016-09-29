@@ -8,6 +8,7 @@ SELECT quantilesTimingWeighted(0, 0.001, 0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.
 
 DROP TABLE IF EXISTS test.numbers_1001;
 CREATE TABLE test.numbers_1001 (number UInt64) ENGINE = Memory;
+SET min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 SET max_block_size = 10;
 INSERT INTO test.numbers_1001 SELECT number FROM system.numbers LIMIT 1001;
 

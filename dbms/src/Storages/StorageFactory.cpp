@@ -2,13 +2,14 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <DB/Core/FieldVisitors.h>
+#include <DB/Common/StringUtils.h>
 
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
 
 #include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/reinterpretAsIdentifier.h>
+#include <DB/Interpreters/evaluateConstantExpression.h>
 #include <DB/Interpreters/getClusterName.h>
 
 #include <DB/Storages/StorageLog.h>
@@ -45,16 +46,6 @@ namespace ErrorCodes
 	extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-
-static bool endsWith(const std::string & s, const std::string & suffix)
-{
-	return s.size() >= suffix.size() && 0 == strncmp(s.data() + s.size() - suffix.size(), suffix.data(), suffix.size());
-}
-
-static bool startsWith(const std::string & s, const std::string & prefix)
-{
-	return s.size() >= prefix.size() && 0 == strncmp(s.data(), prefix.data(), prefix.size());
-}
 
 /** Для StorageMergeTree: достать первичный ключ в виде ASTExpressionList.
   * Он может быть указан в кортеже: (CounterID, Date),
@@ -227,7 +218,8 @@ StoragePtr StorageFactory::get(
 	const NamesAndTypesList & materialized_columns,
 	const NamesAndTypesList & alias_columns,
 	const ColumnDefaults & column_defaults,
-	bool attach) const
+	bool attach,
+	bool has_force_restore_data_flag) const
 {
 	if (name == "Log")
 	{
@@ -290,11 +282,11 @@ StoragePtr StorageFactory::get(
 			throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
 		const String strictness_str = Poco::toLower(strictness_id->name);
-		ASTJoin::Strictness strictness;
+		ASTTableJoin::Strictness strictness;
 		if (strictness_str == "any")
-			strictness = ASTJoin::Strictness::Any;
+			strictness = ASTTableJoin::Strictness::Any;
 		else if (strictness_str == "all")
-			strictness = ASTJoin::Strictness::All;
+			strictness = ASTTableJoin::Strictness::All;
 		else
 			throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
@@ -303,15 +295,15 @@ StoragePtr StorageFactory::get(
 			throw Exception("Second parameter of storage Join must be LEFT or INNER (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
 		const String kind_str = Poco::toLower(kind_id->name);
-		ASTJoin::Kind kind;
+		ASTTableJoin::Kind kind;
 		if (kind_str == "left")
-			kind = ASTJoin::Kind::Left;
+			kind = ASTTableJoin::Kind::Left;
 		else if (kind_str == "inner")
-			kind = ASTJoin::Kind::Inner;
+			kind = ASTTableJoin::Kind::Inner;
 		else if (kind_str == "right")
-			kind = ASTJoin::Kind::Right;
+			kind = ASTTableJoin::Kind::Right;
 		else if (kind_str == "full")
-			kind = ASTJoin::Kind::Full;
+			kind = ASTTableJoin::Kind::Full;
 		else
 			throw Exception("Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
@@ -358,8 +350,11 @@ StoragePtr StorageFactory::get(
 				" - name of source database and regexp for table names.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String source_database 		= reinterpretAsIdentifier(args[0], local_context).name;
-		String table_name_regexp	= safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[1]).value);
+		args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], local_context);
+		args[1] = evaluateConstantExpressionAsLiteral(args[1], local_context);
+
+		String source_database 		= static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+		String table_name_regexp	= static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 
 		return StorageMerge::create(
 			table_name, columns,
@@ -368,8 +363,16 @@ StoragePtr StorageFactory::get(
 	}
 	else if (name == "Distributed")
 	{
-		/** В запросе в качестве аргумента для движка указано имя конфигурационной секции,
-		  *  в которой задан список удалённых серверов, а также имя удалённой БД и имя удалённой таблицы.
+		/** Arguments of engine is following:
+		  * - name of cluster in configuration;
+		  * - name of remote database;
+		  * - name of remote table;
+		  *
+		  * Remote database may be specified in following form:
+		  * - identifier;
+		  * - constant expression with string result, like currentDatabase();
+		  * -- string literal as specific case;
+		  * - empty string means 'use default database from cluster'.
 		  */
 		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
 
@@ -387,8 +390,11 @@ StoragePtr StorageFactory::get(
 
 		String cluster_name = getClusterName(*args[0]);
 
-		String remote_database 	= reinterpretAsIdentifier(args[1], local_context).name;
-		String remote_table 	= typeid_cast<ASTIdentifier &>(*args[2]).name;
+		args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
+		args[2] = evaluateConstantExpressionOrIdentidierAsLiteral(args[2], local_context);
+
+		String remote_database 	= static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+		String remote_table 	= static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
 
 		const auto & sharding_key = args.size() == 4 ? args[3] : nullptr;
 
@@ -421,8 +427,11 @@ StoragePtr StorageFactory::get(
 				" destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String destination_database = reinterpretAsIdentifier(args[0], local_context).name;
-		String destination_table 	= typeid_cast<ASTIdentifier &>(*args[1]).name;
+		args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], local_context);
+		args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
+
+		String destination_database = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+		String destination_table 	= static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 
 		size_t num_buckets = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[2]).value);
 
@@ -528,7 +537,7 @@ SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType
 ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
 
 
-For further info please read the documentation: https://clickhouse.yandex-team.ru/
+For further info please read the documentation: https://clickhouse.yandex/
 )";
 
 		String name_part = name.substr(0, name.size() - strlen("MergeTree"));
@@ -748,6 +757,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, merging_params,
+				has_force_restore_data_flag,
 				context.getMergeTreeSettings());
 		else
 			return StorageMergeTree::create(
@@ -755,6 +765,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, merging_params,
+				has_force_restore_data_flag,
 				context.getMergeTreeSettings());
 	}
 	else

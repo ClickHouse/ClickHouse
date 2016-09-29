@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.hpp>
+
 #include <DB/Storages/IStorage.h>
 #include <DB/Interpreters/Context.h>
 
@@ -9,8 +11,10 @@ namespace DB
 
 /** Реализует системную таблицу databases, которая позволяет получить информацию о всех БД.
   */
-class StorageSystemDatabases : public IStorage
+class StorageSystemDatabases : private ext::shared_ptr_helper<StorageSystemDatabases>, public IStorage
 {
+friend class ext::shared_ptr_helper<StorageSystemDatabases>;
+
 public:
 	static StoragePtr create(const std::string & name_);
 

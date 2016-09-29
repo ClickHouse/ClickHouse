@@ -27,7 +27,8 @@ public:
 		const NamesAndTypesList & materialized_columns,
 		const NamesAndTypesList & alias_columns,
 		const ColumnDefaults & column_defaults,
-		bool attach) const;
+		bool attach,
+		bool has_force_restore_data_flag) const;
 };
 
 }

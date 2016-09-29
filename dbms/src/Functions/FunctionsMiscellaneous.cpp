@@ -106,7 +106,7 @@ namespace VisibleWidth
 	template <typename T>
 	static bool executeConstNumber(Block & block, const ColumnPtr & column, size_t result)
 	{
-		if (const ColumnConst<T> * col = typeid_cast<const ColumnConst<T> *>(&*column))
+		if (const ColumnConst<T> * col = typeid_cast<const ColumnConst<T> *>(column.get()))
 		{
 			UInt64 res = 0;
 			numWidthConstant(col->getData(), res);
@@ -120,7 +120,7 @@ namespace VisibleWidth
 	template <typename T>
 	static bool executeNumber(Block & block, const ColumnPtr & column, size_t result)
 	{
-		if (const ColumnVector<T> * col = typeid_cast<const ColumnVector<T> *>(&*column))
+		if (const ColumnVector<T> * col = typeid_cast<const ColumnVector<T> *>(column.get()))
 		{
 			auto res = std::make_shared<ColumnUInt64>(column->size());
 			block.getByPosition(result).column = res;
@@ -178,11 +178,11 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 	const DataTypePtr type = block.getByPosition(arguments[0]).type;
 	size_t rows = column->size();
 
-	if (typeid_cast<const DataTypeDate *>(&*type))
+	if (typeid_cast<const DataTypeDate *>(type.get()))
 	{
 		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(rows, strlen("0000-00-00"));
 	}
-	else if (typeid_cast<const DataTypeDateTime *>(&*type))
+	else if (typeid_cast<const DataTypeDateTime *>(type.get()))
 	{
 		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(rows, strlen("0000-00-00 00:00:00"));
 	}
@@ -212,27 +212,27 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 		|| VisibleWidth::executeNumber<Float64>(block, column, result))
 	{
 	}
-	else if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
+	else if (const ColumnString * col = typeid_cast<const ColumnString *>(column.get()))
 	{
 		auto res = std::make_shared<ColumnUInt64>(rows);
 		block.getByPosition(result).column = res;
 		stringWidthVector(col->getChars(), col->getOffsets(), res->getData());
 	}
-	else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column))
+	else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(column.get()))
 	{
 		auto res = std::make_shared<ColumnUInt64>(rows);
 		block.getByPosition(result).column = res;
 		stringWidthFixedVector(col->getChars(), col->getN(), res->getData());
 	}
-	else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
+	else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(column.get()))
 	{
 		UInt64 res = 0;
 		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(rows, res);
 		stringWidthConstant(col->getData(), res);
 	}
-	else if (const ColumnArray * col = typeid_cast<const ColumnArray *>(&*column))
+	else if (const ColumnArray * col = typeid_cast<const ColumnArray *>(column.get()))
 	{
-		/// Вычисляем видимую ширину для значений массива.
+		/// Calculate visible width of elements of array.
 		Block nested_block;
 		ColumnWithTypeAndName nested_values;
 		nested_values.type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
@@ -246,27 +246,29 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 		ColumnNumbers nested_argument_numbers(1, 0);
 		execute(nested_block, nested_argument_numbers, 1);
 
-		/// Теперь суммируем и кладём в результат.
+		/// Then accumulate and place into result.
 		auto res = std::make_shared<ColumnUInt64>(rows);
 		block.getByPosition(result).column = res;
 		ColumnUInt64::Container_t & vec = res->getData();
 
-		size_t additional_symbols = 0;	/// Кавычки.
-		if (typeid_cast<const DataTypeDate *>(&*nested_values.type)
-			|| typeid_cast<const DataTypeDateTime *>(&*nested_values.type)
-			|| typeid_cast<const DataTypeString *>(&*nested_values.type)
-			|| typeid_cast<const DataTypeFixedString *>(&*nested_values.type))
+		size_t additional_symbols = 0;	/// Quotes.
+		if (typeid_cast<const DataTypeDate *>(nested_values.type.get())
+			|| typeid_cast<const DataTypeDateTime *>(nested_values.type.get())
+			|| typeid_cast<const DataTypeString *>(nested_values.type.get())
+			|| typeid_cast<const DataTypeFixedString *>(nested_values.type.get())
+			|| typeid_cast<const DataTypeEnum8 *>(nested_values.type.get())
+			|| typeid_cast<const DataTypeEnum16 *>(nested_values.type.get()))
 			additional_symbols = 2;
 
-		if (ColumnUInt64 * nested_result_column = typeid_cast<ColumnUInt64 *>(&*nested_block.getByPosition(1).column))
+		if (ColumnUInt64 * nested_result_column = typeid_cast<ColumnUInt64 *>(nested_block.getByPosition(1).column.get()))
 		{
 			ColumnUInt64::Container_t & nested_res = nested_result_column->getData();
 
 			size_t j = 0;
 			for (size_t i = 0; i < rows; ++i)
 			{
-				/** Если пустой массив - то два символа: [];
-				  * если непустой - то сначала один символ [, и по одному лишнему символу на значение: , или ].
+				/** If empty array - then two characters: [];
+				  * if not - then character '[', and one excessive character for each element: either ',' or ']'.
 				  */
 				vec[i] = j == col->getOffsets()[i] ? 2 : 1;
 
@@ -274,7 +276,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 					vec[i] += 1 + additional_symbols + nested_res[j];
 			}
 		}
-		else if (ColumnConstUInt64 * nested_result_column = typeid_cast<ColumnConstUInt64 *>(&*nested_block.getByPosition(1).column))
+		else if (ColumnConstUInt64 * nested_result_column = typeid_cast<ColumnConstUInt64 *>(nested_block.getByPosition(1).column.get()))
 		{
 			size_t nested_length = nested_result_column->getData() + additional_symbols + 1;
 			for (size_t i = 0; i < rows; ++i)
@@ -282,9 +284,9 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 					(i == 0 ? col->getOffsets()[0] : (col->getOffsets()[i] - col->getOffsets()[i - 1])) * nested_length);
 		}
 	}
-	else if (const ColumnTuple * col = typeid_cast<const ColumnTuple *>(&*column))
+	else if (const ColumnTuple * col = typeid_cast<const ColumnTuple *>(column.get()))
 	{
-		/// Посчитаем видимую ширину для каждого вложенного столбца по отдельности, и просуммируем.
+		/// Calculate visible width for each nested column separately, and then accumulate.
 		Block nested_block = col->getData();
 		size_t columns = nested_block.columns();
 
@@ -294,7 +296,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 		{
 			nested_block.getByPosition(i).type = static_cast<const DataTypeTuple &>(*type).getElements()[i];
 
-			/** nested_block будет состоять из следующих столбцов:
+			/** nested_block will consist of following columns:
 			  * x1, x2, x3... , width1, width2, width1 + width2, width3, width1 + width2 + width3, ...
 			  */
 
@@ -318,16 +320,18 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 			}
 		}
 
-		/// Прибавим ещё количество символов на кавычки и запятые.
+		/// Add also number of characters for quotes and commas.
 
-		size_t additional_symbols = columns - 1;	/// Запятые.
+		size_t additional_symbols = columns - 1;	/// Commas.
 		for (size_t i = 0; i < columns; ++i)
 		{
-			if (typeid_cast<const DataTypeDate *>(&*nested_block.getByPosition(i).type)
-				|| typeid_cast<const DataTypeDateTime *>(&*nested_block.getByPosition(i).type)
-				|| typeid_cast<const DataTypeString *>(&*nested_block.getByPosition(i).type)
-				|| typeid_cast<const DataTypeFixedString *>(&*nested_block.getByPosition(i).type))
-				additional_symbols += 2;			/// Кавычки.
+			if (typeid_cast<const DataTypeDate *>(nested_block.getByPosition(i).type.get())
+				|| typeid_cast<const DataTypeDateTime *>(nested_block.getByPosition(i).type.get())
+				|| typeid_cast<const DataTypeString *>(nested_block.getByPosition(i).type.get())
+				|| typeid_cast<const DataTypeFixedString *>(nested_block.getByPosition(i).type.get())
+				|| typeid_cast<const DataTypeEnum8 *>(nested_block.getByPosition(i).type.get())
+				|| typeid_cast<const DataTypeEnum16 *>(nested_block.getByPosition(i).type.get()))
+				additional_symbols += 2;			/// Quotes.
 		}
 
 		ColumnPtr & nested_result_column = nested_block.getByPosition(nested_block.columns() - 1).column;
@@ -349,15 +353,25 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 
 		block.getByPosition(result).column = nested_result_column;
 	}
-	else if (const ColumnConstArray * col = typeid_cast<const ColumnConstArray *>(&*column))
+	else if (typeid_cast<const ColumnConstArray *>(column.get())
+		|| typeid_cast<const ColumnConstTuple *>(column.get()))
 	{
 		String s;
 		{
 			WriteBufferFromString wb(s);
-			type->serializeTextEscaped(*col->convertToFullColumn(), 0, wb);
+			type->serializeTextEscaped(*column->cut(0, 1)->convertToFullColumnIfConst(), 0, wb);
 		}
 
 		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(rows, s.size());
+	}
+	else if (typeid_cast<const ColumnAggregateFunction *>(column.get()))
+	{
+		/** Return obviously wrong (arbitary) value for states of aggregate functions.
+		  * Result of visibleWidth is used for presentation purposes,
+		  *  and state of aggregate function is presented as unreadable sequence of bytes,
+		  *  so using wrong calculation of its displayed width don't make presentation much worse.
+		  */
+		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(rows, 10);
 	}
 	else
 	   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -378,9 +392,11 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 	factory.registerFunction<FunctionHostName>();
 	factory.registerFunction<FunctionVisibleWidth>();
 	factory.registerFunction<FunctionToTypeName>();
+	factory.registerFunction<FunctionToColumnTypeName>();
 	factory.registerFunction<FunctionBlockSize>();
-	factory.registerFunction<FunctionRowNumberInBlock>();
 	factory.registerFunction<FunctionBlockNumber>();
+	factory.registerFunction<FunctionRowNumberInBlock>();
+	factory.registerFunction<FunctionRowNumberInAllBlocks>();
 	factory.registerFunction<FunctionSleep>();
 	factory.registerFunction<FunctionMaterialize>();
 	factory.registerFunction<FunctionIgnore>();
@@ -405,6 +421,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 	factory.registerFunction<FunctionUptime>();
 
 	factory.registerFunction<FunctionRunningAccumulate>();
+	factory.registerFunction<FunctionRunningDifference>();
 	factory.registerFunction<FunctionFinalizeAggregation>();
 }
 

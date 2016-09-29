@@ -174,7 +174,7 @@ struct DivideIntegralImpl
 	static inline Result apply(A a, B b)
 	{
 		throwIfDivisionLeadsToFPE(a, b);
-		return static_cast<Result>(a) / b;
+		return a / b;
 	}
 };
 
@@ -186,7 +186,7 @@ struct DivideIntegralOrZeroImpl
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
 	{
-		return unlikely(divisionLeadsToFPE(a, b)) ? 0 : static_cast<Result>(a) / b;
+		return unlikely(divisionLeadsToFPE(a, b)) ? 0 : a / b;
 	}
 };
 
@@ -747,7 +747,7 @@ private:
 	template <typename T0>
 	bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnVector<T0> * col = typeid_cast<const ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<T0> * col = typeid_cast<const ColumnVector<T0> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			using ResultType = typename Op<T0>::ResultType;
 
@@ -760,7 +760,7 @@ private:
 
 			return true;
 		}
-		else if (const ColumnConst<T0> * col = typeid_cast<const ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<T0> * col = typeid_cast<const ColumnConst<T0> *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			using ResultType = typename Op<T0>::ResultType;
 

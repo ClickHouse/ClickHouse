@@ -13,12 +13,12 @@ class LimitReadBuffer : public ReadBuffer
 private:
 	ReadBuffer & in;
 	size_t limit;
-	
-	bool nextImpl()
+
+	bool nextImpl() override
 	{
 		if (count() >= limit || !in.next())
 			return false;
-		
+
 		working_buffer = in.buffer();
 		if (limit - count() < working_buffer.size())
 			working_buffer.resize(limit - count());

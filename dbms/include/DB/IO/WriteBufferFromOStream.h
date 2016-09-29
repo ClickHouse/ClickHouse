@@ -21,11 +21,11 @@ class WriteBufferFromOStream : public BufferWithOwnMemory<WriteBuffer>
 private:
 	std::ostream & ostr;
 
-	void nextImpl()
+	void nextImpl() override
 	{
 		if (!offset())
 			return;
-		
+
 		ostr.write(working_buffer.begin(), offset());
 		ostr.flush();
 
@@ -37,7 +37,7 @@ public:
 	WriteBufferFromOStream(std::ostream & ostr_, size_t size = DBMS_DEFAULT_BUFFER_SIZE)
 		: BufferWithOwnMemory<WriteBuffer>(size), ostr(ostr_) {}
 
-	~WriteBufferFromOStream()
+	~WriteBufferFromOStream() override
 	{
 		try
 		{

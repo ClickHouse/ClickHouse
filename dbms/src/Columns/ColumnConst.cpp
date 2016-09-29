@@ -109,6 +109,11 @@ StringRef ColumnConst<Array>::getDataAtWithTerminatingZero(size_t n) const
 
 ColumnPtr ColumnConst<Tuple>::convertToFullColumn() const
 {
+	return convertToTupleOfConstants()->convertToFullColumnIfConst();
+}
+
+ColumnPtr ColumnConst<Tuple>::convertToTupleOfConstants() const
+{
 	if (!data_type)
 		throw Exception("No data type specified for ColumnConstTuple", ErrorCodes::LOGICAL_ERROR);
 
@@ -116,17 +121,24 @@ ColumnPtr ColumnConst<Tuple>::convertToFullColumn() const
 	if (!type)
 		throw Exception("Non-Tuple data type specified for ColumnConstTuple", ErrorCodes::LOGICAL_ERROR);
 
-	/// Ask data_type to create ColumnTuple of corresponding type
-	ColumnPtr res = type->createColumn();
-	static_cast<ColumnTuple &>(*res).insert(getDataFromHolderImpl());
+	/// Create columns for each element and convert to full columns.
+	const DataTypes & element_types = type->getElements();
+	size_t tuple_size = element_types.size();
+	Block block;
 
-	return res;
+	for (size_t i = 0; i < tuple_size; ++i)
+		block.insert(ColumnWithTypeAndName{
+			element_types[i]->createConstColumn(s, static_cast<const TupleBackend &>(*data)[i]),
+			element_types[i],
+			""});
+
+	return std::make_shared<ColumnTuple>(block);
 }
 
 void ColumnConst<Tuple>::getExtremes(Field & min, Field & max) const
 {
-	min = data_type->getDefault();
-	max = data_type->getDefault();
+	min = *data;
+	max = *data;
 }
 
 StringRef ColumnConst<Tuple>::getDataAt(size_t n) const

@@ -21,8 +21,8 @@
 STRONG_TYPEDEF(UInt16, DayNum_t);
 
 
-/** Lookup таблица для преобразования времени в дату, а также в месяц или в год или в день недели или в день месяца.
-  * Сейчас она используется для ускорения OLAPServer-а, который делает такие преобразования миллиардами.
+/** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
+  * First time was implemented for OLAPServer, that needed to do billions of such transformations.
   */
 class DateLUTImpl
 {
@@ -486,16 +486,3 @@ public:
 		return s;
 	}
 };
-
-
-namespace std
-{
-	template<>
-	struct hash<DayNum_t>
-	{
-		size_t operator() (DayNum_t x) const
-		{
-			return x;
-		}
-	};
-}

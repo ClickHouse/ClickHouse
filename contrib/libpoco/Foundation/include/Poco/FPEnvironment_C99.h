@@ -87,7 +87,7 @@ inline bool FPEnvironmentImpl::isInfiniteImpl(double value)
 
 inline bool FPEnvironmentImpl::isInfiniteImpl(long double value)
 {
-	return std::isinf((double) value) != 0;
+	return std::isinf(static_cast<double>(value)) != 0;
 }
 
 
@@ -105,7 +105,7 @@ inline bool FPEnvironmentImpl::isNaNImpl(double value)
 
 inline bool FPEnvironmentImpl::isNaNImpl(long double value)
 {
-	return std::isnan((double) value) != 0;
+	return std::isnan(static_cast<double>(value)) != 0;
 }
 
 

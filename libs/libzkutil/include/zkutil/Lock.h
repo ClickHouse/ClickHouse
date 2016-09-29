@@ -31,6 +31,7 @@ namespace zkutil
 		}
 
 		Lock(const Lock &) = delete;
+		Lock(Lock && lock) = default;
 		Lock & operator=(const Lock &) = delete;
 
 		~Lock()
@@ -58,6 +59,7 @@ namespace zkutil
 		Status tryCheck() const;
 
 		void unlock();
+		void unlockOrMoveIfFailed(std::vector<zkutil::Lock> & failed_to_unlock_locks);
 
 		bool tryLock();
 

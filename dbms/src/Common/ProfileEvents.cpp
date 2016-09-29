@@ -3,5 +3,5 @@
 
 namespace ProfileEvents
 {
-	size_t counters[END];	/// Глобальная переменная - инициализируется нулями.
+	std::atomic<size_t> counters[END] {};	/// Глобальная переменная - инициализируется нулями.
 }

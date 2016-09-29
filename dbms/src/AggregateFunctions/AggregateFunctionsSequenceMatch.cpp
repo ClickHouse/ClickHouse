@@ -27,8 +27,8 @@ AggregateFunctionPtr createAggregateFunctionSequenceMatch(const std::string & na
 
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction({"sequenceMatch"}, createAggregateFunctionSequenceMatch);
-	factory.registerFunction({"sequenceCount"}, createAggregateFunctionSequenceCount);
+	factory.registerFunction("sequenceMatch", createAggregateFunctionSequenceMatch);
+	factory.registerFunction("sequenceCount", createAggregateFunctionSequenceCount);
 }
 
 }

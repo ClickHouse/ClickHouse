@@ -37,7 +37,7 @@ public:
 		impl = std::make_unique<ReadBufferFromHTTP>(host, port, params, buffer_size, connection_timeout, send_timeout, receive_timeout);
 	}
 
-	bool nextImpl()
+	bool nextImpl() override
 	{
 		if (!impl->next())
 			return false;

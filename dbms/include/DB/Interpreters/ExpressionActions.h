@@ -69,7 +69,7 @@ public:
 
 	/// Для ARRAY_JOIN
 	NameSet array_joined_columns;
-	bool array_join_is_left;
+	bool array_join_is_left = false;
 
 	/// Для JOIN
 	std::shared_ptr<const Join> join;

@@ -17,10 +17,10 @@ class HexWriteBuffer : public WriteBuffer
 {
 protected:
 	char buf[DBMS_HEX_WRITE_BUFFER_SIZE];
-	
+
 	WriteBuffer & out;
-	
-	void nextImpl()
+
+	void nextImpl() override
 	{
 		if (!offset())
 			return;
@@ -35,7 +35,7 @@ protected:
 public:
 	HexWriteBuffer(WriteBuffer & out_) : WriteBuffer(buf, sizeof(buf)), out(out_) {}
 
-    ~HexWriteBuffer()
+    ~HexWriteBuffer() override
 	{
 		try
 		{

@@ -46,7 +46,7 @@ try
 		elem.name = name_type.name;
 		elem.type = name_type.type;
 		elem.column = elem.type->createColumn();
-		sample.insert(elem);
+		sample.insert(std::move(elem));
 	}
 
 	{
@@ -62,7 +62,7 @@ try
 		//copyData(row_input, row_output);
 
 		BlockInputStreamFromRowInputStream in(std::make_shared<TabSeparatedRowInputStream>(in_buf, sample, true, true), sample);
-		BlockOutputStreamFromRowOutputStream out(std::make_shared<JSONRowOutputStream>(out_buf, sample));
+		BlockOutputStreamFromRowOutputStream out(std::make_shared<JSONRowOutputStream>(out_buf, sample, false));
 		copyData(in, out);
 	}
 

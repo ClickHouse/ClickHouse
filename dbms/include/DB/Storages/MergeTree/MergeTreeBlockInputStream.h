@@ -203,7 +203,7 @@ protected:
 		{
 			const auto minimum_size_column_name = owned_data_part->getMinimumSizeColumnName();
 			columns.push_back(minimum_size_column_name);
-			injected_columns.insert(minimum_size_column_name);
+			injected_columns.insert(std::move(minimum_size_column_name));
 		}
 
 		return injected_columns;
@@ -224,16 +224,16 @@ protected:
 
 			owned_mark_cache = storage.context.getMarkCache();
 
-			reader.reset(new MergeTreeReader(
+			reader = std::make_unique<MergeTreeReader>(
 				path, owned_data_part, columns, owned_uncompressed_cache.get(),
 				owned_mark_cache.get(), save_marks_in_cache, storage,
-				all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size));
+				all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
 
 			if (prewhere_actions)
-				pre_reader.reset(new MergeTreeReader(
+				pre_reader = std::make_unique<MergeTreeReader>(
 					path, owned_data_part, pre_columns, owned_uncompressed_cache.get(),
 					owned_mark_cache.get(), save_marks_in_cache, storage,
-					all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size));
+					all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
 		}
 
 		if (prewhere_actions)

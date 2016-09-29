@@ -13,6 +13,7 @@
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Common/Volnitsky.h>
 #include <DB/Functions/IFunction.h>
+#include <DB/Functions/ObjectPool.h>
 #include <DB/Common/StringSearcher.h>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
@@ -423,74 +424,22 @@ inline bool likePatternIsStrstr(const String & pattern, String & res)
 
 namespace Regexps
 {
-	struct Holder;
-	struct Deleter;
-
 	using Regexp = OptimizedRegularExpressionImpl<false>;
-	using KnownRegexps = std::map<String, std::unique_ptr<Holder>>;
-	using Pointer = std::unique_ptr<Regexp, Deleter>;
-
-	///	Container for regular expressions with embedded mutex for safe addition and removal
-	struct Holder
-	{
-		std::mutex mutex;
-		std::stack<std::unique_ptr<Regexp>> stack;
-
-		/**	Extracts and returns a pointer from the collection if it's not empty,
-		*	creates a new one by calling provided f() otherwise.
-		*/
-		template <typename Factory> Pointer get(Factory && f);
-	};
-
-	/**	Specialized deleter for std::unique_ptr.
-	*	Returns underlying pointer back to holder thus reclaiming its ownership.
-	*/
-	struct Deleter
-	{
-		Holder * holder;
-
-		Deleter(Holder * holder = nullptr) : holder{holder} {}
-
-		void operator()(Regexp * owning_ptr) const
-		{
-			std::lock_guard<std::mutex> lock{holder->mutex};
-			holder->stack.emplace(owning_ptr);
-		}
-
-	};
-
-	template <typename Factory>
-	inline Pointer Holder::get(Factory && f)
-	{
-		std::lock_guard<std::mutex> lock{mutex};
-
-		if (stack.empty())
-			return { f(), this };
-
-		auto regexp = stack.top().release();
-		stack.pop();
-
-		return { regexp, this };
-	}
+	using Pool = ObjectPool<Regexp, String>;
 
 	template <bool like>
 	inline Regexp createRegexp(const std::string & pattern, int flags) { return {pattern, flags}; }
+
 	template <>
 	inline Regexp createRegexp<true>(const std::string & pattern, int flags) { return {likePatternToRegexp(pattern), flags}; }
 
 	template <bool like, bool no_capture>
-	inline Pointer get(const std::string & pattern)
+	inline Pool::Pointer get(const std::string & pattern)
 	{
 		/// C++11 has thread-safe function-local statics on most modern compilers.
-		static KnownRegexps known_regexps;	/// Разные переменные для разных параметров шаблона.
-		static std::mutex mutex;
-		std::lock_guard<std::mutex> lock{mutex};
+		static Pool known_regexps;	/// Разные переменные для разных параметров шаблона.
 
-		auto it = known_regexps.find(pattern);
-		if (known_regexps.end() == it)
-			it = known_regexps.emplace(pattern, std::make_unique<Holder>()).first;
-
-		return it->second->get([&pattern]
+		return known_regexps.get(pattern, [&pattern]
 		{
 			int flags = OptimizedRegularExpression::RE_DOT_NL;
 			if (no_capture)
@@ -1202,8 +1151,8 @@ public:
 		if (!column_needle->isConst() || !column_replacement->isConst())
 			throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
 
-		const IColumn * c1 = &*block.getByPosition(arguments[1]).column;
-		const IColumn * c2 = &*block.getByPosition(arguments[2]).column;
+		const IColumn * c1 = block.getByPosition(arguments[1]).column.get();
+		const IColumn * c2 = block.getByPosition(arguments[2]).column.get();
 		const ColumnConstString * c1_const = typeid_cast<const ColumnConstString *>(c1);
 		const ColumnConstString * c2_const = typeid_cast<const ColumnConstString *>(c2);
 		String needle = c1_const->getData();

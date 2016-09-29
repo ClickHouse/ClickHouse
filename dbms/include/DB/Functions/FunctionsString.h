@@ -29,18 +29,14 @@ namespace DB
 /** Функции работы со строками:
   *
   * length, empty, notEmpty,
-  * concat, substring, lower, upper, reverse, // left, right, insert, replace,
-  * // escape, quote, unescape, unquote, trim, trimLeft, trimRight, pad, padLeft
-  * lengthUTF8, substringUTF8, lowerUTF8, upperUTF8, reverseUTF8, // leftUTF8, rightUTF8, insertUTF8, replaceUTF8
-  * // padUTF8, padLeftUTF8.
+  * concat, substring, lower, upper, reverse
+  * lengthUTF8, substringUTF8, lowerUTF8, upperUTF8, reverseUTF8
   *
   * s				-> UInt8:	empty, notEmpty
   * s 				-> UInt64: 	length, lengthUTF8
-  * s 				-> s:		lower, upper, lowerUTF8, upperUTF8, reverse, reverseUTF8, escape, quote, unescape, unquote, trim, trimLeft, trimRight
+  * s 				-> s:		lower, upper, lowerUTF8, upperUTF8, reverse, reverseUTF8
   * s, s 			-> s: 		concat
   * s, c1, c2 		-> s:		substring, substringUTF8
-  * s, c1 			-> s:		left, right, leftUTF8, rightUTF8
-  * s, c1, s2		-> s:		insert, insertUTF8, pad, padLeft, padUTF8, padLeftUTF8
   * s, c1, c2, s2	-> s:		replace, replaceUTF8
   *
   * Функции поиска строк и регулярных выражений расположены отдельно.
@@ -609,7 +605,8 @@ struct SubstringImpl
 		ColumnString::Offset_t res_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			if (start + prev_offset >= offsets[i] + 1)
+			size_t string_size = offsets[i] - prev_offset;
+			if (start >= string_size + 1)
 			{
 				res_data.resize(res_data.size() + 1);
 				res_data[res_offset] = 0;
@@ -1105,8 +1102,8 @@ private:
 
 	void executeBinary(Block & block, const ColumnNumbers & arguments, const size_t result)
 	{
-		const IColumn * c0 = &*block.getByPosition(arguments[0]).column;
-		const IColumn * c1 = &*block.getByPosition(arguments[1]).column;
+		const IColumn * c0 = block.getByPosition(arguments[0]).column.get();
+		const IColumn * c1 = block.getByPosition(arguments[1]).column.get();
 
 		const ColumnString * c0_string = typeid_cast<const ColumnString *>(c0);
 		const ColumnString * c1_string = typeid_cast<const ColumnString *>(c1);
@@ -1506,14 +1503,23 @@ public:
 		if (!column_start->isConst() || !column_length->isConst())
 			throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
 
-		FieldVisitorConvertToNumber<UInt64> converter;
 		Field start_field = (*block.getByPosition(arguments[1]).column)[0];
 		Field length_field = (*block.getByPosition(arguments[2]).column)[0];
-		UInt64 start = apply_visitor(converter, start_field);
-		UInt64 length = apply_visitor(converter, length_field);
+
+		if (start_field.getType() != Field::Types::UInt64
+			|| length_field.getType() != Field::Types::UInt64)
+			throw Exception("2nd and 3rd arguments of function " + getName() + " must be non-negative and must have UInt type.");
+
+		UInt64 start = start_field.get<UInt64>();
+		UInt64 length = length_field.get<UInt64>();
 
 		if (start == 0)
 			throw Exception("Second argument of function substring must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+		/// Otherwise may lead to overflow and pass bounds check inside inner loop.
+		if (start >= 0x8000000000000000ULL
+			|| length >= 0x8000000000000000ULL)
+			throw Exception("Too large values of 2nd or 3rd argument provided for function substring.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column_string))
 		{

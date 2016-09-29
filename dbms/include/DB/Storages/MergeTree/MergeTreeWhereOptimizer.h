@@ -404,11 +404,13 @@ private:
 
 	void determineArrayJoinedNames(ASTSelectQuery & select)
 	{
+		auto array_join_expression_list = select.array_join_expression_list();
+
 		/// much simplified code from ExpressionAnalyzer::getArrayJoinedColumns()
-		if (!select.array_join_expression_list)
+		if (!array_join_expression_list)
 			return;
 
-		for (const auto & ast : select.array_join_expression_list->children)
+		for (const auto & ast : array_join_expression_list->children)
 			array_joined_names.emplace(ast->getAliasOrColumnName());
 	}
 

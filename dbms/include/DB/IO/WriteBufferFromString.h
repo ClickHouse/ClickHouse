@@ -1,6 +1,6 @@
 #pragma once
 
-#include <iostream>
+#include <string>
 
 #include <DB/IO/WriteBuffer.h>
 
@@ -17,7 +17,7 @@ class WriteBufferFromString : public WriteBuffer
 private:
 	std::string & s;
 
-	void nextImpl()
+	void nextImpl() override
 	{
 		size_t old_size = s.size();
 		s.resize(old_size * 2);
@@ -41,7 +41,7 @@ public:
 		}
 	}
 
-    virtual ~WriteBufferFromString()
+    ~WriteBufferFromString() override
 	{
 		finish();
 	}

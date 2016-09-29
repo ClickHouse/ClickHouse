@@ -65,7 +65,7 @@ struct ExtractProtocol
 
 		Pos pos = data;
 
-		while ((*pos >= 'a' && *pos <= 'z') || (*pos >= 'A' && *pos <= 'Z') || (*pos >= '0' && *pos <= '9'))
+		while (isAlphaNumericASCII(*pos))
 			++pos;
 
 		if (pos == data || pos + 3 >= data + size)

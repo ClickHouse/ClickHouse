@@ -27,7 +27,7 @@ int main(int argc, const char ** argv)
 	int block = atoi(argv[2]);
 	int min_skip = atoi(argv[3]);
 	int max_skip = atoi(argv[4]);
-	size_t buf_size = argc <= 5 ? DBMS_DEFAULT_BUFFER_SIZE : (size_t)atoi(argv[5]);
+	size_t buf_size = argc <= 5 ? DBMS_DEFAULT_BUFFER_SIZE : static_cast<size_t>(atoi(argv[5]));
 
 	UInt64 size = Poco::File(argv[1]).getSize();
 	UInt64 pos = 0;
@@ -40,7 +40,7 @@ int main(int argc, const char ** argv)
 
 	while (!in.eof())
 	{
-		UInt64 len = (UInt64)(rand() % (max_skip - min_skip + 1) + min_skip);
+		UInt64 len = static_cast<UInt64>(rand() % (max_skip - min_skip + 1) + min_skip);
 		len = std::min(len, size - pos);
 		off_t seek_res = in.seek(len, SEEK_CUR);
 		pos += len;
@@ -49,7 +49,7 @@ int main(int argc, const char ** argv)
 			std::cerr << "Unexpected seek return value: " << seek_res << "; expeted " << pos << ", seeking by " << len << std::endl;
 			return 1;
 		}
-		len = std::min((UInt64)block, size - pos);
+		len = std::min(static_cast<UInt64>(block), size - pos);
 		in.read(&buf[0], len);
 		checksum += buf[0] + buf[block - 1];
 		pos += len;

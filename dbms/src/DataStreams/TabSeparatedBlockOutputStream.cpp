@@ -4,6 +4,11 @@
 namespace DB
 {
 
+void TabSeparatedBlockOutputStream::flush()
+{
+	ostr.next();
+}
+
 void TabSeparatedBlockOutputStream::write(const Block & block)
 {
 	size_t columns = block.columns();

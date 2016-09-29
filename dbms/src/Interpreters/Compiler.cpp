@@ -4,12 +4,11 @@
 
 #include <DB/Common/SipHash.h>
 #include <DB/Common/ShellCommand.h>
+#include <DB/Common/StringUtils.h>
 
 #include <DB/IO/Operators.h>
-#include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/copyData.h>
 #include <DB/IO/WriteBufferFromFile.h>
 
 #include <DB/Interpreters/Compiler.h>
@@ -28,7 +27,7 @@ Compiler::Compiler(const std::string & path_, size_t threads)
 	for (Poco::DirectoryIterator dir_it(path); dir_end != dir_it; ++dir_it)
 	{
 		std::string name = dir_it.name();
-		if (name.length() > strlen(".so") && 0 == name.compare(name.size() - 3, 3, ".so"))
+		if (endsWith(name, ".so"))
 		{
 			files.insert(name.substr(0, name.size() - 3));
 		}
@@ -204,12 +203,7 @@ void Compiler::compile(
 
 	{
 		auto process = ShellCommand::execute(command.str());
-
-		{
-			WriteBufferFromString res(compile_result);
-			copyData(process->out, res);
-		}
-
+		readStringUntilEOF(compile_result, process->out);
 		process->wait();
 	}
 

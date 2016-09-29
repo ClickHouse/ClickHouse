@@ -19,9 +19,6 @@ public:
 	/// Удаляет таблицу.
 	BlockIO execute() override;
 
-	/// Удаляет таблицу, уже отцепленную от контекста (Context::detach).
-	static void dropDetachedTable(String database_name, StoragePtr table, Context & context);
-
 private:
 	ASTPtr query_ptr;
 	Context context;

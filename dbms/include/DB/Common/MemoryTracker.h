@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <common/Common.h>
 
 
@@ -9,9 +10,9 @@
   */
 class MemoryTracker
 {
-	Int64 amount = 0;
-	Int64 peak = 0;
-	Int64 limit = 0;
+	std::atomic<Int64> amount {0};
+	std::atomic<Int64> peak {0};
+	Int64 limit {0};
 
 	/// В целях тестирования exception safety - кидать исключение при каждом выделении памяти с указанной вероятностью.
 	double fault_probability = 0;
@@ -43,12 +44,12 @@ public:
 
 	Int64 get() const
 	{
-		return amount;
+		return amount.load(std::memory_order_relaxed);
 	}
 
 	Int64 getPeak() const
 	{
-		return peak;
+		return peak.load(std::memory_order_relaxed);
 	}
 
 	void setLimit(Int64 limit_)

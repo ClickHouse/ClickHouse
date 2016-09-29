@@ -35,12 +35,12 @@ using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
 
 
-/** Соединение с сервером БД для использования в клиенте.
-  * Как использовать - см. Core/Protocol.h
-  * (Реализацию на стороне сервера - см. Server/TCPHandler.h)
+/** Connection with database server, to use by client.
+  * How to use - see Core/Protocol.h
+  * (Implementation of server end - see Server/TCPHandler.h)
   *
-  * В качестве default_database может быть указана пустая строка
-  *  - в этом случае сервер использует свою БД по-умолчанию.
+  * As 'default_database' empty string could be passed
+  *  - in that case, server will use it's own default database.
   */
 class Connection : private boost::noncopyable
 {
@@ -65,7 +65,7 @@ public:
 		ping_timeout(ping_timeout_),
 		log_wrapper(*this)
 	{
-		/// Соединеняемся не сразу, а при первой необходимости.
+		/// Don't connect immediately, only on first need.
 
 		if (user.empty())
 			user = "default";
@@ -93,7 +93,7 @@ public:
 		ping_timeout(ping_timeout_),
 		log_wrapper(*this)
 	{
-		/// Соединеняемся не сразу, а при первой необходимости.
+		/// Don't connect immediately, only on first need.
 
 		if (user.empty())
 			user = "default";
@@ -103,14 +103,14 @@ public:
 
 	virtual ~Connection() {};
 
-	/// Установить ограничитель сетевого трафика. Один ограничитель может использоваться одновременно для нескольких разных соединений.
+	/// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
 	void setThrottler(const ThrottlerPtr & throttler_)
 	{
 		throttler = throttler_;
 	}
 
 
-	/// Пакет, который может быть получен от сервера.
+	/// Packet that could be received from server.
 	struct Packet
 	{
 		UInt64 type;
@@ -123,46 +123,46 @@ public:
 		Packet() : type(Protocol::Server::Hello) {}
 	};
 
-	/// Изменить базу данных по умолчанию. Изменения начинают использоваться только при следующем переподключении.
+	/// Change default database. Changes will take effect on next reconnect.
 	void setDefaultDatabase(const String & database);
 
 	void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision);
 
-	/// Для сообщений в логе и в эксепшенах.
+	/// For log and exception messages.
 	const String & getDescription() const;
 	const String & getHost() const;
 	UInt16 getPort() const;
 	const String & getDefaultDatabase() const;
 
-	/// Если последний флаг true, то затем необходимо вызвать sendExternalTablesData
+	/// If last flag is true, you need to call sendExternalTablesData after.
 	void sendQuery(const String & query, const String & query_id_ = "", UInt64 stage = QueryProcessingStage::Complete,
 		const Settings * settings = nullptr, bool with_pending_data = false);
 
 	void sendCancel();
-	/// Отправить блок данных, на сервере сохранить во временную таблицу name
+	/// Send block of data; if name is specified, server will write it to external (temporary) table of that name.
 	void sendData(const Block & block, const String & name = "");
-	/// Отправить все содержимое внешних таблиц
+	/// Send all contents of external (temporary) tables.
 	void sendExternalTablesData(ExternalTablesData & data);
 
-	/// Отправить блок данных, который уже был заранее сериализован (и, если надо, сжат), который следует прочитать из input-а.
-	/// можно передать размер сериализованного/сжатого блока.
-	void sendPreparedData(ReadBuffer & input, size_t size,  const String & name = "");
+	/// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
+	/// You could pass size of serialized/compressed block.
+	void sendPreparedData(ReadBuffer & input, size_t size, const String & name = "");
 
-	/// Проверить, есть ли данные, которые можно прочитать.
+	/// Check, if has data to read.
 	bool poll(size_t timeout_microseconds = 0);
 
-	/// Проверить, есть ли данные в буфере для чтения.
+	/// Check, if has data in read buffer.
 	bool hasReadBufferPendingData() const;
 
-	/// Получить пакет от сервера.
+	/// Receive packet from server.
 	Packet receivePacket();
 
-	/// Если ещё не соединено, или соединение разорвано - соединиться. Если не получилось - кинуть исключение.
+	/// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
 	void forceConnected();
 
-	/** Разорвать соединение.
-	  * Это может быть нужно, например, чтобы соединение не осталось висеть в
-	  *  рассинхронизированном состоянии (когда кто-то чего-то продолжает ждать) после эксепшена.
+	/** Disconnect.
+	  * This may be used, if connection is left in unsynchronised state
+	  *  (when someone continues to wait for something) after an exception.
 	  */
 	void disconnect();
 
@@ -181,8 +181,8 @@ private:
 	String user;
 	String password;
 
-	/** Адрес может быть заранее отрезолвен и передан в конструктор. Тогда поля host и port имеют смысл только для логгирования.
-	  * Иначе адрес резолвится в конструкторе. То есть, DNS балансировка не поддерживается.
+	/** Address could be resolved beforehand and passed to constructor. Then 'host' and 'port' fields are used just for logging.
+	  * Otherwise address is resolved in constructor. Thus, DNS based load balancing is not supported.
 	  */
 	Poco::Net::SocketAddress resolved_address;
 
@@ -204,12 +204,12 @@ private:
 	std::shared_ptr<WriteBuffer> out;
 
 	String query_id;
-	UInt64 compression;		/// Сжимать ли данные при взаимодействии с сервером.
-	/// каким алгоритмом сжимать данные при INSERT и данные внешних таблиц
+	UInt64 compression;		/// Enable data compression for communication.
+	/// What compression algorithm to use while sending data for INSERT queries and external tables.
 	CompressionMethod network_compression_method = CompressionMethod::LZ4;
 
-	/** Если не nullptr, то используется, чтобы ограничить сетевой трафик.
-	  * Учитывается только трафик при передаче блоков. Другие пакеты не учитываются.
+	/** If not nullptr, used to limit network traffic.
+	  * Only traffic for transferring blocks is accounted. Other packets don't.
 	  */
 	ThrottlerPtr throttler;
 
@@ -218,15 +218,15 @@ private:
 	Poco::Timespan send_timeout;
 	Poco::Timespan ping_timeout;
 
-	/// Откуда читать результат выполнения запроса.
+	/// From where to read query execution result.
 	std::shared_ptr<ReadBuffer> maybe_compressed_in;
 	BlockInputStreamPtr block_in;
 
-	/// Куда писать данные INSERT-а.
+	/// Where to write data for INSERT.
 	std::shared_ptr<WriteBuffer> maybe_compressed_out;
 	BlockOutputStreamPtr block_out;
 
-	/// логгер, создаваемый лениво, чтобы не обращаться к DNS в конструкторе
+	/// Logger is created lazily, for avoid to run DNS request in constructor.
 	class LoggerWrapper
 	{
 	public:

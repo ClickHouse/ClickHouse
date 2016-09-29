@@ -186,6 +186,9 @@ public:
 			{
 				++depth;
 
+				if (depth == std::numeric_limits<RegionDepth>::max())
+					throw Poco::Exception("Logical error in regions hierarchy: region " + DB::toString(current) + " possible is inside infinite loop");
+
 				current = new_parents[current];
 				if (current == 0)
 					break;

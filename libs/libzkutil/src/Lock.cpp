@@ -16,6 +16,9 @@ bool Lock::tryLock()
 	{
 		size_t attempt;
 		std::string dummy;
+
+		/// TODO: ошибка. можно создать эфемерную ноду, но при этом не получить подтверждения даже после нескольких попыток.
+		/// тогда все последующие локи будут неуспешные из-за существования ноды.
 		int32_t code = zookeeper->tryCreateWithRetries(lock_path, lock_message, zkutil::CreateMode::Ephemeral, dummy, &attempt);
 
 		if (code == ZNODEEXISTS)
@@ -46,16 +49,16 @@ bool Lock::tryLock()
 
 void Lock::unlock()
 {
-	auto zookeeper = zookeeper_holder->getZooKeeper();
-
 	if (locked)
 	{
+		auto zookeeper = zookeeper_holder->getZooKeeper();
 		try
 		{
 			if (tryCheck() == Status::LOCKED_BY_ME)
 			{
 				size_t attempt;
 				int32_t code = zookeeper->tryRemoveEphemeralNodeWithRetries(lock_path, -1, &attempt);
+
 				if (attempt)
 				{
 					if (code != ZOK)
@@ -115,5 +118,23 @@ std::string Lock::status2String(Status status)
 		throw zkutil::KeeperException("Wrong status code: " + std::to_string(status));
 	static const char * names[] = {"Unlocked", "Locked by me", "Locked by other"};
 	return names[status];
+}
+
+void Lock::unlockOrMoveIfFailed(std::vector<zkutil::Lock> & failed_to_unlock_locks)
+{
+	try
+	{
+		unlock();
+	}
+	catch (const zkutil::KeeperException & e)
+	{
+		if (e.isTemporaryError())
+		{
+			LOG_WARNING(log, "Fail to unlock lock. Move lock to vector to remove later. Path: " << getPath());
+			failed_to_unlock_locks.emplace_back(std::move(*this));
+		}
+		else
+			throw;
+	}
 }
 

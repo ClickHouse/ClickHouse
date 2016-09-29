@@ -10,6 +10,7 @@
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnTuple.h>
 #include <DB/AggregateFunctions/AggregateFunctionCount.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
@@ -58,7 +59,7 @@ void AggregatedDataVariants::convertToTwoLevel()
 	{
 	#define M(NAME) \
 		case Type::NAME: \
-			NAME ## _two_level.reset(new decltype(NAME ## _two_level)::element_type(*NAME)); \
+			NAME ## _two_level = std::make_unique<decltype(NAME ## _two_level)::element_type>(*NAME); \
 			NAME.reset(); \
 			type = Type::NAME ## _two_level; \
 			break;
@@ -105,7 +106,7 @@ void Aggregator::initialize(const Block & block)
 	for (size_t i = 0; i < params.aggregates_size; ++i)
 		aggregate_functions[i] = params.aggregates[i].function.get();
 
-	/// Инициализируем размеры состояний и смещения для агрегатных функций.
+	/// Initialize sizes of aggregation states and its offsets.
 	offsets_of_aggregate_states.resize(params.aggregates_size);
 	total_size_of_aggregate_states = 0;
 	all_aggregates_has_trivial_destructor = true;
@@ -122,19 +123,19 @@ void Aggregator::initialize(const Block & block)
 	if (isCancelled())
 		return;
 
-	/** Всё остальное - только если передан непустой block.
-	  * (всё остальное не нужно в методе merge блоков с готовыми состояниями агрегатных функций).
+	/** All below, if non-empty block passed.
+	  * (it doesn't needed in methods that merging blocks with aggregation states).
 	  */
 	if (!block)
 		return;
 
-	/// Преобразуем имена столбцов в номера, если номера не заданы
+	/// Transform names of columns to numbers.
 	params.calculateColumnNumbers(block);
 
 	if (isCancelled())
 		return;
 
-	/// Создадим пример блока, описывающего результат
+	/// Create "header" block, describing result.
 	if (!sample)
 	{
 		for (size_t i = 0; i < params.keys_size; ++i)
@@ -157,7 +158,7 @@ void Aggregator::initialize(const Block & block)
 			col.type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
 			col.column = col.type->createColumn();
 
-			sample.insert(col);
+			sample.insert(std::move(col));
 		}
 	}
 }
@@ -348,10 +349,10 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 }
 
 
-AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes)
+AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes) const
 {
-	/** Возвращает обычные (не two-level) методы, так как обработка начинается с них.
-	  * Затем, в процессе работы, данные могут быть переконвертированы в two-level структуру, если их становится много.
+	/** Returns ordinary (not two-level) methods, because we start from them.
+	  * Later, during aggregation process, data may be converted (partitioned) to two-level structure, if cardinality is high.
 	  */
 
 	bool all_fixed = true;
@@ -360,6 +361,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 	size_t num_array_keys = 0;
 	bool has_arrays_of_non_fixed_elems = false;
 	bool all_non_array_keys_are_fixed = true;
+	bool has_tuples = false;
 
 	key_sizes.resize(params.keys_size);
 	for (size_t j = 0; j < params.keys_size; ++j)
@@ -381,15 +383,20 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 					has_arrays_of_non_fixed_elems = true;
 			}
 			else
+			{
 				all_non_array_keys_are_fixed = false;
+
+				if (typeid_cast<const ColumnTuple *>(key_columns[j]))
+					has_tuples = true;
+			}
 		}
 	}
 
-	/// Если ключей нет
+	/// If no keys. All aggregating to single row.
 	if (params.keys_size == 0)
 		return AggregatedDataVariants::Type::without_key;
 
-	/// Если есть один числовой ключ, который помещается в 64 бита
+	/// Single numeric key.
 	if (params.keys_size == 1 && key_columns[0]->isNumeric())
 	{
 		size_t size_of_field = key_columns[0]->sizeOfField();
@@ -404,30 +411,41 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 		throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
 	}
 
-	/// Если ключи помещаются в N бит, будем использовать хэш-таблицу по упакованным в N-бит ключам
+	/// If all keys fits in N bits, will use hash table with all keys packed (placed contiguously) to single N-bit key.
 	if (all_fixed && keys_bytes <= 16)
 		return AggregatedDataVariants::Type::keys128;
 	if (all_fixed && keys_bytes <= 32)
 		return AggregatedDataVariants::Type::keys256;
 
-	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
+	/// If single string key - will use hash table with references to it. Strings itself are stored separately in Arena.
 	if (params.keys_size == 1 && typeid_cast<const ColumnString *>(key_columns[0]))
 		return AggregatedDataVariants::Type::key_string;
 
 	if (params.keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
 		return AggregatedDataVariants::Type::key_fixed_string;
 
-	/** Если есть массивы.
-	  * Если есть не более одного массива из элементов фиксированной длины, и остальные ключи фиксированной длины,
-	  *  то всё ещё можно использовать метод concat. Иначе - serialized.
+	/** If some keys are arrays.
+	  * If there is no more than one key that is array, and it is array of fixed-size elements, and all other keys are fixed-size,
+	  *  then it is possible to use 'concat' method (due to one-to-one correspondense). Otherwise the method will be 'serialized'.
 	  */
-	if (num_array_keys > 1 || has_arrays_of_non_fixed_elems || (num_array_keys == 1 && !all_non_array_keys_are_fixed))
-		return AggregatedDataVariants::Type::serialized;
+	if (num_array_keys == 1 && !has_arrays_of_non_fixed_elems && all_non_array_keys_are_fixed)
+		return AggregatedDataVariants::Type::concat;
 
-	/// Иначе будем агрегировать по конкатенации ключей.
-	return AggregatedDataVariants::Type::concat;
+	/** For case with multiple strings, we use 'concat' method despite the fact, that correspondense is not one-to-one.
+	  * Concat will concatenate strings including its zero terminators.
+	  * But if strings contains zero bytes in between, different keys may clash.
+	  * For example, keys ('a\0b', 'c') and ('a', 'b\0c') will be aggregated as one key.
+	  * This is documented behaviour. It may be avoided by just switching to 'serialized' method, which is less efficient.
+	  *
+	  * Some of aggregation keys may be tuples. In most cases, tuples are flattened in expression analyzer and not passed here.
+	  * But in rare cases, they are not flattened. Will fallback to 'serialized' method for simplicity.
+	  */
+	if (num_array_keys == 0 && !has_tuples)
+		return AggregatedDataVariants::Type::concat;
 
-	/// NOTE AggregatedDataVariants::Type::hashed не используется.
+	return AggregatedDataVariants::Type::serialized;
+
+	/// NOTE AggregatedDataVariants::Type::hashed is not used. It's proven to be less efficient than 'serialized' in most cases.
 }
 
 
@@ -651,7 +669,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		aggregate_functions_instructions[i].that = aggregate_functions[i];
 		aggregate_functions_instructions[i].func = aggregate_functions[i]->getAddressOfAddFunction();
 		aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
-		aggregate_functions_instructions[i].arguments = &aggregate_columns[i][0];
+		aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
 	}
 
 	if (isCancelled())
@@ -1176,7 +1194,7 @@ BlocksList Aggregator::prepareBlocksAndFillSingleLevel(AggregatedDataVariants & 
 }
 
 
-BlocksList Aggregator::prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, boost::threadpool::pool * thread_pool) const
+BlocksList Aggregator::prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, ThreadPool * thread_pool) const
 {
 #define M(NAME) \
 	else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
@@ -1195,7 +1213,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 	AggregatedDataVariants & data_variants,
 	Method & method,
 	bool final,
-	boost::threadpool::pool * thread_pool) const
+	ThreadPool * thread_pool) const
 {
 	auto converter = [&](size_t bucket, MemoryTracker * memory_tracker)
 	{
@@ -1263,10 +1281,10 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 	if (data_variants.empty())
 		return blocks;
 
-	std::unique_ptr<boost::threadpool::pool> thread_pool;
+	std::unique_ptr<ThreadPool> thread_pool;
 	if (max_threads > 1 && data_variants.sizeWithoutOverflowRow() > 100000	/// TODO Сделать настраиваемый порог.
 		&& data_variants.isTwoLevel())						/// TODO Использовать общий тред-пул с функцией merge.
-		thread_pool.reset(new boost::threadpool::pool(max_threads));
+		thread_pool = std::make_unique<ThreadPool>(max_threads);
 
 	if (isCancelled())
 		return BlocksList();
@@ -1554,7 +1572,7 @@ protected:
 		{
 			if (!parallel_merge_data)
 			{
-				parallel_merge_data.reset(new ParallelMergeData(threads));
+				parallel_merge_data = std::make_unique<ParallelMergeData>(threads);
 				for (size_t i = 0; i < threads; ++i)
 					scheduleThreadForNextBucket();
 			}
@@ -1602,7 +1620,7 @@ private:
 
 	struct ParallelMergeData
 	{
-		boost::threadpool::pool pool;
+		ThreadPool pool;
 		std::map<Int32, Block> ready_blocks;
 		std::exception_ptr exception;
 		std::mutex mutex;
@@ -1971,14 +1989,10 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 			}
 		};
 
-		/// packaged_task используются, чтобы исключения автоматически прокидывались в основной поток.
-
-		std::vector<std::packaged_task<void()>> tasks(max_bucket + 1);
-
-		std::unique_ptr<boost::threadpool::pool> thread_pool;
+		std::unique_ptr<ThreadPool> thread_pool;
 		if (max_threads > 1 && total_input_rows > 100000	/// TODO Сделать настраиваемый порог.
 			&& has_two_level)
-			thread_pool.reset(new boost::threadpool::pool(max_threads));
+			thread_pool = std::make_unique<ThreadPool>(max_threads);
 
 		for (const auto & bucket_blocks : bucket_to_blocks)
 		{
@@ -1990,20 +2004,16 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 			result.aggregates_pools.push_back(std::make_shared<Arena>());
 			Arena * aggregates_pool = result.aggregates_pools.back().get();
 
-			tasks[bucket] = std::packaged_task<void()>(std::bind(merge_bucket, bucket, aggregates_pool, current_memory_tracker));
+			auto task = std::bind(merge_bucket, bucket, aggregates_pool, current_memory_tracker);
 
 			if (thread_pool)
-				thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
+				thread_pool->schedule(task);
 			else
-				tasks[bucket]();
+				task();
 		}
 
 		if (thread_pool)
 			thread_pool->wait();
-
-		for (auto & task : tasks)
-			if (task.valid())
-				task.get_future().get();
 
 		LOG_TRACE(log, "Merged partially aggregated two-level data.");
 	}
@@ -2069,6 +2079,29 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
 	Sizes key_sizes;
 	AggregatedDataVariants::Type method = chooseAggregationMethod(key_columns, key_sizes);
+
+	/** If possible, change 'method' to some_hash64. Otherwise, leave as is.
+	  * Better hash function is needed because during external aggregation,
+	  *  we may merge partitions of data with total number of keys far greater than 4 billion.
+	  */
+
+#define APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M) \
+		M(key64) 			\
+		M(key_string) 		\
+		M(key_fixed_string) \
+		M(keys128) 			\
+		M(keys256) 			\
+		M(concat) 			\
+		M(serialized)		\
+
+#define M(NAME) \
+	if (method == AggregatedDataVariants::Type::NAME) \
+		method = AggregatedDataVariants::Type::NAME ## _hash64; \
+
+	APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M)
+#undef M
+
+#undef APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION
 
 	/// Временные данные для агрегации.
 	AggregatedDataVariants result;

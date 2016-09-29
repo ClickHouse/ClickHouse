@@ -60,10 +60,10 @@ public:
 
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
-	void toParent(const PaddedPODArray<id_t> & ids, PaddedPODArray<id_t> & out) const override;
+	void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const override;
 
 #define DECLARE(TYPE)\
-	void get##TYPE(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, PaddedPODArray<TYPE> & out) const;
+	void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const;
 	DECLARE(UInt8)
 	DECLARE(UInt16)
 	DECLARE(UInt32)
@@ -76,11 +76,11 @@ public:
 	DECLARE(Float64)
 #undef DECLARE
 
-	void getString(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, ColumnString * out) const;
+	void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const;
 
 #define DECLARE(TYPE)\
 	void get##TYPE(\
-		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const PaddedPODArray<TYPE> & def,\
+		const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<TYPE> & def,\
 		PaddedPODArray<TYPE> & out) const;
 	DECLARE(UInt8)
 	DECLARE(UInt16)
@@ -95,12 +95,12 @@ public:
 #undef DECLARE
 
 	void getString(
-		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const ColumnString * const def,
+		const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def,
 		ColumnString * const out) const;
 
 #define DECLARE(TYPE)\
 	void get##TYPE(\
-		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const TYPE & def, PaddedPODArray<TYPE> & out) const;
+		const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE & def, PaddedPODArray<TYPE> & out) const;
 	DECLARE(UInt8)
 	DECLARE(UInt16)
 	DECLARE(UInt32)
@@ -114,16 +114,16 @@ public:
 #undef DECLARE
 
 	void getString(
-		const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const String & def,
+		const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def,
 		ColumnString * const out) const;
 
-	void has(const PaddedPODArray<id_t> & ids, PaddedPODArray<UInt8> & out) const override;
+	void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
 private:
 	template <typename Value> using CollectionType = HashMap<UInt64, Value>;
 	template <typename Value> using CollectionPtrType = std::unique_ptr<CollectionType<Value>>;
 
-	struct attribute_t final
+	struct Attribute final
 	{
 		AttributeUnderlyingType type;
 		std::tuple<
@@ -144,38 +144,38 @@ private:
 	void loadData();
 
 	template <typename T>
-	void addAttributeSize(const attribute_t & attribute);
+	void addAttributeSize(const Attribute & attribute);
 
 	void calculateBytesAllocated();
 
 	template <typename T>
-	void createAttributeImpl(attribute_t & attribute, const Field & null_value);
+	void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-	attribute_t createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+	Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
 	template <typename OutputType, typename ValueSetter, typename DefaultGetter>
 	void getItemsNumber(
-		const attribute_t & attribute,
-		const PaddedPODArray<id_t> & ids,
+		const Attribute & attribute,
+		const PaddedPODArray<Key> & ids,
 		ValueSetter && set_value,
 		DefaultGetter && get_default) const;
 
 	template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
 	void getItemsImpl(
-		const attribute_t & attribute,
-		const PaddedPODArray<id_t> & ids,
+		const Attribute & attribute,
+		const PaddedPODArray<Key> & ids,
 		ValueSetter && set_value,
 		DefaultGetter && get_default) const;
 
 	template <typename T>
-	void setAttributeValueImpl(attribute_t & attribute, const id_t id, const T value);
+	void setAttributeValueImpl(Attribute & attribute, const Key id, const T value);
 
-	void setAttributeValue(attribute_t & attribute, const id_t id, const Field & value);
+	void setAttributeValue(Attribute & attribute, const Key id, const Field & value);
 
-	const attribute_t & getAttribute(const std::string & attribute_name) const;
+	const Attribute & getAttribute(const std::string & attribute_name) const;
 
 	template <typename T>
-	void has(const attribute_t & attribute, const PaddedPODArray<id_t> & ids, PaddedPODArray<UInt8> & out) const;
+	void has(const Attribute & attribute, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const;
 
 	const std::string name;
 	const DictionaryStructure dict_struct;
@@ -184,8 +184,8 @@ private:
 	const bool require_nonempty;
 
 	std::map<std::string, std::size_t> attribute_index_by_name;
-	std::vector<attribute_t> attributes;
-	const attribute_t * hierarchical_attribute = nullptr;
+	std::vector<Attribute> attributes;
+	const Attribute * hierarchical_attribute = nullptr;
 
 	std::size_t bytes_allocated = 0;
 	std::size_t element_count = 0;

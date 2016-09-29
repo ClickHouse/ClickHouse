@@ -37,7 +37,7 @@ public:
 	public:
 		void incrementCounter(const String & name, int value = 1)
 		{
-			std::unique_lock<std::mutex> lock(pool.mutex);
+			std::unique_lock<std::mutex> lock(pool.counters_mutex);
 			local_counters[name] += value;
 			pool.counters[name] += value;
 		}
@@ -69,8 +69,8 @@ public:
 
 		/// При выполнении задачи, держится read lock.
 		Poco::RWLock rwlock;
-		volatile bool removed = false;
-		volatile time_t next_time_to_execute = 0;	/// Приоритет задачи. Для совпадающего времени в секундах берётся первая по списку задача.
+		std::atomic<bool> removed {false};
+		std::atomic<time_t> next_time_to_execute {0};	/// Приоритет задачи. Для совпадающего времени в секундах берётся первая по списку задача.
 
 		std::list<std::shared_ptr<TaskInfo>>::iterator iterator;
 
@@ -103,12 +103,14 @@ private:
 	static constexpr double sleep_seconds_random_part = 1.0;
 
 	Tasks tasks; 		/// Задачи в порядке, в котором мы планируем их выполнять.
+	std::mutex tasks_mutex;
+
 	Counters counters;
-	std::mutex mutex;	/// Для работы со списком tasks, а также с counters (когда threads не пустой).
+	std::mutex counters_mutex;
 
 	Threads threads;
 
-	volatile bool shutdown = false;
+	std::atomic<bool> shutdown {false};
 	std::condition_variable wake_event;
 
 

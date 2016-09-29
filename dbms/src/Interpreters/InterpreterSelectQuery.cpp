@@ -78,7 +78,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 			ASTSelectQuery & head_query = static_cast<ASTSelectQuery &>(*head);
 			tail = head_query.next_union_all;
 
-			interpreter->next_select_in_union_all.reset(new InterpreterSelectQuery(head, context, to_stage, subquery_depth));
+			interpreter->next_select_in_union_all = std::make_unique<InterpreterSelectQuery>(head, context, to_stage, subquery_depth);
 			interpreter = interpreter->next_select_in_union_all.get();
 		}
 	}
@@ -111,21 +111,23 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 
 void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
 {
-	if (query.table && typeid_cast<ASTSelectQuery *>(query.table.get()))
+	auto query_table = query.table();
+
+	if (query_table && typeid_cast<ASTSelectQuery *>(query_table.get()))
 	{
 		if (table_column_names.empty())
 		{
-			table_column_names = InterpreterSelectQuery::getSampleBlock(query.table, context).getColumnsList();
+			table_column_names = InterpreterSelectQuery::getSampleBlock(query_table, context).getColumnsList();
 		}
 	}
 	else
 	{
-		if (query.table && typeid_cast<const ASTFunction *>(query.table.get()))
+		if (query_table && typeid_cast<const ASTFunction *>(query_table.get()))
 		{
 			/// Получить табличную функцию
-			TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(typeid_cast<const ASTFunction *>(query.table.get())->name, context);
+			TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(typeid_cast<const ASTFunction *>(query_table.get())->name, context);
 			/// Выполнить ее и запомнить результат
-			storage = table_function_ptr->execute(query.table, context);
+			storage = table_function_ptr->execute(query_table, context);
 		}
 		else
 		{
@@ -145,7 +147,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
 	if (table_column_names.empty())
 		throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
 
-	query_analyzer.reset(new ExpressionAnalyzer(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze));
+	query_analyzer = std::make_unique<ExpressionAnalyzer>(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze);
 
 	/// Сохраняем в query context новые временные таблицы
 	for (auto & it : query_analyzer->getExternalTables())
@@ -268,20 +270,23 @@ void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column
 
 void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)
 {
+	auto query_database = query.database();
+	auto query_table = query.table();
+
 	/** Если таблица не указана - используем таблицу system.one.
 	 *  Если база данных не указана - используем текущую базу данных.
 	 */
-	if (query.database)
-		database_name = typeid_cast<ASTIdentifier &>(*query.database).name;
-	if (query.table)
-		table_name = typeid_cast<ASTIdentifier &>(*query.table).name;
+	if (query_database)
+		database_name = typeid_cast<ASTIdentifier &>(*query_database).name;
+	if (query_table)
+		table_name = typeid_cast<ASTIdentifier &>(*query_table).name;
 
-	if (!query.table)
+	if (!query_table)
 	{
 		database_name = "system";
 		table_name = "one";
 	}
-	else if (!query.database)
+	else if (!query_database)
 	{
 		if (context.tryGetTable("", table_name))
 			database_name = "";
@@ -447,8 +452,8 @@ void InterpreterSelectQuery::executeSingleQuery()
 				before_join = chain.getLastActions();
 				chain.addStep();
 
-				auto join = typeid_cast<const ASTJoin &>(*query.join);
-				if (join.kind == ASTJoin::Full || join.kind == ASTJoin::Right)
+				const ASTTableJoin & join = static_cast<const ASTTableJoin &>(*query.join()->table_join);
+				if (join.kind == ASTTableJoin::Kind::Full || join.kind == ASTTableJoin::Kind::Right)
 					stream_with_non_joined_data = before_join->createStreamWithNonJoinedDataIfFullOrRightJoin(settings.max_block_size);
 			}
 
@@ -698,7 +703,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 		}
 	}
 
-	if (query.table && typeid_cast<ASTSelectQuery *>(query.table.get()))
+	auto query_table = query.table();
+	if (query_table && typeid_cast<ASTSelectQuery *>(query_table.get()))
 	{
 		/** Для подзапроса не действуют ограничения на максимальный размер результата.
 		 *  Так как результат поздапроса - ещё не результат всего запроса.
@@ -712,17 +718,17 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 		subquery_context.setSettings(subquery_settings);
 
 		interpreter_subquery.emplace(
-			query.table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+			query_table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
 
 		/// Если во внешнем запросе есть аггрегация, то WITH TOTALS игнорируется в подзапросе.
 		if (query_analyzer->hasAggregation())
 			interpreter_subquery->ignoreWithTotals();
 	}
 
-	if (query.sample_size && (!storage || !storage->supportsSampling()))
+	if (query.sample_size() && (!storage || !storage->supportsSampling()))
 		throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
-	if (query.final && (!storage || !storage->supportsFinal()))
+	if (query.final() && (!storage || !storage->supportsFinal()))
 		throw Exception(storage ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
 
 	if (query.prewhere_expression && (!storage || !storage->supportsPrewhere()))
@@ -784,6 +790,9 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 	if (!interpreter_subquery)
 	{
 		size_t max_streams = settings.max_threads;
+
+		if (max_streams == 0)
+			throw Exception("Logical error: zero number of streams requested", ErrorCodes::LOGICAL_ERROR);
 
 		/// Если надо - запрашиваем больше источников, чем количество потоков - для более равномерного распределения работы по потокам.
 		if (max_streams > 1 && !is_remote)
@@ -1171,11 +1180,12 @@ void InterpreterSelectQuery::executeLimit()
 			always_read_till_end = true;
 		}
 
-		if (!query.group_by_with_totals && query.table && typeid_cast<const ASTSelectQuery *>(query.table.get()))
+		auto query_table = query.table();
+		if (!query.group_by_with_totals && query_table && typeid_cast<const ASTSelectQuery *>(query_table.get()))
 		{
-			const ASTSelectQuery * subquery = static_cast<const ASTSelectQuery *>(query.table.get());
+			const ASTSelectQuery * subquery = static_cast<const ASTSelectQuery *>(query_table.get());
 
-			while (subquery->table)
+			while (subquery->table())
 			{
 				if (subquery->group_by_with_totals)
 				{
@@ -1187,8 +1197,9 @@ void InterpreterSelectQuery::executeLimit()
 					break;
 				}
 
-				if (typeid_cast<const ASTSelectQuery *>(subquery->table.get()))
-					subquery = static_cast<const ASTSelectQuery *>(subquery->table.get());
+				auto subquery_table = subquery->table();
+				if (typeid_cast<const ASTSelectQuery *>(subquery_table.get()))
+					subquery = static_cast<const ASTSelectQuery *>(subquery_table.get());
 				else
 					break;
 			}

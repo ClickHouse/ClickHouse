@@ -136,6 +136,11 @@ public:
 		throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
+	void updateHashWithValue(size_t n, SipHash & hash) const override
+	{
+		throw Exception("Method updateHashWithValue is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
 	{
 		if (s != filt.size())
@@ -288,6 +293,9 @@ public:
 
 	/** Преобразование из константы в полноценный столбец */
 	ColumnPtr convertToFullColumn() const override;
+
+	/** Create ColumnTuple of constant columns as elements. */
+	ColumnPtr convertToTupleOfConstants() const;
 
 	void getExtremes(Field & min, Field & max) const override;
 };

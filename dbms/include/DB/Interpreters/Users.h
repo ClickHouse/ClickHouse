@@ -17,6 +17,7 @@
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Common/SimpleCache.h>
+#include <DB/Common/StringUtils.h>
 
 #include <openssl/sha.h>
 
@@ -265,12 +266,12 @@ public:
 			Container::value_type pattern;
 			String value = config.getString(config_elem + "." + *it);
 
-			if (0 == it->compare(0, strlen("ip"), "ip"))
-				pattern.reset(new IPAddressPattern(value));
-			else if (0 == it->compare(0, strlen("host_regexp"), "host_regexp"))
-				pattern.reset(new HostRegexpPattern(value));
-			else if (0 == it->compare(0, strlen("host"), "host"))
-				pattern.reset(new HostExactPattern(value));
+			if (startsWith(*it, "ip"))
+				pattern = std::make_unique<IPAddressPattern>(value);
+			else if (startsWith(*it, "host_regexp"))
+				pattern = std::make_unique<HostRegexpPattern>(value);
+			else if (startsWith(*it, "host"))
+				pattern = std::make_unique<HostExactPattern>(value);
 			else
 				throw Exception("Unknown address pattern type: " + *it, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);
 

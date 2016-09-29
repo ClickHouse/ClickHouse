@@ -6,6 +6,9 @@
 namespace DB
 {
 
+class WriteBuffer;
+
+
 /** Формат данных, предназначенный для упрощения реализации ODBC драйвера.
   * ODBC драйвер предназначен для сборки под разные платформы без зависимостей от основного кода,
   *  поэтому формат сделан так, чтобы в нём можно было как можно проще его распарсить.
@@ -19,7 +22,7 @@ public:
 
 	void write(const Block & block) override;
 
-	void flush() override { out.next(); }
+	void flush() override;
 	String getContentType() const override { return "application/octet-stream"; }
 
 private:

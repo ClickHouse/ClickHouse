@@ -51,7 +51,7 @@ MultiplexedConnections::MultiplexedConnections(IConnectionPool * pool_, const Se
 	supports_parallel_execution = active_connection_total_count > 1;
 
 	if (append_extra_info)
-		block_extra_info.reset(new BlockExtraInfo);
+		block_extra_info = std::make_unique<BlockExtraInfo>();
 }
 
 MultiplexedConnections::MultiplexedConnections(ConnectionPools & pools_, const Settings * settings_, ThrottlerPtr throttler_,
@@ -73,7 +73,7 @@ MultiplexedConnections::MultiplexedConnections(ConnectionPools & pools_, const S
 	supports_parallel_execution = active_connection_total_count > 1;
 
 	if (append_extra_info)
-		block_extra_info.reset(new BlockExtraInfo);
+		block_extra_info = std::make_unique<BlockExtraInfo>();
 }
 
 void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)

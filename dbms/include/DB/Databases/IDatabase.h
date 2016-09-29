@@ -1,10 +1,10 @@
 #pragma once
 
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 #include <DB/Core/Types.h>
 #include <DB/Parsers/IAST.h>
 #include <DB/Storages/IStorage.h>
-
+#include <ctime>
 
 namespace DB
 {
@@ -43,7 +43,7 @@ public:
 
 	/// Загрузить множество существующих таблиц. Если задан thread_pool - использовать его.
 	/// Можно вызывать только один раз, сразу после создания объекта.
-	virtual void loadTables(Context & context, boost::threadpool::pool * thread_pool) = 0;
+	virtual void loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag) = 0;
 
 	/// Проверить существование таблицы.
 	virtual bool isTableExist(const String & name) const = 0;
@@ -72,6 +72,9 @@ public:
 
 	/// Переименовать таблицу и, возможно, переместить таблицу в другую БД.
 	virtual void renameTable(const Context & context, const String & name, IDatabase & to_database, const String & to_name) = 0;
+
+	/// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
+	virtual time_t getTableMetadataModificationTime(const String & name) = 0;
 
 	using ASTModifier = std::function<void(ASTPtr &)>;
 
@@ -102,3 +105,4 @@ using DatabasePtr = std::shared_ptr<IDatabase>;
 using Databases = std::map<String, DatabasePtr>;
 
 }
+

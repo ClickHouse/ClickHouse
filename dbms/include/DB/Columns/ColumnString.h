@@ -9,6 +9,7 @@
 #include <DB/Common/Collator.h>
 #include <DB/Common/PODArray.h>
 #include <DB/Common/Arena.h>
+#include <DB/Common/SipHash.h>
 #include <DB/Common/memcpySmall.h>
 
 
@@ -85,43 +86,71 @@ public:
 	void insert(const Field & x) override
 	{
 		const String & s = DB::get<const String &>(x);
-		size_t old_size = chars.size();
-		size_t size_to_append = s.size() + 1;
+		const size_t old_size = chars.size();
+		const size_t size_to_append = s.size() + 1;
+		const size_t new_size = old_size + size_to_append;
 
-		chars.resize(old_size + size_to_append);
+		chars.resize(new_size);
 		memcpy(&chars[old_size], s.c_str(), size_to_append);
-		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + size_to_append);
+		offsets.push_back(new_size);
 	}
 
 	void insertFrom(const IColumn & src_, size_t n) override
 	{
 		const ColumnString & src = static_cast<const ColumnString &>(src_);
-		size_t old_size = chars.size();
-		size_t size_to_append = src.sizeAt(n);
-		size_t offset = src.offsetAt(n);
 
-		chars.resize(old_size + size_to_append);
-		memcpySmallAllowReadWriteOverflow15(&chars[old_size], &src.chars[offset], size_to_append);
-		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + size_to_append);
+		if (n != 0)
+		{
+			const size_t size_to_append = src.offsets[n] - src.offsets[n - 1];
+
+			if (size_to_append == 1)
+			{
+				/// shortcut for empty string
+				chars.push_back(0);
+				offsets.push_back(chars.size());
+			}
+			else
+			{
+				const size_t old_size = chars.size();
+				const size_t offset = src.offsets[n - 1];
+				const size_t new_size = old_size + size_to_append;
+
+				chars.resize(new_size);
+				memcpySmallAllowReadWriteOverflow15(&chars[old_size], &src.chars[offset], size_to_append);
+				offsets.push_back(new_size);
+			}
+		}
+		else
+		{
+			const size_t old_size = chars.size();
+			const size_t size_to_append = src.offsets[0];
+			const size_t new_size = old_size + size_to_append;
+
+			chars.resize(new_size);
+			memcpySmallAllowReadWriteOverflow15(&chars[old_size], &src.chars[0], size_to_append);
+			offsets.push_back(new_size);
+		}
 	}
 
 	void insertData(const char * pos, size_t length) override
 	{
-		size_t old_size = chars.size();
+		const size_t old_size = chars.size();
+		const size_t new_size = old_size + length + 1;
 
-		chars.resize(old_size + length + 1);
+		chars.resize(new_size);
 		memcpy(&chars[old_size], pos, length);
 		chars[old_size + length] = 0;
-		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + length + 1);
+		offsets.push_back(new_size);
 	}
 
 	void insertDataWithTerminatingZero(const char * pos, size_t length) override
 	{
-		size_t old_size = chars.size();
+		const size_t old_size = chars.size();
+		const size_t new_size = old_size + length;
 
-		chars.resize(old_size + length);
+		chars.resize(new_size);
 		memcpy(&chars[old_size], pos, length);
-		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + length);
+		offsets.push_back(new_size);
 	}
 
 	void popBack(size_t n) override
@@ -148,15 +177,25 @@ public:
 
 	const char * deserializeAndInsertFromArena(const char * pos) override
 	{
-		size_t string_size = *reinterpret_cast<const size_t *>(pos);
+		const size_t string_size = *reinterpret_cast<const size_t *>(pos);
 		pos += sizeof(string_size);
 
-		size_t old_size = chars.size();
-		chars.resize(old_size + string_size);
+		const size_t old_size = chars.size();
+		const size_t new_size = old_size + string_size;
+		chars.resize(new_size);
 		memcpy(&chars[old_size], pos, string_size);
 
-		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + string_size);
+		offsets.push_back(new_size);
 		return pos + string_size;
+	}
+
+	void updateHashWithValue(size_t n, SipHash & hash) const override
+	{
+		size_t string_size = sizeAt(n);
+		size_t offset = offsetAt(n);
+
+		hash.update(reinterpret_cast<const char *>(&string_size), sizeof(string_size));
+		hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
 	}
 
 	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override

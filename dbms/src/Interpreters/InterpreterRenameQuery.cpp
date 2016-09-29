@@ -1,20 +1,5 @@
-#include <Poco/File.h>
-#include <Poco/FileStream.h>
-
-#include <DB/Common/escapeForFileName.h>
-
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/copyData.h>
-
 #include <DB/Parsers/ASTRenameQuery.h>
-#include <DB/Parsers/ASTCreateQuery.h>
-#include <DB/Parsers/ParserCreateQuery.h>
-#include <DB/Parsers/formatAST.h>
-#include <DB/Parsers/parseQuery.h>
-
 #include <DB/Databases/IDatabase.h>
-
 #include <DB/Interpreters/InterpreterRenameQuery.h>
 
 

@@ -67,14 +67,14 @@ void ReplicatedMergeTreeAlterThread::run()
 
 			{
 				/// Если потребуется блокировать структуру таблицы, то приостановим мерджи.
-				std::unique_ptr<MergeTreeMergeBlocker> merge_blocker;
-				std::unique_ptr<MergeTreeMergeBlocker> unreplicated_merge_blocker;
+				MergeTreeDataMerger::Blocker merge_blocker;
+				MergeTreeDataMerger::Blocker unreplicated_merge_blocker;
 
 				if (changed_version || force_recheck_parts)
 				{
-					merge_blocker = std::make_unique<MergeTreeMergeBlocker>(storage.merger);
+					merge_blocker = storage.merger.cancel();
 					if (storage.unreplicated_merger)
-						unreplicated_merge_blocker = std::make_unique<MergeTreeMergeBlocker>(*storage.unreplicated_merger);
+						unreplicated_merge_blocker = storage.unreplicated_merger->cancel();
 				}
 
 				MergeTreeData::DataParts parts;

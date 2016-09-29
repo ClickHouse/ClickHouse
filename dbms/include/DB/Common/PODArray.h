@@ -13,6 +13,7 @@
 
 #include <DB/Common/Allocator.h>
 #include <DB/Common/Exception.h>
+#include <DB/Common/BitHelpers.h>
 
 
 namespace DB
@@ -60,23 +61,9 @@ private:
 	/// Минимальное количество памяти, которое нужно выделить для num_elements элементов, включая padding.
 	static size_t minimum_memory_for_elements(size_t num_elements) { return byte_size(num_elements) + pad_right; }
 
-	static size_t round_up_to_power_of_two(size_t n)
-	{
-		--n;
-		n |= n >> 1;
-		n |= n >> 2;
-		n |= n >> 4;
-		n |= n >> 8;
-		n |= n >> 16;
-		n |= n >> 32;
-		++n;
-
-		return n;
-	}
-
 	void alloc_for_num_elements(size_t num_elements)
 	{
-		alloc(round_up_to_power_of_two(minimum_memory_for_elements(num_elements)));
+		alloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(num_elements)));
 	}
 
 	void alloc(size_t bytes)
@@ -109,6 +96,17 @@ private:
 		c_end_of_storage = c_start + bytes - pad_right;
 	}
 
+	bool isInitialized() const
+	{
+		return (c_start != nullptr) && (c_end != nullptr) && (c_end_of_storage != nullptr);
+	}
+
+	bool isAllocatedFromStack() const
+	{
+		constexpr size_t stack_threshold = TAllocator::getStackThreshold();
+		return (stack_threshold > 0) && (allocated_size() <= stack_threshold);
+	}
+
 public:
 	using value_type = T;
 
@@ -130,55 +128,46 @@ public:
 
 	PODArray() {}
 
-    PODArray(size_t n)
+	PODArray(size_t n)
 	{
 		alloc_for_num_elements(n);
 		c_end += byte_size(n);
 	}
 
-    PODArray(size_t n, const T & x)
+	PODArray(size_t n, const T & x)
 	{
 		alloc_for_num_elements(n);
 		assign(n, x);
 	}
 
-    PODArray(const_iterator from_begin, const_iterator from_end)
+	PODArray(const_iterator from_begin, const_iterator from_end)
 	{
 		alloc_for_num_elements(from_end - from_begin);
 		insert(from_begin, from_end);
 	}
 
-    ~PODArray()
+	~PODArray()
 	{
 		dealloc();
 	}
 
 	PODArray(PODArray && other)
 	{
-		c_start = other.c_start;
-		c_end = other.c_end;
-		c_end_of_storage = other.c_end_of_storage;
-
-		other.c_start = nullptr;
-		other.c_end = nullptr;
-		other.c_end_of_storage = nullptr;
+		this->swap(other);
 	}
 
 	PODArray & operator=(PODArray && other)
 	{
-		std::swap(c_start, other.c_start);
-		std::swap(c_end, other.c_end);
-		std::swap(c_end_of_storage, other.c_end_of_storage);
-
+		this->swap(other);
 		return *this;
 	}
 
 	T * data() { return t_start(); }
 	const T * data() const { return t_start(); }
 
-    size_t size() const { return t_end() - t_start(); }
-    bool empty() const { return t_end() == t_start(); }
-    size_t capacity() const { return t_end_of_storage() - t_start(); }
+	size_t size() const { return t_end() - t_start(); }
+	bool empty() const { return t_end() == t_start(); }
+	size_t capacity() const { return t_end_of_storage() - t_start(); }
 
 	T & operator[] (size_t n) 				{ return t_start()[n]; }
 	const T & operator[] (size_t n) const 	{ return t_start()[n]; }
@@ -198,7 +187,7 @@ public:
 	void reserve(size_t n)
 	{
 		if (n > capacity())
-			realloc(round_up_to_power_of_two(minimum_memory_for_elements(n)));
+			realloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(n)));
 	}
 
 	void reserve()
@@ -278,7 +267,7 @@ public:
 	{
 		size_t required_capacity = size() + (from_end - from_begin);
 		if (required_capacity > capacity())
-			reserve(round_up_to_power_of_two(required_capacity));
+			reserve(roundUpToPowerOfTwoOrZero(required_capacity));
 
 		insert_assume_reserved(from_begin, from_end);
 	}
@@ -288,7 +277,7 @@ public:
 	{
 		size_t required_capacity = size() + (from_end - from_begin);
 		if (required_capacity > capacity())
-			reserve(round_up_to_power_of_two(required_capacity));
+			reserve(roundUpToPowerOfTwoOrZero(required_capacity));
 
 		size_t bytes_to_copy = byte_size(from_end - from_begin);
 		size_t bytes_to_move = (end() - it) * sizeof(T);
@@ -310,9 +299,107 @@ public:
 
 	void swap(PODArray & rhs)
 	{
-		std::swap(c_start, rhs.c_start);
-		std::swap(c_end, rhs.c_end);
-		std::swap(c_end_of_storage, rhs.c_end_of_storage);
+		/// Swap two PODArray objects, arr1 and arr2, that satisfy the following conditions:
+		/// - The elements of arr1 are stored on stack.
+		/// - The elements of arr2 are stored on heap.
+		auto swap_stack_heap = [](PODArray & arr1, PODArray & arr2)
+		{
+			size_t stack_size = arr1.size();
+			size_t stack_allocated = arr1.allocated_size();
+
+			size_t heap_size = arr2.size();
+			size_t heap_allocated = arr2.allocated_size();
+
+			/// Keep track of the stack content we have to copy.
+			char * stack_c_start = arr1.c_start;
+
+			/// arr1 takes ownership of the heap memory of arr2.
+			arr1.c_start = arr2.c_start;
+			arr1.c_end_of_storage = arr1.c_start + heap_allocated - arr1.pad_right;
+			arr1.c_end = arr1.c_start + byte_size(heap_size);
+
+			/// Allocate stack space for arr2.
+			arr2.alloc(stack_allocated);
+			/// Copy the stack content.
+			memcpy(arr2.c_start, stack_c_start, byte_size(stack_size));
+			arr2.c_end = arr2.c_start + byte_size(stack_size);
+		};
+
+		auto do_move = [](PODArray & src, PODArray & dest)
+		{
+			if (src.isAllocatedFromStack())
+			{
+				dest.dealloc();
+				dest.alloc(src.allocated_size());
+				memcpy(dest.c_start, src.c_start, byte_size(src.size()));
+				dest.c_end = dest.c_start + (src.c_end - src.c_start);
+
+				src.c_start = nullptr;
+				src.c_end = nullptr;
+				src.c_end_of_storage = nullptr;
+			}
+			else
+			{
+				std::swap(dest.c_start, src.c_start);
+				std::swap(dest.c_end, src.c_end);
+				std::swap(dest.c_end_of_storage, src.c_end_of_storage);
+			}
+		};
+
+		if (!isInitialized() && !rhs.isInitialized())
+			return;
+		else if (!isInitialized() && rhs.isInitialized())
+		{
+			do_move(rhs, *this);
+			return;
+		}
+		else if (isInitialized() && !rhs.isInitialized())
+		{
+			do_move(*this, rhs);
+			return;
+		}
+
+		if (isAllocatedFromStack() && rhs.isAllocatedFromStack())
+		{
+			size_t min_size = std::min(size(), rhs.size());
+			size_t max_size = std::max(size(), rhs.size());
+
+			for (size_t i = 0; i < min_size; ++i)
+				std::swap(this->operator[](i), rhs[i]);
+
+			if (size() == max_size)
+			{
+				for (size_t i = min_size; i < max_size; ++i)
+					rhs[i] = this->operator[](i);
+			}
+			else
+			{
+				for (size_t i = min_size; i < max_size; ++i)
+					this->operator[](i) = rhs[i];
+			}
+
+			size_t lhs_size = size();
+			size_t lhs_allocated = allocated_size();
+
+			size_t rhs_size = rhs.size();
+			size_t rhs_allocated = rhs.allocated_size();
+
+			c_end_of_storage = c_start + rhs_allocated - pad_right;
+			rhs.c_end_of_storage = rhs.c_start + lhs_allocated - pad_right;
+
+			c_end = c_start + byte_size(rhs_size);
+			rhs.c_end = rhs.c_start + byte_size(lhs_size);
+		}
+		else if (isAllocatedFromStack() && !rhs.isAllocatedFromStack())
+			swap_stack_heap(*this, rhs);
+		else if (!isAllocatedFromStack() && rhs.isAllocatedFromStack())
+			swap_stack_heap(rhs, *this);
+		else
+		{
+			std::swap(c_start, rhs.c_start);
+			std::swap(c_end, rhs.c_end);
+			std::swap(c_end_of_storage, rhs.c_end_of_storage);
+		}
 	}
 
 	void assign(size_t n, const T & x)
@@ -326,7 +413,7 @@ public:
 	{
 		size_t required_capacity = from_end - from_begin;
 		if (required_capacity > capacity())
-			reserve(round_up_to_power_of_two(required_capacity));
+			reserve(roundUpToPowerOfTwoOrZero(required_capacity));
 
 		size_t bytes_to_copy = byte_size(required_capacity);
 		memcpy(c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
@@ -365,6 +452,11 @@ public:
 	}
 };
 
+template <typename T, size_t INITIAL_SIZE, typename TAllocator, size_t pad_right_>
+void swap(PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & lhs, PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & rhs)
+{
+	lhs.swap(rhs);
+}
 
 /** Для столбцов. Padding-а хватает, чтобы читать и писать xmm-регистр по адресу последнего элемента. */
 template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>>

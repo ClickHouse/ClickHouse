@@ -40,7 +40,7 @@ private:
 	{
 		if (!file_in)
 		{
-			file_in.reset(createReadBufferFromFileBase(path, estimated_size, aio_threshold, buf_size));
+			file_in = createReadBufferFromFileBase(path, estimated_size, aio_threshold, buf_size);
 			compressed_in = &*file_in;
 
 			if (profile_callback)
@@ -48,7 +48,7 @@ private:
 		}
 	}
 
-	bool nextImpl()
+	bool nextImpl() override
 	{
 		/// Проверим наличие разжатого блока в кэше, захватим владение этим блоком, если он есть.
 
@@ -61,7 +61,7 @@ private:
 			initInput();
 			file_in->seek(file_pos);
 
-			owned_cell.reset(new UncompressedCacheCell);
+			owned_cell = std::make_shared<UncompressedCacheCell>();
 
 			size_t size_decompressed;
 			size_t size_compressed_without_checksum;

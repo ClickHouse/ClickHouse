@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int TOO_DEEP_RECURSION;
+	extern const int DIRECTORY_ALREADY_EXISTS;
 }
 }
 
@@ -74,6 +75,12 @@ static void localBackupImpl(Poco::Path source_path, Poco::Path destination_path,
 
 void localBackup(Poco::Path source_path, Poco::Path destination_path)
 {
+	if (Poco::File(destination_path).exists()
+		&& Poco::DirectoryIterator(destination_path) != Poco::DirectoryIterator())
+	{
+		throw DB::Exception("Directory " + destination_path.toString() + " already exists and is not empty.", DB::ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+	}
+
 	size_t try_no = 0;
 	const size_t max_tries = 10;
 

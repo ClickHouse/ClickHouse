@@ -11,20 +11,20 @@ namespace DB
 {
 
 
-/** Прогресс выполнения запроса.
-  * Передаваемые по сети значения представляют собой разницу - сколько было сделано после предыдущего отправленного значения.
-  * Тот же объект используется для суммирования полученных значений.
+/** Progress of query execution.
+  * Values, transferred over network are deltas - how much was done after previously sent value.
+  * The same struct is also used for summarized values.
   */
 struct Progress
 {
-	size_t rows = 0;		/// Строк обработано.
-	size_t bytes = 0;		/// Байт обработано.
+	std::atomic<size_t> rows {0};		/// Rows (source) processed.
+	std::atomic<size_t> bytes {0};		/// Bytes (uncompressed, source) processed.
 
-	/** Сколько ещё строк надо обработать, приблизительно. Передаётся не ноль, когда возникает информация о какой-то новой части работы.
-	  * Полученные значения надо суммровать, чтобы получить оценку общего количества строк для обработки.
-	  * Используется для отображения прогресс-бара на клиенте.
+	/** How much rows must be processed, in total, approximately. Non-zero value is sent when there is information about some new part of job.
+	  * Received values must be summed to get estimate of total rows to process.
+	  * Used for rendering progress bar on client.
 	  */
-	size_t total_rows = 0;
+	std::atomic<size_t> total_rows {0};
 
 	Progress() {}
 	Progress(size_t rows_, size_t bytes_, size_t total_rows_ = 0)
@@ -32,11 +32,19 @@ struct Progress
 
 	void read(ReadBuffer & in, UInt64 server_revision)
 	{
-		readVarUInt(rows, in);
-		readVarUInt(bytes, in);
+		size_t new_rows = 0;
+		size_t new_bytes = 0;
+		size_t new_total_rows = 0;
+
+		readVarUInt(new_rows, in);
+		readVarUInt(new_bytes, in);
 
 		if (server_revision >= DBMS_MIN_REVISION_WITH_TOTAL_ROWS_IN_PROGRESS)
-			readVarUInt(total_rows, in);
+			readVarUInt(new_total_rows, in);
+
+		rows = new_rows;
+		bytes = new_bytes;
+		total_rows = new_total_rows;
 	}
 
 	void write(WriteBuffer & out, UInt64 client_revision) const
@@ -48,35 +56,44 @@ struct Progress
 			writeVarUInt(total_rows, out);
 	}
 
-	void increment(const Progress & rhs)
+	/// Each value separately is changed atomically (but not whole object).
+	void incrementPiecewiseAtomically(const Progress & rhs)
 	{
 		rows += rhs.rows;
 		bytes += rhs.bytes;
 		total_rows += rhs.total_rows;
 	}
 
-	/// Каждое значение по-отдельности изменяется атомарно.
-	void incrementPiecewiseAtomically(const Progress & rhs)
-	{
-		__sync_add_and_fetch(&rows, rhs.rows);
-		__sync_add_and_fetch(&bytes, rhs.bytes);
-		__sync_add_and_fetch(&total_rows, rhs.total_rows);
-	}
-
 	void reset()
 	{
-		*this = Progress();
+		rows = 0;
+		bytes = 0;
+		total_rows = 0;
 	}
 
 	Progress fetchAndResetPiecewiseAtomically()
 	{
 		Progress res;
 
-		res.rows = __sync_fetch_and_and(&rows, 0);
-		res.bytes = __sync_fetch_and_and(&bytes, 0);
-		res.total_rows = __sync_fetch_and_and(&total_rows, 0);
+		res.rows = rows.fetch_and(0);
+		res.bytes = bytes.fetch_and(0);
+		res.total_rows = total_rows.fetch_and(0);
 
 		return res;
+	}
+
+	Progress & operator=(Progress && other)
+	{
+		rows = other.rows.load(std::memory_order_relaxed);
+		bytes = other.bytes.load(std::memory_order_relaxed);
+		total_rows = other.total_rows.load(std::memory_order_relaxed);
+
+		return *this;
+	}
+
+	Progress(Progress && other)
+	{
+		*this = std::move(other);
 	}
 };
 

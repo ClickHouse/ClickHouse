@@ -33,14 +33,10 @@
 #include <DB/Interpreters/QueryLog.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/copyData.h>
 #include <DB/IO/UncompressedCache.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/parseQuery.h>
-#include <DB/Client/ConnectionPool.h>
-#include <DB/Client/ConnectionPoolWithFailover.h>
 #include <DB/Databases/IDatabase.h>
 
 #include <DB/Common/ConfigProcessor.h>
@@ -486,8 +482,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 	/** Возможность обратиться к временным таблицам другого запроса в виде _query_QUERY_ID.table
 	  * NOTE В дальнейшем может потребоваться подумать об изоляции.
 	  */
-	if (database_name.size() > strlen("_query_")
-		&& database_name.compare(0, strlen("_query_"), "_query_") == 0)
+	if (startsWith(database_name, "_query_"))
 	{
 		String requested_query_id = database_name.substr(strlen("_query_"));
 
@@ -808,7 +803,7 @@ void Context::setUncompressedCache(size_t max_size_in_bytes)
 	if (shared->uncompressed_cache)
 		throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-	shared->uncompressed_cache.reset(new UncompressedCache(max_size_in_bytes));
+	shared->uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes);
 }
 
 
@@ -825,7 +820,7 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
 	if (shared->mark_cache)
 		throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-	shared->mark_cache.reset(new MarkCache(cache_size_in_bytes, std::chrono::seconds(settings.mark_cache_min_lifetime)));
+	shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes, std::chrono::seconds(settings.mark_cache_min_lifetime));
 }
 
 MarkCachePtr Context::getMarkCache() const
@@ -969,7 +964,7 @@ QueryLog & Context::getQueryLog()
 		size_t flush_interval_milliseconds = parse<size_t>(
 			config.getString("query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS_STR));
 
-		shared->query_log.reset(new QueryLog{ *global_context, database, table, flush_interval_milliseconds });
+		shared->query_log = std::make_unique<QueryLog>(*global_context, database, table, flush_interval_milliseconds);
 	}
 
 	return *shared->query_log;
@@ -986,9 +981,9 @@ CompressionMethod Context::chooseCompressionMethod(size_t part_size, double part
 		auto & config = Poco::Util::Application::instance().config();
 
 		if (config.has(config_name))
-			shared->compression_method_selector.reset(new CompressionMethodSelector{config, "compression"});
+			shared->compression_method_selector = std::make_unique<CompressionMethodSelector>(config, "compression");
 		else
-			shared->compression_method_selector.reset(new CompressionMethodSelector);
+			shared->compression_method_selector = std::make_unique<CompressionMethodSelector>();
 	}
 
 	return shared->compression_method_selector->choose(part_size, part_size_ratio);
@@ -1002,7 +997,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings()
 	if (!shared->merge_tree_settings)
 	{
 		auto & config = Poco::Util::Application::instance().config();
-		shared->merge_tree_settings.reset(new MergeTreeSettings());
+		shared->merge_tree_settings = std::make_unique<MergeTreeSettings>();
 		shared->merge_tree_settings->loadFromConfig("merge_tree", config);
 	}
 

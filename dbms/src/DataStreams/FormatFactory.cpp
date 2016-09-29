@@ -1,3 +1,4 @@
+#include <DB/Interpreters/Context.h>
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
@@ -60,9 +61,15 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 	else if (name == "CSVWithNames")
 		return std::make_shared<BlockInputStreamFromRowInputStream>(std::make_shared<CSVRowInputStream>(buf, sample, ',', true), sample, max_block_size);
 	else if (name == "TSKV")
-		return std::make_shared<BlockInputStreamFromRowInputStream>(std::make_shared<TSKVRowInputStream>(buf, sample, false), sample, max_block_size);
+	{
+		auto row_stream = std::make_shared<TSKVRowInputStream>(buf, sample, context.getSettingsRef().input_format_skip_unknown_fields);
+		return std::make_shared<BlockInputStreamFromRowInputStream>(std::move(row_stream), sample, max_block_size);
+	}
 	else if (name == "JSONEachRow")
-		return std::make_shared<BlockInputStreamFromRowInputStream>(std::make_shared<JSONEachRowRowInputStream>(buf, sample), sample, max_block_size);
+	{
+		auto row_stream = std::make_shared<JSONEachRowRowInputStream>(buf, sample, context.getSettingsRef().input_format_skip_unknown_fields);
+		return std::make_shared<BlockInputStreamFromRowInputStream>(std::move(row_stream), sample, max_block_size);
+	}
 	else if (name == "TabSeparatedRaw"
 		|| name == "BlockTabSeparated"
 		|| name == "Pretty"
@@ -127,13 +134,16 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
 	else if (name == "Values")
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<ValuesRowOutputStream>(buf));
 	else if (name == "JSON")
-		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONRowOutputStream>(buf, sample));
+		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONRowOutputStream>(buf, sample,
+			context.getSettingsRef().output_format_write_statistics));
 	else if (name == "JSONCompact")
-		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONCompactRowOutputStream>(buf, sample));
+		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONCompactRowOutputStream>(buf, sample,
+			context.getSettingsRef().output_format_write_statistics));
 	else if (name == "JSONEachRow")
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONEachRowRowOutputStream>(buf, sample));
 	else if (name == "XML")
-		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<XMLRowOutputStream>(buf, sample));
+		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<XMLRowOutputStream>(buf, sample,
+			context.getSettingsRef().output_format_write_statistics));
 	else if (name == "TSKV")
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TSKVRowOutputStream>(buf, sample));
 	else if (name == "ODBCDriver")

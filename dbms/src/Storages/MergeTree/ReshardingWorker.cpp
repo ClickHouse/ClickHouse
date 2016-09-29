@@ -15,12 +15,14 @@
 
 #include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Common/SipHash.h>
+#include <DB/Common/StringUtils.h>
+#include <DB/Common/randomSeed.h>
 
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/Cluster.h>
 
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 
 #include <zkutil/ZooKeeper.h>
 
@@ -75,17 +77,17 @@ public:
 	{
 		Poco::Util::AbstractConfiguration::Keys keys;
 		config.keys(config_name, keys);
+
 		for (const auto & key : keys)
 		{
 			if (key == "task_queue_path")
-			{
 				task_queue_path = config.getString(config_name + "." + key);
-				if (task_queue_path.empty())
-					throw Exception{"Invalid parameter in resharding configuration", ErrorCodes::INVALID_CONFIG_PARAMETER};
-			}
 			else
 				throw Exception{"Unknown parameter in resharding configuration", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
 		}
+
+		if (task_queue_path.empty())
+			throw Exception{"Resharding: missing parameter task_queue_path", ErrorCodes::INVALID_CONFIG_PARAMETER};
 	}
 
 	Arguments(const Arguments &) = delete;
@@ -158,6 +160,7 @@ std::string computeHashFromString(const std::string & in)
 	return {out, hash_size};
 }
 
+#if 0
 /// Compute the value value from the checksum files of a given partition.
 /// The hash function we use is SipHash.
 std::string computeHashFromPartition(const std::string & data_path, const std::string & partition_name)
@@ -172,7 +175,7 @@ std::string computeHashFromPartition(const std::string & data_path, const std::s
 		const auto filename = it.name();
 		if (!ActiveDataPartSet::isPartDirectory(filename))
 			continue;
-		if (0 != filename.compare(0, partition_name.size(), partition_name))
+		if (!startsWith(filename, partition_name))
 			continue;
 
 		const auto part_path = it.path().absolute().toString();
@@ -203,6 +206,7 @@ std::string computeHashFromPartition(const std::string & data_path, const std::s
 
 	return {out, hash_size};
 }
+#endif
 
 }
 
@@ -952,7 +956,7 @@ void ReshardingWorker::publishShardedPartitions()
 
 	size_t remote_count = task_info_list.size() - local_count;
 
-	boost::threadpool::pool pool(remote_count);
+	ThreadPool pool(remote_count);
 
 	using Tasks = std::vector<std::packaged_task<bool()> >;
 	Tasks tasks(remote_count);
@@ -1107,7 +1111,7 @@ void ReshardingWorker::commit()
 	/// Execute all the remaining log records.
 
 	size_t pool_size = operation_count;
-	boost::threadpool::pool pool(pool_size);
+	ThreadPool pool(pool_size);
 
 	using Tasks = std::vector<std::packaged_task<void()> >;
 	Tasks tasks(pool_size);
@@ -1185,6 +1189,18 @@ void ReshardingWorker::repairLogRecord(LogRecord & log_record)
 			found = false;
 		else
 		{
+			/// XXX Disabled this check because, in order to make it reliable,
+			/// we should disable merging for this partition. This is not a good
+			/// idea anyway.
+			/// In a a future release, we should implement a fence that would,
+			/// for a given partition, separate the data that are to be resharded,
+			/// from the data that are not to be touched. The tricky part is to
+			/// get it consistent on *each* replica (e.g. imagine that a resharding
+			/// operation starts while an INSERT operation is not fully replicated
+			/// on all the replicas).
+			/// For now we make the assumption that no write operations happen
+			/// while resharding a partition.
+#if 0
 			auto current_hash = computeHashFromPartition(storage.data.getFullPath(),
 				current_job.partition);
 			if (current_hash != log_record.partition_hash)
@@ -1194,6 +1210,7 @@ void ReshardingWorker::repairLogRecord(LogRecord & log_record)
 					" time we were online");
 				found = false;
 			}
+#endif
 		}
 	}
 	else if (log_record.operation == LogRecord::OP_ATTACH)
@@ -1292,7 +1309,7 @@ bool ReshardingWorker::checkAttachLogRecord(LogRecord & log_record)
 		}
 	}
 
-	boost::threadpool::pool pool(task_info_list.size());
+	ThreadPool pool(task_info_list.size());
 
 	using Tasks = std::vector<std::packaged_task<RemotePartChecker::Status()> >;
 	Tasks tasks(task_info_list.size());
@@ -1399,11 +1416,7 @@ void ReshardingWorker::executeAttach(LogRecord & log_record)
 	{
 		ShardTaskInfo()
 		{
-			struct timespec times;
-			if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
-				throwFromErrno("Cannot clock_gettime.", DB::ErrorCodes::CANNOT_CLOCK_GETTIME);
-
-			(void) srand48_r(reinterpret_cast<intptr_t>(this) ^ times.tv_nsec, &rand_state);
+			(void) srand48_r(randomSeed(), &rand_state);
 		}
 
 		ShardTaskInfo(const ShardTaskInfo &) = delete;
@@ -1539,7 +1552,7 @@ void ReshardingWorker::createLog()
 {
 	LOG_DEBUG(log, "Creating log");
 
-	auto & storage = *(current_job.storage);
+	//auto & storage = *(current_job.storage);
 	auto zookeeper = context.getZooKeeper();
 
 	auto log_path = getLocalJobPath() + "/log";
@@ -1560,8 +1573,11 @@ void ReshardingWorker::createLog()
 		LogRecord log_record{zookeeper};
 		log_record.operation = LogRecord::OP_DROP;
 		log_record.partition = current_job.partition;
+		/// Disabled. See comment in repairLogRecord().
+#if 0
 		log_record.partition_hash = computeHashFromPartition(storage.data.getFullPath(),
 			current_job.partition);
+#endif
 		log_record.state = LogRecord::READY;
 
 		log_record.enqueue(log_path);

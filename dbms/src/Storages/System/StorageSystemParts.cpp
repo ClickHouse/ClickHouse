@@ -43,7 +43,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
 
 StoragePtr StorageSystemParts::create(const std::string & name_)
 {
-	return (new StorageSystemParts(name_))->thisPtr();
+	return make_shared(name_);
 }
 
 
@@ -184,7 +184,24 @@ BlockInputStreams StorageSystemParts::read(
 		}
 
 		StoragePtr storage = storages.at(std::make_pair(database, table));
-		auto table_lock = storage->lockStructure(false); /// Чтобы таблицу не удалили.
+		IStorage::TableStructureReadLockPtr table_lock;
+
+		try
+		{
+			table_lock = storage->lockStructure(false);	/// For table not to be dropped.
+		}
+		catch (const Exception & e)
+		{
+			/** There are case when IStorage::drop was called,
+			 *  but we still own the object.
+			 * Then table will throw exception at attempt to lock it.
+			 * Just skip the table.
+			 */
+			if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+				continue;
+			else
+				throw;
+		}
 
 		String engine = storage->getName();
 

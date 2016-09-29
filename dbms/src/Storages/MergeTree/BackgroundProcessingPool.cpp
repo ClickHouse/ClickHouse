@@ -20,13 +20,16 @@ void BackgroundProcessingPool::TaskInfo::wake()
 	if (removed)
 		return;
 
-	std::unique_lock<std::mutex> lock(pool.mutex);
-	pool.tasks.splice(pool.tasks.begin(), pool.tasks, iterator);
-
-	/// Если эта задача в прошлый раз ничего не сделала, и ей было назначено спать, то отменим время сна.
 	time_t current_time = time(0);
-	if (next_time_to_execute > current_time)
-		next_time_to_execute = current_time;
+
+	{
+		std::unique_lock<std::mutex> lock(pool.tasks_mutex);
+		pool.tasks.splice(pool.tasks.begin(), pool.tasks, iterator);
+
+		/// Если эта задача в прошлый раз ничего не сделала, и ей было назначено спать, то отменим время сна.
+		if (next_time_to_execute > current_time)
+			next_time_to_execute = current_time;
+	}
 
 	/// Если все потоки сейчас выполняют работу, этот вызов никого не разбудит.
 	pool.wake_event.notify_one();
@@ -39,13 +42,13 @@ BackgroundProcessingPool::BackgroundProcessingPool(int size_) : size(size_)
 
 	threads.resize(size);
 	for (auto & thread : threads)
-			thread = std::thread([this] { threadFunction(); });
+		thread = std::thread([this] { threadFunction(); });
 }
 
 
 int BackgroundProcessingPool::getCounter(const String & name)
 {
-	std::unique_lock<std::mutex> lock(mutex);
+	std::unique_lock<std::mutex> lock(counters_mutex);
 	return counters[name];
 }
 
@@ -54,7 +57,7 @@ BackgroundProcessingPool::TaskHandle BackgroundProcessingPool::addTask(const Tas
 	TaskHandle res(new TaskInfo(*this, task));
 
 	{
-		std::unique_lock<std::mutex> lock(mutex);
+		std::unique_lock<std::mutex> lock(tasks_mutex);
 		res->iterator = tasks.insert(tasks.begin(), res);
 	}
 
@@ -65,7 +68,8 @@ BackgroundProcessingPool::TaskHandle BackgroundProcessingPool::addTask(const Tas
 
 void BackgroundProcessingPool::removeTask(const TaskHandle & task)
 {
-	task->removed = true;
+	if (task->removed.exchange(true))
+		return;
 
 	/// Дождёмся завершения всех выполнений этой задачи.
 	{
@@ -73,7 +77,7 @@ void BackgroundProcessingPool::removeTask(const TaskHandle & task)
 	}
 
 	{
-		std::unique_lock<std::mutex> lock(mutex);
+		std::unique_lock<std::mutex> lock(tasks_mutex);
 		tasks.erase(task->iterator);
 	}
 }
@@ -112,11 +116,21 @@ void BackgroundProcessingPool::threadFunction()
 			time_t min_time = std::numeric_limits<time_t>::max();
 
 			{
-				std::unique_lock<std::mutex> lock(mutex);
+				std::unique_lock<std::mutex> lock(tasks_mutex);
 
 				if (!tasks.empty())
 				{
-					/// O(n), n - число задач. По сути, количество таблиц. Обычно их мало.
+					/** Number of tasks is about number of tables of MergeTree family.
+					  * Select task with minimal 'next_time_to_execute', and place to end of queue.
+					  * Remind that one task could be selected and executed simultaneously from many threads.
+					  *
+					  * Tasks is like priority queue,
+					  *  but we must have ability to change priority of any task in queue.
+					  *
+					  * If there is too much tasks, select from first 100.
+					  * TODO Change list to multimap.
+					  */
+					size_t i = 0;
 					for (const auto & handle : tasks)
 					{
 						if (handle->removed)
@@ -129,6 +143,10 @@ void BackgroundProcessingPool::threadFunction()
 							min_time = next_time_to_execute;
 							task = handle;
 						}
+
+						++i;
+						if (i > 100)
+							break;
 					}
 
 					if (task)	/// Переложим в конец очереди (уменьшим приоритет среди задач с одинаковым next_time_to_execute).
@@ -141,7 +159,7 @@ void BackgroundProcessingPool::threadFunction()
 
 			if (!task)
 			{
-				std::unique_lock<std::mutex> lock(mutex);
+				std::unique_lock<std::mutex> lock(tasks_mutex);
 				wake_event.wait_for(lock,
 					std::chrono::duration<double>(sleep_seconds
 						+ std::uniform_real_distribution<double>(0, sleep_seconds_random_part)(rng)));
@@ -152,7 +170,7 @@ void BackgroundProcessingPool::threadFunction()
 			time_t current_time = time(0);
 			if (min_time > current_time)
 			{
-				std::unique_lock<std::mutex> lock(mutex);
+				std::unique_lock<std::mutex> lock(tasks_mutex);
 				wake_event.wait_for(lock, std::chrono::duration<double>(
 					min_time - current_time + std::uniform_real_distribution<double>(0, sleep_seconds_random_part)(rng)));
 			}
@@ -182,7 +200,7 @@ void BackgroundProcessingPool::threadFunction()
 		/// Вычтем все счётчики обратно.
 		if (!counters_diff.empty())
 		{
-			std::unique_lock<std::mutex> lock(mutex);
+			std::unique_lock<std::mutex> lock(counters_mutex);
 			for (const auto & it : counters_diff)
 				counters[it.first] -= it.second;
 		}
@@ -192,7 +210,7 @@ void BackgroundProcessingPool::threadFunction()
 
 		if (has_exception)
 		{
-			std::unique_lock<std::mutex> lock(mutex);
+			std::unique_lock<std::mutex> lock(tasks_mutex);
 			wake_event.wait_for(lock, std::chrono::duration<double>(sleep_seconds));
 		}
 	}

@@ -67,7 +67,6 @@ public:
 	{
 		TCP = 1,
 		HTTP = 2,
-		OLAP_HTTP = 3,
 	};
 
 	enum class HTTPMethod

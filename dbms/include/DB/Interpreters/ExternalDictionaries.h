@@ -3,6 +3,7 @@
 #include <DB/Dictionaries/IDictionary.h>
 #include <DB/Common/Exception.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/randomSeed.h>
 #include <common/MultiVersion.h>
 #include <common/logger_useful.h>
 #include <Poco/Event.h>
@@ -42,15 +43,15 @@ private:
 
 	mutable std::mutex dictionaries_mutex;
 
-	using dictionary_ptr_t = std::shared_ptr<MultiVersion<IDictionaryBase>>;
-	struct dictionary_info final
+	using DictionaryPtr = std::shared_ptr<MultiVersion<IDictionaryBase>>;
+	struct DictionaryInfo final
 	{
-		dictionary_ptr_t dict;
+		DictionaryPtr dict;
 		std::string origin;
 		std::exception_ptr exception;
 	};
 
-	struct failed_dictionary_info final
+	struct FailedDictionaryInfo final
 	{
 		std::unique_ptr<IDictionaryBase> dict;
 		std::chrono::system_clock::time_point next_attempt_time;
@@ -59,18 +60,18 @@ private:
 
 	/** Имя словаря -> словарь.
 	  */
-	std::unordered_map<std::string, dictionary_info> dictionaries;
+	std::unordered_map<std::string, DictionaryInfo> dictionaries;
 
 	/** Здесь находятся словари, которых ещё ни разу не удалось загрузить.
 	  * В dictionaries они тоже присутствуют, но с нулевым указателем dict.
 	  */
-	std::unordered_map<std::string, failed_dictionary_info> failed_dictionaries;
+	std::unordered_map<std::string, FailedDictionaryInfo> failed_dictionaries;
 
 	/** И для обычных и для failed_dictionaries.
 	  */
 	std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
 
-	std::mt19937_64 rnd_engine{getSeed()};
+	std::mt19937_64 rnd_engine{randomSeed()};
 
 	Context & context;
 
@@ -95,13 +96,6 @@ private:
 
 			reloadImpl();
 		}
-	}
-
-	static std::uint64_t getSeed()
-	{
-		timespec ts;
-		clock_gettime(CLOCK_MONOTONIC, &ts);
-		return static_cast<std::uint64_t>(ts.tv_nsec ^ getpid());
 	}
 
 public:

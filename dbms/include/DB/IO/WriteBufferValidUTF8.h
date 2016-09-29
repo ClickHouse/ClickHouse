@@ -2,7 +2,7 @@
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
-#include <Poco/UTF8Encoding.h>
+
 
 namespace DB
 {
@@ -26,7 +26,7 @@ private:
 	void putReplacement();
 	void putValid(char * data, size_t len);
 
-	void nextImpl();
+	void nextImpl() override;
 	void finish();
 
 public:
@@ -38,7 +38,7 @@ public:
 		const char * replacement = "\xEF\xBF\xBD",
 		size_t size = DEFAULT_SIZE);
 
-	virtual ~WriteBufferValidUTF8()
+	virtual ~WriteBufferValidUTF8() override
 	{
 		finish();
 	}

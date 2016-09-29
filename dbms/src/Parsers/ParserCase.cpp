@@ -113,13 +113,11 @@ bool ParserCase::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 
 		auto src_array_function = std::make_shared<ASTFunction>(StringRange{begin, pos});
 		src_array_function->name = "array";
-		src_array_function->genus = ASTFunction::Genus::CASE_ARRAY;
 		src_array_function->arguments = src_expr_list;
 		src_array_function->children.push_back(src_array_function->arguments);
 
 		auto dst_array_function = std::make_shared<ASTFunction>(StringRange{begin, pos});
 		dst_array_function->name = "array";
-		dst_array_function->genus = ASTFunction::Genus::CASE_ARRAY;
 		dst_array_function->arguments = dst_expr_list;
 		dst_array_function->children.push_back(dst_array_function->arguments);
 
@@ -131,7 +129,6 @@ bool ParserCase::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 
 		auto function = std::make_shared<ASTFunction>(StringRange{begin, pos});
 		function->name = "transform";
-		function->genus = ASTFunction::Genus::CASE_WITH_EXPR;
 		function->arguments = function_args;
 		function->children.push_back(function->arguments);
 
@@ -148,7 +145,6 @@ bool ParserCase::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 
 		auto function = std::make_shared<ASTFunction>(StringRange{begin, pos});
 		function->name = "multiIf";
-		function->genus = ASTFunction::Genus::CASE_WITHOUT_EXPR;
 		function->arguments = function_args;
 		function->children.push_back(function->arguments);
 

@@ -152,10 +152,9 @@ bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 	else
 	{
 		while (pos != end
-			&& ((*pos >= 'a' && *pos <= 'z')
-				|| (*pos >= 'A' && *pos <= 'Z')
+			&& (isAlphaASCII(*pos)
 				|| (*pos == '_')
-				|| (pos != begin && *pos >= '0' && *pos <= '9')))
+				|| (pos != begin && isNumericASCII(*pos))))
 			++pos;
 
 		if (pos != begin)
@@ -203,8 +202,11 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 
 	ParserIdentifier id_parser;
 	ParserString open("("), close(")");
+	ParserString distinct("DISTINCT", true, true);
 	ParserExpressionList contents(false);
 	ParserWhiteSpaceOrComments ws;
+
+	bool has_distinct_modifier = false;
 
 	ASTPtr identifier;
 	ASTPtr expr_list_args;
@@ -219,6 +221,13 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 		return false;
 
 	ws.ignore(pos, end);
+
+	if (distinct.ignore(pos, end, max_parsed_pos, expected))
+	{
+		has_distinct_modifier = true;
+		ws.ignore(pos, end);
+	}
+
 	Pos contents_begin = pos;
 	if (!contents.parse(pos, end, expr_list_args, max_parsed_pos, expected))
 		return false;
@@ -254,10 +263,21 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 	/// У параметрической агрегатной функции - два списка (параметры и аргументы) в круглых скобках. Пример: quantile(0.9)(x).
 	if (open.ignore(pos, end, max_parsed_pos, expected))
 	{
+		/// Parametric aggregate functions cannot have DISTINCT in parameters list.
+		if (has_distinct_modifier)
+			return false;
+
 		expr_list_params = expr_list_args;
 		expr_list_args = nullptr;
 
 		ws.ignore(pos, end);
+
+		if (distinct.ignore(pos, end, max_parsed_pos, expected))
+		{
+			has_distinct_modifier = true;
+			ws.ignore(pos, end);
+		}
+
 		if (!contents.parse(pos, end, expr_list_args, max_parsed_pos, expected))
 			return false;
 		ws.ignore(pos, end);
@@ -267,8 +287,11 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 	}
 
 	auto function_node = std::make_shared<ASTFunction>(StringRange(begin, pos));
-	ASTPtr node_holder{function_node};
 	function_node->name = typeid_cast<ASTIdentifier &>(*identifier).name;
+
+	/// func(DISTINCT ...) is equivalent to funcDistinct(...)
+	if (has_distinct_modifier)
+		function_node->name += "Distinct";
 
 	function_node->arguments = expr_list_args;
 	function_node->children.push_back(function_node->arguments);
@@ -279,7 +302,7 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 		function_node->children.push_back(function_node->parameters);
 	}
 
-	node = node_holder;
+	node = function_node;
 	return true;
 }
 
@@ -413,8 +436,8 @@ bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed
 	if (pos == end)
 		return false;
 
-	/** Максимальная длина числа. 319 символов достаточно, чтобы записать максимальный double в десятичной форме.
-	  * Лишнее копирование нужно, чтобы воспользоваться функциями strto*, которым нужна 0-терминированная строка.
+	/** Maximum length of number. 319 symbols is enough to write maximum double in decimal form.
+	  * Copy is needed to use strto* functions, which require 0-terminated string.
 	  */
 	char buf[320];
 
@@ -423,16 +446,25 @@ bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed
 	buf[bytes_to_copy] = 0;
 
 	char * pos_double = buf;
-	errno = 0;	/// Функции strto* не очищают errno.
+	errno = 0;	/// Functions strto* don't clear errno.
 	Float64 float_value = std::strtod(buf, &pos_double);
 	if (pos_double == buf || errno == ERANGE)
 	{
 		expected = "number";
 		return false;
 	}
+
+	/// excessive "word" symbols after number
+	if (pos_double < buf + bytes_to_copy
+		&& isWordCharASCII(*pos_double))
+	{
+		expected = "number";
+		return false;
+	}
+
 	res = float_value;
 
-	/// попробуем использовать более точный тип - UInt64 или Int64
+	/// try to use more exact type: UInt64 or Int64
 
 	char * pos_integer = buf;
 	if (float_value < 0)

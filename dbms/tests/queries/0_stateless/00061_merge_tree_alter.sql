@@ -28,7 +28,7 @@ DESC TABLE test.alter;
 SHOW CREATE TABLE test.alter;
 SELECT * FROM test.alter ORDER BY k;
 
-ALTER TABLE test.alter ADD COLUMN s String;
+ALTER TABLE test.alter ADD COLUMN s String DEFAULT '0';
 INSERT INTO test.alter VALUES ('2015-01-01', 6,38,'2014-07-15 13:26:50',[10,20,30],['asd','qwe','qwe'],['2000-01-01','2000-01-01','2000-01-03'],'100500');
 
 DESC TABLE test.alter;

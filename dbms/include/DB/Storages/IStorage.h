@@ -47,7 +47,7 @@ using StoragePtr = std::shared_ptr<IStorage>;
   * - структура хранения данных (сжатие, etc.)
   * - конкуррентный доступ к данным (блокировки, etc.)
   */
-class IStorage : private boost::noncopyable, public ITableDeclaration
+class IStorage : public std::enable_shared_from_this<IStorage>, private boost::noncopyable, public ITableDeclaration
 {
 public:
 	/// Основное имя типа таблицы (например, StorageMergeTree).
@@ -106,7 +106,7 @@ public:
 	  */
 	TableStructureReadLockPtr lockStructure(bool will_modify_data)
 	{
-		TableStructureReadLockPtr res = std::make_shared<TableStructureReadLock>(thisPtr(), true, will_modify_data);
+		TableStructureReadLockPtr res = std::make_shared<TableStructureReadLock>(shared_from_this(), true, will_modify_data);
 		if (is_dropped)
 			throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 		return res;
@@ -239,7 +239,7 @@ public:
 
 	/** Выполнить запрос FREEZE PARTITION. То есть, создать локальный бэкап (снэпшот) данных с помощью функции localBackup (см. localBackup.h)
 	  */
-	virtual void freezePartition(const Field & partition, const Settings & settings)
+	virtual void freezePartition(const Field & partition, const String & with_name, const Settings & settings)
 	{
 		throw Exception("Method freezePartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
@@ -270,19 +270,6 @@ public:
 	  */
 	virtual void shutdown() {}
 
-	/** Возвращает владеющий указатель на себя.
-	  */
-	std::shared_ptr<IStorage> thisPtr()
-	{
-		std::shared_ptr<IStorage> res = this_ptr.lock();
-		if (!res)
-		{
-			res.reset(this);
-			this_ptr = res;
-		}
-		return res;
-	}
-
 	bool is_dropped{false};
 
 	/// Поддерживается ли индекс в секции IN
@@ -293,10 +280,9 @@ public:
 
 protected:
 	using ITableDeclaration::ITableDeclaration;
+	using std::enable_shared_from_this<IStorage>::shared_from_this;
 
 private:
-	std::weak_ptr<IStorage> this_ptr;
-
 	/// Брать следующие два лока всегда нужно в этом порядке.
 
 	/** Берется на чтение на все время запроса INSERT и на все время слияния кусков (для MergeTree).

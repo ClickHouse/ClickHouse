@@ -1,6 +1,6 @@
 ## Введение
 
-Для начала, возьмём какую-нибудь машину, например, создадим виртуальный инстанс в OpenStack со следующими характеристиками:
+Для начала, возьмём какую-нибудь машину, например, создадим виртуальный инстанс в Openstack со следующими характеристиками:
 ```
 RAM             61GB
 VCPUs           16 VCPU
@@ -10,7 +10,7 @@ Ephemeral Disk  100GB
 
 ОС:
 ```
-chebotarev@mtchebotarev:~/ClickHouse$ lsb_release -a
+$ lsb_release -a
 No LSB modules are available.
 Distributor ID:	Ubuntu
 Description:	Ubuntu 16.04 LTS
@@ -33,7 +33,7 @@ https://github.com/yandex/ClickHouse/blob/master/doc/build.md
 
 Установим необходимые пакеты. После этого выполним следующую команду из директории с исходными кодами ClickHouse:
 ```
-DISABLE_MONGODB=1 ./release --standalone
+~/ClickHouse$ DISABLE_MONGODB=1 ./release --standalone
 ```
 
 Сборка успешно завершена:
@@ -51,7 +51,7 @@ sudo service clickhouse-server start
 Перед тем, как загружать данные базы данных On Time в ClickHouse, запустим консольный клиент ClickHouse, для того, чтобы создать таблицу с
 необходимыми полями:
 ```
-clickhouse-client
+$ clickhouse-client
 ```
 
 Таблица создаётся следующим запросом:
@@ -227,7 +227,7 @@ any inner join
 	from ontime
 	group by Year
 ) using (Year)
-order by Year
+order by Year;
 ```
 
 ![](images/complicated.png)
@@ -236,7 +236,7 @@ order by Year
 
 ### Копирование таблицы
 
-Предположим, нам нужно скопировать 1% самых удачливых записей из таблицы ```ontime``` в новую таблицу ```ontime_ltd```. Для этого выполним запросы:
+Предположим, нам нужно скопировать 1% записей из таблицы (самых удачливых) ```ontime``` в новую таблицу ```ontime_ltd```. Для этого выполним запросы:
 ```
 :) create table ontime_ltd as ontime;
 :) insert into ontime_ltd select * from ontime where rand() % 100 = 42;
@@ -255,13 +255,13 @@ order by Year
 
 В целях диагностики часто бывает нужно узнать, что именно в данный момент делает ClickHouse. Запустим запрос, который выполняется очень долго:
 ```
-:) select sleep(1000)
+:) select sleep(1000);
 ```
 
 Если теперь запустить ```clickhouse-client``` в другом терминале, можно будет вывести список запросов, а также некоторую
-полезную информацию:
+полезную информацию о них:
 ```
-:) show processlist
+:) show processlist;
 ```
 
 ![](images/long_query.png)

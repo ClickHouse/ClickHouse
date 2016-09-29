@@ -25,7 +25,7 @@ public:
 
 	String getEngineName() const override { return "Ordinary"; }
 
-	void loadTables(Context & context, boost::threadpool::pool * thread_pool) override;
+	void loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag) override;
 
 	bool isTableExist(const String & table_name) const override;
 	StoragePtr tryGetTable(const String & table_name) override;
@@ -41,6 +41,8 @@ public:
 	StoragePtr detachTable(const String & table_name) override;
 
 	void renameTable(const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name) override;
+
+	time_t getTableMetadataModificationTime(const String & table_name) override;
 
 	ASTPtr getCreateQuery(const String & table_name) const override;
 

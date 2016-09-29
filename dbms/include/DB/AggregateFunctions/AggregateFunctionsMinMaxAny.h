@@ -62,6 +62,7 @@ struct SingleValueDataFixed
 		value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
 	}
 
+	/// Assuming to.has()
 	void change(const Self & to)
 	{
 		has_value = true;
@@ -81,7 +82,24 @@ struct SingleValueDataFixed
 
 	bool changeFirstTime(const Self & to)
 	{
-		if (!has())
+		if (!has() && to.has())
+		{
+			change(to);
+			return true;
+		}
+		else
+			return false;
+	}
+
+	bool changeEveryTime(const IColumn & column, size_t row_num)
+	{
+		change(column, row_num);
+		return true;
+	}
+
+	bool changeEveryTime(const Self & to)
+	{
+		if (to.has())
 		{
 			change(to);
 			return true;
@@ -132,6 +150,16 @@ struct SingleValueDataFixed
 		}
 		else
 			return false;
+	}
+
+	bool isEqualTo(const Self & to) const
+	{
+		return has() && to.value == value;
+	}
+
+	bool isEqualTo(const IColumn & column, size_t row_num) const
+	{
+		return has() && static_cast<const ColumnVector<T> &>(column).getData()[row_num] == value;
 	}
 };
 
@@ -229,7 +257,7 @@ struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
 		}
 	}
 
-
+	/// Assuming to.has()
 	void changeImpl(StringRef value)
 	{
 		Int32 value_size = value.size;
@@ -282,7 +310,24 @@ struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
 
 	bool changeFirstTime(const Self & to)
 	{
-		if (!has())
+		if (!has() && to.has())
+		{
+			change(to);
+			return true;
+		}
+		else
+			return false;
+	}
+
+	bool changeEveryTime(const IColumn & column, size_t row_num)
+	{
+		change(column, row_num);
+		return true;
+	}
+
+	bool changeEveryTime(const Self & to)
+	{
+		if (to.has())
 		{
 			change(to);
 			return true;
@@ -333,6 +378,16 @@ struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
 		}
 		else
 			return false;
+	}
+
+	bool isEqualTo(const Self & to) const
+	{
+		return has() && to.getStringRef() == getStringRef();
+	}
+
+	bool isEqualTo(const IColumn & column, size_t row_num) const
+	{
+		return has() && static_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) == getStringRef();
 	}
 };
 
@@ -404,7 +459,24 @@ struct SingleValueDataGeneric
 
 	bool changeFirstTime(const Self & to)
 	{
-		if (!has())
+		if (!has() && to.has())
+		{
+			change(to);
+			return true;
+		}
+		else
+			return false;
+	}
+
+	bool changeEveryTime(const IColumn & column, size_t row_num)
+	{
+		change(column, row_num);
+		return true;
+	}
+
+	bool changeEveryTime(const Self & to)
+	{
+		if (to.has())
 		{
 			change(to);
 			return true;
@@ -476,6 +548,16 @@ struct SingleValueDataGeneric
 		else
 			return false;
 	}
+
+	bool isEqualTo(const IColumn & column, size_t row_num) const
+	{
+		return has() && value == column[row_num];
+	}
+
+	bool isEqualTo(const Self & to) const
+	{
+		return has() && to.value == value;
+	}
 };
 
 
@@ -522,10 +604,77 @@ struct AggregateFunctionAnyLastData : Data
 {
 	using Self = AggregateFunctionAnyLastData<Data>;
 
-	bool changeIfBetter(const IColumn & column, size_t row_num) { this->change(column, row_num); return true; }
-	bool changeIfBetter(const Self & to) 						{ this->change(to); return true; }
+	bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeEveryTime(column, row_num); }
+	bool changeIfBetter(const Self & to) 						{ return this->changeEveryTime(to); }
 
 	static const char * name() { return "anyLast"; }
+};
+
+
+/** Implement 'heavy hitters' algorithm.
+  * Selects most frequent value if its frequency is more than 50% in each thread of execution.
+  * Otherwise, selects some arbitary value.
+  * http://www.cs.umd.edu/~samir/498/karp.pdf
+  */
+template <typename Data>
+struct AggregateFunctionAnyHeavyData : Data
+{
+	size_t counter = 0;
+
+	using Self = AggregateFunctionAnyHeavyData<Data>;
+
+	bool changeIfBetter(const IColumn & column, size_t row_num)
+	{
+		if (this->isEqualTo(column, row_num))
+		{
+			++counter;
+		}
+		else
+		{
+			if (counter == 0)
+			{
+				this->change(column, row_num);
+				++counter;
+				return true;
+			}
+			else
+				--counter;
+		}
+		return false;
+	}
+
+	bool changeIfBetter(const Self & to)
+	{
+		if (this->isEqualTo(to))
+		{
+			counter += to.counter;
+		}
+		else
+		{
+			if (counter < to.counter)
+			{
+				this->change(to);
+				return true;
+			}
+			else
+				counter -= to.counter;
+		}
+		return false;
+	}
+
+	void write(WriteBuffer & buf, const IDataType & data_type) const
+	{
+		Data::write(buf, data_type);
+		writeBinary(counter, buf);
+	}
+
+	void read(ReadBuffer & buf, const IDataType & data_type)
+	{
+		Data::read(buf, data_type);
+		readBinary(counter, buf);
+	}
+
+	static const char * name() { return "anyHeavy"; }
 };
 
 

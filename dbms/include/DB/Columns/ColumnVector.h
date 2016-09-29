@@ -5,6 +5,7 @@
 
 #include <DB/Common/Exception.h>
 #include <DB/Common/Arena.h>
+#include <DB/Common/SipHash.h>
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteHelpers.h>
@@ -182,6 +183,11 @@ public:
 		return pos + sizeof(T);
 	}
 
+	void updateHashWithValue(size_t n, SipHash & hash) const override
+	{
+		hash.update(reinterpret_cast<const char *>(&data[n]), sizeof(T));
+	}
+
 	size_t byteSize() const override
 	{
 		return data.size() * sizeof(data[0]);
@@ -257,6 +263,16 @@ public:
 	void get(size_t n, Field & res) const override
 	{
 		res = typename NearestFieldType<T>::Type(data[n]);
+	}
+
+	const T & getElement(size_t n) const
+	{
+		return data[n];
+	}
+
+	T & getElement(size_t n)
+	{
+		return data[n];
 	}
 
 	UInt64 get64(size_t n) const override

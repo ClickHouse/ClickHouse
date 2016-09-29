@@ -1,3 +1,4 @@
+#include <experimental/optional>
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockOutputStream.h>
@@ -36,6 +37,7 @@ StorageMergeTree::StorageMergeTree(
 	const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 	size_t index_granularity_,
 	const MergeTreeData::MergingParams & merging_params_,
+	bool has_force_restore_data_flag,
 	const MergeTreeSettings & settings_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
@@ -47,10 +49,9 @@ StorageMergeTree::StorageMergeTree(
 		 settings_, database_name_ + "." + table_name, false),
 	reader(data), writer(data), merger(data),
 	increment(0),
-	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)")),
-	shutdown_called(false)
+	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
-	data.loadDataParts(false);
+	data.loadDataParts(has_force_restore_data_flag);
 	data.clearOldParts();
 	data.clearOldTemporaryDirectories();
 	increment.set(data.getMaxDataPartIndex());
@@ -87,19 +88,18 @@ StoragePtr StorageMergeTree::create(
 	const ASTPtr & sampling_expression_,
 	size_t index_granularity_,
 	const MergeTreeData::MergingParams & merging_params_,
+	bool has_force_restore_data_flag_,
 	const MergeTreeSettings & settings_)
 {
-	auto res = new StorageMergeTree{
+	auto res = make_shared(
 		path_, database_name_, table_name_,
 		columns_, materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
-		sampling_expression_, index_granularity_, merging_params_, settings_
-	};
-	StoragePtr res_ptr = res->thisPtr();
+		sampling_expression_, index_granularity_, merging_params_, has_force_restore_data_flag_, settings_
+	);
+	res->merge_task_handle = res->background_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res.get(), std::placeholders::_1));
 
-	res->merge_task_handle = res->background_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res, std::placeholders::_1));
-
-	return res_ptr;
+	return res;
 }
 
 
@@ -108,7 +108,7 @@ void StorageMergeTree::shutdown()
 	if (shutdown_called)
 		return;
 	shutdown_called = true;
-	merger.cancel();
+	merger.cancelForever();
 	background_pool.removeTask(merge_task_handle);
 }
 
@@ -130,7 +130,7 @@ BlockInputStreams StorageMergeTree::read(
 	auto & select = typeid_cast<const ASTSelectQuery &>(*query);
 
 	/// Try transferring some condition from WHERE to PREWHERE if enabled and viable
-	if (settings.optimize_move_to_prewhere && select.where_expression && !select.prewhere_expression && !select.final)
+	if (settings.optimize_move_to_prewhere && select.where_expression && !select.prewhere_expression && !select.final())
 		MergeTreeWhereOptimizer{query, context, data, column_names, log};
 
 	return reader.read(column_names, query, context, settings, processed_stage, max_block_size, threads, nullptr, 0);
@@ -157,7 +157,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 	table_name = new_table_name;
 	full_path = new_full_path;
 
-	/// TODO: Можно обновить названия логгеров у this, data, reader, writer, merger.
+	/// NOTE: Logger names are not updated.
 }
 
 void StorageMergeTree::alter(
@@ -167,7 +167,7 @@ void StorageMergeTree::alter(
 	const Context & context)
 {
 	/// NOTE: Здесь так же как в ReplicatedMergeTree можно сделать ALTER, не блокирующий запись данных надолго.
-	const MergeTreeMergeBlocker merge_blocker{merger};
+	auto merge_blocker = merger.cancel();
 
 	auto table_soft_lock = lockDataForAlter();
 
@@ -200,6 +200,9 @@ void StorageMergeTree::alter(
 
 	if (primary_key_is_modified && data.merging_params.mode == MergeTreeData::MergingParams::Unsorted)
 		throw Exception("UnsortedMergeTree cannot have primary key", ErrorCodes::BAD_ARGUMENTS);
+
+	if (primary_key_is_modified && supportsSampling())
+		throw Exception("MODIFY PRIMARY KEY only supported for tables without sampling key", ErrorCodes::BAD_ARGUMENTS);
 
 	MergeTreeData::DataParts parts = data.getAllDataParts();
 	for (const MergeTreeData::DataPartPtr & part : parts)
@@ -249,6 +252,44 @@ void StorageMergeTree::alter(
 		data.loadDataParts(false);
 }
 
+
+/// While exists, marks parts as 'currently_merging' and reserves free space on filesystem.
+/// It's possible to mark parts before.
+struct CurrentlyMergingPartsTagger
+{
+	MergeTreeData::DataPartsVector parts;
+	DiskSpaceMonitor::ReservationPtr reserved_space;
+	StorageMergeTree * storage = nullptr;
+
+	CurrentlyMergingPartsTagger() = default;
+
+	CurrentlyMergingPartsTagger(const MergeTreeData::DataPartsVector & parts_, size_t total_size, StorageMergeTree & storage_)
+		: parts(parts_), storage(&storage_)
+	{
+		/// Assume mutex is already locked, because this method is called from mergeTask.
+		reserved_space = DiskSpaceMonitor::reserve(storage->full_path, total_size); /// May throw.
+		for (const auto & part : parts)
+		{
+			if (storage->currently_merging.count(part))
+				throw Exception("Tagging alreagy tagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+		}
+		storage->currently_merging.insert(parts.begin(), parts.end());
+	}
+
+	~CurrentlyMergingPartsTagger()
+	{
+		std::lock_guard<std::mutex> lock(storage->currently_merging_mutex);
+
+		for (const auto & part : parts)
+		{
+			if (!storage->currently_merging.count(part))
+				std::terminate();
+			storage->currently_merging.erase(part);
+		}
+	}
+};
+
+
 bool StorageMergeTree::merge(
 	size_t aio_threshold,
 	bool aggressive,
@@ -265,14 +306,19 @@ bool StorageMergeTree::merge(
 	size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
 	/// Нужно вызывать деструктор под незалоченным currently_merging_mutex.
-	CurrentlyMergingPartsTaggerPtr merging_tagger;
+	std::experimental::optional<CurrentlyMergingPartsTagger> merging_tagger;
 	String merged_name;
 
 	{
 		std::lock_guard<std::mutex> lock(currently_merging_mutex);
 
 		MergeTreeData::DataPartsVector parts;
-		auto can_merge = std::bind(&StorageMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
+
+		auto can_merge = [this] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
+		{
+			return !currently_merging.count(left) && !currently_merging.count(right);
+		};
+
 		/// Если слияние запущено из пула потоков, и хотя бы половина потоков сливает большие куски,
 		///  не будем сливать большие куски.
 		size_t big_merges = background_pool.getCounter("big merges");
@@ -294,8 +340,7 @@ bool StorageMergeTree::merge(
 		if (!selected)
 			return false;
 
-		merging_tagger = std::make_shared<CurrentlyMergingPartsTagger>(
-			parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(parts), *this);
+		merging_tagger.emplace(parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(parts), *this);
 
 		/// Если собираемся сливать большие куски, увеличим счетчик потоков, сливающих большие куски.
 		if (pool_context)
@@ -314,7 +359,7 @@ bool StorageMergeTree::merge(
 	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
 
 	auto new_part = merger.mergePartsToTemporaryPart(
-		merging_tagger->parts, merged_name, *merge_entry, aio_threshold, time(0), &*merging_tagger->reserved_space);
+		merging_tagger->parts, merged_name, *merge_entry, aio_threshold, time(0), merging_tagger->reserved_space.get());
 
 	merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
 
@@ -344,12 +389,6 @@ bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & background_
 }
 
 
-bool StorageMergeTree::canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
-{
-	return !currently_merging.count(left) && !currently_merging.count(right);
-}
-
-
 void StorageMergeTree::dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings)
 {
 	if (unreplicated)
@@ -357,7 +396,7 @@ void StorageMergeTree::dropPartition(ASTPtr query, const Field & partition, bool
 
 	/// Просит завершить мерджи и не позволяет им начаться.
 	/// Это защищает от "оживания" данных за удалённую партицию после завершения мерджа.
-	const MergeTreeMergeBlocker merge_blocker{merger};
+	auto merge_blocker = merger.cancel();
 	/// Дожидается завершения мерджей и не даёт начаться новым.
 	auto lock = lockForAlter();
 
@@ -440,12 +479,12 @@ void StorageMergeTree::attachPartition(ASTPtr query, const Field & field, bool u
 }
 
 
-void StorageMergeTree::freezePartition(const Field & partition, const Settings & settings)
+void StorageMergeTree::freezePartition(const Field & partition, const String & with_name, const Settings & settings)
 {
 	/// Префикс может быть произвольным. Не обязательно месяц - можно указать лишь год.
 	data.freezePartition(partition.getType() == Field::Types::UInt64
 		? toString(partition.get<UInt64>())
-		: partition.safeGet<String>());
+		: partition.safeGet<String>(), with_name);
 }
 
 }

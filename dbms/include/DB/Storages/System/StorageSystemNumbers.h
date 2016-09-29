@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.hpp>
+
 #include <DB/Storages/IStorage.h>
 
 
@@ -10,8 +12,10 @@ namespace DB
   * Таблица содержит единственный столбец number UInt64.
   * Из этой таблицы можно прочитать все натуральные числа, начиная с 0 (до 2^64 - 1, а потом заново).
   */
-class StorageSystemNumbers : public IStorage
+class StorageSystemNumbers : private ext::shared_ptr_helper<StorageSystemNumbers>, public IStorage
 {
+friend class ext::shared_ptr_helper<StorageSystemNumbers>;
+
 public:
 	static StoragePtr create(const std::string & name_, bool multithreaded_ = false);
 

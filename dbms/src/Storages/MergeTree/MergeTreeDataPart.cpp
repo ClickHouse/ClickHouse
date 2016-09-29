@@ -9,6 +9,7 @@
 #include <DB/Core/Defines.h>
 #include <DB/Common/SipHash.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Common/StringUtils.h>
 #include <DB/Storages/MergeTree/MergeTreeDataPart.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 
@@ -229,7 +230,7 @@ void MergeTreeDataPartChecksums::summaryDataChecksum(SipHash & hash) const
 	{
 		const String & name = it.first;
 		const Checksum & sum = it.second;
-		if (name.size() < strlen(".bin") || name.substr(name.size() - 4) != ".bin")
+		if (!endsWith(name, ".bin"))
 			continue;
 		size_t len = name.size();
 		hash.update(reinterpret_cast<const char *>(&len), sizeof(len));
@@ -319,7 +320,7 @@ MergeTreeDataPart::~MergeTreeDataPart()
 			if (!dir.exists())
 				return;
 
-			if (name.substr(0, strlen("tmp")) != "tmp")
+			if (!startsWith(name,"tmp"))
 			{
 				LOG_ERROR(storage.log, "~DataPart() should remove part " << path
 					<< " but its name doesn't start with tmp. Too suspicious, keeping the part.");

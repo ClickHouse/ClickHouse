@@ -65,10 +65,10 @@ private:
 					? block.getPositionByName(desc[i].column_name)
 					: desc[i].column_number;
 
-				sort_columns[i] = &*block.getByPosition(column_number).column;
+				sort_columns[i] = block.getByPosition(column_number).column.get();
 			}
 
-			const IColumn * sign_icolumn = &*block.getByName(sign_column_name).column;
+			const IColumn * sign_icolumn = block.getByName(sign_column_name).column.get();
 
 			sign_column = typeid_cast<const ColumnInt8 *>(sign_icolumn);
 

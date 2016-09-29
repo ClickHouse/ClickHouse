@@ -49,7 +49,7 @@ StorageSystemReplicationQueue::StorageSystemReplicationQueue(const std::string &
 
 StoragePtr StorageSystemReplicationQueue::create(const std::string & name_)
 {
-	return (new StorageSystemReplicationQueue(name_))->thisPtr();
+	return make_shared(name_);
 }
 
 

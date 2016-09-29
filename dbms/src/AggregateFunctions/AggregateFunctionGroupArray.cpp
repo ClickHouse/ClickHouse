@@ -26,7 +26,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string & name,
 
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction({"groupArray"}, createAggregateFunctionGroupArray);
+	factory.registerFunction("groupArray", createAggregateFunctionGroupArray);
 }
 
 }

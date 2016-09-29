@@ -263,7 +263,8 @@ In ClickHouse, data can reside on different shards. Each shard can be a group of
 
 If you are familiar with standard SQL, we can&#39;t really talk about SQL support.
 NULLs are not supported. All the functions have different names. However, this is a declarative query language based on SQL that can&#39;t be differentiated from SQL in many instances.
-JOINs are supported. Subqueries are supported in FROM, IN, and JOIN clauses.
+JOINs are supported. Subqueries are supported in FROM, IN, JOIN clauses; and scalar subqueries.
+Correllated subqueries are not supported.
 
 <h3 class="not-for-contents">7. Vector engine.</h3>
 
@@ -346,6 +347,23 @@ There are no analogs to ClickHouse available.
 At this time (May 2016), there aren&#39;t any available open-source and free systems that have all the features listed above. However, these features are absolutely necessary for Yandex.Metrica.
 
 
+==Possible silly questions==
+
+<h3 class="not-for-contents">1. Why not to use systems like map-reduce?</h3>
+
+Systems like map-reduce are distributed computing systems, where the reduce phase is performed using distributed sorting.
+Regading this aspect, map-reduce is similar to other systems like YAMR, <a href="http://hadoop.apache.org/">Hadoop</a>, <a href="https://yandexdataschool.ru/about/conference/program/babenko">YT</a>.
+
+These systems are not suitable for online queries because of latency, So they can't be used in backend-level for web interface.
+Systems like this also are not suitable for realtime updates.
+Distributed sorting is not optimal solution for reduce operations, if the result of the operation and all intermediate results, shall they exist, fit in operational memory of a single server, as usually happens in case of online analytical queries.
+In this case the optimal way to perform reduce operations is by using a hash-table. A common optimization method for map-reduce tasks is combine operation (partial reduce) which uses hash-tables in memory. This optimization is done by the user manually.
+Distributed sorting is the main reason for long latencies of simple map-reduce jobs.
+
+Systems similar to map-reduce enable running any code on the cluster. But for OLAP use-cases declerative query languages are better suited as they allow to carry out investigations faster. For example, for Hadoop there are <a href="https://hive.apache.org/">Hive</a> and <a href="https://pig.apache.org/">Pig</a>. There are others: <a href="http://impala.io/">Cloudera Impala</a>, <a href="http://shark.cs.berkeley.edu/">Shark (depricated)</a> and <a href="http://spark.apache.org/sql/">Spark SQL</a> for <a href="http://spark.apache.org/">Spark</a>, <a href="https://prestodb.io/">Presto</a>, <a href="https://drill.apache.org/">Apache Drill</a>.
+However, performance of such tasks is highly sub-optimal compared to the performance of specialized systems and relatively high latency does not allow the use of these systems as a backend for the web interface.
+YT allows you to store separate groups of columns. But YT is not a truly columnar storage system, as the system has no fixed length data types (so you can efficiently store a number without "garbage"), and there is no vector engine. Tasks in YT are performed by arbitrary code in streaming mode, so can not be suficiently optimized (up to hundreds of millions of lines per second per server). In 2014-2016 YT is to develop "dynamic table sorting" functionality  using Merge Tree, strongly typed values ​​and SQL-like language support. Dynamicly sorted tables are not suited for OLAP tasks, since the data is stored in rows. Query language development in YT is still in incubating phase, which does not allow it to focus on this functionality. YT developers are considering dynamicly sorted tables for use in OLTP and Key-Value scenarios.
+
 ==Performance==
 
 According to internal testing results, ClickHouse shows the best performance for comparable operating scenarios among systems of its class that were available for testing. This includes the highest throughput for long queries, and the lowest latency on short queries. Testing results are shown <a href="benchmark.html">on this page</a>.
@@ -383,7 +401,7 @@ This is not a cross-platform system. It requires Linux Ubuntu Precise (12.04) or
 To test for SSE 4.2 support, do
 %%grep -q sse4_2 /proc/cpuinfo &amp;&amp; echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"%%
 
-We recommend using Ubuntu Trusty or Ubuntu Precise.
+We recommend using Ubuntu Trusty or Ubuntu Xenial or Ubuntu Precise.
 The terminal must use UTF-8 encoding (the default in Ubuntu).
 
 
@@ -399,23 +417,23 @@ In %%/etc/apt/sources.list%% (or in a separate %%/etc/apt/sources.list.d/clickho
 On Ubuntu Trusty (14.04):
 
 %%
-deb http://repo.yandex.ru/clickhouse/trusty/ dists/stable/main/binary-amd64/
+deb http://repo.yandex.ru/clickhouse/trusty stable main
 %%
 
-On Ubuntu Precise (12.04):
-
-%%
-deb http://repo.yandex.ru/clickhouse/precise/ dists/stable/main/binary-amd64/
-%%
+For other Ubuntu versions, replace %%trusty%% to %%xenial%% or %%precise%%.
 
 Then run:
 
 %%
+sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server-common
 %%
 
-You can also download and install packages manually from here: <a href="https://dist.yandex.ru/metrika/stable/amd64/">https://dist.yandex.ru/metrika/stable/amd64/</a>.
+You can also download and install packages manually from here:
+<a href="http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/">http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/</a>,
+<a href="http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/">http://repo.yandex.ru/clickhouse/xenial/pool/main/c/clickhouse/</a>
+<a href="http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/">http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/</a>.
 
 ClickHouse contains access restriction settings. They are located in the &#39;users.xml&#39; file (next to &#39;config.xml&#39;).
 By default, access is allowed from everywhere for the default user without a password. See &#39;user/default/networks&#39;. For more information, see the section &quot;Configuration files&quot;.
@@ -441,6 +459,13 @@ For the server, create a catalog with data, such as:
 Run &#39;chown&#39; for the desired user.
 
 Note the path to logs in the server config (src/dbms/src/Server/config.xml).
+
+
+===Other methods of installation===
+
+The Docker image is located here: <a href="https://hub.docker.com/r/yandex/clickhouse-server/">https://hub.docker.com/r/yandex/clickhouse-server/</a>
+
+There is Gentoo overlay located here: <a href="https://github.com/kmeaw/clickhouse-overlay">https://github.com/kmeaw/clickhouse-overlay</a>
 
 
 ===Launch===
@@ -521,7 +546,7 @@ Otherwise, you could use one of available public datasets, described <a href="ht
 If you are Yandex employee, use internal ClickHouse maillist.
 You can subscribe to this list to get announcements, information on new developments, and questions that other users have.
 
-Otherwise, you could ask questions on <a href="https://stackoverflow.com/">Stackoverflow</a> with 'clickhouse' tag; discuss in <a href="https://groups.google.com/group/clickhouse">Google Groups</a>; or send private message to developers to address <a href="mailto:clickhouse-feedback@yandex-team.com">clickhouse-feedback@yandex-team.com</a>.
+Otherwise, you could ask questions on <a href="https://stackoverflow.com/">Stackoverflow</a>; discuss in <a href="https://groups.google.com/group/clickhouse">Google Groups</a>; or send private message to developers to address <a href="mailto:clickhouse-feedback@yandex-team.com">clickhouse-feedback@yandex-team.com</a>.
 
 
 
@@ -737,6 +762,23 @@ The optional &#39;quota_key&#39; parameter can be passed as the quota key (any s
 The HTTP interface allows passing external data (external temporary tables) for querying. For more information, see the section &quot;External data for query processing&quot;.
 
 
+==JDBC driver==
+
+There is official JDBC driver for ClickHouse. See <a href="https://github.com/yandex/clickhouse-jdbc">here</a>.
+
+
+==Third-party client libraries==
+
+There exist third-party client libraries for <a href="https://github.com/Infinidat/infi.clickhouse_orm">Python</a>, PHP (<a href="https://github.com/8bitov/clickhouse-php-client">1</a>, <a href="https://github.com/SevaCode/PhpClickHouseClient">2</a>, <a href="https://github.com/smi2/phpClickHouse">3</a>), <a href="https://github.com/roistat/go-clickhouse">Go</a>, Node.js (<a href="https://github.com/TimonKK/clickhouse">1</a>, <a href="https://github.com/apla/node-clickhouse">2</a>), <a href="https://github.com/elcamlost/perl-DBD-ClickHouse">Perl</a>.
+
+Libraries was not tested by us. Ordering is arbitrary.
+
+
+==Third-party GUI==
+
+There exist minimalistic web UI for ClickHouse by <a href="https://github.com/smi2/clickhouse-frontend">SMI2</a>.
+
+
 ==Native interface (TCP)==
 
 The native interface is used in the &quot;clickhouse-client&quot; command-line client for interaction between servers with distributed query processing, and also in C++ programs. We will only cover the command-line client.
@@ -793,6 +835,20 @@ You can also specify any settings that will be used for processing queries. For 
 The client can be used in interactive and non-interactive (batch) mode.
 To use batch mode, specify the &#39;query&#39; parameter, or send data to &#39;stdin&#39; (it verifies that &#39;stdin&#39; is not a terminal), or both.
 Similar to the HTTP interface, when using the &#39;query&#39; parameter and sending data to &#39;stdin&#39;, the request is a concatenation of the &#39;query&#39; parameter, a line break, and the data in &#39;stdin&#39;. This is convenient for large INSERT queries.
+
+Examples for insert data via clickhouse-client:
+
+%%
+echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+
+cat &lt;&lt;_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+3, 'some text', '2016-08-14 00:00:00'
+4, 'some more text', '2016-08-14 00:00:01'
+_EOF
+
+cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+%%
+
 In batch mode, the default data format is TabSeparated. You can set the format in the FORMAT clause of the query.
 
 By default, you can only process a single query in batch mode. To make multiple queries from a &quot;script,&quot; use the &#39;multiquery&#39; parameter. This works for all queries except INSERT. Query results are output consecutively without additional separators.
@@ -889,7 +945,9 @@ Examples: %%1%%, %%18446744073709551615%%, %%0xDEADBEEF%%, %%01%%, %%0.1%%, %%1e
 
 <h4>String literals</h4>
 
-Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have special meanings: %%\b%%, %%\f%%, %%\r%%, %%\n%%, %%\t%%, %%\0%%. In all other cases, escape sequences like <span class="inline-example">\<i>x</i></span>, where <i>x</i> is any character, are transformed to <i>x</i>. This means that the sequences %%\&#39;%% and %%\\%% can be used. The value will have the String type.
+Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have special meanings: %%\b%%, %%\f%%, %%\r%%, %%\n%%, %%\t%%, %%\0%%, %%\a%%, %%\v%%, <span class="inline-example">\x<i>HH</i></span>. In all other cases, escape sequences like <span class="inline-example">\<i>c</i></span>, where <i>c</i> is any character, are transformed to <i>c</i>. This means that the sequences %%\&#39;%% and %%\\%% can be used. The value will have the String type.
+
+Minimum set of symbols that must be escaped in string literal is %%'%% and %%\%%.
 
 <h4>Compound literals</h4>
 
@@ -2155,7 +2213,7 @@ This is more optimal than using the normal IN. However, keep the following point
 2. The temporary table will be sent to all the remote servers. Transmission does not account for network topology. For example, if 10 remote servers reside in a datacenter that is very remote in relation to the requestor server, the data will be sent 10 times over the channel to the remote datacenter. Try to avoid large data sets when using %%GLOBAL IN%%.
 3. When transmitting data to remote servers, restrictions on network bandwidth are not configurable. You might overload the network.
 4. Try to distribute data across servers so that you don&#39;t need to use %%GLOBAL IN%% on a regular basis.
-5. If you need to use %%GLOBAL IN%% often, plan the location of the ClickHouse cluster so that a single group of replicas resides in no more than one data center, and there is a fast network between them.
+5. If you need to use %%GLOBAL IN%% often, plan the location of the ClickHouse cluster so that in each datacenter, there will be at least one replica of each shard, and there is a fast network between them - for possibility to process query with transferring data only inside datacenter.
 
 It also makes sense to specify a local table in the %%GLOBAL IN%% clause, in case this local table is only available on the requestor server and you want to use data from it on remote servers.
 
@@ -2792,7 +2850,7 @@ Replication is an optional feature. To use replication, set the addresses of the
 &lt;/zookeeper>
 %%
 
-Use ZooKeeper version 3.4.5 or later. For example, the version in the Ubuntu Precise package is too old. You can get a newer version for Ubuntu Precise from the repository <a href="https://dist.yandex.net/metrika/stable/amd64/">https://dist.yandex.net/metrika/stable/amd64/</a>.
+Use ZooKeeper version 3.4.5 or later. For example, the version in the Ubuntu Precise package is too old.
 
 You can specify any existing ZooKeeper cluster - the system will use a directory on it for its own data (the directory is specified when creating a replicatable table).
 
@@ -2962,10 +3020,10 @@ Example:
 ALTER TABLE merge.hits
 RESHARD PARTITION 201501
 TO
-	/clickhouse/tables/01-01/hits WEIGHT 1,
-	/clickhouse/tables/01-02/hits WEIGHT 2,
-	/clickhouse/tables/01-03/hits WEIGHT 1,
-	/clickhouse/tables/01-04/hits WEIGHT 1
+	'/clickhouse/tables/01-01/hits' WEIGHT 1,
+	'/clickhouse/tables/01-02/hits' WEIGHT 2,
+	'/clickhouse/tables/01-03/hits' WEIGHT 1,
+	'/clickhouse/tables/01-04/hits' WEIGHT 1
 USING UserID
 %%
 
@@ -3046,7 +3104,7 @@ Used for tests.
 
 ==system.tables==
 
-This table contains the String columns &#39;database&#39;, &#39;name&#39;, and &#39;engine&#39;.
+This table contains the String columns &#39;database&#39;, &#39;name&#39;, and &#39;engine&#39; and DateTime column metadata_modification_time.
 Each table that the server knows about is entered in the &#39;system.tables&#39; table.
 There is an issue: table engines are specified without parameters.
 This system table is used for implementing SHOW TABLES queries.
@@ -3484,7 +3542,8 @@ The password can be omitted. In this case, an empty password is used.
 </div>
 <div class="island content">
 
-The format determines how data is given to you after SELECTs, and how it is accepted for INSERTs.
+The format determines how data is given (written by server as output) to you after SELECTs, and how it is accepted (read by server as input) for INSERTs.
+
 
 
 ==Native==
@@ -3498,20 +3557,20 @@ You can use this format to quickly generate dumps that can only be read by the C
 
 In TabSeparated format, data is written by row. Each row contains values separated by tabs. Each value is follow by a tab, except the last value in the row, which is followed by a line break. Strictly Unix line breaks are assumed everywhere. The last row also must contain a line break at the end. Values are written in text format, without enclosing quotation marks, and with special characters escaped.
 
-Whole numbers are written in decimal form. Numbers may contain an extra &quot;+&quot; symbol at the beginning (but it is not recorded during a write). Non-negative numbers can&#39;t contain the negative sign. When reading, it is allowed to parse an empty string as a zero, or (for signed types) a string consisting of just a minus sign as a zero. Numbers that do not fit into the corresponding data type may be parsed as a different number, without an error message.
+Numbers are written in decimal form. Numbers may contain an extra &quot;+&quot; symbol at the beginning (but it is not recorded during an output). Non-negative numbers can&#39;t contain the negative sign. When parsing, it is allowed to parse an empty string as a zero, or (for signed types) a string consisting of just a minus sign as a zero. Numbers that do not fit into the corresponding data type may be parsed as a different number, without an error message.
 
-Floating-point numbers are written in decimal form. The dot is used as the decimal separator. Exponential entries are supported, as are &#39;inf&#39;, &#39;+inf&#39;, &#39;-inf&#39;, and &#39;nan&#39;. An entry of floating-point numbers may begin or end with a decimal point.
-For writes, accuracy may be lost on floating-point numbers.
-For reads, a result is not necessarily the nearest machine-representable number.
+Floating-point numbers are formatted in decimal form. The dot is used as the decimal separator. Exponential entries are supported, as are &#39;inf&#39;, &#39;+inf&#39;, &#39;-inf&#39;, and &#39;nan&#39;. An entry of floating-point numbers may begin or end with a decimal point.
+During formatting, accuracy may be lost on floating-point numbers.
+During parsing, a result is not necessarily the nearest machine-representable number.
 
-Data is written in YYYY-MM-DD format and read in the same format, but with any characters as separators.
-Dates with times are written in the format YYYY-MM-DD hh:mm:ss and read in the same format, but with any characters as separators.
-This all occurs in the system time zone at the time the client or server starts (depending on which one formats data). For dates with times, daylight saving time is not specified. So if a dump has times during daylight saving time, the dump does not unequivocally match the data, and a read will select one of the two times.
-During a read operation, incorrect dates and dates with times can be parsed with natural overflow or as null dates and times, without an error message.
+Dates are formatted in YYYY-MM-DD format and parsed in the same format, but with any characters as separators.
+DateTimes are formatted in the format YYYY-MM-DD hh:mm:ss and parsed in the same format, but with any characters as separators.
+This all occurs in the system time zone at the time the client or server starts (depending on which one formats data). For DateTimes, daylight saving time is not specified. So if a dump has times during daylight saving time, the dump does not unequivocally match the data, and parsing will select one of the two times.
+During a parsing operation, incorrect dates and dates with times can be parsed with natural overflow or as null dates and times, without an error message.
 
-As an exception, reading dates with times is also supported in Unix timestamp format, if it consists of exactly 10 decimal digits. However, the result is not time zone-dependent. The formats YYYY-MM-DD hh:mm:ss and NNNNNNNNNN are differentiated automatically.
+As an exception, parsing DateTime is also supported in Unix timestamp format, if it consists of exactly 10 decimal digits. The result is not time zone-dependent. The formats YYYY-MM-DD hh:mm:ss and NNNNNNNNNN are differentiated automatically.
 
-Strings are written with backslash-escaped special characters. The following escape sequences are used: %%\b%%, %%\f%%, %%\r,%% %%\n%%, %%\t%%, %%\0%%, %%\&#39;%%, and %%\\%%. For a read, any sequences of the type <span class="inline-example">\<i>x</i></span> are also supported, where <i>x</i> is any character. These sequences are converted to <i>x</i>. This means that a read supports formats where a line break can be written as %%\n%% or as %%\%% and a line break. For example, the string &#39;Hello world&#39; with a line break between the words instead of a space can be retrieved in any of the following variations:
+Strings are parsed and formatted with backslash-escaped special characters. The following escape sequences are used while formatting: %%\b%%, %%\f%%, %%\r,%% %%\n%%, %%\t%%, %%\0%%, %%\&#39;%%, and %%\\%%. For parsing, also supported %%\a%%, %%\v%% and <span class="inline-example">\x<i>HH</i></span> (hex escape sequence) and any sequences of the type <span class="inline-example">\<i>c</i></span> where <i>c</i> is any character (these sequences are converted to <i>c</i>). This means that parsing supports formats where a line break can be written as %%\n%% or as %%\%% and a line break. For example, the string &#39;Hello world&#39; with a line break between the words instead of a space can be retrieved in any of the following variations:
 
 %%Hello\nworld%%
 
@@ -3522,7 +3581,9 @@ The second variant is supported because MySQL uses it when writing tab-separated
 
 Only a small set of symbols are escaped. You can easily stumble onto a string value that your terminal will ruin in output.
 
-Arrays are written as a list of comma-separated values in square brackets. Number items in the array are written as normally, but dates, dates with times, and strings are written in single quotes with the same escaping rules as above.
+Minimum set of symbols that you must escape in TabSeparated format is tab, newline (LF) and backslash.
+
+Arrays are formatted as a list of comma-separated values in square brackets. Number items in the array are formatted as normally, but dates, dates with times, and strings are formatted in single quotes with the same escaping rules as above.
 
 The TabSeparated format is convenient for processing data using custom programs and scripts. It is used by default in the HTTP interface, and in the command-line client&#39;s batch mode. This format also allows transferring data between different DBMSs. For example, you can get a dump from MySQL and upload it to ClickHouse, or vice versa.
 
@@ -3547,20 +3608,21 @@ The TabSeparated format supports outputting total values (when using WITH TOTALS
 
 ==TabSeparatedWithNames==
 
-Differs from the TabSeparated format in that the column names are written in the first row.
-For a read, the first row is completely ignored. You can&#39;t use column names to determine their position or to check their correctness.
+Differs from the TabSeparated format in that the column names are output in the first row.
+For parsing, the first row is completely ignored. You can&#39;t use column names to determine their position or to check their correctness.
+(Support for using header while parsing could be added in future.)
 
 
 ==TabSeparatedWithNamesAndTypes==
 
-Differs from the TabSeparated format in that the column names are written to the first row, while the column types are in the second row.
-For a read, the first and second rows are completely ignored.
+Differs from the TabSeparated format in that the column names are output to the first row, while the column types are in the second row.
+For parsing, the first and second rows are completely ignored.
 
 
 ==TabSeparatedRaw==
 
-Differs from the TabSeparated format in that the rows are written without escaping.
-This format is only appropriate for writing (outputting a query result), but not for reading (retrieving data to insert in a table).
+Differs from the TabSeparated format in that the rows are formatted without escaping.
+This format is only appropriate for outputting a query result, but not for parsing data to insert into a table.
 
 
 ==BlockTabSeparated==
@@ -3570,7 +3632,23 @@ Each block consists of parts of columns, each of which is written on a separate 
 The values are tab-separated. The last value in a column part is followed by a line break instead of a tab.
 Blocks are separated by a double line break.
 The rest of the rules are the same as in the TabSeparated format.
-This format is only appropriate for writes, not for reads.
+This format is only appropriate for outputting a query result, not for parsing.
+
+
+==CSV==
+
+Comma separated values (<a href="https://tools.ietf.org/html/rfc4180">RFC</a>).
+
+String values are output in double quotes. Double quote inside a string is output as two consecutive double quotes. That's all escaping rules. Date and DateTime values are output in double quotes. Numbers are output without quotes. Fields are delimited by commas. Rows are delimited by unix newlines (LF). Arrays are output in following way: first, array are serialized to String (as in TabSeparated or Values formats), and then the String value are output in double quotes. Tuples are narrowed and serialized as separate columns.
+
+During parsing, values could be enclosed or not enclosed in quotes. Supported both single and double quotes. In particular, Strings could be represented without quotes - in that case, they are parsed up to comma or newline (CR or LF). Contrary to RFC, in case of parsing strings without quotes, leading and trailing spaces and tabs are ignored. As line delimiter, both Unix (LF), Windows (CR LF) or Mac OS Classic (LF CR) variants are supported.
+
+CSV format supports output of totals and extremes similar to TabSeparated format.
+
+
+==CSVWithNames==
+
+Also contains header, similar to TabSeparatedWithNames.
 
 
 ==RowBinary==
@@ -3578,13 +3656,20 @@ This format is only appropriate for writes, not for reads.
 Writes data by row in binary format. Rows and values are listed consecutively, without separators.
 This format is less efficient than the Native format, since it is row-based.
 
+Numbers is written in little endian, fixed width. For example, UInt64 takes 8 bytes.
+DateTime is written as UInt32 with unix timestamp value.
+Date is written as UInt16 with number of days since 1970-01-01 in value.
+String is written as length in varint (unsigned <a href="https://en.wikipedia.org/wiki/LEB128">LEB128</a>) format and then bytes of string.
+FixedString is written as just its bytes.
+Array is written as length in varint (unsigned <a href="https://en.wikipedia.org/wiki/LEB128">LEB128</a>) format and then all elements, contiguously.
+
 
 ==Pretty==
 
 Writes data as Unicode-art tables, also using ANSI-escape sequences for setting colors in the terminal.
 A full grid of the table is drawn, and each row occupies two lines in the terminal. Each result block is output as a separate table. This is necessary so that blocks can be output without buffering results (buffering would be necessary in order to pre-calculate the visible width of all the values).
 To avoid dumping too much data to the terminal, only the first 10,000 rows are printed. If the number of rows is greater than or equal to 10,000, the message &quot;Showed first 10,000&quot; is printed.
-This format is only appropriate for writes (outputting a query result), but not for reads.
+This format is only appropriate for outputting a query result, not for parsing.
 
 The Pretty format supports outputting total values (when using WITH TOTALS) and extremes (when &#39;extremes&#39; is set to 1). In these cases, total values and extreme values are output after the main data, in separate tables. Example (shown for the PrettyCompact format):
 
@@ -3651,15 +3736,17 @@ The same.
 ==Vertical==
 
 Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows, if each row consists of a large number of columns.
-This format is only appropriate for writes, not for reads.
+This format is only appropriate for outputting a query result, not for parsing.
 
 
 ==Values==
 
-Prints every row in brackets. Rows are separated by commas. There is no comma after the last row. The values inside the brackets are also comma-separated. Numbers are output in decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are similar to the TabSeparated format. During formatting, extra spaces aren&#39;t inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed).
+Prints every row in parentheses. Rows are separated by commas. There is no comma after the last row. The values inside the parentheses are also comma-separated. Numbers are output in decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are same as in the TabSeparated format. During formatting, extra spaces aren&#39;t inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed).
+
+Minimum set of symbols that you must escape in Values format is single quote and backslash.
 
 This is the format that is used in INSERT INTO t VALUES ...
-But you can also use it for output.
+But you can also use it for query result.
 
 
 ==JSON==
@@ -3741,8 +3828,8 @@ If the query contains GROUP BY, %%rows_before_limit_at_least%% is the exact numb
 %%totals%% - Total values (when using %%WITH TOTALS%%).
 %%extremes%% - Extreme values (when %%extremes%% is set to 1).
 
-
-This format is only appropriate for writes, not for reads.
+This format is only appropriate for outputting a query result, not for parsing.
+See JSONEachRow format for INSERT queries.
 
 
 ==JSONCompact==
@@ -3786,10 +3873,137 @@ Differs from JSON only in that data rows are output in arrays, not in objects. E
 }
 %%
 
+This format is only appropriate for outputting a query result, not for parsing.
+See JSONEachRow format for INSERT queries.
+
+
+==JSONEachRow==
+
+If put in SELECT query, displays data in newline delimited JSON (JSON objects separated by \\n character) format.
+If put in INSERT query, expects this kind of data as input.
+
+%%
+{"SearchPhrase":"","count()":"8267016"}
+{"SearchPhrase":"bathroom interior","count()":"2166"}
+{"SearchPhrase":"yandex","count()":"1655"}
+{"SearchPhrase":"spring 2014 fashion","count()":"1549"}
+{"SearchPhrase":"free-form photo","count()":"1480"}
+{"SearchPhrase":"Angelina Jolie","count()":"1245"}
+{"SearchPhrase":"omsk","count()":"1112"}
+{"SearchPhrase":"photos of dog breeds","count()":"1091"}
+{"SearchPhrase":"curtain design","count()":"1064"}
+{"SearchPhrase":"baku","count()":"1000"}
+%%
+
+Unlike JSON format, there are no replacements of invalid UTF-8 sequences. There can be arbitrary amount of bytes in a line.
+This is done in order to avoid data loss during formatting. Values are displayed analogous to JSON format.
+
+In INSERT queries JSON data can be supplied with arbitrary order of columns (JSON key-value pairs). It is also possible to omit values in which case the default value of the column is inserted. N.B. when using JSONEachRow format, complex default values are not supported, so when omitting a column its value will be zeros or empty string depending on its type.
+
+Space characters between JSON objects are skipped. Between objects there can be a comma which is ignored. Newline character is not a mandatory separator for objects.
+
+
+==TSKV==
+
+Similar to TabSeparated, but displays data in %%name=value%% format. Names are displayed just as in TabSeparated. Additionally, a %%=%% symbol is displayed.
+
+%%
+SearchPhrase=   count()=8267016
+SearchPhrase=bathroom interior    count()=2166
+SearchPhrase=yandex     count()=1655
+SearchPhrase=spring 2014 fashion    count()=1549
+SearchPhrase=free-form photo       count()=1480
+SearchPhrase=Angelina Jolie    count()=1245
+SearchPhrase=omsk       count()=1112
+SearchPhrase=photos of dog breeds    count()=1091
+SearchPhrase=curtain design        count()=1064
+SearchPhrase=baku       count()=1000
+%%
+
+In case of many small columns this format is obviously not effective and there usually is no reason to use it. This format is supported because it is used for some cases in Yandex.
+
+Format is supported both for input and output. In INSERT queries data can be supplied with arbitrary order of columns. It is also possible to omit values in which case the default value of the column is inserted. N.B. when using TSKV format, complex default values are not supported, so when omitting a column its value will be zeros or empty string depending on its type.
+
+
+==XML==
+
+XML format is supported only for displaying data, not for INSERTS. Example:
+
+%%
+&lt;?xml version='1.0' encoding='UTF-8' ?&gt;
+&lt;result&gt;
+        &lt;meta&gt;
+                &lt;columns&gt;
+                        &lt;column&gt;
+                                &lt;name&gt;SearchPhrase&lt;/name&gt;
+                                &lt;type&gt;String&lt;/type&gt;
+                        &lt;/column&gt;
+                        &lt;column&gt;
+                                &lt;name&gt;count()&lt;/name&gt;
+                                &lt;type&gt;UInt64&lt;/type&gt;
+                        &lt;/column&gt;
+                &lt;/columns&gt;
+        &lt;/meta&gt;
+        &lt;data&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;&lt;/SearchPhrase&gt;
+                        &lt;field&gt;8267016&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;bathroom interior&lt;/SearchPhrase&gt;
+                        &lt;field&gt;2166&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;yandex&gt;
+                        &lt;field&gt;1655&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;spring 2014 fashion&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1549&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;free-form photo&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1480&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;Angelina Jolie&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1245&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;omsk&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1112&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;photos of dog breeds&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1091&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;curtain design&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1064&lt;/field&gt;
+                &lt;/row&gt;
+                &lt;row&gt;
+                        &lt;SearchPhrase&gt;baku&lt;/SearchPhrase&gt;
+                        &lt;field&gt;1000&lt;/field&gt;
+                &lt;/row&gt;
+        &lt;/data&gt;
+        &lt;rows&gt;10&lt;/rows&gt;
+        &lt;rows_before_limit_at_least&gt;141137&lt;/rows_before_limit_at_least&gt;
+&lt;/result&gt;
+%%
+
+If name of a column contains some unacceptable character, field is used as a name. In other aspects XML uses JSON structure.
+As in case of JSON, invalid UTF-8 sequences are replaced by replacement character � so displayed text will only contain valid UTF-8 sequences.
+
+In string values %%&lt;%% and %%&amp;%% are displayed as %%&amp;lt;%% and %%&amp;amp;%%.
+
+Arrays are displayed as %%&lt;array&gt;&lt;elem&gt;Hello&lt;/elem&gt;&lt;elem&gt;World&lt;/elem&gt;...&lt;/array&gt;%%,
+and tuples as %%&lt;tuple&gt;&lt;elem&gt;Hello&lt;/elem&gt;&lt;elem&gt;World&lt;/elem&gt;...&lt;/tuple&gt;%%.
+
 
 ==Null==
 
-Nothing is output. However, the query is processed, and when using the command-line client, data is transmitted to the client. This is used for tests, including productivity testing. Obviously, this format is only appropriate for writes, not for reads.
+Nothing is output. However, the query is processed, and when using the command-line client, data is transmitted to the client. This is used for tests, including productivity testing. Obviously, this format is only appropriate for outputting a query result, not for parsing.
+
 
 </div>
 <div class="island">
@@ -3826,9 +4040,9 @@ For example, the &#39;length&#39; function calculates the string length in bytes
 ==FixedString(N)==
 
 A fixed-length string of N bytes (not characters or code points). N must be a strictly positive natural number.
-When reading a string that contains fewer bytes, the string is padded to N bytes by appending null bytes at the right.
-When reading a string that contains more bytes, an error message is returned.
-When writing a string, null bytes are not trimmed off of the end of the string, but are output.
+When server reads a string (as an input passed in INSERT query, for example) that contains fewer bytes, the string is padded to N bytes by appending null bytes at the right.
+When server reads a string that contains more bytes, an error message is returned.
+When server writes a string (as an output of SELECT query, for example), null bytes are not trimmed off of the end of the string, but are output.
 Note that this behavior differs from MySQL behavior for the CHAR type (where strings are padded with spaces, and the spaces are removed for output).
 
 Fewer functions can work with the FixedString(N) type than with String, so it is less convenient to use.
@@ -3853,6 +4067,31 @@ The date with time is converted from text (divided into component parts) to bina
 Supports only those time zones that never had the time differ from UTC for a partial number of hours (without leap seconds) over the entire time range you will be working with.
 
 So when working with a textual date (for example, when saving text dumps), keep in mind that there may be ambiguity during changes for daylight savings time, and there may be problems matching data if the time zone changed.
+
+==Enum==
+
+Enum8 or Enum16. A set of enumerated string values that are stored as Int8 or Int16. Example:
+
+%%Enum8('hello' = 1, 'world' = 2)%%
+- This data type has two possible values - 'hello' and 'world'.
+
+The numeric values must be within -128..127 for %%Enum8%% and -32768..32767 for %%Enum16%%. Every member of the enum must also have different numbers. The empty string is a valid value. The numbers do not need to be sequential and can be in any order. The order does not matter.
+
+In memory, the data is stored in the same way as the numeric types %%Int8%% and %%Int16%%.
+When reading in text format, the string is read and the corresponding numeric value is looked up. An exception will be thrown if it is not found.
+When writing in text format, the stored number is looked up and the corresponding string is written out. An exception will be thrown if the number does not correspond to a known value.
+In binary format, the information is saved in the same way as %%Int8%% and %%Int16%%.
+The implicit default value for an Enum is the value having the smallest numeric value.
+
+In %%ORDER BY%%, %%GROUP BY%%, %%IN%%, %%DISTINCT%%, etc. Enums behave like the numeric value. e.g. they will be sorted by the numeric value in an %%ORDER BY%%. Equality and comparison operators behave like they do on the underlying numeric value.
+
+Enum values cannot be compared to numbers, they must be compared to a string. If the string compared to is not a valid value for the Enum, an exception will be thrown. The %%IN%% operator is supported with the Enum on the left hand side and a set of strings on the right hand side.
+
+Most numeric and string operations are not defined for Enum values, e.g. adding a number to an Enum or concatenating a string to an Enum. However, the %%toString%% function can be used to convert the Enum to its string value. Enum values are also convertible to numeric types using the %%to<i>T</i>%% function where <i>T</i> is a numeric type. When T corresponds to the enum's underlying numeric type, this conversion is zero-cost.
+
+It is possible to add new members to the Enum using ALTER. If the only change is to the set of values, the operation will be almost instant. It is also possible to remove members of the Enum using ALTER. Removing members is only safe if the removed value has never been used in the table. As a safeguard, changing the numeric value of a previously defined Enum member will throw an exception.
+
+Using ALTER, it is possible to change an %%Enum8%% to an %%Enum16%% or vice versa - just like changing an %%Int8%% to %%Int16%%.
 
 
 ==Array(T)==
@@ -4294,6 +4533,28 @@ Conversion between a date and date with time is performed the natural way: by ad
 
 Conversion between numeric types uses the same rules as assignments between different numeric types in C++.
 
+To do transformations on DateTime in given time zone, pass second argument with time zone name:
+%%
+SELECT
+    toDateTime('2016-06-15 23:00:00') AS time,
+    toDate(time) AS date_local,
+    toDate(time, 'Asia/Yekaterinburg') AS date_yekat,
+    toString(time, 'US/Samoa') AS time_samoa
+
+┌────────────────time─┬─date_local─┬─date_yekat─┬─time_samoa──────────┐
+│ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-16 │ 2016-06-15 09:00:00 │
+└─────────────────────┴────────────┴────────────┴─────────────────────┘
+%%
+
+To format DateTime in given time zone:
+%%
+toString(now(), 'Asia/Yekaterinburg')
+%%
+To get unix timestamp for string with datetime in specified time zone:
+%%
+toUnixTimestamp('2000-01-01 00:00:00', 'Asia/Yekaterinburg')
+%%
+
 ===toFixedString(s, N)===
 
 Converts a String type argument to a FixedString(N) type (a string with fixed length N). N must be a constant. If the string has fewer bytes than N, it is passed with null bytes to the right. If the string has more bytes than N, an exception is thrown.
@@ -4403,7 +4664,7 @@ This function is specific to Yandex.Metrica, since half an hour is the minimum a
 
 ===timeSlots(StartTime, Duration)===
 - For a time interval starting at &#39;StartTime&#39; and continuing for &#39;Duration&#39; seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the half hour.
-For example, %%timeSlots(toDateTime(&#39;2012-01-01 12:20:00&#39;), 600) = [toDateTime(&#39;2012-01-01 12:00:00&#39;), toDateTime(&#39;2012-01-01 12:30:00&#39;)]%%.
+For example, %%timeSlots(toDateTime(&#39;2012-01-01 12:20:00&#39;), toUInt32(600)) = [toDateTime(&#39;2012-01-01 12:00:00&#39;), toDateTime(&#39;2012-01-01 12:30:00&#39;)]%%.
 This is necessary for searching for pageviews in the corresponding session.
 
 
@@ -4437,11 +4698,13 @@ The result type is UInt64.
 
 ===lowerUTF8===
 - Converts a string to lowercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text. It doesn&#39;t detect the language. So for Turkish the result might not be exactly correct.
-Note: I don&#39;t remember what it does if the string isn&#39;t UTF-8.
+If length of UTF-8 sequence is different for upper and lower case of code point, then result for that code point could be incorrect.
+If value contains invalid UTF-8, the behavior is unspecified.
 
 ===upperUTF8===
 - Converts a string to uppercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text. It doesn&#39;t detect the language. So for Turkish the result might not be exactly correct.
-Note: I don&#39;t remember what it does if the string isn&#39;t UTF-8.
+If length of UTF-8 sequence is different for upper and lower case of code point, then result for that code point could be incorrect.
+If value contains invalid UTF-8, the behavior is unspecified.
 
 ===reverse===
 - Reverses the string (as a sequence of bytes).
@@ -6352,6 +6615,12 @@ A floating-point number from 0 to 1. By default, 1.
 Allows setting a default sampling coefficient for all SELECT queries.
 (For tables that don&#39;t support sampling, an exception will be thrown.)
 If set to 1, default sampling is not performed.
+
+====input_format_skip_unknown_fields==
+
+If the parameter is true, INSERT operation will skip columns with unknown names from input.
+Otherwise, an exception will be generated.
+The parameter works only for JSONEachRow and TSKV input formats.
 
 
 ==Restrictions on query complexity==

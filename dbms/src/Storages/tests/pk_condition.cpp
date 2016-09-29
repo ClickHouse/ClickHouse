@@ -31,7 +31,7 @@ int main(int argc, const char ** argv)
 	SortDescription sort_descr;
 	sort_descr.push_back(SortColumnDescription("key", 1));
 
-	cond.reset(new PKCondition(ast, context, columns, sort_descr));
+	cond = std::make_unique<PKCondition>(ast, context, columns, sort_descr);
 	std::cout << "condition: " << cond->toString() << std::endl;
 
 	check(100, 1000, false);

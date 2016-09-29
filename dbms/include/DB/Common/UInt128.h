@@ -25,8 +25,10 @@ struct UInt128
 
 struct UInt128Hash
 {
-	DefaultHash<UInt64> hash64;
-	size_t operator()(UInt128 x) const { return hash64(hash64(x.first) ^ x.second); }
+	size_t operator()(UInt128 x) const
+	{
+		return Hash128to64({x.first, x.second});
+	}
 };
 
 #if defined(__x86_64__)
@@ -87,6 +89,15 @@ struct UInt256
 	bool operator!= (const UInt64 rhs) const { return !operator==(rhs); }
 
 	UInt256 & operator= (const UInt64 rhs) { a = rhs; b = 0; c = 0; d = 0; return *this; }
+};
+
+struct UInt256Hash
+{
+	size_t operator()(UInt256 x) const
+	{
+		/// NOTE suboptimal
+		return Hash128to64({Hash128to64({x.a, x.b}), Hash128to64({x.c, x.d})});
+	}
 };
 
 #if defined(__x86_64__)

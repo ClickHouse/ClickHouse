@@ -19,7 +19,7 @@ public:
 	Cluster(const Settings & settings, const String & cluster_name);
 
 	/// Построить кластер по именам шардов и реплик. Локальные обрабатываются так же как удаленные.
-	Cluster(const Settings & settings, std::vector<std::vector<String>> names,
+	Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
 			const String & username, const String & password);
 
 	Cluster(const Cluster &) = delete;
@@ -31,19 +31,20 @@ public:
 public:
 	struct Address
 	{
-		/** В конфиге адреса либо находятся в узлах <node>:
+		/** In configuration file,
+		* addresses are located either in <node> elements:
 		* <node>
 		* 	<host>example01-01-1</host>
 		* 	<port>9000</port>
-		* 	<!-- <user>, <password>, если нужны -->
+		* 	<!-- <user>, <password>, <default_database> if needed -->
 		* </node>
 		* ...
-		* либо в узлах <shard>, и внутри - <replica>
+		* or in <shard> and inside in <replica> elements:
 		* <shard>
 		* 	<replica>
 		* 		<host>example01-01-1</host>
 		* 		<port>9000</port>
-		* 		<!-- <user>, <password>, если нужны -->
+		* 		<!-- <user>, <password>, <default_database> if needed -->
 		*	</replica>
 		* </shard>
 		*/
@@ -52,6 +53,7 @@ public:
 		UInt16 port;
 		String user;
 		String password;
+		String default_database;	/// this database is selected when no database is specified for Distributed table
 		UInt32 replica_num;
 
 		Address(const String & config_prefix);

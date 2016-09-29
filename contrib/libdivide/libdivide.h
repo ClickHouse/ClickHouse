@@ -1,6 +1,8 @@
 /* libdivide.h
    Copyright 2010 ridiculous_fish
 */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
 
 #if defined(_WIN32) || defined(WIN32)
 #define LIBDIVIDE_WINDOWS 1
@@ -1340,3 +1342,5 @@ __m128i operator/(__m128i numer, const divider<int_type, ALGO> & denom) {
 } //close namespace libdivide
 } //close anonymous namespace
 #endif
+
+#pragma GCC diagnostic pop

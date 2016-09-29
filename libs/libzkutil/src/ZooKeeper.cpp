@@ -1,8 +1,8 @@
 #include <functional>
 #include <zkutil/ZooKeeper.h>
-#include <boost/make_shared.hpp>
 #include <common/logger_useful.h>
 #include <DB/Common/ProfileEvents.h>
+#include <DB/Common/StringUtils.h>
 
 
 namespace zkutil
@@ -88,14 +88,13 @@ struct ZooKeeperArgs
 	{
 		Poco::Util::AbstractConfiguration::Keys keys;
 		config.keys(config_name, keys);
-		std::string node_key = "node";
 
 		std::vector<std::string> hosts_strings;
 
 		session_timeout_ms = DEFAULT_SESSION_TIMEOUT;
 		for (const auto & key : keys)
 		{
-			if (key == node_key || key.compare(0, node_key.size(), node_key) == 0)
+			if (startsWith(key, "node"))
 			{
 				hosts_strings.push_back(
 					config.getString(config_name + "." + key + ".host") + ":" + config.getString(config_name + "." + key + ".port"));

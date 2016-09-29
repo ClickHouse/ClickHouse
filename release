@@ -1,12 +1,12 @@
 #!/bin/bash
 
-source release_lib.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/release_lib.sh"
 
 CONTROL=debian/control
 CHLOG=debian/changelog
-CHDATE=$(LC_ALL=C date -R | sed -e 's/,/\\,/g') # Заменим запятую на '\,'
+CHDATE=$(LC_ALL=C date -R | sed -e 's/,/\\,/g') # Replace comma to '\,'
 
-# Собирать пакет с конфигурационными файлами для Яндекс.Метрики.
+# Build a package with configuration files for Yandex.Metrika.
 BUILD_PACKAGE_FOR_METRIKA=$([ -f 'private/Server/metrika/config.xml' ] && echo 'yes')
 
 while [[ $1 == --* ]]
@@ -29,7 +29,7 @@ do
 	fi
 done
 
-# Список демонов для сборки может быть указан в аргументах командной строки.
+# List of daemons to build could be specified in command line arguments.
 if [ $# -gt 0 ]
 then
 	DAEMONS="$@"
@@ -50,8 +50,8 @@ make_control "$CONTROL" "$DAEMONS"
 
 gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" "$CHLOG" "$DAEMONS"
 
-# Сборка (только бинарных пакетов).
-debuild -e DAEMONS="${DAEMONS}" -e DISABLE_MONGODB -e CC -e CXX -b ${DEBUILD_NOSIGN_OPTIONS}
+# Build (only binary packages).
+debuild -e DAEMONS="${DAEMONS}" -e DISABLE_MONGODB -e GLIBC_COMPATIBILITY -e CC -e CXX -b ${DEBUILD_NOSIGN_OPTIONS}
 
 if [[ $STANDALONE != 'yes' ]]
 then

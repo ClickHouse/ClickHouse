@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 2.6)
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     # require at least gcc 5
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5)
-        message(FATAL_ERROR "GCC version must be at least 5! For example, if GCC 5 is available under gcc-5, g++-5 names, do the following: export CC=gcc-5 CXX=g++-5; rm -rf CMakeCache.txt CMakeFiles; and re run cmake.")
+        message(FATAL_ERROR "GCC version must be at least 5! For example, if GCC 5 is available under gcc-5, g++-5 names, do the following: export CC=gcc-5 CXX=g++-5; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
     endif()
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     # require at least clang 3.8
@@ -26,7 +26,11 @@ IF(NOT CMAKE_BUILD_TYPE)
 ENDIF()
 MESSAGE( STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE} )
 
-set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
+# ASan - build type with address sanitizer
+# UBSan - build type with undefined behaviour sanitizer
+# TSan is not supported due to false positive errors in libstdc++ and necessity to rebuild libstdc++ with TSan
+set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel;ASan;UBSan" CACHE STRING "" FORCE)
+
 
 IF (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*)")
 	SET(AARCH64 1)
@@ -36,22 +40,46 @@ IF (NOT AARCH64)
 	SET(MACHINE_FLAGS "-msse4 -mpopcnt")
 ENDIF()
 
+SET(COMMON_WARNING_FLAGS "-Wall -Werror")
+SET(CXX_WARNING_FLAGS "-Wnon-virtual-dtor -Wold-style-cast")
+
+
+set (GLIBC_COMPATIBILITY FALSE CACHE BOOL "Set to TRUE to enable compatibility with older glibc libraries")
+
+if ($ENV{GLIBC_COMPATIBILITY})
+	set (GLIBC_COMPATIBILITY TRUE)
+endif()
+
+if (GLIBC_COMPATIBILITY)
+	SET(GLIBC_COMPATIBILITY_COMPILE_FLAGS   "-include ${ClickHouse_SOURCE_DIR}/libs/libcommon/include/common/glibc_compatibility.h")
+	SET(GLIBC_COMPATIBILITY_LINK_FLAGS      "-Wl,--wrap=memcpy")
+endif()
+
+if (DISABLE_CXX11_ABI)
+    SET(CXX11_ABI "-D_GLIBCXX_USE_CXX11_ABI=0")
+endif()
+
 SET(CMAKE_BUILD_COLOR_MAKEFILE          ON)
-SET(CMAKE_CXX_FLAGS                     "-std=gnu++1y -Wall -Werror -Wnon-virtual-dtor ${MACHINE_FLAGS}")
+SET(CMAKE_CXX_FLAGS                     "-std=gnu++1y -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI}")
 SET(CMAKE_CXX_FLAGS_RELEASE             "-O3 -DNDEBUG")
 SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO      "-O3 -g")
-SET(CMAKE_C_FLAGS                       "-Wall -Werror ${MACHINE_FLAGS}")
+SET(CMAKE_CXX_FLAGS_DEBUG               "-O0 -g3 -ggdb3 -fno-inline")
+
+SET(CMAKE_C_FLAGS                       "-fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI}")
 SET(CMAKE_C_FLAGS_RELEASE               "-O3 -DNDEBUG")
 SET(CMAKE_C_FLAGS_RELWITHDEBINFO        "-O3 -g")
-SET(CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++")
+SET(CMAKE_C_FLAGS_DEBUG                 "-O0 -g3 -ggdb3 -fno-inline")
 
-# cmake -DCMAKE_BUILD_TYPE=Debug ..
-SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
+SET(CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++ ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI}")
+
+SET(CMAKE_CXX_FLAGS_ASAN                "-O3 -g -fsanitize=address -fno-omit-frame-pointer ${CXX11_ABI}")
+SET(CMAKE_CXX_FLAGS_UBSAN               "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI}")
+SET(CMAKE_C_FLAGS_ASAN                  "-O3 -g -fsanitize=address -fno-omit-frame-pointer ${CXX11_ABI}")
+SET(CMAKE_C_FLAGS_UBSAN                 "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI}")
 
 # Флаги для test coverage
-SET(TEST_COVERAGE TRUE CACHE BOOL "Add compliler flags for test coverage")
 IF (TEST_COVERAGE)
-SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -fprofile-arcs -ftest-coverage -fPIC -DIS_DEBUG")
+    SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -fprofile-arcs -ftest-coverage -fPIC -DIS_DEBUG ${CXX11_ABI}")
 ENDIF(TEST_COVERAGE)
 
 # Собирать тесты?
@@ -68,9 +96,6 @@ ENDIF(TESTS)
 # Префикс для установки
 SET(CMAKE_INSTALL_PREFIX /usr)
 
-# Директория для файлов, специфичных для Яндекса
-SET(CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)
-
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libcityhash/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/liblz4/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libdivide/)
@@ -82,7 +107,7 @@ include_directories (${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libsparsehash/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libre2/)
 include_directories (${ClickHouse_BINARY_DIR}/contrib/libre2/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libboost-threadpool/)
+include_directories (${ClickHouse_SOURCE_DIR}/contrib/libzookeeper/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Foundation/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Util/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Net/include/)
@@ -120,8 +145,17 @@ include_directories (/usr/local/include/)
 
 link_directories (/usr/local/lib)
 
+# Directory for Yandex specific files
+SET(CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)
+
 add_subdirectory (contrib)
 add_subdirectory (libs)
 add_subdirectory (utils)
 add_subdirectory (dbms)
-add_subdirectory (private)
+
+IF (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
+	add_subdirectory (private)
+ENDIF()
+
+message(STATUS "C_FLAGS:  =${CMAKE_C_FLAGS}")
+message(STATUS "CXX_FLAGS:=${CMAKE_CXX_FLAGS}")

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.hpp>
+
 #include <DB/Storages/StorageSet.h>
 #include <DB/Interpreters/Join.h>
 
@@ -14,24 +16,25 @@ namespace DB
   *
   * При использовании, JOIN должен быть соответствующего типа (ANY|ALL LEFT|INNER ...).
   */
-class StorageJoin : public StorageSetOrJoinBase
+class StorageJoin : private ext::shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
 {
+friend class ext::shared_ptr_helper<StorageJoin>;
+
 public:
 	static StoragePtr create(
 		const String & path_,
 		const String & name_,
 		const Names & key_names_,
-		ASTJoin::Kind kind_, ASTJoin::Strictness strictness_,
+		ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_,
 		NamesAndTypesListPtr columns_,
 		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_)
 	{
-		return (new StorageJoin{
-			path_, name_,
-			key_names_, kind_, strictness_,
-			columns_,
-			materialized_columns_, alias_columns_, column_defaults_})->thisPtr();
+		return ext::shared_ptr_helper<StorageJoin>::make_shared(
+			path_, name_, key_names_, kind_, strictness_,
+			columns_, materialized_columns_, alias_columns_, column_defaults_
+		);
 	}
 
 	String getName() const override { return "Join"; }
@@ -40,12 +43,12 @@ public:
 	JoinPtr & getJoin() { return join; }
 
 	/// Убедиться, что структура данных подходит для осуществления JOIN такого типа.
-	void assertCompatible(ASTJoin::Kind kind_, ASTJoin::Strictness strictness_) const;
+	void assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_) const;
 
 private:
 	const Names & key_names;
-	ASTJoin::Kind kind;					/// LEFT | INNER ...
-	ASTJoin::Strictness strictness;		/// ANY | ALL
+	ASTTableJoin::Kind kind;					/// LEFT | INNER ...
+	ASTTableJoin::Strictness strictness;		/// ANY | ALL
 
 	JoinPtr join;
 
@@ -53,7 +56,7 @@ private:
 		const String & path_,
 		const String & name_,
 		const Names & key_names_,
-		ASTJoin::Kind kind_, ASTJoin::Strictness strictness_,
+		ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_,
 		NamesAndTypesListPtr columns_,
 		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,

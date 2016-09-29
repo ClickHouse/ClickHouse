@@ -1,9 +1,8 @@
 #include <common/JSON.h>
 #include <Poco/Path.h>
 #include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/copyData.h>
+#include <DB/IO/WriteBufferFromString.h>
 #include <DB/Common/escapeForFileName.h>
 
 #include <DB/Common/FileChecker.h>

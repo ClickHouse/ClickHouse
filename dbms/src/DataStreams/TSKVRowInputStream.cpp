@@ -16,6 +16,10 @@ namespace ErrorCodes
 TSKVRowInputStream::TSKVRowInputStream(ReadBuffer & istr_, const Block & sample_, bool skip_unknown_)
 	: istr(istr_), sample(sample_), skip_unknown(skip_unknown_), name_map(sample.columns())
 {
+	/// In this format, we assume that column name cannot contain BOM,
+	///  so BOM at beginning of stream cannot be confused with name of field, and it is safe to skip it.
+	skipBOMIfExists(istr);
+
 	size_t columns = sample.columns();
 	for (size_t i = 0; i < columns; ++i)
 		name_map[sample.getByPosition(i).name] = i;		/// NOTE Можно было бы расположить имена более кэш-локально.

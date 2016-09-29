@@ -1,3 +1,5 @@
+#include <ext/shared_ptr_helper.hpp>
+
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/parseQuery.h>
@@ -15,12 +17,14 @@
 #include <string>
 
 /// Упрощённый вариант класса StorageDistributed.
-class StorageDistributedFake : public DB::IStorage
+class StorageDistributedFake : private ext::shared_ptr_helper<StorageDistributedFake>, public DB::IStorage
 {
+friend class ext::shared_ptr_helper<StorageDistributedFake>;
+
 public:
 	static DB::StoragePtr create(const std::string & remote_database_, const std::string & remote_table_, size_t shard_count_)
 	{
-		return (new StorageDistributedFake{remote_database_, remote_table_, shard_count_})->thisPtr();
+		return make_shared(remote_database_, remote_table_, shard_count_);
 	}
 
 	std::string getName() const override { return "DistributedFake"; }
@@ -1231,7 +1235,7 @@ bool parse(DB::ASTPtr & ast, const std::string & query)
 	std::string message;
 	auto begin = query.data();
 	auto end = begin + query.size();
-	ast = DB::tryParseQuery(parser, begin, end, message, false, "");
+	ast = DB::tryParseQuery(parser, begin, end, message, false, "", false);
 	return ast != nullptr;
 }
 

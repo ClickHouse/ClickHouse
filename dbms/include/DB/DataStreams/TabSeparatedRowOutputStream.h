@@ -1,12 +1,13 @@
 #pragma once
 
 #include <DB/Core/Block.h>
-#include <DB/IO/WriteBuffer.h>
 #include <DB/DataStreams/IRowOutputStream.h>
 
 
 namespace DB
 {
+
+class WriteBuffer;
 
 /** Поток для вывода данных в формате tsv.
   */
@@ -24,7 +25,7 @@ public:
 	void writePrefix() override;
 	void writeSuffix() override;
 
-	void flush() override { ostr.next(); }
+	void flush() override;
 
 	void setTotals(const Block & totals_) override { totals = totals_; }
 	void setExtremes(const Block & extremes_) override { extremes = extremes_; }

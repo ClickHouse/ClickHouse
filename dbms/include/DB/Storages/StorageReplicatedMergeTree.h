@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.hpp>
+
 #include <DB/Storages/IStorage.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
@@ -67,8 +69,10 @@ namespace DB
   * в качестве времени будет браться время создания соответствующего куска на какой-либо из реплик.
   */
 
-class StorageReplicatedMergeTree : public IStorage
+class StorageReplicatedMergeTree : private ext::shared_ptr_helper<StorageReplicatedMergeTree>, public IStorage
 {
+friend class ext::shared_ptr_helper<StorageReplicatedMergeTree>;
+
 public:
 	/** Если !attach, либо создает новую таблицу в ZK, либо добавляет реплику в существующую таблицу.
 	  */
@@ -87,6 +91,7 @@ public:
 		const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 		size_t index_granularity_,
 		const MergeTreeData::MergingParams & merging_params_,
+		bool has_force_restore_data_flag,
 		const MergeTreeSettings & settings_);
 
 	void shutdown() override;
@@ -135,7 +140,8 @@ public:
 	void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
 	void attachPartition(ASTPtr query, const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
 	void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
-	void freezePartition(const Field & partition, const Settings & settings) override;
+	void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
+
 	void reshardPartitions(ASTPtr query, const String & database_name,
 		const Field & first_partition, const Field & last_partition,
 		const WeightedZooKeeperPaths & weighted_zookeeper_paths,
@@ -268,7 +274,7 @@ private:
 	std::mutex unreplicated_mutex; /// Для мерджей и удаления нереплицируемых кусков.
 
 	/// Нужно ли завершить фоновые потоки (кроме restarting_thread).
-	volatile bool shutdown_called = false;
+	std::atomic<bool> shutdown_called {false};
 	Poco::Event shutdown_event;
 
 	/// Потоки:
@@ -317,6 +323,7 @@ private:
 		const ASTPtr & sampling_expression_,
 		size_t index_granularity_,
 		const MergeTreeData::MergingParams & merging_params_,
+		bool has_force_restore_data_flag,
 		const MergeTreeSettings & settings_);
 
 	/// Инициализация.
@@ -418,11 +425,22 @@ private:
 	  */
 	String findReplicaHavingPart(const String & part_name, bool active);
 
+	/** Find replica having specified part or any part that covers it.
+	  * If active = true, consider only active replicas.
+	  * If found, returns replica name and set 'out_covering_part_name' to name of found largest covering part.
+	  * If not found, returns empty string.
+	  */
+	String findReplicaHavingCoveringPart(const String & part_name, bool active, String & out_covering_part_name);
+
 	/** Скачать указанный кусок с указанной реплики.
 	  * Если to_detached, то кусок помещается в директорию detached.
 	  * Если quorum != 0, то обновляется узел для отслеживания кворума.
+	  * Returns false if part is already fetching right now.
 	  */
-	void fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum);
+	bool fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum);
+
+	std::unordered_set<String> currently_fetching_parts;
+	std::mutex currently_fetching_parts_mutex;
 
 	/** При отслеживаемом кворуме - добавить реплику в кворум для куска.
 	  */

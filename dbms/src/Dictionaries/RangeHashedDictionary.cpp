@@ -41,7 +41,7 @@ RangeHashedDictionary::RangeHashedDictionary(const RangeHashedDictionary & other
 
 #define DECLARE_MULTIPLE_GETTER(TYPE)\
 void RangeHashedDictionary::get##TYPE(\
-	const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const PaddedPODArray<UInt16> & dates,\
+	const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,\
 	PaddedPODArray<TYPE> & out) const\
 {\
 	const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::TYPE);\
@@ -60,11 +60,11 @@ DECLARE_MULTIPLE_GETTER(Float64)
 #undef DECLARE_MULTIPLE_GETTER
 
 void RangeHashedDictionary::getString(
-	const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const PaddedPODArray<UInt16> & dates,
+	const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,
 	ColumnString * out) const
 {
 	const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::String);
-	const auto & attr = *std::get<ptr_t<StringRef>>(attribute.maps);
+	const auto & attr = *std::get<Ptr<StringRef>>(attribute.maps);
 	const auto & null_value = std::get<String>(attribute.null_values);
 
 	for (const auto i : ext::range(0, ids.size()))
@@ -75,7 +75,7 @@ void RangeHashedDictionary::getString(
 			const auto date = dates[i];
 			const auto & ranges_and_values = it->second;
 			const auto val_it = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values),
-				[date] (const value_t<StringRef> & v) { return v.range.contains(date); });
+				[date] (const Value<StringRef> & v) { return v.range.contains(date); });
 
 			const auto string_ref = val_it != std::end(ranges_and_values) ? val_it->value : StringRef{null_value};
 			out->insertData(string_ref.data, string_ref.size);
@@ -125,7 +125,7 @@ void RangeHashedDictionary::loadData()
 
 			for (const auto row_idx : ext::range(0, id_column.size()))
 				setAttributeValue(attribute, id_column[row_idx].get<UInt64>(),
-					range_t(min_range_column[row_idx].get<UInt64>(), max_range_column[row_idx].get<UInt64>()),
+					Range(min_range_column[row_idx].get<UInt64>(), max_range_column[row_idx].get<UInt64>()),
 					attribute_column[row_idx]);
 		}
 	}
@@ -139,10 +139,10 @@ void RangeHashedDictionary::loadData()
 }
 
 template <typename T>
-void RangeHashedDictionary::addAttributeSize(const attribute_t & attribute)
+void RangeHashedDictionary::addAttributeSize(const Attribute & attribute)
 {
-	const auto & map_ref = std::get<ptr_t<T>>(attribute.maps);
-	bytes_allocated += sizeof(collection_t<T>) + map_ref->getBufferSizeInBytes();
+	const auto & map_ref = std::get<Ptr<T>>(attribute.maps);
+	bytes_allocated += sizeof(Collection<T>) + map_ref->getBufferSizeInBytes();
 	bucket_count = map_ref->getBufferSizeInCells();
 }
 
@@ -176,15 +176,15 @@ void RangeHashedDictionary::calculateBytesAllocated()
 }
 
 template <typename T>
-void RangeHashedDictionary::createAttributeImpl(attribute_t & attribute, const Field & null_value)
+void RangeHashedDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
 	std::get<T>(attribute.null_values) = null_value.get<typename NearestFieldType<T>::Type>();
-	std::get<ptr_t<T>>(attribute.maps) = std::make_unique<collection_t<T>>();
+	std::get<Ptr<T>>(attribute.maps) = std::make_unique<Collection<T>>();
 }
 
-RangeHashedDictionary::attribute_t RangeHashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
+RangeHashedDictionary::Attribute RangeHashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-	attribute_t attr{type};
+	Attribute attr{type};
 
 	switch (type)
 	{
@@ -201,7 +201,7 @@ RangeHashedDictionary::attribute_t RangeHashedDictionary::createAttributeWithTyp
 		case AttributeUnderlyingType::String:
 		{
 			std::get<String>(attr.null_values) = null_value.get<String>();
-			std::get<ptr_t<StringRef>>(attr.maps) = std::make_unique<collection_t<StringRef>>();
+			std::get<Ptr<StringRef>>(attr.maps) = std::make_unique<Collection<StringRef>>();
 			attr.string_arena = std::make_unique<Arena>();
 			break;
 		}
@@ -213,8 +213,8 @@ RangeHashedDictionary::attribute_t RangeHashedDictionary::createAttributeWithTyp
 
 template <typename OutputType>
 void RangeHashedDictionary::getItems(
-	const attribute_t & attribute,
-	const PaddedPODArray<id_t> & ids,
+	const Attribute & attribute,
+	const PaddedPODArray<Key> & ids,
 	const PaddedPODArray<UInt16> & dates,
 	PaddedPODArray<OutputType> & out) const
 {
@@ -239,12 +239,12 @@ void RangeHashedDictionary::getItems(
 
 template <typename AttributeType, typename OutputType>
 void RangeHashedDictionary::getItemsImpl(
-	const attribute_t & attribute,
-	const PaddedPODArray<id_t> & ids,
+	const Attribute & attribute,
+	const PaddedPODArray<Key> & ids,
 	const PaddedPODArray<UInt16> & dates,
 	PaddedPODArray<OutputType> & out) const
 {
-	const auto & attr = *std::get<ptr_t<AttributeType>>(attribute.maps);
+	const auto & attr = *std::get<Ptr<AttributeType>>(attribute.maps);
 	const auto null_value = std::get<AttributeType>(attribute.null_values);
 
 	for (const auto i : ext::range(0, ids.size()))
@@ -255,7 +255,7 @@ void RangeHashedDictionary::getItemsImpl(
 			const auto date = dates[i];
 			const auto & ranges_and_values = it->second;
 			const auto val_it = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values),
-				[date] (const value_t<AttributeType> & v) { return v.range.contains(date); });
+				[date] (const Value<AttributeType> & v) { return v.range.contains(date); });
 
 			out[i] = val_it != std::end(ranges_and_values) ? val_it->value : null_value;
 		}
@@ -268,9 +268,9 @@ void RangeHashedDictionary::getItemsImpl(
 
 
 template <typename T>
-void RangeHashedDictionary::setAttributeValueImpl(attribute_t & attribute, const id_t id, const range_t & range, const T value)
+void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const T value)
 {
-	auto & map = *std::get<ptr_t<T>>(attribute.maps);
+	auto & map = *std::get<Ptr<T>>(attribute.maps);
 	const auto it = map.find(id);
 
 	if (it != map.end())
@@ -278,17 +278,17 @@ void RangeHashedDictionary::setAttributeValueImpl(attribute_t & attribute, const
 		auto & values = it->second;
 
 		const auto insert_it = std::lower_bound(std::begin(values), std::end(values), range,
-			[] (const value_t<T> & lhs, const range_t & range) {
+			[] (const Value<T> & lhs, const Range & range) {
 				return lhs.range < range;
 			});
 
-		values.insert(insert_it, value_t<T>{ range, value });
+		values.insert(insert_it, Value<T>{ range, value });
 	}
 	else
-		map.insert({ id, values_t<T>{ value_t<T>{ range, value } } });
+		map.insert({ id, Values<T>{ Value<T>{ range, value } } });
 }
 
-void RangeHashedDictionary::setAttributeValue(attribute_t & attribute, const id_t id, const range_t & range, const Field & value)
+void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const Key id, const Range & range, const Field & value)
 {
 	switch (attribute.type)
 	{
@@ -304,7 +304,7 @@ void RangeHashedDictionary::setAttributeValue(attribute_t & attribute, const id_
 		case AttributeUnderlyingType::Float64: setAttributeValueImpl<Float64>(attribute, id, range, value.get<Float64>()); break;
 		case AttributeUnderlyingType::String:
 		{
-			auto & map = *std::get<ptr_t<StringRef>>(attribute.maps);
+			auto & map = *std::get<Ptr<StringRef>>(attribute.maps);
 			const auto & string = value.get<String>();
 			const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
 			const StringRef string_ref{string_in_arena, string.size()};
@@ -316,21 +316,21 @@ void RangeHashedDictionary::setAttributeValue(attribute_t & attribute, const id_
 				auto & values = it->second;
 
 				const auto insert_it = std::lower_bound(std::begin(values), std::end(values), range,
-					[] (const value_t<StringRef> & lhs, const range_t & range) {
+					[] (const Value<StringRef> & lhs, const Range & range) {
 						return lhs.range < range;
 					});
 
-				values.insert(insert_it, value_t<StringRef>{ range, string_ref });
+				values.insert(insert_it, Value<StringRef>{ range, string_ref });
 			}
 			else
-				map.insert({ id, values_t<StringRef>{ value_t<StringRef>{ range, string_ref } } });
+				map.insert({ id, Values<StringRef>{ Value<StringRef>{ range, string_ref } } });
 
 			break;
 		}
 	}
 }
 
-const RangeHashedDictionary::attribute_t & RangeHashedDictionary::getAttribute(const std::string & attribute_name) const
+const RangeHashedDictionary::Attribute & RangeHashedDictionary::getAttribute(const std::string & attribute_name) const
 {
 	const auto it = attribute_index_by_name.find(attribute_name);
 	if (it == std::end(attribute_index_by_name))
@@ -341,7 +341,7 @@ const RangeHashedDictionary::attribute_t & RangeHashedDictionary::getAttribute(c
 	return attributes[it->second];
 }
 
-const RangeHashedDictionary::attribute_t & RangeHashedDictionary::getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const
+const RangeHashedDictionary::Attribute & RangeHashedDictionary::getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const
 {
 	const auto & attribute = getAttribute(name);
 	if (attribute.type != type)

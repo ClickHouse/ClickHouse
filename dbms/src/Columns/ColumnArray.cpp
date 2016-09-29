@@ -361,15 +361,13 @@ ColumnPtr ColumnArray::replicateString(const Offsets_t & replicate_offsets) cons
 		size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
 		/// Количество строк в массиве.
 		size_t value_size = src_offsets[i] - prev_src_offset;
-
-		size_t sum_chars_size = 0;
+		/// Количество символов в строках массива, включая нулевые байты.
+		size_t sum_chars_size = value_size == 0 ? 0 : (src_string_offsets[prev_src_offset + value_size - 1] - prev_src_string_offset);
 
 		for (size_t j = 0; j < size_to_replicate; ++j)
 		{
 			current_res_offset += value_size;
 			res_offsets.push_back(current_res_offset);
-
-			sum_chars_size = 0;
 
 			size_t prev_src_string_offset_local = prev_src_string_offset;
 			for (size_t k = 0; k < value_size; ++k)
@@ -380,14 +378,13 @@ ColumnPtr ColumnArray::replicateString(const Offsets_t & replicate_offsets) cons
 				current_res_string_offset += chars_size;
 				res_string_offsets.push_back(current_res_string_offset);
 
-				/// Копирование символов одной строки.
-				res_chars.resize(res_chars.size() + chars_size);
-				memcpySmallAllowReadWriteOverflow15(
-					&res_chars[res_chars.size() - chars_size], &src_chars[prev_src_string_offset_local], chars_size);
-
-				sum_chars_size += chars_size;
 				prev_src_string_offset_local += chars_size;
 			}
+
+			/// Копирование символов массива строк.
+			res_chars.resize(res_chars.size() + sum_chars_size);
+			memcpySmallAllowReadWriteOverflow15(
+				&res_chars[res_chars.size() - sum_chars_size], &src_chars[prev_src_string_offset], sum_chars_size);
 		}
 
 		prev_replicate_offset = replicate_offsets[i];

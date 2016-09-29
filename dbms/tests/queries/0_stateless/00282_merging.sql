@@ -75,6 +75,7 @@ DROP TABLE test.merge;
 
 CREATE TABLE IF NOT EXISTS test.merge (d Date DEFAULT '2000-01-01', x UInt64) ENGINE = MergeTree(d, x, 8192);
 
+SET min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 SET max_block_size = 8200;
 INSERT INTO test.merge (x) SELECT number AS x FROM (SELECT * FROM system.numbers LIMIT 8200) ORDER BY rand();
 INSERT INTO test.merge (x) SELECT number AS x FROM (SELECT * FROM system.numbers LIMIT 8200) ORDER BY rand();

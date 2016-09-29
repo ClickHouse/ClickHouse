@@ -672,8 +672,27 @@ private:
 		  * x >= y:  x1 > y1 || (x1 == y1 && (x2 > y2 || (x2 == y2 ... && xn >= yn))
 		  */
 
+		auto x_const = typeid_cast<const ColumnConstTuple *>(c0);
+		auto y_const = typeid_cast<const ColumnConstTuple *>(c1);
+
+		ColumnPtr x_tuple_of_consts;
+		ColumnPtr y_tuple_of_consts;
+
 		auto x = static_cast<const ColumnTuple *>(c0);
 		auto y = static_cast<const ColumnTuple *>(c1);
+
+		if (x_const)
+		{
+			x_tuple_of_consts = x_const->convertToTupleOfConstants();
+			x = static_cast<const ColumnTuple *>(x_tuple_of_consts.get());
+		}
+
+		if (y_const)
+		{
+			y_tuple_of_consts = y_const->convertToTupleOfConstants();
+			y = static_cast<const ColumnTuple *>(y_tuple_of_consts.get());
+		}
+
 		const size_t tuple_size = x->getData().columns();
 
 		if (0 == tuple_size)
@@ -842,10 +861,10 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const auto & col_with_name_and_type_left = block.getByPosition(arguments[0]);
-		const auto & col_with_name_and_type_right = block.getByPosition(arguments[1]);
-		const IColumn * col_left_untyped = col_with_name_and_type_left.column.get();
-		const IColumn * col_right_untyped = col_with_name_and_type_right.column.get();
+		const auto & col_with_type_and_name_left = block.getByPosition(arguments[0]);
+		const auto & col_with_type_and_name_right = block.getByPosition(arguments[1]);
+		const IColumn * col_left_untyped = col_with_type_and_name_left.column.get();
+		const IColumn * col_right_untyped = col_with_type_and_name_right.column.get();
 
 		const bool left_is_num = col_left_untyped->isNumeric();
 		const bool right_is_num = col_right_untyped->isNumeric();
@@ -866,14 +885,14 @@ public:
 					+ " of first argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
-		else if (typeid_cast<const ColumnTuple *>(col_left_untyped))
+		else if (typeid_cast<const DataTypeTuple *>(col_with_type_and_name_left.type.get()))
 			executeTuple(block, result, col_left_untyped, col_right_untyped);
 		else if (!left_is_num && !right_is_num)
 			executeString(block, result, col_left_untyped, col_right_untyped);
 		else
 			executeDateOrDateTimeOrEnumWithConstString(
 				block, result, col_left_untyped, col_right_untyped,
-				col_with_name_and_type_left.type, col_with_name_and_type_right.type,
+				col_with_type_and_name_left.type, col_with_type_and_name_right.type,
 				left_is_num, right_is_num);
 }
 };

@@ -1,4 +1,5 @@
 #include <zkutil/RWLock.h>
+#include <DB/Common/StringUtils.h>
 #include <algorithm>
 #include <iterator>
 
@@ -164,8 +165,7 @@ void RWLock::acquireImpl(Mode mode)
 					children.crend(),
 					[](const std::string & child)
 					{
-						return (child.length() >= prefix_length) &&
-							(child.compare(0, prefix_length, Prefix<RWLock::Write>::name) == 0);
+						return startsWith(child, Prefix<RWLock::Write>::name);
 					});
 				if (it2 != children.crend())
 					observed_key = &*it2;

@@ -8,3 +8,6 @@ add_executable (field field.cpp)
 target_link_libraries (field dbms)
 
 add_executable (rvo_test rvo_test.cpp)
+
+add_executable (string_ref_hash string_ref_hash.cpp)
+target_link_libraries (string_ref_hash dbms)

@@ -4,6 +4,7 @@
 #include <DB/Databases/DatabaseOrdinary.h>
 #include <DB/Databases/DatabasesCommon.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Common/StringUtils.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
@@ -11,7 +12,6 @@
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/copyData.h>
 
 
 namespace DB
@@ -34,13 +34,19 @@ static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 static constexpr size_t TABLES_PARALLEL_LOAD_BUNCH_SIZE = 100;
 
 
+static String getTableMetadataPath(const String & base_path, const String & table_name)
+{
+	return base_path + (endsWith(base_path, "/") ? "" : "/") + escapeForFileName(table_name) + ".sql";
+}
+
 static void loadTable(
 	Context & context,
 	const String & database_metadata_path,
 	DatabaseOrdinary & database,
 	const String & database_name,
 	const String & database_data_path,
-	const String & file_name)
+	const String & file_name,
+	bool has_force_restore_data_flag)
 {
 	Logger * log = &Logger::get("loadTable");
 
@@ -50,8 +56,7 @@ static void loadTable(
 	{
 		char in_buf[METADATA_FILE_BUFFER_SIZE];
 		ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
-		WriteBufferFromString out(s);
-		copyData(in, out);
+		readStringUntilEOF(s, in);
 	}
 
 	/** Пустые файлы с метаданными образуются после грубого перезапуска сервера.
@@ -69,7 +74,7 @@ static void loadTable(
 		String table_name;
 		StoragePtr table;
 		std::tie(table_name, table) = createTableFromDefinition(
-			s, database_name, database_data_path, context, "in file " + table_metadata_path);
+			s, database_name, database_data_path, context, has_force_restore_data_flag, "in file " + table_metadata_path);
 		database.attachTable(table_name, table);
 	}
 	catch (const Exception & e)
@@ -81,13 +86,6 @@ static void loadTable(
 }
 
 
-static bool endsWith(const String & s, const char * suffix)
-{
-	return s.size() >= strlen(suffix) && 0 == s.compare(s.size() - strlen(suffix), strlen(suffix), suffix);
-}
-
-
-
 DatabaseOrdinary::DatabaseOrdinary(
 	const String & name_, const String & path_)
 	: name(name_), path(path_)
@@ -95,7 +93,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 }
 
 
-void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * thread_pool)
+void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag)
 {
 	log = &Logger::get("DatabaseOrdinary (" + name + ")");
 
@@ -105,7 +103,7 @@ void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * t
 	Poco::DirectoryIterator dir_end;
 	for (Poco::DirectoryIterator dir_it(path); dir_it != dir_end; ++dir_it)
 	{
-		/// Для директории .svn и файла .gitignore
+		/// For '.svn', '.gitignore' directory and similar.
 		if (dir_it.name().at(0) == '.')
 			continue;
 
@@ -141,7 +139,7 @@ void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * t
 	String data_path = context.getPath() + "/data/" + escapeForFileName(name) + "/";
 
 	StopwatchWithLock watch;
-	size_t tables_processed = 0;
+	std::atomic<size_t> tables_processed {0};
 
 	auto task_function = [&](FileNames::const_iterator begin, FileNames::const_iterator end)
 	{
@@ -150,14 +148,14 @@ void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * t
 			const String & table = *it;
 
 			/// Сообщения, чтобы было не скучно ждать, когда сервер долго загружается.
-			if (__sync_add_and_fetch(&tables_processed, 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
+			if ((++tables_processed) % PRINT_MESSAGE_EACH_N_TABLES == 0
 				|| watch.lockTestAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
 			{
 				LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
 				watch.restart();
 			}
 
-			loadTable(context, path, *this, name, data_path, table);
+			loadTable(context, path, *this, name, data_path, table, has_force_restore_data_flag);
 		}
 	};
 
@@ -167,7 +165,6 @@ void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * t
 
 	const size_t bunch_size = TABLES_PARALLEL_LOAD_BUNCH_SIZE;
 	size_t num_bunches = (total_tables + bunch_size - 1) / bunch_size;
-	std::vector<std::packaged_task<void()>> tasks(num_bunches);
 
 	for (size_t i = 0; i < num_bunches; ++i)
 	{
@@ -176,19 +173,16 @@ void DatabaseOrdinary::loadTables(Context & context, boost::threadpool::pool * t
 			? file_names.end()
 			: (file_names.begin() + (i + 1) * bunch_size);
 
-		tasks[i] = std::packaged_task<void()>(std::bind(task_function, begin, end));
+		auto task = std::bind(task_function, begin, end);
 
 		if (thread_pool)
-			thread_pool->schedule([i, &tasks]{ tasks[i](); });
+			thread_pool->schedule(task);
 		else
-			tasks[i]();
+			task();
 	}
 
 	if (thread_pool)
 		thread_pool->wait();
-
-	for (auto & task : tasks)
-		task.get_future().get();
 }
 
 
@@ -285,9 +279,8 @@ void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr &
 			throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 	}
 
-	String table_name_escaped = escapeForFileName(table_name);
-	String table_metadata_tmp_path = path + "/" + table_name_escaped + ".sql.tmp";
-	String table_metadata_path = path + "/" + table_name_escaped + ".sql";
+	String table_metadata_path = getTableMetadataPath(path, table_name);
+	String table_metadata_tmp_path = table_metadata_path + ".tmp";
 	String statement;
 
 	{
@@ -343,8 +336,7 @@ void DatabaseOrdinary::removeTable(const String & table_name)
 {
 	StoragePtr res = detachTable(table_name);
 
-	String table_name_escaped = escapeForFileName(table_name);
-	String table_metadata_path = path + "/" + table_name_escaped + ".sql";
+	String table_metadata_path = getTableMetadataPath(path, table_name);
 
 	try
 	{
@@ -360,14 +352,12 @@ void DatabaseOrdinary::removeTable(const String & table_name)
 
 static ASTPtr getCreateQueryImpl(const String & path, const String & table_name)
 {
-	String table_name_escaped = escapeForFileName(table_name);
-	String table_metadata_path = path + "/" + table_name_escaped + ".sql";
+	String table_metadata_path = getTableMetadataPath(path, table_name);
 
 	String query;
 	{
 		ReadBufferFromFile in(table_metadata_path, 4096);
-		WriteBufferFromString out(query);
-		copyData(in, out);
+		readStringUntilEOF(query, in);
 	}
 
 	ParserCreateQuery parser;
@@ -408,6 +398,22 @@ void DatabaseOrdinary::renameTable(
 	/// NOTE Неатомарно.
 	to_database_concrete->createTable(to_table_name, table, ast, table->getName());
 	removeTable(table_name);
+}
+
+
+time_t DatabaseOrdinary::getTableMetadataModificationTime(const String & table_name)
+{
+	String table_metadata_path = getTableMetadataPath(path, table_name);
+	Poco::File meta_file(table_metadata_path);
+
+	if (meta_file.exists())
+	{
+		return meta_file.getLastModified().epochTime();
+	}
+	else
+	{
+		return static_cast<time_t>(0);
+	}
 }
 
 
@@ -461,8 +467,7 @@ void DatabaseOrdinary::alterTable(
 	{
 		char in_buf[METADATA_FILE_BUFFER_SIZE];
 		ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
-		WriteBufferFromString out(statement);
-		copyData(in, out);
+		readStringUntilEOF(statement, in);
 	}
 
 	ParserCreateQuery parser;

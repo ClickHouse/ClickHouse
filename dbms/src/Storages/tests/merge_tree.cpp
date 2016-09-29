@@ -47,7 +47,7 @@ try
 		"./", "default", "test",
 		names_and_types, {}, {}, ColumnDefaults{},
 		context, primary_expr, "d",
-		nullptr, 101, params, {});
+		nullptr, 101, params, false, {});
 
 	/// пишем в неё
 	{
@@ -103,12 +103,12 @@ try
 		{
 			ColumnWithTypeAndName col;
 			col.type = names_and_types->front().type;
-			sample.insert(col);
+			sample.insert(std::move(col));
 		}
 		{
 			ColumnWithTypeAndName col;
 			col.type = names_and_types->back().type;
-			sample.insert(col);
+			sample.insert(std::move(col));
 		}
 
 		WriteBufferFromFileDescriptor out_buf(STDOUT_FILENO);

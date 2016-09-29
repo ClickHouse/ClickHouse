@@ -7,6 +7,7 @@
 #include <Poco/Util/Application.h>
 #include <common/logger_useful.h>
 
+
 /// пишет в Graphite данные в формате
 /// path value timestamp\n
 /// path может иметь любую вложенность. Директории разделяются с помощью "."
@@ -19,7 +20,6 @@ public:
 	template <typename T> using KeyValuePair = std::pair<std::string, T>;
 	template <typename T> using KeyValueVector = std::vector<KeyValuePair<T>>;
 
-	/// TODO: Сделать custom_root_path = getPerLayerPath() по умолчанию
 	template <typename T> void write(const std::string & key, const T & value, 
 									 time_t timestamp = 0, const std::string & custom_root_path = "")
 	{
@@ -31,10 +31,6 @@ public:
 	{
 		writeImpl(key_val_vec, timestamp, custom_root_path);
 	}
-
-	/// Для облачных демонов удобней использовать
-	/// путь вида prefix.environment.layer.daemon_name.metrica
-	static std::string getPerLayerPath(const std::string & prefix = "one_min");
 	
 	/// возвращает путь root_path.server_name
 	static std::string getPerServerPath(const std::string & server_name, const std::string & root_path = "one_min");

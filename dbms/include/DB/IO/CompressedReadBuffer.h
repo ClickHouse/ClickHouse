@@ -11,7 +11,7 @@ class CompressedReadBuffer : public CompressedReadBufferBase, public BufferWithO
 private:
 	size_t size_compressed = 0;
 
-	bool nextImpl()
+	bool nextImpl() override
 	{
 		size_t size_decompressed;
 		size_t size_compressed_without_checksum;

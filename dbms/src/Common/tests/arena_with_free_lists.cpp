@@ -140,7 +140,7 @@ struct Dictionary
 		String
 	};
 
-	struct attribute_t final
+	struct Attribute final
 	{
 		AttributeUnderlyingType type;
 		std::tuple<
@@ -158,7 +158,7 @@ struct Dictionary
 	std::unique_ptr<ArenaWithFreeLists> string_arena;
 
 	/// Эта функция компилируется в точно такой же машинный код, как в продакшене, когда был баг.
-	void NO_INLINE setAttributeValue(attribute_t & attribute, const uint64_t idx, const Field & value) const
+	void NO_INLINE setAttributeValue(Attribute & attribute, const uint64_t idx, const Field & value) const
 	{
 		switch (attribute.type)
 		{
@@ -287,11 +287,11 @@ int main(int argc, char ** argv)
 	}
 
 	Dictionary dictionary;
-	dictionary.string_arena.reset(new ArenaWithFreeLists);
+	dictionary.string_arena = std::make_unique<ArenaWithFreeLists>();
 
 	constexpr size_t cache_size = 1024;
 
-	Dictionary::attribute_t attr;
+	Dictionary::Attribute attr;
 	attr.type = Dictionary::AttributeUnderlyingType::String;
 	std::get<Dictionary::ContainerPtrType<StringRef>>(attr.arrays).reset(new StringRef[cache_size]{});
 

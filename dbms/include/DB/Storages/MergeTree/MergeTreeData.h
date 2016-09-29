@@ -426,10 +426,11 @@ public:
 	/// Проверить, что кусок не сломан и посчитать для него чексуммы, если их нет.
 	MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
 
-	/** Сделать локальный бэкап (снэпшот) для кусков, начинающихся с указанного префикса.
-	  * Бэкап создаётся в директории clickhouse_dir/shadow/i/, где i - инкрементное число.
+	/** Create local backup (snapshot) for parts with specified prefix.
+	  * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
+	  *  or if 'with_name' is specified - backup is created in directory with specified name.
 	  */
-	void freezePartition(const std::string & prefix);
+	void freezePartition(const std::string & prefix, const String & with_name);
 
 	/** Возвращает размер заданной партиции в байтах.
 	  */

@@ -1,9 +1,11 @@
 #include <iomanip>
+
 #include <Poco/InflatingStream.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
 
 #include <DB/Common/Stopwatch.h>
+#include <DB/Common/StringUtils.h>
 
 #include <DB/IO/ReadBufferFromIStream.h>
 #include <DB/IO/ReadBufferFromString.h>
@@ -34,11 +36,14 @@ namespace ErrorCodes
 }
 
 
-void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, Output & used_output)
+void HTTPHandler::processQuery(
+	Poco::Net::HTTPServerRequest & request,
+	HTMLForm & params,
+	Poco::Net::HTTPServerResponse & response,
+	Output & used_output)
 {
 	LOG_TRACE(log, "Request URI: " << request.getURI());
 
-	HTMLForm params(request);
 	std::istream & istr = request.stream();
 
 	BlockInputStreamPtr query_plan;
@@ -156,7 +161,7 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	std::unique_ptr<ReadBuffer> in;
 
 	/// Поддержка "внешних данных для обработки запроса".
-	if (0 == strncmp(request.getContentType().data(), "multipart/form-data", strlen("multipart/form-data")))
+	if (startsWith(request.getContentType().data(), "multipart/form-data"))
 	{
 		in = std::move(in_param);
 		ExternalTablesHandler handler(context, params);
@@ -213,7 +218,8 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 			|| it->first == "user"
 			|| it->first == "password"
 			|| it->first == "quota_key"
-			|| it->first == "query_id")
+			|| it->first == "query_id"
+			|| it->first == "stacktrace")
 		{
 		}
 		else
@@ -239,6 +245,9 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	/// Возможно, что выставлена настройка - не проверять чексуммы при разжатии данных от клиента, сжатых родным форматом.
 	if (in_post_compressed && context.getSettingsRef().http_native_compression_disable_checksumming_on_decompress)
 		static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
+
+	/// Добавить CORS header выставлена настройка, и если клиент передал заголовок Origin
+	used_output.out->addHeaderCORS( context.getSettingsRef().add_http_cors_header && !request.get("Origin", "").empty() );
 
 	context.setInterface(Context::Interface::HTTP);
 
@@ -288,7 +297,7 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s,
 			  * Также стоит иметь ввиду, что мы могли уже отправить код 200.
 			  */
 
-			/** Если данные есть в буфере, но их ещё не отправили, то и не будем отправлять */
+			/** If buffer has data, and that data wasn't sent yet, then no need to send that data */
 			if (used_output.out->count() - used_output.out->offset() == 0)
 			{
 				used_output.out_maybe_compressed->position() = used_output.out_maybe_compressed->buffer().begin();
@@ -312,21 +321,38 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 {
 	Output used_output;
 
+	/// In case of exception, send stack trace to client.
+	bool with_stacktrace = false;
+
 	try
 	{
 		response.setContentType("text/plain; charset=UTF-8");
 
-		/// Для того, чтобы работал keep-alive.
+		/// For keep-alive to work.
 		if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
 			response.setChunkedTransferEncoding(true);
 
-		processQuery(request, response, used_output);
+		HTMLForm params(request);
+		with_stacktrace = parse<bool>(params.get("stacktrace", "0"));
+
+		processQuery(request, params, response, used_output);
 		LOG_INFO(log, "Done processing query");
 	}
 	catch (...)
 	{
 		tryLogCurrentException(log);
-		trySendExceptionToClient(getCurrentExceptionMessage(true), request, response, used_output);
+
+		std::string exception_message = getCurrentExceptionMessage(with_stacktrace);
+
+		/** If exception is received from remote server, then stack trace is embedded in message.
+		  * If exception is thrown on local server, then stack trace is in separate field.
+		  */
+
+		auto embedded_stack_trace_pos = exception_message.find("Stack trace");
+		if (std::string::npos != embedded_stack_trace_pos && !with_stacktrace)
+			exception_message.resize(embedded_stack_trace_pos);
+
+		trySendExceptionToClient(exception_message, request, response, used_output);
 	}
 }
 

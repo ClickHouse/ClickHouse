@@ -47,6 +47,11 @@ public:
 		set(std::move(value));
 	}
 
+	MultiVersion(std::unique_ptr<T> && value)
+	{
+		set(std::move(value));
+	}
+
 	/// Получить текущую версию для использования. Возвращает shared_ptr, который определяет время жизни версии.
 	const Version get() const
 	{
@@ -66,6 +71,11 @@ public:
 	void set(T * value)
 	{
 		set(Version(value));
+	}
+
+	void set(std::unique_ptr<T> && value)
+	{
+		set(Version(value.release()));
 	}
 
 private:
