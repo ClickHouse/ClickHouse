@@ -40,12 +40,12 @@ public:
 	}
 
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		this->data(place).sum += static_cast<const ColumnVector<T> &>(column).getData()[row_num];
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).sum += this->data(rhs).sum;
 	}
@@ -55,7 +55,7 @@ public:
 		writeBinary(this->data(place).sum, buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		readBinary(this->data(place).sum, buf);
 	}

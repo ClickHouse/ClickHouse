@@ -27,14 +27,14 @@ public:
 	}
 
 	/// Добавить значение.
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override final
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override final
 	{
-		getDerived().addImpl(place, *columns[0], row_num);
+		getDerived().addImpl(place, *columns[0], row_num, arena);
 	}
 
-	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num)
+	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
 	{
-		return static_cast<const Derived &>(*that).addImpl(place, *columns[0], row_num);
+		static_cast<const Derived &>(*that).addImpl(place, *columns[0], row_num, arena);
 	}
 
 	IAggregateFunction::AddFunc getAddressOfAddFunction() const override { return &addFree; }

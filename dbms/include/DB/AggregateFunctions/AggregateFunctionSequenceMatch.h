@@ -192,7 +192,7 @@ public:
 		parsePattern();
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num) const override
+	void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
 	{
 		const auto timestamp = static_cast<const ColumnUInt32 *>(columns[0])->getData()[row_num];
 
@@ -206,7 +206,7 @@ public:
 		data(place).add(timestamp, events);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		data(place).merge(data(rhs));
 	}
@@ -216,7 +216,7 @@ public:
 		data(place).serialize(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		data(place).deserialize(buf);
 	}
@@ -234,9 +234,9 @@ public:
 		static_cast<ColumnUInt8 &>(to).getData().push_back(match(events_it, events_end));
 	}
 
-	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num)
+	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
 	{
-		return static_cast<const AggregateFunctionSequenceMatch &>(*that).add(place, columns, row_num);
+		static_cast<const AggregateFunctionSequenceMatch &>(*that).add(place, columns, row_num, arena);
 	}
 
 	IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }

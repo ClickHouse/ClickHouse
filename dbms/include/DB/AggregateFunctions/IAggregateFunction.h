@@ -5,6 +5,7 @@
 #include <DB/Core/Row.h>
 #include <DB/DataTypes/IDataType.h>
 #include <DB/Common/typeid_cast.h>
+#include <DB/Common/Arena.h>
 
 
 namespace DB
@@ -76,19 +77,29 @@ public:
 	/// Как должна быть выровнена структура с данными. NOTE: Сейчас не используется (структуры с состоянием агрегации кладутся без выравнивания).
 	virtual size_t alignOfData() const = 0;
 
-	/// Добавить значение. columns - столбцы, содержащие аргументы, row_num - номер строки в столбцах.
-	virtual void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const = 0;
+	/** Adds a value into aggregation data on which place points to.
+	 *  columns points to columns containing arguments of aggregation function.
+	 *  row_num is number of row which should be added.
+	 *  Additional parameter arena should be used instead of standard memory allocator if the addition requires memory allocation.
+	 */
+	virtual void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const = 0;
 
-	/// Объединить состояние с другим состоянием.
-	virtual void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const = 0;
+	/// Merges state (on which place points to) with other state of current aggregation function.
+	virtual void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
 
-	/// Сериализовать состояние (например, для передачи по сети).
+	/// Serializes state (to transmit it over the network, for example).
 	virtual void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const = 0;
 
-	/// Десериализовать состояние. Вызывается для пустого (только что созданного) состояния.
-	virtual void deserialize(AggregateDataPtr place, ReadBuffer & buf) const = 0;
+	/// Deserializes state. This function is called only for empty (just created) states.
+	virtual void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const = 0;
 
-	/// Вставить результат в столбец.
+	/// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
+	virtual bool allocatesMemoryInArena() const
+	{
+		return false;
+	}
+
+	/// Inserts results into a column.
 	virtual void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const = 0;
 
 	/** Возвращает true для агрегатных функций типа -State.
@@ -103,7 +114,7 @@ public:
 	  * Это даёт падение производительности на простых запросах в районе 12%.
 	  * После появления более хороших компиляторов, код можно будет убрать.
 	  */
-	using AddFunc = void (*)(const IAggregateFunction *, AggregateDataPtr, const IColumn **, size_t);
+	using AddFunc = void (*)(const IAggregateFunction *, AggregateDataPtr, const IColumn **, size_t, Arena *);
 	virtual AddFunc getAddressOfAddFunction() const = 0;
 };
 

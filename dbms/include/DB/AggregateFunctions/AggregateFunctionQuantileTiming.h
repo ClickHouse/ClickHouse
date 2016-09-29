@@ -815,12 +815,12 @@ public:
 	}
 
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		this->data(place).insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
@@ -830,7 +830,7 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).deserialize(buf);
 	}
@@ -873,14 +873,14 @@ public:
 		level = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const
 	{
 		this->data(place).insertWeighted(
 			static_cast<const ColumnVector<ArgumentFieldType> &>(column_value).getData()[row_num],
 			static_cast<const ColumnVector<WeightFieldType> &>(column_weight).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
@@ -890,7 +890,7 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).deserialize(buf);
 	}
@@ -930,12 +930,12 @@ public:
 	}
 
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		this->data(place).insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
@@ -945,7 +945,7 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).deserialize(buf);
 	}
@@ -991,14 +991,14 @@ public:
 		levels.set(params);
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const
 	{
 		this->data(place).insertWeighted(
 			static_cast<const ColumnVector<ArgumentFieldType> &>(column_value).getData()[row_num],
 			static_cast<const ColumnVector<WeightFieldType> &>(column_weight).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
@@ -1008,7 +1008,7 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).deserialize(buf);
 	}

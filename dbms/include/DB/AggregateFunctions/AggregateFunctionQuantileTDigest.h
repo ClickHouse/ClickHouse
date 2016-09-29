@@ -382,12 +382,12 @@ public:
 		level = apply_visitor(FieldVisitorConvertToNumber<Float32>(), params[0]);
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		this->data(place).digest.add(params, static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).digest.merge(params, this->data(rhs).digest);
 	}
@@ -397,7 +397,7 @@ public:
 		this->data(const_cast<AggregateDataPtr>(place)).digest.write(params, buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).digest.read(params, buf);
 	}
@@ -449,14 +449,14 @@ public:
 		level = apply_visitor(FieldVisitorConvertToNumber<Float32>(), params[0]);
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const
 	{
 		this->data(place).digest.add(params,
 			static_cast<const ColumnVector<T> &>(column_value).getData()[row_num],
 			static_cast<const ColumnVector<Weight> &>(column_weight).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).digest.merge(params, this->data(rhs).digest);
 	}
@@ -466,7 +466,7 @@ public:
 		this->data(const_cast<AggregateDataPtr>(place)).digest.write(params, buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).digest.read(params, buf);
 	}
@@ -513,12 +513,12 @@ public:
 		levels.set(params);
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		this->data(place).digest.add(params, static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).digest.merge(params, this->data(rhs).digest);
 	}
@@ -528,7 +528,7 @@ public:
 		this->data(const_cast<AggregateDataPtr>(place)).digest.write(params, buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).digest.read(params, buf);
 	}
@@ -593,14 +593,14 @@ public:
 		levels.set(params);
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const
 	{
 		this->data(place).digest.add(params,
 			static_cast<const ColumnVector<T> &>(column_value).getData()[row_num],
 			static_cast<const ColumnVector<Weight> &>(column_weight).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).digest.merge(params, this->data(rhs).digest);
 	}
@@ -610,7 +610,7 @@ public:
 		this->data(const_cast<AggregateDataPtr>(place)).digest.write(params, buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).digest.read(params, buf);
 	}

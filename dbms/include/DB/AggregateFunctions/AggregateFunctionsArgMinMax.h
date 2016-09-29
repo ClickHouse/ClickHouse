@@ -41,13 +41,13 @@ public:
 		type_val = arguments[1];
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column_arg, const IColumn & column_max, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_arg, const IColumn & column_max, size_t row_num, Arena *) const
 	{
 		if (this->data(place).value.changeIfBetter(column_max, row_num))
 			this->data(place).result.change(column_arg, row_num);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		if (this->data(place).value.changeIfBetter(this->data(rhs).value))
 			this->data(place).result.change(this->data(rhs).result);
@@ -59,7 +59,7 @@ public:
 		this->data(place).value.write(buf, *type_val.get());
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).result.read(buf, *type_res.get());
 		this->data(place).value.read(buf, *type_val.get());

@@ -2714,7 +2714,7 @@ public:
 			try
 			{
 				for (size_t j = current_offset; j < next_offset; ++j)
-					agg_func.add(place, aggregate_arguments, j);
+					agg_func.add(place, aggregate_arguments, j, nullptr);
 
 				agg_func.insertResultInto(place, res_col);
 			}

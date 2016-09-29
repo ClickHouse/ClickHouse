@@ -17,6 +17,7 @@
 #include <DB/Core/StringRef.h>
 #include <DB/Common/Exception.h>
 #include <DB/Common/StringUtils.h>
+#include <DB/Common/Arena.h>
 
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/VarInt.h>
@@ -124,6 +125,18 @@ inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t MAX_STRIN
 
 	s.resize(size);
 	buf.readStrict(&s[0], size);
+}
+
+
+inline StringRef readStringBinaryInto(Arena & arena, ReadBuffer & buf)
+{
+	size_t size = 0;
+	readVarUInt(size, buf);
+
+	char * data = arena.alloc(size);
+	buf.readStrict(data, size);
+
+	return StringRef(data, size);
 }
 
 

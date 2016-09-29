@@ -74,11 +74,12 @@ struct AggregateFunctionsUpdater
 		const Sizes & offsets_of_aggregate_states_,
 		Aggregator::AggregateColumns & aggregate_columns_,
 		AggregateDataPtr & value_,
-		size_t row_num_)
+		size_t row_num_,
+		Arena * arena_)
 		: aggregate_functions(aggregate_functions_),
 		offsets_of_aggregate_states(offsets_of_aggregate_states_),
 		aggregate_columns(aggregate_columns_),
-		value(value_), row_num(row_num_)
+		value(value_), row_num(row_num_), arena(arena_)
 	{
 	}
 
@@ -90,6 +91,7 @@ struct AggregateFunctionsUpdater
 	Aggregator::AggregateColumns & aggregate_columns;
 	AggregateDataPtr & value;
 	size_t row_num;
+	Arena * arena;
 };
 
 template <typename AggregateFunction, size_t column_num>
@@ -98,7 +100,7 @@ void AggregateFunctionsUpdater::operator()()
 	static_cast<AggregateFunction *>(aggregate_functions[column_num])->add(
 		value + offsets_of_aggregate_states[column_num],
 		&aggregate_columns[column_num][0],
-		row_num);
+		row_num, arena);
 }
 
 struct AggregateFunctionsCreator
@@ -205,7 +207,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 
 					/// Добавляем значения в агрегатные функции.
 					AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
-						aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i));
+						aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i, aggregates_pool));
 
 					method.onExistingKey(key, keys, *aggregates_pool);
 					continue;
@@ -254,7 +256,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 
 		/// Добавляем значения в агрегатные функции.
 		AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
-			aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i));
+			aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i, aggregates_pool));
 	}
 }
 
@@ -264,7 +266,8 @@ template <typename AggregateFunctionsList>
 void NO_INLINE Aggregator::executeSpecializedWithoutKey(
 	AggregatedDataWithoutKey & res,
 	size_t rows,
-	AggregateColumns & aggregate_columns) const
+	AggregateColumns & aggregate_columns,
+	Arena * arena) const
 {
 	/// Оптимизация в случае единственной агрегатной функции count.
 	AggregateFunctionCount * agg_count = params.aggregates_size == 1
@@ -278,7 +281,7 @@ void NO_INLINE Aggregator::executeSpecializedWithoutKey(
 		for (size_t i = 0; i < rows; ++i)
 		{
 			AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
-				aggregate_functions, offsets_of_aggregate_states, aggregate_columns, res, i));
+				aggregate_functions, offsets_of_aggregate_states, aggregate_columns, res, i, arena));
 		}
 	}
 }
