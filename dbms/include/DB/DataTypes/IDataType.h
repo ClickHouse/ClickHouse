@@ -87,9 +87,10 @@ public:
 	  */
 	virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
 
-	/** Текстовая сериализация в виде литерала для использования в формате JSON.
+	/** Text serialization intended for using in JSON format.
+	  * If values can be serizlized without quotes, force_quoting parameter forces to brace them into quotes (make sense for Int64 types).
 	  */
-	virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+	virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting) const = 0;
 	virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const = 0;
 
 	/** Текстовая сериализация для подстановки в формат XML.

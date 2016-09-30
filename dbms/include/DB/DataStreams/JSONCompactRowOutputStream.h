@@ -14,7 +14,7 @@ namespace DB
 class JSONCompactRowOutputStream : public JSONRowOutputStream
 {
 public:
-	JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_);
+	JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_, bool force_quoting_);
 
 	void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
 	void writeFieldDelimiter() override;
