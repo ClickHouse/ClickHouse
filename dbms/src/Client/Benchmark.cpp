@@ -8,7 +8,6 @@
 #include <fstream>
 #include <iomanip>
 #include <random>
-#include <limits.h>
 
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
@@ -27,8 +26,10 @@
 
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
+#include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/IO/Operators.h>
 
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 
@@ -193,7 +194,7 @@ private:
 		Stopwatch watch;
 
 		/// В цикле, кладём все запросы в очередь.
-		for (size_t i = 0; !(max_iterations > 0) || i < max_iterations; ++i)
+		for (size_t i = 0; !max_iterations || i < max_iterations; ++i)
 		{
 			size_t query_index = randomize ? distribution(generator) : i % queries.size();
 
@@ -347,6 +348,7 @@ private:
 
 		for (int percent = 0; percent <= 90; percent += 10)
 			print_percentile(percent);
+
 		print_percentile(95);
 		print_percentile(99);
 		print_percentile(99.9);
@@ -357,42 +359,48 @@ private:
 
 	void reportJSON(Stats & info, const std::string & filename)
 	{
-		std::ofstream jout(filename);
-		if (!jout.is_open())
-			throw Exception("Can't write JSON data");
+		WriteBufferFromFile json_out(filename);
 
 		std::lock_guard<std::mutex> lock(mutex);
 
-		double seconds = info.watch.elapsedSeconds();
-
-		jout << "{\n";
-
-		jout << "\"statistics\": {\n"
-			<< "\"QPS\":            " << (info.queries / seconds) << ",\n"
-			<< "\"RPS\":            " << (info.read_rows / seconds) << ",\n"
-			<< "\"MiBPS\":          " << (info.read_bytes / seconds / 1048576) << ",\n"
-			<< "\"RPS_result\":     " << (info.result_rows / seconds) << ",\n"
-			<< "\"MiBPS_result\":   " << (info.result_bytes / seconds / 1048576) << ",\n"
-			<< "\"num_queries\":    " << info.queries << "\n"
-			<< "},\n";
+		auto print_key_value = [&](auto key, auto value, bool with_comma = true)
+		{
+			json_out << double_quote << key << ": " << value << (with_comma ? ",\n" : "\n");
+		};
 
 		auto print_percentile = [&](auto percent, bool with_comma = true)
 		{
-			jout << "\"" << percent << "\":\t" << info.sampler.quantileInterpolated(percent / 100.0) << (with_comma ? ",\n" : "\n");
+			json_out << "\"" << percent << "\"" << ": " << info.sampler.quantileInterpolated(percent / 100.0) << (with_comma ? ",\n" : "\n");
 		};
 
-		jout << "\"query_time_percentiles\": {\n";
+		json_out << "{\n";
+
+		json_out << double_quote << "statistics" << ": {\n";
+
+		double seconds = info.watch.elapsedSeconds();
+		print_key_value("QPS", info.queries / seconds);
+		print_key_value("RPS", info.queries / seconds);
+		print_key_value("MiBPS", info.queries / seconds);
+		print_key_value("RPS_result", info.queries / seconds);
+		print_key_value("MiBPS_result", info.queries / seconds);
+		print_key_value("num_queries", info.queries / seconds, false);
+
+		json_out << "},\n";
+
+
+		json_out << double_quote << "query_time_percentiles" << ": {\n";
+
 		for (int percent = 0; percent <= 90; percent += 10)
 			print_percentile(percent);
+
 		print_percentile(95);
 		print_percentile(99);
 		print_percentile(99.9);
 		print_percentile(99.99, false);
-		jout << "}\n";
 
-		jout << "}\n";
+		json_out << "}\n";
 
-		jout.close();
+		json_out << "}\n";
 	}
 };
 
