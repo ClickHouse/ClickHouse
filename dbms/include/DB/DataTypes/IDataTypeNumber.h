@@ -134,21 +134,21 @@ template <typename FType> inline void IDataTypeNumber<FType>::serializeTextJSON(
 	serializeText(column, row_num, ostr);
 }
 
-template <> inline void IDataTypeNumber<Int64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting) const
+template <> inline void IDataTypeNumber<Int64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const
 {
-	if (force_quoting)
+	if (force_quoting_64bit_integers)
 		writeChar('"', ostr);
 	serializeText(column, row_num, ostr);
-	if (force_quoting)
+	if (force_quoting_64bit_integers)
 		writeChar('"', ostr);
 }
 
-template <> inline void IDataTypeNumber<UInt64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting) const
+template <> inline void IDataTypeNumber<UInt64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const
 {
-	if (force_quoting)
+	if (force_quoting_64bit_integers)
 		writeChar('"', ostr);
 	serializeText(column, row_num, ostr);
-	if (force_quoting)
+	if (force_quoting_64bit_integers)
 		writeChar('"', ostr);
 }
 
