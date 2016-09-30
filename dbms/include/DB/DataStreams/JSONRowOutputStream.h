@@ -16,7 +16,7 @@ class JSONRowOutputStream : public IRowOutputStream
 {
 public:
 	JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_,
-		bool write_statistics_);
+		bool write_statistics_, bool force_quoting_64bit_integers_);
 
 	void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
 	void writeFieldDelimiter() override;
@@ -68,6 +68,7 @@ protected:
 	Progress progress;
 	Stopwatch watch;
 	bool write_statistics;
+	bool force_quoting_64bit_integers;
 };
 
 }

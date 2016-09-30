@@ -56,7 +56,7 @@ public:
 		deserializeText(column, istr);
 	}
 
-	inline void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+	inline void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const override;
 
 	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override
 	{
@@ -121,7 +121,7 @@ public:
 	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override {}
 	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
 	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override {}
-	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
+	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const override {}
 	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override {}
 	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override {}
 	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override {}
@@ -129,26 +129,30 @@ public:
 	Field getDefault() const override { return {}; }
 };
 
-template <typename FType> inline void IDataTypeNumber<FType>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+template <typename FType> inline void IDataTypeNumber<FType>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const
 {
 	serializeText(column, row_num, ostr);
 }
 
-template <> inline void IDataTypeNumber<Int64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+template <> inline void IDataTypeNumber<Int64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const
 {
-	writeChar('"', ostr);
+	if (force_quoting_64bit_integers)
+		writeChar('"', ostr);
 	serializeText(column, row_num, ostr);
-	writeChar('"', ostr);
+	if (force_quoting_64bit_integers)
+		writeChar('"', ostr);
 }
 
-template <> inline void IDataTypeNumber<UInt64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+template <> inline void IDataTypeNumber<UInt64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const
 {
-	writeChar('"', ostr);
+	if (force_quoting_64bit_integers)
+		writeChar('"', ostr);
 	serializeText(column, row_num, ostr);
-	writeChar('"', ostr);
+	if (force_quoting_64bit_integers)
+		writeChar('"', ostr);
 }
 
-template <> inline void IDataTypeNumber<Float32>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+template <> inline void IDataTypeNumber<Float32>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const
 {
 	auto x = static_cast<const ColumnType &>(column).getData()[row_num];
 	if (likely(std::isfinite(x)))
@@ -157,7 +161,7 @@ template <> inline void IDataTypeNumber<Float32>::serializeTextJSON(const IColum
 		writeCString("null", ostr);
 }
 
-template <> inline void IDataTypeNumber<Float64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+template <> inline void IDataTypeNumber<Float64>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const
 {
 	auto x = static_cast<const ColumnType &>(column).getData()[row_num];
 	if (likely(std::isfinite(x)))
