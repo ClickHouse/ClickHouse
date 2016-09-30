@@ -1,4 +1,5 @@
-clickhouse-client -n --query "DROP TABLE IF EXISTS test.json_noisy;  CREATE TABLE test.json_noisy (d1 UInt8, d2 String) ENGINE = Memory"
+#!/bin/bash
+clickhouse-client -n --query "DROP TABLE IF EXISTS test.json_noisy; CREATE TABLE test.json_noisy (d1 UInt8, d2 String) ENGINE = Memory"
 
 echo '{"d1" : 1, "d2" : "ok"}
 { }
