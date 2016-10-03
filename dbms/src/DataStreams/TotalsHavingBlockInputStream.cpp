@@ -208,12 +208,12 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 		{
 			for (size_t j = 0; j < size; ++j)
 				if ((*filter)[j])
-					function->merge(data, vec[j]);
+					function->merge(data, vec[j], arena.get());
 		}
 		else
 		{
 			for (size_t j = 0; j < size; ++j)
-				function->merge(data, vec[j]);
+				function->merge(data, vec[j], arena.get());
 		}
 	}
 }

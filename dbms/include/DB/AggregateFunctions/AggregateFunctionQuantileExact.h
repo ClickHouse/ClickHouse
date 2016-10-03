@@ -68,12 +68,12 @@ public:
 		level = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		this->data(place).array.push_back(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).array.insert(this->data(rhs).array.begin(), this->data(rhs).array.end());
 	}
@@ -87,7 +87,7 @@ public:
 		buf.write(reinterpret_cast<const char *>(&array[0]), size * sizeof(array[0]));
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		auto & array = this->data(place).array;
 
@@ -150,12 +150,12 @@ public:
 		levels.set(params);
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		this->data(place).array.push_back(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).array.insert(this->data(rhs).array.begin(), this->data(rhs).array.end());
 	}
@@ -169,7 +169,7 @@ public:
 		buf.write(reinterpret_cast<const char *>(&array[0]), size * sizeof(array[0]));
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		auto & array = this->data(place).array;
 

@@ -74,14 +74,14 @@ public:
 		level = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const
 	{
 		this->data(place)
 			.map[static_cast<const ColumnVector<ValueType> &>(column_value).getData()[row_num]]
 			+= static_cast<const ColumnVector<WeightType> &>(column_weight).getData()[row_num];
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		auto & map = this->data(place).map;
 		const auto & rhs_map = this->data(rhs).map;
@@ -95,7 +95,7 @@ public:
 		this->data(place).map.write(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		typename AggregateFunctionQuantileExactWeightedData<ValueType>::Map::Reader reader(buf);
 
@@ -189,14 +189,14 @@ public:
 		levels.set(params);
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const
 	{
 		this->data(place)
 			.map[static_cast<const ColumnVector<ValueType> &>(column_value).getData()[row_num]]
 			+= static_cast<const ColumnVector<WeightType> &>(column_weight).getData()[row_num];
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		auto & map = this->data(place).map;
 		const auto & rhs_map = this->data(rhs).map;
@@ -210,7 +210,7 @@ public:
 		this->data(place).map.write(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		typename AggregateFunctionQuantileExactWeightedData<ValueType>::Map::Reader reader(buf);
 

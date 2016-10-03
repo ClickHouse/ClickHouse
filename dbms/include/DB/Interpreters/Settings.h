@@ -225,7 +225,10 @@ struct Settings
 	M(SettingBool, add_http_cors_header, false) \
 	\
 	/** Skip columns with unknown names from input data (it works for JSONEachRow and TSKV formats). */ \
-	M(SettingBool, input_format_skip_unknown_fields, false)
+	M(SettingBool, input_format_skip_unknown_fields, false) \
+	\
+	/** Controls quoting of 64-bit integers in JSON output format. */ \
+	M(SettingBool, output_format_json_quote_64bit_integers, true)
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

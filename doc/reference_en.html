@@ -6616,12 +6616,17 @@ Allows setting a default sampling coefficient for all SELECT queries.
 (For tables that don&#39;t support sampling, an exception will be thrown.)
 If set to 1, default sampling is not performed.
 
-====input_format_skip_unknown_fields==
+==input_format_skip_unknown_fields==
 
 If the parameter is true, INSERT operation will skip columns with unknown names from input.
-Otherwise, an exception will be generated.
+Otherwise, an exception will be generated, it is default behavior.
 The parameter works only for JSONEachRow and TSKV input formats.
 
+==output_format_json_quote_64bit_integers==
+
+If the parameter is true (default value), UInt64 and Int64 numbers are printed as quoted strings in all JSON output formats.
+Such behavior is compatible with most JavaScript interpreters that stores all numbers as double-precision floating point numbers.
+Otherwise, they are printed as regular numbers.
 
 ==Restrictions on query complexity==
 
