@@ -133,3 +133,15 @@ namespace Test
 		Poco::Logger::root().setLevel("trace");
 	}
 };
+
+/// использование в boost_unit_test:
+/// BOOST_GLOBAL_FIXTURE(TestLogInitializer);
+///
+/// без namespace, т.к. BOOST_GLOBAL_FIXTURE некорректно работает с namespace
+struct TestLogInitializer
+{
+    TestLogInitializer()
+    {
+        Test::initLogger();
+    }
+};
