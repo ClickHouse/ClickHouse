@@ -29,7 +29,7 @@ public:
 		const Context & context_ = getDefaultContext());
 
 	/// Принимает пул, из которого нужно будет достать одно или несколько соединений.
-	RemoteBlockInputStream(IConnectionPool * pool_, const String & query_, const Settings * settings_,
+	RemoteBlockInputStream(ConnectionPoolPtr & pool_, const String & query_, const Settings * settings_,
 		ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
 		QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
 		const Context & context_ = getDefaultContext());
@@ -110,7 +110,7 @@ private:
 	Connection * connection = nullptr;
 
 	/// Пул соединений одного шарда.
-	IConnectionPool * pool = nullptr;
+	ConnectionPoolPtr pool = nullptr;
 
 	/// Пулы соединений одного или нескольких шардов.
 	ConnectionPoolsPtr pools;

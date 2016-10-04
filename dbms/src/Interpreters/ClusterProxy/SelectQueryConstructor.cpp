@@ -34,7 +34,7 @@ BlockInputStreamPtr SelectQueryConstructor::createLocal(ASTPtr query_ast, const 
 	return std::make_shared<MaterializingBlockInputStream>(stream);
 }
 
-BlockInputStreamPtr SelectQueryConstructor::createRemote(IConnectionPool * pool, const std::string & query,
+BlockInputStreamPtr SelectQueryConstructor::createRemote(ConnectionPoolPtr & pool, const std::string & query,
 	const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
 	auto stream = std::make_shared<RemoteBlockInputStream>(pool, query, &settings, throttler, external_tables, processed_stage, context);
