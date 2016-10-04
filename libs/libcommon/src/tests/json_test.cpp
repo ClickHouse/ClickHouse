@@ -1,4 +1,4 @@
-#define BOOST_TEST_MODULE JSON
+#define BOOST_TEST_MODULE JSON_MODULE
 
 #include <vector>
 #include <string>
@@ -646,18 +646,18 @@ void test()
 				JSON j(r.input.c_str(), r.input.c_str() + r.input.size());
 				
 				BOOST_CHECK_EQUAL(j.getString(), r.result);
-				BOOST_CHECK_EQUAL(r.result_type, ResultType::Return);
+				BOOST_CHECK(r.result_type == ResultType::Return);
 			}
 			catch (JSONException & e)
 			{
-				BOOST_CHECK_EQUAL(r.result_type, ResultType::Throw);
+				BOOST_CHECK(r.result_type == ResultType::Throw);
 				BOOST_CHECK_EQUAL(e.message(), r.result);
 			}
 		}
 	}
 }
 
-BOOST_AUTO_TEST_SUITE(JSON)
+BOOST_AUTO_TEST_SUITE(JSON_Suite)
 
 BOOST_AUTO_TEST_CASE(SimpleTest)
 {
