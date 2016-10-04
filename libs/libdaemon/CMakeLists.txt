@@ -4,6 +4,7 @@ add_library (daemon
 
 	include/daemon/BaseDaemon.h
 	include/daemon/GraphiteWriter.h
+	include/daemon/OwnPatternFormatter.h
 )
 
 target_link_libraries (daemon dbms)

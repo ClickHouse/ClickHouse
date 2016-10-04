@@ -16,8 +16,10 @@
 
 #include <DB/Common/StackTrace.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <daemon/OwnPatternFormatter.h>
 
 #include <Poco/ConsoleChannel.h>
+#include <Poco/FormattingChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
 
@@ -121,8 +123,13 @@ namespace Test
 
 	inline void initLogger()
 	{
-		Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
-		Poco::Logger::root().setChannel(channel);
+		Poco::AutoPtr<OwnPatternFormatter> pattern_formatter = new OwnPatternFormatter(nullptr);
+		pattern_formatter->setProperty("times", "local");
+		Poco::AutoPtr<Poco::FormattingChannel> formatting_channel = new Poco::FormattingChannel(pattern_formatter);
+		Poco::AutoPtr<Poco::ConsoleChannel> console_channel = new Poco::ConsoleChannel(std::cerr);
+		formatting_channel->setChannel(console_channel);
+		
+		Poco::Logger::root().setChannel(formatting_channel);
 		Poco::Logger::root().setLevel("trace");
 	}
 };
