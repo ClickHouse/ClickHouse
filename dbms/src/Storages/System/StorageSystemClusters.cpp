@@ -73,14 +73,14 @@ BlockInputStreams StorageSystemClusters::read(
 		default_database_column->insert(address.default_database);
 	};
 
-	const auto & clusters = context.getClusters();
-	for (const auto & entry : clusters->impl)
+	auto clusters = context.getClusters().getClusters();
+	for (const auto & entry : clusters)
 	{
 		const std::string cluster_name = entry.first;
-		const Cluster & cluster = entry.second;
-		const auto & addresses = cluster.getShardsAddresses();
-		const auto & addresses_with_failover = cluster.getShardsWithFailoverAddresses();
-		const auto & shards_info = cluster.getShardsInfo();
+		const ClusterPtr cluster = entry.second;
+		const auto & addresses = cluster->getShardsAddresses();
+		const auto & addresses_with_failover = cluster->getShardsWithFailoverAddresses();
+		const auto & shards_info = cluster->getShardsInfo();
 
 		if (!addresses.empty())
 		{

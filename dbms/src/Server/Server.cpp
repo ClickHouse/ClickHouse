@@ -67,7 +67,7 @@ namespace ErrorCodes
 class PingRequestHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
 	{
 		try
 		{
@@ -86,7 +86,7 @@ public:
 class NotFoundHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
 	{
 		try
 		{
@@ -122,7 +122,7 @@ public:
 	HTTPRequestHandlerFactory(Server & server_, const std::string & name_)
 		: server(server_), log(&Logger::get(name_)), name(name_) {}
 
-	Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request)
+	Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override
 	{
 		LOG_TRACE(log, "HTTP Request for " << name << ". "
 			<< "Method: " << request.getMethod()
@@ -167,7 +167,7 @@ private:
 public:
 	TCPConnectionFactory(Server & server_) : server(server_), log(&Logger::get("TCPConnectionFactory")) {}
 
-	Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket)
+	Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket) override
 	{
 		LOG_TRACE(log, "TCP Request. " << "Address: " << socket.peerAddress().toString());
 
@@ -279,8 +279,11 @@ int Server::main(const std::vector<std::string> & args)
 	if (config().has("macros"))
 		global_context->setMacros(Macros(config(), "macros"));
 
-	std::string users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
-	auto users_config_reloader = std::make_unique<UsersConfigReloader>(users_config_path, global_context.get());
+	/// Initialize automatic config updater
+	std::string main_config_path = config().getString("config-file", "config.xml");
+	std::string users_config_path = config().getString("users_config", main_config_path);
+	std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
+	auto users_config_reloader = std::make_unique<UsersConfigReloader>(main_config_path, users_config_path, include_from_path, global_context.get());
 
 	/// Максимальное количество одновременно выполняющихся запросов.
 	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));

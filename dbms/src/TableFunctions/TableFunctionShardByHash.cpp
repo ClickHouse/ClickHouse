@@ -64,10 +64,10 @@ StoragePtr TableFunctionShardByHash::execute(ASTPtr ast_function, Context & cont
 		if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(arg.get()))
 			id->kind = ASTIdentifier::Table;
 
-	const Cluster & cluster = context.getCluster(cluster_name);
-	size_t shard_index = sipHash64(key) % cluster.getShardCount();
+	auto cluster = context.getCluster(cluster_name);
+	size_t shard_index = sipHash64(key) % cluster->getShardCount();
 
-	std::shared_ptr<Cluster> shard(cluster.getClusterWithSingleShard(shard_index).release());
+	std::shared_ptr<Cluster> shard(cluster->getClusterWithSingleShard(shard_index).release());
 
 	return StorageDistributed::create(
 		getName(),

@@ -276,8 +276,9 @@ public:
 	  */
 	void resetCaches() const;
 
-	const Cluster & getCluster(const std::string & cluster_name) const;
-	std::shared_ptr<Clusters> getClusters() const;
+	Clusters & getClusters() const;
+	std::shared_ptr<Cluster> getCluster(const std::string & cluster_name, bool throw_on_error = true) const;
+	void setClustersConfig(ConfigurationPtr config);
 
 	Compiler & getCompiler();
 	QueryLog & getQueryLog();

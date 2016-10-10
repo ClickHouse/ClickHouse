@@ -76,10 +76,8 @@ Poco::Net::SocketAddress resolveSocketAddress(const String & host_and_port)
 
 /// Implementation of Cluster::Address class
 
-Cluster::Address::Address(const String & config_prefix)
+Cluster::Address::Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-	const auto & config = Poco::Util::Application::instance().config();
-
 	host_name = config.getString(config_prefix + ".host");
 	port = config.getInt(config_prefix + ".port");
 	resolved_address = resolveSocketAddress(host_name, port);
@@ -111,23 +109,47 @@ Cluster::Address::Address(const String & host_port_, const String & user_, const
 
 /// Implementation of Clusters class
 
-Clusters::Clusters(const Settings & settings, const String & config_name)
+Clusters::Clusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
 {
-	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 	Poco::Util::AbstractConfiguration::Keys config_keys;
 	config.keys(config_name, config_keys);
 
 	for (const auto & key : config_keys)
-		impl.emplace(std::piecewise_construct,
-			std::forward_as_tuple(key),
-			std::forward_as_tuple(settings, config_name + "." + key));
+		impl.emplace(key, std::make_shared<Cluster>(config, settings, config_name + "." + key));
+}
+
+void Clusters::updateClusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
+{
+	Poco::Util::AbstractConfiguration::Keys config_keys;
+	config.keys(config_name, config_keys);
+
+	std::lock_guard<std::mutex> lock(mutex);
+
+	for (const auto & key : config_keys)
+	{
+		auto it = impl.find(key);
+		auto new_cluster = std::make_shared<Cluster>(config, settings, config_name + "." + key);
+
+		if (it == impl.end())
+			impl.emplace(key, std::move(new_cluster));
+		else
+		{
+			//TODO: Check that cluster update is necessarily
+			it->second = std::move(new_cluster);
+		}
+	}
+}
+
+Clusters::Impl Clusters::getClusters() const
+{
+	std::lock_guard<std::mutex> lock(mutex);
+	return impl;
 }
 
 /// Реализация класса Cluster
 
-Cluster::Cluster(const Settings & settings, const String & cluster_name)
+Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name)
 {
-	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 	Poco::Util::AbstractConfiguration::Keys config_keys;
 	config.keys(cluster_name, config_keys);
 
@@ -149,7 +171,7 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 			if (weight == 0)
 				continue;
 
-			addresses.emplace_back(prefix);
+			addresses.emplace_back(config, prefix);
 			addresses.back().replica_num = 1;
 			const auto & address = addresses.back();
 
@@ -206,7 +228,7 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 
 				if (startsWith(replica_key, "replica"))
 				{
-					replica_addresses.emplace_back(partial_prefix + replica_key);
+					replica_addresses.emplace_back(config, partial_prefix + replica_key);
 					replica_addresses.back().replica_num = current_replica_num;
 					++current_replica_num;
 

@@ -7,6 +7,8 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Client/ConnectionPool.h>
 #include <DB/Client/MultiplexedConnections.h>
+#include <DB/Interpreters/Cluster.h>
+
 
 namespace DB
 {
