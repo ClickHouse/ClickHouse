@@ -62,7 +62,7 @@ try
 		//copyData(row_input, row_output);
 
 		BlockInputStreamFromRowInputStream in(std::make_shared<TabSeparatedRowInputStream>(in_buf, sample, true, true), sample);
-		BlockOutputStreamFromRowOutputStream out(std::make_shared<JSONRowOutputStream>(out_buf, sample, false));
+		BlockOutputStreamFromRowOutputStream out(std::make_shared<JSONRowOutputStream>(out_buf, sample, false, true));
 		copyData(in, out);
 	}
 
