@@ -28,11 +28,6 @@ set_target_properties( "${LIBNAME}"
 
 target_link_libraries( "${LIBNAME}" PocoFoundation)
 
-if(ENABLE_DATA_SQLITE)
-    # SQlite3 is built in any case
-    add_subdirectory( SQLite )
-endif(ENABLE_DATA_SQLITE)
-
 if(ENABLE_DATA_MYSQL)
     find_package(MySQL)
     if(MYSQL_FOUND)
