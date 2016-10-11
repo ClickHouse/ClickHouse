@@ -12,7 +12,7 @@ namespace ErrorCodes
 
 ProcessList::EntryPtr ProcessList::insert(
 	const String & query_, const String & user_, const String & query_id_, const Poco::Net::IPAddress & ip_address_,
-	const Settings & settings)
+	UInt16 port_, const Settings & settings)
 {
 	EntryPtr res;
 
@@ -54,7 +54,7 @@ ProcessList::EntryPtr ProcessList::insert(
 		++cur_size;
 
 		res = std::make_shared<Entry>(*this, cont.emplace(cont.end(),
-			query_, user_, query_id_, ip_address_,
+			query_, user_, query_id_, ip_address_, port_,
 			settings.limits.max_memory_usage, settings.memory_tracker_fault_probability,
 			priorities.insert(settings.priority)));
 

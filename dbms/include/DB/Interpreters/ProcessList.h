@@ -33,6 +33,7 @@ struct ProcessInfo
 	String user;
 	String query_id;
 	Poco::Net::IPAddress ip_address;
+	UInt16 port;
 	double elapsed_seconds;
 	size_t rows;
 	size_t bytes;
@@ -48,6 +49,7 @@ struct ProcessListElement
 	String user;
 	String query_id;
 	Poco::Net::IPAddress ip_address;
+	UInt16 port;
 
 	Stopwatch watch;
 
@@ -67,9 +69,9 @@ struct ProcessListElement
 
 	ProcessListElement(const String & query_, const String & user_,
 		const String & query_id_, const Poco::Net::IPAddress & ip_address_,
-		size_t max_memory_usage, double memory_tracker_fault_probability,
+		UInt16 port_, size_t max_memory_usage, double memory_tracker_fault_probability,
 		QueryPriorities::Handle && priority_handle_)
-		: query(query_), user(user_), query_id(query_id_), ip_address(ip_address_), memory_tracker(max_memory_usage),
+		: query(query_), user(user_), query_id(query_id_), ip_address(ip_address_), port(port_), memory_tracker(max_memory_usage),
 		priority_handle(std::move(priority_handle_))
 	{
 		memory_tracker.setDescription("(for query)");
@@ -101,6 +103,7 @@ struct ProcessListElement
 			.user 				= user,
 			.query_id 			= query_id,
 			.ip_address 		= ip_address,
+			.port				= port,
 			.elapsed_seconds 	= watch.elapsedSeconds(),
 			.rows 				= progress.rows,
 			.bytes 				= progress.bytes,
@@ -184,7 +187,7 @@ public:
 	  * Если времени не хватило - кинуть исключение.
 	  */
 	EntryPtr insert(const String & query_, const String & user_, const String & query_id_, const Poco::Net::IPAddress & ip_address_,
-		const Settings & settings);
+		UInt16 port_, const Settings & settings);
 
 	/// Количество одновременно выполняющихся запросов.
 	size_t size() const { return cur_size; }

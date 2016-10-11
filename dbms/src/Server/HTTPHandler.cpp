@@ -108,7 +108,7 @@ void HTTPHandler::processQuery(
 	Context context = *server.global_context;
 	context.setGlobalContext(*server.global_context);
 
-	context.setUser(user, password, request.clientAddress().host(), quota_key);
+	context.setUser(user, password, request.clientAddress().host(), request.clientAddress().port(), quota_key);
 	context.setCurrentQueryId(query_id);
 
 	std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query_param);
