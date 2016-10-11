@@ -283,7 +283,7 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, const String & quota_key)
+void Context::setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, UInt16 port, const String & quota_key)
 {
 	auto lock = getLock();
 
@@ -291,8 +291,9 @@ void Context::setUser(const String & name, const String & password, const Poco::
 	setSetting("profile", user_props.profile);
 	setQuota(user_props.quota, quota_key, name, address);
 
-	user = name;
-	ip_address = address;
+	this->user = name;
+	this->ip_address = address;
+	this->port = port;
 }
 
 

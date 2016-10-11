@@ -15,6 +15,7 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
 	, columns{
 		{ "user", 			std::make_shared<DataTypeString>()	},
 		{ "address",		std::make_shared<DataTypeString>()	},
+		{ "port",			std::make_shared<DataTypeUInt16>()	},
 		{ "elapsed", 		std::make_shared<DataTypeFloat64>()	},
 		{ "rows_read", 		std::make_shared<DataTypeUInt64>()	},
 		{ "bytes_read",		std::make_shared<DataTypeUInt64>()	},
@@ -46,6 +47,7 @@ BlockInputStreams StorageSystemProcesses::read(
 
 	ColumnWithTypeAndName col_user{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "user"};
 	ColumnWithTypeAndName col_address{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "address"};
+	ColumnWithTypeAndName col_port{std::make_shared<ColumnUInt16>(), std::make_shared<DataTypeUInt16>(), "port"};
 	ColumnWithTypeAndName col_elapsed{std::make_shared<ColumnFloat64>(), std::make_shared<DataTypeFloat64>(), "elapsed"};
 	ColumnWithTypeAndName col_rows_read{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "rows_read"};
 	ColumnWithTypeAndName col_bytes_read{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "bytes_read"};
@@ -60,6 +62,7 @@ BlockInputStreams StorageSystemProcesses::read(
 	{
 		col_user.column->insert(process.user);
 		col_address.column->insert(process.ip_address.toString());
+		col_port.column->insert(static_cast<UInt64>(process.port));
 		col_elapsed.column->insert(process.elapsed_seconds);
 		col_rows_read.column->insert(process.rows);
 		col_bytes_read.column->insert(process.bytes);
@@ -72,6 +75,7 @@ BlockInputStreams StorageSystemProcesses::read(
 	Block block{
 		col_user,
 		col_address,
+		col_port,
 		col_elapsed,
 		col_rows_read,
 		col_bytes_read,
