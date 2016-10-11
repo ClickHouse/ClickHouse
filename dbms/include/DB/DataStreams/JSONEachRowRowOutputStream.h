@@ -14,7 +14,7 @@ namespace DB
 class JSONEachRowRowOutputStream : public IRowOutputStream
 {
 public:
-	JSONEachRowRowOutputStream(WriteBuffer & ostr_, const Block & sample, bool force_quoting_64bit_integers_);
+	JSONEachRowRowOutputStream(WriteBuffer & ostr_, const Block & sample, bool force_quoting_64bit_integers_ = true);
 
 	void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
 	void writeFieldDelimiter() override;
