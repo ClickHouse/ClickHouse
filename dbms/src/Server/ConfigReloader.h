@@ -21,13 +21,13 @@ class Context;
   * NOTE: Не перезагружает конфиг, если изменились другие файлы, влияющие на обработку конфига: metrika.xml
   *  и содержимое conf.d и users.d. Это можно исправить, переместив проверку времени изменения файлов в ConfigProcessor.
   */
-class UsersConfigReloader
+class ConfigReloader
 {
 public:
-	UsersConfigReloader(const std::string & path, Context * context);
-	UsersConfigReloader(const std::string & main_config_path_, const std::string & users_config_path_, const std::string & include_from_path_, Context * context_);
+	ConfigReloader(const std::string & path, Context * context);
+	ConfigReloader(const std::string & main_config_path_, const std::string & users_config_path_, const std::string & include_from_path_, Context * context_);
 
-	~UsersConfigReloader();
+	~ConfigReloader();
 
 private:
 
@@ -92,7 +92,7 @@ private:
 	std::atomic<bool> quit{false};
 	std::thread thread;
 
-	Poco::Logger * log = &Logger::get("UsersConfigReloader");
+	Poco::Logger * log = &Logger::get("ConfigReloader");
 };
 
 }

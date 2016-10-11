@@ -50,7 +50,7 @@
 #include "InterserverIOHTTPHandler.h"
 #include "TCPHandler.h"
 #include "MetricsTransmitter.h"
-#include "UsersConfigReloader.h"
+#include "ConfigReloader.h"
 #include "StatusFile.h"
 
 
@@ -283,7 +283,7 @@ int Server::main(const std::vector<std::string> & args)
 	std::string main_config_path = config().getString("config-file", "config.xml");
 	std::string users_config_path = config().getString("users_config", main_config_path);
 	std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
-	auto users_config_reloader = std::make_unique<UsersConfigReloader>(main_config_path, users_config_path, include_from_path, global_context.get());
+	auto users_config_reloader = std::make_unique<ConfigReloader>(main_config_path, users_config_path, include_from_path, global_context.get());
 
 	/// Максимальное количество одновременно выполняющихся запросов.
 	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));

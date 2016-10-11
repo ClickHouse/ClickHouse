@@ -1,4 +1,4 @@
-#include "UsersConfigReloader.h"
+#include "ConfigReloader.h"
 
 #include <Poco/Util/Application.h>
 #include <Poco/File.h>
@@ -16,7 +16,7 @@ namespace DB
 namespace ErrorCodes { extern const int FILE_DOESNT_EXIST; }
 
 
-UsersConfigReloader::UsersConfigReloader(const std::string & main_config_path_, const std::string & users_config_path_, const std::string & include_from_path_, Context * context_)
+ConfigReloader::ConfigReloader(const std::string & main_config_path_, const std::string & users_config_path_, const std::string & include_from_path_, Context * context_)
 	: main_config_path(main_config_path_), users_config_path(users_config_path_), include_from_path(include_from_path_), context(context_)
 {
 	/// Assume that paths derived from --config-file, <users_config> and <include_from> are not changed
@@ -33,25 +33,25 @@ UsersConfigReloader::UsersConfigReloader(const std::string & main_config_path_, 
 	/// Setup users on server init
 	reloadIfNewer(false, true);
 
-	thread = std::thread(&UsersConfigReloader::run, this);
+	thread = std::thread(&ConfigReloader::run, this);
 }
 
-UsersConfigReloader::~UsersConfigReloader()
+ConfigReloader::~ConfigReloader()
 {
 	try
 	{
-		LOG_DEBUG(log, "UsersConfigReloader::~UsersConfigReloader()");
+		LOG_DEBUG(log, "ConfigReloader::~ConfigReloader()");
 		quit = true;
 		thread.join();
 	}
 	catch (...)
 	{
-		tryLogCurrentException("~UsersConfigReloader");
+		tryLogCurrentException("~ConfigReloader");
 	}
 }
 
 
-void UsersConfigReloader::run()
+void ConfigReloader::run()
 {
 	setThreadName("UserConfReload");
 
@@ -63,7 +63,7 @@ void UsersConfigReloader::run()
 }
 
 
-UsersConfigReloader::FilesChangesTracker UsersConfigReloader::getFileListFor(const std::string & root_config_path)
+ConfigReloader::FilesChangesTracker ConfigReloader::getFileListFor(const std::string & root_config_path)
 {
 	FilesChangesTracker file_list;
 
@@ -77,7 +77,7 @@ UsersConfigReloader::FilesChangesTracker UsersConfigReloader::getFileListFor(con
 }
 
 
-ConfigurationPtr UsersConfigReloader::loadConfigFor(const std::string & root_config_path, bool throw_on_error)
+ConfigurationPtr ConfigReloader::loadConfigFor(const std::string & root_config_path, bool throw_on_error)
 {
 	ConfigurationPtr config;
 
@@ -108,7 +108,7 @@ ConfigurationPtr UsersConfigReloader::loadConfigFor(const std::string & root_con
 }
 
 
-bool UsersConfigReloader::applyConfigFor(bool for_main, ConfigurationPtr config, bool throw_on_error)
+bool ConfigReloader::applyConfigFor(bool for_main, ConfigurationPtr config, bool throw_on_error)
 {
 	auto & root_config_path = (for_main) ? main_config_path : users_config_path;
 
@@ -152,7 +152,7 @@ bool UsersConfigReloader::applyConfigFor(bool for_main, ConfigurationPtr config,
 }
 
 
-void UsersConfigReloader::reloadIfNewer(bool force_main, bool force_users)
+void ConfigReloader::reloadIfNewer(bool force_main, bool force_users)
 {
 	FilesChangesTracker main_config_files = getFileListFor(main_config_path);
 	if (force_main || main_config_files.isDifferOrNewerThan(last_main_config_files))
