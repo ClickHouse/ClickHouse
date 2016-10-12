@@ -7,8 +7,8 @@ namespace DB
 {
 
 
-JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_)
-	: dst_ostr(ostr_), write_statistics(write_statistics_)
+JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_, bool force_quoting_64bit_integers_)
+	: dst_ostr(ostr_), write_statistics(write_statistics_), force_quoting_64bit_integers(force_quoting_64bit_integers_)
 {
 	NamesAndTypesList columns(sample_.getColumnsList());
 	fields.assign(columns.begin(), columns.end());
@@ -72,7 +72,7 @@ void JSONRowOutputStream::writeField(const IColumn & column, const IDataType & t
 	writeCString("\t\t\t", *ostr);
 	writeString(fields[field_number].name, *ostr);
 	writeCString(": ", *ostr);
-	type.serializeTextJSON(column, row_num, *ostr);
+	type.serializeTextJSON(column, row_num, *ostr, force_quoting_64bit_integers);
 	++field_number;
 }
 
@@ -152,7 +152,7 @@ void JSONRowOutputStream::writeTotals()
 			writeCString("\t\t", *ostr);
 			writeJSONString(column.name, *ostr);
 			writeCString(": ", *ostr);
-			column.type->serializeTextJSON(*column.column.get(), 0, *ostr);
+			column.type->serializeTextJSON(*column.column.get(), 0, *ostr, force_quoting_64bit_integers);
 		}
 
 		writeChar('\n', *ostr);
@@ -161,7 +161,7 @@ void JSONRowOutputStream::writeTotals()
 }
 
 
-static void writeExtremesElement(const char * title, const Block & extremes, size_t row_num, WriteBuffer & ostr)
+static void writeExtremesElement(const char * title, const Block & extremes, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers)
 {
 	writeCString("\t\t\"", ostr);
 	writeCString(title, ostr);
@@ -179,7 +179,7 @@ static void writeExtremesElement(const char * title, const Block & extremes, siz
 		writeCString("\t\t\t", ostr);
 		writeJSONString(column.name, ostr);
 		writeCString(": ", ostr);
-		column.type->serializeTextJSON(*column.column.get(), row_num, ostr);
+		column.type->serializeTextJSON(*column.column.get(), row_num, ostr, force_quoting_64bit_integers);
 	}
 
 	writeChar('\n', ostr);
@@ -195,9 +195,9 @@ void JSONRowOutputStream::writeExtremes()
 		writeCString("\t\"extremes\":\n", *ostr);
 		writeCString("\t{\n", *ostr);
 
-		writeExtremesElement("min", extremes, 0, *ostr);
+		writeExtremesElement("min", extremes, 0, *ostr, force_quoting_64bit_integers);
 		writeCString(",\n", *ostr);
-		writeExtremesElement("max", extremes, 1, *ostr);
+		writeExtremesElement("max", extremes, 1, *ostr, force_quoting_64bit_integers);
 
 		writeChar('\n', *ostr);
 		writeCString("\t}", *ostr);

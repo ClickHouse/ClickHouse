@@ -184,6 +184,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 				context.getUser(),
 				context.getCurrentQueryId(),
 				context.getIPAddress(),
+				context.getPort(),
 				settings);
 
 			context.setProcessListElement(&process_list_entry->get());

@@ -26,8 +26,10 @@
 
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
+#include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/IO/Operators.h>
 
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 
@@ -38,8 +40,8 @@
 #include "InterruptListener.h"
 
 
-/** Инструмент для измерения производительности ClickHouse
-  *  при выполнении запросов с фиксированным количеством одновременных запросов.
+/** A tool for evaluating ClickHouse performance.
+  * The tool emulates a case with fixed amount of simultaneously executing queries.
   */
 
 namespace DB
@@ -58,12 +60,13 @@ public:
 	Benchmark(unsigned concurrency_, double delay_,
 			const String & host_, UInt16 port_, const String & default_database_,
 			const String & user_, const String & password_, const String & stage,
-			bool randomize_,
-			const Settings & settings_)
-		: concurrency(concurrency_), delay(delay_), queue(concurrency),
+			bool randomize_, size_t max_iterations_, double max_time_,
+			const String & json_path_, const Settings & settings_)
+		:
+		concurrency(concurrency_), delay(delay_), queue(concurrency),
 		connections(concurrency, host_, port_, default_database_, user_, password_),
-		randomize(randomize_),
-		settings(settings_), pool(concurrency)
+		randomize(randomize_), max_iterations(max_iterations_), max_time(max_time_),
+		json_path(json_path_), settings(settings_), pool(concurrency)
 	{
 		std::cerr << std::fixed << std::setprecision(3);
 
@@ -75,6 +78,11 @@ public:
 			query_processing_stage = QueryProcessingStage::WithMergeableState;
 		else
 			throw Exception("Unknown query processing stage: " + stage, ErrorCodes::BAD_ARGUMENTS);
+
+		if (!json_path.empty() && Poco::File(json_path).exists()) /// Clear file with previous results
+		{
+			Poco::File(json_path).remove();
+		}
 
 		readQueries();
 		run();
@@ -94,6 +102,9 @@ private:
 
 	ConnectionPool connections;
 	bool randomize;
+	size_t max_iterations;
+	double max_time;
+	String json_path;
 	Settings settings;
 	QueryProcessingStage::Enum query_processing_stage;
 
@@ -183,18 +194,13 @@ private:
 		Stopwatch watch;
 
 		/// В цикле, кладём все запросы в очередь.
-		for (size_t i = 0; !interrupt_listener.check(); ++i)
+		for (size_t i = 0; !max_iterations || i < max_iterations; ++i)
 		{
-			if (i >= queries.size())
-				i = 0;
-
-			size_t query_index = randomize
-				? distribution(generator)
-				: i;
+			size_t query_index = randomize ? distribution(generator) : i % queries.size();
 
 			queue.push(queries[query_index]);
 
-			if (watch.elapsedSeconds() > delay)
+			if (delay > 0 && watch.elapsedSeconds() > delay)
 			{
 				auto total_queries = 0;
 				{
@@ -206,6 +212,18 @@ private:
 				report(info_per_interval);
 				watch.restart();
 			}
+
+			if (max_time > 0 && info_total.watch.elapsedSeconds() >= max_time)
+			{
+				std::cout << "Stopping launch of queries. Requested time limit is exhausted.\n";
+				break;
+			}
+
+			if (interrupt_listener.check())
+			{
+				std::cout << "Stopping launch of queries. SIGINT recieved.\n";
+				break;
+			}
 		}
 
 		/// Попросим потоки завершиться.
@@ -214,6 +232,9 @@ private:
 
 		pool.wait();
 
+		info_total.watch.stop();
+		if (!json_path.empty())
+			reportJSON(info_total, json_path);
 		printNumberOfQueriesExecuted(info_total.queries);
 		report(info_total);
 	}
@@ -320,16 +341,66 @@ private:
 			<< "result MiB/s: " << (info.result_bytes / seconds / 1048576) << "."
 			<< "\n";
 
-		for (size_t percent = 0; percent <= 90; percent += 10)
+		auto print_percentile = [&](double percent)
+		{
 			std::cerr << percent << "%\t" << info.sampler.quantileInterpolated(percent / 100.0) << " sec." << std::endl;
+		};
 
-		std::cerr << "95%\t" 	<< info.sampler.quantileInterpolated(0.95) 	<< " sec.\n";
-		std::cerr << "99%\t" 	<< info.sampler.quantileInterpolated(0.99) 	<< " sec.\n";
-		std::cerr << "99.9%\t" 	<< info.sampler.quantileInterpolated(0.999) 	<< " sec.\n";
-		std::cerr << "99.99%\t" << info.sampler.quantileInterpolated(0.9999) << " sec.\n";
-		std::cerr << "100%\t" 	<< info.sampler.quantileInterpolated(1) 		<< " sec.\n";
+		for (int percent = 0; percent <= 90; percent += 10)
+			print_percentile(percent);
+
+		print_percentile(95);
+		print_percentile(99);
+		print_percentile(99.9);
+		print_percentile(99.99);
 
 		info.clear();
+	}
+
+	void reportJSON(Stats & info, const std::string & filename)
+	{
+		WriteBufferFromFile json_out(filename);
+
+		std::lock_guard<std::mutex> lock(mutex);
+
+		auto print_key_value = [&](auto key, auto value, bool with_comma = true)
+		{
+			json_out << double_quote << key << ": " << value << (with_comma ? ",\n" : "\n");
+		};
+
+		auto print_percentile = [&](auto percent, bool with_comma = true)
+		{
+			json_out << "\"" << percent << "\"" << ": " << info.sampler.quantileInterpolated(percent / 100.0) << (with_comma ? ",\n" : "\n");
+		};
+
+		json_out << "{\n";
+
+		json_out << double_quote << "statistics" << ": {\n";
+
+		double seconds = info.watch.elapsedSeconds();
+		print_key_value("QPS", info.queries / seconds);
+		print_key_value("RPS", info.queries / seconds);
+		print_key_value("MiBPS", info.queries / seconds);
+		print_key_value("RPS_result", info.queries / seconds);
+		print_key_value("MiBPS_result", info.queries / seconds);
+		print_key_value("num_queries", info.queries / seconds, false);
+
+		json_out << "},\n";
+
+
+		json_out << double_quote << "query_time_percentiles" << ": {\n";
+
+		for (int percent = 0; percent <= 90; percent += 10)
+			print_percentile(percent);
+
+		print_percentile(95);
+		print_percentile(99);
+		print_percentile(99.9);
+		print_percentile(99.99, false);
+
+		json_out << "}\n";
+
+		json_out << "}\n";
 	}
 };
 
@@ -342,18 +413,24 @@ int main(int argc, char ** argv)
 
 	try
 	{
+		using boost::program_options::value;
+
 		boost::program_options::options_description desc("Allowed options");
 		desc.add_options()
-			("help", "produce help message")
-			("concurrency,c", boost::program_options::value<unsigned>()->default_value(1), "number of parallel queries")
-			("delay,d", boost::program_options::value<double>()->default_value(1), "delay between reports in seconds")
-			("host,h", boost::program_options::value<std::string>()->default_value("localhost"), "")
-			("port", boost::program_options::value<UInt16>()->default_value(9000), "")
-			("user", boost::program_options::value<std::string>()->default_value("default"), "")
-			("password", boost::program_options::value<std::string>()->default_value(""), "")
-			("database", boost::program_options::value<std::string>()->default_value("default"), "")
-			("stage", boost::program_options::value<std::string>()->default_value("complete"), "request query processing up to specified stage")
-			("randomize,r", boost::program_options::value<bool>()->default_value(false), "randomize order of execution")
+			("help", 																"produce help message")
+			("concurrency,c",	value<unsigned>()->default_value(1), 				"number of parallel queries")
+			("delay,d", 		value<double>()->default_value(1), 					"delay between intermediate reports in seconds (set 0 to disable reports)")
+			("stage",			value<std::string>()->default_value("complete"), 	"request query processing up to specified stage")
+			("iterations,i",	value<size_t>()->default_value(0),					"amount of queries to be executed")
+			("timelimit,t",		value<double>()->default_value(0.), 				"stop launch of queries after specified time limit")
+			("randomize,r",		value<bool>()->default_value(false),				"randomize order of execution")
+			("json",			value<std::string>()->default_value(""),			"write final report to specified file in JSON format")
+			("host,h",			value<std::string>()->default_value("localhost"), 	"")
+			("port", 			value<UInt16>()->default_value(9000), 				"")
+			("user", 			value<std::string>()->default_value("default"),		"")
+			("password",		value<std::string>()->default_value(""), 			"")
+			("database",		value<std::string>()->default_value("default"), 	"")
+
 		#define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
 		#define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
@@ -392,6 +469,9 @@ int main(int argc, char ** argv)
 			options["password"].as<std::string>(),
 			options["stage"].as<std::string>(),
 			options["randomize"].as<bool>(),
+			options["iterations"].as<size_t>(),
+			options["timelimit"].as<double>(),
+			options["json"].as<std::string>(),
 			settings);
 	}
 	catch (const Exception & e)

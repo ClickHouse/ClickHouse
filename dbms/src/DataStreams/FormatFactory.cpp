@@ -135,12 +135,13 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<ValuesRowOutputStream>(buf));
 	else if (name == "JSON")
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONRowOutputStream>(buf, sample,
-			context.getSettingsRef().output_format_write_statistics));
+			context.getSettingsRef().output_format_write_statistics, context.getSettingsRef().output_format_json_quote_64bit_integers));
 	else if (name == "JSONCompact")
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONCompactRowOutputStream>(buf, sample,
-			context.getSettingsRef().output_format_write_statistics));
+			context.getSettingsRef().output_format_write_statistics, context.getSettingsRef().output_format_json_quote_64bit_integers));
 	else if (name == "JSONEachRow")
-		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONEachRowRowOutputStream>(buf, sample));
+		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONEachRowRowOutputStream>(buf, sample,
+			context.getSettingsRef().output_format_json_quote_64bit_integers));
 	else if (name == "XML")
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<XMLRowOutputStream>(buf, sample,
 			context.getSettingsRef().output_format_write_statistics));
