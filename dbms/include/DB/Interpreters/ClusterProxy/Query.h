@@ -2,6 +2,7 @@
 
 #include <DB/Parsers/IAST.h>
 #include <DB/Storages/IStorage.h>
+#include <DB/Interpreters/Cluster.h>
 
 namespace DB
 {
@@ -24,7 +25,7 @@ class IQueryConstructor;
 class Query
 {
 public:
-	Query(IQueryConstructor & query_constructor_, const Cluster & cluster_,
+	Query(IQueryConstructor & query_constructor_, const ClusterPtr & cluster_,
 		ASTPtr query_ast_, const Context & context_, const Settings & settings_, bool enable_shard_multiplexing_);
 
 	/// For each location at which we perform the query, create an input stream
@@ -33,7 +34,7 @@ public:
 
 private:
 	IQueryConstructor & query_constructor;
-	const Cluster & cluster;
+	ClusterPtr cluster;
 	ASTPtr query_ast;
 	const Context & context;
 	const Settings & settings;

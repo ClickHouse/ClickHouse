@@ -26,7 +26,7 @@ add_library (dbms
 	src/Server/TCPHandler.h
 	src/Server/HTTPHandler.h
 	src/Server/MetricsTransmitter.h
-	src/Server/UsersConfigReloader.h
+	src/Server/ConfigReloader.h
 	src/Server/StatusFile.h
 	src/Server/ReplicasStatusHandler.h
 	src/Client/InterruptListener.h

@@ -7,6 +7,7 @@
 #include <DB/Client/ConnectionPoolWithFailover.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/Cluster.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <common/logger_useful.h>
 
@@ -45,7 +46,7 @@ public:
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
 		const String & remote_database_,	/// БД на удалённых серверах.
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
-		std::shared_ptr<Cluster> & owned_cluster_,
+		ClusterPtr & owned_cluster_,
 		Context & context_);
 
 	std::string getName() const override { return "Distributed"; }
@@ -95,7 +96,7 @@ public:
 	const String & getPath() const { return path; }
 	std::string getRemoteDatabaseName() const { return remote_database; }
 	std::string getRemoteTableName() const { return remote_table; }
-
+	std::string getClusterName() const { return cluster_name; } /// Returns empty string if tables is used by TableFunctionRemote
 
 private:
 	StorageDistributed(
@@ -103,7 +104,7 @@ private:
 		NamesAndTypesListPtr columns_,
 		const String & remote_database_,
 		const String & remote_table_,
-		const Cluster & cluster_,
+		const String & cluster_name_,
 		Context & context_,
 		const ASTPtr & sharding_key_ = nullptr,
 		const String & data_path_ = String{});
@@ -116,7 +117,7 @@ private:
 		const ColumnDefaults & column_defaults_,
 		const String & remote_database_,
 		const String & remote_table_,
-		const Cluster & cluster_,
+		const String & cluster_name_,
 		Context & context_,
 		const ASTPtr & sharding_key_ = nullptr,
 		const String & data_path_ = String{});
@@ -129,6 +130,9 @@ private:
 	/// ensure directory monitor creation
 	void requireDirectoryMonitor(const std::string & name);
 
+	ClusterPtr getCluster() const;
+
+private:
 	String name;
 	NamesAndTypesListPtr columns;
 	String remote_database;
@@ -137,16 +141,15 @@ private:
 	Context & context;
 	Logger * log = &Logger::get("StorageDistributed");
 
-	/// Используется только, если таблица должна владеть объектом Cluster,
-	///  которым больше никто не владеет - для реализации TableFunctionRemote.
+	/// Used to implement TableFunctionRemote.
 	std::shared_ptr<Cluster> owned_cluster;
 
-	/// Соединения с удалёнными серверами.
-	const Cluster & cluster;
+	/// Is empty if this storage implements TableFunctionRemote.
+	const String cluster_name;
 
+	bool has_sharding_key;
 	ExpressionActionsPtr sharding_key_expr;
 	String sharding_key_column_name;
-	bool write_enabled;
 	String path;	/// Может быть пустым, если data_path_ пустой. В этом случае, директория для данных для отправки не создаётся.
 
 	class DirectoryMonitor;

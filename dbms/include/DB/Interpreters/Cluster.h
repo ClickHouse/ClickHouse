@@ -16,7 +16,7 @@ namespace DB
 class Cluster
 {
 public:
-	Cluster(const Settings & settings, const String & cluster_name);
+	Cluster(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name);
 
 	/// Построить кластер по именам шардов и реплик. Локальные обрабатываются так же как удаленные.
 	Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
@@ -56,7 +56,7 @@ public:
 		String default_database;	/// this database is selected when no database is specified for Distributed table
 		UInt32 replica_num;
 
-		Address(const String & config_prefix);
+		Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 		Address(const String & host_port_, const String & user_, const String & password_);
 	};
 
@@ -142,20 +142,31 @@ private:
 	size_t local_shard_count = 0;
 };
 
+using ClusterPtr = std::shared_ptr<Cluster>;
+
 
 class Clusters
 {
 public:
-	Clusters(const Settings & settings, const String & config_name = "remote_servers");
+	Clusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name = "remote_servers");
 
 	Clusters(const Clusters &) = delete;
 	Clusters & operator=(const Clusters &) = delete;
 
-public:
-	using Impl = std::map<String, Cluster>;
+	ClusterPtr getCluster(const std::string & cluster_name) const;
+
+	void updateClusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name = "remote_servers");
 
 public:
+	using Impl = std::map<String, ClusterPtr>;
+
+	Impl getContainer() const;
+
+protected:
 	Impl impl;
+	mutable std::mutex mutex;
 };
+
+using ClustersPtr = std::shared_ptr<Clusters>;
 
 }
