@@ -118,6 +118,16 @@ Clusters::Clusters(Poco::Util::AbstractConfiguration & config, const Settings & 
 		impl.emplace(key, std::make_shared<Cluster>(config, settings, config_name + "." + key));
 }
 
+
+ClusterPtr Clusters::getCluster(const std::string & cluster_name) const
+{
+	std::lock_guard<std::mutex> lock(mutex);
+
+	auto it = impl.find(cluster_name);
+	return (it != impl.end()) ? it->second : nullptr;
+}
+
+
 void Clusters::updateClusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
 {
 	Poco::Util::AbstractConfiguration::Keys config_keys;
@@ -140,9 +150,10 @@ void Clusters::updateClusters(Poco::Util::AbstractConfiguration & config, const 
 	}
 }
 
-Clusters::Impl Clusters::getClusters() const
+Clusters::Impl Clusters::getContainer() const
 {
 	std::lock_guard<std::mutex> lock(mutex);
+	/// The following line copies container of shared_ptrs to return value under lock
 	return impl;
 }
 

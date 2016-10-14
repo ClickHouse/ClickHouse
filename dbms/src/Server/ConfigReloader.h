@@ -16,15 +16,19 @@ namespace DB
 
 class Context;
 
-/** Каждые две секунды проверяет, не изменился ли конфиг.
-  *  Когда изменился, запускает на нем ConfigProcessor и вызывает setUsersConfig у контекста.
-  * NOTE: Не перезагружает конфиг, если изменились другие файлы, влияющие на обработку конфига: metrika.xml
-  *  и содержимое conf.d и users.d. Это можно исправить, переместив проверку времени изменения файлов в ConfigProcessor.
+/** Every two seconds checks configuration files for update.
+  * If configuration is changed, then config will be reloaded by ConfigProcessor
+  *  and the reloaded config will be applied via setUsersConfig() and setClusters() methods of Context.
+  * So, ConfigReloader actually reloads only <users> and <remote_servers> "tags".
+  * Also, it doesn't take into account changes of --config-file, <users_config> and <include_from> parameters.
   */
 class ConfigReloader
 {
 public:
-	ConfigReloader(const std::string & path, Context * context);
+	/** main_config_path is usually /path/to/.../clickhouse-server/config.xml (i.e. --config-file value)
+	  * users_config_path is usually /path/to/.../clickhouse-server/users.xml (i.e. value of <users_config> tag)
+	  * include_from_path is usually /path/to/.../etc/metrika.xml (i.e. value of <include_from> tag)
+	  */
 	ConfigReloader(const std::string & main_config_path_, const std::string & users_config_path_, const std::string & include_from_path_, Context * context_);
 
 	~ConfigReloader();
@@ -36,7 +40,7 @@ private:
 		std::string path;
 		time_t modification_time;
 
-		FileWithTimestamp(const std::string & path_,  time_t modification_time_)
+		FileWithTimestamp(const std::string & path_, time_t modification_time_)
 			: path(path_), modification_time(modification_time_) {}
 
 		bool operator < (const FileWithTimestamp & rhs) const
@@ -44,9 +48,9 @@ private:
 			return path < rhs.path;
 		}
 
-		bool operator == (const FileWithTimestamp & rhs) const
+		static bool isTheSame(const FileWithTimestamp & lhs, const FileWithTimestamp & rhs)
 		{
-			return (modification_time == rhs.modification_time) && (path == rhs.path);
+			return (lhs.modification_time == rhs.modification_time) && (lhs.path == rhs.path);
 		}
 	};
 
@@ -64,7 +68,8 @@ private:
 
 		bool isDifferOrNewerThan(const FilesChangesTracker & rhs)
 		{
-			return files != rhs.files;
+			return (files.size() != rhs.files.size()) ||
+					!std::equal(files.begin(), files.end(), rhs.files.begin(), FileWithTimestamp::isTheSame);
 		}
 	};
 
@@ -76,9 +81,10 @@ private:
 
 	FilesChangesTracker getFileListFor(const std::string & root_config_path);
 	ConfigurationPtr loadConfigFor(const std::string & root_config_path, bool throw_error);
-	bool applyConfigFor(bool for_main, ConfigurationPtr config, bool throw_on_error);
 
 private:
+
+	static constexpr auto reload_interval = std::chrono::seconds(2);
 
 	std::string main_config_path;
 	std::string users_config_path;

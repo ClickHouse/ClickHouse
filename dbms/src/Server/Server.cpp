@@ -283,7 +283,7 @@ int Server::main(const std::vector<std::string> & args)
 	std::string main_config_path = config().getString("config-file", "config.xml");
 	std::string users_config_path = config().getString("users_config", main_config_path);
 	std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
-	auto users_config_reloader = std::make_unique<ConfigReloader>(main_config_path, users_config_path, include_from_path, global_context.get());
+	auto config_reloader = std::make_unique<ConfigReloader>(main_config_path, users_config_path, include_from_path, global_context.get());
 
 	/// Максимальное количество одновременно выполняющихся запросов.
 	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
@@ -474,7 +474,7 @@ int Server::main(const std::vector<std::string> & args)
 
 			LOG_DEBUG(log, "Waiting for current connections to close.");
 
-			users_config_reloader.reset();
+			     config_reloader.reset();
 
 			is_cancelled = true;
 

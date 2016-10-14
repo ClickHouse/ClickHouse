@@ -253,7 +253,7 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 
 	auto cluster = getCluster();
 
-	/// resharding_worker не нуждается во владении cluster, здесь используется только мета-информация
+	/// resharding_worker doesn't need to own cluster, here only meta-information of cluster is used
 	std::string coordinator_id = resharding_worker.createCoordinator(*cluster);
 
 	std::atomic<bool> has_notified_error{false};

@@ -124,7 +124,6 @@ private:
 	Block sample_block;
 	Context & context;
 	const bool is_local;
-	//std::uniq_ptr<ConnectionPool> pool;
 	ConnectionPoolPtr pool;
 	const std::string load_all_query;
 };

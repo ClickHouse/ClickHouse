@@ -108,7 +108,7 @@ struct ContextShared
 	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Настройки для движка MergeTree.
 
 	/// Clusters for distributed tables
-	/// Initilalized on demand (on distributed storages initialization) since Settings should be initialized
+	/// Initialized on demand (on distributed storages initialization) since Settings should be initialized
 	std::unique_ptr<Clusters> clusters;
 	ConfigurationPtr clusters_config;						/// Soteres updated configs
 	mutable std::mutex clusters_mutex;						/// Guards clusters and clusters_config
@@ -270,7 +270,7 @@ void Context::setTemporaryPath(const String & path)
 }
 
 
-void Context::setUsersConfig(ConfigurationPtr config)
+void Context::setUsersConfig(const ConfigurationPtr & config)
 {
 	auto lock = getLock();
 	shared->users_config = config;
@@ -910,14 +910,20 @@ UInt16 Context::getTCPPort() const
 }
 
 
-std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, bool throw_on_error) const
+std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
 	auto res = getClusters().getCluster(cluster_name);
 
-	if (!res && throw_on_error)
+	if (!res)
 		throw Exception("Requested cluster '" + cluster_name + "' not found", ErrorCodes::BAD_GET);
 
 	return res;
+}
+
+
+std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
+{
+	return getClusters().getCluster(cluster_name);
 }
 
 
@@ -936,8 +942,8 @@ Clusters & Context::getClusters() const
 }
 
 
-/// On repeating calls updates existing clusters and adds new clusters
-void Context::setClustersConfig(ConfigurationPtr config)
+/// On repeating calls updates existing clusters and adds new clusters, doesn't delete old clusters
+void Context::setClustersConfig(const ConfigurationPtr & config)
 {
 	std::lock_guard<std::mutex> lock(shared->clusters_mutex);
 

@@ -16,13 +16,13 @@ namespace DB
 namespace ErrorCodes { extern const int FILE_DOESNT_EXIST; }
 
 
-ConfigReloader::ConfigReloader(const std::string & main_config_path_, const std::string & users_config_path_, const std::string & include_from_path_, Context * context_)
-	: main_config_path(main_config_path_), users_config_path(users_config_path_), include_from_path(include_from_path_), context(context_)
+ConfigReloader::ConfigReloader(const std::string & main_config_path_, const std::string & users_config_path_,
+							   const std::string & include_from_path_, Context * context_)
+	: main_config_path(main_config_path_), users_config_path(users_config_path_),
+	include_from_path(include_from_path_), context(context_)
 {
-	/// Assume that paths derived from --config-file, <users_config> and <include_from> are not changed
-
-	/// Если путь к конфигу не абсолютный, угадаем, относительно чего он задан.
-    /// Сначала поищем его рядом с основным конфигом, потом - в текущей директории.
+	/// If path to users' config isn't absolute, try guess its root (current) dir.
+	/// At first, try to find it in dir of main config, after will use current dir.
 	if (users_config_path.empty() || users_config_path[0] != '/')
 	{
 		std::string config_dir = Poco::Path(main_config_path).parent().toString();
@@ -53,11 +53,11 @@ ConfigReloader::~ConfigReloader()
 
 void ConfigReloader::run()
 {
-	setThreadName("UserConfReload");
+	setThreadName("ConfigReloader");
 
 	while (!quit)
 	{
-		std::this_thread::sleep_for(std::chrono::seconds(2));
+		std::this_thread::sleep_for(reload_interval);
 		reloadIfNewer(false, false);
 	}
 }
@@ -68,9 +68,9 @@ ConfigReloader::FilesChangesTracker ConfigReloader::getFileListFor(const std::st
 	FilesChangesTracker file_list;
 
 	file_list.addIfExists(root_config_path);
-	file_list.addIfExists(this->include_from_path);
+	file_list.addIfExists(include_from_path);
 
-	for (auto & path : ConfigProcessor::getConfigMergeFiles(root_config_path))
+	for (const auto & path : ConfigProcessor::getConfigMergeFiles(root_config_path))
 		file_list.addIfExists(path);
 
  	return file_list;
@@ -87,68 +87,16 @@ ConfigurationPtr ConfigReloader::loadConfigFor(const std::string & root_config_p
 	{
 		config = ConfigProcessor().loadConfig(root_config_path);
 	}
-	catch (Poco::Exception & e)
-	{
-		if (throw_on_error)
-			throw;
-
-		LOG_ERROR(log, "Error loading config from '" << root_config_path << "' : " << e.what() << ": " << e.displayText());
-		return nullptr;
-	}
 	catch (...)
 	{
 		if (throw_on_error)
 			throw;
 
-		LOG_ERROR(log, "Error loading config from '" << root_config_path << "'.");
+		tryLogCurrentException(log, "Error loading config from '" + root_config_path + "' ");
 		return nullptr;
 	}
 
 	return config;
-}
-
-
-bool ConfigReloader::applyConfigFor(bool for_main, ConfigurationPtr config, bool throw_on_error)
-{
-	auto & root_config_path = (for_main) ? main_config_path : users_config_path;
-
-	try
-	{
-		if (for_main)
-		{
-			context->setClustersConfig(config);
-		}
-		else
-		{
-			context->setUsersConfig(config);
-		}
-	}
-	catch (Exception & e)
-	{
-		if (throw_on_error)
-			throw;
-
-		LOG_ERROR(log, "Error updating config from '" << root_config_path << "': " << e.what() << ": " << e.displayText() << "\n" << e.getStackTrace().toString());
-		return false;
-	}
-	catch (Poco::Exception & e)
-	{
-		if (throw_on_error)
-			throw;
-
-		LOG_ERROR(log, "Error updating config from '" << root_config_path << "': " <<  e.what() << ": " << e.displayText());
-		return false;
-	}
-	catch (...)
-	{
-		if (throw_on_error)
-			throw;
-
-		LOG_ERROR(log, "Error updating config from '" << root_config_path << "'.");
-		return false;
-	}
-
-	return true;
 }
 
 
@@ -161,7 +109,18 @@ void ConfigReloader::reloadIfNewer(bool force_main, bool force_users)
 
 		ConfigurationPtr config = loadConfigFor(main_config_path, force_main);
 		if (config)
-			applyConfigFor(true, config, force_main);
+		{
+			try
+			{
+				context->setClustersConfig(config);
+			}
+			catch (...)
+			{
+				if (force_main)
+					throw;
+				tryLogCurrentException(log, "Error updating remote_servers config from '" + main_config_path + "' ");
+			}
+		}
 	}
 
 	FilesChangesTracker users_config_files = getFileListFor(users_config_path);
@@ -171,7 +130,18 @@ void ConfigReloader::reloadIfNewer(bool force_main, bool force_users)
 
 		ConfigurationPtr config = loadConfigFor(users_config_path, force_users);
 		if (config)
-			applyConfigFor(false, config, force_users);
+		{
+			try
+			{
+				context->setUsersConfig(config);
+			}
+			catch (...)
+			{
+				if (force_users)
+					throw;
+				tryLogCurrentException(log, "Error updating users config from '" + users_config_path + "' ");
+			}
+		}
 	}
 }
 

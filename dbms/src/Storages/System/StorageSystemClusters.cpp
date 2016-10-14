@@ -73,7 +73,7 @@ BlockInputStreams StorageSystemClusters::read(
 		default_database_column->insert(address.default_database);
 	};
 
-	auto clusters = context.getClusters().getClusters();
+	auto clusters = context.getClusters().getContainer();
 	for (const auto & entry : clusters)
 	{
 		const std::string cluster_name = entry.first;

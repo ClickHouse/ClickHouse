@@ -153,20 +153,14 @@ public:
 	Clusters(const Clusters &) = delete;
 	Clusters & operator=(const Clusters &) = delete;
 
-	ClusterPtr getCluster(const std::string & cluster_name) const
-	{
-		std::lock_guard<std::mutex> lock(mutex);
-
-		auto it = impl.find(cluster_name);
-		return (it != impl.end()) ? it->second : nullptr;
-	}
+	ClusterPtr getCluster(const std::string & cluster_name) const;
 
 	void updateClusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name = "remote_servers");
 
 public:
 	using Impl = std::map<String, ClusterPtr>;
 
-	Impl getClusters() const;
+	Impl getContainer() const;
 
 protected:
 	Impl impl;

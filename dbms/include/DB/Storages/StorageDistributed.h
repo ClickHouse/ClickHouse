@@ -141,10 +141,10 @@ private:
 	Context & context;
 	Logger * log = &Logger::get("StorageDistributed");
 
-	/// для реализации TableFunctionRemote.
+	/// Used to implement TableFunctionRemote.
 	std::shared_ptr<Cluster> owned_cluster;
 
-	/// Пусто если используется для реализации TableFunctionRemote.
+	/// Is empty if this storage implements TableFunctionRemote.
 	const String cluster_name;
 
 	bool has_sharding_key;

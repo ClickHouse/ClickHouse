@@ -117,7 +117,7 @@ public:
 	  * Список пользователей полностью заменяется.
 	  * Накопленные значения у квоты не сбрасываются, если квота не удалена.
 	  */
-	void setUsersConfig(ConfigurationPtr config);
+	void setUsersConfig(const ConfigurationPtr & config);
 
 	ConfigurationPtr getUsersConfig();
 
@@ -277,8 +277,9 @@ public:
 	void resetCaches() const;
 
 	Clusters & getClusters() const;
-	std::shared_ptr<Cluster> getCluster(const std::string & cluster_name, bool throw_on_error = true) const;
-	void setClustersConfig(ConfigurationPtr config);
+	std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
+	std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
+	void setClustersConfig(const ConfigurationPtr & config);
 
 	Compiler & getCompiler();
 	QueryLog & getQueryLog();
