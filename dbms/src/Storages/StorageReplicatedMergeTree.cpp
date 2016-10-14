@@ -1872,6 +1872,11 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
 void StorageReplicatedMergeTree::becomeLeader()
 {
+	std::lock_guard<std::mutex> lock(leader_node_mutex);
+
+	if (shutdown_called)
+		return;
+
 	LOG_INFO(log, "Became leader");
 	is_leader_node = true;
 	merge_selecting_thread = std::thread(&StorageReplicatedMergeTree::mergeSelectingThread, this);
