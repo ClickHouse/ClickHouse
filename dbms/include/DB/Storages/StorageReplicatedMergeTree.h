@@ -200,6 +200,7 @@ private:
 	friend class ReplicatedMergeTreePartCheckThread;
 	friend class ReplicatedMergeTreeCleanupThread;
 	friend class ReplicatedMergeTreeAlterThread;
+	friend class ReplicatedMergeTreeRestartingThread;
 	friend struct ReplicatedMergeTreeLogEntry;
 	friend class ScopedPartitionMergeLock;
 

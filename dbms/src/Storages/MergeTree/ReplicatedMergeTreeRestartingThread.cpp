@@ -381,6 +381,16 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 
 	/// Yielding leadership only after finish of merge_selecting_thread.
 	/// Otherwise race condition with parallel run of merge selecting thread on different servers is possible.
+	///
+	/// On the other hand, leader_election colud call becomeLeader() from own thread after
+	/// merge_selecting_thread is finished and restarting_thread is destroyed.
+	/// becomeLeader() recreates merge_selecting_thread and it becomes joinable again, even restarting_thread is destroyed.
+	/// But restarting_thread is responisble to stop merge_selecting_thread.
+	/// It will lead to std::terminate in ~StorageReplicatedMergeTree().
+	/// Such behaviour was rarely observed on DROP queries.
+	/// Therefore we need either avoid becoming leader after first shutdown call (more deliberate choice),
+	/// either manually wait merge_selecting_thread.join() inside ~StorageReplicatedMergeTree(), either or something third.
+	/// So, shutdown check is added in becomeLeader().
 	storage.leader_election = nullptr;
 
 	LOG_TRACE(log, "Threads finished");
