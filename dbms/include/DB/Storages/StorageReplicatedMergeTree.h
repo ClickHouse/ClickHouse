@@ -248,6 +248,7 @@ private:
 	/** Является ли эта реплика "ведущей". Ведущая реплика выбирает куски для слияния.
 	  */
 	bool is_leader_node = false;
+	std::mutex leader_node_mutex;
 
 	InterserverIOEndpointHolderPtr endpoint_holder;
 	InterserverIOEndpointHolderPtr disk_space_monitor_endpoint_holder;

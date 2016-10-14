@@ -362,11 +362,15 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 	storage.replica_is_active_node = nullptr;
 
 	LOG_TRACE(log, "Waiting for threads to finish");
-	if (storage.is_leader_node)
 	{
-		storage.is_leader_node = false;
-		if (storage.merge_selecting_thread.joinable())
-			storage.merge_selecting_thread.join();
+		std::lock_guard<std::mutex> lock(storage.leader_node_mutex);
+
+		if (storage.is_leader_node)
+		{
+			storage.is_leader_node = false;
+			if (storage.merge_selecting_thread.joinable())
+				storage.merge_selecting_thread.join();
+		}
 	}
 	if (storage.queue_updating_thread.joinable())
 		storage.queue_updating_thread.join();
@@ -390,7 +394,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 	/// Such behaviour was rarely observed on DROP queries.
 	/// Therefore we need either avoid becoming leader after first shutdown call (more deliberate choice),
 	/// either manually wait merge_selecting_thread.join() inside ~StorageReplicatedMergeTree(), either or something third.
-	/// So, shutdown check is added in becomeLeader().
+	/// So, we added shutdown check in becomeLeader() and made its creation and deletion atomic.
 	storage.leader_election = nullptr;
 
 	LOG_TRACE(log, "Threads finished");
