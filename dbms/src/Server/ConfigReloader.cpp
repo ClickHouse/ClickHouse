@@ -16,6 +16,9 @@ namespace DB
 namespace ErrorCodes { extern const int FILE_DOESNT_EXIST; }
 
 
+constexpr decltype(ConfigReloader::reload_interval) ConfigReloader::reload_interval;
+
+
 ConfigReloader::ConfigReloader(const std::string & main_config_path_, const std::string & users_config_path_,
 							   const std::string & include_from_path_, Context * context_)
 	: main_config_path(main_config_path_), users_config_path(users_config_path_),
