@@ -264,7 +264,7 @@ In ClickHouse, data can reside on different shards. Each shard can be a group of
 If you are familiar with standard SQL, we can&#39;t really talk about SQL support.
 NULLs are not supported. All the functions have different names. However, this is a declarative query language based on SQL that can&#39;t be differentiated from SQL in many instances.
 JOINs are supported. Subqueries are supported in FROM, IN, JOIN clauses; and scalar subqueries.
-Correllated subqueries are not supported.
+Correlated subqueries are not supported.
 
 <h3 class="not-for-contents">7. Vector engine.</h3>
 
@@ -352,17 +352,17 @@ At this time (May 2016), there aren&#39;t any available open-source and free sys
 <h3 class="not-for-contents">1. Why not to use systems like map-reduce?</h3>
 
 Systems like map-reduce are distributed computing systems, where the reduce phase is performed using distributed sorting.
-Regading this aspect, map-reduce is similar to other systems like YAMR, <a href="http://hadoop.apache.org/">Hadoop</a>, <a href="https://yandexdataschool.ru/about/conference/program/babenko">YT</a>.
+Regarding this aspect, map-reduce is similar to other systems like YAMR, <a href="http://hadoop.apache.org/">Hadoop</a>, <a href="https://yandexdataschool.ru/about/conference/program/babenko">YT</a>.
 
 These systems are not suitable for online queries because of latency, So they can't be used in backend-level for web interface.
-Systems like this also are not suitable for realtime updates.
+Systems like this also are not suitable for real-time updates.
 Distributed sorting is not optimal solution for reduce operations, if the result of the operation and all intermediate results, shall they exist, fit in operational memory of a single server, as usually happens in case of online analytical queries.
 In this case the optimal way to perform reduce operations is by using a hash-table. A common optimization method for map-reduce tasks is combine operation (partial reduce) which uses hash-tables in memory. This optimization is done by the user manually.
 Distributed sorting is the main reason for long latencies of simple map-reduce jobs.
 
-Systems similar to map-reduce enable running any code on the cluster. But for OLAP use-cases declerative query languages are better suited as they allow to carry out investigations faster. For example, for Hadoop there are <a href="https://hive.apache.org/">Hive</a> and <a href="https://pig.apache.org/">Pig</a>. There are others: <a href="http://impala.io/">Cloudera Impala</a>, <a href="http://shark.cs.berkeley.edu/">Shark (depricated)</a> and <a href="http://spark.apache.org/sql/">Spark SQL</a> for <a href="http://spark.apache.org/">Spark</a>, <a href="https://prestodb.io/">Presto</a>, <a href="https://drill.apache.org/">Apache Drill</a>.
+Systems similar to map-reduce enable running any code on the cluster. But for OLAP use-cases declarative query languages are better suited as they allow to carry out investigations faster. For example, for Hadoop there are <a href="https://hive.apache.org/">Hive</a> and <a href="https://pig.apache.org/">Pig</a>. There are others: <a href="http://impala.io/">Cloudera Impala</a>, <a href="http://shark.cs.berkeley.edu/">Shark (deprecated)</a> and <a href="http://spark.apache.org/sql/">Spark SQL</a> for <a href="http://spark.apache.org/">Spark</a>, <a href="https://prestodb.io/">Presto</a>, <a href="https://drill.apache.org/">Apache Drill</a>.
 However, performance of such tasks is highly sub-optimal compared to the performance of specialized systems and relatively high latency does not allow the use of these systems as a backend for the web interface.
-YT allows you to store separate groups of columns. But YT is not a truly columnar storage system, as the system has no fixed length data types (so you can efficiently store a number without "garbage"), and there is no vector engine. Tasks in YT are performed by arbitrary code in streaming mode, so can not be suficiently optimized (up to hundreds of millions of lines per second per server). In 2014-2016 YT is to develop "dynamic table sorting" functionality  using Merge Tree, strongly typed values ​​and SQL-like language support. Dynamicly sorted tables are not suited for OLAP tasks, since the data is stored in rows. Query language development in YT is still in incubating phase, which does not allow it to focus on this functionality. YT developers are considering dynamicly sorted tables for use in OLTP and Key-Value scenarios.
+YT allows you to store separate groups of columns. But YT is not a truly columnar storage system, as the system has no fixed length data types (so you can efficiently store a number without "garbage"), and there is no vector engine. Tasks in YT are performed by arbitrary code in streaming mode, so can not be sufficiently optimized (up to hundreds of millions of lines per second per server). In 2014-2016 YT is to develop "dynamic table sorting" functionality  using Merge Tree, strongly typed values ​​and SQL-like language support. Dynamically sorted tables are not suited for OLAP tasks, since the data is stored in rows. Query language development in YT is still in incubating phase, which does not allow it to focus on this functionality. YT developers are considering dynamically sorted tables for use in OLTP and Key-Value scenarios.
 
 ==Performance==
 
@@ -4329,7 +4329,7 @@ In this section we discuss regular functions. For aggregate functions, see the s
 
 In contrast to standard SQL, ClickHouse has strong typing. In other words, it doesn&#39;t make implicit conversions between types. Each function works for a specific set of types. This means that sometimes you need to use type conversion functions.
 
-===Сommon subexpression elimination===
+===Common subexpression elimination===
 
 All expressions in a query that have the same AST (the same record or same result of syntactic parsing) are considered to have identical values. Such expressions are concatenated and executed once. Identical subqueries are also eliminated this way.
 
@@ -6943,7 +6943,7 @@ We could have defined this list of networks directly in &#39;users.xml&#39;, or 
 
 The config includes comments explaining how to open access from everywhere.
 
-For use in production, only specify IP elements (IP addresses and their masks), since using &#39;host&#39; and &#39;hoost_regexp&#39; might cause extra latency.
+For use in production, only specify IP elements (IP addresses and their masks), since using &#39;host&#39; and &#39;host_regexp&#39; might cause extra latency.
 
 Next the user settings profile is specified (see the section &quot;Settings profiles&quot;). You can specify the default profile, &#39;default&#39;. The profile can have any name. You can specify the same profile for different users. The most important thing you can write in the settings profile is &#39;readonly&#39; set to 1, which provides read-only access.
 
