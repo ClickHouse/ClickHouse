@@ -289,7 +289,6 @@ protected:
 				const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
 				actual_columns.push_back(nullable_col.getNestedColumn().get());
 				null_maps.push_back(nullable_col.getNullValuesByteMap().get());
-				has_nullable_columns = true;
 			}
 			else
 			{
@@ -333,7 +332,6 @@ protected:
 private:
 	ConstColumnPlainPtrs actual_columns;
 	ConstColumnPlainPtrs null_maps;
-	bool has_nullable_columns = false;
 };
 
 /// Case where nullable keys are not supported.
@@ -422,7 +420,7 @@ struct AggregationMethodKeysFixed
 	{
 		static constexpr auto bitmap_size = has_nullable_keys ? std::tuple_size<KeysNullMap<Key>>::value : 0;
 		/// In any hash key value, column values to be read start just after the bitmap, if it exists.
-		size_t offset = bitmap_size;
+		size_t pos = bitmap_size;
 
 		for (size_t i = 0; i < keys_size; ++i)
 		{
@@ -449,7 +447,7 @@ struct AggregationMethodKeysFixed
 				/// corresponding key is nullable. Update the null map accordingly.
 				size_t bucket = i / 8;
 				size_t offset = i % 8;
-				bool val = (reinterpret_cast<const char *>(&value.first)[bucket] >> offset) & 1;
+				UInt8 val = (reinterpret_cast<const UInt8 *>(&value.first)[bucket] >> offset) & 1;
 				null_map->insert(val);
 				is_null = val == 1;
 			}
@@ -461,8 +459,8 @@ struct AggregationMethodKeysFixed
 			else
 			{
 				size_t size = key_sizes[i];
-				observed_column->insertData(reinterpret_cast<const char *>(&value.first) + offset, size);
-				offset += size;
+				observed_column->insertData(reinterpret_cast<const char *>(&value.first) + pos, size);
+				pos += size;
 			}
 		}
 	}

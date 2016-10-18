@@ -131,7 +131,17 @@ static inline T ALWAYS_INLINE packFixed(
 
 	for (size_t j = 0; j < keys_size; ++j)
 	{
-		bool is_null = has_bitmap && (bitmap[j / 8] & (UINT8_C(1) << (j % 8)));
+		bool is_null;
+
+		if (!has_bitmap)
+			is_null = false;
+		else
+		{
+			size_t bucket = j / 8;
+			size_t off = j % 8;
+			is_null = ((bitmap[bucket] >> off) & 1) == 1;
+		}
+
 		if (is_null)
 			continue;
 

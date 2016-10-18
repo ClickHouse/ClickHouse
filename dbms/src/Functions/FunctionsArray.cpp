@@ -1599,7 +1599,11 @@ bool FunctionArrayUniq::execute128bit(
 					{
 						const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[i]).getData();
 						if (null_map[j] == 1)
-							bitmap[i / 8] |= UINT8_C(1) << (i % 8);
+						{
+							size_t bucket = i / 8;
+							size_t offset = i % 8;
+							bitmap[bucket] |= UInt8(1) << offset;
+						}
 					}
 				}
 				set.insert(packFixed<UInt128>(j, count, columns, key_sizes, bitmap));
@@ -1909,7 +1913,11 @@ bool FunctionArrayEnumerateUniq::execute128bit(
 					{
 						const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[i]).getData();
 						if (null_map[j] == 1)
-							bitmap[i / 8] |= UINT8_C(1) << (i % 8);
+						{
+							size_t bucket = i / 8;
+							size_t offset = i % 8;
+							bitmap[bucket] |= UInt8(1) << offset;
+						}
 					}
 				}
 				res_values[j] = ++indices[packFixed<UInt128>(j, count, columns, key_sizes, bitmap)];
