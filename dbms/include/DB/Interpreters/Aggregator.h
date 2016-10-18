@@ -25,6 +25,7 @@
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnAggregateFunction.h>
 #include <DB/Columns/ColumnVector.h>
+#include <DB/Columns/ColumnNullable.h>
 
 
 namespace DB
@@ -265,9 +266,102 @@ struct AggregationMethodFixedString
 	}
 };
 
+/// This class is designed to provide the functionality that is required for
+/// supporting nullable keys in AggregationMethodKeysFixed. If there are
+/// no nullable keys, this class is merely implemented as an empty shell.
+template <typename Key, bool has_nullable_keys>
+class BaseStateKeysFixed;
+
+/// Case where nullable keys are supported.
+template <typename Key>
+class BaseStateKeysFixed<Key, true>
+{
+protected:
+	void init(const ConstColumnPlainPtrs & key_columns)
+	{
+		null_maps.reserve(key_columns.size());
+		actual_columns.reserve(key_columns.size());
+
+		for (const auto & col : key_columns)
+		{
+			if (col->isNullable())
+			{
+				const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
+				actual_columns.push_back(nullable_col.getNestedColumn().get());
+				null_maps.push_back(nullable_col.getNullValuesByteMap().get());
+				has_nullable_columns = true;
+			}
+			else
+			{
+				actual_columns.push_back(col);
+				null_maps.push_back(nullptr);
+			}
+		}
+	}
+
+	/// Return the columns which actually contain the values of the keys.
+	/// For a given key column, if it is nullable, we return its nested
+	/// column. Otherwise we return the key column itself.
+	inline const ConstColumnPlainPtrs & getActualColumns() const
+	{
+		return actual_columns;
+	}
+
+	/// Create a bitmap that indicates whether, for a particular row,
+	/// a key column bears a null value or not.
+	KeysNullMap<Key> createBitmap(size_t row) const
+	{
+		KeysNullMap<Key> bitmap{};
+
+		for (size_t k = 0; k < null_maps.size(); ++k)
+		{
+			if (null_maps[k] != nullptr)
+			{
+				const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[k]).getData();
+				if (null_map[row] == 1)
+				{
+					size_t bucket = k / 8;
+					size_t offset = k % 8;
+					bitmap[bucket] |= UInt8(1) << offset;
+				}
+			}
+		}
+
+		return bitmap;
+	}
+
+private:
+	ConstColumnPlainPtrs actual_columns;
+	ConstColumnPlainPtrs null_maps;
+	bool has_nullable_columns = false;
+};
+
+/// Case where nullable keys are not supported.
+template <typename Key>
+class BaseStateKeysFixed<Key, false>
+{
+protected:
+	void init(const ConstColumnPlainPtrs & key_columns)
+	{
+		throw Exception{"Internal error: calling init() for non-nullable"
+			" keys is forbidden", ErrorCodes::LOGICAL_ERROR};
+	}
+
+	const ConstColumnPlainPtrs & getActualColumns() const
+	{
+		throw Exception{"Internal error: calling getActualColumns() for non-nullable"
+			" keys is forbidden", ErrorCodes::LOGICAL_ERROR};
+	}
+
+	KeysNullMap<Key> createBitmap(size_t row) const
+	{
+		throw Exception{"Internal error: calling createBitmap() for non-nullable keys"
+			" is forbidden", ErrorCodes::LOGICAL_ERROR};
+	}
+};
 
 /// Для случая, когда все ключи фиксированной длины, и они помещаются в N (например, 128) бит.
-template <typename TData>
+template <typename TData, bool has_nullable_keys_ = false>
 struct AggregationMethodKeysFixed
 {
 	using Data = TData;
@@ -275,6 +369,7 @@ struct AggregationMethodKeysFixed
 	using Mapped = typename Data::mapped_type;
 	using iterator = typename Data::iterator;
 	using const_iterator = typename Data::const_iterator;
+	static constexpr bool has_nullable_keys = has_nullable_keys_;
 
 	Data data;
 
@@ -283,10 +378,15 @@ struct AggregationMethodKeysFixed
 	template <typename Other>
 	AggregationMethodKeysFixed(const Other & other) : data(other.data) {}
 
-	struct State
+	class State final : private BaseStateKeysFixed<Key, has_nullable_keys>
 	{
+	public:
+		using Base = BaseStateKeysFixed<Key, has_nullable_keys>;
+
 		void init(ConstColumnPlainPtrs & key_columns)
 		{
+			if (has_nullable_keys)
+				Base::init(key_columns);
 		}
 
 		Key getKey(
@@ -297,7 +397,13 @@ struct AggregationMethodKeysFixed
 			StringRefs & keys,
 			Arena & pool) const
 		{
-			return packFixed<Key>(i, keys_size, key_columns, key_sizes);
+			if (has_nullable_keys)
+			{
+				auto bitmap = Base::createBitmap(i);
+				return packFixed<Key>(i, keys_size, Base::getActualColumns(), key_sizes, bitmap);
+			}
+			else
+				return packFixed<Key>(i, keys_size, key_columns, key_sizes);
 		}
 	};
 
@@ -314,19 +420,57 @@ struct AggregationMethodKeysFixed
 
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
-		size_t offset = 0;
+		static constexpr auto bitmap_size = has_nullable_keys ? std::tuple_size<KeysNullMap<Key>>::value : 0;
+		/// In any hash key value, column values to be read start just after the bitmap, if it exists.
+		size_t offset = bitmap_size;
+
 		for (size_t i = 0; i < keys_size; ++i)
 		{
-			size_t size = key_sizes[i];
-			key_columns[i]->insertData(reinterpret_cast<const char *>(&value.first) + offset, size);
-			offset += size;
+			IColumn * observed_column;
+			ColumnUInt8 * null_map;
+
+			/// If we have a nullable column, get its nested column and its null map.
+			if (has_nullable_keys && key_columns[i]->isNullable())
+			{
+				ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
+				observed_column = nullable_col.getNestedColumn().get();
+				null_map = static_cast<ColumnUInt8 *>(nullable_col.getNullValuesByteMap().get());
+			}
+			else
+			{
+				observed_column = key_columns[i];
+				null_map = nullptr;
+			}
+
+			bool is_null;
+			if (has_nullable_keys && key_columns[i]->isNullable())
+			{
+				/// The current column is nullable. Check if the value of the
+				/// corresponding key is nullable. Update the null map accordingly.
+				size_t bucket = i / 8;
+				size_t offset = i % 8;
+				bool val = (reinterpret_cast<const char *>(&value.first)[bucket] >> offset) & 1;
+				null_map->insert(val);
+				is_null = val == 1;
+			}
+			else
+				is_null = false;
+
+			if (has_nullable_keys && is_null)
+				observed_column->insertDefault();
+			else
+			{
+				size_t size = key_sizes[i];
+				observed_column->insertData(reinterpret_cast<const char *>(&value.first) + offset, size);
+				offset += size;
+			}
 		}
 	}
 };
 
 
 /// Агрегирует по конкатенации ключей. (При этом, строки, содержащие нули посередине, могут склеиться.)
-template <typename TData>
+template <typename TData, bool has_nullable_keys_ = false>
 struct AggregationMethodConcat
 {
 	using Data = TData;
@@ -334,6 +478,8 @@ struct AggregationMethodConcat
 	using Mapped = typename Data::mapped_type;
 	using iterator = typename Data::iterator;
 	using const_iterator = typename Data::const_iterator;
+
+	static constexpr bool has_nullable_keys = has_nullable_keys_;
 
 	Data data;
 
@@ -356,7 +502,7 @@ struct AggregationMethodConcat
 			StringRefs & keys,
 			Arena & pool) const
 		{
-			return extractKeysAndPlaceInPoolContiguous(i, keys_size, key_columns, keys, pool);
+			return extractKeysAndPlaceInPoolContiguous<has_nullable_keys>(i, keys_size, key_columns, keys, pool);
 		}
 	};
 
@@ -377,15 +523,26 @@ struct AggregationMethodConcat
 
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
+		if (has_nullable_keys)
+			insertKeyIntoNullableColumnsImpl(value, key_columns, keys_size, key_sizes);
+		else
+			insertKeyIntoColumnsImpl(value, key_columns, keys_size, key_sizes);
+	}
+
+private:
+	/// Insert the values of the specified keys into the corresponding columns.
+	/// Implementation for the case where there are no nullable keys.
+	static void insertKeyIntoColumnsImpl(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+	{
 		/// См. функцию extractKeysAndPlaceInPoolContiguous.
 		const StringRef * key_refs = reinterpret_cast<const StringRef *>(value.first.data + value.first.size);
 
 		if (unlikely(0 == value.first.size))
 		{
 			/** Исправление, если все ключи - пустые массивы. Для них в хэш-таблицу записывается StringRef нулевой длины, но с ненулевым указателем.
-			  * Но при вставке в хэш-таблицу, такой StringRef оказывается равен другому ключу нулевой длины,
-			  *  у которого указатель на данные может быть любым мусором и использовать его нельзя.
-			  */
+				* Но при вставке в хэш-таблицу, такой StringRef оказывается равен другому ключу нулевой длины,
+				*  у которого указатель на данные может быть любым мусором и использовать его нельзя.
+				*/
 			for (size_t i = 0; i < keys_size; ++i)
 				key_columns[i]->insertDefault();
 		}
@@ -393,6 +550,92 @@ struct AggregationMethodConcat
 		{
 			for (size_t i = 0; i < keys_size; ++i)
 				key_columns[i]->insertDataWithTerminatingZero(key_refs[i].data, key_refs[i].size);
+		}
+	}
+
+	/// Insert the value of the specified keys into the corresponding columns.
+	/// Implementation for the case where there is at least one nullable key.
+	static void insertKeyIntoNullableColumnsImpl(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+	{
+		size_t compact_bitmap_size = keys_size / 8;
+		if ((keys_size % 8) != 0) { ++compact_bitmap_size; }
+
+		if (unlikely(value.first.size < compact_bitmap_size))
+		{
+			/// This code path is logically impossible.
+			/// Only a bug in the code base can trigger it.
+			throw Exception{"Aggregator: corrupted hash table key", ErrorCodes::LOGICAL_ERROR};
+		}
+		else if (unlikely(value.first.size == compact_bitmap_size))
+		{
+			/// This case occurs when each of the keys falls into either of the following two
+			/// categories: (i) it has a null value; (ii) it represents an empty array.
+			/// The remarks are the same as for the implementation of the non-nullable case above.
+			const UInt8 * compact_bitmap = reinterpret_cast<const UInt8 *>(value.first.data);
+
+			for (size_t i = 0; i < keys_size; ++i)
+			{
+				IColumn * observed_column;
+
+				if (key_columns[i]->isNullable())
+				{
+					ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
+					observed_column = nullable_col.getNestedColumn().get();
+					ColumnUInt8 & null_map = static_cast<ColumnUInt8 &>(*nullable_col.getNullValuesByteMap());
+
+					size_t bucket = i / 8;
+					size_t offset = i % 8;
+					UInt8 is_null = (compact_bitmap[bucket] >> offset) & 1;
+					null_map.insert(is_null);
+				}
+				else
+					observed_column = key_columns[i];
+
+				observed_column->insertDefault();
+			}
+		}
+		else
+		{
+			const UInt8 * compact_bitmap = reinterpret_cast<const UInt8 *>(value.first.data);
+			const StringRef * key_refs = reinterpret_cast<const StringRef *>(value.first.data + value.first.size);
+
+			for (size_t i = 0; i < keys_size; ++i)
+			{
+				IColumn * observed_column;
+				ColumnUInt8 * null_map;
+
+				/// If we have a nullable column, get its nested column and its null map.
+				if (key_columns[i]->isNullable())
+				{
+					ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
+					observed_column = nullable_col.getNestedColumn().get();
+					null_map = static_cast<ColumnUInt8 *>(nullable_col.getNullValuesByteMap().get());
+				}
+				else
+				{
+					observed_column = key_columns[i];
+					null_map = nullptr;
+				}
+
+				bool is_null;
+				if (key_columns[i]->isNullable())
+				{
+					/// The current column is nullable. Check if the value of the
+					/// corresponding key is nullable. Update the null map accordingly.
+					size_t bucket = i / 8;
+					size_t offset = i % 8;
+					UInt8 val = (compact_bitmap[bucket] >> offset) & 1;
+					null_map->insert(val);
+					is_null = val == 1;
+				}
+				else
+					is_null = false;
+
+				if (is_null)
+					observed_column->insertDefault();
+				else
+					observed_column->insertDataWithTerminatingZero(key_refs[i].data, key_refs[i].size);
+			}
 		}
 	}
 };
@@ -574,6 +817,14 @@ struct AggregatedDataVariants : private boost::noncopyable
 	std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKeyTwoLevel>> 				concat_two_level;
 	std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>> 			serialized_two_level;
 
+	/// Support for nullable keys.
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128, true>>				nullable_keys128;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256, true>>				nullable_keys256;
+	std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKey, true>>					nullable_concat;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, true>>		nullable_keys128_two_level;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, true>>		nullable_keys256_two_level;
+	std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKeyTwoLevel, true>>			nullable_concat_two_level;
+
 	/// В этом и подобных макросах, вариант without_key не учитывается.
 	#define APPLY_FOR_AGGREGATED_VARIANTS(M) \
 		M(key8,					false) \
@@ -596,6 +847,12 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(hashed_two_level,				true) \
 		M(concat_two_level,				true) \
 		M(serialized_two_level,			true) \
+		M(nullable_keys128,			false) \
+		M(nullable_keys256,			false) \
+		M(nullable_concat,			false) \
+		M(nullable_keys128_two_level,	true) \
+		M(nullable_keys256_two_level,	true) \
+		M(nullable_concat_two_level,	true)
 
 	enum class Type
 	{
@@ -713,6 +970,9 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(hashed)			\
 		M(concat)			\
 		M(serialized)		\
+		M(nullable_keys128)	\
+		M(nullable_keys256)	\
+		M(nullable_concat)	\
 
 	#define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
 		M(key8)				\
@@ -748,7 +1008,10 @@ struct AggregatedDataVariants : private boost::noncopyable
 			M(keys256_two_level)			\
 			M(hashed_two_level)				\
 			M(concat_two_level)				\
-			M(serialized_two_level)
+			M(serialized_two_level)			\
+			M(nullable_keys128_two_level)	\
+			M(nullable_keys256_two_level)	\
+			M(nullable_concat_two_level)
 };
 
 using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
