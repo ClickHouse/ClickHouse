@@ -2093,18 +2093,18 @@ private:
 	/// Actions to be taken when performing a conversion.
 	struct Action
 	{
-		/// If neither the input type nor the input type is nullable or null,
+		/// If neither the input type nor the output type is nullable or null,
 		/// we perform the conversion without any pre and/or processing.
-		static constexpr auto NONE = UINT64_C(0);
+		static constexpr auto NONE = UInt64(0);
 		/// The input has a nullable type. We must extract its nested type
 		/// before performing any conversion.
-		static constexpr auto UNWRAP_NULLABLE_INPUT = UINT64_C(1) << 0;
+		static constexpr auto UNWRAP_NULLABLE_INPUT = UInt64(1) << 0;
 		/// The output has a nullable type. We must wrap the result from the
 		/// conversion into a ColumnNullable.
-		static constexpr auto WRAP_RESULT_INTO_NULLABLE = UINT64_C(1) << 1;
+		static constexpr auto WRAP_RESULT_INTO_NULLABLE = UInt64(1) << 1;
 		/// The input is the NULL value. Before performing any conversion,
 		/// we will turn it into a single UInt8 zero value.
-		static constexpr auto CONVERT_NULL = UINT64_C(1) << 2;
+		static constexpr auto CONVERT_NULL = UInt64(1) << 2;
 	};
 
 	WrapperType prepare(const DataTypePtr & from_type, const IDataType * const to_type, const uint64_t action)
