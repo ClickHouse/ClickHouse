@@ -13,7 +13,7 @@ namespace DB
 namespace ClusterProxy
 {
 
-Query::Query(IQueryConstructor & query_constructor_, const Cluster & cluster_,
+Query::Query(IQueryConstructor & query_constructor_, const ClusterPtr & cluster_,
 	ASTPtr query_ast_, const Context & context_, const Settings & settings_, bool enable_shard_multiplexing_)
 	: query_constructor{query_constructor_}, cluster{cluster_}, query_ast{query_ast_},
 	context{context_}, settings{settings_}, enable_shard_multiplexing{enable_shard_multiplexing_}
@@ -45,14 +45,14 @@ BlockInputStreams Query::execute()
 
 	if (query_constructor.getPoolMode() == PoolMode::GET_ALL)
 	{
-		for (const auto & shard_info : cluster.getShardsInfo())
+		for (const auto & shard_info : cluster->getShardsInfo())
 		{
 			if (shard_info.hasRemoteConnections())
 				++remote_count;
 		}
 	}
 	else
-		remote_count = cluster.getRemoteShardCount();
+		remote_count = cluster->getRemoteShardCount();
 
 	size_t thread_count;
 
@@ -73,7 +73,7 @@ BlockInputStreams Query::execute()
 
 	/// Цикл по шардам.
 	size_t current_thread = 0;
-	for (const auto & shard_info : cluster.getShardsInfo())
+	for (const auto & shard_info : cluster->getShardsInfo())
 	{
 		bool create_local_queries = shard_info.isLocal();
 
@@ -105,7 +105,7 @@ BlockInputStreams Query::execute()
 
 			if (actual_pools_per_thread == 1)
 			{
-				res.emplace_back(query_constructor.createRemote(shard_info.pool.get(), query, new_settings, throttler, context));
+				res.emplace_back(query_constructor.createRemote(shard_info.pool, query, new_settings, throttler, context));
 				++current_thread;
 			}
 			else

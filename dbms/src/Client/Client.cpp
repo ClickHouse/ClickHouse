@@ -569,8 +569,16 @@ private:
 				while (isWhitespace(*begin) || *begin == ';')
 					++begin;
 
-				if (!processSingleQuery(query, ast) || got_exception)
+				if (!processSingleQuery(query, ast))
 					return false;
+
+				if (got_exception)
+				{
+					if (is_interactive)
+						break;
+					else
+						return false;
+				}
 			}
 
 			return true;

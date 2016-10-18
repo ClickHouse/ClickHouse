@@ -8,6 +8,7 @@
 #include <mutex>
 #include <Poco/RWLock.h>
 #include <Poco/Event.h>
+#include <Poco/Timestamp.h>
 #include <DB/Core/Types.h>
 
 namespace DB
@@ -51,15 +52,17 @@ public:
 		Counters & local_counters;
 	};
 
-	/// Возвращает true, если что-то получилось сделать. В таком случае поток не будет спать перед следующим вызовом.
+	/// Returns true, if some useful work was done. In that case, thread will not sleep before next run of this task.
 	using Task = std::function<bool (Context & context)>;
 
 
 	class TaskInfo
 	{
 	public:
-		/// Разбудить какой-нибудь поток.
+		/// Wake up any thread.
 		void wake();
+
+		TaskInfo(BackgroundProcessingPool & pool_, const Task & function_) : pool(pool_), function(function_) {}
 
 	private:
 		friend class BackgroundProcessingPool;
@@ -67,14 +70,11 @@ public:
 		BackgroundProcessingPool & pool;
 		Task function;
 
-		/// При выполнении задачи, держится read lock.
+		/// Read lock is hold when task is executed.
 		Poco::RWLock rwlock;
 		std::atomic<bool> removed {false};
-		std::atomic<time_t> next_time_to_execute {0};	/// Приоритет задачи. Для совпадающего времени в секундах берётся первая по списку задача.
 
-		std::list<std::shared_ptr<TaskInfo>>::iterator iterator;
-
-		TaskInfo(BackgroundProcessingPool & pool_, const Task & function_) : pool(pool_), function(function_) {}
+		std::multimap<Poco::Timestamp, std::shared_ptr<TaskInfo>>::iterator iterator;
 	};
 
 	using TaskHandle = std::shared_ptr<TaskInfo>;
@@ -95,14 +95,14 @@ public:
 	~BackgroundProcessingPool();
 
 private:
-	using Tasks = std::list<TaskHandle>;
+	using Tasks = std::multimap<Poco::Timestamp, TaskHandle>;	/// key is desired next time to execute (priority).
 	using Threads = std::vector<std::thread>;
 
 	const size_t size;
 	static constexpr double sleep_seconds = 10;
 	static constexpr double sleep_seconds_random_part = 1.0;
 
-	Tasks tasks; 		/// Задачи в порядке, в котором мы планируем их выполнять.
+	Tasks tasks; 		/// Ordered in priority.
 	std::mutex tasks_mutex;
 
 	Counters counters;

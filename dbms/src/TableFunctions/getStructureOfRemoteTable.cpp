@@ -36,7 +36,7 @@ NamesAndTypesList getStructureOfRemoteTable(
 
 	BlockInputStreamPtr input =
 		std::make_shared<RemoteBlockInputStream>(
-			pool.get(), query, &settings, nullptr,
+			pool, query, &settings, nullptr,
 			Tables(), QueryProcessingStage::Complete, context);
 	input->readPrefix();
 
