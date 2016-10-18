@@ -29,7 +29,10 @@
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/StorageSet.h>
 #include <DB/Storages/StorageJoin.h>
+#include <DB/Storages/StorageFile.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
+
+#include <unistd.h>
 
 
 namespace DB
@@ -254,6 +257,44 @@ StoragePtr StorageFactory::get(
 			data_path, table_name, columns,
 			materialized_columns, alias_columns, column_defaults,
 			attach, context.getSettings().max_compress_block_size);
+	}
+	else if (name == "File")
+	{
+		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
+
+		constexpr auto error_msg = "Storage File requires exactly 1 parameter - name of using format.";
+
+		/// TODO: Maybe some my misunderstanding of ASTs
+
+		if (args_func.size() != 1)
+			throw Exception(error_msg, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
+
+		if (args.empty() || args.size() > 2)
+			throw Exception(error_msg, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], local_context);
+		String format_name = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+
+		int source_fd = -1;
+		String source_path;
+		if (args.size() >= 2)
+		{
+			args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
+			String table_source = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+
+			if (table_source == "stdin")
+				source_fd = STDIN_FILENO;
+			else
+				source_path = std::move(table_source);
+		}
+
+		return StorageFile::create(
+			source_path, source_fd,
+			data_path, table_name, format_name, columns,
+			materialized_columns, alias_columns, column_defaults,
+			context);
 	}
 	else if (name == "Set")
 	{
