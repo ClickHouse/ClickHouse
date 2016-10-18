@@ -2932,7 +2932,9 @@ When the server starts (or establishes a new session with ZooKeeper), it only ch
 
 If the local set of data differs too much from the expected one, a safety mechanism is triggered. The server enters this in the log and refuses to launch. The reason for this is that this case may indicate a configuration error, such as if a replica on a shard was accidentally configured like a replica on a different shard. However, the thresholds for this mechanism are set fairly low, and this situation might occur during normal failure recovery. In this case, data is restored semi-automatically - by &quot;pushing a button&quot;.
 
-To start recovery, create the node <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span>  in ZooKeeper with any content, and launch the server. On start, the server deletes this flag and starts recovery.
+To start recovery, create the node <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span> in ZooKeeper with any content or run command to recover all replicated tables:
+%%sudo -u metrika touch /opt/clickhouse/flags/force_restore_data%%
+Then launch the server. On start, the server deletes these flags and starts recovery.
 
 
 ===Recovery after complete data loss===
@@ -2945,7 +2947,9 @@ If all data and metadata disappeared from one of the servers, follow these steps
 
 3. Copy table definitions located in %%/opt/clickhouse/metadata/%% from a replica. If a shard or replica identifier is defined explicitly in the table definitions, correct it so that it corresponds to this replica. (Alternatively, launch the server and make all the ATTACH TABLE queries that should have been in the .sql files in %%/opt/clickhouse/metadata/%%.)
 
-4. Create the <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span> node in ZooKeeper with any content, and launch the server (restart it if it is already running). Data will be downloaded from replicas.
+4. Create the <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span> node in ZooKeeper with any content or run command to recover all replicated tables:
+%%sudo -u metrika touch /opt/clickhouse/flags/force_restore_data%%
+Then launch the server (restart it if it is already running). Data will be downloaded from replicas.
 
 An alternative recovery option is to delete information about the lost replica from ZooKeeper ( <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i></span>), then create the replica again as described in &quot;Creating replicated tables&quot;.
 
