@@ -2345,7 +2345,12 @@ public:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		wrapper_function(block, arguments, result);
+		/// drop second argument, pass others
+		ColumnNumbers new_arguments{arguments.front()};
+		if (arguments.size() > 2)
+			new_arguments.insert(std::end(new_arguments), std::next(std::begin(arguments), 2), std::end(arguments));
+
+		wrapper_function(block, new_arguments, result);
 	}
 
 	bool hasInformationAboutMonotonicity() const override
