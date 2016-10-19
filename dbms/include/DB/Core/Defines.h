@@ -15,9 +15,6 @@
 #define DBMS_DEFAULT_PING_TIMEOUT_SEC							5
 #define DBMS_DEFAULT_POLL_INTERVAL 								10
 
-/// Насколько секунд можно максимально задерживать вставку в таблицу типа MergeTree, если в ней много недомердженных кусков.
-#define DBMS_MAX_DELAY_OF_INSERT								200.0
-
 /// Размер буфера ввода-вывода по-умолчанию.
 #define DBMS_DEFAULT_BUFFER_SIZE 								1048576ULL
 
