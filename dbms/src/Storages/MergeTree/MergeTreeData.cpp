@@ -588,7 +588,7 @@ void MergeTreeData::checkAlter(const AlterCommands & params)
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-	ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata)
+	ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
 {
 	out_expression = nullptr;
 	out_rename_map = {};
