@@ -43,9 +43,13 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 		return res;
 	}
 
-	/// Разделяем на блоки по месяцам. Для каждого ещё посчитаем минимальную и максимальную дату.
+	/// Split to blocks for different months. And also will calculate min and max date for each of them.
 	using BlocksByMonth = std::map<UInt16, BlockWithDateInterval *>;
 	BlocksByMonth blocks_by_month;
+
+	ColumnPlainPtrs src_columns(columns);
+	for (size_t i = 0; i < columns; ++i)
+		src_columns[i] = block.getByPosition(i).column.get();
 
 	for (size_t i = 0; i < rows; ++i)
 	{
@@ -58,13 +62,10 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 			block_for_month->block = block.cloneEmpty();
 		}
 
-		if (dates[i] < block_for_month->min_date)
-			block_for_month->min_date = dates[i];
-		if (dates[i] > block_for_month->max_date)
-			block_for_month->max_date = dates[i];
+		block_for_month->updateDates(dates[i]);
 
 		for (size_t j = 0; j < columns; ++j)
-			block_for_month->block.getByPosition(j).column->insert((*block.getByPosition(j).column)[i]);
+			block_for_month->block.unsafeGetByPosition(j).column->insertFrom(*src_columns[j], i);
 	}
 
 	return res;

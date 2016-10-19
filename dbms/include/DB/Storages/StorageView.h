@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.hpp>
+
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Storages/IStorage.h>
 
@@ -7,8 +9,9 @@
 namespace DB
 {
 
-class StorageView : public IStorage
+class StorageView : private ext::shared_ptr_helper<StorageView>, public IStorage
 {
+friend class ext::shared_ptr_helper<StorageView>;
 
 public:
 	static StoragePtr create(

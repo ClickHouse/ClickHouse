@@ -267,11 +267,11 @@ public:
 			String value = config.getString(config_elem + "." + *it);
 
 			if (startsWith(*it, "ip"))
-				pattern.reset(new IPAddressPattern(value));
+				pattern = std::make_unique<IPAddressPattern>(value);
 			else if (startsWith(*it, "host_regexp"))
-				pattern.reset(new HostRegexpPattern(value));
+				pattern = std::make_unique<HostRegexpPattern>(value);
 			else if (startsWith(*it, "host"))
-				pattern.reset(new HostExactPattern(value));
+				pattern = std::make_unique<HostExactPattern>(value);
 			else
 				throw Exception("Unknown address pattern type: " + *it, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);
 

@@ -2,12 +2,14 @@
 
 #include <DB/Core/Block.h>
 #include <DB/Core/Names.h>
-#include <DB/IO/WriteBuffer.h>
 #include <DB/DataStreams/IRowOutputStream.h>
 
 
 namespace DB
 {
+
+class WriteBuffer;
+
 
 /** Поток для вывода данных в формате "каждое значение на своей строке".
   */
@@ -20,7 +22,7 @@ public:
 	void writeRowStartDelimiter() override;
 	void writeRowBetweenDelimiter() override;
 
-	void flush() override { ostr.next(); }
+	void flush() override;
 
 protected:
 	virtual void writeValue(const IColumn & column, const IDataType & type, size_t row_num) const;

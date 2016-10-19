@@ -74,13 +74,13 @@ public:
 	}
 
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, const IColumn & determinator, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, const IColumn & determinator, size_t row_num, Arena *) const
 	{
 		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num],
 			determinator.get64(row_num));
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).sample.merge(this->data(rhs).sample);
 	}
@@ -90,7 +90,7 @@ public:
 		this->data(place).sample.write(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).sample.read(buf);
 	}
@@ -158,13 +158,13 @@ public:
 	}
 
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, const IColumn & determinator, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, const IColumn & determinator, size_t row_num, Arena *) const
 	{
 		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num],
 			determinator.get64(row_num));
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).sample.merge(this->data(rhs).sample);
 	}
@@ -174,7 +174,7 @@ public:
 		this->data(place).sample.write(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).sample.read(buf);
 	}

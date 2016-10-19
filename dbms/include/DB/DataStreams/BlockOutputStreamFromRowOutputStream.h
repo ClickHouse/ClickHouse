@@ -23,6 +23,7 @@ public:
 	void setRowsBeforeLimit(size_t rows_before_limit) override;
 	void setTotals(const Block & totals) override;
 	void setExtremes(const Block & extremes) override;
+	void onProgress(const Progress & progress) override;
 
 	String getContentType() const override { return row_output->getContentType(); }
 

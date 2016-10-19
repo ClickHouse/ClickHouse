@@ -21,44 +21,38 @@ sudo apt-get install git cmake
 export THREADS=$(grep -c ^processor /proc/cpuinfo)
 ```
 
-## Install GCC 5
+## Install GCC 6
 
-(GCC 6 is fine too)
 There are several ways to do it.
 
-### 1. If you run on Ubuntu 15.10 or newer, just do
-```
-sudo apt-get install g++-5
-```
-
-### 2. Install from PPA package.
+### 1. Install from PPA package.
 
 ```
 sudo apt-get install software-properties-common
 sudo apt-add-repository ppa:ubuntu-toolchain-r/test
 sudo apt-get update
-sudo apt-get install gcc-5 g++-5
+sudo apt-get install gcc-6 g++-6
 ```
 
-### 3. Install GCC 5 from sources.
+### 2. Install GCC 6 from sources.
 
 Example:
 ```
 # Download gcc from https://gcc.gnu.org/mirrors.html
-wget ftp://ftp.fu-berlin.de/unix/languages/gcc/releases/gcc-5.3.0/gcc-5.3.0.tar.bz2
-tar xf gcc-5.3.0.tar.bz2
-cd gcc-5.3.0
+wget ftp://ftp.fu-berlin.de/unix/languages/gcc/releases/gcc-6.2.0/gcc-6.2.0.tar.bz2
+tar xf gcc-6.2.0.tar.bz2
+cd gcc-6.2.0
 ./contrib/download_prerequisites
 cd ..
 mkdir gcc-build
 cd gcc-build
-../gcc-5.3.0/configure --enable-languages=c,c++
+../gcc-6.2.0/configure --enable-languages=c,c++
 make -j $THREADS
 sudo make install
 hash gcc g++
 gcc --version
-sudo ln -s /usr/local/bin/gcc /usr/local/bin/gcc-5
-sudo ln -s /usr/local/bin/g++ /usr/local/bin/g++-5
+sudo ln -s /usr/local/bin/gcc /usr/local/bin/gcc-6
+sudo ln -s /usr/local/bin/g++ /usr/local/bin/g++-6
 sudo ln -s /usr/local/bin/gcc /usr/local/bin/cc
 sudo ln -s /usr/local/bin/g++ /usr/local/bin/c++
 # /usr/local/bin/ should be in $PATH
@@ -72,11 +66,11 @@ When using different C++ ABI, you need to recompile all C++ libraries,
 ClickHouse works with both old and new C++ ABI,
  but production releases is built with old C++ ABI.
 
-## Use GCC 5 for builds
+## Use GCC 6 for builds
 
 ```
-export CC=gcc-5
-export CXX=g++-5
+export CC=gcc-6
+export CXX=g++-6
 ```
 
 ## Install required libraries from packages
@@ -98,8 +92,8 @@ wget http://downloads.sourceforge.net/project/boost/boost/1.60.0/boost_1_60_0.ta
 tar xf boost_1_60_0.tar.bz2
 cd boost_1_60_0
 ./bootstrap.sh
-./b2 --toolset=gcc-5 -j $THREADS
-sudo ./b2 install --toolset=gcc-5 -j $THREADS
+./b2 --toolset=gcc-6 -j $THREADS
+sudo ./b2 install --toolset=gcc-6 -j $THREADS
 cd ..
 ```
 
@@ -162,12 +156,12 @@ cd ..
 sudo apt-get install subversion
 mkdir llvm
 cd llvm
-svn co http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_380/final llvm
+svn co http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_390/final llvm
 cd llvm/tools
-svn co http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_380/final clang
+svn co http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_390/final clang
 cd ..
 cd projects/
-svn co http://llvm.org/svn/llvm-project/compiler-rt/tags/RELEASE_380/final compiler-rt
+svn co http://llvm.org/svn/llvm-project/compiler-rt/tags/RELEASE_390/final compiler-rt
 cd ../..
 mkdir build
 cd build/

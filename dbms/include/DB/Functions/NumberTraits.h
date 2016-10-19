@@ -198,7 +198,7 @@ template <typename A, typename B> struct ResultOfIntegerDivision
 {
 	typedef typename Construct<
 		typename boost::mpl::or_<typename Traits<A>::Sign, typename Traits<B>::Sign>::type,
-		typename boost::mpl::or_<typename Traits<A>::Floatness, typename Traits<B>::Floatness>::type,
+		Integer,
 		typename Traits<A>::Bits,
 		typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type>::Type Type;
 };

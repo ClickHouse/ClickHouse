@@ -7,6 +7,7 @@
 
 #include <DB/IO/WriteBufferFromVector.h>
 #include <DB/IO/ReadBufferFromString.h>
+#include <DB/IO/Operators.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -33,7 +34,15 @@ namespace DB
 
 namespace ErrorCodes
 {
+	extern const int ATTEMPT_TO_READ_AFTER_EOF;
 	extern const int CANNOT_PARSE_NUMBER;
+	extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+	extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+	extern const int CANNOT_PARSE_QUOTED_STRING;
+	extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
+	extern const int CANNOT_PARSE_DATE;
+	extern const int CANNOT_PARSE_DATETIME;
+	extern const int CANNOT_PARSE_TEXT;
 }
 
 
@@ -313,7 +322,7 @@ struct ToDateTransform32Or64
 template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
 	: details::ToDateConverter<DataTypeDateTime, details::ToDateTransform, Name> {};
 
-/** Special case of converting (U)Int32 or (U)Int64 to Date.
+/** Special case of converting (U)Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to Date.
   * If number is less than 65536, then it is treated as DayNum, and if greater or equals, then as unix timestamp.
   * It's a bit illogical, as we actually have two functions in one.
   * But allows to support frequent case,
@@ -328,6 +337,10 @@ template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name>
 	: details::ToDateConverter<DataTypeInt32, details::ToDateTransform32Or64, Name> {};
 template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name>
 	: details::ToDateConverter<DataTypeInt64, details::ToDateTransform32Or64, Name> {};
+template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate, Name>
+	: details::ToDateConverter<DataTypeUInt32, details::ToDateTransform32Or64, Name> {};
+template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name>
+	: details::ToDateConverter<DataTypeUInt64, details::ToDateTransform32Or64, Name> {};
 
 
 /** Transformation of numbers, dates, datetimes to strings: through formatting.
@@ -743,6 +756,12 @@ template <> inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType 
 }
 
 
+/** Throw exception with verbose message when string value is not parsed completely.
+  */
+void throwExceptionForIncompletelyParsedValue(
+	ReadBuffer & read_buffer, Block & block, const ColumnNumbers & arguments, size_t result);
+
+
 template <typename ToDataType, typename Name>
 struct ConvertImpl<DataTypeString, ToDataType, Name>
 {
@@ -774,7 +793,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 				if (!read_buffer.eof()
 					&& !(std::is_same<ToDataType, DataTypeDate>::value /// Special exception, that allows to parse string with DateTime as Date.
 						&& offsets[i] - current_offset - 1 == strlen("YYYY-MM-DD hh:mm:ss")))
-					throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
+					throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
 
 				current_offset = offsets[i];
 			}
@@ -789,7 +808,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 			if (!read_buffer.eof()
 				&& !(std::is_same<ToDataType, DataTypeDate>::value /// Special exception, that allows to parse string with DateTime as Date.
 					&& s.size() == strlen("YYYY-MM-DD hh:mm:ss")))
-				throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
+				throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
 
 			block.getByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(col_from->size(), x);
 		}
@@ -902,7 +921,7 @@ struct ConvertImplGenericFromString
 				data_type_to.deserializeTextEscaped(column_to, read_buffer);
 
 				if (!read_buffer.eof())
-					throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_READ_ALL_DATA);
+					throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
 
 				current_offset = offsets[i];
 			}
@@ -914,6 +933,9 @@ struct ConvertImplGenericFromString
 
 			auto tmp_col = data_type_to.createColumn();
 			data_type_to.deserializeTextEscaped(*tmp_col, read_buffer);
+
+			if (!read_buffer.eof())
+				throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
 
 			block.getByPosition(result).column = data_type_to.createConstColumn(size, (*tmp_col)[0]);
 		}
@@ -1192,7 +1214,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 						++read_buffer.position();
 
 					if (read_buffer.position() < end)
-						throw Exception("Cannot parse from fixed string.", ErrorCodes::CANNOT_PARSE_NUMBER);
+						throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
 				}
 			}
 		}
@@ -1278,7 +1300,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionConvert>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -1290,8 +1311,51 @@ public:
 		return getReturnTypeInternal(arguments);
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		try
+		{
+			executeInternal(block, arguments, result);
+		}
+		catch (Exception & e)
+		{
+			/// More convenient error message.
+			if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+			{
+				e.addMessage("Cannot parse "
+					+ block.unsafeGetByPosition(result).type->getName() + " from "
+					+ block.unsafeGetByPosition(arguments[0]).type->getName()
+					+ ", because value is too short");
+			}
+			else if (e.code() == ErrorCodes::CANNOT_PARSE_NUMBER
+				|| e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
+				|| e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
+				|| e.code() == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
+				|| e.code() == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE
+				|| e.code() == ErrorCodes::CANNOT_PARSE_DATE
+				|| e.code() == ErrorCodes::CANNOT_PARSE_DATETIME)
+			{
+				e.addMessage("Cannot parse "
+					+ block.unsafeGetByPosition(result).type->getName() + " from "
+					+ block.unsafeGetByPosition(arguments[0]).type->getName());
+			}
+
+			throw;
+		}
+	}
+
+	bool hasInformationAboutMonotonicity() const override
+	{
+		return Monotonic::has();
+	}
+
+	Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+	{
+		return Monotonic::get(type, left, right);
+	}
+
+private:
+	void executeInternal(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
@@ -1324,17 +1388,6 @@ public:
 		}
 	}
 
-	bool hasInformationAboutMonotonicity() const override
-	{
-		return Monotonic::has();
-	}
-
-	Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
-	{
-		return Monotonic::get(type, left, right);
-	}
-
-private:
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
 	DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
 		typename std::enable_if<!(std::is_same<ToDataType2, DataTypeString>::value ||

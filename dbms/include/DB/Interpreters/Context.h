@@ -80,8 +80,9 @@ private:
 	using Shared = std::shared_ptr<ContextShared>;
 	Shared shared;
 
-	String user;						/// Текущий пользователь.
-	Poco::Net::IPAddress ip_address;	/// IP-адрес, с которого задан запрос.
+	String user;						/// Current user
+	Poco::Net::IPAddress ip_address;	/// IP address
+	UInt16 port;						///            and port, from which current query was recieved
 	Interface interface = Interface::TCP;
 	HTTPMethod http_method = HTTPMethod::UNKNOWN;	/// NOTE Возможно, перенести это в отдельный struct ClientInfo.
 
@@ -117,13 +118,14 @@ public:
 	  * Список пользователей полностью заменяется.
 	  * Накопленные значения у квоты не сбрасываются, если квота не удалена.
 	  */
-	void setUsersConfig(ConfigurationPtr config);
+	void setUsersConfig(const ConfigurationPtr & config);
 
 	ConfigurationPtr getUsersConfig();
 
-	void setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, const String & quota_key);
+	void setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, UInt16 port, const String & quota_key);
 	String getUser() const { return user; }
 	Poco::Net::IPAddress getIPAddress() const { return ip_address; }
+	UInt16 getPort() const { return port; }
 
 	Interface getInterface() const { return interface; }
 	void setInterface(Interface interface_) { interface = interface_; }
@@ -276,8 +278,10 @@ public:
 	  */
 	void resetCaches() const;
 
-	const Cluster & getCluster(const std::string & cluster_name) const;
-	std::shared_ptr<Clusters> getClusters() const;
+	Clusters & getClusters() const;
+	std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
+	std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
+	void setClustersConfig(const ConfigurationPtr & config);
 
 	Compiler & getCompiler();
 	QueryLog & getQueryLog();

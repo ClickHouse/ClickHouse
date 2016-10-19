@@ -20,7 +20,7 @@ class WriteBufferFromVector : public WriteBuffer
 private:
 	VectorType & vector;
 
-	void nextImpl()
+	void nextImpl() override
 	{
 		size_t old_size = vector.size();
 		vector.resize(old_size * 2);

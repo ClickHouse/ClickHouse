@@ -369,7 +369,7 @@ void TCPHandler::sendProfileInfo()
 	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
 	{
 		writeVarUInt(Protocol::Server::ProfileInfo, *out);
-		input->getInfo().write(*out);
+		input->getProfileInfo().write(*out);
 		out->next();
 	}
 }
@@ -464,7 +464,7 @@ void TCPHandler::receiveHello()
 		<< (!user.empty() ? ", user: " + user : "")
 		<< ".");
 
-	connection_context.setUser(user, password, socket().peerAddress().host(), "");
+	connection_context.setUser(user, password, socket().peerAddress().host(), socket().peerAddress().port(), "");
 }
 
 

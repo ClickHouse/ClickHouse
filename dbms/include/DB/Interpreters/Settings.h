@@ -103,9 +103,9 @@ struct Settings
 	M(SettingUInt64, group_by_two_level_threshold_bytes, 100000000) \
 	/** Включён ли экономный по памяти режим распределённой агрегации. */ \
 	M(SettingBool, distributed_aggregation_memory_efficient, false) \
-	/** Сколько потоков использовать для мерджа результатов в режиме, экономном по памяти. Чем больше, чем больше памяти расходуется. \
-	  * 0, означает - столько же, сколько max_threads. Временно выставленно в 1, так как реализация некорректна. */ \
-	M(SettingUInt64, aggregation_memory_efficient_merge_threads, 1) \
+	/** Number of threads to use for merge intermediate aggregation results in memory efficient mode. When bigger, then more memory is consumed. \
+	  * 0 means - same as 'max_threads'. */ \
+	M(SettingUInt64, aggregation_memory_efficient_merge_threads, 0) \
 	\
 	/** Максимальное количество используемых реплик каждого шарда при выполнении запроса */ \
 	M(SettingUInt64, max_parallel_replicas, 1) \
@@ -217,6 +217,18 @@ struct Settings
 	\
 	/** What aggregate function to use for implementation of count(DISTINCT ...) */ \
 	M(SettingString, count_distinct_implementation, "uniq") \
+	\
+	/** Write statistics about read rows, bytes, time elapsed in suitable output formats */ \
+	M(SettingBool, output_format_write_statistics, true) \
+	\
+	/** Write add http CORS header */ \
+	M(SettingBool, add_http_cors_header, false) \
+	\
+	/** Skip columns with unknown names from input data (it works for JSONEachRow and TSKV formats). */ \
+	M(SettingBool, input_format_skip_unknown_fields, false) \
+	\
+	/** Controls quoting of 64-bit integers in JSON output format. */ \
+	M(SettingBool, output_format_json_quote_64bit_integers, true)
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

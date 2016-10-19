@@ -381,12 +381,12 @@ void LogBlockInputStream::addStream(const String & name, const IDataType & type,
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
 	else
-		streams[name].reset(new Stream(
+		streams[name] = std::make_unique<Stream>(
 			storage.files[name].data_file.path(),
 			mark_number
 				? storage.files[name].marks[mark_number].offset
 				: 0,
-			max_read_buffer_size));
+			max_read_buffer_size);
 }
 
 
@@ -508,7 +508,7 @@ void LogBlockOutputStream::addStream(const String & name, const IDataType & type
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
 	else
-		streams[name].reset(new Stream(storage.files[name].data_file.path(), storage.max_compress_block_size));
+		streams[name] = std::make_unique<Stream>(storage.files[name].data_file.path(), storage.max_compress_block_size);
 }
 
 
@@ -640,11 +640,11 @@ StoragePtr StorageLog::create(
 	const ColumnDefaults & column_defaults_,
 	size_t max_compress_block_size_)
 {
-	return (new StorageLog{
+	return make_shared(
 		path_, name_, columns_,
 		materialized_columns_, alias_columns_, column_defaults_,
 		max_compress_block_size_
-	})->thisPtr();
+	);
 }
 
 StoragePtr StorageLog::create(
@@ -653,11 +653,11 @@ StoragePtr StorageLog::create(
 	NamesAndTypesListPtr columns_,
 	size_t max_compress_block_size_)
 {
-	return (new StorageLog{
+	return make_shared(
 		path_, name_, columns_,
-		{}, {}, ColumnDefaults{},
+		NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{},
 		max_compress_block_size_
-	})->thisPtr();
+	);
 }
 
 

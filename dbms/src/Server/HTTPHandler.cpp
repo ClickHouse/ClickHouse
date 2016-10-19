@@ -108,7 +108,7 @@ void HTTPHandler::processQuery(
 	Context context = *server.global_context;
 	context.setGlobalContext(*server.global_context);
 
-	context.setUser(user, password, request.clientAddress().host(), quota_key);
+	context.setUser(user, password, request.clientAddress().host(), request.clientAddress().port(), quota_key);
 	context.setCurrentQueryId(query_id);
 
 	std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query_param);
@@ -245,6 +245,9 @@ void HTTPHandler::processQuery(
 	/// Возможно, что выставлена настройка - не проверять чексуммы при разжатии данных от клиента, сжатых родным форматом.
 	if (in_post_compressed && context.getSettingsRef().http_native_compression_disable_checksumming_on_decompress)
 		static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
+
+	/// Добавить CORS header выставлена настройка, и если клиент передал заголовок Origin
+	used_output.out->addHeaderCORS( context.getSettingsRef().add_http_cors_header && !request.get("Origin", "").empty() );
 
 	context.setInterface(Context::Interface::HTTP);
 

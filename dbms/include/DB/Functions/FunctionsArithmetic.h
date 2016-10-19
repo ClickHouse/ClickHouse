@@ -174,7 +174,7 @@ struct DivideIntegralImpl
 	static inline Result apply(A a, B b)
 	{
 		throwIfDivisionLeadsToFPE(a, b);
-		return static_cast<Result>(a) / b;
+		return a / b;
 	}
 };
 
@@ -186,7 +186,7 @@ struct DivideIntegralOrZeroImpl
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
 	{
-		return unlikely(divisionLeadsToFPE(a, b)) ? 0 : static_cast<Result>(a) / b;
+		return unlikely(divisionLeadsToFPE(a, b)) ? 0 : a / b;
 	}
 };
 

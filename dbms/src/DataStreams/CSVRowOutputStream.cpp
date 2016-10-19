@@ -17,6 +17,12 @@ CSVRowOutputStream::CSVRowOutputStream(WriteBuffer & ostr_, const Block & sample
 }
 
 
+void CSVRowOutputStream::flush()
+{
+	ostr.next();
+}
+
+
 void CSVRowOutputStream::writePrefix()
 {
 	size_t columns = sample.columns();

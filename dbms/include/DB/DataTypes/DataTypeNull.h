@@ -122,7 +122,8 @@ public:
 		writeCString(NullSymbol::Plain::name, ostr);
 	}
 
-	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
+	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+		bool force_quoting_64bit_integers) const override
 	{
 		writeCString(NullSymbol::JSON::name, ostr);
 	}

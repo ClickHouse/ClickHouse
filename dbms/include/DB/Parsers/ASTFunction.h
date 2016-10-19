@@ -10,7 +10,7 @@
 namespace DB
 {
 
-/** Применение функции или оператора
+/** AST for function application or operator.
   */
 class ASTFunction : public ASTWithAlias
 {
@@ -25,11 +25,9 @@ public:
 		ARRAY_JOIN,
 	};
 
-	/// имя функции
 	String name;
-	/// аргументы
 	ASTPtr arguments;
-	/// параметры - для параметрических агрегатных функций. Пример: quantile(0.9)(x) - то, что в первых скобках - параметры.
+	/// parameters - for parametric aggregate function. Example: quantile(0.9)(x) - what in first parens are 'parameters'.
 	ASTPtr parameters;
 
 	FunctionKind kind{UNKNOWN};
@@ -40,7 +38,7 @@ public:
 
 	String getColumnName() const override;
 
-	/** Получить текст, который идентифицирует этот элемент. */
+	/** Get text identifying the AST node. */
 	String getID() const override;
 
 	ASTPtr clone() const override;

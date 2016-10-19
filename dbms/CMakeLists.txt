@@ -9,11 +9,16 @@ if ($ENV{DISABLE_MONGODB})
 	set (DISABLE_MONGODB TRUE)
 endif()
 
-if (${DISABLE_MONGODB})
+if (DISABLE_MONGODB)
 	add_definitions(-D DISABLE_MONGODB)
 else()
 	set (LINK_MONGOCLIENT libmongoclient.a libssl.a libcrypto.a libboost_thread.a)
 endif()
+
+
+add_library(string_utils
+	include/DB/Common/StringUtils.h
+	src/Common/StringUtils.cpp)
 
 add_library (dbms
 	src/Server/InterserverIOHTTPHandler.h
@@ -21,7 +26,7 @@ add_library (dbms
 	src/Server/TCPHandler.h
 	src/Server/HTTPHandler.h
 	src/Server/MetricsTransmitter.h
-	src/Server/UsersConfigReloader.h
+	src/Server/ConfigReloader.h
 	src/Server/StatusFile.h
 	src/Server/ReplicasStatusHandler.h
 	src/Client/InterruptListener.h
@@ -58,6 +63,7 @@ add_library (dbms
 	include/DB/Functions/FunctionsComparison.h
 	include/DB/Functions/FunctionsHashing.h
 	include/DB/Functions/FunctionsMath.h
+	include/DB/Functions/FunctionsGeo.h
 	include/DB/Functions/FunctionsMiscellaneous.h
 	include/DB/Functions/FunctionsDateTime.h
 	include/DB/Functions/IFunction.h
@@ -65,6 +71,7 @@ add_library (dbms
 	include/DB/Functions/NumberTraits.h
 	include/DB/Functions/DataTypeTraits.h
 	include/DB/Functions/EnrichedDataTypePtr.h
+	include/DB/Functions/ObjectPool.h
 	include/DB/TableFunctions/TableFunctionRemote.h
 	include/DB/TableFunctions/TableFunctionFactory.h
 	include/DB/TableFunctions/TableFunctionMerge.h
@@ -322,7 +329,6 @@ add_library (dbms
 	include/DB/Interpreters/AggregationCommon.h
 	include/DB/Interpreters/ProcessList.h
 	include/DB/Interpreters/AggregateDescription.h
-	include/DB/Interpreters/reinterpretAsIdentifier.h
 	include/DB/Interpreters/Cluster.h
 	include/DB/Interpreters/loadMetadata.h
 	include/DB/Interpreters/ExternalDictionaries.h
@@ -434,7 +440,6 @@ add_library (dbms
 	include/DB/Common/getNumberOfPhysicalCPUCores.h
 	include/DB/Common/BitHelpers.h
 	include/DB/Common/BlockFilterCreator.h
-	include/DB/Common/StringUtils.h
 	include/DB/Common/randomSeed.h
 	include/DB/Common/unaligned.h
 	include/DB/Common/ThreadPool.h
@@ -608,8 +613,8 @@ add_library (dbms
 	src/Common/ShellCommand.cpp
 	src/Common/isLocalAddress.cpp
 	src/Common/getNumberOfPhysicalCPUCores.cpp
-	src/Common/StringUtils.cpp
 	src/Common/randomSeed.cpp
+	src/Common/ThreadPool.cpp
 
 	src/Core/Field.cpp
 	src/Core/FieldVisitors.cpp
@@ -632,6 +637,7 @@ add_library (dbms
 	src/IO/ReadBufferFromFileBase.cpp
 	src/IO/WriteBufferFromFileBase.cpp
 	src/IO/InterserverWriteBuffer.cpp
+	src/IO/ReadBufferFromHTTP.cpp
 
 	src/Columns/ColumnConst.cpp
 	src/Columns/ColumnArray.cpp
@@ -763,7 +769,6 @@ add_library (dbms
 	src/DataStreams/SquashingBlockInputStream.cpp
 	src/DataStreams/SquashingBlockOutputStream.cpp
 	src/DataStreams/MaterializingBlockInputStream.cpp
-	src/DataStreams/MaterializingBlockOutputStream.cpp
 	src/DataStreams/NullableAdapterBlockInputStream.cpp
 
 	src/DataTypes/DataTypeString.cpp
@@ -848,7 +853,6 @@ add_library (dbms
 	src/Interpreters/evaluateMissingDefaults.cpp
 	src/Interpreters/evaluateConstantExpression.cpp
 	src/Interpreters/convertFieldToType.cpp
-	src/Interpreters/reinterpretAsIdentifier.cpp
 	src/Interpreters/Set.cpp
 	src/Interpreters/Join.cpp
 	src/Interpreters/Quota.cpp
@@ -890,8 +894,10 @@ add_library (dbms
 	src/Functions/FunctionsURL.cpp
 	src/Functions/FunctionsVisitParam.cpp
 	src/Functions/FunctionsMath.cpp
+	src/Functions/FunctionsGeo.cpp
 	src/Functions/FunctionsMiscellaneous.cpp
 	src/Functions/FunctionsTransform.cpp
+	src/Functions/FunctionsCharset.cpp
 	src/Functions/Conditional/getArrayType.cpp
 	src/Functions/Conditional/ArgsInfo.cpp
 	src/Functions/Conditional/CondSource.cpp
@@ -933,39 +939,42 @@ add_library (dbms
 	src/Client/MultiplexedConnections.cpp
 )
 
-# Не генерируем отладочную информацию для файлов с большим количеством инстанцирований шаблонов
-# - для более быстрой линковки и меньшего размера бинарника.
-SET_SOURCE_FILES_PROPERTIES(
-	src/Functions/FunctionsArithmetic.cpp
-	src/Functions/FunctionsArray.cpp
-	src/Functions/FunctionsCoding.cpp
-	src/Functions/FunctionsComparison.cpp
-	src/Functions/FunctionsConditional.cpp
-	src/Functions/FunctionsConversion.cpp
-	src/Functions/FunctionsDateTime.cpp
-	src/Functions/FunctionsDictionaries.cpp
-	src/Functions/FunctionsFormatting.cpp
-	src/Functions/FunctionsHashing.cpp
-	src/Functions/FunctionsHigherOrder.cpp
-	src/Functions/FunctionsLogical.cpp
-	src/Functions/FunctionsRandom.cpp
-	src/Functions/FunctionsReinterpret.cpp
-	src/Functions/FunctionsRound.cpp
-	src/Functions/FunctionsString.cpp
-	src/Functions/FunctionsStringArray.cpp
-	src/Functions/FunctionsStringSearch.cpp
-	src/Functions/FunctionsURL.cpp
-	src/Functions/FunctionsVisitParam.cpp
-	src/Functions/FunctionsMath.cpp
-	src/Functions/FunctionsMiscellaneous.cpp
-	src/Functions/FunctionsTransform.cpp
-	src/Dictionaries/FlatDictionary.cpp
-	src/Dictionaries/HashedDictionary.cpp
-	src/Dictionaries/CacheDictionary.cpp
-	src/Dictionaries/RangeHashedDictionary.cpp
-	src/Dictionaries/ComplexKeyHashedDictionary.cpp
-	src/Dictionaries/ComplexKeyCacheDictionary.cpp
-	PROPERTIES COMPILE_FLAGS -g0)
+if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    # Не генерируем отладочную информацию для файлов с большим количеством инстанцирований шаблонов
+    # - для более быстрой линковки и меньшего размера бинарника.
+    SET_SOURCE_FILES_PROPERTIES(
+        src/Functions/FunctionsArithmetic.cpp
+        src/Functions/FunctionsArray.cpp
+        src/Functions/FunctionsCoding.cpp
+        src/Functions/FunctionsComparison.cpp
+        src/Functions/FunctionsConditional.cpp
+        src/Functions/FunctionsConversion.cpp
+        src/Functions/FunctionsDateTime.cpp
+        src/Functions/FunctionsDictionaries.cpp
+        src/Functions/FunctionsFormatting.cpp
+        src/Functions/FunctionsHashing.cpp
+        src/Functions/FunctionsHigherOrder.cpp
+        src/Functions/FunctionsLogical.cpp
+        src/Functions/FunctionsRandom.cpp
+        src/Functions/FunctionsReinterpret.cpp
+        src/Functions/FunctionsRound.cpp
+        src/Functions/FunctionsString.cpp
+        src/Functions/FunctionsStringArray.cpp
+        src/Functions/FunctionsStringSearch.cpp
+        src/Functions/FunctionsURL.cpp
+        src/Functions/FunctionsVisitParam.cpp
+        src/Functions/FunctionsMath.cpp
+        src/Functions/FunctionsGeo.cpp
+        src/Functions/FunctionsMiscellaneous.cpp
+        src/Functions/FunctionsTransform.cpp
+        src/Dictionaries/FlatDictionary.cpp
+        src/Dictionaries/HashedDictionary.cpp
+        src/Dictionaries/CacheDictionary.cpp
+        src/Dictionaries/RangeHashedDictionary.cpp
+        src/Dictionaries/ComplexKeyHashedDictionary.cpp
+        src/Dictionaries/ComplexKeyCacheDictionary.cpp
+        PROPERTIES COMPILE_FLAGS -g0)
+endif()
 
 IF (NOT AARCH64)
 	SET(LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
@@ -977,6 +986,7 @@ target_link_libraries(dbms
 	mysqlxx
 	cityhash farmhash metrohash
 	lz4 zstd
+	string_utils
 	double-conversion
 	${LINK_LIBRARIES_ONLY_ON_X86_64}
 	re2 re2_st

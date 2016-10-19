@@ -4,7 +4,7 @@ add_executable(clickhouse-server
 	TCPHandler.cpp
 	InterserverIOHTTPHandler.cpp
 	MetricsTransmitter.cpp
-	UsersConfigReloader.cpp
+	ConfigReloader.cpp
 	StatusFile.cpp
 	ReplicasStatusHandler.cpp)
 

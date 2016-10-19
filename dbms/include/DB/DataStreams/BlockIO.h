@@ -39,8 +39,6 @@ struct BlockIO
 	{
 		if (exception_callback)
 			exception_callback();
-		else
-			tryLogCurrentException(__PRETTY_FUNCTION__);
 	}
 
 	BlockIO & operator= (const BlockIO & rhs)

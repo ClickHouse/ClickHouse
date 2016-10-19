@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.hpp>
+
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
@@ -12,8 +14,10 @@ namespace DB
 /** При записи, ничего не делает.
   * При чтении, возвращает пустоту.
   */
-class StorageNull : public IStorage
+class StorageNull : private ext::shared_ptr_helper<StorageNull>, public IStorage
 {
+friend class ext::shared_ptr_helper<StorageNull>;
+
 public:
 	static StoragePtr create(
 		const std::string & name_,
@@ -22,7 +26,7 @@ public:
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_)
 	{
-		return (new StorageNull{name_, columns_, materialized_columns_, alias_columns_, column_defaults_})->thisPtr();
+		return make_shared(name_, columns_, materialized_columns_, alias_columns_, column_defaults_);
 	}
 
 	std::string getName() const override { return "Null"; }

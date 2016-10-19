@@ -22,7 +22,7 @@ void PrintAvalancheDiagram ( int x, int y, int reps, double scale, int * bins )
 
       b *= scale;
 
-      int s = (int)floor(b*10);
+      int s = static_cast<int>(floor(b*10));
 
       if(s > 10) s = 10;
       if(s < 0) s = 0;
@@ -40,12 +40,12 @@ double maxBias ( std::vector<int> & counts, int reps )
 {
   double worst = 0;
 
-  for(int i = 0; i < (int)counts.size(); i++)
+  for(int i = 0; i < static_cast<int>(counts.size()); i++)
   {
-    double c = double(counts[i]) / double(reps);
+    double c = static_cast<double>(counts[i]) / static_cast<double>(reps);
 
     double d = fabs(c * 2 - 1);
-      
+
     if(d > worst)
     {
       worst = d;

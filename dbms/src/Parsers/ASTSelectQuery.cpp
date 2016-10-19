@@ -66,7 +66,7 @@ void ASTSelectQuery::renameColumns(const ASTSelectQuery & source)
 	}
 }
 
-void ASTSelectQuery::rewriteSelectExpressionList(const Names & column_names)
+void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_names)
 {
 	ASTPtr result = std::make_shared<ASTExpressionList>();
 	ASTs asts = select_expression_list->children;
@@ -91,7 +91,7 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & column_names)
 	Mapping mapping(asts.size());
 
 	/// На какой позиции в SELECT-выражении находится соответствующий столбец из column_names.
-	std::vector<size_t> from(column_names.size());
+	std::vector<size_t> positions_of_required_columns(required_column_names.size());
 
 	/// Не будем выбрасывать выражения, содержащие функцию arrayJoin.
 	for (size_t i = 0; i < asts.size(); ++i)
@@ -100,31 +100,29 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & column_names)
 			mapping[i] = Arrow(i);
 	}
 
-	for (size_t i = 0; i < column_names.size(); ++i)
+	for (size_t i = 0; i < required_column_names.size(); ++i)
 	{
-		bool done = false;
-		for (size_t j = 0; j < asts.size(); ++j)
+		size_t j = 0;
+		for (; j < asts.size(); ++j)
 		{
-			if (asts[j]->getAliasOrColumnName() == column_names[i])
+			if (asts[j]->getAliasOrColumnName() == required_column_names[i])
 			{
-				from[i] = j;
-				done = true;
+				positions_of_required_columns[i] = j;
 				break;
 			}
 		}
-		if (!done)
+		if (j == asts.size())
 			throw Exception("Error while rewriting expression list for select query."
-				" Could not find alias: " + column_names[i],
+				" Could not find alias: " + required_column_names[i],
 				DB::ErrorCodes::UNKNOWN_IDENTIFIER);
 	}
 
-	auto to = from;
+	std::vector<size_t> positions_of_required_columns_in_subquery_order = positions_of_required_columns;
+	std::sort(positions_of_required_columns_in_subquery_order.begin(), positions_of_required_columns_in_subquery_order.end());
 
-	/// Теперь from - список позиций column_names по возрастанию.
-	std::sort(from.begin(), from.end());
+	for (size_t i = 0; i < required_column_names.size(); ++i)
+		mapping[positions_of_required_columns_in_subquery_order[i]] = Arrow(positions_of_required_columns[i]);
 
-	for (size_t i = 0; i < column_names.size(); ++i)
-		mapping[from[i]] = Arrow(to[i]);
 
 	/// Составить новое выражение.
 	for (const auto & arrow : mapping)

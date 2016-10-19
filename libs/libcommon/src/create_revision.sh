@@ -1,11 +1,6 @@
 #!/bin/bash
 
-# отрезает суффикс от тегов мобильной метрики, чтобы привести к числу
-# фильтрует теги, не являющиеся релизными тегами
-function tag_filter
-{
-    sed 's/-mobmet//g' | grep -E "^[0-9]{5,8}$"
-}
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/get_revision_lib.sh"
 
 if [[ $# -ne 1 ]] && [[ $# -ne 2 ]]; then
 	echo "usage: create_revision.sh out_file_path [--use_dbms_tcp_protocol_version]"
@@ -30,21 +25,14 @@ then
 " > $out_file
 
 else
-	# GIT
-	git fetch --tags;
 	# берем последний тэг из текущего коммита
-	revision=$(git tag --points-at HEAD 2> /dev/null | tag_filter | tail -1)
-	# или ближайший тэг если в данном комите нет тэгов
-	if [[ "$revision" = "" ]]; then
-		revision=$( ( git describe --tags) | cut -d "-" -f 1 | tag_filter )
-	fi
-	
+	revision=$(get_revision)
+
 	if [[ "$revision" == "" ]]; then
-	    # в крайнем случае выбирем любую версию как версию демона
-	    # нужно для stash или неполноценной копии репозитория
-	    revision="77777"
+		# в крайнем случае выбирем любую версию как версию демона
+		# нужно для stash или неполноценной копии репозитория
+		revision="77777"
 	fi
-	revision=$(echo $revision | sed 's/\([0-9]*\)[^0-9]*/\1/')
 
 	echo "
 #ifndef REVISION

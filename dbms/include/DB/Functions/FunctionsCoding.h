@@ -442,8 +442,6 @@ public:
 	}
 
 
-	static bool isDigit(char c) { return c >= '0' && c <= '9'; }
-
 	static bool ipv4_scan(const char * src, unsigned char * dst)
 	{
 		constexpr auto size = sizeof(UInt32);
@@ -453,7 +451,7 @@ public:
 		{
 			UInt32 value = 0;
 			size_t len = 0;
-			while (isDigit(*src) && len <= 3)
+			while (isNumericASCII(*src) && len <= 3)
 			{
 				value = value * 10 + (*src - '0');
 				++len;
@@ -766,11 +764,6 @@ public:
 		return std::make_shared<DataTypeUInt32>();
 	}
 
-	static bool isDigit(char c)
-	{
-		return c >= '0' && c <= '9';
-	}
-
 	static UInt32 parseIPv4(const char * pos)
 	{
 		UInt32 res = 0;
@@ -778,7 +771,7 @@ public:
 		{
 			UInt32 value = 0;
 			size_t len = 0;
-			while (isDigit(*pos) && len <= 3)
+			while (isNumericASCII(*pos) && len <= 3)
 			{
 				value = value * 10 + (*pos - '0');
 				++len;

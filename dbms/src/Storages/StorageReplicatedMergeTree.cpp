@@ -281,11 +281,11 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	String unreplicated_path = full_path + "unreplicated/";
 	if (Poco::File(unreplicated_path).exists())
 	{
-		unreplicated_data.reset(new MergeTreeData(unreplicated_path, columns_,
+		unreplicated_data = std::make_unique<MergeTreeData>(unreplicated_path, columns_,
 			materialized_columns_, alias_columns_, column_defaults_,
 			context_, primary_expr_ast_,
 			date_column_name_, sampling_expression_, index_granularity_, merging_params_, settings_,
-			database_name_ + "." + table_name + "[unreplicated]", false));
+			database_name_ + "." + table_name + "[unreplicated]", false);
 
 		unreplicated_data->loadDataParts(skip_sanity_checks);
 
@@ -296,8 +296,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		else
 		{
 			LOG_INFO(log, "Have unreplicated data");
-			unreplicated_reader.reset(new MergeTreeDataSelectExecutor(*unreplicated_data));
-			unreplicated_merger.reset(new MergeTreeDataMerger(*unreplicated_data));
+			unreplicated_reader = std::make_unique<MergeTreeDataSelectExecutor>(*unreplicated_data);
+			unreplicated_merger = std::make_unique<MergeTreeDataMerger>(*unreplicated_data);
 		}
 	}
 
@@ -309,7 +309,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	queue.pullLogsToQueue(current_zookeeper, nullptr);
 
 	/// В этом потоке реплика будет активирована.
-	restarting_thread.reset(new ReplicatedMergeTreeRestartingThread(*this));
+	restarting_thread = std::make_unique<ReplicatedMergeTreeRestartingThread>(*this);
 }
 
 
@@ -346,15 +346,14 @@ StoragePtr StorageReplicatedMergeTree::create(
 	bool has_force_restore_data_flag_,
 	const MergeTreeSettings & settings_)
 {
-	auto res = new StorageReplicatedMergeTree{
+	auto res = make_shared(
 		zookeeper_path_, replica_name_, attach,
 		path_, database_name_, name_,
 		columns_, materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_,
-		merging_params_, has_force_restore_data_flag_, settings_};
-
-	StoragePtr res_ptr = res->thisPtr();
+		merging_params_, has_force_restore_data_flag_, settings_);
+	StoragePtr res_ptr = res;
 
 	auto get_endpoint_holder = [&res](InterserverIOEndpointPtr endpoint)
 	{
@@ -394,7 +393,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 		}
 	}
 
-	return res_ptr;
+	return res;
 }
 
 
@@ -1182,7 +1181,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 						"4. Non-deterministic merge algorithm due to logical error in code. "
 						"5. Data corruption in memory due to bug in code. "
 						"6. Data corruption in memory due to hardware issue. "
-						"7. Manual modification of source data after server starup. "
+						"7. Manual modification of source data after server startup. "
 						"8. Manual modification of checksums stored in ZooKeeper. "
 						"We will download merged part from replica to force byte-identical result.");
 				}
@@ -1874,6 +1873,11 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
 void StorageReplicatedMergeTree::becomeLeader()
 {
+	std::lock_guard<std::mutex> lock(leader_node_mutex);
+
+	if (shutdown_called)
+		return;
+
 	LOG_INFO(log, "Became leader");
 	is_leader_node = true;
 	merge_selecting_thread = std::thread(&StorageReplicatedMergeTree::mergeSelectingThread, this);
@@ -2384,9 +2388,9 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	assertNotReadonly();
 
 	auto zookeeper = getZooKeeper();
-	const MergeTreeMergeBlocker merge_blocker{merger};
-	const auto unreplicated_merge_blocker = unreplicated_merger ?
-		std::make_unique<MergeTreeMergeBlocker>(*unreplicated_merger) : nullptr;
+	auto merge_blocker = merger.cancel();
+	auto unreplicated_merge_blocker = unreplicated_merger ?
+		unreplicated_merger->cancel() : MergeTreeDataMerger::Blocker();
 
 	LOG_DEBUG(log, "Doing ALTER");
 
@@ -2577,7 +2581,7 @@ void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partiti
 
 	/// Просит завершить мерджи и не позволяет им начаться.
 	/// Это защищает от "оживания" данных за удалённую партицию после завершения мерджа.
-	const MergeTreeMergeBlocker merge_blocker{*unreplicated_merger};
+	auto merge_blocker = unreplicated_merger->cancel();
 	auto structure_lock = lockStructure(true);
 
 	const DayNum_t month = MergeTreeData::getMonthDayNum(partition);

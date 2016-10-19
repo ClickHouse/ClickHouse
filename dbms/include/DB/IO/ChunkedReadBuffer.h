@@ -22,7 +22,7 @@ protected:
 	size_t chunk_size;
 	UInt64 assert_query_id;
 
-	bool nextImpl()
+	bool nextImpl() override
 	{
 		/// Если прочитали ещё не весь блок - получим следующие данные. Если следующих данных нет - ошибка.
 		if (read_in_chunk < chunk_size)

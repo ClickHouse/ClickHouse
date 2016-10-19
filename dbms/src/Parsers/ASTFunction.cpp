@@ -67,7 +67,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 	nested_need_parens.need_parens = true;
 	nested_dont_need_parens.need_parens = false;
 
-	/// Стоит ли записать эту функцию в виде оператора?
+	/// Should this function to be written as operator?
 	bool written = false;
 	if (arguments && !parameters)
 	{

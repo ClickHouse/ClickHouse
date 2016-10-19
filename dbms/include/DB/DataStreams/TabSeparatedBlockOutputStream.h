@@ -6,6 +6,10 @@
 namespace DB
 {
 
+class Block;
+class WriteBuffer;
+
+
 /** Пишет данные в tab-separated файл, но по столбцам, блоками.
   * Блоки разделены двойным переводом строки.
   * На каждой строке блока - данные одного столбца.
@@ -16,7 +20,7 @@ public:
 	TabSeparatedBlockOutputStream(WriteBuffer & ostr_) : ostr(ostr_) {}
 
 	void write(const Block & block) override;
-	void flush() override { ostr.next(); }
+	void flush() override;
 
 private:
 	WriteBuffer & ostr;

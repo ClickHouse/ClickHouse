@@ -486,16 +486,3 @@ public:
 		return s;
 	}
 };
-
-
-namespace std
-{
-	template<>
-	struct hash<DayNum_t>
-	{
-		size_t operator() (DayNum_t x) const
-		{
-			return x;
-		}
-	};
-}

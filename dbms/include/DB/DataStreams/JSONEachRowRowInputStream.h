@@ -19,13 +19,14 @@ class ReadBuffer;
 class JSONEachRowRowInputStream : public IRowInputStream
 {
 public:
-	JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & sample_);
+	JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & sample_, bool skip_unknown_);
 
 	bool read(Block & block) override;
 
 private:
 	ReadBuffer & istr;
 	const Block sample;
+	bool skip_unknown;
 
 	/// Буфер для прочитанного из потока имени поля. Используется, если его потребовалось скопировать.
 	String name_buf;

@@ -117,7 +117,7 @@ public:
 
 	void getString(
 		const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def,
-		ColumnString * const out) const;;
+		ColumnString * const out) const;
 
 	void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
@@ -132,7 +132,7 @@ private:
 			UInt8, UInt16, UInt32, UInt64,
 			Int8, Int16, Int32, Int64,
 			Float32, Float64,
-			String> null_values;
+			StringRef> null_values;
 		std::tuple<
 			ContainerPtrType<UInt8>, ContainerPtrType<UInt16>, ContainerPtrType<UInt32>, ContainerPtrType<UInt64>,
 			ContainerPtrType<Int8>, ContainerPtrType<Int16>, ContainerPtrType<Int32>, ContainerPtrType<Int64>,
@@ -169,7 +169,10 @@ private:
 		DefaultGetter && get_default) const;
 
 	template <typename T>
-	void setAttributeValueImpl(Attribute & attribute, const Key id, const T value);
+	void resize(Attribute & attribute, const Key id);
+
+	template <typename T>
+	void setAttributeValueImpl(Attribute & attribute, const Key id, const T& value);
 
 	void setAttributeValue(Attribute & attribute, const Key id, const Field & value);
 
@@ -187,6 +190,7 @@ private:
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	std::vector<Attribute> attributes;
 	const Attribute * hierarchical_attribute = nullptr;
+	std::vector<bool> loaded_ids;
 
 	std::size_t bytes_allocated = 0;
 	std::size_t element_count = 0;

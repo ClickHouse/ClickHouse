@@ -65,11 +65,11 @@ static void initImpl(Maps & maps, Join::Type type)
 {
 	switch (type)
 	{
-		case Join::Type::EMPTY:																	break;
-		case Join::Type::KEY_64:		maps.key64		.reset(new typename Maps::MapUInt64); 	break;
-		case Join::Type::KEY_STRING:	maps.key_string	.reset(new typename Maps::MapString); 	break;
-		case Join::Type::HASHED:		maps.hashed		.reset(new typename Maps::MapHashed);	break;
-		case Join::Type::CROSS:																	break;
+		case Join::Type::EMPTY:			break;
+		case Join::Type::KEY_64:		maps.key64		= std::make_unique<typename Maps::MapUInt64>(); break;
+		case Join::Type::KEY_STRING:	maps.key_string	= std::make_unique<typename Maps::MapString>(); break;
+		case Join::Type::HASHED:		maps.hashed		= std::make_unique<typename Maps::MapHashed>();	break;
+		case Join::Type::CROSS:			break;
 
 		default:
 			throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
@@ -652,14 +652,14 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	std::unique_ptr<IColumn::Filter> filter;
 
 	if ((kind == ASTTableJoin::Kind::Inner || kind == ASTTableJoin::Kind::Right) && strictness == ASTTableJoin::Strictness::Any)
-		filter.reset(new IColumn::Filter(rows));
+		filter = std::make_unique<IColumn::Filter>(rows);
 
 	/// Используется при ALL ... JOIN
 	IColumn::Offset_t current_offset = 0;
 	std::unique_ptr<IColumn::Offsets_t> offsets_to_replicate;
 
 	if (strictness == ASTTableJoin::Strictness::All)
-		offsets_to_replicate.reset(new IColumn::Offsets_t(rows));
+		offsets_to_replicate = std::make_unique<IColumn::Offsets_t>(rows);
 
 	/** Для LEFT/INNER JOIN, сохранённые блоки не содержат ключи.
 	  * Для FULL/RIGHT JOIN, сохранённые блоки содержат ключи;

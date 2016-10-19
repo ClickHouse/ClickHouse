@@ -14,7 +14,10 @@
 #include <common/LocalDateTime.h>
 
 #include <DB/Core/Types.h>
+#include <DB/Core/StringRef.h>
 #include <DB/Common/Exception.h>
+#include <DB/Common/StringUtils.h>
+#include <DB/Common/Arena.h>
 
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/VarInt.h>
@@ -122,6 +125,18 @@ inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t MAX_STRIN
 
 	s.resize(size);
 	buf.readStrict(&s[0], size);
+}
+
+
+inline StringRef readStringBinaryInto(Arena & arena, ReadBuffer & buf)
+{
+	size_t size = 0;
+	readVarUInt(size, buf);
+
+	char * data = arena.alloc(size);
+	buf.readStrict(data, size);
+
+	return StringRef(data, size);
 }
 
 
@@ -306,7 +321,16 @@ bool exceptionPolicySelector(ExcepFun && excep_f, NoExcepFun && no_excep_f, Args
 };
 
 
-/// грубо
+/// Returns true, iff parsed.
+bool parseInfinity(ReadBuffer & buf);
+bool parseNaN(ReadBuffer & buf);
+
+void assertInfinity(ReadBuffer & buf);
+void assertNaN(ReadBuffer & buf);
+
+
+/// Rough: not exactly nearest machine representable number is returned.
+/// Some garbage may be successfully parsed, examples: '.' parsed as 0; 123Inf parsed as inf.
 template <typename T, typename ReturnType, char point_symbol = '.'>
 ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 {
@@ -324,22 +348,6 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 		else
 			return ReturnType(false);
 	}
-
-	auto parse_special_value = [&buf, &x, &negative](const char * str, T value)
-	{
-		auto assert_str_lambda = [](const char * str, ReadBuffer & buf){ assertString(str, buf); };
-		auto check_str_lambda = [](const char * str, ReadBuffer & buf){ return checkString(str, buf); };
-
-		++buf.position();
-		bool result = exceptionPolicySelector<throw_exception>(assert_str_lambda, check_str_lambda, str, buf);
-		if (result)
-		{
-			x = value;
-			if (negative)
-				x = -x;
-		}
-		return result;
-	};
 
 	while (!buf.eof())
 	{
@@ -388,25 +396,43 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 				}
 				return ReturnType(res);
 			}
-			case 'i':
-				return ReturnType(parse_special_value("nf", std::numeric_limits<T>::infinity()));
 
+			case 'i':
 			case 'I':
-				return ReturnType(parse_special_value("NF", std::numeric_limits<T>::infinity()));
+			{
+				bool res = exceptionPolicySelector<throw_exception>(assertInfinity, parseInfinity, buf);
+				if (res)
+				{
+					x = std::numeric_limits<T>::infinity();
+					if (negative)
+						x = -x;
+				}
+				return ReturnType(res);
+			}
 
 			case 'n':
-				return ReturnType(parse_special_value("an", std::numeric_limits<T>::quiet_NaN()));
-
 			case 'N':
-				return ReturnType(parse_special_value("AN", std::numeric_limits<T>::quiet_NaN()));
+			{
+				bool res = exceptionPolicySelector<throw_exception>(assertNaN, parseNaN, buf);
+				if (res)
+				{
+					x = std::numeric_limits<T>::quiet_NaN();
+					if (negative)
+						x = -x;
+				}
+				return ReturnType(res);
+			}
 
 			default:
+			{
 				if (negative)
 					x = -x;
 				return ReturnType(true);
+			}
 		}
 		++buf.position();
 	}
+
 	if (negative)
 		x = -x;
 
@@ -794,14 +820,12 @@ void readText(std::vector<T> & x, ReadBuffer & buf)
 /// Пропустить пробельные символы.
 inline void skipWhitespaceIfAny(ReadBuffer & buf)
 {
-	while (!buf.eof()
-			&& (*buf.position() == ' '
-			|| *buf.position() == '\t'
-			|| *buf.position() == '\n'
-			|| *buf.position() == '\r'
-			|| *buf.position() == '\f'))
+	while (!buf.eof() && isWhitespaceASCII(*buf.position()))
 		++buf.position();
 }
+
+/// Skips json value. If the value contains objects (i.e. {...} sequence), an exception will be thrown.
+void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed);
 
 
 /** Прочитать сериализованный эксепшен.

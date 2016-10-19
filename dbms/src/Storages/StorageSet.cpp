@@ -122,8 +122,8 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 	/// TODO Добавить скорость, сжатые байты, объём данных в памяти, коэффициент сжатия... Обобщить всё логгирование статистики в проекте.
 	LOG_INFO(&Logger::get("StorageSetOrJoinBase"), std::fixed << std::setprecision(2)
 		<< "Loaded from backup file " << file_path << ". "
-		<< backup_stream.getInfo().rows << " rows, "
-		<< backup_stream.getInfo().bytes / 1048576.0 << " MiB. "
+		<< backup_stream.getProfileInfo().rows << " rows, "
+		<< backup_stream.getProfileInfo().bytes / 1048576.0 << " MiB. "
 		<< "State has " << getSize() << " unique rows.");
 }
 

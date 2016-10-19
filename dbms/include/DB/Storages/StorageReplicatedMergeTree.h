@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.hpp>
+
 #include <DB/Storages/IStorage.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
@@ -67,8 +69,10 @@ namespace DB
   * в качестве времени будет браться время создания соответствующего куска на какой-либо из реплик.
   */
 
-class StorageReplicatedMergeTree : public IStorage
+class StorageReplicatedMergeTree : private ext::shared_ptr_helper<StorageReplicatedMergeTree>, public IStorage
 {
+friend class ext::shared_ptr_helper<StorageReplicatedMergeTree>;
+
 public:
 	/** Если !attach, либо создает новую таблицу в ZK, либо добавляет реплику в существующую таблицу.
 	  */
@@ -196,6 +200,7 @@ private:
 	friend class ReplicatedMergeTreePartCheckThread;
 	friend class ReplicatedMergeTreeCleanupThread;
 	friend class ReplicatedMergeTreeAlterThread;
+	friend class ReplicatedMergeTreeRestartingThread;
 	friend struct ReplicatedMergeTreeLogEntry;
 	friend class ScopedPartitionMergeLock;
 
@@ -243,6 +248,7 @@ private:
 	/** Является ли эта реплика "ведущей". Ведущая реплика выбирает куски для слияния.
 	  */
 	bool is_leader_node = false;
+	std::mutex leader_node_mutex;
 
 	InterserverIOEndpointHolderPtr endpoint_holder;
 	InterserverIOEndpointHolderPtr disk_space_monitor_endpoint_holder;

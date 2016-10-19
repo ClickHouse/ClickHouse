@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.hpp>
+
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
@@ -14,8 +16,9 @@ namespace DB
 
 /** См. описание структуры данных в MergeTreeData.
   */
-class StorageMergeTree : public IStorage
+class StorageMergeTree : private ext::shared_ptr_helper<StorageMergeTree>, public IStorage
 {
+friend class ext::shared_ptr_helper<StorageMergeTree>;
 friend class MergeTreeBlockOutputStream;
 
 public:
@@ -128,47 +131,7 @@ private:
 
 	BackgroundProcessingPool::TaskHandle merge_task_handle;
 
-	/// Пока существует, помечает части как currently_merging и держит резерв места.
-	/// Вероятно, что части будут помечены заранее.
-	struct CurrentlyMergingPartsTagger
-	{
-		MergeTreeData::DataPartsVector parts;
-		DiskSpaceMonitor::ReservationPtr reserved_space;
-		StorageMergeTree & storage;
-
-		CurrentlyMergingPartsTagger(const MergeTreeData::DataPartsVector & parts_, size_t total_size, StorageMergeTree & storage_)
-			: parts(parts_), storage(storage_)
-		{
-			/// Здесь не лочится мьютекс, так как конструктор вызывается внутри mergeTask, где он уже залочен.
-			reserved_space = DiskSpaceMonitor::reserve(storage.full_path, total_size); /// Может бросить исключение.
-			for (const auto & part : parts)
-			{
-				if (storage.currently_merging.count(part))
-					throw Exception("Tagging alreagy tagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
-			}
-			storage.currently_merging.insert(parts.begin(), parts.end());
-		}
-
-		~CurrentlyMergingPartsTagger()
-		{
-			try
-			{
-				std::lock_guard<std::mutex> lock(storage.currently_merging_mutex);
-				for (const auto & part : parts)
-				{
-					if (!storage.currently_merging.count(part))
-						throw Exception("Untagging already untagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
-					storage.currently_merging.erase(part);
-				}
-			}
-			catch (...)
-			{
-				tryLogCurrentException("~CurrentlyMergingPartsTagger");
-			}
-		}
-	};
-
-	using CurrentlyMergingPartsTaggerPtr = std::shared_ptr<CurrentlyMergingPartsTagger>;
+	friend struct CurrentlyMergingPartsTagger;
 
 	StorageMergeTree(
 		const String & path_,
@@ -181,7 +144,7 @@ private:
 		Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,
-		const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
+		const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
 		size_t index_granularity_,
 		const MergeTreeData::MergingParams & merging_params_,
 		bool has_force_restore_data_flag,
@@ -194,9 +157,6 @@ private:
 	bool merge(size_t aio_threshold, bool aggressive, BackgroundProcessingPool::Context * context, const String & partition, bool final);
 
 	bool mergeTask(BackgroundProcessingPool::Context & context);
-
-	/// Вызывается во время выбора кусков для слияния.
-	bool canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right);
 };
 
 }

@@ -132,7 +132,7 @@ public:
 
 			if (newoff + off < 0 || (this->epptr() - this->pbase()) < newoff + off)
 				return fail;
-			this->pbump((int)(newoff + off - (this->pptr() - this->pbase())));
+			this->pbump(static_cast<int>(newoff + off - (this->pptr() - this->pbase())));
 		}
 
 		return newoff;

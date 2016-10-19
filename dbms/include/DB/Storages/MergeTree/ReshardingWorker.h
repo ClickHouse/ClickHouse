@@ -206,7 +206,8 @@ private:
 	void publishShardedPartitions();
 
 	/// On each target shard attach its corresponding new sharded partition.
-	/// Locally drop the source partition.
+	/// If COPY is not specified in the ALTER TABLE ... RESHARD ... query,
+	/// drop source partitions on each performer.
 	void commit();
 
 	void repairLogRecord(LogRecord & log_record);
@@ -388,6 +389,8 @@ private:
 	Logger * log = &Logger::get("ReshardingWorker");
 
 	zkutil::EventPtr event = std::make_shared<Poco::Event>();
+
+	/// Helper that acquires an alive ZooKeeper session.
 	zkutil::GetZooKeeper get_zookeeper;
 
 	std::atomic<bool> is_started{false};

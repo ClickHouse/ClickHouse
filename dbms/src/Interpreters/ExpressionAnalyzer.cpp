@@ -127,10 +127,24 @@ bool functionIsInOrGlobalInOperator(const String & name)
 	return name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn";
 }
 
+void removeDuplicateColumns(NamesAndTypesList & columns)
+{
+	std::set<String> names;
+	for (auto it = columns.begin(); it != columns.end();)
+	{
+		if (names.emplace(it->name).second)
+			++it;
+		else
+			columns.erase(it++);
+	}
+}
+
 }
 
 void ExpressionAnalyzer::init()
 {
+	removeDuplicateColumns(columns);
+
 	select_query = typeid_cast<ASTSelectQuery *>(ast.get());
 
 	/// В зависимости от профиля пользователя проверить наличие прав на выполнение
@@ -222,9 +236,9 @@ void ExpressionAnalyzer::analyzeAggregation()
 		{
 			NameSet unique_keys;
 			ASTs & group_asts = select_query->group_expression_list->children;
-			for (ssize_t i = 0; i < static_cast<ssize_t>(group_asts.size()); ++i)
+			for (ssize_t i = 0; i < ssize_t(group_asts.size()); ++i)
 			{
-				size_t size = group_asts.size();
+				ssize_t size = group_asts.size();
 				getRootActions(group_asts[i], true, false, temp_actions);
 
 				const auto & column_name = group_asts[i]->getColumnName();
@@ -2419,10 +2433,7 @@ void ExpressionAnalyzer::collectUsedColumns()
 		unknown_required_columns.erase(it->name);
 
 		if (!required.count(it->name))
-		{
-			required.erase(it->name);
 			columns.erase(it++);
-		}
 		else
 			++it;
 	}

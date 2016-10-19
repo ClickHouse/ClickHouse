@@ -264,7 +264,7 @@ In ClickHouse, data can reside on different shards. Each shard can be a group of
 If you are familiar with standard SQL, we can&#39;t really talk about SQL support.
 NULLs are not supported. All the functions have different names. However, this is a declarative query language based on SQL that can&#39;t be differentiated from SQL in many instances.
 JOINs are supported. Subqueries are supported in FROM, IN, JOIN clauses; and scalar subqueries.
-Correllated subqueries are not supported.
+Correlated subqueries are not supported.
 
 <h3 class="not-for-contents">7. Vector engine.</h3>
 
@@ -352,17 +352,17 @@ At this time (May 2016), there aren&#39;t any available open-source and free sys
 <h3 class="not-for-contents">1. Why not to use systems like map-reduce?</h3>
 
 Systems like map-reduce are distributed computing systems, where the reduce phase is performed using distributed sorting.
-Regading this aspect, map-reduce is similar to other systems like YAMR, <a href="http://hadoop.apache.org/">Hadoop</a>, <a href="https://yandexdataschool.ru/about/conference/program/babenko">YT</a>.
+Regarding this aspect, map-reduce is similar to other systems like YAMR, <a href="http://hadoop.apache.org/">Hadoop</a>, <a href="https://yandexdataschool.ru/about/conference/program/babenko">YT</a>.
 
 These systems are not suitable for online queries because of latency, So they can't be used in backend-level for web interface.
-Systems like this also are not suitable for realtime updates.
+Systems like this also are not suitable for real-time updates.
 Distributed sorting is not optimal solution for reduce operations, if the result of the operation and all intermediate results, shall they exist, fit in operational memory of a single server, as usually happens in case of online analytical queries.
 In this case the optimal way to perform reduce operations is by using a hash-table. A common optimization method for map-reduce tasks is combine operation (partial reduce) which uses hash-tables in memory. This optimization is done by the user manually.
 Distributed sorting is the main reason for long latencies of simple map-reduce jobs.
 
-Systems similar to map-reduce enable running any code on the cluster. But for OLAP use-cases declerative query languages are better suited as they allow to carry out investigations faster. For example, for Hadoop there are <a href="https://hive.apache.org/">Hive</a> and <a href="https://pig.apache.org/">Pig</a>. There are others: <a href="http://impala.io/">Cloudera Impala</a>, <a href="http://shark.cs.berkeley.edu/">Shark (depricated)</a> and <a href="http://spark.apache.org/sql/">Spark SQL</a> for <a href="http://spark.apache.org/">Spark</a>, <a href="https://prestodb.io/">Presto</a>, <a href="https://drill.apache.org/">Apache Drill</a>.
+Systems similar to map-reduce enable running any code on the cluster. But for OLAP use-cases declarative query languages are better suited as they allow to carry out investigations faster. For example, for Hadoop there are <a href="https://hive.apache.org/">Hive</a> and <a href="https://pig.apache.org/">Pig</a>. There are others: <a href="http://impala.io/">Cloudera Impala</a>, <a href="http://shark.cs.berkeley.edu/">Shark (deprecated)</a> and <a href="http://spark.apache.org/sql/">Spark SQL</a> for <a href="http://spark.apache.org/">Spark</a>, <a href="https://prestodb.io/">Presto</a>, <a href="https://drill.apache.org/">Apache Drill</a>.
 However, performance of such tasks is highly sub-optimal compared to the performance of specialized systems and relatively high latency does not allow the use of these systems as a backend for the web interface.
-YT allows you to store separate groups of columns. But YT is not a truly columnar storage system, as the system has no fixed length data types (so you can efficiently store a number without "garbage"), and there is no vector engine. Tasks in YT are performed by arbitrary code in streaming mode, so can not be suficiently optimized (up to hundreds of millions of lines per second per server). In 2014-2016 YT is to develop "dynamic table sorting" functionality  using Merge Tree, strongly typed values ​​and SQL-like language support. Dynamicly sorted tables are not suited for OLAP tasks, since the data is stored in rows. Query language development in YT is still in incubating phase, which does not allow it to focus on this functionality. YT developers are considering dynamicly sorted tables for use in OLTP and Key-Value scenarios.
+YT allows you to store separate groups of columns. But YT is not a truly columnar storage system, as the system has no fixed length data types (so you can efficiently store a number without "garbage"), and there is no vector engine. Tasks in YT are performed by arbitrary code in streaming mode, so can not be sufficiently optimized (up to hundreds of millions of lines per second per server). In 2014-2016 YT is to develop "dynamic table sorting" functionality  using Merge Tree, strongly typed values ​​and SQL-like language support. Dynamically sorted tables are not suited for OLAP tasks, since the data is stored in rows. Query language development in YT is still in incubating phase, which does not allow it to focus on this functionality. YT developers are considering dynamically sorted tables for use in OLTP and Key-Value scenarios.
 
 ==Performance==
 
@@ -769,9 +769,14 @@ There is official JDBC driver for ClickHouse. See <a href="https://github.com/ya
 
 ==Third-party client libraries==
 
-There exist third-party client libraries for <a href="https://github.com/Infinidat/infi.clickhouse_orm">Python</a>, PHP (<a href="https://github.com/8bitov/clickhouse-php-client">1</a>, <a href="https://github.com/SevaCode/PhpClickHouseClient">2</a>, <a href="https://github.com/smi2/phpClickHouse">3</a>), <a href="https://github.com/roistat/go-clickhouse">Go</a>, Node.js (<a href="https://github.com/TimonKK/clickhouse">1</a>, <a href="https://github.com/apla/node-clickhouse">2</a>), <a href="https://github.com/elcamlost/perl-DBD-ClickHouse">Perl</a>.
+There exist third-party client libraries for Python (<a href="https://github.com/Infinidat/infi.clickhouse_orm">1</a>), PHP (<a href="https://github.com/8bitov/clickhouse-php-client">1</a>, <a href="https://github.com/SevaCode/PhpClickHouseClient">2</a>, <a href="https://github.com/smi2/phpClickHouse">3</a>), Go (<a href="https://github.com/roistat/go-clickhouse">1</a>), Node.js (<a href="https://github.com/TimonKK/clickhouse">1</a>, <a href="https://github.com/apla/node-clickhouse">2</a>), Perl (<a href="https://github.com/elcamlost/perl-DBD-ClickHouse">1</a>, <a href="https://metacpan.org/release/HTTP-ClickHouse">2</a>, <a href="https://metacpan.org/release/AnyEvent-ClickHouse">3</a>), Ruby (<a href="https://github.com/archan937/clickhouse">1</a>), R (<a href="https://github.com/hannesmuehleisen/clickhouse-r">1</a>).
 
 Libraries was not tested by us. Ordering is arbitrary.
+
+
+==Third-party GUI==
+
+There exist minimalistic web UI for ClickHouse by <a href="https://github.com/smi2/clickhouse-frontend">SMI2</a>.
 
 
 ==Native interface (TCP)==
@@ -830,6 +835,20 @@ You can also specify any settings that will be used for processing queries. For 
 The client can be used in interactive and non-interactive (batch) mode.
 To use batch mode, specify the &#39;query&#39; parameter, or send data to &#39;stdin&#39; (it verifies that &#39;stdin&#39; is not a terminal), or both.
 Similar to the HTTP interface, when using the &#39;query&#39; parameter and sending data to &#39;stdin&#39;, the request is a concatenation of the &#39;query&#39; parameter, a line break, and the data in &#39;stdin&#39;. This is convenient for large INSERT queries.
+
+Examples for insert data via clickhouse-client:
+
+%%
+echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+
+cat &lt;&lt;_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+3, 'some text', '2016-08-14 00:00:00'
+4, 'some more text', '2016-08-14 00:00:01'
+_EOF
+
+cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+%%
+
 In batch mode, the default data format is TabSeparated. You can set the format in the FORMAT clause of the query.
 
 By default, you can only process a single query in batch mode. To make multiple queries from a &quot;script,&quot; use the &#39;multiquery&#39; parameter. This works for all queries except INSERT. Query results are output consecutively without additional separators.
@@ -2913,7 +2932,9 @@ When the server starts (or establishes a new session with ZooKeeper), it only ch
 
 If the local set of data differs too much from the expected one, a safety mechanism is triggered. The server enters this in the log and refuses to launch. The reason for this is that this case may indicate a configuration error, such as if a replica on a shard was accidentally configured like a replica on a different shard. However, the thresholds for this mechanism are set fairly low, and this situation might occur during normal failure recovery. In this case, data is restored semi-automatically - by &quot;pushing a button&quot;.
 
-To start recovery, create the node <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span>  in ZooKeeper with any content, and launch the server. On start, the server deletes this flag and starts recovery.
+To start recovery, create the node <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span> in ZooKeeper with any content or run command to recover all replicated tables:
+%%sudo -u metrika touch /opt/clickhouse/flags/force_restore_data%%
+Then launch the server. On start, the server deletes these flags and starts recovery.
 
 
 ===Recovery after complete data loss===
@@ -2926,7 +2947,9 @@ If all data and metadata disappeared from one of the servers, follow these steps
 
 3. Copy table definitions located in %%/opt/clickhouse/metadata/%% from a replica. If a shard or replica identifier is defined explicitly in the table definitions, correct it so that it corresponds to this replica. (Alternatively, launch the server and make all the ATTACH TABLE queries that should have been in the .sql files in %%/opt/clickhouse/metadata/%%.)
 
-4. Create the <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span> node in ZooKeeper with any content, and launch the server (restart it if it is already running). Data will be downloaded from replicas.
+4. Create the <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span> node in ZooKeeper with any content or run command to recover all replicated tables:
+%%sudo -u metrika touch /opt/clickhouse/flags/force_restore_data%%
+Then launch the server (restart it if it is already running). Data will be downloaded from replicas.
 
 An alternative recovery option is to delete information about the lost replica from ZooKeeper ( <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i></span>), then create the replica again as described in &quot;Creating replicated tables&quot;.
 
@@ -3085,7 +3108,7 @@ Used for tests.
 
 ==system.tables==
 
-This table contains the String columns &#39;database&#39;, &#39;name&#39;, and &#39;engine&#39;.
+This table contains the String columns &#39;database&#39;, &#39;name&#39;, and &#39;engine&#39; and DateTime column metadata_modification_time.
 Each table that the server knows about is entered in the &#39;system.tables&#39; table.
 There is an issue: table engines are specified without parameters.
 This system table is used for implementing SHOW TABLES queries.
@@ -4310,7 +4333,7 @@ In this section we discuss regular functions. For aggregate functions, see the s
 
 In contrast to standard SQL, ClickHouse has strong typing. In other words, it doesn&#39;t make implicit conversions between types. Each function works for a specific set of types. This means that sometimes you need to use type conversion functions.
 
-===Сommon subexpression elimination===
+===Common subexpression elimination===
 
 All expressions in a query that have the same AST (the same record or same result of syntactic parsing) are considered to have identical values. Such expressions are concatenated and executed once. Identical subqueries are also eliminated this way.
 
@@ -4645,7 +4668,7 @@ This function is specific to Yandex.Metrica, since half an hour is the minimum a
 
 ===timeSlots(StartTime, Duration)===
 - For a time interval starting at &#39;StartTime&#39; and continuing for &#39;Duration&#39; seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the half hour.
-For example, %%timeSlots(toDateTime(&#39;2012-01-01 12:20:00&#39;), 600) = [toDateTime(&#39;2012-01-01 12:00:00&#39;), toDateTime(&#39;2012-01-01 12:30:00&#39;)]%%.
+For example, %%timeSlots(toDateTime(&#39;2012-01-01 12:20:00&#39;), toUInt32(600)) = [toDateTime(&#39;2012-01-01 12:00:00&#39;), toDateTime(&#39;2012-01-01 12:30:00&#39;)]%%.
 This is necessary for searching for pageviews in the corresponding session.
 
 
@@ -6597,6 +6620,17 @@ Allows setting a default sampling coefficient for all SELECT queries.
 (For tables that don&#39;t support sampling, an exception will be thrown.)
 If set to 1, default sampling is not performed.
 
+==input_format_skip_unknown_fields==
+
+If the parameter is true, INSERT operation will skip columns with unknown names from input.
+Otherwise, an exception will be generated, it is default behavior.
+The parameter works only for JSONEachRow and TSKV input formats.
+
+==output_format_json_quote_64bit_integers==
+
+If the parameter is true (default value), UInt64 and Int64 numbers are printed as quoted strings in all JSON output formats.
+Such behavior is compatible with most JavaScript interpreters that stores all numbers as double-precision floating point numbers.
+Otherwise, they are printed as regular numbers.
 
 ==Restrictions on query complexity==
 
@@ -6913,7 +6947,7 @@ We could have defined this list of networks directly in &#39;users.xml&#39;, or 
 
 The config includes comments explaining how to open access from everywhere.
 
-For use in production, only specify IP elements (IP addresses and their masks), since using &#39;host&#39; and &#39;hoost_regexp&#39; might cause extra latency.
+For use in production, only specify IP elements (IP addresses and their masks), since using &#39;host&#39; and &#39;host_regexp&#39; might cause extra latency.
 
 Next the user settings profile is specified (see the section &quot;Settings profiles&quot;). You can specify the default profile, &#39;default&#39;. The profile can have any name. You can specify the same profile for different users. The most important thing you can write in the settings profile is &#39;readonly&#39; set to 1, which provides read-only access.
 

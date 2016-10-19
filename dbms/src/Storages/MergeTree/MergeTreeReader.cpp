@@ -535,7 +535,7 @@ void MergeTreeReader::Stream::loadMarks(MarkCache * cache, bool save_in_cache, b
 			return;
 	}
 
-	marks.reset(new MarksInCompressedFile);
+	marks = std::make_shared<MarksInCompressedFile>();
 
 	ReadBufferFromFile buffer(path);
 	while (!buffer.eof())

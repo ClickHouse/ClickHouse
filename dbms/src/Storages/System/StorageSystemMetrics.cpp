@@ -22,7 +22,7 @@ StorageSystemMetrics::StorageSystemMetrics(const std::string & name_)
 
 StoragePtr StorageSystemMetrics::create(const std::string & name_)
 {
-	return (new StorageSystemMetrics(name_))->thisPtr();
+	return make_shared(name_);
 }
 
 

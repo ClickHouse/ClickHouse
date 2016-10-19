@@ -2324,7 +2324,7 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, co
 	else if (const auto in = typeid_cast<const ColumnConst<T> *>(arg))
 	{
 		const auto & in_data = in->getData();
-		if ((in_data != 0) && (in->size() > std::numeric_limits<std::size_t>::max() / in_data))
+		if ((in_data != 0) && (in->size() > (std::numeric_limits<std::size_t>::max() / in_data)))
 			throw Exception{
 				"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
 				ErrorCodes::ARGUMENT_OUT_OF_BOUND
@@ -2845,7 +2845,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 		try
 		{
 			for (size_t j = current_offset; j < next_offset; ++j)
-				agg_func.add(place, aggregate_arguments, j);
+				agg_func.add(place, aggregate_arguments, j, nullptr);
 
 			agg_func.insertResultInto(place, res_col);
 		}

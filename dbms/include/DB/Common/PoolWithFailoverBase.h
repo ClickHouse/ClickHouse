@@ -110,6 +110,19 @@ public:
 			return {};
 	}
 
+	void reportError(const Entry & entry)
+	{
+		for (auto & pool : nested_pools)
+		{
+			if (pool.pool->contains(entry))
+			{
+				++pool.state.error_count;
+				return;
+			}
+		}
+		throw DB::Exception("Can't find pool to report error.");
+	}
+
 	/** Выделяет до указанного количества соединений для работы
 	  * Соединения предоставляют доступ к разным репликам одного шарда.
 	  */

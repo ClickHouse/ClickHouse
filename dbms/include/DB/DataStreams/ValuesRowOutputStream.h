@@ -1,11 +1,12 @@
 #pragma once
 
-#include <DB/IO/WriteBuffer.h>
 #include <DB/DataStreams/IRowOutputStream.h>
 
 
 namespace DB
 {
+
+class WriteBuffer;
 
 
 /** Поток для вывода данных в формате VALUES (как в INSERT запросе).
@@ -20,8 +21,7 @@ public:
 	void writeRowStartDelimiter() override;
 	void writeRowEndDelimiter() override;
 	void writeRowBetweenDelimiter() override;
-
-	void flush() override { ostr.next(); }
+	void flush() override;
 
 private:
 	WriteBuffer & ostr;

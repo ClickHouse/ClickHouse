@@ -42,13 +42,13 @@ public:
 	}
 
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		this->data(place).sum += static_cast<const ColumnVector<T> &>(column).getData()[row_num];
 		++this->data(place).count;
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).sum += this->data(rhs).sum;
 		this->data(place).count += this->data(rhs).count;
@@ -60,7 +60,7 @@ public:
 		writeVarUInt(this->data(place).count, buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		readBinary(this->data(place).sum, buf);
 		readVarUInt(this->data(place).count, buf);

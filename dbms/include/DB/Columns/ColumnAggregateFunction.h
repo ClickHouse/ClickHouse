@@ -159,7 +159,8 @@ public:
 	/// Объединить состояние в последней строке с заданным
 	void insertMergeFrom(const IColumn & src, size_t n)
 	{
-		func->merge(getData().back(), static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
+		Arena & arena = createOrGetArena();
+		func->merge(getData().back(), static_cast<const ColumnAggregateFunction &>(src).getData()[n], &arena);
 	}
 
 	Arena & createOrGetArena()
@@ -178,7 +179,7 @@ public:
 		getData().push_back(arena.alloc(function->sizeOfData()));
 		function->create(getData().back());
 		ReadBufferFromString read_buffer(x.get<const String &>());
-		function->deserialize(getData().back(), read_buffer);
+		function->deserialize(getData().back(), read_buffer, &arena);
 	}
 
 	void insertDefault() override

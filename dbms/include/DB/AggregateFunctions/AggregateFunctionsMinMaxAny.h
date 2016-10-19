@@ -62,6 +62,7 @@ struct SingleValueDataFixed
 		value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
 	}
 
+	/// Assuming to.has()
 	void change(const Self & to)
 	{
 		has_value = true;
@@ -81,7 +82,24 @@ struct SingleValueDataFixed
 
 	bool changeFirstTime(const Self & to)
 	{
-		if (!has())
+		if (!has() && to.has())
+		{
+			change(to);
+			return true;
+		}
+		else
+			return false;
+	}
+
+	bool changeEveryTime(const IColumn & column, size_t row_num)
+	{
+		change(column, row_num);
+		return true;
+	}
+
+	bool changeEveryTime(const Self & to)
+	{
+		if (to.has())
 		{
 			change(to);
 			return true;
@@ -239,7 +257,7 @@ struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
 		}
 	}
 
-
+	/// Assuming to.has()
 	void changeImpl(StringRef value)
 	{
 		Int32 value_size = value.size;
@@ -292,7 +310,24 @@ struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
 
 	bool changeFirstTime(const Self & to)
 	{
-		if (!has())
+		if (!has() && to.has())
+		{
+			change(to);
+			return true;
+		}
+		else
+			return false;
+	}
+
+	bool changeEveryTime(const IColumn & column, size_t row_num)
+	{
+		change(column, row_num);
+		return true;
+	}
+
+	bool changeEveryTime(const Self & to)
+	{
+		if (to.has())
 		{
 			change(to);
 			return true;
@@ -424,7 +459,24 @@ struct SingleValueDataGeneric
 
 	bool changeFirstTime(const Self & to)
 	{
-		if (!has())
+		if (!has() && to.has())
+		{
+			change(to);
+			return true;
+		}
+		else
+			return false;
+	}
+
+	bool changeEveryTime(const IColumn & column, size_t row_num)
+	{
+		change(column, row_num);
+		return true;
+	}
+
+	bool changeEveryTime(const Self & to)
+	{
+		if (to.has())
 		{
 			change(to);
 			return true;
@@ -552,8 +604,8 @@ struct AggregateFunctionAnyLastData : Data
 {
 	using Self = AggregateFunctionAnyLastData<Data>;
 
-	bool changeIfBetter(const IColumn & column, size_t row_num) { this->change(column, row_num); return true; }
-	bool changeIfBetter(const Self & to) 						{ this->change(to); return true; }
+	bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeEveryTime(column, row_num); }
+	bool changeIfBetter(const Self & to) 						{ return this->changeEveryTime(to); }
 
 	static const char * name() { return "anyLast"; }
 };
@@ -649,12 +701,12 @@ public:
 	}
 
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		this->data(place).changeIfBetter(column, row_num);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).changeIfBetter(this->data(rhs));
 	}
@@ -664,7 +716,7 @@ public:
 		this->data(place).write(buf, *type.get());
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).read(buf, *type.get());
 	}

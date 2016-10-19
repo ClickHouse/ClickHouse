@@ -1,12 +1,42 @@
 #pragma once
 
 #include <queue>
+#include <type_traits>
 
 #include <Poco/Mutex.h>
 #include <Poco/Semaphore.h>
 
 #include <DB/Core/Types.h>
 
+namespace detail
+{
+	template <class T, bool is_nothrow_move_assignable = std::is_nothrow_move_assignable<T>::value>
+	struct MoveOrCopyIfThrow;
+
+	template <class T>
+	struct MoveOrCopyIfThrow<T, true>
+	{
+		void operator()(T && src, T & dst) const
+		{
+			dst = std::forward<T>(src);
+		}
+	};
+
+	template <class T>
+	struct MoveOrCopyIfThrow<T, false>
+	{
+		void operator()(T && src, T & dst) const
+		{
+			dst = src;
+		}
+	};
+
+	template <class T>
+	void moveOrCopyIfThrow(T && src, T & dst)
+	{
+		MoveOrCopyIfThrow<T>()(std::forward<T>(src), dst);
+	}
+};
 
 /** Очень простая thread-safe очередь ограниченной длины.
   * Если пытаться вынуть элемент из пустой очереди, то поток блокируется, пока очередь не станет непустой.
@@ -36,12 +66,23 @@ public:
 		fill_count.set();
 	}
 
+	template <class ... Args>
+	void emplace(Args && ... args)
+	{
+		empty_count.wait();
+		{
+			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+			queue.emplace(std::forward<Args>(args)...);
+		}
+		fill_count.set();
+	}
+
 	void pop(T & x)
 	{
 		fill_count.wait();
 		{
 			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-			x = queue.front();
+			detail::moveOrCopyIfThrow(std::move(queue.front()), x);
 			queue.pop();
 		}
 		empty_count.set();
@@ -61,13 +102,28 @@ public:
 		return false;
 	}
 
+	template <class ... Args>
+	bool tryEmplace(DB::UInt64 milliseconds, Args && ... args)
+	{
+		if (empty_count.tryWait(milliseconds))
+		{
+			{
+				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+				queue.emplace(std::forward<Args>(args)...);
+			}
+			fill_count.set();
+			return true;
+		}
+		return false;
+	}
+
 	bool tryPop(T & x, DB::UInt64 milliseconds = 0)
 	{
 		if (fill_count.tryWait(milliseconds))
 		{
 			{
 				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-				x = queue.front();
+				detail::moveOrCopyIfThrow(std::move(queue.front()), x);
 				queue.pop();
 			}
 			empty_count.set();

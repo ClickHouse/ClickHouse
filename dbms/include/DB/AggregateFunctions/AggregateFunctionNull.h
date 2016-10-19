@@ -95,7 +95,7 @@ public:
 		return nested_function->alignOfData();
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
 	{
 		/// This container stores the columns we really pass to the nested function.
 		const IColumn * passed_columns[argument_count];
@@ -117,12 +117,12 @@ public:
 				passed_columns[i] = columns[i];
 		}
 
-		nested_function->add(place, passed_columns, row_num);
+		nested_function->add(place, passed_columns, row_num, arena);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
-		nested_function->merge(place, rhs);
+		nested_function->merge(place, rhs, arena);
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
@@ -130,9 +130,9 @@ public:
 		nested_function->serialize(place, buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
 	{
-		nested_function->deserialize(place, buf);
+		nested_function->deserialize(place, buf, arena);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -140,9 +140,10 @@ public:
 		nested_function->insertResultInto(place, to);
 	}
 
-	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num)
+	static void addFree(const IAggregateFunction * that, AggregateDataPtr place,
+		const IColumn ** columns, size_t row_num, Arena * arena)
 	{
-		return static_cast<const AggregateFunctionNull &>(*that).add(place, columns, row_num);
+		return static_cast<const AggregateFunctionNull &>(*that).add(place, columns, row_num, arena);
 	}
 
 	AddFunc getAddressOfAddFunction() const override

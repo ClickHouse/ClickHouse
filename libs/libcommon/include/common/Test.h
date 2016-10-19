@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 #include <sstream>
+#include <iostream>
 
 /// Часть функциональности - только для сборки из репозитория Метрики.
 #ifndef NO_METRIKA
@@ -11,6 +12,8 @@
 #endif
 
 #include <regex>
+#include <iostream>
+
 #include <DB/Common/StackTrace.h>
 #include <DB/IO/WriteBufferFromString.h>
 

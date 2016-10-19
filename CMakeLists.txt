@@ -26,7 +26,11 @@ IF(NOT CMAKE_BUILD_TYPE)
 ENDIF()
 MESSAGE( STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE} )
 
-set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
+# ASan - build type with address sanitizer
+# UBSan - build type with undefined behaviour sanitizer
+# TSan is not supported due to false positive errors in libstdc++ and necessity to rebuild libstdc++ with TSan
+set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel;ASan;UBSan" CACHE STRING "" FORCE)
+
 
 IF (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*)")
 	SET(AARCH64 1)
@@ -37,6 +41,7 @@ IF (NOT AARCH64)
 ENDIF()
 
 SET(COMMON_WARNING_FLAGS "-Wall -Werror")
+SET(CXX_WARNING_FLAGS "-Wnon-virtual-dtor -Wold-style-cast")
 
 
 set (GLIBC_COMPATIBILITY FALSE CACHE BOOL "Set to TRUE to enable compatibility with older glibc libraries")
@@ -50,23 +55,31 @@ if (GLIBC_COMPATIBILITY)
 	SET(GLIBC_COMPATIBILITY_LINK_FLAGS      "-Wl,--wrap=memcpy")
 endif()
 
+if (DISABLE_CXX11_ABI)
+    SET(CXX11_ABI "-D_GLIBCXX_USE_CXX11_ABI=0")
+endif()
 
 SET(CMAKE_BUILD_COLOR_MAKEFILE          ON)
-SET(CMAKE_CXX_FLAGS "-std=gnu++1y ${COMMON_WARNING_FLAGS} -Wnon-virtual-dtor ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
+SET(CMAKE_CXX_FLAGS                     "-std=gnu++1y -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI}")
 SET(CMAKE_CXX_FLAGS_RELEASE             "-O3 -DNDEBUG")
 SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO      "-O3 -g")
-SET(CMAKE_C_FLAGS                       "${COMMON_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
+SET(CMAKE_CXX_FLAGS_DEBUG               "-O0 -g3 -ggdb3 -fno-inline")
+
+SET(CMAKE_C_FLAGS                       "-fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI}")
 SET(CMAKE_C_FLAGS_RELEASE               "-O3 -DNDEBUG")
 SET(CMAKE_C_FLAGS_RELWITHDEBINFO        "-O3 -g")
-SET(CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++ ${GLIBC_COMPATIBILITY_LINK_FLAGS}")
+SET(CMAKE_C_FLAGS_DEBUG                 "-O0 -g3 -ggdb3 -fno-inline")
 
-# cmake -DCMAKE_BUILD_TYPE=Debug ..
-SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
+SET(CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++ ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI}")
+
+SET(CMAKE_CXX_FLAGS_ASAN                "-O3 -g -fsanitize=address -fno-omit-frame-pointer ${CXX11_ABI}")
+SET(CMAKE_CXX_FLAGS_UBSAN               "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI}")
+SET(CMAKE_C_FLAGS_ASAN                  "-O3 -g -fsanitize=address -fno-omit-frame-pointer ${CXX11_ABI}")
+SET(CMAKE_C_FLAGS_UBSAN                 "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI}")
 
 # Флаги для test coverage
-SET(TEST_COVERAGE TRUE CACHE BOOL "Add compliler flags for test coverage")
 IF (TEST_COVERAGE)
-SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -fprofile-arcs -ftest-coverage -fPIC -DIS_DEBUG")
+    SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -fprofile-arcs -ftest-coverage -fPIC -DIS_DEBUG ${CXX11_ABI}")
 ENDIF(TEST_COVERAGE)
 
 # Собирать тесты?

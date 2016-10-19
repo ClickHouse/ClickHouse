@@ -22,7 +22,7 @@ class ReadBufferFromIStream : public BufferWithOwnMemory<ReadBuffer>
 private:
 	std::istream & istr;
 
-	bool nextImpl()
+	bool nextImpl() override
 	{
 		istr.read(internal_buffer.begin(), internal_buffer.size());
 		size_t gcount = istr.gcount();

@@ -19,7 +19,7 @@ std::ostream & operator<< (std::ostream & ostr, const __m128i vec)
 
 	ostr << "{";
 	for (size_t i = 0; i < 16; ++i)
-		ostr << (i ? ", " : "") << (int)digits[i];
+		ostr << (i ? ", " : "") << static_cast<int>(digits[i]);
 	ostr << "}";
 	
 	return ostr;

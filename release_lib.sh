@@ -1,8 +1,4 @@
-# фильтрует теги, не являющиеся релизными тегами
-function tag_filter
-{
-    grep -E "^[0-9]{5,8}$"
-}
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/libs/libcommon/src/get_revision_lib.sh"
 
 function add_daemon_impl {
 	local daemon=$1
@@ -58,17 +54,10 @@ function make_control {
 # Генерируем номер ревизии.
 # выставляются переменные окружения REVISION, AUTHOR
 function gen_revision_author {
-	# GIT
-	git fetch --tags
-	IS_IT_GITHUB=$( git config --get remote.origin.url | grep 'github')
-
-	REVISION=$( git tag | tag_filter | tail -1 )
-	REVISION_FULL_NAME=$REVISION
+	REVISION=$(get_revision)
 
 	if [[ $STANDALONE != 'yes' ]]
 	then
-		MAX_REVISION=$(($REVISION + 10))	# Максимальное количество попыток отправить тег в Git.
-
 		# Создадим номер ревизии и попытаемся залить на сервер.
 		succeeded=0
 		attempts=0
@@ -78,37 +67,30 @@ function gen_revision_author {
 			REVISION=$(($REVISION + 1))
 			attempts=$(($attempts + 1))
 
-			[ "$REVISION" -ge "$MAX_REVISION" ] && exit 1
+			tag="v1.1.$REVISION-testing"
 
-			REVISION_FULL_NAME=$REVISION
-
-			if [[ "$IS_IT_GITHUB" = "" ]]
+			echo -e "\nTrying to create tag: $tag"
+			if git tag -a "$tag" -m "$tag"
 			then
-				REVISION_FULL_NAME=$REVISION_FULL_NAME-mobmet
-			fi
-
-			echo -e "\nTrying to create revision:" $REVISION_FULL_NAME
-			if git tag $REVISION_FULL_NAME
-			then
-				echo -e "\nTrying to push revision to origin:" $REVISION_FULL_NAME
-					git push origin $REVISION_FULL_NAME
-				if [ $? -ne 0 ];
+				echo -e "\nTrying to push tag to origin: $tag"
+				git push origin "$tag"
+				if [ $? -ne 0 ]
 				then
-					git tag -d $REVISION_FULL_NAME
+					git tag -d "$tag"
 				else
 					succeeded=1
 				fi
 			fi
 		done
 
-		if [ $succeeded -eq 0 ]; then
+		if [ $succeeded -eq 0 ]
+		then
 			echo "Fail to create tag"
 			exit 1
 		fi
 	fi
 
 	AUTHOR=$(git config --get user.name)
-	REVISION=$REVISION_FULL_NAME
 	export REVISION
 	export AUTHOR
 }
@@ -132,7 +114,7 @@ function gen_changelog {
 		< $CHLOG.in > $CHLOG
 }
 
-# Загрузка в репозитории Метрики и БК
+# Загрузка в репозитории Метрики
 # рабочая директория - где лежит сам скрипт
 function upload_debs {
 	REVISION="$1"
@@ -142,10 +124,10 @@ function upload_debs {
 
 	if [ "$DISTRIB_CODENAME" == "precise" ]; then
 		REPO="metrika"
-		REPO_YABS="bs"
 	elif [ "$DISTRIB_CODENAME" == "trusty" ]; then
 		REPO="metrika-trusty"
-		REPO_YABS="bs-trusty"
+	elif [ "$DISTRIB_CODENAME" == "xenial" ]; then
+		REPO="metrika-xenial"
 	else
 		echo -e "\n\e[0;31mUnknown Ubuntu version $DISTRIB_CODENAME \e[0;0m\n"
 	fi
@@ -156,15 +138,5 @@ function upload_debs {
 	DUPLOAD_CONF=dupload.conf
 	cat src/debian/dupload.conf.in | sed -e "s/[@]AUTHOR[@]/$(whoami)/g" > $DUPLOAD_CONF
 
-
 	dupload metrika-yandex_1.1."$REVISION"_amd64.changes -t $REPO -c --nomail
-
-	# Загрузка в репозиторий баннерной крутилки (только ClickHouse).
-	if [[ -z "$(echo $DAEMONS | tr ' ' '\n' | grep -v clickhouse)" ]];
-	then
-		echo -e "\n\e[0;32mUploading daemons "$DAEMONS" to Banner System \e[0;0m\n "
-		dupload metrika-yandex_1.1."$REVISION"_amd64.changes -t $REPO_YABS -c --nomail
-	else
-		echo -e "\n\e[0;31mWill not upload daemons to Banner System \e[0;0m\n "
-	fi
 }

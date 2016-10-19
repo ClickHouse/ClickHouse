@@ -37,24 +37,23 @@ SingleBarrier::SingleBarrier(GetZooKeeper get_zookeeper_, const std::string & pa
 
 	auto zookeeper = get_zookeeper();
 
-	int32_t code = zookeeper->tryCreate(path, "", CreateMode::Persistent);
-	if ((code != ZOK) && (code != ZNODEEXISTS))
-		throw KeeperException{code};
+	Ops ops;
+	auto acl = zookeeper->getDefaultACL();
+
+	ops.push_back(new zkutil::Op::Create{path, "", acl, CreateMode::Persistent});
 
 	/// List of tokens.
-	code = zookeeper->tryCreate(path + "/tokens", "", CreateMode::Persistent);
-	if ((code != ZOK) && (code != ZNODEEXISTS))
-		throw KeeperException{code};
+	ops.push_back(new zkutil::Op::Create{path + "/tokens", "", acl, CreateMode::Persistent});
 
 	/// Tokens are tagged so that we can differentiate obsolete tokens that may
 	/// be deleted from those that are currently used to cross this barrier.
-	code = zookeeper->tryCreate(path + "/tag", "0", CreateMode::Persistent);
-	if ((code != ZOK) && (code != ZNODEEXISTS))
-		throw KeeperException{code};
+	ops.push_back(new zkutil::Op::Create{path + "/tag", "0", acl, CreateMode::Persistent});
 
 	/// We protect some areas of the code in order to reliably determine which
 	/// token has unblocked this barrier.
-	code = zookeeper->tryCreate(path + "/lock", "", CreateMode::Persistent);
+	ops.push_back(new zkutil::Op::Create{path + "/lock", "", acl, CreateMode::Persistent});
+
+	int32_t code = zookeeper->tryMulti(ops);
 	if ((code != ZOK) && (code != ZNODEEXISTS))
 		throw KeeperException{code};
 }

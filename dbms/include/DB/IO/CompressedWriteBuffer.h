@@ -3,6 +3,7 @@
 #include <math.h>
 
 #include <vector>
+#include <memory>
 
 #include <city.h>
 
@@ -15,6 +16,7 @@
 #include <zstd/zstd.h>
 
 #include <DB/Common/PODArray.h>
+#include <DB/Common/unaligned.h>
 #include <DB/Core/Types.h>
 
 #include <DB/IO/WriteBuffer.h>
@@ -41,14 +43,14 @@ private:
 	PODArray<char> compressed_buffer;
 
 #ifdef USE_QUICKLZ
-	qlz_state_compress * qlz_state;
+	std::unique_ptr<qlz_state_compress> qlz_state;
 #else
 	void * fixed_size_padding = nullptr;
 	/// Отменяет warning unused-private-field.
 	void * fixed_size_padding_used() const { return fixed_size_padding; }
 #endif
 
-	void nextImpl()
+	void nextImpl() override
 	{
 		if (!offset())
 			return;
@@ -71,7 +73,7 @@ private:
 					working_buffer.begin(),
 					&compressed_buffer[0],
 					uncompressed_size,
-					qlz_state);
+					qlz_state.get());
 
 				compressed_buffer[0] &= 3;
 				compressed_buffer_ptr = &compressed_buffer[0];
@@ -85,7 +87,10 @@ private:
 			{
 				static constexpr size_t header_size = 1 + sizeof(UInt32) + sizeof(UInt32);
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
 				compressed_buffer.resize(header_size + LZ4_COMPRESSBOUND(uncompressed_size));
+#pragma GCC diagnostic pop
 
 				compressed_buffer[0] = static_cast<UInt8>(CompressionMethodByte::LZ4);
 
@@ -103,8 +108,8 @@ private:
 				UInt32 compressed_size_32 = compressed_size;
 				UInt32 uncompressed_size_32 = uncompressed_size;
 
-				memcpy(&compressed_buffer[1], reinterpret_cast<const char *>(&compressed_size_32), sizeof(compressed_size_32));
-				memcpy(&compressed_buffer[5], reinterpret_cast<const char *>(&uncompressed_size_32), sizeof(uncompressed_size_32));
+				unalignedStore(&compressed_buffer[1], compressed_size_32);
+				unalignedStore(&compressed_buffer[5], uncompressed_size_32);
 
 				compressed_buffer_ptr = &compressed_buffer[0];
 				break;
@@ -132,8 +137,8 @@ private:
 				UInt32 compressed_size_32 = compressed_size;
 				UInt32 uncompressed_size_32 = uncompressed_size;
 
-				memcpy(&compressed_buffer[1], reinterpret_cast<const char *>(&compressed_size_32), sizeof(compressed_size_32));
-				memcpy(&compressed_buffer[5], reinterpret_cast<const char *>(&uncompressed_size_32), sizeof(uncompressed_size_32));
+				unalignedStore(&compressed_buffer[1], compressed_size_32);
+				unalignedStore(&compressed_buffer[5], uncompressed_size_32);
 
 				compressed_buffer_ptr = &compressed_buffer[0];
 				break;
@@ -155,7 +160,7 @@ public:
 		size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
 		: BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), method(method_)
 	#ifdef USE_QUICKLZ
-			, qlz_state(new qlz_state_compress)
+			, qlz_state(std::make_unique<qlz_state_compress>())
 	#endif
 	{
 	}
@@ -180,7 +185,7 @@ public:
 		return offset();
 	}
 
-	~CompressedWriteBuffer()
+	~CompressedWriteBuffer() override
 	{
 		try
 		{
@@ -190,10 +195,6 @@ public:
 		{
 			tryLogCurrentException(__PRETTY_FUNCTION__);
 		}
-
-	#ifdef USE_QUICKLZ
-		delete qlz_state;
-	#endif
 	}
 };
 

@@ -210,14 +210,16 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
 		nested_data_type->serializeText(*col.getNestedColumn(), row_num, ostr);
 }
 
-void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr,
+	bool force_quoting_64bit_integers) const
 {
 	const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
 	if (col.isNullAt(row_num))
 		writeCString(NullSymbol::JSON::name, ostr);
 	else
-		nested_data_type->serializeTextJSON(*col.getNestedColumn(), row_num, ostr);
+		nested_data_type->serializeTextJSON(*col.getNestedColumn(), row_num, ostr,
+			force_quoting_64bit_integers);
 }
 
 void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const

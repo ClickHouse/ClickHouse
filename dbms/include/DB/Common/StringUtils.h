@@ -45,9 +45,10 @@ inline bool endsWith(const std::string & s, const char * suffix)
 template <typename T>
 std::string getOrdinalSuffix(T n)
 {
-	static_assert(std::is_integral<T>::value, "Integer value required");
+	static_assert(std::is_integral<T>::value && std::is_unsigned<T>::value,
+		"Unsigned integer value required");
 
-	auto val = n % 10;
+	const auto val = n % 10;
 
 	bool is_th;
 	if ((val >= 1) && (val <= 3))
@@ -64,7 +65,59 @@ std::string getOrdinalSuffix(T n)
 			case 1: return "st";
 			case 2: return "nd";
 			case 3: return "rd";
-			default: throw DB::Exception{"Internal error", DB::ErrorCodes::LOGICAL_ERROR};
+			default: throw DB::Exception{"getOrdinalSuffix: internal error",
+				DB::ErrorCodes::LOGICAL_ERROR};
 		};
 	}
+}
+
+/// More efficient than libc, because doesn't respect locale.
+
+inline bool isASCII(char c)
+{
+	return static_cast<unsigned char>(c) < 0x80;
+}
+
+inline bool isAlphaASCII(char c)
+{
+	return (c >= 'a' && c <= 'z')
+		|| (c >= 'A' && c <= 'Z');
+}
+
+inline bool isNumericASCII(char c)
+{
+	return (c >= '0' && c <= '9');
+}
+
+inline bool isAlphaNumericASCII(char c)
+{
+	return isAlphaASCII(c)
+		|| isNumericASCII(c);
+}
+
+inline bool isWordCharASCII(char c)
+{
+	return isAlphaNumericASCII(c)
+		|| c == '_';
+}
+
+inline bool isWhitespaceASCII(char c)
+{
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+}
+
+/// Works assuming isAlphaASCII.
+inline char toLowerIfAlphaASCII(char c)
+{
+	return c | 0x20;
+}
+
+inline char toUpperIfAlphaASCII(char c)
+{
+	return c & (~0x20);
+}
+
+inline char alternateCaseIfAlphaASCII(char c)
+{
+	return c ^ 0x20;
 }
