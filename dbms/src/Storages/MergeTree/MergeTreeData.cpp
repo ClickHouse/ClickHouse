@@ -863,7 +863,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 		if (it.second == "")
 			new_checksums.files.erase(it.first);
 		else
-			new_checksums.files[it.second] = add_checksums.files.at(it.first);
+			new_checksums.files[it.second] = add_checksums.files[it.first];
 	}
 
 	if (new_primary_key_file_size)

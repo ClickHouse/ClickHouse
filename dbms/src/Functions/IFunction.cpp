@@ -352,8 +352,6 @@ void IFunction::postProcessResult(Strategy strategy, Block & block, const Block 
 		throw Exception{"IFunction: internal error", ErrorCodes::LOGICAL_ERROR};
 }
 
-/// Return a copy of a given block in which the specified columns are replaced by
-/// their respective nested columns if they are nullable.
 Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers args)
 {
 	std::sort(args.begin(), args.end());
@@ -373,10 +371,10 @@ Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers
 			if (col.column->isNullable())
 			{
 				auto nullable_col = static_cast<const ColumnNullable *>(col.column.get());
-				ColumnPtr nested_col = nullable_col->getNestedColumn();
+				const ColumnPtr & nested_col = nullable_col->getNestedColumn();
 
 				auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
-				DataTypePtr nested_type = nullable_type->getNestedType();
+				const DataTypePtr & nested_type = nullable_type->getNestedType();
 
 				res.insert(i, {nested_col, nested_type, col.name});
 
