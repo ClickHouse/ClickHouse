@@ -383,6 +383,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 	bool has_arrays_of_non_fixed_elems = false;
 	bool all_non_array_keys_are_fixed = true;
 	bool has_tuples = false;
+	bool has_arrays_of_nullable = false;
 
 	key_sizes.resize(params.keys_size);
 	for (size_t j = 0; j < params.keys_size; ++j)
@@ -399,6 +400,9 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 			if (const ColumnArray * arr = typeid_cast<const ColumnArray *>(nested_key_columns[j]))
 			{
 				++num_array_keys;
+
+				if (arr->getData().isNullable())
+					has_arrays_of_nullable = true;
 
 				if (!arr->getData().isFixed())
 					has_arrays_of_non_fixed_elems = true;
@@ -417,7 +421,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 	if (params.keys_size == 0)
 		return AggregatedDataVariants::Type::without_key;
 
-	if (has_nullable_key)
+	if (has_nullable_key || has_arrays_of_nullable)
 	{
 		/// At least one key is nullable. Therefore we choose an aggregation method
 		/// that takes into account this fact.
@@ -433,14 +437,21 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 					ErrorCodes::LOGICAL_ERROR};
 		}
 
-		/// Pack if possible all the keys along with information about which key values are nulls
-		/// into a fixed 16- or 32-byte blob.
-		if (keys_bytes > (std::numeric_limits<size_t>::max() - std::tuple_size<KeysNullMap<UInt128>>::value))
-			throw Exception{"Aggregator: keys sizes overflow", ErrorCodes::LOGICAL_ERROR};
-		if (all_fixed && ((std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes) <= 16))
-			return AggregatedDataVariants::Type::nullable_keys128;
-		if (all_fixed && ((std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes) <= 32))
-			return AggregatedDataVariants::Type::nullable_keys256;
+		if (all_fixed)
+		{
+			/// Pack if possible all the keys along with information about which key values are nulls
+			/// into a fixed 16- or 32-byte blob.
+			if (keys_bytes > (std::numeric_limits<size_t>::max() - std::tuple_size<KeysNullMap<UInt128>>::value))
+				throw Exception{"Aggregator: keys sizes overflow", ErrorCodes::LOGICAL_ERROR};
+			if ((std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes) <= 16)
+				return AggregatedDataVariants::Type::nullable_keys128;
+			if ((std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes) <= 32)
+				return AggregatedDataVariants::Type::nullable_keys256;
+		}
+
+		/// XXX Aggregation with Array(Nullable(T)) keys can be done much more efficiently.
+		if (has_arrays_of_nullable)
+			return AggregatedDataVariants::Type::serialized;
 
 		/// For the following two cases, see the comments below on the non-nullable variant,
 		/// since it is similar.

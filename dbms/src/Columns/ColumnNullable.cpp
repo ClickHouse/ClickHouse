@@ -79,23 +79,27 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
 	auto pos = arena.allocContinue(s, begin);
 	memcpy(pos, &arr[n], s);
 
+	size_t nested_size = 0;
+
 	if (arr[n] == 0)
-		return nested_column->serializeValueIntoArena(n, arena, begin);
-	else
-		return StringRef{pos, s};
+		nested_size = nested_column->serializeValueIntoArena(n, arena, begin).size;
+
+	return StringRef{begin, s + nested_size};
 }
 
 const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
 {
 	UInt8 val = *reinterpret_cast<const UInt8 *>(pos);
-	const auto next_pos = pos + sizeof(val);
+	pos += sizeof(val);
 
 	getNullMapContent().insert(val);
 
 	if (val == 0)
-		return nested_column->deserializeAndInsertFromArena(pos + sizeof(next_pos));
+		pos = nested_column->deserializeAndInsertFromArena(pos);
 	else
-		return next_pos;
+		nested_column->insertDefault();
+
+	return pos;
 }
 
 void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)

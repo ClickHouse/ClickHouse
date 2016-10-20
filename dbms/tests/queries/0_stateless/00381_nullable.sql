@@ -347,3 +347,162 @@ INSERT INTO test.test1(col1,col2) VALUES(['a','bc',NULL,'ghij'], 'ghij');
 INSERT INTO test.test1(col1,col2) VALUES([NULL,NULL,NULL,NULL], NULL);
 
 SELECT has(col1,col2) FROM test.test1;
+
+/* Aggregation */
+
+DROP TABLE IF EXISTS test.test1;
+CREATE TABLE test.test1(col1 Nullable(String), col2 Nullable(UInt8), col3 String) ENGINE=TinyLog;
+INSERT INTO test.test1(col1,col2,col3) VALUES('A', 0, 'ABCDEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('A', 0, 'BACDEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('A', 1, 'BCADEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('A', 1, 'BCDAEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('B', 1, 'BCDEAFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('B', 1, 'BCDEFAGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('B', 1, 'BCDEFGAH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('B', 1, 'BCDEFGHA');
+INSERT INTO test.test1(col1,col2,col3) VALUES('C', 1, 'ACBDEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('C', NULL, 'ACDBEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('C', NULL, 'ACDEBFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('C', NULL, 'ACDEFBGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, 1, 'ACDEFGBH');
+INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, NULL, 'ACDEFGHB');
+
+SELECT col1, col2, count() FROM test.test1 GROUP BY col1, col2;
+
+DROP TABLE IF EXISTS test.test1;
+CREATE TABLE test.test1(col1 String, col2 Nullable(UInt8), col3 String) ENGINE=TinyLog;
+INSERT INTO test.test1(col1,col2,col3) VALUES('A', 0, 'ABCDEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('A', 0, 'BACDEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('A', 1, 'BCADEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('A', 1, 'BCDAEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('B', 1, 'BCDEAFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('B', 1, 'BCDEFAGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('B', 1, 'BCDEFGAH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('B', 1, 'BCDEFGHA');
+INSERT INTO test.test1(col1,col2,col3) VALUES('C', 1, 'ACBDEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('C', NULL, 'ACDBEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('C', NULL, 'ACDEBFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES('C', NULL, 'ACDEFBGH');
+
+SELECT col1, col2, count() FROM test.test1 GROUP BY col1, col2;
+
+DROP TABLE IF EXISTS test.test1;
+CREATE TABLE test.test1(col1 Nullable(String), col2 String) ENGINE=TinyLog;
+INSERT INTO test.test1(col1,col2) VALUES('A', 'ABCDEFGH');
+INSERT INTO test.test1(col1,col2) VALUES('A', 'BACDEFGH');
+INSERT INTO test.test1(col1,col2) VALUES('A', 'BCADEFGH');
+INSERT INTO test.test1(col1,col2) VALUES('A', 'BCDAEFGH');
+INSERT INTO test.test1(col1,col2) VALUES('B', 'BCDEAFGH');
+INSERT INTO test.test1(col1,col2) VALUES('B', 'BCDEFAGH');
+INSERT INTO test.test1(col1,col2) VALUES('B', 'BCDEFGAH');
+INSERT INTO test.test1(col1,col2) VALUES('B', 'BCDEFGHA');
+INSERT INTO test.test1(col1,col2) VALUES('C', 'ACBDEFGH');
+INSERT INTO test.test1(col1,col2) VALUES('C', 'ACDBEFGH');
+INSERT INTO test.test1(col1,col2) VALUES('C', 'ACDEBFGH');
+INSERT INTO test.test1(col1,col2) VALUES('C', 'ACDEFBGH');
+INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDEFGBH');
+INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDEFGHB');
+
+SELECT col1, count() FROM test.test1 GROUP BY col1;
+
+DROP TABLE IF EXISTS test.test1;
+CREATE TABLE test.test1(col1 Nullable(UInt8), col2 String) ENGINE=TinyLog;
+INSERT INTO test.test1(col1,col2) VALUES(0, 'ABCDEFGH');
+INSERT INTO test.test1(col1,col2) VALUES(0, 'BACDEFGH');
+INSERT INTO test.test1(col1,col2) VALUES(1, 'BCADEFGH');
+INSERT INTO test.test1(col1,col2) VALUES(1, 'BCDAEFGH');
+INSERT INTO test.test1(col1,col2) VALUES(1, 'BCDEAFGH');
+INSERT INTO test.test1(col1,col2) VALUES(1, 'BCDEFAGH');
+INSERT INTO test.test1(col1,col2) VALUES(1, 'BCDEFGAH');
+INSERT INTO test.test1(col1,col2) VALUES(1, 'BCDEFGHA');
+INSERT INTO test.test1(col1,col2) VALUES(1, 'ACBDEFGH');
+INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDBEFGH');
+INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDEBFGH');
+INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDEFBGH');
+
+SELECT col1, count() FROM test.test1 GROUP BY col1;
+
+DROP TABLE IF EXISTS test.test1;
+CREATE TABLE test.test1(col1 Nullable(UInt64), col2 UInt64, col3 String) ENGINE=TinyLog;
+INSERT INTO test.test1(col1,col2,col3) VALUES(0, 2, 'ABCDEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES(0, 3, 'BACDEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES(1, 5, 'BCADEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES(1, 2, 'BCDAEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES(1, 3, 'BCDEAFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES(1, 5, 'BCDEFAGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES(1, 2, 'BCDEFGAH');
+INSERT INTO test.test1(col1,col2,col3) VALUES(1, 3, 'BCDEFGHA');
+INSERT INTO test.test1(col1,col2,col3) VALUES(1, 5, 'ACBDEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, 2, 'ACDBEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, 3, 'ACDEBFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, 3, 'ACDEFBGH');
+
+SELECT col1, col2, count() FROM test.test1 GROUP BY col1, col2;
+
+DROP TABLE IF EXISTS test.test1;
+CREATE TABLE test.test1(col1 Nullable(UInt64), col2 UInt64, col3 Nullable(UInt64), col4 String) ENGINE=TinyLog;
+INSERT INTO test.test1(col1,col2,col3,col4) VALUES(0, 2, 1, 'ABCDEFGH');
+INSERT INTO test.test1(col1,col2,col3,col4) VALUES(0, 3, NULL, 'BACDEFGH');
+INSERT INTO test.test1(col1,col2,col3,col4) VALUES(1, 5, 1, 'BCADEFGH');
+INSERT INTO test.test1(col1,col2,col3,col4) VALUES(1, 2, NULL, 'BCDAEFGH');
+INSERT INTO test.test1(col1,col2,col3,col4) VALUES(1, 3, 1, 'BCDEAFGH');
+INSERT INTO test.test1(col1,col2,col3,col4) VALUES(1, 5, NULL, 'BCDEFAGH');
+INSERT INTO test.test1(col1,col2,col3,col4) VALUES(1, 2, 1, 'BCDEFGAH');
+INSERT INTO test.test1(col1,col2,col3,col4) VALUES(1, 3, NULL, 'BCDEFGHA');
+INSERT INTO test.test1(col1,col2,col3,col4) VALUES(1, 5, 1, 'ACBDEFGH');
+INSERT INTO test.test1(col1,col2,col3,col4) VALUES(NULL, 2, NULL, 'ACDBEFGH');
+INSERT INTO test.test1(col1,col2,col3,col4) VALUES(NULL, 3, 1, 'ACDEBFGH');
+INSERT INTO test.test1(col1,col2,col3,col4) VALUES(NULL, 3, NULL, 'ACDEFBGH');
+
+SELECT col1, col2, col3, count() FROM test.test1 GROUP BY col1, col2, col3;
+
+DROP TABLE IF EXISTS test.test1;
+CREATE TABLE test.test1(col1 Nullable(Array(UInt8)), col2 String) ENGINE=TinyLog;
+INSERT INTO test.test1(col1,col2) VALUES([0], 'ABCDEFGH');
+INSERT INTO test.test1(col1,col2) VALUES([0], 'BACDEFGH');
+INSERT INTO test.test1(col1,col2) VALUES([1], 'BCADEFGH');
+INSERT INTO test.test1(col1,col2) VALUES([1], 'BCDAEFGH');
+INSERT INTO test.test1(col1,col2) VALUES([1], 'BCDEAFGH');
+INSERT INTO test.test1(col1,col2) VALUES([1], 'BCDEFAGH');
+INSERT INTO test.test1(col1,col2) VALUES([1], 'BCDEFGAH');
+INSERT INTO test.test1(col1,col2) VALUES([1], 'BCDEFGHA');
+INSERT INTO test.test1(col1,col2) VALUES([1], 'ACBDEFGH');
+INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDBEFGH');
+INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDEBFGH');
+INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDEFBGH');
+
+SELECT col1, count() FROM test.test1 GROUP BY col1;
+
+DROP TABLE IF EXISTS test.test1;
+CREATE TABLE test.test1(col1 Array(Nullable(UInt8)), col2 String) ENGINE=TinyLog;
+INSERT INTO test.test1(col1,col2) VALUES([0], 'ABCDEFGH');
+INSERT INTO test.test1(col1,col2) VALUES([0], 'BACDEFGH');
+INSERT INTO test.test1(col1,col2) VALUES([1], 'BCADEFGH');
+INSERT INTO test.test1(col1,col2) VALUES([1], 'BCDAEFGH');
+INSERT INTO test.test1(col1,col2) VALUES([1], 'BCDEAFGH');
+INSERT INTO test.test1(col1,col2) VALUES([1], 'BCDEFAGH');
+INSERT INTO test.test1(col1,col2) VALUES([1], 'BCDEFGAH');
+INSERT INTO test.test1(col1,col2) VALUES([1], 'BCDEFGHA');
+INSERT INTO test.test1(col1,col2) VALUES([1], 'ACBDEFGH');
+INSERT INTO test.test1(col1,col2) VALUES([NULL], 'ACDBEFGH');
+INSERT INTO test.test1(col1,col2) VALUES([NULL], 'ACDEBFGH');
+INSERT INTO test.test1(col1,col2) VALUES([NULL], 'ACDEFBGH');
+
+SELECT col1, count() FROM test.test1 GROUP BY col1;
+
+DROP TABLE IF EXISTS test.test1;
+CREATE TABLE test.test1(col1 Nullable(Array(UInt8)), col2 Array(Nullable(UInt8)), col3 String) ENGINE=TinyLog;
+INSERT INTO test.test1(col1,col2,col3) VALUES([0], [0], 'ABCDEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES([0], [0], 'BACDEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES([1], [1], 'BCADEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES([1], [1], 'BCDAEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES([1], [1], 'BCDEAFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES([1], [1], 'BCDEFAGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES([1], [1], 'BCDEFGAH');
+INSERT INTO test.test1(col1,col2,col3) VALUES([1], [1], 'BCDEFGHA');
+INSERT INTO test.test1(col1,col2,col3) VALUES([1], [NULL], 'ACBDEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, [1], 'ACDBEFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, [NULL], 'ACDEBFGH');
+INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, [NULL], 'ACDEFBGH');
+
+SELECT col1, col2, count() FROM test.test1 GROUP BY col1, col2;
