@@ -78,6 +78,11 @@ protected:
 	size_t aio_threshold;
 
 	CompressionMethod compression_method;
+
+private:
+	/// Internal version of writeData.
+	void writeDataImpl(const String & name, const IDataType & type, const IColumn & column,
+		OffsetColumns & offset_columns, size_t level, bool write_array_data);
 };
 
 
