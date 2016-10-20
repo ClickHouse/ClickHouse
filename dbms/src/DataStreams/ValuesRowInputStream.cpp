@@ -118,9 +118,9 @@ bool ValuesRowInputStream::read(Block & block)
 						is_null_allowed = true;
 					else
 					{
-						/// XXX For now we support only one level of null values, i.e.
-						/// XXX there are not yet such things as Array(Nullable(Array(Nullable(T))).
-						/// XXX Therefore the code below is valid.
+						/// NOTE: For now we support only one level of null values, i.e.
+						/// there are not yet such things as Array(Nullable(Array(Nullable(T))).
+						/// Therefore the code below is valid within the current limitations.
 						const auto array_type = typeid_cast<const DataTypeArray *>(&type);
 						if (array_type != nullptr)
 						{
