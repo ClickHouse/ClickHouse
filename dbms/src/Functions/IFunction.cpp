@@ -364,7 +364,7 @@ Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers
 		const auto & col = block.unsafeGetByPosition(i);
 		bool is_inserted = false;
 
-		if (i == args[j])
+		if ((j < args.size()) && (i == args[j]))
 		{
 			++j;
 
@@ -401,7 +401,7 @@ Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers
 		const auto & col = block.unsafeGetByPosition(i);
 		bool is_inserted = false;
 
-		if (i == args[j])
+		if ((j < args.size()) && (i == args[j]))
 		{
 			++j;
 
