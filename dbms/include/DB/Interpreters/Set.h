@@ -145,19 +145,122 @@ struct SetMethodFixedString
 	}
 };
 
+namespace set_impl
+{
+
+/// This class is designed to provide the functionality that is required for
+/// supporting nullable keys in SetMethodKeysFixed. If there are
+/// no nullable keys, this class is merely implemented as an empty shell.
+template <typename Key, bool has_nullable_keys>
+class BaseStateKeysFixed;
+
+/// Case where nullable keys are supported.
+template <typename Key>
+class BaseStateKeysFixed<Key, true>
+{
+protected:
+	void init(const ConstColumnPlainPtrs & key_columns)
+	{
+		null_maps.reserve(key_columns.size());
+		actual_columns.reserve(key_columns.size());
+
+		for (const auto & col : key_columns)
+		{
+			if (col->isNullable())
+			{
+				const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
+				actual_columns.push_back(nullable_col.getNestedColumn().get());
+				null_maps.push_back(nullable_col.getNullValuesByteMap().get());
+			}
+			else
+			{
+				actual_columns.push_back(col);
+				null_maps.push_back(nullptr);
+			}
+		}
+	}
+
+	/// Return the columns which actually contain the values of the keys.
+	/// For a given key column, if it is nullable, we return its nested
+	/// column. Otherwise we return the key column itself.
+	inline const ConstColumnPlainPtrs & getActualColumns() const
+	{
+		return actual_columns;
+	}
+
+	/// Create a bitmap that indicates whether, for a particular row,
+	/// a key column bears a null value or not.
+	KeysNullMap<Key> createBitmap(size_t row) const
+	{
+		KeysNullMap<Key> bitmap{};
+
+		for (size_t k = 0; k < null_maps.size(); ++k)
+		{
+			if (null_maps[k] != nullptr)
+			{
+				const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[k]).getData();
+				if (null_map[row] == 1)
+				{
+					size_t bucket = k / 8;
+					size_t offset = k % 8;
+					bitmap[bucket] |= UInt8(1) << offset;
+				}
+			}
+		}
+
+		return bitmap;
+	}
+
+private:
+	ConstColumnPlainPtrs actual_columns;
+	ConstColumnPlainPtrs null_maps;
+};
+
+/// Case where nullable keys are not supported.
+template <typename Key>
+class BaseStateKeysFixed<Key, false>
+{
+protected:
+	void init(const ConstColumnPlainPtrs & key_columns)
+	{
+		throw Exception{"Internal error: calling init() for non-nullable"
+			" keys is forbidden", ErrorCodes::LOGICAL_ERROR};
+	}
+
+	const ConstColumnPlainPtrs & getActualColumns() const
+	{
+		throw Exception{"Internal error: calling getActualColumns() for non-nullable"
+			" keys is forbidden", ErrorCodes::LOGICAL_ERROR};
+	}
+
+	KeysNullMap<Key> createBitmap(size_t row) const
+	{
+		throw Exception{"Internal error: calling createBitmap() for non-nullable keys"
+			" is forbidden", ErrorCodes::LOGICAL_ERROR};
+	}
+};
+
+}
+
 /// Для случая, когда все ключи фиксированной длины, и они помещаются в N (например, 128) бит.
-template <typename TData>
+template <typename TData, bool has_nullable_keys_ = false>
 struct SetMethodKeysFixed
 {
 	using Data = TData;
 	using Key = typename Data::key_type;
+	static constexpr bool has_nullable_keys = has_nullable_keys_;
 
 	Data data;
 
-	struct State
+	class State : private set_impl::BaseStateKeysFixed<Key, has_nullable_keys>
 	{
+	public:
+		using Base = set_impl::BaseStateKeysFixed<Key, has_nullable_keys>;
+
 		void init(const ConstColumnPlainPtrs & key_columns)
 		{
+			if (has_nullable_keys)
+				Base::init(key_columns);
 		}
 
 		Key getKey(
@@ -166,7 +269,13 @@ struct SetMethodKeysFixed
 			size_t i,
 			const Sizes & key_sizes) const
 		{
-			return packFixed<Key>(i, keys_size, key_columns, key_sizes);
+			if (has_nullable_keys)
+			{
+				auto bitmap = Base::createBitmap(i);
+				return packFixed<Key>(i, keys_size, Base::getActualColumns(), key_sizes, bitmap);
+			}
+			else
+				return packFixed<Key>(i, keys_size, key_columns, key_sizes);
 		}
 	};
 
@@ -222,6 +331,10 @@ struct SetVariants
 	std::unique_ptr<SetMethodKeysFixed<HashSet<UInt256, UInt256HashCRC32>>> 		keys256;
 	std::unique_ptr<SetMethodHashed<HashSet<UInt128, UInt128TrivialHash>>> 			hashed;
 
+	/// Support for nullable keys.
+	std::unique_ptr<SetMethodKeysFixed<HashSet<UInt128, UInt128HashCRC32>, true>> 		nullable_keys128;
+	std::unique_ptr<SetMethodKeysFixed<HashSet<UInt256, UInt256HashCRC32>, true>> 		nullable_keys256;
+
 	/** В отличие от Aggregator, здесь не используется метод concat.
 	  * Это сделано потому что метод hashed, хоть и медленнее, но в данном случае, использует меньше оперативки.
 	  *  так как при его использовании, сами значения ключей не сохраняются.
@@ -238,6 +351,8 @@ struct SetVariants
 		M(key_fixed_string) \
 		M(keys128) 			\
 		M(keys256) 			\
+		M(nullable_keys128)	\
+		M(nullable_keys256)	\
 		M(hashed)
 
 	enum class Type

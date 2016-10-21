@@ -10,6 +10,7 @@
 #include <DB/DataStreams/OneBlockInputStream.h>
 
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/Functions/DataTypeTraits.h>
 
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTFunction.h>
@@ -99,26 +100,78 @@ bool Set::checkSetSizeLimits() const
 
 SetVariants::Type SetVariants::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes)
 {
-	size_t keys_size = key_columns.size();
+	/// Check if at least one of the specified keys is nullable.
+	/// Create a set of nested key columns from the corresponding key columns.
+	/// Here "nested" means that, if a key column is nullable, we take its nested
+	/// column; otherwise we take the key column as is.
+	ConstColumnPlainPtrs nested_key_columns;
+	nested_key_columns.reserve(key_columns.size());
+	bool has_nullable_key = false;
+
+	for (const auto & col : key_columns)
+	{
+		if (col->isNullable())
+		{
+			const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
+			nested_key_columns.push_back(nullable_col.getNestedColumn().get());
+			has_nullable_key = true;
+		}
+		else
+			nested_key_columns.push_back(col);
+	}
+
+	size_t keys_size = nested_key_columns.size();
 
 	bool all_fixed = true;
 	size_t keys_bytes = 0;
 	key_sizes.resize(keys_size);
 	for (size_t j = 0; j < keys_size; ++j)
 	{
-		if (!key_columns[j]->isFixed())
+		if (!nested_key_columns[j]->isFixed())
 		{
 			all_fixed = false;
 			break;
 		}
-		key_sizes[j] = key_columns[j]->sizeOfField();
+		key_sizes[j] = nested_key_columns[j]->sizeOfField();
 		keys_bytes += key_sizes[j];
 	}
 
-	/// Если есть один числовой ключ, который помещается в 64 бита
-	if (keys_size == 1 && key_columns[0]->isNumericNotNullable())
+	if (has_nullable_key)
 	{
-		size_t size_of_field = key_columns[0]->sizeOfField();
+		/// At least one key is nullable. Therefore we choose a method
+		/// that takes into account this fact.
+		if ((keys_size == 1) && (nested_key_columns[0]->isNumeric()))
+		{
+			/// We have exactly one key and it is nullable. We shall add it a tag
+			/// which specifies whether its value is null or not.
+			size_t size_of_field = nested_key_columns[0]->sizeOfField();
+			if ((size_of_field == 1) || (size_of_field == 2) || (size_of_field == 4) || (size_of_field == 8))
+				return SetVariants::Type::nullable_keys128;
+			else
+				throw Exception{"Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.",
+					ErrorCodes::LOGICAL_ERROR};
+		}
+
+		if (all_fixed)
+		{
+			/// Pack if possible all the keys along with information about which key values are nulls
+			/// into a fixed 16- or 32-byte blob.
+			if (keys_bytes > (std::numeric_limits<size_t>::max() - std::tuple_size<KeysNullMap<UInt128>>::value))
+				throw Exception{"Aggregator: keys sizes overflow", ErrorCodes::LOGICAL_ERROR};
+			if ((std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes) <= 16)
+				return SetVariants::Type::nullable_keys128;
+			if ((std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes) <= 32)
+				return SetVariants::Type::nullable_keys256;
+		}
+
+		/// Fallback case.
+		return SetVariants::Type::hashed;
+	}
+
+	/// Если есть один числовой ключ, который помещается в 64 бита
+	if (keys_size == 1 && nested_key_columns[0]->isNumericNotNullable())
+	{
+		size_t size_of_field = nested_key_columns[0]->sizeOfField();
 		if (size_of_field == 1)
 			return SetVariants::Type::key8;
 		if (size_of_field == 2)
@@ -137,10 +190,10 @@ SetVariants::Type SetVariants::chooseMethod(const ConstColumnPlainPtrs & key_col
 		return SetVariants::Type::keys256;
 
 	/// If there is single string key, use hash table of it's values.
-	if (keys_size == 1 && (typeid_cast<const ColumnString *>(key_columns[0]) || typeid_cast<const ColumnConstString *>(key_columns[0])))
+	if (keys_size == 1 && (typeid_cast<const ColumnString *>(nested_key_columns[0]) || typeid_cast<const ColumnConstString *>(nested_key_columns[0])))
 		return SetVariants::Type::key_string;
 
-	if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
+	if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(nested_key_columns[0]))
 		return SetVariants::Type::key_fixed_string;
 
 	/// Otherwise, will use set of cryptographic hashes of unambiguously serialized values.
@@ -379,8 +432,11 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 	{
 		if (data_types.size() != 1 || num_key_columns != 1)
 			throw Exception("Number of columns in section IN doesn't match.", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
-		if (array_type->getNestedType()->getName() != data_types[0]->getName())
-			throw Exception(std::string() + "Types in section IN don't match: " + data_types[0]->getName() + " on the right, " + array_type->getNestedType()->getName() + " on the left.", ErrorCodes::TYPE_MISMATCH);
+		if (DataTypeTraits::removeNullable(array_type->getNestedType())->getName() !=
+			DataTypeTraits::removeNullable(data_types[0])->getName())
+			throw Exception(std::string() + "Types in section IN don't match: " + data_types[0]->getName() +
+				" on the right, " + array_type->getNestedType()->getName() + " on the left.",
+				ErrorCodes::TYPE_MISMATCH);
 
 		const IColumn * in_column = block.getByPosition(0).column.get();
 
@@ -415,10 +471,11 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 		{
 			key_columns.push_back(block.getByPosition(i).column.get());
 
-			if (data_types[i]->getName() != block.getByPosition(i).type->getName())
+			if (DataTypeTraits::removeNullable(data_types[i])->getName() !=
+				DataTypeTraits::removeNullable(block.getByPosition(i).type)->getName())
 				throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: "
-					+ data_types[i]->getName() + " on the right, " + block.getByPosition(i).type->getName() + " on the left.",
-					ErrorCodes::TYPE_MISMATCH);
+					+ data_types[i]->getName() + " on the right, " + block.getByPosition(i).type->getName() +
+					" on the left.", ErrorCodes::TYPE_MISMATCH);
 
 			if (auto converted = key_columns.back()->convertToFullColumnIfConst())
 			{

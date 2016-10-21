@@ -279,6 +279,9 @@ struct AggregationMethodFixedString
 	}
 };
 
+namespace aggregator_impl
+{
+
 /// This class is designed to provide the functionality that is required for
 /// supporting nullable keys in AggregationMethodKeysFixed. If there are
 /// no nullable keys, this class is merely implemented as an empty shell.
@@ -371,6 +374,8 @@ protected:
 	}
 };
 
+}
+
 /// Для случая, когда все ключи фиксированной длины, и они помещаются в N (например, 128) бит.
 template <typename TData, bool has_nullable_keys_ = false>
 struct AggregationMethodKeysFixed
@@ -389,10 +394,10 @@ struct AggregationMethodKeysFixed
 	template <typename Other>
 	AggregationMethodKeysFixed(const Other & other) : data(other.data) {}
 
-	class State final : private BaseStateKeysFixed<Key, has_nullable_keys>
+	class State final : private aggregator_impl::BaseStateKeysFixed<Key, has_nullable_keys>
 	{
 	public:
-		using Base = BaseStateKeysFixed<Key, has_nullable_keys>;
+		using Base = aggregator_impl::BaseStateKeysFixed<Key, has_nullable_keys>;
 
 		void init(ConstColumnPlainPtrs & key_columns)
 		{
