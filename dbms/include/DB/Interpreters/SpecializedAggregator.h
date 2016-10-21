@@ -15,6 +15,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionArray.h>
 #include <DB/AggregateFunctions/AggregateFunctionState.h>
 #include <DB/AggregateFunctions/AggregateFunctionMerge.h>
+#include <DB/AggregateFunctions/AggregateFunctionNull.h>
 
 
 namespace DB
