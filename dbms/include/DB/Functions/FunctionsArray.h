@@ -117,8 +117,6 @@ public:
 	/// Получить имя функции.
 	String getName() const override;
 
-	bool hasSpecialSupportForNulls() const override { return true; }
-
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1215,11 +1213,6 @@ public:
 	/// Получить имя функции.
 	String getName() const override;
 
-	bool hasSpecialSupportForNulls() const override
-	{
-		return true;
-	}
-
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1259,11 +1252,6 @@ public:
 
 	/// Получить имя функции.
 	String getName() const override;
-
-	bool hasSpecialSupportForNulls() const override
-	{
-		return true;
-	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
