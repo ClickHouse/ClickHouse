@@ -102,7 +102,13 @@
                      + __GNUC_MINOR__ * 100           \
                      + __GNUC_PATCHLEVEL__)
 
+#define CLANG_VERSION (__clang_major__ * 10000         \
+                       + __clang_minor__ * 100         \
+                       + __clang_patchlevel__)
+
 #if defined(TCMALLOC_PREFER_GCC_ATOMICS) && defined(__GNUC__) && GCC_VERSION >= 40700
+#include "base/atomicops-internals-gcc.h"
+#elif defined(TCMALLOC_PREFER_GCC_ATOMICS) && defined(__clang__) && CLANG_VERSION >= 30400
 #include "base/atomicops-internals-gcc.h"
 #elif defined(__MACH__) && defined(__APPLE__)
 #include "base/atomicops-internals-macosx.h"
@@ -119,6 +125,8 @@
 #elif defined(__GNUC__) && defined(__mips__)
 #include "base/atomicops-internals-mips.h"
 #elif defined(__GNUC__) && GCC_VERSION >= 40700
+#include "base/atomicops-internals-gcc.h"
+#elif defined(__clang__) && CLANG_VERSION >= 30400
 #include "base/atomicops-internals-gcc.h"
 #else
 #error You need to implement atomic operations for this architecture

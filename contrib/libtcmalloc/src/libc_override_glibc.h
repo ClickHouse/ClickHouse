@@ -86,60 +86,6 @@ extern "C" {
 
 #endif  // #if defined(__GNUC__) && !defined(__MACH__)
 
-
-// We also have to hook libc malloc.  While our work with weak symbols
-// should make sure libc malloc is never called in most situations, it
-// can be worked around by shared libraries with the DEEPBIND
-// environment variable set.  The below hooks libc to call our malloc
-// routines even in that situation.  In other situations, this hook
-// should never be called.
-extern "C" {
-static void* glibc_override_malloc(size_t size, const void *caller) {
-  return tc_malloc(size);
-}
-static void* glibc_override_realloc(void *ptr, size_t size,
-                                    const void *caller) {
-  return tc_realloc(ptr, size);
-}
-static void glibc_override_free(void *ptr, const void *caller) {
-  tc_free(ptr);
-}
-static void* glibc_override_memalign(size_t align, size_t size,
-                                     const void *caller) {
-  return tc_memalign(align, size);
-}
-
-// We should be using __malloc_initialize_hook here, like the #if 0
-// code below.  (See http://swoolley.org/man.cgi/3/malloc_hook.)
-// However, this causes weird linker errors with programs that link
-// with -static, so instead we just assign the vars directly at
-// static-constructor time.  That should serve the same effect of
-// making sure the hooks are set before the first malloc call the
-// program makes.
-#if 0
-#include <malloc.h>  // for __malloc_hook, etc.
-void glibc_override_malloc_init_hook(void) {
-  __malloc_hook = glibc_override_malloc;
-  __realloc_hook = glibc_override_realloc;
-  __free_hook = glibc_override_free;
-  __memalign_hook = glibc_override_memalign;
-}
-
-void (* MALLOC_HOOK_MAYBE_VOLATILE __malloc_initialize_hook)(void)
-    = &glibc_override_malloc_init_hook;
-#endif
-
-void* (* MALLOC_HOOK_MAYBE_VOLATILE __malloc_hook)(size_t, const void*)
-    = &glibc_override_malloc;
-void* (* MALLOC_HOOK_MAYBE_VOLATILE __realloc_hook)(void*, size_t, const void*)
-    = &glibc_override_realloc;
-void (* MALLOC_HOOK_MAYBE_VOLATILE __free_hook)(void*, const void*)
-    = &glibc_override_free;
-void* (* MALLOC_HOOK_MAYBE_VOLATILE __memalign_hook)(size_t,size_t, const void*)
-    = &glibc_override_memalign;
-
-}   // extern "C"
-
 // No need to write ReplaceSystemAlloc(); one of the #includes above
 // did it for us.
 

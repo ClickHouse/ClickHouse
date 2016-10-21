@@ -379,10 +379,6 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 	storage.alter_thread.reset();
 	storage.part_check_thread.stop();
 
-	if (storage.queue_task_handle)
-		storage.context.getBackgroundPool().removeTask(storage.queue_task_handle);
-	storage.queue_task_handle.reset();
-
 	/// Yielding leadership only after finish of merge_selecting_thread.
 	/// Otherwise race condition with parallel run of merge selecting thread on different servers is possible.
 	///
@@ -396,6 +392,10 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 	/// either manually wait merge_selecting_thread.join() inside ~StorageReplicatedMergeTree(), either or something third.
 	/// So, we added shutdown check in becomeLeader() and made its creation and deletion atomic.
 	storage.leader_election = nullptr;
+
+	if (storage.queue_task_handle)
+		storage.context.getBackgroundPool().removeTask(storage.queue_task_handle);
+	storage.queue_task_handle.reset();
 
 	LOG_TRACE(log, "Threads finished");
 }

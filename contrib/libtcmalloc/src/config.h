@@ -218,9 +218,6 @@
    */
 #define LT_OBJDIR ".libs/"
 
-/* Define to 'volatile' if __malloc_hook is declared volatile */
-#define MALLOC_HOOK_MAYBE_VOLATILE volatile
-
 /* Name of package */
 #define PACKAGE "gperftools"
 

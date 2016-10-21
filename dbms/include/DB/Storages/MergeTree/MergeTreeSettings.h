@@ -55,9 +55,11 @@ struct MergeTreeSettings
 	/// Если в таблице хотя бы столько активных кусков, искусственно замедлять вставки в таблицу.
 	size_t parts_to_delay_insert = 150;
 
-	/// Если в таблице parts_to_delay_insert + k кусков, спать insert_delay_step^k миллисекунд перед вставкой каждого блока.
-	/// Таким образом, скорость вставок автоматически замедлится примерно до скорости слияний.
-	double insert_delay_step = 1.1;
+	/// Если в таблице хотя бы столько активных кусков, выдавать ошибку 'Too much parts ...'
+	size_t parts_to_throw_insert = 300;
+
+	/// Насколько секунд можно максимально задерживать вставку в таблицу типа MergeTree, если в ней много недомердженных кусков.
+	size_t max_delay_to_insert = 200;
 
 	/** Настройки репликации. */
 
@@ -127,7 +129,8 @@ struct MergeTreeSettings
 		SET_SIZE_T(old_parts_lifetime);
 		SET_SIZE_T(temporary_directories_lifetime);
 		SET_SIZE_T(parts_to_delay_insert);
-		SET_DOUBLE(insert_delay_step);
+		SET_SIZE_T(parts_to_throw_insert);
+		SET_SIZE_T(max_delay_to_insert);
 		SET_SIZE_T(replicated_deduplication_window);
 		SET_SIZE_T(replicated_logs_to_keep);
 		SET_SIZE_T(prefer_fetch_merged_part_time_threshold);
