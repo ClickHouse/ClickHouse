@@ -259,7 +259,7 @@ void IFunction::getLambdaArgumentTypes(DataTypes & arguments) const
 void IFunction::execute(Block & block, const ColumnNumbers & args, size_t result)
 {
 	auto strategy = chooseStrategy(block, args);
-	Block processed_block = preProcessBlock(strategy, block, args);
+	Block processed_block = preProcessBlock(strategy, block, args, result);
 
 	if (strategy != RETURN_NULL)
 	{
@@ -273,7 +273,7 @@ void IFunction::execute(Block & block, const ColumnNumbers & args, size_t result
 void IFunction::execute(Block & block, const ColumnNumbers & args, const ColumnNumbers & prerequisites, size_t result)
 {
 	auto strategy = chooseStrategy(block, args);
-	Block processed_block = preProcessBlock(strategy, block, args);
+	Block processed_block = preProcessBlock(strategy, block, args, result);
 
 	if (strategy != RETURN_NULL)
 	{
@@ -307,7 +307,7 @@ IFunction::Strategy IFunction::chooseStrategy(const Block & block, const ColumnN
 	return DIRECTLY_EXECUTE;
 }
 
-Block IFunction::preProcessBlock(Strategy strategy, const Block & block, const ColumnNumbers & args)
+Block IFunction::preProcessBlock(Strategy strategy, const Block & block, const ColumnNumbers & args, size_t result)
 {
 	if (strategy == DIRECTLY_EXECUTE)
 		return {};
@@ -317,7 +317,7 @@ Block IFunction::preProcessBlock(Strategy strategy, const Block & block, const C
 	{
 		/// Run the function on a block whose nullable columns have been replaced
 		/// with their respective nested columns.
-		return createBlockWithNestedColumns(block, args);
+		return createBlockWithNestedColumns(block, args, result);
 	}
 	else
 		throw Exception{"IFunction: internal error", ErrorCodes::LOGICAL_ERROR};
@@ -378,6 +378,54 @@ Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers
 
 				res.insert(i, {nested_col, nested_type, col.name});
 
+				is_inserted = true;
+			}
+		}
+
+		if (!is_inserted)
+			res.insert(i, col);
+	}
+
+	return res;
+}
+
+Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size_t result)
+{
+	std::sort(args.begin(), args.end());
+
+	Block res;
+
+	size_t j = 0;
+	for (size_t i = 0; i < block.columns(); ++i)
+	{
+		const auto & col = block.unsafeGetByPosition(i);
+		bool is_inserted = false;
+
+		if (i == args[j])
+		{
+			++j;
+
+			if (col.column->isNullable())
+			{
+				auto nullable_col = static_cast<const ColumnNullable *>(col.column.get());
+				const ColumnPtr & nested_col = nullable_col->getNestedColumn();
+
+				auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
+				const DataTypePtr & nested_type = nullable_type->getNestedType();
+
+				res.insert(i, {nested_col, nested_type, col.name});
+
+				is_inserted = true;
+			}
+		}
+		else if (i == result)
+		{
+			if (col.type->isNullable())
+			{
+				auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
+				const DataTypePtr & nested_type = nullable_type->getNestedType();
+
+				res.insert(i, {nullptr, nested_type, col.name});
 				is_inserted = true;
 			}
 		}

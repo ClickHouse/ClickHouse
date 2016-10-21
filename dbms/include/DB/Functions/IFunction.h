@@ -142,6 +142,8 @@ protected:
 	/// the "arguments" parameter is replaced with its respective nested
 	/// column if it is nullable.
 	static Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args);
+	/// Similar function as above. Additionally transform the result type if needed.
+	static Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size_t result);
 
 private:
 	/// Strategy to apply when executing a function.
@@ -164,7 +166,8 @@ private:
 
 	/// If required by the specified strategy, process the given block, then
 	/// return the processed block. Otherwise return an empty block.
-	Block preProcessBlock(Strategy strategy, const Block & block, const ColumnNumbers & args);
+	Block preProcessBlock(Strategy strategy, const Block & block, const ColumnNumbers & args,
+		size_t result);
 
 	/// If required by the specified strategy, post-process the result column.
 	void postProcessResult(Strategy strategy, Block & block, const Block & processed_block,
