@@ -83,7 +83,6 @@
 	\
 	M(ReplicaYieldLeadership) \
 	M(ReplicaPartialShutdown) \
-	M(ReplicaPermanentlyReadonly) \
 	\
 	M(SelectedParts) \
 	M(SelectedRanges) \
