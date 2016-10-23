@@ -34,23 +34,16 @@ ActiveMetrics::~ActiveMetrics()
 
 void ActiveMetrics::run()
 {
-	using namespace std::literals;
-
 	setThreadName("ActiveMetrics");
-
-	std::this_thread::sleep_for(30s);	/// To be distant with moment of transmission of metrics. It is not strictly necessary.
-
-	const auto get_next_minute = []
-	{
-		return std::chrono::time_point_cast<std::chrono::minutes, std::chrono::system_clock>(
-			std::chrono::system_clock::now() + std::chrono::minutes(1));
-	};
 
 	std::unique_lock<std::mutex> lock{mutex};
 
+	/// To be distant with moment of transmission of metrics. It is not strictly necessary.
+	cond.wait_until(lock, std::chrono::system_clock::now() + std::chrono::seconds(30), [this] { return quit; });
+
 	while (true)
 	{
-		if (cond.wait_until(lock, get_next_minute(), [this] { return quit; }))
+		if (cond.wait_until(lock, std::chrono::system_clock::now() + std::chrono::seconds(60), [this] { return quit; }))
 			break;
 
 		try
