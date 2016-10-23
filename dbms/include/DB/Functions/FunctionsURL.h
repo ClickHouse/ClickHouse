@@ -11,11 +11,11 @@
 namespace DB
 {
 
-/** Функции работы с URL.
-  * Все функции работают не по RFC - то есть, максимально упрощены ради производительности.
+/** URL processing functions.
+  * All functions are not strictly follow RFC, instead they are maximally simplified for performance reasons.
   *
-  * Функции, извлекающие часть URL-а.
-  * Если в URL-е нет ничего похожего, то возвращается пустая строка.
+  * Functions for extraction parts of URL.
+  * If URL has nothing like, then empty string is returned.
   *
   *  domain
   *  domainWithoutWWW
@@ -26,29 +26,29 @@ namespace DB
   *  fragment
   *  queryStringAndFragment
   *
-  * Функции, удаляющие часть из URL-а.
-  * Если в URL-е нет ничего похожего, то URL остаётся без изменений.
+  * Functions, removing parts from URL.
+  * If URL has nothing like, then it is retured unchanged.
   *
   *  cutWWW
   *  cutFragment
   *  cutQueryString
   *  cutQueryStringAndFragment
   *
-  * Извлечь значение параметра в URL, если он есть. Вернуть пустую строку, если его нет.
-  * Если таких параметров много - вернуть значение первого. Значение не разэскейпливается.
+  * Extract value of parameter in query string or in fragment identifier. Return empty string, if URL has no such parameter.
+  * If there are many parameters with same name - return value of first one. Value is not %-decoded.
   *
   *  extractURLParameter(URL, name)
   *
-  * Извлечь все параметры из URL в виде массива строк вида name=value.
+  * Extract all parameters from URL in form of array of strings name=value.
   *  extractURLParameters(URL)
   *
-  * Извлечь все имена параметров из URL в виде массива строк
+  * Extract names of all parameters from URL in form of array of strings.
   *  extractURLParameterNames(URL)
   *
-  * Убрать указанный параметр из URL.
+  * Remove specified parameter from URL.
   *  cutURLParameter(URL, name)
   *
-  * Получить массив иерархии URL. См. функцию nextURLInHierarchy в URLParser.
+  * Get array of URL 'hierarchy' as in Yandex.Metrica tree-like reports. See docs.
   *  URLHierarchy(URL)
   */
 
@@ -164,10 +164,10 @@ struct ExtractFirstSignificantSubdomain
 		if (!last_3_periods[2])
 			last_3_periods[2] = begin - 1;
 
-		if (!strncmp(last_3_periods[1] + 1, "com", 3) ||
-			!strncmp(last_3_periods[1] + 1, "net", 3) ||
-			!strncmp(last_3_periods[1] + 1, "org", 3) ||
-			!strncmp(last_3_periods[1] + 1, "co", 2))
+		if (!strncmp(last_3_periods[1] + 1, "com.", 4)		/// Note that in ColumnString every value has zero byte after it.
+			|| !strncmp(last_3_periods[1] + 1, "net.", 4)
+			|| !strncmp(last_3_periods[1] + 1, "org.", 4)
+			|| !strncmp(last_3_periods[1] + 1, "co.", 3))
 		{
 			res_data += last_3_periods[2] + 1 - begin;
 			res_size = last_3_periods[1] - last_3_periods[2] - 1;

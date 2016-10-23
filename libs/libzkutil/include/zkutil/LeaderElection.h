@@ -9,64 +9,30 @@
 namespace zkutil
 {
 
-/** Реализует метод выбора лидера, описанный здесь: http://zookeeper.apache.org/doc/r3.4.5/recipes.html#sc_leaderElection
+/** Implements leader election algorithm described here: http://zookeeper.apache.org/doc/r3.4.5/recipes.html#sc_leaderElection
   */
 class LeaderElection
 {
 public:
 	using LeadershipHandler = std::function<void()>;
 
-	/** handler вызывается, когда этот экземпляр становится лидером.
+	/** handler is called when this instance become leader.
 	  */
 	LeaderElection(const std::string & path_, ZooKeeper & zookeeper_, LeadershipHandler handler_, const std::string & identifier_ = "")
-		: path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_),
-		log(&Logger::get("LeaderElection"))
+		: path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_)
 	{
-		node = EphemeralNodeHolder::createSequential(path + "/leader_election-", zookeeper, identifier);
-
-		std::string node_path = node->getPath();
-		node_name = node_path.substr(node_path.find_last_of('/') + 1);
-
-		thread = std::thread(&LeaderElection::threadFunction, this);
+		createNode();
 	}
 
-	enum State
+	void yield()
 	{
-		WAITING_LEADERSHIP,
-		LEADER,
-		LEADERSHIP_LOST
-	};
-
-	/// если возвращает LEADER, то еще sessionTimeoutMs мы будем лидером, даже если порвется соединение с zookeeper
-	State getState()
-	{
-		if (state == LEADER)
-		{
-			try
-			{
-				/// возможно, если сессия разорвалась и заново был вызван init
-				if (!zookeeper.exists(node->getPath()))
-				{
-					LOG_WARNING(log, "Leadership lost. Node " << node->getPath() << " doesn't exist.");
-					state = LEADERSHIP_LOST;
-				}
-			}
-			catch (const KeeperException & e)
-			{
-				LOG_WARNING(log, "Leadership lost. e.message() = " << e.message());
-				state = LEADERSHIP_LOST;
-			}
-		}
-
-		return state;
-
+		releaseNode();
+		createNode();
 	}
 
 	~LeaderElection()
 	{
-		shutdown = true;
-		event->set();
-		thread.join();
+		releaseNode();
 	}
 
 private:
@@ -79,12 +45,28 @@ private:
 	std::string node_name;
 
 	std::thread thread;
-	volatile bool shutdown = false;
+	std::atomic<bool> shutdown {false};
 	zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
-	State state = WAITING_LEADERSHIP;
+	void createNode()
+	{
+		shutdown = false;
+		node = EphemeralNodeHolder::createSequential(path + "/leader_election-", zookeeper, identifier);
 
-	Logger * log;
+		std::string node_path = node->getPath();
+		node_name = node_path.substr(node_path.find_last_of('/') + 1);
+
+		thread = std::thread(&LeaderElection::threadFunction, this);
+	}
+
+	void releaseNode()
+	{
+		shutdown = true;
+		event->set();
+		if (thread.joinable())
+			thread.join();
+		node = nullptr;
+	}
 
 	void threadFunction()
 	{
@@ -102,7 +84,6 @@ private:
 
 				if (it == children.begin())
 				{
-					state = LEADER;
 					handler();
 					return;
 				}

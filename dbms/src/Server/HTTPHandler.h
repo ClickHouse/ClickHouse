@@ -25,7 +25,7 @@ public:
 		std::shared_ptr<WriteBuffer> out_maybe_compressed;
 	};
 
-	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response);
+	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 
 	void trySendExceptionToClient(const std::string & s,
 		Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,

@@ -50,7 +50,7 @@
 #include "InterserverIOHTTPHandler.h"
 #include "TCPHandler.h"
 #include "MetricsTransmitter.h"
-#include "UsersConfigReloader.h"
+#include "ConfigReloader.h"
 #include "StatusFile.h"
 
 
@@ -63,11 +63,11 @@ namespace ErrorCodes
 }
 
 
-/// Отвечает "Ok.\n". Используется для проверки живости.
+/// Response with "Ok.\n". Used for availability checks.
 class PingRequestHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
 	{
 		try
 		{
@@ -82,11 +82,11 @@ public:
 };
 
 
-/// Отвечает 404 с подробным объяснением.
+/// Response with 404 and verbose description.
 class NotFoundHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
 	{
 		try
 		{
@@ -122,7 +122,7 @@ public:
 	HTTPRequestHandlerFactory(Server & server_, const std::string & name_)
 		: server(server_), log(&Logger::get(name_)), name(name_) {}
 
-	Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request)
+	Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override
 	{
 		LOG_TRACE(log, "HTTP Request for " << name << ". "
 			<< "Method: " << request.getMethod()
@@ -167,7 +167,7 @@ private:
 public:
 	TCPConnectionFactory(Server & server_) : server(server_), log(&Logger::get("TCPConnectionFactory")) {}
 
-	Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket)
+	Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket) override
 	{
 		LOG_TRACE(log, "TCP Request. " << "Address: " << socket.peerAddress().toString());
 
@@ -187,9 +187,23 @@ int Server::main(const std::vector<std::string> & args)
 	if (path.back() != '/')
 		path += '/';
 
+	/** Context contains all that query execution is dependent:
+	  *  settings, available functions, data types, aggregate functions, databases...
+	  */
+	global_context = std::make_unique<Context>();
+
+	global_context->setGlobalContext(*global_context);
+	global_context->setPath(path);
+
+	std::string default_database = config().getString("default_database", "default");
+
+	/// Create directories for 'path' and for default database, if not exist.
+	Poco::File(path + "data/" + default_database).createDirectories();
+	Poco::File(path + "metadata/" + default_database).createDirectories();
+
 	StatusFile status{path + "status"};
 
-	/// Попробуем повысить ограничение на число открытых файлов.
+	/// Try to increase limit on number of opened files.
 	{
 		rlimit rlim;
 		if (getrlimit(RLIMIT_NOFILE, &rlim))
@@ -213,18 +227,10 @@ int Server::main(const std::vector<std::string> & args)
 	static ServerErrorHandler error_handler;
 	Poco::ErrorHandler::set(&error_handler);
 
-	/// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
+	/// Initialize DateLUT early, to not interfere with running time of first query.
 	LOG_DEBUG(log, "Initializing DateLUT.");
 	DateLUT::instance();
 	LOG_TRACE(log, "Initialized DateLUT.");
-
-	global_context = std::make_unique<Context>();
-
-	/** Контекст содержит всё, что влияет на обработку запроса:
-	  *  настройки, набор функций, типов данных, агрегатных функций, баз данных...
-	  */
-	global_context->setGlobalContext(*global_context);
-	global_context->setPath(path);
 
 	/// Directory with temporary data for processing of hard queries.
 	{
@@ -279,29 +285,34 @@ int Server::main(const std::vector<std::string> & args)
 	if (config().has("macros"))
 		global_context->setMacros(Macros(config(), "macros"));
 
-	std::string users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
-	auto users_config_reloader = std::make_unique<UsersConfigReloader>(users_config_path, global_context.get());
+	/// Initialize automatic config updater
+	std::string main_config_path = config().getString("config-file", "config.xml");
+	std::string users_config_path = config().getString("users_config", main_config_path);
+	std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
+	auto config_reloader = std::make_unique<ConfigReloader>(main_config_path, users_config_path, include_from_path, global_context.get());
 
-	/// Максимальное количество одновременно выполняющихся запросов.
+	/// Limit on total number of coucurrently executed queries.
 	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
 
-	/// Размер кэша разжатых блоков. Если нулевой - кэш отключён.
+	/// Size of cache for uncompressed blocks. Zero means disabled.
 	size_t uncompressed_cache_size = parse<size_t>(config().getString("uncompressed_cache_size", "0"));
 	if (uncompressed_cache_size)
 		global_context->setUncompressedCache(uncompressed_cache_size);
 
-	/// Размер кэша засечек. Обязательный параметр.
+	/// Size of cache for marks (index of MergeTree family of tables). It is necessary.
 	size_t mark_cache_size = parse<size_t>(config().getString("mark_cache_size"));
 	if (mark_cache_size)
 		global_context->setMarkCache(mark_cache_size);
 
-	/// Загружаем настройки.
+	/// Load global settings from default profile.
 	Settings & settings = global_context->getSettingsRef();
 	global_context->setSetting("profile", config().getString("default_profile", "default"));
 
 	LOG_INFO(log, "Loading metadata.");
 	loadMetadata(*global_context);
 	LOG_DEBUG(log, "Loaded metadata.");
+
+	global_context->setCurrentDatabase(default_database);
 
 	/// Create system tables.
 	if (!global_context->isDatabaseExist("system"))
@@ -339,8 +350,6 @@ int Server::main(const std::vector<std::string> & args)
 	if (has_zookeeper)
 		system_database->attachTable("zookeeper", StorageSystemZooKeeper::create("zookeeper"));
 
-	global_context->setCurrentDatabase(config().getString("default_database", "default"));
-
 	bool has_resharding_worker = false;
 	if (has_zookeeper && config().has("resharding"))
 	{
@@ -353,17 +362,17 @@ int Server::main(const std::vector<std::string> & args)
 	SCOPE_EXIT(
 		LOG_DEBUG(log, "Closed all connections.");
 
-		/** Попросим завершить фоновую работу у всех движков таблиц,
-		  *  а также у query_log-а.
-		  * Это важно делать заранее, не в деструкторе Context-а, так как
-		  *  движки таблиц могут при уничтожении всё ещё пользоваться Context-ом.
+		/** Ask to cancel background jobs all table engines,
+		  *  and also query_log.
+		  * It is important to do early, not in destructor of Context, because
+		  *  table engines could use Context on destroy.
 		  */
 		LOG_INFO(log, "Shutting down storages.");
 		global_context->shutdown();
 		LOG_DEBUG(log, "Shutted down storages.");
 
-		/** Явно уничтожаем контекст - это удобнее, чем в деструкторе Server-а, так как ещё доступен логгер.
-		  * В этот момент никто больше не должен владеть shared-частью контекста.
+		/** Explicitly destroy Context. It is more convenient than in destructor of Server, becuase logger is still available.
+		  * At this moment, no one could own shared part of Context.
 		  */
 		global_context.reset();
 
@@ -471,7 +480,7 @@ int Server::main(const std::vector<std::string> & args)
 
 			LOG_DEBUG(log, "Waiting for current connections to close.");
 
-			users_config_reloader.reset();
+			     config_reloader.reset();
 
 			is_cancelled = true;
 

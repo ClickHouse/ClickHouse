@@ -10,6 +10,7 @@
 #include <ext/range.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "writeParenthesisedString.h"
+#include <memory>
 
 
 namespace DB
@@ -45,7 +46,7 @@ public:
 		  query_builder{dict_struct, db, table, where},
 		  sample_block{sample_block}, context(context),
 		  is_local{isLocalAddress({ host, port })},
-		  pool{is_local ? nullptr : std::make_unique<ConnectionPool>(
+		  pool{is_local ? nullptr : std::make_shared<ConnectionPool>(
 			  max_connections, host, port, db, user, password,
 			  "ClickHouseDictionarySource")
 		  },
@@ -61,7 +62,7 @@ public:
 		  query_builder{dict_struct, db, table, where},
 		  sample_block{other.sample_block}, context(other.context),
 		  is_local{other.is_local},
-		  pool{is_local ? nullptr : std::make_unique<ConnectionPool>(
+		  pool{is_local ? nullptr : std::make_shared<ConnectionPool>(
 			  max_connections, host, port, db, user, password,
 			  "ClickHouseDictionarySource")},
 		  load_all_query{other.load_all_query}
@@ -74,7 +75,7 @@ public:
 		*/
 		if (is_local)
 			return executeQuery(load_all_query, context, true).in;
-		return std::make_shared<RemoteBlockInputStream>(pool.get(), load_all_query, nullptr);
+		return std::make_shared<RemoteBlockInputStream>(pool, load_all_query, nullptr);
 	}
 
 	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
@@ -107,7 +108,7 @@ private:
 	{
 		if (is_local)
 			return executeQuery(query, context, true).in;
-		return std::make_shared<RemoteBlockInputStream>(pool.get(), query, nullptr);
+		return std::make_shared<RemoteBlockInputStream>(pool, query, nullptr);
 	}
 
 
@@ -123,7 +124,7 @@ private:
 	Block sample_block;
 	Context & context;
 	const bool is_local;
-	std::unique_ptr<ConnectionPool> pool;
+	ConnectionPoolPtr pool;
 	const std::string load_all_query;
 };
 

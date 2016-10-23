@@ -58,16 +58,16 @@ private:
 		std::uint64_t error_count;
 	};
 
-	/** Имя словаря -> словарь.
+	/** name -> dictionary.
 	  */
 	std::unordered_map<std::string, DictionaryInfo> dictionaries;
 
-	/** Здесь находятся словари, которых ещё ни разу не удалось загрузить.
-	  * В dictionaries они тоже присутствуют, но с нулевым указателем dict.
+	/** Here are dictionaries, that has been never loaded sussessfully.
+	  * They are also in 'dictionaries', but with nullptr as 'dict'.
 	  */
 	std::unordered_map<std::string, FailedDictionaryInfo> failed_dictionaries;
 
-	/** И для обычных и для failed_dictionaries.
+	/** Both for dictionaries and failed_dictionaries.
 	  */
 	std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
 
@@ -99,13 +99,13 @@ private:
 	}
 
 public:
-	/// Справочники будут обновляться в отдельном потоке, каждые reload_period секунд.
+	/// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
 	ExternalDictionaries(Context & context, const bool throw_on_error)
 		: context(context), log(&Logger::get("ExternalDictionaries"))
 	{
 		{
-			/** При синхронной загрузки внешних словарей в момент выполнения запроса,
-			  *  не нужно использовать ограничение на расход памяти запросом.
+			/** During synchronous loading of external dictionaries at moment of query execution,
+			  *  we should not use per query memory limit.
 			  */
 			struct TemporarilyDisableMemoryTracker
 			{

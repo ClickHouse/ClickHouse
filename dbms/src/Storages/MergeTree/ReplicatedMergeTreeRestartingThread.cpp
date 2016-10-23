@@ -45,16 +45,15 @@ void ReplicatedMergeTreeRestartingThread::run()
 
 	setThreadName("ReplMTRestart");
 
-	try
-	{
-		bool first_time = true;					/// Активация реплики в первый раз.
-		bool need_restart = false;				/// Перезапуск по собственной инициативе, чтобы отдать лидерство.
-		time_t prev_time_of_check_delay = 0;
+	bool first_time = true;					/// Активация реплики в первый раз.
+	time_t prev_time_of_check_delay = 0;
 
-		/// Запуск реплики при старте сервера/создании таблицы. Перезапуск реплики при истечении сессии с ZK.
-		while (!need_stop)
+	/// Запуск реплики при старте сервера/создании таблицы. Перезапуск реплики при истечении сессии с ZK.
+	while (!need_stop)
+	{
+		try
 		{
-			if (first_time || need_restart || storage.getZooKeeper()->expired())
+			if (first_time || storage.getZooKeeper()->expired())
 			{
 				if (first_time)
 				{
@@ -62,10 +61,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 				}
 				else
 				{
-					if (need_restart)
-						LOG_WARNING(log, "Will reactivate replica.");
-					else
-						LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
+					LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
 
 					if (!storage.is_readonly)
 						CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
@@ -101,7 +97,6 @@ void ReplicatedMergeTreeRestartingThread::run()
 					CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
 				storage.is_readonly = false;
 				first_time = false;
-				need_restart = false;
 			}
 
 			time_t current_time = time(0);
@@ -111,47 +106,37 @@ void ReplicatedMergeTreeRestartingThread::run()
 				time_t absolute_delay = 0;
 				time_t relative_delay = 0;
 
-				bool error = false;
-				try
-				{
-					storage.getReplicaDelays(absolute_delay, relative_delay);
-					LOG_TRACE(log, "Absolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".");
-				}
-				catch (...)
-				{
-					tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot get replica delays");
-					error = true;
-				}
+				storage.getReplicaDelays(absolute_delay, relative_delay);
+				LOG_TRACE(log, "Absolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".");
 
 				prev_time_of_check_delay = current_time;
 
 				/// Уступаем лидерство, если относительное отставание больше порога.
 				if (storage.is_leader_node
-					&& (error || relative_delay > static_cast<time_t>(storage.data.settings.min_relative_delay_to_yield_leadership)))
+					&& relative_delay > static_cast<time_t>(storage.data.settings.min_relative_delay_to_yield_leadership))
 				{
-					if (error)
-						LOG_INFO(log, "Will yield leadership.");
-					else
-						LOG_INFO(log, "Relative replica delay (" << relative_delay << " seconds) is bigger than threshold ("
-							<< storage.data.settings.min_relative_delay_to_yield_leadership << "). Will yield leadership.");
+					LOG_INFO(log, "Relative replica delay (" << relative_delay << " seconds) is bigger than threshold ("
+						<< storage.data.settings.min_relative_delay_to_yield_leadership << "). Will yield leadership.");
 
 					ProfileEvents::increment(ProfileEvents::ReplicaYieldLeadership);
 
-					need_restart = true;
-					continue;
+					if (storage.is_leader_node)
+					{
+						storage.is_leader_node = false;
+						if (storage.merge_selecting_thread.joinable())
+							storage.merge_selecting_thread.join();
+
+						storage.leader_election->yield();
+					}
 				}
 			}
-
-			wakeup_event.tryWait(check_period_ms);
 		}
-	}
-	catch (...)
-	{
-		tryLogCurrentException("StorageReplicatedMergeTree::restartingThread");
-		LOG_ERROR(log, "Unexpected exception in restartingThread. The storage will be readonly until server restart.");
-		goReadOnlyPermanently();
-		LOG_DEBUG(log, "Restarting thread finished");
-		return;
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+
+		wakeup_event.tryWait(check_period_ms);
 	}
 
 	try
@@ -176,6 +161,10 @@ void ReplicatedMergeTreeRestartingThread::run()
 			storage.unreplicated_merger->cancelForever();
 
 		partialShutdown();
+
+		if (storage.queue_task_handle)
+			storage.context.getBackgroundPool().removeTask(storage.queue_task_handle);
+		storage.queue_task_handle.reset();
 	}
 	catch (...)
 	{
@@ -211,9 +200,10 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 		storage.alter_thread = std::make_unique<ReplicatedMergeTreeAlterThread>(storage);
 		storage.cleanup_thread = std::make_unique<ReplicatedMergeTreeCleanupThread>(storage);
 		storage.part_check_thread.start();
-		storage.queue_task_handle = storage.context.getBackgroundPool().addTask(
-			std::bind(&StorageReplicatedMergeTree::queueTask, &storage, std::placeholders::_1));
-		storage.queue_task_handle->wake();
+
+		if (!storage.queue_task_handle)
+			storage.queue_task_handle = storage.context.getBackgroundPool().addTask(
+				std::bind(&StorageReplicatedMergeTree::queueTask, &storage, std::placeholders::_1));
 
 		return true;
 	}
@@ -362,11 +352,15 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 	storage.replica_is_active_node = nullptr;
 
 	LOG_TRACE(log, "Waiting for threads to finish");
-	if (storage.is_leader_node)
 	{
-		storage.is_leader_node = false;
-		if (storage.merge_selecting_thread.joinable())
-			storage.merge_selecting_thread.join();
+		std::lock_guard<std::mutex> lock(storage.leader_node_mutex);
+
+		if (storage.is_leader_node)
+		{
+			storage.is_leader_node = false;
+			if (storage.merge_selecting_thread.joinable())
+				storage.merge_selecting_thread.join();
+		}
 	}
 	if (storage.queue_updating_thread.joinable())
 		storage.queue_updating_thread.join();
@@ -375,30 +369,21 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 	storage.alter_thread.reset();
 	storage.part_check_thread.stop();
 
-	if (storage.queue_task_handle)
-		storage.context.getBackgroundPool().removeTask(storage.queue_task_handle);
-	storage.queue_task_handle.reset();
-
 	/// Yielding leadership only after finish of merge_selecting_thread.
 	/// Otherwise race condition with parallel run of merge selecting thread on different servers is possible.
+	///
+	/// On the other hand, leader_election could call becomeLeader() from own thread after
+	/// merge_selecting_thread is finished and restarting_thread is destroyed.
+	/// becomeLeader() recreates merge_selecting_thread and it becomes joinable again, even restarting_thread is destroyed.
+	/// But restarting_thread is responsible to stop merge_selecting_thread.
+	/// It will lead to std::terminate in ~StorageReplicatedMergeTree().
+	/// Such behaviour was rarely observed on DROP queries.
+	/// Therefore we need either avoid becoming leader after first shutdown call (more deliberate choice),
+	/// either manually wait merge_selecting_thread.join() inside ~StorageReplicatedMergeTree(), either or something third.
+	/// So, we added shutdown check in becomeLeader() and made its creation and deletion atomic.
 	storage.leader_election = nullptr;
 
 	LOG_TRACE(log, "Threads finished");
 }
-
-
-void ReplicatedMergeTreeRestartingThread::goReadOnlyPermanently()
-{
-	LOG_INFO(log, "Going to readonly mode");
-	ProfileEvents::increment(ProfileEvents::ReplicaPermanentlyReadonly);
-
-	if (!storage.is_readonly)
-		CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
-	storage.is_readonly = true;
-	stop();
-
-	partialShutdown();
-}
-
 
 }

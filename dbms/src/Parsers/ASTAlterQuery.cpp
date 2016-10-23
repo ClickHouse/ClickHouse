@@ -74,10 +74,10 @@ void ASTAlterQuery::formatImpl(const FormatSettings & settings, FormatState & st
 	{
 		if (!database.empty())
 		{
-			settings.ostr << indent_str << database;
+			settings.ostr << indent_str << backQuoteIfNeed(database);
 			settings.ostr << ".";
 		}
-		settings.ostr << indent_str << table;
+		settings.ostr << indent_str << backQuoteIfNeed(table);
 	}
 	settings.ostr << settings.nl_or_ws;
 
