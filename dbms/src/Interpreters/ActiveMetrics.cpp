@@ -65,18 +65,18 @@ void ActiveMetrics::run()
 }
 
 
-template <typename Max>
-static void calculateMax(Max & max, Max x)
+template <typename Max, typename T>
+static void calculateMax(Max & max, T x)
 {
-	if (x > max)
+	if (Max(x) > max)
 		max = x;
 }
 
-template <typename Max, typename Sum>
-static void calculateMaxAndSum(Max & max, Sum & sum, Max x)
+template <typename Max, typename Sum, typename T>
+static void calculateMaxAndSum(Max & max, Sum & sum, T x)
 {
 	sum += x;
-	if (x > max)
+	if (Max(x) > max)
 		max = x;
 }
 
