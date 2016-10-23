@@ -27,7 +27,7 @@ ActiveMetrics::~ActiveMetrics()
 	}
 	catch (...)
 	{
-		DB::tryLogCurrentException(__FUNCTION__);
+		DB::tryLogCurrentException(__PRETTY_FUNCTION__);
 	}
 }
 
@@ -38,12 +38,16 @@ void ActiveMetrics::run()
 
 	std::unique_lock<std::mutex> lock{mutex};
 
-	/// To be distant with moment of transmission of metrics. It is not strictly necessary.
-	cond.wait_until(lock, std::chrono::system_clock::now() + std::chrono::seconds(30), [this] { return quit; });
+	/// Next minute + 30 seconds. To be distant with moment of transmission of metrics, see MetricsTransmitter.
+	const auto get_next_minute = []
+	{
+		return std::chrono::time_point_cast<std::chrono::minutes, std::chrono::system_clock>(
+			std::chrono::system_clock::now() + std::chrono::minutes(1)) + std::chrono::seconds(30);
+	};
 
 	while (true)
 	{
-		if (cond.wait_until(lock, std::chrono::system_clock::now() + std::chrono::seconds(60), [this] { return quit; }))
+		if (cond.wait_until(lock, get_next_minute(), [this] { return quit; }))
 			break;
 
 		try

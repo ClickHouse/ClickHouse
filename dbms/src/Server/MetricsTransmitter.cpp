@@ -23,7 +23,7 @@ MetricsTransmitter::~MetricsTransmitter()
 	}
 	catch (...)
 	{
-		DB::tryLogCurrentException(__FUNCTION__);
+		DB::tryLogCurrentException(__PRETTY_FUNCTION__);
 	}
 }
 
@@ -32,6 +32,7 @@ void MetricsTransmitter::run()
 {
 	setThreadName("MetricsTransmit");
 
+	/// Next minute at 00 seconds. To avoid time drift and transmit values exactly each minute.
 	const auto get_next_minute = []
 	{
 		return std::chrono::time_point_cast<std::chrono::minutes, std::chrono::system_clock>(

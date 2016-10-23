@@ -361,8 +361,6 @@ int Server::main(const std::vector<std::string> & args)
 	}
 
 	SCOPE_EXIT(
-		LOG_DEBUG(log, "Closed all connections.");
-
 		/** Ask to cancel background jobs all table engines,
 		  *  and also query_log.
 		  * It is important to do early, not in destructor of Context, because
@@ -481,12 +479,14 @@ int Server::main(const std::vector<std::string> & args)
 
 			LOG_DEBUG(log, "Waiting for current connections to close.");
 
-			     config_reloader.reset();
-
 			is_cancelled = true;
 
 			http_server->stop();
 			tcp_server->stop();
+
+			LOG_DEBUG(log, "Closed all connections.");
+
+			config_reloader.reset();
 		);
 
 		/// try to load dictionaries immediately, throw on error and die
