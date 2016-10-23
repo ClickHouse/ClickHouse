@@ -20,6 +20,7 @@
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/ProcessList.h>
+#include <DB/Interpreters/ActiveMetrics.h>
 
 #include <DB/Storages/System/StorageSystemNumbers.h>
 #include <DB/Storages/System/StorageSystemTables.h>
@@ -496,14 +497,17 @@ int Server::main(const std::vector<std::string> & args)
 				global_context->tryCreateDictionaries();
 				global_context->tryCreateExternalDictionaries();
 			}
-
-			waitForTerminationRequest();
 		}
 		catch (...)
 		{
 			LOG_ERROR(log, "Caught exception while loading dictionaries.");
 			throw;
 		}
+
+		/// This object will periodically calculate some metrics.
+		ActiveMetrics active_metrics(*global_context);
+
+		waitForTerminationRequest();
 	}
 
 	return Application::EXIT_OK;

@@ -35,6 +35,19 @@
 	M(QueryThread) \
 	M(ReadonlyReplica) \
 	M(MemoryTracking) \
+	M(MarkCacheBytes) \
+	M(MarkCacheFiles) \
+	M(UncompressedCacheBytes) \
+	M(UncompressedCacheCells) \
+	M(ReplicasMaxQueueSize) \
+	M(ReplicasMaxInsertsInQueue) \
+	M(ReplicasMaxMergesInQueue) \
+	M(ReplicasSumQueueSize) \
+	M(ReplicasSumInsertsInQueue) \
+	M(ReplicasSumMergesInQueue) \
+	M(ReplicasMaxAbsoluteDelay) \
+	M(ReplicasMaxRelativeDelay) \
+	M(MaxPartCountForPartition) \
 	\
 	M(END)
 

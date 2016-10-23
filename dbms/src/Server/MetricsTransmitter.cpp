@@ -32,10 +32,10 @@ void MetricsTransmitter::run()
 {
 	setThreadName("MetricsTransmit");
 
-	const auto get_next_minute = [] {
+	const auto get_next_minute = []
+	{
 		return std::chrono::time_point_cast<std::chrono::minutes, std::chrono::system_clock>(
-			std::chrono::system_clock::now() + std::chrono::minutes(1)
-		);
+			std::chrono::system_clock::now() + std::chrono::minutes(1));
 	};
 
 	std::unique_lock<std::mutex> lock{mutex};

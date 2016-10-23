@@ -371,6 +371,7 @@ add_library (dbms
 	include/DB/Interpreters/ClusterProxy/DescribeQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/AlterQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/Query.h
+	include/DB/Interpreters/ActiveMetrics.h
 	include/DB/Common/Allocator.h
 	include/DB/Common/CombinedCardinalityEstimator.h
 	include/DB/Common/ExternalTable.h
@@ -852,6 +853,7 @@ add_library (dbms
 	src/Interpreters/ClusterProxy/DescribeQueryConstructor.cpp
 	src/Interpreters/ClusterProxy/AlterQueryConstructor.cpp
 	src/Interpreters/ClusterProxy/Query.cpp
+	src/Interpreters/ActiveMetrics.cpp
 
 	src/Functions/FunctionFactory.cpp
 	src/Functions/FunctionsArithmetic.cpp
