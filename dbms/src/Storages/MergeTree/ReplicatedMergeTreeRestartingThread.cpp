@@ -107,7 +107,9 @@ void ReplicatedMergeTreeRestartingThread::run()
 				time_t relative_delay = 0;
 
 				storage.getReplicaDelays(absolute_delay, relative_delay);
-				LOG_TRACE(log, "Absolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".");
+
+				if (absolute_delay)
+					LOG_TRACE(log, "Absolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".");
 
 				prev_time_of_check_delay = current_time;
 
