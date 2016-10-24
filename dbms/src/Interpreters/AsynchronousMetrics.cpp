@@ -205,6 +205,8 @@ void AsynchronousMetrics::update()
 
 		auto malloc_metrics =
 		{
+			"generic.current_allocated_bytes",
+			"generic.heap_size",
 			"tcmalloc.current_total_thread_cache_bytes",
 			"tcmalloc.central_cache_free_bytes",
 			"tcmalloc.transfer_cache_free_bytes",
