@@ -99,7 +99,13 @@ private:
 
 	/** Оставить в каждом запросе цепочки UNION ALL только нужные столбцы секции SELECT.
 	 *  Однако, если используется хоть один DISTINCT в цепочке, то все столбцы считаются нужными,
-	 *  так как иначе DISTINCT работал бы по-другому.
+	 *   так как иначе DISTINCT работал бы по-другому.
+	 *
+	 *  Always leave arrayJoin, because it changes number of rows.
+	 *
+	 *  TODO If query doesn't have GROUP BY, but have aggregate functions,
+	 *   then leave at least one aggregate function,
+	 *   In order that fact of aggregation has not been lost.
 	 */
 	void rewriteExpressionList(const Names & required_column_names);
 
