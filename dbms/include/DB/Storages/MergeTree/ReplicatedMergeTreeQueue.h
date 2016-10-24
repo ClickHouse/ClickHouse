@@ -157,7 +157,7 @@ public:
 	  * Если в процессе обработки было исключение - сохраняет его в entry.
 	  * Возвращает true, если в процессе обработки не было исключений.
 	  */
-	bool processEntry(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
+	bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
 	/// Будет ли кусок в будущем слит в более крупный (или мерджи кусков в данном диапазоне запрещены)?
 	bool partWillBeMergedOrMergesDisabled(const String & part_name) const;

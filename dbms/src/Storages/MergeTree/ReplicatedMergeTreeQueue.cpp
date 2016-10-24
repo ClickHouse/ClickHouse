@@ -577,14 +577,17 @@ ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToP
 }
 
 
-bool ReplicatedMergeTreeQueue::processEntry(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func)
+bool ReplicatedMergeTreeQueue::processEntry(
+	std::function<zkutil::ZooKeeperPtr()> get_zookeeper,
+	LogEntryPtr & entry,
+	const std::function<bool(LogEntryPtr &)> func)
 {
 	std::exception_ptr saved_exception;
 
 	try
 	{
 		if (func(entry))
-			remove(zookeeper, entry);
+			remove(get_zookeeper(), entry);
 	}
 	catch (...)
 	{
