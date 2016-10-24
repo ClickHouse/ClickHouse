@@ -422,9 +422,6 @@ void TCPHandler::receiveHello()
 {
 	/// Получить hello пакет.
 	UInt64 packet_type = 0;
-	String client_name;
-	UInt64 client_version_major = 0;
-	UInt64 client_version_minor = 0;
 	String user = "default";
 	String password;
 
@@ -532,8 +529,15 @@ void TCPHandler::receiveQuery()
 		if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
 			client_info.read(*in);
 
+		/// For better support of old clients, that does not send ClientInfo.
 		if (client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)
+		{
 			client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+			client_info.client_name = client_name;
+			client_info.client_version_major = client_version_major;
+			client_info.client_version_minor = client_version_minor;
+			client_info.client_revision = client_revision;
+		}
 
 		/// Set fields, that are known apriori.
 		client_info.interface = ClientInfo::Interface::TCP;
