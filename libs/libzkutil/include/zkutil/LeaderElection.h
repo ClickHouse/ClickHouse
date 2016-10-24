@@ -17,6 +17,11 @@ public:
 	using LeadershipHandler = std::function<void()>;
 
 	/** handler is called when this instance become leader.
+	  *
+	  * identifier - if not empty, must uniquely (within same path) identify participant of leader election.
+	  * It means that different participants of leader election have different identifiers
+	  *  and existence of more than one ephemeral node with same identifier indicates an error
+	  *  (see cleanOldEphemeralNodes).
 	  */
 	LeaderElection(const std::string & path_, ZooKeeper & zookeeper_, LeadershipHandler handler_, const std::string & identifier_ = "")
 		: path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_)
@@ -56,7 +61,38 @@ private:
 		std::string node_path = node->getPath();
 		node_name = node_path.substr(node_path.find_last_of('/') + 1);
 
+		cleanOldEphemeralNodes();
+
 		thread = std::thread(&LeaderElection::threadFunction, this);
+	}
+
+	void cleanOldEphemeralNodes()
+	{
+		if (identifier.empty())
+			return;
+
+		/** If there are nodes with same identifier, remove them.
+		  * Such nodes could still be alive after failed attempt of removal,
+		  *  if it was temporary communication failure, that was continued for more than session timeout,
+		  *  but ZK session is still alive for unknown reason, and someone still holds that ZK session.
+		  * See comments in destructor of EphemeralNodeHolder.
+		  */
+		Strings brothers = zookeeper.getChildren(path);
+		for (const auto & brother : brothers)
+		{
+			if (brother == node_name)
+				continue;
+
+			std::string brother_path = path + "/" + brother;
+			std::string brother_identifier = zookeeper.get(brother_path);
+
+			if (brother_identifier == identifier)
+			{
+				LOG_WARNING(&Logger::get("LeaderElection"), "Found obsolete ephemeral node for identifier "
+					+ identifier + ", removing: " + brother_path);
+				zookeeper.tryRemoveWithRetries(brother_path);
+			}
+		}
 	}
 
 	void releaseNode()
