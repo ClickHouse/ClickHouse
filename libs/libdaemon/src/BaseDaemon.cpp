@@ -462,10 +462,14 @@ void BaseDaemon::reloadConfiguration()
 	  * (Чтобы при запуске с минимумом параметров, лог выводился в консоль.)
 	  * При этом, параметры логгирования, заданные в командной строке, не игнорируются.
 	  */
+
+	if (is_local_server && !config().has("config-file"))
+		return;
+
 	std::string log_command_line_option = config().getString("logger.log", "");
 	ConfigurationPtr processed_config = ConfigProcessor(false, true).loadConfig(config().getString("config-file", "config.xml"));
 	config().add(processed_config.duplicate(), PRIO_DEFAULT, false);
-	log_to_console = !config().getBool("application.runAsDaemon", false) && log_command_line_option.empty();
+	log_to_console = !is_daemon && log_command_line_option.empty();
 }
 
 
@@ -584,14 +588,12 @@ void BaseDaemon::buildLoggers()
 	if (config().hasProperty("logger.log") && !log_to_console)
 	{
 		std::string path = createDirectory(config().getString("logger.log"));
-		if (config().getBool("application.runAsDaemon", false)
-			&& chdir(path.c_str()) != 0)
+		if (is_daemon && chdir(path.c_str()) != 0)
 			throw Poco::Exception("Cannot change directory to " + path);
 	}
 	else
 	{
-		if (config().getBool("application.runAsDaemon", false)
-			&& chdir("/tmp") != 0)
+		if (is_daemon && chdir("/tmp") != 0)
 			throw Poco::Exception("Cannot change directory to /tmp");
 	}
 
@@ -696,12 +698,13 @@ void BaseDaemon::closeLogs()
 		logger().warning("Logging to console but received signal to close log file (ignoring).");
 }
 
-void BaseDaemon::initialize(Application& self)
+void BaseDaemon::initialize(Application & self)
 {
 	task_manager.reset(new Poco::TaskManager);
 	ServerApplication::initialize(self);
 
-	bool is_daemon = config().getBool("application.runAsDaemon", false);
+	is_daemon = config().getBool("application.runAsDaemon", false);
+	is_local_server = config().has("local-mode");
 
 	if (is_daemon)
 	{
@@ -882,6 +885,22 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet& _options)
 			.repeatable (false)
 			.argument ("<file>")
 			.binding("pid")
+			);
+
+	_options.addOption(
+		Poco::Util::Option ("local-mode", "M", "[Local mode] Run as standalone binary")
+			.required (false)
+			.repeatable (false)
+			.argument ("<bool>", false)
+			.binding("local-mode")
+			);
+
+	_options.addOption(
+		Poco::Util::Option ("query", "Q", "[Local mode] queries to execute")
+			.required (false)
+			.repeatable (false)
+			.argument ("<string>", true)
+			.binding("query")
 			);
 }
 

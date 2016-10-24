@@ -178,16 +178,67 @@ public:
 };
 
 
+static std::vector<String> splitMultipartQuery(const String & queries)
+{
+	std::vector<String> queries_list;
+
+	ASTPtr ast;
+	ParserQuery parser;
+
+	const char * begin = queries.data();
+	const char * end = begin + queries.size();
+
+	while (begin < end)
+	{
+		const char * pos = begin;
+
+		ast = parseQueryAndMovePosition(parser, pos, end, "", true);
+		if (!ast)
+			break;
+
+		ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*ast);
+
+		if (insert && insert->data)
+		{
+			pos = insert->data;
+			while (*pos && *pos != '\n')
+				++pos;
+			insert->end = pos;
+		}
+
+		queries_list.emplace_back(queries.substr(begin - queries.data(), pos - begin));
+
+		begin = pos;
+		while (isWhitespaceASCII(*begin) || *begin == ';')
+			++begin;
+	}
+
+	return queries_list;
+}
+
+
 int Server::main(const std::vector<std::string> & args)
 {
 	Logger * log = &logger();
 
-	std::string path = config().getString("path");
+	std::string path = config().getString("path", "");
 	Poco::trimInPlace(path);
 	if (path.empty())
-		throw Exception("path configuration parameter is empty");
+	{
+		if (!is_local_server)
+			throw Exception("path configuration parameter is empty");
+		else
+		{
+			std::string tmp_dir_template = Poco::Path::temp() + "clickhouse.XXXXXX";
+			path = mkdtemp(&tmp_dir_template[0]);
+			LOG_INFO(log, "Parameter path is empty, will use '" + path + "' as working dir");
+		}
+	}
 	if (path.back() != '/')
 		path += '/';
+
+	LOG_INFO(log, "local-mode=" << is_local_server << ", is_daemon=" << config().getBool("application.runAsDaemon", false));
+	LOG_INFO(log, "path=" << path << " application.path=" << config().getString("application.path", ""));
 
 	/** Context contains all that query execution is dependent:
 	  *  settings, available functions, data types, aggregate functions, databases...
@@ -200,8 +251,11 @@ int Server::main(const std::vector<std::string> & args)
 	std::string default_database = config().getString("default_database", "default");
 
 	/// Create directories for 'path' and for default database, if not exist.
-	Poco::File(path + "data/" + default_database).createDirectories();
-	Poco::File(path + "metadata/" + default_database).createDirectories();
+	if (!is_local_server)
+	{
+		Poco::File(path + "data/" + default_database).createDirectories();
+		Poco::File(path + "metadata/" + default_database).createDirectories();
+	}
 
 	StatusFile status{path + "status"};
 
@@ -258,16 +312,20 @@ int Server::main(const std::vector<std::string> & args)
 	  * Flags may be cleared automatically after being applied by the server.
 	  * Examples: do repair of local data; clone all replicated tables from replica.
 	  */
-	Poco::File(path + "flags/").createDirectories();
+	{
+		std::string flags_path = path + "flags/";
+		Poco::File(flags_path).createDirectories();
+		global_context->setFlagsPath(flags_path);
+	}
 
 	bool has_zookeeper = false;
-	if (config().has("zookeeper"))
+	if (!is_local_server && config().has("zookeeper"))
 	{
 		global_context->setZooKeeper(std::make_shared<zkutil::ZooKeeper>(config(), "zookeeper"));
 		has_zookeeper = true;
 	}
 
-	if (config().has("interserver_http_port"))
+	if (!is_local_server && config().has("interserver_http_port"))
 	{
 		String this_host = config().getString("interserver_http_host", "");
 
@@ -290,10 +348,74 @@ int Server::main(const std::vector<std::string> & args)
 		global_context->setMacros(Macros(config(), "macros"));
 
 	/// Initialize automatic config updater
-	std::string main_config_path = config().getString("config-file", "config.xml");
-	std::string users_config_path = config().getString("users_config", main_config_path);
-	std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
-	auto config_reloader = std::make_unique<ConfigReloader>(main_config_path, users_config_path, include_from_path, global_context.get());
+	std::unique_ptr<ConfigReloader> config_reloader;
+	if (!is_local_server)
+	{
+		std::string main_config_path = config().getString("config-file", "config.xml");
+		std::string users_config_path = config().getString("users_config", main_config_path);
+		std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
+		config_reloader = std::make_unique<ConfigReloader>(main_config_path, users_config_path, include_from_path, global_context.get());
+	}
+	else
+	{
+		ConfigurationPtr users_config;
+
+		if ((config().has("users_config") || config().has("config-file")))
+		{
+			auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
+			users_config = ConfigProcessor().loadConfig(users_config_path);
+		}
+		else
+		{
+			std::stringstream default_user_stream;
+			default_user_stream <<
+"<yandex>\n"
+"	<profiles>\n"
+"		<default>\n"
+"			<max_memory_usage>10000000000</max_memory_usage>\n"
+"			<use_uncompressed_cache>0</use_uncompressed_cache>\n"
+"			<load_balancing>random</load_balancing>\n"
+"		</default>\n"
+"		<readonly>\n"
+"			<readonly>1</readonly>\n"
+"		</readonly>\n"
+"	</profiles>\n"
+"\n"
+"	<users>\n"
+"		<default>\n"
+"			<password></password>\n"
+"			<networks>\n"
+"				<ip>::/0</ip>\n"
+"			</networks>\n"
+"			<profile>default</profile>\n"
+"			<quota>default</quota>\n"
+"		</default>\n"
+"	</users>\n"
+"\n"
+"	<quotas>\n"
+"		<default>\n"
+"			<interval>\n"
+"				<duration>3600</duration>\n"
+"				<queries>0</queries>\n"
+"				<errors>0</errors>\n"
+"				<result_rows>0</result_rows>\n"
+"				<read_rows>0</read_rows>\n"
+"				<execution_time>0</execution_time>\n"
+"			</interval>\n"
+"		</default>\n"
+"	</quotas>\n"
+"</yandex>\n";
+
+			Poco::XML::InputSource default_user_source(default_user_stream);
+			users_config = ConfigurationPtr(new Poco::Util::XMLConfiguration(&default_user_source));
+		}
+
+		if (users_config)
+			global_context->setUsersConfig(users_config);
+		else
+			throw Exception("Can't load config for users");
+	}
+
 
 	/// Limit on total number of coucurrently executed queries.
 	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
@@ -303,6 +425,10 @@ int Server::main(const std::vector<std::string> & args)
 	if (uncompressed_cache_size)
 		global_context->setUncompressedCache(uncompressed_cache_size);
 
+	/// Workaround
+	if (is_local_server && !config().has("mark_cache_size"))
+		config().setString("mark_cache_size", "5368709120");
+
 	/// Size of cache for marks (index of MergeTree family of tables). It is necessary.
 	size_t mark_cache_size = parse<size_t>(config().getString("mark_cache_size"));
 	if (mark_cache_size)
@@ -310,49 +436,27 @@ int Server::main(const std::vector<std::string> & args)
 
 	/// Load global settings from default profile.
 	Settings & settings = global_context->getSettingsRef();
+	LOG_DEBUG(log, "settings " << &settings);
 	global_context->setSetting("profile", config().getString("default_profile", "default"));
 
-	LOG_INFO(log, "Loading metadata.");
-	loadMetadata(*global_context);
-	LOG_DEBUG(log, "Loaded metadata.");
+	LOG_DEBUG(log, "profile done");
 
-	global_context->setCurrentDatabase(default_database);
-
-	/// Create system tables.
-	if (!global_context->isDatabaseExist("system"))
+	if (!is_local_server)
 	{
-		Poco::File(path + "data/system").createDirectories();
-		Poco::File(path + "metadata/system").createDirectories();
+		LOG_INFO(log, "Loading metadata.");
+		loadMetadata(*global_context);
+		LOG_DEBUG(log, "Loaded metadata.");
 
-		auto system_database = std::make_shared<DatabaseOrdinary>("system", path + "metadata/system/");
-		global_context->addDatabase("system", system_database);
-
-		/// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
-		system_database->loadTables(*global_context, nullptr, true);
+		/// Create system tables.
+		attachSystemTables(path, has_zookeeper);
+	}
+	else
+	{
+		/// Init dummy default DB
+		global_context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
 	}
 
-	DatabasePtr system_database = global_context->getDatabase("system");
-
-	system_database->attachTable("one",			StorageSystemOne::create("one"));
-	system_database->attachTable("numbers", 	StorageSystemNumbers::create("numbers"));
-	system_database->attachTable("numbers_mt", 	StorageSystemNumbers::create("numbers_mt", true));
-	system_database->attachTable("tables", 		StorageSystemTables::create("tables"));
-	system_database->attachTable("parts", 		StorageSystemParts::create("parts"));
-	system_database->attachTable("databases", 	StorageSystemDatabases::create("databases"));
-	system_database->attachTable("processes", 	StorageSystemProcesses::create("processes"));
-	system_database->attachTable("settings", 	StorageSystemSettings::create("settings"));
-	system_database->attachTable("events", 		StorageSystemEvents::create("events"));
-	system_database->attachTable("metrics", 	StorageSystemMetrics::create("metrics"));
-	system_database->attachTable("merges",		StorageSystemMerges::create("merges"));
-	system_database->attachTable("replicas",	StorageSystemReplicas::create("replicas"));
-	system_database->attachTable("replication_queue", StorageSystemReplicationQueue::create("replication_queue"));
-	system_database->attachTable("dictionaries", StorageSystemDictionaries::create("dictionaries"));
-	system_database->attachTable("columns",   	StorageSystemColumns::create("columns"));
-	system_database->attachTable("functions", 	StorageSystemFunctions::create("functions"));
-	system_database->attachTable("clusters", 	StorageSystemClusters::create("clusters", *global_context));
-
-	if (has_zookeeper)
-		system_database->attachTable("zookeeper", StorageSystemZooKeeper::create("zookeeper"));
+	global_context->setCurrentDatabase(default_database);
 
 	bool has_resharding_worker = false;
 	if (has_zookeeper && config().has("resharding"))
@@ -362,6 +466,8 @@ int Server::main(const std::vector<std::string> & args)
 		resharding_worker->start();
 		has_resharding_worker = true;
 	}
+
+	LOG_DEBUG(log, "zookeeper done");
 
 	SCOPE_EXIT(
 		/** Ask to cancel background jobs all table engines,
@@ -381,6 +487,7 @@ int Server::main(const std::vector<std::string> & args)
 		LOG_DEBUG(log, "Destroyed global context.");
 	);
 
+	if (!is_local_server)
 	{
 		const std::string listen_host = config().getString("listen_host", "::");
 
@@ -514,11 +621,79 @@ int Server::main(const std::vector<std::string> & args)
 
 		waitForTerminationRequest();
 	}
+	else if (config().has("query"))
+	{
+		auto queries_str = config().getString("query");
+		LOG_DEBUG(log, "Executing queries: '" << queries_str << "'");
+		auto queries = splitMultipartQuery(queries_str);
+
+		auto local_context = std::make_unique<Context>(*global_context);
+		local_context->setGlobalContext(*global_context);
+		local_context->setUser("default", "", Poco::Net::IPAddress{}, 0, "");
+		local_context->setDefaultFormat("PrettyCompact");
+
+		for (const auto & query : queries)
+		{
+			LOG_DEBUG(log, "Executing query: '" << query << "'");
+			try
+			{
+				ReadBufferFromString read_buf(query);
+				WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
+				BlockInputStreamPtr plan;
+
+				LOG_DEBUG(log, "executing query: " << query);
+				executeQuery(read_buf, write_buf, *local_context, plan, nullptr);
+			}
+			catch (...)
+			{
+				tryLogCurrentException(log, "An error ocurred while executing query");
+				throw;
+			}
+		}
+	}
 
 	return Application::EXIT_OK;
 }
 
+
+void Server::attachSystemTables(const std::string & path, bool has_zookeeper) const
+{
+	if (!global_context->isDatabaseExist("system"))
+	{
+		Poco::File(path + "data/system").createDirectories();
+		Poco::File(path + "metadata/system").createDirectories();
+
+		auto system_database = std::make_shared<DatabaseOrdinary>("system", path + "metadata/system/");
+		global_context->addDatabase("system", system_database);
+
+		/// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
+		system_database->loadTables(*global_context, nullptr, true);
+	}
+
+	DatabasePtr system_database = global_context->getDatabase("system");
+
+	system_database->attachTable("one",			StorageSystemOne::create("one"));
+	system_database->attachTable("numbers", 	StorageSystemNumbers::create("numbers"));
+	system_database->attachTable("numbers_mt", 	StorageSystemNumbers::create("numbers_mt", true));
+	system_database->attachTable("tables", 		StorageSystemTables::create("tables"));
+	system_database->attachTable("parts", 		StorageSystemParts::create("parts"));
+	system_database->attachTable("databases", 	StorageSystemDatabases::create("databases"));
+	system_database->attachTable("processes", 	StorageSystemProcesses::create("processes"));
+	system_database->attachTable("settings", 	StorageSystemSettings::create("settings"));
+	system_database->attachTable("events", 		StorageSystemEvents::create("events"));
+	system_database->attachTable("metrics", 	StorageSystemMetrics::create("metrics"));
+	system_database->attachTable("merges",		StorageSystemMerges::create("merges"));
+	system_database->attachTable("replicas",	StorageSystemReplicas::create("replicas"));
+	system_database->attachTable("replication_queue", StorageSystemReplicationQueue::create("replication_queue"));
+	system_database->attachTable("dictionaries", StorageSystemDictionaries::create("dictionaries"));
+	system_database->attachTable("columns",   	StorageSystemColumns::create("columns"));
+	system_database->attachTable("functions", 	StorageSystemFunctions::create("functions"));
+	system_database->attachTable("clusters", 	StorageSystemClusters::create("clusters", *global_context));
+
+	if (has_zookeeper)
+		system_database->attachTable("zookeeper", StorageSystemZooKeeper::create("zookeeper"));
 }
 
+}
 
 YANDEX_APP_SERVER_MAIN(DB::Server);

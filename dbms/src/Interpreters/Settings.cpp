@@ -1,4 +1,5 @@
 #include <DB/Interpreters/Settings.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -75,6 +76,8 @@ void Settings::set(const String & name, const String & value)
 void Settings::setProfile(const String & profile_name, Poco::Util::AbstractConfiguration & config)
 {
 	String elem = "profiles." + profile_name;
+
+	LOG_DEBUG(&Logger::get("Settings"), "profile_name=" << profile_name << ", config=" << &config);
 
 	if (!config.has(elem))
 		throw Exception("There is no profile '" + profile_name + "' in configuration file.", ErrorCodes::THERE_IS_NO_PROFILE);

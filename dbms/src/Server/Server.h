@@ -57,6 +57,10 @@ protected:
 	}
 
 	int main(const std::vector<std::string> & args);
+
+private:
+
+	void attachSystemTables(const std::string & path, bool has_zookeeper) const;
 };
 
 }

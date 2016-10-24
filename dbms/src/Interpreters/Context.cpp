@@ -83,6 +83,7 @@ struct ContextShared
 
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	String tmp_path;										/// Путь ко временным файлам, возникающим при обработке запроса.
+	String flags_path;										///
 	Databases databases;									/// Список БД и таблиц в них.
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
@@ -256,6 +257,12 @@ String Context::getTemporaryPath() const
 	return shared->tmp_path;
 }
 
+String Context::getFlagsPath() const
+{
+	auto lock = getLock();
+	return shared->flags_path;
+}
+
 
 void Context::setPath(const String & path)
 {
@@ -267,6 +274,12 @@ void Context::setTemporaryPath(const String & path)
 {
 	auto lock = getLock();
 	shared->tmp_path = path;
+}
+
+void Context::setFlagsPath(const String & path)
+{
+	auto lock = getLock();
+	shared->flags_path = path;
 }
 
 
@@ -641,7 +654,10 @@ void Context::setSetting(const String & name, const std::string & value)
 {
 	auto lock = getLock();
 	if (name == "profile")
+	{
+		LOG_DEBUG(&Logger::get("Context"), "shared=" << shared << ", shared->users_config=" << shared->users_config);
 		settings.setProfile(value, *shared->users_config);
+	}
 	else
 		settings.set(name, value);
 }

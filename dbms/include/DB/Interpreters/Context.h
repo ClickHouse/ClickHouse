@@ -91,8 +91,10 @@ public:
 
 	String getPath() const;
 	String getTemporaryPath() const;
+	String getFlagsPath() const;
 	void setPath(const String & path);
 	void setTemporaryPath(const String & path);
+	void setFlagsPath(const String & path);
 
 	using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
