@@ -432,7 +432,7 @@ public:
 		}
 		catch (const KeeperException & e)
 		{
-			LOG_ERROR(zookeeper.log, "~EphemeralNodeHolder(): " << e.displayText());
+			DB::tryLogCurrentException(__PRETTY_FUNCTION__);
 		}
 	}
 
