@@ -11,6 +11,11 @@ namespace ProfileEvents
 	extern const Event FileOpen;
 }
 
+namespace CurrentMetrics
+{
+	extern const Metric OpenFileForRead;
+}
+
 namespace DB
 {
 

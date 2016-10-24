@@ -10,23 +10,25 @@
 namespace DB
 {
 
+class AsynchronousMetrics;
+
 /**	Automatically sends
   * - difference of ProfileEvents;
   * - values of CurrentMetrics;
-  * - values of ActiveMetrics;
+  * - values of AsynchronousMetrics;
   *  to Graphite at beginning of every minute.
   */
 class MetricsTransmitter
 {
 public:
+	MetricsTransmitter(const AsynchronousMetrics & async_metrics_) : async_metrics(async_metrics_) {}
 	~MetricsTransmitter();
 
 private:
 	void run();
-	void transmit();
+	void transmit(ProfileEvents::Count * prev_counters);
 
-	/// Values of ProfileEvents counters at previous iteration (or zeros at first time).
-	decltype(ProfileEvents::counters) prev_counters{};
+	const AsynchronousMetrics & async_metrics;
 
 	bool quit = false;
 	std::mutex mutex;
@@ -35,7 +37,7 @@ private:
 
 	static constexpr auto profile_events_path_prefix = "ClickHouse.ProfileEvents.";
 	static constexpr auto current_metrics_path_prefix = "ClickHouse.Metrics.";
-	static constexpr auto active_metrics_path_prefix = "ClickHouse.ActiveMetrics.";
+	static constexpr auto asynchronous_metrics_path_prefix = "ClickHouse.AsynchronousMetrics.";
 };
 
 }

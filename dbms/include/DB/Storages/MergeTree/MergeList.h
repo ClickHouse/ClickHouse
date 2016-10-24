@@ -7,6 +7,12 @@
 #include <mutex>
 #include <atomic>
 
+
+namespace CurrentMetrics
+{
+	extern const Metric Merge;
+}
+
 namespace DB
 {
 

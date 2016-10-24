@@ -18,6 +18,11 @@
 #include <condition_variable>
 
 
+namespace CurrentMetrics
+{
+	extern const Metric DistributedSend;
+}
+
 namespace DB
 {
 

@@ -15,7 +15,7 @@ namespace ProfileEvents
 	using Event = size_t;
 	using Count = size_t;
 
-	/// Get text description of event by identifier. Returs statically allocated string.
+	/// Get text description of event by identifier. Returns statically allocated string.
 	const char * getDescription(Event event);
 
 	/// Counters - how many times each event happened.

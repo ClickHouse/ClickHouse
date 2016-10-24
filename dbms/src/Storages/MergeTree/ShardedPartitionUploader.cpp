@@ -7,6 +7,13 @@
 
 #include <DB/IO/InterserverWriteBuffer.h>
 
+
+namespace CurrentMetrics
+{
+	extern const Metric ReplicatedSend;
+	extern const Metric ReplicatedFetch;
+}
+
 namespace DB
 {
 

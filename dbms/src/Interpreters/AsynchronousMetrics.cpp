@@ -1,4 +1,4 @@
-#include <DB/Interpreters/ActiveMetrics.h>
+#include <DB/Interpreters/AsynchronousMetrics.h>
 #include <DB/Common/Exception.h>
 #include <DB/Common/setThreadName.h>
 #include <DB/Common/CurrentMetrics.h>
@@ -13,16 +13,16 @@
 namespace DB
 {
 
-ActiveMetrics::~ActiveMetrics()
+AsynchronousMetrics::~AsynchronousMetrics()
 {
 	try
 	{
 		{
-			std::lock_guard<std::mutex> lock{mutex};
+			std::lock_guard<std::mutex> lock{wait_mutex};
 			quit = true;
 		}
 
-		cond.notify_one();
+		wait_cond.notify_one();
 		thread.join();
 	}
 	catch (...)
@@ -32,11 +32,25 @@ ActiveMetrics::~ActiveMetrics()
 }
 
 
-void ActiveMetrics::run()
+AsynchronousMetrics::Container AsynchronousMetrics::getValues() const
 {
-	setThreadName("ActiveMetrics");
+	std::lock_guard<std::mutex> lock{container_mutex};
+	return container;
+}
 
-	std::unique_lock<std::mutex> lock{mutex};
+
+void AsynchronousMetrics::set(const std::string & name, Value value)
+{
+	std::lock_guard<std::mutex> lock{container_mutex};
+	container[name] = value;
+}
+
+
+void AsynchronousMetrics::run()
+{
+	setThreadName("AsyncMetrics");
+
+	std::unique_lock<std::mutex> lock{wait_mutex};
 
 	/// Next minute + 30 seconds. To be distant with moment of transmission of metrics, see MetricsTransmitter.
 	const auto get_next_minute = []
@@ -47,7 +61,7 @@ void ActiveMetrics::run()
 
 	while (true)
 	{
-		if (cond.wait_until(lock, get_next_minute(), [this] { return quit; }))
+		if (wait_cond.wait_until(lock, get_next_minute(), [this] { return quit; }))
 			break;
 
 		try
@@ -78,21 +92,21 @@ static void calculateMaxAndSum(Max & max, Sum & sum, T x)
 }
 
 
-void ActiveMetrics::update()
+void AsynchronousMetrics::update()
 {
 	{
 		if (auto mark_cache = context.getMarkCache())
 		{
-			CurrentMetrics::set(CurrentMetrics::MarkCacheBytes, mark_cache->weight());
-			CurrentMetrics::set(CurrentMetrics::MarkCacheFiles, mark_cache->count());
+			set("MarkCacheBytes", mark_cache->weight());
+			set("MarkCacheFiles", mark_cache->count());
 		}
 	}
 
 	{
 		if (auto uncompressed_cache = context.getUncompressedCache())
 		{
-			CurrentMetrics::set(CurrentMetrics::UncompressedCacheBytes, uncompressed_cache->weight());
-			CurrentMetrics::set(CurrentMetrics::UncompressedCacheCells, uncompressed_cache->count());
+			set("UncompressedCacheBytes", uncompressed_cache->weight());
+			set("UncompressedCacheCells", uncompressed_cache->count());
 		}
 	}
 
@@ -156,18 +170,18 @@ void ActiveMetrics::update()
 			}
 		}
 
-		CurrentMetrics::set(CurrentMetrics::ReplicasMaxQueueSize, max_queue_size);
-		CurrentMetrics::set(CurrentMetrics::ReplicasMaxInsertsInQueue, max_inserts_in_queue);
-		CurrentMetrics::set(CurrentMetrics::ReplicasMaxMergesInQueue, max_merges_in_queue);
+		set("ReplicasMaxQueueSize", max_queue_size);
+		set("ReplicasMaxInsertsInQueue", max_inserts_in_queue);
+		set("ReplicasMaxMergesInQueue", max_merges_in_queue);
 
-		CurrentMetrics::set(CurrentMetrics::ReplicasSumQueueSize, sum_queue_size);
-		CurrentMetrics::set(CurrentMetrics::ReplicasSumInsertsInQueue, sum_inserts_in_queue);
-		CurrentMetrics::set(CurrentMetrics::ReplicasSumMergesInQueue, sum_merges_in_queue);
+		set("ReplicasSumQueueSize", sum_queue_size);
+		set("ReplicasSumInsertsInQueue", sum_inserts_in_queue);
+		set("ReplicasSumMergesInQueue", sum_merges_in_queue);
 
-		CurrentMetrics::set(CurrentMetrics::ReplicasMaxAbsoluteDelay, max_absolute_delay);
-		CurrentMetrics::set(CurrentMetrics::ReplicasMaxRelativeDelay, max_relative_delay);
+		set("ReplicasMaxAbsoluteDelay", max_absolute_delay);
+		set("ReplicasMaxRelativeDelay", max_relative_delay);
 
-		CurrentMetrics::set(CurrentMetrics::MaxPartCountForPartition, max_part_count_for_partition);
+		set("MaxPartCountForPartition", max_part_count_for_partition);
 	}
 
 	/// Add more metrics as you wish.

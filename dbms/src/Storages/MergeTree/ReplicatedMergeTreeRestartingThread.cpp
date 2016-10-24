@@ -13,6 +13,12 @@ namespace ProfileEvents
 	extern const Event ReplicaPartialShutdown;
 }
 
+namespace CurrentMetrics
+{
+	extern const Metric ReadonlyReplica;
+}
+
+
 namespace DB
 {
 

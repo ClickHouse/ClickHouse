@@ -4,6 +4,11 @@
 #include <DB/Common/CurrentMetrics.h>
 
 
+namespace CurrentMetrics
+{
+	extern const Metric InterserverConnection;
+}
+
 namespace DB
 {
 

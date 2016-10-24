@@ -25,6 +25,11 @@ namespace ProfileEvents
 	extern const Event Seek;
 }
 
+namespace CurrentMetrics
+{
+	extern const Metric Read;
+}
+
 namespace DB
 {
 

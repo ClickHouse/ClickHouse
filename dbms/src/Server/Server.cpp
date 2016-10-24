@@ -20,7 +20,7 @@
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/ProcessList.h>
-#include <DB/Interpreters/ActiveMetrics.h>
+#include <DB/Interpreters/AsynchronousMetrics.h>
 
 #include <DB/Storages/System/StorageSystemNumbers.h>
 #include <DB/Storages/System/StorageSystemTables.h>
@@ -39,6 +39,7 @@
 #include <DB/Storages/System/StorageSystemFunctions.h>
 #include <DB/Storages/System/StorageSystemClusters.h>
 #include <DB/Storages/System/StorageSystemMetrics.h>
+#include <DB/Storages/System/StorageSystemAsynchronousMetrics.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReshardingWorker.h>
 #include <DB/Databases/DatabaseOrdinary.h>
@@ -379,10 +380,6 @@ int Server::main(const std::vector<std::string> & args)
 	);
 
 	{
-		const auto metrics_transmitter = config().getBool("use_graphite", true)
-			? std::make_unique<MetricsTransmitter>()
-			: nullptr;
-
 		const std::string listen_host = config().getString("listen_host", "::");
 
 		Poco::Timespan keep_alive_timeout(config().getInt("keep_alive_timeout", 10), 0);
@@ -505,7 +502,13 @@ int Server::main(const std::vector<std::string> & args)
 		}
 
 		/// This object will periodically calculate some metrics.
-		ActiveMetrics active_metrics(*global_context);
+		AsynchronousMetrics async_metrics(*global_context);
+
+		system_database->attachTable("asynchronous_metrics", StorageSystemAsynchronousMetrics::create("asynchronous_metrics", async_metrics));
+
+		const auto metrics_transmitter = config().getBool("use_graphite", true)
+			? std::make_unique<MetricsTransmitter>(async_metrics)
+			: nullptr;
 
 		waitForTerminationRequest();
 	}

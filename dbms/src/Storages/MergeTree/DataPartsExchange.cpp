@@ -3,6 +3,12 @@
 #include <DB/Common/CurrentMetrics.h>
 
 
+namespace CurrentMetrics
+{
+	extern const Metric ReplicatedSend;
+	extern const Metric ReplicatedFetch;
+}
+
 namespace DB
 {
 

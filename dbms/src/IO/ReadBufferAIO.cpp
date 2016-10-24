@@ -16,6 +16,11 @@ namespace ProfileEvents
 	extern const Event ReadBufferAIOReadBytes;
 }
 
+namespace CurrentMetrics
+{
+	extern const Metric Read;
+}
+
 namespace DB
 {
 

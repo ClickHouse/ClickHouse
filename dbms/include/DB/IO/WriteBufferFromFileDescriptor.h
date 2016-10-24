@@ -19,6 +19,11 @@ namespace ProfileEvents
 	extern const Event WriteBufferFromFileDescriptorWriteBytes;
 }
 
+namespace CurrentMetrics
+{
+	extern const Metric Write;
+}
+
 namespace DB
 {
 

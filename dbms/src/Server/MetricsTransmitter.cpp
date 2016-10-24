@@ -3,6 +3,7 @@
 #include <daemon/BaseDaemon.h>
 #include <DB/Common/setThreadName.h>
 #include <DB/Common/CurrentMetrics.h>
+#include <DB/Interpreters/AsynchronousMetrics.h>
 
 
 namespace DB
@@ -39,6 +40,8 @@ void MetricsTransmitter::run()
 			std::chrono::system_clock::now() + std::chrono::minutes(1));
 	};
 
+	ProfileEvents::Count prev_counters[ProfileEvents::end()] {};
+
 	std::unique_lock<std::mutex> lock{mutex};
 
 	while (true)
@@ -46,32 +49,39 @@ void MetricsTransmitter::run()
 		if (cond.wait_until(lock, get_next_minute(), [this] { return quit; }))
 			break;
 
-		transmit();
+		transmit(prev_counters);
 	}
 }
 
 
-void MetricsTransmitter::transmit()
+void MetricsTransmitter::transmit(ProfileEvents::Count * prev_counters)
 {
+	auto async_metrics_values = async_metrics.getValues();
+
 	GraphiteWriter::KeyValueVector<ssize_t> key_vals{};
-	key_vals.reserve(ProfileEvents::end() + CurrentMetrics::END);
+	key_vals.reserve(ProfileEvents::end() + CurrentMetrics::end() + async_metrics_values.size());
 
 	for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
 	{
 		const auto counter = ProfileEvents::counters[i].load(std::memory_order_relaxed);
-		const auto counter_increment = counter - prev_counters[i].load(std::memory_order_relaxed);
-		prev_counters[i].store(counter, std::memory_order_relaxed);
+		const auto counter_increment = counter - prev_counters[i];
+		prev_counters[i] = counter;
 
 		std::string key {ProfileEvents::getDescription(static_cast<ProfileEvents::Event>(i))};
 		key_vals.emplace_back(profile_events_path_prefix + key, counter_increment);
 	}
 
-	for (size_t i = 0; i < CurrentMetrics::END; ++i)
+	for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
 	{
 		const auto value = CurrentMetrics::values[i].load(std::memory_order_relaxed);
 
 		std::string key {CurrentMetrics::getDescription(static_cast<CurrentMetrics::Metric>(i))};
 		key_vals.emplace_back(current_metrics_path_prefix + key, value);
+	}
+
+	for (const auto & name_value : async_metrics_values)
+	{
+		key_vals.emplace_back(asynchronous_metrics_path_prefix + name_value.first, name_value.second);
 	}
 
 	BaseDaemon::instance().writeToGraphite(key_vals);
