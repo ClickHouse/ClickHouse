@@ -16,6 +16,7 @@
 
 #include <DB/Common/Macros.h>
 #include <DB/Common/getFQDNOrHostName.h>
+#include <DB/Parsers/parseQuery.h>
 #include <DB/Common/StringUtils.h>
 
 #include <DB/Interpreters/loadMetadata.h>
@@ -178,45 +179,6 @@ public:
 };
 
 
-static std::vector<String> splitMultipartQuery(const String & queries)
-{
-	std::vector<String> queries_list;
-
-	ASTPtr ast;
-	ParserQuery parser;
-
-	const char * begin = queries.data();
-	const char * end = begin + queries.size();
-
-	while (begin < end)
-	{
-		const char * pos = begin;
-
-		ast = parseQueryAndMovePosition(parser, pos, end, "", true);
-		if (!ast)
-			break;
-
-		ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*ast);
-
-		if (insert && insert->data)
-		{
-			pos = insert->data;
-			while (*pos && *pos != '\n')
-				++pos;
-			insert->end = pos;
-		}
-
-		queries_list.emplace_back(queries.substr(begin - queries.data(), pos - begin));
-
-		begin = pos;
-		while (isWhitespaceASCII(*begin) || *begin == ';')
-			++begin;
-	}
-
-	return queries_list;
-}
-
-
 int Server::main(const std::vector<std::string> & args)
 {
 	Logger * log = &logger();
@@ -244,7 +206,6 @@ int Server::main(const std::vector<std::string> & args)
 	  *  settings, available functions, data types, aggregate functions, databases...
 	  */
 	global_context = std::make_unique<Context>();
-
 	global_context->setGlobalContext(*global_context);
 	global_context->setPath(path);
 
@@ -436,10 +397,7 @@ int Server::main(const std::vector<std::string> & args)
 
 	/// Load global settings from default profile.
 	Settings & settings = global_context->getSettingsRef();
-	LOG_DEBUG(log, "settings " << &settings);
 	global_context->setSetting("profile", config().getString("default_profile", "default"));
-
-	LOG_DEBUG(log, "profile done");
 
 	if (!is_local_server)
 	{
@@ -625,7 +583,8 @@ int Server::main(const std::vector<std::string> & args)
 	{
 		auto queries_str = config().getString("query");
 		LOG_DEBUG(log, "Executing queries: '" << queries_str << "'");
-		auto queries = splitMultipartQuery(queries_str);
+		std::vector<String> queries;
+		splitMultipartQuery(queries_str, queries);
 
 		auto local_context = std::make_unique<Context>(*global_context);
 		local_context->setGlobalContext(*global_context);

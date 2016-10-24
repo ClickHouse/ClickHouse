@@ -1,4 +1,7 @@
 #include <DB/Parsers/parseQuery.h>
+#include <DB/Parsers/ParserQuery.h>
+#include <DB/Parsers/ASTInsertQuery.h>
+#include <DB/Common/StringUtils.h>
 
 
 namespace DB
@@ -171,6 +174,44 @@ ASTPtr parseQuery(
 {
 	auto pos = begin;
 	return parseQueryAndMovePosition(parser, pos, end, description, false);
+}
+
+bool splitMultipartQuery(const std::string & queries, std::vector<std::string> & queries_list)
+{
+	ASTPtr ast;
+	ParserQuery parser;
+
+	const char * begin = queries.data();
+	const char * end = begin + queries.size();
+
+	queries_list.clear();
+
+	while (begin < end)
+	{
+		const char * pos = begin;
+
+		ast = parseQueryAndMovePosition(parser, pos, end, "", true);
+		if (!ast)
+			break;
+
+		ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*ast);
+
+		if (insert && insert->data)
+		{
+			pos = insert->data;
+			while (*pos && *pos != '\n')
+				++pos;
+			insert->end = pos;
+		}
+
+		queries_list.emplace_back(queries.substr(begin - queries.data(), pos - begin));
+
+		begin = pos;
+		while (isWhitespaceASCII(*begin) || *begin == ';')
+			++begin;
+	}
+
+	return true;
 }
 
 }

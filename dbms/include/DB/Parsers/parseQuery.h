@@ -32,4 +32,8 @@ ASTPtr parseQuery(
 	IParser::Pos end,
 	const std::string & description);
 
+
+/// Split queries separated by ; on to list of single queries
+bool splitMultipartQuery(const std::string & queries, std::vector<std::string> & queries_list);
+
 }
