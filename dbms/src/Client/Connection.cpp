@@ -23,6 +23,8 @@
 #include <DB/Common/NetException.h>
 #include <DB/Common/CurrentMetrics.h>
 
+#include <DB/Interpreters/ClientInfo.h>
+
 
 namespace CurrentMetrics
 {
@@ -262,7 +264,13 @@ bool Connection::ping()
 }
 
 
-void Connection::sendQuery(const String & query, const String & query_id_, UInt64 stage, const Settings * settings, bool with_pending_data)
+void Connection::sendQuery(
+	const String & query,
+	const String & query_id_,
+	UInt64 stage,
+	const Settings * settings,
+	const ClientInfo * client_info,
+	bool with_pending_data)
 {
 	network_compression_method = settings ? settings->network_compression_method.value : CompressionMethod::LZ4;
 
@@ -274,6 +282,28 @@ void Connection::sendQuery(const String & query, const String & query_id_, UInt6
 
 	writeVarUInt(Protocol::Client::Query, *out);
 	writeStringBinary(query_id, *out);
+
+	/// Client info.
+	if (server_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
+	{
+		ClientInfo client_info_to_send;
+
+		if (!client_info)
+		{
+			/// No client info passed - means this query initiated by me.
+			client_info_to_send.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+			client_info_to_send.fillOSUserHostNameAndVersionInfo();
+			client_info_to_send.client_name = (DBMS_NAME " ") + client_name;
+		}
+		else
+		{
+			/// This query is initiated by another query.
+			client_info_to_send = *client_info;
+			client_info_to_send.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+		}
+
+		client_info_to_send.write(*out);
+	}
 
 	/// Per query settings.
 	if (settings)

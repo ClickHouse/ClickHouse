@@ -285,17 +285,16 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, UInt16 port, const String & quota_key)
+void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
 {
 	auto lock = getLock();
 
-	const User & user_props = shared->users.get(name, password, address);
+	const User & user_props = shared->users.get(name, password, address.host());
 	setSetting("profile", user_props.profile);
-	setQuota(user_props.quota, quota_key, name, address);
+	setQuota(user_props.quota, quota_key, name, address.host());
 
-	this->user = name;
-	this->ip_address = address;
-	this->port = port;
+	client_info.current_user = name;
+	client_info.current_address = address;
 }
 
 
@@ -314,13 +313,13 @@ QuotaForIntervals & Context::getQuota()
 
 void Context::checkDatabaseAccessRights(const std::string & database_name) const
 {
-	if (user.empty() || (database_name == "system"))
+	if (client_info.current_user.empty() || (database_name == "system"))
 	{
 		/// Безымянный пользователь, т.е. сервер, имеет доступ ко всем БД.
 		/// Все пользователи имеют доступ к БД system.
 		return;
 	}
-	if (!shared->users.isAllowedDatabase(user, database_name))
+	if (!shared->users.isAllowedDatabase(client_info.current_user, database_name))
 		throw Exception("Access denied to database " + database_name, ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
@@ -658,7 +657,7 @@ String Context::getCurrentDatabase() const
 String Context::getCurrentQueryId() const
 {
 	auto lock = getLock();
-	return current_query_id;
+	return client_info.current_query_id;
 }
 
 
@@ -672,7 +671,7 @@ void Context::setCurrentDatabase(const String & name)
 
 void Context::setCurrentQueryId(const String & query_id)
 {
-	if (!current_query_id.empty())
+	if (!client_info.current_query_id.empty())
 		throw Exception("Logical error: attempt to set query_id twice", ErrorCodes::LOGICAL_ERROR);
 
 	String query_id_to_set = query_id;
@@ -680,7 +679,7 @@ void Context::setCurrentQueryId(const String & query_id)
 		query_id_to_set = shared->uuid_generator.createRandom().toString();
 
 	auto lock = getLock();
-	current_query_id = query_id_to_set;
+	client_info.current_query_id = query_id_to_set;
 }
 
 

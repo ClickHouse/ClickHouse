@@ -369,6 +369,7 @@ add_library (dbms
 	include/DB/Interpreters/InterpreterSelectQuery.h
 	include/DB/Interpreters/QueryPriorities.h
 	include/DB/Interpreters/QueryLog.h
+	include/DB/Interpreters/ClientInfo.h
 	include/DB/Interpreters/getClusterName.h
 	include/DB/Interpreters/ClusterProxy/IQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/SelectQueryConstructor.h
@@ -854,6 +855,7 @@ add_library (dbms
 	src/Interpreters/DictionaryFactory.cpp
 	src/Interpreters/ProcessList.cpp
 	src/Interpreters/QueryLog.cpp
+	src/Interpreters/ClientInfo.cpp
 	src/Interpreters/getClusterName.cpp
 	src/Interpreters/ClusterProxy/SelectQueryConstructor.cpp
 	src/Interpreters/ClusterProxy/DescribeQueryConstructor.cpp

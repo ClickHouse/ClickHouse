@@ -199,13 +199,53 @@ Block QueryLog::createBlock()
 		{std::make_shared<ColumnString>(), 	std::make_shared<DataTypeString>(), 	"exception"},
 		{std::make_shared<ColumnString>(), 	std::make_shared<DataTypeString>(), 	"stack_trace"},
 
-		{std::make_shared<ColumnUInt8>(), 	std::make_shared<DataTypeUInt8>(), 		"interface"},
-		{std::make_shared<ColumnUInt8>(), 	std::make_shared<DataTypeUInt8>(), 		"http_method"},
-		{std::make_shared<ColumnFixedString>(16), std::make_shared<DataTypeFixedString>(16), "ip_address"},
+		{std::make_shared<ColumnUInt8>(), 	std::make_shared<DataTypeUInt8>(), 		"is_initial_query"},
+
 		{std::make_shared<ColumnString>(), 	std::make_shared<DataTypeString>(), 	"user"},
 		{std::make_shared<ColumnString>(), 	std::make_shared<DataTypeString>(), 	"query_id"},
+		{std::make_shared<ColumnFixedString>(16), std::make_shared<DataTypeFixedString>(16), "address"},
+		{std::make_shared<ColumnUInt16>(), 	std::make_shared<DataTypeUInt16>(), 	"port"},
+
+		{std::make_shared<ColumnString>(), 	std::make_shared<DataTypeString>(), 	"initial_user"},
+		{std::make_shared<ColumnString>(), 	std::make_shared<DataTypeString>(), 	"initial_query_id"},
+		{std::make_shared<ColumnFixedString>(16), std::make_shared<DataTypeFixedString>(16), "initial_address"},
+		{std::make_shared<ColumnUInt16>(), 	std::make_shared<DataTypeUInt16>(), 	"initial_port"},
+
+		{std::make_shared<ColumnUInt8>(), 	std::make_shared<DataTypeUInt8>(), 		"interface"},
+
+		{std::make_shared<ColumnString>(), 	std::make_shared<DataTypeString>(), 	"os_user"},
+		{std::make_shared<ColumnString>(), 	std::make_shared<DataTypeString>(), 	"client_hostname"},
+		{std::make_shared<ColumnString>(), 	std::make_shared<DataTypeString>(), 	"client_name"},
+		{std::make_shared<ColumnUInt32>(), 	std::make_shared<DataTypeUInt32>(), 	"client_revision"},
+
+		{std::make_shared<ColumnUInt8>(), 	std::make_shared<DataTypeUInt8>(), 		"http_method"},
+		{std::make_shared<ColumnString>(), 	std::make_shared<DataTypeString>(), 	"http_user_agent"},
+
 		{std::make_shared<ColumnUInt32>(), 	std::make_shared<DataTypeUInt32>(), 	"revision"},
 	};
+}
+
+
+static std::array<char, 16> IPv6ToBinary(const Poco::Net::IPAddress & address)
+{
+	std::array<char, 16> res;
+
+	if (Poco::Net::IPAddress::IPv6 == address.family())
+	{
+		memcpy(res.data(), address.addr(), 16);
+	}
+	else if (Poco::Net::IPAddress::IPv4 == address.family())
+	{
+		/// Преобразуем в IPv6-mapped адрес.
+		memset(res.data(), 0, 10);
+		res[10] = '\xFF';
+		res[11] = '\xFF';
+		memcpy(&res[12], address.addr(), 4);
+	}
+	else
+		memset(res.data(), 0, 16);
+
+	return res;
 }
 
 
@@ -221,51 +261,49 @@ void QueryLog::flush()
 
 		for (const QueryLogElement & elem : data)
 		{
-			char ipv6_binary[16];
-			if (Poco::Net::IPAddress::IPv6 == elem.ip_address.family())
-			{
-				memcpy(ipv6_binary, elem.ip_address.addr(), 16);
-			}
-			else if (Poco::Net::IPAddress::IPv4 == elem.ip_address.family())
-			{
-				/// Преобразуем в IPv6-mapped адрес.
-				memset(ipv6_binary, 0, 10);
-				ipv6_binary[10] = '\xFF';
-				ipv6_binary[11] = '\xFF';
-				memcpy(&ipv6_binary[12], elem.ip_address.addr(), 4);
-			}
-			else
-				memset(ipv6_binary, 0, 16);
-
 			size_t i = 0;
 
-			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.type));
-			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(date_lut.toDayNum(elem.event_time)));
-			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.event_time));
-			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.query_start_time));
-			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.query_duration_ms));
+			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.type));
+			block.unsafeGetByPosition(i++).column->insert(UInt64(date_lut.toDayNum(elem.event_time)));
+			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.event_time));
+			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.query_start_time));
+			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.query_duration_ms));
 
-			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.read_rows));
-			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.read_bytes));
+			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.read_rows));
+			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.read_bytes));
 
-			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.result_rows));
-			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.result_bytes));
+			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.result_rows));
+			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.result_bytes));
 
-			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.memory_usage));
+			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.memory_usage));
 
-			block.unsafeGetByPosition(i++).column.get()->insertData(elem.query.data(), elem.query.size());
-			block.unsafeGetByPosition(i++).column.get()->insertData(elem.exception.data(), elem.exception.size());
-			block.unsafeGetByPosition(i++).column.get()->insertData(elem.stack_trace.data(), elem.stack_trace.size());
+			block.unsafeGetByPosition(i++).column->insertData(elem.query.data(), elem.query.size());
+			block.unsafeGetByPosition(i++).column->insertData(elem.exception.data(), elem.exception.size());
+			block.unsafeGetByPosition(i++).column->insertData(elem.stack_trace.data(), elem.stack_trace.size());
 
-			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.interface));
-			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.http_method));
+			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY));
 
-			block.unsafeGetByPosition(i++).column.get()->insertData(ipv6_binary, 16);
+			block.unsafeGetByPosition(i++).column->insert(elem.client_info.current_user);
+			block.unsafeGetByPosition(i++).column->insert(elem.client_info.current_query_id);
+			block.unsafeGetByPosition(i++).column->insertData(IPv6ToBinary(elem.client_info.current_address.host()).data(), 16);
+			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.client_info.current_address.port()));
 
-			block.unsafeGetByPosition(i++).column.get()->insertData(elem.user.data(), elem.user.size());
-			block.unsafeGetByPosition(i++).column.get()->insertData(elem.query_id.data(), elem.query_id.size());
+			block.unsafeGetByPosition(i++).column->insert(elem.client_info.initial_user);
+			block.unsafeGetByPosition(i++).column->insert(elem.client_info.initial_query_id);
+			block.unsafeGetByPosition(i++).column->insertData(IPv6ToBinary(elem.client_info.initial_address.host()).data(), 16);
+			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.client_info.initial_address.port()));
 
-			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(ClickHouseRevision::get()));
+			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.client_info.interface));
+
+			block.unsafeGetByPosition(i++).column->insert(elem.client_info.os_user);
+			block.unsafeGetByPosition(i++).column->insert(elem.client_info.client_hostname);
+			block.unsafeGetByPosition(i++).column->insert(elem.client_info.client_name);
+			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.client_info.client_revision));
+
+			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.client_info.http_method));
+			block.unsafeGetByPosition(i++).column->insert(elem.client_info.http_user_agent);
+
+			block.unsafeGetByPosition(i++).column->insert(UInt64(ClickHouseRevision::get()));
 		}
 
 		/// Мы пишем не напрямую в таблицу, а используем InterpreterInsertQuery.

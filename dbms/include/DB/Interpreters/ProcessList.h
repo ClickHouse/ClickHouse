@@ -13,6 +13,7 @@
 #include <DB/Common/MemoryTracker.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Interpreters/QueryPriorities.h>
+#include <DB/Interpreters/ClientInfo.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/Common/CurrentMetrics.h>
 
@@ -35,15 +36,12 @@ namespace DB
 struct ProcessInfo
 {
 	String query;
-	String user;
-	String query_id;
-	Poco::Net::IPAddress ip_address;
-	UInt16 port;
 	double elapsed_seconds;
 	size_t rows;
 	size_t bytes;
 	size_t total_rows;
 	Int64 memory_usage;
+	ClientInfo client_info;
 };
 
 
@@ -51,10 +49,7 @@ struct ProcessInfo
 struct ProcessListElement
 {
 	String query;
-	String user;
-	String query_id;
-	Poco::Net::IPAddress ip_address;
-	UInt16 port;
+	ClientInfo client_info;
 
 	Stopwatch watch;
 
@@ -72,11 +67,13 @@ struct ProcessListElement
 	Tables temporary_tables;
 
 
-	ProcessListElement(const String & query_, const String & user_,
-		const String & query_id_, const Poco::Net::IPAddress & ip_address_,
-		UInt16 port_, size_t max_memory_usage, double memory_tracker_fault_probability,
+	ProcessListElement(
+		const String & query_,
+		const ClientInfo & client_info_,
+		size_t max_memory_usage,
+		double memory_tracker_fault_probability,
 		QueryPriorities::Handle && priority_handle_)
-		: query(query_), user(user_), query_id(query_id_), ip_address(ip_address_), port(port_), memory_tracker(max_memory_usage),
+		: query(query_), client_info(client_info_), memory_tracker(max_memory_usage),
 		priority_handle(std::move(priority_handle_))
 	{
 		memory_tracker.setDescription("(for query)");
@@ -103,18 +100,17 @@ struct ProcessListElement
 
 	ProcessInfo getInfo() const
 	{
-		return ProcessInfo{
-			.query 				= query,
-			.user 				= user,
-			.query_id 			= query_id,
-			.ip_address 		= ip_address,
-			.port				= port,
-			.elapsed_seconds 	= watch.elapsedSeconds(),
-			.rows 				= progress.rows,
-			.bytes 				= progress.bytes,
-			.total_rows 		= progress.total_rows,
-			.memory_usage 		= memory_tracker.get(),
-		};
+		ProcessInfo res;
+
+		res.query 			= query;
+		res.client_info 	= client_info;
+		res.elapsed_seconds = watch.elapsedSeconds();
+		res.rows 			= progress.rows;
+		res.bytes 			= progress.bytes;
+		res.total_rows 		= progress.total_rows;
+		res.memory_usage 	= memory_tracker.get();
+
+		return res;
 	}
 };
 
@@ -191,8 +187,7 @@ public:
 	  * If too much running queries - wait for not more than specified (see settings) amount of time.
 	  * If timeout is passed - throw an exception.
 	  */
-	EntryPtr insert(const String & query_, const String & user_, const String & query_id_, const Poco::Net::IPAddress & ip_address_,
-		UInt16 port_, const Settings & settings);
+	EntryPtr insert(const String & query_, const ClientInfo & client_info, const Settings & settings);
 
 	/// Number of currently executing queries.
 	size_t size() const { return cur_size; }

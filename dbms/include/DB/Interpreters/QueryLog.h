@@ -59,11 +59,7 @@ struct QueryLogElement
 	String exception;
 	String stack_trace;
 
-	Context::Interface interface = Context::Interface::TCP;
-	Context::HTTPMethod http_method = Context::HTTPMethod::UNKNOWN;
-	Poco::Net::IPAddress ip_address;
-	String user;
-	String query_id;
+	ClientInfo client_info;
 };
 
 

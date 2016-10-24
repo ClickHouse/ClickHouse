@@ -6,6 +6,7 @@
 #include <DB/Core/Types.h>
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Interpreters/Settings.h>
+#include <DB/Interpreters/ClientInfo.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/IO/CompressedStream.h>
 
@@ -62,33 +63,14 @@ using Dependencies = std::vector<DatabaseAndTableName>;
   */
 class Context
 {
-public:
-	enum class Interface
-	{
-		TCP = 1,
-		HTTP = 2,
-	};
-
-	enum class HTTPMethod
-	{
-		UNKNOWN = 0,
-		GET = 1,
-		POST = 2,
-	};
-
 private:
 	using Shared = std::shared_ptr<ContextShared>;
 	Shared shared;
 
-	String user;						/// Current user
-	Poco::Net::IPAddress ip_address;	/// IP address
-	UInt16 port;						///            and port, from which current query was recieved
-	Interface interface = Interface::TCP;
-	HTTPMethod http_method = HTTPMethod::UNKNOWN;	/// NOTE Возможно, перенести это в отдельный struct ClientInfo.
+	ClientInfo client_info;
 
 	std::shared_ptr<QuotaForIntervals> quota;	/// Текущая квота. По-умолчанию - пустая квота, которая ничего не ограничивает.
 	String current_database;			/// Текущая БД.
-	String current_query_id;			/// Id текущего запроса.
 	Settings settings;					/// Настройки выполнения запроса.
 	using ProgressCallback = std::function<void(const Progress & progress)>;
 	ProgressCallback progress_callback;	/// Колбек для отслеживания прогресса выполнения запроса.
@@ -122,16 +104,11 @@ public:
 
 	ConfigurationPtr getUsersConfig();
 
-	void setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, UInt16 port, const String & quota_key);
-	String getUser() const { return user; }
-	Poco::Net::IPAddress getIPAddress() const { return ip_address; }
-	UInt16 getPort() const { return port; }
+	/// Must be called before getClientInfo.
+	void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
 
-	Interface getInterface() const { return interface; }
-	void setInterface(Interface interface_) { interface = interface_; }
-
-	HTTPMethod getHTTPMethod() const { return http_method; }
-	void setHTTPMethod(HTTPMethod http_method_) { http_method = http_method_; }
+	ClientInfo & getClientInfo() { return client_info; };
+	const ClientInfo & getClientInfo() const { return client_info; };
 
 	void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
 	QuotaForIntervals & getQuota();

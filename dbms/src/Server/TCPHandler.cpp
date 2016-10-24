@@ -134,7 +134,6 @@ void TCPHandler::runImpl()
 		{
 			/// Восстанавливаем контекст запроса.
 			query_context = connection_context;
-			query_context.setInterface(Context::Interface::TCP);
 
 			/** Если Query - обрабатываем. Если Ping или Cancel - возвращаемся в начало.
 			  * Могут прийти настройки на отдельный запрос, которые модифицируют query_context.
@@ -464,7 +463,7 @@ void TCPHandler::receiveHello()
 		<< (!user.empty() ? ", user: " + user : "")
 		<< ".");
 
-	connection_context.setUser(user, password, socket().peerAddress().host(), socket().peerAddress().port(), "");
+	connection_context.setUser(user, password, socket().peerAddress(), "");
 }
 
 
@@ -526,6 +525,27 @@ void TCPHandler::receiveQuery()
 	readStringBinary(state.query_id, *in);
 
 	query_context.setCurrentQueryId(state.query_id);
+
+	/// Client info
+	{
+		ClientInfo & client_info = query_context.getClientInfo();
+		if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
+			client_info.read(*in);
+
+		if (client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)
+			client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+
+		/// Set fields, that are known apriori.
+		client_info.interface = ClientInfo::Interface::TCP;
+
+		if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+		{
+			/// 'Current' fields was set at receiveHello.
+			client_info.initial_user = client_info.current_user;
+			client_info.initial_query_id = client_info.current_query_id;
+			client_info.initial_address = client_info.current_address;
+		}
+	}
 
 	/// Per query settings.
 	query_context.getSettingsRef().deserialize(*in);

@@ -24,6 +24,8 @@
 namespace DB
 {
 
+class ClientInfo;
+
 /// Поток блоков читающих из таблицы и ее имя
 using ExternalTableData = std::pair<BlockInputStreamPtr, std::string>;
 /// Вектор пар, описывающих таблицы
@@ -135,8 +137,13 @@ public:
 	const String & getDefaultDatabase() const;
 
 	/// If last flag is true, you need to call sendExternalTablesData after.
-	void sendQuery(const String & query, const String & query_id_ = "", UInt64 stage = QueryProcessingStage::Complete,
-		const Settings * settings = nullptr, bool with_pending_data = false);
+	void sendQuery(
+		const String & query,
+		const String & query_id_ = "",
+		UInt64 stage = QueryProcessingStage::Complete,
+		const Settings * settings = nullptr,
+		const ClientInfo * client_info = nullptr,
+		bool with_pending_data = false);
 
 	void sendCancel();
 	/// Send block of data; if name is specified, server will write it to external (temporary) table of that name.
