@@ -9,17 +9,18 @@
 #include <DB/Databases/IDatabase.h>
 #include <chrono>
 
-#include <gperftools/malloc_extension.h>
+#ifndef NO_TCMALLOC
+	#include <gperftools/malloc_extension.h>
 
-
-/// Initializing malloc extension in global constructor as required.
-struct MallocExtensionInitializer
-{
-	MallocExtensionInitializer()
+	/// Initializing malloc extension in global constructor as required.
+	struct MallocExtensionInitializer
 	{
-		MallocExtension::Initialize();
-	}
-} malloc_extension_initializer;
+		MallocExtensionInitializer()
+		{
+			MallocExtension::Initialize();
+		}
+	} malloc_extension_initializer;
+#endif
 
 
 namespace DB
@@ -196,6 +197,7 @@ void AsynchronousMetrics::update()
 		set("MaxPartCountForPartition", max_part_count_for_partition);
 	}
 
+#ifndef NO_TCMALLOC
 	{
 		/// tcmalloc related metrics. Remove if you switch to different allocator.
 
@@ -218,6 +220,7 @@ void AsynchronousMetrics::update()
 				set(malloc_metric, value);
 		}
 	}
+#endif
 
 	/// Add more metrics as you wish.
 }

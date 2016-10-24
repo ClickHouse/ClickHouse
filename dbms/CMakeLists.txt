@@ -15,6 +15,10 @@ else()
 	set (LINK_MONGOCLIENT libmongoclient.a libssl.a libcrypto.a libboost_thread.a)
 endif()
 
+if (DISABLE_LIBTCMALLOC)
+	add_definitions(-D NO_TCMALLOC)
+endif()
+
 
 add_library(string_utils
 	include/DB/Common/StringUtils.h
