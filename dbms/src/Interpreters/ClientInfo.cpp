@@ -101,8 +101,8 @@ void ClientInfo::read(ReadBuffer & in)
 
 void ClientInfo::fillOSUserHostNameAndVersionInfo()
 {
-	os_user.resize(L_cuserid + 1, '\0');
-	if (0 != getlogin_r(&os_user[0], L_cuserid))
+	os_user.resize(256, '\0');
+	if (0 == getlogin_r(&os_user[0], os_user.size() - 1))
 		os_user.resize(strlen(os_user.data()));
 	else
 		os_user.clear();	/// Don't mind if we cannot determine user login.
