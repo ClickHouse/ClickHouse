@@ -22,6 +22,16 @@ ProcessList::EntryPtr ProcessList::insert(
 			&& (!settings.queue_max_wait_ms.totalMilliseconds() || !have_space.tryWait(mutex, settings.queue_max_wait_ms.totalMilliseconds())))
 			throw Exception("Too much simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
+		/** Why we use initial user, but current query_id?
+		  *
+		  * We use initial_user to implement limit on number of simultaneously running queries for one user
+		  *  on each node during distributed query execution, not only on initiating node (more fair).
+		  *
+		  * We use current_query_id because we want to allow distributed queries that will run multiple secondary queries on same server,
+		  *  like SELECT count() FROM remote('127.0.0.{1,2}', system.numbers)
+		  *  so they must have different query_ids.
+		  */
+
 		{
 			UserToQueries::iterator user_process_list = user_to_queries.find(client_info.initial_user);
 
@@ -33,13 +43,13 @@ ProcessList::EntryPtr ProcessList::insert(
 						+ ", maximum: " + toString(settings.max_concurrent_queries_for_user),
 						ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
-				if (!client_info.initial_query_id.empty())
+				if (!client_info.current_query_id.empty())
 				{
-					ProcessListForUser::QueryToElement::iterator element = user_process_list->second.queries.find(client_info.initial_query_id);
+					ProcessListForUser::QueryToElement::iterator element = user_process_list->second.queries.find(client_info.current_query_id);
 					if (element != user_process_list->second.queries.end())
 					{
 						if (!settings.replace_running_query)
-							throw Exception("Query with id = " + client_info.initial_query_id + " is already running.",
+							throw Exception("Query with id = " + client_info.current_query_id + " is already running.",
 								ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
 
 						element->second->is_cancelled = true;
@@ -57,10 +67,10 @@ ProcessList::EntryPtr ProcessList::insert(
 			settings.limits.max_memory_usage, settings.memory_tracker_fault_probability,
 			priorities.insert(settings.priority)));
 
-		if (!client_info.initial_query_id.empty())
+		if (!client_info.current_query_id.empty())
 		{
 			ProcessListForUser & user_process_list = user_to_queries[client_info.initial_user];
-			user_process_list.queries[client_info.initial_query_id] = &res->get();
+			user_process_list.queries[client_info.current_query_id] = &res->get();
 
 			if (current_memory_tracker)
 			{
@@ -88,7 +98,7 @@ ProcessListEntry::~ProcessListEntry()
 	/// Важен порядок удаления memory_tracker-ов.
 
 	String user = it->client_info.initial_user;
-	String query_id = it->client_info.initial_query_id;
+	String query_id = it->client_info.current_query_id;
 	bool is_cancelled = it->is_cancelled;
 
 	/// Здесь удаляется memory_tracker одного запроса.
