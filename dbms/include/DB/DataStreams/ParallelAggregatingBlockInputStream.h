@@ -11,6 +11,12 @@
 #include <common/ClickHouseRevision.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ExternalAggregationMerge;
+}
+
+
 namespace DB
 {
 

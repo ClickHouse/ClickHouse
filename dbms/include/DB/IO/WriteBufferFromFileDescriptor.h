@@ -13,6 +13,12 @@
 #include <DB/IO/BufferWithOwnMemory.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event WriteBufferFromFileDescriptorWrite;
+	extern const Event WriteBufferFromFileDescriptorWriteBytes;
+}
+
 namespace DB
 {
 
@@ -24,7 +30,7 @@ namespace ErrorCodes
 	extern const int CANNOT_TRUNCATE_FILE;
 }
 
-/** Работает с готовым файловым дескриптором. Не открывает и не закрывает файл.
+/** Use ready file descriptor. Does not open or close a file.
   */
 class WriteBufferFromFileDescriptor : public WriteBufferFromFileBase
 {
@@ -57,7 +63,7 @@ protected:
 		ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWriteBytes, bytes_written);
 	}
 
-	/// Имя или описание файла
+	/// Name or some description of file.
 	virtual std::string getFileName() const override
 	{
 		return "(fd = " + toString(fd) + ")";
@@ -67,8 +73,8 @@ public:
 	WriteBufferFromFileDescriptor(int fd_ = -1, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
 		: WriteBufferFromFileBase(buf_size, existing_memory, alignment), fd(fd_) {}
 
-	/** Можно вызывать для инициализации, если нужный fd не был передан в конструктор.
-	  * Менять fd во время работы нельзя.
+	/** Could be used before initialization if needed 'fd' was not passed to constructor.
+	  * It's not possible to change 'fd' during work.
 	  */
 	void setFD(int fd_)
 	{
@@ -100,10 +106,10 @@ public:
 
 	void sync() override
 	{
-		/// Если в буфере ещё остались данные - запишем их.
+		/// If buffer has pending data - write it.
 		next();
 
-		/// Попросим ОС сбросить данные на диск.
+		/// Request OS to sync data with storage medium.
 		int res = fsync(fd);
 		if (-1 == res)
 			throwFromErrno("Cannot fsync " + getFileName(), ErrorCodes::CANNOT_FSYNC);

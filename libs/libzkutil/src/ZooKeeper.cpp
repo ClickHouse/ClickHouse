@@ -5,6 +5,20 @@
 #include <DB/Common/StringUtils.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ZooKeeperInit;
+	extern const Event ZooKeeperTransactions;
+	extern const Event ZooKeeperCreate;
+	extern const Event ZooKeeperRemove;
+	extern const Event ZooKeeperExists;
+	extern const Event ZooKeeperMulti;
+	extern const Event ZooKeeperGet;
+	extern const Event ZooKeeperSet;
+	extern const Event ZooKeeperGetChildren;
+}
+
+
 namespace zkutil
 {
 

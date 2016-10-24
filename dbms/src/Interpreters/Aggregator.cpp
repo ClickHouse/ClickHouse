@@ -22,6 +22,13 @@
 #include <common/ClickHouseRevision.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ExternalAggregationWritePart;
+	extern const Event ExternalAggregationCompressedBytes;
+	extern const Event ExternalAggregationUncompressedBytes;
+}
+
 namespace DB
 {
 

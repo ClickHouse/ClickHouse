@@ -52,7 +52,7 @@ BlockInputStreams StorageSystemEvents::read(
 	col_value.column = std::make_shared<ColumnUInt64>();
 	block.insert(col_value);
 
-	for (size_t i = 0; i < ProfileEvents::END; ++i)
+	for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
 	{
 		UInt64 value = ProfileEvents::counters[i];
 

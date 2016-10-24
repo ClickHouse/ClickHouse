@@ -72,7 +72,7 @@ public:
 		MergeTreeData::DataPartsVector & parts,
 		MergeTreeData::MutableDataPartPtr & new_data_part,
 		const String & merged_name,
-		MergeTreeData::Transaction * out_transaction = nullptr);
+		MergeTreeData::Transaction * out_transaction = nullptr) noexcept;
 
 	/** Перешардирует заданную партицию.
 	  */

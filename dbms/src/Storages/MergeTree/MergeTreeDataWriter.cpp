@@ -4,6 +4,16 @@
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/IO/HashingWriteBuffer.h>
 
+
+namespace ProfileEvents
+{
+	extern const Event MergeTreeDataWriterBlocks;
+	extern const Event MergeTreeDataWriterBlocksAlreadySorted;
+	extern const Event MergeTreeDataWriterRows;
+	extern const Event MergeTreeDataWriterUncompressedBytes;
+	extern const Event MergeTreeDataWriterCompressedBytes;
+}
+
 namespace DB
 {
 

@@ -54,16 +54,16 @@ void MetricsTransmitter::run()
 void MetricsTransmitter::transmit()
 {
 	GraphiteWriter::KeyValueVector<ssize_t> key_vals{};
-	key_vals.reserve(ProfileEvents::END + CurrentMetrics::END);
+	key_vals.reserve(ProfileEvents::end() + CurrentMetrics::END);
 
-	for (size_t i = 0; i < ProfileEvents::END; ++i)
+	for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
 	{
 		const auto counter = ProfileEvents::counters[i].load(std::memory_order_relaxed);
 		const auto counter_increment = counter - prev_counters[i].load(std::memory_order_relaxed);
 		prev_counters[i].store(counter, std::memory_order_relaxed);
 
 		std::string key {ProfileEvents::getDescription(static_cast<ProfileEvents::Event>(i))};
-		key_vals.emplace_back(event_path_prefix + key, counter_increment);
+		key_vals.emplace_back(profile_events_path_prefix + key, counter_increment);
 	}
 
 	for (size_t i = 0; i < CurrentMetrics::END; ++i)
@@ -71,7 +71,7 @@ void MetricsTransmitter::transmit()
 		const auto value = CurrentMetrics::values[i].load(std::memory_order_relaxed);
 
 		std::string key {CurrentMetrics::getDescription(static_cast<CurrentMetrics::Metric>(i))};
-		key_vals.emplace_back(metrics_path_prefix + key, value);
+		key_vals.emplace_back(current_metrics_path_prefix + key, value);
 	}
 
 	BaseDaemon::instance().writeToGraphite(key_vals);

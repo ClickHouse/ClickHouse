@@ -35,6 +35,11 @@
 #include <DB/Core/Field.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event SelectQuery;
+}
+
 namespace DB
 {
 

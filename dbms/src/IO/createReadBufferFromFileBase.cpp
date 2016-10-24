@@ -3,6 +3,13 @@
 #include <DB/IO/ReadBufferAIO.h>
 #include <DB/Common/ProfileEvents.h>
 
+
+namespace ProfileEvents
+{
+	extern const Event CreatedReadBufferOrdinary;
+	extern const Event CreatedReadBufferAIO;
+}
+
 namespace DB
 {
 

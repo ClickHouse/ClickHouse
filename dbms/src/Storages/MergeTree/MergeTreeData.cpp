@@ -25,6 +25,13 @@
 #include <thread>
 
 
+namespace ProfileEvents
+{
+	extern const Event RejectedInserts;
+	extern const Event DelayedInserts;
+	extern const Event DelayedInsertsMilliseconds;
+}
+
 
 namespace DB
 {

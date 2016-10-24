@@ -7,6 +7,12 @@
 #include <DB/Common/randomSeed.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ReplicaYieldLeadership;
+	extern const Event ReplicaPartialShutdown;
+}
+
 namespace DB
 {
 

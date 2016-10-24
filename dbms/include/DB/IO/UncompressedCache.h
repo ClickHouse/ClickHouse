@@ -7,6 +7,13 @@
 #include <DB/Interpreters/AggregationCommon.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event UncompressedCacheHits;
+	extern const Event UncompressedCacheMisses;
+	extern const Event UncompressedCacheWeightLost;
+}
+
 namespace DB
 {
 
@@ -26,7 +33,7 @@ struct UncompressedSizeWeightFunction
 };
 
 
-/** Кэш разжатых блоков для CachedCompressedReadBuffer. thread-safe.
+/** Cache of decompressed blocks for implementation of CachedCompressedReadBuffer. thread-safe.
   */
 class UncompressedCache : public LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>
 {
@@ -37,7 +44,7 @@ public:
 	UncompressedCache(size_t max_size_in_bytes)
 		: Base(max_size_in_bytes) {}
 
-	/// Посчитать ключ от пути к файлу и смещения.
+	/// Calculate key from path to file and offset.
 	static UInt128 hash(const String & path_to_file, size_t offset)
 	{
 		UInt128 key;

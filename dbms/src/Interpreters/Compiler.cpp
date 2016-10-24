@@ -14,6 +14,12 @@
 #include <DB/Interpreters/Compiler.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event CompileAttempt;
+	extern const Event CompileSuccess;
+}
+
 namespace DB
 {
 

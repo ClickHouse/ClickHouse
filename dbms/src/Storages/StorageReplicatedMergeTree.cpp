@@ -47,6 +47,14 @@
 #include <future>
 
 
+namespace ProfileEvents
+{
+	extern const Event ReplicatedPartMerges;
+	extern const Event ReplicatedPartFailedFetches;
+	extern const Event ReplicatedPartFetchesOfMerged;
+	extern const Event ObsoleteReplicatedParts;
+	extern const Event ReplicatedPartFetches;
+}
 
 namespace DB
 {

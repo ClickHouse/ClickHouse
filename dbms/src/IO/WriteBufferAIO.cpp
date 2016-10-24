@@ -5,6 +5,14 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+
+namespace ProfileEvents
+{
+	extern const Event FileOpen;
+	extern const Event WriteBufferAIOWrite;
+	extern const Event WriteBufferAIOWriteBytes;
+}
+
 namespace DB
 {
 

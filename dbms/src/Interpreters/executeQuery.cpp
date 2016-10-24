@@ -20,6 +20,11 @@
 #include <DB/Interpreters/executeQuery.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event Query;
+}
+
 namespace DB
 {
 

@@ -8,6 +8,11 @@
 #include <set>
 
 
+namespace ProfileEvents
+{
+	extern const Event FunctionExecute;
+}
+
 namespace DB
 {
 
