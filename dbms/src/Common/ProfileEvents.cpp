@@ -90,6 +90,12 @@
 	M(MergeTreeDataWriterCompressedBytes) \
 	M(MergeTreeDataWriterBlocks) \
 	M(MergeTreeDataWriterBlocksAlreadySorted) \
+	\
+	M(ObsoleteEphemeralNode) \
+	M(CannotRemoveEphemeralNode) \
+	M(LeaderElectionAcquiredLeadership) \
+	\
+	M(RegexpCreated) \
 
 namespace ProfileEvents
 {

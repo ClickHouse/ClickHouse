@@ -24,6 +24,9 @@
 	M(ReadonlyReplica) \
 	M(LeaderReplica) \
 	M(MemoryTracking) \
+	M(LeaderElection) \
+	M(EphemeralNode) \
+	M(ZooKeeperWatch) \
 
 
 namespace CurrentMetrics

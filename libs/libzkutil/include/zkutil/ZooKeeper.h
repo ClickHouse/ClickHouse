@@ -9,6 +9,19 @@
 #include <mutex>
 #include <string>
 #include <common/logger_useful.h>
+#include <DB/Common/ProfileEvents.h>
+#include <DB/Common/CurrentMetrics.h>
+
+
+namespace ProfileEvents
+{
+	extern const Event CannotRemoveEphemeralNode;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric EphemeralNode;
+}
 
 
 namespace zkutil
@@ -432,6 +445,7 @@ public:
 		}
 		catch (const KeeperException & e)
 		{
+			ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
 			DB::tryLogCurrentException(__PRETTY_FUNCTION__);
 		}
 	}
@@ -439,6 +453,7 @@ public:
 private:
 	std::string path;
 	ZooKeeper & zookeeper;
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::EphemeralNode};
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;

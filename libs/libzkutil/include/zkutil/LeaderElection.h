@@ -4,6 +4,19 @@
 #include <functional>
 #include <memory>
 #include <common/logger_useful.h>
+#include <DB/Common/CurrentMetrics.h>
+
+
+namespace ProfileEvents
+{
+	extern const Event ObsoleteEphemeralNode;
+	extern const Event LeaderElectionAcquiredLeadership;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric LeaderElection;
+}
 
 
 namespace zkutil
@@ -53,6 +66,8 @@ private:
 	std::atomic<bool> shutdown {false};
 	zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::LeaderElection};
+
 	void createNode()
 	{
 		shutdown = false;
@@ -88,6 +103,7 @@ private:
 
 			if (brother_identifier == identifier)
 			{
+				ProfileEvents::increment(ProfileEvents::ObsoleteEphemeralNode);
 				LOG_WARNING(&Logger::get("LeaderElection"), "Found obsolete ephemeral node for identifier "
 					+ identifier + ", removing: " + brother_path);
 				zookeeper.tryRemoveWithRetries(brother_path);
@@ -120,6 +136,7 @@ private:
 
 				if (it == children.begin())
 				{
+					ProfileEvents::increment(ProfileEvents::LeaderElectionAcquiredLeadership);
 					handler();
 					return;
 				}

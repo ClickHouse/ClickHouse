@@ -18,6 +18,11 @@ namespace ProfileEvents
 	extern const Event ZooKeeperGetChildren;
 }
 
+namespace CurrentMetrics
+{
+	extern const Metric ZooKeeperWatch;
+}
+
 
 namespace zkutil
 {
@@ -43,6 +48,7 @@ struct WatchWithEvent
 	/// существует все время существования WatchWithEvent
 	ZooKeeper & zk;
 	EventPtr event;
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::ZooKeeperWatch};
 
 	WatchWithEvent(ZooKeeper & zk_, EventPtr event_) : zk(zk_), event(event_) {}
 

@@ -50,10 +50,10 @@ void ReplicatedMergeTreeRestartingThread::run()
 	constexpr auto retry_period_ms = 10 * 1000;
 
 	/// Периодичность проверки истечения сессии в ZK.
-	time_t check_period_ms = 60 * 1000;
+	Int64 check_period_ms = storage.data.settings.zookeeper_session_expiration_check_period * 1000;
 
 	/// Периодичность проверки величины отставания реплики.
-	if (check_period_ms > static_cast<time_t>(storage.data.settings.check_delay_period) * 1000)
+	if (check_period_ms > static_cast<Int64>(storage.data.settings.check_delay_period) * 1000)
 		check_period_ms = storage.data.settings.check_delay_period * 1000;
 
 	setThreadName("ReplMTRestart");
