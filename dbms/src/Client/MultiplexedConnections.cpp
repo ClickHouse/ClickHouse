@@ -98,7 +98,6 @@ void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesDa
 }
 
 void MultiplexedConnections::sendQuery(
-	const ClientInfo & client_info,
 	const String & query,
 	const String & query_id,
 	UInt64 stage,
