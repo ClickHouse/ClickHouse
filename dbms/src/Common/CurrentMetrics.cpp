@@ -22,6 +22,7 @@
 	M(SendExternalTables) \
 	M(QueryThread) \
 	M(ReadonlyReplica) \
+	M(LeaderReplica) \
 	M(MemoryTracking) \
 
 

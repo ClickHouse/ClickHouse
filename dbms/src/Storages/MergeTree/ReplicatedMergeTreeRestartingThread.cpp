@@ -16,6 +16,7 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
 	extern const Metric ReadonlyReplica;
+	extern const Metric LeaderReplica;
 }
 
 
@@ -137,6 +138,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 					if (storage.is_leader_node)
 					{
 						storage.is_leader_node = false;
+						CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
 						if (storage.merge_selecting_thread.joinable())
 							storage.merge_selecting_thread.join();
 
@@ -201,7 +203,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 			storage.zookeeper_path + "/leader_election",
 			*storage.current_zookeeper,		/// current_zookeeper живёт в течение времени жизни leader_election,
 											///  так как до изменения current_zookeeper, объект leader_election уничтожается в методе partialShutdown.
-			[this] { storage.becomeLeader(); },
+			[this] { storage.becomeLeader(); CurrentMetrics::add(CurrentMetrics::LeaderReplica); },
 			storage.replica_name);
 
 		/// Все, что выше, может бросить KeeperException, если что-то не так с ZK.
@@ -372,6 +374,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 		if (storage.is_leader_node)
 		{
 			storage.is_leader_node = false;
+			CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
 			if (storage.merge_selecting_thread.joinable())
 				storage.merge_selecting_thread.join();
 		}
