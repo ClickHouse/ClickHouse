@@ -18,6 +18,18 @@
 #include <DB/IO/BufferWithOwnMemory.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ReadBufferFromFileDescriptorRead;
+	extern const Event ReadBufferFromFileDescriptorReadBytes;
+	extern const Event Seek;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric Read;
+}
+
 namespace DB
 {
 
@@ -29,13 +41,13 @@ namespace ErrorCodes
 	extern const int CANNOT_SELECT;
 }
 
-/** Работает с готовым файловым дескриптором. Не открывает и не закрывает файл.
+/** Use ready file descriptor. Does not open or close a file.
   */
 class ReadBufferFromFileDescriptor : public ReadBufferFromFileBase
 {
 protected:
 	int fd;
-	off_t pos_in_file; /// Какому сдвигу в файле соответствует working_buffer.end().
+	off_t pos_in_file; /// What offset in file corresponds to working_buffer.end().
 
 	bool nextImpl() override
 	{
@@ -85,7 +97,7 @@ protected:
 		return true;
 	}
 
-	/// Имя или описание файла
+	/// Name or some description of file.
 	std::string getFileName() const override
 	{
 		return "(fd = " + toString(fd) + ")";
@@ -108,7 +120,7 @@ public:
 
 private:
 
-	/// Если offset такой маленький, что мы не выйдем за пределы буфера, настоящий seek по файлу не делается.
+	/// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
 	off_t doSeek(off_t offset, int whence) override
 	{
 		off_t new_pos = offset;
@@ -117,13 +129,13 @@ private:
 		else if (whence != SEEK_SET)
 			throw Exception("ReadBufferFromFileDescriptor::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-		/// Никуда не сдвинулись.
+		/// Position is unchanged.
 		if (new_pos + (working_buffer.end() - pos) == pos_in_file)
 			return new_pos;
 
 		if (hasPendingData() && new_pos <= pos_in_file && new_pos >= pos_in_file - static_cast<off_t>(working_buffer.size()))
 		{
-			/// Остались в пределах буфера.
+			/// Position is still inside buffer.
 			pos = working_buffer.begin() + (new_pos - (pos_in_file - working_buffer.size()));
 			return new_pos;
 		}
@@ -141,7 +153,7 @@ private:
 	}
 
 
-	/// При условии, что файловый дескриптор позволяет использовать select, проверяет в течение таймаута, есть ли данные для чтения.
+	/// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
 	bool poll(size_t timeout_microseconds)
 	{
 		fd_set fds;

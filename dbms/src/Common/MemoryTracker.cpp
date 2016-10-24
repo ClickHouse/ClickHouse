@@ -9,12 +9,17 @@
 #include <DB/Common/MemoryTracker.h>
 
 
+namespace CurrentMetrics
+{
+	extern const Metric MemoryTracking;
+}
+
 namespace DB
 {
-namespace ErrorCodes
-{
-	extern const int MEMORY_LIMIT_EXCEEDED;
-}
+	namespace ErrorCodes
+	{
+		extern const int MEMORY_LIMIT_EXCEEDED;
+	}
 }
 
 

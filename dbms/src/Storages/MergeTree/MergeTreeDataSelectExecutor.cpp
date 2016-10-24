@@ -36,6 +36,14 @@
 #include <DB/Common/VirtualColumnUtils.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event SelectedParts;
+	extern const Event SelectedRanges;
+	extern const Event SelectedMarks;
+}
+
+
 namespace DB
 {
 

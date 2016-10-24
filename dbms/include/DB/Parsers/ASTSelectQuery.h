@@ -33,7 +33,7 @@ public:
 	void renameColumns(const ASTSelectQuery & source);
 
 	/// Переписывает select_expression_list, чтобы вернуть только необходимые столбцы в правильном порядке.
-	void rewriteSelectExpressionList(const Names & column_names);
+	void rewriteSelectExpressionList(const Names & required_column_names);
 
 	bool isUnionAllHead() const { return (prev_union_all == nullptr) && next_union_all != nullptr; }
 

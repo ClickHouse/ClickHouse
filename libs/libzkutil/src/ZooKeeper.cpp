@@ -5,6 +5,25 @@
 #include <DB/Common/StringUtils.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ZooKeeperInit;
+	extern const Event ZooKeeperTransactions;
+	extern const Event ZooKeeperCreate;
+	extern const Event ZooKeeperRemove;
+	extern const Event ZooKeeperExists;
+	extern const Event ZooKeeperMulti;
+	extern const Event ZooKeeperGet;
+	extern const Event ZooKeeperSet;
+	extern const Event ZooKeeperGetChildren;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric ZooKeeperWatch;
+}
+
+
 namespace zkutil
 {
 
@@ -29,6 +48,7 @@ struct WatchWithEvent
 	/// существует все время существования WatchWithEvent
 	ZooKeeper & zk;
 	EventPtr event;
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::ZooKeeperWatch};
 
 	WatchWithEvent(ZooKeeper & zk_, EventPtr event_) : zk(zk_), event(event_) {}
 

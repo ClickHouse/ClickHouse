@@ -16,6 +16,13 @@
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/Common/Increment.h>
 
+
+namespace ProfileEvents
+{
+	extern const Event MergedRows;
+	extern const Event MergedUncompressedBytes;
+}
+
 namespace DB
 {
 

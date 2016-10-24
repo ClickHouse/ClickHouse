@@ -24,6 +24,11 @@
 #include <DB/Common/CurrentMetrics.h>
 
 
+namespace CurrentMetrics
+{
+	extern const Metric SendExternalTables;
+}
+
 namespace DB
 {
 
@@ -286,7 +291,7 @@ void Connection::sendQuery(const String & query, const String & query_id_, UInt6
 	block_in.reset();
 	block_out.reset();
 
-	/// Если версия сервера достаточно новая и стоит флаг, отправляем пустой блок, символизируя конец передачи данных.
+	/// If server version is new enough, send empty block which meand end of data.
 	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES && !with_pending_data)
 	{
 		sendData(Block());

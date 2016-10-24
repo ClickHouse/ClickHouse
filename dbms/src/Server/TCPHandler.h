@@ -14,6 +14,12 @@
 #include "Server.h"
 
 
+namespace CurrentMetrics
+{
+	extern const Metric TCPConnection;
+}
+
+
 namespace DB
 {
 

@@ -20,6 +20,7 @@
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/ProcessList.h>
+#include <DB/Interpreters/AsynchronousMetrics.h>
 
 #include <DB/Storages/System/StorageSystemNumbers.h>
 #include <DB/Storages/System/StorageSystemTables.h>
@@ -38,6 +39,7 @@
 #include <DB/Storages/System/StorageSystemFunctions.h>
 #include <DB/Storages/System/StorageSystemClusters.h>
 #include <DB/Storages/System/StorageSystemMetrics.h>
+#include <DB/Storages/System/StorageSystemAsynchronousMetrics.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReshardingWorker.h>
 #include <DB/Databases/DatabaseOrdinary.h>
@@ -360,8 +362,6 @@ int Server::main(const std::vector<std::string> & args)
 	}
 
 	SCOPE_EXIT(
-		LOG_DEBUG(log, "Closed all connections.");
-
 		/** Ask to cancel background jobs all table engines,
 		  *  and also query_log.
 		  * It is important to do early, not in destructor of Context, because
@@ -380,10 +380,6 @@ int Server::main(const std::vector<std::string> & args)
 	);
 
 	{
-		const auto metrics_transmitter = config().getBool("use_graphite", true)
-			? std::make_unique<MetricsTransmitter>()
-			: nullptr;
-
 		const std::string listen_host = config().getString("listen_host", "::");
 
 		Poco::Timespan keep_alive_timeout(config().getInt("keep_alive_timeout", 10), 0);
@@ -480,12 +476,14 @@ int Server::main(const std::vector<std::string> & args)
 
 			LOG_DEBUG(log, "Waiting for current connections to close.");
 
-			     config_reloader.reset();
-
 			is_cancelled = true;
 
 			http_server->stop();
 			tcp_server->stop();
+
+			LOG_DEBUG(log, "Closed all connections.");
+
+			config_reloader.reset();
 		);
 
 		/// try to load dictionaries immediately, throw on error and die
@@ -496,14 +494,23 @@ int Server::main(const std::vector<std::string> & args)
 				global_context->tryCreateDictionaries();
 				global_context->tryCreateExternalDictionaries();
 			}
-
-			waitForTerminationRequest();
 		}
 		catch (...)
 		{
 			LOG_ERROR(log, "Caught exception while loading dictionaries.");
 			throw;
 		}
+
+		/// This object will periodically calculate some metrics.
+		AsynchronousMetrics async_metrics(*global_context);
+
+		system_database->attachTable("asynchronous_metrics", StorageSystemAsynchronousMetrics::create("asynchronous_metrics", async_metrics));
+
+		const auto metrics_transmitter = config().getBool("use_graphite", true)
+			? std::make_unique<MetricsTransmitter>(async_metrics)
+			: nullptr;
+
+		waitForTerminationRequest();
 	}
 
 	return Application::EXIT_OK;

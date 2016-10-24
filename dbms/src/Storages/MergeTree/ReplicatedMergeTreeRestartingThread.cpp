@@ -7,6 +7,19 @@
 #include <DB/Common/randomSeed.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ReplicaYieldLeadership;
+	extern const Event ReplicaPartialShutdown;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric ReadonlyReplica;
+	extern const Metric LeaderReplica;
+}
+
+
 namespace DB
 {
 
@@ -37,10 +50,10 @@ void ReplicatedMergeTreeRestartingThread::run()
 	constexpr auto retry_period_ms = 10 * 1000;
 
 	/// Периодичность проверки истечения сессии в ZK.
-	time_t check_period_ms = 60 * 1000;
+	Int64 check_period_ms = storage.data.settings.zookeeper_session_expiration_check_period * 1000;
 
 	/// Периодичность проверки величины отставания реплики.
-	if (check_period_ms > static_cast<time_t>(storage.data.settings.check_delay_period) * 1000)
+	if (check_period_ms > static_cast<Int64>(storage.data.settings.check_delay_period) * 1000)
 		check_period_ms = storage.data.settings.check_delay_period * 1000;
 
 	setThreadName("ReplMTRestart");
@@ -107,7 +120,9 @@ void ReplicatedMergeTreeRestartingThread::run()
 				time_t relative_delay = 0;
 
 				storage.getReplicaDelays(absolute_delay, relative_delay);
-				LOG_TRACE(log, "Absolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".");
+
+				if (absolute_delay)
+					LOG_TRACE(log, "Absolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".");
 
 				prev_time_of_check_delay = current_time;
 
@@ -123,6 +138,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 					if (storage.is_leader_node)
 					{
 						storage.is_leader_node = false;
+						CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
 						if (storage.merge_selecting_thread.joinable())
 							storage.merge_selecting_thread.join();
 
@@ -187,7 +203,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 			storage.zookeeper_path + "/leader_election",
 			*storage.current_zookeeper,		/// current_zookeeper живёт в течение времени жизни leader_election,
 											///  так как до изменения current_zookeeper, объект leader_election уничтожается в методе partialShutdown.
-			[this] { storage.becomeLeader(); },
+			[this] { storage.becomeLeader(); CurrentMetrics::add(CurrentMetrics::LeaderReplica); },
 			storage.replica_name);
 
 		/// Все, что выше, может бросить KeeperException, если что-то не так с ZK.
@@ -358,6 +374,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 		if (storage.is_leader_node)
 		{
 			storage.is_leader_node = false;
+			CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
 			if (storage.merge_selecting_thread.joinable())
 				storage.merge_selecting_thread.join();
 		}

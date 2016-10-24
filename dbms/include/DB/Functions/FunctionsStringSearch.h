@@ -24,6 +24,12 @@
 #include <ext/range.hpp>
 
 
+namespace ProfileEvents
+{
+	extern const Event RegexpCreated;
+}
+
+
 namespace DB
 {
 
@@ -445,6 +451,7 @@ namespace Regexps
 			if (no_capture)
 				flags |= OptimizedRegularExpression::RE_NO_CAPTURE;
 
+			ProfileEvents::increment(ProfileEvents::RegexpCreated);
 			return new Regexp{createRegexp<like>(pattern, flags)};
 		});
 	}

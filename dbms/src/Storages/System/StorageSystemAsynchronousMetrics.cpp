@@ -1,32 +1,33 @@
-#include <DB/Common/CurrentMetrics.h>
+#include <DB/Interpreters/AsynchronousMetrics.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Storages/System/StorageSystemMetrics.h>
+#include <DB/Storages/System/StorageSystemAsynchronousMetrics.h>
 
 
 namespace DB
 {
 
 
-StorageSystemMetrics::StorageSystemMetrics(const std::string & name_)
+StorageSystemAsynchronousMetrics::StorageSystemAsynchronousMetrics(const std::string & name_, const AsynchronousMetrics & async_metrics_)
 	: name(name_),
 	columns
 	{
 		{"metric", 		std::make_shared<DataTypeString>()},
-		{"value",		std::make_shared<DataTypeInt64>()},
-	}
+		{"value",		std::make_shared<DataTypeFloat64>()},
+	},
+	async_metrics(async_metrics_)
 {
 }
 
-StoragePtr StorageSystemMetrics::create(const std::string & name_)
+StoragePtr StorageSystemAsynchronousMetrics::create(const std::string & name_, const AsynchronousMetrics & async_metrics_)
 {
-	return make_shared(name_);
+	return make_shared(name_, async_metrics_);
 }
 
 
-BlockInputStreams StorageSystemMetrics::read(
+BlockInputStreams StorageSystemAsynchronousMetrics::read(
 	const Names & column_names,
 	ASTPtr query,
 	const Context & context,
@@ -48,16 +49,16 @@ BlockInputStreams StorageSystemMetrics::read(
 
 	ColumnWithTypeAndName col_value;
 	col_value.name = "value";
-	col_value.type = std::make_shared<DataTypeInt64>();
-	col_value.column = std::make_shared<ColumnInt64>();
+	col_value.type = std::make_shared<DataTypeFloat64>();
+	col_value.column = std::make_shared<ColumnFloat64>();
 	block.insert(col_value);
 
-	for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-	{
-		auto value = CurrentMetrics::values[i].load(std::memory_order_relaxed);
+	auto async_metrics_values = async_metrics.getValues();
 
-		col_metric.column->insert(String(CurrentMetrics::getDescription(CurrentMetrics::Metric(i))));
-		col_value.column->insert(value);
+	for (const auto & name_value : async_metrics_values)
+	{
+		col_metric.column->insert(name_value.first);
+		col_value.column->insert(name_value.second);
 	}
 
 	return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));

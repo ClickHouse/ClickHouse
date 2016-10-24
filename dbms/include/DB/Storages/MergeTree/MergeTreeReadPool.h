@@ -6,6 +6,12 @@
 #include <mutex>
 
 
+namespace ProfileEvents
+{
+	extern const Event SlowRead;
+	extern const Event ReadBackoff;
+}
+
 namespace DB
 {
 
@@ -55,21 +61,21 @@ using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 class MergeTreeReadPool
 {
 public:
-	/** Пул может динамически уменьшать количество потоков, если чтения происходят медленно.
-	  * Настройки порогов для такого уменьшения.
+	/** Pull could dynamically lower (backoff) number of threads, if read operation are too slow.
+	  * Settings for that backoff.
 	  */
 	struct BackoffSettings
 	{
-		/// Обращать внимания только на чтения, занявшие не меньше такого количества времени. Если выставлено в 0 - значит backoff выключен.
+		/// Pay attention only to reads, that took at least this amount of time. If set to 0 - means backoff is disabled.
 		size_t min_read_latency_ms = 1000;
-		/// Считать события, когда пропускная способность меньше стольки байт в секунду.
+		/// Count events, when read throughput is less than specified bytes per second.
 		size_t max_throughput = 1048576;
-		/// Не обращать внимания на событие, если от предыдущего прошло меньше стольки-то времени.
+		/// Do not pay attention to event, if not enough time passed since previous event.
 		size_t min_interval_between_events_ms = 1000;
-		/// Количество событий, после которого количество потоков будет уменьшено.
+		/// Number of events to do backoff - to lower number of threads in pool.
 		size_t min_events = 2;
 
-		/// Константы выше приведены лишь в качестве примера.
+		/// Constants above is just an example.
 		BackoffSettings(const Settings & settings)
 			: min_read_latency_ms(settings.read_backoff_min_latency_ms.totalMilliseconds()),
 			max_throughput(settings.read_backoff_max_throughput),
@@ -84,7 +90,7 @@ public:
 	BackoffSettings backoff_settings;
 
 private:
-	/** Состояние для отслеживания скорости чтений.
+	/** State to track numbers of slow reads.
 	  */
 	struct BackoffState
 	{
@@ -118,7 +124,7 @@ public:
 	{
 		const std::lock_guard<std::mutex> lock{mutex};
 
-		/// Если количество потоков было уменьшено из-за backoff, то не будем отдавать задачи для более чем backoff_state.current_threads потоков.
+		/// If number of threads was lowered due to backoff, then will assign work only for maximum 'backoff_state.current_threads' threads.
 		if (thread >= backoff_state.current_threads)
 			return nullptr;
 
@@ -138,23 +144,24 @@ public:
 		auto & part = parts[part_idx];
 		auto & marks_in_part = thread_tasks.sum_marks_in_parts.back();
 
-		/// Берём весь кусок, если он достаточно мал
+		/// Get whole part to read if it is small enough.
 		auto need_marks = std::min(marks_in_part, min_marks_to_read);
 
-		/// Не будем оставлять в куске слишком мало строк.
+		/// Do not leave too little rows in part for next time.
 		if (marks_in_part > need_marks &&
 			marks_in_part - need_marks < min_marks_to_read)
 			need_marks = marks_in_part;
 
 		MarkRanges ranges_to_get_from_part;
 
-		/// Возьмем весь кусок, если он достаточно мал.
+		/// Get whole part to read if it is small enough.
 		if (marks_in_part <= need_marks)
 		{
 			const auto marks_to_get_from_range = marks_in_part;
 
-			/** Отрезки уже перечислены справа налево, reverse изначально сделан в MergeTreeDataSelectExecutor и
-			 *	поддержан в fillPerThreadInfo. */
+			/** Ranges are in right-to-left order, because 'reverse' was done in MergeTreeDataSelectExecutor
+			  *	 and that order is supported in 'fillPerThreadInfo'.
+			  */
 			ranges_to_get_from_part = thread_task.ranges;
 
 			marks_in_part -= marks_to_get_from_range;
@@ -167,7 +174,7 @@ public:
 		}
 		else
 		{
-			/// Цикл по отрезкам куска.
+			/// Loop through part ranges.
 			while (need_marks > 0 && !thread_task.ranges.empty())
 			{
 				auto & range = thread_task.ranges.back();
@@ -187,9 +194,9 @@ public:
 				need_marks -= marks_to_get_from_range;
 			}
 
-			/** Перечислим справа налево, чтобы MergeTreeThreadBlockInputStream забирал
-			 *	отрезки с помощью .pop_back() (их порядок был сменен на "слева направо"
-			 *	из-за .pop_back() в этой ветке). */
+			/** Change order to right-to-left, for MergeTreeThreadBlockInputStream to get ranges with .pop_back()
+			  *  (order was changed to left-to-right due to .pop_back() above).
+			  */
 			std::reverse(std::begin(ranges_to_get_from_part), std::end(ranges_to_get_from_part));
 		}
 
@@ -199,9 +206,9 @@ public:
 			per_part_remove_prewhere_column[part_idx], per_part_should_reorder[part_idx]);
 	}
 
-	/** Каждый обработчик задач может вызвать этот метод, передав в него информацию о скорости чтения.
-	  * Если скорость чтения слишком низкая, то пул может принять решение уменьшить число потоков - не отдавать больше задач в некоторые потоки.
-	  * Это позволяет бороться с чрезмерной нагрузкой на дисковую подсистему в случаях, когда чтения осуществляются не из page cache.
+	/** Each worker could call this method and pass information about read performance.
+	  * If read performance is too low, pool could decide to lower number of threads: do not assign more tasks to several threads.
+	  * This allows to overcome excessive load to disk subsystem, when reads are not from page cache.
 	  */
 	void profileFeedback(const ReadBufferFromFileBase::ProfileInfo info)
 	{
@@ -254,9 +261,9 @@ private:
 		{
 			auto & part = parts[i];
 
-			/// Посчитаем засечки для каждого куска.
+			/// Read marks for every data part.
 			size_t sum_marks = 0;
-			/// Отрезки уже перечислены справа налево, reverse в MergeTreeDataSelectExecutor.
+			/// Ranges are in right-to-left order, due to 'reverse' in MergeTreeDataSelectExecutor.
 			for (const auto & range : part.ranges)
 				sum_marks += range.end - range.begin;
 
@@ -291,8 +298,9 @@ private:
 				const NameSet pre_name_set{
 					std::begin(required_pre_column_names), std::end(required_pre_column_names)
 				};
-				/** Если выражение в PREWHERE - не столбец таблицы, не нужно отдавать наружу столбец с ним
-				 *	(от storage ожидают получить только столбцы таблицы). */
+				/** If expression in PREWHERE is not table column, then no need to return column with it to caller
+				  *	(because storage is expected only to read table columns).
+				  */
 				per_part_remove_prewhere_column.push_back(0 == pre_name_set.count(prewhere_column_name));
 
 				Names post_column_names;
@@ -309,8 +317,9 @@ private:
 
 			if (check_columns)
 			{
-				/** Под part->columns_lock проверим, что все запрошенные столбцы в куске того же типа, что в таблице.
-				 *	Это может быть не так во время ALTER MODIFY. */
+				/** Under part->columns_lock check that all requested columns in part are of same type that in table.
+				  *	This could be violated during ALTER MODIFY.
+				  */
 				if (!required_pre_column_names.empty())
 					data.check(part.data_part->columns, required_pre_column_names);
 				if (!required_column_names.empty())
@@ -351,12 +360,12 @@ private:
 				RangesInDataPart & part = parts.back();
 				size_t & marks_in_part = per_part_sum_marks.back();
 
-				/// Не будем брать из куска слишком мало строк.
+				/// Do not get too few rows from part.
 				if (marks_in_part >= min_marks_for_concurrent_read &&
 					need_marks < min_marks_for_concurrent_read)
 					need_marks = min_marks_for_concurrent_read;
 
-				/// Не будем оставлять в куске слишком мало строк.
+				/// Do not leave too few rows in part for next time.
 				if (marks_in_part > need_marks &&
 					marks_in_part - need_marks < min_marks_for_concurrent_read)
 					need_marks = marks_in_part;
@@ -364,10 +373,10 @@ private:
 				MarkRanges ranges_to_get_from_part;
 				size_t marks_in_ranges = need_marks;
 
-				/// Возьмем весь кусок, если он достаточно мал.
+				/// Get whole part to read if it is small enough.
 				if (marks_in_part <= need_marks)
 				{
-					/// Оставим отрезки перечисленными справа налево для удобства использования .pop_back() в .getTask()
+					/// Leave ranges in right-to-left order for convenience to use .pop_back() in .getTask()
 					ranges_to_get_from_part = part.ranges;
 					marks_in_ranges = marks_in_part;
 
@@ -377,7 +386,7 @@ private:
 				}
 				else
 				{
-					/// Цикл по отрезкам куска.
+					/// Loop through part ranges.
 					while (need_marks > 0)
 					{
 						if (part.ranges.empty())
@@ -396,9 +405,9 @@ private:
 							part.ranges.pop_back();
 					}
 
-					/** Вновь перечислим отрезки справа налево, чтобы .getTask() мог забирать их
-					 *	с помощью .pop_back() (их порядок был сменен на "слева направо"
-					 *	из-за .pop_back() в этой ветке). */
+					/** Change order to right-to-left, for getTask() to get ranges with .pop_back()
+					  *  (order was changed to left-to-right due to .pop_back() above).
+					  */
 					std::reverse(std::begin(ranges_to_get_from_part), std::end(ranges_to_get_from_part));
 				}
 
@@ -410,10 +419,12 @@ private:
 		}
 	}
 
+
 	/** Если некоторых запрошенных столбцов нет в куске,
-	 *	то выясняем, какие столбцы может быть необходимо дополнительно прочитать,
-	 *	чтобы можно было вычислить DEFAULT выражение для этих столбцов.
-	 *	Добавляет их в columns. */
+	  *	то выясняем, какие столбцы может быть необходимо дополнительно прочитать,
+	  *	чтобы можно было вычислить DEFAULT выражение для этих столбцов.
+	  *	Добавляет их в columns.
+	  */
 	NameSet injectRequiredColumns(const MergeTreeData::DataPartPtr & part, Names & columns) const
 	{
 		NameSet required_columns{std::begin(columns), std::end(columns)};

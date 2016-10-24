@@ -10,6 +10,16 @@
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event FileOpen;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric OpenFileForWrite;
+}
+
 namespace DB
 {
 
@@ -21,7 +31,8 @@ namespace ErrorCodes
 }
 
 
-/** Принимает имя файла. Самостоятельно открывает и закрывает файл.
+/** Accepts path to file and opens it, or pre-opened file descriptor.
+  * Closes file by himself (thus "owns" a file descriptor).
   */
 class WriteBufferFromFile : public WriteBufferFromFileDescriptor
 {
@@ -42,7 +53,7 @@ public:
 			throwFromErrno("Cannot open file " + file_name, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 	}
 
-	/// Использовать уже открытый файл.
+	/// Use pre-opened file descriptor.
 	WriteBufferFromFile(int fd, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1, mode_t mode = 0666,
 		char * existing_memory = nullptr, size_t alignment = 0)
 		: WriteBufferFromFileDescriptor(fd, buf_size, existing_memory, alignment), file_name("(fd = " + toString(fd) + ")")
@@ -66,7 +77,7 @@ public:
 		::close(fd);
 	}
 
-	/// Закрыть файл раньше вызова деструктора.
+	/// Close file before destruction of object.
 	void close()
 	{
 		next();
@@ -76,17 +87,6 @@ public:
 
 		fd = -1;
 		metric_increment.destroy();
-	}
-
-	/** fsync() transfers ("flushes") all modified in-core data of (i.e., modified buffer cache pages for) the file
-	  * referred to by the file descriptor fd to the disk device (or other permanent storage device)
-	  * so that all changed information can be retrieved even after the system crashed or was rebooted.
-	  * This includes writing through or flushing a disk cache if present. The call blocks until the device
-	  * reports that the transfer has completed. It also flushes metadata information associated with the file (see stat(2)).
-	  *    - man fsync */
-	void sync() override
-	{
-		fsync(fd);
 	}
 
 	std::string getFileName() const override

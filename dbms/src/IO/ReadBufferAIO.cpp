@@ -9,6 +9,18 @@
 #include <experimental/optional>
 
 
+namespace ProfileEvents
+{
+	extern const Event FileOpen;
+	extern const Event ReadBufferAIORead;
+	extern const Event ReadBufferAIOReadBytes;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric Read;
+}
+
 namespace DB
 {
 

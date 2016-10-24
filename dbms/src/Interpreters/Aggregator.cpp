@@ -22,6 +22,18 @@
 #include <common/ClickHouseRevision.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ExternalAggregationWritePart;
+	extern const Event ExternalAggregationCompressedBytes;
+	extern const Event ExternalAggregationUncompressedBytes;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric QueryThread;
+}
+
 namespace DB
 {
 

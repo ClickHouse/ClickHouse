@@ -7,6 +7,12 @@
 
 #include <random>
 
+
+namespace CurrentMetrics
+{
+	extern const Metric BackgroundPoolTask;
+}
+
 namespace DB
 {
 

@@ -43,13 +43,17 @@ ConfigReloader::~ConfigReloader()
 {
 	try
 	{
-		LOG_DEBUG(log, "ConfigReloader::~ConfigReloader()");
-		quit = true;
+		{
+			std::lock_guard<std::mutex> lock{mutex};
+			quit = true;
+		}
+
+		cond.notify_one();
 		thread.join();
 	}
 	catch (...)
 	{
-		tryLogCurrentException("~ConfigReloader");
+		DB::tryLogCurrentException(__PRETTY_FUNCTION__);
 	}
 }
 
@@ -58,9 +62,13 @@ void ConfigReloader::run()
 {
 	setThreadName("ConfigReloader");
 
-	while (!quit)
+	std::unique_lock<std::mutex> lock{mutex};
+
+	while (true)
 	{
-		std::this_thread::sleep_for(reload_interval);
+		if (cond.wait_for(lock, reload_interval, [this] { return quit; }))
+			break;
+
 		reloadIfNewer(false, false);
 	}
 }

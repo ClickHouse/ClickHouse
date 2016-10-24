@@ -15,6 +15,11 @@
 #include <DB/Common/escapeForFileName.h>
 
 
+namespace CurrentMetrics
+{
+	extern const Metric ReplicatedChecks;
+}
+
 namespace DB
 {
 

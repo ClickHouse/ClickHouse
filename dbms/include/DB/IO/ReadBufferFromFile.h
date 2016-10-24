@@ -6,6 +6,16 @@
 #include <DB/Common/CurrentMetrics.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event FileOpen;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric OpenFileForRead;
+}
+
 namespace DB
 {
 
@@ -17,7 +27,8 @@ namespace ErrorCodes
 }
 
 
-/** Принимает имя файла. Самостоятельно открывает и закрывает файл.
+/** Accepts path to file and opens it, or pre-opened file descriptor.
+  * Closes file by himself (thus "owns" a file descriptor).
   */
 class ReadBufferFromFile : public ReadBufferFromFileDescriptor
 {
@@ -38,7 +49,7 @@ public:
 			throwFromErrno("Cannot open file " + file_name, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 	}
 
-	/// Использовать уже открытый файл.
+	/// Use pre-opened file descriptor.
 	ReadBufferFromFile(int fd, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
 		char * existing_memory = nullptr, size_t alignment = 0)
 		: ReadBufferFromFileDescriptor(fd, buf_size, existing_memory, alignment), file_name("(fd = " + toString(fd) + ")")
@@ -53,7 +64,7 @@ public:
 		::close(fd);
 	}
 
-	/// Закрыть файл раньше вызова деструктора.
+	/// Close file before destruction of object.
 	void close()
 	{
 		if (0 != ::close(fd))

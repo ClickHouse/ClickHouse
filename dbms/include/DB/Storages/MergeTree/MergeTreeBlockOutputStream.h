@@ -4,6 +4,12 @@
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <iomanip>
 
+
+namespace ProfileEvents
+{
+	extern const Event SynchronousMergeOnInsert;
+}
+
 namespace DB
 {
 

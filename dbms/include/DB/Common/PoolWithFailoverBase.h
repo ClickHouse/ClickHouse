@@ -18,6 +18,12 @@ namespace ErrorCodes
 }
 }
 
+namespace ProfileEvents
+{
+	extern const Event DistributedConnectionFailTry;
+	extern const Event DistributedConnectionFailAtAll;
+}
+
 
 namespace
 {

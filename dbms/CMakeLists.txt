@@ -15,6 +15,10 @@ else()
 	set (LINK_MONGOCLIENT libmongoclient.a libssl.a libcrypto.a libboost_thread.a)
 endif()
 
+if (DISABLE_LIBTCMALLOC)
+	add_definitions(-D NO_TCMALLOC)
+endif()
+
 
 add_library(string_utils
 	include/DB/Common/StringUtils.h
@@ -371,6 +375,7 @@ add_library (dbms
 	include/DB/Interpreters/ClusterProxy/DescribeQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/AlterQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/Query.h
+	include/DB/Interpreters/AsynchronousMetrics.h
 	include/DB/Common/Allocator.h
 	include/DB/Common/CombinedCardinalityEstimator.h
 	include/DB/Common/ExternalTable.h
@@ -541,6 +546,7 @@ add_library (dbms
 	include/DB/Storages/StorageStripeLog.h
 	include/DB/Storages/System/StorageSystemEvents.h
 	include/DB/Storages/System/StorageSystemMetrics.h
+	include/DB/Storages/System/StorageSystemAsynchronousMetrics.h
 	include/DB/Storages/System/StorageSystemTables.h
 	include/DB/Storages/MergeTree/MarkRange.h
 	include/DB/Storages/MergeTree/MergeTreeDataMerger.h
@@ -647,6 +653,7 @@ add_library (dbms
 	src/Storages/System/StorageSystemProcesses.cpp
 	src/Storages/System/StorageSystemEvents.cpp
 	src/Storages/System/StorageSystemMetrics.cpp
+	src/Storages/System/StorageSystemAsynchronousMetrics.cpp
 	src/Storages/System/StorageSystemMerges.cpp
 	src/Storages/System/StorageSystemSettings.cpp
 	src/Storages/System/StorageSystemZooKeeper.cpp
@@ -852,6 +859,7 @@ add_library (dbms
 	src/Interpreters/ClusterProxy/DescribeQueryConstructor.cpp
 	src/Interpreters/ClusterProxy/AlterQueryConstructor.cpp
 	src/Interpreters/ClusterProxy/Query.cpp
+	src/Interpreters/AsynchronousMetrics.cpp
 
 	src/Functions/FunctionFactory.cpp
 	src/Functions/FunctionsArithmetic.cpp
