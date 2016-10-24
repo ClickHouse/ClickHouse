@@ -9,6 +9,18 @@
 #include <DB/Databases/IDatabase.h>
 #include <chrono>
 
+#include <gperftools/malloc_extension.h>
+
+
+/// Initializing malloc extension in global constructor as required.
+struct MallocExtensionInitializer
+{
+	MallocExtensionInitializer()
+	{
+		MallocExtension::Initialize();
+	}
+} malloc_extension_initializer;
+
 
 namespace DB
 {
@@ -182,6 +194,29 @@ void AsynchronousMetrics::update()
 		set("ReplicasMaxRelativeDelay", max_relative_delay);
 
 		set("MaxPartCountForPartition", max_part_count_for_partition);
+	}
+
+	{
+		/// tcmalloc related metrics. Remove if you switch to different allocator.
+
+		MallocExtension & malloc_extension = *MallocExtension::instance();
+
+		auto malloc_metrics =
+		{
+			"tcmalloc.current_total_thread_cache_bytes",
+			"tcmalloc.central_cache_free_bytes",
+			"tcmalloc.transfer_cache_free_bytes",
+			"tcmalloc.thread_cache_free_bytes",
+			"tcmalloc.pageheap_free_bytes",
+			"tcmalloc.pageheap_unmapped_bytes",
+		};
+
+		for (auto malloc_metric : malloc_metrics)
+		{
+			size_t value = 0;
+			if (malloc_extension.GetNumericProperty(malloc_metric, &value))
+				set(malloc_metric, value);
+		}
 	}
 
 	/// Add more metrics as you wish.
