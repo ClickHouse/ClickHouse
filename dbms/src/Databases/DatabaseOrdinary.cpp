@@ -5,6 +5,7 @@
 #include <DB/Databases/DatabasesCommon.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/StringUtils.h>
+#include <DB/Common/Stopwatch.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>

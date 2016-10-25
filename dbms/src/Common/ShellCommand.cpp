@@ -7,6 +7,7 @@
 #include <DB/Common/Exception.h>
 #include <DB/Common/ShellCommand.h>
 #include <DB/IO/WriteBufferFromVector.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB

@@ -2,10 +2,6 @@
 
 #include <ext/shared_ptr_helper.hpp>
 
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/DataStreams/NativeBlockOutputStream.h>
-
 #include <DB/Storages/IStorage.h>
 #include <DB/Interpreters/Set.h>
 
@@ -53,26 +49,6 @@ private:
 	/// Вставить блок в состояние.
 	virtual void insertBlock(const Block & block) = 0;
 	virtual size_t getSize() const = 0;
-};
-
-
-class SetOrJoinBlockOutputStream : public IBlockOutputStream
-{
-public:
-	SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
-		const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_);
-
-	void write(const Block & block) override;
-	void writeSuffix() override;
-
-private:
-	StorageSetOrJoinBase & table;
-	String backup_path;
-	String backup_tmp_path;
-	String backup_file_name;
-	WriteBufferFromFile backup_buf;
-	CompressedWriteBuffer compressed_backup_buf;
-	NativeBlockOutputStream backup_stream;
 };
 
 

@@ -470,7 +470,6 @@ add_library (dbms
 	include/DB/IO/RemoteWriteBuffer.h
 	include/DB/IO/VarInt.h
 	include/DB/IO/copyData.h
-	include/DB/IO/ChunkedReadBuffer.h
 	include/DB/IO/LimitReadBuffer.h
 	include/DB/IO/HexWriteBuffer.h
 	include/DB/IO/CachedCompressedReadBuffer.h
@@ -478,7 +477,6 @@ add_library (dbms
 	include/DB/IO/AsynchronousWriteBuffer.h
 	include/DB/IO/ReadBufferAIO.h
 	include/DB/IO/ReadHelpers.h
-	include/DB/IO/ChunkedWriteBuffer.h
 	include/DB/IO/WriteBufferFromPocoSocket.h
 	include/DB/IO/ReadBufferFromHTTP.h
 	include/DB/IO/WriteBufferFromHTTPServerResponse.h
@@ -622,6 +620,15 @@ add_library (dbms
 	src/Core/NamesAndTypes.cpp
 	src/Core/ErrorCodes.cpp
 
+	src/IO/CachedCompressedReadBuffer.cpp
+	src/IO/CompressedReadBuffer.cpp
+	src/IO/CompressedReadBufferBase.cpp
+	src/IO/CompressedReadBufferFromFile.cpp
+	src/IO/CompressedWriteBuffer.cpp
+	src/IO/ReadBufferFromFile.cpp
+	src/IO/ReadBufferFromFileDescriptor.cpp
+	src/IO/WriteBufferFromFile.cpp
+	src/IO/WriteBufferFromFileDescriptor.cpp
 	src/IO/ReadHelpers.cpp
 	src/IO/WriteHelpers.cpp
 	src/IO/WriteBufferValidUTF8.cpp
