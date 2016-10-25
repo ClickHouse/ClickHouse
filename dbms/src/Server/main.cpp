@@ -25,4 +25,3 @@ int main (int argc_, char * argv_[])
 		main_clickhouse_server(argc_, argv_);
 	}
 }
-

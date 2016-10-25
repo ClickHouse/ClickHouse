@@ -3,11 +3,14 @@
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/WriteHelpers.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 
 #include <DB/Common/escapeForFileName.h>
+
+#include <fcntl.h>
 
 namespace DB
 {
@@ -35,12 +38,12 @@ StorageFile::StorageFile(
 {
 	if (table_fd < 0) // Will use file
 	{
-		if (!table_path_.empty()) // Is user file
+		if (!table_path_.empty()) // Is user's file
 		{
 			path = Poco::Path(table_path_).absolute().toString();
 			is_db_table = false;
 		}
-		else
+		else // Is DB's file
 		{
 			path = getTablePath(db_dir_path, table_name, format_name);
 			is_db_table = true;
@@ -51,8 +54,6 @@ StorageFile::StorageFile(
 	{
 		is_db_table = false;
 	}
-
-	LOG_DEBUG(log, "Creating StorageFile " << table_name <<  " with format " << format_name << " using path " << path << " and dir " << db_dir_path);
 }
 
 
@@ -115,6 +116,14 @@ BlockInputStreams StorageFile::read(
 	size_t max_block_size,
 	unsigned threads)
 {
+	if (table_fd >= 0)
+	{
+		if (table_fd_was_used)
+			throw Exception("Repeating read from the same file descriptor inside " + getName());
+
+		table_fd_was_used = true;
+	}
+
 	return BlockInputStreams(1, std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size));
 }
 
@@ -166,8 +175,15 @@ BlockOutputStreamPtr StorageFile::write(
 	ASTPtr query,
 	const Settings & settings)
 {
-	/// TODO: replace settings to context globally
-	/// TODO: currently, for example, output_format_json_quote_64bit_integers works time-to-time
+	if (table_fd >= 0)
+	{
+		if (table_fd_was_used)
+			throw Exception("Repeating write from the same file descriptor inside " + getName());
+
+		table_fd_was_used = true;
+	}
+
+	/// TODO: Do we need to use output_format_json_quote_64bit_integers from setting here?
 
 	return std::make_shared<StorageFileBlockOutputStream>(*this);
 }
@@ -175,11 +191,7 @@ BlockOutputStreamPtr StorageFile::write(
 
 void StorageFile::drop()
 {
-	if (!is_db_table)
-		throw Exception("Can't drop table '" + table_name + "' stored in user-defined file");
-
-// 	Poco::ScopedWriteRWLock lock(rwlock);
-// 	Poco::File(path).remove();
+	/// Extra actions are not required.
 }
 
 

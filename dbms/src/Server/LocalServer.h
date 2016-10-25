@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Poco/Util/Application.h>
 #include <memory>
 

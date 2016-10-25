@@ -99,6 +99,8 @@ private:
 	int table_fd = -1;
 	bool is_db_table = true; /// Table is stored in real database, not user's file
 
+	bool table_fd_was_used = false; /// To detect repeating reads from stdin, not thread-safe.
+
 	Poco::RWLock rwlock;
 
 	Logger * log = &Logger::get("StorageFile");

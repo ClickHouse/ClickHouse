@@ -614,6 +614,7 @@ add_library (dbms
 	include/DB/Storages/StorageNull.h
 	include/DB/Storages/System/StorageSystemSettings.h
 	include/DB/Databases/IDatabase.h
+	include/DB/Databases/DatabaseMemory.h
 	include/DB/Databases/DatabaseOrdinary.h
 	include/DB/Databases/DatabaseCloud.h
 	include/DB/Databases/DatabaseFactory.h
@@ -956,6 +957,7 @@ add_library (dbms
 	src/AggregateFunctions/AggregateFunctionUniqUpTo.cpp
 	src/AggregateFunctions/AggregateFunctionDebug.cpp
 
+	src/Databases/DatabaseMemory.cpp
 	src/Databases/DatabaseOrdinary.cpp
 	src/Databases/DatabaseFactory.cpp
 	src/Databases/DatabasesCommon.cpp
