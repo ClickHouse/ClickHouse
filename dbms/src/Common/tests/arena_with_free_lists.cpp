@@ -17,6 +17,7 @@
 
 #include <DB/Core/StringRef.h>
 #include <DB/Core/Field.h>
+#include <DB/Common/Stopwatch.h>
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/ReadHelpers.h>
