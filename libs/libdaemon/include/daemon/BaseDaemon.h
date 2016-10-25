@@ -199,9 +199,6 @@ protected:
 	std::condition_variable signal_event;
 	std::atomic_size_t terminate_signals_counter{0};
 	std::atomic_size_t sigint_signals_counter{0};
-
-	bool is_daemon = false;
-	bool is_local_server = false;
 };
 
 
