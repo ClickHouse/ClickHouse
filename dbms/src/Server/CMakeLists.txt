@@ -1,4 +1,5 @@
 add_executable(clickhouse-server
+	main.cpp
 	Server.cpp
 	HTTPHandler.cpp
 	TCPHandler.cpp
@@ -6,7 +7,8 @@ add_executable(clickhouse-server
 	MetricsTransmitter.cpp
 	ConfigReloader.cpp
 	StatusFile.cpp
-	ReplicasStatusHandler.cpp)
+	ReplicasStatusHandler.cpp
+	LocalServer.cpp)
 
 # Adding init.d support
 INCLUDE(${PROJECT_SOURCE_DIR}/tools/init.d/CMakeLists.init)

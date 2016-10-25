@@ -34,6 +34,7 @@ ASTPtr parseQuery(
 
 
 /// Split queries separated by ; on to list of single queries
-bool splitMultipartQuery(const std::string & queries, std::vector<std::string> & queries_list);
+/// Returns pointer to the end of last sucessfuly parsed query (first), and true if all queries are sucessfuly parsed (second)
+std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, std::vector<std::string> & queries_list);
 
 }

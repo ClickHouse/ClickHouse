@@ -6,7 +6,6 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DirectoryIterator.h>
 
-#include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
 
 #include <ext/scope_guard.hpp>
@@ -654,5 +653,3 @@ void Server::attachSystemTables(const std::string & path, bool has_zookeeper) co
 }
 
 }
-
-YANDEX_APP_SERVER_MAIN(DB::Server);

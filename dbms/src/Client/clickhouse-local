@@ -1,0 +1,2 @@
+#!/bin/bash
+clickhouse-server --local-mode "$@"

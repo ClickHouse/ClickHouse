@@ -176,7 +176,7 @@ ASTPtr parseQuery(
 	return parseQueryAndMovePosition(parser, pos, end, description, false);
 }
 
-bool splitMultipartQuery(const std::string & queries, std::vector<std::string> & queries_list)
+std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, std::vector<std::string> & queries_list)
 {
 	ASTPtr ast;
 	ParserQuery parser;
@@ -192,7 +192,7 @@ bool splitMultipartQuery(const std::string & queries, std::vector<std::string> &
 
 		ast = parseQueryAndMovePosition(parser, pos, end, "", true);
 		if (!ast)
-			break;
+			return std::make_pair(begin, false);
 
 		ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*ast);
 
@@ -211,7 +211,7 @@ bool splitMultipartQuery(const std::string & queries, std::vector<std::string> &
 			++begin;
 	}
 
-	return true;
+	return std::make_pair(begin, false);
 }
 
 }
