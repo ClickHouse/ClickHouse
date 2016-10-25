@@ -22,23 +22,23 @@ ProcessList::EntryPtr ProcessList::insert(
 			&& (!settings.queue_max_wait_ms.totalMilliseconds() || !have_space.tryWait(mutex, settings.queue_max_wait_ms.totalMilliseconds())))
 			throw Exception("Too much simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
-		/** Why we use initial user, but current query_id?
+		/** Why we use current user?
+		  * Because initial one is passed by client and credentials for it is not verified,
+		  *  and using initial_user for limits will be insecure.
 		  *
-		  * We use initial_user to implement limit on number of simultaneously running queries for one user
-		  *  on each node during distributed query execution, not only on initiating node (more fair).
-		  *
-		  * We use current_query_id because we want to allow distributed queries that will run multiple secondary queries on same server,
+		  * Why we use current_query_id?
+		  * Because we want to allow distributed queries that will run multiple secondary queries on same server,
 		  *  like SELECT count() FROM remote('127.0.0.{1,2}', system.numbers)
 		  *  so they must have different query_ids.
 		  */
 
 		{
-			UserToQueries::iterator user_process_list = user_to_queries.find(client_info.initial_user);
+			UserToQueries::iterator user_process_list = user_to_queries.find(client_info.current_user);
 
 			if (user_process_list != user_to_queries.end())
 			{
 				if (settings.max_concurrent_queries_for_user && user_process_list->second.queries.size() >= settings.max_concurrent_queries_for_user)
-					throw Exception("Too much simultaneous queries for user " + client_info.initial_user
+					throw Exception("Too much simultaneous queries for user " + client_info.current_user
 						+ ". Current: " + toString(user_process_list->second.queries.size())
 						+ ", maximum: " + toString(settings.max_concurrent_queries_for_user),
 						ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
@@ -69,7 +69,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
 		if (!client_info.current_query_id.empty())
 		{
-			ProcessListForUser & user_process_list = user_to_queries[client_info.initial_user];
+			ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
 			user_process_list.queries[client_info.current_query_id] = &res->get();
 
 			if (current_memory_tracker)
@@ -97,7 +97,7 @@ ProcessListEntry::~ProcessListEntry()
 
 	/// Важен порядок удаления memory_tracker-ов.
 
-	String user = it->client_info.initial_user;
+	String user = it->client_info.current_user;
 	String query_id = it->client_info.current_query_id;
 	bool is_cancelled = it->is_cancelled;
 

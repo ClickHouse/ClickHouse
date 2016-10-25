@@ -527,7 +527,7 @@ void TCPHandler::receiveQuery()
 	{
 		ClientInfo & client_info = query_context.getClientInfo();
 		if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
-			client_info.read(*in);
+			client_info.read(*in, client_revision);
 
 		/// For better support of old clients, that does not send ClientInfo.
 		if (client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)

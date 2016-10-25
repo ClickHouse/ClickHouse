@@ -350,7 +350,6 @@ namespace ErrorCodes
 	extern const int SUPPORT_IS_DISABLED = 344;
 	extern const int TABLE_DIFFERS_TOO_MUCH = 345;
 	extern const int CANNOT_ICONV = 346;
-	extern const int UNKNOWN_CLIENT_INFO_VERSION = 347;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;

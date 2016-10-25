@@ -73,9 +73,10 @@ public:
 
 	/** Serialization and deserialization.
 	  * Only values that are not calculated automatically or passed separately are serialized.
+	  * Revisions are passed to use format that server will understand or client was used.
 	  */
-	void write(WriteBuffer & out) const;
-	void read(ReadBuffer & in);
+	void write(WriteBuffer & out, UInt64 server_revision) const;
+	void read(ReadBuffer & in, UInt64 client_revision);
 
 	void fillOSUserHostNameAndVersionInfo();
 };

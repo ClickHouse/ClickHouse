@@ -302,7 +302,7 @@ void Connection::sendQuery(
 			client_info_to_send.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
 		}
 
-		client_info_to_send.write(*out);
+		client_info_to_send.write(*out, server_revision);
 	}
 
 	/// Per query settings.

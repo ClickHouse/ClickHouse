@@ -15,17 +15,14 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int UNKNOWN_CLIENT_INFO_VERSION;
+	extern const int LOGICAL_ERROR;
 }
 
 
-/// Change when format is changed.
-static const UInt32 client_info_version = 1;
-
-
-void ClientInfo::write(WriteBuffer & out) const
+void ClientInfo::write(WriteBuffer & out, UInt64 server_revision) const
 {
-	writeVarUInt(client_info_version, out);
+	if (server_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
+		throw Exception("Logical error: method ClientInfo::write is called for unsupported server revision", ErrorCodes::LOGICAL_ERROR);
 
 	writeBinary(UInt8(query_kind), out);
 	if (empty())
@@ -54,13 +51,10 @@ void ClientInfo::write(WriteBuffer & out) const
 }
 
 
-void ClientInfo::read(ReadBuffer & in)
+void ClientInfo::read(ReadBuffer & in, UInt64 client_revision)
 {
-	UInt32 read_client_info_version = 0;
-	readVarUInt(read_client_info_version, in);
-
-	if (client_info_version != read_client_info_version)
-		throw Exception("Unknown version of ClientInfo: " + toString(read_client_info_version), ErrorCodes::UNKNOWN_CLIENT_INFO_VERSION);
+	if (client_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
+		throw Exception("Logical error: method ClientInfo::read is called for unsupported client revision", ErrorCodes::LOGICAL_ERROR);
 
 	UInt8 read_query_kind = 0;
 	readBinary(read_query_kind, in);
