@@ -1,35 +1,22 @@
-/*
-    Buffered version of Zstd compression library
-    Copyright (C) 2015-2016, Yann Collet.
+/**
+ * Copyright (c) 2016-present, Yann Collet, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ */
 
-    BSD 2-Clause License (http://www.opensource.org/licenses/bsd-license.php)
+/* ***************************************************************
+*  NOTES/WARNINGS
+*****************************************************************/
+/* The streaming API defined here will soon be deprecated by the
+* new one in 'zstd.h'; consider migrating towards newer streaming
+* API. See 'lib/README.md'.
+*****************************************************************/
 
-    Redistribution and use in source and binary forms, with or without
-    modification, are permitted provided that the following conditions are
-    met:
-    * Redistributions of source code must retain the above copyright
-    notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above
-    copyright notice, this list of conditions and the following disclaimer
-    in the documentation and/or other materials provided with the
-    distribution.
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-    You can contact the author at :
-    - zstd homepage : http://www.zstd.net/
-*/
-#ifndef ZSTD_BUFFERED_H
-#define ZSTD_BUFFERED_H
+#ifndef ZSTD_BUFFERED_H_23987
+#define ZSTD_BUFFERED_H_23987
 
 #if defined (__cplusplus)
 extern "C" {
@@ -38,16 +25,14 @@ extern "C" {
 /* *************************************
 *  Dependencies
 ***************************************/
-#include <stddef.h>   /* size_t */
+#include <stddef.h>      /* size_t */
 
 
 /* ***************************************************************
 *  Compiler specifics
 *****************************************************************/
-/*!
-*  ZSTD_DLL_EXPORT :
-*  Enable exporting of functions when building a Windows DLL
-*/
+/* ZSTD_DLL_EXPORT :
+*  Enable exporting of functions when building a Windows DLL */
 #if defined(_WIN32) && defined(ZSTD_DLL_EXPORT) && (ZSTD_DLL_EXPORT==1)
 #  define ZSTDLIB_API __declspec(dllexport)
 #else
@@ -58,6 +43,12 @@ extern "C" {
 /* *************************************
 *  Streaming functions
 ***************************************/
+/* This is the easier "buffered" streaming API,
+*  using an internal buffer to lift all restrictions on user-provided buffers
+*  which can be any size, any place, for both input and output.
+*  ZBUFF and ZSTD are 100% interoperable,
+*  frames created by one can be decoded by the other one */
+
 typedef struct ZBUFF_CCtx_s ZBUFF_CCtx;
 ZSTDLIB_API ZBUFF_CCtx* ZBUFF_createCCtx(void);
 ZSTDLIB_API size_t      ZBUFF_freeCCtx(ZBUFF_CCtx* cctx);
@@ -103,8 +94,8 @@ ZSTDLIB_API size_t ZBUFF_compressEnd(ZBUFF_CCtx* cctx, void* dst, size_t* dstCap
 *  @return : nb of bytes still present into internal buffer (0 if it's empty)
 *            or an error code, which can be tested using ZBUFF_isError().
 *
-*  Hint : recommended buffer sizes (not compulsory) : ZBUFF_recommendedCInSize / ZBUFF_recommendedCOutSize
-*  input : ZBUFF_recommendedCInSize==128 KB block size is the internal unit, it improves latency to use this value (skipped buffering).
+*  Hint : _recommended buffer_ sizes (not compulsory) : ZBUFF_recommendedCInSize() / ZBUFF_recommendedCOutSize()
+*  input : ZBUFF_recommendedCInSize==128 KB block size is the internal unit, use this value to reduce intermediate stages (better latency)
 *  output : ZBUFF_recommendedCOutSize==ZSTD_compressBound(128 KB) + 3 + 3 : ensures it's always possible to write/flush/end a full block. Skip some buffering.
 *  By using both, it ensures that input will be entirely consumed, and output will always contain the result, reducing intermediate buffering.
 * **************************************************/
@@ -135,8 +126,9 @@ ZSTDLIB_API size_t ZBUFF_decompressContinue(ZBUFF_DCtx* dctx,
 *  The function will report how many bytes were read or written by modifying *srcSizePtr and *dstCapacityPtr.
 *  Note that it may not consume the entire input, in which case it's up to the caller to present remaining input again.
 *  The content of `dst` will be overwritten (up to *dstCapacityPtr) at each function call, so save its content if it matters, or change `dst`.
-*  @return : a hint to preferred nb of bytes to use as input for next function call (it's only a hint, to help latency),
-*            or 0 when a frame is completely decoded,
+*  @return : 0 when a frame is completely decoded and fully flushed,
+*            1 when there is still some data left within internal buffer to flush,
+*            >1 when more data is expected, with value being a suggested next input size (it's just a hint, which helps latency),
 *            or an error code, which can be tested using ZBUFF_isError().
 *
 *  Hint : recommended buffer sizes (not compulsory) : ZBUFF_recommendedDInSize() and ZBUFF_recommendedDOutSize()
@@ -160,8 +152,40 @@ ZSTDLIB_API size_t ZBUFF_recommendedDInSize(void);
 ZSTDLIB_API size_t ZBUFF_recommendedDOutSize(void);
 
 
+#ifdef ZBUFF_STATIC_LINKING_ONLY
+
+/* ====================================================================================
+ * The definitions in this section are considered experimental.
+ * They should never be used in association with a dynamic library, as they may change in the future.
+ * They are provided for advanced usages.
+ * Use them only in association with static linking.
+ * ==================================================================================== */
+
+/*--- Dependency ---*/
+#define ZSTD_STATIC_LINKING_ONLY   /* ZSTD_parameters, ZSTD_customMem */
+#include "zstd.h"
+
+
+/*--- Custom memory allocator ---*/
+/*! ZBUFF_createCCtx_advanced() :
+ *  Create a ZBUFF compression context using external alloc and free functions */
+ZSTDLIB_API ZBUFF_CCtx* ZBUFF_createCCtx_advanced(ZSTD_customMem customMem);
+
+/*! ZBUFF_createDCtx_advanced() :
+ *  Create a ZBUFF decompression context using external alloc and free functions */
+ZSTDLIB_API ZBUFF_DCtx* ZBUFF_createDCtx_advanced(ZSTD_customMem customMem);
+
+
+/*--- Advanced Streaming Initialization ---*/
+ZSTDLIB_API size_t ZBUFF_compressInit_advanced(ZBUFF_CCtx* zbc,
+                                               const void* dict, size_t dictSize,
+                                               ZSTD_parameters params, unsigned long long pledgedSrcSize);
+
+#endif /* ZBUFF_STATIC_LINKING_ONLY */
+
+
 #if defined (__cplusplus)
 }
 #endif
 
-#endif  /* ZSTD_BUFFERED_H */
+#endif  /* ZSTD_BUFFERED_H_23987 */
