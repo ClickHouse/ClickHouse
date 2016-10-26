@@ -11,6 +11,13 @@ set_source_files_properties(
 
 include_directories (${CMAKE_CURRENT_BINARY_DIR}/src/)
 
+if (APPLE)
+	add_library (apple_rt
+		src/apple_rt.cpp
+		include/common/apple_rt.h
+	)
+endif()
+
 add_library (common
 	src/DateLUT.cpp
 	src/DateLUTImpl.cpp
@@ -59,6 +66,12 @@ ELSE($ENV{DISABLE_LIBTCMALLOC})
 	ENDIF($ENV{DEBUG_LIBTCMALLOC})
 ENDIF($ENV{DISABLE_LIBTCMALLOC})
 
+if (APPLE)
+	SET(RT_LIBRARIES "apple_rt")
+else()
+	SET(RT_LIBRARIES "librt.a")
+endif()
+
 target_link_libraries (
 	common
 	pocoext
@@ -66,7 +79,7 @@ target_link_libraries (
 	pthread
 	libglib-2.0.a
 	libicui18n.a libicuuc.a libicudata.a
-	librt.a)
+	${RT_LIBRARIES})
 
 IF(TESTS)
 	add_subdirectory (src/tests)

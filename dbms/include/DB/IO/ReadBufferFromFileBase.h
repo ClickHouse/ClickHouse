@@ -6,6 +6,10 @@
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
 
+#ifdef __APPLE__
+#include <common/apple_rt.h>
+#endif
+
 namespace DB
 {
 

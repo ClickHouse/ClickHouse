@@ -131,7 +131,7 @@ struct ExternalQueryBuilder
 	}
 
 	/** Получить запрос на загрузку данных по множеству простых ключей. */
-	std::string composeLoadIdsQuery(const std::vector<std::uint64_t> & ids)
+	std::string composeLoadIdsQuery(const std::vector<UInt64> & ids)
 	{
 		if (!dict_struct.id)
 			throw Exception{"Simple key required for method", ErrorCodes::UNSUPPORTED_METHOD};

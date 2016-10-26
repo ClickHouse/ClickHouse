@@ -1,5 +1,4 @@
 include_directories (${CMAKE_CURRENT_BINARY_DIR})
-
 set(SRCS )
 
 add_executable (read_buffer read_buffer.cpp ${SRCS})
@@ -64,10 +63,10 @@ add_check (hashing_read_buffer)
 add_executable (io_operators operators.cpp ${SRCS})
 target_link_libraries (io_operators dbms)
 
-add_executable (io_and_exceptions io_and_exceptions.cpp ${SRCS})
+if (NOT APPLE)
+	add_executable(write_buffer_aio write_buffer_aio.cpp)
+	target_link_libraries (write_buffer_aio dbms libboost_filesystem.a)
 
-add_executable(write_buffer_aio write_buffer_aio.cpp)
-target_link_libraries (write_buffer_aio dbms libboost_filesystem.a)
-
-add_executable(read_buffer_aio read_buffer_aio.cpp)
-target_link_libraries (read_buffer_aio dbms libboost_filesystem.a)
+	add_executable(read_buffer_aio read_buffer_aio.cpp)
+	target_link_libraries (read_buffer_aio dbms libboost_filesystem.a)
+endif()

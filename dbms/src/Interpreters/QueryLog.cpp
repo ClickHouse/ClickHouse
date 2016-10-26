@@ -8,6 +8,7 @@
 #include <DB/Interpreters/QueryLog.h>
 #include <common/ClickHouseRevision.h>
 #include <Poco/Net/IPAddress.h>
+#include <array>
 
 
 namespace DB

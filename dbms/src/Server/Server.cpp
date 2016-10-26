@@ -219,8 +219,13 @@ int Server::main(const std::vector<std::string> & args)
 		{
 			rlim_t old = rlim.rlim_cur;
 			rlim.rlim_cur = rlim.rlim_max;
+			#ifndef __APPLE__
 			if (setrlimit(RLIMIT_NOFILE, &rlim))
 				throw Poco::Exception("Cannot setrlimit");
+			#else
+			LOG_INFO(log, "Setting nofile limit is not supported on MacOS X. Please increase it manually. See MacOS.md for more information. Current limit is '" << old << "'");
+			throw Poco::Exception("setrlimit is not supported on MacOS X");
+			#endif
 
 			LOG_DEBUG(log, "Set rlimit on number of file descriptors to " << rlim.rlim_cur << " (was " << old << ")");
 		}

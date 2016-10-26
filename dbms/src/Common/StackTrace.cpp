@@ -1,4 +1,6 @@
+#ifndef __APPLE__
 #include <malloc.h>
+#endif
 #include <execinfo.h>
 #include <cxxabi.h>
 #include <string.h>

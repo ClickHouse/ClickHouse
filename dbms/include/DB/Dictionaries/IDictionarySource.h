@@ -25,7 +25,7 @@ public:
 	virtual bool supportsSelectiveLoad() const = 0;
 
 	/// returns an input stream with the data for a collection of identifiers
-	virtual BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) = 0;
+	virtual BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) = 0;
 
 	/** returns an input stream with the data for a collection of composite keys.
 	 *	`requested_rows` contains indices of all rows containing unique keys. */

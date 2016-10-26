@@ -11,7 +11,7 @@ void ResultSet::init(Statement & statement_)
 		return;
 
 	/// Заголовок: количество столбцов, их имена и типы.
-	uint64_t num_columns = 0;
+	UInt64 num_columns = 0;
 	readSize(num_columns, in());
 
 	if (!num_columns)

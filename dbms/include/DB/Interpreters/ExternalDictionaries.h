@@ -55,7 +55,7 @@ private:
 	{
 		std::unique_ptr<IDictionaryBase> dict;
 		std::chrono::system_clock::time_point next_attempt_time;
-		std::uint64_t error_count;
+		UInt64 error_count;
 	};
 
 	/** name -> dictionary.

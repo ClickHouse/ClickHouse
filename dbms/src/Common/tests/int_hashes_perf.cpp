@@ -10,14 +10,24 @@
 #include "AvalancheTest.h"	/// Взято из SMHasher.
 
 
+#ifdef __APPLE__
+#include <common/apple_rt.h>
+#endif
+
 void setAffinity()
 {
+#ifndef __APPLE__
 	cpu_set_t mask;
 	CPU_ZERO(&mask);
 	CPU_SET(0, &mask);
 
 	if (-1 == sched_setaffinity(0, sizeof(mask), &mask))
 		throw Poco::Exception("Cannot set CPU affinity");
+#else
+	/** MacOS X by default have THREAD_AFFINITY_NULL
+	 *  See: https://developer.apple.com/library/content/releasenotes/Performance/RN-AffinityAPI/
+	 */
+#endif
 }
 
 

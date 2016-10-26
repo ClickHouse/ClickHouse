@@ -40,8 +40,17 @@ namespace
 
 		Pipe()
 		{
+			#ifndef __APPLE__
 			if (0 != pipe2(fds, O_CLOEXEC))
 				DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
+			#else
+			if (0 != pipe(fds))
+				DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
+			if (0 != fcntl(fds[0], F_SETFD, FD_CLOEXEC))
+				DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
+			if (0 != fcntl(fds[1], F_SETFD, FD_CLOEXEC))
+				DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
+			#endif
 		}
 
 		~Pipe()

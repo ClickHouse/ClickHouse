@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 
-inline std::uint64_t CacheDictionary::getCellIdx(const Key id) const
+inline UInt64 CacheDictionary::getCellIdx(const Key id) const
 {
 	const auto hash = intHash64(id);
 	const auto idx = hash & (size - 1);
@@ -517,7 +517,7 @@ void CacheDictionary::update(
 	for (const auto id : requested_ids)
 		remaining_ids.insert({ id, 0 });
 
-	std::uniform_int_distribution<std::uint64_t> distribution{
+	std::uniform_int_distribution<UInt64> distribution{
 		dict_lifetime.min_sec,
 		dict_lifetime.max_sec
 	};

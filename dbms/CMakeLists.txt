@@ -3,7 +3,14 @@ include_directories(/usr/include/mysql)
 
 add_subdirectory (src)
 
+option(ENABLE_MONGODB "Set to TRUE to enable MongoDB support as source for external dictionaries" True)
 set (DISABLE_MONGODB FALSE CACHE BOOL "Set to TRUE to disable MongoDB support as source for external dictionaries")
+
+if (ENABLE_MONGODB)
+	set (DISABLE_MONGODB FALSE)
+else()
+	set (DISABLE_MONGODB TRUE)
+endif()
 
 if ($ENV{DISABLE_MONGODB})
 	set (DISABLE_MONGODB TRUE)
@@ -19,6 +26,22 @@ if (DISABLE_LIBTCMALLOC)
 	add_definitions(-D NO_TCMALLOC)
 endif()
 
+if (APPLE)
+      	set (AIO_CPP_FILES "")
+      	set (AIO_H_FILES "")
+      	set (APPLE_ICONV_LIB iconv)
+
+else()
+      	set (AIO_H_FILES include/DB/Common/AIO.h
+      		include/DB/IO/WriteBufferAIO.h
+      		include/DB/IO/ReadBufferAIO.h
+      	)
+      	set (AIO_CPP_FILES
+      		src/IO/ReadBufferAIO.cpp
+      		src/IO/WriteBufferAIO.cpp
+      	)
+      	set (APPLE_ICONV_LIB "")
+endif()
 
 add_library(string_utils
 	include/DB/Common/StringUtils.h
@@ -422,7 +445,6 @@ add_library (dbms
 	include/DB/Common/StringSearcher.h
 	include/DB/Common/SimpleCache.h
 	include/DB/Common/Stopwatch.h
-	include/DB/Common/AIO.h
 	include/DB/Common/CounterInFile.h
 	include/DB/Common/HyperLogLogCounter.h
 	include/DB/Common/Increment.h
@@ -454,17 +476,14 @@ add_library (dbms
 	include/DB/IO/BufferWithOwnMemory.h
 	include/DB/IO/WriteHelpers.h
 	include/DB/IO/ConcatReadBuffer.h
-	include/DB/IO/createWriteBufferFromFileBase.h
 	include/DB/IO/WriteBufferFromOStream.h
 	include/DB/IO/ReadBuffer.h
 	include/DB/IO/WriteBufferFromVector.h
-	include/DB/IO/ReadBufferFromFileBase.h
 	include/DB/IO/ReadBufferFromPocoSocket.h
 	include/DB/IO/RemoteReadBuffer.h
 	include/DB/IO/HashingWriteBuffer.h
 	include/DB/IO/ReadBufferFromString.h
 	include/DB/IO/CompressedReadBufferBase.h
-	include/DB/IO/WriteBufferAIO.h
 	include/DB/IO/HashingReadBuffer.h
 	include/DB/IO/Operators.h
 	include/DB/IO/WriteBufferFromFile.h
@@ -476,7 +495,7 @@ add_library (dbms
 	include/DB/IO/CachedCompressedReadBuffer.h
 	include/DB/IO/BufferBase.h
 	include/DB/IO/AsynchronousWriteBuffer.h
-	include/DB/IO/ReadBufferAIO.h
+	${AIO_H_FILES}
 	include/DB/IO/ReadHelpers.h
 	include/DB/IO/WriteBufferFromPocoSocket.h
 	include/DB/IO/ReadBufferFromHTTP.h
@@ -641,12 +660,12 @@ add_library (dbms
 	src/IO/ReadBufferFromPocoSocket.cpp
 	src/IO/WriteBufferFromPocoSocket.cpp
 	src/IO/HashingWriteBuffer.cpp
-	src/IO/ReadBufferAIO.cpp
-	src/IO/WriteBufferAIO.cpp
-	src/IO/createReadBufferFromFileBase.cpp
-	src/IO/createWriteBufferFromFileBase.cpp
 	src/IO/ReadBufferFromFileBase.cpp
 	src/IO/WriteBufferFromFileBase.cpp
+	${AIO_CPP_FILES}
+	src/IO/createReadBufferFromFileBase.cpp
+	src/IO/createWriteBufferFromFileBase.cpp
+
 	src/IO/InterserverWriteBuffer.cpp
 	src/IO/ReadBufferFromHTTP.cpp
 
@@ -1000,6 +1019,7 @@ target_link_libraries(dbms
 	libboost_regex.a
 	PocoData
 	PocoDataODBC
+	${APPLE_ICONV_LIB}
 	dl libltdl.a)
 
 add_dependencies (dbms

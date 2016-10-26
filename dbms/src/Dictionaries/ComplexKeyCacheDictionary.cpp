@@ -14,7 +14,7 @@ namespace ErrorCodes
 }
 
 
-inline std::uint64_t ComplexKeyCacheDictionary::getCellIdx(const StringRef key) const
+inline UInt64 ComplexKeyCacheDictionary::getCellIdx(const StringRef key) const
 {
 	const auto hash = StringRefHash{}(key);
 	const auto idx = hash & (size - 1);
@@ -553,7 +553,7 @@ void ComplexKeyCacheDictionary::update(
 	for (const auto row : in_requested_rows)
 		remaining_keys.insert({ in_keys[row], false });
 
-	std::uniform_int_distribution<std::uint64_t> distribution{
+	std::uniform_int_distribution<UInt64> distribution{
 		dict_lifetime.min_sec,
 		dict_lifetime.max_sec
 	};

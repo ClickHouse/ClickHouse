@@ -63,7 +63,7 @@ void SingleBarrier::setCancellationHook(CancellationHook cancellation_hook_)
 	cancellation_hook = cancellation_hook_;
 }
 
-void SingleBarrier::enter(uint64_t timeout)
+void SingleBarrier::enter(UInt64 timeout)
 {
 	__sync_synchronize();
 

@@ -131,7 +131,7 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
 	fd_set fds;
 	FD_ZERO(&fds);
 	FD_SET(fd, &fds);
-	timeval timeout = { time_t(timeout_microseconds / 1000000), time_t(timeout_microseconds % 1000000) };
+	timeval timeout = { time_t(timeout_microseconds / 1000000), suseconds_t(timeout_microseconds % 1000000) };
 
 	int res = select(1, &fds, 0, 0, &timeout);
 

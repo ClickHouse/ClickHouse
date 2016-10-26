@@ -162,17 +162,17 @@ BlockInputStreams StorageSystemZooKeeper::read(
 
 		col_name.column->insert(nodes[i]);
 		col_value.column->insert(res.value);
-		col_czxid.column->insert(stat.czxid);
-		col_mzxid.column->insert(stat.mzxid);
+		col_czxid.column->insert(Int64(stat.czxid));
+		col_mzxid.column->insert(Int64(stat.mzxid));
 		col_ctime.column->insert(UInt64(stat.ctime / 1000));
 		col_mtime.column->insert(UInt64(stat.mtime / 1000));
 		col_version.column->insert(Int64(stat.version));
 		col_cversion.column->insert(Int64(stat.cversion));
 		col_aversion.column->insert(Int64(stat.aversion));
-		col_ephemeralOwner.column->insert(stat.ephemeralOwner);
+		col_ephemeralOwner.column->insert(Int64(stat.ephemeralOwner));
 		col_dataLength.column->insert(Int64(stat.dataLength));
 		col_numChildren.column->insert(Int64(stat.numChildren));
-		col_pzxid.column->insert(stat.pzxid);
+		col_pzxid.column->insert(Int64(stat.pzxid));
 		col_path.column->insert(path);			/// Здесь именно оригинальный path. Чтобы при обработке запроса, условие в WHERE срабатывало.
 	}
 

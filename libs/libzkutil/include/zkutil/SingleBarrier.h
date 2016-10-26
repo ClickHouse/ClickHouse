@@ -34,7 +34,7 @@ public:
 	/// Register a function that cancels barrier operations if requested.
 	void setCancellationHook(CancellationHook cancellation_hook_);
 
-	void enter(uint64_t timeout = 0);
+	void enter(UInt64 timeout = 0);
 
 private:
 	/// Cancel any ongoing operation if requested. Additionally perform cleanup.

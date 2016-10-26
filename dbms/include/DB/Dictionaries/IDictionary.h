@@ -21,7 +21,7 @@ class ColumnString;
 
 struct IDictionaryBase
 {
-	using Key = std::uint64_t;
+	using Key = UInt64;
 
 	virtual std::exception_ptr getCreationException() const = 0;
 

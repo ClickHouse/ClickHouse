@@ -7,6 +7,9 @@
 #include <DB/Functions/FunctionsStringSearch.h>
 #include <DB/Functions/FunctionsStringArray.h>
 
+#ifdef __APPLE__
+#include <common/apple_memrchr.h>
+#endif
 
 namespace DB
 {

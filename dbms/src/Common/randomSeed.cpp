@@ -4,6 +4,11 @@
 
 #include <DB/Common/Exception.h>
 #include <DB/Common/randomSeed.h>
+#include <DB/Core/Types.h>
+
+#ifdef __APPLE__
+#include <common/apple_rt.h>
+#endif
 
 
 namespace DB
@@ -15,7 +20,7 @@ namespace DB
 }
 
 
-uint64_t randomSeed()
+DB::UInt64 randomSeed()
 {
 	struct timespec times;
 	if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))

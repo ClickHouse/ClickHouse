@@ -106,7 +106,7 @@ public:
 
 	bool supportsSelectiveLoad() const override { return true; }
 
-	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
+	BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override
 	{
 		if (!dict_struct.id)
 			throw Exception{"'id' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};

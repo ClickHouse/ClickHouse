@@ -15,6 +15,10 @@ else()
     message(WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 3.8+ and GCC 5+.")
 endif()
 
+if (APPLE)
+	set(APPLE_EXTRA_CXX_FLAG "-Dexp10=__exp10") # Also needed for libc++
+endif()
+
 # отключаем варнинг о том, что в каждой директории должен быть CMakeLists.txt
 cmake_policy(SET CMP0014 OLD)
 
@@ -60,7 +64,7 @@ if (DISABLE_CXX11_ABI)
 endif()
 
 SET(CMAKE_BUILD_COLOR_MAKEFILE          ON)
-SET(CMAKE_CXX_FLAGS                     "-std=gnu++1y -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI}")
+SET(CMAKE_CXX_FLAGS                     "-std=gnu++1y ${APPLE_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI}")
 SET(CMAKE_CXX_FLAGS_RELEASE             "-O3 -DNDEBUG")
 SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO      "-O3 -g")
 SET(CMAKE_CXX_FLAGS_DEBUG               "-O0 -g3 -ggdb3 -fno-inline")
@@ -70,7 +74,9 @@ SET(CMAKE_C_FLAGS_RELEASE               "-O3 -DNDEBUG")
 SET(CMAKE_C_FLAGS_RELWITHDEBINFO        "-O3 -g")
 SET(CMAKE_C_FLAGS_DEBUG                 "-O0 -g3 -ggdb3 -fno-inline")
 
-SET(CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++ ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI}")
+if (NOT APPLE)
+	SET(CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++ ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI}")
+endif()
 
 # -fuse-ld=gold - fix linkage for gcc-5.4, gcc-6.1 
 # see more in http://stackoverflow.com/questions/37603238/fsanitize-not-using-gold-linker-in-gcc-6-1
