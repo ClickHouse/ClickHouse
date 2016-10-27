@@ -27,6 +27,7 @@
 	M(LeaderElection) \
 	M(EphemeralNode) \
 	M(ZooKeeperWatch) \
+	M(DelayedInserts) \
 
 
 namespace CurrentMetrics

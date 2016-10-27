@@ -676,33 +676,17 @@ void ReplicatedMergeTreeQueue::getEntries(LogEntriesData & res)
 }
 
 
-void ReplicatedMergeTreeQueue::countMerges(size_t & all_merges, size_t & big_merges, size_t max_big_merges,
-	const std::function<bool(const String &)> & is_part_big)
+size_t ReplicatedMergeTreeQueue::countMerges()
 {
-	all_merges = 0;
-	big_merges = 0;
+	size_t all_merges = 0;
 
 	std::lock_guard<std::mutex> lock(mutex);
 
 	for (const auto & entry : queue)
-	{
 		if (entry->type == LogEntry::MERGE_PARTS)
-		{
 			++all_merges;
 
-			if (big_merges + big_merges < max_big_merges)
-			{
-				for (const String & name : entry->parts_to_merge)
-				{
-					if (is_part_big(name))
-					{
-						++big_merges;
-						break;
-					}
-				}
-			}
-		}
-	}
+	return all_merges;
 }
 
 

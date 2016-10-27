@@ -587,6 +587,8 @@ add_library (dbms
 	include/DB/Storages/MergeTree/ShardedPartitionUploader.h
 	include/DB/Storages/MergeTree/RemoteQueryExecutor.h
 	include/DB/Storages/MergeTree/RemotePartChecker.h
+	include/DB/Storages/MergeTree/MergeSelector.h
+	include/DB/Storages/MergeTree/SimpleMergeSelector.h
 	include/DB/Storages/StorageNull.h
 	include/DB/Storages/System/StorageSystemSettings.h
 	include/DB/Databases/IDatabase.h

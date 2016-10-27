@@ -166,7 +166,7 @@ public:
 	void disableMergesInRange(const String & part_name);
 
 	/// Посчитать количество слияний в очереди.
-	void countMerges(size_t & all_merges, size_t & big_merges, size_t max_big_merges, const std::function<bool(const String &)> & is_part_big);
+	size_t countMerges();
 
 	struct Status
 	{

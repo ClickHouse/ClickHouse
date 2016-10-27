@@ -88,7 +88,7 @@ public:
 	  */
 	bool optimize(const String & partition, bool final, const Settings & settings) override
 	{
-		return merge(settings.min_bytes_to_use_direct_io, true, nullptr, partition, final);
+		return merge(settings.min_bytes_to_use_direct_io, true, partition, final);
 	}
 
 	void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
@@ -154,9 +154,9 @@ private:
 	  * Если aggressive - выбрать куски, не обращая внимание на соотношение размеров и их новизну (для запроса OPTIMIZE).
 	  * Возвращает, получилось ли что-нибудь объединить.
 	  */
-	bool merge(size_t aio_threshold, bool aggressive, BackgroundProcessingPool::Context * context, const String & partition, bool final);
+	bool merge(size_t aio_threshold, bool aggressive, const String & partition, bool final);
 
-	bool mergeTask(BackgroundProcessingPool::Context & context);
+	bool mergeTask();
 };
 
 }

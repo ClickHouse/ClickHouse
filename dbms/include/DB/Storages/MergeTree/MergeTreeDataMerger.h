@@ -25,9 +25,12 @@ public:
 
 	void setCancellationHook(CancellationHook cancellation_hook_);
 
+	/** Get maximum total size of parts to do merge, at current moment of time.
+	  * It depends on number of free threads in background_pool and amount of free space in disk.
+	  */
+	size_t getMaxPartsSizeForMerge();
+
 	/** Выбирает, какие куски слить. Использует кучу эвристик.
-	  * Если merge_anything_for_old_months, для кусков за прошедшие месяцы снимается ограничение на соотношение размеров.
-	  * Выбирает куски так, чтобы available_disk_space, скорее всего, хватило с запасом для их слияния.
 	  *
 	  * can_merge - функция, определяющая, можно ли объединить пару соседних кусков.
 	  *  Эта функция должна координировать слияния со вставками и другими слияниями, обеспечивая, что:
@@ -37,10 +40,8 @@ public:
 	bool selectPartsToMerge(
 		MergeTreeData::DataPartsVector & what,
 		String & merged_name,
-		size_t available_disk_space,
-		bool merge_anything_for_old_months,
 		bool aggressive,
-		bool only_small,
+		size_t max_total_size_to_merge,
 		const AllowedMergingPredicate & can_merge);
 
 	/** Выбрать для слияния все куски в заданной партиции, если возможно.
