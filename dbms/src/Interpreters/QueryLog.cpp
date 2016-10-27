@@ -1,11 +1,3 @@
-#include <DB/Common/Stopwatch.h>
-#include <DB/Parsers/ASTCreateQuery.h>
-#include <DB/Parsers/parseQuery.h>
-#include <DB/Parsers/ExpressionElementParsers.h>
-#include <DB/Parsers/ASTRenameQuery.h>
-#include <DB/Parsers/formatAST.h>
-#include <DB/Parsers/ASTInsertQuery.h>
-#include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
@@ -13,171 +5,16 @@
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/Interpreters/InterpreterCreateQuery.h>
-#include <DB/Interpreters/InterpreterRenameQuery.h>
 #include <DB/Interpreters/QueryLog.h>
-#include <DB/Interpreters/InterpreterInsertQuery.h>
-#include <DB/Common/setThreadName.h>
 #include <common/ClickHouseRevision.h>
+#include <Poco/Net/IPAddress.h>
 
 
 namespace DB
 {
 
 
-QueryLog::QueryLog(Context & context_, const String & database_name_, const String & table_name_, size_t flush_interval_milliseconds_)
-	: context(context_), database_name(database_name_), table_name(table_name_), flush_interval_milliseconds(flush_interval_milliseconds_)
-{
-	data.reserve(DBMS_QUERY_LOG_QUEUE_SIZE);
-
-	{
-		String description = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name);
-
-		auto lock = context.getLock();
-
-		table = context.tryGetTable(database_name, table_name);
-
-		if (table)
-		{
-			const Block expected = createBlock();
-			const Block actual = table->getSampleBlockNonMaterialized();
-
-			if (!blocksHaveEqualStructure(actual, expected))
-			{
-				/// Переименовываем существующую таблицу.
-				int suffix = 0;
-				while (context.isTableExist(database_name, table_name + "_" + toString(suffix)))
-					++suffix;
-
-				auto rename = std::make_shared<ASTRenameQuery>();
-
-				ASTRenameQuery::Table from;
-				from.database = database_name;
-				from.table = table_name;
-
-				ASTRenameQuery::Table to;
-				to.database = database_name;
-				to.table = table_name + "_" + toString(suffix);
-
-				ASTRenameQuery::Element elem;
-				elem.from = from;
-				elem.to = to;
-
-				rename->elements.emplace_back(elem);
-
-				LOG_DEBUG(log, "Existing table " << description << " for query log has obsolete or different structure."
-					" Renaming it to " << backQuoteIfNeed(to.table));
-
-				InterpreterRenameQuery(rename, context).execute();
-
-				/// Нужная таблица будет создана.
-				table = nullptr;
-			}
-			else
-				LOG_DEBUG(log, "Will use existing table " << description << " for query log.");
-		}
-
-		if (!table)
-		{
-			/// Создаём таблицу.
-			LOG_DEBUG(log, "Creating new table " << description << " for query log.");
-
-			auto create = std::make_shared<ASTCreateQuery>();
-
-			create->database = database_name;
-			create->table = table_name;
-
-			Block sample = createBlock();
-			create->columns = InterpreterCreateQuery::formatColumns(sample.getColumnsList());
-
-			String engine = "MergeTree(event_date, event_time, 8192)";
-			ParserFunction engine_parser;
-
-			create->storage = parseQuery(engine_parser, engine.data(), engine.data() + engine.size(), "ENGINE to create table for query log");
-
-			InterpreterCreateQuery(create, context).execute();
-
-			table = context.getTable(database_name, table_name);
-		}
-	}
-
-	saving_thread = std::thread([this] { threadFunction(); });
-}
-
-
-QueryLog::~QueryLog()
-{
-	/// Говорим потоку, что надо завершиться.
-	QueryLogElement elem;
-	elem.type = QueryLogElement::SHUTDOWN;
-	queue.push(elem);
-
-	saving_thread.join();
-}
-
-
-void QueryLog::threadFunction()
-{
-	setThreadName("QueryLogFlush");
-
-	Stopwatch time_after_last_write;
-	bool first = true;
-
-	while (true)
-	{
-		try
-		{
-			if (first)
-			{
-				time_after_last_write.restart();
-				first = false;
-			}
-
-			QueryLogElement element;
-			bool has_element = false;
-
-			if (data.empty())
-			{
-				queue.pop(element);
-				has_element = true;
-			}
-			else
-			{
-				size_t milliseconds_elapsed = time_after_last_write.elapsed() / 1000000;
-				if (milliseconds_elapsed < flush_interval_milliseconds)
-					has_element = queue.tryPop(element, flush_interval_milliseconds - milliseconds_elapsed);
-			}
-
-			if (has_element)
-			{
-				if (element.type == QueryLogElement::SHUTDOWN)
-				{
-					flush();
-					break;
-				}
-				else
-					data.push_back(element);
-			}
-
-			size_t milliseconds_elapsed = time_after_last_write.elapsed() / 1000000;
-			if (milliseconds_elapsed >= flush_interval_milliseconds)
-			{
-				/// Записываем данные в таблицу.
-				flush();
-				time_after_last_write.restart();
-			}
-		}
-		catch (...)
-		{
-			/// В случае ошибки теряем накопленные записи, чтобы не блокироваться.
-			data.clear();
-			tryLogCurrentException(__PRETTY_FUNCTION__);
-		}
-	}
-}
-
-
-Block QueryLog::createBlock()
+Block QueryLogElement::createBlock()
 {
 	return
 	{
@@ -249,85 +86,51 @@ static std::array<char, 16> IPv6ToBinary(const Poco::Net::IPAddress & address)
 }
 
 
-void QueryLog::flush()
+void QueryLogElement::appendToBlock(Block & block) const
 {
-	try
-	{
-		LOG_TRACE(log, "Flushing query log");
+	size_t i = 0;
 
-		const auto & date_lut = DateLUT::instance();
+	block.unsafeGetByPosition(i++).column->insert(UInt64(type));
+	block.unsafeGetByPosition(i++).column->insert(UInt64(DateLUT::instance().toDayNum(event_time)));
+	block.unsafeGetByPosition(i++).column->insert(UInt64(event_time));
+	block.unsafeGetByPosition(i++).column->insert(UInt64(query_start_time));
+	block.unsafeGetByPosition(i++).column->insert(UInt64(query_duration_ms));
 
-		Block block = createBlock();
+	block.unsafeGetByPosition(i++).column->insert(UInt64(read_rows));
+	block.unsafeGetByPosition(i++).column->insert(UInt64(read_bytes));
 
-		for (const QueryLogElement & elem : data)
-		{
-			size_t i = 0;
+	block.unsafeGetByPosition(i++).column->insert(UInt64(result_rows));
+	block.unsafeGetByPosition(i++).column->insert(UInt64(result_bytes));
 
-			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.type));
-			block.unsafeGetByPosition(i++).column->insert(UInt64(date_lut.toDayNum(elem.event_time)));
-			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.event_time));
-			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.query_start_time));
-			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.query_duration_ms));
+	block.unsafeGetByPosition(i++).column->insert(UInt64(memory_usage));
 
-			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.read_rows));
-			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.read_bytes));
+	block.unsafeGetByPosition(i++).column->insertData(query.data(), query.size());
+	block.unsafeGetByPosition(i++).column->insertData(exception.data(), exception.size());
+	block.unsafeGetByPosition(i++).column->insertData(stack_trace.data(), stack_trace.size());
 
-			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.result_rows));
-			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.result_bytes));
+	block.unsafeGetByPosition(i++).column->insert(UInt64(client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY));
 
-			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.memory_usage));
+	block.unsafeGetByPosition(i++).column->insert(client_info.current_user);
+	block.unsafeGetByPosition(i++).column->insert(client_info.current_query_id);
+	block.unsafeGetByPosition(i++).column->insertData(IPv6ToBinary(client_info.current_address.host()).data(), 16);
+	block.unsafeGetByPosition(i++).column->insert(UInt64(client_info.current_address.port()));
 
-			block.unsafeGetByPosition(i++).column->insertData(elem.query.data(), elem.query.size());
-			block.unsafeGetByPosition(i++).column->insertData(elem.exception.data(), elem.exception.size());
-			block.unsafeGetByPosition(i++).column->insertData(elem.stack_trace.data(), elem.stack_trace.size());
+	block.unsafeGetByPosition(i++).column->insert(client_info.initial_user);
+	block.unsafeGetByPosition(i++).column->insert(client_info.initial_query_id);
+	block.unsafeGetByPosition(i++).column->insertData(IPv6ToBinary(client_info.initial_address.host()).data(), 16);
+	block.unsafeGetByPosition(i++).column->insert(UInt64(client_info.initial_address.port()));
 
-			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY));
+	block.unsafeGetByPosition(i++).column->insert(UInt64(client_info.interface));
 
-			block.unsafeGetByPosition(i++).column->insert(elem.client_info.current_user);
-			block.unsafeGetByPosition(i++).column->insert(elem.client_info.current_query_id);
-			block.unsafeGetByPosition(i++).column->insertData(IPv6ToBinary(elem.client_info.current_address.host()).data(), 16);
-			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.client_info.current_address.port()));
+	block.unsafeGetByPosition(i++).column->insert(client_info.os_user);
+	block.unsafeGetByPosition(i++).column->insert(client_info.client_hostname);
+	block.unsafeGetByPosition(i++).column->insert(client_info.client_name);
+	block.unsafeGetByPosition(i++).column->insert(UInt64(client_info.client_revision));
 
-			block.unsafeGetByPosition(i++).column->insert(elem.client_info.initial_user);
-			block.unsafeGetByPosition(i++).column->insert(elem.client_info.initial_query_id);
-			block.unsafeGetByPosition(i++).column->insertData(IPv6ToBinary(elem.client_info.initial_address.host()).data(), 16);
-			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.client_info.initial_address.port()));
+	block.unsafeGetByPosition(i++).column->insert(UInt64(client_info.http_method));
+	block.unsafeGetByPosition(i++).column->insert(client_info.http_user_agent);
 
-			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.client_info.interface));
-
-			block.unsafeGetByPosition(i++).column->insert(elem.client_info.os_user);
-			block.unsafeGetByPosition(i++).column->insert(elem.client_info.client_hostname);
-			block.unsafeGetByPosition(i++).column->insert(elem.client_info.client_name);
-			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.client_info.client_revision));
-
-			block.unsafeGetByPosition(i++).column->insert(UInt64(elem.client_info.http_method));
-			block.unsafeGetByPosition(i++).column->insert(elem.client_info.http_user_agent);
-
-			block.unsafeGetByPosition(i++).column->insert(UInt64(ClickHouseRevision::get()));
-		}
-
-		/// Мы пишем не напрямую в таблицу, а используем InterpreterInsertQuery.
-		/// Это нужно, чтобы поддержать наличие DEFAULT-столбцов в таблице.
-
-		std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-		insert->database = database_name;
-		insert->table = table_name;
-		ASTPtr query_ptr(insert.release());
-
-		InterpreterInsertQuery interpreter(query_ptr, context);
-		BlockIO io = interpreter.execute();
-
-		io.out->writePrefix();
-		io.out->write(block);
-		io.out->writeSuffix();
-	}
-	catch (...)
-	{
-		tryLogCurrentException(__PRETTY_FUNCTION__);
-	}
-
-	/// В случае ошибки тоже очищаем накопленные записи, чтобы не блокироваться.
-	data.clear();
+	block.unsafeGetByPosition(i++).column->insert(UInt64(ClickHouseRevision::get()));
 }
 
 }

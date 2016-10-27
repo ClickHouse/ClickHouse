@@ -368,6 +368,7 @@ add_library (dbms
 	include/DB/Interpreters/ExpressionAnalyzer.h
 	include/DB/Interpreters/InterpreterSelectQuery.h
 	include/DB/Interpreters/QueryPriorities.h
+	include/DB/Interpreters/SystemLog.h
 	include/DB/Interpreters/QueryLog.h
 	include/DB/Interpreters/ClientInfo.h
 	include/DB/Interpreters/getClusterName.h

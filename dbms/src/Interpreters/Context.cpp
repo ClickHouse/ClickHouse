@@ -983,7 +983,8 @@ QueryLog & Context::getQueryLog()
 		size_t flush_interval_milliseconds = parse<size_t>(
 			config.getString("query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS_STR));
 
-		shared->query_log = std::make_unique<QueryLog>(*global_context, database, table, flush_interval_milliseconds);
+		shared->query_log = std::make_unique<QueryLog>(
+			*global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
 	}
 
 	return *shared->query_log;
