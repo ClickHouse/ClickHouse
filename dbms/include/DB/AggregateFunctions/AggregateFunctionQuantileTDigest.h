@@ -541,6 +541,9 @@ public:
 		size_t size = levels.size();
 		offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
 
+		if (!size)
+			return;
+
 		if (returns_float)
 		{
 			typename ColumnFloat32::Container_t & data_to = static_cast<ColumnFloat32 &>(arr_to.getData()).getData();
@@ -622,6 +625,9 @@ public:
 
 		size_t size = levels.size();
 		offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+
+		if (!size)
+			return;
 
 		if (returns_float)
 		{
