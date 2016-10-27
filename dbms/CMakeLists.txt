@@ -713,6 +713,7 @@ add_library (dbms
 	src/Storages/MergeTree/RemoteQueryExecutor.cpp
 	src/Storages/MergeTree/RemotePartChecker.cpp
 	src/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.cpp
+	src/Storages/MergeTree/SimpleMergeSelector.cpp
 	src/Storages/ITableDeclaration.cpp
 	src/Storages/AlterCommands.cpp
 	src/Storages/ColumnsDescription.cpp
