@@ -9,6 +9,7 @@
 
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -30,9 +31,9 @@ private:
 	time_t file_modification_time;
 	Logger * log;
 
-	using RegionID = Int32;
-	using RegionType = Int8;
-	using RegionDepth = Int8;
+	using RegionID = UInt32;
+	using RegionType = UInt8;
+	using RegionDepth = UInt8;
 	using RegionPopulation = UInt32;
 
 	/// отношение parent; 0, если родителей нет - обычная lookup таблица.
@@ -83,6 +84,7 @@ public:
 		LOG_DEBUG(log, "Reloading regions hierarchy");
 
 		const size_t initial_size = 10000;
+		const size_t max_size = 1000000;
 
 		RegionParents new_parents(initial_size);
 		RegionParents new_city(initial_size);
@@ -133,9 +135,12 @@ public:
 
 			if (region_id > max_region_id)
 			{
+				if (region_id > max_size)
+					throw DB::Exception("Region id is too large: " + DB::toString(region_id) + ", should be not more than " + DB::toString(max_size));
+
 				max_region_id = region_id;
 
-				while (region_id >= static_cast<int>(new_parents.size()))
+				while (region_id >= new_parents.size())
 				{
 					new_parents.resize(new_parents.size() * 2);
 					new_populations.resize(new_parents.size());
@@ -233,7 +238,7 @@ public:
 
 	bool in(RegionID lhs, RegionID rhs) const
 	{
-		if (static_cast<size_t>(lhs) >= parents.size())
+		if (lhs >= parents.size())
 			return false;
 
 		while (lhs != 0 && lhs != rhs)
@@ -244,63 +249,63 @@ public:
 
 	RegionID toCity(RegionID region) const
 	{
-		if (static_cast<size_t>(region) >= city.size())
+		if (region >= city.size())
 			return 0;
 		return city[region];
 	}
 
 	RegionID toCountry(RegionID region) const
 	{
-		if (static_cast<size_t>(region) >= country.size())
+		if (region >= country.size())
 			return 0;
 		return country[region];
 	}
 
 	RegionID toArea(RegionID region) const
 	{
-		if (static_cast<size_t>(region) >= area.size())
+		if (region >= area.size())
 			return 0;
 		return area[region];
 	}
 
 	RegionID toDistrict(RegionID region) const
 	{
-		if (static_cast<size_t>(region) >= district.size())
+		if (region >= district.size())
 			return 0;
 		return district[region];
 	}
 
 	RegionID toContinent(RegionID region) const
 	{
-		if (static_cast<size_t>(region) >= continent.size())
+		if (region >= continent.size())
 			return 0;
 		return continent[region];
 	}
 
 	RegionID toTopContinent(RegionID region) const
 	{
-		if (static_cast<size_t>(region) >= top_continent.size())
+		if (region >= top_continent.size())
 			return 0;
 		return top_continent[region];
 	}
 
 	RegionID toParent(RegionID region) const
 	{
-		if (static_cast<size_t>(region) >= parents.size())
+		if (region >= parents.size())
 			return 0;
 		return parents[region];
 	}
 
 	RegionDepth getDepth(RegionID region) const
 	{
-		if (static_cast<size_t>(region) >= depths.size())
+		if (region >= depths.size())
 			return 0;
 		return depths[region];
 	}
 
 	RegionPopulation getPopulation(RegionID region) const
 	{
-		if (static_cast<size_t>(region) >= populations.size())
+		if (region >= populations.size())
 			return 0;
 		return populations[region];
 	}

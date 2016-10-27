@@ -11,8 +11,11 @@
 #include <common/logger_useful.h>
 
 #include <DB/Core/StringRef.h>
+
 #include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadBufferFromFile.h>
+
 
 /** @brief Класс, позволяющий узнавать по id региона его текстовое название на одном из поддерживаемых языков: ru, en, ua, by, kz, tr.
   *
@@ -63,13 +66,13 @@ private:
 		return language_aliases;
 	}
 
-	using RegionID_t = int;
+	using RegionID = UInt32;
 
-	using Chars_t = std::vector<char>;
-	using CharsForLanguageID_t = std::vector<Chars_t>;
-	using ModificationTimes_t = std::vector<time_t>;
-	using StringRefs_t = std::vector<StringRef>; /// Lookup table RegionID -> StringRef
-	using StringRefsForLanguageID_t = std::vector<StringRefs_t>;
+	using Chars = std::vector<char>;
+	using CharsForLanguageID = std::vector<Chars>;
+	using ModificationTimes = std::vector<time_t>;
+	using StringRefs = std::vector<StringRef>; /// Lookup table RegionID -> StringRef
+	using StringRefsForLanguageID = std::vector<StringRefs>;
 
 public:
 	static constexpr auto required_key = "path_to_regions_names_files";
@@ -86,7 +89,7 @@ public:
 	{
 		LOG_DEBUG(log, "Reloading regions names");
 
-		RegionID_t max_region_id = 0;
+		RegionID max_region_id = 0;
 		for (size_t language_id = 0; language_id < SUPPORTED_LANGUAGES_COUNT; ++language_id)
 		{
 			const std::string & language = getSupportedLanguages()[language_id];
@@ -103,16 +106,17 @@ public:
 			DB::ReadBufferFromFile in(path);
 
 			const size_t initial_size = 10000;
+			const size_t max_size = 1000000;
 
-			Chars_t new_chars;
-			StringRefs_t new_names_refs(initial_size, StringRef("", 0));
+			Chars new_chars;
+			StringRefs new_names_refs(initial_size, StringRef("", 0));
 
 			/// Выделим непрерывный кусок памяти, которого хватит для хранения всех имён.
 			new_chars.reserve(Poco::File(path).getSize());
 
 			while (!in.eof())
 			{
-				RegionID_t region_id;
+				RegionID region_id;
 				std::string region_name;
 
 				DB::readIntText(region_id, in);
@@ -132,9 +136,14 @@ public:
 				memcpy(&new_chars[old_size], region_name.c_str(), region_name.length() + 1);
 
 				if (region_id > max_region_id)
+				{
 					max_region_id = region_id;
 
-				while (region_id >= static_cast<int>(new_names_refs.size()))
+					if (region_id > max_size)
+						throw DB::Exception("Region id is too large: " + DB::toString(region_id) + ", should be not more than " + DB::toString(max_size));
+				}
+
+				while (region_id >= new_names_refs.size())
 					new_names_refs.resize(new_names_refs.size() * 2, StringRef("", 0));
 
 				new_names_refs[region_id] = StringRef(&new_chars[old_size], region_name.length());
@@ -148,11 +157,11 @@ public:
 			names_refs[language_id].resize(max_region_id + 1, StringRef("", 0));
 	}
 
-	StringRef getRegionName(RegionID_t region_id, Language language = Language::RU) const
+	StringRef getRegionName(RegionID region_id, Language language = Language::RU) const
 	{
 		size_t language_id = static_cast<size_t>(language);
 
-		if (static_cast<size_t>(region_id) > names_refs[language_id].size())
+		if (region_id > names_refs[language_id].size())
 			return StringRef("", 0);
 
 		StringRef ref = names_refs[language_id][region_id];
@@ -197,12 +206,12 @@ public:
 
 private:
 	const std::string directory;
-	ModificationTimes_t file_modification_times = ModificationTimes_t(SUPPORTED_LANGUAGES_COUNT);
+	ModificationTimes file_modification_times = ModificationTimes(SUPPORTED_LANGUAGES_COUNT);
 	Logger * log = &Logger::get("RegionsNames");
 
 	/// Байты имен для каждого языка, уложенные подряд, разделенные нулями
-	CharsForLanguageID_t chars = CharsForLanguageID_t(SUPPORTED_LANGUAGES_COUNT);
+	CharsForLanguageID chars = CharsForLanguageID(SUPPORTED_LANGUAGES_COUNT);
 
 	/// Отображение для каждого языка из id региона в указатель на диапазон байт имени
-	StringRefsForLanguageID_t names_refs = StringRefsForLanguageID_t(SUPPORTED_LANGUAGES_COUNT);
+	StringRefsForLanguageID names_refs = StringRefsForLanguageID(SUPPORTED_LANGUAGES_COUNT);
 };
