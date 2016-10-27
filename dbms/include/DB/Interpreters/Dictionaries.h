@@ -31,34 +31,22 @@ private:
 	std::thread reloading_thread;
 	Poco::Event destroy;
 
-	Logger * log;
-
+	Logger * log = &Logger::get("Dictionaries");
 
 
 	void handleException(const bool throw_on_error) const
 	{
 		const auto exception_ptr = std::current_exception();
 
-		try
-		{
-			throw;
-		}
-		catch (const Poco::Exception & e)
-		{
-			LOG_ERROR(log, "Cannot load dictionary! You must resolve this manually. " << e.displayText());
-		}
-		catch (...)
-		{
-			LOG_ERROR(log, "Cannot load dictionary! You must resolve this manually.");
-		}
+		tryLogCurrentException(log, "Cannot load dictionary! You must resolve this manually.");
 
 		if (throw_on_error)
 			std::rethrow_exception(exception_ptr);
 	}
 
 
-	/// Updates directories (dictionaries).
-	bool reloadImpl(const bool throw_on_error = false)
+	/// Updates dictionaries.
+	bool reloadImpl(const bool throw_on_error)
 	{
 		/** Если не удаётся обновить справочники, то несмотря на это, не кидаем исключение (используем старые справочники).
 		  * Если старых корректных справочников нет, то при использовании функций, которые от них зависят,
@@ -136,7 +124,7 @@ private:
 			if (destroy.tryWait(cur_reload_period * 1000))
 				return;
 
-			if (reloadImpl())
+			if (reloadImpl(false))
 			{
 				/// Success
 				cur_reload_period = reload_period;
@@ -154,8 +142,7 @@ private:
 public:
 	/// Every reload_period seconds directories are updated inside a separate thread.
 	Dictionaries(const bool throw_on_error, const int reload_period_)
-		: reload_period(reload_period_),
-		log(&Logger::get("Dictionaries"))
+		: reload_period(reload_period_)
 	{
 		reloadImpl(throw_on_error);
 		reloading_thread = std::thread([this] { reloadPeriodically(); });
@@ -163,8 +150,7 @@ public:
 
 	Dictionaries(const bool throw_on_error)
 		: Dictionaries(throw_on_error,
-					   Poco::Util::Application::instance().config()
-						   .getInt("builtin_dictionaries_reload_interval", 3600))
+			Poco::Util::Application::instance().config().getInt("builtin_dictionaries_reload_interval", 3600))
 	{}
 
 	~Dictionaries()
