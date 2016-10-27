@@ -233,6 +233,9 @@ public:
 		size_t num_levels = levels.size();
 		offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + num_levels);
 
+		if (!num_levels)
+			return;
+
 		typename ColumnVector<ValueType>::Container_t & data_to = static_cast<ColumnVector<ValueType> &>(arr_to.getData()).getData();
 
 		size_t old_size = data_to.size();
