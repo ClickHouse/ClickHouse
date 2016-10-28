@@ -25,11 +25,17 @@ public:
 
 	~LocalServer() = default;
 
-protected:
+private:
+
+	std::string getInitialCreateTableQuery();
+
+	void attachSystemTables();
 
 	void processQueries();
 
 	void setupUsers();
+
+protected:
 
 	std::unique_ptr<Context> context;
 };

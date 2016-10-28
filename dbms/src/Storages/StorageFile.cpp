@@ -15,6 +15,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+	extern const int CANNOT_SEEK_THROUGH_FILE;
+};
+
 
 static std::string getTablePath(const std::string & db_dir_path, const std::string & table_name, const std::string & format_name)
 {
@@ -38,6 +44,8 @@ StorageFile::StorageFile(
 {
 	if (table_fd < 0) // Will use file
 	{
+		use_table_fd = false;
+
 		if (!table_path_.empty()) // Is user's file
 		{
 			path = Poco::Path(table_path_).absolute().toString();
@@ -53,6 +61,8 @@ StorageFile::StorageFile(
 	else
 	{
 		is_db_table = false;
+		use_table_fd = true;
+		table_fd_init_offset = lseek(table_fd, 0, SEEK_CUR);
 	}
 }
 
@@ -62,11 +72,30 @@ class StorageFileBlockInputStream : public IProfilingBlockInputStream
 public:
 
 	StorageFileBlockInputStream(StorageFile & storage_, const Context & context, size_t max_block_size)
-	: storage(storage_), lock(storage.rwlock)
+	: storage(storage_), lock(storage.rwlock, storage.use_table_fd)
 	{
-		read_buf = (!storage.path.empty()) ?
-			std::make_unique<ReadBufferFromFile>(storage.path) :
-			std::make_unique<ReadBufferFromFile>(storage.table_fd);
+		if (storage.use_table_fd)
+		{
+			/// We could use common ReadBuffer and WriteBuffer in storage to leverage cache
+			///  and add ability to seek unseekable files, but cache sync isn't supported.
+
+			if (storage.table_fd_was_used) /// We need seek to initial position
+			{
+				if (storage.table_fd_init_offset < 0)
+					throw Exception("File descriptor isn't seekable, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+
+				/// ReadBuffer's seek() doesn't make sence, since cache is empty
+				if (lseek(storage.table_fd, storage.table_fd_init_offset, SEEK_SET) < 0)
+					throw Exception("Cannot seek file descriptor, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+			}
+
+			storage.table_fd_was_used = true;
+			read_buf = std::make_unique<ReadBufferFromFileDescriptor>(storage.table_fd);
+		}
+		else
+		{
+			read_buf = std::make_unique<ReadBufferFromFile>(storage.path);
+		}
 
 		input_formatter = FormatFactory().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
 	}
@@ -100,9 +129,9 @@ public:
 
 private:
 	StorageFile & storage;
-	Poco::ScopedReadRWLock lock;
+	Poco::ScopedRWLock lock;
 	Block sample_block;
-	std::unique_ptr<ReadBufferFromFile> read_buf;
+	std::unique_ptr<ReadBufferFromFileDescriptor> read_buf;
 	BlockInputStreamPtr input_formatter;
 };
 
@@ -116,14 +145,6 @@ BlockInputStreams StorageFile::read(
 	size_t max_block_size,
 	unsigned threads)
 {
-	if (table_fd >= 0)
-	{
-		if (table_fd_was_used)
-			throw Exception("Repeating read from the same file descriptor inside " + getName());
-
-		table_fd_was_used = true;
-	}
-
 	return BlockInputStreams(1, std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size));
 }
 
@@ -135,11 +156,20 @@ public:
 	StorageFileBlockOutputStream(StorageFile & storage_)
 	: storage(storage_), lock(storage.rwlock)
 	{
-		/// TODO: check that storage.table_fd is writeable
+		if (storage.use_table_fd)
+		{
+			/// TODO: more detail checks: 1) fd is writeable 2) points to the end of data (if possible)
+			if (storage.table_fd_was_used)
+				throw Exception("Write to file descriptor after use, inside " + storage.getName(),
+								ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
 
-		write_buf = (!storage.path.empty()) ?
-			 std::make_unique<WriteBufferFromFile>(storage.path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT) :
-			 std::make_unique<WriteBufferFromFile>(storage.table_fd);
+			storage.table_fd_was_used = true;
+			write_buf = std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd);
+		}
+		else
+		{
+			write_buf = std::make_unique<WriteBufferFromFile>(storage.path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+		}
 
 		output_formatter = FormatFactory().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), storage.context_global);
 	}
@@ -167,7 +197,7 @@ public:
 private:
 	StorageFile & storage;
 	Poco::ScopedWriteRWLock lock;
-	std::unique_ptr<WriteBufferFromFile> write_buf;
+	std::unique_ptr<WriteBufferFromFileDescriptor> write_buf;
 	BlockOutputStreamPtr output_formatter;
 };
 
@@ -175,16 +205,6 @@ BlockOutputStreamPtr StorageFile::write(
 	ASTPtr query,
 	const Settings & settings)
 {
-	if (table_fd >= 0)
-	{
-		if (table_fd_was_used)
-			throw Exception("Repeating write from the same file descriptor inside " + getName());
-
-		table_fd_was_used = true;
-	}
-
-	/// TODO: Do we need to use output_format_json_quote_64bit_integers from setting here?
-
 	return std::make_shared<StorageFileBlockOutputStream>(*this);
 }
 
@@ -198,7 +218,7 @@ void StorageFile::drop()
 void StorageFile::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
 	if (!is_db_table)
-		throw Exception("Can't rename table '" + table_name + "' stored in user-defined file");
+		throw Exception("Can't rename table '" + table_name + "' stored in user-defined file (or FD)");
 
 	Poco::ScopedWriteRWLock lock(rwlock);
 

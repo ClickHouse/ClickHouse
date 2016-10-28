@@ -9,19 +9,15 @@ YANDEX_APP_MAIN_FUNC(DB::LocalServer, main_clickhouse_local);
 
 int main (int argc_, char * argv_[])
 {
-	if (argc_ > 1 && !strcmp(argv_[1], "--local-mode"))
-	{
-		/// Cut first argument
-		int argc = argc_ - 1;
-		std::vector<char *> argv(argc);
-		argv[0] = argv_[0];
-		for (int i_arg = 2; i_arg < argc_; ++i_arg)
-			argv[i_arg - 1] = argv_[i_arg];
+	std::vector<char *> argv(argv_, argv_ + argc_);
+	auto main_func = main_clickhouse_server;
 
-		main_clickhouse_local(argc, argv.data());
-	}
-	else
+	auto it_mode_local = std::find_if(argv.begin(), argv.end(), [](char * arg) { return !strcmp(arg, "--local-mode"); } );
+	if (it_mode_local != argv.end())
 	{
-		main_clickhouse_server(argc_, argv_);
+		argv.erase(it_mode_local);
+		main_func = main_clickhouse_local;
 	}
+
+	return main_func(static_cast<int>(argv.size()), argv.data());
 }

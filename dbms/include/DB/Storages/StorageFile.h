@@ -86,6 +86,8 @@ public:
 
 	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
+protected:
+
 	friend class StorageFileBlockInputStream;
 	friend class StorageFileBlockOutputStream;
 
@@ -95,13 +97,16 @@ private:
 	std::string format_name;
 	NamesAndTypesListPtr columns;
 	Context & context_global;
+
 	std::string path;
 	int table_fd = -1;
-	bool is_db_table = true; /// Table is stored in real database, not user's file
 
-	bool table_fd_was_used = false; /// To detect repeating reads from stdin, not thread-safe.
+	bool is_db_table = true; 					/// Table is stored in real database, not user's file
+	bool use_table_fd = false;					/// Use table_fd insted of path
+	std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin
+	off_t table_fd_init_offset = -1;			/// Initial position of fd, used for repeating reads
 
-	Poco::RWLock rwlock;
+	mutable Poco::RWLock rwlock;
 
 	Logger * log = &Logger::get("StorageFile");
 };
