@@ -224,23 +224,23 @@ bool UTF8Encoding::isLegal(const unsigned char *bytes, int length)
 	case 3: 
 		if ((a = (*--srcptr)) < 0x80 || a > 0xBF) return false;
 	case 2:
-		if ((a = (*--srcptr)) > 0xBF) return false;
-		switch (*bytes) 
+		a = (*--srcptr);
+		switch (*bytes)
 		{
 		case 0xE0:
-			if (a < 0xA0) return false; 
+			if (a < 0xA0 || a > 0xBF) return false;
 			break;
 		case 0xED:
-			if (a > 0x9F) return false; 
+			if (a < 0x80 || a > 0x9F) return false;
 			break;
 		case 0xF0:
-			if (a < 0x90) return false; 
+			if (a < 0x90 || a > 0xBF) return false;
 			break;
 		case 0xF4:
-			if (a > 0x8F) return false; 
+			if (a < 0x80 || a > 0x8F) return false;
 			break;
 		default:
-			if (a < 0x80) return false;
+			if (a < 0x80 || a > 0xBF) return false;
 		}
 	case 1:
 		if (*bytes >= 0x80 && *bytes < 0xC2) return false;
