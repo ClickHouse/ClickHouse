@@ -1,18 +1,21 @@
 #include <DB/Storages/MergeTree/SimpleMergeSelector.h>
 
-#include <cmath>
+#include <iostream>
 
 
 namespace DB
 {
 
+/** Estimates best set of parts to merge within passed alternatives.
+  */
 struct Estimator
 {
 	void consider(SimpleMergeSelector::PartsInPartition && parts, size_t sum_size)
 	{
-		if (!min_size || sum_size < min_size)
+		double current_score = score(parts.size(), sum_size);
+		if (!min_score || current_score < min_score)
 		{
-			min_size = sum_size;
+			min_score = current_score;
 			best = std::move(parts);
 		}
 	}
@@ -22,22 +25,36 @@ struct Estimator
 		return std::move(best);
 	}
 
-	size_t min_size = 0;
+	static double score(double count, double sum_size)
+	{
+		/** Consider we have two alternative ranges of data parts to merge.
+		  * Assume time to merge a range is proportional to sum size of its parts.
+		  *
+		  * Cost of query execution is proportional to total number of data parts in a moment of time.
+		  * Let define our target: to minimize average (in time) total number of data parts.
+		  *
+		  * Let calculate integral of total number of parts, if we are going to do merge of one or another range.
+		  * It must be lower, and thus we decide, what range is better to merge.
+		  *
+		  * The integral is lower iff the following formula is lower:
+		  */
+		return sum_size / (count - 1);
+	}
+
+	double min_score = 0;
 	SimpleMergeSelector::PartsInPartition best;
 };
 
 
 SimpleMergeSelector::PartsInPartition SimpleMergeSelector::select(
 	const Partitions & partitions,
-	CanMergePart can_merge_part,
 	CanMergeAdjacent can_merge_adjacent,
-	const size_t max_total_size_to_merge,
-	bool aggressive_mode)
+	const size_t max_total_size_to_merge)
 {
 	Estimator estimator;
 
 	for (const auto & partition : partitions)
-		selectWithinPartition(partition, can_merge_part, can_merge_adjacent, max_total_size_to_merge, aggressive_mode, estimator);
+		selectWithinPartition(partition, can_merge_adjacent, max_total_size_to_merge, estimator);
 
 	return estimator.getBest();
 }
@@ -45,81 +62,68 @@ SimpleMergeSelector::PartsInPartition SimpleMergeSelector::select(
 
 void SimpleMergeSelector::selectWithinPartition(
 	const PartsInPartition & parts,
-	CanMergePart can_merge_part,
 	CanMergeAdjacent can_merge_adjacent,
 	const size_t max_total_size_to_merge,
-	bool aggressive_mode,
 	Estimator & estimator)
 {
 	if (parts.size() <= 1)
 		return;
 
+	double actual_base = settings.base;
+
+	if (parts.back().age > settings.lower_base_after)
+		actual_base = 1;
+
+	std::cerr << "parts.size(): " << parts.size()
+		<< ", actual_base: " << actual_base
+		<< ", max_total_size_to_merge: " << max_total_size_to_merge
+		<< "\n";
+
+	auto prev_right_it = parts.begin();
 	for (auto left_it = parts.begin(); left_it != parts.end(); ++left_it)
 	{
-		if (!can_merge_part(*left_it))
-			continue;
-
 		auto right_it = left_it;
-		auto prev_right_it = right_it;
+		auto right_it_minus_one = right_it;
 		++right_it;
 
-		size_t count = 1;
 		size_t sum_size = left_it->size;
 		size_t max_size = left_it->size;
-		time_t min_age = left_it->age;
 		PartsInPartition candidate;
 		candidate.push_back(*left_it);
 
 		for (; right_it != parts.end(); ++right_it)
 		{
-			++count;
 			sum_size += right_it->size;
 			if (right_it->size > max_size)
 				max_size = right_it->size;
-			if (right_it->age < min_age)
-				min_age = right_it->age;
-
-			double non_uniformity = static_cast<double>(max_size * count) / sum_size;
 
 			if (max_total_size_to_merge && sum_size > max_total_size_to_merge)
 				break;
 
-			if (count > settings.max_parts_to_merge_at_once)
+			if (settings.max_parts_to_merge_at_once && candidate.size() >= settings.max_parts_to_merge_at_once)
 				break;
 
-			if (!aggressive_mode && non_uniformity > settings.max_nonuniformity_of_sizes_to_merge)
-				break;
-
-			if (!can_merge_part(*right_it))
-				break;
-
-			if (!can_merge_adjacent(*prev_right_it, *right_it))
+			if (!can_merge_adjacent(*right_it_minus_one, *right_it))
 				break;
 
 			candidate.push_back(*right_it);
 
-			prev_right_it = right_it;
+			right_it_minus_one = right_it;
 		}
 
-		if (count <= 1)
+		if (candidate.size() <= 1)
 			continue;
 
-		size_t min_parts_to_merge_at_once_with_correction_by_age = settings.min_parts_to_merge_at_once;
+		if (static_cast<double>(sum_size) / max_size < actual_base)
+			continue;
 
-		if (min_age >= settings.lower_min_parts_to_merge_at_once_starting_at_time)
-		{
-			size_t min_parts_to_merge_at_once_correction = 1
-				+ std::log(static_cast<double>(min_age) / settings.lower_min_parts_to_merge_at_once_starting_at_time)
-					/ std::log(settings.lower_min_parts_to_merge_at_once_base_of_exponent);
-
-			if (min_parts_to_merge_at_once_with_correction_by_age >= min_parts_to_merge_at_once_correction + 2)
-				min_parts_to_merge_at_once_with_correction_by_age -= min_parts_to_merge_at_once_correction;
-		}
-
-		if (count < min_parts_to_merge_at_once_with_correction_by_age)
+		/// Do not select subrange of previously considered range.
+		if (right_it_minus_one <= prev_right_it)
 			continue;
 
 		estimator.consider(std::move(candidate), sum_size);
+
+		prev_right_it = right_it_minus_one;
 	}
 }
 

@@ -17,6 +17,7 @@
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 #include <DB/Common/Increment.h>
+#include <DB/Common/interpolate.h>
 
 #include <cmath>
 
@@ -85,18 +86,10 @@ size_t MergeTreeDataMerger::getMaxPartsSizeForMerge()
 	size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
 	size_t free_threads_in_pool = total_threads_in_pool - busy_threads_in_pool;
 
-	/// Interpolate between 'max_bytes_to_merge_at_min_space_in_pool' and 'max_bytes_to_merge_at_max_space_in_pool' with exponential function.
-
-	double base_of_exponent =
-		static_cast<double>(data.settings.max_bytes_to_merge_at_min_space_in_pool)
-						 / data.settings.max_bytes_to_merge_at_min_space_in_pool;
-
-	/// from 0 to 1
-	double power_of_exponent =
-		static_cast<double>(free_threads_in_pool)
-						/ total_threads_in_pool;
-
-	size_t max_size = data.settings.max_bytes_to_merge_at_min_space_in_pool * std::pow(base_of_exponent, power_of_exponent);
+	size_t max_size = interpolateExponential(
+		data.settings.max_bytes_to_merge_at_min_space_in_pool,
+		data.settings.max_bytes_to_merge_at_max_space_in_pool,
+		static_cast<double>(free_threads_in_pool) / total_threads_in_pool);
 
 	return std::min(max_size, static_cast<size_t>(DiskSpaceMonitor::getUnreservedFreeSpace(data.full_path) / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
@@ -109,6 +102,8 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 	size_t max_total_size_to_merge,
 	const AllowedMergingPredicate & can_merge_callback)
 {
+	parts.clear();
+
 	MergeTreeData::DataParts data_parts = data.getDataParts();
 
 	if (data_parts.empty())
@@ -150,46 +145,52 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 		partitions.back().emplace_back(part_info);
 	}
 
-	SimpleMergeSelector merge_selector{SimpleMergeSelector::Settings()};
+	SimpleMergeSelector::Settings merge_settings;
+
+	if (aggressive)
+	{
+		merge_settings.base = 1;
+		merge_settings.lower_base_after = 0;
+		merge_settings.max_parts_to_merge_at_once = 0;
+	}
+
+	SimpleMergeSelector merge_selector(merge_settings);
+
 	IMergeSelector::PartsInPartition parts_to_merge = merge_selector.select(
 		partitions,
-		[] (const IMergeSelector::Part &) { return true; },
 		[&] (const IMergeSelector::Part & left, const IMergeSelector::Part & right)
 		{
 			return can_merge(
 				*static_cast<const MergeTreeData::DataPartPtr *>(left.data),
 				*static_cast<const MergeTreeData::DataPartPtr *>(right.data));
 		},
-		max_total_size_to_merge,
-		aggressive);
+		max_total_size_to_merge);
 
-	if (!parts_to_merge.empty())
+	if (parts_to_merge.empty())
+		return false;
+
+	parts.reserve(parts_to_merge.size());
+
+	DayNum_t left_date = DayNum_t(std::numeric_limits<UInt16>::max());
+	DayNum_t right_date = DayNum_t(std::numeric_limits<UInt16>::min());
+	UInt32 level = 0;
+
+	for (IMergeSelector::Part & part_info : parts_to_merge)
 	{
-		parts.clear();
+		const MergeTreeData::DataPartPtr & part = *static_cast<const MergeTreeData::DataPartPtr *>(part_info.data);
 
-		DayNum_t left_date = DayNum_t(std::numeric_limits<UInt16>::max());
-		DayNum_t right_date = DayNum_t(std::numeric_limits<UInt16>::min());
-		UInt32 level = 0;
+		parts.push_back(part);
 
-		for (IMergeSelector::Part & part_info : parts_to_merge)
-		{
-			const MergeTreeData::DataPartPtr & part = *static_cast<const MergeTreeData::DataPartPtr *>(part_info.data);
-
-			parts.push_back(part);
-
-			level = std::max(level, part->level);
-			left_date = std::min(left_date, part->left_date);
-			right_date = std::max(right_date, part->right_date);
-		}
-
-		merged_name = ActiveDataPartSet::getPartName(
-			left_date, right_date, parts.front()->left, parts.back()->right, level + 1);
-
-		LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
-		return true;
+		level = std::max(level, part->level);
+		left_date = std::min(left_date, part->left_date);
+		right_date = std::max(right_date, part->right_date);
 	}
 
-	return false;
+	merged_name = ActiveDataPartSet::getPartName(
+		left_date, right_date, parts.front()->left, parts.back()->right, level + 1);
+
+	LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
+	return true;
 }
 
 

@@ -13,33 +13,32 @@ class SimpleMergeSelector : public IMergeSelector
 public:
 	struct Settings
 	{
-		size_t min_parts_to_merge_at_once = 8;
+		/** Minimum ratio of size of one part to all parts in set of parts to merge (for usual cases).
+		  * For example, if all parts have equal size, it means, that at least 'base' number of parts should be merged.
+		  * If parts has non-uniform sizes, then minumum number of parts to merge is effectively increased.
+		  * This behaviour balances merge-tree workload.
+		  * It called 'base', because merge-tree depth could be estimated as logarithm with that base.
+		  */
+		double base = 8;
+
+		time_t lower_base_after = 300;
+
+		/// Zero means unlimited.
 		size_t max_parts_to_merge_at_once = 100;
-
-		double max_nonuniformity_of_sizes_to_merge = 2;
-
-		time_t lower_min_parts_to_merge_at_once_starting_at_time = 300;
-		size_t lower_min_parts_to_merge_at_once_base_of_exponent = 4;
 	};
 
 	SimpleMergeSelector(const Settings & settings) : settings(settings) {}
 
 	PartsInPartition select(
 		const Partitions & partitions,
-		CanMergePart can_merge_part,
-		CanMergeAdjacent can_merge_adjacent,
-		const size_t max_total_size_to_merge,
-		bool aggressive_mode) override;
+		const size_t max_total_size_to_merge) override;
 
 private:
 	const Settings settings;
 
 	void selectWithinPartition(
 		const PartsInPartition & parts,
-		CanMergePart can_merge_part,
-		CanMergeAdjacent can_merge_adjacent,
 		const size_t max_total_size_to_merge,
-		bool aggressive_mode,
 		Estimator & estimator);
 };
 
