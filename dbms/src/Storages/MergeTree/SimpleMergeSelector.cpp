@@ -21,7 +21,7 @@ struct Estimator
 
 		if (size_next_at_left > sum_size * 0.9)
 		{
-			double difference = abs(log2(static_cast<double>(sum_size) / size_next_at_left));
+			double difference = std::abs(log2(static_cast<double>(sum_size) / size_next_at_left));
 			if (difference < 0.5)
 				current_score *= 0.75 + difference * 0.5;
 		}
@@ -31,7 +31,7 @@ struct Estimator
 
 		if (size_next_at_right > sum_size * 0.9)
 		{
-			double difference = abs(log2(static_cast<double>(sum_size) / size_next_at_right));
+			double difference = std::abs(log2(static_cast<double>(sum_size) / size_next_at_right));
 			if (difference < 0.5)
 				current_score *= 0.75 + difference * 0.5;
 		}
