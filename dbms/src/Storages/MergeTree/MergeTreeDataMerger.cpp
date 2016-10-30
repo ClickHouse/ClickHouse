@@ -109,30 +109,19 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 	if (data_parts.empty())
 		return false;
 
-	/// Мемоизация для функции can_merge_callback. Результат вызова can_merge_callback для этого куска и предыдущего в data_parts.
-	std::map<MergeTreeData::DataPartPtr, bool> can_merge_with_previous;
-	auto can_merge = [&can_merge_with_previous, &can_merge_callback]
-		(const MergeTreeData::DataPartPtr & first, const MergeTreeData::DataPartPtr & second) -> bool
-	{
-		auto it = can_merge_with_previous.find(second);
-		if (it != can_merge_with_previous.end())
-			return it->second;
-		bool res = can_merge_callback(first, second);
-		can_merge_with_previous[second] = res;
-		return res;
-	};
-
 	time_t current_time = time(nullptr);
 
 	IMergeSelector::Partitions partitions;
 
 	DayNum_t prev_month = DayNum_t(-1);
+	const MergeTreeData::DataPartPtr * prev_part = nullptr;
 	for (const MergeTreeData::DataPartPtr & part : data_parts)
 	{
 		DayNum_t month = part->month;
-		if (month != prev_month)
+		if (month != prev_month || (prev_part && !can_merge_callback(*prev_part, part)))
 		{
-			partitions.emplace_back();
+			if (partitions.empty() || !partitions.back().empty())
+				partitions.emplace_back();
 			prev_month = month;
 		}
 
@@ -143,6 +132,8 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 		part_info.data = &part;
 
 		partitions.back().emplace_back(part_info);
+
+		prev_part = &part;
 	}
 
 	SimpleMergeSelector::Settings merge_settings;
@@ -158,12 +149,6 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 
 	IMergeSelector::PartsInPartition parts_to_merge = merge_selector.select(
 		partitions,
-		[&] (const IMergeSelector::Part & left, const IMergeSelector::Part & right)
-		{
-			return can_merge(
-				*static_cast<const MergeTreeData::DataPartPtr *>(left.data),
-				*static_cast<const MergeTreeData::DataPartPtr *>(right.data));
-		},
 		max_total_size_to_merge);
 
 	if (parts_to_merge.empty())

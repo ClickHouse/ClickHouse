@@ -10,19 +10,22 @@ namespace DB
   */
 struct Estimator
 {
-	void consider(SimpleMergeSelector::PartsInPartition && parts, size_t sum_size)
+	using Iterator = SimpleMergeSelector::PartsInPartition::const_iterator;
+
+	void consider(Iterator begin, Iterator end, size_t sum_size)
 	{
-		double current_score = score(parts.size(), sum_size);
+		double current_score = score(end - begin, sum_size);
 		if (!min_score || current_score < min_score)
 		{
 			min_score = current_score;
-			best = std::move(parts);
+			best_begin = begin;
+			best_end = end;
 		}
 	}
 
 	SimpleMergeSelector::PartsInPartition getBest()
 	{
-		return std::move(best);
+		return SimpleMergeSelector::PartsInPartition(best_begin, best_end);
 	}
 
 	static double score(double count, double sum_size)
@@ -42,19 +45,19 @@ struct Estimator
 	}
 
 	double min_score = 0;
-	SimpleMergeSelector::PartsInPartition best;
+	Iterator best_begin;
+	Iterator best_end;
 };
 
 
 SimpleMergeSelector::PartsInPartition SimpleMergeSelector::select(
 	const Partitions & partitions,
-	CanMergeAdjacent can_merge_adjacent,
 	const size_t max_total_size_to_merge)
 {
 	Estimator estimator;
 
 	for (const auto & partition : partitions)
-		selectWithinPartition(partition, can_merge_adjacent, max_total_size_to_merge, estimator);
+		selectWithinPartition(partition, max_total_size_to_merge, estimator);
 
 	return estimator.getBest();
 }
@@ -62,7 +65,6 @@ SimpleMergeSelector::PartsInPartition SimpleMergeSelector::select(
 
 void SimpleMergeSelector::selectWithinPartition(
 	const PartsInPartition & parts,
-	CanMergeAdjacent can_merge_adjacent,
 	const size_t max_total_size_to_merge,
 	Estimator & estimator)
 {
@@ -74,56 +76,38 @@ void SimpleMergeSelector::selectWithinPartition(
 	if (parts.back().age > settings.lower_base_after)
 		actual_base = 1;
 
+	if (parts.size() < actual_base)
+		return;
+
 	std::cerr << "parts.size(): " << parts.size()
 		<< ", actual_base: " << actual_base
 		<< ", max_total_size_to_merge: " << max_total_size_to_merge
 		<< "\n";
 
-	auto prev_right_it = parts.begin();
-	for (auto left_it = parts.begin(); left_it != parts.end(); ++left_it)
+	size_t parts_count = parts.size();
+	size_t prefix_sum = 0;
+	std::vector<size_t> prefix_sums(parts.size() + 1);
+
+	for (size_t i = 0; i < parts_count; ++i)
 	{
-		auto right_it = left_it;
-		auto right_it_minus_one = right_it;
-		++right_it;
+		prefix_sum += parts[i].size;
+		prefix_sums[i + 1] = prefix_sum;
+	}
 
-		size_t sum_size = left_it->size;
-		size_t max_size = left_it->size;
-		PartsInPartition candidate;
-		candidate.push_back(*left_it);
-
-		for (; right_it != parts.end(); ++right_it)
+	for (size_t begin = 0; begin < parts_count; ++begin)
+	{
+		for (size_t end = begin + 1 + actual_base; end <= parts_count; ++end)
 		{
-			sum_size += right_it->size;
-			if (right_it->size > max_size)
-				max_size = right_it->size;
+			if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once)
+				break;
+
+			size_t sum_size = prefix_sums[end] - prefix_sums[begin];
 
 			if (max_total_size_to_merge && sum_size > max_total_size_to_merge)
 				break;
 
-			if (settings.max_parts_to_merge_at_once && candidate.size() >= settings.max_parts_to_merge_at_once)
-				break;
-
-			if (!can_merge_adjacent(*right_it_minus_one, *right_it))
-				break;
-
-			candidate.push_back(*right_it);
-
-			right_it_minus_one = right_it;
+			estimator.consider(parts.begin() + begin, parts.begin() + end, sum_size);
 		}
-
-		if (candidate.size() <= 1)
-			continue;
-
-		if (static_cast<double>(sum_size) / max_size < actual_base)
-			continue;
-
-		/// Do not select subrange of previously considered range.
-		if (right_it_minus_one <= prev_right_it)
-			continue;
-
-		estimator.consider(std::move(candidate), sum_size);
-
-		prev_right_it = right_it_minus_one;
 	}
 }
 

@@ -46,15 +46,11 @@ public:
 	/// Parts are in some specific order. Parts could be merged only in contiguous ranges.
 	using Partitions = std::vector<PartsInPartition>;
 
-	/// Some parts are forbidden to merge at this moment. Because them are already merged right now, or because there is some lock.
-	using CanMergeAdjacent = std::function<bool(const Part &, const Part &)>;
-
 	/** Function could be called at any frequency and it must decide, should you do any merge at all.
 	  * If better not to do any merge, it returns empty result.
 	  */
 	virtual PartsInPartition select(
 		const Partitions & partitions,
-		CanMergeAdjacent can_merge_adjacent,
 		const size_t max_total_size_to_merge) = 0;
 
 	virtual ~IMergeSelector() {}
