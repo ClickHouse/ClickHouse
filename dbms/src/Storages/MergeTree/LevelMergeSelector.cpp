@@ -53,8 +53,8 @@ void selectWithinPartition(
 	if (parts.back().age > settings.lower_base_after)
 	{
 		actual_base -= log2(parts.back().age - settings.lower_base_after);
-		if (actual_base < 1)
-			actual_base = 1;
+		if (actual_base < 2)
+			actual_base = 2;
 	}
 
 	if (parts.size() < actual_base)
