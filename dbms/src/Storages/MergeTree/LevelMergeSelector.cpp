@@ -109,8 +109,10 @@ void selectWithinPartition(
 							size_t subrange_begin = range_begin + subrange_index * range_size / num_subranges;
 							size_t subrange_end = range_begin + (subrange_index + 1) * range_size / num_subranges;
 
-							estimator.consider(parts.begin() + subrange_begin, parts.begin() + subrange_end,
-								prefix_sums[subrange_end] - prefix_sums[subrange_begin]);
+							size_t size_of_subrange = prefix_sums[subrange_end] - prefix_sums[subrange_begin];
+
+							if (size_of_subrange <= max_total_size_to_merge)
+								estimator.consider(parts.begin() + subrange_begin, parts.begin() + subrange_end, size_of_subrange);
 						}
 					}
 				}
