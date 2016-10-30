@@ -71,9 +71,19 @@ void selectWithinPartition(
 	}
 
 	size_t max_level = 0;
+	size_t prev_level = -1;
+	bool has_range_of_same_level = false;
+
 	for (const auto & part : parts)
+	{
 		if (part.level > max_level)
 			max_level = part.level;
+
+		if (part.level == prev_level)
+			has_range_of_same_level = true;
+
+		prev_level = part.level;
+	}
 
 	for (size_t level = 0; level <= max_level; ++level)
 	{
@@ -83,7 +93,7 @@ void selectWithinPartition(
 
 		for (size_t i = 0; i <= parts_size; ++i)
 		{
-			if (i < parts_size && parts[i].level == level)
+			if (i < parts_size && (parts[i].level == level || !has_range_of_same_level))
 			{
 				if (!in_range)
 				{
@@ -118,6 +128,9 @@ void selectWithinPartition(
 				}
 			}
 		}
+
+		if (!has_range_of_same_level)
+			break;
 	}
 }
 
