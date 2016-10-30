@@ -448,7 +448,11 @@ void ReplicatedMergeTreeQueue::removeGetsAndMergesInRange(zkutil::ZooKeeperPtr z
 }
 
 
-bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason, MergeTreeDataMerger & merger)
+bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
+	const LogEntry & entry,
+	String & out_postpone_reason,
+	MergeTreeDataMerger & merger,
+	MergeTreeData & data)
 {
 	/// mutex уже захвачен. Функция вызывается только из selectEntryToProcess.
 
@@ -498,6 +502,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(const LogEntry & entry, Str
 		  * Если каких-то частей не хватает, вместо мерджа будет попытка скачать кусок.
 		  * Такая ситуация возможна, если получение какого-то куска пофейлилось, и его переместили в конец очереди.
 		  */
+		size_t sum_parts_size_in_bytes = 0;
 		for (const auto & name : entry.parts_to_merge)
 		{
 			if (future_parts.count(name))
@@ -508,11 +513,26 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(const LogEntry & entry, Str
 				out_postpone_reason = reason;
 				return false;
 			}
+
+			auto part = data.getPartIfExists(name);
+			if (part)
+				sum_parts_size_in_bytes += part->size_in_bytes;
 		}
 
 		if (merger.isCancelled())
 		{
 			String reason = "Not executing log entry for part " + entry.new_part_name + " because merges are cancelled now.";
+			LOG_DEBUG(log, reason);
+			out_postpone_reason = reason;
+			return false;
+		}
+
+		size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge();
+		if (sum_parts_size_in_bytes > max_parts_size_for_merge)
+		{
+			String reason = "Not executing log entry for part " + entry.new_part_name
+				+ " because its size (" + formatReadableSizeWithBinarySuffix(sum_parts_size_in_bytes)
+				+ ") is greater than current maximum (" + formatReadableSizeWithBinarySuffix(max_parts_size_for_merge) + ").";
 			LOG_DEBUG(log, reason);
 			out_postpone_reason = reason;
 			return false;
@@ -546,7 +566,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
 }
 
 
-ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToProcess(MergeTreeDataMerger & merger)
+ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToProcess(MergeTreeDataMerger & merger, MergeTreeData & data)
 {
 	std::lock_guard<std::mutex> lock(mutex);
 
@@ -557,7 +577,7 @@ ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToP
 		if ((*it)->currently_executing)
 			continue;
 
-		if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger))
+		if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger, data))
 		{
 			entry = *it;
 			queue.splice(queue.end(), queue, it);

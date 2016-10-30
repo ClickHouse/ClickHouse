@@ -1137,13 +1137,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
 		if (!do_fetch)
 		{
-			size_t sum_parts_size_in_bytes = 0;
-			for (const MergeTreeData::DataPartPtr & part : parts)
-				sum_parts_size_in_bytes += part->size_in_bytes;
-
-			if (sum_parts_size_in_bytes > merger.getMaxPartsSizeForMerge())
-				return false;
-
 			size_t estimated_space_for_merge = MergeTreeDataMerger::estimateDiskSpaceForMerge(parts);
 
 			/// Может бросить исключение.
@@ -1537,7 +1530,7 @@ bool StorageReplicatedMergeTree::queueTask()
 
 	try
 	{
-		selected = queue.selectEntryToProcess(merger);
+		selected = queue.selectEntryToProcess(merger, data);
 	}
 	catch (...)
 	{
