@@ -1035,7 +1035,7 @@ void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_ev
 }
 
 
-bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context)
+bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 {
 	if (entry.type == LogEntry::DROP_RANGE)
 	{
@@ -1137,21 +1137,17 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 
 		if (!do_fetch)
 		{
-			/// Если собираемся сливать большие куски, увеличим счетчик потоков, сливающих большие куски.
-			for (const auto & part : parts)
-			{
-				if (part->size_in_bytes > data.settings.max_bytes_to_merge_parts_small)
-				{
-					pool_context.incrementCounter("big merges");
-					pool_context.incrementCounter("replicated big merges");
-					break;
-				}
-			}
+			size_t sum_parts_size_in_bytes = 0;
+			for (const MergeTreeData::DataPartPtr & part : parts)
+				sum_parts_size_in_bytes += part->size_in_bytes;
 
-			size_t sum_parts_size_in_bytes = MergeTreeDataMerger::estimateDiskSpaceForMerge(parts);
+			if (sum_parts_size_in_bytes > merger.getMaxPartsSizeForMerge())
+				return false;
+
+			size_t estimated_space_for_merge = MergeTreeDataMerger::estimateDiskSpaceForMerge(parts);
 
 			/// Может бросить исключение.
-			DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, sum_parts_size_in_bytes);
+			DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, estimated_space_for_merge);
 
 			auto table_lock = lockStructure(false);
 
@@ -1534,7 +1530,7 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 }
 
 
-bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & pool_context)
+bool StorageReplicatedMergeTree::queueTask()
 {
 	/// Этот объект будет помечать элемент очереди как выполняющийся.
 	ReplicatedMergeTreeQueue::SelectedEntry selected;
@@ -1559,7 +1555,7 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 	{
 		try
 		{
-			return executeLogEntry(*entry, pool_context);
+			return executeLogEntry(*entry);
 		}
 		catch (const Exception & e)
 		{
@@ -1711,37 +1707,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 			std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
-			/** Сколько в очереди или в фоновом потоке мерджей крупных кусков.
-			  * Если их больше половины от размера пула потоков для мерджа, то можно мерджить только мелкие куски.
-			  */
-			auto & background_pool = context.getBackgroundPool();
-
-			size_t big_merges_current = background_pool.getCounter("replicated big merges");
-			size_t max_number_of_big_merges = background_pool.getNumberOfThreads() / 2;
-			size_t merges_queued = 0;
-			size_t big_merges_queued = 0;
-
-			if (big_merges_current < max_number_of_big_merges)
-			{
-				queue.countMerges(merges_queued, big_merges_queued, max_number_of_big_merges - big_merges_current,
-					[&](const String & name)
-					{
-						MergeTreeData::DataPartPtr part = data.getActiveContainingPart(name);
-						if (!part || part->name != name)
-							return false;
-
-						return part->size_in_bytes > data.settings.max_bytes_to_merge_parts_small;
-					});
-			}
-
-			bool only_small = big_merges_current + big_merges_queued >= max_number_of_big_merges;
-
-			if (big_merges_current || merges_queued)
-				LOG_TRACE(log, "Currently executing big merges: " << big_merges_current
-					<< ". Queued big merges: " << big_merges_queued
-					<< ". All merges in queue: " << merges_queued
-					<< ". Max number of big merges: " << max_number_of_big_merges
-					<< (only_small ? ". So, will select only small parts to merge." : "."));
+			size_t merges_queued = queue.countMerges();
 
 			if (merges_queued >= data.settings.max_replicated_merges_in_queue)
 			{
@@ -1756,8 +1722,8 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 				size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
-				if ((		merger.selectPartsToMerge(parts, merged_name, disk_space, false, false, only_small, can_merge)
-						|| 	merger.selectPartsToMerge(parts, merged_name, disk_space, true, false, only_small, can_merge))
+				if (merger.selectPartsToMerge(
+					parts, merged_name, false, std::min(disk_space, data.settings.max_bytes_to_merge_at_max_space_in_pool), can_merge)
 					&& createLogEntryToMergeParts(parts, merged_name))
 				{
 					success = true;
@@ -2322,7 +2288,7 @@ bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, 
 		String merged_name;
 		auto always_can_merge = [](const MergeTreeData::DataPartPtr & a, const MergeTreeData::DataPartPtr & b) { return true; };
 
-		if (unreplicated_merger->selectPartsToMerge(parts, merged_name, 0, true, true, false, always_can_merge))
+		if (unreplicated_merger->selectPartsToMerge(parts, merged_name, true, 0, always_can_merge))
 		{
 			const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
 
@@ -2360,8 +2326,7 @@ bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, 
 
 		if (partition.empty())
 		{
-			selected = merger.selectPartsToMerge(parts, merged_name, disk_space, false, true, false, can_merge)
-				|| merger.selectPartsToMerge(parts, merged_name, disk_space,  true, true, false, can_merge);
+			selected = merger.selectPartsToMerge(parts, merged_name, false, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge);
 		}
 		else
 		{

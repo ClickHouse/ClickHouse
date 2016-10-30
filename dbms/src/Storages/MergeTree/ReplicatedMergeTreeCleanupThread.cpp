@@ -70,10 +70,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldParts()
 	size_t count = parts.size();
 
 	if (!count)
-	{
-		LOG_TRACE(log, "No old parts");
 		return;
-	}
 
 	try
 	{

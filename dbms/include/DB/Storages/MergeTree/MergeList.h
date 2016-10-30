@@ -8,6 +8,10 @@
 #include <atomic>
 
 
+/** Maintains a list of currently running merges.
+  * For implementation of system.merges table.
+  */
+
 namespace CurrentMetrics
 {
 	extern const Metric Merge;

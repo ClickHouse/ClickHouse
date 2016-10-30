@@ -476,6 +476,7 @@ public:
 private:
 	friend struct MergeTreeDataPart;
 	friend class StorageMergeTree;
+	friend class MergeTreeDataMerger;
 
 	bool require_part_metadata;
 

@@ -57,12 +57,6 @@ BackgroundProcessingPool::BackgroundProcessingPool(int size_) : size(size_)
 }
 
 
-int BackgroundProcessingPool::getCounter(const String & name)
-{
-	std::unique_lock<std::mutex> lock(counters_mutex);
-	return counters[name];
-}
-
 BackgroundProcessingPool::TaskHandle BackgroundProcessingPool::addTask(const Task & task)
 {
 	TaskHandle res = std::make_shared<TaskInfo>(*this, task);
@@ -120,7 +114,6 @@ void BackgroundProcessingPool::threadFunction()
 
 	while (!shutdown)
 	{
-		Counters counters_diff;
 		bool done_work = false;
 		TaskHandle task;
 
@@ -173,22 +166,12 @@ void BackgroundProcessingPool::threadFunction()
 
 			{
 				CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundPoolTask};
-
-				Context context(*this, counters_diff);
-				done_work = task->function(context);
+				done_work = task->function();
 			}
 		}
 		catch (...)
 		{
 			tryLogCurrentException(__PRETTY_FUNCTION__);
-		}
-
-		/// Subtract counters backwards.
-		if (!counters_diff.empty())
-		{
-			std::unique_lock<std::mutex> lock(counters_mutex);
-			for (const auto & it : counters_diff)
-				counters[it.first] -= it.second;
 		}
 
 		if (shutdown)

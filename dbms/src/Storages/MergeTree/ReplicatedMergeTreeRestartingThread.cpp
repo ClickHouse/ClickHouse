@@ -219,7 +219,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
 		if (!storage.queue_task_handle)
 			storage.queue_task_handle = storage.context.getBackgroundPool().addTask(
-				std::bind(&StorageReplicatedMergeTree::queueTask, &storage, std::placeholders::_1));
+				std::bind(&StorageReplicatedMergeTree::queueTask, &storage));
 
 		return true;
 	}

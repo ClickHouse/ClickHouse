@@ -16,33 +16,11 @@ struct MergeTreeSettings
 {
 	/** Merge settings. */
 
-	/// Determines how unbalanced merges we could do.
-	/// Bigger values for more unbalanced merges. It is advisable to be more than 1 / max_parts_to_merge_at_once.
-	double size_ratio_coefficient_to_merge_parts = 0.25;
-
-	/// How many parts could be merges at once.
-	/// Labour coefficient of parts selection O(N * max_parts_to_merge_at_once).
-	size_t max_parts_to_merge_at_once = 10;
-
-	/// But while total size of parts is too small(less than this number of bytes), we could merge more parts at once.
-	/// This is intentionally to allow quicker merge of too small parts, which could be accumulated too quickly.
-	size_t merge_more_parts_if_sum_bytes_is_less_than = 100 * 1024 * 1024;
-	size_t max_parts_to_merge_at_once_if_small = 100;
-
-	/// Parts of more than this bytes couldn't be merged at all.
-	size_t max_bytes_to_merge_parts = 10ULL * 1024 * 1024 * 1024;
-
-	/// No more than half of threads could execute merge of parts, if at least one part more than this size in bytes.
-	size_t max_bytes_to_merge_parts_small = 250 * 1024 * 1024;
-
-	/// Parts more than this size in bytes deny to merge at all.
-	size_t max_sum_bytes_to_merge_parts = 25ULL * 1024 * 1024 * 1024;
-
-	/// How much times we increase the coefficient at night.
-	size_t merge_parts_at_night_inc = 10;
+	size_t max_bytes_to_merge_at_max_space_in_pool = 100ULL * 1024 * 1024 * 1024;
+	size_t max_bytes_to_merge_at_min_space_in_pool = 1024 * 1024;
 
 	/// How many tasks of merging parts are allowed simultaneously in ReplicatedMergeTree queue.
-	size_t max_replicated_merges_in_queue = 6;
+	size_t max_replicated_merges_in_queue = 20;
 
 	/// How many seconds to keep obsolete parts.
 	time_t old_parts_lifetime = 8 * 60;
@@ -120,14 +98,6 @@ struct MergeTreeSettings
 	#define SET_SIZE_T(NAME) \
 		if (config.has(config_elem + "." #NAME)) NAME = parse<size_t>(config.getString(config_elem + "." #NAME));
 
-		SET_DOUBLE(size_ratio_coefficient_to_merge_parts);
-		SET_SIZE_T(max_parts_to_merge_at_once);
-		SET_SIZE_T(merge_more_parts_if_sum_bytes_is_less_than);
-		SET_SIZE_T(max_parts_to_merge_at_once_if_small);
-		SET_SIZE_T(max_bytes_to_merge_parts);
-		SET_SIZE_T(max_bytes_to_merge_parts_small);
-		SET_SIZE_T(max_sum_bytes_to_merge_parts);
-		SET_SIZE_T(merge_parts_at_night_inc);
 		SET_SIZE_T(max_replicated_merges_in_queue);
 		SET_SIZE_T(old_parts_lifetime);
 		SET_SIZE_T(temporary_directories_lifetime);

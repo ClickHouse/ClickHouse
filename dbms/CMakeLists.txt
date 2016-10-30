@@ -587,6 +587,10 @@ add_library (dbms
 	include/DB/Storages/MergeTree/ShardedPartitionUploader.h
 	include/DB/Storages/MergeTree/RemoteQueryExecutor.h
 	include/DB/Storages/MergeTree/RemotePartChecker.h
+	include/DB/Storages/MergeTree/MergeSelector.h
+	include/DB/Storages/MergeTree/SimpleMergeSelector.h
+	include/DB/Storages/MergeTree/LevelMergeSelector.h
+	include/DB/Storages/MergeTree/AllMergeSelector.h
 	include/DB/Storages/StorageNull.h
 	include/DB/Storages/System/StorageSystemSettings.h
 	include/DB/Databases/IDatabase.h
@@ -711,6 +715,9 @@ add_library (dbms
 	src/Storages/MergeTree/RemoteQueryExecutor.cpp
 	src/Storages/MergeTree/RemotePartChecker.cpp
 	src/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.cpp
+	src/Storages/MergeTree/SimpleMergeSelector.cpp
+	src/Storages/MergeTree/LevelMergeSelector.cpp
+	src/Storages/MergeTree/AllMergeSelector.cpp
 	src/Storages/ITableDeclaration.cpp
 	src/Storages/AlterCommands.cpp
 	src/Storages/ColumnsDescription.cpp
