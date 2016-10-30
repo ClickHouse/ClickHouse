@@ -6,8 +6,6 @@
 namespace DB
 {
 
-struct Estimator;
-
 class SimpleMergeSelector : public IMergeSelector
 {
 public:
@@ -35,11 +33,6 @@ public:
 
 private:
 	const Settings settings;
-
-	void selectWithinPartition(
-		const PartsInPartition & parts,
-		const size_t max_total_size_to_merge,
-		Estimator & estimator);
 };
 
 }

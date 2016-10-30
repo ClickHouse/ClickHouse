@@ -28,3 +28,5 @@ target_link_libraries (part_name dbms)
 add_executable (remove_symlink_directory remove_symlink_directory.cpp)
 target_link_libraries (remove_symlink_directory dbms)
 
+add_executable (merge_selector merge_selector.cpp)
+target_link_libraries (merge_selector dbms)

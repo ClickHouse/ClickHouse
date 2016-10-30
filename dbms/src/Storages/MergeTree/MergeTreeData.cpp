@@ -378,14 +378,14 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
 			if ((*curr_jt)->contains(**prev_jt))
 			{
-				(*prev_jt)->remove_time = time(0);
+				(*prev_jt)->remove_time = (*prev_jt)->modification_time;
 				data_parts.erase(prev_jt);
 				prev_jt = curr_jt;
 				++curr_jt;
 			}
 			else if ((*prev_jt)->contains(**curr_jt))
 			{
-				(*curr_jt)->remove_time = time(0);
+				(*curr_jt)->remove_time = (*curr_jt)->modification_time;
 				data_parts.erase(curr_jt++);
 			}
 			else

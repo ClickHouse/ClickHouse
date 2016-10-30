@@ -4,7 +4,8 @@
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
 #include <DB/Storages/MergeTree/MergeTreeSharder.h>
 #include <DB/Storages/MergeTree/ReshardingJob.h>
-#include <DB/Storages/MergeTree/SimpleMergeSelector.h>
+#include <DB/Storages/MergeTree/LevelMergeSelector.h>
+#include <DB/Storages/MergeTree/AllMergeSelector.h>
 #include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
@@ -84,7 +85,7 @@ size_t MergeTreeDataMerger::getMaxPartsSizeForMerge()
 {
 	size_t total_threads_in_pool = data.context.getBackgroundPool().getNumberOfThreads();
 	size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
-	size_t free_threads_in_pool = total_threads_in_pool - busy_threads_in_pool;
+	size_t free_threads_in_pool = 1 + total_threads_in_pool - busy_threads_in_pool;	/// 1 is current thread
 
 	size_t max_size = interpolateExponential(
 		data.settings.max_bytes_to_merge_at_min_space_in_pool,
@@ -136,23 +137,25 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 		prev_part = &part;
 	}
 
-	SimpleMergeSelector::Settings merge_settings;
+	std::unique_ptr<IMergeSelector> merge_selector;
 
 	if (aggressive)
+		merge_selector = std::make_unique<AllMergeSelector>();
+	else
 	{
-		merge_settings.base = 1;
-		merge_settings.lower_base_after = 0;
-		merge_settings.max_parts_to_merge_at_once = 0;
+		LevelMergeSelector::Settings merge_settings;
+		merge_selector = std::make_unique<LevelMergeSelector>(merge_settings);
 	}
 
-	SimpleMergeSelector merge_selector(merge_settings);
-
-	IMergeSelector::PartsInPartition parts_to_merge = merge_selector.select(
+	IMergeSelector::PartsInPartition parts_to_merge = merge_selector->select(
 		partitions,
 		max_total_size_to_merge);
 
 	if (parts_to_merge.empty())
 		return false;
+
+	if (parts_to_merge.size() == 1)
+		throw Exception("Logical error: merge selector returned only one part to merge", ErrorCodes::LOGICAL_ERROR);
 
 	parts.reserve(parts_to_merge.size());
 
