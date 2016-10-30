@@ -16,6 +16,7 @@ struct MergeTreeSettings
 {
 	/** Merge settings. */
 
+	/// Maximum in total size of parts to merge, when there are maximum (minimum) free threads in background pool.
 	size_t max_bytes_to_merge_at_max_space_in_pool = 100ULL * 1024 * 1024 * 1024;
 	size_t max_bytes_to_merge_at_min_space_in_pool = 1024 * 1024;
 
@@ -98,6 +99,8 @@ struct MergeTreeSettings
 	#define SET_SIZE_T(NAME) \
 		if (config.has(config_elem + "." #NAME)) NAME = parse<size_t>(config.getString(config_elem + "." #NAME));
 
+		SET_SIZE_T(max_bytes_to_merge_at_max_space_in_pool);
+		SET_SIZE_T(max_bytes_to_merge_at_min_space_in_pool);
 		SET_SIZE_T(max_replicated_merges_in_queue);
 		SET_SIZE_T(old_parts_lifetime);
 		SET_SIZE_T(temporary_directories_lifetime);
