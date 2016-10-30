@@ -158,9 +158,9 @@ std::string LocalServer::getInitialCreateTableQuery()
 		return std::string();
 
 	auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
-	auto table_structure = config().getString("table-structure"); /// TODO: add back quotes
+	auto table_structure = config().getString("table-structure");
 	auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TabSeparated"));
-	auto table_file = backQuoteIfNeed(config().getString("table-file", "stdin"));
+	auto table_file = config().getString("table-file", "stdin");
 
 	return
 	"CREATE TABLE " + table_name +
@@ -193,7 +193,7 @@ void LocalServer::processQueries()
 	std::vector<String> queries;
 	auto parse_res = splitMultipartQuery(queries_str, queries);
 
-	context->setUser("default", "", Poco::Net::IPAddress{}, 0, "");
+	context->setUser("default", "", Poco::Net::SocketAddress{}, "");
 
 	for (const auto & query : queries)
 	{
