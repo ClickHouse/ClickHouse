@@ -527,8 +527,13 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 			return false;
 		}
 
+		/** Execute merge only if there are enough free threads in background pool to do merges of that size.
+		  * But if all threads are free (maximal size of merge is allowed) then execute any merge,
+		  *  (because it may be ordered by OPTIMIZE or early with differrent settings).
+		  */
 		size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge();
-		if (sum_parts_size_in_bytes > max_parts_size_for_merge)
+		if (max_parts_size_for_merge != data.settings.max_bytes_to_merge_at_max_space_in_pool
+			&& sum_parts_size_in_bytes > max_parts_size_for_merge)
 		{
 			String reason = "Not executing log entry for part " + entry.new_part_name
 				+ " because its size (" + formatReadableSizeWithBinarySuffix(sum_parts_size_in_bytes)

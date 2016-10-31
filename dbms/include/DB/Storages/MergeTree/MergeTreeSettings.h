@@ -21,7 +21,7 @@ struct MergeTreeSettings
 	size_t max_bytes_to_merge_at_min_space_in_pool = 1024 * 1024;
 
 	/// How many tasks of merging parts are allowed simultaneously in ReplicatedMergeTree queue.
-	size_t max_replicated_merges_in_queue = 20;
+	size_t max_replicated_merges_in_queue = 6;
 
 	/// How many seconds to keep obsolete parts.
 	time_t old_parts_lifetime = 8 * 60;

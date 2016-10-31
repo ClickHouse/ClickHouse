@@ -121,19 +121,19 @@ void selectWithinPartition(
 					in_range = false;
 					range_end = i;
 
-					size_t range_size = range_end - range_begin;
+					size_t range_length = range_end - range_begin;
 
-					/// Size of range is enough.
-					if (range_size >= actual_base)
+					/// Length of range is enough.
+					if (range_length >= actual_base)
 					{
-						/// If size of range is larger than 'max_parts_to_merge' - split it to subranges of almost equal sizes.
-						/// For example, if 'max_parts_to_merge' == 100 and 'range_size' = 101, split it to subranges of sizes 50 and 51.
-						size_t num_subranges = (range_size + settings.max_parts_to_merge - 1) / settings.max_parts_to_merge;
+						/// If length of range is larger than 'max_parts_to_merge' - split it to subranges of almost equal lengths.
+						/// For example, if 'max_parts_to_merge' == 100 and 'range_length' = 101, split it to subranges of lengths 50 and 51.
+						size_t num_subranges = (range_length + settings.max_parts_to_merge - 1) / settings.max_parts_to_merge;
 
 						for (size_t subrange_index = 0; subrange_index < num_subranges; ++subrange_index)
 						{
-							size_t subrange_begin = range_begin + subrange_index * range_size / num_subranges;
-							size_t subrange_end = range_begin + (subrange_index + 1) * range_size / num_subranges;
+							size_t subrange_begin = range_begin + subrange_index * range_length / num_subranges;
+							size_t subrange_end = range_begin + (subrange_index + 1) * range_length / num_subranges;
 
 							size_t size_of_subrange = prefix_sums[subrange_end] - prefix_sums[subrange_begin];
 
