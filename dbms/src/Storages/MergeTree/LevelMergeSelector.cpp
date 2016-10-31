@@ -10,6 +10,7 @@ namespace
 {
 
 /** Estimates best set of parts to merge within passed alternatives.
+  * It is selected simply: by minimal size.
   */
 struct Estimator
 {
@@ -49,6 +50,8 @@ void selectWithinPartition(
 	if (parts_size <= 1)
 		return;
 
+	/// Will lower 'min_parts_to_merge' if all parts are old enough.
+	/// NOTE It is called base, because it is a base of logarithm, that determines merge tree depth.
 	double actual_base = settings.min_parts_to_merge;
 
 	if (current_min_part_age > settings.lower_base_after)
@@ -58,9 +61,11 @@ void selectWithinPartition(
 			actual_base = 2;
 	}
 
+	/// Not enough parts to merge.
 	if (parts.size() < actual_base)
 		return;
 
+	/// To easily calculate sum size in any range.
 	size_t parts_count = parts.size();
 	size_t prefix_sum = 0;
 	std::vector<size_t> prefix_sums(parts.size() + 1);
@@ -86,9 +91,12 @@ void selectWithinPartition(
 		prev_level = part.level;
 	}
 
+	/// If no ranges of same level - then nothing to merge
+	///  except case when parts are old (much time has passed) and 'base' was lowered to minimum.
 	if (!has_range_of_same_level && actual_base > 2)
 		return;
 
+	/// For each level, try to select range of parts with that level.
 	for (size_t level = 0; level <= max_level; ++level)
 	{
 		bool in_range = false;
@@ -97,6 +105,7 @@ void selectWithinPartition(
 
 		for (size_t i = 0; i <= parts_size; ++i)
 		{
+			/// But if !has_range_of_same_level - it is allowed to select parts with any different levels.
 			if (i < parts_size && (parts[i].level == level || !has_range_of_same_level))
 			{
 				if (!in_range)
@@ -114,8 +123,11 @@ void selectWithinPartition(
 
 					size_t range_size = range_end - range_begin;
 
+					/// Size of range is enough.
 					if (range_size >= actual_base)
 					{
+						/// If size of range is larger than 'max_parts_to_merge' - split it to subranges of almost equal sizes.
+						/// For example, if 'max_parts_to_merge' == 100 and 'range_size' = 101, split it to subranges of sizes 50 and 51.
 						size_t num_subranges = (range_size + settings.max_parts_to_merge - 1) / settings.max_parts_to_merge;
 
 						for (size_t subrange_index = 0; subrange_index < num_subranges; ++subrange_index)
@@ -125,6 +137,7 @@ void selectWithinPartition(
 
 							size_t size_of_subrange = prefix_sums[subrange_end] - prefix_sums[subrange_begin];
 
+							/// Don't consider this range if its size is too large.
 							if (!max_total_size_to_merge || size_of_subrange <= max_total_size_to_merge)
 								estimator.consider(parts.begin() + subrange_begin, parts.begin() + subrange_end, size_of_subrange);
 						}
@@ -133,6 +146,7 @@ void selectWithinPartition(
 			}
 		}
 
+		/// If we don't care of levels, first iteration was enough.
 		if (!has_range_of_same_level)
 			break;
 	}
