@@ -654,10 +654,7 @@ void Context::setSetting(const String & name, const std::string & value)
 {
 	auto lock = getLock();
 	if (name == "profile")
-	{
-		LOG_DEBUG(&Logger::get("Context"), "shared=" << shared << ", shared->users_config=" << shared->users_config);
 		settings.setProfile(value, *shared->users_config);
-	}
 	else
 		settings.set(name, value);
 }

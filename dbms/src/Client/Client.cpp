@@ -203,7 +203,7 @@ private:
 		else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
 			loadConfiguration("/etc/clickhouse-client/config.xml");
 
-		/// settings и limits могли так же быть указаны в кофигурационном файле, но уже записанные настройки имеют больший приоритет.
+		/// settings and limits could be specified in config file, but passed settings has higher priority
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
 		if (config().has(#NAME) && !context.getSettingsRef().NAME.changed) \
 			context.setSetting(#NAME, config().getString(#NAME));
@@ -1304,7 +1304,7 @@ public:
 }
 
 
-int main(int argc, char ** argv)
+int main_clickhouse_client(int argc, char ** argv)
 {
 	DB::Client client;
 

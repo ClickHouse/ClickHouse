@@ -23,6 +23,8 @@
 #include <DB/Parsers/IAST.h>
 
 #include <common/ErrorHandlers.h>
+#include <common/ApplicationServerExt.h>
+
 
 namespace DB
 {
@@ -78,7 +80,7 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 			);
 
 	_options.addOption(
-		Poco::Util::Option ("format", "f", "Format of intial table's data")
+		Poco::Util::Option ("iformat", "fi", "Input format of intial table data. Note, --format is output one")
 			.required (false)
 			.repeatable (false)
 			.argument (" TabSeparated")
@@ -94,20 +96,68 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 			.binding("query")
 			);
 
+	/// Default Output format
 	_options.addOption(
-		Poco::Util::Option ("verbose", "V", "Print info about execution queries")
+		Poco::Util::Option ("oformat", "fo", "Default ouput format")
 			.required (false)
 			.repeatable (false)
-			.argument ("", false)
+			.argument (" TabSeparated", true)
+			.binding("oformat")
+			);
+
+	/// Alias for previous one, required for clickhouse-client compability
+	_options.addOption(
+		Poco::Util::Option ("format", "f", "Default ouput format")
+			.required (false)
+			.repeatable (false)
+			.argument (" TabSeparated", true)
+			.binding("format")
+			);
+
+	_options.addOption(
+		Poco::Util::Option ("verbose", "", "Print info about execution queries")
+			.required (false)
+			.repeatable (false)
+			.noArgument()
 			.binding("verbose")
 			);
 
 	_options.addOption(
-		Poco::Util::Option("help", "h", "Display help information")
+		Poco::Util::Option("help", "", "Display help information")
 		.required(false)
 		.repeatable(false)
+		.noArgument()
 		.binding("help")
 		.callback(Poco::Util::OptionCallback<LocalServer>(this, &LocalServer::handleHelp)));
+
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT) \
+	_options.addOption(Poco::Util::Option(#NAME, "", "Settings.h").group("settings").required(false).repeatable(false).binding(#NAME));
+	APPLY_FOR_SETTINGS(DECLARE_SETTING)
+#undef DECLARE_SETTING
+
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT) \
+	_options.addOption(Poco::Util::Option(#NAME, "", "Limits.h").group("limits").required(false).repeatable(false).binding(#NAME));
+	APPLY_FOR_LIMITS(DECLARE_SETTING)
+#undef DECLARE_SETTING
+}
+
+
+void LocalServer::applyOptions()
+{
+	context->setDefaultFormat(config().getString("oformat", config().getString("format", "TabSeparated")));
+
+	/// settings and limits could be specified in config file, but passed settings has higher priority
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+		if (config().has(#NAME) && !context->getSettingsRef().NAME.changed) \
+			context->setSetting(#NAME, config().getString(#NAME));
+		APPLY_FOR_SETTINGS(EXTRACT_SETTING)
+#undef EXTRACT_SETTING
+
+#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT) \
+		if (config().has(#NAME) && !context->getSettingsRef().limits.NAME.changed) \
+			context->setSetting(#NAME, config().getString(#NAME));
+		APPLY_FOR_LIMITS(EXTRACT_LIMIT)
+#undef EXTRACT_LIMIT
 }
 
 
@@ -116,16 +166,16 @@ void LocalServer::displayHelp()
 	Poco::Util::HelpFormatter helpFormatter(options());
 	helpFormatter.setCommand(commandName());
 	helpFormatter.setUsage("[initial table definition] [--query <query>]");
-	helpFormatter.setHeader(
-		"clickhouse-local allows to execute SQL queries on your data files using one command line call.\n"
+	helpFormatter.setHeader("\n"
+		"clickhouse-local allows to execute SQL queries on your data files via single command line call.\n"
 		"To do so, intially you need to define your data source and its format.\n"
 		"After you can execute your SQL queries in the usual manner.\n"
 		"There are two ways to define initial table keeping your data:\n"
 		"either just in first query like this:\n"
 		"	CREATE TABLE <table> (<structure>) ENGINE = File(<format>, <file>);\n"
-		"either through corresponding command line parameters.\n"
+		"either through corresponding command line parameters."
 	);
-	helpFormatter.setWidth(80);
+	helpFormatter.setWidth(132); /// 80 is ugly due to wide settings params
 
 	helpFormatter.format(std::cerr);
 	std::cerr << "Example printing memory used by each Unix user:\n"
@@ -158,6 +208,8 @@ int LocalServer::main(const std::vector<std::string> & args)
 
 	context = std::make_unique<Context>();
 	context->setGlobalContext(*context);
+
+	applyOptions();
 
 	/// Skip path, temp path, flag's path installation
 
@@ -343,3 +395,5 @@ const char * LocalServer::default_user_xml =
 "</yandex>\n";
 
 }
+
+YANDEX_APP_MAIN_FUNC(DB::LocalServer, main_clickhouse_local);

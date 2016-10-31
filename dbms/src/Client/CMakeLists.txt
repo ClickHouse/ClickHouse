@@ -18,18 +18,13 @@ else()
 	message(STATUS "Not using any library for line editing.")
 endif()
 
-add_executable(clickhouse-client Client.cpp)
-add_executable(clickhouse-benchmark Benchmark.cpp)
-
+add_library(clickhouse-client Client.cpp)
 target_link_libraries (clickhouse-client dbms ${LINE_EDITING_LIBS} ${BOOST_PROGRAM_OPTIONS_LIB})
+INSTALL(FILES config.xml DESTINATION /etc/clickhouse-client COMPONENT clickhouse)
+
+add_executable(clickhouse-benchmark Benchmark.cpp)
 target_link_libraries (clickhouse-benchmark dbms ${BOOST_PROGRAM_OPTIONS_LIB})
-
-INSTALL(TARGETS clickhouse-client RUNTIME DESTINATION bin COMPONENT clickhouse-client)
-INSTALL(FILES config.xml DESTINATION /etc/clickhouse-client COMPONENT clickhouse-client)
 INSTALL(TARGETS clickhouse-benchmark RUNTIME DESTINATION bin COMPONENT clickhouse-benchmark)
-
-add_custom_target(clickhouse-local DEPENDS clickhouse-server)
-INSTALL(CODE "execute_process(COMMAND ln -s -f clickhouse-server clickhouse-local WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}/bin\")")
 
 IF(TESTS)
 	add_subdirectory (tests)

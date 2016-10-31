@@ -29,6 +29,8 @@ private:
 
 	std::string getInitialCreateTableQuery();
 
+	void applyOptions();
+
 	void attachSystemTables();
 
 	void processQueries();
