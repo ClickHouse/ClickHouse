@@ -4,7 +4,7 @@
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
 #include <DB/Storages/MergeTree/MergeTreeSharder.h>
 #include <DB/Storages/MergeTree/ReshardingJob.h>
-#include <DB/Storages/MergeTree/LevelMergeSelector.h>
+#include <DB/Storages/MergeTree/SimpleMergeSelector.h>
 #include <DB/Storages/MergeTree/AllMergeSelector.h>
 #include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
@@ -143,8 +143,8 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 		merge_selector = std::make_unique<AllMergeSelector>();
 	else
 	{
-		LevelMergeSelector::Settings merge_settings;
-		merge_selector = std::make_unique<LevelMergeSelector>(merge_settings);
+		SimpleMergeSelector::Settings merge_settings;
+		merge_selector = std::make_unique<SimpleMergeSelector>(merge_settings);
 	}
 
 	IMergeSelector::PartsInPartition parts_to_merge = merge_selector->select(
