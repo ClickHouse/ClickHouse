@@ -181,14 +181,15 @@ std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, s
 	ASTPtr ast;
 	ParserQuery parser;
 
-	const char * begin = queries.data();
+	const char * begin = queries.data(); /// begin of current query
+	const char * pos = begin; /// parser moves pos from begin to the end of current query
 	const char * end = begin + queries.size();
 
 	queries_list.clear();
 
-	while (begin < end)
+	while (pos < end)
 	{
-		const char * pos = begin;
+		begin = pos;
 
 		ast = parseQueryAndMovePosition(parser, pos, end, "", true);
 		if (!ast)
@@ -206,12 +207,11 @@ std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, s
 
 		queries_list.emplace_back(queries.substr(begin - queries.data(), pos - begin));
 
-		begin = pos;
-		while (isWhitespaceASCII(*begin) || *begin == ';')
-			++begin;
+		while (isWhitespaceASCII(*pos) || *pos == ';')
+			++pos;
 	}
 
-	return std::make_pair(begin, begin == end);
+	return std::make_pair(begin, pos == end);
 }
 
 }

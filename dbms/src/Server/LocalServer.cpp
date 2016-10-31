@@ -1,9 +1,12 @@
 #include "LocalServer.h"
 #include <Poco/Util/XMLConfiguration.h>
+#include <Poco/Util/HelpFormatter.h>
+#include <Poco/Util/OptionCallback.h>
 
 #include <DB/Databases/DatabaseOrdinary.h>
 
 #include <DB/Storages/System/StorageSystemNumbers.h>
+#include <DB/Storages/System/StorageSystemOne.h>
 
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ProcessList.h>
@@ -41,28 +44,28 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 	Poco::Util::Application::defineOptions (_options);
 
 	_options.addOption(
-		Poco::Util::Option ("config-file", "C", "load configuration from a given file")
+		Poco::Util::Option ("config-file", "C", "Load configuration from a given file")
 			.required (false)
 			.repeatable (false)
-			.argument ("<file>")
+			.argument (" config.xml")
 			.binding("config-file")
 			);
 
 	/// Arguments that define first query creating initial table:
 	/// (If structure argument is omitted then initial query is not generated)
 	_options.addOption(
-		Poco::Util::Option ("structure", "S", "Structe of initial table (i.e. list columns names with their types)")
+		Poco::Util::Option ("structure", "S", "Structe of initial table (list columns names with their types)")
 			.required (false)
 			.repeatable (false)
-			.argument ("<string>")
+			.argument (" <struct>")
 			.binding("table-structure")
 			);
 
 	_options.addOption(
-		Poco::Util::Option ("table", "N", "Name of intial table ('table' by default)")
+		Poco::Util::Option ("table", "N", "Name of intial table")
 			.required (false)
 			.repeatable (false)
-			.argument ("<file>")
+			.argument (" table")
 			.binding("table-name")
 			);
 
@@ -70,32 +73,82 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 		Poco::Util::Option ("file", "F", "Path to file with data of initial table (stdin if not specified)")
 			.required (false)
 			.repeatable (false)
-			.argument ("<file>")
+			.argument (" stdin")
 			.binding("table-file")
 			);
 
 	_options.addOption(
-		Poco::Util::Option ("format", "F", "Format of intial table's data (TabSeparated by default)")
+		Poco::Util::Option ("format", "f", "Format of intial table's data")
 			.required (false)
 			.repeatable (false)
-			.argument ("<file>")
+			.argument (" TabSeparated")
 			.binding("table-data-format")
 			);
 
 	/// List of queries to execute
 	_options.addOption(
-		Poco::Util::Option ("query", "Q", "[Local mode] queries to execute")
+		Poco::Util::Option ("query", "Q", "Queries to execute")
 			.required (false)
 			.repeatable (false)
-			.argument ("<string>", true)
+			.argument (" <query>", true)
 			.binding("query")
 			);
+
+	_options.addOption(
+		Poco::Util::Option ("verbose", "V", "Print info about execution queries")
+			.required (false)
+			.repeatable (false)
+			.argument ("", false)
+			.binding("verbose")
+			);
+
+	_options.addOption(
+		Poco::Util::Option("help", "h", "Display help information")
+		.required(false)
+		.repeatable(false)
+		.binding("help")
+		.callback(Poco::Util::OptionCallback<LocalServer>(this, &LocalServer::handleHelp)));
 }
+
+
+void LocalServer::displayHelp()
+{
+	Poco::Util::HelpFormatter helpFormatter(options());
+	helpFormatter.setCommand(commandName());
+	helpFormatter.setUsage("[initial table definition] [--query <query>]");
+	helpFormatter.setHeader(
+		"clickhouse-local allows to execute SQL queries on your data files using one command line call.\n"
+		"To do so, intially you need to define your data source and its format.\n"
+		"After you can execute your SQL queries in the usual manner.\n"
+		"There are two ways to define initial table keeping your data:\n"
+		"either just in first query like this:\n"
+		"	CREATE TABLE <table> (<structure>) ENGINE = File(<format>, <file>);\n"
+		"either through corresponding command line parameters.\n"
+	);
+	helpFormatter.setWidth(80);
+
+	helpFormatter.format(std::cerr);
+	std::cerr << "Example printing memory used by each Unix user:\n"
+	"ps aux | tail -n +2 | awk '{ printf(\"%s\\t%s\\n\", $1, $4) }' | "
+	"clickhouse-local -S \"user String, mem Float64\" -Q \"SELECT user, round(sum(mem), 2) as memTotal FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty;\"\n";
+}
+
+
+void LocalServer::handleHelp(const std::string & name, const std::string & value)
+{
+	displayHelp();
+	stopOptionsProcessing();
+}
+
 
 int LocalServer::main(const std::vector<std::string> & args)
 {
-	if (!config().has("query")) /// Nothing to process
+	if (!config().has("query") && !config().has("table-structure")) /// Nothing to process
+	{
+		std::cerr << "There are no queries to process.\n";
+		displayHelp();
 		return Application::EXIT_OK;
+	}
 
 	if (config().has("config-file") || Poco::File("config.xml").exists())
 	{
@@ -173,11 +226,12 @@ std::string LocalServer::getInitialCreateTableQuery()
 
 void LocalServer::attachSystemTables()
 {
-	/// Only numbers table make sense
+	/// Only numbers an one table make sense
 	/// TODO: add attachTableDelayed into DatabaseMemory
 
 	DatabasePtr system_database = std::make_shared<DatabaseMemory>("system");
 	context->addDatabase("system", system_database);
+	system_database->attachTable("one", 	StorageSystemOne::create("one"));
 	system_database->attachTable("numbers", StorageSystemNumbers::create("numbers"));
 }
 
@@ -188,7 +242,10 @@ void LocalServer::processQueries()
 
 	String initial_create_query = getInitialCreateTableQuery();
 	String queries_str = initial_create_query + config().getString("query");
-	LOG_INFO(log, "Executing queries: '" << queries_str << "'");
+
+	bool verbose = config().getBool("verbose", false);
+	if (verbose)
+		LOG_INFO(log, "Executing queries: " << queries_str);
 
 	std::vector<String> queries;
 	auto parse_res = splitMultipartQuery(queries_str, queries);
@@ -203,7 +260,9 @@ void LocalServer::processQueries()
 			WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
 			BlockInputStreamPtr plan;
 
-			LOG_INFO(log, "Executing query: " << query);
+			if (verbose)
+				LOG_INFO(log, "Executing query: " << query);
+
 			executeQuery(read_buf, write_buf, *context, plan, nullptr);
 		}
 		catch (...)
@@ -232,7 +291,20 @@ void LocalServer::setupUsers()
 	else
 	{
 		std::stringstream default_user_stream;
-		default_user_stream <<
+		default_user_stream << default_user_xml;
+
+		Poco::XML::InputSource default_user_source(default_user_stream);
+		users_config = ConfigurationPtr(new Poco::Util::XMLConfiguration(&default_user_source));
+	}
+
+	if (users_config)
+		context->setUsersConfig(users_config);
+	else
+		throw Exception("Can't load config for users");
+}
+
+
+const char * LocalServer::default_user_xml =
 "<yandex>\n"
 "	<profiles>\n"
 "		<default>\n"
@@ -269,15 +341,5 @@ void LocalServer::setupUsers()
 "		</default>\n"
 "	</quotas>\n"
 "</yandex>\n";
-
-		Poco::XML::InputSource default_user_source(default_user_stream);
-		users_config = ConfigurationPtr(new Poco::Util::XMLConfiguration(&default_user_source));
-	}
-
-	if (users_config)
-		context->setUsersConfig(users_config);
-	else
-		throw Exception("Can't load config for users");
-}
 
 }

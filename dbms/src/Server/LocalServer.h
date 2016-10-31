@@ -35,6 +35,12 @@ private:
 
 	void setupUsers();
 
+	void displayHelp();
+
+	void handleHelp(const std::string & name, const std::string & value);
+
+	static const char * default_user_xml;
+
 protected:
 
 	std::unique_ptr<Context> context;
