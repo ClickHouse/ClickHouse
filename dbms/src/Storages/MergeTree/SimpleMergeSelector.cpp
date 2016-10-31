@@ -74,7 +74,7 @@ struct Estimator
 void selectWithinPartition(
 	const SimpleMergeSelector::PartsInPartition & parts,
 	const size_t max_total_size_to_merge,
-	const time_t current_max_part_age,
+	const time_t current_min_part_age,
 	Estimator & estimator,
 	const SimpleMergeSelector::Settings & settings)
 {
@@ -83,9 +83,9 @@ void selectWithinPartition(
 
 	double actual_base = settings.base;
 
-	if (current_max_part_age > settings.lower_base_after)
+	if (current_min_part_age > settings.lower_base_after)
 	{
-		actual_base -= log2(current_max_part_age - settings.lower_base_after);
+		actual_base -= log2(current_min_part_age - settings.lower_base_after);
 		if (actual_base < 1)
 			actual_base = 1;
 	}
@@ -149,16 +149,16 @@ SimpleMergeSelector::PartsInPartition SimpleMergeSelector::select(
 	const Partitions & partitions,
 	const size_t max_total_size_to_merge)
 {
-	time_t max_age = 0;
+	time_t min_age = -1;
 	for (const auto & partition : partitions)
 		for (const auto & part : partition)
-			if (part.age > max_age)
-				max_age = part.age;
+			if (min_age == -1 || part.age < min_age)
+				min_age = part.age;
 
 	Estimator estimator;
 
 	for (const auto & partition : partitions)
-		selectWithinPartition(partition, max_total_size_to_merge, max_age, estimator, settings);
+		selectWithinPartition(partition, max_total_size_to_merge, min_age, estimator, settings);
 
 	return estimator.getBest();
 }

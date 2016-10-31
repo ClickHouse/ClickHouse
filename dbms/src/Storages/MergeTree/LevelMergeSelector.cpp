@@ -41,7 +41,7 @@ struct Estimator
 void selectWithinPartition(
 	const LevelMergeSelector::PartsInPartition & parts,
 	const size_t max_total_size_to_merge,
-	const time_t current_max_part_age,
+	const time_t current_min_part_age,
 	Estimator & estimator,
 	const LevelMergeSelector::Settings & settings)
 {
@@ -51,9 +51,9 @@ void selectWithinPartition(
 
 	double actual_base = settings.min_parts_to_merge;
 
-	if (current_max_part_age > settings.lower_base_after)
+	if (current_min_part_age > settings.lower_base_after)
 	{
-		actual_base -= log2(current_max_part_age - settings.lower_base_after);
+		actual_base -= log2(current_min_part_age - settings.lower_base_after);
 		if (actual_base < 2)
 			actual_base = 2;
 	}
@@ -125,7 +125,7 @@ void selectWithinPartition(
 
 							size_t size_of_subrange = prefix_sums[subrange_end] - prefix_sums[subrange_begin];
 
-							if (size_of_subrange <= max_total_size_to_merge)
+							if (!max_total_size_to_merge || size_of_subrange <= max_total_size_to_merge)
 								estimator.consider(parts.begin() + subrange_begin, parts.begin() + subrange_end, size_of_subrange);
 						}
 					}
@@ -145,16 +145,16 @@ LevelMergeSelector::PartsInPartition LevelMergeSelector::select(
 	const Partitions & partitions,
 	const size_t max_total_size_to_merge)
 {
-	time_t max_age = 0;
+	time_t min_age = -1;
 	for (const auto & partition : partitions)
 		for (const auto & part : partition)
-			if (part.age > max_age)
-				max_age = part.age;
+			if (min_age == -1 || part.age < min_age)
+				min_age = part.age;
 
 	Estimator estimator;
 
 	for (const auto & partition : partitions)
-		selectWithinPartition(partition, max_total_size_to_merge, max_age, estimator, settings);
+		selectWithinPartition(partition, max_total_size_to_merge, min_age, estimator, settings);
 
 	return estimator.getBest();
 }
