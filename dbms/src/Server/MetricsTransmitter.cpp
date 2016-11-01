@@ -54,7 +54,7 @@ void MetricsTransmitter::run()
 }
 
 
-void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> &prev_counters)
+void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_counters)
 {
 	auto async_metrics_values = async_metrics.getValues();
 
