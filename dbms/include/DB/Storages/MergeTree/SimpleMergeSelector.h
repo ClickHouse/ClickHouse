@@ -24,7 +24,9 @@ public:
 		  * It will be lowered by 3 after that time * 2^2,
 		  *  and so on, exponentially.
 		  */
-		time_t lower_base_after = 300;
+		time_t lower_base_after = 30;
+
+		size_t lower_base_after_num_parts = 20;
 
 		/// Zero means unlimited.
 		size_t max_parts_to_merge_at_once = 100;

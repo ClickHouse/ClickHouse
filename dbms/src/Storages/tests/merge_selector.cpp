@@ -18,15 +18,15 @@ int main(int argc, char ** argv)
 	IMergeSelector::Partitions partitions(1);
 	IMergeSelector::PartsInPartition & parts = partitions.back();
 
-/*	SimpleMergeSelector::Settings settings;
-	settings.base = 1;
-	settings.max_parts_to_merge_at_once = 10;
-	SimpleMergeSelector selector(settings);*/
+	SimpleMergeSelector::Settings settings;
+//	settings.base = 2;
+//	settings.max_parts_to_merge_at_once = 10;
+	SimpleMergeSelector selector(settings);
 
-	LevelMergeSelector::Settings settings;
+/*	LevelMergeSelector::Settings settings;
 	settings.min_parts_to_merge = 8;
 	settings.max_parts_to_merge = 16;
-	LevelMergeSelector selector(settings);
+	LevelMergeSelector selector(settings);*/
 
 	ReadBufferFromFileDescriptor in(STDIN_FILENO);
 
@@ -98,6 +98,7 @@ int main(int argc, char ** argv)
 
 		parts[start_index].size = sum_merged_size;
 		parts[start_index].level = max_level + 1;
+		parts[start_index].age = 0;
 		parts.erase(parts.begin() + start_index + 1, parts.begin() + start_index + selected_parts.size());
 
 		std::cout << '\n';
@@ -108,7 +109,8 @@ int main(int argc, char ** argv)
 
 	std::cout << std::fixed << std::setprecision(2)
 		<< "Write amplification: " << static_cast<double>(sum_size_written) / sum_parts_size << "\n"
-		<< "Tree depth: " << num_merges << "\n"
+		<< "Num merges: " << num_merges << "\n"
+		<< "Tree depth: " << parts.front().level << "\n"
 		;
 
 	return 0;
