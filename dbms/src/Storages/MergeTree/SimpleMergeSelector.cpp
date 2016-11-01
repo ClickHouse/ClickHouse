@@ -74,6 +74,7 @@ struct Estimator
 void selectWithinPartition(
 	const SimpleMergeSelector::PartsInPartition & parts,
 	const size_t max_total_size_to_merge,
+	const time_t current_min_part_age,
 	Estimator & estimator,
 	const SimpleMergeSelector::Settings & settings)
 {
@@ -115,7 +116,8 @@ void selectWithinPartition(
 
 	double actual_base = settings.base;
 
-	if (parts.size() > settings.lower_base_after_num_parts)
+	if (parts.size() > settings.lower_base_after_num_parts
+		|| current_min_part_age > settings.lower_base_after_seconds)
 		actual_base = 1;
 
 	{
@@ -127,21 +129,6 @@ void selectWithinPartition(
 			sum_size += it->size;
 			if (it->size > max_size)
 				max_size = it->size;
-		}
-
-		if (actual_base > 1)
-		{
-			time_t min_age = -1;
-			for (auto it = local_estimator.best_begin; it != local_estimator.best_end; ++it)
-				if (min_age == -1 || it->age < min_age)
-					min_age = it->age;
-
-			if (min_age > settings.lower_base_after)
-			{
-				actual_base -= log2(min_age - settings.lower_base_after);
-				if (actual_base < 1)
-					actual_base = 1;
-			}
 		}
 
 		if (static_cast<double>(sum_size) / max_size >= actual_base)
@@ -156,10 +143,16 @@ SimpleMergeSelector::PartsInPartition SimpleMergeSelector::select(
 	const Partitions & partitions,
 	const size_t max_total_size_to_merge)
 {
+	time_t min_age = -1;
+	for (const auto & partition : partitions)
+		for (const auto & part : partition)
+			if (min_age == -1 || part.age < min_age)
+				min_age = part.age;
+
 	Estimator estimator;
 
 	for (const auto & partition : partitions)
-		selectWithinPartition(partition, max_total_size_to_merge, estimator, settings);
+		selectWithinPartition(partition, max_total_size_to_merge, min_age, estimator, settings);
 
 	return estimator.getBest();
 }

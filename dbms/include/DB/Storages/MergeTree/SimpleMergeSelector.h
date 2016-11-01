@@ -17,15 +17,9 @@ public:
 		  * This behaviour balances merge-tree workload.
 		  * It called 'base', because merge-tree depth could be estimated as logarithm with that base.
 		  */
-		double base = 8;
+		double base = 2;
 
-		/** Lower base by 1 after that time.
-		  * It will be lowered by 2 after that time * 2^1,
-		  * It will be lowered by 3 after that time * 2^2,
-		  *  and so on, exponentially.
-		  */
-		time_t lower_base_after = 30;
-
+		time_t lower_base_after_seconds = 300;
 		size_t lower_base_after_num_parts = 20;
 
 		/// Zero means unlimited.
