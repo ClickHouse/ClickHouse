@@ -102,20 +102,23 @@ public:
 		RegionID max_region_id = 0;
 		while (!in.eof())
 		{
+			/** Our internal geobase has negative numbers,
+			  *  that means "this is garbage, ignore this row".
+			  */
 			Int32 read_region_id = 0;
 			Int32 read_parent_id = 0;
-			RegionType type = 0;
-			RegionPopulation population = 0;
+			Int8 read_type = 0;
 
 			DB::readIntText(read_region_id, in);
 			DB::assertChar('\t', in);
 			DB::readIntText(read_parent_id, in);
 			DB::assertChar('\t', in);
-			DB::readIntText(type, in);
+			DB::readIntText(read_type, in);
 
 			/** Далее может быть перевод строки (старый вариант)
 			  *  или таб, население региона, перевод строки (новый вариант).
 			  */
+			RegionPopulation population = 0;
 			if (!in.eof() && *in.position() == '\t')
 			{
 				++in.position();
@@ -127,7 +130,7 @@ public:
 			}
 			DB::assertChar('\n', in);
 
-			if (read_region_id <= 0)
+			if (read_region_id <= 0 || read_type < 0)
 				continue;
 
 			RegionID region_id = read_region_id;
@@ -135,6 +138,8 @@ public:
 
 			if (read_parent_id >= 0)
 				parent_id = read_parent_id;
+
+			RegionType type = read_type;
 
 			if (region_id > max_region_id)
 			{
