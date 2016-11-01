@@ -78,61 +78,41 @@ void selectWithinPartition(
 	Estimator & estimator,
 	const SimpleMergeSelector::Settings & settings)
 {
-	if (parts.size() <= 1)
+	size_t parts_count = parts.size();
+	if (parts_count <= 1)
 		return;
 
-	size_t parts_count = parts.size();
-	size_t prefix_sum = 0;
-	std::vector<size_t> prefix_sums(parts.size() + 1);
+	double actual_base = settings.base;
 
-	for (size_t i = 0; i < parts_count; ++i)
-	{
-		prefix_sum += parts[i].size;
-		prefix_sums[i + 1] = prefix_sum;
-	}
-
-	Estimator local_estimator;
+	if (parts_count > settings.lower_base_after_num_parts
+		|| current_min_part_age > settings.lower_base_after_seconds)
+		actual_base = 1;
 
 	for (size_t begin = 0; begin < parts_count; ++begin)
 	{
+		size_t sum_size = parts[begin].size;
+		size_t max_size = parts[begin].size;
+
 		for (size_t end = begin + 2; end <= parts_count; ++end)
 		{
 			if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once)
 				break;
 
-			size_t sum_size = prefix_sums[end] - prefix_sums[begin];
+			sum_size += parts[end - 1].size;
+			if (parts[end - 1].size > max_size)
+				max_size = parts[end - 1].size;
 
 			if (max_total_size_to_merge && sum_size > max_total_size_to_merge)
 				break;
 
-			local_estimator.consider(
-				parts.begin() + begin,
-				parts.begin() + end,
-				sum_size,
-				begin == 0 ? 0 : parts[begin - 1].size,
-				end == parts_count ? 0 : parts[end].size);
+			if (static_cast<double>(sum_size) / max_size >= actual_base)
+				estimator.consider(
+					parts.begin() + begin,
+					parts.begin() + end,
+					sum_size,
+					begin == 0 ? 0 : parts[begin - 1].size,
+					end == parts_count ? 0 : parts[end].size);
 		}
-	}
-
-	double actual_base = settings.base;
-
-	if (parts.size() > settings.lower_base_after_num_parts
-		|| current_min_part_age > settings.lower_base_after_seconds)
-		actual_base = 1;
-
-	{
-		size_t sum_size = 0;
-		size_t max_size = 0;
-
-		for (auto it = local_estimator.best_begin; it != local_estimator.best_end; ++it)
-		{
-			sum_size += it->size;
-			if (it->size > max_size)
-				max_size = it->size;
-		}
-
-		if (static_cast<double>(sum_size) / max_size >= actual_base)
-			estimator.consider(local_estimator.best_begin, local_estimator.best_end, sum_size, 0, 0);
 	}
 }
 
