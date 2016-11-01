@@ -139,13 +139,12 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 
 	std::unique_ptr<IMergeSelector> merge_selector;
 
+	SimpleMergeSelector::Settings merge_settings;
 	if (aggressive)
-		merge_selector = std::make_unique<AllMergeSelector>();
-	else
-	{
-		SimpleMergeSelector::Settings merge_settings;
-		merge_selector = std::make_unique<SimpleMergeSelector>(merge_settings);
-	}
+		merge_settings.base = 1;
+
+	/// NOTE Could allow selection of different merge strategy.
+	merge_selector = std::make_unique<SimpleMergeSelector>(merge_settings);
 
 	IMergeSelector::PartsInPartition parts_to_merge = merge_selector->select(
 		partitions,
