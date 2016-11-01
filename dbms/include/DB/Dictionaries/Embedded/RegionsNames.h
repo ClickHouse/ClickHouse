@@ -116,16 +116,18 @@ public:
 
 			while (!in.eof())
 			{
-				RegionID region_id;
+				Int32 read_region_id;
 				std::string region_name;
 
-				DB::readIntText(region_id, in);
+				DB::readIntText(read_region_id, in);
 				DB::assertChar('\t', in);
 				DB::readString(region_name, in);
 				DB::assertChar('\n', in);
 
-				if (region_id <= 0)
+				if (read_region_id <= 0)
 					continue;
+
+				RegionID region_id = read_region_id;
 
 				size_t old_size = new_chars.size();
 

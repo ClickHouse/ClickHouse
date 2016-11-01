@@ -102,14 +102,14 @@ public:
 		RegionID max_region_id = 0;
 		while (!in.eof())
 		{
-			RegionID region_id = 0;
-			RegionID parent_id = 0;
+			Int32 read_region_id = 0;
+			Int32 read_parent_id = 0;
 			RegionType type = 0;
 			RegionPopulation population = 0;
 
-			DB::readIntText(region_id, in);
+			DB::readIntText(read_region_id, in);
 			DB::assertChar('\t', in);
-			DB::readIntText(parent_id, in);
+			DB::readIntText(read_parent_id, in);
 			DB::assertChar('\t', in);
 			DB::readIntText(type, in);
 
@@ -127,11 +127,14 @@ public:
 			}
 			DB::assertChar('\n', in);
 
-			if (region_id <= 0)
+			if (read_region_id <= 0)
 				continue;
 
-			if (parent_id < 0)
-				parent_id = 0;
+			RegionID region_id = read_region_id;
+			RegionID parent_id = 0;
+
+			if (read_parent_id >= 0)
+				parent_id = read_parent_id;
 
 			if (region_id > max_region_id)
 			{
