@@ -87,12 +87,12 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 			if (const auto exception_ptr = dict_ptr->getCreationException())
 			{
 				/// recalculate next attempt time
-				std::uniform_int_distribution<std::uint64_t> distribution(
+				std::uniform_int_distribution<UInt64> distribution(
 					0, std::exp2(failed_dictionary.second.error_count));
 
 				failed_dictionary.second.next_attempt_time = std::chrono::system_clock::now() +
 					std::chrono::seconds{
-						std::min<std::uint64_t>(backoff_max_sec, backoff_initial_sec + distribution(rnd_engine))};
+						std::min<UInt64>(backoff_max_sec, backoff_initial_sec + distribution(rnd_engine))};
 
 				++failed_dictionary.second.error_count;
 
@@ -103,7 +103,7 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 				const std::lock_guard<std::mutex> lock{dictionaries_mutex};
 
 				const auto & lifetime = dict_ptr->getLifetime();
-				std::uniform_int_distribution<std::uint64_t> distribution{lifetime.min_sec, lifetime.max_sec};
+				std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
 				update_times[name] = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
 
 				const auto dict_it = dictionaries.find(name);
@@ -160,7 +160,7 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 
 				SCOPE_EXIT(
 					/// calculate next update time
-					std::uniform_int_distribution<std::uint64_t> distribution{lifetime.min_sec, lifetime.max_sec};
+					std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
 					update_time = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
 				);
 
@@ -274,7 +274,7 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 						const auto & lifetime = dict_ptr->getLifetime();
 						if (lifetime.min_sec != 0 && lifetime.max_sec != 0)
 						{
-							std::uniform_int_distribution<std::uint64_t> distribution{
+							std::uniform_int_distribution<UInt64> distribution{
 								lifetime.min_sec,
 								lifetime.max_sec
 							};

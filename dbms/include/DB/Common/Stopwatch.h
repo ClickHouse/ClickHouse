@@ -5,6 +5,9 @@
 #include <Poco/ScopedLock.h>
 #include <common/Common.h>
 
+#ifdef __APPLE__
+#include <common/apple_rt.h>
+#endif
 
 /** Отличается от Poco::Stopwatch только тем, что использует clock_gettime вместо gettimeofday,
   * возвращает наносекунды вместо микросекунд, а также другими незначительными отличиями.

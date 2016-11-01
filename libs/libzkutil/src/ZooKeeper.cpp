@@ -668,7 +668,7 @@ bool ZooKeeper::expired()
 	return is_dirty || zoo_state(impl) == ZOO_EXPIRED_SESSION_STATE;
 }
 
-int64_t ZooKeeper::getClientID()
+Int64 ZooKeeper::getClientID()
 {
 	return zoo_client_id(impl)->client_id;
 }

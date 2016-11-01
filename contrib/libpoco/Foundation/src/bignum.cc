@@ -750,6 +750,8 @@ void Bignum::SubtractTimes(const Bignum& other, int factor) {
     borrow = static_cast<Chunk>((difference >> (kChunkSize - 1)) +
                                 (remove >> kBigitSize));
   }
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wfor-loop-analysis"
   for (int i = other.used_digits_ + exponent_diff; i < used_digits_; ++i) {
     if (borrow == 0) return;
     Chunk difference = bigits_[i] - borrow;
@@ -757,6 +759,7 @@ void Bignum::SubtractTimes(const Bignum& other, int factor) {
     borrow = difference >> (kChunkSize - 1);
     ++i;
   }
+#pragma clang diagnostic pop
   Clamp();
 }
 

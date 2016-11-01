@@ -3,6 +3,9 @@
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/Common/CurrentMetrics.h>
 
+#ifndef O_DIRECT
+#define O_DIRECT 00040000
+#endif
 
 namespace CurrentMetrics
 {

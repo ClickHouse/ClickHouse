@@ -28,13 +28,13 @@ struct MergeInfo
 	const std::string result_part_name;
 	Stopwatch watch;
 	Float64 progress{};
-	uint64_t num_parts{};
-	uint64_t total_size_bytes_compressed{};
-	uint64_t total_size_marks{};
-	std::atomic<uint64_t> bytes_read_uncompressed{};
-	std::atomic<uint64_t> rows_read{};
-	std::atomic<uint64_t> bytes_written_uncompressed{};
-	std::atomic<uint64_t> rows_written{};
+	UInt64 num_parts{};
+	UInt64 total_size_bytes_compressed{};
+	UInt64 total_size_marks{};
+	std::atomic<UInt64> bytes_read_uncompressed{};
+	std::atomic<UInt64> rows_read{};
+	std::atomic<UInt64> bytes_written_uncompressed{};
+	std::atomic<UInt64> rows_written{};
 
 
 	MergeInfo(const std::string & database, const std::string & table, const std::string & result_part_name)

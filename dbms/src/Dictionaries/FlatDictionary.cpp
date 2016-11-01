@@ -377,7 +377,6 @@ void FlatDictionary::getItemsImpl(
 {
 	const auto & attr = *std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
 	const auto rows = ext::size(ids);
-	using null_value_type = std::conditional_t<std::is_same<AttributeType, StringRef>::value, String, AttributeType>;
 
 	for (const auto row : ext::range(0, rows))
 	{

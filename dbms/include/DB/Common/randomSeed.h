@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <DB/Core/Types.h>
 
 /** Returns a number suitable as seed for PRNG. Use clock_gettime, pid and so on. */
-uint64_t randomSeed();
+DB::UInt64 randomSeed();

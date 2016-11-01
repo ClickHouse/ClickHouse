@@ -44,8 +44,8 @@ std::string toString(const AttributeUnderlyingType type);
 /// Min and max lifetimes for a dictionary or it's entry
 struct DictionaryLifetime final
 {
-	std::uint64_t min_sec;
-	std::uint64_t max_sec;
+	UInt64 min_sec;
+	UInt64 max_sec;
 
 	DictionaryLifetime(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 };

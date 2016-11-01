@@ -78,7 +78,7 @@ public:
 		return std::make_shared<RemoteBlockInputStream>(pool, load_all_query, nullptr);
 	}
 
-	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
+	BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override
 	{
 		return createStreamForSelectiveLoad(
 			query_builder.composeLoadIdsQuery(ids));

@@ -6,7 +6,7 @@
 
 #include <string.h>
 
-#include <malloc.h>
+#include <cstdlib>
 
 #include <utility>
 

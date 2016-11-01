@@ -43,7 +43,7 @@ BlockInputStreamPtr ODBCDictionarySource::loadAll()
 	return std::make_shared<ODBCBlockInputStream>(pool->get(), load_all_query, sample_block, max_block_size);
 }
 
-BlockInputStreamPtr ODBCDictionarySource::loadIds(const std::vector<std::uint64_t> & ids)
+BlockInputStreamPtr ODBCDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
 	const auto query = query_builder.composeLoadIdsQuery(ids);
 	return std::make_shared<ODBCBlockInputStream>(pool->get(), query, sample_block, max_block_size);

@@ -121,7 +121,7 @@ struct AggregateFunctionSequenceMatchData final
 			std::uint32_t timestamp;
 			readBinary(timestamp, buf);
 
-			unsigned long events;
+			UInt64 events;
 			readBinary(events, buf);
 
 			eventsList.emplace_back(timestamp, Events{events});

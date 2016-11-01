@@ -12,6 +12,10 @@
 #include <signal.h>
 #include <cxxabi.h>
 #include <execinfo.h>
+#ifdef __APPLE__
+// ucontext is not available without _XOPEN_SOURCE
+#define _XOPEN_SOURCE
+#endif
 #include <ucontext.h>
 
 #include <typeinfo>
@@ -52,8 +56,6 @@
 #include <DB/IO/WriteHelpers.h>
 
 #include <common/ClickHouseRevision.h>
-
-
 
 using Poco::Logger;
 using Poco::AutoPtr;
@@ -282,7 +284,11 @@ private:
 
 #if defined(__x86_64__)
 		/// Get the address at the time the signal was raised from the RIP (x86-64)
+		#ifndef __APPLE__
 		caller_address = reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
+		#else
+		caller_address = reinterpret_cast<void *>(context.uc_mcontext->__ss.__rip);
+		#endif
 #elif defined(__aarch64__)
 		caller_address = reinterpret_cast<void *>(context.uc_mcontext.pc);
 #endif

@@ -5,6 +5,9 @@
 
 #include <DB/Core/Types.h>
 
+#if __APPLE__
+#include <common/apple_rt.h>
+#endif
 
 namespace DB
 {

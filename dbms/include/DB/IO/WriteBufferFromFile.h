@@ -12,6 +12,10 @@ namespace CurrentMetrics
 }
 
 
+#ifndef O_DIRECT
+#define O_DIRECT 00040000
+#endif
+
 namespace DB
 {
 
