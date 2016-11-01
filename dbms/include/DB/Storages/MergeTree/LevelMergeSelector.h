@@ -29,6 +29,9 @@ public:
 		  *  and so on, exponentially.
 		  */
 		time_t lower_base_after = 300;
+
+		/// If there are too much parts, merge any parts of same level, or if no such ranges, then totally ignore levels.
+		size_t fallback_after_num_parts = 50;
 	};
 
 	LevelMergeSelector(const Settings & settings) : settings(settings) {}

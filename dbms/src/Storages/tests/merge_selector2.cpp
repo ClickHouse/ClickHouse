@@ -20,16 +20,13 @@ int main(int argc, char ** argv)
 	IMergeSelector::Partitions partitions(1);
 	IMergeSelector::PartsInPartition & parts = partitions.back();
 
-	SimpleMergeSelector::Settings settings;
-//	settings.base = 2;
-//	settings.max_parts_to_merge_at_once = 10;
-	settings.lower_base_after = 30;
-	SimpleMergeSelector selector(settings);
+/*	SimpleMergeSelector::Settings settings;
+	SimpleMergeSelector selector(settings);*/
 
-/*	LevelMergeSelector::Settings settings;
+	LevelMergeSelector::Settings settings;
 	settings.min_parts_to_merge = 8;
 	settings.max_parts_to_merge = 16;
-	LevelMergeSelector selector(settings);*/
+	LevelMergeSelector selector(settings);
 
 	ReadBufferFromFileDescriptor in(STDIN_FILENO);
 

@@ -61,6 +61,9 @@ void selectWithinPartition(
 			actual_base = 2;
 	}
 
+	if (parts.size() > settings.fallback_after_num_parts)
+		actual_base = 2;
+
 	/// Not enough parts to merge.
 	if (parts.size() < actual_base)
 		return;
