@@ -5,6 +5,10 @@
   * To use, include this file with -include compiler parameter.
   */
 
+#include <common/apple_rt.h>
+
+#if APPLE_SIERRA_OR_NEWER == 0
+
 #include <time.h>
 #include <stdlib.h>
 #include <mach/mach_init.h>
@@ -12,7 +16,6 @@
 #include <mach/mach_port.h>
 #include <sys/time.h>
 
-#include <common/apple_rt.h>
 
 int clock_gettime_thread(timespec *spec) {
 	thread_port_t thread = mach_thread_self();
@@ -43,3 +46,5 @@ int clock_gettime(int clk_id, struct timespec* t) {
 
     return 0;
 }
+
+#endif

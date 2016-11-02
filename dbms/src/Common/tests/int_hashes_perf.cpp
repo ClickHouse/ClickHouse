@@ -1,4 +1,6 @@
+#ifndef __APPLE__
 #include <sched.h>
+#endif
 
 #include <iostream>
 #include <iomanip>

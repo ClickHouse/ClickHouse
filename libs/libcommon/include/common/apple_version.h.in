@@ -1,0 +1,3 @@
+#pragma once
+
+#define APPLE_SIERRA_OR_NEWER ${APPLE_SIERRA_OR_NEWER}

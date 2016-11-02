@@ -1,6 +1,11 @@
 #pragma once
 
+#pragma GCC diagnostic push
+#ifdef __APPLE__
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
 #include <unicode/ucol.h>
+#pragma GCC diagnostic pop
 
 #include <DB/Common/Exception.h>
 #include <DB/IO/WriteHelpers.h>

@@ -26,7 +26,7 @@ add_library (mysqlxx
 
 add_dependencies (mysqlxx common)
 
-target_link_libraries (mysqlxx common libmysqlclient.a libssl.a libcrypto.a libz.a dl)
+target_link_libraries (mysqlxx common libmysqlclient.a ${OPENSSL_LIBS} libz.a dl)
 
 
 ADD_CUSTOM_COMMAND(

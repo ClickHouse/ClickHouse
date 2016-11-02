@@ -1,7 +1,12 @@
 #include <common/DateLUT.h>
 
+#pragma GCC diagnostic push
+#ifdef __APPLE__
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
 #include <unicode/timezone.h>
 #include <unicode/unistr.h>
+#pragma GCC diagnostic pop
 
 DateLUT::DateLUT()
 {
