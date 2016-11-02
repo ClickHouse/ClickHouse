@@ -185,7 +185,7 @@ void BackgroundProcessingPool::threadFunction()
 			std::unique_lock<std::mutex> lock(tasks_mutex);
 
 			if (task->removed)
-				return;
+				continue;
 
 			tasks.erase(task->iterator);
 			task->iterator = tasks.emplace(next_time_to_execute, task);
