@@ -21,7 +21,7 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(const String & path_,	/// Ð
 	const MarkRanges & mark_ranges_, bool use_uncompressed_cache_,
 	ExpressionActionsPtr prewhere_actions_, String prewhere_column_, bool check_columns,
 	size_t min_bytes_to_use_direct_io_, size_t max_read_buffer_size_,
-	bool save_marks_in_cache_)
+	bool save_marks_in_cache_, bool quiet)
 	:
 	path(path_), block_size(block_size_),
 	storage(storage_), owned_data_part(owned_data_part_),
@@ -97,6 +97,7 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(const String & path_,	/// Ð
 			total_rows += range.end - range.begin;
 		total_rows *= storage.index_granularity;
 
+		if (!quiet)
 		LOG_TRACE(log, "Reading " << all_mark_ranges.size() << " ranges from part " << owned_data_part->name
 			<< ", approx. " << total_rows
 			<< (all_mark_ranges.size() > 1
