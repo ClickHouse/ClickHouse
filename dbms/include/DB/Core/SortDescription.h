@@ -61,6 +61,9 @@ struct SortCursorImpl
 	/** Есть ли хотя бы один столбец с Collator. */
 	bool has_collation = false;
 
+	/* Index of part from which the block was acquired */
+	// UInt8 source_part_label;
+
 	SortCursorImpl() {}
 
 	SortCursorImpl(const Block & block, const SortDescription & desc_, size_t order_ = 0)

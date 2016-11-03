@@ -120,6 +120,18 @@ public:
 
 	bool isCancelled() const { return cancelled > 0; }
 
+protected:
+
+	enum class MergeAlg
+	{
+		BASIC,
+		VERTICAL
+	};
+
+	MergeAlg chooseMergingAlg(
+		const MergeTreeData::DataPartsVector & parts, const Names & all_column_names, const SortDescription & sort_desc,
+		size_t rows_upper_bound, MergedRowSources & rows_sources_to_alloc) const;
+
 private:
 	MergeTreeData & data;
 	const BackgroundProcessingPool & pool;

@@ -46,6 +46,8 @@ struct MergeTreeDataPartChecksums
 
 	void addFile(const String & file_name, size_t file_size, uint128 file_hash);
 
+	void add(MergeTreeDataPartChecksums && rhs_checksums);
+
 	/// Проверяет, что множество столбцов и их контрольные суммы совпадают. Если нет - бросает исключение.
 	/// Если have_uncompressed, для сжатых файлов сравнивает чексуммы разжатых данных. Иначе сравнивает только чексуммы файлов.
 	void checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed) const;
