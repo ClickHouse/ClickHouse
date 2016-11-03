@@ -222,6 +222,17 @@ void MergeTreeDataPartChecksums::addFile(const String & file_name, size_t file_s
 	files[file_name] = Checksum(file_size, file_hash);
 }
 
+void MergeTreeDataPartChecksums::add(MergeTreeDataPartChecksums && rhs_checksums)
+{
+	for (auto & checksum : rhs_checksums.files)
+	{
+		if (!files.emplace(std::move(checksum)).second)
+			throw Exception("Adding already existing file checksum", ErrorCodes::LOGICAL_ERROR);
+	}
+
+	rhs_checksums.files.clear();
+}
+
 /// Контрольная сумма от множества контрольных сумм .bin файлов.
 void MergeTreeDataPartChecksums::summaryDataChecksum(SipHash & hash) const
 {

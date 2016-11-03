@@ -35,6 +35,11 @@ struct SortColumnDescription
 			res << ", collation locale: " << collator->getLocale();
 		return res.str();
 	}
+
+	bool matchColumn(const String & rhs_column_name, size_t rhs_column_number) const
+	{
+		return (!column_name.empty()) ? column_name == rhs_column_name : column_number == rhs_column_number;
+	}
 };
 
 /// Описание правила сортировки по нескольким столбцам.
@@ -66,6 +71,9 @@ struct SortCursorImpl
 
 	/** Есть ли хотя бы один столбец с Collator. */
 	bool has_collation = false;
+
+	/* Index of part from which the block was acquired */
+	// UInt8 source_part_label;
 
 	SortCursorImpl() {}
 

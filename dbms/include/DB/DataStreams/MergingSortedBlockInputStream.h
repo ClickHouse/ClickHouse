@@ -9,6 +9,7 @@
 #include <DB/Core/SortDescription.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/ColumnGathererStream.h>
 
 
 namespace DB
@@ -57,9 +58,10 @@ class MergingSortedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	/// limit - если не 0, то можно выдать только первые limit строк в сортированном порядке.
-	MergingSortedBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_, size_t max_block_size_, size_t limit_ = 0)
+	MergingSortedBlockInputStream(BlockInputStreams & inputs_, const SortDescription & description_,
+								  size_t max_block_size_, size_t limit_ = 0, MergedRowSources * row_sources_ = nullptr)
 		: description(description_), max_block_size(max_block_size_), limit(limit_),
-		source_blocks(inputs_.size()), cursors(inputs_.size())
+		source_blocks(inputs_.size()), cursors(inputs_.size()), row_sources(row_sources_)
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
 	}
@@ -157,6 +159,9 @@ protected:
 
 	using QueueWithCollation = std::priority_queue<SortCursorWithCollation>;
 	QueueWithCollation queue_with_collation;
+
+	/// Used in VERTICAL merge algorithm
+	MergedRowSources * row_sources = nullptr;
 
 
 	/// Эти методы используются в Collapsing/Summing/Aggregating... SortedBlockInputStream-ах.
