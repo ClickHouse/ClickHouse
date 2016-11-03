@@ -46,8 +46,8 @@ struct AlignedBuffer
 	{
 		size_t page = sysconf(_SC_PAGESIZE);
 		size = size_;
-		posix_memalign(reinterpret_cast<void **>(&data), page, (size + page - 1) / page * page);
-		if (!data)
+		int rc = posix_memalign(reinterpret_cast<void **>(&data), page, (size + page - 1) / page * page);
+		if (data == nullptr || rc != 0)
 			throwFromErrno("memalign failed");
 	}
 

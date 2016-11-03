@@ -132,6 +132,7 @@ include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/MongoDB/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Zip/include/)
 
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libcommon/include/)
+include_directories (${ClickHouse_BINARY_DIR}/libs/libcommon/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libpocoext/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libmysqlxx/include/)
@@ -153,6 +154,23 @@ ENDIF()
 include_directories (/usr/local/include/)
 
 link_directories (/usr/local/lib)
+
+# External libraries
+
+# 1. openssl
+include_directories ("/usr/local/opt/openssl/include")
+set (OPENSSL_HINTS "/usr/local/opt/openssl/lib")
+find_library (LIBSSL libssl.a HINTS ${OPENSSL_HINTS})
+find_library (LIBCRYPTO libcrypto.a HINTS ${OPENSSL_HINTS})
+set (OPENSSL_LIBS ${LIBSSL} ${LIBCRYPTO})
+
+# 2. icu4c
+include_directories ("/usr/local/opt/icu4c/include")
+set (ICU_HINTS "/usr/local/opt/icu4c/lib")
+find_library (ICUI18N libicui18n.a HINTS ${ICU_HINTS})
+find_library (ICUUC libicuuc.a HINTS ${ICU_HINTS})
+find_library (ICUDATA libicudata.a HINTS ${ICU_HINTS})
+set (ICU_LIBS ${ICUI18N} ${ICUUC} ${ICUDATA})
 
 # Directory for Yandex specific files
 SET(CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)

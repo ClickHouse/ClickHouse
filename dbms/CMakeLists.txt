@@ -19,7 +19,7 @@ endif()
 if (DISABLE_MONGODB)
 	add_definitions(-D DISABLE_MONGODB)
 else()
-	set (LINK_MONGOCLIENT libmongoclient.a libssl.a libcrypto.a libboost_thread.a)
+	set (LINK_MONGOCLIENT libmongoclient.a ${OPENSSL_LIBS} libboost_thread.a)
 endif()
 
 if (DISABLE_LIBTCMALLOC)

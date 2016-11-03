@@ -12,6 +12,12 @@ set_source_files_properties(
 include_directories (${CMAKE_CURRENT_BINARY_DIR}/src/)
 
 if (APPLE)
+	if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.1.0")
+		set (APPLE_SIERRA_OR_NEWER 1)
+	else ()
+		set (APPLE_SIERRA_OR_NEWER 0)
+	endif ()
+	configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/apple_version.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/common/apple_version.h)
 	add_library (apple_rt
 		src/apple_rt.cpp
 		include/common/apple_rt.h
@@ -78,7 +84,7 @@ target_link_libraries (
 	${MALLOC_LIBRARIES}
 	pthread
 	libglib-2.0.a
-	libicui18n.a libicuuc.a libicudata.a
+	${ICU_LIBS}
 	${RT_LIBRARIES})
 
 IF(TESTS)

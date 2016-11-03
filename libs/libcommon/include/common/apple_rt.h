@@ -6,6 +6,9 @@
   * To use, include this file with -include compiler parameter.
   */
 
+#include <common/apple_version.h>
+
+#if APPLE_SIERRA_OR_NEWER == 0
 /**
  * MacOS X doesn't support different clock sources
  *
@@ -20,3 +23,6 @@
 
 typedef int clockid_t;
 int clock_gettime(int clk_id, struct timespec* t);
+#else
+#define CLOCK_MONOTONIC_COARSE CLOCK_MONOTONIC
+#endif

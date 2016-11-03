@@ -46,9 +46,14 @@ add_library (re2_st ${re2_headers})
 
 set_target_properties(re2_st PROPERTIES COMPILE_DEFINITIONS "NO_THREADS;re2=re2_st")
 
-ADD_CUSTOM_COMMAND(
-    TARGET re2_st
-    POST_BUILD
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/create_st_headers.sh ARGS ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    COMMENT "Creating headers for re2_st library.")
+message ("Creating headers for re2_st library.")
+file (MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/re2_st)
+foreach (FILENAME filtered_re2.h re2.h set.h stringpiece.h variadic_function.h)
+	file (READ ${CMAKE_CURRENT_SOURCE_DIR}/re2/${FILENAME} CONTENT)
+	string(REGEX REPLACE "using re2::RE2;" "" CONTENT "${CONTENT}")
+	string(REGEX REPLACE "namespace re2" "namespace re2_st" CONTENT "${CONTENT}")
+	string(REGEX REPLACE "re2::" "re2_st::" CONTENT "${CONTENT}")
+	string(REGEX REPLACE "\"re2/" "\"re2_st/" CONTENT "${CONTENT}")
+	string(REGEX REPLACE "(.\\*?_H)" "\\1_ST" CONTENT "${CONTENT}")
+	file (WRITE ${CMAKE_CURRENT_BINARY_DIR}/re2_st/${FILENAME} "${CONTENT}")
+endforeach ()
