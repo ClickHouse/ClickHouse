@@ -689,7 +689,7 @@ $ GET &#39;http://localhost:8123/?query=SELECT a FROM t&#39;
 Deleting the table.
 
 <pre class="terminal">
-POST &#39;http://localhost:8123/?query=DROP TABLE t&#39;
+echo &#39;DROP TABLE t&#39; | POST &#39;http://localhost:8123/&#39;
 </pre>
 
 For successful requests that don&#39;t return a data table, an empty response body is returned.
