@@ -17,10 +17,13 @@ public:
 		  * This behaviour balances merge-tree workload.
 		  * It called 'base', because merge-tree depth could be estimated as logarithm with that base.
 		  */
-		double base = 2;
+		double base = 5;
 
-		time_t lower_base_after_seconds = 300;
-		size_t lower_base_after_num_parts = 20;
+		time_t lower_base_after_seconds_start = 300;
+		time_t lower_base_after_seconds_end = 3600;
+
+		size_t lower_base_after_num_parts_start = 10;
+		size_t lower_base_after_num_parts_end = 50;
 
 		/// Zero means unlimited.
 		size_t max_parts_to_merge_at_once = 100;

@@ -1,4 +1,5 @@
 #include <DB/Storages/MergeTree/SimpleMergeSelector.h>
+#include <DB/Common/interpolate.h>
 
 #include <cmath>
 
@@ -82,11 +83,13 @@ void selectWithinPartition(
 	if (parts_count <= 1)
 		return;
 
-	double actual_base = settings.base;
-
-	if (parts_count > settings.lower_base_after_num_parts
-		|| current_min_part_age > settings.lower_base_after_seconds)
-		actual_base = 1;
+	double actual_base = std::max(1.0, std::min(
+		settings.base,
+		std::min(
+			interpolateLinear(settings.base, 1.0, (static_cast<double>(parts_count) - settings.lower_base_after_num_parts_start)
+				/ (settings.lower_base_after_num_parts_end - settings.lower_base_after_num_parts_start)),
+			interpolateLinear(settings.base, 1.0, (static_cast<double>(current_min_part_age) - settings.lower_base_after_seconds_start)
+				/ (settings.lower_base_after_seconds_end - settings.lower_base_after_seconds_start)))));
 
 	for (size_t begin = 0; begin < parts_count; ++begin)
 	{
