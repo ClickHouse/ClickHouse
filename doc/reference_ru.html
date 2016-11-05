@@ -702,7 +702,7 @@ $ GET 'http://localhost:8123/?query=SELECT a FROM t'
 Удаляем таблицу.
 
 <pre class="terminal">
-POST 'http://localhost:8123/?query=DROP TABLE t'
+echo 'DROP TABLE t' | POST 'http://localhost:8123/'
 </pre>
 
 Для запросов, которые не возвращают таблицу с данными, в случае успеха, выдаётся пустое тело ответа.
