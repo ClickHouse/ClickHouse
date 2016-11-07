@@ -25,10 +25,16 @@ brew install cmake gcc
 brew install boost --cc=gcc-6
 ```
 
-## Install required libraries from packages
+## Install required libraries
 
 ```
 brew install icu4c mysql openssl unixodbc
+```
+
+## Install optional libraries
+
+```
+brew install readline
 ```
 
 # Checkout ClickHouse sources

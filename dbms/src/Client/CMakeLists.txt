@@ -1,10 +1,12 @@
 find_library(READLINE_LIB
-	NAMES libreadline.a libreadline.so)
+	NAMES libreadline.a libreadline.so
+	HINTS "/usr/local/opt/readline/lib")
 
 find_library(LIBEDIT_LIB
 	NAMES libedit.a libedit.so)
 
 if(READLINE_LIB)
+	include_directories("/usr/local/opt/readline/include")
 	add_definitions(-D USE_READLINE)
 	set(LINE_EDITING_LIBS ${READLINE_LIB} libtermcap.a)
 	message(STATUS "Using line editing libraries: ${LINE_EDITING_LIBS}")
