@@ -50,4 +50,4 @@ add_executable (in_join_subqueries_preprocessor in_join_subqueries_preprocessor.
 target_link_libraries (in_join_subqueries_preprocessor dbms)
 
 add_executable (users users.cpp)
-target_link_libraries (users dbms libboost_filesystem.a)
+target_link_libraries (users dbms ${BOOST_FILESYSTEM_LIB})

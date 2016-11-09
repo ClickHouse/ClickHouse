@@ -21,8 +21,8 @@ endif()
 add_executable(clickhouse-client Client.cpp)
 add_executable(clickhouse-benchmark Benchmark.cpp)
 
-target_link_libraries (clickhouse-client dbms ${LINE_EDITING_LIBS} libboost_program_options.a)
-target_link_libraries (clickhouse-benchmark dbms libboost_program_options.a)
+target_link_libraries (clickhouse-client dbms ${LINE_EDITING_LIBS} ${BOOST_PROGRAM_OPTIONS_LIB})
+target_link_libraries (clickhouse-benchmark dbms ${BOOST_PROGRAM_OPTIONS_LIB})
 
 INSTALL(TARGETS clickhouse-client RUNTIME DESTINATION bin COMPONENT clickhouse-client)
 INSTALL(FILES config.xml DESTINATION /etc/clickhouse-client  COMPONENT clickhouse-client)

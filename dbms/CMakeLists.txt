@@ -19,7 +19,7 @@ endif()
 if (DISABLE_MONGODB)
 	add_definitions(-D DISABLE_MONGODB)
 else()
-	set (LINK_MONGOCLIENT libmongoclient.a ${OPENSSL_LIBS} libboost_thread.a)
+	set (LINK_MONGOCLIENT libmongoclient.a ${OPENSSL_LIBS} ${BOOST_THREAD_LIB})
 endif()
 
 if (DISABLE_LIBTCMALLOC)
@@ -1014,13 +1014,13 @@ target_link_libraries(dbms
 	${LINK_LIBRARIES_ONLY_ON_X86_64}
 	re2 re2_st
 	libcrypto.a
-	libboost_system.a
+	${BOOST_SYSTEM_LIB}
 	${LINK_MONGOCLIENT}
-	libboost_regex.a
+	${BOOST_REGEX_LIB}
 	PocoData
 	PocoDataODBC
 	${APPLE_ICONV_LIB}
-	dl libltdl.a)
+	dl ${LTDL_LIB})
 
 add_dependencies (dbms
 	common

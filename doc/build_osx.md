@@ -3,10 +3,6 @@
 Build should work on Mac OS X 10.12. If you're using earlier version, you can try to build ClickHouse using Gentoo Prefix and clang sl in this instruction.
 With appropriate changes, build should work on any other OS X distribution.
 
-## Install Xcode
-
-Use App Store.
-
 ## Install Homebrew
 
 ```
@@ -28,7 +24,7 @@ brew install boost --cc=gcc-6
 ## Install required libraries
 
 ```
-brew install icu4c mysql openssl unixodbc
+brew install icu4c mysql openssl unixodbc glib libtool
 ```
 
 ## Install optional libraries
