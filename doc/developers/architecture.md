@@ -3,7 +3,7 @@
 > Gray text is for side notes you don't have to read.
 
 
-ClickHouse is a true column oriented DBMS. Data is stored by columns. Even more, during query execution, data is processed by arrays (vectors, chunks of columns). In all places, where it is possible, operations on data are dispatched not for individual values but for arrays. It is called "vectorized query execution". This allowes to lower dispatch cost relatively to cost of actual data processing.
+ClickHouse is a true column oriented DBMS. Data is stored by columns. Even more, during query execution, data is processed by arrays (vectors, chunks of columns). In all places, where it is possible, operations on data are dispatched not for individual values but for arrays. It is called "vectorized query execution". This allows to lower dispatch cost relatively to cost of actual data processing.
 
 >This idea is not any new. It is dated back to `APL` programming language and its descendants: `A+`, `J`, `K`, `Q`. Array programming is widely used in scientific data processing. Also, this idea is not new for relational databases: for example, it is used in `Vectorwise` system.
 
