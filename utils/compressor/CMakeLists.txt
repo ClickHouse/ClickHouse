@@ -1,5 +1,5 @@
 add_executable (compressor main.cpp)
-target_link_libraries (compressor dbms libboost_program_options.a)
+target_link_libraries (compressor dbms ${BOOST_PROGRAM_OPTIONS_LIB})
 
 INSTALL(TARGETS compressor RUNTIME DESTINATION bin COMPONENT compressor)
 

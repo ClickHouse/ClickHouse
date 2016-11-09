@@ -26,16 +26,18 @@ add_library (mysqlxx
 
 add_dependencies (mysqlxx common)
 
-target_link_libraries (mysqlxx common libmysqlclient.a ${OPENSSL_LIBS} libz.a dl)
+set (MYSQL_HINTS "/usr/local/opt/mysql/lib")
+find_library (MYSQLCLIENT_LIB libmysqlclient.a HINTS ${MYSQL_HINTS})
 
+target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBS} libz.a dl)
 
-ADD_CUSTOM_COMMAND(
+add_custom_command(
     TARGET mysqlxx
     POST_BUILD
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/patch.sh
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "Patching mysqlclient library.")
 
-IF(TESTS)
+if(TESTS)
 	add_subdirectory (src/tests)
-ENDIF(TESTS)
+endif(TESTS)

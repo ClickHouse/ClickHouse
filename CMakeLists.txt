@@ -172,6 +172,18 @@ find_library (ICUUC libicuuc.a HINTS ${ICU_HINTS})
 find_library (ICUDATA libicudata.a HINTS ${ICU_HINTS})
 set (ICU_LIBS ${ICUI18N} ${ICUUC} ${ICUDATA})
 
+# 3. boost
+set (BOOST_HINTS "/usr/local/opt/boost/lib")
+find_library (BOOST_PROGRAM_OPTIONS_LIB libboost_program_options.a HINTS ${BOOST_HINTS})
+find_library (BOOST_SYSTEM_LIB libboost_system.a HINTS ${BOOST_HINTS})
+find_library (BOOST_FILESYSTEM_LIB libboost_filesystem.a HINTS ${BOOST_HINTS})
+find_library (BOOST_REGEX_LIB libboost_regex.a HINTS ${BOOST_HINTS})
+find_library (BOOST_THREAD_LIB libboost_thread.a HINTS ${BOOST_HINTS})
+
+# 4. ltdl
+set (LTDL_HINTS "/usr/local/opt/libtool/lib")
+find_library (LTDL_LIB libltdl.a HINTS ${LTDL_HINTS})
+
 # Directory for Yandex specific files
 SET(CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)
 

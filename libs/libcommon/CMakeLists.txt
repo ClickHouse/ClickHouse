@@ -78,12 +78,15 @@ else()
 	SET(RT_LIBRARIES "librt.a")
 endif()
 
+set (GLIB_HINTS "/usr/local/opt/glib/lib")
+find_library (GLIB_LIB libglib-2.0.a HINTS ${GLIB_HINTS})
+
 target_link_libraries (
 	common
 	pocoext
 	${MALLOC_LIBRARIES}
 	pthread
-	libglib-2.0.a
+	${GLIB_LIB}
 	${ICU_LIBS}
 	${RT_LIBRARIES})
 
