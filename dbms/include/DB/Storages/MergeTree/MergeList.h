@@ -34,7 +34,13 @@ struct MergeInfo
 	std::atomic<UInt64> bytes_read_uncompressed{};
 	std::atomic<UInt64> rows_read{};
 	std::atomic<UInt64> bytes_written_uncompressed{};
+
+	/// mutually exclusive, updated either rows_written either columns_written
 	std::atomic<UInt64> rows_written{};
+	std::atomic<UInt64> columns_written{};
+
+	/// Number of rows for which primary key cols are written (updated alwasys)
+	std::atomic<UInt64> rows_with_key_columns_written{};
 
 
 	MergeInfo(const std::string & database, const std::string & table, const std::string & result_part_name)
