@@ -24,7 +24,7 @@ public:
 		const MarkRanges & mark_ranges_, bool use_uncompressed_cache_,
 		ExpressionActionsPtr prewhere_actions_, String prewhere_column_, bool check_columns,
 		size_t min_bytes_to_use_direct_io_, size_t max_read_buffer_size_,
-		bool save_marks_in_cache_);
+		bool save_marks_in_cache_, bool quiet = false);
 
     ~MergeTreeBlockInputStream() override;
 

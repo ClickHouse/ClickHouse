@@ -9,6 +9,7 @@ namespace DB
 {
 
 class MergeListEntry;
+class MergeProgressCallBack;
 struct ReshardingJob;
 
 
@@ -120,7 +121,7 @@ public:
 
 	bool isCancelled() const { return cancelled > 0; }
 
-protected:
+public:
 
 	enum class MergeAlg
 	{
@@ -128,8 +129,9 @@ protected:
 		VERTICAL
 	};
 
-	MergeAlg chooseMergingAlg(
-		const MergeTreeData::DataPartsVector & parts, const Names & all_column_names, const SortDescription & sort_desc,
+private:
+
+	MergeAlg chooseMergingAlg(const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
 		size_t rows_upper_bound, MergedRowSources & rows_sources_to_alloc) const;
 
 private:
