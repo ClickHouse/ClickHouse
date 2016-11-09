@@ -60,9 +60,9 @@ struct MergeTreeSettings
 	size_t max_suspicious_broken_parts = 10;
 
 	/// Not apply ALTER if number of files for modification(deletion, addition) more than this.
-	size_t max_files_to_modify_in_alter_columns = 50;
+	size_t max_files_to_modify_in_alter_columns = 75;
 	/// Not apply ALTER, if number of files for deletion more than this.
-	size_t max_files_to_remove_in_alter_columns = 10;
+	size_t max_files_to_remove_in_alter_columns = 50;
 
 	/// Maximum number of errors during parts loading, while ReplicatedMergeTree still allowed to start.
 	size_t replicated_max_unexpected_parts = 3;
