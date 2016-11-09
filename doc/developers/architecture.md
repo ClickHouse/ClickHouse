@@ -146,7 +146,7 @@ Implementing a function could be slightly unconvenient, because a function is do
 
 ## Aggregate Functions
 
-Aggregate functions is a stateful functions. They accumulate passed values into some state, and finally allow to get result from that state. They are managed with `IAggregateFunction` interface. States could be rather simple (for example, state for `AggregateFunctionCount` is just single `UInt64` value) or quite complex (example: state of `AggregateFunctionUniqCombined` is a combination of linear array, hash table and `HyperLogLog` probablistic data structure).
+Aggregate functions is a stateful functions. They accumulate passed values into some state, and finally allow to get result from that state. They are managed with `IAggregateFunction` interface. States could be rather simple (for example, state for `AggregateFunctionCount` is just single `UInt64` value) or quite complex (example: state of `AggregateFunctionUniqCombined` is a combination of linear array, hash table and `HyperLogLog` probabilistic data structure).
 
 To deal with many states while executing high-cardinality `GROUP BY` query, states are allocated in `Arena` - a memory pool, or they could be allocated in any suitable piece of memory. States could have non-trivial constructor and destructor: for example, complex aggregation states could allocate additional memory by themself. It requires some attention to create and destroy states and to proper pass their ownership: to mind, who and when will destroy states.
 
