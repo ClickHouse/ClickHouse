@@ -4716,9 +4716,8 @@ If value contains invalid UTF-8, the behavior is unspecified.
 ===reverseUTF8===
 - Reverses a sequence of Unicode code points, assuming that the string contains a set of bytes representing a UTF-8 text. Otherwise, it does something else (it doesn&#39;t throw an exception).
 
-===concat(s1, s2)===
-- Concatenates two strings, without a separator.
-If you need to concatenate more than two strings, write &#39;concat&#39; multiple times.
+===concat(s1, s2, ...)===
+- Concatenates strings from the function arguments, without a separator.
 
 ===substring(s, offset, length)===
 - Returns a substring starting with the byte from the &#39;offset&#39; index that is &#39;length&#39; bytes long. Character indexing starts from one (as in standard SQL). The &#39;offset&#39; and &#39;length&#39; arguments must be constants.
