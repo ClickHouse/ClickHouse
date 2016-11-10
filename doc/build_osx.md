@@ -57,6 +57,12 @@ export CXX=g++-6
 export DISABLE_MONGODB=1
 ```
 
+## Detect number of threads
+
+```
+export THREADS=$(sysctl -n hw.ncpu)
+```
+
 # Build ClickHouse
 
 ```
