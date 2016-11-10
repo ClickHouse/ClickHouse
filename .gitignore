@@ -218,6 +218,9 @@ nbproject/*
 # JetBrains project files
 .idea
 
+# Microsoft Visual Studio Code
+.vscode
+
 config-preprocessed.xml
 
 # Protobuf
