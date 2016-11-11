@@ -82,7 +82,10 @@ def main(args):
 			break
 		
 		suite_dir = os.path.join(base_dir, suite)
-		suite = re.search('^[0-9]+_(.*)$', suite).group(1)
+		suite_re_obj = re.search('^[0-9]+_(.*)$', suite)
+		if not suite_re_obj: #skip .gitignore and so on
+			continue
+		suite = suite_re_obj.group(1)
 		if os.path.isdir(suite_dir):
 			print("\nRunning {} tests.\n".format(suite))
 			

@@ -193,8 +193,8 @@ int Server::main(const std::vector<std::string> & args)
 	  *  settings, available functions, data types, aggregate functions, databases...
 	  */
 	global_context = std::make_unique<Context>();
-
 	global_context->setGlobalContext(*global_context);
+	global_context->setApplicationType(Context::ApplicationType::SERVER);
 	global_context->setPath(path);
 
 	std::string default_database = config().getString("default_database", "default");
@@ -520,4 +520,4 @@ int Server::main(const std::vector<std::string> & args)
 
 }
 
-YANDEX_APP_SERVER_MAIN_FUNC(DB::Server, main_clickhouse_server);
+YANDEX_APP_SERVER_MAIN_FUNC(DB::Server, mainEntryClickHouseServer);

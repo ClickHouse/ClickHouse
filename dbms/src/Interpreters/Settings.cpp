@@ -1,5 +1,4 @@
 #include <DB/Interpreters/Settings.h>
-#include <common/logger_useful.h>
 
 
 namespace DB

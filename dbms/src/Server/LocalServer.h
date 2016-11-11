@@ -15,7 +15,7 @@ class LocalServer : public Poco::Util::Application
 {
 public:
 
-	LocalServer() = default;
+	LocalServer();
 
 	void initialize(Poco::Util::Application & self) override;
 
@@ -23,10 +23,14 @@ public:
 
 	int main(const std::vector<std::string> & args) override;
 
-	~LocalServer() = default;
+	~LocalServer();
 
 private:
 
+	/** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
+	  * This query will be executed first, before queries passed through --query argument
+	  * Returns empty string if it cannot compose that query.
+	  */
 	std::string getInitialCreateTableQuery();
 
 	void applyOptions();
@@ -40,8 +44,6 @@ private:
 	void displayHelp();
 
 	void handleHelp(const std::string & name, const std::string & value);
-
-	static const char * default_user_xml;
 
 protected:
 

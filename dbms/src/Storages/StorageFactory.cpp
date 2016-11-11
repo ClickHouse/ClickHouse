@@ -47,6 +47,7 @@ namespace ErrorCodes
 	extern const int NO_REPLICA_NAME_GIVEN;
 	extern const int NO_ELEMENTS_IN_CONFIG;
 	extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+	extern const int UNKNOWN_IDENTIFIER;
 }
 
 
@@ -260,16 +261,13 @@ StoragePtr StorageFactory::get(
 	}
 	else if (name == "File")
 	{
-		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
+		auto & func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage);
+		auto & args = typeid_cast<ASTExpressionList &>(*func.arguments).children;
 
-		constexpr auto error_msg = "Storage File requires exactly 1 parameter - name of using format.";
+		constexpr auto error_msg = "Storage File requires 1 or 2 arguments: name of used format and source.";
 
-		/// TODO: Maybe some my misunderstanding of ASTs
-
-		if (args_func.size() != 1)
-			throw Exception(error_msg, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
+		if (func.parameters)
+			throw Exception(error_msg, ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS);
 
 		if (args.empty() || args.size() > 2)
 			throw Exception(error_msg, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -281,13 +279,32 @@ StoragePtr StorageFactory::get(
 		String source_path;
 		if (args.size() >= 2)
 		{
-			args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
-			String table_source = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+			/// Will use FD if args[1] is int literal or identifier with std* name
 
-			if (table_source == "stdin")
-				source_fd = STDIN_FILENO;
-			else
-				source_path = std::move(table_source);
+			if (ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(args[1].get()))
+			{
+				if (identifier->name == "stdin")
+					source_fd = STDIN_FILENO;
+				else if (identifier->name == "stdout")
+					source_fd = STDOUT_FILENO;
+				else if (identifier->name == "stderr")
+					source_fd = STDERR_FILENO;
+				else
+					throw Exception("Unknown identifier '" + identifier->name + "' in second arg of File storage constructor",
+									ErrorCodes::UNKNOWN_IDENTIFIER);
+			}
+
+			if (ASTLiteral * literal = typeid_cast<ASTLiteral *>(args[1].get()))
+			{
+				auto type = literal->value.getType();
+				if (type == Field::Types::Int64)
+					source_fd = static_cast<int>(literal->value.get<Int64>());
+				else if (type == Field::Types::UInt64)
+					source_fd = static_cast<int>(literal->value.get<UInt64>());
+			}
+
+			args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
+			source_path = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 		}
 
 		return StorageFile::create(

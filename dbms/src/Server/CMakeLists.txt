@@ -14,13 +14,14 @@ add_library(clickhouse-local LocalServer.cpp)
 target_link_libraries(clickhouse-local dbms)
 
 add_executable(clickhouse main.cpp)
-target_link_libraries(clickhouse clickhouse-server clickhouse-client clickhouse-local)
+target_link_libraries(clickhouse clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark)
 INSTALL(TARGETS clickhouse RUNTIME DESTINATION bin COMPONENT clickhouse)
 
-#make symbolic links to concrete clickhouse applications
+# make symbolic links to concrete clickhouse applications
 INSTALL(CODE "execute_process(COMMAND ln -s -f clickhouse clickhouse-server WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}/bin\")")
 INSTALL(CODE "execute_process(COMMAND ln -s -f clickhouse clickhouse-client WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}/bin\")")
 INSTALL(CODE "execute_process(COMMAND ln -s -f clickhouse clickhouse-local WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}/bin\")")
+INSTALL(CODE "execute_process(COMMAND ln -s -f clickhouse clickhouse-benchmark WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}/bin\")")
 
 INSTALL(
     FILES config.xml users.xml

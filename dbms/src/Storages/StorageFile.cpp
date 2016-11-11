@@ -1,10 +1,10 @@
 #include <DB/Storages/StorageFile.h>
 
-#include <DB/DataStreams/FormatFactory.h>
+#include <DB/Interpreters/Context.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/WriteHelpers.h>
-
+#include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 
@@ -19,12 +19,19 @@ namespace ErrorCodes
 {
 	extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
 	extern const int CANNOT_SEEK_THROUGH_FILE;
+	extern const int DATABASE_ACCESS_DENIED;
 };
 
 
 static std::string getTablePath(const std::string & db_dir_path, const std::string & table_name, const std::string & format_name)
 {
-	return db_dir_path + escapeForFileName(table_name) + "/main." + escapeForFileName(format_name);
+	return db_dir_path + escapeForFileName(table_name) + "/data." + escapeForFileName(format_name);
+}
+
+static void checkCreationIsAllowed(Context & context_global)
+{
+	if (context_global.getApplicationType() == Context::ApplicationType::SERVER)
+		throw Exception("Using file descriptor or user specified path as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
 
@@ -42,26 +49,31 @@ StorageFile::StorageFile(
 	: IStorage(materialized_columns_, alias_columns_, column_defaults_),
 	table_name(table_name_), format_name(format_name_), columns(columns_), context_global(context_), table_fd(table_fd_)
 {
-	if (table_fd < 0) // Will use file
+	if (table_fd < 0) /// Will use file
 	{
 		use_table_fd = false;
 
-		if (!table_path_.empty()) // Is user's file
+		if (!table_path_.empty()) /// Is user's file
 		{
+			checkCreationIsAllowed(context_global);
 			path = Poco::Path(table_path_).absolute().toString();
 			is_db_table = false;
 		}
-		else // Is DB's file
+		else /// Is DB's file
 		{
 			path = getTablePath(db_dir_path, table_name, format_name);
 			is_db_table = true;
 			Poco::File(Poco::Path(path).parent()).createDirectories();
 		}
 	}
-	else
+	else /// Will use FD
 	{
+		checkCreationIsAllowed(context_global);
 		is_db_table = false;
 		use_table_fd = true;
+
+		/// Save initial offset, it will be used for repeating SELECTs
+		/// If FD isn't seekable (lseek returns -1), then the second and subsequent SELECTs will fail.
 		table_fd_init_offset = lseek(table_fd, 0, SEEK_CUR);
 	}
 }
@@ -72,7 +84,7 @@ class StorageFileBlockInputStream : public IProfilingBlockInputStream
 public:
 
 	StorageFileBlockInputStream(StorageFile & storage_, const Context & context, size_t max_block_size)
-	: storage(storage_), lock(storage.rwlock, storage.use_table_fd)
+		: storage(storage_), lock(storage.rwlock, storage.use_table_fd)
 	{
 		if (storage.use_table_fd)
 		{
@@ -86,7 +98,7 @@ public:
 
 				/// ReadBuffer's seek() doesn't make sence, since cache is empty
 				if (lseek(storage.table_fd, storage.table_fd_init_offset, SEEK_SET) < 0)
-					throw Exception("Cannot seek file descriptor, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+					throwFromErrno("Cannot seek file descriptor, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 			}
 
 			storage.table_fd_was_used = true;
@@ -97,7 +109,7 @@ public:
 			read_buf = std::make_unique<ReadBufferFromFile>(storage.path);
 		}
 
-		input_formatter = FormatFactory().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
+		reader = FormatFactory().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
 	}
 
 	String getName() const override
@@ -108,23 +120,28 @@ public:
 	String getID() const override
 	{
 		std::stringstream res_stream;
-		res_stream << "File(" << &storage << ")";
+		res_stream << "File(" << storage.format_name << ", ";
+		if (!storage.path.empty())
+			res_stream << storage.path;
+		else
+			res_stream << storage.table_fd;
+		res_stream << ")";
 		return res_stream.str();
 	}
 
 	Block readImpl() override
 	{
-		return input_formatter->read();
+		return reader->read();
 	}
 
 	void readPrefixImpl() override
 	{
-		input_formatter->readPrefix();
+		reader->readPrefix();
 	}
 
 	void readSuffixImpl() override
 	{
-		input_formatter->readSuffix();
+		reader->readSuffix();
 	}
 
 private:
@@ -132,7 +149,7 @@ private:
 	Poco::ScopedRWLock lock;
 	Block sample_block;
 	std::unique_ptr<ReadBufferFromFileDescriptor> read_buf;
-	BlockInputStreamPtr input_formatter;
+	BlockInputStreamPtr reader;
 };
 
 
@@ -154,15 +171,14 @@ class StorageFileBlockOutputStream : public IBlockOutputStream
 public:
 
 	StorageFileBlockOutputStream(StorageFile & storage_)
-	: storage(storage_), lock(storage.rwlock)
+		: storage(storage_), lock(storage.rwlock)
 	{
 		if (storage.use_table_fd)
 		{
-			/// TODO: more detail checks: 1) fd is writeable 2) points to the end of data (if possible)
-			if (storage.table_fd_was_used)
-				throw Exception("Write to file descriptor after use, inside " + storage.getName(),
-								ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
-
+			/** NOTE: Using real file binded to FD may be misleading:
+			  * SELECT *; INSERT insert_data; SELECT *; last SELECT returns initil_fd_data + insert_data
+			  * INSERT data; SELECT *; last SELECT returns only insert_data
+			  */
 			storage.table_fd_was_used = true;
 			write_buf = std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd);
 		}
@@ -171,34 +187,34 @@ public:
 			write_buf = std::make_unique<WriteBufferFromFile>(storage.path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
 		}
 
-		output_formatter = FormatFactory().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), storage.context_global);
+		writer = FormatFactory().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), storage.context_global);
 	}
 
 	void write(const Block & block) override
 	{
-		output_formatter->write(block);
+		writer->write(block);
 	}
 
 	void writePrefix() override
 	{
-		output_formatter->writePrefix();
+		writer->writePrefix();
 	}
 
 	void writeSuffix() override
 	{
-		output_formatter->writeSuffix();
+		writer->writeSuffix();
 	}
 
 	void flush() override
 	{
-		output_formatter->flush();
+		writer->flush();
 	}
 
 private:
 	StorageFile & storage;
 	Poco::ScopedWriteRWLock lock;
 	std::unique_ptr<WriteBufferFromFileDescriptor> write_buf;
-	BlockOutputStreamPtr output_formatter;
+	BlockOutputStreamPtr writer;
 };
 
 BlockOutputStreamPtr StorageFile::write(
@@ -218,7 +234,7 @@ void StorageFile::drop()
 void StorageFile::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
 	if (!is_db_table)
-		throw Exception("Can't rename table '" + table_name + "' stored in user-defined file (or FD)");
+		throw Exception("Can't rename table '" + table_name + "' binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
 
 	Poco::ScopedWriteRWLock lock(rwlock);
 

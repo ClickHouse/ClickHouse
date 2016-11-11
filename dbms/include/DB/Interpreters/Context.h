@@ -274,6 +274,16 @@ public:
 
 	void shutdown();
 
+	enum class ApplicationType
+	{
+		SERVER,			/// The program is run as clickhouse-server daemon (default behavior)
+		CLIENT,			/// clickhouse-client
+		LOCAL_SERVER	/// clickhouse-local
+	};
+
+	ApplicationType getApplicationType() const;
+	void setApplicationType(ApplicationType type);
+
 private:
 	/** Проверить, имеет ли текущий клиент доступ к заданной базе данных.
 	  * Если доступ запрещён, кинуть исключение.

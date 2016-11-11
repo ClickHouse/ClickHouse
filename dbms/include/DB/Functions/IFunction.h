@@ -17,6 +17,7 @@ namespace ErrorCodes
 	extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 	extern const int ILLEGAL_COLUMN;
 	extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 	extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
 }
 

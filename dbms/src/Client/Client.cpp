@@ -203,6 +203,8 @@ private:
 		else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
 			loadConfiguration("/etc/clickhouse-client/config.xml");
 
+		context.setApplicationType(Context::ApplicationType::CLIENT);
+
 		/// settings and limits could be specified in config file, but passed settings has higher priority
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
 		if (config().has(#NAME) && !context.getSettingsRef().NAME.changed) \
@@ -1304,7 +1306,7 @@ public:
 }
 
 
-int main_clickhouse_client(int argc, char ** argv)
+int mainEntryClickhouseClient(int argc, char ** argv)
 {
 	DB::Client client;
 

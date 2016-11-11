@@ -80,7 +80,7 @@ void DatabaseMemory::removeTable(const String & table_name)
 void DatabaseMemory::renameTable(
 	const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name)
 {
-	throw Exception("renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+	throw Exception("DatabaseMemory: renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 time_t DatabaseMemory::getTableMetadataModificationTime(const String & table_name)
@@ -90,7 +90,7 @@ time_t DatabaseMemory::getTableMetadataModificationTime(const String & table_nam
 
 ASTPtr DatabaseMemory::getCreateQuery(const String & table_name) const
 {
-	throw Exception("getCreateQuery() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+	throw Exception("DatabaseMemory: getCreateQuery() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 	return nullptr;
 }
 
@@ -120,7 +120,7 @@ void DatabaseMemory::alterTable(
 	const ColumnDefaults & column_defaults,
 	const ASTModifier & engine_modifier)
 {
-	throw Exception("alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+	throw Exception("DatabaseMemory: alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

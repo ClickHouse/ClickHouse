@@ -6,7 +6,15 @@
 #include <DB/Databases/DatabaseOrdinary.h>
 
 #include <DB/Storages/System/StorageSystemNumbers.h>
+#include <DB/Storages/System/StorageSystemTables.h>
+#include <DB/Storages/System/StorageSystemDatabases.h>
+#include <DB/Storages/System/StorageSystemProcesses.h>
+#include <DB/Storages/System/StorageSystemEvents.h>
 #include <DB/Storages/System/StorageSystemOne.h>
+#include <DB/Storages/System/StorageSystemSettings.h>
+#include <DB/Storages/System/StorageSystemDictionaries.h>
+#include <DB/Storages/System/StorageSystemColumns.h>
+#include <DB/Storages/System/StorageSystemFunctions.h>
 
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ProcessList.h>
@@ -29,6 +37,18 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int SYNTAX_ERROR;
+	extern const int CANNOT_LOAD_CONFIG;
+}
+
+
+LocalServer::LocalServer() = default;
+
+LocalServer::~LocalServer() = default;
+
+
 void LocalServer::initialize(Poco::Util::Application & self)
 {
 	Poco::Util::Application::initialize(self);
@@ -47,77 +67,77 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 
 	_options.addOption(
 		Poco::Util::Option ("config-file", "C", "Load configuration from a given file")
-			.required (false)
-			.repeatable (false)
-			.argument (" config.xml")
+			.required(false)
+			.repeatable(false)
+			.argument(" config.xml")
 			.binding("config-file")
 			);
 
 	/// Arguments that define first query creating initial table:
 	/// (If structure argument is omitted then initial query is not generated)
 	_options.addOption(
-		Poco::Util::Option ("structure", "S", "Structe of initial table (list columns names with their types)")
-			.required (false)
-			.repeatable (false)
-			.argument (" <struct>")
+		Poco::Util::Option ("structure", "S", "Structe of initial table(list columns names with their types)")
+			.required(false)
+			.repeatable(false)
+			.argument(" <struct>")
 			.binding("table-structure")
 			);
 
 	_options.addOption(
 		Poco::Util::Option ("table", "N", "Name of intial table")
-			.required (false)
-			.repeatable (false)
-			.argument (" table")
+			.required(false)
+			.repeatable(false)
+			.argument(" table")
 			.binding("table-name")
 			);
 
 	_options.addOption(
 		Poco::Util::Option ("file", "F", "Path to file with data of initial table (stdin if not specified)")
-			.required (false)
-			.repeatable (false)
-			.argument (" stdin")
+			.required(false)
+			.repeatable(false)
+			.argument(" stdin")
 			.binding("table-file")
 			);
 
 	_options.addOption(
-		Poco::Util::Option ("iformat", "fi", "Input format of intial table data. Note, --format is output one")
-			.required (false)
-			.repeatable (false)
-			.argument (" TabSeparated")
+		Poco::Util::Option ("input-format", "if", "Input format of intial table data")
+			.required(false)
+			.repeatable(false)
+			.argument(" TabSeparated")
 			.binding("table-data-format")
 			);
 
 	/// List of queries to execute
 	_options.addOption(
 		Poco::Util::Option ("query", "Q", "Queries to execute")
-			.required (false)
-			.repeatable (false)
-			.argument (" <query>", true)
+			.required(false)
+			.repeatable(false)
+			.argument(" <query>", true)
 			.binding("query")
 			);
 
 	/// Default Output format
 	_options.addOption(
-		Poco::Util::Option ("oformat", "fo", "Default ouput format")
-			.required (false)
-			.repeatable (false)
-			.argument (" TabSeparated", true)
-			.binding("oformat")
+		Poco::Util::Option ("output-format", "of", "Default output format")
+			.required(false)
+			.repeatable(false)
+			.argument(" TabSeparated", true)
+			.binding("output-format")
 			);
 
 	/// Alias for previous one, required for clickhouse-client compability
 	_options.addOption(
 		Poco::Util::Option ("format", "f", "Default ouput format")
-			.required (false)
-			.repeatable (false)
-			.argument (" TabSeparated", true)
+			.required(false)
+			.repeatable(false)
+			.argument(" TabSeparated", true)
 			.binding("format")
 			);
 
 	_options.addOption(
-		Poco::Util::Option ("verbose", "", "Print info about execution queries")
-			.required (false)
-			.repeatable (false)
+		Poco::Util::Option ("verbose", "", "Print info about execution of queries")
+			.required(false)
+			.repeatable(false)
 			.noArgument()
 			.binding("verbose")
 			);
@@ -144,7 +164,7 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 
 void LocalServer::applyOptions()
 {
-	context->setDefaultFormat(config().getString("oformat", config().getString("format", "TabSeparated")));
+	context->setDefaultFormat(config().getString("output-format", config().getString("format", "TabSeparated")));
 
 	/// settings and limits could be specified in config file, but passed settings has higher priority
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
@@ -208,6 +228,7 @@ int LocalServer::main(const std::vector<std::string> & args)
 
 	context = std::make_unique<Context>();
 	context->setGlobalContext(*context);
+	context->setApplicationType(Context::ApplicationType::LOCAL_SERVER);
 
 	applyOptions();
 
@@ -227,7 +248,7 @@ int LocalServer::main(const std::vector<std::string> & args)
 
 	setupUsers();
 
-	/// Limit on total number of coucurrently executed queries.
+	/// Limit on total number of concurrently executing queries.
 	/// Threre are no need for concurrent threads, override max_concurrent_queries.
 	context->getProcessList().setMaxSize(0);
 
@@ -237,7 +258,7 @@ int LocalServer::main(const std::vector<std::string> & args)
 		context->setUncompressedCache(uncompressed_cache_size);
 
 	/// Size of cache for marks (index of MergeTree family of tables). It is necessary.
-	/// Specify default value if mark_cache_size explicitly!
+	/// Specify default value for mark_cache_size explicitly!
 	size_t mark_cache_size = parse<size_t>(config().getString("mark_cache_size", "5368709120"));
 	if (mark_cache_size)
 		context->setMarkCache(mark_cache_size);
@@ -257,34 +278,53 @@ int LocalServer::main(const std::vector<std::string> & args)
 }
 
 
+inline String getQuotedString(const String & s)
+{
+	String res;
+	WriteBufferFromString buf(res);
+	writeQuotedString(s, buf);
+	return res;
+}
+
+
 std::string LocalServer::getInitialCreateTableQuery()
 {
 	if (!config().has("table-structure"))
-		return std::string();
+		return {};
 
 	auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
 	auto table_structure = config().getString("table-structure");
 	auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TabSeparated"));
-	auto table_file = config().getString("table-file", "stdin");
+	String table_file;
+	if (!config().has("table-file") || config().getString("table-file") == "-") /// Use Unix tools stdin naming convention
+		table_file = "stdin";
+	else /// Use regular file
+		table_file = getQuotedString(config().getString("table-file"));
 
 	return
 	"CREATE TABLE " + table_name +
 		" (" + table_structure + ") " +
 	"ENGINE = "
-		"File(" + data_format + ", '" + table_file + "')"
+		"File(" + data_format + ", " + table_file + ")"
 	"; ";
 }
 
 
 void LocalServer::attachSystemTables()
 {
-	/// Only numbers an one table make sense
-	/// TODO: add attachTableDelayed into DatabaseMemory
+	/// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
 
 	DatabasePtr system_database = std::make_shared<DatabaseMemory>("system");
 	context->addDatabase("system", system_database);
 	system_database->attachTable("one", 	StorageSystemOne::create("one"));
 	system_database->attachTable("numbers", StorageSystemNumbers::create("numbers"));
+	system_database->attachTable("numbers_mt", StorageSystemNumbers::create("numbers_mt", true));
+	system_database->attachTable("databases", 	StorageSystemDatabases::create("databases"));
+	system_database->attachTable("tables", 		StorageSystemTables::create("tables"));
+	system_database->attachTable("columns",   	StorageSystemColumns::create("columns"));
+	system_database->attachTable("functions", 	StorageSystemFunctions::create("functions"));
+	system_database->attachTable("events", 		StorageSystemEvents::create("events"));
+	system_database->attachTable("settings", 	StorageSystemSettings::create("settings"));
 }
 
 
@@ -296,11 +336,12 @@ void LocalServer::processQueries()
 	String queries_str = initial_create_query + config().getString("query");
 
 	bool verbose = config().getBool("verbose", false);
-	if (verbose)
-		LOG_INFO(log, "Executing queries: " << queries_str);
 
 	std::vector<String> queries;
 	auto parse_res = splitMultipartQuery(queries_str, queries);
+
+	if (!parse_res.second)
+		throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
 	context->setUser("default", "", Poco::Net::SocketAddress{}, "");
 
@@ -323,13 +364,28 @@ void LocalServer::processQueries()
 			throw;
 		}
 	}
-
-	/// Execute while queries are valid
-	if (!parse_res.second)
-	{
-		LOG_ERROR(log, "Cannot parse and execute the following part of query: '" << parse_res.first << "'");
-	}
 }
+
+static const char * minimal_default_user_xml =
+"<yandex>"
+"	<profiles>"
+"		<default></default>"
+"	</profiles>"
+"	<users>"
+"		<default>"
+"			<password></password>"
+"			<networks>"
+"				<ip>::/0</ip>"
+"			</networks>"
+"			<profile>default</profile>"
+"			<quota>default</quota>"
+"		</default>"
+"	</users>"
+"	<quotas>"
+"		<default></default>"
+"	</quotas>"
+"</yandex>";
+
 
 void LocalServer::setupUsers()
 {
@@ -343,7 +399,7 @@ void LocalServer::setupUsers()
 	else
 	{
 		std::stringstream default_user_stream;
-		default_user_stream << default_user_xml;
+		default_user_stream << minimal_default_user_xml;
 
 		Poco::XML::InputSource default_user_source(default_user_stream);
 		users_config = ConfigurationPtr(new Poco::Util::XMLConfiguration(&default_user_source));
@@ -352,48 +408,9 @@ void LocalServer::setupUsers()
 	if (users_config)
 		context->setUsersConfig(users_config);
 	else
-		throw Exception("Can't load config for users");
+		throw Exception("Can't load config for users", ErrorCodes::CANNOT_LOAD_CONFIG);
 }
-
-
-const char * LocalServer::default_user_xml =
-"<yandex>\n"
-"	<profiles>\n"
-"		<default>\n"
-"			<max_memory_usage>10000000000</max_memory_usage>\n"
-"			<use_uncompressed_cache>0</use_uncompressed_cache>\n"
-"			<load_balancing>random</load_balancing>\n"
-"		</default>\n"
-"		<readonly>\n"
-"			<readonly>1</readonly>\n"
-"		</readonly>\n"
-"	</profiles>\n"
-"\n"
-"	<users>\n"
-"		<default>\n"
-"			<password></password>\n"
-"			<networks>\n"
-"				<ip>::/0</ip>\n"
-"			</networks>\n"
-"			<profile>default</profile>\n"
-"			<quota>default</quota>\n"
-"		</default>\n"
-"	</users>\n"
-"\n"
-"	<quotas>\n"
-"		<default>\n"
-"			<interval>\n"
-"				<duration>3600</duration>\n"
-"				<queries>0</queries>\n"
-"				<errors>0</errors>\n"
-"				<result_rows>0</result_rows>\n"
-"				<read_rows>0</read_rows>\n"
-"				<execution_time>0</execution_time>\n"
-"			</interval>\n"
-"		</default>\n"
-"	</quotas>\n"
-"</yandex>\n";
 
 }
 
-YANDEX_APP_MAIN_FUNC(DB::LocalServer, main_clickhouse_local);
+YANDEX_APP_MAIN_FUNC(DB::LocalServer, mainEntryClickhouseLocal);

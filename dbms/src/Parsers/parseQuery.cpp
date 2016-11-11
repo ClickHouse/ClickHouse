@@ -195,10 +195,11 @@ std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, s
 		if (!ast)
 			break;
 
-		ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*ast);
+		ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(ast.get());
 
 		if (insert && insert->data)
 		{
+			/// Inserting data is broken on new line
 			pos = insert->data;
 			while (*pos && *pos != '\n')
 				++pos;

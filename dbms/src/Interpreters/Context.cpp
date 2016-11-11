@@ -129,6 +129,8 @@ struct ContextShared
 
 	Stopwatch uptime_watch;
 
+	Context::ApplicationType application_type = Context::ApplicationType::SERVER;
+
 
 	~ContextShared()
 	{
@@ -1060,5 +1062,18 @@ void Context::shutdown()
 {
 	shared->shutdown();
 }
+
+
+Context::ApplicationType Context::getApplicationType() const
+{
+	return shared->application_type;
+}
+
+void Context::setApplicationType(ApplicationType type)
+{
+	/// Lock isn't required, you should set it at start
+	shared->application_type = type;
+}
+
 
 }

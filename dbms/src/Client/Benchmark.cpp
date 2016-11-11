@@ -407,7 +407,7 @@ private:
 }
 
 
-int main(int argc, char ** argv)
+int mainEntryClickhouseBenchmark(int argc, char ** argv)
 {
 	using namespace DB;
 
@@ -502,4 +502,6 @@ int main(int argc, char ** argv)
 		std::cerr << "Unknown exception\n";
 		return ErrorCodes::UNKNOWN_EXCEPTION;
 	}
+
+	return 0;
 }

@@ -56,7 +56,7 @@ public:
 
 	std::string getName() const override
 	{
-		return "File(" + format_name + ")";
+		return "File";
 	}
 
 	std::string getTableName() const override

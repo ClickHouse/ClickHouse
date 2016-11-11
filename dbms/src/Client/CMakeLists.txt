@@ -22,9 +22,8 @@ add_library(clickhouse-client Client.cpp)
 target_link_libraries (clickhouse-client dbms ${LINE_EDITING_LIBS} ${BOOST_PROGRAM_OPTIONS_LIB})
 INSTALL(FILES config.xml DESTINATION /etc/clickhouse-client COMPONENT clickhouse)
 
-add_executable(clickhouse-benchmark Benchmark.cpp)
+add_library(clickhouse-benchmark Benchmark.cpp)
 target_link_libraries (clickhouse-benchmark dbms ${BOOST_PROGRAM_OPTIONS_LIB})
-INSTALL(TARGETS clickhouse-benchmark RUNTIME DESTINATION bin COMPONENT clickhouse-benchmark)
 
 IF(TESTS)
 	add_subdirectory (tests)
