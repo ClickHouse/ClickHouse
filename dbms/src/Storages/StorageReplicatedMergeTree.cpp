@@ -2526,6 +2526,7 @@ static String getFakePartNameForDrop(const String & month_name, UInt64 left, UIn
 	DayNum_t right_date = DayNum_t(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
 
 	/// Уровень - right-left+1: кусок не мог образоваться в результате такого или большего количества слияний.
+	/// TODO This is not true for parts after ATTACH.
 	return ActiveDataPartSet::getPartName(left_date, right_date, left, right, right - left + 1);
 }
 
@@ -2745,6 +2746,7 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 		ActiveDataPartSet::Part part;
 		ActiveDataPartSet::parsePartName(part_name, part);
 		part.left = part.right = --min_used_number;
+		part.level = 0;		/// previous level has no sense after attach.
 		String new_part_name = ActiveDataPartSet::getPartName(part.left_date, part.right_date, part.left, part.right, part.level);
 
 		LOG_INFO(log, "Will attach " << part_name << " as " << new_part_name);
