@@ -1,10 +1,10 @@
 #pragma once
 
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Common/HashTable/HashSet.h>
-#include <DB/Interpreters/AggregationCommon.h>
+#include <DB/Common/SipHash.h>
+#include <DB/Common/UInt128.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Interpreters/Limits.h>
-
 
 namespace DB
 {
@@ -22,25 +22,13 @@ public:
 
 	String getName() const override { return "Distinct"; }
 
-	String getID() const override
-	{
-		std::stringstream res;
-		res << "Distinct(" << children.back()->getID() << ")";
-		return res.str();
-	}
+	String getID() const override;
 
 protected:
 	Block readImpl() override;
-private:
 
-	bool checkLimits() const
-	{
-		if (max_rows && set.size() > max_rows)
-			return false;
-		if (max_bytes && set.getBufferSizeInBytes() > max_bytes)
-			return false;
-		return true;
-	}
+private:
+	bool checkLimits() const;
 
 	Names columns_names;
 

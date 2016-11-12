@@ -829,6 +829,7 @@ add_library (dbms
 	src/Parsers/ASTIdentifier.cpp
 	src/Parsers/ASTSampleRatio.cpp
 	src/Parsers/ASTTablesInSelectQuery.cpp
+	src/Parsers/CommonParsers.cpp
 	src/Parsers/IAST.cpp
 	src/Parsers/IParserBase.cpp
 	src/Parsers/ExpressionElementParsers.cpp

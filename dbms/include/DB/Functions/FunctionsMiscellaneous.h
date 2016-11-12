@@ -1299,18 +1299,18 @@ private:
 	template <typename F>
 	void dispatchForSourceType(const IDataType & src_type, F && f) const
 	{
-			 if (auto src_type_concrete = typeid_cast<const DataTypeUInt8  *>(&src_type)) f(UInt8());
-		else if (auto src_type_concrete = typeid_cast<const DataTypeUInt16 *>(&src_type)) f(UInt16());
-		else if (auto src_type_concrete = typeid_cast<const DataTypeUInt32 *>(&src_type)) f(UInt32());
-		else if (auto src_type_concrete = typeid_cast<const DataTypeUInt64 *>(&src_type)) f(UInt64());
-		else if (auto src_type_concrete = typeid_cast<const DataTypeInt8 *>(&src_type)) f(Int8());
-		else if (auto src_type_concrete = typeid_cast<const DataTypeInt16 *>(&src_type)) f(Int16());
-		else if (auto src_type_concrete = typeid_cast<const DataTypeInt32 *>(&src_type)) f(Int32());
-		else if (auto src_type_concrete = typeid_cast<const DataTypeInt64 *>(&src_type)) f(Int64());
-		else if (auto src_type_concrete = typeid_cast<const DataTypeFloat32 *>(&src_type)) f(Float32());
-		else if (auto src_type_concrete = typeid_cast<const DataTypeFloat64 *>(&src_type)) f(Float64());
-		else if (auto src_type_concrete = typeid_cast<const DataTypeDate *>(&src_type)) f(DataTypeDate::FieldType());
-		else if (auto src_type_concrete = typeid_cast<const DataTypeDateTime *>(&src_type)) f(DataTypeDateTime::FieldType());
+			 if (typeid_cast<const DataTypeUInt8  *>(&src_type)) f(UInt8());
+		else if (typeid_cast<const DataTypeUInt16 *>(&src_type)) f(UInt16());
+		else if (typeid_cast<const DataTypeUInt32 *>(&src_type)) f(UInt32());
+		else if (typeid_cast<const DataTypeUInt64 *>(&src_type)) f(UInt64());
+		else if (typeid_cast<const DataTypeInt8 *>(&src_type)) f(Int8());
+		else if (typeid_cast<const DataTypeInt16 *>(&src_type)) f(Int16());
+		else if (typeid_cast<const DataTypeInt32 *>(&src_type)) f(Int32());
+		else if (typeid_cast<const DataTypeInt64 *>(&src_type)) f(Int64());
+		else if (typeid_cast<const DataTypeFloat32 *>(&src_type)) f(Float32());
+		else if (typeid_cast<const DataTypeFloat64 *>(&src_type)) f(Float64());
+		else if (typeid_cast<const DataTypeDate *>(&src_type)) f(DataTypeDate::FieldType());
+		else if (typeid_cast<const DataTypeDateTime *>(&src_type)) f(DataTypeDateTime::FieldType());
 		else
 			throw Exception("Argument for function " + getName() + " must have numeric type.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
