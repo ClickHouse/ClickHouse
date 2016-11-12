@@ -144,25 +144,11 @@ private:
 	void executeSubqueriesInSetsAndJoins(std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
 
 	template <typename Transform>
-	void transformStreams(Transform && transform)
-	{
-		for (auto & stream : streams)
-			transform(stream);
+	void transformStreams(Transform && transform);
 
-		if (stream_with_non_joined_data)
-			transform(stream_with_non_joined_data);
-	}
+	bool hasNoData() const;
 
-	bool hasNoData() const
-	{
-		return streams.empty() && !stream_with_non_joined_data;
-	}
-
-	bool hasMoreThanOneStream() const
-	{
-		return streams.size() + (stream_with_non_joined_data ? 1 : 0) > 1;
-	}
-
+	bool hasMoreThanOneStream() const;
 
 	void ignoreWithTotals();
 

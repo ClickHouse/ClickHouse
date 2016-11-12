@@ -1229,6 +1229,28 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(SubqueriesForSets &
 	streams[0] = std::make_shared<CreatingSetsBlockInputStream>(streams[0], subqueries_for_sets, settings.limits);
 }
 
+template <typename Transform>
+void InterpreterSelectQuery::transformStreams(Transform && transform)
+{
+	for (auto & stream : streams)
+		transform(stream);
+
+	if (stream_with_non_joined_data)
+		transform(stream_with_non_joined_data);
+}
+
+
+bool InterpreterSelectQuery::hasNoData() const
+{
+	return streams.empty() && !stream_with_non_joined_data;
+}
+
+
+bool InterpreterSelectQuery::hasMoreThanOneStream() const
+{
+	return streams.size() + (stream_with_non_joined_data ? 1 : 0) > 1;
+}
+
 
 void InterpreterSelectQuery::ignoreWithTotals()
 {
