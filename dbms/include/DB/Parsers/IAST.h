@@ -50,6 +50,7 @@ public:
 	using Attributes = UInt32;
 	Attributes attributes = 0;
 
+	/// TODO Grabage. Need to throw away.
 	/// Был ли узел посещён? (см. класс LogicalExpressionsOptimizer)
 	static constexpr Attributes IsVisited = 1U;
 	/// Был ли узел обработан? (см. класс InJoinSubqueriesPreprocessor)
