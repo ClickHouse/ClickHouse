@@ -471,6 +471,7 @@ void TCPHandler::sendHello()
 	writeVarUInt(DBMS_VERSION_MAJOR, *out);
 	writeVarUInt(DBMS_VERSION_MINOR, *out);
 	writeVarUInt(ClickHouseRevision::get(), *out);
+	writeStringBinary(DateLUT::instance().getTimeZone(), *out);
 	out->next();
 }
 

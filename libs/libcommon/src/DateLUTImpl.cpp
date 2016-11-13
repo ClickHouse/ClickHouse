@@ -96,7 +96,8 @@ GDateTimePtr toNextDay(const GTimeZonePtr & p_tz, const GDateTimePtr & p_dt)
 
 }}
 
-DateLUTImpl::DateLUTImpl(const std::string & time_zone)
+DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
+	: time_zone(time_zone_)
 {
 	details::GTimeZonePtr p_tz = details::createGTimeZone(time_zone);
 

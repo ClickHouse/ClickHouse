@@ -131,6 +131,7 @@ void Connection::receiveHello()
 		readVarUInt(server_version_major, *in);
 		readVarUInt(server_version_minor, *in);
 		readVarUInt(server_revision, *in);
+		readStringBinary(server_timezone, *in);
 	}
 	else if (packet_type == Protocol::Server::Exception)
 		receiveException()->rethrow();
@@ -180,6 +181,10 @@ void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 
 	revision = server_revision;
 }
 
+const String & Connection::getServerTimezone()
+{
+	return server_timezone;
+}
 
 void Connection::forceConnected()
 {

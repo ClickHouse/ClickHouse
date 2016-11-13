@@ -355,6 +355,19 @@ private:
 
 			/// Инициализируем DateLUT, чтобы потраченное время не отображалось, как время, потраченное на запрос.
 			DateLUT::instance();
+			if (!context.getSettingsRef().use_client_time_zone)
+			{
+				const auto & time_zone = connection->getServerTimezone();
+				try
+				{
+					DateLUT::setDefaultTimezone(time_zone);
+				}
+				catch (const Poco::Exception & ex)
+				{
+					std::cerr << "Warning: could not switch to server time zone: " << time_zone << ", proceeding with local time zone"
+						<< std::endl << std::endl;
+				}
+			}
 
 			loop();
 
