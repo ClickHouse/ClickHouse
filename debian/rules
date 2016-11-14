@@ -25,7 +25,7 @@ build-stamp: configure-stamp
 	# последовательно запускаем make для каждой из целей.
 	# т.к. при параллельном запуске (make target1 target2) несколько раз одновременно создаются бинарники
 	# и возникает raise с custom_command, использующие эти бинарники
-	for daemon in ${DAEMONS}; do $(MAKE) -j$(THREADS_COUNT) -C build $$daemon; done
+	for daemon in clickhouse ${DAEMONS}; do $(MAKE) -j$(THREADS_COUNT) -C build $$daemon; done
 	touch $@
 
 clean:
@@ -50,7 +50,7 @@ install: build
 	dh_testroot
 	dh_prep
 	cd build && \
-	for daemon in ${DAEMONS}; do\
+	for daemon in clickhouse ${DAEMONS}; do\
 		DESTDIR=../debian/tmp cmake -DCOMPONENT=$$daemon -P cmake_install.cmake;\
 	done
 

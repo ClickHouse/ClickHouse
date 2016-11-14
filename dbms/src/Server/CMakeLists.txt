@@ -18,10 +18,14 @@ target_link_libraries(clickhouse clickhouse-server clickhouse-client clickhouse-
 INSTALL(TARGETS clickhouse RUNTIME DESTINATION bin COMPONENT clickhouse)
 
 # make symbolic links to concrete clickhouse applications
-INSTALL(CODE "execute_process(COMMAND ln -s -f clickhouse clickhouse-server WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}/bin\")")
-INSTALL(CODE "execute_process(COMMAND ln -s -f clickhouse clickhouse-client WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}/bin\")")
-INSTALL(CODE "execute_process(COMMAND ln -s -f clickhouse clickhouse-local WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}/bin\")")
-INSTALL(CODE "execute_process(COMMAND ln -s -f clickhouse clickhouse-benchmark WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}/bin\")")
+macro(install_symlink_to_clickhouse app)
+	INSTALL(CODE "execute_process(COMMAND ln -sf clickhouse ${app} WORKING_DIRECTORY \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin\" )" COMPONENT ${app})
+endmacro(make_symlink_to_clickhouse)
+
+install_symlink_to_clickhouse(clickhouse-server)
+install_symlink_to_clickhouse(clickhouse-client)
+install_symlink_to_clickhouse(clickhouse-local)
+install_symlink_to_clickhouse(clickhouse-benchmark)
 
 INSTALL(
     FILES config.xml users.xml
