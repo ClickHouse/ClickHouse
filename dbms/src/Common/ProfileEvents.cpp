@@ -46,7 +46,6 @@
 	M(DelayedInserts) \
 	M(RejectedInserts) \
 	M(DelayedInsertsMilliseconds) \
-	M(SynchronousMergeOnInsert) \
 	\
 	M(ZooKeeperInit) \
 	M(ZooKeeperTransactions) \
