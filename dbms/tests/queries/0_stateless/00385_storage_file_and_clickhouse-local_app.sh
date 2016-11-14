@@ -11,8 +11,8 @@ function pack_unpack_compare()
 	clickhouse-client --query "DROP TABLE IF EXISTS test.buf_file"
 
 	clickhouse-client --query "CREATE TABLE test.buf ENGINE = Memory AS $1"
-	local res_orig=$(clickhouse-client --query "SELECT $TABLE_HASH FROM test.buf")
-	
+	local res_orig=$(clickhouse-client --max_threads=1 --query "SELECT $TABLE_HASH FROM test.buf")
+
 	clickhouse-client --max_threads=1 --query "CREATE TABLE test.buf_file ENGINE = File($3) AS SELECT * FROM test.buf"
 	local res_db_file=$(clickhouse-client --max_threads=1 --query "SELECT $TABLE_HASH FROM test.buf_file")
 
@@ -24,10 +24,10 @@ function pack_unpack_compare()
 	clickhouse-client --query "DROP TABLE IF EXISTS test.buf_file"
 	rm -f "$buf_file"
 
-	echo $((res_orig - res_db_file)) $((res_orig - res_ch_local1)) $((res_orig - res_ch_local2))
+	echo $res_orig $res_db_file $res_ch_local1 $res_ch_local2
 }
 
-pack_unpack_compare "SELECT number FROM system.numbers LIMIT 10000" "number UInt64" "TabSeparated" 
+pack_unpack_compare "SELECT number FROM system.numbers LIMIT 10000" "number UInt64" "TabSeparated"
 pack_unpack_compare "SELECT number FROM system.numbers LIMIT 10000" "number UInt64" "Native"
 pack_unpack_compare "SELECT number FROM system.numbers LIMIT 10000" "number UInt64" "JSONEachRow"
 echo

@@ -115,16 +115,6 @@ install: build
 		./copy_headers.sh . debian/tmp/usr/share/clickhouse/headers; \
 	fi;
 
-
-	# Список бинариев, для которых делаем strip. Это делается из-за того, что на некоторых серверах мало места.
-	$(eval STRIP_LIST=\
-		clickhouse-client \
-	)
-
-	for DAEMON in ${STRIP_LIST}; do \
-		if [ -e debian/tmp/usr/bin/$$DAEMON ]; then strip debian/tmp/usr/bin/$$DAEMON; fi; \
-	done
-
 	# Создаём документацию
 	cp LICENSE debian/copyright
 
