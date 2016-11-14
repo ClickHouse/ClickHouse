@@ -1148,7 +1148,6 @@ bool performTests(const TestEntries & entries)
 		if (res.first)
 		{
 			++count;
-			std::cout << "Test " << i << " passed.\n";
 		}
 		else
 			std::cout << "Test " << i << " at line " << entry.line_num << " failed.\n"

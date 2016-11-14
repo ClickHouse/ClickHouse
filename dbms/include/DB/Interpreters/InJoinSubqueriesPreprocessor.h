@@ -73,9 +73,9 @@ bool isQueryFromTable(const ASTSelectQuery & query)
 
 	if (query_table)
 	{
-		if (typeid_cast<const ASTSelectQuery *>(query_table.get()) != nullptr)
+		if (typeid_cast<const ASTSelectQuery *>(query_table.get()))
 			return false;
-		else if (typeid_cast<const ASTFunction *>(query_table.get()) != nullptr)
+		else if (typeid_cast<const ASTFunction *>(query_table.get()))
 			return false;
 		else
 			return true;
@@ -166,11 +166,7 @@ public:
 			auto node = to_preprocess.back();
 			to_preprocess.pop_back();
 
-			ASTFunction * function;
-			ASTTableJoin * join;
-			ASTSelectQuery * sub_select_query;
-
-			if ((function = typeid_cast<ASTFunction *>(node)) != nullptr)
+			if (ASTFunction * function = typeid_cast<ASTFunction *>(node))
 			{
 				auto attributes = getAttributesFromInSubqueryName(function->name);
 				if (attributes != 0)
@@ -180,23 +176,28 @@ public:
 					node->attributes |= attributes;
 				}
 			}
-			else if ((join = typeid_cast<ASTTableJoin *>(node)) != nullptr)
+			else if (ASTTablesInSelectQueryElement * join = typeid_cast<ASTTablesInSelectQueryElement *>(node))
 			{
-				/// Найдена секция JOIN.
-				node->enclosing_in_or_join = node;
-				node->attributes |= IAST::IsJoin;
-				if (join->locality == ASTTableJoin::Locality::Global)
-					node->attributes |= IAST::IsGlobal;
-			}
-			else if ((node != static_cast<IAST *>(select_query))
-				&& ((sub_select_query = typeid_cast<ASTSelectQuery *>(node)) != nullptr))
-			{
-				++node->select_query_depth;
-
-				if (sub_select_query->enclosing_in_or_join != nullptr)
+				if (join->table_join)
 				{
-					/// Найден подзапрос внутри секции IN или JOIN.
-					preprocessSubquery(*sub_select_query);
+					/// Найдена секция JOIN.
+					join->enclosing_in_or_join = join->table_join.get();
+					join->table_join->attributes |= IAST::IsJoin;
+					if (static_cast<const ASTTableJoin &>(*join->table_join).locality == ASTTableJoin::Locality::Global)
+						join->table_join->attributes |= IAST::IsGlobal;
+				}
+			}
+			else if (node != static_cast<IAST *>(select_query))
+			{
+				if (ASTSelectQuery * sub_select_query = typeid_cast<ASTSelectQuery *>(node))
+				{
+					++node->select_query_depth;
+
+					if (sub_select_query->enclosing_in_or_join)
+					{
+						/// Найден подзапрос внутри секции IN или JOIN.
+						preprocessSubquery(*sub_select_query);
+					}
 				}
 			}
 
