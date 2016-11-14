@@ -203,7 +203,9 @@ private:
 		else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
 			loadConfiguration("/etc/clickhouse-client/config.xml");
 
-		/// settings и limits могли так же быть указаны в кофигурационном файле, но уже записанные настройки имеют больший приоритет.
+		context.setApplicationType(Context::ApplicationType::CLIENT);
+
+		/// settings and limits could be specified in config file, but passed settings has higher priority
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
 		if (config().has(#NAME) && !context.getSettingsRef().NAME.changed) \
 			context.setSetting(#NAME, config().getString(#NAME));
@@ -465,7 +467,7 @@ private:
 			{
 				if (query != prev_query)
 				{
-					// Заменяем переводы строк на пробелы, а то возникает следуцющая проблема.
+					// Заменяем переводы строк на пробелы, а то возникает следующая проблема.
 					// Каждая строчка многострочного запроса сохраняется в истории отдельно. Если
 					// выйти из клиента и войти заново, то при нажатии клавиши "вверх" выводится не
 					// весь многострочный запрос, а каждая его строчка по-отдельности.
@@ -1304,7 +1306,7 @@ public:
 }
 
 
-int main(int argc, char ** argv)
+int mainEntryClickhouseClient(int argc, char ** argv)
 {
 	DB::Client client;
 

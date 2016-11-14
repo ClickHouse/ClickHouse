@@ -54,7 +54,7 @@ void loadMetadata(Context & context)
 	  * This file is deleted after successful loading of tables.
 	  * (flag is "one-shot")
 	  */
-	Poco::File force_restore_data_flag_file(context.getPath() + "flags/force_restore_data");
+	Poco::File force_restore_data_flag_file(context.getFlagsPath() + "force_restore_data");
 	bool has_force_restore_data_flag = force_restore_data_flag_file.exists();
 
 	/// For parallel tables loading.

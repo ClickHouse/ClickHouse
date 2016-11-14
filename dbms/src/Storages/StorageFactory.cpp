@@ -29,7 +29,10 @@
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/StorageSet.h>
 #include <DB/Storages/StorageJoin.h>
+#include <DB/Storages/StorageFile.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
+
+#include <unistd.h>
 
 
 namespace DB
@@ -44,6 +47,7 @@ namespace ErrorCodes
 	extern const int NO_REPLICA_NAME_GIVEN;
 	extern const int NO_ELEMENTS_IN_CONFIG;
 	extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+	extern const int UNKNOWN_IDENTIFIER;
 }
 
 
@@ -254,6 +258,60 @@ StoragePtr StorageFactory::get(
 			data_path, table_name, columns,
 			materialized_columns, alias_columns, column_defaults,
 			attach, context.getSettings().max_compress_block_size);
+	}
+	else if (name == "File")
+	{
+		auto & func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage);
+		auto & args = typeid_cast<ASTExpressionList &>(*func.arguments).children;
+
+		constexpr auto error_msg = "Storage File requires 1 or 2 arguments: name of used format and source.";
+
+		if (func.parameters)
+			throw Exception(error_msg, ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS);
+
+		if (args.empty() || args.size() > 2)
+			throw Exception(error_msg, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], local_context);
+		String format_name = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+
+		int source_fd = -1;
+		String source_path;
+		if (args.size() >= 2)
+		{
+			/// Will use FD if args[1] is int literal or identifier with std* name
+
+			if (ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(args[1].get()))
+			{
+				if (identifier->name == "stdin")
+					source_fd = STDIN_FILENO;
+				else if (identifier->name == "stdout")
+					source_fd = STDOUT_FILENO;
+				else if (identifier->name == "stderr")
+					source_fd = STDERR_FILENO;
+				else
+					throw Exception("Unknown identifier '" + identifier->name + "' in second arg of File storage constructor",
+									ErrorCodes::UNKNOWN_IDENTIFIER);
+			}
+
+			if (ASTLiteral * literal = typeid_cast<ASTLiteral *>(args[1].get()))
+			{
+				auto type = literal->value.getType();
+				if (type == Field::Types::Int64)
+					source_fd = static_cast<int>(literal->value.get<Int64>());
+				else if (type == Field::Types::UInt64)
+					source_fd = static_cast<int>(literal->value.get<UInt64>());
+			}
+
+			args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
+			source_path = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+		}
+
+		return StorageFile::create(
+			source_path, source_fd,
+			data_path, table_name, format_name, columns,
+			materialized_columns, alias_columns, column_defaults,
+			context);
 	}
 	else if (name == "Set")
 	{

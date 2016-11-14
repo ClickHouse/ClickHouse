@@ -83,6 +83,7 @@ struct ContextShared
 
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	String tmp_path;										/// Путь ко временным файлам, возникающим при обработке запроса.
+	String flags_path;										///
 	Databases databases;									/// Список БД и таблиц в них.
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
@@ -127,6 +128,8 @@ struct ContextShared
 	mutable std::mutex ddl_guards_mutex;
 
 	Stopwatch uptime_watch;
+
+	Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
 
 	~ContextShared()
@@ -256,6 +259,12 @@ String Context::getTemporaryPath() const
 	return shared->tmp_path;
 }
 
+String Context::getFlagsPath() const
+{
+	auto lock = getLock();
+	return shared->flags_path;
+}
+
 
 void Context::setPath(const String & path)
 {
@@ -267,6 +276,12 @@ void Context::setTemporaryPath(const String & path)
 {
 	auto lock = getLock();
 	shared->tmp_path = path;
+}
+
+void Context::setFlagsPath(const String & path)
+{
+	auto lock = getLock();
+	shared->flags_path = path;
 }
 
 
@@ -1047,5 +1062,18 @@ void Context::shutdown()
 {
 	shared->shutdown();
 }
+
+
+Context::ApplicationType Context::getApplicationType() const
+{
+	return shared->application_type;
+}
+
+void Context::setApplicationType(ApplicationType type)
+{
+	/// Lock isn't required, you should set it at start
+	shared->application_type = type;
+}
+
 
 }

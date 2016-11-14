@@ -1,5 +1,6 @@
 #include <DB/Databases/DatabaseFactory.h>
 #include <DB/Databases/DatabaseOrdinary.h>
+#include <DB/Databases/DatabaseMemory.h>
 
 
 namespace DB
@@ -19,6 +20,8 @@ DatabasePtr DatabaseFactory::get(
 {
 	if (engine_name == "Ordinary")
 		return std::make_shared<DatabaseOrdinary>(database_name, path);
+	else if (engine_name == "Memory")
+		return std::make_shared<DatabaseMemory>(database_name);
 
 	throw Exception("Unknown database engine: " + engine_name, ErrorCodes::UNKNOWN_DATABASE_ENGINE);
 }

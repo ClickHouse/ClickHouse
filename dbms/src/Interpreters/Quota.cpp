@@ -152,8 +152,11 @@ void QuotaForIntervals::initFromConfig(const String & config_elem, Poco::Util::A
 			continue;
 
 		String interval_config_elem = config_elem + "." + *it;
-		time_t duration = config.getInt(interval_config_elem + ".duration");
+		time_t duration = config.getInt(interval_config_elem + ".duration", 0);
 		time_t offset = 0;
+
+		if (!duration) /// Skip quaotas with zero duration
+			continue;
 
 		bool randomize = config.getBool(interval_config_elem + ".randomize", false);
 		if (randomize)

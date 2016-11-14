@@ -91,8 +91,10 @@ public:
 
 	String getPath() const;
 	String getTemporaryPath() const;
+	String getFlagsPath() const;
 	void setPath(const String & path);
 	void setTemporaryPath(const String & path);
+	void setFlagsPath(const String & path);
 
 	using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -271,6 +273,16 @@ public:
 	time_t getUptimeSeconds() const;
 
 	void shutdown();
+
+	enum class ApplicationType
+	{
+		SERVER,			/// The program is run as clickhouse-server daemon (default behavior)
+		CLIENT,			/// clickhouse-client
+		LOCAL_SERVER	/// clickhouse-local
+	};
+
+	ApplicationType getApplicationType() const;
+	void setApplicationType(ApplicationType type);
 
 private:
 	/** Проверить, имеет ли текущий клиент доступ к заданной базе данных.

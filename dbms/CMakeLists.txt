@@ -542,6 +542,7 @@ add_library (dbms
 	include/DB/Storages/AlterCommands.h
 	include/DB/Storages/System/StorageSystemFunctions.h
 	include/DB/Storages/StorageLog.h
+	include/DB/Storages/StorageFile.h
 	include/DB/Storages/IStorage.h
 	include/DB/Storages/ColumnsDescription.h
 	include/DB/Storages/System/StorageSystemMerges.h
@@ -613,6 +614,7 @@ add_library (dbms
 	include/DB/Storages/StorageNull.h
 	include/DB/Storages/System/StorageSystemSettings.h
 	include/DB/Databases/IDatabase.h
+	include/DB/Databases/DatabaseMemory.h
 	include/DB/Databases/DatabaseOrdinary.h
 	include/DB/Databases/DatabaseCloud.h
 	include/DB/Databases/DatabaseFactory.h
@@ -698,6 +700,7 @@ add_library (dbms
 	src/Storages/StorageLog.cpp
 	src/Storages/StorageTinyLog.cpp
 	src/Storages/StorageStripeLog.cpp
+	src/Storages/StorageFile.cpp
 	src/Storages/StorageMemory.cpp
 	src/Storages/StorageBuffer.cpp
 	src/Storages/StorageFactory.cpp
@@ -955,6 +958,7 @@ add_library (dbms
 	src/AggregateFunctions/AggregateFunctionUniqUpTo.cpp
 	src/AggregateFunctions/AggregateFunctionDebug.cpp
 
+	src/Databases/DatabaseMemory.cpp
 	src/Databases/DatabaseOrdinary.cpp
 	src/Databases/DatabaseFactory.cpp
 	src/Databases/DatabasesCommon.cpp
