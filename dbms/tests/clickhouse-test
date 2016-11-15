@@ -137,7 +137,9 @@ def main(args):
 							print("{0} - Timeout!".format(MSG_FAIL))
 						else:
 							stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
+							stdout = unicode(stdout, errors='strict', encoding='utf-8')
 							stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
+							stderr = unicode(stderr, errors='strict', encoding='utf-8')
 							
 							if proc.returncode != 0:
 								failure = et.Element("failure", attrib = {"message": "return code {}".format(proc.returncode)})
