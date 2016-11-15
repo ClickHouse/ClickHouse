@@ -17,12 +17,12 @@ function pack_unpack_compare()
 	local res_db_file=$(clickhouse-client --max_threads=1 --query "SELECT $TABLE_HASH FROM test.buf_file")
 
 	clickhouse-client --max_threads=1 --query "SELECT * FROM test.buf FORMAT $3" > "$buf_file"
-	local res_ch_local1=$(clickhouse-local --structure "$2" --file "$buf_file" --table "my super table" --input-format "$3" --output-format TabSeparated --query "SELECT $TABLE_HASH FROM \`my super table\`" 2>/dev/null)
-	local res_ch_local2=$(clickhouse-local --structure "$2" --table "my super table" --input-format "$3" --output-format TabSeparated --query "SELECT $TABLE_HASH FROM \`my super table\`" < "$buf_file" 2>/dev/null)
+	local res_ch_local1=$(clickhouse-local --structure "$2" --file "$buf_file" --table "my super table" --input-format "$3" --output-format TabSeparated --query "SELECT $TABLE_HASH FROM \`my super table\`" 2>stderr || (echo error && cat stderr 1>&2))
+	local res_ch_local2=$(clickhouse-local --structure "$2" --table "my super table" --input-format "$3" --output-format TabSeparated --query "SELECT $TABLE_HASH FROM \`my super table\`" < "$buf_file" 2>stderr || (echo error && cat stderr 1>&2))
 
 	clickhouse-client --query "DROP TABLE IF EXISTS test.buf"
 	clickhouse-client --query "DROP TABLE IF EXISTS test.buf_file"
-	rm -f "$buf_file"
+	rm -f "$buf_file" stderr
 
 	echo $res_orig $res_db_file $res_ch_local1 $res_ch_local2
 }
