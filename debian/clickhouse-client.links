@@ -1,0 +1,3 @@
+/usr/bin/clickhouse /usr/bin/clickhouse-client
+/usr/bin/clickhouse /usr/bin/clickhouse-benchmark
+/usr/bin/clickhouse /usr/bin/clickhouse-local
