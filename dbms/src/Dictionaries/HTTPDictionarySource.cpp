@@ -4,6 +4,7 @@
 #include <DB/Dictionaries/OwningBufferBlockInputStream.h>
 #include <DB/IO/ReadBufferFromHTTP.h>
 #include <DB/IO/RemoteReadBuffer.h>
+#include <Poco/Net/HTTPRequest.h>
 
 namespace DB
 {
@@ -15,13 +16,11 @@ HTTPDictionarySource::HTTPDictionarySource(const Poco::Util::AbstractConfigurati
 	host{config.getString(config_prefix + ".host")},
 	port{std::stoi(config.getString(config_prefix + ".port"))},
 	path{config.getString(config_prefix + ".path")},
-	format{format},
+	format{config.getString(config_prefix + ".format")},
 	sample_block{sample_block},
 	context(context)
 {
-		//last_modification = LocalDateTime {std::time(nullptr)};
 		last_modification = std::time(nullptr);
-	std::cerr << __FUNCTION__ << ":" << __LINE__ << "Ok." << std::endl;
 
 }
 
@@ -35,29 +34,11 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other) :
 {
 }
 
-
 BlockInputStreamPtr HTTPDictionarySource::loadAll()
 {
-
-	std::cerr << " http go " << toString() << std::endl;
-
-	ReadBufferFromHTTP::Params params =
-	{
-		//{"endpoint", getEndpointId(location.name)},
-		//{"compress", "false"},
-		//{"query", query}
-	};
-
-	ReadBufferFromHTTP in{host, port, params};
-
-
-
-/*
-	auto in_ptr = std::make_unique<RemoteReadBuffer>(host, port, path);
+	auto in_ptr = std::make_unique<ReadBufferFromHTTP>(host, port, path, params, Poco::Net::HTTPRequest::HTTP_GET);
 	auto stream = context.getInputFormat( format, *in_ptr, sample_block, max_block_size);
 	return std::make_shared<OwningBufferBlockInputStream>(stream, std::move(in_ptr));
-*/
-	throw Exception{"Method unsupported", ErrorCodes::NOT_IMPLEMENTED};
 }
 
 BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -88,15 +69,12 @@ DictionarySourcePtr HTTPDictionarySource::clone() const
 
 std::string HTTPDictionarySource::toString() const
 {
-	std::cerr << " TS " << std::endl;
-
-	return "HTTP: " + host + ":" + std::to_string(port) + path;
+	return "http://" + host + ":" + std::to_string(port) + "/" + path;
 }
 
 LocalDateTime HTTPDictionarySource::getLastModification() const
 {
 	return last_modification;
 }
-
 
 }

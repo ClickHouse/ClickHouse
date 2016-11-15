@@ -1,6 +1,7 @@
 #include <DB/Storages/MergeTree/DataPartsExchange.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Common/CurrentMetrics.h>
+#include <DB/IO/ReadBufferFromHTTP.h>
 
 
 namespace CurrentMetrics
@@ -173,7 +174,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
 		{"compress", "false"}
 	};
 
-	ReadBufferFromHTTP in(host, port, params);
+	ReadBufferFromHTTP in(host, port, "", params);
 
 	String full_part_name = String(to_detached ? "detached/" : "") + "tmp_" + part_name;
 	String part_path = data.getFullPath() + full_part_name + "/";

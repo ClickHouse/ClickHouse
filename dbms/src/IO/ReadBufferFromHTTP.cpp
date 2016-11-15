@@ -35,15 +35,20 @@ static Poco::Net::IPAddress resolveHost(const String & host)
 ReadBufferFromHTTP::ReadBufferFromHTTP(
 	const String & host_,
 	int port_,
+	const String & path_,
 	const Params & params,
+	const String & method_,
 	size_t buffer_size_,
 	const Poco::Timespan & connection_timeout,
 	const Poco::Timespan & send_timeout,
 	const Poco::Timespan & receive_timeout)
-	: ReadBuffer(nullptr, 0), host(host_), port(port_)
+	: ReadBuffer(nullptr, 0), host(host_), port(port_), path(path_), method(method_)
 {
+	if (method.empty())
+		method = Poco::Net::HTTPRequest::HTTP_POST;
+
 	std::stringstream uri;
-	uri << "http://" << host << ":" << port << "/";
+	uri << "http://" << host << ":" << port << "/" << path;
 
 	bool first = true;
 	for (const auto & it : params)
@@ -62,7 +67,7 @@ ReadBufferFromHTTP::ReadBufferFromHTTP(
 
 	session.setTimeout(connection_timeout, send_timeout, receive_timeout);
 
-	Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri.str());
+	Poco::Net::HTTPRequest request(method, "/" + path);
 	Poco::Net::HTTPResponse response;
 
 	LOG_TRACE((&Logger::get("ReadBufferFromHTTP")), "Sending request to " << uri.str());

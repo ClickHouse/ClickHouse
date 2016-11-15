@@ -1,7 +1,6 @@
 #include <DB/Storages/MergeTree/ShardedPartitionUploader.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/IO/ReadBufferFromHTTP.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 
