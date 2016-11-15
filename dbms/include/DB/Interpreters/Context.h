@@ -205,6 +205,7 @@ public:
 	std::unique_lock<Poco::Mutex> getLock() const;
 
 	Context & getSessionContext();
+	const Context & getGlobalContext() const;
 	Context & getGlobalContext();
 
 	void setSessionContext(Context & context_)								{ session_context = &context_; }
