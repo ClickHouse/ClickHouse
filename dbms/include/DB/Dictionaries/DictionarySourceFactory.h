@@ -146,12 +146,10 @@ public:
 		{
 			if (dict_struct.has_expressions)
 				throw Exception{
-					"Dictionary source of type `executable` does not support attribute expressions",
+					"Dictionary source of type `http` does not support attribute expressions",
 					ErrorCodes::LOGICAL_ERROR};
 
-			const auto url = config.getString(config_prefix + ".http.url");
-			const auto format = config.getString(config_prefix + ".http.format");
-			return std::make_unique<HTTPDictionarySource>(name, format, sample_block, context);
+			return std::make_unique<HTTPDictionarySource>(config, config_prefix + ".http", sample_block, context);
 		}
 
 		throw Exception{

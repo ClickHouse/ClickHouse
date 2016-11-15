@@ -13,7 +13,7 @@ class HTTPDictionarySource final : public IDictionarySource
 
 public:
 
-	HTTPDictionarySource(const std::string & url, const std::string & format, Block & sample_block,
+	HTTPDictionarySource(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, Block & sample_block,
 		const Context & context);
 
 	HTTPDictionarySource(const HTTPDictionarySource & other);
@@ -39,11 +39,12 @@ public:
 private:
 	Logger * log = &Logger::get("HTTPDictionarySource");
 
-	static std::string quoteForLike(const std::string s);
-
 	LocalDateTime getLastModification() const;
 
-	const std::string url;
+	const std::string host;
+	int port;
+	const std::string path;
+
 	const std::string format;
 	Block sample_block;
 	const Context & context;

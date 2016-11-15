@@ -36,8 +36,6 @@ public:
 private:
 	Logger * log = &Logger::get("ExecutableDictionarySource");
 
-	static std::string quoteForLike(const std::string s);
-
 	LocalDateTime getLastModification() const;
 
 	const std::string name;

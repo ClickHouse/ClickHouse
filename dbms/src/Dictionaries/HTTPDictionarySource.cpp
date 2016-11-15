@@ -11,17 +11,27 @@ namespace DB
 
 decltype(HTTPDictionarySource::max_block_size) HTTPDictionarySource::max_block_size;
 
-HTTPDictionarySource::HTTPDictionarySource(const std::string & url, const std::string & format, Block & sample_block, const Context & context)
-	: url{url}, format{format}, sample_block{sample_block}, context(context)
+HTTPDictionarySource::HTTPDictionarySource(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, Block & sample_block, const Context & context) :
+	host{config.getString(config_prefix + ".host")},
+	port{std::stoi(config.getString(config_prefix + ".port"))},
+	path{config.getString(config_prefix + ".path")},
+	format{format},
+	sample_block{sample_block},
+	context(context)
 {
-		last_modification = LocalDateTime {std::time(nullptr)};
+		//last_modification = LocalDateTime {std::time(nullptr)};
+		last_modification = std::time(nullptr);
+	std::cerr << __FUNCTION__ << ":" << __LINE__ << "Ok." << std::endl;
+
 }
 
-HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
-	: url{other.url},
-	  format{other.format},
-	  sample_block{other.sample_block}, context(other.context),
-	  last_modification{other.last_modification}
+HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other) :
+	host{other.host},
+	port{other.port},
+	path{other.path},
+	format{other.format},
+	sample_block{other.sample_block}, context(other.context),
+	last_modification{other.last_modification}
 {
 }
 
@@ -29,25 +39,24 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
 BlockInputStreamPtr HTTPDictionarySource::loadAll()
 {
 
-	//RemoteReadBuffer
-	
-/*
+	std::cerr << " http go " << toString() << std::endl;
+
 	ReadBufferFromHTTP::Params params =
 	{
 		//{"endpoint", getEndpointId(location.name)},
-		{"compress", "false"},
-		{"query", query}
+		//{"compress", "false"},
+		//{"query", query}
 	};
 
-	ReadBufferFromHTTP in{location.host, location.port, params};
-*/
+	ReadBufferFromHTTP in{host, port, params};
 
-std::cerr << " http go " << url << "\n";
 
-	auto in_ptr = std::make_unique<RemoteReadBuffer>(url, 80, "/");
+
+/*
+	auto in_ptr = std::make_unique<RemoteReadBuffer>(host, port, path);
 	auto stream = context.getInputFormat( format, *in_ptr, sample_block, max_block_size);
 	return std::make_shared<OwningBufferBlockInputStream>(stream, std::move(in_ptr));
-
+*/
 	throw Exception{"Method unsupported", ErrorCodes::NOT_IMPLEMENTED};
 }
 
@@ -79,7 +88,9 @@ DictionarySourcePtr HTTPDictionarySource::clone() const
 
 std::string HTTPDictionarySource::toString() const
 {
-	return "HTTP: " + url;
+	std::cerr << " TS " << std::endl;
+
+	return "HTTP: " + host + ":" + std::to_string(port) + path;
 }
 
 LocalDateTime HTTPDictionarySource::getLastModification() const
