@@ -733,6 +733,12 @@ Context & Context::getSessionContext()
 	return *session_context;
 }
 
+const Context & Context::getGlobalContext() const
+{
+	if (!global_context)
+		throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
+	return *global_context;
+}
 
 Context & Context::getGlobalContext()
 {
