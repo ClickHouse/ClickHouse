@@ -5,6 +5,8 @@
 #include <DB/Dictionaries/FileDictionarySource.h>
 #include <DB/Dictionaries/MySQLDictionarySource.h>
 #include <DB/Dictionaries/ClickHouseDictionarySource.h>
+#include <DB/Dictionaries/ExecutableDictionarySource.h>
+#include <DB/Dictionaries/HTTPDictionarySource.h>
 
 #ifndef DISABLE_MONGODB
 #include <DB/Dictionaries/MongoDBDictionarySource.h>
@@ -126,6 +128,30 @@ public:
 		else if ("odbc" == source_type)
 		{
 			return std::make_unique<ODBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block);
+		}
+
+		else if ("executable" == source_type)
+		{
+			if (dict_struct.has_expressions)
+				throw Exception{
+					"Dictionary source of type `executable` does not support attribute expressions",
+					ErrorCodes::LOGICAL_ERROR};
+
+			const auto name = config.getString(config_prefix + ".executable.name");
+			const auto format = config.getString(config_prefix + ".executable.format");
+			return std::make_unique<ExecutableDictionarySource>(name, format, sample_block, context);
+		}
+
+		else if ("http" == source_type)
+		{
+			if (dict_struct.has_expressions)
+				throw Exception{
+					"Dictionary source of type `executable` does not support attribute expressions",
+					ErrorCodes::LOGICAL_ERROR};
+
+			const auto url = config.getString(config_prefix + ".http.url");
+			const auto format = config.getString(config_prefix + ".http.format");
+			return std::make_unique<HTTPDictionarySource>(name, format, sample_block, context);
 		}
 
 		throw Exception{

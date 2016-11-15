@@ -337,6 +337,8 @@ add_library (dbms
 	include/DB/Dictionaries/OwningBufferBlockInputStream.h
 	include/DB/Dictionaries/CacheDictionary.h
 	include/DB/Dictionaries/MySQLDictionarySource.h
+	include/DB/Dictionaries/ExecutableDictionarySource.h
+	include/DB/Dictionaries/HTTPDictionarySource.h
 	include/DB/Dictionaries/RangeHashedDictionary.h
 	include/DB/Dictionaries/writeParenthesisedString.h
 	include/DB/Dictionaries/Embedded/RegionsHierarchy.h
@@ -815,6 +817,8 @@ add_library (dbms
 
 	src/Dictionaries/MySQLDictionarySource.cpp
 	src/Dictionaries/ODBCDictionarySource.cpp
+	src/Dictionaries/ExecutableDictionarySource.cpp
+	src/Dictionaries/HTTPDictionarySource.cpp
 	src/Dictionaries/writeParenthesisedString.cpp
 	src/Dictionaries/DictionaryStructure.cpp
 	src/Dictionaries/FlatDictionary.cpp
