@@ -358,13 +358,24 @@ private:
 			if (!context.getSettingsRef().use_client_time_zone)
 			{
 				const auto & time_zone = connection->getServerTimezone();
-				try
+				if (!time_zone.empty())
 				{
-					DateLUT::setDefaultTimezone(time_zone);
+					try
+					{
+						DateLUT::setDefaultTimezone(time_zone);
+					}
+					catch (...)
+					{
+						std::cerr << "Warning: could not switch to server time zone: " << time_zone
+							<< ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
+							<< "Proceeding with local time zone."
+							<< std::endl << std::endl;
+					}
 				}
-				catch (const Poco::Exception & ex)
+				else
 				{
-					std::cerr << "Warning: could not switch to server time zone: " << time_zone << ", proceeding with local time zone"
+					std::cerr << "Warning: could not determine server time zone. "
+						<< "Proceeding with local time zone."
 						<< std::endl << std::endl;
 				}
 			}

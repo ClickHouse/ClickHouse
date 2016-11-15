@@ -130,7 +130,7 @@ public:
 
 	void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision);
 
-	const String & getServerTimezone();
+	const String & getServerTimezone() const;
 
 	/// For log and exception messages.
 	const String & getDescription() const;

@@ -131,7 +131,10 @@ void Connection::receiveHello()
 		readVarUInt(server_version_major, *in);
 		readVarUInt(server_version_minor, *in);
 		readVarUInt(server_revision, *in);
-		readStringBinary(server_timezone, *in);
+		if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
+		{
+			readStringBinary(server_timezone, *in);
+		}
 	}
 	else if (packet_type == Protocol::Server::Exception)
 		receiveException()->rethrow();
@@ -181,7 +184,7 @@ void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 
 	revision = server_revision;
 }
 
-const String & Connection::getServerTimezone()
+const String & Connection::getServerTimezone() const
 {
 	return server_timezone;
 }

@@ -2,6 +2,7 @@
 
 #include <common/DateLUTImpl.h>
 #include <common/singleton.h>
+#include <DB/Core/Defines.h>
 #include <Poco/Exception.h>
 
 #include <unordered_map>
@@ -20,14 +21,14 @@ public:
 	DateLUT & operator=(const DateLUT &) = delete;
 
 	/// Return singleton DateLUTImpl instance for the default time zone.
-	static __attribute__((__always_inline__)) const DateLUTImpl & instance()
+	static ALWAYS_INLINE const DateLUTImpl & instance()
 	{
 		const auto & date_lut = Singleton<DateLUT>::instance();
 		return *date_lut.default_impl.load(std::memory_order_acquire);
 	}
 
 	/// Return singleton DateLUTImpl instance for a given time zone.
-	static __attribute__((__always_inline__)) const DateLUTImpl & instance(const std::string & time_zone)
+	static ALWAYS_INLINE const DateLUTImpl & instance(const std::string & time_zone)
 	{
 		const auto & date_lut = Singleton<DateLUT>::instance();
 		if (time_zone.empty())
@@ -47,7 +48,7 @@ protected:
 	DateLUT();
 
 private:
-	__attribute__((__always_inline__)) const DateLUTImpl & getImplementation(const std::string & time_zone) const
+	ALWAYS_INLINE const DateLUTImpl & getImplementation(const std::string & time_zone) const
 	{
 		auto it = time_zone_to_group.find(time_zone);
 		if (it == time_zone_to_group.end())
