@@ -1,6 +1,4 @@
 compressor
 clickhouse-client
 clickhouse-server
-clickhouse-benchmark
-clickhouse-local
 config-processor

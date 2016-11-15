@@ -7,6 +7,8 @@ ifndef THREADS_COUNT
     THREADS_COUNT=`grep -c ^processor /proc/cpuinfo`
 endif
 
+BUILD_TARGETS=clickhouse $(DAEMONS)
+
 configure-stamp:
 	dh_testdir
 	rm -rf build
@@ -25,14 +27,13 @@ build-stamp: configure-stamp
 	# последовательно запускаем make для каждой из целей.
 	# т.к. при параллельном запуске (make target1 target2) несколько раз одновременно создаются бинарники
 	# и возникает raise с custom_command, использующие эти бинарники
-	for daemon in clickhouse ${DAEMONS}; do $(MAKE) -j$(THREADS_COUNT) -C build $$daemon; done
+	for target in ${BUILD_TARGETS}; do $(MAKE) -j$(THREADS_COUNT) -C build $$target; done
 	touch $@
 
 clean:
 	dh_testdir
 	dh_testroot
-	rm -f configure-stamp
-	rm -f build-stamp
+	rm -f configure-stamp build-stamp
 	rm -rf build
 	# Удалим созданные для dh_installinit файлы
 	find ./debian/ -name "*.init" -type l -delete
@@ -50,9 +51,7 @@ install: build
 	dh_testroot
 	dh_prep
 	cd build && \
-	for daemon in clickhouse ${DAEMONS}; do\
-		DESTDIR=../debian/tmp cmake -DCOMPONENT=$$daemon -P cmake_install.cmake;\
-	done
+	for target in ${BUILD_TARGETS}; do DESTDIR=../debian/tmp cmake -DCOMPONENT=$$target -P cmake_install.cmake; done
 
 	# Создаём нужные файлы для dh_installinit, т.к. он их понимает только внутри debian/
 	for I in debian/tmp/etc/init.d/*; do echo $$I; ln -s tmp/etc/init.d/`basename $$I` debian/`basename $$I`.init; done
