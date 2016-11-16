@@ -471,6 +471,10 @@ void TCPHandler::sendHello()
 	writeVarUInt(DBMS_VERSION_MAJOR, *out);
 	writeVarUInt(DBMS_VERSION_MINOR, *out);
 	writeVarUInt(ClickHouseRevision::get(), *out);
+	if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
+	{
+		writeStringBinary(DateLUT::instance().getTimeZone(), *out);
+	}
 	out->next();
 }
 
