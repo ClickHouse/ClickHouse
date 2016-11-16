@@ -1257,29 +1257,25 @@ On an operating server, you can&#39;t manually change the set of parts or their 
 
 The &#39;detached&#39; directory contains parts that are not used by the server - detached from the table using the ALTER ... DETACH query. Parts that are damaged are also moved to this directory, instead of deleting them. You can add, delete, or modify the data in the &#39;detached&#39; directory at any time - the server won&#39;t know about this until you make the ALTER TABLE ... ATTACH query.
 
-For replicated tables, there is also an &#39;unreplicated&#39; directory. This directory can hold the portion of table data that does not participate in replication. This data is present only if the table was converted from a non-replicated one (see the section &quot;Conversion from MergeTree to ReplicatedMergeTree&quot;).
 
-
-%%ALTER TABLE [db.]table DETACH [UNREPLICATED] PARTITION &#39;name&#39;%%
+%%ALTER TABLE [db.]table DETACH PARTITION &#39;name&#39;%%
 
 Move all data for partitions named &#39;name&#39; to the &#39;detached&#39; directory and forget about them.
 The partition name is specified in YYYYMM format. It can be indicated in single quotes or without them.
 
 After the query is executed, you can do whatever you want with the data in the &#39;detached&#39; directory — delete it from the file system, or just leave it.
 
-If UNREPLICATED is specified (this only works for replicatable tables), the query is run for the unreplicated part of a replicatable table.
-
 The query is replicated - data will be moved to the &#39;detached&#39; directory and forgotten on all replicas. The query can only be sent to a leader replica. To find out if a replica is a leader, perform SELECT to the &#39;system.replicas&#39; system table. Alternatively, it is easier to make a query on all replicas, and all except one will throw an exception.
 
 
-%%ALTER TABLE [db.]table DROP [UNREPLICATED] PARTITION &#39;name&#39;%%
+%%ALTER TABLE [db.]table DROP PARTITION &#39;name&#39;%%
 
 Similar to the DETACH operation. Deletes data from the table. Data parts will be tagged as inactive and will be completely deleted in approximately 10 minutes. The query is replicated - data will be deleted on all replicas.
 
 
-%%ALTER TABLE [db.]table ATTACH [UNREPLICATED] PARTITION|PART &#39;name&#39;%%
+%%ALTER TABLE [db.]table ATTACH PARTITION|PART &#39;name&#39;%%
 
-Adds data to the table from the &#39;detached&#39; directory. Or, if UNREPLICATED is specified, data is moved from an &#39;unreplicated&#39; part to replicated data.
+Adds data to the table from the &#39;detached&#39; directory.
 
 It is possible to add data for an entire partition or a separate part. For a part, specify the full name of the part in single quotes.
 
@@ -2943,7 +2939,7 @@ If all data and metadata disappeared from one of the servers, follow these steps
 
 1. Install ClickHouse on the server. Define substitutions correctly in the config file that contains the shard identifier and replicas, if you use them.
 
-2. If you had unreplicated tables that must be manually duplicated on the servers, copy their data from a replica (in the directory <span class="inline-example">/opt/clickhouse/data/<i>db_name</i>/<i>table_name</i>/</span>). If replicated tables had unreplicated parts, synchronize them as well. Note that these exist only if you migrated from MergeTree to ReplicatedMergeTree (see &quot;Converting from MergeTree to ReplicatedMergeTree&quot;).
+2. If you had unreplicated tables that must be manually duplicated on the servers, copy their data from a replica (in the directory <span class="inline-example">/opt/clickhouse/data/<i>db_name</i>/<i>table_name</i>/</span>).
 
 3. Copy table definitions located in %%/opt/clickhouse/metadata/%% from a replica. If a shard or replica identifier is defined explicitly in the table definitions, correct it so that it corresponds to this replica. (Alternatively, launch the server and make all the ATTACH TABLE queries that should have been in the .sql files in %%/opt/clickhouse/metadata/%%.)
 
@@ -2961,17 +2957,6 @@ There is no restriction on network bandwidth during recovery. Keep this in mind 
 From here on, we use &quot;MergeTree&quot; to refer to all the table engines in the MergeTree family, including ReplicatedMergeTree.
 
 If you had a MergeTree table that was manually replicated, you can convert it to a replicatable table. You might need to do this if you have already collected a large amount of data in a MergeTree table and now you want to enable replication.
-
-There are two ways to do this:
-
-1. Leave the old data &quot;as is&quot; without syncing it.
-
-To do this, rename the existing MergeTree table, then create a ReplicatedMergeTree table with the old name.
-In the directory with data for the new table (<span class="inline-example">/opt/clickhouse/data/<i>db_name</i>/<i>table_name</i>/</span>), create the &#39;unreplicated&#39; subdirectory and move the data from the old table to it. Then restart the server.
-
-For read requests, the replicated table will also read from the &#39;unreplicated&#39; data set. The integrity of this data is not monitored in any way.
-
-2. Add the old data to the set of replicatable data.
 
 If the data differs on various replicas, first sync it, or delete this data on all the replicas except one.
 
