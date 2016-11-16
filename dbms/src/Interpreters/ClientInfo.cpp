@@ -48,6 +48,9 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_revision) const
 		writeBinary(UInt8(http_method), out);
 		writeBinary(http_user_agent, out);
 	}
+
+	if (server_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)
+		writeBinary(quota_key, out);
 }
 
 
@@ -90,6 +93,9 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_revision)
 
 		readBinary(http_user_agent, in);
 	}
+
+	if (client_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)
+		readBinary(quota_key, in);
 }
 
 

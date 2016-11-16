@@ -310,6 +310,9 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
 	client_info.current_user = name;
 	client_info.current_address = address;
+
+	if (!quota_key.empty())
+		client_info.quota_key = quota_key;
 }
 
 

@@ -69,6 +69,9 @@ public:
 	HTTPMethod http_method = HTTPMethod::UNKNOWN;
 	String http_user_agent;
 
+	/// Common
+	String quota_key;
+
 	bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 
 	/** Serialization and deserialization.

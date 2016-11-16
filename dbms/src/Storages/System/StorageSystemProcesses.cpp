@@ -37,6 +37,8 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
 		{ "http_method",			std::make_shared<DataTypeUInt8>() },
 		{ "http_user_agent",		std::make_shared<DataTypeString>() },
 
+		{ "quota_key",			std::make_shared<DataTypeString>() },
+
 		{ "elapsed", 			std::make_shared<DataTypeFloat64>()	},
 		{ "rows_read", 			std::make_shared<DataTypeUInt64>()	},
 		{ "bytes_read",			std::make_shared<DataTypeUInt64>()	},
@@ -90,6 +92,7 @@ BlockInputStreams StorageSystemProcesses::read(
 		block.unsafeGetByPosition(i++).column->insert(UInt64(process.client_info.client_revision));
 		block.unsafeGetByPosition(i++).column->insert(UInt64(process.client_info.http_method));
 		block.unsafeGetByPosition(i++).column->insert(process.client_info.http_user_agent);
+		block.unsafeGetByPosition(i++).column->insert(process.client_info.quota_key);
 		block.unsafeGetByPosition(i++).column->insert(process.elapsed_seconds);
 		block.unsafeGetByPosition(i++).column->insert(process.rows);
 		block.unsafeGetByPosition(i++).column->insert(process.bytes);
