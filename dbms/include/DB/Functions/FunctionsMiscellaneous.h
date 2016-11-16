@@ -1421,7 +1421,6 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 private:
-	/// @NOTE: for reviewers: is existing of global context guranteed?
 	const Context & global_context;
 };
 
