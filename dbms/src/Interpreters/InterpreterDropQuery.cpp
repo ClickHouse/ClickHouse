@@ -139,29 +139,4 @@ BlockIO InterpreterDropQuery::execute()
 }
 
 
-void InterpreterDropQuery::dropDetachedTable(String database_name, StoragePtr table, Context & context)
-{
-	table->shutdown();
-
-	auto table_lock = table->lockForAlter();
-
-	String table_name = table->getTableName();
-
-	String path = context.getPath();
-	String database_name_escaped = escapeForFileName(database_name);
-
-	String data_path = path + "data/" + database_name_escaped + "/" + escapeForFileName(table_name);
-	String metadata_path = path + "metadata/" + database_name_escaped + "/" + escapeForFileName(table_name) + ".sql";
-
-	if (Poco::File(metadata_path).exists())
-		Poco::File(metadata_path).remove();
-
-	table->drop();
-	table->is_dropped = true;
-
-	if (Poco::File(data_path).exists())
-		Poco::File(data_path).remove(true);
-}
-
-
 }

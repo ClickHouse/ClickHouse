@@ -35,6 +35,11 @@
 #include <DB/Core/Field.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event SelectQuery;
+}
+
 namespace DB
 {
 
@@ -78,7 +83,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 			ASTSelectQuery & head_query = static_cast<ASTSelectQuery &>(*head);
 			tail = head_query.next_union_all;
 
-			interpreter->next_select_in_union_all.reset(new InterpreterSelectQuery(head, context, to_stage, subquery_depth));
+			interpreter->next_select_in_union_all = std::make_unique<InterpreterSelectQuery>(head, context, to_stage, subquery_depth);
 			interpreter = interpreter->next_select_in_union_all.get();
 		}
 	}
@@ -147,7 +152,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
 	if (table_column_names.empty())
 		throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
 
-	query_analyzer.reset(new ExpressionAnalyzer(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze));
+	query_analyzer = std::make_unique<ExpressionAnalyzer>(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze);
 
 	/// Сохраняем в query context новые временные таблицы
 	for (auto & it : query_analyzer->getExternalTables())
@@ -1222,6 +1227,28 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(SubqueriesForSets &
 
 	executeUnion();
 	streams[0] = std::make_shared<CreatingSetsBlockInputStream>(streams[0], subqueries_for_sets, settings.limits);
+}
+
+template <typename Transform>
+void InterpreterSelectQuery::transformStreams(Transform && transform)
+{
+	for (auto & stream : streams)
+		transform(stream);
+
+	if (stream_with_non_joined_data)
+		transform(stream_with_non_joined_data);
+}
+
+
+bool InterpreterSelectQuery::hasNoData() const
+{
+	return streams.empty() && !stream_with_non_joined_data;
+}
+
+
+bool InterpreterSelectQuery::hasMoreThanOneStream() const
+{
+	return streams.size() + (stream_with_non_joined_data ? 1 : 0) > 1;
 }
 
 

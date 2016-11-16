@@ -3,6 +3,7 @@
 #include <cerrno>
 #include <cstring>
 #include <iostream>
+
 #include <Poco/DOM/Text.h>
 #include <Poco/DOM/Attr.h>
 #include <Poco/DOM/Comment.h>
@@ -281,21 +282,20 @@ void ConfigProcessor::doIncludes(DocumentPtr config, DocumentPtr include_from)
 	doIncludesRecursive(config, include_from, getRootNode(&*config));
 }
 
-XMLDocumentPtr ConfigProcessor::processConfig(const std::string & path_str)
+ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & config_path)
 {
-	DocumentPtr config = DOMParser().parse(path_str);
+	Files res;
 
-	std::vector<std::string> contributing_files;
-	contributing_files.push_back(path_str);
-	Poco::Path merge_dir_path(path_str);
+	Poco::Path merge_dir_path(config_path);
 	merge_dir_path.setExtension("d");
+
 	std::vector<std::string> merge_dirs;
 	merge_dirs.push_back(merge_dir_path.toString());
-	if (merge_dir_path.getBaseName() != "conf")
-	{
+	if (merge_dir_path.getBaseName() != "conf")	{
 		merge_dir_path.setBaseName("conf");
 		merge_dirs.push_back(merge_dir_path.toString());
 	}
+
 	for (const std::string & merge_dir_name : merge_dirs)
 	{
 		Poco::File merge_dir(merge_dir_name);
@@ -304,19 +304,40 @@ XMLDocumentPtr ConfigProcessor::processConfig(const std::string & path_str)
 		for (Poco::DirectoryIterator it(merge_dir_name); it != Poco::DirectoryIterator(); ++it)
 		{
 			Poco::File & file = *it;
-			try
+			if (file.isFile() && (endsWith(file.path(), ".xml") || endsWith(file.path(), ".conf")))
 			{
-				if (file.isFile() && (endsWith(file.path(), ".xml") || endsWith(file.path(), ".conf")))
-				{
-					contributing_files.push_back(file.path());
-					DocumentPtr with = DOMParser().parse(file.path());
-					merge(config, with);
-				}
+				res.push_back(file.path());
 			}
-			catch (Poco::Exception & e)
-			{
-				throw Poco::Exception("Failed to merge config with " + file.path() + ": " + e.displayText());
-			}
+		}
+	}
+
+	return res;
+}
+
+XMLDocumentPtr ConfigProcessor::processConfig(const std::string & path_str)
+{
+	/// We need larger name pool to allow to support vast amount of users in users.xml files for ClickHouse.
+	/// Size is prime because Poco::XML::NamePool uses bad (inefficient, low quality)
+	///  hash function internally, and its size was prime by default.
+	Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool(65521));
+	Poco::XML::DOMParser dom_parser(name_pool);
+
+	DocumentPtr config = dom_parser.parse(path_str);
+
+	std::vector<std::string> contributing_files;
+	contributing_files.push_back(path_str);
+
+	for (auto & merge_file : getConfigMergeFiles(path_str))
+	{
+		try
+		{
+			DocumentPtr with = dom_parser.parse(merge_file);
+			merge(config, with);
+			contributing_files.push_back(merge_file);
+		}
+		catch (Poco::Exception & e)
+		{
+			throw Poco::Exception("Failed to merge config with " + merge_file + ": " + e.displayText());
 		}
 	}
 
@@ -338,7 +359,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(const std::string & path_str)
 		if (!include_from_path.empty())
 		{
 			contributing_files.push_back(include_from_path);
-			include_from = DOMParser().parse(include_from_path);
+			include_from = dom_parser.parse(include_from_path);
 		}
 
 		doIncludes(config, include_from);

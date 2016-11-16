@@ -25,6 +25,18 @@
 #include <thread>
 
 
+namespace ProfileEvents
+{
+	extern const Event RejectedInserts;
+	extern const Event DelayedInserts;
+	extern const Event DelayedInsertsMilliseconds;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric DelayedInserts;
+}
+
 
 namespace DB
 {
@@ -366,14 +378,14 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
 			if ((*curr_jt)->contains(**prev_jt))
 			{
-				(*prev_jt)->remove_time = time(0);
+				(*prev_jt)->remove_time = (*prev_jt)->modification_time;
 				data_parts.erase(prev_jt);
 				prev_jt = curr_jt;
 				++curr_jt;
 			}
 			else if ((*prev_jt)->contains(**curr_jt))
 			{
-				(*curr_jt)->remove_time = time(0);
+				(*curr_jt)->remove_time = (*curr_jt)->modification_time;
 				data_parts.erase(curr_jt++);
 			}
 			else
@@ -1224,32 +1236,34 @@ bool MergeTreeData::hasBlockNumberInMonth(Int64 block_number, DayNum_t month) co
 	return false;
 }
 
-
 void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 {
-	size_t parts_count = getMaxPartsCountForMonth();
-	if (parts_count > settings.parts_to_delay_insert)
+	const size_t parts_count = getMaxPartsCountForMonth();
+	if (parts_count < settings.parts_to_delay_insert)
+		return;
+
+	if (parts_count >= settings.parts_to_throw_insert)
 	{
-		double delay = std::pow(settings.insert_delay_step, parts_count - settings.parts_to_delay_insert);
-		delay /= 1000;
-
-		if (delay > DBMS_MAX_DELAY_OF_INSERT)
-		{
-			ProfileEvents::increment(ProfileEvents::RejectedInserts);
-			throw Exception("Too much parts. Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MUCH_PARTS);
-		}
-
-		ProfileEvents::increment(ProfileEvents::DelayedInserts);
-		ProfileEvents::increment(ProfileEvents::DelayedInsertsMilliseconds, delay * 1000);
-
-		LOG_INFO(log, "Delaying inserting block by "
-			<< std::fixed << std::setprecision(4) << delay << " sec. because there are " << parts_count << " parts");
-
-		if (until)
-			until->tryWait(delay * 1000);
-		else
-			std::this_thread::sleep_for(std::chrono::duration<double>(delay));
+		ProfileEvents::increment(ProfileEvents::RejectedInserts);
+		throw Exception("Too much parts. Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MUCH_PARTS);
 	}
+
+	const size_t max_k = settings.parts_to_throw_insert - settings.parts_to_delay_insert; /// always > 0
+	const size_t k = 1 + parts_count - settings.parts_to_delay_insert; /// from 1 to max_k
+	const double delay_sec = ::pow(settings.max_delay_to_insert, static_cast<double>(k) / max_k);
+
+	ProfileEvents::increment(ProfileEvents::DelayedInserts);
+	ProfileEvents::increment(ProfileEvents::DelayedInsertsMilliseconds, delay_sec * 1000);
+
+	CurrentMetrics::Increment metric_increment(CurrentMetrics::DelayedInserts);
+
+	LOG_INFO(log, "Delaying inserting block by "
+		<< std::fixed << std::setprecision(4) << delay_sec << " sec. because there are " << parts_count << " parts");
+
+	if (until)
+		until->tryWait(delay_sec * 1000);
+	else
+		std::this_thread::sleep_for(std::chrono::duration<double>(delay_sec));
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name)

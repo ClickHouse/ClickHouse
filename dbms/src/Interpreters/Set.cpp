@@ -43,7 +43,7 @@ void SetVariants::init(Type type_)
 		case Type::EMPTY: break;
 
 	#define M(NAME) \
-		case Type::NAME: NAME.reset(new decltype(NAME)::element_type); break;
+		case Type::NAME: NAME = std::make_unique<decltype(NAME)::element_type>(); break;
 		APPLY_FOR_SET_VARIANTS(M)
 	#undef M
 
@@ -291,7 +291,7 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, const Context & context,
 		col.column = data_types[i]->createColumn();
 		col.name = "_" + toString(i);
 
-		block.insert(col);
+		block.insert(std::move(col));
 	}
 
 	Row tuple_values;

@@ -2,7 +2,7 @@
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
-#include <DB/Interpreters/reinterpretAsIdentifier.h>
+#include <DB/Interpreters/evaluateConstantExpression.h>
 #include <DB/Interpreters/Cluster.h>
 #include <DB/Interpreters/getClusterName.h>
 #include <DB/Common/SipHash.h>
@@ -52,18 +52,22 @@ StoragePtr TableFunctionShardByHash::execute(ASTPtr ast_function, Context & cont
 
 	cluster_name = getClusterName(*args[0]);
 	key = getStringLiteral(*args[1], "Key to hash");
-	remote_database = reinterpretAsIdentifier(args[2], context).name;
-	remote_table = reinterpretAsIdentifier(args[3], context).name;
+
+	args[2] = evaluateConstantExpressionOrIdentidierAsLiteral(args[2], context);
+	args[3] = evaluateConstantExpressionOrIdentidierAsLiteral(args[3], context);
+
+	remote_database = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
+	remote_table = static_cast<const ASTLiteral &>(*args[3]).value.safeGet<String>();
 
 	/// Аналогично другим TableFunctions.
 	for (auto & arg : args)
 		if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(arg.get()))
 			id->kind = ASTIdentifier::Table;
 
-	const Cluster & cluster = context.getCluster(cluster_name);
-	size_t shard_index = sipHash64(key) % cluster.getShardCount();
+	auto cluster = context.getCluster(cluster_name);
+	size_t shard_index = sipHash64(key) % cluster->getShardCount();
 
-	std::shared_ptr<Cluster> shard(cluster.getClusterWithSingleShard(shard_index).release());
+	std::shared_ptr<Cluster> shard(cluster->getClusterWithSingleShard(shard_index).release());
 
 	return StorageDistributed::create(
 		getName(),

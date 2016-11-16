@@ -9,7 +9,7 @@
 #include <DB/Parsers/ASTLiteral.h>
 
 #include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/reinterpretAsIdentifier.h>
+#include <DB/Interpreters/evaluateConstantExpression.h>
 #include <DB/Interpreters/getClusterName.h>
 
 #include <DB/Storages/StorageLog.h>
@@ -29,7 +29,10 @@
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/StorageSet.h>
 #include <DB/Storages/StorageJoin.h>
+#include <DB/Storages/StorageFile.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
+
+#include <unistd.h>
 
 
 namespace DB
@@ -44,6 +47,7 @@ namespace ErrorCodes
 	extern const int NO_REPLICA_NAME_GIVEN;
 	extern const int NO_ELEMENTS_IN_CONFIG;
 	extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+	extern const int UNKNOWN_IDENTIFIER;
 }
 
 
@@ -218,7 +222,8 @@ StoragePtr StorageFactory::get(
 	const NamesAndTypesList & materialized_columns,
 	const NamesAndTypesList & alias_columns,
 	const ColumnDefaults & column_defaults,
-	bool attach) const
+	bool attach,
+	bool has_force_restore_data_flag) const
 {
 	if (name == "Log")
 	{
@@ -253,6 +258,60 @@ StoragePtr StorageFactory::get(
 			data_path, table_name, columns,
 			materialized_columns, alias_columns, column_defaults,
 			attach, context.getSettings().max_compress_block_size);
+	}
+	else if (name == "File")
+	{
+		auto & func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage);
+		auto & args = typeid_cast<ASTExpressionList &>(*func.arguments).children;
+
+		constexpr auto error_msg = "Storage File requires 1 or 2 arguments: name of used format and source.";
+
+		if (func.parameters)
+			throw Exception(error_msg, ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS);
+
+		if (args.empty() || args.size() > 2)
+			throw Exception(error_msg, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], local_context);
+		String format_name = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+
+		int source_fd = -1;
+		String source_path;
+		if (args.size() >= 2)
+		{
+			/// Will use FD if args[1] is int literal or identifier with std* name
+
+			if (ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(args[1].get()))
+			{
+				if (identifier->name == "stdin")
+					source_fd = STDIN_FILENO;
+				else if (identifier->name == "stdout")
+					source_fd = STDOUT_FILENO;
+				else if (identifier->name == "stderr")
+					source_fd = STDERR_FILENO;
+				else
+					throw Exception("Unknown identifier '" + identifier->name + "' in second arg of File storage constructor",
+									ErrorCodes::UNKNOWN_IDENTIFIER);
+			}
+
+			if (ASTLiteral * literal = typeid_cast<ASTLiteral *>(args[1].get()))
+			{
+				auto type = literal->value.getType();
+				if (type == Field::Types::Int64)
+					source_fd = static_cast<int>(literal->value.get<Int64>());
+				else if (type == Field::Types::UInt64)
+					source_fd = static_cast<int>(literal->value.get<UInt64>());
+			}
+
+			args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
+			source_path = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+		}
+
+		return StorageFile::create(
+			source_path, source_fd,
+			data_path, table_name, format_name, columns,
+			materialized_columns, alias_columns, column_defaults,
+			context);
 	}
 	else if (name == "Set")
 	{
@@ -349,8 +408,11 @@ StoragePtr StorageFactory::get(
 				" - name of source database and regexp for table names.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String source_database 		= reinterpretAsIdentifier(args[0], local_context).name;
-		String table_name_regexp	= safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[1]).value);
+		args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], local_context);
+		args[1] = evaluateConstantExpressionAsLiteral(args[1], local_context);
+
+		String source_database 		= static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+		String table_name_regexp	= static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 
 		return StorageMerge::create(
 			table_name, columns,
@@ -359,8 +421,16 @@ StoragePtr StorageFactory::get(
 	}
 	else if (name == "Distributed")
 	{
-		/** В запросе в качестве аргумента для движка указано имя конфигурационной секции,
-		  *  в которой задан список удалённых серверов, а также имя удалённой БД и имя удалённой таблицы.
+		/** Arguments of engine is following:
+		  * - name of cluster in configuration;
+		  * - name of remote database;
+		  * - name of remote table;
+		  *
+		  * Remote database may be specified in following form:
+		  * - identifier;
+		  * - constant expression with string result, like currentDatabase();
+		  * -- string literal as specific case;
+		  * - empty string means 'use default database from cluster'.
 		  */
 		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
 
@@ -378,8 +448,11 @@ StoragePtr StorageFactory::get(
 
 		String cluster_name = getClusterName(*args[0]);
 
-		String remote_database 	= reinterpretAsIdentifier(args[1], local_context).name;
-		String remote_table 	= typeid_cast<ASTIdentifier &>(*args[2]).name;
+		args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
+		args[2] = evaluateConstantExpressionOrIdentidierAsLiteral(args[2], local_context);
+
+		String remote_database 	= static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+		String remote_table 	= static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
 
 		const auto & sharding_key = args.size() == 4 ? args[3] : nullptr;
 
@@ -412,8 +485,11 @@ StoragePtr StorageFactory::get(
 				" destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String destination_database = reinterpretAsIdentifier(args[0], local_context).name;
-		String destination_table 	= typeid_cast<ASTIdentifier &>(*args[1]).name;
+		args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], local_context);
+		args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
+
+		String destination_database = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+		String destination_table 	= static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 
 		size_t num_buckets = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[2]).value);
 
@@ -519,7 +595,7 @@ SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType
 ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
 
 
-For further info please read the documentation: https://clickhouse.yandex-team.ru/
+For further info please read the documentation: https://clickhouse.yandex/
 )";
 
 		String name_part = name.substr(0, name.size() - strlen("MergeTree"));
@@ -739,6 +815,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, merging_params,
+				has_force_restore_data_flag,
 				context.getMergeTreeSettings());
 		else
 			return StorageMergeTree::create(
@@ -746,6 +823,7 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, merging_params,
+				has_force_restore_data_flag,
 				context.getMergeTreeSettings());
 	}
 	else

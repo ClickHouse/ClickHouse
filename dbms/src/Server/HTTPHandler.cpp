@@ -108,7 +108,7 @@ void HTTPHandler::processQuery(
 	Context context = *server.global_context;
 	context.setGlobalContext(*server.global_context);
 
-	context.setUser(user, password, request.clientAddress().host(), quota_key);
+	context.setUser(user, password, request.clientAddress(), quota_key);
 	context.setCurrentQueryId(query_id);
 
 	std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query_param);
@@ -246,15 +246,26 @@ void HTTPHandler::processQuery(
 	if (in_post_compressed && context.getSettingsRef().http_native_compression_disable_checksumming_on_decompress)
 		static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
-	context.setInterface(Context::Interface::HTTP);
+	/// Добавить CORS header выставлена настройка, и если клиент передал заголовок Origin
+	used_output.out->addHeaderCORS( context.getSettingsRef().add_http_cors_header && !request.get("Origin", "").empty() );
 
-	Context::HTTPMethod http_method = Context::HTTPMethod::UNKNOWN;
+	ClientInfo & client_info = context.getClientInfo();
+	client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+	client_info.interface = ClientInfo::Interface::HTTP;
+
+	/// Query sent through HTTP interface is initial.
+	client_info.initial_user = client_info.current_user;
+	client_info.initial_query_id = client_info.current_query_id;
+	client_info.initial_address = client_info.current_address;
+
+	ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
 	if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
-		http_method = Context::HTTPMethod::GET;
+		http_method = ClientInfo::HTTPMethod::GET;
 	else if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_POST)
-		http_method = Context::HTTPMethod::POST;
+		http_method = ClientInfo::HTTPMethod::POST;
 
-	context.setHTTPMethod(http_method);
+	client_info.http_method = http_method;
+	client_info.http_user_agent = request.get("User-Agent", "");
 
 	executeQuery(*in, *used_output.out_maybe_compressed, context, query_plan,
 		[&response] (const String & content_type) { response.setContentType(content_type); });

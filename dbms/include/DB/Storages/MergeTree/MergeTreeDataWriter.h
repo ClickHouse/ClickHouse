@@ -16,12 +16,21 @@ namespace DB
 struct BlockWithDateInterval
 {
 	Block block;
-	UInt16 min_date;
-	UInt16 max_date;
+	UInt16 min_date = std::numeric_limits<UInt16>::max(); /// For further updating, see updateDates method.
+	UInt16 max_date = std::numeric_limits<UInt16>::min();
 
-	BlockWithDateInterval() : min_date(std::numeric_limits<UInt16>::max()), max_date(0) {}
+	BlockWithDateInterval() = default;
 	BlockWithDateInterval(const Block & block_, UInt16 min_date_, UInt16 max_date_)
-	: block(block_), min_date(min_date_), max_date(max_date_) {}
+		: block(block_), min_date(min_date_), max_date(max_date_) {}
+
+	void updateDates(UInt16 date)
+	{
+		if (date < min_date)
+			min_date = date;
+
+		if (date > max_date)
+			max_date = date;
+	}
 };
 
 using BlocksWithDateIntervals = std::list<BlockWithDateInterval>;
@@ -33,15 +42,15 @@ class MergeTreeDataWriter
 public:
 	MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Logger::get(data.getLogName() + " (Writer)")) {}
 
-	/** Разбивает блок на блоки, каждый из которых нужно записать в отдельный кусок.
-	  *  (читай: разбивает строки по месяцам)
-	  * Работает детерминированно: если отдать на вход такой же блок, на выходе получатся такие же блоки в таком же порядке.
+	/** Split the block to blocks, each of them must be written as separate part.
+	  *  (split rows by months)
+	  * Works deterministically: if same block was passed, function will return same result in same order.
 	  */
 	BlocksWithDateIntervals splitBlockIntoParts(const Block & block);
 
-	/** Все строки должны относиться к одному месяцу.
-	  * temp_index - значение left и right для нового куска. Можно будет изменить при переименовании.
-	  * Возвращает кусок с именем, начинающимся с tmp_, еще не добавленный в MergeTreeData.
+	/** All rows must correspond to same month.
+	  * 'temp_index' - value for 'left' and 'right' for new part. Could be changed later at rename.
+	  * Returns part with name starting with 'tmp_', yet not added to MergeTreeData.
 	  */
 	MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithDateInterval & block, Int64 temp_index);
 

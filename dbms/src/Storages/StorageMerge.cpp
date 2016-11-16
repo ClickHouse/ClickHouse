@@ -53,10 +53,10 @@ StoragePtr StorageMerge::create(
 	const String & table_name_regexp_,
 	const Context & context_)
 {
-	return (new StorageMerge{
+	return make_shared(
 		name_, columns_,
 		source_database_, table_name_regexp_, context_
-	})->thisPtr();
+	);
 }
 
 StoragePtr StorageMerge::create(
@@ -69,10 +69,10 @@ StoragePtr StorageMerge::create(
 	const String & table_name_regexp_,
 	const Context & context_)
 {
-	return (new StorageMerge{
+	return make_shared(
 		name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
 		source_database_, table_name_regexp_, context_
-	})->thisPtr();
+	);
 }
 
 NameAndTypePair StorageMerge::getColumn(const String & column_name) const

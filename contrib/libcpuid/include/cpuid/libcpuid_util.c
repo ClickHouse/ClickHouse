@@ -38,7 +38,7 @@ void match_features(const struct feature_map_t* matchtable, int count, uint32_t 
 {
 	int i;
 	for (i = 0; i < count; i++)
-		if (reg & (1 << matchtable[i].bit))
+		if (reg & (1U << matchtable[i].bit))
 			data->flags[matchtable[i].feature] = 1;
 }
 

@@ -59,7 +59,7 @@ public:
     ~BaseDaemon();
 
 	/// Загружает конфигурацию и "строит" логгеры на запись в файлы
-	void initialize(Poco::Util::Application &);
+	void initialize(Poco::Util::Application &) override;
 
 	/// Читает конфигурацию
 	void reloadConfiguration();
@@ -68,7 +68,7 @@ public:
 	void buildLoggers();
 
 	/// Определяет параметр командной строки
-	void defineOptions(Poco::Util::OptionSet& _options);
+	void defineOptions(Poco::Util::OptionSet& _options) override;
 
 	/// Заставляет демон завершаться, если хотя бы одна задача завершилась неудачно
 	void exitOnTaskError();
@@ -90,6 +90,9 @@ public:
 	{
 		return dynamic_cast<BaseDaemon &>(Poco::Util::Application::instance());
 	}
+
+	/// return none if daemon doesn't exist, reference to the daemon otherwise
+	static boost::optional<BaseDaemon &> tryGetInstance() { return tryGetInstance<BaseDaemon>(); }
 
 	/// Спит заданное количество секунд или до события wakeup
 	void sleep(double seconds);
@@ -141,6 +144,9 @@ protected:
 	void waitForTerminationRequest() override;
 	/// thread safe
 	virtual void onInterruptSignals(int signal_id);
+
+	template <class Daemon>
+	static boost::optional<Daemon &> tryGetInstance();
 
 	std::unique_ptr<Poco::TaskManager> task_manager;
 
@@ -194,3 +200,23 @@ protected:
 	std::atomic_size_t terminate_signals_counter{0};
 	std::atomic_size_t sigint_signals_counter{0};
 };
+
+
+template <class Daemon>
+boost::optional<Daemon &> BaseDaemon::tryGetInstance()
+{
+	Daemon * ptr = nullptr;
+	try
+	{
+		ptr = dynamic_cast<Daemon *>(&Poco::Util::Application::instance());
+	}
+	catch (const Poco::NullPointerException &)
+	{
+		/// if daemon doesn't exist than instance() throw NullPointerException
+	}
+
+	if (ptr)
+		return boost::optional<Daemon &>(*ptr);
+	else
+		return boost::none;
+}

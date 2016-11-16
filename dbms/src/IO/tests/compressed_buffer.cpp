@@ -6,6 +6,7 @@
 #include <iomanip>
 
 #include <DB/Core/Types.h>
+#include <DB/Common/Stopwatch.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/CompressedWriteBuffer.h>

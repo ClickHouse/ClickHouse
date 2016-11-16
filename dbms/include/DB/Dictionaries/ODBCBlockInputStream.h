@@ -58,7 +58,7 @@ public:
 	}
 
 private:
-	using value_type_t = ExternalResultDescription::value_type_t;
+	using ValueType = ExternalResultDescription::ValueType;
 
 
 	Block readImpl() override
@@ -98,23 +98,23 @@ private:
 		return block;
 	}
 
-	static void insertValue(IColumn * const column, const value_type_t type, const Poco::Dynamic::Var & value)
+	static void insertValue(IColumn * const column, const ValueType type, const Poco::Dynamic::Var & value)
 	{
 		switch (type)
 		{
-			case value_type_t::UInt8: static_cast<ColumnUInt8 *>(column)->insert(value.convert<UInt64>()); break;
-			case value_type_t::UInt16: static_cast<ColumnUInt16 *>(column)->insert(value.convert<UInt64>()); break;
-			case value_type_t::UInt32: static_cast<ColumnUInt32 *>(column)->insert(value.convert<UInt64>()); break;
-			case value_type_t::UInt64: static_cast<ColumnUInt64 *>(column)->insert(value.convert<UInt64>()); break;
-			case value_type_t::Int8: static_cast<ColumnInt8 *>(column)->insert(value.convert<Int64>()); break;
-			case value_type_t::Int16: static_cast<ColumnInt16 *>(column)->insert(value.convert<Int64>()); break;
-			case value_type_t::Int32: static_cast<ColumnInt32 *>(column)->insert(value.convert<Int64>()); break;
-			case value_type_t::Int64: static_cast<ColumnInt64 *>(column)->insert(value.convert<Int64>()); break;
-			case value_type_t::Float32: static_cast<ColumnFloat32 *>(column)->insert(value.convert<Float64>()); break;
-			case value_type_t::Float64: static_cast<ColumnFloat64 *>(column)->insert(value.convert<Float64>()); break;
-			case value_type_t::String: static_cast<ColumnString *>(column)->insert(value.convert<String>()); break;
-			case value_type_t::Date: static_cast<ColumnUInt16 *>(column)->insert(UInt16{LocalDate{value.convert<String>()}.getDayNum()}); break;
-			case value_type_t::DateTime: static_cast<ColumnUInt32 *>(column)->insert(time_t{LocalDateTime{value.convert<String>()}}); break;
+			case ValueType::UInt8: static_cast<ColumnUInt8 *>(column)->insert(value.convert<UInt64>()); break;
+			case ValueType::UInt16: static_cast<ColumnUInt16 *>(column)->insert(value.convert<UInt64>()); break;
+			case ValueType::UInt32: static_cast<ColumnUInt32 *>(column)->insert(value.convert<UInt64>()); break;
+			case ValueType::UInt64: static_cast<ColumnUInt64 *>(column)->insert(value.convert<UInt64>()); break;
+			case ValueType::Int8: static_cast<ColumnInt8 *>(column)->insert(value.convert<Int64>()); break;
+			case ValueType::Int16: static_cast<ColumnInt16 *>(column)->insert(value.convert<Int64>()); break;
+			case ValueType::Int32: static_cast<ColumnInt32 *>(column)->insert(value.convert<Int64>()); break;
+			case ValueType::Int64: static_cast<ColumnInt64 *>(column)->insert(value.convert<Int64>()); break;
+			case ValueType::Float32: static_cast<ColumnFloat32 *>(column)->insert(value.convert<Float64>()); break;
+			case ValueType::Float64: static_cast<ColumnFloat64 *>(column)->insert(value.convert<Float64>()); break;
+			case ValueType::String: static_cast<ColumnString *>(column)->insert(value.convert<String>()); break;
+			case ValueType::Date: static_cast<ColumnUInt16 *>(column)->insert(UInt16{LocalDate{value.convert<String>()}.getDayNum()}); break;
+			case ValueType::DateTime: static_cast<ColumnUInt32 *>(column)->insert(time_t{LocalDateTime{value.convert<String>()}}); break;
 		}
 	}
 

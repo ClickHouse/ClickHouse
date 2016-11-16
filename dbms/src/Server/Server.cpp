@@ -20,6 +20,7 @@
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/ProcessList.h>
+#include <DB/Interpreters/AsynchronousMetrics.h>
 
 #include <DB/Storages/System/StorageSystemNumbers.h>
 #include <DB/Storages/System/StorageSystemTables.h>
@@ -38,6 +39,7 @@
 #include <DB/Storages/System/StorageSystemFunctions.h>
 #include <DB/Storages/System/StorageSystemClusters.h>
 #include <DB/Storages/System/StorageSystemMetrics.h>
+#include <DB/Storages/System/StorageSystemAsynchronousMetrics.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReshardingWorker.h>
 #include <DB/Databases/DatabaseOrdinary.h>
@@ -48,22 +50,26 @@
 #include "HTTPHandler.h"
 #include "ReplicasStatusHandler.h"
 #include "InterserverIOHTTPHandler.h"
-#include "OLAPHTTPHandler.h"
 #include "TCPHandler.h"
 #include "MetricsTransmitter.h"
-#include "UsersConfigReloader.h"
+#include "ConfigReloader.h"
 #include "StatusFile.h"
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int NO_ELEMENTS_IN_CONFIG;
+}
 
-/// Отвечает "Ok.\n". Используется для проверки живости.
+
+/// Response with "Ok.\n". Used for availability checks.
 class PingRequestHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
 	{
 		try
 		{
@@ -78,11 +84,11 @@ public:
 };
 
 
-/// Отвечает 404 с подробным объяснением.
+/// Response with 404 and verbose description.
 class NotFoundHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
 	{
 		try
 		{
@@ -118,7 +124,7 @@ public:
 	HTTPRequestHandlerFactory(Server & server_, const std::string & name_)
 		: server(server_), log(&Logger::get(name_)), name(name_) {}
 
-	Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request)
+	Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override
 	{
 		LOG_TRACE(log, "HTTP Request for " << name << ". "
 			<< "Method: " << request.getMethod()
@@ -163,7 +169,7 @@ private:
 public:
 	TCPConnectionFactory(Server & server_) : server(server_), log(&Logger::get("TCPConnectionFactory")) {}
 
-	Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket)
+	Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket) override
 	{
 		LOG_TRACE(log, "TCP Request. " << "Address: " << socket.peerAddress().toString());
 
@@ -183,9 +189,23 @@ int Server::main(const std::vector<std::string> & args)
 	if (path.back() != '/')
 		path += '/';
 
+	/** Context contains all that query execution is dependent:
+	  *  settings, available functions, data types, aggregate functions, databases...
+	  */
+	global_context = std::make_unique<Context>();
+	global_context->setGlobalContext(*global_context);
+	global_context->setApplicationType(Context::ApplicationType::SERVER);
+	global_context->setPath(path);
+
+	std::string default_database = config().getString("default_database", "default");
+
+	/// Create directories for 'path' and for default database, if not exist.
+	Poco::File(path + "data/" + default_database).createDirectories();
+	Poco::File(path + "metadata/" + default_database).createDirectories();
+
 	StatusFile status{path + "status"};
 
-	/// Попробуем повысить ограничение на число открытых файлов.
+	/// Try to increase limit on number of open files.
 	{
 		rlimit rlim;
 		if (getrlimit(RLIMIT_NOFILE, &rlim))
@@ -198,37 +218,31 @@ int Server::main(const std::vector<std::string> & args)
 		else
 		{
 			rlim_t old = rlim.rlim_cur;
-			rlim.rlim_cur = rlim.rlim_max;
-			if (setrlimit(RLIMIT_NOFILE, &rlim))
-				throw Poco::Exception("Cannot setrlimit");
+			rlim.rlim_cur = config().getUInt("max_open_files", rlim.rlim_max);
+			int rc = setrlimit(RLIMIT_NOFILE, &rlim);
+			if (rc != 0)
+				//throwFromErrno(std::string("Cannot setrlimit (tried rlim_cur = ") + std::to_string(rlim.rlim_cur) + "). Try to specify max_open_files according to your system limits");
+				throw DB::Exception(std::string("Cannot setrlimit (tried rlim_cur = ") + std::to_string(rlim.rlim_cur) + "). Try to specify max_open_files according to your system limits. error: " + strerror(errno));
 
-			LOG_DEBUG(log, "Set rlimit on number of file descriptors to " << rlim.rlim_cur << " (was " << old << ")");
+			LOG_DEBUG(log, "Set rlimit on number of file descriptors to " << rlim.rlim_cur << " (was " << old << ").");
 		}
 	}
 
 	static ServerErrorHandler error_handler;
 	Poco::ErrorHandler::set(&error_handler);
 
-	/// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
+	/// Initialize DateLUT early, to not interfere with running time of first query.
 	LOG_DEBUG(log, "Initializing DateLUT.");
 	DateLUT::instance();
 	LOG_TRACE(log, "Initialized DateLUT.");
 
-	global_context.reset(new Context);
-
-	/** Контекст содержит всё, что влияет на обработку запроса:
-	  *  настройки, набор функций, типов данных, агрегатных функций, баз данных...
-	  */
-	global_context->setGlobalContext(*global_context);
-	global_context->setPath(path);
-
-	/// Директория для временных файлов при обработке тяжёлых запросов.
+	/// Directory with temporary data for processing of hard queries.
 	{
 		std::string tmp_path = config().getString("tmp_path", path + "tmp/");
 		global_context->setTemporaryPath(tmp_path);
 		Poco::File(tmp_path).createDirectories();
 
-		/// Очистка временных файлов.
+		/// Clearing old temporary files.
 		Poco::DirectoryIterator dir_end;
 		for (Poco::DirectoryIterator it(tmp_path); it != dir_end; ++it)
 		{
@@ -239,6 +253,12 @@ int Server::main(const std::vector<std::string> & args)
 			}
 		}
 	}
+
+	/** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
+	  * Flags may be cleared automatically after being applied by the server.
+	  * Examples: do repair of local data; clone all replicated tables from replica.
+	  */
+	Poco::File(path + "flags/").createDirectories();
 
 	bool has_zookeeper = false;
 	if (config().has("zookeeper"))
@@ -269,23 +289,26 @@ int Server::main(const std::vector<std::string> & args)
 	if (config().has("macros"))
 		global_context->setMacros(Macros(config(), "macros"));
 
-	std::string users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
-	auto users_config_reloader = std::make_unique<UsersConfigReloader>(users_config_path, global_context.get());
+	/// Initialize automatic config updater
+	std::string main_config_path = config().getString("config-file", "config.xml");
+	std::string users_config_path = config().getString("users_config", main_config_path);
+	std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
+	auto config_reloader = std::make_unique<ConfigReloader>(main_config_path, users_config_path, include_from_path, global_context.get());
 
-	/// Максимальное количество одновременно выполняющихся запросов.
+	/// Limit on total number of coucurrently executed queries.
 	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
 
-	/// Размер кэша разжатых блоков. Если нулевой - кэш отключён.
+	/// Size of cache for uncompressed blocks. Zero means disabled.
 	size_t uncompressed_cache_size = parse<size_t>(config().getString("uncompressed_cache_size", "0"));
 	if (uncompressed_cache_size)
 		global_context->setUncompressedCache(uncompressed_cache_size);
 
-	/// Размер кэша засечек. Обязательный параметр.
+	/// Size of cache for marks (index of MergeTree family of tables). It is necessary.
 	size_t mark_cache_size = parse<size_t>(config().getString("mark_cache_size"));
 	if (mark_cache_size)
 		global_context->setMarkCache(mark_cache_size);
 
-	/// Загружаем настройки.
+	/// Load global settings from default profile.
 	Settings & settings = global_context->getSettingsRef();
 	global_context->setSetting("profile", config().getString("default_profile", "default"));
 
@@ -293,7 +316,9 @@ int Server::main(const std::vector<std::string> & args)
 	loadMetadata(*global_context);
 	LOG_DEBUG(log, "Loaded metadata.");
 
-	/// Создаём системные таблицы.
+	global_context->setCurrentDatabase(default_database);
+
+	/// Create system tables.
 	if (!global_context->isDatabaseExist("system"))
 	{
 		Poco::File(path + "data/system").createDirectories();
@@ -301,7 +326,9 @@ int Server::main(const std::vector<std::string> & args)
 
 		auto system_database = std::make_shared<DatabaseOrdinary>("system", path + "metadata/system/");
 		global_context->addDatabase("system", system_database);
-		system_database->loadTables(*global_context, nullptr);
+
+		/// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
+		system_database->loadTables(*global_context, nullptr, true);
 	}
 
 	DatabasePtr system_database = global_context->getDatabase("system");
@@ -327,8 +354,6 @@ int Server::main(const std::vector<std::string> & args)
 	if (has_zookeeper)
 		system_database->attachTable("zookeeper", StorageSystemZooKeeper::create("zookeeper"));
 
-	global_context->setCurrentDatabase(config().getString("default_database", "default"));
-
 	bool has_resharding_worker = false;
 	if (has_zookeeper && config().has("resharding"))
 	{
@@ -339,19 +364,17 @@ int Server::main(const std::vector<std::string> & args)
 	}
 
 	SCOPE_EXIT(
-		LOG_DEBUG(log, "Closed all connections.");
-
-		/** Попросим завершить фоновую работу у всех движков таблиц,
-		  *  а также у query_log-а.
-		  * Это важно делать заранее, не в деструкторе Context-а, так как
-		  *  движки таблиц могут при уничтожении всё ещё пользоваться Context-ом.
+		/** Ask to cancel background jobs all table engines,
+		  *  and also query_log.
+		  * It is important to do early, not in destructor of Context, because
+		  *  table engines could use Context on destroy.
 		  */
 		LOG_INFO(log, "Shutting down storages.");
 		global_context->shutdown();
 		LOG_DEBUG(log, "Shutted down storages.");
 
-		/** Явно уничтожаем контекст - это удобнее, чем в деструкторе Server-а, так как ещё доступен логгер.
-		  * В этот момент никто больше не должен владеть shared-частью контекста.
+		/** Explicitly destroy Context. It is more convenient than in destructor of Server, becuase logger is still available.
+		  * At this moment, no one could own shared part of Context.
 		  */
 		global_context.reset();
 
@@ -359,10 +382,6 @@ int Server::main(const std::vector<std::string> & args)
 	);
 
 	{
-		const auto metrics_transmitter = config().getBool("use_graphite", true)
-			? std::make_unique<MetricsTransmitter>()
-			: nullptr;
-
 		const std::string listen_host = config().getString("listen_host", "::");
 
 		Poco::Timespan keep_alive_timeout(config().getInt("keep_alive_timeout", 10), 0);
@@ -372,43 +391,57 @@ int Server::main(const std::vector<std::string> & args)
 		http_params->setTimeout(settings.receive_timeout);
 		http_params->setKeepAliveTimeout(keep_alive_timeout);
 
-		/// HTTP
-		Poco::Net::SocketAddress http_socket_address;
+		/// For testing purposes, user may omit tcp_port or http_port in configuration file.
 
-		try
+		/// HTTP
+		std::experimental::optional<Poco::Net::HTTPServer> http_server;
+		if (config().has("http_port"))
 		{
-			http_socket_address = Poco::Net::SocketAddress(listen_host, config().getInt("http_port"));
-		}
-		catch (const Poco::Net::DNSException & e)
-		{
-			/// Better message when IPv6 is disabled on host.
-			if (e.code() == EAI_ADDRFAMILY)
+			Poco::Net::SocketAddress http_socket_address;
+
+			try
 			{
-				LOG_ERROR(log, "Cannot resolve listen_host (" << listen_host + "), error: " << e.message() << ". "
-					"If it is an IPv6 address and your host has disabled IPv6, then consider to specify IPv4 address to listen in <listen_host> element of configuration file. Example: <listen_host>0.0.0.0</listen_host>");
+				http_socket_address = Poco::Net::SocketAddress(listen_host, config().getInt("http_port"));
+			}
+			catch (const Poco::Net::DNSException & e)
+			{
+				/// Better message when IPv6 is disabled on host.
+				if (e.code() == EAI_ADDRFAMILY)
+				{
+					LOG_ERROR(log, "Cannot resolve listen_host (" << listen_host + "), error: " << e.message() << ". "
+						"If it is an IPv6 address and your host has disabled IPv6, then consider to specify IPv4 address to listen in <listen_host> element of configuration file. Example: <listen_host>0.0.0.0</listen_host>");
+				}
+
+				throw;
 			}
 
-			throw;
+			Poco::Net::ServerSocket http_socket(http_socket_address);
+			http_socket.setReceiveTimeout(settings.receive_timeout);
+			http_socket.setSendTimeout(settings.send_timeout);
+			http_server.emplace(
+				new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"),
+				server_pool,
+				http_socket,
+				http_params);
 		}
 
-		Poco::Net::ServerSocket http_socket(http_socket_address);
-		http_socket.setReceiveTimeout(settings.receive_timeout);
-		http_socket.setSendTimeout(settings.send_timeout);
-		Poco::Net::HTTPServer http_server(
-			new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"),
-			server_pool,
-			http_socket,
-			http_params);
-
 		/// TCP
-		Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress(listen_host, config().getInt("tcp_port")));
-		tcp_socket.setReceiveTimeout(settings.receive_timeout);
-		tcp_socket.setSendTimeout(settings.send_timeout);
-		Poco::Net::TCPServer tcp_server(
-			new TCPConnectionFactory(*this),
-			server_pool,
-			tcp_socket,
-			new Poco::Net::TCPServerParams);
+		std::experimental::optional<Poco::Net::TCPServer> tcp_server;
+		if (config().has("tcp_port"))
+		{
+			Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress(listen_host, config().getInt("tcp_port")));
+			tcp_socket.setReceiveTimeout(settings.receive_timeout);
+			tcp_socket.setSendTimeout(settings.send_timeout);
+			tcp_server.emplace(
+				new TCPConnectionFactory(*this),
+				server_pool,
+				tcp_socket,
+				new Poco::Net::TCPServerParams);
+		}
+
+		/// At least one of TCP and HTTP servers must be created.
+		if (!http_server && !tcp_server)
+			throw Exception("No 'tcp_port' and 'http_port' is specified in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
 		/// Interserver IO HTTP
 		std::experimental::optional<Poco::Net::HTTPServer> interserver_io_http_server;
@@ -424,30 +457,10 @@ int Server::main(const std::vector<std::string> & args)
 				http_params);
 		}
 
-		/// OLAP HTTP
-		std::experimental::optional<Poco::Net::HTTPServer> olap_http_server;
-		bool use_olap_server = config().has("olap_compatibility.port");
-		if (use_olap_server)
-		{
-			olap_parser = std::make_unique<OLAP::QueryParser>();
-			olap_converter = std::make_unique<OLAP::QueryConverter>(config());
-
-			Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("olap_compatibility.port")));
-			olap_http_socket.setReceiveTimeout(settings.receive_timeout);
-			olap_http_socket.setSendTimeout(settings.send_timeout);
-			olap_http_server.emplace(
-				new HTTPRequestHandlerFactory<OLAPHTTPHandler>(*this, "OLAPHTTPHandler-factory"),
-				server_pool,
-				olap_http_socket,
-				http_params);
-		}
-
-		http_server.start();
-		tcp_server.start();
+		http_server->start();
+		tcp_server->start();
 		if (interserver_io_http_server)
 			interserver_io_http_server->start();
-		if (olap_http_server)
-			olap_http_server->start();
 
 		LOG_INFO(log, "Ready for connections.");
 
@@ -465,14 +478,14 @@ int Server::main(const std::vector<std::string> & args)
 
 			LOG_DEBUG(log, "Waiting for current connections to close.");
 
-			users_config_reloader.reset();
-
 			is_cancelled = true;
 
-			http_server.stop();
-			tcp_server.stop();
-			if (use_olap_server)
-				olap_http_server->stop();
+			http_server->stop();
+			tcp_server->stop();
+
+			LOG_DEBUG(log, "Closed all connections.");
+
+			config_reloader.reset();
 		);
 
 		/// try to load dictionaries immediately, throw on error and die
@@ -483,14 +496,23 @@ int Server::main(const std::vector<std::string> & args)
 				global_context->tryCreateDictionaries();
 				global_context->tryCreateExternalDictionaries();
 			}
-
-			waitForTerminationRequest();
 		}
 		catch (...)
 		{
 			LOG_ERROR(log, "Caught exception while loading dictionaries.");
 			throw;
 		}
+
+		/// This object will periodically calculate some metrics.
+		AsynchronousMetrics async_metrics(*global_context);
+
+		system_database->attachTable("asynchronous_metrics", StorageSystemAsynchronousMetrics::create("asynchronous_metrics", async_metrics));
+
+		const auto metrics_transmitter = config().getBool("use_graphite", true)
+			? std::make_unique<MetricsTransmitter>(async_metrics)
+			: nullptr;
+
+		waitForTerminationRequest();
 	}
 
 	return Application::EXIT_OK;
@@ -498,5 +520,4 @@ int Server::main(const std::vector<std::string> & args)
 
 }
 
-
-YANDEX_APP_SERVER_MAIN(DB::Server);
+YANDEX_APP_SERVER_MAIN_FUNC(DB::Server, mainEntryClickHouseServer);

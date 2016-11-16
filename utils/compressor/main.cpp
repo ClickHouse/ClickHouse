@@ -10,6 +10,15 @@
 #include <DB/IO/copyData.h>
 
 
+namespace DB
+{
+	namespace ErrorCodes
+	{
+		extern const int TOO_LARGE_SIZE_COMPRESSED;
+	}
+}
+
+
 /// Выводит размеры разжатых и сжатых блоков для сжатого файла.
 void stat(DB::ReadBuffer & in, DB::WriteBuffer & out)
 {

@@ -134,7 +134,6 @@ void TCPHandler::runImpl()
 		{
 			/// Восстанавливаем контекст запроса.
 			query_context = connection_context;
-			query_context.setInterface(Context::Interface::TCP);
 
 			/** Если Query - обрабатываем. Если Ping или Cancel - возвращаемся в начало.
 			  * Могут прийти настройки на отдельный запрос, которые модифицируют query_context.
@@ -297,11 +296,11 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
 
 void TCPHandler::processOrdinaryQuery()
 {
-	/// Вынимаем результат выполнения запроса, если есть, и пишем его в сеть.
+	/// Pull query execution result, if exists, and send it to network.
 	if (state.io.in)
 	{
-		/// Отправим блок-заголовок, чтобы клиент мог подготовить формат вывода
-		if (state.io.in_sample && client_revision >= DBMS_MIN_REVISION_WITH_HEADER_BLOCK)
+		/// Send header-block, to allow client to prepare output format for data to send.
+		if (state.io.in_sample)
 			sendData(state.io.in_sample);
 
 		AsynchronousBlockInputStream async_in(state.io.in);
@@ -366,13 +365,10 @@ void TCPHandler::processOrdinaryQuery()
 
 void TCPHandler::sendProfileInfo()
 {
-	if (client_revision < DBMS_MIN_REVISION_WITH_PROFILING_PACKET)
-		return;
-
 	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
 	{
 		writeVarUInt(Protocol::Server::ProfileInfo, *out);
-		input->getInfo().write(*out);
+		input->getProfileInfo().write(*out);
 		out->next();
 	}
 }
@@ -380,9 +376,6 @@ void TCPHandler::sendProfileInfo()
 
 void TCPHandler::sendTotals()
 {
-	if (client_revision < DBMS_MIN_REVISION_WITH_TOTALS_EXTREMES)
-		return;
-
 	if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(&*state.io.in))
 	{
 		const Block & totals = input->getTotals();
@@ -405,9 +398,6 @@ void TCPHandler::sendTotals()
 
 void TCPHandler::sendExtremes()
 {
-	if (client_revision < DBMS_MIN_REVISION_WITH_TOTALS_EXTREMES)
-		return;
-
 	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
 	{
 		const Block & extremes = input->getExtremes();
@@ -432,9 +422,6 @@ void TCPHandler::receiveHello()
 {
 	/// Получить hello пакет.
 	UInt64 packet_type = 0;
-	String client_name;
-	UInt64 client_version_major = 0;
-	UInt64 client_version_minor = 0;
 	String user = "default";
 	String password;
 
@@ -448,10 +435,7 @@ void TCPHandler::receiveHello()
 		{
 			writeString("HTTP/1.0 400 Bad Request\r\n\r\n"
 				"Port " + server.config().getString("tcp_port") + " is for clickhouse-client program.\r\n"
-				"You must use port " + server.config().getString("http_port") + " for HTTP"
-				+ (server.config().getBool("use_olap_http_server", false)
-					? "\r\n or port " + server.config().getString("olap_http_port") + " for OLAPServer compatibility layer.\r\n"
-					: ".\r\n"),
+				"You must use port " + server.config().getString("http_port") + " for HTTP.\r\n",
 				*out);
 
 			throw Exception("Client has connected to wrong port", ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT);
@@ -465,12 +449,8 @@ void TCPHandler::receiveHello()
 	readVarUInt(client_version_minor, *in);
 	readVarUInt(client_revision, *in);
 	readStringBinary(default_database, *in);
-
-	if (client_revision >= DBMS_MIN_REVISION_WITH_USER_PASSWORD)
-	{
-		readStringBinary(user, *in);
-		readStringBinary(password, *in);
-	}
+	readStringBinary(user, *in);
+	readStringBinary(password, *in);
 
 	LOG_DEBUG(log, "Connected " << client_name
 		<< " version " << client_version_major
@@ -480,7 +460,7 @@ void TCPHandler::receiveHello()
 		<< (!user.empty() ? ", user: " + user : "")
 		<< ".");
 
-	connection_context.setUser(user, password, socket().peerAddress().host(), "");
+	connection_context.setUser(user, password, socket().peerAddress(), "");
 }
 
 
@@ -539,22 +519,40 @@ void TCPHandler::receiveQuery()
 	UInt64 compression = 0;
 
 	state.is_empty = false;
-	if (client_revision < DBMS_MIN_REVISION_WITH_STRING_QUERY_ID)
-	{
-		UInt64 query_id_int;
-		readIntBinary(query_id_int, *in);
-		state.query_id = "";
-	}
-	else
-		readStringBinary(state.query_id, *in);
+	readStringBinary(state.query_id, *in);
 
 	query_context.setCurrentQueryId(state.query_id);
 
-	/// Настройки на отдельный запрос.
-	if (client_revision >= DBMS_MIN_REVISION_WITH_PER_QUERY_SETTINGS)
+	/// Client info
 	{
-		query_context.getSettingsRef().deserialize(*in);
+		ClientInfo & client_info = query_context.getClientInfo();
+		if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
+			client_info.read(*in, client_revision);
+
+		/// For better support of old clients, that does not send ClientInfo.
+		if (client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)
+		{
+			client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+			client_info.client_name = client_name;
+			client_info.client_version_major = client_version_major;
+			client_info.client_version_minor = client_version_minor;
+			client_info.client_revision = client_revision;
+		}
+
+		/// Set fields, that are known apriori.
+		client_info.interface = ClientInfo::Interface::TCP;
+
+		if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+		{
+			/// 'Current' fields was set at receiveHello.
+			client_info.initial_user = client_info.current_user;
+			client_info.initial_query_id = client_info.current_query_id;
+			client_info.initial_address = client_info.current_address;
+		}
 	}
+
+	/// Per query settings.
+	query_context.getSettingsRef().deserialize(*in);
 
 	readVarUInt(stage, *in);
 	state.stage = QueryProcessingStage::Enum(stage);

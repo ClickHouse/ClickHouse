@@ -13,6 +13,9 @@
 	#include <emmintrin.h>
 #endif
 
+#include <DB/Core/Types.h>
+#include <DB/Common/unaligned.h>
+
 
 /// Штука, чтобы не создавать строки для поиска подстроки в хэш таблице.
 struct StringRef
@@ -32,6 +35,7 @@ struct StringRef
 
 using StringRefs = std::vector<StringRef>;
 
+using UInt64 = DB::UInt64;
 
 #if defined(__x86_64__)
 
@@ -101,7 +105,7 @@ inline bool memequalSSE2Wide(const char * p1, const char * p2, size_t size)
 		case 11: if (p1[10] != p2[10]) return false;
 		case 10: if (p1[9] != p2[9]) return false;
 		case 9:  if (p1[8] != p2[8]) return false;
-	l8: case 8:  return reinterpret_cast<const uint64_t *>(p1)[0] == reinterpret_cast<const uint64_t *>(p2)[0];
+		l8: case 8:  return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
 		case 7:  if (p1[6] != p2[6]) return false;
 		case 6:  if (p1[5] != p2[5]) return false;
 		case 5:  if (p1[4] != p2[4]) return false;
@@ -159,13 +163,21 @@ inline bool operator> (StringRef lhs, StringRef rhs)
   * Подробнее см. hash_map_string_3.cpp
   */
 
+struct StringRefHash64
+{
+	size_t operator() (StringRef x) const
+	{
+		return CityHash64(x.data, x.size);
+	}
+};
+
 #if defined(__x86_64__)
 
 #ifdef __SSE4_1__
 #include <smmintrin.h>
 #else
 
-inline uint64 _mm_crc32_u64(uint64 crc, uint64 value)
+inline UInt64 _mm_crc32_u64(UInt64 crc, UInt64 value)
 {
 	asm("crc32q %[value], %[crc]\n" : [crc] "+r" (crc) : [value] "rm" (value));
 	return crc;
@@ -175,30 +187,30 @@ inline uint64 _mm_crc32_u64(uint64 crc, uint64 value)
 
 /// Кусочки взяты из CityHash.
 
-inline uint64 hashLen16(uint64 u, uint64 v)
+inline UInt64 hashLen16(UInt64 u, UInt64 v)
 {
 	return Hash128to64(uint128(u, v));
 }
 
-inline uint64 shiftMix(uint64 val)
+inline UInt64 shiftMix(UInt64 val)
 {
 	return val ^ (val >> 47);
 }
 
-inline uint64 rotateByAtLeast1(uint64 val, int shift)
+inline UInt64 rotateByAtLeast1(UInt64 val, int shift)
 {
 	return (val >> shift) | (val << (64 - shift));
 }
 
 inline size_t hashLessThan8(const char * data, size_t size)
 {
-	static constexpr uint64 k2 = 0x9ae16a3b2f90404fULL;
-	static constexpr uint64 k3 = 0xc949d7c7509e6557ULL;
+	static constexpr UInt64 k2 = 0x9ae16a3b2f90404fULL;
+	static constexpr UInt64 k3 = 0xc949d7c7509e6557ULL;
 
 	if (size >= 4)
 	{
-		uint64 a = *reinterpret_cast<const uint32_t *>(data);;
-		return hashLen16(size + (a << 3), *reinterpret_cast<const uint32_t *>(data + size - 4));
+		UInt64 a = unalignedLoad<uint32_t>(data);
+		return hashLen16(size + (a << 3), unalignedLoad<uint32_t>(data + size - 4));
 	}
 
 	if (size > 0)
@@ -218,8 +230,8 @@ inline size_t hashLessThan16(const char * data, size_t size)
 {
 	if (size > 8)
 	{
-		uint64 a = *reinterpret_cast<const uint64_t *>(data);
-		uint64 b = *reinterpret_cast<const uint64_t *>(data + size - 8);
+		UInt64 a = unalignedLoad<UInt64>(data);
+		UInt64 b = unalignedLoad<UInt64>(data + size - 8);
 		return hashLen16(a, rotateByAtLeast1(b + size, size)) ^ b;
 	}
 
@@ -246,13 +258,13 @@ struct CRC32Hash
 
 		do
 		{
-			uint64_t word = *reinterpret_cast<const uint64_t *>(pos);
+			UInt64 word = unalignedLoad<UInt64>(pos);
 			res = _mm_crc32_u64(res, word);
 
 			pos += 8;
 		} while (pos + 8 < end);
 
-		uint64_t word = *reinterpret_cast<const uint64_t *>(end - 8);	/// Не уверен, что это нормально.
+		UInt64 word = unalignedLoad<UInt64>(end - 8);	/// Не уверен, что это нормально.
 		res = _mm_crc32_u64(res, word);
 
 		return res;
@@ -263,13 +275,7 @@ struct StringRefHash : CRC32Hash {};
 
 #else
 
-struct StringRefHash
-{
-	size_t operator() (StringRef x) const
-	{
-		return CityHash64(x.data, x.size);
-	}
-};
+struct StringRefHash : StringRefHash64 {};
 
 #endif
 

@@ -8,6 +8,7 @@
 
 #include <DB/Core/Defines.h>
 #include <DB/Common/PODArray.h>
+#include <DB/Common/StringUtils.h>
 #include <DB/IO/ReadHelpers.h>
 #include <common/find_first_symbols.h>
 
@@ -19,6 +20,7 @@ namespace ErrorCodes
 	extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
 	extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
 	extern const int CANNOT_PARSE_QUOTED_STRING;
+	extern const int INCORRECT_DATA;
 }
 
 
@@ -46,6 +48,24 @@ bool checkString(const char * s, ReadBuffer & buf)
 	}
 	return true;
 }
+
+
+static bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf)
+{
+	for (; *s; ++s)
+	{
+		if (buf.eof())
+			return false;
+
+		char c = *buf.position();
+		if (!(*s == c || (isAlphaASCII(*s) && alternateCaseIfAlphaASCII(*s) == c)))
+			return false;
+
+		++buf.position();
+	}
+	return true;
+}
+
 
 void assertString(const char * s, ReadBuffer & buf)
 {
@@ -361,6 +381,7 @@ void readQuotedString(String & s, ReadBuffer & buf)
 }
 
 template void readQuotedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readDoubleQuotedStringInto(NullSink & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf)
 {
@@ -503,6 +524,7 @@ void readJSONString(String & s, ReadBuffer & buf)
 }
 
 template void readJSONStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readJSONStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
 
 
 void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf)
@@ -514,7 +536,7 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf)
 	char * s_pos = s;
 
 	/// Кусок, похожий на unix timestamp.
-	while (s_pos < s + UNIX_TIMESTAMP_MAX_LENGTH && !buf.eof() && *buf.position() >= '0' && *buf.position() <= '9')
+	while (s_pos < s + UNIX_TIMESTAMP_MAX_LENGTH && !buf.eof() && isNumericASCII(*buf.position()))
 	{
 		*s_pos = *buf.position();
 		++s_pos;
@@ -547,6 +569,74 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf)
 	}
 	else
 		datetime = parse<time_t>(s, s_pos - s);
+}
+
+
+void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
+{
+	if (buf.eof())
+		throw Exception("Unexpected EOF for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+	else if (*buf.position() == '"') /// skip double-quoted string
+	{
+		NullSink sink;
+		readJSONStringInto(sink, buf);
+	}
+	else if (isNumericASCII(*buf.position())) /// skip number
+	{
+		double v;
+		if (!tryReadFloatText(v, buf))
+			throw Exception("Expected a number field for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+	}
+	else if (*buf.position() == 'n') /// skip null
+	{
+		assertString("null", buf);
+	}
+	else if (*buf.position() == 't') /// skip true
+	{
+		assertString("true", buf);
+	}
+	else if (*buf.position() == 'f') /// skip false
+	{
+		assertString("false", buf);
+	}
+	else if (*buf.position() == '[')
+	{
+		++buf.position();
+		skipWhitespaceIfAny(buf);
+
+		if (!buf.eof() && *buf.position() == ']') /// skip empty array
+		{
+			++buf.position();
+			return;
+		}
+
+		while (true)
+		{
+			skipJSONFieldPlain(buf, name_of_filed);
+			skipWhitespaceIfAny(buf);
+
+			if (!buf.eof() && *buf.position() == ',')
+			{
+				++buf.position();
+				skipWhitespaceIfAny(buf);
+			}
+			else if (!buf.eof() && *buf.position() == ']')
+			{
+				++buf.position();
+				break;
+			}
+			else
+				throw Exception("Unexpected symbol for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+		}
+	}
+	else if (*buf.position() == '{') /// fail on objects
+	{
+		throw Exception("Unexpected nested field for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+	}
+	else
+	{
+		throw Exception("Unexpected symbol for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+	}
 }
 
 
@@ -590,6 +680,45 @@ void readAndThrowException(ReadBuffer & buf, const String & additional_message)
 	Exception e;
 	readException(e, buf, additional_message);
 	e.rethrow();
+}
+
+
+/** Must successfully parse inf, INF and Infinity.
+  * All other variants in different cases are also parsed for simplicity.
+  */
+bool parseInfinity(ReadBuffer & buf)
+{
+	if (!checkStringCaseInsensitive("inf", buf))
+		return false;
+
+	/// Just inf.
+	if (buf.eof() || !isWordCharASCII(*buf.position()))
+		return true;
+
+	/// If word characters after inf, it should be infinity.
+	return checkStringCaseInsensitive("inity", buf);
+}
+
+
+/** Must successfully parse nan, NAN and NaN.
+  * All other variants in different cases are also parsed for simplicity.
+  */
+bool parseNaN(ReadBuffer & buf)
+{
+	return checkStringCaseInsensitive("nan", buf);
+}
+
+
+void assertInfinity(ReadBuffer & buf)
+{
+	if (!parseInfinity(buf))
+		throw Exception("Cannot parse infinity.", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+}
+
+void assertNaN(ReadBuffer & buf)
+{
+	if (!parseNaN(buf))
+		throw Exception("Cannot parse NaN.", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
 }
 
 }

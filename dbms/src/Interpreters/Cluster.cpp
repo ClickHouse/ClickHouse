@@ -22,16 +22,22 @@ namespace ErrorCodes
 namespace
 {
 
-/// Вес шарда по-умолчанию.
+/// Default shard weight.
 static constexpr int default_weight = 1;
 
 inline bool isLocal(const Cluster::Address & address)
 {
-	///	Если среди реплик существует такая, что:
-	/// - её порт совпадает с портом, который слушает сервер;
-	/// - её хост резолвится в набор адресов, один из которых совпадает с одним из адресов сетевых интерфейсов сервера
-	/// то нужно всегда ходить на этот шард без межпроцессного взаимодействия
-	return isLocalAddress(address.resolved_address);
+	///	If there is replica, for which:
+	/// - its port is the same that the server is listening;
+	/// - its host is resolved to set of addresses, one of which is the same as one of addresses of network interfaces of the server machine*;
+	/// then we must go to this shard without any inter-process communication.
+	///
+	/// * - this criteria is somewhat approximate.
+	///
+	/// Also, replica is considered non-local, if it has default database set
+	///  (only reason is to avoid query rewrite).
+
+	return address.default_database.empty() && isLocalAddress(address.resolved_address);
 }
 
 inline std::string addressToDirName(const Cluster::Address & address)
@@ -43,7 +49,7 @@ inline std::string addressToDirName(const Cluster::Address & address)
 		std::to_string(address.resolved_address.port());
 }
 
-/// Для кэширования DNS запросов.
+/// To cache DNS requests.
 Poco::Net::SocketAddress resolveSocketAddressImpl1(const String & host, UInt16 port)
 {
 	return Poco::Net::SocketAddress(host, port);
@@ -68,17 +74,16 @@ Poco::Net::SocketAddress resolveSocketAddress(const String & host_and_port)
 
 }
 
-/// Реализация класса Cluster::Address
+/// Implementation of Cluster::Address class
 
-Cluster::Address::Address(const String & config_prefix)
+Cluster::Address::Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-	const auto & config = Poco::Util::Application::instance().config();
-
 	host_name = config.getString(config_prefix + ".host");
 	port = config.getInt(config_prefix + ".port");
 	resolved_address = resolveSocketAddress(host_name, port);
 	user = config.getString(config_prefix + ".user", "default");
 	password = config.getString(config_prefix + ".password", "");
+	default_database = config.getString(config_prefix + ".default_database", "");
 }
 
 
@@ -87,7 +92,7 @@ Cluster::Address::Address(const String & host_port_, const String & user_, const
 {
 	UInt16 default_port = Poco::Util::Application::instance().config().getInt("tcp_port", 0);
 
-	/// Похоже на то, что строка host_port_ содержит порт. Если условие срабатывает - не обязательно значит, что порт есть (пример: [::]).
+	/// It's like that 'host_port_' string contains port. If condition is met, it doesn't necessarily mean that port exists (example: [::]).
 	if ((nullptr != strchr(host_port_.c_str(), ':')) || !default_port)
 	{
 		resolved_address = resolveSocketAddress(host_port_);
@@ -102,25 +107,60 @@ Cluster::Address::Address(const String & host_port_, const String & user_, const
 	}
 }
 
-/// Реализация класса Clusters
+/// Implementation of Clusters class
 
-Clusters::Clusters(const Settings & settings, const String & config_name)
+Clusters::Clusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
 {
-	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 	Poco::Util::AbstractConfiguration::Keys config_keys;
 	config.keys(config_name, config_keys);
 
 	for (const auto & key : config_keys)
-		impl.emplace(std::piecewise_construct,
-			std::forward_as_tuple(key),
-			std::forward_as_tuple(settings, config_name + "." + key));
+		impl.emplace(key, std::make_shared<Cluster>(config, settings, config_name + "." + key));
+}
+
+
+ClusterPtr Clusters::getCluster(const std::string & cluster_name) const
+{
+	std::lock_guard<std::mutex> lock(mutex);
+
+	auto it = impl.find(cluster_name);
+	return (it != impl.end()) ? it->second : nullptr;
+}
+
+
+void Clusters::updateClusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
+{
+	Poco::Util::AbstractConfiguration::Keys config_keys;
+	config.keys(config_name, config_keys);
+
+	std::lock_guard<std::mutex> lock(mutex);
+
+	for (const auto & key : config_keys)
+	{
+		auto it = impl.find(key);
+		auto new_cluster = std::make_shared<Cluster>(config, settings, config_name + "." + key);
+
+		if (it == impl.end())
+			impl.emplace(key, std::move(new_cluster));
+		else
+		{
+			//TODO: Check that cluster update is necessarily
+			it->second = std::move(new_cluster);
+		}
+	}
+}
+
+Clusters::Impl Clusters::getContainer() const
+{
+	std::lock_guard<std::mutex> lock(mutex);
+	/// The following line copies container of shared_ptrs to return value under lock
+	return impl;
 }
 
 /// Реализация класса Cluster
 
-Cluster::Cluster(const Settings & settings, const String & cluster_name)
+Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name)
 {
-	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 	Poco::Util::AbstractConfiguration::Keys config_keys;
 	config.keys(cluster_name, config_keys);
 
@@ -142,7 +182,7 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 			if (weight == 0)
 				continue;
 
-			addresses.emplace_back(prefix);
+			addresses.emplace_back(config, prefix);
 			addresses.back().replica_num = 1;
 			const auto & address = addresses.back();
 
@@ -158,7 +198,7 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 				info.pool = std::make_shared<ConnectionPool>(
 					settings.distributed_connections_pool_size,
 					address.host_name, address.port, address.resolved_address,
-					"", address.user, address.password,
+					address.default_database, address.user, address.password,
 					"server", Protocol::Compression::Enable,
 					saturate(settings.connect_timeout, settings.limits.max_execution_time),
 					saturate(settings.receive_timeout, settings.limits.max_execution_time),
@@ -199,7 +239,7 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 
 				if (startsWith(replica_key, "replica"))
 				{
-					replica_addresses.emplace_back(partial_prefix + replica_key);
+					replica_addresses.emplace_back(config, partial_prefix + replica_key);
 					replica_addresses.back().replica_num = current_replica_num;
 					++current_replica_num;
 
@@ -237,7 +277,7 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 					replicas.emplace_back(std::make_shared<ConnectionPool>(
 						settings.distributed_connections_pool_size,
 						replica.host_name, replica.port, replica.resolved_address,
-						"", replica.user, replica.password,
+						replica.default_database, replica.user, replica.password,
 						"server", Protocol::Compression::Enable,
 						saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
 						saturate(settings.receive_timeout, settings.limits.max_execution_time),
@@ -265,7 +305,7 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 }
 
 
-Cluster::Cluster(const Settings & settings, std::vector<std::vector<String>> names,
+Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
 				 const String & username, const String & password)
 {
 	UInt32 current_shard_num = 1;
@@ -286,7 +326,7 @@ Cluster::Cluster(const Settings & settings, std::vector<std::vector<String>> nam
 			replicas.emplace_back(std::make_shared<ConnectionPool>(
 				settings.distributed_connections_pool_size,
 				replica.host_name, replica.port, replica.resolved_address,
-				"", replica.user, replica.password,
+				replica.default_database, replica.user, replica.password,
 				"server", Protocol::Compression::Enable,
 				saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
 				saturate(settings.receive_timeout, settings.limits.max_execution_time),

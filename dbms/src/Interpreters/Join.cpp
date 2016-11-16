@@ -65,11 +65,11 @@ static void initImpl(Maps & maps, Join::Type type)
 {
 	switch (type)
 	{
-		case Join::Type::EMPTY:																	break;
-		case Join::Type::KEY_64:		maps.key64		.reset(new typename Maps::MapUInt64); 	break;
-		case Join::Type::KEY_STRING:	maps.key_string	.reset(new typename Maps::MapString); 	break;
-		case Join::Type::HASHED:		maps.hashed		.reset(new typename Maps::MapHashed);	break;
-		case Join::Type::CROSS:																	break;
+		case Join::Type::EMPTY:			break;
+		case Join::Type::KEY_64:		maps.key64		= std::make_unique<typename Maps::MapUInt64>(); break;
+		case Join::Type::KEY_STRING:	maps.key_string	= std::make_unique<typename Maps::MapString>(); break;
+		case Join::Type::HASHED:		maps.hashed		= std::make_unique<typename Maps::MapHashed>();	break;
+		case Join::Type::CROSS:			break;
 
 		default:
 			throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
@@ -446,7 +446,7 @@ bool Join::insertFromBlock(const Block & block)
 			size_t pos = stored_block->getPositionByName(name);
 			ColumnWithTypeAndName col = stored_block->getByPosition(pos);
 			stored_block->erase(pos);
-			stored_block->insert(key_num, col);
+			stored_block->insert(key_num, std::move(col));
 			++key_num;
 		}
 	}
@@ -641,9 +641,9 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	{
 		const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.getByPosition(i);
 		ColumnWithTypeAndName new_column = src_column.cloneEmpty();
-		block.insert(new_column);
 		added_columns[i] = new_column.column.get();
 		added_columns[i]->reserve(src_column.column->size());
+		block.insert(std::move(new_column));
 	}
 
 	size_t rows = block.rowsInFirstColumn();
@@ -652,14 +652,14 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	std::unique_ptr<IColumn::Filter> filter;
 
 	if ((kind == ASTTableJoin::Kind::Inner || kind == ASTTableJoin::Kind::Right) && strictness == ASTTableJoin::Strictness::Any)
-		filter.reset(new IColumn::Filter(rows));
+		filter = std::make_unique<IColumn::Filter>(rows);
 
 	/// Используется при ALL ... JOIN
 	IColumn::Offset_t current_offset = 0;
 	std::unique_ptr<IColumn::Offsets_t> offsets_to_replicate;
 
 	if (strictness == ASTTableJoin::Strictness::All)
-		offsets_to_replicate.reset(new IColumn::Offsets_t(rows));
+		offsets_to_replicate = std::make_unique<IColumn::Offsets_t>(rows);
 
 	/** Для LEFT/INNER JOIN, сохранённые блоки не содержат ключи.
 	  * Для FULL/RIGHT JOIN, сохранённые блоки содержат ключи;
@@ -776,8 +776,8 @@ void Join::joinBlockImplCross(Block & block) const
 	{
 		const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.unsafeGetByPosition(i);
 		ColumnWithTypeAndName new_column = src_column.cloneEmpty();
-		res.insert(new_column);
 		dst_right_columns[i] = new_column.column.get();
+		res.insert(std::move(new_column));
 	}
 
 	size_t rows_left = block.rowsInFirstColumn();
@@ -939,7 +939,7 @@ public:
 		{
 			const ColumnWithTypeAndName & src_column = parent.sample_block_with_columns_to_add.getByPosition(i);
 			ColumnWithTypeAndName new_column = src_column.cloneEmpty();
-			result_sample_block.insert(new_column);
+			result_sample_block.insert(std::move(new_column));
 		}
 
 		column_numbers_left.reserve(num_columns_left);
@@ -1010,17 +1010,17 @@ private:
 
 		for (size_t i = 0; i < num_columns_left; ++i)
 		{
-			auto & column_with_name_and_type = block.getByPosition(column_numbers_left[i]);
-			column_with_name_and_type.column = column_with_name_and_type.type->createColumn();
-			columns_left[i] = column_with_name_and_type.column.get();
+			auto & column_with_type_and_name = block.getByPosition(column_numbers_left[i]);
+			column_with_type_and_name.column = column_with_type_and_name.type->createColumn();
+			columns_left[i] = column_with_type_and_name.column.get();
 		}
 
 		for (size_t i = 0; i < num_columns_right; ++i)
 		{
-			auto & column_with_name_and_type = block.getByPosition(column_numbers_keys_and_right[i]);
-			column_with_name_and_type.column = column_with_name_and_type.type->createColumn();
-			columns_keys_and_right[i] = column_with_name_and_type.column.get();
-			columns_keys_and_right[i]->reserve(column_with_name_and_type.column->size());
+			auto & column_with_type_and_name = block.getByPosition(column_numbers_keys_and_right[i]);
+			column_with_type_and_name.column = column_with_type_and_name.type->createColumn();
+			columns_keys_and_right[i] = column_with_type_and_name.column.get();
+			columns_keys_and_right[i]->reserve(column_with_type_and_name.column->size());
 		}
 
 		size_t rows_added = 0;

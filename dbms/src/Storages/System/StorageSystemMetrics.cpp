@@ -22,7 +22,7 @@ StorageSystemMetrics::StorageSystemMetrics(const std::string & name_)
 
 StoragePtr StorageSystemMetrics::create(const std::string & name_)
 {
-	return (new StorageSystemMetrics(name_))->thisPtr();
+	return make_shared(name_);
 }
 
 
@@ -52,9 +52,9 @@ BlockInputStreams StorageSystemMetrics::read(
 	col_value.column = std::make_shared<ColumnInt64>();
 	block.insert(col_value);
 
-	for (size_t i = 0; i < CurrentMetrics::END; ++i)
+	for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
 	{
-		auto value = CurrentMetrics::values[i];
+		Int64 value = CurrentMetrics::values[i].load(std::memory_order_relaxed);
 
 		col_metric.column->insert(String(CurrentMetrics::getDescription(CurrentMetrics::Metric(i))));
 		col_value.column->insert(value);

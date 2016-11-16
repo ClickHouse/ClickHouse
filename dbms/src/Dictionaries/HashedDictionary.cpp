@@ -40,7 +40,7 @@ HashedDictionary::HashedDictionary(const HashedDictionary & other)
 }
 
 
-void HashedDictionary::toParent(const PaddedPODArray<id_t> & ids, PaddedPODArray<id_t> & out) const
+void HashedDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {
 	const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
 
@@ -51,7 +51,7 @@ void HashedDictionary::toParent(const PaddedPODArray<id_t> & ids, PaddedPODArray
 
 
 #define DECLARE(TYPE)\
-void HashedDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, PaddedPODArray<TYPE> & out) const\
+void HashedDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const\
 {\
 	const auto & attribute = getAttribute(attribute_name);\
 	if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
@@ -77,7 +77,7 @@ DECLARE(Float32)
 DECLARE(Float64)
 #undef DECLARE
 
-void HashedDictionary::getString(const std::string & attribute_name, const PaddedPODArray<id_t> & ids, ColumnString * out) const
+void HashedDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
 {
 	const auto & attribute = getAttribute(attribute_name);
 	if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
@@ -94,7 +94,7 @@ void HashedDictionary::getString(const std::string & attribute_name, const Padde
 
 #define DECLARE(TYPE)\
 void HashedDictionary::get##TYPE(\
-	const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const PaddedPODArray<TYPE> & def,\
+	const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<TYPE> & def,\
 	PaddedPODArray<TYPE> & out) const\
 {\
 	const auto & attribute = getAttribute(attribute_name);\
@@ -120,7 +120,7 @@ DECLARE(Float64)
 #undef DECLARE
 
 void HashedDictionary::getString(
-	const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const ColumnString * const def,
+	const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def,
 	ColumnString * const out) const
 {
 	const auto & attribute = getAttribute(attribute_name);
@@ -136,7 +136,7 @@ void HashedDictionary::getString(
 
 #define DECLARE(TYPE)\
 void HashedDictionary::get##TYPE(\
-	const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const TYPE & def, PaddedPODArray<TYPE> & out) const\
+	const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE & def, PaddedPODArray<TYPE> & out) const\
 {\
 	const auto & attribute = getAttribute(attribute_name);\
 	if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
@@ -161,7 +161,7 @@ DECLARE(Float64)
 #undef DECLARE
 
 void HashedDictionary::getString(
-	const std::string & attribute_name, const PaddedPODArray<id_t> & ids, const String & def,
+	const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def,
 	ColumnString * const out) const
 {
 	const auto & attribute = getAttribute(attribute_name);
@@ -175,7 +175,7 @@ void HashedDictionary::getString(
 		[&] (const std::size_t) { return StringRef{def}; });
 }
 
-void HashedDictionary::has(const PaddedPODArray<id_t> & ids, PaddedPODArray<UInt8> & out) const
+void HashedDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
 {
 	const auto & attribute = attributes.front();
 
@@ -247,7 +247,7 @@ void HashedDictionary::loadData()
 }
 
 template <typename T>
-void HashedDictionary::addAttributeSize(const attribute_t & attribute)
+void HashedDictionary::addAttributeSize(const Attribute & attribute)
 {
 	const auto & map_ref = std::get<CollectionPtrType<T>>(attribute.maps);
 	bytes_allocated += sizeof(CollectionType<T>) + map_ref->getBufferSizeInBytes();
@@ -284,15 +284,15 @@ void HashedDictionary::calculateBytesAllocated()
 }
 
 template <typename T>
-void HashedDictionary::createAttributeImpl(attribute_t & attribute, const Field & null_value)
+void HashedDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
 	std::get<T>(attribute.null_values) = null_value.get<typename NearestFieldType<T>::Type>();
 	std::get<CollectionPtrType<T>>(attribute.maps) = std::make_unique<CollectionType<T>>();
 }
 
-HashedDictionary::attribute_t HashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
+HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-	attribute_t attr{type};
+	Attribute attr{type};
 
 	switch (type)
 	{
@@ -321,8 +321,8 @@ HashedDictionary::attribute_t HashedDictionary::createAttributeWithType(const At
 
 template <typename OutputType, typename ValueSetter, typename DefaultGetter>
 void HashedDictionary::getItemsNumber(
-	const attribute_t & attribute,
-	const PaddedPODArray<id_t> & ids,
+	const Attribute & attribute,
+	const PaddedPODArray<Key> & ids,
 	ValueSetter && set_value,
 	DefaultGetter && get_default) const
 {
@@ -347,8 +347,8 @@ void HashedDictionary::getItemsNumber(
 
 template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
 void HashedDictionary::getItemsImpl(
-	const attribute_t & attribute,
-	const PaddedPODArray<id_t> & ids,
+	const Attribute & attribute,
+	const PaddedPODArray<Key> & ids,
 	ValueSetter && set_value,
 	DefaultGetter && get_default) const
 {
@@ -366,13 +366,13 @@ void HashedDictionary::getItemsImpl(
 
 
 template <typename T>
-void HashedDictionary::setAttributeValueImpl(attribute_t & attribute, const id_t id, const T value)
+void HashedDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, const T value)
 {
 	auto & map = *std::get<CollectionPtrType<T>>(attribute.maps);
 	map.insert({ id, value });
 }
 
-void HashedDictionary::setAttributeValue(attribute_t & attribute, const id_t id, const Field & value)
+void HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, const Field & value)
 {
 	switch (attribute.type)
 	{
@@ -397,7 +397,7 @@ void HashedDictionary::setAttributeValue(attribute_t & attribute, const id_t id,
 	}
 }
 
-const HashedDictionary::attribute_t & HashedDictionary::getAttribute(const std::string & attribute_name) const
+const HashedDictionary::Attribute & HashedDictionary::getAttribute(const std::string & attribute_name) const
 {
 	const auto it = attribute_index_by_name.find(attribute_name);
 	if (it == std::end(attribute_index_by_name))
@@ -409,7 +409,7 @@ const HashedDictionary::attribute_t & HashedDictionary::getAttribute(const std::
 }
 
 template <typename T>
-void HashedDictionary::has(const attribute_t & attribute, const PaddedPODArray<id_t> & ids, PaddedPODArray<UInt8> & out) const
+void HashedDictionary::has(const Attribute & attribute, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
 {
 	const auto & attr = *std::get<CollectionPtrType<T>>(attribute.maps);
 	const auto rows = ext::size(ids);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.hpp>
+
 #include <DB/Storages/IStorage.h>
 
 namespace DB
@@ -7,11 +9,14 @@ namespace DB
 
 class Context;
 
-/** Реализует системную таблицу columns, которая позволяет получить информацию
-  * о столбцах каждой таблицы для всех баз данных.
+/** Implements system table 'clusters'
+  *  that allows to obtain information about available clusters
+  *  (which may be specified in Distributed tables).
   */
-class StorageSystemClusters : public IStorage
+class StorageSystemClusters : private ext::shared_ptr_helper<StorageSystemClusters>, public IStorage
 {
+friend class ext::shared_ptr_helper<StorageSystemClusters>;
+
 public:
 	StorageSystemClusters(const std::string & name_, Context & context_);
 	static StoragePtr create(const std::string & name_, Context & context_);

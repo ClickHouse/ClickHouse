@@ -4,15 +4,6 @@
 		<level>trace</level>
 		<log>/var/log/clickhouse-server/clickhouse-server.log</log>
 		<errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
-
-		<!-- Built-in method of logs rotation.
-			 Threshold is big enough because 'logrotate' is used instead of built-in method.
-			 So, this threshold setting just protects from cases when 'logrotate' get called too late.
-
-			 Why logrotate? Becase built-in method doesn't allow to specify
-			  that two last files must be uncompressed and other compressed
-			  (important for some administration scripts).
-		  -->
 		<size>1000M</size>
 		<count>10</count>
 	</logger>
@@ -40,6 +31,10 @@
 
 	<!-- Maximum number of concurrent queries. -->
 	<max_concurrent_queries>100</max_concurrent_queries>
+
+	<!-- Set limit on number of open files (default: maximum). This setting makes sense on Mac OS X because getrlimit() fails to retrieve
+		 correct maximum value. -->
+	<!-- <max_open_files>262144</max_open_files> -->
 
 	<!-- Size of cache of uncompressed blocks of data, used in tables of MergeTree family.
 		 In bytes. Cache is single for server. Memory is allocated only on demand.
@@ -156,11 +151,15 @@
 			<min_part_size>10000000000</min_part_size>		<!- - Min part size in bytes. - ->
 			<min_part_size_ratio>0.01</min_part_size_ratio>	<!- - Min size of part relative to whole table size. - ->
 
-			<!- - Какой метод сжатия выбрать. - ->
+			<!- - What compression method to use. - ->
 			<method>zstd</method>	<!- - Keep in mind that zstd compression library is highly experimental. - ->
 		</case>
 	-->
 	</compression>
+
+	<resharding>
+		<task_queue_path>/clickhouse/task_queue</task_queue_path>
+	</resharding>
 
 	<!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
 	<!--

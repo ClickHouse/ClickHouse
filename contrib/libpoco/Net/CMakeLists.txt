@@ -16,7 +16,7 @@ if(WIN32)
     else()    
         set(SYSLIBS ${SYSLIBS} "ws2_32.lib" "iphlpapi.lib")
     endif()    
-else()
+elseif(NOT APPLE)
     set(SYSLIBS ${SYSLIBS} "libanl.a")
 endif(WIN32)
 

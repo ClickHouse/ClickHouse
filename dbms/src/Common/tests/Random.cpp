@@ -1,5 +1,7 @@
 /// Взято из SMHasher.
-
+#ifdef __APPLE__
+#include <common/apple_rt.h>
+#endif
 #include "Random.h"
 
 Rand g_rand1(1);

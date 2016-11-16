@@ -32,7 +32,7 @@ add_executable (simple_cache simple_cache.cpp)
 target_link_libraries (simple_cache common)
 
 add_executable (compact_array compact_array.cpp)
-target_link_libraries (compact_array dbms libboost_filesystem.a)
+target_link_libraries (compact_array dbms ${BOOST_FILESYSTEM_LIB})
 
 add_executable (radix_sort radix_sort.cpp)
 target_link_libraries (radix_sort dbms)
@@ -45,3 +45,9 @@ target_link_libraries (arena_with_free_lists dbms)
 
 add_executable (pod_array pod_array.cpp)
 target_link_libraries (pod_array dbms)
+
+add_executable (thread_creation_latency thread_creation_latency.cpp)
+target_link_libraries (thread_creation_latency dbms)
+
+add_executable (thread_pool thread_pool.cpp)
+target_link_libraries (thread_pool dbms)

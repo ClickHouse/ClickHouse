@@ -28,7 +28,7 @@ typedef void (*pfHash) ( const void * blob, const int len, const uint32_t seed, 
 
 inline uint32_t getbit ( const void * block, int len, uint32_t bit )
 {
-  uint8_t * b = (uint8_t*)block;
+  uint8_t * b = reinterpret_cast<uint8_t*>(const_cast<void*>(block));
 
   int byte = bit >> 3;
   bit = bit & 0x7;
@@ -46,7 +46,7 @@ inline uint32_t getbit ( T & blob, uint32_t bit )
 
 inline void flipbit ( void * block, int len, uint32_t bit )
 {
-  uint8_t * b = (uint8_t*)block;
+  uint8_t * b = reinterpret_cast<uint8_t*>(block);
 
   int byte = bit >> 3;
   bit = bit & 0x7;
@@ -211,7 +211,7 @@ void BicTest3 ( pfHash hash, const int reps, bool verbose = true )
 
         for(int b = 0; b < 4; b++)
         {
-          double b2 = double(bins[b]) / double(reps / 2);
+          double b2 = static_cast<double>(bins[b]) / static_cast<double>(reps / 2);
           b2 = fabs(b2 * 2 - 1);
 
           if(b2 > bias) bias = b2;
@@ -225,7 +225,7 @@ void BicTest3 ( pfHash hash, const int reps, bool verbose = true )
           maxB = out2;
         }
 
-        if(verbose) 
+        if(verbose)
         {
           if     (bias < 0.01) printf(".");
           else if(bias < 0.05) printf("o");

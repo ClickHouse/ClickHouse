@@ -18,6 +18,11 @@
 #include <condition_variable>
 
 
+namespace CurrentMetrics
+{
+	extern const Metric DistributedSend;
+}
+
 namespace DB
 {
 
@@ -116,7 +121,7 @@ private:
 				do_sleep = true;
 				++error_count;
 				sleep_time = std::min(
-					std::chrono::milliseconds{std::int64_t(default_sleep_time.count() * std::exp2(error_count))},
+					std::chrono::milliseconds{Int64(default_sleep_time.count() * std::exp2(error_count))},
 					std::chrono::milliseconds{max_sleep_time});
 				tryLogCurrentException(getLoggerName().data());
 			};

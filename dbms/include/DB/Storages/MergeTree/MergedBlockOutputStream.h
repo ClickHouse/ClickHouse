@@ -442,20 +442,30 @@ private:
 			}
 		}
 
-		/// Пишем индекс. Индекс содержит значение Primary Key для каждой index_granularity строки.
-		for (size_t i = index_offset; i < rows; i += storage.index_granularity)
 		{
-			if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
-			{
-				for (size_t j = 0, size = primary_columns.size(); j < size; ++j)
-				{
-					const IColumn & primary_column = *primary_columns[j].column.get();
-					index_columns[j].get()->insertFrom(primary_column, i);
-					primary_columns[j].type.get()->serializeBinary(primary_column, i, *index_stream);
-				}
-			}
+			/** While filling index (index_columns), disable memory tracker.
+			  * Because memory is allocated here (maybe in context of INSERT query),
+			  *  but then freed in completely different place (while merging parts), where query memory_tracker is not available.
+			  * And otherwise it will look like excessively growing memory consumption in context of query.
+			  *  (observed in long INSERT SELECTs)
+			  */
+			TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
 
-			++marks_count;
+			/// Пишем индекс. Индекс содержит значение Primary Key для каждой index_granularity строки.
+			for (size_t i = index_offset; i < rows; i += storage.index_granularity)
+			{
+				if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+				{
+					for (size_t j = 0, size = primary_columns.size(); j < size; ++j)
+					{
+						const IColumn & primary_column = *primary_columns[j].column.get();
+						index_columns[j].get()->insertFrom(primary_column, i);
+						primary_columns[j].type.get()->serializeBinary(primary_column, i, *index_stream);
+					}
+				}
+
+				++marks_count;
+			}
 		}
 
 		size_t written_for_last_mark = (storage.index_granularity - index_offset + rows) % storage.index_granularity;

@@ -9,11 +9,11 @@
 #include <unordered_map>
 
 #include <common/logger_useful.h>
-#include <threadpool.hpp>
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
 #include <DB/Common/UInt128.h>
+#include <DB/Common/ThreadPool.h>
 
 
 namespace DB
@@ -99,7 +99,7 @@ private:
 	using Files = std::unordered_set<std::string>;
 
 	const std::string path;
-	boost::threadpool::pool pool;
+	ThreadPool pool;
 
 	/// Количество вызовов функции getOrCount.
 	Counts counts;

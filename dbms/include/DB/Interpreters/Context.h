@@ -6,6 +6,7 @@
 #include <DB/Core/Types.h>
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Interpreters/Settings.h>
+#include <DB/Interpreters/ClientInfo.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/IO/CompressedStream.h>
 
@@ -62,33 +63,14 @@ using Dependencies = std::vector<DatabaseAndTableName>;
   */
 class Context
 {
-public:
-	enum class Interface
-	{
-		TCP = 1,
-		HTTP = 2,
-		OLAP_HTTP = 3,
-	};
-
-	enum class HTTPMethod
-	{
-		UNKNOWN = 0,
-		GET = 1,
-		POST = 2,
-	};
-
 private:
 	using Shared = std::shared_ptr<ContextShared>;
 	Shared shared;
 
-	String user;						/// Текущий пользователь.
-	Poco::Net::IPAddress ip_address;	/// IP-адрес, с которого задан запрос.
-	Interface interface = Interface::TCP;
-	HTTPMethod http_method = HTTPMethod::UNKNOWN;	/// NOTE Возможно, перенести это в отдельный struct ClientInfo.
+	ClientInfo client_info;
 
 	std::shared_ptr<QuotaForIntervals> quota;	/// Текущая квота. По-умолчанию - пустая квота, которая ничего не ограничивает.
 	String current_database;			/// Текущая БД.
-	String current_query_id;			/// Id текущего запроса.
 	Settings settings;					/// Настройки выполнения запроса.
 	using ProgressCallback = std::function<void(const Progress & progress)>;
 	ProgressCallback progress_callback;	/// Колбек для отслеживания прогресса выполнения запроса.
@@ -109,8 +91,10 @@ public:
 
 	String getPath() const;
 	String getTemporaryPath() const;
+	String getFlagsPath() const;
 	void setPath(const String & path);
 	void setTemporaryPath(const String & path);
+	void setFlagsPath(const String & path);
 
 	using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -118,19 +102,15 @@ public:
 	  * Список пользователей полностью заменяется.
 	  * Накопленные значения у квоты не сбрасываются, если квота не удалена.
 	  */
-	void setUsersConfig(ConfigurationPtr config);
+	void setUsersConfig(const ConfigurationPtr & config);
 
 	ConfigurationPtr getUsersConfig();
 
-	void setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, const String & quota_key);
-	String getUser() const { return user; }
-	Poco::Net::IPAddress getIPAddress() const { return ip_address; }
+	/// Must be called before getClientInfo.
+	void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
 
-	Interface getInterface() const { return interface; }
-	void setInterface(Interface interface_) { interface = interface_; }
-
-	HTTPMethod getHTTPMethod() const { return http_method; }
-	void setHTTPMethod(HTTPMethod http_method_) { http_method = http_method_; }
+	ClientInfo & getClientInfo() { return client_info; };
+	const ClientInfo & getClientInfo() const { return client_info; };
 
 	void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
 	QuotaForIntervals & getQuota();
@@ -277,8 +257,10 @@ public:
 	  */
 	void resetCaches() const;
 
-	const Cluster & getCluster(const std::string & cluster_name) const;
-	std::shared_ptr<Clusters> getClusters() const;
+	Clusters & getClusters() const;
+	std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
+	std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
+	void setClustersConfig(const ConfigurationPtr & config);
 
 	Compiler & getCompiler();
 	QueryLog & getQueryLog();
@@ -291,6 +273,16 @@ public:
 	time_t getUptimeSeconds() const;
 
 	void shutdown();
+
+	enum class ApplicationType
+	{
+		SERVER,			/// The program is run as clickhouse-server daemon (default behavior)
+		CLIENT,			/// clickhouse-client
+		LOCAL_SERVER	/// clickhouse-local
+	};
+
+	ApplicationType getApplicationType() const;
+	void setApplicationType(ApplicationType type);
 
 private:
 	/** Проверить, имеет ли текущий клиент доступ к заданной базе данных.

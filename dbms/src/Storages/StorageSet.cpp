@@ -1,6 +1,9 @@
 #include <DB/Storages/StorageSet.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/CompressedReadBuffer.h>
+#include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/CompressedWriteBuffer.h>
+#include <DB/DataStreams/NativeBlockOutputStream.h>
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/StringUtils.h>
@@ -9,6 +12,26 @@
 
 namespace DB
 {
+
+
+class SetOrJoinBlockOutputStream : public IBlockOutputStream
+{
+public:
+	SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
+		const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_);
+
+	void write(const Block & block) override;
+	void writeSuffix() override;
+
+private:
+	StorageSetOrJoinBase & table;
+	String backup_path;
+	String backup_tmp_path;
+	String backup_file_name;
+	WriteBufferFromFile backup_buf;
+	CompressedWriteBuffer compressed_backup_buf;
+	NativeBlockOutputStream backup_stream;
+};
 
 
 SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
@@ -122,8 +145,8 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 	/// TODO Добавить скорость, сжатые байты, объём данных в памяти, коэффициент сжатия... Обобщить всё логгирование статистики в проекте.
 	LOG_INFO(&Logger::get("StorageSetOrJoinBase"), std::fixed << std::setprecision(2)
 		<< "Loaded from backup file " << file_path << ". "
-		<< backup_stream.getInfo().rows << " rows, "
-		<< backup_stream.getInfo().bytes / 1048576.0 << " MiB. "
+		<< backup_stream.getProfileInfo().rows << " rows, "
+		<< backup_stream.getProfileInfo().bytes / 1048576.0 << " MiB. "
 		<< "State has " << getSize() << " unique rows.");
 }
 

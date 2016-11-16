@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source release_lib.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/release_lib.sh"
 
 CONTROL=debian/control
 CHLOG=debian/changelog

@@ -6,8 +6,8 @@
 namespace DB
 {
 
-XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
-	: dst_ostr(ostr_)
+XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_)
+	: dst_ostr(ostr_), write_statistics(write_statistics_)
 {
 	NamesAndTypesList columns(sample_.getColumnsList());
 	fields.assign(columns.begin(), columns.end());
@@ -27,9 +27,8 @@ XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample
 		for (const char * pos = begin; pos != end; ++pos)
 		{
 			char c = *pos;
-			if (!( (c >= 'a' && c <= 'z')
-				|| (c >= 'A' && c <= 'Z')
-				|| (pos != begin && c >= '0' && c <= '9')
+			if (!( isAlphaASCII(c)
+				|| (pos != begin && isNumericASCII(c))
 				|| c == '_'
 				|| c == '-'
 				|| c == '.'))
@@ -46,7 +45,7 @@ XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample
 
 	if (have_non_numeric_columns)
 	{
-		validating_ostr.reset(new WriteBufferValidUTF8(dst_ostr));
+		validating_ostr = std::make_unique<WriteBufferValidUTF8>(dst_ostr);
 		ostr = validating_ostr.get();
 	}
 	else
@@ -121,6 +120,9 @@ void XMLRowOutputStream::writeSuffix()
 
 	writeRowsBeforeLimitAtLeast();
 
+	if (write_statistics)
+		writeStatistics();
+
 	writeCString("</result>\n", *ostr);
 	ostr->next();
 }
@@ -194,6 +196,28 @@ void XMLRowOutputStream::writeExtremes()
 		writeExtremesElement("max", extremes, 1, field_tag_names, *ostr);
 		writeCString("\t</extremes>\n", *ostr);
 	}
+}
+
+
+void XMLRowOutputStream::onProgress(const Progress & value)
+{
+	progress.incrementPiecewiseAtomically(value);
+}
+
+
+void XMLRowOutputStream::writeStatistics()
+{
+	writeCString("\t<statistics>\n", *ostr);
+	writeCString("\t\t<elapsed>", *ostr);
+	writeText(watch.elapsedSeconds(), *ostr);
+	writeCString("</elapsed>\n", *ostr);
+	writeCString("\t\t<rows_read>", *ostr);
+	writeText(progress.rows.load(), *ostr);
+	writeCString("</rows_read>\n", *ostr);
+	writeCString("\t\t<bytes_read>", *ostr);
+	writeText(progress.bytes.load(), *ostr);
+	writeCString("</bytes_read>\n", *ostr);
+	writeCString("\t</statistics>\n", *ostr);
 }
 
 }

@@ -58,7 +58,10 @@ protected:
 	void buildRequest(BinaryWriter& writer);
 
 private:
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-private-field"
 	Int32 _flags;
+#pragma clang diagnostic pop
 	std::string _fullCollectionName;
 	Int32 _numberToReturn;
 	Int64 _cursorID;

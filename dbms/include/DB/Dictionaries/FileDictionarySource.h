@@ -38,7 +38,7 @@ public:
 		return std::make_shared<OwningBufferBlockInputStream>(stream, std::move(in_ptr));
 	}
 
-	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
+	BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override
 	{
 		throw Exception{"Method unsupported", ErrorCodes::NOT_IMPLEMENTED};
 	}

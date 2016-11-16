@@ -32,6 +32,12 @@ NativeBlockOutputStream::NativeBlockOutputStream(
 }
 
 
+void NativeBlockOutputStream::flush()
+{
+	ostr.next();
+}
+
+
 void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, size_t offset, size_t limit)
 {
 	/** Если есть столбцы-константы - то материализуем их.
@@ -118,14 +124,15 @@ void NativeBlockOutputStream::write(const Block & block)
 
 		const ColumnWithTypeAndName & column = block.getByPosition(i);
 
-		/// Имя
+		/// Name
 		writeStringBinary(column.name, ostr);
 
-		/// Тип
+		/// Type
 		writeStringBinary(column.type->getName(), ostr);
 
-		/// Данные
-		writeData(*column.type, column.column, ostr, 0, 0);
+		/// Data
+		if (rows)	/// Zero items of data is always represented as zero number of bytes.
+			writeData(*column.type, column.column, ostr, 0, 0);
 
 		if (index_ostr)
 		{

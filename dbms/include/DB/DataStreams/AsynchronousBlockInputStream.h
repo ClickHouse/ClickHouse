@@ -1,13 +1,17 @@
 #pragma once
 
-#include <threadpool.hpp>
-
 #include <Poco/Event.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Common/setThreadName.h>
 #include <DB/Common/CurrentMetrics.h>
+#include <DB/Common/ThreadPool.h>
 
+
+namespace CurrentMetrics
+{
+	extern const Metric QueryThread;
+}
 
 namespace DB
 {
@@ -81,7 +85,7 @@ public:
 	}
 
 protected:
-	boost::threadpool::pool pool{1};
+	ThreadPool pool{1};
 	Poco::Event ready;
 	bool started = false;
 	bool first = true;

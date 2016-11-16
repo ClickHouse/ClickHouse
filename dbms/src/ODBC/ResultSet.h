@@ -14,8 +14,8 @@ class Field
 public:
 	std::string data;
 
-	uint64_t getUInt() const 	{ return Poco::NumberParser::parseUnsigned64(data); }
-	int64_t getInt() const		{ return Poco::NumberParser::parse64(data); }
+	UInt64 getUInt() const 	{ return Poco::NumberParser::parseUnsigned64(data); }
+	Int64 getInt() const		{ return Poco::NumberParser::parse64(data); }
 	float getFloat() const		{ return Poco::NumberParser::parseFloat(data); }
 	double getDouble() const	{ return Poco::NumberParser::parseFloat(data); }
 

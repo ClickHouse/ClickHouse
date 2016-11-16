@@ -29,9 +29,13 @@ if (${num_extra_args} GREATER 0)
 endif()
 set(tmp_file_name ${filename}.init)
 
+set (SED_INPLACE_SUFFIX "")
+if (APPLE)
+	set (SED_INPLACE_SUFFIX "''")
+endif ()
 add_custom_target(${daemonname}-init.target ALL
     COMMAND sed -e 's,[@]DAEMON[@],${daemonname},g' < ${PROJECT_SOURCE_DIR}/tools/init.d/template > ${CMAKE_CURRENT_BINARY_DIR}/${tmp_file_name}
-    COMMAND sed -i 's,[@]CRONFILE[@],${filename},g' ${CMAKE_CURRENT_BINARY_DIR}/${tmp_file_name}
+    COMMAND sed -i ${SED_INPLACE_SUFFIX} 's,[@]CRONFILE[@],${filename},g' ${CMAKE_CURRENT_BINARY_DIR}/${tmp_file_name}
     COMMAND chmod a+x ${CMAKE_CURRENT_BINARY_DIR}/${tmp_file_name}
     COMMENT "Building ${daemonname}"
 )

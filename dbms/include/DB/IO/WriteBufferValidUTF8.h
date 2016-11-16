@@ -2,7 +2,7 @@
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
-#include <Poco/UTF8Encoding.h>
+
 
 namespace DB
 {
@@ -20,13 +20,10 @@ private:
 	bool just_put_replacement = false;
 	std::string replacement;
 
-	/// Таблица взята из ConvertUTF.c от Unicode, Inc. Позволяет узнать длину последовательности по первому байту.
-	static const char trailingBytesForUTF8[256];
-
 	void putReplacement();
 	void putValid(char * data, size_t len);
 
-	void nextImpl();
+	void nextImpl() override;
 	void finish();
 
 public:
@@ -38,7 +35,7 @@ public:
 		const char * replacement = "\xEF\xBF\xBD",
 		size_t size = DEFAULT_SIZE);
 
-	virtual ~WriteBufferValidUTF8()
+	virtual ~WriteBufferValidUTF8() override
 	{
 		finish();
 	}

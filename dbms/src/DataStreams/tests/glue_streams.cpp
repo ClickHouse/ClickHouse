@@ -1,7 +1,7 @@
 #include <iostream>
 #include <iomanip>
 
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 
@@ -79,7 +79,7 @@ try
 
 	std::mutex mutex;
 
-	boost::threadpool::pool pool(inputs.size() + forks.size());
+	ThreadPool pool(inputs.size() + forks.size());
 
 	pool.schedule(std::bind(inputThread, inputs[0], out1, std::ref(wb), std::ref(mutex)));
 	pool.schedule(std::bind(inputThread, inputs[1], out2, std::ref(wb), std::ref(mutex)));

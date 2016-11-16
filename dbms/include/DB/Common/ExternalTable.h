@@ -50,7 +50,7 @@ public:
 			column.name = structure[i].first;
 			column.type = data_type_factory.get(structure[i].second);
 			column.column = column.type->createColumn();
-			sample_block.insert(column);
+			sample_block.insert(std::move(column));
 		}
 	}
 
@@ -124,9 +124,9 @@ public:
 	void initReadBuffer()
 	{
 		if (file == "-")
-			read_buffer.reset(new ReadBufferFromFileDescriptor(STDIN_FILENO));
+			read_buffer = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
 		else
-			read_buffer.reset(new ReadBufferFromFile(file));
+			read_buffer = std::make_unique<ReadBufferFromFile>(file);
 	}
 
 	/// Извлечение параметров из variables_map, которая строится по командной строке клиента

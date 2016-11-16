@@ -5,6 +5,7 @@
 #include <DB/Dictionaries/ExternalQueryBuilder.h>
 #include <ext/range.hpp>
 #include <mysqlxx/Pool.h>
+
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Data/SessionPool.h>
 
@@ -28,7 +29,7 @@ public:
 
 	BlockInputStreamPtr loadAll() override;
 
-	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override;
+	BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
 	BlockInputStreamPtr loadKeys(
 		const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows) override;

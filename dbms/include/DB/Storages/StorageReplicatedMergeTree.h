@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.hpp>
+
 #include <DB/Storages/IStorage.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
@@ -67,8 +69,10 @@ namespace DB
   * в качестве времени будет браться время создания соответствующего куска на какой-либо из реплик.
   */
 
-class StorageReplicatedMergeTree : public IStorage
+class StorageReplicatedMergeTree : private ext::shared_ptr_helper<StorageReplicatedMergeTree>, public IStorage
 {
+friend class ext::shared_ptr_helper<StorageReplicatedMergeTree>;
+
 public:
 	/** Если !attach, либо создает новую таблицу в ZK, либо добавляет реплику в существующую таблицу.
 	  */
@@ -87,6 +91,7 @@ public:
 		const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 		size_t index_granularity_,
 		const MergeTreeData::MergingParams & merging_params_,
+		bool has_force_restore_data_flag,
 		const MergeTreeSettings & settings_);
 
 	void shutdown() override;
@@ -195,6 +200,7 @@ private:
 	friend class ReplicatedMergeTreePartCheckThread;
 	friend class ReplicatedMergeTreeCleanupThread;
 	friend class ReplicatedMergeTreeAlterThread;
+	friend class ReplicatedMergeTreeRestartingThread;
 	friend struct ReplicatedMergeTreeLogEntry;
 	friend class ScopedPartitionMergeLock;
 
@@ -242,6 +248,7 @@ private:
 	/** Является ли эта реплика "ведущей". Ведущая реплика выбирает куски для слияния.
 	  */
 	bool is_leader_node = false;
+	std::mutex leader_node_mutex;
 
 	InterserverIOEndpointHolderPtr endpoint_holder;
 	InterserverIOEndpointHolderPtr disk_space_monitor_endpoint_holder;
@@ -269,7 +276,7 @@ private:
 	std::mutex unreplicated_mutex; /// Для мерджей и удаления нереплицируемых кусков.
 
 	/// Нужно ли завершить фоновые потоки (кроме restarting_thread).
-	volatile bool shutdown_called = false;
+	std::atomic<bool> shutdown_called {false};
 	Poco::Event shutdown_event;
 
 	/// Потоки:
@@ -318,6 +325,7 @@ private:
 		const ASTPtr & sampling_expression_,
 		size_t index_granularity_,
 		const MergeTreeData::MergingParams & merging_params_,
+		bool has_force_restore_data_flag,
 		const MergeTreeSettings & settings_);
 
 	/// Инициализация.
@@ -376,7 +384,7 @@ private:
 	/** Выполнить действие из очереди. Бросает исключение, если что-то не так.
 	  * Возвращает, получилось ли выполнить. Если не получилось, запись нужно положить в конец очереди.
 	  */
-	bool executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context);
+	bool executeLogEntry(const LogEntry & entry);
 
 	void executeDropRange(const LogEntry & entry);
 	bool executeAttachPart(const LogEntry & entry); /// Возвращает false, если куска нет, и его нужно забрать с другой реплики.
@@ -387,7 +395,7 @@ private:
 
 	/** Выполняет действия из очереди.
 	  */
-	bool queueTask(BackgroundProcessingPool::Context & context);
+	bool queueTask();
 
 	/// Выбор кусков для слияния.
 
@@ -419,11 +427,22 @@ private:
 	  */
 	String findReplicaHavingPart(const String & part_name, bool active);
 
+	/** Find replica having specified part or any part that covers it.
+	  * If active = true, consider only active replicas.
+	  * If found, returns replica name and set 'out_covering_part_name' to name of found largest covering part.
+	  * If not found, returns empty string.
+	  */
+	String findReplicaHavingCoveringPart(const String & part_name, bool active, String & out_covering_part_name);
+
 	/** Скачать указанный кусок с указанной реплики.
 	  * Если to_detached, то кусок помещается в директорию detached.
 	  * Если quorum != 0, то обновляется узел для отслеживания кворума.
+	  * Returns false if part is already fetching right now.
 	  */
-	void fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum);
+	bool fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum);
+
+	std::unordered_set<String> currently_fetching_parts;
+	std::mutex currently_fetching_parts_mutex;
 
 	/** При отслеживаемом кворуме - добавить реплику в кворум для куска.
 	  */
@@ -469,19 +488,6 @@ private:
 
 	using ReplicaToSpaceInfo = std::map<std::string, ReplicaSpaceInfo>;
 
-	struct PartitionMergeLockInfo
-	{
-		PartitionMergeLockInfo(const std::string & fake_part_name_)
-			: fake_part_name(fake_part_name_), ref_count(1)
-		{
-		}
-
-		std::string fake_part_name;
-		unsigned int ref_count;
-	};
-
-	using PartitionToMergeLock = std::map<std::string, PartitionMergeLockInfo>;
-
 	/** Проверяет, что структуры локальной и реплицируемых таблиц совпадают.
 	  */
 	void enforceShardsConsistency(const WeightedZooKeeperPaths & weighted_zookeeper_paths);
@@ -494,9 +500,6 @@ private:
 	/** Проверяет, что имеется достаточно свободного места локально и на всех репликах.
 	  */
 	bool checkSpaceForResharding(const ReplicaToSpaceInfo & replica_to_space_info, size_t partition_size) const;
-
-	std::mutex mutex_partition_to_merge_lock;
-	PartitionToMergeLock partition_to_merge_lock;
 };
 
 

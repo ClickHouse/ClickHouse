@@ -229,6 +229,16 @@ inline Dest bit_cast(const Source& source) {
   return dest;
 }
 
+// bit_store<Dest,Source> implements the equivalent of
+// "dest = *reinterpret_cast<Dest*>(&source)".
+//
+// This prevents undefined behavior when the dest pointer is unaligned.
+template <class Dest, class Source>
+inline void bit_store(Dest *dest, const Source *source) {
+  COMPILE_ASSERT(sizeof(Dest) == sizeof(Source), bitcasting_unequal_sizes);
+  memcpy(dest, source, sizeof(Dest));
+}
+
 #ifdef HAVE___ATTRIBUTE__
 # define ATTRIBUTE_WEAK      __attribute__((weak))
 # define ATTRIBUTE_NOINLINE  __attribute__((noinline))
@@ -363,7 +373,7 @@ class AssignAttributeStartEnd {
 # elif (defined(__aarch64__))
 #   define CACHELINE_ALIGNED __attribute__((aligned(64)))
     // implementation specific, Cortex-A53 and 57 should have 64 bytes
-# elif (defined(__s390x__))
+# elif (defined(__s390__))
 #   define CACHELINE_ALIGNED __attribute__((aligned(256)))
 # else
 #   error Could not determine cache line length - unknown architecture

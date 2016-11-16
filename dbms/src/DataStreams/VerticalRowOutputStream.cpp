@@ -31,6 +31,12 @@ VerticalRowOutputStream::VerticalRowOutputStream(WriteBuffer & ostr_, const Bloc
 }
 
 
+void VerticalRowOutputStream::flush()
+{
+	ostr.next();
+}
+
+
 void VerticalRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
 	writeEscapedString(names[field_number], ostr);

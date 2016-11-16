@@ -11,6 +11,12 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+
+namespace CurrentMetrics
+{
+	extern const Metric OpenFileForWrite;
+}
+
 namespace DB
 {
 
@@ -32,12 +38,10 @@ public:
 	int getFD() const override { return fd; }
 
 private:
-	///
 	void nextImpl() override;
-	///
 	off_t doSeek(off_t off, int whence) override;
-	///
 	void doTruncate(off_t length) override;
+
 	/// Если в буфере ещё остались данные - запишем их.
 	void flush();
 	/// Ждать окончания текущей асинхронной задачи.

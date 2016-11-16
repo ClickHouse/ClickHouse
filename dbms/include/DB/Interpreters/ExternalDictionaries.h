@@ -3,6 +3,7 @@
 #include <DB/Dictionaries/IDictionary.h>
 #include <DB/Common/Exception.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/randomSeed.h>
 #include <common/MultiVersion.h>
 #include <common/logger_useful.h>
 #include <Poco/Event.h>
@@ -42,35 +43,35 @@ private:
 
 	mutable std::mutex dictionaries_mutex;
 
-	using dictionary_ptr_t = std::shared_ptr<MultiVersion<IDictionaryBase>>;
-	struct dictionary_info final
+	using DictionaryPtr = std::shared_ptr<MultiVersion<IDictionaryBase>>;
+	struct DictionaryInfo final
 	{
-		dictionary_ptr_t dict;
+		DictionaryPtr dict;
 		std::string origin;
 		std::exception_ptr exception;
 	};
 
-	struct failed_dictionary_info final
+	struct FailedDictionaryInfo final
 	{
 		std::unique_ptr<IDictionaryBase> dict;
 		std::chrono::system_clock::time_point next_attempt_time;
-		std::uint64_t error_count;
+		UInt64 error_count;
 	};
 
-	/** Имя словаря -> словарь.
+	/** name -> dictionary.
 	  */
-	std::unordered_map<std::string, dictionary_info> dictionaries;
+	std::unordered_map<std::string, DictionaryInfo> dictionaries;
 
-	/** Здесь находятся словари, которых ещё ни разу не удалось загрузить.
-	  * В dictionaries они тоже присутствуют, но с нулевым указателем dict.
+	/** Here are dictionaries, that has been never loaded sussessfully.
+	  * They are also in 'dictionaries', but with nullptr as 'dict'.
 	  */
-	std::unordered_map<std::string, failed_dictionary_info> failed_dictionaries;
+	std::unordered_map<std::string, FailedDictionaryInfo> failed_dictionaries;
 
-	/** И для обычных и для failed_dictionaries.
+	/** Both for dictionaries and failed_dictionaries.
 	  */
 	std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
 
-	std::mt19937_64 rnd_engine{getSeed()};
+	std::mt19937_64 rnd_engine{randomSeed()};
 
 	Context & context;
 
@@ -97,37 +98,16 @@ private:
 		}
 	}
 
-	static std::uint64_t getSeed()
-	{
-		timespec ts;
-		clock_gettime(CLOCK_MONOTONIC, &ts);
-		return static_cast<std::uint64_t>(ts.tv_nsec ^ getpid());
-	}
-
 public:
-	/// Справочники будут обновляться в отдельном потоке, каждые reload_period секунд.
+	/// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
 	ExternalDictionaries(Context & context, const bool throw_on_error)
 		: context(context), log(&Logger::get("ExternalDictionaries"))
 	{
 		{
-			/** При синхронной загрузки внешних словарей в момент выполнения запроса,
-			  *  не нужно использовать ограничение на расход памяти запросом.
+			/** During synchronous loading of external dictionaries at moment of query execution,
+			  *  we should not use per query memory limit.
 			  */
-			struct TemporarilyDisableMemoryTracker
-			{
-				MemoryTracker * memory_tracker;
-
-				TemporarilyDisableMemoryTracker()
-				{
-					memory_tracker = current_memory_tracker;
-					current_memory_tracker = nullptr;
-				}
-
-				~TemporarilyDisableMemoryTracker()
-				{
-					current_memory_tracker = memory_tracker;
-				}
-			} temporarily_disable_memory_tracker;
+			TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
 
 			reloadImpl(throw_on_error);
 		}

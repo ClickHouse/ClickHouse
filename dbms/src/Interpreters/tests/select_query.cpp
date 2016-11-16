@@ -36,7 +36,7 @@ try
 
 	DatabasePtr system = std::make_shared<DatabaseOrdinary>("system", "./metadata/system/");
 	context.addDatabase("system", system);
-	system->loadTables(context, nullptr);
+	system->loadTables(context, nullptr, false);
 	system->attachTable("one", 	StorageSystemOne::create("one"));
 	system->attachTable("numbers", StorageSystemNumbers::create("numbers"));
 	context.setCurrentDatabase("default");

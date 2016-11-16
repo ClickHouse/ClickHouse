@@ -17,7 +17,7 @@ StorageSystemOne::StorageSystemOne(const std::string & name_)
 
 StoragePtr StorageSystemOne::create(const std::string & name_)
 {
-	return (new StorageSystemOne(name_))->thisPtr();
+	return make_shared(name_);
 }
 
 
@@ -38,7 +38,7 @@ BlockInputStreams StorageSystemOne::read(
 	col.name = "dummy";
 	col.type = std::make_shared<DataTypeUInt8>();
 	col.column = ColumnConstUInt8(1, 0).convertToFullColumn();
-	block.insert(col);
+	block.insert(std::move(col));
 
 	return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
 }

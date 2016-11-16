@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.hpp>
+
 #include <DB/Storages/IStorage.h>
 
 
@@ -8,8 +10,10 @@ namespace DB
 
 /** Реализует системную таблицу metrics, которая позволяет получить информацию о работе сервера.
 	*/
-class StorageSystemMetrics : public IStorage
+class StorageSystemMetrics : private ext::shared_ptr_helper<StorageSystemMetrics>, public IStorage
 {
+friend class ext::shared_ptr_helper<StorageSystemMetrics>;
+
 public:
 	static StoragePtr create(const std::string & name_);
 

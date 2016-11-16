@@ -72,6 +72,7 @@ namespace ErrorCodes
 	extern const int DUPLICATE_COLUMN;
 	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 	extern const int ILLEGAL_AGGREGATION;
+	extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -128,41 +129,24 @@ bool functionIsInOrGlobalInOperator(const String & name)
 	return name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn";
 }
 
-/// Create a function uniquely identified by the first two parameters. If this
-/// function actually is a CASE expression, record this information.
-FunctionPtr getFunctionFromFactory(const String & name, const ASTFunction::Genus genus, const Context & context)
+void removeDuplicateColumns(NamesAndTypesList & columns)
 {
-	FunctionPtr function = FunctionFactory::instance().get(name, context);
-
-	if (genus == ASTFunction::Genus::CASE_WITH_EXPR)
+	std::set<String> names;
+	for (auto it = columns.begin(); it != columns.end();)
 	{
-		FunctionTransform * fun_transform = typeid_cast<FunctionTransform *>(&*function);
-		if (fun_transform == nullptr)
-			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-		fun_transform->setCaseMode();
+		if (names.emplace(it->name).second)
+			++it;
+		else
+			columns.erase(it++);
 	}
-	else if (genus == ASTFunction::Genus::CASE_WITHOUT_EXPR)
-	{
-		FunctionMultiIf * fun_multi_if = typeid_cast<FunctionMultiIf *>(&*function);
-		if (fun_multi_if == nullptr)
-			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-		fun_multi_if->setCaseMode();
-	}
-	else if (genus == ASTFunction::Genus::CASE_ARRAY)
-	{
-		FunctionArray * fun_array = typeid_cast<FunctionArray *>(&*function);
-		if (fun_array == nullptr)
-			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-		fun_array->setCaseMode();
-	}
-
-	return function;
 }
 
 }
 
 void ExpressionAnalyzer::init()
 {
+	removeDuplicateColumns(columns);
+
 	select_query = typeid_cast<ASTSelectQuery *>(ast.get());
 
 	/// В зависимости от профиля пользователя проверить наличие прав на выполнение
@@ -249,13 +233,14 @@ void ExpressionAnalyzer::analyzeAggregation()
 	{
 		assertSelect();
 
-		/// Найдем ключи агрегации.
+		/// Find out aggregation keys.
 		if (select_query->group_expression_list)
 		{
 			NameSet unique_keys;
-			auto & group_asts = select_query->group_expression_list->children;
-			for (size_t i = 0; i < group_asts.size(); ++i)
+			ASTs & group_asts = select_query->group_expression_list->children;
+			for (ssize_t i = 0; i < ssize_t(group_asts.size()); ++i)
 			{
+				ssize_t size = group_asts.size();
 				getRootActions(group_asts[i], true, false, temp_actions);
 
 				const auto & column_name = group_asts[i]->getColumnName();
@@ -266,31 +251,31 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 				const auto & col = block.getByName(column_name);
 
-				/// constant expressions have non-null column pointer at this stage
+				/// Constant expressions have non-null column pointer at this stage.
 				if (const auto is_constexpr = col.column)
 				{
-					/// but don't remove last key column if no aggregate functions, otherwise aggregation will not work
-					if (!aggregate_descriptions.empty() || group_asts.size() > 1)
+					/// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
+					if (!aggregate_descriptions.empty() || size > 1)
 					{
-						if (i < group_asts.size() - 1)
+						if (i + 1 < size)
 							group_asts[i] = std::move(group_asts.back());
 
 						group_asts.pop_back();
-						i -= 1;
 
+						--i;
 						continue;
 					}
 				}
 
 				NameAndTypePair key{column_name, col.type};
 
-				/// Ключи агрегации уникализируются.
+				/// Aggregation keys are uniqued.
 				if (!unique_keys.count(key.name))
 				{
 					unique_keys.insert(key.name);
 					aggregation_keys.push_back(key);
 
-					/// key is no longer needed, therefore we can save a little by moving it
+					/// Key is no longer needed, therefore we can save a little by moving it.
 					aggregated_columns.push_back(std::move(key));
 				}
 			}
@@ -346,13 +331,7 @@ void ExpressionAnalyzer::initGlobalSubqueries(ASTPtr & ast)
 		/// Для GLOBAL JOIN.
 		if (do_global && node->table_join
 			&& static_cast<const ASTTableJoin &>(*node->table_join).locality == ASTTableJoin::Locality::Global)
-		{
-			auto & table_expression = static_cast<ASTTableExpression &>(*node->table_expression);
-
-			addExternalStorage(table_expression.database_and_table_name
-				? table_expression.database_and_table_name
-				: table_expression.subquery);
-		}
+			addExternalStorage(node->table_expression);
 	}
 }
 
@@ -377,16 +356,47 @@ static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
 	ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_columns);
 
 
-void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
+void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_table_expression)
 {
 	/// При нераспределённых запросах, создание временных таблиц не имеет смысла.
 	if (!(storage && storage->isRemote()))
 		return;
 
-	if (const ASTIdentifier * table = typeid_cast<const ASTIdentifier *>(subquery_or_table_name.get()))
+	ASTPtr subquery;
+	ASTPtr table_name;
+	ASTPtr subquery_or_table_name;
+
+	if (typeid_cast<const ASTIdentifier *>(subquery_or_table_name_or_table_expression.get()))
+	{
+		table_name = subquery_or_table_name_or_table_expression;
+		subquery_or_table_name = table_name;
+	}
+	else if (auto ast_table_expr = typeid_cast<const ASTTableExpression *>(subquery_or_table_name_or_table_expression.get()))
+	{
+		if (ast_table_expr->database_and_table_name)
+		{
+			table_name = ast_table_expr->database_and_table_name;
+			subquery_or_table_name = table_name;
+		}
+		else if (ast_table_expr->subquery)
+		{
+			subquery = ast_table_expr->subquery;
+			subquery_or_table_name = subquery;
+		}
+	}
+	else if (typeid_cast<const ASTSubquery *>(subquery_or_table_name_or_table_expression.get()))
+	{
+		subquery = subquery_or_table_name_or_table_expression;
+		subquery_or_table_name = subquery;
+	}
+
+	if (!subquery_or_table_name)
+		throw Exception("Logical error: unknown AST element passed to ExpressionAnalyzer::addExternalStorage method", ErrorCodes::LOGICAL_ERROR);
+
+	if (table_name)
 	{
 		/// Если это уже внешняя таблица, ничего заполять не нужно. Просто запоминаем ее наличие.
-		if (external_tables.end() != external_tables.find(table->name))
+		if (external_tables.end() != external_tables.find(static_cast<const ASTIdentifier &>(*table_name).name))
 			return;
 	}
 
@@ -428,10 +438,24 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 		  *  вместо выполнения подзапроса, надо будет просто из неё прочитать.
 		  */
 
-		subquery_or_table_name = std::make_shared<ASTIdentifier>(StringRange(), external_table_name, ASTIdentifier::Table);
+		auto database_and_table_name = std::make_shared<ASTIdentifier>(StringRange(), external_table_name, ASTIdentifier::Table);
+
+		if (auto ast_table_expr = typeid_cast<ASTTableExpression *>(subquery_or_table_name_or_table_expression.get()))
+		{
+			ast_table_expr->subquery.reset();
+			ast_table_expr->database_and_table_name = database_and_table_name;
+
+			ast_table_expr->children.clear();
+			ast_table_expr->children.emplace_back(database_and_table_name);
+		}
+		else
+			subquery_or_table_name_or_table_expression = database_and_table_name;
 	}
 	else if (settings.global_subqueries_method == GlobalSubqueriesMethod::PULL)
 	{
+		throw Exception("Support for 'pull' method of execution of global subqueries is disabled.", ErrorCodes::SUPPORT_IS_DISABLED);
+
+		/// TODO
 /*		String host_port = getFQDNOrHostName() + ":" + toString(context.getTCPPort());
 		String database = "_query_" + context.getCurrentQueryId();
 
@@ -551,7 +575,7 @@ void ExpressionAnalyzer::normalizeTree()
 {
 	SetOfASTs tmp_set;
 	MapOfASTs tmp_map;
-	normalizeTreeImpl(ast, tmp_map, tmp_set, "");
+	normalizeTreeImpl(ast, tmp_map, tmp_set, "", 0);
 }
 
 
@@ -559,8 +583,11 @@ void ExpressionAnalyzer::normalizeTree()
 /// current_asts - вершины в текущем стеке вызовов этого метода
 /// current_alias - алиас, повешенный на предка ast (самого глубокого из предков с алиасами)
 void ExpressionAnalyzer::normalizeTreeImpl(
-	ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias)
+	ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, size_t level)
 {
+	if (level > settings.limits.max_ast_depth)
+		throw Exception("Normalized AST is too deep. Maximum: " + toString(settings.limits.max_ast_depth), ErrorCodes::TOO_DEEP_AST);
+
 	if (finished_asts.count(ast))
 	{
 		ast = finished_asts[ast];
@@ -677,7 +704,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 	/// Если заменили корень поддерева вызовемся для нового корня снова - на случай, если алиас заменился на алиас.
 	if (replaced)
 	{
-		normalizeTreeImpl(ast, finished_asts, current_asts, current_alias);
+		normalizeTreeImpl(ast, finished_asts, current_asts, current_alias, level + 1);
 		current_asts.erase(initial_ast.get());
 		current_asts.erase(ast.get());
 		finished_asts[initial_ast] = ast;
@@ -699,7 +726,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 				|| typeid_cast<const ASTTableExpression *>(child.get()))
 				continue;
 
-			normalizeTreeImpl(child, finished_asts, current_asts, current_alias);
+			normalizeTreeImpl(child, finished_asts, current_asts, current_alias, level + 1);
 		}
 	}
 	else
@@ -710,7 +737,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 				|| typeid_cast<const ASTTableExpression *>(child.get()))
 				continue;
 
-			normalizeTreeImpl(child, finished_asts, current_asts, current_alias);
+			normalizeTreeImpl(child, finished_asts, current_asts, current_alias, level + 1);
 		}
 	}
 
@@ -718,11 +745,11 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 	if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(ast.get()))
 	{
 		if (select->prewhere_expression)
-			normalizeTreeImpl(select->prewhere_expression, finished_asts, current_asts, current_alias);
+			normalizeTreeImpl(select->prewhere_expression, finished_asts, current_asts, current_alias, level + 1);
 		if (select->where_expression)
-			normalizeTreeImpl(select->where_expression, finished_asts, current_asts, current_alias);
+			normalizeTreeImpl(select->where_expression, finished_asts, current_asts, current_alias, level + 1);
 		if (select->having_expression)
-			normalizeTreeImpl(select->having_expression, finished_asts, current_asts, current_alias);
+			normalizeTreeImpl(select->having_expression, finished_asts, current_asts, current_alias, level + 1);
 	}
 
 	/// Действия, выполняемые снизу вверх.
@@ -1601,7 +1628,8 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 	else
 	{
 		for (auto & child : ast->children)
-			if (!typeid_cast<const ASTSubquery *>(child.get()))
+			if (!typeid_cast<const ASTSubquery *>(child.get())
+				&& !typeid_cast<const ASTSelectQuery *>(child.get()))
 				getArrayJoinedColumnsImpl(child);
 	}
 }
@@ -1694,7 +1722,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				return;
 			}
 
-			const FunctionPtr & function = getFunctionFromFactory(node->name, node->genus, context);
+			const FunctionPtr & function = FunctionFactory::instance().get(node->name, context);
 
 			Names argument_names;
 			DataTypes argument_types;
@@ -1936,7 +1964,8 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
 	else
 	{
 		for (const auto & child : ast->children)
-			if (!typeid_cast<const ASTSubquery *>(child.get()))
+			if (!typeid_cast<const ASTSubquery *>(child.get())
+				&& !typeid_cast<const ASTSelectQuery *>(child.get()))
 				getAggregates(child, actions);
 	}
 }
@@ -1951,7 +1980,8 @@ void ExpressionAnalyzer::assertNoAggregates(const ASTPtr & ast, const char * des
 			+ " is found " + String(description) + " in query", ErrorCodes::ILLEGAL_AGGREGATION);
 
 	for (const auto & child : ast->children)
-		if (!typeid_cast<const ASTSubquery *>(child.get()))
+		if (!typeid_cast<const ASTSubquery *>(child.get())
+			&& !typeid_cast<const ASTSelectQuery *>(child.get()))
 			assertNoAggregates(child, description);
 }
 
@@ -2405,10 +2435,7 @@ void ExpressionAnalyzer::collectUsedColumns()
 		unknown_required_columns.erase(it->name);
 
 		if (!required.count(it->name))
-		{
-			required.erase(it->name);
 			columns.erase(it++);
-		}
 		else
 			++it;
 	}

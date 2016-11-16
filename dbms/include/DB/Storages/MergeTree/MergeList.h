@@ -7,6 +7,16 @@
 #include <mutex>
 #include <atomic>
 
+
+/** Maintains a list of currently running merges.
+  * For implementation of system.merges table.
+  */
+
+namespace CurrentMetrics
+{
+	extern const Metric Merge;
+}
+
 namespace DB
 {
 
@@ -18,17 +28,33 @@ struct MergeInfo
 	const std::string result_part_name;
 	Stopwatch watch;
 	Float64 progress{};
-	std::uint64_t num_parts{};
-	std::uint64_t total_size_bytes_compressed{};
-	std::uint64_t total_size_marks{};
-	std::uint64_t bytes_read_uncompressed{};
-	std::uint64_t rows_read{};
-	std::uint64_t bytes_written_uncompressed{};
-	std::uint64_t rows_written{};
+	UInt64 num_parts{};
+	UInt64 total_size_bytes_compressed{};
+	UInt64 total_size_marks{};
+	std::atomic<UInt64> bytes_read_uncompressed{};
+	std::atomic<UInt64> rows_read{};
+	std::atomic<UInt64> bytes_written_uncompressed{};
+	std::atomic<UInt64> rows_written{};
 
 
 	MergeInfo(const std::string & database, const std::string & table, const std::string & result_part_name)
 		: database{database}, table{table}, result_part_name{result_part_name}
+	{
+	}
+
+	MergeInfo(const MergeInfo & other)
+		: database(other.database),
+		table(other.table),
+		result_part_name(other.result_part_name),
+		watch(other.watch),
+		progress(other.progress),
+		num_parts(other.num_parts),
+		total_size_bytes_compressed(other.total_size_bytes_compressed),
+		total_size_marks(other.total_size_marks),
+		bytes_read_uncompressed(other.bytes_read_uncompressed.load(std::memory_order_relaxed)),
+		rows_read(other.rows_read.load(std::memory_order_relaxed)),
+		bytes_written_uncompressed(other.bytes_written_uncompressed.load(std::memory_order_relaxed)),
+		rows_written(other.rows_written.load(std::memory_order_relaxed))
 	{
 	}
 };

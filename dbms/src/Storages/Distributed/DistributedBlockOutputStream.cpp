@@ -30,14 +30,14 @@ std::vector<IColumn::Filter> createFiltersImpl(const size_t num_rows, const ICol
 
 }
 
-DistributedBlockOutputStream::DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast)
-	: storage(storage), query_ast(query_ast)
+DistributedBlockOutputStream::DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_)
+	: storage(storage), query_ast(query_ast), cluster(cluster_)
 {
 }
 
 void DistributedBlockOutputStream::write(const Block & block)
 {
-	if (storage.getShardingKeyExpr() && (storage.cluster.getShardsInfo().size() > 1))
+	if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
 		return writeSplit(block);
 
 	writeImpl(block);
@@ -66,7 +66,7 @@ std::vector<IColumn::Filter> DistributedBlockOutputStream::createFilters(Block b
 	const auto it = creators.find(key_column.type->getName());
 
 	return it != std::end(creators)
-		? (*it->second)(block.rowsInFirstColumn(), key_column.column.get(), storage.cluster)
+		? (*it->second)(block.rowsInFirstColumn(), key_column.column.get(), *cluster)
 		: throw Exception{
 			"Sharding key expression does not evaluate to an integer type",
 			ErrorCodes::TYPE_MISMATCH
@@ -83,7 +83,7 @@ void DistributedBlockOutputStream::writeSplit(const Block & block)
 
 	auto filters = createFilters(block);
 
-	const auto num_shards = storage.cluster.getShardsInfo().size();
+	const auto num_shards = cluster->getShardsInfo().size();
 
 	ssize_t size_hint = ((block.rowsInFirstColumn() + num_shards - 1) / num_shards) * 1.1;	/// Число 1.1 выбрано наугад.
 
@@ -101,7 +101,7 @@ void DistributedBlockOutputStream::writeSplit(const Block & block)
 
 void DistributedBlockOutputStream::writeImpl(const Block & block, const size_t shard_id)
 {
-	const auto & shard_info = storage.cluster.getShardsInfo()[shard_id];
+	const auto & shard_info = cluster->getShardsInfo()[shard_id];
 	if (shard_info.getLocalNodeCount() > 0)
 		writeToLocal(block, shard_info.getLocalNodeCount());
 

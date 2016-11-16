@@ -19,6 +19,8 @@ public:
 	Op() : data(new zoo_op_t) {}
 	virtual ~Op() {}
 
+	virtual std::string describe() = 0;
+
 	std::unique_ptr<zoo_op_t> data;
 
 	struct Remove;
@@ -35,6 +37,8 @@ struct Op::Remove : public Op
 		zoo_delete_op_init(data.get(), path.c_str(), version);
 	}
 
+	std::string describe() override { return "command: remove, path: " + path; }
+
 private:
 	std::string path;
 };
@@ -46,6 +50,13 @@ struct Op::Create : public Op
 	std::string getPathCreated()
 	{
 		return created_path.data();
+	}
+
+	std::string describe() override
+	{
+		return 	"command: create"
+				", path: " + path +
+				", value: " + value;
 	}
 
 private:
@@ -61,6 +72,16 @@ struct Op::SetData : public Op
 	{
 		zoo_set_op_init(data.get(), path.c_str(), value.c_str(), value.size(), version, &stat);
 	}
+
+	std::string describe() override
+	{
+		return
+			"command: set"
+			", path: " + path +
+			", value: " + value +
+			", version: " + std::to_string(data->set_op.version);
+	}
+
 private:
 	std::string path;
 	std::string value;
@@ -74,6 +95,9 @@ struct Op::Check : public Op
 	{
 		zoo_check_op_init(data.get(), path.c_str(), version);
 	}
+
+	std::string describe() override { return "command: check, path: " + path; }
+	
 private:
 	std::string path;
 };

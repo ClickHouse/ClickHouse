@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.hpp>
+
 #include <DB/Storages/IStorage.h>
 #include <DB/Interpreters/Context.h>
 
@@ -9,8 +11,10 @@ namespace DB
 
 /** Реализует системную таблицу replication_queue, которая позволяет посмотреть очереди репликации для реплицируемых таблиц.
   */
-class StorageSystemReplicationQueue : public IStorage
+class StorageSystemReplicationQueue : private ext::shared_ptr_helper<StorageSystemReplicationQueue>, public IStorage
 {
+friend class ext::shared_ptr_helper<StorageSystemReplicationQueue>;
+
 public:
 	static StoragePtr create(const std::string & name_);
 

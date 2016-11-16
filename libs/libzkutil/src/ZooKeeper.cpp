@@ -1,9 +1,27 @@
 #include <functional>
 #include <zkutil/ZooKeeper.h>
-#include <boost/make_shared.hpp>
 #include <common/logger_useful.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/StringUtils.h>
+
+
+namespace ProfileEvents
+{
+	extern const Event ZooKeeperInit;
+	extern const Event ZooKeeperTransactions;
+	extern const Event ZooKeeperCreate;
+	extern const Event ZooKeeperRemove;
+	extern const Event ZooKeeperExists;
+	extern const Event ZooKeeperMulti;
+	extern const Event ZooKeeperGet;
+	extern const Event ZooKeeperSet;
+	extern const Event ZooKeeperGetChildren;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric ZooKeeperWatch;
+}
 
 
 namespace zkutil
@@ -30,6 +48,7 @@ struct WatchWithEvent
 	/// существует все время существования WatchWithEvent
 	ZooKeeper & zk;
 	EventPtr event;
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::ZooKeeperWatch};
 
 	WatchWithEvent(ZooKeeper & zk_, EventPtr event_) : zk(zk_), event(event_) {}
 
@@ -649,7 +668,7 @@ bool ZooKeeper::expired()
 	return is_dirty || zoo_state(impl) == ZOO_EXPIRED_SESSION_STATE;
 }
 
-int64_t ZooKeeper::getClientID()
+Int64 ZooKeeper::getClientID()
 {
 	return zoo_client_id(impl)->client_id;
 }

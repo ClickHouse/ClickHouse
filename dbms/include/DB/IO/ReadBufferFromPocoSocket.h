@@ -22,7 +22,7 @@ protected:
 	  */
 	Poco::Net::SocketAddress peer_address;
 
-	bool nextImpl();
+	bool nextImpl() override;
 
 public:
 	ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);

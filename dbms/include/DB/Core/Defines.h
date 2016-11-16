@@ -6,7 +6,7 @@
 
 #define DBMS_DEFAULT_HOST 										"localhost"
 #define DBMS_DEFAULT_PORT 										9000
-#define DBMS_DEFAULT_PORT_STR 									"9000"
+#define DBMS_DEFAULT_PORT_STR 									#DBMS_DEFAULT_PORT
 #define DBMS_DEFAULT_HTTP_PORT 									8123
 #define DBMS_DEFAULT_CONNECT_TIMEOUT_SEC						10
 #define DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS			50
@@ -14,9 +14,6 @@
 #define DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC						300
 #define DBMS_DEFAULT_PING_TIMEOUT_SEC							5
 #define DBMS_DEFAULT_POLL_INTERVAL 								10
-
-/// Насколько секунд можно максимально задерживать вставку в таблицу типа MergeTree, если в ней много недомердженных кусков.
-#define DBMS_MAX_DELAY_OF_INSERT								200.0
 
 /// Размер буфера ввода-вывода по-умолчанию.
 #define DBMS_DEFAULT_BUFFER_SIZE 								1048576ULL
@@ -53,9 +50,9 @@
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 	3
 /// каждый период уменьшаем счетчик ошибок в 2 раза
 /// слишком маленький период может приводить, что ошибки исчезают сразу после создания.
-#define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD 	(2*DBMS_DEFAULT_SEND_TIMEOUT_SEC)
+#define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD 	(2 * DBMS_DEFAULT_SEND_TIMEOUT_SEC)
 #define DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS 						5000	/// Максимальное время ожидания в очереди запросов.
-#define DBMS_DEFAULT_BACKGROUND_POOL_SIZE					6
+#define DBMS_DEFAULT_BACKGROUND_POOL_SIZE						6
 
 /// Используется в методе reserve, когда известно число строк, но неизвестны их размеры.
 #define DBMS_APPROX_STRING_SIZE 64
@@ -63,17 +60,13 @@
 /// Суффикс имени для столбца, содержащего смещения массива.
 #define ARRAY_SIZES_COLUMN_NAME_SUFFIX 							".size"
 
-#define DBMS_MIN_REVISION_WITH_PER_QUERY_SETTINGS				28558
-#define DBMS_MIN_REVISION_WITH_PROFILING_PACKET					32029
-#define DBMS_MIN_REVISION_WITH_HEADER_BLOCK						32881
-#define DBMS_MIN_REVISION_WITH_USER_PASSWORD					34482
-#define DBMS_MIN_REVISION_WITH_TOTALS_EXTREMES					35265
-#define DBMS_MIN_REVISION_WITH_STRING_QUERY_ID					39002
 #define DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES					50264
 #define DBMS_MIN_REVISION_WITH_TOTAL_ROWS_IN_PROGRESS			51554
 #define DBMS_MIN_REVISION_WITH_BLOCK_INFO						51903
-/// Версия TCP протокола ClickHouse
-#define DBMS_TCP_PROTOCOL_VERSION								53694
+#define DBMS_MIN_REVISION_WITH_CLIENT_INFO						54032
+
+/// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
+#define DBMS_TCP_PROTOCOL_VERSION								54032
 
 #define DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS		100
 
@@ -91,11 +84,19 @@
 	#error PLATFORM_NOT_SUPPORTED
 #endif
 
-/// Проверка наличия address sanitizer
+/// Check for presence of address sanitizer
 #if defined(__has_feature)
 	#if __has_feature(address_sanitizer)
 		#define ADDRESS_SANITIZER 1
 	#endif
 #elif defined(__SANITIZE_ADDRESS__)
 	#define ADDRESS_SANITIZER 1
+#endif
+
+#if defined(__has_feature)
+	#if __has_feature(thread_sanitizer)
+		#define THREAD_SANITIZER 1
+	#endif
+#elif defined(__SANITIZE_THREAD__)
+	#define THREAD_SANITIZER 1
 #endif

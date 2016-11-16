@@ -1,5 +1,5 @@
 /// Совместимость с clang, в котором std::numeric_limits (из libstdc++ из gcc) почему-то не специализируется для __uint128_t.
-#if __clang__
+#if __clang__ && __clang_major__ < 4
 	#include <limits>
 
 	namespace std
@@ -34,6 +34,14 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/Common/VirtualColumnUtils.h>
+
+
+namespace ProfileEvents
+{
+	extern const Event SelectedParts;
+	extern const Event SelectedRanges;
+	extern const Event SelectedMarks;
+}
 
 
 namespace DB

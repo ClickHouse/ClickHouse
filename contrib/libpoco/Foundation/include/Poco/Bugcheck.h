@@ -176,10 +176,10 @@ struct poco_static_assert_test
 #if defined(__GNUC__) && (__GNUC__ == 3) && ((__GNUC_MINOR__ == 3) || (__GNUC_MINOR__ == 4))
 #define poco_static_assert(B) \
 	typedef char POCO_JOIN(poco_static_assert_typedef_, __LINE__) \
-        [POCO_STATIC_ASSERTION_FAILURE<(bool) (B)>::value]
+        [POCO_STATIC_ASSERTION_FAILURE<static_cast<bool>(B)>::value]
 #else
 #define poco_static_assert(B) \
-	typedef poco_static_assert_test<sizeof(POCO_STATIC_ASSERTION_FAILURE<(bool) (B)>)> \
+	typedef poco_static_assert_test<sizeof(POCO_STATIC_ASSERTION_FAILURE<static_cast<bool>(B)>)> \
 		POCO_JOIN(poco_static_assert_typedef_, __LINE__)
 #endif
 

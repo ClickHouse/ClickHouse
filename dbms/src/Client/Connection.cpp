@@ -23,6 +23,13 @@
 #include <DB/Common/NetException.h>
 #include <DB/Common/CurrentMetrics.h>
 
+#include <DB/Interpreters/ClientInfo.h>
+
+
+namespace CurrentMetrics
+{
+	extern const Metric SendExternalTables;
+}
 
 namespace DB
 {
@@ -69,14 +76,14 @@ void Connection::connect()
 	{
 		disconnect();
 
-		/// Добавляем в сообщение адрес сервера. Также объект Exception запомнит stack trace. Жаль, что более точный тип исключения теряется.
+		/// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
 		throw NetException(e.displayText(), "(" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
 	}
 	catch (Poco::TimeoutException & e)
 	{
 		disconnect();
 
-		/// Добавляем в сообщение адрес сервера. Также объект Exception запомнит stack trace. Жаль, что более точный тип исключения теряется.
+		/// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
 		throw NetException(e.displayText(), "(" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
 	}
 }
@@ -114,7 +121,7 @@ void Connection::receiveHello()
 {
 	//LOG_TRACE(log_wrapper.get(), "Receiving hello");
 
-	/// Получить hello пакет.
+	/// Receive hello packet.
 	UInt64 packet_type = 0;
 
 	readVarUInt(packet_type, *in);
@@ -124,17 +131,12 @@ void Connection::receiveHello()
 		readVarUInt(server_version_major, *in);
 		readVarUInt(server_version_minor, *in);
 		readVarUInt(server_revision, *in);
-
-		/// Старые ревизии сервера не поддерживают имя пользователя и пароль, которые были отправлены в пакете hello.
-		if (server_revision < DBMS_MIN_REVISION_WITH_USER_PASSWORD)
-			throw Exception("Server revision is too old for this client. You must update server to at least " + toString(DBMS_MIN_REVISION_WITH_USER_PASSWORD) + ".",
-				ErrorCodes::SERVER_REVISION_IS_TOO_OLD);
 	}
 	else if (packet_type == Protocol::Server::Exception)
 		receiveException()->rethrow();
 	else
 	{
-		/// Закроем соединение, чтобы не было рассинхронизации.
+		/// Close connection, to not stay in unsynchronised state.
 		disconnect();
 
 		throw NetException("Unexpected packet from server " + getDescription() + " (expected Hello or Exception, got "
@@ -234,7 +236,7 @@ bool Connection::ping()
 
 		readVarUInt(pong, *in);
 
-		/// Можем получить запоздалые пакеты прогресса. TODO: может быть, это можно исправить.
+		/// Could receive late packets with progress. TODO: Maybe possible to fix.
 		while (pong == Protocol::Server::Progress)
 		{
 			receiveProgress();
@@ -262,7 +264,13 @@ bool Connection::ping()
 }
 
 
-void Connection::sendQuery(const String & query, const String & query_id_, UInt64 stage, const Settings * settings, bool with_pending_data)
+void Connection::sendQuery(
+	const String & query,
+	const String & query_id_,
+	UInt64 stage,
+	const Settings * settings,
+	const ClientInfo * client_info,
+	bool with_pending_data)
 {
 	network_compression_method = settings ? settings->network_compression_method.value : CompressionMethod::LZ4;
 
@@ -273,20 +281,35 @@ void Connection::sendQuery(const String & query, const String & query_id_, UInt6
 	//LOG_TRACE(log_wrapper.get(), "Sending query");
 
 	writeVarUInt(Protocol::Client::Query, *out);
+	writeStringBinary(query_id, *out);
 
-	if (server_revision >= DBMS_MIN_REVISION_WITH_STRING_QUERY_ID)
-		writeStringBinary(query_id, *out);
-	else
-		writeIntBinary<UInt64>(1, *out);
-
-	/// Настройки на отдельный запрос.
-	if (server_revision >= DBMS_MIN_REVISION_WITH_PER_QUERY_SETTINGS)
+	/// Client info.
+	if (server_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
 	{
-		if (settings)
-			settings->serialize(*out);
+		ClientInfo client_info_to_send;
+
+		if (!client_info)
+		{
+			/// No client info passed - means this query initiated by me.
+			client_info_to_send.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+			client_info_to_send.fillOSUserHostNameAndVersionInfo();
+			client_info_to_send.client_name = (DBMS_NAME " ") + client_name;
+		}
 		else
-			writeStringBinary("", *out);
+		{
+			/// This query is initiated by another query.
+			client_info_to_send = *client_info;
+			client_info_to_send.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+		}
+
+		client_info_to_send.write(*out, server_revision);
 	}
+
+	/// Per query settings.
+	if (settings)
+		settings->serialize(*out);
+	else
+		writeStringBinary("", *out);
 
 	writeVarUInt(stage, *out);
 	writeVarUInt(compression, *out);
@@ -298,7 +321,7 @@ void Connection::sendQuery(const String & query, const String & query_id_, UInt6
 	block_in.reset();
 	block_out.reset();
 
-	/// Если версия сервера достаточно новая и стоит флаг, отправляем пустой блок, символизируя конец передачи данных.
+	/// If server version is new enough, send empty block which meand end of data.
 	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES && !with_pending_data)
 	{
 		sendData(Block());
@@ -349,7 +372,7 @@ void Connection::sendData(const Block & block, const String & name)
 
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
-	/// NOTE В этом методе не используется throttler (хотя можно использовать, но это пока не важно).
+	/// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
 
 	writeVarUInt(Protocol::Client::Data, *out);
 
@@ -366,7 +389,7 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
 
 void Connection::sendExternalTablesData(ExternalTablesData & data)
 {
-	/// Если работаем со старым сервером, то никакой информации не отправляем
+	/// If working with older server, don't send any info.
 	if (server_revision < DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
 	{
 		out->next();
@@ -375,7 +398,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 
 	if (data.empty())
 	{
-		/// Отправляем пустой блок, символизируя конец передачи данных
+		/// Send empty block, which means end of data transfer.
 		sendData(Block());
 		return;
 	}
@@ -398,7 +421,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 		elem.first->readSuffix();
 	}
 
-	/// Отправляем пустой блок, символизируя конец передачи данных
+	/// Send empty block, which means end of data transfer.
 	sendData(Block());
 
 	out_bytes = out->count() - out_bytes;
@@ -461,12 +484,12 @@ Connection::Packet Connection::receivePacket()
 				return res;
 
 			case Protocol::Server::Totals:
-				/// Блок с тотальными значениями передаётся так же, как обычный блок данных. Разница только в идентификаторе пакета.
+				/// Block with total values is passed in same form as ordinary block. The only difference is packed id.
 				res.block = receiveData();
 				return res;
 
 			case Protocol::Server::Extremes:
-				/// Аналогично.
+				/// Same as above.
 				res.block = receiveData();
 				return res;
 
@@ -474,7 +497,7 @@ Connection::Packet Connection::receivePacket()
 				return res;
 
 			default:
-				/// Закроем соединение, чтобы не было рассинхронизации.
+				/// In unknown state, disconnect - to not leave unsynchronised connection.
 				disconnect();
 				throw Exception("Unknown packet "
 					+ toString(res.type)
@@ -483,7 +506,7 @@ Connection::Packet Connection::receivePacket()
 	}
 	catch (Exception & e)
 	{
-		/// Дописываем в текст исключения адрес сервера, если надо.
+		/// Add server address to exception message, if need.
 		if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
 			e.addMessage("while receiving packet from " + getDescription());
 
@@ -505,7 +528,7 @@ Block Connection::receiveData()
 
 	size_t prev_bytes = in->count();
 
-	/// Прочитать из сети один блок
+	/// Read one block from network.
 	Block res = block_in->read();
 
 	if (throttler)

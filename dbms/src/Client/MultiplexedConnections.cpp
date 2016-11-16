@@ -51,7 +51,7 @@ MultiplexedConnections::MultiplexedConnections(IConnectionPool * pool_, const Se
 	supports_parallel_execution = active_connection_total_count > 1;
 
 	if (append_extra_info)
-		block_extra_info.reset(new BlockExtraInfo);
+		block_extra_info = std::make_unique<BlockExtraInfo>();
 }
 
 MultiplexedConnections::MultiplexedConnections(ConnectionPools & pools_, const Settings * settings_, ThrottlerPtr throttler_,
@@ -73,7 +73,7 @@ MultiplexedConnections::MultiplexedConnections(ConnectionPools & pools_, const S
 	supports_parallel_execution = active_connection_total_count > 1;
 
 	if (append_extra_info)
-		block_extra_info.reset(new BlockExtraInfo);
+		block_extra_info = std::make_unique<BlockExtraInfo>();
 }
 
 void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
@@ -97,7 +97,12 @@ void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesDa
 	}
 }
 
-void MultiplexedConnections::sendQuery(const String & query, const String & query_id, UInt64 stage, bool with_pending_data)
+void MultiplexedConnections::sendQuery(
+	const String & query,
+	const String & query_id,
+	UInt64 stage,
+	const ClientInfo * client_info,
+	bool with_pending_data)
 {
 	std::lock_guard<std::mutex> lock(cancel_mutex);
 
@@ -116,7 +121,7 @@ void MultiplexedConnections::sendQuery(const String & query, const String & quer
 				if (connection == nullptr)
 					throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
 
-				connection->sendQuery(query, query_id, stage, nullptr, with_pending_data);
+				connection->sendQuery(query, query_id, stage, nullptr, client_info, with_pending_data);
 				++it;
 			}
 		}
@@ -138,7 +143,7 @@ void MultiplexedConnections::sendQuery(const String & query, const String & quer
 						throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
 
 					query_settings.parallel_replica_offset = offset;
-					connection->sendQuery(query, query_id, stage, &query_settings, with_pending_data);
+					connection->sendQuery(query, query_id, stage, &query_settings, client_info, with_pending_data);
 					++offset;
 					++it;
 				}
@@ -151,7 +156,7 @@ void MultiplexedConnections::sendQuery(const String & query, const String & quer
 		if (connection == nullptr)
 			throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
 
-		connection->sendQuery(query, query_id, stage, settings, with_pending_data);
+		connection->sendQuery(query, query_id, stage, settings, client_info, with_pending_data);
 	}
 
 	sent_query = true;

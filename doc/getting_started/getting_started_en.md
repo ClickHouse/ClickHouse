@@ -193,7 +193,7 @@ After that, add the data to ClickHouse:
 ```
 for i in *.zip; do
 	echo $i
-	unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="insert into ontime format CSVWithNames"
+	unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --query="insert into ontime format CSVWithNames"
 done
 ```
 

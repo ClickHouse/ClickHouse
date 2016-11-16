@@ -1,6 +1,6 @@
 #include <string.h>
 #include <iostream>
-#include <threadpool.hpp>
+#include <DB/Common/ThreadPool.h>
 #include <functional>
 #include <common/MultiVersion.h>
 #include <Poco/Exception.h>
@@ -34,7 +34,7 @@ int main(int argc, char ** argv)
 		MV x(std::make_shared<T>(s1));
 		Results results(n);
 
-		boost::threadpool::pool tp(8);
+		ThreadPool tp(8);
 		for (size_t i = 0; i < n; ++i)
 		{
 			tp.schedule(std::bind(thread1, std::ref(x), std::ref(results[i])));

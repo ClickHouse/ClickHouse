@@ -12,6 +12,10 @@
 #include <signal.h>
 #include <cxxabi.h>
 #include <execinfo.h>
+#ifdef __APPLE__
+// ucontext is not available without _XOPEN_SOURCE
+#define _XOPEN_SOURCE
+#endif
 #include <ucontext.h>
 
 #include <typeinfo>
@@ -52,8 +56,6 @@
 #include <DB/IO/WriteHelpers.h>
 
 #include <common/ClickHouseRevision.h>
-
-
 
 using Poco::Logger;
 using Poco::AutoPtr;
@@ -185,6 +187,12 @@ static bool already_printed_stack_trace = false;
 class SignalListener : public Poco::Runnable
 {
 public:
+	enum Signals : int
+	{
+		StdTerminate = -1,
+		StopThread = -2
+	};
+
 	SignalListener(BaseDaemon & daemon_)
 	: log(&Logger::get("BaseDaemon"))
 	, daemon(daemon_)
@@ -201,13 +209,18 @@ public:
 			int sig = 0;
 			DB::readBinary(sig, in);
 
-			if (sig == SIGHUP || sig == SIGUSR1)
+			if (sig == Signals::StopThread)
+			{
+				LOG_INFO(log, "Stop SignalListener thread");
+				break;
+			}
+			else if (sig == SIGHUP || sig == SIGUSR1)
 			{
 				LOG_DEBUG(log, "Received signal to close logs.");
 				BaseDaemon::instance().closeLogs();
 				LOG_INFO(log, "Opened new log file after received signal.");
 			}
-			else if (sig == -1)		/// -1 для обозначения std::terminate.
+			else if (sig == Signals::StdTerminate)
 			{
 				ThreadNumber thread_num;
 				std::string message;
@@ -271,7 +284,11 @@ private:
 
 #if defined(__x86_64__)
 		/// Get the address at the time the signal was raised from the RIP (x86-64)
+		#ifndef __APPLE__
 		caller_address = reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
+		#else
+		caller_address = reinterpret_cast<void *>(context.uc_mcontext->__ss.__rip);
+		#endif
 #elif defined(__aarch64__)
 		caller_address = reinterpret_cast<void *>(context.uc_mcontext.pc);
 #endif
@@ -408,7 +425,7 @@ static void terminate_handler()
 	char buf[buf_size];
 	DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
 
-	DB::writeBinary(-1, out);
+	DB::writeBinary(SignalListener::StdTerminate, out);
 	DB::writeBinary(Poco::ThreadNumber::get(), out);
 	DB::writeBinary(log_message, out);
 	out.next();
@@ -527,8 +544,9 @@ BaseDaemon::BaseDaemon() = default;
 
 BaseDaemon::~BaseDaemon()
 {
-	signal_pipe.close();
+	writeSignalIDtoSignalPipe(SignalListener::StopThread);
 	signal_listener_thread.join();
+	signal_pipe.close();
 }
 
 
@@ -708,10 +726,10 @@ void BaseDaemon::initialize(Application& self)
 
 		if (setrlimit(RLIMIT_CORE, &rlim))
 		{
-		#ifndef ADDRESS_SANITIZER
+		#if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER)
 			throw Poco::Exception("Cannot setrlimit");
 		#else
-			/// Не работает под address sanitizer. http://lists.llvm.org/pipermail/llvm-bugs/2013-April/027880.html
+			/// Не работает под address/thread sanitizer. http://lists.llvm.org/pipermail/llvm-bugs/2013-April/027880.html
 			std::cerr << "Cannot setrlimit\n";
 		#endif
 		}

@@ -33,14 +33,10 @@
 #include <DB/Interpreters/QueryLog.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/copyData.h>
 #include <DB/IO/UncompressedCache.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/parseQuery.h>
-#include <DB/Client/ConnectionPool.h>
-#include <DB/Client/ConnectionPoolWithFailover.h>
 #include <DB/Databases/IDatabase.h>
 
 #include <DB/Common/ConfigProcessor.h>
@@ -87,6 +83,7 @@ struct ContextShared
 
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	String tmp_path;										/// Путь ко временным файлам, возникающим при обработке запроса.
+	String flags_path;										///
 	Databases databases;									/// Список БД и таблиц в них.
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
@@ -111,9 +108,11 @@ struct ContextShared
 	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
 	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Настройки для движка MergeTree.
 
-	/// Кластеры для distributed таблиц
-	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
-	mutable std::shared_ptr<Clusters> clusters;
+	/// Clusters for distributed tables
+	/// Initialized on demand (on distributed storages initialization) since Settings should be initialized
+	std::unique_ptr<Clusters> clusters;
+	ConfigurationPtr clusters_config;						/// Soteres updated configs
+	mutable std::mutex clusters_mutex;						/// Guards clusters and clusters_config
 
 	Poco::UUIDGenerator uuid_generator;
 
@@ -129,6 +128,8 @@ struct ContextShared
 	mutable std::mutex ddl_guards_mutex;
 
 	Stopwatch uptime_watch;
+
+	Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
 
 	~ContextShared()
@@ -258,6 +259,12 @@ String Context::getTemporaryPath() const
 	return shared->tmp_path;
 }
 
+String Context::getFlagsPath() const
+{
+	auto lock = getLock();
+	return shared->flags_path;
+}
+
 
 void Context::setPath(const String & path)
 {
@@ -271,8 +278,14 @@ void Context::setTemporaryPath(const String & path)
 	shared->tmp_path = path;
 }
 
+void Context::setFlagsPath(const String & path)
+{
+	auto lock = getLock();
+	shared->flags_path = path;
+}
 
-void Context::setUsersConfig(ConfigurationPtr config)
+
+void Context::setUsersConfig(const ConfigurationPtr & config)
 {
 	auto lock = getLock();
 	shared->users_config = config;
@@ -287,16 +300,16 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, const String & quota_key)
+void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
 {
 	auto lock = getLock();
 
-	const User & user_props = shared->users.get(name, password, address);
+	const User & user_props = shared->users.get(name, password, address.host());
 	setSetting("profile", user_props.profile);
-	setQuota(user_props.quota, quota_key, name, address);
+	setQuota(user_props.quota, quota_key, name, address.host());
 
-	user = name;
-	ip_address = address;
+	client_info.current_user = name;
+	client_info.current_address = address;
 }
 
 
@@ -315,13 +328,13 @@ QuotaForIntervals & Context::getQuota()
 
 void Context::checkDatabaseAccessRights(const std::string & database_name) const
 {
-	if (user.empty() || (database_name == "system"))
+	if (client_info.current_user.empty() || (database_name == "system"))
 	{
 		/// Безымянный пользователь, т.е. сервер, имеет доступ ко всем БД.
 		/// Все пользователи имеют доступ к БД system.
 		return;
 	}
-	if (!shared->users.isAllowedDatabase(user, database_name))
+	if (!shared->users.isAllowedDatabase(client_info.current_user, database_name))
 		throw Exception("Access denied to database " + database_name, ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
@@ -659,7 +672,7 @@ String Context::getCurrentDatabase() const
 String Context::getCurrentQueryId() const
 {
 	auto lock = getLock();
-	return current_query_id;
+	return client_info.current_query_id;
 }
 
 
@@ -673,7 +686,7 @@ void Context::setCurrentDatabase(const String & name)
 
 void Context::setCurrentQueryId(const String & query_id)
 {
-	if (!current_query_id.empty())
+	if (!client_info.current_query_id.empty())
 		throw Exception("Logical error: attempt to set query_id twice", ErrorCodes::LOGICAL_ERROR);
 
 	String query_id_to_set = query_id;
@@ -681,7 +694,7 @@ void Context::setCurrentQueryId(const String & query_id)
 		query_id_to_set = shared->uuid_generator.createRandom().toString();
 
 	auto lock = getLock();
-	current_query_id = query_id_to_set;
+	client_info.current_query_id = query_id_to_set;
 }
 
 
@@ -807,7 +820,7 @@ void Context::setUncompressedCache(size_t max_size_in_bytes)
 	if (shared->uncompressed_cache)
 		throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-	shared->uncompressed_cache.reset(new UncompressedCache(max_size_in_bytes));
+	shared->uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes);
 }
 
 
@@ -824,7 +837,7 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
 	if (shared->mark_cache)
 		throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-	shared->mark_cache.reset(new MarkCache(cache_size_in_bytes, std::chrono::seconds(settings.mark_cache_min_lifetime)));
+	shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes, std::chrono::seconds(settings.mark_cache_min_lifetime));
 }
 
 MarkCachePtr Context::getMarkCache() const
@@ -912,31 +925,48 @@ UInt16 Context::getTCPPort() const
 }
 
 
-const Cluster & Context::getCluster(const std::string & cluster_name) const
+std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
-	{
-		auto lock = getLock();
-		if (!shared->clusters)
-			shared->clusters = std::make_shared<Clusters>(settings);
-	}
+	auto res = getClusters().getCluster(cluster_name);
 
-	Clusters::Impl::iterator it = shared->clusters->impl.find(cluster_name);
-	if (it != shared->clusters->impl.end())
-		return it->second;
-	else
-		throw Poco::Exception("Failed to find cluster with name = " + cluster_name);
+	if (!res)
+		throw Exception("Requested cluster '" + cluster_name + "' not found", ErrorCodes::BAD_GET);
+
+	return res;
 }
 
-std::shared_ptr<Clusters> Context::getClusters() const
+
+std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
+{
+	return getClusters().getCluster(cluster_name);
+}
+
+
+Clusters & Context::getClusters() const
 {
 	{
-		auto lock = getLock();
+		std::lock_guard<std::mutex> lock(shared->clusters_mutex);
 		if (!shared->clusters)
-			shared->clusters = std::make_shared<Clusters>(settings);
+		{
+			auto & config = shared->clusters_config ? *shared->clusters_config : Poco::Util::Application::instance().config();
+			shared->clusters = std::make_unique<Clusters>(config, settings);
+		}
 	}
 
-	return shared->clusters;
+	return *shared->clusters;
 }
+
+
+/// On repeating calls updates existing clusters and adds new clusters, doesn't delete old clusters
+void Context::setClustersConfig(const ConfigurationPtr & config)
+{
+	std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+
+	shared->clusters_config = config;
+	if (shared->clusters)
+		shared->clusters->updateClusters(*shared->clusters_config, settings);
+}
+
 
 Compiler & Context::getCompiler()
 {
@@ -968,7 +998,8 @@ QueryLog & Context::getQueryLog()
 		size_t flush_interval_milliseconds = parse<size_t>(
 			config.getString("query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS_STR));
 
-		shared->query_log.reset(new QueryLog{ *global_context, database, table, flush_interval_milliseconds });
+		shared->query_log = std::make_unique<QueryLog>(
+			*global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
 	}
 
 	return *shared->query_log;
@@ -985,9 +1016,9 @@ CompressionMethod Context::chooseCompressionMethod(size_t part_size, double part
 		auto & config = Poco::Util::Application::instance().config();
 
 		if (config.has(config_name))
-			shared->compression_method_selector.reset(new CompressionMethodSelector{config, "compression"});
+			shared->compression_method_selector = std::make_unique<CompressionMethodSelector>(config, "compression");
 		else
-			shared->compression_method_selector.reset(new CompressionMethodSelector);
+			shared->compression_method_selector = std::make_unique<CompressionMethodSelector>();
 	}
 
 	return shared->compression_method_selector->choose(part_size, part_size_ratio);
@@ -1001,7 +1032,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings()
 	if (!shared->merge_tree_settings)
 	{
 		auto & config = Poco::Util::Application::instance().config();
-		shared->merge_tree_settings.reset(new MergeTreeSettings());
+		shared->merge_tree_settings = std::make_unique<MergeTreeSettings>();
 		shared->merge_tree_settings->loadFromConfig("merge_tree", config);
 	}
 
@@ -1031,5 +1062,18 @@ void Context::shutdown()
 {
 	shared->shutdown();
 }
+
+
+Context::ApplicationType Context::getApplicationType() const
+{
+	return shared->application_type;
+}
+
+void Context::setApplicationType(ApplicationType type)
+{
+	/// Lock isn't required, you should set it at start
+	shared->application_type = type;
+}
+
 
 }

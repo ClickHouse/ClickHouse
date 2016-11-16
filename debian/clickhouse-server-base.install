@@ -1,5 +1,5 @@
+/usr/bin/clickhouse
 /usr/bin/clickhouse-server
-/etc/logrotate.d/clickhouse-server.logrt
 /etc/cron.d/clickhouse-server
 /etc/security/limits.d/metrika.conf
 /usr/share/clickhouse/*

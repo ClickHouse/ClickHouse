@@ -4,6 +4,12 @@
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <iomanip>
 
+
+namespace ProfileEvents
+{
+	extern const Event SynchronousMergeOnInsert;
+}
+
 namespace DB
 {
 
@@ -15,8 +21,8 @@ public:
 
 	void writePrefix() override
 	{
-		/// Если слишком много кусков - делаем внеочередные мерджи, синхронно, в текущем потоке.
-		/// Почему 10? - на всякий случай, вместо бесконечного цикла.
+		/// If too much parts, do extra merges synchronously, in current thread.
+		/// Why 10? - just in case, it is better than possibly infinite loop.
 		for (size_t i = 0; i < 10; ++i)
 		{
 			size_t parts_count = storage.data.getMaxPartsCountForMonth();
@@ -24,7 +30,7 @@ public:
 				break;
 
 			ProfileEvents::increment(ProfileEvents::SynchronousMergeOnInsert);
-			storage.merge(0, {}, {}, {}, {});
+			storage.merge(0, {}, {}, {});
 		}
 	}
 
@@ -37,7 +43,7 @@ public:
 			MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, temp_index);
 			storage.data.renameTempPartAndAdd(part, &storage.increment);
 
-			/// Инициируем асинхронный мердж - он будет произведён, если пора делать мердж и если в background_pool-е есть место.
+			/// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
 			storage.merge_task_handle->wake();
 		}
 	}

@@ -12,6 +12,11 @@ namespace DB
 	}
 }
 
+namespace ProfileEvents
+{
+	extern const Event ZooKeeperExceptions;
+}
+
 
 namespace zkutil
 {
@@ -48,6 +53,11 @@ public:
 	bool isHardwareError() const
 	{
 		return isUnrecoverable() || code == ZCONNECTIONLOSS || code == ZOPERATIONTIMEOUT;
+	}
+
+	bool isTemporaryError() const
+	{
+		return code == ZCONNECTIONLOSS || code == ZOPERATIONTIMEOUT;
 	}
 
 	const int32_t code;

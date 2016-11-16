@@ -3,6 +3,11 @@
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ExternalAggregationMerge;
+}
+
 namespace DB
 {
 

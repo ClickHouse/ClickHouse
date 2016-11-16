@@ -107,7 +107,7 @@ struct FastHash64
 		size_t len = x.size;
 
 		const uint64_t    m = 0x880355f21e6d1965ULL;
-		const uint64_t *pos = (const uint64_t *)buf;
+		const uint64_t *pos = reinterpret_cast<const uint64_t *>(buf);
 		const uint64_t *end = pos + (len / 8);
 		const unsigned char *pos2;
 		uint64_t h = len * m;
@@ -119,17 +119,17 @@ struct FastHash64
 			h *= m;
 		}
 
-		pos2 = (const unsigned char*)pos;
+		pos2 = reinterpret_cast<const unsigned char*>(pos);
 		v = 0;
 
 		switch (len & 7) {
-		case 7: v ^= (uint64_t)pos2[6] << 48;
-		case 6: v ^= (uint64_t)pos2[5] << 40;
-		case 5: v ^= (uint64_t)pos2[4] << 32;
-		case 4: v ^= (uint64_t)pos2[3] << 24;
-		case 3: v ^= (uint64_t)pos2[2] << 16;
-		case 2: v ^= (uint64_t)pos2[1] << 8;
-		case 1: v ^= (uint64_t)pos2[0];
+		case 7: v ^= static_cast<uint64_t>(pos2[6]) << 48;
+		case 6: v ^= static_cast<uint64_t>(pos2[5]) << 40;
+		case 5: v ^= static_cast<uint64_t>(pos2[4]) << 32;
+		case 4: v ^= static_cast<uint64_t>(pos2[3]) << 24;
+		case 3: v ^= static_cast<uint64_t>(pos2[2]) << 16;
+		case 2: v ^= static_cast<uint64_t>(pos2[1]) << 8;
+		case 1: v ^= static_cast<uint64_t>(pos2[0]);
 			h ^= mix(v);
 			h *= m;
 		}
@@ -234,13 +234,13 @@ struct SimpleHash
 
 		while (pos + 8 < end)
 		{
-			UInt64 word = *reinterpret_cast<const UInt64 *>(pos);
+			uint64_t word = *reinterpret_cast<const uint64_t *>(pos);
 			res = intHash64(word ^ res);
 
 			pos += 8;
 		}
 
-		UInt64 word = *reinterpret_cast<const UInt64 *>(end - 8);
+		uint64_t word = *reinterpret_cast<const uint64_t *>(end - 8);
 		res = intHash64(word ^ res);
 
 		return res;
@@ -269,14 +269,14 @@ struct VerySimpleHash
 
 		while (pos + 8 < end)
 		{
-			res ^= reinterpret_cast<const UInt64 *>(pos)[0];
+			res ^= reinterpret_cast<const uint64_t *>(pos)[0];
 			res ^= res >> 33;
 			res *= 0xff51afd7ed558ccdULL;
 
 			pos += 8;
 		}
 
-		res ^= *reinterpret_cast<const UInt64 *>(end - 8);
+		res ^= *reinterpret_cast<const uint64_t *>(end - 8);
 		res ^= res >> 33;
 		res *= 0xc4ceb9fe1a85ec53ULL;
 		res ^= res >> 33;
@@ -301,7 +301,7 @@ struct MetroHash64
 	size_t operator() (StringRef x) const
 	{
 		union {
-			std::uint64_t u64;
+			uint64_t u64;
 			std::uint8_t u8[sizeof(u64)];
 		};
 
@@ -334,13 +334,13 @@ struct MetroHash64
 
 		do
 		{
-			UInt64 word = *reinterpret_cast<const UInt64 *>(pos);
+			uint64_t word = *reinterpret_cast<const uint64_t *>(pos);
 			res = _mm_crc32_u64(res, word);
 
 			pos += 8;
 		} while (pos + 8 < end);
 
-		UInt64 word = *reinterpret_cast<const UInt64 *>(end - 8);
+		uint64_t word = *reinterpret_cast<const uint64_t *>(end - 8);
 		res = _mm_crc32_u64(res, word);
 
 		return res;
@@ -370,16 +370,16 @@ struct CRC32ILPHash
 
 		do
 		{
-			UInt64 word0 = reinterpret_cast<const UInt64 *>(pos)[0];
-			UInt64 word1 = reinterpret_cast<const UInt64 *>(pos)[1];
+			uint64_t word0 = reinterpret_cast<const uint64_t *>(pos)[0];
+			uint64_t word1 = reinterpret_cast<const uint64_t *>(pos)[1];
 			res0 = _mm_crc32_u64(res0, word0);
 			res1 = _mm_crc32_u64(res1, word1);
 
 			pos += 16;
 		} while (pos < end_16);
 
-		UInt64 word0 = *reinterpret_cast<const UInt64 *>(end - 8);
-		UInt64 word1 = *reinterpret_cast<const UInt64 *>(end - 16);
+		uint64_t word0 = *reinterpret_cast<const uint64_t *>(end - 8);
+		uint64_t word1 = *reinterpret_cast<const uint64_t *>(end - 16);
 
 	/*	return HashLen16(Rotate(word0 - word1, 43) + Rotate(res0, 30) + res1,
 			word0 + Rotate(word1 ^ k3, 20) - res0 + size);*/
@@ -394,7 +394,7 @@ struct CRC32ILPHash
 #endif
 
 
-using Value = UInt64;
+using Value = uint64_t;
 
 
 template <typename Key, typename Hash>

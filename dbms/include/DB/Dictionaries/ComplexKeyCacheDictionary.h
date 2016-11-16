@@ -155,14 +155,14 @@ private:
 	template <typename Value> using ContainerType = Value[];
 	template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
 
-	struct cell_metadata_t final
+	struct CellMetadata final
 	{
 		using time_point_t = std::chrono::system_clock::time_point;
 		using time_point_rep_t = time_point_t::rep;
 		using time_point_urep_t = std::make_unsigned_t<time_point_rep_t>;
 
-		static constexpr std::uint64_t EXPIRES_AT_MASK = std::numeric_limits<time_point_rep_t>::max();
-		static constexpr std::uint64_t IS_DEFAULT_MASK = ~EXPIRES_AT_MASK;
+		static constexpr UInt64 EXPIRES_AT_MASK = std::numeric_limits<time_point_rep_t>::max();
+		static constexpr UInt64 IS_DEFAULT_MASK = ~EXPIRES_AT_MASK;
 
 		StringRef key;
 		decltype(StringRefHash{}(key)) hash;
@@ -177,7 +177,7 @@ private:
 		void setDefault() { data |= IS_DEFAULT_MASK; }
 	};
 
-	struct attribute_t final
+	struct Attribute final
 	{
 		AttributeUnderlyingType type;
 		std::tuple<
@@ -194,25 +194,25 @@ private:
 
 	void createAttributes();
 
-	attribute_t createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+	Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
 	template <typename OutputType, typename DefaultGetter>
 	void getItemsNumber(
-		attribute_t & attribute,
+		Attribute & attribute,
 		const ConstColumnPlainPtrs & key_columns,
 		PaddedPODArray<OutputType> & out,
 		DefaultGetter && get_default) const;
 
 	template <typename AttributeType, typename OutputType, typename DefaultGetter>
 	void getItemsNumberImpl(
-		attribute_t & attribute,
+		Attribute & attribute,
 		const ConstColumnPlainPtrs & key_columns,
 		PaddedPODArray<OutputType> & out,
 		DefaultGetter && get_default) const;
 
 	template <typename DefaultGetter>
 	void getItemsString(
-		attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, ColumnString * out,
+		Attribute & attribute, const ConstColumnPlainPtrs & key_columns, ColumnString * out,
 		DefaultGetter && get_default) const;
 
 	template <typename PresentKeyHandler, typename AbsentKeyHandler>
@@ -221,13 +221,13 @@ private:
 		const std::vector<std::size_t> & in_requested_rows, PresentKeyHandler && on_cell_updated,
 		AbsentKeyHandler && on_key_not_found) const;
 
-	std::uint64_t getCellIdx(const StringRef key) const;
+	UInt64 getCellIdx(const StringRef key) const;
 
-	void setDefaultAttributeValue(attribute_t & attribute, const std::size_t idx) const;
+	void setDefaultAttributeValue(Attribute & attribute, const std::size_t idx) const;
 
-	void setAttributeValue(attribute_t & attribute, const std::size_t idx, const Field & value) const;
+	void setAttributeValue(Attribute & attribute, const std::size_t idx, const Field & value) const;
 
-	attribute_t & getAttribute(const std::string & attribute_name) const;
+	Attribute & getAttribute(const std::string & attribute_name) const;
 
 	StringRef allocKey(const std::size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys) const;
 
@@ -240,6 +240,7 @@ private:
 	StringRef placeKeysInFixedSizePool(
 		const std::size_t row, const ConstColumnPlainPtrs & key_columns) const;
 
+	static StringRef copyIntoArena(StringRef src, Arena & arena);
 	StringRef copyKey(const StringRef key) const;
 
 	const std::string name;
@@ -250,10 +251,10 @@ private:
 
 	mutable Poco::RWLock rw_lock;
 	const std::size_t size;
-	const std::uint64_t zero_cell_idx{getCellIdx(StringRef{})};
+	const UInt64 zero_cell_idx{getCellIdx(StringRef{})};
 	std::map<std::string, std::size_t> attribute_index_by_name;
-	mutable std::vector<attribute_t> attributes;
-	mutable std::vector<cell_metadata_t> cells{size};
+	mutable std::vector<Attribute> attributes;
+	mutable std::vector<CellMetadata> cells{size};
 	const bool key_size_is_fixed{dict_struct.isKeySizeFixed()};
 	std::size_t key_size{key_size_is_fixed ? dict_struct.getKeySize() : 0};
 	std::unique_ptr<ArenaWithFreeLists> keys_pool = key_size_is_fixed ? nullptr :

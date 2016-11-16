@@ -158,7 +158,7 @@ inline bool operator==(StringRef_Compare8_1_byUInt64 lhs, StringRef_Compare8_1_b
 
 	while (p1 < p1_end_8)
 	{
-		if (reinterpret_cast<const uint64_t *>(p1)[0] != reinterpret_cast<const uint64_t *>(p2)[0])
+		if (reinterpret_cast<const UInt64 *>(p1)[0] != reinterpret_cast<const UInt64 *>(p2)[0])
 			return false;
 
 		p1 += 8;
@@ -186,14 +186,14 @@ inline bool compare_byMemcmp(const char * p1, const char * p2)
 
 inline bool compare_byUInt64_logicAnd(const char * p1, const char * p2)
 {
-	return reinterpret_cast<const uint64_t *>(p1)[0] == reinterpret_cast<const uint64_t *>(p2)[0]
-		&& reinterpret_cast<const uint64_t *>(p1)[1] == reinterpret_cast<const uint64_t *>(p2)[1];
+	return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0]
+		&& reinterpret_cast<const UInt64 *>(p1)[1] == reinterpret_cast<const UInt64 *>(p2)[1];
 }
 
 inline bool compare_byUInt64_bitAnd(const char * p1, const char * p2)
 {
-	return (reinterpret_cast<const uint64_t *>(p1)[0] == reinterpret_cast<const uint64_t *>(p2)[0])
-		 & (reinterpret_cast<const uint64_t *>(p1)[1] == reinterpret_cast<const uint64_t *>(p2)[1]);
+	return (reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0])
+		 & (reinterpret_cast<const UInt64 *>(p1)[1] == reinterpret_cast<const UInt64 *>(p2)[1]);
 }
 
 #if defined(__x86_64__)

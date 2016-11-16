@@ -1,8 +1,7 @@
 #pragma once
 
 #include <limits>
-#include <boost/type_traits.hpp>
-#include <boost/utility/enable_if.hpp>
+#include <type_traits>
 
 #include <common/likely.h>
 
@@ -24,7 +23,7 @@ namespace detail
 	  * http://vimeo.com/55639112
 	  */
 
-	
+
 	/// Обычный способ, если в буфере не хватает места, чтобы там поместилось любое число.
 	template <typename T>
 	void writeUIntTextFallback(T x, WriteBuffer & buf)
@@ -37,7 +36,7 @@ namespace detail
 
 			return;
 		}
-		
+
 		char tmp[WRITE_HELPERS_MAX_INT_WIDTH];
 
 		char * pos;
@@ -178,20 +177,20 @@ namespace detail
 			++buf.position();
 		}
 
-		writeUIntText(static_cast<typename boost::make_unsigned<T>::type>(x), buf);
+		writeUIntText(static_cast<typename std::make_unsigned<T>::type>(x), buf);
 	}
 
 }
 
 
 template <typename T>
-typename boost::disable_if<boost::is_unsigned<T>, void>::type writeIntText(T x, WriteBuffer & buf)
+typename std::enable_if<std::is_signed<T>::value, void>::type writeIntText(T x, WriteBuffer & buf)
 {
 	detail::writeSIntText(x, buf);
 }
 
 template <typename T>
-typename boost::enable_if<boost::is_unsigned<T>, void>::type writeIntText(T x, WriteBuffer & buf)
+typename std::enable_if<std::is_unsigned<T>::value, void>::type writeIntText(T x, WriteBuffer & buf)
 {
 	detail::writeUIntText(x, buf);
 }

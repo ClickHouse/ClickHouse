@@ -31,7 +31,7 @@ StorageSystemMerges::StorageSystemMerges(const std::string & name)
 
 StoragePtr StorageSystemMerges::create(const std::string & name)
 {
-	return (new StorageSystemMerges{name})->thisPtr();
+	return make_shared(name);
 }
 
 BlockInputStreams StorageSystemMerges::read(
@@ -69,10 +69,10 @@ BlockInputStreams StorageSystemMerges::read(
 		col_result_part_name.column->insert(merge.result_part_name);
 		col_total_size_bytes_compressed.column->insert(merge.total_size_bytes_compressed);
 		col_total_size_marks.column->insert(merge.total_size_marks);
-		col_bytes_read_uncompressed.column->insert(merge.bytes_read_uncompressed);
-		col_rows_read.column->insert(merge.rows_read);
-		col_bytes_written_uncompressed.column->insert(merge.bytes_written_uncompressed);
-		col_rows_written.column->insert(merge.rows_written);
+		col_bytes_read_uncompressed.column->insert(merge.bytes_read_uncompressed.load(std::memory_order_relaxed));
+		col_rows_read.column->insert(merge.rows_read.load(std::memory_order_relaxed));
+		col_bytes_written_uncompressed.column->insert(merge.bytes_written_uncompressed.load(std::memory_order_relaxed));
+		col_rows_written.column->insert(merge.rows_written.load(std::memory_order_relaxed));
 	}
 
 	Block block{

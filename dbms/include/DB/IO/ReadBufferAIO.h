@@ -12,6 +12,12 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+
+namespace CurrentMetrics
+{
+	extern const Metric OpenFileForRead;
+}
+
 namespace DB
 {
 

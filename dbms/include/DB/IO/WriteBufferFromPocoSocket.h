@@ -21,9 +21,9 @@ protected:
 	  *  (getpeername вернёт ошибку).
 	  */
 	Poco::Net::SocketAddress peer_address;
-	
-	
-	void nextImpl();
+
+
+	void nextImpl() override;
 
 public:
 	WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);

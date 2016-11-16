@@ -42,7 +42,7 @@ inline std::size_t seqLength(const UInt8 first_octet)
 		return 1;
 
 	const std::size_t bits = 8;
-	const auto first_zero = bit_scan_reverse(static_cast<UInt8>(~first_octet));
+	const auto first_zero = bitScanReverse(static_cast<UInt8>(~first_octet));
 
 	return bits - 1 - first_zero;
 }

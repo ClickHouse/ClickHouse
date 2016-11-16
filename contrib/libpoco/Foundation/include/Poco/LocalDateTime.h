@@ -368,13 +368,13 @@ inline Timestamp LocalDateTime::timestamp() const
 
 inline Timestamp::UtcTimeVal LocalDateTime::utcTime() const
 {
-	return _dateTime.utcTime() - ((Timestamp::TimeDiff) _tzd)*10000000;
+	return _dateTime.utcTime() - (static_cast<Timestamp::TimeDiff>(_tzd))*10000000;
 }
 
 
 inline void LocalDateTime::adjustForTzd()
 {
-	_dateTime += Timespan(((Timestamp::TimeDiff) _tzd)*Timespan::SECONDS);
+	_dateTime += Timespan((static_cast<Timestamp::TimeDiff>(_tzd))*Timespan::SECONDS);
 }
 
 
