@@ -196,10 +196,10 @@ def main(args):
 			failures_total = failures_total + failures
 	
 	if failures_total > 0:
-		print("\n{COLOR_FAIL}Having {0} errors!{COLOR_RESET}".format(failures_total, **COLORS))
+		print(colored("\nHaving {0} errors!".format(failures_total), "red"))
 		sys.exit(1)
 	else:
-		print("\n{COLOR_OK}All tests passed.{COLOR_RESET}".format(**COLORS))
+		print(colored("\nAll tests passed.", "green"))
 		sys.exit(0)
 			
 
