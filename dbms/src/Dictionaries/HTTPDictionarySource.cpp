@@ -3,8 +3,7 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Dictionaries/OwningBufferBlockInputStream.h>
 #include <DB/IO/ReadBufferFromHTTP.h>
-#include <DB/IO/RemoteReadBuffer.h>
-#include <Poco/Net/HTTPRequest.h>
+//#include <Poco/Net/HTTPRequest.h> // HTTP_GET
 
 namespace DB
 {
@@ -16,6 +15,7 @@ HTTPDictionarySource::HTTPDictionarySource(const Poco::Util::AbstractConfigurati
 	host{config.getString(config_prefix + ".host")},
 	port{std::stoi(config.getString(config_prefix + ".port"))},
 	path{config.getString(config_prefix + ".path")},
+	method{config.getString(config_prefix + ".method")},
 	format{config.getString(config_prefix + ".format")},
 	sample_block{sample_block},
 	context(context)
@@ -36,7 +36,7 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other) :
 
 BlockInputStreamPtr HTTPDictionarySource::loadAll()
 {
-	auto in_ptr = std::make_unique<ReadBufferFromHTTP>(host, port, path, params, Poco::Net::HTTPRequest::HTTP_GET);
+	auto in_ptr = std::make_unique<ReadBufferFromHTTP>(host, port, path, ReadBufferFromHTTP::Params(), method);
 	auto stream = context.getInputFormat( format, *in_ptr, sample_block, max_block_size);
 	return std::make_shared<OwningBufferBlockInputStream>(stream, std::move(in_ptr));
 }

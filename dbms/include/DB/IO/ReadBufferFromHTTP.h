@@ -19,10 +19,10 @@ namespace DB
 class ReadBufferFromHTTP : public ReadBuffer
 {
 private:
-	String method;
 	String host;
 	int port;
 	String path;
+	String method;
 
 	Poco::Net::HTTPClientSession session;
 	std::istream * istr;	/// owned by session

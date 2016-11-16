@@ -44,6 +44,7 @@ private:
 	const std::string host;
 	int port;
 	const std::string path;
+	const std::string method;
 
 	const std::string format;
 	Block sample_block;
