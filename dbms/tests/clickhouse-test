@@ -15,28 +15,14 @@ from subprocess import CalledProcessError
 from datetime import datetime
 from time import sleep
 from errno import ESRCH
+from termcolor import colored
 
-if sys.stdout.isatty():
-	COLORS = {
-		"COLOR_RESET": "\033[0m",
-		"COLOR_WHITE": "\033[1;37m",
-		"COLOR_FAIL": "\033[1;31m",
-		"COLOR_UNKNOWN": "\033[1;30m",
-		"COLOR_OK": "\033[1;32m",
-		"COLOR_SKIPPED": "\033[1;34m" }
-else:
-	COLORS = {
-		"COLOR_RESET": "",
-		"COLOR_WHITE": "",
-		"COLOR_FAIL": "",
-		"COLOR_UNKNOWN": "",
-		"COLOR_OK": "",
-		"COLOR_SKIPPED": "" }
 
-MSG_FAIL = "{COLOR_WHITE}[ {COLOR_FAIL}FAIL{COLOR_WHITE} ]{COLOR_RESET}".format(**COLORS)
-MSG_UNKNOWN = "{COLOR_WHITE}[ {COLOR_UNKNOWN}UNKNOWN{COLOR_WHITE} ]{COLOR_RESET}".format(**COLORS)
-MSG_OK = "{COLOR_WHITE}[ {COLOR_OK}OK{COLOR_WHITE} ]{COLOR_RESET}".format(**COLORS)
-MSG_SKIPPED = "{COLOR_WHITE}[ {COLOR_SKIPPED}SKIPPED{COLOR_WHITE} ]{COLOR_RESET}".format(**COLORS)
+MSG_FAIL = "[ " + colored("FAIL", "red") + " ]"
+MSG_UNKNOWN = "[ " + colored("UNKNOWN", "yellow") + " ]"
+MSG_OK = "[ " + colored("OK", "green") + " ]"
+MSG_SKIPPED = "[ " + colored("SKIPPED", "cyan") + " ]"
+
 
 def main(args):
 
@@ -107,7 +93,7 @@ def main(args):
 					
 					if not args.zookeeper and 'zookeeper' in name:
 						report_testcase.append(et.Element("skipped", attrib = {"message": "no zookeeper"}))
-						print(MSG_SKIPPED, " - no zookeeper")
+						print(MSG_SKIPPED + " - no zookeeper")
 					else:
 						reference_file = os.path.join(suite_dir, name) + '.reference'
 						stdout_file = os.path.join(suite_dir, name) + '.stdout'
@@ -137,7 +123,9 @@ def main(args):
 							print("{0} - Timeout!".format(MSG_FAIL))
 						else:
 							stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
+							stdout = unicode(stdout, errors='replace', encoding='utf-8')
 							stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
+							stderr = unicode(stderr, errors='replace', encoding='utf-8')
 							
 							if proc.returncode != 0:
 								failure = et.Element("failure", attrib = {"message": "return code {}".format(proc.returncode)})
@@ -208,10 +196,10 @@ def main(args):
 			failures_total = failures_total + failures
 	
 	if failures_total > 0:
-		print("\n{COLOR_FAIL}Having {0} errors!{COLOR_RESET}".format(failures_total, **COLORS))
+		print(colored("\nHaving {0} errors!".format(failures_total), "red"))
 		sys.exit(1)
 	else:
-		print("\n{COLOR_OK}All tests passed.{COLOR_RESET}".format(**COLORS))
+		print(colored("\nAll tests passed.", "green"))
 		sys.exit(0)
 			
 

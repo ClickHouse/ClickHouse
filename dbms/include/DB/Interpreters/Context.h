@@ -69,18 +69,18 @@ private:
 
 	ClientInfo client_info;
 
-	std::shared_ptr<QuotaForIntervals> quota;	/// Текущая квота. По-умолчанию - пустая квота, которая ничего не ограничивает.
-	String current_database;			/// Текущая БД.
-	Settings settings;					/// Настройки выполнения запроса.
+	std::shared_ptr<QuotaForIntervals> quota;	/// Current quota. By default - empty quota, that have no limits.
+	String current_database;
+	Settings settings;							/// Setting for query execution.
 	using ProgressCallback = std::function<void(const Progress & progress)>;
-	ProgressCallback progress_callback;	/// Колбек для отслеживания прогресса выполнения запроса.
-	ProcessListElement * process_list_elem = nullptr;	/// Для отслеживания общего количества потраченных на запрос ресурсов.
+	ProgressCallback progress_callback;			/// Callback for tracking progress of query execution.
+	ProcessListElement * process_list_elem = nullptr;	/// For tracking total resource usage for query.
 
-	String default_format;	/// Формат, используемый, если сервер сам форматирует данные, и если в запросе не задан FORMAT.
-							/// То есть, используется в HTTP-интерфейсе. Может быть не задан - тогда используется некоторый глобальный формат по-умолчанию.
-	Tables external_tables;				/// Временные таблицы.
-	Context * session_context = nullptr;	/// Контекст сессии или nullptr, если его нет. (Возможно, равен this.)
-	Context * global_context = nullptr;		/// Глобальный контекст или nullptr, если его нет. (Возможно, равен this.)
+	String default_format;	/// Format, used when server formats data by itself and if query does not have FORMAT specification.
+							/// Thus, used in HTTP interface. If not specified - then some globally default format is used.
+	Tables external_tables;					/// Temporary tables.
+	Context * session_context = nullptr;	/// Session context or nullptr. Could be equal to this.
+	Context * global_context = nullptr;		/// Global context or nullptr. Could be equal to this.
 
 	using DatabasePtr = std::shared_ptr<IDatabase>;
 	using Databases = std::map<String, std::shared_ptr<IDatabase>>;
@@ -204,7 +204,10 @@ public:
 	/// Для методов ниже может быть необходимо захватывать блокировку самостоятельно.
 	std::unique_lock<Poco::Mutex> getLock() const;
 
+	const Context & getSessionContext() const;
 	Context & getSessionContext();
+
+	const Context & getGlobalContext() const;
 	Context & getGlobalContext();
 
 	void setSessionContext(Context & context_)								{ session_context = &context_; }

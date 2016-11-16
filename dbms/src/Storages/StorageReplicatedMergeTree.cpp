@@ -1208,29 +1208,25 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
 	if (do_fetch)
 	{
-		String replica;
+		String covering_part;
+		String replica = findReplicaHavingCoveringPart(entry.new_part_name, true, covering_part);
+
+		if (replica.empty() && entry.type == LogEntry::ATTACH_PART)
+		{
+			/** Если ATTACH - куска может не быть, потому что реплика, на которой кусок есть, ещё сама не успела его прицепить.
+				* В таком случае, надо подождать этого.
+				*/
+
+			/// Кусок должен быть на реплике-инициаторе.
+			if (entry.source_replica.empty() || entry.source_replica == replica_name)
+				throw Exception("Logical error: no source replica specified for ATTACH_PART log entry;"
+					" or trying to fetch part on source replica", ErrorCodes::LOGICAL_ERROR);
+
+			throw Exception("No active replica has attached part " + entry.new_part_name + " or covering part yet", ErrorCodes::NO_REPLICA_HAS_PART);
+		}
 
 		try
 		{
-			String covering_part;
-			replica = findReplicaHavingCoveringPart(entry.new_part_name, true, covering_part);
-
-			if (replica.empty() && entry.type == LogEntry::ATTACH_PART)
-			{
-				/** Если ATTACH - куска может не быть, потому что реплика, на которой кусок есть, ещё сама не успела его прицепить.
-				  * В таком случае, надо подождать этого.
-				  */
-
-				/// Кусок должен быть на реплике-инициаторе.
-				if (entry.source_replica.empty() || entry.source_replica == replica_name)
-					throw Exception("Logical error: no source replica specified for ATTACH_PART log entry;"
-						" or trying to fetch part on source replica", ErrorCodes::LOGICAL_ERROR);
-
-				/// Подождём, пока реплика-инициатор подцепит кусок.
-				waitForReplicaToProcessLogEntry(entry.source_replica, entry);
-				replica = findReplicaHavingCoveringPart(entry.new_part_name, true, covering_part);
-			}
-
 			if (replica.empty())
 			{
 				/** Если кусок должен быть записан с кворумом, и кворум ещё недостигнут,

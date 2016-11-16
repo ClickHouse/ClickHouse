@@ -80,13 +80,22 @@ endif()
 
 set (GLIB_HINTS "/usr/local/opt/glib/lib")
 find_library (GLIB_LIB libglib-2.0.a HINTS ${GLIB_HINTS})
+if (APPLE)
+	set (INTL_HINTS "/usr/local/opt/gettext/lib")
+	find_library (INTL_LIB libintl.a HINTS ${INTL_HINTS})
+	find_library (CORE_FOUNDATION_LIB CoreFoundation)
+	find_library (CARBON_LIB Carbon)
+	set (GLIB_LIBS ${GLIB_LIB} ${INTL_LIB} libiconv.a ${CORE_FOUNDATION_LIB} ${CARBON_LIB})
+else ()
+	set (GLIB_LIBS ${GLIB_LIB})
+endif ()
 
 target_link_libraries (
 	common
 	pocoext
 	${MALLOC_LIBRARIES}
 	pthread
-	${GLIB_LIB}
+	${GLIB_LIBS}
 	${ICU_LIBS}
 	${RT_LIBRARIES})
 

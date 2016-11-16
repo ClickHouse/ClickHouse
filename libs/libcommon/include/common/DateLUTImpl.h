@@ -44,6 +44,8 @@ public:
 	};
 
 private:
+	std::string time_zone;
+
 	/// Сравнительно много данных. То есть, лучше не класть объект на стек.
 	/// По сравнению с std::vector, на один indirection меньше.
 	Values lut[DATE_LUT_MAX_DAY_NUM + 1];
@@ -53,7 +55,6 @@ private:
 
 	/// Смещение от UTC в начале Unix эпохи.
 	time_t offset_at_start_of_epoch;
-
 
 	inline size_t findIndex(time_t t) const
 	{
@@ -88,6 +89,8 @@ private:
 	}
 
 public:
+	const std::string & getTimeZone() const { return time_zone; }
+
 	/// всё ниже thread-safe; корректность входных данных не проверяется
 
 	inline time_t 		toDate(time_t t) 		const {	return find(t).date; }

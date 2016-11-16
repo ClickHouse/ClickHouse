@@ -310,6 +310,9 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
 	client_info.current_user = name;
 	client_info.current_address = address;
+
+	if (!quota_key.empty())
+		client_info.quota_key = quota_key;
 }
 
 
@@ -722,6 +725,12 @@ void Context::setMacros(Macros && macros)
 	shared->macros = macros;
 }
 
+const Context & Context::getSessionContext() const
+{
+	if (!session_context)
+		throw Exception("There is no session", ErrorCodes::THERE_IS_NO_SESSION);
+	return *session_context;
+}
 
 Context & Context::getSessionContext()
 {
@@ -730,6 +739,12 @@ Context & Context::getSessionContext()
 	return *session_context;
 }
 
+const Context & Context::getGlobalContext() const
+{
+	if (!global_context)
+		throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
+	return *global_context;
+}
 
 Context & Context::getGlobalContext()
 {

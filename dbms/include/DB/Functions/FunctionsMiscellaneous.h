@@ -1396,4 +1396,32 @@ public:
 	}
 };
 
+
+/** Usage:
+ *  hasColumnInTable('database', 'table', 'column')
+ */
+class FunctionHasColumnInTable : public IFunction
+{
+public:
+	static constexpr auto name = "hasColumnInTable";
+	static constexpr size_t number_of_arguments = 3;
+
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionHasColumnInTable>(context.getGlobalContext()); }
+
+	FunctionHasColumnInTable(const Context & global_context_)
+	: global_context(global_context_)
+	{
+	}
+
+	String getName() const override { return name; }
+
+	void getReturnTypeAndPrerequisites(const ColumnsWithTypeAndName & arguments,
+										DataTypePtr & out_return_type,
+										ExpressionActions::Actions & out_prerequisites) override;
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override;
+
+private:
+	const Context & global_context;
+};
+
 }
