@@ -410,19 +410,19 @@ void FunctionHasColumnInTable::getReturnTypeAndPrerequisites(
 void FunctionHasColumnInTable::execute(Block & block, const ColumnNumbers & arguments, size_t result)
 {
 	auto get_string_from_block =
-		[&](size_t column_pos) -> const DB::String &
+		[&](size_t column_pos) -> const String &
 		{
 			DB::ColumnPtr column = block.getByPosition(column_pos).column;
 			const ColumnConstString * const_column = typeid_cast<const ColumnConstString *>(column.get());
 			return const_column->getData();
 		};
 
-	const DB::String & database = get_string_from_block(arguments[0]);
-	const DB::String & tablename = get_string_from_block(arguments[1]);
-	const DB::String & column = get_string_from_block(arguments[2]);
+	const DB::String & database_name = get_string_from_block(arguments[0]);
+	const DB::String & table_name = get_string_from_block(arguments[1]);
+	const DB::String & column_name = get_string_from_block(arguments[2]);
 
-	const DB::StoragePtr & table = global_context.getTable(database, tablename);
-	const bool has_column = table->hasColumn(column);
+	const DB::StoragePtr & table = global_context.getTable(database_name, table_name);
+	const bool has_column = table->hasColumn(column_name);
 
 	block.getByPosition(result).column = std::make_shared<ColumnConstUInt8>(
 		block.rowsInFirstColumn(), has_column);
