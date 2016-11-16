@@ -29,7 +29,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 {
 	last_modification = getLastModification();
-	LOG_TRACE(log, load_all_query);
+	//LOG_TRACE(log, );
 
 	std::string exec_result;
 
@@ -39,10 +39,11 @@ BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 		process->wait();
 	}
 
+std::cerr << "readed [" <<  exec_result  << "] format=" << format << std::endl;
+
 	auto in_ptr = std::make_unique<ReadBufferFromString>(exec_result);
 	auto stream = context.getInputFormat( format, *in_ptr, sample_block, max_block_size);
 	return std::make_shared<OwningBufferBlockInputStream>(stream, std::move(in_ptr));
-
 }
 
 BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)

@@ -42,7 +42,6 @@ private:
 	const std::string format;
 	Block sample_block;
 	const Context & context;
-	const std::string load_all_query;
 	LocalDateTime last_modification;
 };
 
