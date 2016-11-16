@@ -204,7 +204,10 @@ public:
 	/// Для методов ниже может быть необходимо захватывать блокировку самостоятельно.
 	std::unique_lock<Poco::Mutex> getLock() const;
 
+	const Context & getSessionContext() const;
 	Context & getSessionContext();
+
+	const Context & getGlobalContext() const;
 	Context & getGlobalContext();
 
 	void setSessionContext(Context & context_)								{ session_context = &context_; }
