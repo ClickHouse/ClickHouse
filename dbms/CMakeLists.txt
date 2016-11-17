@@ -335,6 +335,7 @@ add_library (dbms
 	include/DB/Dictionaries/ComplexKeyCacheDictionary.h
 	include/DB/Dictionaries/IDictionarySource.h
 	include/DB/Dictionaries/OwningBufferBlockInputStream.h
+	include/DB/Dictionaries/OwningBlockInputStream.h
 	include/DB/Dictionaries/CacheDictionary.h
 	include/DB/Dictionaries/MySQLDictionarySource.h
 	include/DB/Dictionaries/ExecutableDictionarySource.h

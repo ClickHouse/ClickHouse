@@ -2,19 +2,15 @@
 
 #include <DB/Common/ShellCommand.h>
 #include <DB/Interpreters/Context.h>
-#include <DB/Dictionaries/OwningBufferBlockInputStream.h>
-#include <DB/IO/ReadBufferFromString.h>
+#include <DB/Dictionaries/OwningBlockInputStream.h>
 
 namespace DB
 {
 
-
-decltype(ExecutableDictionarySource::max_block_size) ExecutableDictionarySource::max_block_size;
-
 ExecutableDictionarySource::ExecutableDictionarySource(const std::string & name, const std::string & format, Block & sample_block, const Context & context)
 	: name{name}, format{format}, sample_block{sample_block}, context(context)
 {
-		last_modification = LocalDateTime {std::time(nullptr)};
+		last_modification = std::time(nullptr);
 }
 
 ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionarySource & other)
@@ -25,35 +21,40 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 {
 }
 
-
 BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 {
 	last_modification = getLastModification();
-	//LOG_TRACE(log, );
-
-	std::string exec_result;
-
-	{
-		auto process = ShellCommand::execute(name);
-		readStringUntilEOF(exec_result, process->out);
-		process->wait();
-	}
-
-std::cerr << "readed [" <<  exec_result  << "] format=" << format << std::endl;
-
-	auto in_ptr = std::make_unique<ReadBufferFromString>(exec_result);
-	auto stream = context.getInputFormat( format, *in_ptr, sample_block, max_block_size);
-	return std::make_shared<OwningBufferBlockInputStream>(stream, std::move(in_ptr));
+	LOG_TRACE(log, "execute " + name);
+	auto process = ShellCommand::execute(name);
+	auto stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
+	return std::make_shared<OwningBlockInputStream<ShellCommand>>(stream, std::move(process));
 }
 
 BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-	throw Exception{"Method unsupported", ErrorCodes::NOT_IMPLEMENTED};
+	auto process = ShellCommand::execute(name);
+
+	for (auto & id : ids) {
+		writeString(std::to_string(id), process->in);
+		writeString("\n", process->in); // TODO: format?
+	}
+
+	process->in.close();
+
+	/*
+	std::string process_err;
+	readStringUntilEOF(process_err, process->err);
+	std::cerr << "readed ERR [" <<  process_err  << "] " << std::endl;
+	*/
+
+	auto stream = context.getInputFormat( format, process->out, sample_block, max_block_size);
+	return std::make_shared<OwningBlockInputStream<ShellCommand>>(stream, std::move(process));
 }
 
 BlockInputStreamPtr ExecutableDictionarySource::loadKeys(
 	const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows)
 {
+std::cerr << "ExecutableDictionarySource::loadKeys " << requested_rows.size()  << std::endl;
 	throw Exception{"Method unsupported", ErrorCodes::NOT_IMPLEMENTED};
 }
 
@@ -64,7 +65,7 @@ bool ExecutableDictionarySource::isModified() const
 
 bool ExecutableDictionarySource::supportsSelectiveLoad() const
 {
-	return false;
+	return true;
 }
 
 DictionarySourcePtr ExecutableDictionarySource::clone() const

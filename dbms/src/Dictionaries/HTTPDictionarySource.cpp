@@ -8,9 +8,6 @@
 namespace DB
 {
 
-
-decltype(HTTPDictionarySource::max_block_size) HTTPDictionarySource::max_block_size;
-
 HTTPDictionarySource::HTTPDictionarySource(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, Block & sample_block, const Context & context) :
 	host{config.getString(config_prefix + ".host")},
 	port{std::stoi(config.getString(config_prefix + ".port"))},
@@ -59,7 +56,7 @@ bool HTTPDictionarySource::isModified() const
 
 bool HTTPDictionarySource::supportsSelectiveLoad() const
 {
-	return false;
+	return true;
 }
 
 DictionarySourcePtr HTTPDictionarySource::clone() const
