@@ -219,8 +219,12 @@ int LocalServer::main(const std::vector<std::string> & args)
 {
 	if (!config().has("query") && !config().has("table-structure")) /// Nothing to process
 	{
-		std::cerr << "There are no queries to process.\n";
-		displayHelp();
+		if (!config().has("help"))
+		{
+			std::cerr << "There are no queries to process.\n";
+			displayHelp();
+		}
+
 		return Application::EXIT_OK;
 	}
 
@@ -277,6 +281,9 @@ int LocalServer::main(const std::vector<std::string> & args)
 	attachSystemTables();
 
 	processQueries();
+
+	context->shutdown();
+	context.reset();
 
 	return Application::EXIT_OK;
 }
