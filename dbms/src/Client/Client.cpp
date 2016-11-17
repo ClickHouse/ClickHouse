@@ -327,6 +327,33 @@ private:
 
 		connect();
 
+		/// Инициализируем DateLUT, чтобы потраченное время не отображалось, как время, потраченное на запрос.
+		DateLUT::instance();
+		if (!context.getSettingsRef().use_client_time_zone)
+		{
+			const auto & time_zone = connection->getServerTimezone();
+			if (!time_zone.empty())
+			{
+				try
+				{
+					DateLUT::setDefaultTimezone(time_zone);
+				}
+				catch (...)
+				{
+					std::cerr << "Warning: could not switch to server time zone: " << time_zone
+						<< ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
+						<< "Proceeding with local time zone."
+						<< std::endl << std::endl;
+				}
+			}
+			else
+			{
+				std::cerr << "Warning: could not determine server time zone. "
+					<< "Proceeding with local time zone."
+					<< std::endl << std::endl;
+			}
+		}
+
 		if (is_interactive)
 		{
 			if (print_time_to_stderr)
@@ -353,33 +380,6 @@ private:
 				}
 				else	/// Создаём файл с историей.
 					Poco::File(history_file).createFile();
-			}
-
-			/// Инициализируем DateLUT, чтобы потраченное время не отображалось, как время, потраченное на запрос.
-			DateLUT::instance();
-			if (!context.getSettingsRef().use_client_time_zone)
-			{
-				const auto & time_zone = connection->getServerTimezone();
-				if (!time_zone.empty())
-				{
-					try
-					{
-						DateLUT::setDefaultTimezone(time_zone);
-					}
-					catch (...)
-					{
-						std::cerr << "Warning: could not switch to server time zone: " << time_zone
-							<< ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
-							<< "Proceeding with local time zone."
-							<< std::endl << std::endl;
-					}
-				}
-				else
-				{
-					std::cerr << "Warning: could not determine server time zone. "
-						<< "Proceeding with local time zone."
-						<< std::endl << std::endl;
-				}
 			}
 
 			loop();
