@@ -184,8 +184,11 @@ void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 
 	revision = server_revision;
 }
 
-const String & Connection::getServerTimezone() const
+const String & Connection::getServerTimezone()
 {
+	if (!connected)
+		connect();
+
 	return server_timezone;
 }
 
