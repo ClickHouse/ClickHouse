@@ -215,7 +215,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 			if (last_part->left < cur_id)
 			{
 				LOG_ERROR(log, "Part " << last_part->name << " intersects previous part");
-				break;
+				std::terminate();
 			}
 
 			newest_modification_time = std::max(newest_modification_time, last_part->modification_time);
