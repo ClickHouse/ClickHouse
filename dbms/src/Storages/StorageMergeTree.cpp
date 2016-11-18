@@ -296,9 +296,12 @@ bool StorageMergeTree::merge(
 	const String & partition,
 	bool final)
 {
-	/// Удаляем старые куски.
-	data.clearOldParts();
-	data.clearOldTemporaryDirectories();	/// TODO Делать это реже.
+	/// Clear old parts. It does not matter to do it more frequently than each second.
+	if (time_after_previous_cleanup.lockTestAndRestart(1))
+	{
+		data.clearOldParts();
+		data.clearOldTemporaryDirectories();
+	}
 
 	auto structure_lock = lockStructure(true);
 

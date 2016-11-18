@@ -134,6 +134,13 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 
 		partitions.back().emplace_back(part_info);
 
+		/// Check for consistenty of data parts. If assertion is failed, it requires immediate investigation.
+		if (prev_part && part->month == (*prev_part)->month && part->left < (*prev_part)->right)
+		{
+			LOG_ERROR(log, "Part " << part->name << " intersects previous part " << (*prev_part)->name);
+			std::terminate();
+		}
+
 		prev_part = &part;
 	}
 

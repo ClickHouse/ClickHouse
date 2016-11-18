@@ -490,13 +490,14 @@ public:
 		ADD_NOTHING = 0,
 		ADD_LAYER_TAG = 1 << 0
 	};
+
 	OwnPatternFormatter(const BaseDaemon & daemon_, Options options_ = ADD_NOTHING) : Poco::PatternFormatter(""), daemon(daemon_), options(options_) {}
 
 	void format(const Message & msg, std::string & text) override
 	{
 		DB::WriteBufferFromString wb(text);
 
-		/// в syslog тэг идет перед сообщением и до первого пробела.
+		/// For syslog: tag must be before message and first whitespace.
 		if (options & ADD_LAYER_TAG)
 		{
 			boost::optional<size_t> layer = daemon.getLayer();
@@ -508,19 +509,21 @@ public:
 			}
 		}
 
-		/// Выведем время с точностью до миллисекунд.
+		/// Output time with microsecond resolution.
 		timeval tv;
 		if (0 != gettimeofday(&tv, nullptr))
 			DB::throwFromErrno("Cannot gettimeofday");
 
-		/// Поменяем разделители у даты для совместимости.
+		/// Change delimiters in date for compatibility with old logs.
 		DB::writeDateTimeText<'.', ':'>(tv.tv_sec, wb);
 
-		int milliseconds = tv.tv_usec / 1000;
 		DB::writeChar('.', wb);
-		DB::writeChar('0' + ((milliseconds / 100) % 10), wb);
-		DB::writeChar('0' + ((milliseconds / 10) % 10), wb);
-		DB::writeChar('0' + (milliseconds % 10), wb);
+		DB::writeChar('0' + ((tv.tv_usec / 100000) % 10), wb);
+		DB::writeChar('0' + ((tv.tv_usec / 10000) % 10), wb);
+		DB::writeChar('0' + ((tv.tv_usec / 1000) % 10), wb);
+		DB::writeChar('0' + ((tv.tv_usec / 100) % 10), wb);
+		DB::writeChar('0' + ((tv.tv_usec / 10) % 10), wb);
+		DB::writeChar('0' + ((tv.tv_usec / 1) % 10), wb);
 
 		writeCString(" [ ", wb);
 		DB::writeIntText(Poco::ThreadNumber::get(), wb);
