@@ -119,8 +119,11 @@ private:
 	MergeTreeDataWriter writer;
 	MergeTreeDataMerger merger;
 
-	/// Для нумерации блоков.
+	/// For block numbers.
 	SimpleIncrement increment;
+
+	/// For clearOldParts, clearOldTemporaryDirectories.
+	StopwatchWithLock time_after_previous_cleanup;
 
 	MergeTreeData::DataParts currently_merging;
 	std::mutex currently_merging_mutex;
