@@ -172,7 +172,7 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 			if (init)
 			{
 				ColumnPtr new_column = current.type->createColumn();
-				new_column->insertDefault();
+				new_column->insert(current.type->getDefault());
 				totals.insert(ColumnWithTypeAndName(new_column, current.type, current.name));
 			}
 			continue;
