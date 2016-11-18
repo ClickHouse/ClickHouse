@@ -8,7 +8,8 @@
 namespace DB
 {
 
-HTTPDictionarySource::HTTPDictionarySource(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, Block & sample_block, const Context & context) :
+HTTPDictionarySource::HTTPDictionarySource(const DictionaryStructure & dict_struct_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, Block & sample_block, const Context & context) :
+	dict_struct{dict_struct_},
 	host{config.getString(config_prefix + ".host")},
 	port{std::stoi(config.getString(config_prefix + ".port"))},
 	path{config.getString(config_prefix + ".path")},
@@ -17,24 +18,23 @@ HTTPDictionarySource::HTTPDictionarySource(const Poco::Util::AbstractConfigurati
 	sample_block{sample_block},
 	context(context)
 {
-		last_modification = std::time(nullptr);
-
 }
 
 HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other) :
+	dict_struct{other.dict_struct},
 	host{other.host},
 	port{other.port},
 	path{other.path},
 	format{other.format},
-	sample_block{other.sample_block}, context(other.context),
-	last_modification{other.last_modification}
+	sample_block{other.sample_block},
+	context(other.context)
 {
 }
 
 BlockInputStreamPtr HTTPDictionarySource::loadAll()
 {
 	auto in_ptr = std::make_unique<ReadBufferFromHTTP>(host, port, path, ReadBufferFromHTTP::Params(), method);
-	auto stream = context.getInputFormat( format, *in_ptr, sample_block, max_block_size);
+	auto stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
 	return std::make_shared<OwningBufferBlockInputStream>(stream, std::move(in_ptr));
 }
 
@@ -51,7 +51,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(
 
 bool HTTPDictionarySource::isModified() const
 {
-	return getLastModification() > last_modification;
+	return true;
 }
 
 bool HTTPDictionarySource::supportsSelectiveLoad() const
@@ -67,11 +67,6 @@ DictionarySourcePtr HTTPDictionarySource::clone() const
 std::string HTTPDictionarySource::toString() const
 {
 	return "http://" + host + ":" + std::to_string(port) + "/" + path;
-}
-
-LocalDateTime HTTPDictionarySource::getLastModification() const
-{
-	return last_modification;
 }
 
 }

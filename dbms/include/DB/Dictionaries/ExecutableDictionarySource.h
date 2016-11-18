@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Dictionaries/IDictionarySource.h>
+#include <DB/Dictionaries/DictionaryStructure.h>
 
 namespace DB
 {
@@ -13,7 +14,7 @@ class ExecutableDictionarySource final : public IDictionarySource
 
 public:
 
-	ExecutableDictionarySource(const std::string & name, const std::string & format, Block & sample_block,
+	ExecutableDictionarySource(const DictionaryStructure & dict_struct_, const std::string & name, const std::string & format, Block & sample_block,
 		const Context & context);
 
 	ExecutableDictionarySource(const ExecutableDictionarySource & other);
@@ -36,13 +37,11 @@ public:
 private:
 	Logger * log = &Logger::get("ExecutableDictionarySource");
 
-	LocalDateTime getLastModification() const;
-
+	const DictionaryStructure dict_struct;
 	const std::string name;
 	const std::string format;
 	Block sample_block;
 	const Context & context;
-	LocalDateTime last_modification;
 };
 
 }
