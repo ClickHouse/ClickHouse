@@ -105,7 +105,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 {
 	parts.clear();
 
-	MergeTreeData::DataParts data_parts = data.getDataParts();
+	MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
 
 	if (data_parts.empty())
 		return false;

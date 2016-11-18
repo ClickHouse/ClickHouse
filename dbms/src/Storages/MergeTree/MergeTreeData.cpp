@@ -1157,7 +1157,6 @@ MergeTreeData::DataParts MergeTreeData::getDataParts() const
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector() const
 {
 	std::lock_guard<std::mutex> lock(data_parts_mutex);
-
 	return DataPartsVector(std::begin(data_parts), std::end(data_parts));
 }
 

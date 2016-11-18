@@ -93,6 +93,10 @@ void selectWithinPartition(
 
 	for (size_t begin = 0; begin < parts_count; ++begin)
 	{
+		/// If too much parts, select only from first, to avoid complexity.
+		if (begin > 1000)
+			break;
+
 		size_t sum_size = parts[begin].size;
 		size_t max_size = parts[begin].size;
 

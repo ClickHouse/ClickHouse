@@ -304,6 +304,16 @@ void StorageBuffer::shutdown()
 }
 
 
+/** NOTE If you do OPTIMIZE after insertion,
+  * it does not guarantee, that all data will be in destination table at the time of next SELECT just after OPTIMIZE.
+  *
+  * Because in case if there was already running flushBuffer method,
+  *  then call to flushBuffer inside OPTIMIZE will see empty buffer and return quickly,
+  *  but at the same time, the already running flushBuffer method possibly is not finished,
+  *  so next SELECT will observe missing data.
+  *
+  * This kind of race condition make very hard to implement proper tests.
+  */
 bool StorageBuffer::optimize(const String & partition, bool final, const Settings & settings)
 {
 	if (!partition.empty())
@@ -359,6 +369,8 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 	  * Затем пытаемся записать полученный блок в подчинённую таблицу.
 	  * Если этого не получилось - кладём данные обратно в буфер.
 	  * Замечание: может быть, стоит избавиться от такой сложности.
+	  *
+	  * NOTE During flush, data is not seen by SELECTs.
 	  */
 	{
 		std::lock_guard<std::mutex> lock(buffer.mutex);

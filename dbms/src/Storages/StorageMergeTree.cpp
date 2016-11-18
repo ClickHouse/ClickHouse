@@ -297,7 +297,7 @@ bool StorageMergeTree::merge(
 	bool final)
 {
 	/// Clear old parts. It does not matter to do it more frequently than each second.
-	if (time_after_previous_cleanup.lockTestAndRestart(1))
+	if (auto lock = time_after_previous_cleanup.lockTestAndRestartAfter(1))
 	{
 		data.clearOldParts();
 		data.clearOldTemporaryDirectories();
