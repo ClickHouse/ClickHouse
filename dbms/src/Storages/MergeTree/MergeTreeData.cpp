@@ -938,10 +938,8 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrem
 {
 	auto removed = renameTempPartAndReplace(part, increment, out_transaction);
 	if (!removed.empty())
-	{
-		LOG_ERROR(log, "Added part " << part->name << + " covers " << toString(removed.size())
-			<< " existing part(s) (including " << removed[0]->name << ")");
-	}
+		throw Exception("Added part " + part->name + " covers " + toString(removed.size())
+			+ " existing part(s) (including " + removed[0]->name + ")", ErrorCodes::LOGICAL_ERROR);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
@@ -955,18 +953,17 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 	String old_name = part->name;
 	String old_path = getFullPath() + old_name + "/";
 
-	/** Для StorageMergeTree важно, что получение номера куска происходит атомарно с добавлением этого куска в набор.
-	  * Иначе есть race condition - может произойти слияние пары кусков, диапазоны номеров которых
-	  *  содержат ещё не добавленный кусок.
-	  */
-	if (increment)
-		part->left = part->right = increment->get();
-
-	String new_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
-
 	DataPartsVector replaced;
 	{
 		std::lock_guard<std::mutex> lock(data_parts_mutex);
+
+		/** It is important that obtaining new block number and adding that block to parts set is done atomically.
+		  * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
+		  */
+		if (increment)
+			part->left = part->right = increment->get();
+
+		String new_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
 
 		part->is_temp = false;
 		part->name = new_name;
