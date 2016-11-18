@@ -31,8 +31,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 
 BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 {
-	//std::cerr << "ExecutableDictionarySource::loadAll " <<std::endl;
-	LOG_TRACE(log, "execute " + name);
+	LOG_TRACE(log, "loadAll " + toString());
 	auto process = ShellCommand::execute(name);
 	auto stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
 	return std::make_shared<OwningBlockInputStream<ShellCommand>>(stream, std::move(process));
@@ -40,7 +39,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 
 BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-	//std::cerr << "ExecutableDictionarySource::loadIds s=" << ids.size() <<std::endl;
+	LOG_TRACE(log, "loadIds " + toString());
 	auto process = ShellCommand::execute(name);
 
 	{
@@ -49,7 +48,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64
 		column.column = column.type->createColumn();
 
 		for (auto & id : ids) {
-			column.column->insert(id); //maybe faster?
+			column.column->insert(id); //CHECKME maybe faster?
 		}
 
 		Block block;
@@ -58,13 +57,6 @@ BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64
 		auto stream_out = context.getOutputFormat(format, process->in, sample_block);
 		stream_out->write(block);
 	}
-
-/*
-	for (auto & id : ids) {
-		writeString(std::to_string(id), process->in);
-		writeString("\n", process->in);
-	}
-*/
 
 	process->in.close();
 
@@ -81,18 +73,22 @@ BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64
 BlockInputStreamPtr ExecutableDictionarySource::loadKeys(
 	const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows)
 {
-	//std::cerr << " ExecutableDictionarySource::loadKeys cols=" << key_columns.size() << " rows=" <<requested_rows.size()   << std::endl;
+	LOG_TRACE(log, "loadKeys " + toString());
 	auto process = ShellCommand::execute(name);
 
 	{
 		Block block;
-		for(auto & key : key_columns) {
+
+		const auto keys_size = key_columns.size();
+		for (const auto i : ext::range(0, keys_size))
+		{
+
+			const auto & key_description = (*dict_struct.key)[i];
+			const auto & key = key_columns[i];
+
 			ColumnWithTypeAndName column;
-			column.type = std::make_shared<DataTypeUInt64>(); // TODO TYPE
-			//column.column = column.type->createColumn();
-			//column.column.reset(const_cast<DB::IColumn*>(key));
-			column.column = key->clone(); // wrong!
-			//column.column = key->convertToFullColumnIfConst(); // check!
+			column.type = key_description.type;
+			column.column = key->clone(); // CHECKME !!
 			block.insert(std::move(column));
 		}
 
@@ -100,13 +96,6 @@ BlockInputStreamPtr ExecutableDictionarySource::loadKeys(
 		stream_out->write(block);
 
 	}
-/*
-	for (const auto row : requested_rows)
-	{
-		writeString(std::to_string(row), process->in);
-		writeString("\n", process->in); // TODO: format?
-	}
-*/
 
 		process->in.close();
 
