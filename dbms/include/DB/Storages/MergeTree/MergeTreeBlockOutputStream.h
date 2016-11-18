@@ -14,13 +14,10 @@ public:
 	MergeTreeBlockOutputStream(StorageMergeTree & storage_)
 		: storage(storage_) {}
 
-	void writePrefix() override
-	{
-		storage.data.delayInsertIfNeeded();
-	}
-
 	void write(const Block & block) override
 	{
+		storage.data.delayInsertIfNeeded();
+
 		auto part_blocks = storage.writer.splitBlockIntoParts(block);
 		for (auto & current_block : part_blocks)
 		{

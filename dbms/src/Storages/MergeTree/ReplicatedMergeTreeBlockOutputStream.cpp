@@ -33,13 +33,6 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
 }
 
 
-void ReplicatedMergeTreeBlockOutputStream::writePrefix()
-{
-	/// TODO Можно ли здесь не блокировать структуру таблицы?
-	storage.data.delayInsertIfNeeded(&storage.restarting_thread->getWakeupEvent());
-}
-
-
 /// Позволяет проверить, что сессия в ZooKeeper ещё жива.
 static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
 {
@@ -53,6 +46,9 @@ static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
 
 void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 {
+	/// TODO Можно ли здесь не блокировать структуру таблицы?
+	storage.data.delayInsertIfNeeded(&storage.restarting_thread->getWakeupEvent());
+
 	auto zookeeper = storage.getZooKeeper();
 
 	assertSessionIsNotExpired(zookeeper);
