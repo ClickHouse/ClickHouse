@@ -43,7 +43,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 	location{location},
 	timeouts{timeouts}
 {
-	std::stringstream uri;
+
 	std::stringstream path_params;
 	path_params << location.path;
 
@@ -59,6 +59,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 		path_params << encoded_key << "=" << encoded_value;
 	}
 
+	std::stringstream uri;
 	uri << "http://" << location.host << ":" << location.port << path_params.str();
 
 	session.setHost(resolveHost(location.host).toString());	/// Cache DNS forever (until server restart)
@@ -71,6 +72,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 
 	LOG_TRACE((&Logger::get("ReadBufferFromHTTP")), "Sending request to " << uri.str());
 
+	//auto & stream_out = 
 	session.sendRequest(request);
 	istr = &session.receiveResponse(response);
 

@@ -46,10 +46,11 @@ ReadBufferFromHTTP::ReadBufferFromHTTP(
 {
 	if (method.empty())
 		method = Poco::Net::HTTPRequest::HTTP_POST;
+	if (path.empty())
+		path = "/";
 
-	std::stringstream uri;
 	std::stringstream path_params;
-	path_params << "/" << path;
+	path_params << path;
 
 	bool first = true;
 	for (const auto & it : params)
@@ -63,6 +64,7 @@ ReadBufferFromHTTP::ReadBufferFromHTTP(
 		path_params << encoded_key << "=" << encoded_value;
 	}
 
+	std::stringstream uri;
 	uri << "http://" << host << ":" << port << path_params.str();
 
 	session.setHost(resolveHost(host).toString());	/// Cache DNS forever (until server restart)
