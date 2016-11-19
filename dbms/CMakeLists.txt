@@ -502,6 +502,7 @@ add_library (dbms
 	include/DB/IO/ReadHelpers.h
 	include/DB/IO/WriteBufferFromPocoSocket.h
 	include/DB/IO/ReadBufferFromHTTP.h
+	include/DB/IO/ReadWriteBufferFromHTTP.h
 	include/DB/IO/WriteBufferFromHTTPServerResponse.h
 	include/DB/IO/createReadBufferFromFileBase.h
 	include/DB/IO/WriteIntText.h
@@ -673,6 +674,7 @@ add_library (dbms
 
 	src/IO/InterserverWriteBuffer.cpp
 	src/IO/ReadBufferFromHTTP.cpp
+	src/IO/ReadWriteBufferFromHTTP.cpp
 
 	src/Columns/ColumnConst.cpp
 	src/Columns/ColumnArray.cpp
