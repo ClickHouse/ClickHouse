@@ -325,7 +325,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
 	for (size_t i = 0; i < parts.size(); ++i)
 	{
-		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
+		MarkRanges ranges{{0, parts[i]->size}};
 
 		String part_path = data.getFullPath() + parts[i]->name + '/';
 		auto input = std::make_unique<MergeTreeBlockInputStream>(

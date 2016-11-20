@@ -2,9 +2,6 @@
 
 #include <DB/Parsers/ASTWithAlias.h>
 #include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Functions/IFunction.h>
-#include <DB/AggregateFunctions/IAggregateFunction.h>
-#include <DB/IO/WriteBufferFromString.h>
 
 
 namespace DB

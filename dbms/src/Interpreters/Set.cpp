@@ -1,5 +1,6 @@
 #include <DB/Core/Field.h>
 #include <DB/Core/FieldVisitors.h>
+#include <DB/Core/Row.h>
 
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>

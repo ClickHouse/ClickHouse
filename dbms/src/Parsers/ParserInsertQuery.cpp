@@ -9,6 +9,8 @@
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/ParserInsertQuery.h>
 
+#include <DB/Common/typeid_cast.h>
+
 
 namespace DB
 {

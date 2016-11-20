@@ -41,6 +41,12 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+
 MergeTreeData::MergeTreeData(
 	const String & full_path_, NamesAndTypesListPtr columns_,
 	const NamesAndTypesList & materialized_columns_,

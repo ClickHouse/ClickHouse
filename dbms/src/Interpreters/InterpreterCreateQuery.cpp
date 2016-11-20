@@ -381,7 +381,7 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
 	else
 		throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
-	/// Даже если в запросе был список столбцов, на всякий случай приведем его к стандартному виду (развернём Nested).
+	/// Even if query has list of columns, canonicalize it (unfold Nested columns).
 	ASTPtr new_columns = formatColumns(*res.columns, res.materialized_columns, res.alias_columns, res.column_defaults);
 	if (create.columns)
 	{
@@ -472,7 +472,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 		as_storage_lock = as_storage->lockStructure(false);
 	}
 
-	/// Устанавливаем и получаем список столбцов.
+	/// Set and retrieve list of columns.
 	ColumnsInfo columns = setColumns(create, as_select_sample, as_storage);
 
 	/// Выбор нужного движка таблицы

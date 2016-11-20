@@ -1,6 +1,8 @@
 #include <DB/Parsers/ParserQueryWithOutput.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ExpressionElementParsers.h>
+#include <DB/Common/typeid_cast.h>
+
 
 namespace DB
 {

@@ -809,21 +809,20 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 
 	ws.ignore(pos, end);
 
-	std::shared_ptr<Collator> collator;
+	ASTPtr locale_node;
 	if (collate.ignore(pos, end))
 	{
 		ws.ignore(pos, end);
 
-		ASTPtr locale_node;
 		if (!collate_locale_parser.parse(pos, end, locale_node, max_parsed_pos, expected))
 			return false;
-
-		const String & locale = typeid_cast<const ASTLiteral &>(*locale_node).value.safeGet<String>();
-		collator = std::make_shared<Collator>(locale);
 	}
 
-	node = std::make_shared<ASTOrderByElement>(StringRange(begin, pos), direction, collator);
+	node = std::make_shared<ASTOrderByElement>(StringRange(begin, pos), direction, locale_node);
 	node->children.push_back(expr_elem);
+	if (locale_node)
+		node->children.push_back(locale_node);
+
 	return true;
 }
 
