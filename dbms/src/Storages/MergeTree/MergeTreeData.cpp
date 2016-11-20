@@ -612,6 +612,9 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 		++nested_table_counts[DataTypeNested::extractNestedTableName(column.name)];
 	}
 
+	/// For every column that need to be converted: source column name, column name of calculated expression for conversion.
+	std::vector<std::pair<String, String>> conversions;
+
 	for (const NameAndTypePair & column : old_columns)
 	{
 		if (!new_types.count(column.name))
@@ -669,20 +672,38 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 					{ std::make_shared<ColumnConstString>(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
 
 				const FunctionPtr & function = FunctionFactory::instance().get("CAST", context);
-				out_expression->add(ExpressionAction::applyFunction(function, Names{
-					column.name, new_type_name_column
-				}), out_names);
+				out_expression->add(ExpressionAction::applyFunction(
+					function, Names{column.name, new_type_name_column}), out_names);
 
 				out_expression->add(ExpressionAction::removeColumn(new_type_name_column));
-
 				out_expression->add(ExpressionAction::removeColumn(column.name));
 
-				const String escaped_expr = escapeForFileName(out_names[0]);
-				const String escaped_column = escapeForFileName(column.name);
-				out_rename_map[escaped_expr + ".bin"] = escaped_column + ".bin";
-				out_rename_map[escaped_expr + ".mrk"] = escaped_column + ".mrk";
+				conversions.emplace_back(column.name, out_names.at(0));
 			}
 		}
+	}
+
+	if (!conversions.empty())
+	{
+		/// Give proper names for temporary columns with conversion results.
+
+		NamesWithAliases projection;
+		projection.reserve(conversions.size());
+
+		for (const auto & source_and_expression : conversions)
+		{
+			String converting_column_name = source_and_expression.first + " converting";
+			projection.emplace_back(source_and_expression.second, converting_column_name);
+
+			const String escaped_converted_column = escapeForFileName(converting_column_name);
+			const String escaped_source_column = escapeForFileName(source_and_expression.first);
+
+			/// After conversion, we need to rename temporary files into original.
+			out_rename_map[escaped_converted_column + ".bin"] = escaped_source_column + ".bin";
+			out_rename_map[escaped_converted_column + ".mrk"] = escaped_source_column + ".mrk";
+		}
+
+		out_expression->add(ExpressionAction::project(projection));
 	}
 }
 
