@@ -541,14 +541,14 @@ struct ArrayFirstIndexImpl
 };
 
 
-/** Sort arrays, by values of its elements, or by values of corresponding elements of another arrays (known as "schwartzsort").
+/** Sort arrays, by values of its elements, or by values of corresponding elements of calculated expression (known as "schwartzsort").
   */
 template <bool positive>
 struct ArraySortImpl
 {
 	static bool needBoolean() { return false; }
 	static bool needExpression() { return false; }
-	static bool needOneArray() { return true; }
+	static bool needOneArray() { return false; }
 
 	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
 	{
