@@ -1212,38 +1212,44 @@ private:
 			{
 				for (auto & instr : instrs)
 				{
-					if (InstructionType::COPY_STRING == instr.first)
+					switch (instr.first)
 					{
-						auto & in_offset = instr.second.second;
-						const auto col = static_cast<const ColumnString *>(instr.second.first);
-						const auto offset = col->getOffsets()[row];
-						const auto length = offset - in_offset - 1;
+						case InstructionType::COPY_STRING:
+						{
+							auto & in_offset = instr.second.second;
+							const auto col = static_cast<const ColumnString *>(instr.second.first);
+							const auto offset = col->getOffsets()[row];
+							const auto length = offset - in_offset - 1;
 
-						memcpySmallAllowReadWriteOverflow15(&out_data[out_offset], &col->getChars()[in_offset], length);
-						out_offset += length;
-						in_offset = offset;
-					}
-					else if (InstructionType::COPY_FIXED_STRING == instr.first)
-					{
-						auto & in_offset = instr.second.second;
-						const auto col = static_cast<const ColumnFixedString *>(instr.second.first);
-						const auto length = col->getN();
+							memcpySmallAllowReadWriteOverflow15(&out_data[out_offset], &col->getChars()[in_offset], length);
+							out_offset += length;
+							in_offset = offset;
+							break;
+						}
+						case InstructionType::COPY_FIXED_STRING:
+						{
+							auto & in_offset = instr.second.second;
+							const auto col = static_cast<const ColumnFixedString *>(instr.second.first);
+							const auto length = col->getN();
 
-						memcpySmallAllowReadWriteOverflow15(&out_data[out_offset], &col->getChars()[in_offset], length);
-						out_offset += length;
-						in_offset += length;
-					}
-					else if (InstructionType::COPY_CONST_STRING == instr.first)
-					{
-						const auto col = static_cast<const ColumnConst<String> *>(instr.second.first);
-						const auto & data = col->getData();
-						const auto length = data.size();
+							memcpySmallAllowReadWriteOverflow15(&out_data[out_offset], &col->getChars()[in_offset], length);
+							out_offset += length;
+							in_offset += length;
+							break;
+						}
+						case InstructionType::COPY_CONST_STRING:
+						{
+							const auto col = static_cast<const ColumnConst<String> *>(instr.second.first);
+							const auto & data = col->getData();
+							const auto length = data.size();
 
-						memcpy(&out_data[out_offset], data.data(), length);
-						out_offset += length;
+							memcpy(&out_data[out_offset], data.data(), length);
+							out_offset += length;
+							break;
+						}
+						default:
+							throw Exception("Unknown InstructionType during execution of function 'concat'", ErrorCodes::LOGICAL_ERROR);
 					}
-					else
-						throw Exception("Unknown InstructionType during execution of function 'concat'", ErrorCodes::LOGICAL_ERROR);
 				}
 
 				out_data[out_offset] = '\0';
