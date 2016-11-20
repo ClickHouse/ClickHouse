@@ -15,26 +15,23 @@ int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs
 }
 
 
-namespace
+template <bool positive>
+struct lessWithCollation
 {
-	template <bool positive>
-	struct lessWithCollation
+	const ColumnString & parent;
+	const Collator & collator;
+
+	lessWithCollation(const ColumnString & parent_, const Collator & collator_) : parent(parent_), collator(collator_) {}
+
+	bool operator()(size_t lhs, size_t rhs) const
 	{
-		const ColumnString & parent;
-		const Collator & collator;
+		int res = collator.compare(
+			reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
+			reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]), parent.sizeAt(rhs));
 
-		lessWithCollation(const ColumnString & parent_, const Collator & collator_) : parent(parent_), collator(collator_) {}
-
-		bool operator()(size_t lhs, size_t rhs) const
-		{
-			int res = collator.compare(
-				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
-				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]), parent.sizeAt(rhs));
-
-			return positive ? (res < 0) : (res > 0);
-		}
-	};
-}
+		return positive ? (res < 0) : (res > 0);
+	}
+};
 
 
 void ColumnString::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const
