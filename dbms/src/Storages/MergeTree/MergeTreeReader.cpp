@@ -211,7 +211,7 @@ MergeTreeReader::Stream::Stream(
 			buffer->setProfileCallback(profile_callback, clock_type);
 
 		non_cached_buffer = std::move(buffer);
-		data_buffer = cached_buffer.get();
+		data_buffer = non_cached_buffer.get();
 	}
 }
 
