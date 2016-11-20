@@ -138,7 +138,6 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 		if (prev_part && part->month == (*prev_part)->month && part->left < (*prev_part)->right)
 		{
 			LOG_ERROR(log, "Part " << part->name << " intersects previous part " << (*prev_part)->name);
-			std::terminate();
 		}
 
 		prev_part = &part;
