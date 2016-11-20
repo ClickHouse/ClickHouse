@@ -173,7 +173,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos 
 	Pos begin = pos;
 
 	ASTPtr id_list;
-	if (!ParserList(ParserPtr(new ParserIdentifier), ParserPtr(new ParserString(".")), false)
+	if (!ParserList(std::make_unique<ParserIdentifier>(), std::make_unique<ParserString>("."), false)
 		.parse(pos, end, id_list, max_parsed_pos, expected))
 		return false;
 

@@ -32,7 +32,7 @@ int main(int argc, char ** argv)
 	}
 
 	ASTPtr root;
-	ParserPtr parsers[] = {ParserPtr(new ParserSelectQuery), ParserPtr(new ParserExpressionList(false))};
+	ParserPtr parsers[] = {std::make_unique<ParserSelectQuery>(), std::make_unique<ParserExpressionList>(false)};
 	for (size_t i = 0; i < sizeof(parsers)/sizeof(parsers[0]); ++i)
 	{
 		IParser & parser = *parsers[i];
