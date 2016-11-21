@@ -18,10 +18,13 @@ from errno import ESRCH
 from termcolor import colored
 
 
-MSG_FAIL = "[ " + colored("FAIL", "red") + " ]"
-MSG_UNKNOWN = "[ " + colored("UNKNOWN", "yellow") + " ]"
-MSG_OK = "[ " + colored("OK", "green") + " ]"
-MSG_SKIPPED = "[ " + colored("SKIPPED", "cyan") + " ]"
+OP_SQUARE_BRACKET = colored("[", attrs=['bold'])
+CL_SQUARE_BRACKET = colored("]", attrs=['bold'])
+
+MSG_FAIL = OP_SQUARE_BRACKET + colored(" FAIL ", "red", attrs=['bold']) + CL_SQUARE_BRACKET
+MSG_UNKNOWN = OP_SQUARE_BRACKET + colored(" UNKNOWN ", "yellow", attrs=['bold']) + CL_SQUARE_BRACKET
+MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", "green", attrs=['bold']) + CL_SQUARE_BRACKET
+MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
 
 
 def main(args):
@@ -196,10 +199,10 @@ def main(args):
 			failures_total = failures_total + failures
 	
 	if failures_total > 0:
-		print(colored("\nHaving {0} errors!".format(failures_total), "red"))
+		print(colored("\nHaving {0} errors!".format(failures_total), "red", attrs=["bold"]))
 		sys.exit(1)
 	else:
-		print(colored("\nAll tests passed.", "green"))
+		print(colored("\nAll tests passed.", "green", attrs=["bold"]))
 		sys.exit(0)
 			
 
