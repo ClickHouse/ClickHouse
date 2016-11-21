@@ -93,6 +93,7 @@ def main(args):
 					report_testcase = et.Element("testcase", attrib = {"name": name})
 					
 					print "{0:70}".format(name + ": "),
+					sys.stdout.flush()
 					
 					if not args.zookeeper and 'zookeeper' in name:
 						report_testcase.append(et.Element("skipped", attrib = {"message": "no zookeeper"}))
