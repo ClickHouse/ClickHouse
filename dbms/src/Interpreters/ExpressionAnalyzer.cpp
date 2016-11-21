@@ -1066,7 +1066,7 @@ void ExpressionAnalyzer::optimizeOrderBy()
 		String name = elem->children.front()->getColumnName();
 		const ASTOrderByElement & order_by_elem = typeid_cast<const ASTOrderByElement &>(*elem);
 
-		if (elems_set.emplace(name, order_by_elem.collation->getColumnName()).second)
+		if (elems_set.emplace(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "").second)
 			unique_elems.emplace_back(elem);
 	}
 
