@@ -52,6 +52,7 @@ namespace ErrorCodes
 	extern const int ENGINE_REQUIRED;
 	extern const int TABLE_METADATA_ALREADY_EXISTS;
 	extern const int UNKNOWN_DATABASE_ENGINE;
+	extern const int DUPLICATE_COLUMN;
 }
 
 
@@ -394,6 +395,21 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
 	else
 		create.children.push_back(new_columns);
 	create.columns = new_columns;
+
+	/// Check for duplicates
+	std::set<String> all_columns;
+	auto check_column_already_exists = [&all_columns](const NameAndTypePair & column_name_and_type)
+	{
+		if (!all_columns.emplace(column_name_and_type.name).second)
+			throw Exception("Column " + backQuoteIfNeed(column_name_and_type.name) + " already exists", ErrorCodes::DUPLICATE_COLUMN);
+	};
+
+	for (const auto & elem : *res.columns)
+		check_column_already_exists(elem);
+	for (const auto & elem : res.materialized_columns)
+		check_column_already_exists(elem);
+	for (const auto & elem : res.alias_columns)
+		check_column_already_exists(elem);
 
 	return res;
 }

@@ -2,10 +2,14 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/ExpressionActions.h>
+#include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/DataTypes/DataTypeDate.h>
+#include <DB/DataTypes/DataTypeString.h>
 #include <DB/Columns/ColumnSet.h>
 #include <DB/Columns/ColumnTuple.h>
 #include <DB/Parsers/ASTSet.h>
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Core/FieldVisitors.h>
 
 
 namespace DB
@@ -187,8 +191,9 @@ Block PKCondition::getBlockWithConstants(
 }
 
 
-PKCondition::PKCondition(ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns, const SortDescription & sort_descr_)
-	: sort_descr(sort_descr_)
+PKCondition::PKCondition(ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns,
+						 const SortDescription & sort_descr_, const Block & pk_sample_block_)
+	: sort_descr(sort_descr_), pk_sample_block(pk_sample_block_)
 {
 	for (size_t i = 0; i < sort_descr.size(); ++i)
 	{
@@ -202,7 +207,7 @@ PKCondition::PKCondition(ASTPtr & query, const Context & context, const NamesAnd
 	  */
 	Block block_with_constants = getBlockWithConstants(query, context, all_columns);
 
-	/// Преобразуем секцию WHERE в обратную польскую строку.
+	/// Trasform WHERE section to Reverse Polish notation
 	ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*query);
 	if (select.where_expression)
 	{
@@ -348,6 +353,47 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 }
 
 
+/// NOTE: Keep in the mind that such behavior could be incompatible inside ordinary expression.
+/// TODO: Use common methods for types conversions.
+static bool tryCastValueToType(const DataTypePtr & desired_type, const DataTypePtr & src_type, Field & src_value)
+{
+	if (desired_type->getName() == src_type->getName())
+		return true;
+
+	/// Try to correct type of constant for correct comparison
+	try
+	{
+		/// Convert String to Enum's value
+		if (auto data_type_enum = dynamic_cast<const IDataTypeEnum *>(desired_type.get()))
+		{
+			src_value = data_type_enum->castToValue(src_value);
+		}
+		/// Convert 'YYYY-MM-DD' Strings to Date
+		else if (typeid_cast<const DataTypeDate *>(desired_type.get()))
+		{
+			if (typeid_cast<const DataTypeString *>(src_type.get()))
+			{
+				src_value = stringToDateOrDateTime(src_value.safeGet<String>());
+			}
+		}
+		else if (desired_type->behavesAsNumber() && src_type->behavesAsNumber())
+		{
+			/// Ok, numeric types are mutually convertible
+		}
+		else
+		{
+			return false;
+		}
+	}
+	catch (...)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+
 bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
 {
 	/** Функции < > = != <= >= in notIn, у которых один агрумент константа, другой - один из столбцов первичного ключа,
@@ -362,33 +408,32 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 		if (args.size() != 2)
 			return false;
 
-		/// Если true, слева константа.
-		bool inverted;
-		size_t column;
+		size_t data_arg_pos;		/// Argument number of data (non-const argument)
+		size_t const_column_num;	/// Column number of a constant in block_with_constants
 		RPNElement::MonotonicFunctionsChain chain;
 
 		if (getConstant(args[1], block_with_constants, value)
-			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, column, chain))
+			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, const_column_num, chain))
 		{
-			inverted = false;
+			data_arg_pos = 0;
 		}
 		else if (getConstant(args[0], block_with_constants, value)
-			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[1], context, column, chain))
+			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[1], context, const_column_num, chain))
 		{
-			inverted = true;
+			data_arg_pos = 1;
 		}
 		else if (typeid_cast<const ASTSet *>(args[1].get())
-			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, column, chain))
+			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, const_column_num, chain))
 		{
-			inverted = false;
+			data_arg_pos = 0;
 		}
 		else
 			return false;
 
 		std::string func_name = func->name;
 
-		/// Заменим <const> <sign> <column> на <column> <-sign> <const>
-		if (inverted)
+		/// Replace <const> <sign> <data> on to <data> <-sign> <const>
+		if (data_arg_pos == 1)
 		{
 			if (func_name == "less")
 				func_name = "greater";
@@ -400,17 +445,29 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 				func_name = "greaterOrEquals";
 			else if (func_name == "in" || func_name == "notIn" || func_name == "like")
 			{
-				/// const IN x не имеет смысла (в отличие от x IN const).
+				/// "const IN data_column" doesn't make sense (unlike "data_column IN const")
 				return false;
 			}
 		}
 
-		out.key_column = column;
+		out.key_column = const_column_num;
 		out.monotonic_functions_chain = std::move(chain);
 
 		const auto atom_it = atom_map.find(func_name);
 		if (atom_it == std::end(atom_map))
 			return false;
+
+		std::string data_column_name = args[data_arg_pos]->getColumnName();
+		const DataTypePtr & data_column_type = pk_sample_block.getByName(data_column_name).type;
+		const DataTypePtr & const_type = block_with_constants.getByPosition(const_column_num).type;
+
+		if (!tryCastValueToType(data_column_type, const_type, value))
+		{
+			throw Exception("Primary key expression contains comparison between inconvertible types: " +
+				data_column_type->getName() + " and " + const_type->getName() +
+				" inside " + func->getColumnName(),
+				ErrorCodes::BAD_TYPE_OF_FIELD);
+		}
 
 		return atom_it->second(out, value, node);
 	}

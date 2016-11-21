@@ -223,7 +223,8 @@ public:
 	static const AtomMap atom_map;
 
 	/// Не учитывает секцию SAMPLE. all_columns - набор всех столбцов таблицы.
-	PKCondition(ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns, const SortDescription & sort_descr);
+	PKCondition(ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns, const SortDescription & sort_descr,
+		const Block & pk_sample_block);
 
 	/// Выполнимо ли условие в диапазоне ключей.
 	/// left_pk и right_pk должны содержать все поля из sort_descr в соответствующем порядке.
@@ -332,6 +333,7 @@ private:
 
 	SortDescription sort_descr;
 	ColumnIndices pk_columns;
+	const Block & pk_sample_block;
 };
 
 }
