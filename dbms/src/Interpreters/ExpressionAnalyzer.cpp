@@ -2237,7 +2237,7 @@ bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only
 	for (size_t i = 0; i < asts.size(); ++i)
 	{
 		ASTOrderByElement * ast = typeid_cast<ASTOrderByElement *>(asts[i].get());
-		if (!ast || ast->children.size() != 1)
+		if (!ast || ast->children.size() < 1)
 			throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
 		ASTPtr order_expression = ast->children.at(0);
 		step.required_output.push_back(order_expression->getColumnName());
