@@ -16,9 +16,13 @@
 
 #include <DB/Functions/FunctionsLogical.h>
 #include <DB/Functions/IFunction.h>
+#include <DB/Functions/AccurateComparison.h>
 
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/ReadHelpers.h>
+
+#include <limits>
+#include <type_traits>
 
 
 namespace DB
@@ -40,20 +44,27 @@ namespace DB
   * TODO Массивы.
   */
 
+template <typename A, typename B> struct EqualsOp 			{ static UInt8 apply(A a, B b) { return accurate::equalsOp<A, B>(a, b); } };
+template <typename A, typename B> struct NotEqualsOp 		{ static UInt8 apply(A a, B b) { return accurate::notEqualsOp<A, B>(a, b); } };
+template <typename A, typename B> struct LessOp 			{ static UInt8 apply(A a, B b) { return accurate::lessOp<A, B>(a, b); } };
+template <typename A, typename B> struct GreaterOp 			{ static UInt8 apply(A a, B b) { return accurate::greaterOp<A, B>(a, b); } };
+template <typename A, typename B> struct LessOrEqualsOp 	{ static UInt8 apply(A a, B b) { return accurate::lessOrEqualsOp<A, B>(a, b); } };
+template <typename A, typename B> struct GreaterOrEqualsOp 	{ static UInt8 apply(A a, B b) { return accurate::greaterOrEqualsOp<A, B>(a, b); } };
+
 /** Игнорируем warning о сравнении signed и unsigned.
   * (Результат может быть некорректным.)
   */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-
-template <typename A, typename B> struct EqualsOp 			{ static UInt8 apply(A a, B b) { return a == b; } };
-template <typename A, typename B> struct NotEqualsOp 		{ static UInt8 apply(A a, B b) { return a != b; } };
-template <typename A, typename B> struct LessOp 			{ static UInt8 apply(A a, B b) { return a < b; 	} };
-template <typename A, typename B> struct GreaterOp 			{ static UInt8 apply(A a, B b) { return a > b; 	} };
-template <typename A, typename B> struct LessOrEqualsOp 	{ static UInt8 apply(A a, B b) { return a <= b; } };
-template <typename A, typename B> struct GreaterOrEqualsOp 	{ static UInt8 apply(A a, B b) { return a >= b; } };
-
-#pragma GCC diagnostic pop
+// #pragma GCC diagnostic push
+// #pragma GCC diagnostic ignored "-Wsign-compare"
+//
+// template <typename A, typename B> struct EqualsOp 			{ static UInt8 apply(A a, B b) { return a == b; } };
+// template <typename A, typename B> struct NotEqualsOp 		{ static UInt8 apply(A a, B b) { return a != b; } };
+// template <typename A, typename B> struct LessOp 			{ static UInt8 apply(A a, B b) { return a < b; 	} };
+// template <typename A, typename B> struct GreaterOp 			{ static UInt8 apply(A a, B b) { return a > b; 	} };
+// template <typename A, typename B> struct LessOrEqualsOp 	{ static UInt8 apply(A a, B b) { return a <= b; } };
+// template <typename A, typename B> struct GreaterOrEqualsOp 	{ static UInt8 apply(A a, B b) { return a >= b; } };
+//
+// #pragma GCC diagnostic pop
 
 
 
