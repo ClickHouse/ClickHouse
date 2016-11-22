@@ -67,6 +67,8 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
 		bool is_real_error = e.code() != ErrorCodes::ABORTED;
 
 		std::string message = getCurrentExceptionMessage(is_real_error);
+		if (!response.sent())
+			response.send() << message << std::endl;
 
 		if (is_real_error)
 			LOG_ERROR(log, message);
