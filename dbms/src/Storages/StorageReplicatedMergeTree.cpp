@@ -2340,22 +2340,15 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 {
 	assertNotReadonly();
 
-	auto merge_blocker = merger.cancel();
-	auto unreplicated_merge_blocker = unreplicated_merger ?
-		unreplicated_merger->cancel() : MergeTreeDataMerger::Blocker();
-
 	LOG_DEBUG(log, "Doing ALTER");
 
-	NamesAndTypesList new_columns;
-	NamesAndTypesList new_materialized_columns;
-	NamesAndTypesList new_alias_columns;
-	ColumnDefaults new_column_defaults;
-	String new_columns_str;
 	int new_columns_version;
+	String new_columns_str;
 	zkutil::Stat stat;
 
 	{
-		auto table_lock = lockStructureForAlter();
+		/// Just to read current structure. Alter will be done in separate thread.
+		auto table_lock = lockStructure(false);
 
 		if (is_readonly)
 			throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
@@ -2366,10 +2359,10 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 			if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
 				throw Exception("Modification of primary key is not supported for replicated tables", ErrorCodes::NOT_IMPLEMENTED);
 
-		new_columns = data.getColumnsListNonMaterialized();
-		new_materialized_columns = data.materialized_columns;
-		new_alias_columns = data.alias_columns;
-		new_column_defaults = data.column_defaults;
+		NamesAndTypesList new_columns = data.getColumnsListNonMaterialized();
+		NamesAndTypesList new_materialized_columns = data.materialized_columns;
+		NamesAndTypesList new_alias_columns = data.alias_columns;
+		ColumnDefaults new_column_defaults = data.column_defaults;
 		params.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
 
 		new_columns_str = ColumnsDescription<false>{
