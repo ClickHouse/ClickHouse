@@ -229,6 +229,9 @@ void MergeTreeReader::Stream::loadMarks(MarkCache * cache, bool save_in_cache)
 			return;
 	}
 
+	/// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
+	TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
+
 	size_t file_size = Poco::File(path).getSize();
 
 	if (file_size % sizeof(MarkInCompressedFile) != 0)
