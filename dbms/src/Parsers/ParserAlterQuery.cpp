@@ -308,7 +308,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 		}
 		else if (s_reshard.ignore(pos, end, max_parsed_pos, expected))
 		{
-			ParserList weighted_zookeeper_paths_p(ParserPtr(new ParserWeightedZooKeeperPath), ParserPtr(new ParserString(",")), false);
+			ParserList weighted_zookeeper_paths_p(std::make_unique<ParserWeightedZooKeeperPath>(), std::make_unique<ParserString>(","), false);
 			ParserExpressionWithOptionalAlias parser_sharding_key_expr(false);
 			ParserStringLiteral parser_coordinator;
 

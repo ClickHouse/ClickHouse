@@ -1,8 +1,6 @@
 #pragma once
 
-#include <DB/DataTypes/IDataType.h>
 #include <DB/Parsers/ASTWithAlias.h>
-#include <DB/IO/WriteBufferFromOStream.h>
 
 
 namespace DB

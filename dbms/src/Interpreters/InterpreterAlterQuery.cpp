@@ -27,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int LOGICAL_ERROR;
+	extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 

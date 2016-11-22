@@ -138,7 +138,6 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 		if (prev_part && part->month == (*prev_part)->month && part->left < (*prev_part)->right)
 		{
 			LOG_ERROR(log, "Part " << part->name << " intersects previous part " << (*prev_part)->name);
-			std::terminate();
 		}
 
 		prev_part = &part;
@@ -326,7 +325,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
 	for (size_t i = 0; i < parts.size(); ++i)
 	{
-		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
+		MarkRanges ranges{{0, parts[i]->size}};
 
 		String part_path = data.getFullPath() + parts[i]->name + '/';
 		auto input = std::make_unique<MergeTreeBlockInputStream>(
@@ -463,20 +462,30 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::renameMergedTemporaryPart(
 	if (replaced_parts.size() != parts.size())
 	{
 		/** Это нормально, хотя такое бывает редко.
-		* Ситуация - было заменено 0 кусков вместо N может быть, например, в следующем случае:
-		* - у нас был кусок A, но не было куска B и C;
-		* - в очереди был мердж A, B -> AB, но его не делали, так как куска B нет;
-		* - в очереди был мердж AB, C -> ABC, но его не делали, так как куска AB и C нет;
-		* - мы выполнили задачу на скачивание куска B;
-		* - мы начали делать мердж A, B -> AB, так как все куски появились;
-		* - мы решили скачать с другой реплики кусок ABC, так как невозможно было сделать мердж AB, C -> ABC;
-		* - кусок ABC появился, при его добавлении, были удалены старые куски A, B, C;
-		* - мердж AB закончился. Добавился кусок AB. Но это устаревший кусок. В логе будет сообщение Obsolete part added,
-		*   затем попадаем сюда.
-		* Ситуация - было заменено M > N кусков тоже нормальная.
-		*
-		* Хотя это должно предотвращаться проверкой в методе StorageReplicatedMergeTree::shouldExecuteLogEntry.
-		*/
+		 *
+		 * Ситуация - было заменено 0 кусков вместо N может быть, например, в следующем случае:
+		 * - у нас был кусок A, но не было куска B и C;
+		 * - в очереди был мердж A, B -> AB, но его не делали, так как куска B нет;
+		 * - в очереди был мердж AB, C -> ABC, но его не делали, так как куска AB и C нет;
+		 * - мы выполнили задачу на скачивание куска B;
+		 * - мы начали делать мердж A, B -> AB, так как все куски появились;
+		 * - мы решили скачать с другой реплики кусок ABC, так как невозможно было сделать мердж AB, C -> ABC;
+		 * - кусок ABC появился, при его добавлении, были удалены старые куски A, B, C;
+		 * - мердж AB закончился. Добавился кусок AB. Но это устаревший кусок. В логе будет сообщение Obsolete part added,
+		 *   затем попадаем сюда.
+		 *
+		 * When M > N parts could be replaced?
+		 * - new block was added in ReplicatedMergeTreeBlockOutputStream;
+		 * - it was added to working dataset in memory and renamed on filesystem;
+		 * - but ZooKeeper transaction that add its to reference dataset in ZK and unlocks AbandonableLock is failed;
+		 * - and it is failed due to connection loss, so we don't rollback working dataset in memory,
+		 *   because we don't know if the part was added to ZK or not
+		 *   (see ReplicatedMergeTreeBlockOutputStream)
+		 * - then method selectPartsToMerge selects a range and see, that AbandonableLock for this part is abandoned,
+		 *   and so, it is possible to merge a range skipping this part.
+		 *   (NOTE: Merging with part that is not in ZK is not possible, see checks in 'createLogEntryToMergeParts'.)
+		 * - and after merge, this part will be removed in addition to parts that was merged.
+		 */
 		LOG_WARNING(log, "Unexpected number of parts removed when adding " << new_data_part->name << ": " << replaced_parts.size()
 			<< " instead of " << parts.size());
 	}

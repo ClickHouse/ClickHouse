@@ -1034,24 +1034,25 @@ public:
 	}
 
 private:
-	enum class instr_type : uint8_t
+	enum class InstructionType : UInt8
 	{
-		copy_string,
-		copy_fixed_string,
-		copy_const_string
+		COPY_STRING,
+		COPY_FIXED_STRING,
+		COPY_CONST_STRING
 	};
 
 	/// column pointer augmented with offset (current offset String/FixedString, unused for Const<String>)
-	using column_uint_pair_t = std::pair<const IColumn *, IColumn::Offset_t>;
-	/// instr_type is being stored to allow using static_cast safely
-	using instr_t = std::pair<instr_type, column_uint_pair_t>;
-	using instrs_t = std::vector<instr_t>;
+	using ColumnAndOffset = std::pair<const IColumn *, IColumn::Offset_t>;
+	/// InstructionType is being stored to allow using static_cast safely
+	using Instruction = std::pair<InstructionType, ColumnAndOffset>;
+	using Instructions = std::vector<Instruction>;
 
 	/** calculate total length of resulting strings (without terminating nulls), determine whether all input
-	 *	strings are constant, assemble instructions */
-	instrs_t getInstructions(const Block & block, const ColumnNumbers & arguments, size_t & out_length, bool & out_const)
+	  *	strings are constant, assemble instructions
+	  */
+	Instructions getInstructions(const Block & block, const ColumnNumbers & arguments, size_t & out_length, bool & out_const)
 	{
-		instrs_t result{};
+		Instructions result{};
 		result.reserve(arguments.size());
 
 		out_length = 0;
@@ -1065,13 +1066,14 @@ private:
 			if (const auto col = typeid_cast<const ColumnString *>(column))
 			{
 				/** ColumnString stores strings with terminating null character
-				 *  which should not be copied, therefore the decrease of total size by
-				 *	the number of terminating nulls */
+				  *  which should not be copied, therefore the decrease of total size by
+				  *	the number of terminating nulls
+				  */
 				rows = col->size();
 				out_length += col->getChars().size() - col->getOffsets().size();
 				out_const = false;
 
-				result.emplace_back(instr_type::copy_string, column_uint_pair_t{col, 0});
+				result.emplace_back(InstructionType::COPY_STRING, ColumnAndOffset{col, 0});
 			}
 			else if (const auto col = typeid_cast<const ColumnFixedString *>(column))
 			{
@@ -1079,7 +1081,7 @@ private:
 				out_length += col->getChars().size();
 				out_const = false;
 
-				result.emplace_back(instr_type::copy_fixed_string, column_uint_pair_t{col, 0});
+				result.emplace_back(InstructionType::COPY_FIXED_STRING, ColumnAndOffset{col, 0});
 			}
 			else if (const auto col = typeid_cast<const ColumnConstString *>(column))
 			{
@@ -1087,7 +1089,7 @@ private:
 				out_length += col->getData().size() * col->size();
 				out_const = out_const && true;
 
-				result.emplace_back(instr_type::copy_const_string, column_uint_pair_t{col, 0});
+				result.emplace_back(InstructionType::COPY_CONST_STRING, ColumnAndOffset{col, 0});
 			}
 			else
 				throw Exception("Illegal column " + column->getName() + " of argument of function " + getName(),
@@ -1210,38 +1212,44 @@ private:
 			{
 				for (auto & instr : instrs)
 				{
-					if (instr_type::copy_string == instr.first)
+					switch (instr.first)
 					{
-						auto & in_offset = instr.second.second;
-						const auto col = static_cast<const ColumnString *>(instr.second.first);
-						const auto offset = col->getOffsets()[row];
-						const auto length = offset - in_offset - 1;
+						case InstructionType::COPY_STRING:
+						{
+							auto & in_offset = instr.second.second;
+							const auto col = static_cast<const ColumnString *>(instr.second.first);
+							const auto offset = col->getOffsets()[row];
+							const auto length = offset - in_offset - 1;
 
-						memcpySmallAllowReadWriteOverflow15(&out_data[out_offset], &col->getChars()[in_offset], length);
-						out_offset += length;
-						in_offset = offset;
-					}
-					else if (instr_type::copy_fixed_string == instr.first)
-					{
-						auto & in_offset = instr.second.second;
-						const auto col = static_cast<const ColumnFixedString *>(instr.second.first);
-						const auto length = col->getN();
+							memcpySmallAllowReadWriteOverflow15(&out_data[out_offset], &col->getChars()[in_offset], length);
+							out_offset += length;
+							in_offset = offset;
+							break;
+						}
+						case InstructionType::COPY_FIXED_STRING:
+						{
+							auto & in_offset = instr.second.second;
+							const auto col = static_cast<const ColumnFixedString *>(instr.second.first);
+							const auto length = col->getN();
 
-						memcpySmallAllowReadWriteOverflow15(&out_data[out_offset], &col->getChars()[in_offset], length);
-						out_offset += length;
-						in_offset += length;
-					}
-					else if (instr_type::copy_const_string == instr.first)
-					{
-						const auto col = static_cast<const ColumnConst<String> *>(instr.second.first);
-						const auto & data = col->getData();
-						const auto length = data.size();
+							memcpySmallAllowReadWriteOverflow15(&out_data[out_offset], &col->getChars()[in_offset], length);
+							out_offset += length;
+							in_offset += length;
+							break;
+						}
+						case InstructionType::COPY_CONST_STRING:
+						{
+							const auto col = static_cast<const ColumnConst<String> *>(instr.second.first);
+							const auto & data = col->getData();
+							const auto length = data.size();
 
-						memcpy(&out_data[out_offset], data.data(), length);
-						out_offset += length;
+							memcpy(&out_data[out_offset], data.data(), length);
+							out_offset += length;
+							break;
+						}
+						default:
+							throw Exception("Unknown InstructionType during execution of function 'concat'", ErrorCodes::LOGICAL_ERROR);
 					}
-					else
-						throw std::logic_error{"unknown instr_type"};
 				}
 
 				out_data[out_offset] = '\0';
