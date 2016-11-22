@@ -4,7 +4,7 @@
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
 #include <DB/Storages/MergeTree/MergeTreeSharder.h>
 #include <DB/Storages/MergeTree/ReshardingJob.h>
-#include <DB/Storages/MergeTree/LevelMergeSelector.h>
+#include <DB/Storages/MergeTree/SimpleMergeSelector.h>
 #include <DB/Storages/MergeTree/AllMergeSelector.h>
 #include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
@@ -45,7 +45,7 @@ namespace ErrorCodes
 }
 
 
-using MergeAlg = MergeTreeDataMerger::MergeAlg;
+using MergeAlgorithm = MergeTreeDataMerger::MergeAlgorithm;
 
 
 namespace
@@ -151,13 +151,12 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 
 	std::unique_ptr<IMergeSelector> merge_selector;
 
+	SimpleMergeSelector::Settings merge_settings;
 	if (aggressive)
-		merge_selector = std::make_unique<AllMergeSelector>();
-	else
-	{
-		LevelMergeSelector::Settings merge_settings;
-		merge_selector = std::make_unique<LevelMergeSelector>(merge_settings);
-	}
+		merge_settings.base = 1;
+
+	/// NOTE Could allow selection of different merge strategy.
+	merge_selector = std::make_unique<SimpleMergeSelector>(merge_settings);
 
 	IMergeSelector::PartsInPartition parts_to_merge = merge_selector->select(
 		partitions,
@@ -307,8 +306,13 @@ static void extractOrdinaryAndKeyColumns(const NamesAndTypesList & all_columns, 
 }
 
 /* Allow to compute more accurate progress statistics */
-struct ColumnSizeEstimator : public std::unordered_map<String, size_t>
+class ColumnSizeEstimator
 {
+	std::unordered_map<String, size_t> map;
+public:
+
+	/// Stores approximate size of columns in bytes
+	/// Exact values are not required since it used for relative values estimation (progress).
 	size_t sum_total = 0;
 	size_t sum_index_columns = 0;
 	size_t sum_ordinary_columns = 0;
@@ -319,38 +323,42 @@ struct ColumnSizeEstimator : public std::unordered_map<String, size_t>
 			return;
 
 		for (const auto & name_and_type : parts.front()->columns)
-			(*this)[name_and_type.name] = 0;
+			map[name_and_type.name] = 0;
 
 		for (const auto & part : parts)
 		{
 			for (const auto & name_and_type : parts.front()->columns)
-				this->at(name_and_type.name) += part->getColumnSize(name_and_type.name);
+				map.at(name_and_type.name) += part->getColumnSize(name_and_type.name);
 		}
 
 		for (const auto & name : key_columns)
-			sum_index_columns += this->at(name);
+			sum_index_columns += map.at(name);
 
 		for (const auto & name : ordinary_columns)
-			sum_ordinary_columns += this->at(name);
+			sum_ordinary_columns += map.at(name);
 
 		sum_total = sum_index_columns + sum_ordinary_columns;
 	}
 
+	/// Approximate size of num_rows column elements if column contains num_total_rows elements
 	Float64 columnSize(const String & column, size_t num_rows, size_t num_total_rows) const
 	{
-		return static_cast<Float64>(this->at(column)) / num_total_rows * num_rows;
+		return static_cast<Float64>(map.at(column)) / num_total_rows * num_rows;
 	}
 
+	/// Relative size of num_rows column elements (in comparison with overall size of all columns) if column contains num_total_rows elements
 	Float64 columnProgress(const String & column, size_t num_rows, size_t num_total_rows) const
 	{
 		return columnSize(column, num_rows, num_total_rows) / sum_total;
 	}
 
+	/// Like columnSize, but takes into account only PK columns
 	Float64 keyColumnsSize(size_t num_rows, size_t num_total_rows) const
 	{
 		return static_cast<Float64>(sum_index_columns) / num_total_rows * num_rows;
 	}
 
+	/// Like columnProgress, but takes into account only PK columns
 	Float64 keyColumnsProgress(size_t num_rows, size_t num_total_rows) const
 	{
 		return keyColumnsSize(num_rows, num_total_rows) / sum_total;
@@ -358,25 +366,57 @@ struct ColumnSizeEstimator : public std::unordered_map<String, size_t>
 };
 
 
-class MergeProgressCallBack : public ProgressCallback
+class MergeProgressCallback : public ProgressCallback
 {
 public:
-	MergeProgressCallBack(MergeList::Entry & merge_entry_) : merge_entry(merge_entry_) {}
+	MergeProgressCallback(MergeList::Entry & merge_entry_) : merge_entry(merge_entry_) {}
 
-	MergeProgressCallBack(MergeList::Entry & merge_entry_, MergeTreeDataMerger::MergeAlg merge_alg_, size_t num_total_rows,
+	MergeProgressCallback(MergeList::Entry & merge_entry_, MergeTreeDataMerger::MergeAlgorithm merge_alg_, size_t num_total_rows,
 						  const ColumnSizeEstimator & column_sizes)
 	: merge_entry(merge_entry_), merge_alg(merge_alg_)
 	{
-		if (merge_alg == MergeAlg::BASIC)
+		if (merge_alg == MergeAlgorithm::Horizontal)
 			average_elem_progress = 1.0 / num_total_rows;
 		else
 			average_elem_progress = column_sizes.keyColumnsProgress(1, num_total_rows);
 	}
 
 	MergeList::Entry & merge_entry;
-	const MergeAlg merge_alg{MergeAlg::VERTICAL};
+	const MergeAlgorithm merge_alg{MergeAlgorithm::Vertical};
 	Float64 average_elem_progress;
-	/// NOTE: not thread-safety
+
+	void operator() (const Progress & value)
+	{
+		ProfileEvents::increment(ProfileEvents::MergedUncompressedBytes, value.bytes);
+		merge_entry->bytes_read_uncompressed += value.bytes;
+		merge_entry->rows_with_key_columns_read += value.rows;
+
+		if (merge_alg == MergeAlgorithm::Horizontal)
+		{
+			ProfileEvents::increment(ProfileEvents::MergedRows, value.rows);
+			merge_entry->rows_read += value.rows;
+			merge_entry->progress = average_elem_progress * merge_entry->rows_read;
+		}
+		else
+		{
+			merge_entry->progress = average_elem_progress * merge_entry->rows_with_key_columns_read;
+		}
+	};
+};
+
+class MergeProgressCallbackVerticalStep : public MergeProgressCallback
+{
+public:
+
+	MergeProgressCallbackVerticalStep(MergeList::Entry & merge_entry_, size_t num_total_rows_exact,
+								  const ColumnSizeEstimator & column_sizes, const String & column_name)
+	: MergeProgressCallback(merge_entry_), initial_progress(merge_entry->progress)
+	{
+		average_elem_progress = column_sizes.columnProgress(column_name, 1, num_total_rows_exact);
+	}
+
+	Float64 initial_progress;
+	/// NOTE: not thread safe (to be copyable). It is OK in current single thread use case
 	size_t rows_read_internal{0};
 
 	void operator() (const Progress & value)
@@ -384,42 +424,13 @@ public:
 		merge_entry->bytes_read_uncompressed += value.bytes;
 		ProfileEvents::increment(ProfileEvents::MergedUncompressedBytes, value.bytes);
 
-		if (merge_alg == MergeAlg::BASIC)
-		{
-			merge_entry->progress = average_elem_progress * (merge_entry->rows_read += value.rows);
-			ProfileEvents::increment(ProfileEvents::MergedRows, value.rows);
-		}
-		else
-		{
-			merge_entry->progress = average_elem_progress * (rows_read_internal += value.rows);
-		}
-	};
-};
-
-class MergeProgressCallbackOrdinary : public MergeProgressCallBack
-{
-public:
-
-	MergeProgressCallbackOrdinary(MergeList::Entry & merge_entry_, size_t num_total_rows_exact,
-								  const ColumnSizeEstimator & column_sizes, const String & column_name)
-	: MergeProgressCallBack(merge_entry_), initial_progress(merge_entry->progress)
-	{
-		average_elem_progress = column_sizes.columnProgress(column_name, 1, num_total_rows_exact);
-	}
-
-	Float64 initial_progress;
-
-	void operator() (const Progress & value)
-	{
-		merge_entry->bytes_read_uncompressed += value.bytes;
-		ProfileEvents::increment(ProfileEvents::MergedUncompressedBytes, value.bytes);
-
-		Float64 local_progress = average_elem_progress * (rows_read_internal += value.rows);
+		rows_read_internal += value.rows;
+		Float64 local_progress = average_elem_progress * rows_read_internal;
 		merge_entry->progress = initial_progress + local_progress;
 	};
 };
 
-/// parts должны быть отсортированы.
+/// parts should be sorted.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart(
 	MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeList::Entry & merge_entry,
 	size_t aio_threshold, time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation)
@@ -466,17 +477,17 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 	new_data_part->name = "tmp_" + merged_name;
 	new_data_part->is_temp = true;
 
-	size_t sum_rows_upper_bound = merge_entry->total_size_marks * data.index_granularity;
+	size_t sum_input_rows_upper_bound = merge_entry->total_size_marks * data.index_granularity;
 
 	MergedRowSources merged_rows_sources;
-	MergeAlg merge_alg = chooseMergingAlg(data, parts, sum_rows_upper_bound, merged_rows_sources);
+	MergeAlgorithm merge_alg = chooseMergeAlgorithm(data, parts, sum_input_rows_upper_bound, merged_rows_sources);
 
-	MergedRowSources * merged_rows_sources_ptr = (merge_alg == MergeAlg::VERTICAL) ?
-		&merged_rows_sources : nullptr;
-	Names & main_column_names = (merge_alg == MergeAlg::VERTICAL) ?
-		                              key_column_names : all_column_names;
-	NamesAndTypesList & main_column_names_and_types = (merge_alg == MergeAlg::VERTICAL) ?
-		          key_column_names_and_types : all_column_names_and_types;
+	MergedRowSources * merged_rows_sources_ptr = (merge_alg == MergeAlgorithm::Vertical)
+		? &merged_rows_sources : nullptr;
+	Names & main_column_names = (merge_alg == MergeAlgorithm::Vertical)
+		? key_column_names : all_column_names;
+	NamesAndTypesList & main_column_names_and_types = (merge_alg == MergeAlgorithm::Vertical)
+		? key_column_names_and_types : all_column_names_and_types;
 
 	ColumnSizeEstimator column_sizes(parts, key_column_names, ordinary_column_names);
 
@@ -493,7 +504,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 			part_path, DEFAULT_MERGE_BLOCK_SIZE, main_column_names, data, parts[i],
 			MarkRanges(1, MarkRange(0, parts[i]->size)), false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
 
-		input->setProgressCallback(MergeProgressCallBack{merge_entry, merge_alg, sum_rows_upper_bound, column_sizes});
+		input->setProgressCallback(MergeProgressCallback{merge_entry, merge_alg, sum_input_rows_upper_bound, column_sizes});
 
 		if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 			src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(
@@ -569,14 +580,18 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 		rows_written += block.rows();
 		to.write(block);
 
-		merge_entry->rows_written = merged_stream->getProfileInfo().rows;
-		merge_entry->rows_with_key_columns_written += merged_stream->getProfileInfo().rows;
+		if (merge_alg == MergeAlgorithm::Horizontal)
+			merge_entry->rows_written = merged_stream->getProfileInfo().rows;
+		merge_entry->rows_with_key_columns_written = merged_stream->getProfileInfo().rows;
 		merge_entry->bytes_written_uncompressed = merged_stream->getProfileInfo().bytes;
 
-		/// This update is unactual for VERTICAL alg sicne it requires more accurate per-column updates
+		/// This update is unactual for VERTICAL algorithm sicne it requires more accurate per-column updates
 		/// Reservation updates is not performed yet, during the merge it may lead to higher free space requirements
-		if (disk_reservation && merge_alg == MergeAlg::BASIC)
-			disk_reservation->update(static_cast<size_t>((1 - std::min(1., 1. * rows_written / sum_rows_upper_bound)) * initial_reservation));
+		if (disk_reservation && merge_alg == MergeAlgorithm::Horizontal)
+		{
+			Float64 relative_rows_written = std::min(1., 1. * rows_written / sum_input_rows_upper_bound);
+			disk_reservation->update(static_cast<size_t>((1. - relative_rows_written) * initial_reservation));
+		}
 	}
 
 	if (isCancelled())
@@ -584,12 +599,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
 	MergeTreeData::DataPart::Checksums checksums_ordinary_columns;
 
-	/// Gather ordinary rows
-	if (merge_alg == MergeAlg::VERTICAL)
+	/// Gather ordinary columns
+	if (merge_alg == MergeAlgorithm::Vertical)
 	{
-		size_t sum_rows_exact = merge_entry->rows_with_key_columns_written;
+		size_t sum_input_rows_exact = merge_entry->rows_with_key_columns_read;
 		merge_entry->columns_written = key_column_names.size();
-		merge_entry->progress = column_sizes.keyColumnsProgress(sum_rows_exact, sum_rows_exact);
+		merge_entry->progress = column_sizes.keyColumnsProgress(sum_input_rows_exact, sum_input_rows_exact);
 
 		BlockInputStreams column_part_streams(parts.size());
 		auto it_name_and_type = ordinary_column_names_and_types.cbegin();
@@ -599,6 +614,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 			const String & column_name = ordinary_column_names[column_num];
 			Names column_name_(1, column_name);
 			NamesAndTypesList column_name_and_type_(1, *it_name_and_type++);
+			Float64 progress_before = merge_entry->progress;
 
 			LOG_TRACE(log, "Gathering column " << column_name <<  " " << column_name_and_type_.front().type->getName());
 
@@ -613,7 +629,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 					false, true);
 
 				column_part_stream->setProgressCallback(
-					MergeProgressCallbackOrdinary{merge_entry, sum_rows_exact, column_sizes, column_name});
+					MergeProgressCallbackVerticalStep{merge_entry, sum_input_rows_exact, column_sizes, column_name});
 
 				column_part_streams[part_num] = std::move(column_part_stream);
 			}
@@ -626,17 +642,21 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 			{
 				column_to.write(block);
 			}
-
 			/// NOTE: nested column contains duplicates checksums (and files)
 			checksums_ordinary_columns.add(column_to.writeSuffixAndGetChecksums());
 
 			merge_entry->columns_written = key_column_names.size() + column_num;
+			merge_entry->bytes_written_uncompressed += column_gathered_stream.getProfileInfo().bytes;
+			merge_entry->progress = progress_before + column_sizes.columnProgress(column_name, sum_input_rows_exact, sum_input_rows_exact);
+
+			if (isCancelled())
+				throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 		}
 	}
 
 	merged_stream->readSuffix();
 	new_data_part->columns = all_column_names_and_types;
-	if (merge_alg != MergeAlg::VERTICAL)
+	if (merge_alg != MergeAlgorithm::Vertical)
 		new_data_part->checksums = to.writeSuffixAndGetChecksums();
 	else
 		new_data_part->checksums = to.writeSuffixAndGetChecksums(all_column_names_and_types, &checksums_ordinary_columns);
@@ -655,7 +675,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 }
 
 
-MergeTreeDataMerger::MergeAlg MergeTreeDataMerger::chooseMergingAlg(
+MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
 	const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
 	size_t sum_rows_upper_bound, MergedRowSources & rows_sources_to_alloc) const
 {
@@ -670,9 +690,9 @@ MergeTreeDataMerger::MergeAlg MergeTreeDataMerger::chooseMergingAlg(
 	bool no_parts_overflow = parts.size() <= RowSourcePart::MAX_PARTS;
 
 	auto merge_alg = (is_supported_storage && enough_total_rows && enough_ordinary_cols && no_parts_overflow) ?
-						MergeAlg::VERTICAL : MergeAlg::BASIC;
+						MergeAlgorithm::Vertical : MergeAlgorithm::Horizontal;
 
-	if (merge_alg == MergeAlg::VERTICAL)
+	if (merge_alg == MergeAlgorithm::Vertical)
 	{
 		try
 		{
@@ -681,11 +701,11 @@ MergeTreeDataMerger::MergeAlg MergeTreeDataMerger::chooseMergingAlg(
 		catch (...)
 		{
 			/// Not enough memory for VERTICAL merge algorithm, make sense for very large tables
-			merge_alg = MergeAlg::BASIC;
+			merge_alg = MergeAlgorithm::Horizontal;
 		}
 	}
 
-	LOG_DEBUG(log, "Selected MergeAlg: " << ((merge_alg == MergeAlg::VERTICAL) ? "VERTICAL" : "BASIC"));
+	LOG_DEBUG(log, "Selected MergeAlgorithm: " << ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Basic"));
 
 	return merge_alg;
 }

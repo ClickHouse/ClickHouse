@@ -9,7 +9,7 @@ namespace DB
 {
 
 class MergeListEntry;
-class MergeProgressCallBack;
+class MergeProgressCallback;
 struct ReshardingJob;
 
 
@@ -123,15 +123,15 @@ public:
 
 public:
 
-	enum class MergeAlg
+	enum class MergeAlgorithm
 	{
-		BASIC,
-		VERTICAL
+		Horizontal,	/// per-row merge of all columns
+		Vertical	/// per-row merge of PK columns, per-column gather for non-PK columns
 	};
 
 private:
 
-	MergeAlg chooseMergingAlg(const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
+	MergeAlgorithm chooseMergeAlgorithm(const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
 		size_t rows_upper_bound, MergedRowSources & rows_sources_to_alloc) const;
 
 private:

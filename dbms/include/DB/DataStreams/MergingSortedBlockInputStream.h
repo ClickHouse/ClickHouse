@@ -57,11 +57,12 @@ inline void intrusive_ptr_release(detail::SharedBlock * ptr)
 class MergingSortedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	/// limit - если не 0, то можно выдать только первые limit строк в сортированном порядке.
+	/// limit - if isn't 0, then we can produce only first limit rows in sorted order.
+	/// out_row_sources - if isn't nullptr, then at the end of execution it should contain part numbers of each readed row (and needed flag)
 	MergingSortedBlockInputStream(BlockInputStreams & inputs_, const SortDescription & description_,
-								  size_t max_block_size_, size_t limit_ = 0, MergedRowSources * row_sources_ = nullptr)
+								  size_t max_block_size_, size_t limit_ = 0, MergedRowSources * out_row_sources_ = nullptr)
 		: description(description_), max_block_size(max_block_size_), limit(limit_),
-		source_blocks(inputs_.size()), cursors(inputs_.size()), row_sources(row_sources_)
+		source_blocks(inputs_.size()), cursors(inputs_.size()), out_row_sources(out_row_sources_)
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
 	}
@@ -160,8 +161,9 @@ protected:
 	using QueueWithCollation = std::priority_queue<SortCursorWithCollation>;
 	QueueWithCollation queue_with_collation;
 
-	/// Used in VERTICAL merge algorithm
-	MergedRowSources * row_sources = nullptr;
+	/// Used in Vertical merge algorithm to gather non-PK columns (on next step)
+	/// If it is not nullptr then it should be populated during execution
+	MergedRowSources * out_row_sources = nullptr;
 
 
 	/// Эти методы используются в Collapsing/Summing/Aggregating... SortedBlockInputStream-ах.

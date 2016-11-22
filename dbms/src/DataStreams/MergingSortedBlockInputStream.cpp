@@ -221,8 +221,8 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 					finished = true;
 				}
 
-				if (row_sources)
-					row_sources->resize_fill(row_sources->size() + merged_rows, RowSourcePart(source_num));
+				if (out_row_sources)
+					out_row_sources->resize_fill(out_row_sources->size() + merged_rows, RowSourcePart(source_num));
 
 	//			std::cerr << "fetching next block\n";
 
@@ -236,19 +236,19 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 			for (size_t i = 0; i < num_columns; ++i)
 				merged_columns[i]->insertFrom(*current->all_columns[i], current->pos);
 
-			if (row_sources)
+			if (out_row_sources)
 			{
 				/// Actually, current.impl->order stores source number (i.e. cursors[current.impl->order] == current.impl)
 				size_t source_num = 0;
-				size_t size = cursors.size();
-				for (; source_num < size; ++source_num)
+				for (; source_num < cursors.size(); ++source_num)
 					if (&cursors[source_num] == current.impl)
 						break;
 
+				/// TODO: This check can be removed after testing
 				if (source_num != current.impl->order)
-					throw Exception("Developer's logical error");
+					throw Exception("Developer's logical error", ErrorCodes::LOGICAL_ERROR);
 
-				row_sources->push_back(RowSourcePart(current.impl->order));
+				out_row_sources->emplace_back(current.impl->order);
 			}
 
 			if (!current->isLast())

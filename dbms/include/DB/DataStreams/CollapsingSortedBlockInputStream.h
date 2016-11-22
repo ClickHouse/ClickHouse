@@ -24,8 +24,8 @@ class CollapsingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
 public:
 	CollapsingSortedBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_,
-		const String & sign_column_, size_t max_block_size_, MergedRowSources * row_sources_ = nullptr)
-		: MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, row_sources_),
+		const String & sign_column_, size_t max_block_size_, MergedRowSources * out_row_sources_ = nullptr)
+		: MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_),
 		sign_column(sign_column_)
 	{
 	}
