@@ -215,7 +215,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		sampling_expression_, index_granularity_, merging_params_,
 		settings_, database_name_ + "." + table_name, true,
 		[this] (const std::string & name) { enqueuePartForCheck(name); }),
-	reader(data), writer(data), merger(data), fetcher(data), sharded_partition_uploader_client(*this),
+	reader(data), writer(data), merger(data, context.getBackgroundPool()), fetcher(data), sharded_partition_uploader_client(*this),
 	shutdown_event(false), part_check_thread(*this),
 	log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
@@ -304,7 +304,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		{
 			LOG_INFO(log, "Have unreplicated data");
 			unreplicated_reader = std::make_unique<MergeTreeDataSelectExecutor>(*unreplicated_data);
-			unreplicated_merger = std::make_unique<MergeTreeDataMerger>(*unreplicated_data);
+			unreplicated_merger = std::make_unique<MergeTreeDataMerger>(*unreplicated_data, context.getBackgroundPool());
 		}
 	}
 

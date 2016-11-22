@@ -21,7 +21,7 @@ public:
 	using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)>;
 
 public:
-	MergeTreeDataMerger(MergeTreeData & data_);
+	MergeTreeDataMerger(MergeTreeData & data_, const BackgroundProcessingPool & pool_);
 
 	void setCancellationHook(CancellationHook cancellation_hook_);
 
@@ -122,6 +122,7 @@ public:
 
 private:
 	MergeTreeData & data;
+	const BackgroundProcessingPool & pool;
 
 	Logger * log;
 

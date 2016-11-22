@@ -800,7 +800,7 @@ void ReshardingWorker::createShardedPartitions()
 
 	auto & storage = *(current_job.storage);
 
-	MergeTreeDataMerger merger{storage.data};
+	MergeTreeDataMerger merger{storage.data, context.getBackgroundPool()};
 
 	MergeTreeDataMerger::CancellationHook hook = std::bind(&ReshardingWorker::abortJobIfRequested, this);
 	merger.setCancellationHook(hook);
