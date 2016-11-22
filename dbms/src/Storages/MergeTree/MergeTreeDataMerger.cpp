@@ -70,8 +70,8 @@ static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 1.6;
 /// потому что между выбором кусков и резервированием места места может стать немного меньше.
 static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.4;
 
-MergeTreeDataMerger::MergeTreeDataMerger(MergeTreeData & data_)
-	: data(data_), log(&Logger::get(data.getLogName() + " (Merger)"))
+MergeTreeDataMerger::MergeTreeDataMerger(MergeTreeData & data_, const BackgroundProcessingPool & pool_)
+	: data(data_), pool(pool_), log(&Logger::get(data.getLogName() + " (Merger)"))
 {
 }
 
@@ -83,7 +83,7 @@ void MergeTreeDataMerger::setCancellationHook(CancellationHook cancellation_hook
 
 size_t MergeTreeDataMerger::getMaxPartsSizeForMerge()
 {
-	size_t total_threads_in_pool = data.context.getBackgroundPool().getNumberOfThreads();
+	size_t total_threads_in_pool = pool.getNumberOfThreads();
 	size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
 	size_t free_threads_in_pool = 1 + total_threads_in_pool - busy_threads_in_pool;	/// 1 is current thread
 

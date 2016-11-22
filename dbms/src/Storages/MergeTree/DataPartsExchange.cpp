@@ -1,6 +1,7 @@
 #include <DB/Storages/MergeTree/DataPartsExchange.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Common/CurrentMetrics.h>
+#include <DB/Common/NetException.h>
 #include <DB/IO/ReadBufferFromHTTP.h>
 
 
@@ -110,6 +111,11 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 		}
 
 		part->checksums.checkEqual(data_checksums, false);
+	}
+	catch (const NetException & e)
+	{
+		/// Network error or error on remote side. No need to enquue part for check.
+		throw;
 	}
 	catch (const Exception & e)
 	{
