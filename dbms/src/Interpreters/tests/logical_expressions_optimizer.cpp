@@ -4,6 +4,7 @@
 #include <DB/Parsers/queryToString.h>
 #include <DB/Interpreters/LogicalExpressionsOptimizer.h>
 #include <DB/Interpreters/Settings.h>
+#include <DB/Common/typeid_cast.h>
 
 #include <iostream>
 #include <vector>

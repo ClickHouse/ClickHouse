@@ -6,6 +6,8 @@
 #include <DB/Parsers/ParserShowTablesQuery.h>
 #include <DB/Parsers/ExpressionElementParsers.h>
 
+#include <DB/Common/typeid_cast.h>
+
 
 namespace DB
 {

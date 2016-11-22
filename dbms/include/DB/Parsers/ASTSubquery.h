@@ -1,7 +1,5 @@
 #pragma once
 
-#include <DB/DataTypes/IDataType.h>
-
 #include <DB/Parsers/ASTWithAlias.h>
 
 

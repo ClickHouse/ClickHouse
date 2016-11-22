@@ -139,7 +139,7 @@ class ParserUnaryMinusExpression : public IParserBase
 {
 private:
 	static const char * operators[];
-	ParserPrefixUnaryOperatorExpression operator_parser {operators, ParserPtr(new ParserTupleElementExpression)};
+	ParserPrefixUnaryOperatorExpression operator_parser {operators, std::make_unique<ParserTupleElementExpression>()};
 
 protected:
 	const char * getName() const { return "unary minus expression"; }
@@ -152,7 +152,7 @@ class ParserMultiplicativeExpression : public IParserBase
 {
 private:
 	static const char * operators[];
-	ParserLeftAssociativeBinaryOperatorList operator_parser {operators, ParserPtr(new ParserUnaryMinusExpression)};
+	ParserLeftAssociativeBinaryOperatorList operator_parser {operators, std::make_unique<ParserUnaryMinusExpression>()};
 
 protected:
 	const char * getName() const { return "multiplicative expression"; }
@@ -168,7 +168,7 @@ class ParserAdditiveExpression : public IParserBase
 {
 private:
 	static const char * operators[];
-	ParserLeftAssociativeBinaryOperatorList operator_parser {operators, ParserPtr(new ParserMultiplicativeExpression)};
+	ParserLeftAssociativeBinaryOperatorList operator_parser {operators, std::make_unique<ParserMultiplicativeExpression>()};
 
 protected:
 	const char * getName() const { return "additive expression"; }
@@ -180,10 +180,24 @@ protected:
 };
 
 
+class ParserConcatExpression : public IParserBase
+{
+	ParserVariableArityOperatorList operator_parser {"||", "concat", std::make_unique<ParserAdditiveExpression>()};
+
+protected:
+	const char * getName() const { return "string concatenation expression"; }
+
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+	{
+		return operator_parser.parse(pos, end, node, max_parsed_pos, expected);
+	}
+};
+
+
 class ParserBetweenExpression : public IParserBase
 {
 private:
-	ParserAdditiveExpression elem_parser;
+	ParserConcatExpression elem_parser;
 
 protected:
 	const char * getName() const { return "BETWEEN expression"; }
@@ -196,7 +210,7 @@ class ParserComparisonExpression : public IParserBase
 {
 private:
 	static const char * operators[];
-	ParserLeftAssociativeBinaryOperatorList operator_parser {operators, ParserPtr(new ParserBetweenExpression)};
+	ParserLeftAssociativeBinaryOperatorList operator_parser {operators, std::make_unique<ParserBetweenExpression>()};
 
 protected:
 	const char * getName() const { return "comparison expression"; }
@@ -212,7 +226,7 @@ class ParserLogicalNotExpression : public IParserBase
 {
 private:
 	static const char * operators[];
-	ParserPrefixUnaryOperatorExpression operator_parser {operators, ParserPtr(new ParserComparisonExpression)};
+	ParserPrefixUnaryOperatorExpression operator_parser {operators, std::make_unique<ParserComparisonExpression>()};
 
 protected:
 	const char * getName() const { return "logical-NOT expression"; }
@@ -227,12 +241,7 @@ protected:
 class ParserLogicalAndExpression : public IParserBase
 {
 private:
-	ParserVariableArityOperatorList operator_parser;
-public:
-	ParserLogicalAndExpression()
-		: operator_parser("AND", "and", ParserPtr(new ParserLogicalNotExpression))
-	{
-	}
+	ParserVariableArityOperatorList operator_parser {"AND", "and", std::make_unique<ParserLogicalNotExpression>()};
 
 protected:
 	const char * getName() const { return "logical-AND expression"; }
@@ -247,12 +256,7 @@ protected:
 class ParserLogicalOrExpression : public IParserBase
 {
 private:
-	ParserVariableArityOperatorList operator_parser;
-public:
-	ParserLogicalOrExpression()
-		: operator_parser("OR", "or", ParserPtr(new ParserLogicalAndExpression))
-	{
-	}
+	ParserVariableArityOperatorList operator_parser {"OR", "or", std::make_unique<ParserLogicalAndExpression>()};
 
 protected:
 	const char * getName() const { return "logical-OR expression"; }

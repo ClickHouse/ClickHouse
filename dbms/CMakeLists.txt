@@ -649,6 +649,7 @@ add_library (dbms
 	src/Core/BlockInfo.cpp
 	src/Core/NamesAndTypes.cpp
 	src/Core/ErrorCodes.cpp
+	src/Core/SortDescription.cpp
 
 	src/IO/CachedCompressedReadBuffer.cpp
 	src/IO/CompressedReadBuffer.cpp
@@ -681,6 +682,7 @@ add_library (dbms
 	src/Columns/ColumnAggregateFunction.cpp
 	src/Columns/ColumnExpression.cpp
 	src/Columns/ColumnsCommon.cpp
+	src/Columns/ColumnString.cpp
 
 	src/Storages/StorageMaterializedView.cpp
 	src/Storages/StorageView.cpp
@@ -745,6 +747,10 @@ add_library (dbms
 	src/Storages/MergeTree/SimpleMergeSelector.cpp
 	src/Storages/MergeTree/LevelMergeSelector.cpp
 	src/Storages/MergeTree/AllMergeSelector.cpp
+	src/Storages/MergeTree/MergeTreeReader.cpp
+	src/Storages/MergeTree/MergeTreeReadPool.cpp
+	src/Storages/MergeTree/MergeTreeBlockInputStream.cpp
+	src/Storages/MergeTree/MergeTreeThreadBlockInputStream.cpp
 	src/Storages/ITableDeclaration.cpp
 	src/Storages/AlterCommands.cpp
 	src/Storages/ColumnsDescription.cpp
@@ -832,7 +838,9 @@ add_library (dbms
 	src/Dictionaries/ComplexKeyCacheDictionary.cpp
 
 	src/Parsers/ASTSelectQuery.cpp
+	src/Parsers/ASTInsertQuery.cpp
 	src/Parsers/ASTAlterQuery.cpp
+	src/Parsers/ASTOrderByElement.cpp
 	src/Parsers/ASTLiteral.cpp
 	src/Parsers/ASTFunction.cpp
 	src/Parsers/ASTWithAlias.cpp

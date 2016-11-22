@@ -4,6 +4,7 @@
 #include <DB/Core/Types.h>
 #include <mysqlxx/Manip.h>
 
+
 namespace DB
 {
 

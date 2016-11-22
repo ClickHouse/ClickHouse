@@ -6,8 +6,9 @@
 #include <DB/Core/Block.h>
 #include <DB/Columns/IColumn.h>
 #include <DB/Columns/ColumnString.h>
-#include <DB/Common/Collator.h>
 
+
+class Collator;
 
 namespace DB
 {
@@ -27,14 +28,7 @@ struct SortColumnDescription
 		: column_name(column_name_), column_number(0), direction(direction_), collator(collator_) {}
 
 	/// Для IBlockInputStream.
-	String getID() const
-	{
-		std::stringstream res;
-		res << column_name << ", " << column_number << ", " << direction;
-		if (collator)
-			res << ", collation locale: " << collator->getLocale();
-		return res.str();
-	}
+	String getID() const;
 };
 
 /// Описание правила сортировки по нескольким столбцам.
@@ -174,7 +168,7 @@ struct SortCursorWithCollation
 			int res;
 			if (impl->need_collation[i])
 			{
-				const ColumnString & column_string = typeid_cast<const ColumnString &>(*impl->sort_columns[i]);
+				const ColumnString & column_string = static_cast<const ColumnString &>(*impl->sort_columns[i]);
 				res = column_string.compareAtWithCollation(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), *impl->desc[i].collator);
 			}
 			else

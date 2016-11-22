@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/Parsers/IAST.h>
 
 

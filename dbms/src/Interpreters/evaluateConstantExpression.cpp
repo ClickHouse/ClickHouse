@@ -1,6 +1,7 @@
 #include <DB/Core/Block.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Parsers/IAST.h>
+#include <DB/Parsers/ASTIdentifier.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>

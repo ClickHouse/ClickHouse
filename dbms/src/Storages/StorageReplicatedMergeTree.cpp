@@ -3008,7 +3008,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 	/// Пока искали запись, ее уже выполнили и удалили.
 	if (queue_entry_to_wait_for.empty())
 	{
-		LOG_DEBUG(log, "No corresponding node found. Assuming it has been already processed.");
+		LOG_DEBUG(log, "No corresponding node found. Assuming it has been already processed." " Found " << queue_entries.size() << " nodes.");
 		return;
 	}
 

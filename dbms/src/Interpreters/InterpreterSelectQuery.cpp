@@ -33,6 +33,7 @@
 #include <DB/TableFunctions/TableFunctionFactory.h>
 
 #include <DB/Core/Field.h>
+#include <DB/Common/Collator.h>
 
 
 namespace ProfileEvents
@@ -1011,7 +1012,11 @@ static SortDescription getSortDescription(ASTSelectQuery & query)
 		String name = elem->children.front()->getColumnName();
 		const ASTOrderByElement & order_by_elem = typeid_cast<const ASTOrderByElement &>(*elem);
 
-		order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.collator);
+		std::shared_ptr<Collator> collator;
+		if (order_by_elem.collation)
+			collator = std::make_shared<Collator>(typeid_cast<const ASTLiteral &>(*order_by_elem.collation).value.get<String>());
+
+		order_descr.emplace_back(name, order_by_elem.direction, collator);
 	}
 
 	return order_descr;

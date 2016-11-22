@@ -1,4 +1,6 @@
 #include <DB/IO/WriteBufferFromOStream.h>
+#include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/WriteHelpers.h>
 #include <DB/Parsers/IAST.h>
 
 
@@ -41,6 +43,54 @@ void IAST::writeAlias(const String & name, std::ostream & s, bool hilite) const
 	wb.next();
 
 	s << (hilite ? hilite_none : "");
+}
+
+
+size_t IAST::checkSize(size_t max_size) const
+{
+	size_t res = 1;
+	for (const auto & child : children)
+		res += child->checkSize(max_size);
+
+	if (res > max_size)
+		throw Exception("AST is too big. Maximum: " + toString(max_size), ErrorCodes::TOO_BIG_AST);
+
+	return res;
+}
+
+
+String IAST::getTreeID() const
+{
+	std::stringstream s;
+	s << getID();
+
+	if (!children.empty())
+	{
+		s << "(";
+		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+		{
+			if (it != children.begin())
+				s << ", ";
+			s << (*it)->getTreeID();
+		}
+		s << ")";
+	}
+
+	return s.str();
+}
+
+
+size_t IAST::checkDepthImpl(size_t max_depth, size_t level) const
+{
+	size_t res = level + 1;
+	for (const auto & child : children)
+	{
+		if (level >= max_depth)
+			throw Exception("AST is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_AST);
+		res = std::max(res, child->checkDepthImpl(max_depth, level + 1));
+	}
+
+	return res;
 }
 
 }
