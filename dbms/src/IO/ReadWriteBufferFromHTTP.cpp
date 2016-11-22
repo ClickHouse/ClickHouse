@@ -2,7 +2,6 @@
 
 #include <Poco/URI.h>
 #include <Poco/Net/DNS.h>
-//#include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 
 #include <DB/IO/ReadBufferFromIStream.h>
@@ -36,6 +35,7 @@ static Poco::Net::IPAddress resolveHost(const String & host)
 
 ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 		HTTPLocation location,
+		OutStreamCallback out_stream_callback,
 		size_t buffer_size_,
 		HTTPTimeouts timeouts
 	) :
@@ -72,8 +72,12 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 
 	LOG_TRACE((&Logger::get("ReadBufferFromHTTP")), "Sending request to " << uri.str());
 
-	//auto & stream_out = 
-	session.sendRequest(request);
+	auto & stream_out = session.sendRequest(request);
+
+	if (out_stream_callback) {
+		out_stream_callback(stream_out);
+	}
+
 	istr = &session.receiveResponse(response);
 
 	auto status = response.getStatus();

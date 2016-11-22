@@ -1,16 +1,12 @@
 #pragma once
 
-//#include <memory>
-
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <DB/IO/ReadBufferFromHTTP.h>
 #include <DB/IO/ReadBuffer.h>
-//#include <DB/Core/Types.h>
 
 namespace DB
 {
-
 
 struct HTTPLocation {
 	using Params = std::vector<std::pair<String, String>>;
@@ -44,10 +40,12 @@ private:
 	std::unique_ptr<ReadBuffer> impl;
 
 public:
+	using OutStreamCallback = std::function<void(std::ostream&)>;
 	//using Params = std::vector<std::pair<String, String>>;
 
 	ReadWriteBufferFromHTTP(
 		HTTPLocation http_query,
+		OutStreamCallback out_stream_callback = {},
 		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
 		HTTPTimeouts timeouts = HTTPTimeouts()
 	);

@@ -33,8 +33,6 @@ public:
 
 	DictionarySourcePtr clone() const override;
 
-	//DictionarySourcePtr clone() const override { return std::make_unique<HTTPDictionarySource>(*this); }
-
 	std::string toString() const override;
 
 private:
@@ -43,12 +41,14 @@ private:
 	LocalDateTime getLastModification() const;
 
 	const DictionaryStructure dict_struct;
+
 	const std::string host;
 	int port;
 	const std::string path;
 	//const std::string method;
-
 	const std::string format;
+	const bool selective;
+
 	Block sample_block;
 	const Context & context;
 	const std::string load_all_query;

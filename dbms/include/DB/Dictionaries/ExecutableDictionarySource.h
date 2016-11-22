@@ -14,7 +14,9 @@ class ExecutableDictionarySource final : public IDictionarySource
 
 public:
 
-	ExecutableDictionarySource(const DictionaryStructure & dict_struct_, const std::string & name, const std::string & format, Block & sample_block,
+	ExecutableDictionarySource(const DictionaryStructure & dict_struct_,
+		const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+		Block & sample_block,
 		const Context & context);
 
 	ExecutableDictionarySource(const ExecutableDictionarySource & other);
@@ -40,6 +42,7 @@ private:
 	const DictionaryStructure dict_struct;
 	const std::string name;
 	const std::string format;
+	const bool selective;
 	Block sample_block;
 	const Context & context;
 };

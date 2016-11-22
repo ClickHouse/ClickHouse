@@ -4,17 +4,19 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Dictionaries/OwningBlockInputStream.h>
 
-//#include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
 namespace DB
 {
 
-ExecutableDictionarySource::ExecutableDictionarySource(const DictionaryStructure & dict_struct_, const std::string & name, const std::string & format, Block & sample_block, const Context & context) :
+ExecutableDictionarySource::ExecutableDictionarySource(const DictionaryStructure & dict_struct_,
+	const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+	Block & sample_block, const Context & context) :
 	dict_struct{dict_struct_},
-	name{name},
-	format{format},
+	name{config.getString(config_prefix + ".name")},
+	format{config.getString(config_prefix + ".format")},
+	selective{!config.getString(config_prefix + ".selective", "").empty()}, // todo! how to correct?
 	sample_block{sample_block},
 	context(context)
 {
@@ -24,6 +26,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 	  dict_struct{other.dict_struct},
 	  name{other.name},
 	  format{other.format},
+	  selective{other.selective},
 	  sample_block{other.sample_block},
 	  context(other.context)
 {
@@ -116,7 +119,7 @@ bool ExecutableDictionarySource::isModified() const
 
 bool ExecutableDictionarySource::supportsSelectiveLoad() const
 {
-	return true;
+	return selective;
 }
 
 DictionarySourcePtr ExecutableDictionarySource::clone() const

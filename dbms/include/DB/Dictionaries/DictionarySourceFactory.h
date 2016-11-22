@@ -137,9 +137,7 @@ public:
 					"Dictionary source of type `executable` does not support attribute expressions",
 					ErrorCodes::LOGICAL_ERROR};
 
-			const auto name = config.getString(config_prefix + ".executable.name");
-			const auto format = config.getString(config_prefix + ".executable.format");
-			return std::make_unique<ExecutableDictionarySource>(dict_struct, name, format, sample_block, context);
+			return std::make_unique<ExecutableDictionarySource>(dict_struct, config, config_prefix + ".executable", sample_block, context);
 		}
 
 		else if ("http" == source_type)
