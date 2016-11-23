@@ -239,15 +239,6 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 			if (out_row_sources)
 			{
 				/// Actually, current.impl->order stores source number (i.e. cursors[current.impl->order] == current.impl)
-				size_t source_num = 0;
-				for (; source_num < cursors.size(); ++source_num)
-					if (&cursors[source_num] == current.impl)
-						break;
-
-				/// TODO: This check can be removed after testing
-				if (source_num != current.impl->order)
-					throw Exception("Developer's logical error", ErrorCodes::LOGICAL_ERROR);
-
 				out_row_sources->emplace_back(current.impl->order);
 			}
 
