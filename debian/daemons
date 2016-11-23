@@ -1,4 +1,3 @@
 compressor
 clickhouse-client
 clickhouse-server
-config-processor
