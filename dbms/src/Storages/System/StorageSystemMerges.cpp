@@ -70,7 +70,7 @@ BlockInputStreams StorageSystemMerges::read(
 		col_database.column->insert(merge.database);
 		col_table.column->insert(merge.table);
 		col_elapsed.column->insert(merge.watch.elapsedSeconds());
-		col_progress.column->insert(merge.progress);
+		col_progress.column->insert(std::min(1., merge.progress)); /// little cheat
 		col_num_parts.column->insert(merge.num_parts);
 		col_result_part_name.column->insert(merge.result_part_name);
 		col_total_size_bytes_compressed.column->insert(merge.total_size_bytes_compressed);

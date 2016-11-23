@@ -482,6 +482,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 	MergedRowSources merged_rows_sources;
 	MergeAlgorithm merge_alg = chooseMergeAlgorithm(data, parts, sum_input_rows_upper_bound, merged_rows_sources);
 
+	LOG_DEBUG(log, "Selected MergeAlgorithm: " << ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Horizontal"));
+
 	MergedRowSources * merged_rows_sources_ptr = (merge_alg == MergeAlgorithm::Vertical)
 		? &merged_rows_sources : nullptr;
 	Names & main_column_names = (merge_alg == MergeAlgorithm::Vertical)
@@ -679,6 +681,9 @@ MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
 	const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
 	size_t sum_rows_upper_bound, MergedRowSources & rows_sources_to_alloc) const
 {
+	if (data.context.getMergeTreeSettings().enable_vertical_merge_algorithm == 0)
+		return MergeAlgorithm::Horizontal;
+
 	bool is_supported_storage =
 		data.merging_params.mode == MergeTreeData::MergingParams::Ordinary ||
 		data.merging_params.mode == MergeTreeData::MergingParams::Collapsing;
@@ -704,8 +709,6 @@ MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
 			merge_alg = MergeAlgorithm::Horizontal;
 		}
 	}
-
-	LOG_DEBUG(log, "Selected MergeAlgorithm: " << ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Basic"));
 
 	return merge_alg;
 }

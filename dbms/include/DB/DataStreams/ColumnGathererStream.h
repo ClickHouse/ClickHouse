@@ -11,8 +11,11 @@ namespace DB
 
 struct __attribute__((__packed__)) RowSourcePart
 {
-	unsigned int flag: 1;
-	unsigned int source_id: 7;
+	/// Sequence of members is important to use RowSourcePart * as UInt8 * if flag = false
+	UInt8 source_id: 7;
+	UInt8 flag: 1;
+
+	RowSourcePart() = default;
 
 	RowSourcePart(unsigned source_id_, bool flag_ = false)
 	{

@@ -52,7 +52,7 @@ struct SortCursorImpl
 	  * Order is determined by number of cursor.
 	  *
 	  * Cursor number (always?) equals to number of merging part.
-	  * Therefore this filed can be used to determine part number of current row (see ColumnGathererStream).
+	  * Therefore this field can be used to determine part number of current row (see ColumnGathererStream).
 	  */
 	size_t order;
 
