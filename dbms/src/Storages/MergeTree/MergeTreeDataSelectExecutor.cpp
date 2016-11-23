@@ -195,11 +195,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	SortDescription sort_descr = data.getSortDescription();
 
-	Block pk_sample_block = data.getPrimaryExpression()->getSampleBlock();
-
-	PKCondition key_condition(query, context, available_real_and_virtual_columns, sort_descr, pk_sample_block);
+	PKCondition key_condition(query, context, available_real_and_virtual_columns, sort_descr,
+		data.getPrimaryExpression()->getSampleBlock());
 	PKCondition date_condition(query, context, available_real_and_virtual_columns,
-		SortDescription(1, SortColumnDescription(data.date_column_name, 1)), pk_sample_block);
+		SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
 
 	if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
 	{

@@ -4,6 +4,7 @@
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/DataTypes/DataTypeEnum.h>
 #include <DB/DataTypes/DataTypeDate.h>
+#include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/Columns/ColumnSet.h>
 #include <DB/Columns/ColumnTuple.h>
@@ -369,7 +370,7 @@ static bool tryCastValueToType(const DataTypePtr & desired_type, const DataTypeP
 			src_value = data_type_enum->castToValue(src_value);
 		}
 		/// Convert 'YYYY-MM-DD' Strings to Date
-		else if (typeid_cast<const DataTypeDate *>(desired_type.get()))
+		else if (typeid_cast<const DataTypeDate *>(desired_type.get()) || typeid_cast<const DataTypeDateTime *>(desired_type.get()))
 		{
 			if (typeid_cast<const DataTypeString *>(src_type.get()))
 			{
