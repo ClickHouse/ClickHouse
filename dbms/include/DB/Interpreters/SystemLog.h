@@ -88,6 +88,7 @@ private:
 	const String database_name;
 	const String table_name;
 	StoragePtr table;
+	const String engine;
 	const size_t flush_interval_milliseconds;
 
 	using QueueItem = std::pair<bool, LogElement>;		/// First element is shutdown flag for thread.
@@ -109,6 +110,13 @@ private:
 
 	void threadFunction();
 	void flush();
+
+	/** Creates new table if it does not exist.
+	  * Renames old table if its structure is not suitable.
+	  * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
+	  */
+	bool is_prepared = false;
+	void prepareTable();
 };
 
 
@@ -116,84 +124,15 @@ template <typename LogElement>
 SystemLog<LogElement>::SystemLog(Context & context_,
 	const String & database_name_,
 	const String & table_name_,
-	const String & engine,
+	const String & engine_,
 	size_t flush_interval_milliseconds_)
-	: context(context_), database_name(database_name_), table_name(table_name_), flush_interval_milliseconds(flush_interval_milliseconds_)
+	: context(context_),
+	database_name(database_name_), table_name(table_name_), engine(engine_),
+	flush_interval_milliseconds(flush_interval_milliseconds_)
 {
 	log = &Logger::get("SystemLog (" + database_name + "." + table_name + ")");
 
 	data.reserve(DBMS_SYSTEM_LOG_QUEUE_SIZE);
-
-	{
-		String description = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name);
-
-		auto lock = context.getLock();
-
-		table = context.tryGetTable(database_name, table_name);
-
-		if (table)
-		{
-			const Block expected = LogElement::createBlock();
-			const Block actual = table->getSampleBlockNonMaterialized();
-
-			if (!blocksHaveEqualStructure(actual, expected))
-			{
-				/// Переименовываем существующую таблицу.
-				int suffix = 0;
-				while (context.isTableExist(database_name, table_name + "_" + toString(suffix)))
-					++suffix;
-
-				auto rename = std::make_shared<ASTRenameQuery>();
-
-				ASTRenameQuery::Table from;
-				from.database = database_name;
-				from.table = table_name;
-
-				ASTRenameQuery::Table to;
-				to.database = database_name;
-				to.table = table_name + "_" + toString(suffix);
-
-				ASTRenameQuery::Element elem;
-				elem.from = from;
-				elem.to = to;
-
-				rename->elements.emplace_back(elem);
-
-				LOG_DEBUG(log, "Existing table " << description << " for system log has obsolete or different structure."
-					" Renaming it to " << backQuoteIfNeed(to.table));
-
-				InterpreterRenameQuery(rename, context).execute();
-
-				/// Нужная таблица будет создана.
-				table = nullptr;
-			}
-			else
-				LOG_DEBUG(log, "Will use existing table " << description << " for " + LogElement::name());
-		}
-
-		if (!table)
-		{
-			/// Создаём таблицу.
-			LOG_DEBUG(log, "Creating new table " << description << " for " + LogElement::name());
-
-			auto create = std::make_shared<ASTCreateQuery>();
-
-			create->database = database_name;
-			create->table = table_name;
-
-			Block sample = LogElement::createBlock();
-			create->columns = InterpreterCreateQuery::formatColumns(sample.getColumnsList());
-
-			ParserFunction engine_parser;
-
-			create->storage = parseQuery(engine_parser, engine.data(), engine.data() + engine.size(), "ENGINE to create table for" + LogElement::name());
-
-			InterpreterCreateQuery(create, context).execute();
-
-			table = context.getTable(database_name, table_name);
-		}
-	}
-
 	saving_thread = std::thread([this] { threadFunction(); });
 }
 
@@ -277,6 +216,9 @@ void SystemLog<LogElement>::flush()
 	{
 		LOG_TRACE(log, "Flushing query log");
 
+		if (!is_prepared)	/// BTW, flush method is called from single thread.
+			prepareTable();
+
 		Block block = LogElement::createBlock();
 		for (const LogElement & elem : data)
 			elem.appendToBlock(block);
@@ -303,6 +245,81 @@ void SystemLog<LogElement>::flush()
 
 	/// In case of exception, also clean accumulated data - to avoid locking.
 	data.clear();
+}
+
+
+template <typename LogElement>
+void SystemLog<LogElement>::prepareTable()
+{
+	String description = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name);
+
+	auto lock = context.getLock();
+
+	table = context.tryGetTable(database_name, table_name);
+
+	if (table)
+	{
+		const Block expected = LogElement::createBlock();
+		const Block actual = table->getSampleBlockNonMaterialized();
+
+		if (!blocksHaveEqualStructure(actual, expected))
+		{
+			/// Переименовываем существующую таблицу.
+			int suffix = 0;
+			while (context.isTableExist(database_name, table_name + "_" + toString(suffix)))
+				++suffix;
+
+			auto rename = std::make_shared<ASTRenameQuery>();
+
+			ASTRenameQuery::Table from;
+			from.database = database_name;
+			from.table = table_name;
+
+			ASTRenameQuery::Table to;
+			to.database = database_name;
+			to.table = table_name + "_" + toString(suffix);
+
+			ASTRenameQuery::Element elem;
+			elem.from = from;
+			elem.to = to;
+
+			rename->elements.emplace_back(elem);
+
+			LOG_DEBUG(log, "Existing table " << description << " for system log has obsolete or different structure."
+			" Renaming it to " << backQuoteIfNeed(to.table));
+
+			InterpreterRenameQuery(rename, context).execute();
+
+			/// Нужная таблица будет создана.
+			table = nullptr;
+		}
+		else
+			LOG_DEBUG(log, "Will use existing table " << description << " for " + LogElement::name());
+	}
+
+	if (!table)
+	{
+		/// Создаём таблицу.
+		LOG_DEBUG(log, "Creating new table " << description << " for " + LogElement::name());
+
+		auto create = std::make_shared<ASTCreateQuery>();
+
+		create->database = database_name;
+		create->table = table_name;
+
+		Block sample = LogElement::createBlock();
+		create->columns = InterpreterCreateQuery::formatColumns(sample.getColumnsList());
+
+		ParserFunction engine_parser;
+
+		create->storage = parseQuery(engine_parser, engine.data(), engine.data() + engine.size(), "ENGINE to create table for" + LogElement::name());
+
+		InterpreterCreateQuery(create, context).execute();
+
+		table = context.getTable(database_name, table_name);
+	}
+
+	is_prepared = true;
 }
 
 

@@ -62,18 +62,18 @@ namespace ErrorCodes
 class TableFunctionFactory;
 
 
-/** Набор известных объектов, которые могут быть использованы в запросе.
-  * Разделяемая часть. Порядок членов (порядок их уничтожения) очень важен.
+/** Set of known objects (environment), that could be used in query.
+  * Shared (global) part. Order of members (especially, order of destruction) is very important.
   */
 struct ContextShared
 {
-	Logger * log = &Logger::get("Context");					/// Логгер.
+	Logger * log = &Logger::get("Context");
 
-	/// Для доступа и модификации разделяемых объектов. Рекурсивный mutex.
+	/// For access of most of shared objects. Recursive mutex.
 	mutable Poco::Mutex mutex;
-	/// Для доступа к внешним словарям. Отдельный мьютекс, чтобы избежать локов при обращении сервера к самому себе.
+	/// Separate mutex for access of external dictionaries. Separate mutex to avoid locks when server doing request to itself.
 	mutable std::mutex external_dictionaries_mutex;
-	/// Отдельный mutex для переинициализации zookeeper-а. Эта операция может заблокироваться на существенное время и не должна мешать остальным.
+	/// Separate mutex for re-initialization of zookeer session. This operation could take a long time and must not interfere with another operations.
 	mutable std::mutex zookeeper_mutex;
 
 	mutable zkutil::ZooKeeperPtr zookeeper;					/// Клиент для ZooKeeper.
