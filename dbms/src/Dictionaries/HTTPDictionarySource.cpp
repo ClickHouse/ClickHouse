@@ -1,7 +1,6 @@
 #include <DB/Dictionaries/HTTPDictionarySource.h>
 
 #include <DB/Interpreters/Context.h>
-#include <DB/Dictionaries/OwningBufferBlockInputStream.h>
 #include <DB/Dictionaries/OwningBlockInputStream.h>
 #include <DB/IO/ReadBufferFromHTTP.h>
 #include <DB/IO/ReadWriteBufferFromHTTP.h>
@@ -43,7 +42,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadAll()
 	LOG_TRACE(log, "loadAll " + toString());
 	auto in_ptr = std::make_unique<ReadBufferFromHTTP>(host, port, path, ReadBufferFromHTTP::Params(), Poco::Net::HTTPRequest::HTTP_GET);
 	auto stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
-	return std::make_shared<OwningBufferBlockInputStream>(stream, std::move(in_ptr));
+	return std::make_shared<OwningBlockInputStream<ReadBufferFromHTTP>>(stream, std::move(in_ptr));
 }
 
 BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
