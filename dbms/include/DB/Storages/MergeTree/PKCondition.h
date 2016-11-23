@@ -224,7 +224,7 @@ public:
 
 	/// Не учитывает секцию SAMPLE. all_columns - набор всех столбцов таблицы.
 	PKCondition(ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns, const SortDescription & sort_descr,
-		const Block & pk_sample_block = Block());
+		const Block & pk_sample_block);
 
 	/// Выполнимо ли условие в диапазоне ключей.
 	/// left_pk и right_pk должны содержать все поля из sort_descr в соответствующем порядке.
@@ -313,20 +313,23 @@ private:
 	bool atomFromAST(ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
 	bool operatorFromAST(const ASTFunction * func, RPNElement & out);
 
-	/** Является ли node столбцом первичного ключа
-	  *  или выражением, в котором столбец первичного ключа завёрнут в цепочку функций,
-	  *  которые могут быть монотонными на некоторых диапазонах.
-	  * Если да - вернуть номер этого столбца в первичном ключе, а также заполнить цепочку возможно-монотонных функций.
+	/** Is node the primary key column
+	  *  or expression in which column of primary key is wrapped by chain of functions,
+	  *  that can be monotomic on certain ranges?
+	  * If these conditions are true, then returns number of column in primary key, type of resulting expression
+	  *  and fills chain of possibly-monotonic functions.
 	  */
 	bool isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
 		const ASTPtr & node,
 		const Context & context,
 		size_t & out_primary_key_column_num,
+		DataTypePtr & out_primary_key_res_column_type,
 		RPNElement::MonotonicFunctionsChain & out_functions_chain);
 
 	bool isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 		const ASTPtr & node,
 		size_t & out_primary_key_column_num,
+		DataTypePtr & out_primary_key_column_type,
 		std::vector<const ASTFunction *> & out_functions_chain);
 
 	RPN rpn;

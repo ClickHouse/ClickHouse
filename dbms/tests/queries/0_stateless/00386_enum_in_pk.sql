@@ -11,8 +11,8 @@ SELECT cityHash64(groupArray(d)) FROM test.enum_pk WHERE d != '0';
 SELECT cityHash64(groupArray(x)) FROM test.enum_pk WHERE x = '1';
 SELECT cityHash64(groupArray(d)) FROM test.enum_pk WHERE d = '1';
 
-SELECT cityHash64(groupArray(x)) FROM test.enum_pk WHERE x != '1';
-SELECT cityHash64(groupArray(d)) FROM test.enum_pk WHERE d != '1';
+SELECT cityHash64(groupArray(x)) FROM test.enum_pk WHERE exp2(toInt64(x != '1')) > 1;
+SELECT cityHash64(groupArray(d)) FROM test.enum_pk WHERE exp2(toInt64(d != '1')) > 1;
 
 SELECT cityHash64(groupArray(x)) FROM test.enum_pk WHERE x = toString(0);
 SELECT cityHash64(groupArray(d)) FROM test.enum_pk WHERE d = toString(0);
@@ -23,8 +23,8 @@ SELECT cityHash64(groupArray(d)) FROM test.enum_pk WHERE (d = toString(0)) > 0;
 SELECT cityHash64(groupArray(x)) FROM test.enum_pk WHERE ((x != toString(1)) > 0) > 0;
 SELECT cityHash64(groupArray(d)) FROM test.enum_pk WHERE ((d != toString(1)) > 0) > 0;
 
-SELECT cityHash64(groupArray(x)) FROM test.enum_pk WHERE ((x != toString(0)) != 0) > 0;
-SELECT cityHash64(groupArray(d)) FROM test.enum_pk WHERE ((d != toString(0)) != 0) > 0;
+SELECT cityHash64(groupArray(x)) FROM test.enum_pk WHERE exp2((x != toString(0)) != 0) > 1;
+SELECT cityHash64(groupArray(d)) FROM test.enum_pk WHERE exp2((d != toString(0)) != 0) > 1;
 
 SELECT cityHash64(groupArray(x)) FROM test.enum_pk WHERE (-(x != toString(0)) = -1) > 0;
 SELECT cityHash64(groupArray(d)) FROM test.enum_pk WHERE (-(d != toString(0)) = -1) > 0;

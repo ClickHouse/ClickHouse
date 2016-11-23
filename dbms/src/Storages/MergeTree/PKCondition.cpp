@@ -299,11 +299,13 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
 	const ASTPtr & node,
 	const Context & context,
 	size_t & out_primary_key_column_num,
+	DataTypePtr & out_primary_key_res_column_type,
 	RPNElement::MonotonicFunctionsChain & out_functions_chain)
 {
 	std::vector<const ASTFunction *> chain_not_tested_for_monotonicity;
+	DataTypePtr primary_key_column_type;
 
-	if (!isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(node, out_primary_key_column_num, chain_not_tested_for_monotonicity))
+	if (!isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(node, out_primary_key_column_num, primary_key_column_type, chain_not_tested_for_monotonicity))
 		return false;
 
 	for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
@@ -312,8 +314,11 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
 		if (!func || !func->hasInformationAboutMonotonicity())
 			return false;
 
+		primary_key_column_type = func->getReturnType({primary_key_column_type});
 		out_functions_chain.push_back(func);
 	}
+
+	out_primary_key_res_column_type = primary_key_column_type;
 
 	return true;
 }
@@ -322,6 +327,7 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
 bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 	const ASTPtr & node,
 	size_t & out_primary_key_column_num,
+	DataTypePtr & out_primary_key_column_type,
 	std::vector<const ASTFunction *> & out_functions_chain)
 {
 	/** Сам по себе, столбец первичного ключа может быть функциональным выражением. Например, intHash32(UserID).
@@ -333,6 +339,7 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 	if (pk_columns.end() != it)
 	{
 		out_primary_key_column_num = it->second;
+		out_primary_key_column_type = pk_sample_block.getByName(name).type;
 		return true;
 	}
 
@@ -344,7 +351,8 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 
 		out_functions_chain.push_back(func);
 
-		if (!isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_primary_key_column_num, out_functions_chain))
+		if (!isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_primary_key_column_num, out_primary_key_column_type,
+																 out_functions_chain))
 			return false;
 
 		return true;
@@ -370,16 +378,18 @@ static bool tryCastValueToType(const DataTypePtr & desired_type, const DataTypeP
 			src_value = data_type_enum->castToValue(src_value);
 		}
 		/// Convert 'YYYY-MM-DD' Strings to Date
-		else if (typeid_cast<const DataTypeDate *>(desired_type.get()) || typeid_cast<const DataTypeDateTime *>(desired_type.get()))
+		else if (typeid_cast<const DataTypeDate *>(desired_type.get()) && typeid_cast<const DataTypeString *>(src_type.get()))
 		{
-			if (typeid_cast<const DataTypeString *>(src_type.get()))
-			{
-				src_value = stringToDateOrDateTime(src_value.safeGet<String>());
-			}
+			src_value = UInt64(stringToDate(src_value.safeGet<String>()));
+		}
+		/// Convert 'YYYY-MM-DD hh:mm:ss' Strings to DateTime
+		else if (typeid_cast<const DataTypeDateTime *>(desired_type.get()) && typeid_cast<const DataTypeString *>(src_type.get()))
+		{
+			src_value = stringToDateTime(src_value.safeGet<String>());
 		}
 		else if (desired_type->behavesAsNumber() && src_type->behavesAsNumber())
 		{
-			/// Ok, numeric types are mutually convertible
+			/// Ok, numeric types are almost mutually convertible
 		}
 		else
 		{
@@ -409,24 +419,25 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 		if (args.size() != 2)
 			return false;
 
-		size_t data_arg_pos;		/// Argument number of data (non-const argument)
-		size_t const_column_num;	/// Column number of a constant in block_with_constants
+		DataTypePtr key_expr_type;	/// Type of expression containing primary key column
+		size_t key_arg_pos;			/// Position of argument with primary key column (non-const argument)
+		size_t key_column_num;		/// Number of a primary key column (inside sort_descr array)
 		RPNElement::MonotonicFunctionsChain chain;
 
 		if (getConstant(args[1], block_with_constants, value)
-			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, const_column_num, chain))
+			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
 		{
-			data_arg_pos = 0;
+			key_arg_pos = 0;
 		}
 		else if (getConstant(args[0], block_with_constants, value)
-			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[1], context, const_column_num, chain))
+			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
 		{
-			data_arg_pos = 1;
+			key_arg_pos = 1;
 		}
 		else if (typeid_cast<const ASTSet *>(args[1].get())
-			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, const_column_num, chain))
+			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
 		{
-			data_arg_pos = 0;
+			key_arg_pos = 0;
 		}
 		else
 			return false;
@@ -434,7 +445,7 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 		std::string func_name = func->name;
 
 		/// Replace <const> <sign> <data> on to <data> <-sign> <const>
-		if (data_arg_pos == 1)
+		if (key_arg_pos == 1)
 		{
 			if (func_name == "less")
 				func_name = "greater";
@@ -451,22 +462,20 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 			}
 		}
 
-		out.key_column = const_column_num;
+		out.key_column = key_column_num;
 		out.monotonic_functions_chain = std::move(chain);
 
 		const auto atom_it = atom_map.find(func_name);
 		if (atom_it == std::end(atom_map))
 			return false;
 
-		std::string data_column_name = args[data_arg_pos]->getColumnName();
-		const DataTypePtr & data_column_type = pk_sample_block.getByName(data_column_name).type;
-		const DataTypePtr & const_type = block_with_constants.getByPosition(const_column_num).type;
+		const DataTypePtr & const_type = block_with_constants.getByName(args[1 - key_arg_pos]->getColumnName()).type;
 
-		if (!tryCastValueToType(data_column_type, const_type, value))
+		if (!tryCastValueToType(key_expr_type, const_type, value))
 		{
 			throw Exception("Primary key expression contains comparison between inconvertible types: " +
-				data_column_type->getName() + " and " + const_type->getName() +
-				" inside " + func->getColumnName(),
+				key_expr_type->getName() + " and " + const_type->getName() +
+				" inside " + DB::toString(func->range),
 				ErrorCodes::BAD_TYPE_OF_FIELD);
 		}
 
