@@ -40,9 +40,8 @@ private:
 	Logger * log = &Logger::get("ExecutableDictionarySource");
 
 	const DictionaryStructure dict_struct;
-	const std::string name;
+	const std::string path;
 	const std::string format;
-	const bool selective;
 	Block sample_block;
 	const Context & context;
 };

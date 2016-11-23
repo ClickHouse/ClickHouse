@@ -47,7 +47,6 @@ private:
 	const std::string path;
 	//const std::string method;
 	const std::string format;
-	const bool selective;
 
 	Block sample_block;
 	const Context & context;

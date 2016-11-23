@@ -22,7 +22,6 @@ HTTPDictionarySource::HTTPDictionarySource(const DictionaryStructure & dict_stru
 	path{config.getString(config_prefix + ".path", "")},
 	//method{config.getString(config_prefix + ".method", "")},
 	format{config.getString(config_prefix + ".format")},
-	selective{!config.getString(config_prefix + ".selective", "").empty()}, // todo! how to correct?
 	sample_block{sample_block},
 	context(context)
 {
@@ -34,7 +33,6 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other) :
 	port{other.port},
 	path{other.path},
 	format{other.format},
-	selective{other.selective},
 	sample_block{other.sample_block},
 	context(other.context)
 {
@@ -125,7 +123,7 @@ bool HTTPDictionarySource::isModified() const
 
 bool HTTPDictionarySource::supportsSelectiveLoad() const
 {
-	return selective;
+	return true;
 }
 
 DictionarySourcePtr HTTPDictionarySource::clone() const

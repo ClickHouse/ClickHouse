@@ -14,9 +14,8 @@ ExecutableDictionarySource::ExecutableDictionarySource(const DictionaryStructure
 	const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
 	Block & sample_block, const Context & context) :
 	dict_struct{dict_struct_},
-	name{config.getString(config_prefix + ".name")},
+	path{config.getString(config_prefix + ".path")},
 	format{config.getString(config_prefix + ".format")},
-	selective{!config.getString(config_prefix + ".selective", "").empty()}, // todo! how to correct?
 	sample_block{sample_block},
 	context(context)
 {
@@ -24,9 +23,8 @@ ExecutableDictionarySource::ExecutableDictionarySource(const DictionaryStructure
 
 ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionarySource & other) :
 	  dict_struct{other.dict_struct},
-	  name{other.name},
+	  path{other.path},
 	  format{other.format},
-	  selective{other.selective},
 	  sample_block{other.sample_block},
 	  context(other.context)
 {
@@ -35,7 +33,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 {
 	LOG_TRACE(log, "loadAll " + toString());
-	auto process = ShellCommand::execute(name);
+	auto process = ShellCommand::execute(path);
 	auto stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
 	return std::make_shared<OwningBlockInputStream<ShellCommand>>(stream, std::move(process));
 }
@@ -43,7 +41,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
 	LOG_TRACE(log, "loadIds " + toString());
-	auto process = ShellCommand::execute(name);
+	auto process = ShellCommand::execute(path);
 
 	{
 		ColumnWithTypeAndName column;
@@ -77,7 +75,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadKeys(
 	const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows)
 {
 	LOG_TRACE(log, "loadKeys " + toString());
-	auto process = ShellCommand::execute(name);
+	auto process = ShellCommand::execute(path);
 
 	{
 		Block block;
@@ -119,7 +117,7 @@ bool ExecutableDictionarySource::isModified() const
 
 bool ExecutableDictionarySource::supportsSelectiveLoad() const
 {
-	return selective;
+	return true;
 }
 
 DictionarySourcePtr ExecutableDictionarySource::clone() const
@@ -129,7 +127,7 @@ DictionarySourcePtr ExecutableDictionarySource::clone() const
 
 std::string ExecutableDictionarySource::toString() const
 {
-	return "Executable: " + name;
+	return "Executable: " + path;
 }
 
 }
