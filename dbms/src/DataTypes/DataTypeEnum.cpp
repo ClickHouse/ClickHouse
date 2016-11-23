@@ -1,6 +1,7 @@
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/DataTypes/DataTypeEnum.h>
 
+#include <limits>
 
 namespace DB
 {
@@ -237,6 +238,49 @@ template <typename Type>
 Field DataTypeEnum<Type>::getDefault() const
 {
 	return typename NearestFieldType<FieldType>::Type(values.front().second);
+}
+
+template <typename Type>
+static void checkOverflow(Int64 value)
+{
+	if (!(std::numeric_limits<Type>::min() <= value && value <= std::numeric_limits<Type>::max()))
+		throw Exception("DataTypeEnum: Unexpected value " + toString(value), ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <typename Type>
+Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
+{
+	if (value_or_name.getType() == Field::Types::String)
+	{
+		getValue(value_or_name.get<String>()); /// Check correctness
+		return value_or_name.get<String>();
+	}
+	else if (value_or_name.getType() == Field::Types::Int64)
+	{
+		Int64 value = value_or_name.get<Int64>();
+		checkOverflow<Type>(value);
+		return getNameForValue(static_cast<Type>(value)).toString();
+	}
+	else
+		throw Exception(String("DataTypeEnum: Unsupported type of field ") + value_or_name.getTypeName(), ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <typename Type>
+Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
+{
+	if (value_or_name.getType() == Field::Types::String)
+	{
+		return static_cast<Int64>(getValue(value_or_name.get<String>()));
+	}
+	else if (value_or_name.getType() == Field::Types::Int64)
+	{
+		Int64 value = value_or_name.get<Int64>();
+		checkOverflow<Type>(value);
+		getNameForValue(static_cast<Type>(value)); /// Check correctness
+		return value;
+	}
+	else
+		throw Exception(String("DataTypeEnum: Unsupported type of field ") + value_or_name.getTypeName(), ErrorCodes::BAD_TYPE_OF_FIELD);
 }
 
 
