@@ -6332,6 +6332,25 @@ The dictionary config file has the following format:
 			&lt;/clickhouse>
 			&lt;!- - If the address is similar to localhost, the request is made without network interaction. For fault tolerance, you can create a Distributed table on localhost and enter it. - ->
 			-->
+
+			&lt;!-- or the source is a executable. If layout.complex_key_cache - list of needed keys will be written in STDIN of program -->
+			&lt;executable>
+				&lt;!-- Path on the local file system or name located in one of env PATH dirs. -->
+				&lt;path>cat /opt/dictionaries/os.tsv&lt;/path>
+				&lt;!-- Which format to use for reading/writing stream. -->
+				&lt;format>TabSeparated&lt;/format>
+			&lt;/executable>
+
+			&lt;!-- or the source is a http server. If layout.complex_key_cache - list of needed keys will be sent as POST  -->
+			&lt;http>
+				&lt;!-- Host. -->
+				&lt;host>::1&lt;/host>
+				&lt;port>80&lt;/port>
+				&lt;path>/os.tsv&lt;/path>
+				&lt;!-- Which format to use for reading answer and making POST. -->
+				&lt;format>TabSeparated&lt;/format>
+			&lt;/http>
+
 		&lt;/source>
 
 		&lt;!-- Update interval for fully loaded dictionaries. 0 - never update. -->
@@ -6397,7 +6416,7 @@ This is the most effective method. It works if all keys are smaller than 500,000
 This method is slightly less effective than the first one. The dictionary is also loaded to RAM in its entirety, and can contain any number of items with any identifiers. In practice, it makes sense to use up to tens of millions of items, while there is enough RAM.
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
-3. %%cache%% - This is the least effective method. It is appropriate if the dictionary doesn&#39;t fit in RAM. It is a cache of a fixed number of cells, where frequently-used data can be located. MySQL and ClickHouse sources are supported, but file sources are not supported. When searching a dictionary, the cache is searched first. For each data block, all keys not found in the cache (or expired keys) are collected in a package, which is sent to the source with the query %%SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)%%. The received data is then written to the cache.
+3. %%cache%% - This is the least effective method. It is appropriate if the dictionary doesn&#39;t fit in RAM. It is a cache of a fixed number of cells, where frequently-used data can be located. MySQL, ClickHouse, executable, http sources are supported, but file sources are not supported. When searching a dictionary, the cache is searched first. For each data block, all keys not found in the cache (or expired keys) are collected in a package, which is sent to the source with the query %%SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)%%. The received data is then written to the cache.
 
 We recommend using the flat method when possible, or hashed. The speed of the dictionaries is impeccable with this type of memory storage.
 
