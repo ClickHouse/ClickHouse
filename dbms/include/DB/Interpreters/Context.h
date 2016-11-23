@@ -201,7 +201,7 @@ public:
 	Databases getDatabases();
 
 
-	/// Для методов ниже может быть необходимо захватывать блокировку самостоятельно.
+	/// For methods below you may need to acquire a lock by yourself.
 	std::unique_lock<Poco::Mutex> getLock() const;
 
 	const Context & getSessionContext() const;
