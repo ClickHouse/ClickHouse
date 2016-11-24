@@ -33,7 +33,6 @@ public:
 	{
 	}
 
-
 protected:
 	using OffsetColumns = std::set<std::string>;
 
@@ -307,15 +306,10 @@ public:
 		throw Exception("Method writeSuffix is not supported by MergedBlockOutputStream", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums(
-		const NamesAndTypesList & total_column_list,
-		MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr)
+	MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums()
 	{
 		/// Заканчиваем запись и достаем чексуммы.
 		MergeTreeData::DataPart::Checksums checksums;
-
-		if (additional_column_checksums)
-			checksums = std::move(*additional_column_checksums);
 
 		if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 		{
@@ -325,10 +319,10 @@ public:
 			index_stream = nullptr;
 		}
 
-		for (auto & column_stream : column_streams)
+		for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
 		{
-			column_stream.second->finalize();
-			column_stream.second->addToChecksums(checksums);
+			it->second->finalize();
+			it->second->addToChecksums(checksums);
 		}
 
 		column_streams.clear();
@@ -344,7 +338,7 @@ public:
 		{
 			/// Записываем файл с описанием столбцов.
 			WriteBufferFromFile out(part_path + "columns.txt", 4096);
-			total_column_list.writeText(out);
+			columns_list.writeText(out);
 		}
 
 		{
@@ -354,11 +348,6 @@ public:
 		}
 
 		return checksums;
-	}
-
-	MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums()
-	{
-		return writeSuffixAndGetChecksums(columns_list, nullptr);
 	}
 
 	MergeTreeData::DataPart::Index & getIndex()

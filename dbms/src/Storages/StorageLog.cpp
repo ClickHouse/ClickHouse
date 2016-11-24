@@ -691,7 +691,7 @@ BlockInputStreams StorageLog::read(
 			max_block_size,
 			column_names,
 			*this,
-			0, marksCount() ? std::numeric_limits<size_t>::max() : 0,
+			0, std::numeric_limits<size_t>::max(),
 			settings.max_read_buffer_size));
 	}
 	else

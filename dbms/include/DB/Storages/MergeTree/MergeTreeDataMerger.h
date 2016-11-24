@@ -9,7 +9,6 @@ namespace DB
 {
 
 class MergeListEntry;
-class MergeProgressCallback;
 struct ReshardingJob;
 
 
@@ -120,19 +119,6 @@ public:
 	void cancelForever() { ++cancelled; }
 
 	bool isCancelled() const { return cancelled > 0; }
-
-public:
-
-	enum class MergeAlgorithm
-	{
-		Horizontal,	/// per-row merge of all columns
-		Vertical	/// per-row merge of PK columns, per-column gather for non-PK columns
-	};
-
-private:
-
-	MergeAlgorithm chooseMergeAlgorithm(const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
-		size_t rows_upper_bound, MergedRowSources & rows_sources_to_alloc) const;
 
 private:
 	MergeTreeData & data;
