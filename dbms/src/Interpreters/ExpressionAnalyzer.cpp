@@ -169,6 +169,9 @@ void ExpressionAnalyzer::init()
 	/// Выполнение скалярных подзапросов - замена их на значения-константы.
 	executeScalarSubqueries();
 
+	/// Optimize if with constant condition after constats are substituted instead of sclalar subqueries
+	optimizeIfWithConstantCondition();
+
 	/// GROUP BY injective function elimination.
 	optimizeGroupBy();
 
@@ -195,6 +198,77 @@ void ExpressionAnalyzer::init()
 	analyzeAggregation();
 }
 
+void ExpressionAnalyzer::optimizeIfWithConstantCondition()
+{
+	optimizeIfWithConstantConditionImpl(ast);
+}
+
+bool ExpressionAnalyzer::tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const
+{
+	/// numeric constant in condition
+	if (const ASTLiteral * literal = typeid_cast<ASTLiteral *>(condition.get()))
+	{
+		if (literal->value.getType() == Field::Types::Int64 ||
+			literal->value.getType() == Field::Types::UInt64)
+		{
+			value = literal->value.get<Int64>();
+			return true;
+		}
+	}
+
+	/// cast of numeric constant in condition to UInt8
+	if (const ASTFunction * function = typeid_cast<ASTFunction * >(condition.get()))
+	{
+		if (function->name == FunctionCast::name)
+		{
+			if (ASTExpressionList * expr_list = typeid_cast<ASTExpressionList *>(function->arguments.get()))
+			{
+				const ASTPtr & type_ast = expr_list->children.at(1);
+				if (const ASTLiteral * type_literal = typeid_cast<ASTLiteral *>(type_ast.get()))
+				{
+					if (type_literal->value.getType() == Field::Types::String &&
+						type_literal->value.get<std::string>() == "UInt8")
+						return tryExtractConstValueFromCondition(expr_list->children.at(0), value);
+				}
+			}
+		}
+	}
+
+	return false;
+}
+
+void ExpressionAnalyzer::optimizeIfWithConstantConditionImpl(ASTPtr & current_ast) const
+{
+	if (!current_ast)
+		return;
+
+	for (ASTPtr & child : current_ast->children)
+	{
+		ASTFunction * function_node = typeid_cast<ASTFunction *>(child.get());
+		if (!function_node || function_node->name != FunctionIf::name)
+		{
+			optimizeIfWithConstantConditionImpl(child);
+			continue;
+		}
+
+		optimizeIfWithConstantConditionImpl(function_node->arguments);
+		ASTExpressionList * args = typeid_cast<ASTExpressionList *>(function_node->arguments.get());
+
+		ASTPtr condition_expr = args->children.at(0);
+		ASTPtr then_expr = args->children.at(1);
+		ASTPtr else_expr = args->children.at(2);
+
+
+		bool condition;
+		if (tryExtractConstValueFromCondition(condition_expr, condition))
+		{
+			if (condition)
+				child = then_expr;
+			else
+				child = else_expr;
+		}
+	}
+}
 
 void ExpressionAnalyzer::analyzeAggregation()
 {
