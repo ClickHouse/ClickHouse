@@ -1713,8 +1713,6 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				MergeTreeData::DataPartsVector parts;
 				String merged_name;
 
-				size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
-
 				if (merger.selectPartsToMerge(
 					parts, merged_name, false,
 					merger.getMaxPartsSizeForMerge(data.settings.max_replicated_merges_in_queue, merges_queued),
