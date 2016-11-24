@@ -85,12 +85,20 @@ size_t MergeTreeDataMerger::getMaxPartsSizeForMerge()
 {
 	size_t total_threads_in_pool = pool.getNumberOfThreads();
 	size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
-	size_t free_threads_in_pool = 1 + total_threads_in_pool - busy_threads_in_pool;	/// 1 is current thread
+
+	return getMaxPartsSizeForMerge(total_threads_in_pool, busy_threads_in_pool == 0 ? 0 : busy_threads_in_pool - 1); /// 1 is current thread
+}
+
+
+size_t MergeTreeDataMerger::getMaxPartsSizeForMerge(size_t pool_size, size_t pool_used)
+{
+	if (pool_used > pool_size)
+		throw Exception("Logical error: invalid arguments passed to getMaxPartsSizeForMerge: pool_used > pool_size", ErrorCodes::LOGICAL_ERROR);
 
 	size_t max_size = interpolateExponential(
 		data.settings.max_bytes_to_merge_at_min_space_in_pool,
 		data.settings.max_bytes_to_merge_at_max_space_in_pool,
-		static_cast<double>(free_threads_in_pool) / total_threads_in_pool);
+		static_cast<double>(pool_size - pool_used) / pool_size);
 
 	return std::min(max_size, static_cast<size_t>(DiskSpaceMonitor::getUnreservedFreeSpace(data.full_path) / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
