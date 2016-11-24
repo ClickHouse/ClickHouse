@@ -11,6 +11,7 @@
 #include <DB/Parsers/ASTSet.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Core/FieldVisitors.h>
+#include <DB/Interpreters/convertFieldToType.h>
 
 
 namespace DB
@@ -131,7 +132,7 @@ const PKCondition::AtomMap PKCondition::atom_map{
 	},
 	{
 		"in",
-		[] (RPNElement & out, const Field & value, ASTPtr & node)
+		[] (RPNElement & out, const Field &, ASTPtr & node)
 		{
 			out.function = RPNElement::FUNCTION_IN_SET;
 			out.in_function = node;
@@ -140,7 +141,7 @@ const PKCondition::AtomMap PKCondition::atom_map{
 	},
 	{
 		"notIn",
-		[] (RPNElement & out, const Field & value, ASTPtr & node)
+		[] (RPNElement & out, const Field &, ASTPtr & node)
 		{
 			out.function = RPNElement::FUNCTION_NOT_IN_SET;
 			out.in_function = node;
@@ -239,23 +240,26 @@ bool PKCondition::addCondition(const String & column, const Range & range)
 	return true;
 }
 
-/** Получить значение константного выражения.
-  * Вернуть false, если выражение не константно.
+/** Computes value of constant expression and it data type.
+  * Returns false, if expression isn't constant.
   */
-static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field & value)
+static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
 {
 	String column_name = expr->getColumnName();
 
-	if (const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(&*expr))
+	if (const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(expr.get()))
 	{
-		/// литерал
-		value = lit->value;
+		/// Simple literal
+		out_value = lit->value;
+		out_type = block_with_constants.getByName(column_name).type;
 		return true;
 	}
 	else if (block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isConst())
 	{
-		/// выражение, вычислившееся в константу
-		value = (*block_with_constants.getByName(column_name).column)[0];
+		/// An expression which is dependent on constants only
+		const auto & expr_info = block_with_constants.getByName(column_name);
+		out_value = (*expr_info.column)[0];
+		out_type = expr_info.type;
 		return true;
 	}
 	else
@@ -362,46 +366,23 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 }
 
 
-/// NOTE: Keep in the mind that such behavior could be incompatible inside ordinary expression.
-/// TODO: Use common methods for types conversions.
-static bool tryCastValueToType(const DataTypePtr & desired_type, const DataTypePtr & src_type, Field & src_value)
+static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const ASTPtr & node)
 {
 	if (desired_type->getName() == src_type->getName())
-		return true;
+		return;
 
-	/// Try to correct type of constant for correct comparison
 	try
 	{
-		/// Convert String to Enum's value
-		if (auto data_type_enum = dynamic_cast<const IDataTypeEnum *>(desired_type.get()))
-		{
-			src_value = data_type_enum->castToValue(src_value);
-		}
-		/// Convert 'YYYY-MM-DD' Strings to Date
-		else if (typeid_cast<const DataTypeDate *>(desired_type.get()) && typeid_cast<const DataTypeString *>(src_type.get()))
-		{
-			src_value = UInt64(stringToDate(src_value.safeGet<String>()));
-		}
-		/// Convert 'YYYY-MM-DD hh:mm:ss' Strings to DateTime
-		else if (typeid_cast<const DataTypeDateTime *>(desired_type.get()) && typeid_cast<const DataTypeString *>(src_type.get()))
-		{
-			src_value = stringToDateTime(src_value.safeGet<String>());
-		}
-		else if (desired_type->behavesAsNumber() && src_type->behavesAsNumber())
-		{
-			/// Ok, numeric types are almost mutually convertible
-		}
-		else
-		{
-			return false;
-		}
+		/// NOTE: We don't need accurate info about src_type at this moment
+		src_value = convertFieldToType(src_value, *desired_type);
 	}
 	catch (...)
 	{
-		return false;
+		throw Exception("Primary key expression contains comparison between inconvertible types: " +
+			desired_type->getName() + " and " + src_type->getName() +
+			" inside " + DB::toString(node->range),
+			ErrorCodes::BAD_TYPE_OF_FIELD);
 	}
-
-	return true;
 }
 
 
@@ -411,8 +392,9 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 	  *  либо он же, завёрнутый в цепочку возможно-монотонных функций,
 	  *  либо константное выражение - число.
 	  */
-	Field value;
-	if (const ASTFunction * func = typeid_cast<const ASTFunction *>(&*node))
+	Field const_value;
+	DataTypePtr const_type;
+	if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
 	{
 		const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
 
@@ -423,13 +405,14 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 		size_t key_arg_pos;			/// Position of argument with primary key column (non-const argument)
 		size_t key_column_num;		/// Number of a primary key column (inside sort_descr array)
 		RPNElement::MonotonicFunctionsChain chain;
+		bool is_set_const = false;
 
-		if (getConstant(args[1], block_with_constants, value)
+		if (getConstant(args[1], block_with_constants, const_value, const_type)
 			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
 		{
 			key_arg_pos = 0;
 		}
-		else if (getConstant(args[0], block_with_constants, value)
+		else if (getConstant(args[0], block_with_constants, const_value, const_type)
 			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
 		{
 			key_arg_pos = 1;
@@ -438,6 +421,7 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
 		{
 			key_arg_pos = 0;
+			is_set_const = true;
 		}
 		else
 			return false;
@@ -469,26 +453,19 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 		if (atom_it == std::end(atom_map))
 			return false;
 
-		const DataTypePtr & const_type = block_with_constants.getByName(args[1 - key_arg_pos]->getColumnName()).type;
+		if (!is_set_const) /// Set args are already casted inside Set::createFromAST
+			castValueToType(key_expr_type, const_value, const_type, node);
 
-		if (!tryCastValueToType(key_expr_type, const_type, value))
-		{
-			throw Exception("Primary key expression contains comparison between inconvertible types: " +
-				key_expr_type->getName() + " and " + const_type->getName() +
-				" inside " + DB::toString(func->range),
-				ErrorCodes::BAD_TYPE_OF_FIELD);
-		}
-
-		return atom_it->second(out, value, node);
+		return atom_it->second(out, const_value, node);
 	}
-	else if (getConstant(node, block_with_constants, value))	/// Для случаев, когда написано, например, WHERE 0 AND something
+	else if (getConstant(node, block_with_constants, const_value, const_type))	/// Для случаев, когда написано, например, WHERE 0 AND something
 	{
-		if (value.getType() == Field::Types::UInt64
-			|| value.getType() == Field::Types::Int64
-			|| value.getType() == Field::Types::Float64)
+		if (const_value.getType() == Field::Types::UInt64
+			|| const_value.getType() == Field::Types::Int64
+			|| const_value.getType() == Field::Types::Float64)
 		{
 			/// Ноль во всех типах представлен в памяти так же, как в UInt64.
-			out.function = value.get<UInt64>()
+			out.function = const_value.get<UInt64>()
 				? RPNElement::ALWAYS_TRUE
 				: RPNElement::ALWAYS_FALSE;
 

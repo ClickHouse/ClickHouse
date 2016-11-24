@@ -35,5 +35,8 @@ SELECT cityHash64(groupArray(d)) FROM test.enum_pk WHERE 1 = 1;
 SELECT cityHash64(groupArray(x)) FROM test.enum_pk WHERE (x = '0' OR x = '1');
 SELECT cityHash64(groupArray(d)) FROM test.enum_pk WHERE (d = '0' OR d = '1');
 
+SELECT cityHash64(groupArray(x)) FROM test.enum_pk WHERE x IN ('0', '1');
+SELECT cityHash64(groupArray(d)) FROM test.enum_pk WHERE d IN ('0', '1');
+
 SELECT cityHash64(groupArray(x)) FROM test.enum_pk WHERE (x != '0' AND x != '1');
 SELECT cityHash64(groupArray(d)) FROM test.enum_pk WHERE (d != '0' AND d != '1');
