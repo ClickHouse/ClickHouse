@@ -34,44 +34,28 @@ static Poco::Net::IPAddress resolveHost(const String & host)
 
 
 ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
-		HTTPLocation location,
+		const Poco::URI & uri,
+		const std::string & method,
 		OutStreamCallback out_stream_callback,
 		size_t buffer_size_,
-		HTTPTimeouts timeouts
+		const HTTPTimeouts & timeouts
 	) :
 	ReadBuffer(nullptr, 0),
-	location{location},
+	uri{uri},
+	method{method},
 	timeouts{timeouts}
 {
-
-	std::stringstream path_params;
-	path_params << location.path;
-
-	bool first = true;
-	for (const auto & it : location.params)
-	{
-		path_params << (first ? "?" : "&");
-		first = false;
-		String encoded_key;
-		String encoded_value;
-		Poco::URI::encode(it.first, "=&#", encoded_key);
-		Poco::URI::encode(it.second, "&#", encoded_value);
-		path_params << encoded_key << "=" << encoded_value;
-	}
-
-	std::stringstream uri;
-	uri << "http://" << location.host << ":" << location.port << path_params.str();
-
-	session.setHost(resolveHost(location.host).toString());	/// Cache DNS forever (until server restart)
-	session.setPort(location.port);
+	session.setHost(resolveHost(uri.getHost()).toString());	/// Cache DNS forever (until server restart)
+	session.setPort(uri.getPort());
 
 	session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
 
-	Poco::Net::HTTPRequest request(location.method, path_params.str());
+	Poco::Net::HTTPRequest request(method, uri.getPathAndQuery());
 	Poco::Net::HTTPResponse response;
 
-	LOG_TRACE((&Logger::get("ReadBufferFromHTTP")), "Sending request to " << uri.str());
+	LOG_TRACE((&Logger::get("ReadBufferFromHTTP")), "Sending request to " << uri.toString());
 
+	//request.setContentLength();
 	auto & stream_out = session.sendRequest(request);
 
 	if (out_stream_callback) {
@@ -85,7 +69,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 	if (status != Poco::Net::HTTPResponse::HTTP_OK)
 	{
 		std::stringstream error_message;
-		error_message << "Received error from remote server " << uri.str() << ". HTTP status code: "
+		error_message << "Received error from remote server " << uri.toString() << ". HTTP status code: "
 			<< status << ", body: " << istr->rdbuf();
 
 		throw Exception(error_message.str(), ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);

@@ -16,10 +16,7 @@ HTTPDictionarySource::HTTPDictionarySource(const DictionaryStructure & dict_stru
 		const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
 		Block & sample_block, const Context & context) :
 	dict_struct{dict_struct_},
-	host{config.getString(config_prefix + ".host", "::1")},
-	port{std::stoi(config.getString(config_prefix + ".port", "80"))},
-	path{config.getString(config_prefix + ".path", "")},
-	//method{config.getString(config_prefix + ".method", "")},
+	url{config.getString(config_prefix + ".url", "")},
 	format{config.getString(config_prefix + ".format")},
 	sample_block{sample_block},
 	context(context)
@@ -28,10 +25,7 @@ HTTPDictionarySource::HTTPDictionarySource(const DictionaryStructure & dict_stru
 
 HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other) :
 	dict_struct{other.dict_struct},
-	host{other.host},
-	port{other.port},
-	path{other.path},
-	format{other.format},
+	url{other.url},
 	sample_block{other.sample_block},
 	context(other.context)
 {
@@ -40,7 +34,8 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other) :
 BlockInputStreamPtr HTTPDictionarySource::loadAll()
 {
 	LOG_TRACE(log, "loadAll " + toString());
-	auto in_ptr = std::make_unique<ReadBufferFromHTTP>(host, port, path, ReadBufferFromHTTP::Params(), Poco::Net::HTTPRequest::HTTP_GET);
+	Poco::URI uri(url);
+	auto in_ptr = std::make_unique<ReadBufferFromHTTP>(uri.getHost(), uri.getPort(), uri.getPathAndQuery(), ReadBufferFromHTTP::Params(), Poco::Net::HTTPRequest::HTTP_GET);
 	auto stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
 	return std::make_shared<OwningBlockInputStream<ReadBufferFromHTTP>>(stream, std::move(in_ptr));
 }
@@ -49,11 +44,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
 {
 	LOG_TRACE(log, "loadIds " + toString());
 
-	HTTPLocation http_location;
-	http_location.host = host;
-	http_location.port = port;
-	http_location.path = path;
-	http_location.method = Poco::Net::HTTPRequest::HTTP_POST;
+	Poco::URI uri(url);
 	ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & out_stream) {
 		// copypaste from ExecutableDictionarySource.cpp, todo: make func
 		ColumnWithTypeAndName column;
@@ -71,10 +62,9 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
 		auto stream_out = context.getOutputFormat(format, out_buffer, sample_block);
 		stream_out->write(block);
 	};
-	auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(http_location, out_stream_callback);
+	auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback);
 	auto stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
 	return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(stream, std::move(in_ptr));
-
 }
 
 BlockInputStreamPtr HTTPDictionarySource::loadKeys(
@@ -82,11 +72,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(
 {
 	LOG_TRACE(log, "loadKeys " + toString());
 
-	HTTPLocation http_location;
-	http_location.host = host;
-	http_location.port = port;
-	http_location.path = path;
-	http_location.method = Poco::Net::HTTPRequest::HTTP_POST;
+	Poco::URI uri(url);
 	ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & out_stream) {
 		// copypaste from ExecutableDictionarySource.cpp, todo: make func
 		Block block;
@@ -109,10 +95,9 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(
 		stream_out->write(block);
 	};
 
-	auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(http_location, out_stream_callback);
+	auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback);
 	auto stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
 	return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(stream, std::move(in_ptr));
-
 }
 
 bool HTTPDictionarySource::isModified() const
@@ -132,7 +117,8 @@ DictionarySourcePtr HTTPDictionarySource::clone() const
 
 std::string HTTPDictionarySource::toString() const
 {
-	return "http://" + host + ":" + std::to_string(port) + "/" + path;
+	Poco::URI uri(url);
+	return uri.toString();
 }
 
 }

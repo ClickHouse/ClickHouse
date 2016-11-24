@@ -2,24 +2,12 @@
 
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/URI.h>
 #include <DB/IO/ReadBufferFromHTTP.h>
 #include <DB/IO/ReadBuffer.h>
 
 namespace DB
 {
-
-struct HTTPLocation {
-	using Params = std::vector<std::pair<String, String>>;
-	std::string protocol = "http";
-	// user
-	// password
-	std::string host = "::1";
-	unsigned short port = 80;
-	std::string path = "/";
-	Params params;
-	//std::string query = "";
-	std::string method = Poco::Net::HTTPRequest::HTTP_GET;
-};
 
 struct HTTPTimeouts {
 	Poco::Timespan connection_timeout = Poco::Timespan(DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT, 0);
@@ -32,7 +20,8 @@ struct HTTPTimeouts {
 class ReadWriteBufferFromHTTP : public ReadBuffer
 {
 private:
-	HTTPLocation location;
+	Poco::URI uri;
+	std::string method;
 	HTTPTimeouts timeouts;
 
 	Poco::Net::HTTPClientSession session;
@@ -44,10 +33,11 @@ public:
 	//using Params = std::vector<std::pair<String, String>>;
 
 	ReadWriteBufferFromHTTP(
-		HTTPLocation http_query,
+		const Poco::URI & uri,
+		const std::string & method = Poco::Net::HTTPRequest::HTTP_GET,
 		OutStreamCallback out_stream_callback = {},
 		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-		HTTPTimeouts timeouts = HTTPTimeouts()
+		const HTTPTimeouts & timeouts = {}
 	);
 
 	bool nextImpl() override;

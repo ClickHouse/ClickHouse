@@ -14,11 +14,13 @@ class HTTPDictionarySource final : public IDictionarySource
 
 public:
 
-	HTTPDictionarySource(const DictionaryStructure & dict_struct_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, Block & sample_block,
+	HTTPDictionarySource(const DictionaryStructure & dict_struct_,
+		const Poco::Util::AbstractConfiguration & config,
+		const std::string & config_prefix,
+		Block & sample_block,
 		const Context & context);
 
 	HTTPDictionarySource(const HTTPDictionarySource & other);
-
 
 	BlockInputStreamPtr loadAll() override;
 
@@ -41,16 +43,10 @@ private:
 	LocalDateTime getLastModification() const;
 
 	const DictionaryStructure dict_struct;
-
-	const std::string host;
-	int port;
-	const std::string path;
-	//const std::string method;
+	const std::string url;
 	const std::string format;
-
 	Block sample_block;
 	const Context & context;
-	const std::string load_all_query;
 };
 
 }

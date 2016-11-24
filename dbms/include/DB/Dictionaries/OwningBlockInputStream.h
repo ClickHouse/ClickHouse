@@ -2,7 +2,6 @@
 
 #include <memory>
 
-#include <DB/IO/ReadBuffer.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 namespace DB
