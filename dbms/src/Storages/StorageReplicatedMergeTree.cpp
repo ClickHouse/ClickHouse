@@ -2065,6 +2065,12 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
 void StorageReplicatedMergeTree::shutdown()
 {
+	/** This must be done before waiting for restarting_thread.
+	  * Because restarting_thread will wait for finishing of tasks in background pool,
+	  *  and parts are fetched in that tasks.
+	  */
+	fetcher.cancel();
+
 	if (restarting_thread)
 	{
 		restarting_thread->stop();
@@ -2076,7 +2082,6 @@ void StorageReplicatedMergeTree::shutdown()
 		endpoint_holder->cancel();
 		endpoint_holder = nullptr;
 	}
-	fetcher.cancel();
 
 	if (disk_space_monitor_endpoint_holder)
 	{
