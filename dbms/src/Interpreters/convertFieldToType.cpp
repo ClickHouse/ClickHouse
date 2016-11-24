@@ -9,6 +9,8 @@
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeEnum.h>
 
+#include <DB/Core/FieldVisitors.h>
+
 #include <DB/Interpreters/convertFieldToType.h>
 
 
@@ -74,19 +76,12 @@ Field convertFieldToType(const Field & src, const IDataType & type)
 
 		const bool is_date = typeid_cast<const DataTypeDate *>(&type);
 		bool is_datetime = false;
-		bool is_enum8 = false;
-		bool is_enum16 = false;
+		bool is_enum = false;
 
 		if (!is_date)
 			if (!(is_datetime = typeid_cast<const DataTypeDateTime *>(&type)))
-				if (!(is_enum8 = typeid_cast<const DataTypeEnum8 *>(&type)))
-					if (!(is_enum16 = typeid_cast<const DataTypeEnum16 *>(&type)))
-						throw Exception{
-							"Logical error: unknown numeric type " + type.getName(),
-							ErrorCodes::LOGICAL_ERROR
-						};
-
-		const auto is_enum = is_enum8 || is_enum16;
+				if (!(is_enum = dynamic_cast<const IDataTypeEnum *>(&type)))
+					throw Exception{"Logical error: unknown numeric type " + type.getName(), ErrorCodes::LOGICAL_ERROR};
 
 		/// Numeric values for Enums should not be used directly in IN section
 		if (src.getType() == Field::Types::UInt64 && !is_enum)
@@ -94,32 +89,21 @@ Field convertFieldToType(const Field & src, const IDataType & type)
 
 		if (src.getType() == Field::Types::String)
 		{
-			/// Возможность сравнивать даты и даты-с-временем со строкой.
-			const String & str = src.get<const String &>();
-			ReadBufferFromString in(str);
-
 			if (is_date)
 			{
-				DayNum_t date{};
-				readDateText(date, in);
-				if (!in.eof())
-					throw Exception("String is too long for Date: " + str);
-
-				return Field(UInt64(date));
+				/// Convert 'YYYY-MM-DD' Strings to Date
+				return UInt64(stringToDate(src.get<const String &>()));
 			}
 			else if (is_datetime)
 			{
-				time_t date_time{};
-				readDateTimeText(date_time, in);
-				if (!in.eof())
-					throw Exception("String is too long for DateTime: " + str);
-
-				return Field(UInt64(date_time));
+				/// Convert 'YYYY-MM-DD hh:mm:ss' Strings to DateTime
+				return stringToDateTime(src.get<const String &>());
 			}
-			else if (is_enum8)
-				return Field(UInt64(static_cast<const DataTypeEnum8 &>(type).getValue(str)));
-			else if (is_enum16)
-				return Field(UInt64(static_cast<const DataTypeEnum16 &>(type).getValue(str)));
+			else if (is_enum)
+			{
+				/// Convert String to Enum's value
+				return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
+			}
 		}
 
 		throw Exception("Type mismatch in IN or VALUES section: " + type.getName() + " expected, "

@@ -117,6 +117,8 @@ DayNum_t stringToDate(const String & s)
 	DayNum_t date{};
 
 	readDateText(date, in);
+	if (!in.eof())
+		throw Exception("String is too long for Date: " + s);
 
 	return date;
 }
