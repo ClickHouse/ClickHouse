@@ -6474,10 +6474,7 @@ regions_names_*.txt: TabSeparated (без заголовка), столбцы:
 
             &lt;!-- или источник - http сервер. Если layout.cache - список нужных ключей будет послан как POST запрос -->
             &lt;http>
-                &lt;!-- Host. -->
-                &lt;host>::1&lt;/host>
-                &lt;port>80&lt;/port>
-                &lt;path>/os.tsv&lt;/path>
+                &lt;url>http://[::1]/os.tsv&lt;/url>
                 &lt;!-- С помощью какого формата понимать ответ и формировать список ключей. -->
                 &lt;format>TabSeparated&lt;/format>
             &lt;/http>
