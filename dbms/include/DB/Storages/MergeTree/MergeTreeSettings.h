@@ -90,9 +90,6 @@ struct MergeTreeSettings
 	/// Minimal absolute delay to close, stop serving requests and not return Ok during status check.
 	size_t min_absolute_delay_to_close = 0;
 
-	/// Enable usage of Vertical merge algorithm.
-	size_t enable_vertical_merge_algorithm = 0;
-
 
 	void loadFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
 	{
@@ -127,7 +124,6 @@ struct MergeTreeSettings
 		SET_SIZE_T(min_relative_delay_to_yield_leadership);
 		SET_SIZE_T(min_relative_delay_to_close);
 		SET_SIZE_T(min_absolute_delay_to_close);
-		SET_SIZE_T(enable_vertical_merge_algorithm);
 
 	#undef SET_SIZE_T
 	#undef SET_DOUBLE
