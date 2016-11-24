@@ -253,8 +253,6 @@ void SystemLog<LogElement>::prepareTable()
 {
 	String description = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name);
 
-	auto lock = context.getLock();
-
 	table = context.tryGetTable(database_name, table_name);
 
 	if (table)
