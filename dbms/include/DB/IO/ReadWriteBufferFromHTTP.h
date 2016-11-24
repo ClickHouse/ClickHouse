@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Poco/Net/HTTPClientSession.h>
-#include <Poco/Net/HTTPRequest.h>
 #include <Poco/URI.h>
 #include <DB/IO/ReadBufferFromHTTP.h>
 #include <DB/IO/ReadBuffer.h>
@@ -29,13 +28,10 @@ private:
 	std::unique_ptr<ReadBuffer> impl;
 
 public:
-	using OutStreamCallback = std::function<void(std::ostream&)>;
-	//using Params = std::vector<std::pair<String, String>>;
-
 	ReadWriteBufferFromHTTP(
 		const Poco::URI & uri,
-		const std::string & method = Poco::Net::HTTPRequest::HTTP_GET,
-		OutStreamCallback out_stream_callback = {},
+		const std::string & method = {},
+		const std::string & post_body = {},
 		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
 		const HTTPTimeouts & timeouts = {}
 	);

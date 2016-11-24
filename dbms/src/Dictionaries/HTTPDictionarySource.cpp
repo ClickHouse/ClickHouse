@@ -1,8 +1,9 @@
+#include <Poco/Net/HTTPRequest.h>
+
 #include <DB/Dictionaries/HTTPDictionarySource.h>
 
 #include <DB/Interpreters/Context.h>
 #include <DB/Dictionaries/OwningBlockInputStream.h>
-#include <DB/IO/ReadBufferFromHTTP.h>
 #include <DB/IO/ReadWriteBufferFromHTTP.h>
 
 #include <DB/DataStreams/IBlockOutputStream.h>
@@ -35,17 +36,17 @@ BlockInputStreamPtr HTTPDictionarySource::loadAll()
 {
 	LOG_TRACE(log, "loadAll " + toString());
 	Poco::URI uri(url);
-	auto in_ptr = std::make_unique<ReadBufferFromHTTP>(uri.getHost(), uri.getPort(), uri.getPathAndQuery(), ReadBufferFromHTTP::Params(), Poco::Net::HTTPRequest::HTTP_GET);
+	auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_GET);
 	auto stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
-	return std::make_shared<OwningBlockInputStream<ReadBufferFromHTTP>>(stream, std::move(in_ptr));
+	return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(stream, std::move(in_ptr));
 }
 
 BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
 	LOG_TRACE(log, "loadIds " + toString());
 
-	Poco::URI uri(url);
-	ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & out_stream) {
+	std::ostringstream out_stream;
+	{
 		// copypaste from ExecutableDictionarySource.cpp, todo: make func
 		ColumnWithTypeAndName column;
 		column.type = std::make_shared<DataTypeUInt64>();
@@ -62,7 +63,9 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
 		auto stream_out = context.getOutputFormat(format, out_buffer, sample_block);
 		stream_out->write(block);
 	};
-	auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback);
+
+	Poco::URI uri(url);
+	auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream.str());
 	auto stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
 	return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(stream, std::move(in_ptr));
 }
@@ -72,18 +75,15 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(
 {
 	LOG_TRACE(log, "loadKeys " + toString());
 
-	Poco::URI uri(url);
-	ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & out_stream) {
-		// copypaste from ExecutableDictionarySource.cpp, todo: make func
+	std::ostringstream out_stream;
+	{
 		Block block;
 
 		const auto keys_size = key_columns.size();
 		for (const auto i : ext::range(0, keys_size))
 		{
-
 			const auto & key_description = (*dict_struct.key)[i];
 			const auto & key = key_columns[i];
-
 			ColumnWithTypeAndName column;
 			column.type = key_description.type;
 			column.column = key->clone(); // CHECKME !!
@@ -95,7 +95,8 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(
 		stream_out->write(block);
 	};
 
-	auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback);
+	Poco::URI uri(url);
+	auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream.str());
 	auto stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
 	return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(stream, std::move(in_ptr));
 }
