@@ -32,9 +32,20 @@ struct MergeInfo
 	UInt64 total_size_bytes_compressed{};
 	UInt64 total_size_marks{};
 	std::atomic<UInt64> bytes_read_uncompressed{};
-	std::atomic<UInt64> rows_read{};
 	std::atomic<UInt64> bytes_written_uncompressed{};
+
+	/// Updated only for Horizontal algorithm
+	std::atomic<UInt64> rows_read{};
 	std::atomic<UInt64> rows_written{};
+
+	/// Updated only for Vertical algorithm
+	/// mutually exclusive with rows_read and rows_written, updated either rows_written either columns_written
+	std::atomic<UInt64> columns_written{};
+
+	/// Updated in both cases
+	/// Number of rows for which primary key columns have been written
+	std::atomic<UInt64> rows_with_key_columns_read{};
+	std::atomic<UInt64> rows_with_key_columns_written{};
 
 
 	MergeInfo(const std::string & database, const std::string & table, const std::string & result_part_name)
@@ -52,9 +63,12 @@ struct MergeInfo
 		total_size_bytes_compressed(other.total_size_bytes_compressed),
 		total_size_marks(other.total_size_marks),
 		bytes_read_uncompressed(other.bytes_read_uncompressed.load(std::memory_order_relaxed)),
-		rows_read(other.rows_read.load(std::memory_order_relaxed)),
 		bytes_written_uncompressed(other.bytes_written_uncompressed.load(std::memory_order_relaxed)),
-		rows_written(other.rows_written.load(std::memory_order_relaxed))
+		rows_read(other.rows_read.load(std::memory_order_relaxed)),
+		rows_written(other.rows_written.load(std::memory_order_relaxed)),
+		columns_written(other.columns_written.load(std::memory_order_relaxed)),
+		rows_with_key_columns_read(other.rows_with_key_columns_read.load(std::memory_order_relaxed)),
+		rows_with_key_columns_written(other.rows_with_key_columns_written.load(std::memory_order_relaxed))
 	{
 	}
 };
