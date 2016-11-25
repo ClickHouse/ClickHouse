@@ -1695,6 +1695,10 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 			std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
+			/** If many merges is already queued, then will queue only small enough merges.
+			  * Otherwise merge queue could be filled with only large merges,
+			  *  and in the same time, many small parts could be created and won't be merged.
+			  */
 			size_t merges_queued = queue.countMerges();
 
 			if (merges_queued >= data.settings.max_replicated_merges_in_queue)
@@ -1708,10 +1712,10 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				MergeTreeData::DataPartsVector parts;
 				String merged_name;
 
-				size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
-
 				if (merger.selectPartsToMerge(
-					parts, merged_name, false, std::min(disk_space, data.settings.max_bytes_to_merge_at_max_space_in_pool), can_merge)
+					parts, merged_name, false,
+					merger.getMaxPartsSizeForMerge(data.settings.max_replicated_merges_in_queue, merges_queued),
+					can_merge)
 					&& createLogEntryToMergeParts(parts, merged_name))
 				{
 					success = true;
@@ -2060,6 +2064,12 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
 void StorageReplicatedMergeTree::shutdown()
 {
+	/** This must be done before waiting for restarting_thread.
+	  * Because restarting_thread will wait for finishing of tasks in background pool,
+	  *  and parts are fetched in that tasks.
+	  */
+	fetcher.cancel();
+
 	if (restarting_thread)
 	{
 		restarting_thread->stop();
@@ -2071,7 +2081,6 @@ void StorageReplicatedMergeTree::shutdown()
 		endpoint_holder->cancel();
 		endpoint_holder = nullptr;
 	}
-	fetcher.cancel();
 
 	if (disk_space_monitor_endpoint_holder)
 	{
