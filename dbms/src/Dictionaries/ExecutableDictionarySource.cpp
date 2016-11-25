@@ -40,7 +40,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 
 BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-	LOG_TRACE(log, "loadIds " + toString());
+	LOG_TRACE(log, "loadIds " + toString() + " ids=" + std::to_string(ids.size()));
 	auto process = ShellCommand::execute(path);
 
 	{
@@ -56,16 +56,19 @@ BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64
 		block.insert(std::move(column));
 
 		auto stream_out = context.getOutputFormat(format, process->in, sample_block);
+		stream_out->writePrefix();
 		stream_out->write(block);
+		stream_out->writeSuffix();
+		stream_out->flush();
 	}
 
 	process->in.close();
 
-/*
+	/*
 	std::string process_err;
 	readStringUntilEOF(process_err, process->err);
-	std::cerr << "readed ERR [" <<  process_err  << "] " << std::endl;
-*/
+	std::cerr << "readed STDERR [" <<  process_err  << "] " << std::endl;
+	*/
 
 	auto stream = context.getInputFormat( format, process->out, sample_block, max_block_size);
 	return std::make_shared<OwningBlockInputStream<ShellCommand>>(stream, std::move(process));
@@ -74,7 +77,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64
 BlockInputStreamPtr ExecutableDictionarySource::loadKeys(
 	const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows)
 {
-	LOG_TRACE(log, "loadKeys " + toString());
+	LOG_TRACE(log, "loadKeys " + toString() + " rows=" + std::to_string(requested_rows.size()));
 	auto process = ShellCommand::execute(path);
 
 	{
@@ -83,10 +86,8 @@ BlockInputStreamPtr ExecutableDictionarySource::loadKeys(
 		const auto keys_size = key_columns.size();
 		for (const auto i : ext::range(0, keys_size))
 		{
-
 			const auto & key_description = (*dict_struct.key)[i];
 			const auto & key = key_columns[i];
-
 			ColumnWithTypeAndName column;
 			column.type = key_description.type;
 			column.column = key->clone(); // CHECKME !!
@@ -94,17 +95,20 @@ BlockInputStreamPtr ExecutableDictionarySource::loadKeys(
 		}
 
 		auto stream_out = context.getOutputFormat(format, process->in, sample_block);
+		stream_out->writePrefix();
 		stream_out->write(block);
+		stream_out->writeSuffix();
+		stream_out->flush();
 
 	}
 
 		process->in.close();
 
-/*
+	/*
 	std::string process_err;
 	readStringUntilEOF(process_err, process->err);
-	std::cerr << "readed ERR [" <<  process_err  << "] " << std::endl;
-*/
+	std::cerr << "readed STDERR [" <<  process_err  << "] " << std::endl;
+	*/
 
 	auto stream = context.getInputFormat( format, process->out, sample_block, max_block_size);
 	return std::make_shared<OwningBlockInputStream<ShellCommand>>(stream, std::move(process));

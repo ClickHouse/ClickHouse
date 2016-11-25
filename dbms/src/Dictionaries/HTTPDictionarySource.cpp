@@ -43,7 +43,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadAll()
 
 BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-	LOG_TRACE(log, "loadIds " + toString());
+	LOG_TRACE(log, "loadIds " + toString() + " ids=" + std::to_string(ids.size()));
 
 	ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & out_stream) {
 		// copypaste from ExecutableDictionarySource.cpp, todo: make func
@@ -60,7 +60,10 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
 
 		WriteBufferFromOStream out_buffer(out_stream);
 		auto stream_out = context.getOutputFormat(format, out_buffer, sample_block);
+		stream_out->writePrefix();
 		stream_out->write(block);
+		stream_out->writeSuffix();
+		stream_out->flush();
 	};
 
 	Poco::URI uri(url);
@@ -72,7 +75,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
 BlockInputStreamPtr HTTPDictionarySource::loadKeys(
 	const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows)
 {
-	LOG_TRACE(log, "loadKeys " + toString());
+	LOG_TRACE(log, "loadKeys " + toString() + " rows=" + std::to_string(requested_rows.size()));
 
 	ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & out_stream) {
 		// copypaste from ExecutableDictionarySource.cpp, todo: make func
@@ -91,7 +94,11 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(
 
 		WriteBufferFromOStream out_buffer(out_stream);
 		auto stream_out = context.getOutputFormat(format, out_buffer, sample_block);
+		stream_out->writePrefix();
 		stream_out->write(block);
+		stream_out->writeSuffix();
+		stream_out->flush();
+
 	};
 
 	Poco::URI uri(url);
