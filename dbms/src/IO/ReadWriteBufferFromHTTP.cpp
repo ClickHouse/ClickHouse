@@ -2,8 +2,8 @@
 
 #include <Poco/URI.h>
 #include <Poco/Net/DNS.h>
-#include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
 
 #include <DB/IO/ReadBufferFromIStream.h>
 
@@ -37,13 +37,13 @@ static Poco::Net::IPAddress resolveHost(const String & host)
 ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 		const Poco::URI & uri,
 		const std::string & method,
-		const std::string & post_body,
+		OutStreamCallback out_stream_callback,
 		size_t buffer_size_,
 		const HTTPTimeouts & timeouts
 	) :
 	ReadBuffer(nullptr, 0),
 	uri{uri},
-	method{!method.empty() ? method : post_body.empty() ? Poco::Net::HTTPRequest::HTTP_GET : Poco::Net::HTTPRequest::HTTP_POST},
+	method{!method.empty() ? method : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET},
 	timeouts{timeouts}
 {
 	session.setHost(resolveHost(uri.getHost()).toString());	/// Cache DNS forever (until server restart)
@@ -51,18 +51,18 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 
 	session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
 
-	Poco::Net::HTTPRequest request(method, uri.getPathAndQuery());
+	Poco::Net::HTTPRequest request(method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+	if (out_stream_callback)
+		request.setChunkedTransferEncoding(true);
+
 	Poco::Net::HTTPResponse response;
 
-	LOG_TRACE((&Logger::get("ReadBufferFromHTTP")), "Sending request to " << uri.toString());
-
-	if (!post_body.empty() || method == Poco::Net::HTTPRequest::HTTP_POST)
-		request.setContentLength(post_body.size());
+	LOG_TRACE((&Logger::get("ReadWriteBufferFromHTTP")), "Sending request to " << uri.toString());
 
 	auto & stream_out = session.sendRequest(request);
 
-	if (!post_body.empty())
-		stream_out << post_body;
+	if (out_stream_callback)
+		out_stream_callback(stream_out);
 
 	istr = &session.receiveResponse(response);
 

@@ -28,16 +28,17 @@ private:
 	std::unique_ptr<ReadBuffer> impl;
 
 public:
+	using OutStreamCallback = std::function<void(std::ostream&)>;
+
 	ReadWriteBufferFromHTTP(
 		const Poco::URI & uri,
 		const std::string & method = {},
-		const std::string & post_body = {},
+		OutStreamCallback out_stream_callback = {},
 		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
 		const HTTPTimeouts & timeouts = {}
 	);
 
 	bool nextImpl() override;
-
 };
 
 }

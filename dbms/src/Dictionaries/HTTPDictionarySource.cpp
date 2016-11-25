@@ -1,6 +1,6 @@
-#include <Poco/Net/HTTPRequest.h>
-
 #include <DB/Dictionaries/HTTPDictionarySource.h>
+
+#include <Poco/Net/HTTPRequest.h>
 
 #include <DB/Interpreters/Context.h>
 #include <DB/Dictionaries/OwningBlockInputStream.h>
@@ -45,8 +45,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
 {
 	LOG_TRACE(log, "loadIds " + toString());
 
-	std::ostringstream out_stream;
-	{
+	ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & out_stream) {
 		// copypaste from ExecutableDictionarySource.cpp, todo: make func
 		ColumnWithTypeAndName column;
 		column.type = std::make_shared<DataTypeUInt64>();
@@ -65,7 +64,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
 	};
 
 	Poco::URI uri(url);
-	auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream.str());
+	auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback);
 	auto stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
 	return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(stream, std::move(in_ptr));
 }
@@ -75,8 +74,8 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(
 {
 	LOG_TRACE(log, "loadKeys " + toString());
 
-	std::ostringstream out_stream;
-	{
+	ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & out_stream) {
+		// copypaste from ExecutableDictionarySource.cpp, todo: make func
 		Block block;
 
 		const auto keys_size = key_columns.size();
@@ -96,7 +95,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(
 	};
 
 	Poco::URI uri(url);
-	auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream.str());
+	auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback);
 	auto stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
 	return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(stream, std::move(in_ptr));
 }
