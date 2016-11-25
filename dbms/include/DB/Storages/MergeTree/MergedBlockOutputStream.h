@@ -11,6 +11,8 @@
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 
+#include <DB/Columns/ColumnArray.h>
+
 
 namespace DB
 {

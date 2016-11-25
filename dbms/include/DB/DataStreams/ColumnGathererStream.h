@@ -36,8 +36,8 @@ using MergedRowSources = PODArray<RowSourcePart>;
 class ColumnGathererStream : public IProfilingBlockInputStream
 {
 public:
-	ColumnGathererStream(const BlockInputStreams & source_streams, const MergedRowSources& pos_to_source_idx_,
-						 size_t block_size_ = DEFAULT_BLOCK_SIZE);
+	ColumnGathererStream(const BlockInputStreams & source_streams, const String & column_name_,
+						 const MergedRowSources & pos_to_source_idx_, size_t block_size_ = DEFAULT_BLOCK_SIZE);
 
 	String getName() const override { return "ColumnGatherer"; }
 
@@ -47,6 +47,8 @@ public:
 
 private:
 
+	String name;
+	ColumnWithTypeAndName column;
 	const MergedRowSources & pos_to_source_idx;
 
 	/// Cache required fileds
@@ -57,15 +59,15 @@ private:
 		size_t size;
 		Block block;
 
-		Source(Block && block_) : block(std::move(block_))
+		Source(Block && block_, const String & name) : block(std::move(block_))
 		{
-			update();
+			update(name);
 		}
 
-		void update()
+		void update(const String & name)
 		{
-			column = block.getByPosition(0).column.get();
-			size = block.rowsInFirstColumn();
+			column = block.getByName(name).column.get();
+			size = block.rows();
 			pos = 0;
 		}
 	};

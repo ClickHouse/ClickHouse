@@ -62,6 +62,7 @@ private:
 		std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
 		std::string path_prefix;
 		size_t max_mark_range;
+		bool is_empty = false;
 
 		Stream(
 			const String & path_prefix_, UncompressedCache * uncompressed_cache,
@@ -69,9 +70,14 @@ private:
 			const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size,
 			const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
+		static std::unique_ptr<Stream> createEmptyPtr();
+
 		void loadMarks(MarkCache * cache, bool save_in_cache);
 
 		void seekToMark(size_t index);
+
+	private:
+		Stream() = default;
 	};
 
 	using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
