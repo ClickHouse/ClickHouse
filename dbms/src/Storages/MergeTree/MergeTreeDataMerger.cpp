@@ -280,7 +280,10 @@ MergeTreeData::DataPartsVector MergeTreeDataMerger::selectAllPartsFromPartition(
 	return parts_from_partition;
 }
 
+
+/// Key columns are merged, ordinary columns are gathered
 static void extractOrdinaryAndKeyColumns(const NamesAndTypesList & all_columns, ExpressionActionsPtr primary_key_expressions,
+	const MergeTreeData::MergingParams & merging_params,
 	NamesAndTypesList & ordinary_column_names_and_types, Names & ordinary_column_names,
 	NamesAndTypesList & key_column_names_and_types, Names & key_column_names
 )
@@ -288,11 +291,20 @@ static void extractOrdinaryAndKeyColumns(const NamesAndTypesList & all_columns, 
 	Names key_columns_dup = primary_key_expressions->getRequiredColumns();
 	std::set<String> key_columns(key_columns_dup.cbegin(), key_columns_dup.cend());
 
+	/// Force sign column for Collapsing mode
+	if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
+		key_columns.emplace(merging_params.sign_column);
+
+	/// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
+
 	for (auto & column : all_columns)
 	{
 		auto it = std::find(key_columns.cbegin(), key_columns.cend(), column.name);
 
-		if (key_columns.end() == it)
+		bool in_pk = key_columns.end() != it;
+		bool is_nested = column.name.find('.') != std::string::npos;
+
+		if (!in_pk && !is_nested)
 		{
 			ordinary_column_names_and_types.emplace_back(column);
 			ordinary_column_names.emplace_back(column.name);
@@ -308,7 +320,7 @@ static void extractOrdinaryAndKeyColumns(const NamesAndTypesList & all_columns, 
 /* Allow to compute more accurate progress statistics */
 class ColumnSizeEstimator
 {
-	std::unordered_map<String, size_t> map;
+	MergeTreeData::DataPart::ColumnToSize map;
 public:
 
 	/// Stores approximate size of columns in bytes
@@ -317,19 +329,13 @@ public:
 	size_t sum_index_columns = 0;
 	size_t sum_ordinary_columns = 0;
 
-	ColumnSizeEstimator(MergeTreeData::DataPartsVector & parts, const Names & key_columns, const Names & ordinary_columns)
+	ColumnSizeEstimator(const MergeTreeData::DataPart::ColumnToSize & map_, const Names & key_columns, const Names & ordinary_columns)
+		: map(map_)
 	{
-		if (parts.empty())
-			return;
-
-		for (const auto & name_and_type : parts.front()->columns)
-			map[name_and_type.name] = 0;
-
-		for (const auto & part : parts)
-		{
-			for (const auto & name_and_type : parts.front()->columns)
-				map.at(name_and_type.name) += part->getColumnSize(name_and_type.name);
-		}
+		for (const auto & name : key_columns)
+			map[name] = 0;
+		for (const auto & name : ordinary_columns)
+			map[name] = 0;
 
 		for (const auto & name : key_columns)
 			sum_index_columns += map.at(name);
@@ -467,7 +473,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
 	NamesAndTypesList ordinary_column_names_and_types, key_column_names_and_types;
 	Names ordinary_column_names, key_column_names;
-	extractOrdinaryAndKeyColumns(all_column_names_and_types, data.getPrimaryExpression(),
+	extractOrdinaryAndKeyColumns(all_column_names_and_types, data.getPrimaryExpression(), data.merging_params,
 		ordinary_column_names_and_types, ordinary_column_names,
 		key_column_names_and_types, key_column_names
 	);
@@ -491,7 +497,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 	NamesAndTypesList & main_column_names_and_types = (merge_alg == MergeAlgorithm::Vertical)
 		? key_column_names_and_types : all_column_names_and_types;
 
-	ColumnSizeEstimator column_sizes(parts, key_column_names, ordinary_column_names);
+	ColumnSizeEstimator column_sizes(merged_column_to_size, key_column_names, ordinary_column_names);
 
 	/** Читаем из всех кусков, сливаем и пишем в новый.
 	  * Попутно вычисляем выражение для сортировки.
