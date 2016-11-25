@@ -230,6 +230,11 @@ private:
 	/// Удалить из ORDER BY повторяющиеся элементы.
 	void optimizeOrderBy();
 
+	/// remove Function_if AST if condition is constant
+	void optimizeIfWithConstantCondition();
+	void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast) const;
+	bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const;
+
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
 
