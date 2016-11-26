@@ -16,26 +16,22 @@ struct Estimator
 {
 	using Iterator = SimpleMergeSelector::PartsInPartition::const_iterator;
 
-	void consider(Iterator begin, Iterator end, size_t sum_size, size_t size_next_at_left, size_t size_next_at_right)
+	void consider(Iterator begin, Iterator end, size_t sum_size, size_t size_prev_at_left)
 	{
 		double current_score = score(end - begin, sum_size);
 
-		if (size_next_at_left > sum_size * 0.9)
+		if (size_prev_at_left > sum_size * 0.9)
 		{
-			double difference = std::abs(log2(static_cast<double>(sum_size) / size_next_at_left));
+			double difference = std::abs(log2(static_cast<double>(sum_size) / size_prev_at_left));
 			if (difference < 0.5)
 				current_score *= 0.75 + difference * 0.5;
 		}
 
-		if (size_next_at_right == 0)
-			current_score *= 0.9;
-
-		if (size_next_at_right > sum_size * 0.9)
-		{
-			double difference = std::abs(log2(static_cast<double>(sum_size) / size_next_at_right));
-			if (difference < 0.5)
-				current_score *= 0.75 + difference * 0.5;
-		}
+		/** Heuristic:
+		  * From right side of range, remove all parts, that size is less than 1% of sum_size.
+		  */
+		while (end >= begin + 3 && (end - 1)->size < 0.01 * sum_size)
+			--end;
 
 		if (!min_score || current_score < min_score)
 		{
@@ -105,9 +101,10 @@ void selectWithinPartition(
 			if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once)
 				break;
 
-			sum_size += parts[end - 1].size;
-			if (parts[end - 1].size > max_size)
-				max_size = parts[end - 1].size;
+			size_t cur_size = parts[end - 1].size;
+
+			sum_size += cur_size;
+			max_size = std::max(max_size, cur_size);
 
 			if (max_total_size_to_merge && sum_size > max_total_size_to_merge)
 				break;
@@ -117,8 +114,7 @@ void selectWithinPartition(
 					parts.begin() + begin,
 					parts.begin() + end,
 					sum_size,
-					begin == 0 ? 0 : parts[begin - 1].size,
-					end == parts_count ? 0 : parts[end].size);
+					begin == 0 ? 0 : parts[begin - 1].size);
 		}
 	}
 }
