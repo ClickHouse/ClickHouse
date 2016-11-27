@@ -10,6 +10,8 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 
+#include <DB/Dictionaries/ExecutableDictionarySource.h> // idsToBuffer, columnsToBuffer
+
 namespace DB
 {
 
@@ -46,24 +48,9 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
 	LOG_TRACE(log, "loadIds " + toString() + " ids=" + std::to_string(ids.size()));
 
 	ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & out_stream) {
-		// copypaste from ExecutableDictionarySource.cpp, todo: make func
-		ColumnWithTypeAndName column;
-		column.type = std::make_shared<DataTypeUInt64>();
-		column.column = column.type->createColumn();
-
-		for (auto & id : ids) {
-			column.column->insert(id); //CHECKME maybe faster?
-		}
-
-		Block block;
-		block.insert(std::move(column));
 
 		WriteBufferFromOStream out_buffer(out_stream);
-		auto stream_out = context.getOutputFormat(format, out_buffer, sample_block);
-		stream_out->writePrefix();
-		stream_out->write(block);
-		stream_out->writeSuffix();
-		stream_out->flush();
+		idsToBuffer(context, format, sample_block, out_buffer, ids);
 	};
 
 	Poco::URI uri(url);
@@ -78,27 +65,8 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(
 	LOG_TRACE(log, "loadKeys " + toString() + " rows=" + std::to_string(requested_rows.size()));
 
 	ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & out_stream) {
-		// copypaste from ExecutableDictionarySource.cpp, todo: make func
-		Block block;
-
-		const auto keys_size = key_columns.size();
-		for (const auto i : ext::range(0, keys_size))
-		{
-			const auto & key_description = (*dict_struct.key)[i];
-			const auto & key = key_columns[i];
-			ColumnWithTypeAndName column;
-			column.type = key_description.type;
-			column.column = key->clone(); // CHECKME !!
-			block.insert(std::move(column));
-		}
-
 		WriteBufferFromOStream out_buffer(out_stream);
-		auto stream_out = context.getOutputFormat(format, out_buffer, sample_block);
-		stream_out->writePrefix();
-		stream_out->write(block);
-		stream_out->writeSuffix();
-		stream_out->flush();
-
+		columnsToBuffer(context, format, sample_block, out_buffer, dict_struct, key_columns, requested_rows);
 	};
 
 	Poco::URI uri(url);
