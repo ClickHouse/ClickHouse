@@ -12,8 +12,9 @@ namespace ErrorCodes
 	extern const int RECEIVED_EMPTY_DATA;
 }
 
-ColumnGathererStream::ColumnGathererStream(const BlockInputStreams & source_streams, const MergedRowSources & pos_to_source_idx_, size_t block_size_)
-: pos_to_source_idx(pos_to_source_idx_), block_size(block_size_)
+ColumnGathererStream::ColumnGathererStream(const BlockInputStreams & source_streams, const String & column_name_,
+										   const MergedRowSources & pos_to_source_idx_, size_t block_size_)
+: name(column_name_), pos_to_source_idx(pos_to_source_idx_), block_size(block_size_)
 {
 	if (source_streams.empty())
 		throw Exception("There are no streams to gather", ErrorCodes::EMPTY_DATA_PASSED);
@@ -23,15 +24,22 @@ ColumnGathererStream::ColumnGathererStream(const BlockInputStreams & source_stre
 	sources.reserve(children.size());
 	for (size_t i = 0; i < children.size(); i++)
 	{
-		sources.emplace_back(children[i]->read());
+		sources.emplace_back(children[i]->read(), name);
 
 		Block & block = sources.back().block;
 
-		if (block.columns() != 1)
-			throw Exception("Expected exactly one column. Stream " + children[i]->getID() + ", block " + block.dumpStructure(),
-				ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+		/// Sometimes MergeTreeReader injects additional column with partitioning key
+		if (block.columns() > 2 || !block.has(name))
+			throw Exception("Block should have 1 or 2 columns and contain column with requested name", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
 
-		if (block.getByPosition(0).column->getName() != sources[0].block.getByPosition(0).column->getName())
+		if (i == 0)
+		{
+			column.name = name;
+			column.type = block.getByName(name).type->clone();
+			column.column = column.type->createColumn();
+		}
+
+		if (block.getByName(name).column->getName() != column.column->getName())
 			throw Exception("Column types don't match", ErrorCodes::INCOMPATIBLE_COLUMNS);
 	}
 }
@@ -58,8 +66,8 @@ Block ColumnGathererStream::readImpl()
 	if (pos_global >= pos_to_source_idx.size())
 		return Block();
 
-	Block block_res = sources[0].block.cloneEmpty();
-	IColumn & column_res = *block_res.getByPosition(0).column;
+	Block block_res{column.cloneEmpty()};
+	IColumn & column_res = *block_res.unsafeGetByPosition(0).column;
 
 	size_t pos_finish = std::min(pos_global + block_size, pos_to_source_idx.size());
 	column_res.reserve(pos_finish - pos_global);
@@ -75,7 +83,7 @@ Block ColumnGathererStream::readImpl()
 			try
 			{
 				source.block = children[source_id]->read();
-				source.update();
+				source.update(name);
 			}
 			catch (Exception & e)
 			{

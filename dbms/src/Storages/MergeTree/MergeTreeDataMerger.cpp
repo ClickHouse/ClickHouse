@@ -644,7 +644,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 				column_part_streams[part_num] = std::move(column_part_stream);
 			}
 
-			ColumnGathererStream column_gathered_stream(column_part_streams, merged_rows_sources, DEFAULT_BLOCK_SIZE);
+			ColumnGathererStream column_gathered_stream(column_part_streams, column_name, merged_rows_sources, DEFAULT_BLOCK_SIZE);
 			MergedColumnOnlyOutputStream column_to(data, new_part_tmp_path, true, compression_method);
 
 			column_to.writePrefix();
@@ -690,8 +690,8 @@ MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
 	size_t sum_rows_upper_bound, MergedRowSources & rows_sources_to_alloc) const
 {
 // Testing:
-	if (data.context.getMergeTreeSettings().enable_vertical_merge_algorithm == 0)
-		return MergeAlgorithm::Horizontal;
+// 	if (data.context.getMergeTreeSettings().enable_vertical_merge_algorithm == 0)
+// 		return MergeAlgorithm::Horizontal;
 
 	bool is_supported_storage =
 		data.merging_params.mode == MergeTreeData::MergingParams::Ordinary ||
