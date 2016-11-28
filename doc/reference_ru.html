@@ -4358,13 +4358,14 @@ LIMIT 10
 
 ==Условное выражение==
 %%
-CASE
+CASE [x]
     WHEN a THEN b
     [WHEN ... THEN ...]
     ELSE c
 END
 %%
-Функция multiIf(a, b, ..., c).
+В случае указания x - функция transform(x, [a, ...], [b, ...], c).
+Иначе - multiIf(a, b, ..., c).
 
 ==Оператор склеивания строк==
 %%s1 || s2%% - функция concat(s1, s2)

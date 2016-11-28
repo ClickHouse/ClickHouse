@@ -4287,13 +4287,14 @@ See the section &quot;IN operators&quot;.
 ==Conditional expression==
 
 %%
-CASE
+CASE [x]
     WHEN a THEN b
     [WHEN ... THEN ...]
     ELSE c
 END
 %%
-multiIf(a, b, ..., c) function
+If x is given - transform(x, [a, ...], [b, ...], c).
+Otherwise, multiIf(a, b, ..., c).
 
 ==String concatenation operator==
 %%s1 || s2%% - concat(s1, s2) function
