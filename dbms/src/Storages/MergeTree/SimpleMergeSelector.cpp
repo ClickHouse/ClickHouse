@@ -2,6 +2,7 @@
 #include <DB/Common/interpolate.h>
 
 #include <cmath>
+#include <iostream>
 
 
 namespace DB
@@ -16,10 +17,13 @@ struct Estimator
 {
 	using Iterator = SimpleMergeSelector::PartsInPartition::const_iterator;
 
-	void consider(Iterator begin, Iterator end, size_t sum_size, size_t size_prev_at_left)
+	void consider(Iterator begin, Iterator end, size_t sum_size, size_t sum_size_fixed_cost, size_t size_prev_at_left)
 	{
-		double current_score = score(end - begin, sum_size);
+		double current_score = score(end - begin, sum_size, sum_size_fixed_cost);
 
+		/** Heuristic:
+		  * Make some preference for ranges, that sum_size is like (in terms of ratio) to part previous at left.
+		  */
 		if (size_prev_at_left > sum_size * 0.9)
 		{
 			double difference = std::abs(log2(static_cast<double>(sum_size) / size_prev_at_left));
@@ -46,7 +50,7 @@ struct Estimator
 		return SimpleMergeSelector::PartsInPartition(best_begin, best_end);
 	}
 
-	static double score(double count, double sum_size)
+	static double score(double count, double sum_size, double sum_size_fixed_cost)
 	{
 		/** Consider we have two alternative ranges of data parts to merge.
 		  * Assume time to merge a range is proportional to sum size of its parts.
@@ -59,7 +63,7 @@ struct Estimator
 		  *
 		  * The integral is lower iff the following formula is lower:
 		  */
-		return sum_size / (count - 1);
+		return (sum_size + sum_size_fixed_cost * count) / (count - 1);
 	}
 
 	double min_score = 0;
@@ -68,24 +72,78 @@ struct Estimator
 };
 
 
+/**
+ * 1       _____
+ *        /
+ * 0_____/
+ *      ^  ^
+ *     min max
+ */
+double mapPiecewiseLinearToUnit(double value, double min, double max)
+{
+	return value <= min ? 0
+		: (value >= max ? 1
+		: ((value - min) / (max - min)));
+}
+
+
+/** Is allowed to merge parts in range with specific properties.
+  */
+bool allow(
+	double sum_size,
+	double max_size,
+	double min_age,
+	double range_size,
+	double partition_size,
+	const SimpleMergeSelector::Settings & settings)
+{
+//	std::cerr << "sum_size: " << sum_size << "\n";
+
+	/// Map size to 0..1 using logarithmic scale
+	double size_normalized = mapPiecewiseLinearToUnit(log(1 + sum_size), log(1 + settings.min_size_to_lower_base), log(1 + settings.max_size_to_lower_base));
+
+//	std::cerr << "size_normalized: " << size_normalized << "\n";
+
+	/// Calculate boundaries for age
+	double min_age_to_lower_base = interpolateLinear(settings.min_age_to_lower_base_at_min_size, settings.min_age_to_lower_base_at_max_size, size_normalized);
+	double max_age_to_lower_base = interpolateLinear(settings.max_age_to_lower_base_at_min_size, settings.max_age_to_lower_base_at_max_size, size_normalized);
+
+//	std::cerr << "min_age_to_lower_base: " << min_age_to_lower_base << "\n";
+//	std::cerr << "max_age_to_lower_base: " << max_age_to_lower_base << "\n";
+
+	/// Map age to 0..1
+	double age_normalized = mapPiecewiseLinearToUnit(min_age, min_age_to_lower_base, max_age_to_lower_base);
+
+//	std::cerr << "age: " << min_age << "\n";
+//	std::cerr << "age_normalized: " << age_normalized << "\n";
+
+	/// Map partition_size to 0..1
+	double num_parts_normalized = mapPiecewiseLinearToUnit(partition_size, settings.min_parts_to_lower_base, settings.max_parts_to_lower_base);
+
+//	std::cerr << "partition_size: " << partition_size << "\n";
+//	std::cerr << "num_parts_normalized: " << num_parts_normalized << "\n";
+
+	double combined_ratio = std::min(1.0, age_normalized + num_parts_normalized);
+
+//	std::cerr << "combined_ratio: " << combined_ratio << "\n";
+
+	double lowered_base = interpolateLinear(settings.base, 1.0, combined_ratio);
+
+//	std::cerr << "------- lowered_base: " << lowered_base << "\n";
+
+	return (sum_size + range_size * settings.size_fixed_cost_to_add) / (max_size + settings.size_fixed_cost_to_add) >= lowered_base;
+}
+
+
 void selectWithinPartition(
 	const SimpleMergeSelector::PartsInPartition & parts,
 	const size_t max_total_size_to_merge,
-	const time_t current_min_part_age,
 	Estimator & estimator,
 	const SimpleMergeSelector::Settings & settings)
 {
 	size_t parts_count = parts.size();
 	if (parts_count <= 1)
 		return;
-
-	double actual_base = std::max(1.0, std::min(
-		settings.base,
-		std::min(
-			interpolateLinear(settings.base, 1.0, (static_cast<double>(parts_count) - settings.lower_base_after_num_parts_start)
-				/ (settings.lower_base_after_num_parts_end - settings.lower_base_after_num_parts_start)),
-			interpolateLinear(settings.base, 1.0, (static_cast<double>(current_min_part_age) - settings.lower_base_after_seconds_start)
-				/ (settings.lower_base_after_seconds_end - settings.lower_base_after_seconds_start)))));
 
 	for (size_t begin = 0; begin < parts_count; ++begin)
 	{
@@ -95,6 +153,7 @@ void selectWithinPartition(
 
 		size_t sum_size = parts[begin].size;
 		size_t max_size = parts[begin].size;
+		size_t min_age = parts[begin].age;
 
 		for (size_t end = begin + 2; end <= parts_count; ++end)
 		{
@@ -102,18 +161,21 @@ void selectWithinPartition(
 				break;
 
 			size_t cur_size = parts[end - 1].size;
+			size_t cur_age = parts[end - 1].age;
 
 			sum_size += cur_size;
 			max_size = std::max(max_size, cur_size);
+			min_age = std::min(min_age, cur_age);
 
 			if (max_total_size_to_merge && sum_size > max_total_size_to_merge)
 				break;
 
-			if (static_cast<double>(sum_size) / max_size >= actual_base)
+			if (allow(sum_size, max_size, min_age, end - begin, parts_count, settings))
 				estimator.consider(
 					parts.begin() + begin,
 					parts.begin() + end,
 					sum_size,
+					settings.size_fixed_cost_to_add,
 					begin == 0 ? 0 : parts[begin - 1].size);
 		}
 	}
@@ -126,16 +188,10 @@ SimpleMergeSelector::PartsInPartition SimpleMergeSelector::select(
 	const Partitions & partitions,
 	const size_t max_total_size_to_merge)
 {
-	time_t min_age = -1;
-	for (const auto & partition : partitions)
-		for (const auto & part : partition)
-			if (min_age == -1 || part.age < min_age)
-				min_age = part.age;
-
 	Estimator estimator;
 
 	for (const auto & partition : partitions)
-		selectWithinPartition(partition, max_total_size_to_merge, min_age, estimator, settings);
+		selectWithinPartition(partition, max_total_size_to_merge, estimator, settings);
 
 	return estimator.getBest();
 }
