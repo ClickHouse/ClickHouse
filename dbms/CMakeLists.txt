@@ -22,7 +22,7 @@ else()
 	set (LINK_MONGOCLIENT libmongoclient.a ${OPENSSL_LIBS} ${BOOST_THREAD_LIB})
 endif()
 
-if (DISABLE_LIBTCMALLOC)
+if ($ENV{DISABLE_LIBTCMALLOC})
 	add_definitions(-D NO_TCMALLOC)
 endif()
 
