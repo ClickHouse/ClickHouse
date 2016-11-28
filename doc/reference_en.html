@@ -4284,6 +4284,20 @@ See the section &quot;IN operators&quot;.
 
 %%a ? b : c%% - if(a, b, c) function
 
+==Conditional expression==
+
+%%
+CASE
+    WHEN a THEN b
+    [WHEN ... THEN ...]
+    ELSE c
+END
+%%
+multiIf(a, b, ..., c) function
+
+==String concatenation operator==
+%%s1 || s2%% - concat(s1, s2) function
+
 ==Lambda creation operator==
 
 <span class="inline-example">x -> expr</span> - lambda(x, expr) function
