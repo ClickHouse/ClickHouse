@@ -28,7 +28,8 @@ ColumnGathererStream::ColumnGathererStream(const BlockInputStreams & source_stre
 		Block & block = sources.back().block;
 
 		if (block.columns() != 1)
-			throw Exception("Stream should contain exactly one column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+			throw Exception("Expected exactly one column. Stream " + children[i]->getID() + ", block " + block.dumpStructure(),
+				ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
 
 		if (block.getByPosition(0).column->getName() != sources[0].block.getByPosition(0).column->getName())
 			throw Exception("Column types don't match", ErrorCodes::INCOMPATIBLE_COLUMNS);

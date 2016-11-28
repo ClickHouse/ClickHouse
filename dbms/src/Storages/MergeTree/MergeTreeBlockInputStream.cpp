@@ -201,6 +201,8 @@ Block MergeTreeBlockInputStream::readImpl()
 {
 	Block res;
 
+	LOG_DEBUG(&Logger::get("MergeTreeBlockInputStream"), "onInit " << res.dumpStructure());
+
 	if (remaining_mark_ranges.empty())
 		return res;
 
@@ -373,12 +375,16 @@ Block MergeTreeBlockInputStream::readImpl()
 				remaining_mark_ranges.pop_back();
 		}
 
+		LOG_DEBUG(&Logger::get("MergeTreeBlockInputStream"), "readRange " << res.dumpStructure());
+
 		/// В случае isCancelled.
 		if (!res)
 			return res;
 
 		progressImpl(Progress(res.rowsInFirstColumn(), res.bytes()));
 		reader->fillMissingColumns(res, ordered_names);
+
+		LOG_DEBUG(&Logger::get("MergeTreeBlockInputStream"), "fillMissingColumns " << res.dumpStructure());
 	}
 
 	if (remaining_mark_ranges.empty())

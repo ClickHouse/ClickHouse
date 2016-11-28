@@ -302,7 +302,9 @@ static void extractOrdinaryAndKeyColumns(const NamesAndTypesList & all_columns, 
 		auto it = std::find(key_columns.cbegin(), key_columns.cend(), column.name);
 
 		bool in_pk = key_columns.end() != it;
-		bool is_nested = column.name.find('.') != std::string::npos;
+		/// Testing
+		//bool is_nested = column.name.find('.') != std::string::npos;
+		bool is_nested = false;
 
 		if (!in_pk && !is_nested)
 		{
@@ -688,8 +690,8 @@ MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
 	size_t sum_rows_upper_bound, MergedRowSources & rows_sources_to_alloc) const
 {
 // Testing:
-// 	if (data.context.getMergeTreeSettings().enable_vertical_merge_algorithm == 0)
-// 		return MergeAlgorithm::Horizontal;
+	if (data.context.getMergeTreeSettings().enable_vertical_merge_algorithm == 0)
+		return MergeAlgorithm::Horizontal;
 
 	bool is_supported_storage =
 		data.merging_params.mode == MergeTreeData::MergingParams::Ordinary ||

@@ -11,6 +11,8 @@
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 
+#include <DB/Columns/ColumnArray.h>
+
 
 namespace DB
 {
@@ -150,6 +152,19 @@ protected:
 				offset_columns.insert(size_name);
 
 				ColumnStream & stream = *column_streams[size_name];
+
+				Logger * log = &Logger::get("writeData");
+				DataTypePtr offset_type = type_arr->getOffsetsType();
+				ColumnPtr offsets_column = dynamic_cast<const ColumnArray &>(column).getOffsetsColumn();
+				LOG_DEBUG(log, "column " << name);
+				for (size_t i = 0; i < offsets_column->size(); i++)
+				{
+					String str;
+					WriteBufferFromString wstr(str);
+					offset_type->serializeTextQuoted(*offsets_column, i, wstr);
+					LOG_DEBUG(log, "offset " << str);
+				}
+				LOG_DEBUG(log, "column " << name << "end");
 
 				size_t prev_mark = 0;
 				while (prev_mark < size)
