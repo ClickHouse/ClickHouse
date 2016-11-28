@@ -4250,13 +4250,14 @@ All operators are transformed to the corresponding functions at the query parsin
 %%a = b%% - equals(a, b) function
 %%a == b%% - equals(a, b) function
 %%a != b%% - notEquals(a, b) function
-<span class="inline-example">a &lt;> b</span> - notEquals(a, b) function
+%%a &lt;> b%% - notEquals(a, b) function
 %%a &lt;= b%% - lessOrEquals(a, b) function
-<span class="inline-example">a >= b</span> - greaterOrEquals(a, b) function
+%%a &gt;= b%% - greaterOrEquals(a, b) function
 %%a &lt; b%% - less(a, b) function
-<span class="inline-example">a > b</span> - greater(a, b) function
+%%a &gt; b%% - greater(a, b) function
 %%a LIKE s%% - like(a, b) function
 %%a NOT LIKE s%% - notLike(a, b) function
+%%a BETWEEN b AND c%% - equivalent to %%a &gt;= b AND a &lt;= c%%
 
 ==Operators for working with data sets==
 
@@ -4282,6 +4283,20 @@ See the section &quot;IN operators&quot;.
 ==Conditional operator==
 
 %%a ? b : c%% - if(a, b, c) function
+
+==Conditional expression==
+
+%%
+CASE
+    WHEN a THEN b
+    [WHEN ... THEN ...]
+    ELSE c
+END
+%%
+multiIf(a, b, ..., c) function
+
+==String concatenation operator==
+%%s1 || s2%% - concat(s1, s2) function
 
 ==Lambda creation operator==
 
