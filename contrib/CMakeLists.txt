@@ -8,8 +8,11 @@ add_subdirectory (libfarmhash)
 add_subdirectory (libmetrohash)
 add_subdirectory (libpoco)
 add_subdirectory (libre2)
-add_subdirectory (libtcmalloc)
 add_subdirectory (libzookeeper)
+
+if (NOT $ENV{DISABLE_LIBTCMALLOC})
+	add_subdirectory (libtcmalloc)
+endif()
 
 IF (NOT AARCH64)
 	add_subdirectory (libcpuid)
