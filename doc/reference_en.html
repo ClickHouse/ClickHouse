@@ -4607,73 +4607,73 @@ Casting to FixedString(N) works only for String and FixedString(N).
 ==Functions for working with dates and times==
 
 ===toYear===
-- Converts a date or date with time to a UInt16 number containing the year number (AD).
+Converts a date or date with time to a UInt16 number containing the year number (AD).
 
 ===toMonth===
-- Converts a date or date with time to a UInt8 number containing the month number (1-12).
+Converts a date or date with time to a UInt8 number containing the month number (1-12).
 
 ===toDayOfMonth===
-- Converts a date or date with time to a UInt8 number containing the number of the day of the month (1-31).
+Converts a date or date with time to a UInt8 number containing the number of the day of the month (1-31).
 
 ===toDayOfWeek===
-- Converts a date or date with time to a UInt8 number containing the number of the day of the week (Monday is 1, and Sunday is 7).
+Converts a date or date with time to a UInt8 number containing the number of the day of the week (Monday is 1, and Sunday is 7).
 
 ===toHour===
-- Converts a date with time to a UInt8 number containing the number of the hour in 24-hour time (0-23).
+Converts a date with time to a UInt8 number containing the number of the hour in 24-hour time (0-23).
 This function assumes that if clocks are moved ahead, it is by one hour and occurs at 2 a.m., and if clocks are moved back, it is by one hour and occurs at 3 a.m. (which is not always true - even in Moscow the clocks were once changed at a different time).
 
 ===toMinute===
-- Converts a date with time to a UInt8 number containing the number of the minute of the hour (0-59).
+Converts a date with time to a UInt8 number containing the number of the minute of the hour (0-59).
 
 ===toSecond===
-- Converts a date with time to a UInt8 number containing the number of the second in the minute (0-59).
+Converts a date with time to a UInt8 number containing the number of the second in the minute (0-59).
 Leap seconds are not accounted for.
 
 ===toMonday===
-- Rounds down a date or date with time to the nearest Monday.
+Rounds down a date or date with time to the nearest Monday.
 Returns the date.
 
 ===toStartOfMonth===
-- Rounds down a date or date with time to the first day of the month.
+Rounds down a date or date with time to the first day of the month.
 Returns the date.
 
 ===toStartOfQuarter===
-- Rounds down a date or date with time to the first day of the quarter.
+Rounds down a date or date with time to the first day of the quarter.
 The first day of the quarter is either 1 January, 1 April, 1 July, or 1 October. Returns the date.
 
 ===toStartOfYear===
-- Rounds down a date or date with time to the first day of the year.
+Rounds down a date or date with time to the first day of the year.
 Returns the date.
 
 ===toStartOfMinute===
-- Rounds down a date with time to the start of the minute.
+Rounds down a date with time to the start of the minute.
 
 ===toStartOfHour===
-- Rounds down a date with time to the start of the hour.
+Rounds down a date with time to the start of the hour.
 
 ===toTime===
-- Converts a date with time to the date of the start of the Unix Epoch, while preserving the time.
+Converts a date with time to the date of the start of the Unix Epoch, while preserving the time.
 
 ===toRelativeYearNum===
-- Converts a date with time or date to the number of the year, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the year, starting from a certain fixed point in the past.
 
 ===toRelativeMonthNum===
-- Converts a date with time or date to the number of the month, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the month, starting from a certain fixed point in the past.
 
 ===toRelativeWeekNum===
-- Converts a date with time or date to the number of the week, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the week, starting from a certain fixed point in the past.
 
 ===toRelativeDayNum===
-- Converts a date with time or date to the number of the day, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the day, starting from a certain fixed point in the past.
 
 ===toRelativeHourNum===
-- Converts a date with time or date to the number of the hour, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the hour, starting from a certain fixed point in the past.
 
 ===toRelativeMinuteNum===
-- Converts a date with time or date to the number of the minute, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the minute, starting from a certain fixed point in the past.
 
 ===toRelativeSecondNum===
-- Converts a date with time or date to the number of the second, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the second, starting from a certain fixed point in the past.
 
 ===now===
 Accepts zero arguments and returns the current time at one of the moments of request execution.
@@ -4688,11 +4688,11 @@ Accepts zero arguments and returns yesterday&#39;s date at one of the moments of
 The same as &#39;today() - 1&#39;.
 
 ===timeSlot===
-- Rounds the time to the half hour.
+Rounds the time to the half hour.
 This function is specific to Yandex.Metrica, since half an hour is the minimum amount of time for breaking a session into two sessions if a counter shows a single user&#39;s consecutive pageviews that differ in time by strictly more than this amount. This means that tuples (the counter number, user ID, and time slot) can be used to search for pageviews that are included in the corresponding session.
 
 ===timeSlots(StartTime, Duration)===
-- For a time interval starting at &#39;StartTime&#39; and continuing for &#39;Duration&#39; seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the half hour.
+For a time interval starting at &#39;StartTime&#39; and continuing for &#39;Duration&#39; seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the half hour.
 For example, %%timeSlots(toDateTime(&#39;2012-01-01 12:20:00&#39;), toUInt32(600)) = [toDateTime(&#39;2012-01-01 12:00:00&#39;), toDateTime(&#39;2012-01-01 12:30:00&#39;)]%%.
 This is necessary for searching for pageviews in the corresponding session.
 
@@ -4700,52 +4700,52 @@ This is necessary for searching for pageviews in the corresponding session.
 ==Functions for working with strings==
 
 ===empty===
-- Returns 1 for an empty string or 0 for a non-empty string.
+Returns 1 for an empty string or 0 for a non-empty string.
 The result type is UInt8.
 A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte.
 The function also works for arrays.
 
 ===notEmpty===
-- Returns 0 for an empty string or 1 for a non-empty string.
+Returns 0 for an empty string or 1 for a non-empty string.
 The result type is UInt8.
 The function also works for arrays.
 
 ===length===
-- Returns the length of a string in bytes (not in characters, and not in code points).
+Returns the length of a string in bytes (not in characters, and not in code points).
 The result type is UInt64.
 The function also works for arrays.
 
 ===lengthUTF8===
-- Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn&#39;t throw an exception).
+Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn&#39;t throw an exception).
 The result type is UInt64.
 
 ===lower===
-- Converts ASCII Latin symbols in a string to lowercase.
+Converts ASCII Latin symbols in a string to lowercase.
 
 ===upper===
-- Converts ASCII Latin symbols in a string to uppercase.
+Converts ASCII Latin symbols in a string to uppercase.
 
 ===lowerUTF8===
-- Converts a string to lowercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text. It doesn&#39;t detect the language. So for Turkish the result might not be exactly correct.
+Converts a string to lowercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text. It doesn&#39;t detect the language. So for Turkish the result might not be exactly correct.
 If length of UTF-8 sequence is different for upper and lower case of code point, then result for that code point could be incorrect.
 If value contains invalid UTF-8, the behavior is unspecified.
 
 ===upperUTF8===
-- Converts a string to uppercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text. It doesn&#39;t detect the language. So for Turkish the result might not be exactly correct.
+Converts a string to uppercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text. It doesn&#39;t detect the language. So for Turkish the result might not be exactly correct.
 If length of UTF-8 sequence is different for upper and lower case of code point, then result for that code point could be incorrect.
 If value contains invalid UTF-8, the behavior is unspecified.
 
 ===reverse===
-- Reverses the string (as a sequence of bytes).
+Reverses the string (as a sequence of bytes).
 
 ===reverseUTF8===
-- Reverses a sequence of Unicode code points, assuming that the string contains a set of bytes representing a UTF-8 text. Otherwise, it does something else (it doesn&#39;t throw an exception).
+Reverses a sequence of Unicode code points, assuming that the string contains a set of bytes representing a UTF-8 text. Otherwise, it does something else (it doesn&#39;t throw an exception).
 
 ===concat(s1, s2, ...)===
-- Concatenates strings from the function arguments, without a separator.
+Concatenates strings from the function arguments, without a separator.
 
 ===substring(s, offset, length)===
-- Returns a substring starting with the byte from the &#39;offset&#39; index that is &#39;length&#39; bytes long. Character indexing starts from one (as in standard SQL). The &#39;offset&#39; and &#39;length&#39; arguments must be constants.
+Returns a substring starting with the byte from the &#39;offset&#39; index that is &#39;length&#39; bytes long. Character indexing starts from one (as in standard SQL). The &#39;offset&#39; and &#39;length&#39; arguments must be constants.
 
 ===substringUTF8(s, offset, length)===
 The same as &#39;substring&#39;, but for Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn&#39;t throw an exception).
@@ -4760,14 +4760,14 @@ The search is case-sensitive in all these functions.
 The search substring or regular expression must be a constant in all these functions.
 
 ===position(haystack, needle)===
-- Search for the &#39;needle&#39; substring in the &#39;haystack&#39; string.
+Searches for the &#39;needle&#39; substring in the &#39;haystack&#39; string.
 Returns the position (in bytes) of the found substring, starting from 1, or returns 0 if the substring was not found.
 
 ===positionUTF8(haystack, needle)===
 The same as &#39;position&#39;, but the position is returned in Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn&#39;t throw an exception).
 
 ===match(haystack, pattern)===
-- Checks whether the string matches the &#39;pattern&#39; regular expression.
+Checks whether the string matches the &#39;pattern&#39; regular expression.
 The regular expression is re2.
 Returns 0 if it doesn&#39;t match, or 1 if it matches.
 
@@ -4784,7 +4784,7 @@ Extracts a fragment of a string using a regular expression. If &#39;haystack&#39
 Extracts all the fragments of a string using a regular expression. If &#39;haystack&#39; doesn&#39;t match the &#39;pattern&#39; regex, an empty string is returned. Returns an array of strings consisting of all matches to the regex. In general, the behavior is the same as the &#39;extract&#39; function (it takes the first subpattern, or the entire expression if there isn&#39;t a subpattern).
 
 ===like(haystack, pattern), haystack LIKE pattern operator===
-- Checks whether a string matches a simple regular expression. The regular expression can contain the metasymbols %%%%% and %%_%%.
+Checks whether a string matches a simple regular expression. The regular expression can contain the metasymbols %%%%% and %%_%%.
 %%%%% indicates any quantity of any bytes (including zero characters).
 %%_%% indicates any one byte.
 
@@ -4866,17 +4866,17 @@ SELECT replaceRegexpAll(&#39;Hello, World!&#39;, &#39;^&#39;, &#39;here: &#39;) 
 ==Functions for working with arrays==
 
 ===empty===
-- Returns 1 for an empty array, or 0 for a non-empty array.
+Returns 1 for an empty array, or 0 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
 ===notEmpty===
-- Returns 0 for an empty array, or 1 for a non-empty array.
+Returns 0 for an empty array, or 1 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
 ===length===
-- Returns the number of items in the array.
+Returns the number of items in the array.
 The result type is UInt64.
 The function also works for strings.
 
@@ -4891,16 +4891,16 @@ Accepts zero arguments and returns an empty array of the appropriate type.
 Accepts an empty array as argument and returns an array of one element equal to the default value.
 
 ===range(N)===
-- Returns an array of numbers from 0 to N-1.
+Returns an array of numbers from 0 to N-1.
 Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
 
 ===array(x1, ...), [x1, ...] operator===
-- Creates an array from the function arguments.
+Creates an array from the function arguments.
 The arguments must be constants and have types that have the smallest common type. At least one argument must be passed, because otherwise it isn&#39;t clear which type of array to create. That is, you can&#39;t use this function to create an empty array (to do that, use the &#39;emptyArray*&#39; function described above).
 Returns an &#39;Array(T)&#39; type result, where &#39;T&#39; is the smallest common type out of the passed arguments.
 
 ===arrayElement(arr, n), arr[n] operator===
-- Get the element with the index &#39;n&#39; from the array &#39;arr&#39;.
+Get the element with the index &#39;n&#39; from the array &#39;arr&#39;.
 &#39;n&#39; should be any integer type.
 Indexes in an array begin from one.
 Negative indexes are supported - in this case, it selects the corresponding element numbered from the end. For example, &#39;arr[-1]&#39; is the last item in the array.
@@ -4910,18 +4910,18 @@ If the index goes beyond the array bounds:
 - otherwise, a default value is returned (0 for numbers, an empty string for strings, etc.).
 
 ===has(arr, elem)===
-- Checking whether the &#39;arr&#39; array has the &#39;elem&#39; element.
+Checks whether the &#39;arr&#39; array has the &#39;elem&#39; element.
 Returns 0 if the the element is not in the array, or 1 if it is.
 &#39;elem&#39; must be a constant.
 
 ===indexOf(arr, x)===
-- Returns the index of the &#39;x&#39; element (starting from 1) if it is in the array, or 0 if it is not.
+Returns the index of the &#39;x&#39; element (starting from 1) if it is in the array, or 0 if it is not.
 
 ===countEqual(arr, x)===
-- Returns the number of elements in the array equal to &#39;x&#39;. Equivalent to <span class="inline-example">arrayCount(elem -> elem = x, arr)</span>.
+Returns the number of elements in the array equal to &#39;x&#39;. Equivalent to <span class="inline-example">arrayCount(elem -> elem = x, arr)</span>.
 
 ===arrayEnumerate(arr)===
-- Returns the array %%[1, 2, 3, ..., length(arr)]%%
+Returns the array %%[1, 2, 3, ..., length(arr)]%%
 
 This function is normally used together with ARRAY JOIN. It allows counting something just once for each array after applying ARRAY JOIN. Example:
 
@@ -4958,7 +4958,7 @@ WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
 This function can also be used in higher-order functions. For example, you can use it to get array indexes for elements that match a condition.
 
 ===arrayEnumerateUniq(arr, ...)===
-- Returns an array the same size as the source array, indicating for each element what its position is among elements with the same value.
+Returns an array the same size as the source array, indicating for each element what its position is among elements with the same value.
 For example: %%arrayEnumerateUniq([10, 20, 10, 30]) = [1,  1,  2,  1]%%.
 
 This function is useful when using ARRAY JOIN and aggregation of array elements. Example:
@@ -5006,7 +5006,7 @@ SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
 This is necessary when using ARRAY JOIN with a nested data structure and further aggregation across multiple elements in this structure.
 
 ===arrayJoin(arr)===
-- A special function. See the section &quot;arrayJoin function&quot;.
+A special function. See the section &quot;arrayJoin function&quot;.
 
 
 ==Higher-order functions==
@@ -5071,20 +5071,20 @@ Returns the index of the first element in the &#39;arr1&#39; array for which &#3
 ==Functions for splitting and merging strings and arrays==
 
 ===splitByChar(separator, s)===
-- Splits a string into substrings, using &#39;separator&#39; as the separator.
+Splits a string into substrings, using &#39;separator&#39; as the separator.
 &#39;separator&#39; must be a string constant consisting of exactly one character.
 Returns an array of selected substrings. Empty substrings may be selected if the separator occurs at the beginning or end of the string, or if there are multiple consecutive separators.
 
 ===splitByString(separator, s)===
-- The same as above, but it uses a string of multiple characters as the separator. The string must be non-empty.
+The same as above, but it uses a string of multiple characters as the separator. The string must be non-empty.
 
 ===arrayStringConcat(arr[, separator])===
-- Concatenates strings from the array elements, using &#39;separator&#39; as the separator.
+Concatenates strings from the array elements, using &#39;separator&#39; as the separator.
 &#39;separator&#39; is a string constant, an optional parameter. By default it is an empty string.
 Returns a string.
 
 ===alphaTokens(s)===
-- Selects substrings of consecutive bytes from the range a-z and A-Z.
+Selects substrings of consecutive bytes from the range a-z and A-Z.
 Returns an array of selected substrings.
 
 
@@ -5166,19 +5166,19 @@ URLPathHierarchy(&#39;https://example.com/browse/CONV-6788&#39;) =
 If the URL doesn&#39;t have anything similar, the URL remains unchanged.
 
 <h4>cutWWW</h4>
-- Removes no more than one &#39;www.&#39; from the beginning of the URL&#39;s domain, if present.
+Removes no more than one &#39;www.&#39; from the beginning of the URL&#39;s domain, if present.
 
 <h4>cutQueryString</h4>
-- Removes the query-string. The question mark is also removed.
+Removes the query-string. The question mark is also removed.
 
 <h4>cutFragment</h4>
-- Removes the fragment identifier. The number sign is also removed.
+Removes the fragment identifier. The number sign is also removed.
 
 <h4>cutQueryStringAndFragment</h4>
-- Removes the query-string and fragment identifier. The question mark and number sign are also removed.
+Removes the query-string and fragment identifier. The question mark and number sign are also removed.
 
 <h4>cutURLParameter(URL, name)</h4>
-- Removes the URL parameter named &#39;name&#39;, if present. This function works under the assumption that the parameter name is encoded in the URL exactly the same way as in the passed argument.
+Removes the URL parameter named &#39;name&#39;, if present. This function works under the assumption that the parameter name is encoded in the URL exactly the same way as in the passed argument.
 
 
 ==Functions for working with IP addresses==
@@ -5291,11 +5291,11 @@ If an argument is passed, it can be any type, and its value is not used for anyt
 The only purpose of this argument is to prevent common subexpression elimination, so that two different instances of the same function return different columns with different random numbers.
 
 ===rand===
-- Returns a pseudo-random UInt32 number, evenly distributed among all UInt32-type numbers.
+Returns a pseudo-random UInt32 number, evenly distributed among all UInt32-type numbers.
 Uses a linear congruential generator.
 
 ===rand64===
-- Returns a pseudo-random UInt64 number, evenly distributed among all UInt64-type numbers.
+Returns a pseudo-random UInt64 number, evenly distributed among all UInt64-type numbers.
 Uses a linear congruential generator.
 
 
@@ -5304,45 +5304,45 @@ Uses a linear congruential generator.
 Hash functions can be used for deterministic pseudo-random shuffling of elements.
 
 ===halfMD5===
-- Calculates the MD5 from a string. Then it takes the first 8 bytes of the hash and interprets them as UInt64 in big endian.
+Calculates the MD5 from a string. Then it takes the first 8 bytes of the hash and interprets them as UInt64 in big endian.
 Accepts a String-type argument. Returns UInt64.
 This function works fairly slowly (5 million short strings per second per processor core).
 If you don&#39;t need MD5 in particular, use the &#39;sipHash64&#39; function instead.
 
 ===MD5===
-- Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
+Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
 If you don&#39;t need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the &#39;sipHash128&#39; function instead.
 If you need the same result as gives 'md5sum' utility, write %%lower(hex(MD5(s)))%%.
 
 ===sipHash64===
-- Calculates SipHash from a string.
+Calculates SipHash from a string.
 Accepts a String-type argument. Returns UInt64.
 SipHash is a cryptographic hash function. It works at least three times faster than MD5. For more information, see <a href="https://131002.net/siphash/">https://131002.net/siphash/</a>
 
 ===sipHash128===
-- Calculates SipHash from a string.
+Calculates SipHash from a string.
 Accepts a String-type argument. Returns FixedString(16).
 Differs from sipHash64 in that the final xor-folding state is only done up to 128 bytes.
 
 ===cityHash64===
-- Calculates CityHash64 from a string or a similar hash function for any number of any type of arguments.
+Calculates CityHash64 from a string or a similar hash function for any number of any type of arguments.
 For String-type arguments, CityHash is used. This is a fast non-cryptographic hash function for strings with decent quality.
 For other types of arguments, a decent implementation-specific fast non-cryptographic hash function is used.
 If multiple arguments are passed, the function is calculated using the same rules and chain combinations using the CityHash combinator.
 For example, you can compute the checksum of an entire table with accuracy up to the row order: %%SELECT sum(cityHash64(*)) FROM table%%.
 
 ===intHash32===
-- Calculates a 32-bit hash code from any type of integer.
+Calculates a 32-bit hash code from any type of integer.
 This is a relatively fast non-cryptographic hash function of average quality for numbers.
 
 ===intHash64===
-- Calculates a 64-bit hash code from any type of integer.
+Calculates a 64-bit hash code from any type of integer.
 It works faster than intHash32. Average quality.
 
 ===SHA1===
 ===SHA224===
 ===SHA256===
-- Calculates SHA-1, SHA-224, or SHA-256 from a string and returns the resulting set of bytes as FixedString(20), FixedString(28), or FixedString(32).
+Calculates SHA-1, SHA-224, or SHA-256 from a string and returns the resulting set of bytes as FixedString(20), FixedString(28), or FixedString(32).
 The function works fairly slowly (SHA-1 processes about 5 million short strings per second per processor core, while SHA-224 and SHA-256 process about 2.2 million).
 We recommend using this function only in cases when you need a specific hash function and you can&#39;t select it.
 Even in these cases, we recommend applying the function offline and pre-calculating values when inserting them into the table, instead of applying it in SELECTS.
@@ -5717,12 +5717,12 @@ See the section &quot;IN operators&quot;.
 
 
 ===tuple(x, y, ...), operator (x, y, ...)===
-- A function that allows grouping multiple columns.
+A function that allows grouping multiple columns.
 For columns with the types T1, T2, ..., it returns a Tuple(T1, T2, ...) type tuple containing these columns. There is no cost to execute the function.
 Tuples are normally used as intermediate values for an argument of IN operators, or for creating a list of formal parameters of lambda functions. Tuples can&#39;t be written to a table.
 
 ===tupleElement(tuple, n), operator x.N===
-- A function that allows getting columns from a tuple.
+A function that allows getting columns from a tuple.
 &#39;N&#39; is the column index, starting from 1. &#39;N&#39; must be a constant. &#39;N&#39; must be a strict postive integer no greater than the size of the tuple.
 There is no cost to execute the function.
 
@@ -5730,24 +5730,24 @@ There is no cost to execute the function.
 ==Other functions==
 
 ===hostName()===
-- Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
+Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 
 ===visibleWidth(x)===
-- Calculates the approximate width when outputting values to the console in text format (tab-separated). This function is used by the system for implementing Pretty formats.
+Calculates the approximate width when outputting values to the console in text format (tab-separated). This function is used by the system for implementing Pretty formats.
 
 ===toTypeName(x)===
-- Gets the type name. Returns a string containing the type name of the passed argument.
+Gets the type name. Returns a string containing the type name of the passed argument.
 
 ===blockSize()===
-- Gets the size of the block.
+Gets the size of the block.
 In ClickHouse, queries are always run on blocks (sets of column parts). This function allows getting the size of the block that you called it for.
 
 ===materialize(x)===
-- Turns a constant into a full column containing just one value.
+Turns a constant into a full column containing just one value.
 In ClickHouse, full columns and constants are represented differently in memory. Functions work differently for constant arguments and normal arguments (different code is executed), although the result is almost always the same. This function is for debugging this behavior.
 
 ===ignore(...)===
-- A function that accepts any arguments and always returns 0.
+A function that accepts any arguments and always returns 0.
 However, the argument is still calculated. This can be used for benchmarks.
 
 ===sleep(seconds)===
