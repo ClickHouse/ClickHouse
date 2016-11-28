@@ -11,6 +11,9 @@ class SimpleMergeSelector : public IMergeSelector
 public:
 	struct Settings
 	{
+		/// Zero means unlimited.
+		size_t max_parts_to_merge_at_once = 100;
+
 		/** Minimum ratio of size of one part to all parts in set of parts to merge (for usual cases).
 		  * For example, if all parts have equal size, it means, that at least 'base' number of parts should be merged.
 		  * If parts has non-uniform sizes, then minumum number of parts to merge is effectively increased.
@@ -35,7 +38,7 @@ public:
 		  * 3. Sum size of parts participating in merge. If higher - then more age is required to lower base. So, base is lowered slower.
 		  * It means: for small parts, it's worth to merge faster, even not so wide or balanced.
 		  *
-		  * We have multivariative dependency. Let it be logarithmic of size and multi-linear by other variables,
+		  * We have multivariative dependency. Let it be logarithmic of size and somewhat multi-linear by other variables,
 		  *  between some boundary points, and constant outside.
 		  */
 
@@ -53,8 +56,19 @@ public:
 		/// Add this to size before all calculations. It means: merging even very small parts has it's fixed cost.
 		size_t size_fixed_cost_to_add = 5 * 1024 * 1024;
 
-		/// Zero means unlimited.
-		size_t max_parts_to_merge_at_once = 100;
+		/** Heuristic:
+		  * Make some preference for ranges, that sum_size is like (in terms of ratio) to part previous at left.
+		  */
+		bool enable_heuristic_to_align_parts = true;
+		double heuristic_to_align_parts_min_ratio_of_sum_size_to_prev_part = 0.9;
+		double heuristic_to_align_parts_max_absolute_difference_in_powers_of_two = 0.5;
+		double heuristic_to_align_parts_max_score_adjustment = 0.75;
+
+		/** Heuristic:
+		  * From right side of range, remove all parts, that size is less than specified ratio of sum_size.
+		  */
+		bool enable_heuristic_to_remove_small_parts_at_right = true;
+		double heuristic_to_remove_small_parts_at_right_max_ratio = 0.01;
 	};
 
 	SimpleMergeSelector(const Settings & settings) : settings(settings) {}

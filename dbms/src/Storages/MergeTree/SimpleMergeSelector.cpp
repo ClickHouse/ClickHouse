@@ -17,25 +17,22 @@ struct Estimator
 {
 	using Iterator = SimpleMergeSelector::PartsInPartition::const_iterator;
 
-	void consider(Iterator begin, Iterator end, size_t sum_size, size_t sum_size_fixed_cost, size_t size_prev_at_left)
+	void consider(Iterator begin, Iterator end, size_t sum_size, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
 	{
-		double current_score = score(end - begin, sum_size, sum_size_fixed_cost);
+		double current_score = score(end - begin, sum_size, settings.size_fixed_cost_to_add);
 
-		/** Heuristic:
-		  * Make some preference for ranges, that sum_size is like (in terms of ratio) to part previous at left.
-		  */
-		if (size_prev_at_left > sum_size * 0.9)
+		if (settings.enable_heuristic_to_align_parts
+			&& size_prev_at_left > sum_size * settings.heuristic_to_align_parts_min_ratio_of_sum_size_to_prev_part)
 		{
 			double difference = std::abs(log2(static_cast<double>(sum_size) / size_prev_at_left));
-			if (difference < 0.5)
-				current_score *= 0.75 + difference * 0.5;
+			if (difference < settings.heuristic_to_align_parts_max_absolute_difference_in_powers_of_two)
+				current_score *= interpolateLinear(settings.heuristic_to_align_parts_max_score_adjustment, 1,
+					difference / settings.heuristic_to_align_parts_max_absolute_difference_in_powers_of_two);
 		}
 
-		/** Heuristic:
-		  * From right side of range, remove all parts, that size is less than 1% of sum_size.
-		  */
-		while (end >= begin + 3 && (end - 1)->size < 0.01 * sum_size)
-			--end;
+		if (settings.enable_heuristic_to_remove_small_parts_at_right)
+			while (end >= begin + 3 && (end - 1)->size < settings.heuristic_to_remove_small_parts_at_right_max_ratio * sum_size)
+				--end;
 
 		if (!min_score || current_score < min_score)
 		{
@@ -175,8 +172,8 @@ void selectWithinPartition(
 					parts.begin() + begin,
 					parts.begin() + end,
 					sum_size,
-					settings.size_fixed_cost_to_add,
-					begin == 0 ? 0 : parts[begin - 1].size);
+					begin == 0 ? 0 : parts[begin - 1].size,
+					settings);
 		}
 	}
 }
