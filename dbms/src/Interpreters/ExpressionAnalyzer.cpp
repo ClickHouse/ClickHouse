@@ -200,7 +200,7 @@ void ExpressionAnalyzer::init()
 
 void ExpressionAnalyzer::optimizeIfWithConstantCondition()
 {
-	optimizeIfWithConstantConditionImpl(ast);
+	optimizeIfWithConstantConditionImpl(ast, aliases);
 }
 
 bool ExpressionAnalyzer::tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const
@@ -237,7 +237,7 @@ bool ExpressionAnalyzer::tryExtractConstValueFromCondition(const ASTPtr & condit
 	return false;
 }
 
-void ExpressionAnalyzer::optimizeIfWithConstantConditionImpl(ASTPtr & current_ast) const
+void ExpressionAnalyzer::optimizeIfWithConstantConditionImpl(ASTPtr & current_ast, ExpressionAnalyzer::Aliases & aliases) const
 {
 	if (!current_ast)
 		return;
@@ -247,11 +247,11 @@ void ExpressionAnalyzer::optimizeIfWithConstantConditionImpl(ASTPtr & current_as
 		ASTFunction * function_node = typeid_cast<ASTFunction *>(child.get());
 		if (!function_node || function_node->name != FunctionIf::name)
 		{
-			optimizeIfWithConstantConditionImpl(child);
+			optimizeIfWithConstantConditionImpl(child, aliases);
 			continue;
 		}
 
-		optimizeIfWithConstantConditionImpl(function_node->arguments);
+		optimizeIfWithConstantConditionImpl(function_node->arguments, aliases);
 		ASTExpressionList * args = typeid_cast<ASTExpressionList *>(function_node->arguments.get());
 
 		ASTPtr condition_expr = args->children.at(0);
@@ -262,10 +262,24 @@ void ExpressionAnalyzer::optimizeIfWithConstantConditionImpl(ASTPtr & current_as
 		bool condition;
 		if (tryExtractConstValueFromCondition(condition_expr, condition))
 		{
-			if (condition)
-				child = then_expr;
+			ASTPtr replace_ast = condition ? then_expr : else_expr;
+			String replace_alias = replace_ast->tryGetAlias();
+			String if_alias = child->tryGetAlias();
+
+			if (replace_alias.empty())
+			{
+				replace_ast->setAlias(if_alias);
+				child = replace_ast;
+			}
 			else
-				child = else_expr;
+			{
+				/// Only copy of one node is required here.
+				/// But IAST has only method for deep copy of subtree.
+				/// This can be a reason of performance degradation in case of deep queries.
+				ASTPtr replace_ast_deep_copy = replace_ast->clone();
+				replace_ast_deep_copy->setAlias(if_alias);
+				child = replace_ast_deep_copy;
+			}
 		}
 	}
 }

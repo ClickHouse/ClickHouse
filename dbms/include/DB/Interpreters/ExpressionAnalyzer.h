@@ -232,7 +232,7 @@ private:
 
 	/// remove Function_if AST if condition is constant
 	void optimizeIfWithConstantCondition();
-	void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast) const;
+	void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast, Aliases & aliases) const;
 	bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const;
 
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
