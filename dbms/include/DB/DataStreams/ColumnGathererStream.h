@@ -9,21 +9,42 @@ namespace DB
 {
 
 
-struct __attribute__((__packed__)) RowSourcePart
+/// Tiny struct, stores number of a Part from which current row was fetched, and insertion flag.
+struct RowSourcePart
 {
-	/// Sequence of members is important to use RowSourcePart * as UInt8 * if flag = false
-	UInt8 source_id: 7;
-	UInt8 flag: 1;
-
 	RowSourcePart() = default;
 
-	RowSourcePart(unsigned source_id_, bool flag_ = false)
+	RowSourcePart(size_t source_num, bool flag = false)
 	{
-		source_id = source_id_;
-		flag = flag_;
+		static_assert(sizeof(*this) == 1, "Size of RowSourcePart is too big due to compiler settings");
+		setSourceNum(source_num);
+		setFlag(flag);
 	}
 
-	static constexpr size_t MAX_PARTS = 127;
+	/// is equal to getSourceNum() if flag is false
+	size_t getData() const		{ return data; }
+
+	size_t getSourceNum()const 	{ return data & MASK_NUMBER; }
+
+	/// In CollapsingMergeTree case flag means "skip this rows"
+	bool getFlag() const 		{ return (data & MASK_FLAG) != 0; }
+
+	void setSourceNum(size_t source_num)
+	{
+		data = (data & MASK_FLAG) | (static_cast<UInt8>(source_num) & MASK_NUMBER);
+	}
+
+	void setFlag(bool flag)
+	{
+		data = flag ? data | MASK_FLAG : data & ~MASK_FLAG;
+	}
+
+	static constexpr size_t MAX_PARTS = 0x7F;
+	static constexpr UInt8 MASK_NUMBER = 0x7F;
+	static constexpr UInt8 MASK_FLAG = 0x80;
+
+private:
+	UInt8 data;
 };
 
 using MergedRowSources = PODArray<RowSourcePart>;

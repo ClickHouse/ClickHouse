@@ -281,11 +281,11 @@ MergeTreeData::DataPartsVector MergeTreeDataMerger::selectAllPartsFromPartition(
 }
 
 
-/// Key columns are merged, ordinary columns are gathered
-static void extractOrdinaryAndKeyColumns(const NamesAndTypesList & all_columns, ExpressionActionsPtr primary_key_expressions,
+/// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
+static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_columns, ExpressionActionsPtr primary_key_expressions,
 	const MergeTreeData::MergingParams & merging_params,
-	NamesAndTypesList & ordinary_column_names_and_types, Names & ordinary_column_names,
-	NamesAndTypesList & key_column_names_and_types, Names & key_column_names
+	NamesAndTypesList & gathering_columns, Names & gathering_column_names,
+	NamesAndTypesList & merging_columns, Names & merging_column_names
 )
 {
 	Names key_columns_dup = primary_key_expressions->getRequiredColumns();
@@ -301,20 +301,15 @@ static void extractOrdinaryAndKeyColumns(const NamesAndTypesList & all_columns, 
 	{
 		auto it = std::find(key_columns.cbegin(), key_columns.cend(), column.name);
 
-		bool in_pk = key_columns.end() != it;
-		/// Testing
-		//bool is_nested = column.name.find('.') != std::string::npos;
-		bool is_nested = false;
-
-		if (!in_pk && !is_nested)
+		if (key_columns.end() == it)
 		{
-			ordinary_column_names_and_types.emplace_back(column);
-			ordinary_column_names.emplace_back(column.name);
+			gathering_columns.emplace_back(column);
+			gathering_column_names.emplace_back(column.name);
 		}
 		else
 		{
-			key_column_names_and_types.emplace_back(column);
-			key_column_names.emplace_back(column.name);
+			merging_columns.emplace_back(column);
+			merging_column_names.emplace_back(column.name);
 		}
 	}
 }
@@ -335,9 +330,9 @@ public:
 		: map(map_)
 	{
 		for (const auto & name : key_columns)
-			map[name] = 0;
+			if (!map.count(name)) map[name] = 0;
 		for (const auto & name : ordinary_columns)
-			map[name] = 0;
+			if (!map.count(name)) map[name] = 0;
 
 		for (const auto & name : key_columns)
 			sum_index_columns += map.at(name);
@@ -345,7 +340,7 @@ public:
 		for (const auto & name : ordinary_columns)
 			sum_ordinary_columns += map.at(name);
 
-		sum_total = sum_index_columns + sum_ordinary_columns;
+		sum_total = std::max(1UL, sum_index_columns + sum_ordinary_columns);
 	}
 
 	/// Approximate size of num_rows column elements if column contains num_total_rows elements
@@ -463,22 +458,17 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 	}
 
 	MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
-	if (aio_threshold > 0)
-	{
-		for (const MergeTreeData::DataPartPtr & part : parts)
-			part->accumulateColumnSizes(merged_column_to_size);
-	}
+	for (const MergeTreeData::DataPartPtr & part : parts)
+		part->accumulateColumnSizes(merged_column_to_size);
 
 	Names all_column_names = data.getColumnNamesList();
-	NamesAndTypesList all_column_names_and_types = data.getColumnsList();
+	NamesAndTypesList all_columns = data.getColumnsList();
 	SortDescription sort_desc = data.getSortDescription();
 
-	NamesAndTypesList ordinary_column_names_and_types, key_column_names_and_types;
-	Names ordinary_column_names, key_column_names;
-	extractOrdinaryAndKeyColumns(all_column_names_and_types, data.getPrimaryExpression(), data.merging_params,
-		ordinary_column_names_and_types, ordinary_column_names,
-		key_column_names_and_types, key_column_names
-	);
+	NamesAndTypesList gathering_columns, merging_columns;
+	Names gathering_column_names, merging_column_names;
+	extractMergingAndGatheringColumns(all_columns, data.getPrimaryExpression(), data.merging_params,
+		gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 	ActiveDataPartSet::parsePartName(merged_name, *new_data_part);
@@ -488,18 +478,21 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 	size_t sum_input_rows_upper_bound = merge_entry->total_size_marks * data.index_granularity;
 
 	MergedRowSources merged_rows_sources;
+	MergedRowSources * merged_rows_sources_ptr = &merged_rows_sources;
 	MergeAlgorithm merge_alg = chooseMergeAlgorithm(data, parts, sum_input_rows_upper_bound, merged_rows_sources);
 
 	LOG_DEBUG(log, "Selected MergeAlgorithm: " << ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Horizontal"));
 
-	MergedRowSources * merged_rows_sources_ptr = (merge_alg == MergeAlgorithm::Vertical)
-		? &merged_rows_sources : nullptr;
-	Names & main_column_names = (merge_alg == MergeAlgorithm::Vertical)
-		? key_column_names : all_column_names;
-	NamesAndTypesList & main_column_names_and_types = (merge_alg == MergeAlgorithm::Vertical)
-		? key_column_names_and_types : all_column_names_and_types;
+	if (merge_alg != MergeAlgorithm::Vertical)
+	{
+		merged_rows_sources_ptr = nullptr;
+		merging_columns = all_columns;
+		merging_column_names = all_column_names;
+		gathering_columns.clear();
+		gathering_column_names.clear();
+	}
 
-	ColumnSizeEstimator column_sizes(merged_column_to_size, key_column_names, ordinary_column_names);
+	ColumnSizeEstimator column_sizes(merged_column_to_size, merging_column_names, gathering_column_names);
 
 	/** Читаем из всех кусков, сливаем и пишем в новый.
 	  * Попутно вычисляем выражение для сортировки.
@@ -511,7 +504,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 		String part_path = data.getFullPath() + parts[i]->name + '/';
 
 		auto input = std::make_unique<MergeTreeBlockInputStream>(
-			part_path, DEFAULT_MERGE_BLOCK_SIZE, main_column_names, data, parts[i],
+			part_path, DEFAULT_MERGE_BLOCK_SIZE, merging_column_names, data, parts[i],
 			MarkRanges(1, MarkRange(0, parts[i]->size)), false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
 
 		input->setProgressCallback(MergeProgressCallback{merge_entry, merge_alg, sum_input_rows_upper_bound, column_sizes});
@@ -576,7 +569,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 		static_cast<double>(merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
 
 	MergedBlockOutputStream to{
-		data, new_part_tmp_path, main_column_names_and_types, compression_method, merged_column_to_size, aio_threshold};
+		data, new_part_tmp_path, merging_columns, compression_method, merged_column_to_size, aio_threshold};
 
 	merged_stream->readPrefix();
 	to.writePrefix();
@@ -613,15 +606,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 	if (merge_alg == MergeAlgorithm::Vertical)
 	{
 		size_t sum_input_rows_exact = merge_entry->rows_with_key_columns_read;
-		merge_entry->columns_written = key_column_names.size();
+		merge_entry->columns_written = merging_column_names.size();
 		merge_entry->progress = column_sizes.keyColumnsProgress(sum_input_rows_exact, sum_input_rows_exact);
 
 		BlockInputStreams column_part_streams(parts.size());
 		NameSet offset_columns_written;
 
-		auto it_name_and_type = ordinary_column_names_and_types.cbegin();
+		auto it_name_and_type = gathering_columns.cbegin();
 
-		for (size_t column_num = 0; column_num < ordinary_column_names.size(); ++column_num, it_name_and_type++)
+		for (size_t column_num = 0; column_num < gathering_column_names.size(); ++column_num, it_name_and_type++)
 		{
 			const String & column_name = it_name_and_type->name;
 			const DataTypePtr & column_type = it_name_and_type->type;
@@ -663,7 +656,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 			if (typeid_cast<const DataTypeArray *>(column_type.get()))
 				offset_columns_written.emplace(offset_column_name);
 
-			merge_entry->columns_written = key_column_names.size() + column_num;
+			merge_entry->columns_written = merging_column_names.size() + column_num;
 			merge_entry->bytes_written_uncompressed += column_gathered_stream.getProfileInfo().bytes;
 			merge_entry->progress = progress_before + column_sizes.columnProgress(column_name, sum_input_rows_exact, sum_input_rows_exact);
 
@@ -673,11 +666,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 	}
 
 	merged_stream->readSuffix();
-	new_data_part->columns = all_column_names_and_types;
+	new_data_part->columns = all_columns;
 	if (merge_alg != MergeAlgorithm::Vertical)
 		new_data_part->checksums = to.writeSuffixAndGetChecksums();
 	else
-		new_data_part->checksums = to.writeSuffixAndGetChecksums(all_column_names_and_types, &checksums_ordinary_columns);
+		new_data_part->checksums = to.writeSuffixAndGetChecksums(all_columns, &checksums_ordinary_columns);
 	new_data_part->index.swap(to.getIndex());
 
 	/// Для удобства, даже CollapsingSortedBlockInputStream не может выдать ноль строк.
