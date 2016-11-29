@@ -1,5 +1,8 @@
 #!/bin/bash
 
+#HOTFIX!!!
+export DISABLE_LIBTCMALLOC=1
+
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/release_lib.sh"
 
 CONTROL=debian/control
