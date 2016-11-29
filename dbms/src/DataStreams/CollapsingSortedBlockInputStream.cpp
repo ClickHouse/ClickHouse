@@ -55,6 +55,13 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 				++merged_rows;
 				for (size_t i = 0; i < num_columns; ++i)
 					merged_columns[i]->insertFrom(*last_negative.columns[i], last_negative.row_num);
+
+				if (out_row_sources)
+				{
+					/// true flag value means "skip row"
+					out_row_sources->data()[last_positive_pos].setSkipFlag(false);
+					out_row_sources->data()[last_negative_pos].setSkipFlag(false);
+				}
 			}
 			return;
 		}
@@ -64,6 +71,9 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 			++merged_rows;
 			for (size_t i = 0; i < num_columns; ++i)
 				merged_columns[i]->insertFrom(*first_negative.columns[i], first_negative.row_num);
+
+			if (out_row_sources)
+				out_row_sources->data()[first_negative_pos].setSkipFlag(false);
 		}
 
 		if (count_positive >= count_negative)
@@ -71,6 +81,9 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 			++merged_rows;
 			for (size_t i = 0; i < num_columns; ++i)
 				merged_columns[i]->insertFrom(*last_positive.columns[i], last_positive.row_num);
+
+			if (out_row_sources)
+				out_row_sources->data()[last_positive_pos].setSkipFlag(false);
 		}
 
 		if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
