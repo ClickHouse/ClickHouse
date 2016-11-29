@@ -617,16 +617,21 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 		merge_entry->progress = column_sizes.keyColumnsProgress(sum_input_rows_exact, sum_input_rows_exact);
 
 		BlockInputStreams column_part_streams(parts.size());
+		NameSet offset_columns_written;
+
 		auto it_name_and_type = ordinary_column_names_and_types.cbegin();
 
-		for (size_t column_num = 0; column_num < ordinary_column_names.size(); ++column_num)
+		for (size_t column_num = 0; column_num < ordinary_column_names.size(); ++column_num, it_name_and_type++)
 		{
-			const String & column_name = ordinary_column_names[column_num];
+			const String & column_name = it_name_and_type->name;
+			const DataTypePtr & column_type = it_name_and_type->type;
+			const String offset_column_name = DataTypeNested::extractNestedTableName(column_name);
 			Names column_name_(1, column_name);
-			NamesAndTypesList column_name_and_type_(1, *it_name_and_type++);
+			NamesAndTypesList column_name_and_type_(1, *it_name_and_type);
 			Float64 progress_before = merge_entry->progress;
+			bool offset_written = offset_columns_written.count(offset_column_name);
 
-			LOG_TRACE(log, "Gathering column " << column_name <<  " " << column_name_and_type_.front().type->getName());
+			LOG_TRACE(log, "Gathering column " << column_name <<  " " << column_type->getName());
 
 			for (size_t part_num = 0; part_num < parts.size(); ++part_num)
 			{
@@ -645,7 +650,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 			}
 
 			ColumnGathererStream column_gathered_stream(column_part_streams, column_name, merged_rows_sources, DEFAULT_BLOCK_SIZE);
-			MergedColumnOnlyOutputStream column_to(data, new_part_tmp_path, true, compression_method);
+			MergedColumnOnlyOutputStream column_to(data, new_part_tmp_path, true, compression_method, offset_written);
 
 			column_to.writePrefix();
 			while ((block = column_gathered_stream.read()))
@@ -654,6 +659,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 			}
 			/// NOTE: nested column contains duplicates checksums (and files)
 			checksums_ordinary_columns.add(column_to.writeSuffixAndGetChecksums());
+
+			if (typeid_cast<const DataTypeArray *>(column_type.get()))
+				offset_columns_written.emplace(offset_column_name);
 
 			merge_entry->columns_written = key_column_names.size() + column_num;
 			merge_entry->bytes_written_uncompressed += column_gathered_stream.getProfileInfo().bytes;
