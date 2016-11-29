@@ -18,7 +18,7 @@ struct RowSourcePart
 	{
 		static_assert(sizeof(*this) == 1, "Size of RowSourcePart is too big due to compiler settings");
 		setSourceNum(source_num);
-		setFlag(flag);
+		setSkipFlag(flag);
 	}
 
 	/// is equal to getSourceNum() if flag is false
@@ -27,14 +27,14 @@ struct RowSourcePart
 	size_t getSourceNum()const 	{ return data & MASK_NUMBER; }
 
 	/// In CollapsingMergeTree case flag means "skip this rows"
-	bool getFlag() const 		{ return (data & MASK_FLAG) != 0; }
+	bool getSkipFlag() const 	{ return (data & MASK_FLAG) != 0; }
 
 	void setSourceNum(size_t source_num)
 	{
 		data = (data & MASK_FLAG) | (static_cast<UInt8>(source_num) & MASK_NUMBER);
 	}
 
-	void setFlag(bool flag)
+	void setSkipFlag(bool flag)
 	{
 		data = flag ? data | MASK_FLAG : data & ~MASK_FLAG;
 	}

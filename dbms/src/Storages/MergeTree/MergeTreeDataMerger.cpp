@@ -690,9 +690,8 @@ MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
 	const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
 	size_t sum_rows_upper_bound, MergedRowSources & rows_sources_to_alloc) const
 {
-// Testing:
-// 	if (data.context.getMergeTreeSettings().enable_vertical_merge_algorithm == 0)
-// 		return MergeAlgorithm::Horizontal;
+	if (data.context.getMergeTreeSettings().enable_vertical_merge_algorithm == 0)
+		return MergeAlgorithm::Horizontal;
 
 	bool is_supported_storage =
 		data.merging_params.mode == MergeTreeData::MergingParams::Ordinary ||

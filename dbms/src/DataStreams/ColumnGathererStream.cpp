@@ -75,7 +75,7 @@ Block ColumnGathererStream::readImpl()
 	for (size_t pos = pos_global; pos < pos_finish; ++pos)
 	{
 		auto source_id = pos_to_source_idx[pos].getSourceNum();
-		bool skip = pos_to_source_idx[pos].getFlag();
+		bool skip = pos_to_source_idx[pos].getSkipFlag();
 		Source & source = sources[source_id];
 
 		if (source.pos >= source.size) /// Fetch new block
