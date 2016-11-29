@@ -10,6 +10,8 @@ add_definitions(
 
 include_directories (include src)
 
+message(STATUS "Building: tcmalloc_minimal_internal")
+
 add_library (tcmalloc_minimal_internal
 ./src/malloc_hook.cc
 ./src/base/spinlock_internal.cc
