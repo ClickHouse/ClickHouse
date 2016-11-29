@@ -4250,13 +4250,14 @@ All operators are transformed to the corresponding functions at the query parsin
 %%a = b%% - equals(a, b) function
 %%a == b%% - equals(a, b) function
 %%a != b%% - notEquals(a, b) function
-<span class="inline-example">a &lt;> b</span> - notEquals(a, b) function
+%%a &lt;> b%% - notEquals(a, b) function
 %%a &lt;= b%% - lessOrEquals(a, b) function
-<span class="inline-example">a >= b</span> - greaterOrEquals(a, b) function
+%%a &gt;= b%% - greaterOrEquals(a, b) function
 %%a &lt; b%% - less(a, b) function
-<span class="inline-example">a > b</span> - greater(a, b) function
+%%a &gt; b%% - greater(a, b) function
 %%a LIKE s%% - like(a, b) function
 %%a NOT LIKE s%% - notLike(a, b) function
+%%a BETWEEN b AND c%% - equivalent to %%a &gt;= b AND a &lt;= c%%
 
 ==Operators for working with data sets==
 
@@ -4282,6 +4283,21 @@ See the section &quot;IN operators&quot;.
 ==Conditional operator==
 
 %%a ? b : c%% - if(a, b, c) function
+
+==Conditional expression==
+
+%%
+CASE [x]
+    WHEN a THEN b
+    [WHEN ... THEN ...]
+    ELSE c
+END
+%%
+If x is given - transform(x, [a, ...], [b, ...], c).
+Otherwise, multiIf(a, b, ..., c).
+
+==String concatenation operator==
+%%s1 || s2%% - concat(s1, s2) function
 
 ==Lambda creation operator==
 
@@ -4565,6 +4581,27 @@ These functions accept a string and interpret the bytes placed at the beginning 
 ===reinterpretAsString===
 
 This function accepts a number or date or date with time, and returns a string containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
+
+===CAST(x, t)===
+
+Casts <i>x</i> to the <i>t</i> data type.
+The syntax %%CAST(x AS t)%% is also supported.
+
+Example:
+%%
+SELECT
+    '2016-06-15 23:00:00' AS timestamp,
+    CAST(timestamp AS DateTime) AS datetime,
+    CAST(timestamp AS Date) AS date,
+    CAST(timestamp, 'String') AS string,
+    CAST(timestamp, 'FixedString(22)') AS fixed_string
+
+┌─timestamp───────────┬────────────datetime─┬───────date─┬─string──────────────┬─fixed_string──────────────┐
+│ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00\0\0\0 │
+└─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
+%%
+
+Casting to FixedString(N) works only for String and FixedString(N).
 
 
 ==Functions for working with dates and times==

@@ -52,7 +52,7 @@
 /// слишком маленький период может приводить, что ошибки исчезают сразу после создания.
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD 	(2 * DBMS_DEFAULT_SEND_TIMEOUT_SEC)
 #define DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS 						5000	/// Максимальное время ожидания в очереди запросов.
-#define DBMS_DEFAULT_BACKGROUND_POOL_SIZE						6
+#define DBMS_DEFAULT_BACKGROUND_POOL_SIZE						16
 
 /// Используется в методе reserve, когда известно число строк, но неизвестны их размеры.
 #define DBMS_APPROX_STRING_SIZE 64

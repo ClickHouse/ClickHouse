@@ -41,25 +41,34 @@ int main(int argc, char ** argv)
 		IMergeSelector::Part part;
 		in >> part.size >> "\t" >> part.age >> "\t" >> part.level >> "\t" >> part_names.back() >> "\n";
 		part.data = part_names.back().data();
+		part.level = 0;
 		parts.emplace_back(part);
 		sum_parts_size += part.size;
 	}
 
 	size_t sum_size_written = sum_parts_size;
 	size_t num_merges = 1;
+	size_t age_passed = 0;
 
 	while (parts.size() > 1)
 	{
-		IMergeSelector::PartsInPartition selected_parts = selector.select(partitions, 0);
+		IMergeSelector::PartsInPartition selected_parts = selector.select(partitions, 0 /*100ULL * 1024 * 1024 * 1024*/);
 
 		if (selected_parts.empty())
 		{
-			std::cout << '.';
+			++age_passed;
 			for (auto & part : parts)
 				++part.age;
+
+			if (age_passed > 60 * 86400)
+				break;
+
+			if (age_passed % 86400 == 0)
+				std::cout << ".";
+
 			continue;
 		}
-		std::cout << '\n';
+		std::cout << "Time passed: " << age_passed << '\n';
 
 		size_t sum_merged_size = 0;
 		size_t start_index = 0;
@@ -75,7 +84,7 @@ int main(int argc, char ** argv)
 				start_index = i;
 			}
 
-			std::cout << parts[i].size;
+			std::cout << (parts[i].size / 1024) << "_" << parts[i].level;
 			if (in_range)
 			{
 				sum_merged_size += parts[i].size;
@@ -101,6 +110,14 @@ int main(int argc, char ** argv)
 
 		sum_size_written += sum_merged_size;
 		++num_merges;
+
+		double time_to_merge = sum_merged_size / (1048576 * 10.0);
+
+		age_passed += time_to_merge;
+		for (auto & part : parts)
+			part.age += time_to_merge;
+
+		std::cout << "Time passed: " << age_passed << ", num parts: " << parts.size() << '\n';
 	}
 
 	std::cout << std::fixed << std::setprecision(2)
