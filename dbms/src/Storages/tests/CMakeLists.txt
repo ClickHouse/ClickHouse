@@ -33,3 +33,5 @@ target_link_libraries (merge_selector dbms)
 
 add_executable (merge_selector2 merge_selector2.cpp)
 target_link_libraries (merge_selector2 dbms)
+
+add_executable (row_source_bitwise_compatibility row_source_bitwise_test.cpp)
