@@ -13,6 +13,7 @@
 #include <DB/Interpreters/QueryPriorities.h>
 #include <DB/Interpreters/ClientInfo.h>
 #include <DB/Common/CurrentMetrics.h>
+#include <DB/DataStreams/BlockIO.h>
 
 
 namespace CurrentMetrics
@@ -27,6 +28,7 @@ class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 using Tables = std::map<String, StoragePtr>;
 struct Settings;
+struct BlockIO;
 
 
 /** List of currently executing queries.
@@ -73,6 +75,20 @@ struct ProcessListElement
 
 	/// Temporary tables could be registered here. Modify under mutex.
 	Tables temporary_tables;
+
+protected:
+
+	/// Streams with query results, point to BlockIO from executeQuery()
+	/// This declaration is compatible with notes about BlockIO::process_list_entry:
+	///  there are no cyclic dependencies: BlockIO::in,out point to objects inside ProcessListElement (not whole object)
+	BlockInputStreamPtr query_stream_in;
+	BlockOutputStreamPtr query_stream_out;
+
+	/// Abovemetioned streams haved delayed initialization, use this flag to track initialization
+	/// Can be set to true by single thread, can be read from multiple
+	std::atomic<bool> query_streams_initialized{false};
+
+public:
 
 
 	ProcessListElement(
@@ -129,6 +145,11 @@ struct ProcessListElement
 
 		return res;
 	}
+
+	/// Copies pointers to in/out streams
+	void setQueryStreams(const BlockIO & io);
+	/// Get query in/out pointers
+	bool tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const;
 };
 
 
@@ -233,6 +254,18 @@ public:
 
 	/// Find temporary table by query_id and name. NOTE: doesn't work fine if there are many queries with same query_id.
 	StoragePtr tryGetTemporaryTable(const String & query_id, const String & table_name) const;
+
+
+	enum class CancellationCode
+	{
+		NotFound = 0, 					/// already cancelled
+		QueryIsNotInitializedYet = 1,
+		CancelCannotBeSended = 2,
+		CancelSended = 3
+	};
+
+	/// Try call cancel() for input and output streams of query with specified id and user
+	CancellationCode sendCancelToQuery(const String & query_id, const String & intial_user);
 };
 
 }

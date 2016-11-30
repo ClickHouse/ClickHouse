@@ -2,6 +2,7 @@
 #include <DB/Interpreters/Settings.h>
 #include <DB/Common/Exception.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB
@@ -37,11 +38,12 @@ ProcessList::EntryPtr ProcessList::insert(
 		  */
 
 		{
-			UserToQueries::iterator user_process_list = user_to_queries.find(client_info.current_user);
+			auto user_process_list = user_to_queries.find(client_info.current_user);
 
 			if (user_process_list != user_to_queries.end())
 			{
-				if (settings.max_concurrent_queries_for_user && user_process_list->second.queries.size() >= settings.max_concurrent_queries_for_user)
+				if (settings.max_concurrent_queries_for_user
+					&& user_process_list->second.queries.size() >= settings.max_concurrent_queries_for_user)
 					throw Exception("Too much simultaneous queries for user " + client_info.current_user
 						+ ". Current: " + toString(user_process_list->second.queries.size())
 						+ ", maximum: " + toString(settings.max_concurrent_queries_for_user),
@@ -49,7 +51,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
 				if (!client_info.current_query_id.empty())
 				{
-					ProcessListForUser::QueryToElement::iterator element = user_process_list->second.queries.find(client_info.current_query_id);
+					auto element = user_process_list->second.queries.find(client_info.current_query_id);
 					if (element != user_process_list->second.queries.end())
 					{
 						if (!settings.replace_running_query)
@@ -142,6 +144,24 @@ ProcessListEntry::~ProcessListEntry()
 }
 
 
+void ProcessListElement::setQueryStreams(const BlockIO & io)
+{
+	query_stream_in = io.in;
+	query_stream_out = io.out;
+	query_streams_initialized = true;
+}
+
+bool ProcessListElement::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const
+{
+	if (!query_streams_initialized)
+		return false;
+
+	in = query_stream_in;
+	out = query_stream_out;
+	return true;
+}
+
+
 void ProcessList::addTemporaryTable(ProcessListElement & elem, const String & table_name, StoragePtr storage)
 {
 	std::lock_guard<std::mutex> lock(mutex);
@@ -169,6 +189,34 @@ StoragePtr ProcessList::tryGetTemporaryTable(const String & query_id, const Stri
 	}
 
 	return {};
+}
+
+
+ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user)
+{
+	std::lock_guard<std::mutex> lock(mutex);
+
+	BlockInputStreamPtr input_stream;
+	BlockOutputStreamPtr output_stream;
+	IProfilingBlockInputStream * input_stream_casted;
+
+	for (const auto & elem : cont)
+	{
+		if (elem.client_info.current_query_id == current_query_id && elem.client_info.current_user == current_user)
+		{
+			if (elem.tryGetQueryStreams(input_stream, output_stream))
+			{
+				if (input_stream && (input_stream_casted = dynamic_cast<IProfilingBlockInputStream *>(input_stream.get())))
+				{
+					input_stream_casted->cancel();
+					return CancellationCode::CancelSended;
+				}
+				return CancellationCode::CancelCannotBeSended;
+			}
+			return CancellationCode::QueryIsNotInitializedYet;
+		}
+	}
+	return CancellationCode::NotFound;
 }
 
 }
