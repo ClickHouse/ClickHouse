@@ -278,8 +278,8 @@ protected:
 };
 
 
-/** Выражение с тернарным оператором.
-  * Например, a = 1 ? b + 1 : c * 2.
+/** An expression with ternary operator.
+  * For example, a = 1 ? b + 1 : c * 2.
   */
 class ParserTernaryOperatorExpression : public IParserBase
 {

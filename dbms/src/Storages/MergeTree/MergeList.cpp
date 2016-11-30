@@ -23,8 +23,8 @@ MergeListElement::MergeListElement(const std::string & database, const std::stri
 	background_pool_task_memory_tracker = current_memory_tracker;
 	if (background_pool_task_memory_tracker)
 	{
-		background_pool_task_memory_tracker->setNext(&memory_tracker);
 		memory_tracker.setMetric(CurrentMetrics::MemoryTrackingForMerges);
+		background_pool_task_memory_tracker->setNext(&memory_tracker);
 	}
 }
 

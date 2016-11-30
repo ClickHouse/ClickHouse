@@ -8,6 +8,7 @@
 #include <DB/Parsers/ParserUseQuery.h>
 #include <DB/Parsers/ParserSetQuery.h>
 #include <DB/Parsers/ParserAlterQuery.h>
+#include <DB/Parsers/ParserKillQueryQuery.h>
 //#include <DB/Parsers/ParserMultiQuery.h>
 
 
@@ -26,6 +27,7 @@ bool ParserQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_
 	ParserUseQuery use_p;
 	ParserSetQuery set_p;
 	ParserOptimizeQuery optimize_p;
+	ParserKillQueryQuery kill_query_p;
 //	ParserMultiQuery multi_p;
 
 	bool res = query_with_output_p.parse(pos, end, node, max_parsed_pos, expected)
@@ -36,11 +38,12 @@ bool ParserQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_
 		|| alter_p.parse(pos, end, node, max_parsed_pos, expected)
 		|| use_p.parse(pos, end, node, max_parsed_pos, expected)
 		|| set_p.parse(pos, end, node, max_parsed_pos, expected)
-		|| optimize_p.parse(pos, end, node, max_parsed_pos, expected);
+		|| optimize_p.parse(pos, end, node, max_parsed_pos, expected)
+		|| kill_query_p.parse(pos, end, node, max_parsed_pos, expected);
 	/*	|| multi_p.parse(pos, end, node, max_parsed_pos, expected)*/;
 
 	if (!res && (!expected || !*expected))
-		expected = "One of: SHOW TABLES, SHOW DATABASES, SHOW CREATE TABLE, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE, EXISTS, DESCRIBE, DESC, ALTER, SHOW PROCESSLIST, CHECK, opening curly brace";
+		expected = "One of: SHOW TABLES, SHOW DATABASES, SHOW CREATE TABLE, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE, EXISTS, DESCRIBE, DESC, ALTER, SHOW PROCESSLIST, CHECK, KILL QUERY opening curly brace";
 
 	return res;
 }

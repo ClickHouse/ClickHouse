@@ -11,6 +11,7 @@
 #include <DB/Parsers/ASTShowProcesslistQuery.h>
 #include <DB/Parsers/TablePropertiesQueriesASTs.h>
 #include <DB/Parsers/ASTCheckQuery.h>
+#include <DB/Parsers/ASTKillQueryQuery.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterInsertQuery.h>
@@ -27,6 +28,7 @@
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/Interpreters/InterpreterShowProcesslistQuery.h>
 #include <DB/Interpreters/InterpreterCheckQuery.h>
+#include <DB/Interpreters/InterpreterKillQueryQuery.h>
 #include <DB/Interpreters/InterpreterFactory.h>
 
 namespace DB
@@ -114,6 +116,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
 	else if (typeid_cast<ASTCheckQuery *>(query.get()))
 	{
 		return std::make_unique<InterpreterCheckQuery>(query, context);
+	}
+	else if (typeid_cast<ASTKillQueryQuery *>(query.get()))
+	{
+		return std::make_unique<InterpreterKillQueryQuery>(query, context);
 	}
 	else
 		throw Exception("Unknown type of query: " + query->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);

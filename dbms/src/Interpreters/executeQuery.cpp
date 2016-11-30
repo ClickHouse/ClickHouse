@@ -194,6 +194,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 		/// Hold element of process list till end of query execution.
 		res.process_list_entry = process_list_entry;
 
+		/// Delayed initialization of query streams (required for KILL QUERY purposes)
+		if (!internal)
+			(*res.process_list_entry)->setQueryStreams(res);
+
 		if (res.in)
 		{
 			if (auto stream = dynamic_cast<IProfilingBlockInputStream *>(res.in.get()))
