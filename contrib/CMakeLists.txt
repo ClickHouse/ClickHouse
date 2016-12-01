@@ -10,7 +10,7 @@ add_subdirectory (libpoco)
 add_subdirectory (libre2)
 add_subdirectory (libzookeeper)
 
-if (NOT $ENV{DISABLE_LIBTCMALLOC})
+if (NOT DEFINED $ENV{DISABLE_LIBTCMALLOC})
 	add_subdirectory (libtcmalloc)
 endif()
 
