@@ -1,49 +1,32 @@
-include_directories(include)
-include_directories(/usr/include/mysql)
+include_directories (include)
+include_directories (/usr/include/mysql)
 
 add_subdirectory (src)
 
-option(ENABLE_MONGODB "Set to TRUE to enable MongoDB support as source for external dictionaries" True)
-set (DISABLE_MONGODB FALSE CACHE BOOL "Set to TRUE to disable MongoDB support as source for external dictionaries")
-
 if (ENABLE_MONGODB)
-	set (DISABLE_MONGODB FALSE)
-else()
-	set (DISABLE_MONGODB TRUE)
-endif()
-
-if ($ENV{DISABLE_MONGODB})
-	set (DISABLE_MONGODB TRUE)
-endif()
-
-if (DISABLE_MONGODB)
-	add_definitions(-D DISABLE_MONGODB)
-else()
 	set (LINK_MONGOCLIENT libmongoclient.a ${OPENSSL_LIBS} ${BOOST_THREAD_LIB})
-endif()
+	add_definitions(-D ENABLE_MONGODB)
+endif ()
 
-if (DISABLE_LIBTCMALLOC)
+if (NOT ENABLE_LIBTCMALLOC)
 	add_definitions(-D NO_TCMALLOC)
-endif()
+endif ()
 
 if (APPLE)
-      	set (AIO_CPP_FILES "")
-      	set (AIO_H_FILES "")
-      	set (APPLE_ICONV_LIB iconv)
-
+	set (AIO_CPP_FILES "")
+	set (AIO_H_FILES "")
+	set (APPLE_ICONV_LIB iconv)
 else()
-      	set (AIO_H_FILES include/DB/Common/AIO.h
-      		include/DB/IO/WriteBufferAIO.h
-      		include/DB/IO/ReadBufferAIO.h
-      	)
-      	set (AIO_CPP_FILES
-      		src/IO/ReadBufferAIO.cpp
-      		src/IO/WriteBufferAIO.cpp
-      	)
-      	set (APPLE_ICONV_LIB "")
+	set (AIO_H_FILES include/DB/Common/AIO.h
+		include/DB/IO/WriteBufferAIO.h
+		include/DB/IO/ReadBufferAIO.h)
+	set (AIO_CPP_FILES
+		src/IO/ReadBufferAIO.cpp
+		src/IO/WriteBufferAIO.cpp)
+	set (APPLE_ICONV_LIB "")
 endif()
 
-add_library(string_utils
+add_library (string_utils
 	include/DB/Common/StringUtils.h
 	src/Common/StringUtils.cpp)
 
@@ -978,45 +961,44 @@ add_library (dbms
 )
 
 if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-    # Не генерируем отладочную информацию для файлов с большим количеством инстанцирований шаблонов
-    # - для более быстрой линковки и меньшего размера бинарника.
-    SET_SOURCE_FILES_PROPERTIES(
-        src/Functions/FunctionsArithmetic.cpp
-        src/Functions/FunctionsArray.cpp
-        src/Functions/FunctionsCoding.cpp
-        src/Functions/FunctionsComparison.cpp
-        src/Functions/FunctionsConditional.cpp
-        src/Functions/FunctionsConversion.cpp
-        src/Functions/FunctionsDateTime.cpp
-        src/Functions/FunctionsDictionaries.cpp
-        src/Functions/FunctionsFormatting.cpp
-        src/Functions/FunctionsHashing.cpp
-        src/Functions/FunctionsHigherOrder.cpp
-        src/Functions/FunctionsLogical.cpp
-        src/Functions/FunctionsRandom.cpp
-        src/Functions/FunctionsReinterpret.cpp
-        src/Functions/FunctionsRound.cpp
-        src/Functions/FunctionsString.cpp
-        src/Functions/FunctionsStringArray.cpp
-        src/Functions/FunctionsStringSearch.cpp
-        src/Functions/FunctionsURL.cpp
-        src/Functions/FunctionsVisitParam.cpp
-        src/Functions/FunctionsMath.cpp
-        src/Functions/FunctionsGeo.cpp
-        src/Functions/FunctionsMiscellaneous.cpp
-        src/Functions/FunctionsTransform.cpp
-        src/Dictionaries/FlatDictionary.cpp
-        src/Dictionaries/HashedDictionary.cpp
-        src/Dictionaries/CacheDictionary.cpp
-        src/Dictionaries/RangeHashedDictionary.cpp
-        src/Dictionaries/ComplexKeyHashedDictionary.cpp
-        src/Dictionaries/ComplexKeyCacheDictionary.cpp
-        PROPERTIES COMPILE_FLAGS -g0)
-endif()
+	# Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
+	set_source_files_properties(
+		src/Functions/FunctionsArithmetic.cpp
+		src/Functions/FunctionsArray.cpp
+		src/Functions/FunctionsCoding.cpp
+		src/Functions/FunctionsComparison.cpp
+		src/Functions/FunctionsConditional.cpp
+		src/Functions/FunctionsConversion.cpp
+		src/Functions/FunctionsDateTime.cpp
+		src/Functions/FunctionsDictionaries.cpp
+		src/Functions/FunctionsFormatting.cpp
+		src/Functions/FunctionsHashing.cpp
+		src/Functions/FunctionsHigherOrder.cpp
+		src/Functions/FunctionsLogical.cpp
+		src/Functions/FunctionsRandom.cpp
+		src/Functions/FunctionsReinterpret.cpp
+		src/Functions/FunctionsRound.cpp
+		src/Functions/FunctionsString.cpp
+		src/Functions/FunctionsStringArray.cpp
+		src/Functions/FunctionsStringSearch.cpp
+		src/Functions/FunctionsURL.cpp
+		src/Functions/FunctionsVisitParam.cpp
+		src/Functions/FunctionsMath.cpp
+		src/Functions/FunctionsGeo.cpp
+		src/Functions/FunctionsMiscellaneous.cpp
+		src/Functions/FunctionsTransform.cpp
+		src/Dictionaries/FlatDictionary.cpp
+		src/Dictionaries/HashedDictionary.cpp
+		src/Dictionaries/CacheDictionary.cpp
+		src/Dictionaries/RangeHashedDictionary.cpp
+		src/Dictionaries/ComplexKeyHashedDictionary.cpp
+		src/Dictionaries/ComplexKeyCacheDictionary.cpp
+		PROPERTIES COMPILE_FLAGS -g0)
+endif ()
 
-IF (NOT AARCH64)
-	SET(LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
-ENDIF()
+if (NOT AARCH64)
+	set (LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
+endif ()
 
 target_link_libraries(dbms
 	common
@@ -1028,7 +1010,7 @@ target_link_libraries(dbms
 	double-conversion
 	${LINK_LIBRARIES_ONLY_ON_X86_64}
 	re2 re2_st
-	libcrypto.a
+	${LIBCRYPTO}
 	${BOOST_SYSTEM_LIB}
 	${LINK_MONGOCLIENT}
 	${BOOST_REGEX_LIB}

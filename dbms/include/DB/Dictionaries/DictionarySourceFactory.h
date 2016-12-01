@@ -6,7 +6,7 @@
 #include <DB/Dictionaries/MySQLDictionarySource.h>
 #include <DB/Dictionaries/ClickHouseDictionarySource.h>
 
-#ifndef DISABLE_MONGODB
+#ifdef ENABLE_MONGODB
 #include <DB/Dictionaries/MongoDBDictionarySource.h>
 #endif
 
@@ -116,7 +116,7 @@ public:
 		}
 		else if ("mongodb" == source_type)
 		{
-		#ifndef DISABLE_MONGODB
+		#ifdef ENABLE_MONGODB
 			return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
 		#else
 			throw Exception{
