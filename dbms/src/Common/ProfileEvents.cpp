@@ -7,10 +7,13 @@
 	M(SelectQuery) \
 	M(InsertQuery) \
 	M(FileOpen) \
+	M(FileOpenFailed) \
 	M(Seek) \
 	M(ReadBufferFromFileDescriptorRead) \
+	M(ReadBufferFromFileDescriptorReadFailed) \
 	M(ReadBufferFromFileDescriptorReadBytes) \
 	M(WriteBufferFromFileDescriptorWrite) \
+	M(WriteBufferFromFileDescriptorWriteFailed) \
 	M(WriteBufferFromFileDescriptorWriteBytes) \
 	M(ReadBufferAIORead) \
 	M(ReadBufferAIOReadBytes) \
