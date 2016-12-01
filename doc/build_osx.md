@@ -24,7 +24,7 @@ brew install boost --cc=gcc-6
 ## Install required libraries
 
 ```
-brew install icu4c mysql openssl unixodbc glib libtool gettext
+brew install icu4c mysql openssl unixodbc glib libtool gettext homebrew/dupes/libiconv homebrew/dupes/zlib
 ```
 
 ## Install optional libraries
