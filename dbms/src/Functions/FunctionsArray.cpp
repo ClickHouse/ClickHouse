@@ -658,7 +658,8 @@ DataTypePtr FunctionArrayEnumerate::getReturnType(const DataTypes & arguments) c
 
 	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
 	if (!array_type)
-		throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		throw Exception("First argument for function " + getName() + " must be an array but it has type "
+			+ arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 	return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
 }
@@ -727,8 +728,8 @@ DataTypePtr FunctionArrayUniq:: getReturnType(const DataTypes & arguments) const
 	{
 		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
 		if (!array_type)
-			throw Exception("All arguments for function " + getName() + " must be arrays; argument " + toString(i + 1) + " isn't.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception("All arguments for function " + getName() + " must be arrays but argument " +
+				toString(i + 1) + " has type " + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
 	return std::make_shared<DataTypeUInt32>();
@@ -952,8 +953,8 @@ DataTypePtr FunctionArrayEnumerateUniq::getReturnType(const DataTypes & argument
 	{
 		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
 		if (!array_type)
-			throw Exception("All arguments for function " + getName() + " must be arrays; argument " + toString(i + 1) + " isn't.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception("All arguments for function " + getName() + " must be arrays but argument " +
+				toString(i + 1) + " has type " + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
 	return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
@@ -1791,8 +1792,8 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisites(
 	{
 		const DataTypeArray * arg = typeid_cast<const DataTypeArray *>(arguments[i].type.get());
 		if (!arg)
-			throw Exception("Argument " + toString(i) + " for function " + getName() + " must be array.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception("Argument " + toString(i) + " for function " + getName() + " must be an array but it has type "
+				+ arguments[i].type->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		argument_types[i - 1] = arg->getNestedType()->clone();
 	}
