@@ -9,6 +9,7 @@
 namespace ProfileEvents
 {
 	extern const Event FileOpen;
+	extern const Event FileOpenFailed;
 	extern const Event WriteBufferAIOWrite;
 	extern const Event WriteBufferAIOWriteBytes;
 }
@@ -58,6 +59,7 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 	fd = ::open(filename.c_str(), open_flags, mode_);
 	if (fd == -1)
 	{
+		ProfileEvents::increment(ProfileEvents::FileOpenFailed);
 		auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
 		throwFromErrno("Cannot open file " + filename, error_code);
 	}

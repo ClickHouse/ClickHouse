@@ -263,6 +263,7 @@ void ExpressionAnalyzer::optimizeIfWithConstantConditionImpl(ASTPtr & current_as
 		if (tryExtractConstValueFromCondition(condition_expr, condition))
 		{
 			ASTPtr replace_ast = condition ? then_expr : else_expr;
+			ASTPtr child_copy = child;
 			String replace_alias = replace_ast->tryGetAlias();
 			String if_alias = child->tryGetAlias();
 
@@ -279,6 +280,13 @@ void ExpressionAnalyzer::optimizeIfWithConstantConditionImpl(ASTPtr & current_as
 				ASTPtr replace_ast_deep_copy = replace_ast->clone();
 				replace_ast_deep_copy->setAlias(if_alias);
 				child = replace_ast_deep_copy;
+			}
+
+			if (!if_alias.empty())
+			{
+				auto alias_it = aliases.find(if_alias);
+				if (alias_it != aliases.end() && alias_it->second.get() == child_copy.get())
+					alias_it->second = child;
 			}
 		}
 	}

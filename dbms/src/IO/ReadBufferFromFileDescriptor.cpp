@@ -16,6 +16,7 @@
 namespace ProfileEvents
 {
 	extern const Event ReadBufferFromFileDescriptorRead;
+	extern const Event ReadBufferFromFileDescriptorReadFailed;
 	extern const Event ReadBufferFromFileDescriptorReadBytes;
 	extern const Event Seek;
 }
@@ -63,7 +64,10 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 			break;
 
 		if (-1 == res && errno != EINTR)
+		{
+			ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
 			throwFromErrno("Cannot read from file " + getFileName(), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+		}
 
 		if (res > 0)
 			bytes_read += res;
