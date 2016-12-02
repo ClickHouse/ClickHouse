@@ -35,9 +35,9 @@ struct SortColumnDescription
 using SortDescription = std::vector<SortColumnDescription>;
 
 
-/** Курсор, позволяющий сравнивать соответствующие строки в разных блоках.
-  * Курсор двигается по одному блоку.
-  * Для использования в priority queue.
+/** Cursor allows to compare rows in different blocks (and parts).
+  * Cursor moves inside single block.
+  * It is used in priority queue.
   */
 struct SortCursorImpl
 {
@@ -48,14 +48,17 @@ struct SortCursorImpl
 	size_t pos = 0;
 	size_t rows = 0;
 
-	/** Порядок (что сравнивается), если сравниваемые столбцы равны.
-	  * Даёт возможность предпочитать строки из нужного курсора.
+	/** Determines order if comparing columns are equal.
+	  * Order is determined by number of cursor.
+	  *
+	  * Cursor number (always?) equals to number of merging part.
+	  * Therefore this field can be used to determine part number of current row (see ColumnGathererStream).
 	  */
 	size_t order;
 
 	using NeedCollationFlags = std::vector<UInt8>;
 
-	/** Нужно ли использовать Collator для сортировки столбца */
+	/** Should we use Collator to sort a column? */
 	NeedCollationFlags need_collation;
 
 	/** Есть ли хотя бы один столбец с Collator. */

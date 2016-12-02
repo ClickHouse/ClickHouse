@@ -60,17 +60,18 @@ add_library (common
 )
 
 # TESTIRT-3687 DISABLE_LIBTCMALLOC - when testing for memory leaks, disable libtcmalloc
-IF($ENV{DISABLE_LIBTCMALLOC})
+IF(DISABLE_LIBTCMALLOC)
 	message(STATUS "Disabling libtcmalloc for valgrind better analysis")
-ELSE($ENV{DISABLE_LIBTCMALLOC})
-	IF($ENV{DEBUG_LIBTCMALLOC})
-		message(STATUS "Link libtcmalloc_minimal_debug for testing")
-		SET(MALLOC_LIBRARIES libtcmalloc_minimal_debug.a)
-	ELSE($ENV{DEBUG_LIBTCMALLOC})
+ELSE(DISABLE_LIBTCMALLOC)
+	IF(DEBUG_LIBTCMALLOC)
+		find_library(LIBTCMALLOC_DEBUG libtcmalloc_minimal_debug.a tcmalloc_minimal_debug) # debug version of tcmalloc from package
+		message(STATUS "Link libtcmalloc_minimal_debug for testing from ${LIBTCMALLOC_DEBUG}")
+		SET(MALLOC_LIBRARIES ${LIBTCMALLOC_DEBUG})
+	ELSE(DEBUG_LIBTCMALLOC)
 		message(STATUS "Link libtcmalloc_minimal")
 		SET(MALLOC_LIBRARIES tcmalloc_minimal_internal)
-	ENDIF($ENV{DEBUG_LIBTCMALLOC})
-ENDIF($ENV{DISABLE_LIBTCMALLOC})
+	ENDIF(DEBUG_LIBTCMALLOC)
+ENDIF(DISABLE_LIBTCMALLOC)
 
 if (APPLE)
 	SET(RT_LIBRARIES "apple_rt")

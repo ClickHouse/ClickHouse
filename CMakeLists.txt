@@ -184,6 +184,12 @@ find_library (BOOST_THREAD_LIB libboost_thread.a HINTS ${BOOST_HINTS})
 set (LTDL_HINTS "/usr/local/opt/libtool/lib")
 find_library (LTDL_LIB libltdl.a HINTS ${LTDL_HINTS})
 
+# 5. tcmalloc
+if(NOT DEFINED DISABLE_LIBTCMALLOC)
+	set(DISABLE_LIBTCMALLOC $ENV{DISABLE_LIBTCMALLOC} CACHE STRING "Don't use libtcmalloc" FORCE)
+	set(DEBUG_LIBTCMALLOC $ENV{DEBUG_LIBTCMALLOC} CACHE STRING "Use debug version of libtcmalloc" FORCE)
+endif()
+
 # Directory for Yandex specific files
 SET(CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)
 

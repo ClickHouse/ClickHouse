@@ -215,6 +215,13 @@ MergeTreeReader::Stream::Stream(
 	}
 }
 
+std::unique_ptr<MergeTreeReader::Stream> MergeTreeReader::Stream::createEmptyPtr()
+{
+	std::unique_ptr<Stream> res(new Stream);
+	res->is_empty = true;
+	return res;
+}
+
 
 void MergeTreeReader::Stream::loadMarks(MarkCache * cache, bool save_in_cache)
 {
@@ -285,26 +292,39 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 {
 	String escaped_column_name = escapeForFileName(name);
 
-	/** Если файла с данными нет - то не будем пытаться открыть его.
-		* Это нужно, чтобы можно было добавлять новые столбцы к структуре таблицы без создания файлов для старых кусков.
-		*/
-	if (!Poco::File(path + escaped_column_name + ".bin").exists())
+	const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type);
+	bool data_file_exists = Poco::File(path + escaped_column_name + ".bin").exists();
+	bool is_column_of_nested_type = type_arr && level == 0 && DataTypeNested::extractNestedTableName(name) != name;
+
+	/** If data file is missing then we will not try to open it.
+	  * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
+	  * But we should try to load offset data for array columns of Nested subtable (their data will be filled by default value).
+	  */
+	if (!data_file_exists && !is_column_of_nested_type)
 		return;
 
 	/// Для массивов используются отдельные потоки для размеров.
-	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	if (type_arr)
 	{
 		String size_name = DataTypeNested::extractNestedTableName(name)
 			+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
 			+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+		String size_path = path + escaped_size_name + ".bin";
+
+		/// We don't have neither offsets neither data -> skipping, default values will be filled after
+		if (!data_file_exists && !Poco::File(size_path).exists())
+			return;
 
 		if (!streams.count(size_name))
 			streams.emplace(size_name, std::make_unique<Stream>(
 				path + escaped_size_name, uncompressed_cache, mark_cache, save_marks_in_cache,
 				all_mark_ranges, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
 
-		addStream(name, *type_arr->getNestedType(), all_mark_ranges, profile_callback, clock_type, level + 1);
+		if (data_file_exists)
+			addStream(name, *type_arr->getNestedType(), all_mark_ranges, profile_callback, clock_type, level + 1);
+		else
+			streams.emplace(name, Stream::createEmptyPtr());
 	}
 	else
 		streams.emplace(name, std::make_unique<Stream>(
@@ -344,10 +364,11 @@ void MergeTreeReader::readData(const String & name, const IDataType & type, ICol
 					required_internal_size - array.getData().size(),
 					level + 1);
 
+				size_t read_internal_size = array.getData().size();
+
 				/** Исправление для ошибочно записанных пустых файлов с данными массива.
 					* Такое бывает после ALTER с добавлением новых столбцов во вложенную структуру данных.
 					*/
-				size_t read_internal_size = array.getData().size();
 				if (required_internal_size != read_internal_size)
 				{
 					if (read_internal_size != 0)
@@ -369,6 +390,11 @@ void MergeTreeReader::readData(const String & name, const IDataType & type, ICol
 	else
 	{
 		Stream & stream = *streams[name];
+
+		/// It means that data column of array column will be empty, and it will be replaced by const data column
+		if (stream.is_empty)
+			return;
+
 		double & avg_value_size_hint = avg_value_size_hints[name];
 		stream.seekToMark(from_mark);
 		type.deserializeBinary(column, *stream.data_buffer, max_rows_to_read, avg_value_size_hint);
