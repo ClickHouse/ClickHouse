@@ -22,7 +22,7 @@ else()
 	set (LINK_MONGOCLIENT libmongoclient.a ${OPENSSL_LIBS} ${BOOST_THREAD_LIB})
 endif()
 
-if ($ENV{DISABLE_LIBTCMALLOC})
+if (DISABLE_LIBTCMALLOC)
 	add_definitions(-D NO_TCMALLOC)
 endif()
 
@@ -298,6 +298,7 @@ add_library (dbms
 	include/DB/DataStreams/SquashingTransform.h
 	include/DB/DataStreams/SquashingBlockInputStream.h
 	include/DB/DataStreams/SquashingBlockOutputStream.h
+	include/DB/DataStreams/ColumnGathererStream.h
 	include/DB/DataTypes/IDataType.h
 	include/DB/DataTypes/IDataTypeDummy.h
 	include/DB/DataTypes/DataTypeSet.h
@@ -808,6 +809,7 @@ add_library (dbms
 	src/DataStreams/SquashingTransform.cpp
 	src/DataStreams/SquashingBlockInputStream.cpp
 	src/DataStreams/SquashingBlockOutputStream.cpp
+	src/DataStreams/ColumnGathererStream.cpp
 
 	src/DataTypes/DataTypeString.cpp
 	src/DataTypes/DataTypeFixedString.cpp

@@ -11,6 +11,8 @@
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 
+#include <DB/Columns/ColumnArray.h>
+
 
 namespace DB
 {
@@ -32,6 +34,7 @@ public:
 		compression_method(compression_method_)
 	{
 	}
+
 
 protected:
 	using OffsetColumns = std::set<std::string>;
@@ -94,7 +97,8 @@ protected:
 
 	using ColumnStreams = std::map<String, std::unique_ptr<ColumnStream>>;
 
-	void addStream(const String & path, const String & name, const IDataType & type, size_t estimated_size = 0, size_t level = 0, String filename = "")
+	void addStream(const String & path, const String & name, const IDataType & type, size_t estimated_size = 0,
+				   size_t level = 0, String filename = "", bool skip_offsets = false)
 	{
 		String escaped_column_name;
 		if (filename.size())
@@ -105,23 +109,27 @@ protected:
 		/// Для массивов используются отдельные потоки для размеров.
 		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 		{
-			String size_name = DataTypeNested::extractNestedTableName(name)
-				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-			String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
-				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+			if (!skip_offsets)
+			{
+				String size_name = DataTypeNested::extractNestedTableName(name)
+					+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+				String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
+					+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
-			column_streams[size_name] = std::make_unique<ColumnStream>(
-				escaped_size_name,
-				path + escaped_size_name + ".bin",
-				path + escaped_size_name + ".mrk",
-				max_compress_block_size,
-				compression_method,
-				estimated_size,
-				aio_threshold);
+				column_streams[size_name] = std::make_unique<ColumnStream>(
+					escaped_size_name,
+					path + escaped_size_name + ".bin",
+					path + escaped_size_name + ".mrk",
+					max_compress_block_size,
+					compression_method,
+					estimated_size,
+					aio_threshold);
+			}
 
 			addStream(path, name, *type_arr->getNestedType(), estimated_size, level + 1);
 		}
 		else
+		{
 			column_streams[name] = std::make_unique<ColumnStream>(
 				escaped_column_name,
 				path + escaped_column_name + ".bin",
@@ -130,16 +138,19 @@ protected:
 				compression_method,
 				estimated_size,
 				aio_threshold);
+		}
 	}
 
 
 	/// Записать данные одного столбца.
-	void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns, size_t level = 0)
+	void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns,
+				   size_t level = 0, bool skip_offsets = false)
 	{
 		size_t size = column.size();
 
 		/// Для массивов требуется сначала сериализовать размеры, а потом значения.
-		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+		const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type);
+		if (!skip_offsets && type_arr)
 		{
 			String size_name = DataTypeNested::extractNestedTableName(name)
 				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
@@ -306,10 +317,15 @@ public:
 		throw Exception("Method writeSuffix is not supported by MergedBlockOutputStream", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums()
+	MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums(
+		const NamesAndTypesList & total_column_list,
+		MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr)
 	{
 		/// Заканчиваем запись и достаем чексуммы.
 		MergeTreeData::DataPart::Checksums checksums;
+
+		if (additional_column_checksums)
+			checksums = std::move(*additional_column_checksums);
 
 		if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 		{
@@ -319,10 +335,10 @@ public:
 			index_stream = nullptr;
 		}
 
-		for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
+		for (auto & column_stream : column_streams)
 		{
-			it->second->finalize();
-			it->second->addToChecksums(checksums);
+			column_stream.second->finalize();
+			column_stream.second->addToChecksums(checksums);
 		}
 
 		column_streams.clear();
@@ -338,7 +354,7 @@ public:
 		{
 			/// Записываем файл с описанием столбцов.
 			WriteBufferFromFile out(part_path + "columns.txt", 4096);
-			columns_list.writeText(out);
+			total_column_list.writeText(out);
 		}
 
 		{
@@ -348,6 +364,11 @@ public:
 		}
 
 		return checksums;
+	}
+
+	MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums()
+	{
+		return writeSuffixAndGetChecksums(columns_list, nullptr);
 	}
 
 	MergeTreeData::DataPart::Index & getIndex()
@@ -488,12 +509,13 @@ private:
 class MergedColumnOnlyOutputStream : public IMergedBlockOutputStream
 {
 public:
-	MergedColumnOnlyOutputStream(MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method)
+	MergedColumnOnlyOutputStream(MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method,
+								 bool skip_offsets_ = false)
 		: IMergedBlockOutputStream(
 			storage_, storage_.context.getSettings().min_compress_block_size,
 			storage_.context.getSettings().max_compress_block_size, compression_method,
 			storage_.context.getSettings().min_bytes_to_use_direct_io),
-		part_path(part_path_), sync(sync_)
+		part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_)
 	{
 	}
 
@@ -505,7 +527,7 @@ public:
 			for (size_t i = 0; i < block.columns(); ++i)
 			{
 				addStream(part_path, block.getByPosition(i).name,
-					*block.getByPosition(i).type, 0, 0, block.getByPosition(i).name);
+					*block.getByPosition(i).type, 0, 0, block.getByPosition(i).name, skip_offsets);
 			}
 			initialized = true;
 		}
@@ -516,7 +538,7 @@ public:
 		for (size_t i = 0; i < block.columns(); ++i)
 		{
 			const ColumnWithTypeAndName & column = block.getByPosition(i);
-			writeData(column.name, *column.type, *column.column, offset_columns);
+			writeData(column.name, *column.type, *column.column, offset_columns, 0, skip_offsets);
 		}
 
 		size_t written_for_last_mark = (storage.index_granularity - index_offset + rows) % storage.index_granularity;
@@ -537,8 +559,7 @@ public:
 			column_stream.second->finalize();
 			if (sync)
 				column_stream.second->sync();
-			std::string column = escapeForFileName(column_stream.first);
-			column_stream.second->addToChecksums(checksums, column);
+			column_stream.second->addToChecksums(checksums);
 		}
 
 		column_streams.clear();
@@ -552,6 +573,7 @@ private:
 
 	bool initialized = false;
 	bool sync;
+	bool skip_offsets;
 };
 
 }
