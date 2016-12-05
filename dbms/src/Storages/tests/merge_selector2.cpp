@@ -22,13 +22,11 @@ int main(int argc, char ** argv)
 	IMergeSelector::Partitions partitions(1);
 	IMergeSelector::PartsInPartition & parts = partitions.back();
 
-	SimpleMergeSelector::Settings settings;
-	SimpleMergeSelector selector(settings);
+/*	SimpleMergeSelector::Settings settings;
+	SimpleMergeSelector selector(settings);*/
 
-/*	LevelMergeSelector::Settings settings;
-	settings.min_parts_to_merge = 8;
-	settings.max_parts_to_merge = 16;
-	LevelMergeSelector selector(settings);*/
+	LevelMergeSelector::Settings settings;
+	LevelMergeSelector selector(settings);
 
 	ReadBufferFromFileDescriptor in(STDIN_FILENO);
 
@@ -42,7 +40,7 @@ int main(int argc, char ** argv)
 		IMergeSelector::Part part;
 		in >> part.size >> "\t" >> part.age >> "\t" >> part.level >> "\t" >> part_names.back() >> "\n";
 		part.data = part_names.back().data();
-		part.level = 0;
+//		part.level = 0;
 		parts.emplace_back(part);
 		sum_parts_size += part.size;
 	}
