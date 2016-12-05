@@ -59,8 +59,12 @@ struct Estimator
 		  * It must be lower, and thus we decide, what range is better to merge.
 		  *
 		  * The integral is lower iff the following formula is lower:
+		  *
+		  *  sum_size / (count - 1)
+		  *
+		  * But we have some tunes to prefer longer ranges.
 		  */
-		return (sum_size + sum_size_fixed_cost * count) / (count - 1);
+		return (sum_size + sum_size_fixed_cost * count) / (count - 1.9);
 	}
 
 	double min_score = 0;
@@ -124,7 +128,7 @@ bool allow(
 
 //	std::cerr << "combined_ratio: " << combined_ratio << "\n";
 
-	double lowered_base = interpolateLinear(settings.base, 1.0, combined_ratio);
+	double lowered_base = interpolateLinear(settings.base, 2.0, combined_ratio);
 
 //	std::cerr << "------- lowered_base: " << lowered_base << "\n";
 
