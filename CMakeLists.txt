@@ -45,7 +45,7 @@ endif ()
 set (COMMON_WARNING_FLAGS "-Wall -Werror")
 set (CXX_WARNING_FLAGS "-Wnon-virtual-dtor -Wold-style-cast")
 
-set (ENABLE_CXX11_ABI TRUE CACHE BOOL "Enables C++11 ABI")
+set (ENABLE_CXX11_ABI FALSE CACHE BOOL "Enables C++11 ABI")
 set (TEST_COVERAGE FALSE CACHE BOOL "Enables flags for test coverage")
 set (ENABLE_TESTS TRUE CACHE BOOL "Enables tests")
 
