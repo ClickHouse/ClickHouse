@@ -719,7 +719,7 @@ MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
 
 	bool enough_ordinary_cols = data.getColumnNamesList().size() > data.getSortDescription().size();
 
-	bool enough_total_rows = sum_rows_upper_bound >= DEFAULT_MERGE_BLOCK_SIZE;
+	bool enough_total_rows = sum_rows_upper_bound >= data.context.getMergeTreeSettings().vertical_merge_algorithm_min_rows_to_activate;
 
 	bool no_parts_overflow = parts.size() <= RowSourcePart::MAX_PARTS;
 
