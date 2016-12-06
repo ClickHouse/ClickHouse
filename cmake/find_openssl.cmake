@@ -1,0 +1,8 @@
+set (OPENSSL_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})
+if (APPLE)
+	set (OPENSSL_ROOT_DIR "/usr/local/opt/openssl")
+endif ()
+find_package (OpenSSL)
+if (NOT OPENSSL_FOUND)
+	message (SEND_ERROR "OpenSSL is required")
+endif ()
