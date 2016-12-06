@@ -17,25 +17,80 @@ if (NOT ENABLE_LIBTCMALLOC)
 	add_definitions(-D NO_TCMALLOC)
 endif ()
 
-if (APPLE)
-	set (AIO_CPP_FILES "")
-	set (AIO_H_FILES "")
-	set (APPLE_ICONV_LIB iconv)
-else()
-	set (AIO_H_FILES include/DB/Common/AIO.h
-		include/DB/IO/WriteBufferAIO.h
-		include/DB/IO/ReadBufferAIO.h)
-	set (AIO_CPP_FILES
-		src/IO/ReadBufferAIO.cpp
-		src/IO/WriteBufferAIO.cpp)
-	set (APPLE_ICONV_LIB "")
-endif()
-
-add_library (string_utils
+add_library(string_utils
 	include/DB/Common/StringUtils.h
 	src/Common/StringUtils.cpp)
 
-add_library (dbms
+set(AIO_H_FILES
+	include/DB/Common/AIO.h
+	include/DB/IO/WriteBufferAIO.h
+	include/DB/IO/ReadBufferAIO.h)
+set (AIO_CPP_FILES
+	src/IO/ReadBufferAIO.cpp
+	src/IO/WriteBufferAIO.cpp)
+set (APPLE_ICONV_LIB)
+
+if (APPLE)
+	set(APPLE_ICONV_LIB iconv)
+endif()
+
+macro(add_glob cur_list)
+	file(GLOB __tmp RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${ARGN})
+	list(APPEND ${cur_list} ${__tmp})
+endmacro()
+
+macro(add_headers_and_sources prefix common_path)
+	add_glob(${prefix}_headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} include/DB/${common_path}/*.h include/DB/${common_path}/*.inl)
+	add_glob(${prefix}_sources src/${common_path}/*.cpp src/${common_path}/*.h)
+endmacro()
+
+macro(add_headers_only prefix common_path)
+	add_glob(${prefix}_headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} include/DB/${common_path}/*.h src/${common_path}/*.h)
+endmacro()
+
+set(dbms_headers)
+set(dbms_sources)
+add_headers_and_sources(dbms Functions)
+add_headers_and_sources(dbms Functions/Conditional)
+add_headers_and_sources(dbms TableFunctions)
+add_headers_and_sources(dbms Parsers)
+add_headers_and_sources(dbms AggregateFunctions)
+add_headers_and_sources(dbms Core)
+add_headers_and_sources(dbms DataStreams)
+add_headers_and_sources(dbms DataTypes)
+add_headers_and_sources(dbms Databases)
+add_headers_and_sources(dbms DataBases/Distributed)
+add_headers_and_sources(dbms Dictionaries)
+add_headers_and_sources(dbms Dictionaries/Embedded)
+add_headers_and_sources(dbms Interpreters)
+add_headers_and_sources(dbms Interpreters/ClusterProxy)
+add_headers_and_sources(dbms Common)
+add_headers_and_sources(dbms Common/HashTable)
+add_headers_and_sources(dbms IO)
+add_headers_and_sources(dbms Columns)
+add_headers_and_sources(dbms Storages)
+add_headers_and_sources(dbms Storages/Distributed)
+add_headers_and_sources(dbms Storages/MergeTree)
+add_headers_and_sources(dbms Storages/System)
+add_headers_and_sources(dbms Core)
+add_headers_and_sources(dbms Client)
+add_headers_only(dbms Server)
+
+list(REMOVE_ITEM dbms_sources
+	src/Client/Client.cpp
+	src/Client/Benchmark.cpp
+	src/Storages/StorageCloud.cpp
+	src/Databases/DatabaseCloud.cpp
+	src/Common/StringUtils.cpp)
+
+if (APPLE)
+	list(REMOVE_ITEM dbms_headers ${AIO_H_FILES})
+	list(REMOVE_ITEM dbms_sources ${AIO_CPP_FILES})
+endif()
+
+add_library(dbms ${dbms_headers} ${dbms_sources})
+
+set (dbms_all_sources_old
 	src/Server/InterserverIOHTTPHandler.h
 	src/Server/Server.h
 	src/Server/TCPHandler.h
@@ -221,6 +276,7 @@ add_library (dbms
 	include/DB/DataStreams/glueBlockInputStreams.h
 	include/DB/DataStreams/CollapsingSortedBlockInputStream.h
 	include/DB/DataStreams/IBlockOutputStream.h
+	include/DB/DataStreams/InputStreamFromASTInsertQuery.h
 	include/DB/DataStreams/AsynchronousBlockInputStream.h
 	include/DB/DataStreams/MaterializingBlockInputStream.h
 	include/DB/DataStreams/ParallelInputsProcessor.h
@@ -976,6 +1032,31 @@ add_library (dbms
 
 	${MONGODB_FILES}
 )
+
+######
+list(REMOVE_DUPLICATES dbms_all_sources_old)
+list(SORT dbms_all_sources_old)
+
+set(dbms_all_sources ${dbms_headers} ${dbms_sources})
+list(REMOVE_DUPLICATES dbms_all_sources)
+list(SORT dbms_all_sources)
+
+list(LENGTH dbms_all_sources_old len_old)
+list(LENGTH dbms_all_sources len_new)
+set(dbms_all_sources_union ${dbms_all_sources} ${dbms_all_sources_old})
+list(LENGTH dbms_all_sources_union len_union)
+list(REMOVE_DUPLICATES dbms_all_sources_union)
+list(LENGTH dbms_all_sources_union len_union_uniq)
+message(STATUS "len_old ${len_old}, len_new ${len_new}, len_union ${len_union}, len_union_uniq ${len_union_uniq}")
+
+set(dbms_all_sources_not_presented ${dbms_all_sources_old})
+list(REMOVE_ITEM dbms_all_sources_not_presented ${dbms_all_sources})
+message(STATUS "not presented: ${dbms_all_sources_not_presented}")
+
+set(dbms_all_sources_extra ${dbms_all_sources})
+list(REMOVE_ITEM dbms_all_sources_extra ${dbms_all_sources_old})
+message(STATUS "dbms_all_sources_extra: ${dbms_all_sources_extra}")
+######
 
 if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
 	# Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.

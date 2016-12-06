@@ -25,9 +25,7 @@ StorageSystemMerges::StorageSystemMerges(const std::string & name)
 		{ "rows_read", std::make_shared<DataTypeUInt64>() },
 		{ "bytes_written_uncompressed", std::make_shared<DataTypeUInt64>() },
 		{ "rows_written", std::make_shared<DataTypeUInt64>() },
-		{ "columns_written", std::make_shared<DataTypeUInt64>() },
-		{ "rows_with_key_columns_read", std::make_shared<DataTypeUInt64>() },
-		{ "rows_with_key_columns_written", std::make_shared<DataTypeUInt64>() }
+		{ "columns_written", std::make_shared<DataTypeUInt64>() }
 	}
 {
 }
@@ -62,8 +60,6 @@ BlockInputStreams StorageSystemMerges::read(
 	ColumnWithTypeAndName col_bytes_written_uncompressed{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "bytes_written_uncompressed"};
 	ColumnWithTypeAndName col_rows_written{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "rows_written"};
 	ColumnWithTypeAndName col_columns_written{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "columns_written"};
-	ColumnWithTypeAndName col_rows_with_key_columns_read{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "rows_with_key_columns_read"};
-	ColumnWithTypeAndName col_rows_with_key_columns_written{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "rows_with_key_columns_written"};
 
 	for (const auto & merge : context.getMergeList().get())
 	{
@@ -80,8 +76,6 @@ BlockInputStreams StorageSystemMerges::read(
 		col_bytes_written_uncompressed.column->insert(merge.bytes_written_uncompressed.load(std::memory_order_relaxed));
 		col_rows_written.column->insert(merge.rows_written.load(std::memory_order_relaxed));
 		col_columns_written.column->insert(merge.columns_written.load(std::memory_order_relaxed));
-		col_rows_with_key_columns_read.column->insert(merge.rows_with_key_columns_read.load(std::memory_order_relaxed));
-		col_rows_with_key_columns_written.column->insert(merge.rows_with_key_columns_written.load(std::memory_order_relaxed));
 	}
 
 	Block block{
@@ -97,9 +91,7 @@ BlockInputStreams StorageSystemMerges::read(
 		col_rows_read,
 		col_bytes_written_uncompressed,
 		col_rows_written,
-		col_columns_written,
-		col_rows_with_key_columns_read,
-		col_rows_with_key_columns_written
+		col_columns_written
 	};
 
 	return BlockInputStreams{1, std::make_shared<OneBlockInputStream>(block)};
