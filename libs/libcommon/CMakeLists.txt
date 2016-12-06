@@ -72,16 +72,6 @@ else ()
 	message (STATUS "Disabling libtcmalloc for valgrind better analysis")
 endif ()
 
-if (APPLE)
-	set (RT_LIBRARIES "apple_rt")
-else ()
-	if (USE_STATIC_LIBRARIES)
-		set (RT_LIBRARIES "librt.a")
-	else ()
-		set (RT_LIBRARIES "rt")
-	endif ()
-endif ()
-
 include (${ClickHouse_SOURCE_DIR}/cmake/find_glib.cmake)
 
 target_link_libraries (

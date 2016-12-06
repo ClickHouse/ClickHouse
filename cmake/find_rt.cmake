@@ -1,0 +1,10 @@
+if (APPLE)
+	set (RT_LIBRARIES "apple_rt")
+else ()
+	if (USE_STATIC_LIBRARIES)
+		set (RT_LIBRARIES "librt.a")
+	else ()
+		set (RT_LIBRARIES "rt")
+	endif ()
+endif ()
+

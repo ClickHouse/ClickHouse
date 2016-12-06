@@ -8,12 +8,6 @@ add_executable (multi_version multi_version.cpp)
 add_executable (json_test json_test.cpp)
 add_executable (strong_typedef strong_typedef.cpp)
 
-if (APPLE)
-	set (RT_LIBRARIES "")
-else()
-	set (RT_LIBRARIES "rt")
-endif()
-
 target_link_libraries (date_lut_init common ${ICU_LIBS} dl)
 target_link_libraries (date_lut2 common ${ICU_LIBS} dl)
 target_link_libraries (date_lut3 common ${ICU_LIBS} dl)

@@ -164,6 +164,7 @@ include (cmake/find_icu4c.cmake)
 include (cmake/find_boost.cmake)
 include (cmake/find_libtool.cmake)
 include (cmake/find_libmysqlclient.cmake)
+include (cmake/find_rt.cmake)
 
 # Directory for Yandex specific files
 set (CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)
@@ -179,3 +180,5 @@ endif ()
 
 message (STATUS "C_FLAGS:  =${CMAKE_C_FLAGS}")
 message (STATUS "CXX_FLAGS:=${CMAKE_CXX_FLAGS}")
+
+include (cmake/print_include_directories.cmake)
