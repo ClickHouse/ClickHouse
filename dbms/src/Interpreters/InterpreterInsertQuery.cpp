@@ -6,6 +6,7 @@
 #include <DB/DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DB/DataStreams/NullAndDoCopyBlockInputStream.h>
 #include <DB/DataStreams/SquashingBlockOutputStream.h>
+#include <DB/DataStreams/CountingBlockOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTInsertQuery.h>
@@ -100,6 +101,10 @@ BlockIO InterpreterInsertQuery::execute()
 	out = std::make_shared<SquashingBlockOutputStream>(out,
 		context.getSettingsRef().min_insert_block_size_rows,
 		context.getSettingsRef().min_insert_block_size_bytes);
+
+	auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
+	out_wrapper->setProcessListElement(context.getProcessListElement());
+	out = std::move(out_wrapper);
 
 	BlockIO res;
 	res.out_sample = getSampleBlock();

@@ -392,10 +392,9 @@ public:
 						  const ColumnSizeEstimator & column_sizes)
 	: merge_entry(merge_entry_), merge_alg(merge_alg_)
 	{
-		if (merge_alg == MergeAlgorithm::Horizontal)
-			average_elem_progress = 1.0 / num_total_rows;
-		else
-			average_elem_progress = column_sizes.keyColumnsProgress(1, num_total_rows);
+		average_elem_progress = (merge_alg == MergeAlgorithm::Horizontal)
+			? 1.0 / num_total_rows
+			: column_sizes.keyColumnsProgress(1, num_total_rows);
 	}
 
 	MergeList::Entry & merge_entry;
@@ -405,19 +404,11 @@ public:
 	void operator() (const Progress & value)
 	{
 		ProfileEvents::increment(ProfileEvents::MergedUncompressedBytes, value.bytes);
-		merge_entry->bytes_read_uncompressed += value.bytes;
-		merge_entry->rows_with_key_columns_read += value.rows;
+		ProfileEvents::increment(ProfileEvents::MergedRows, value.rows);
 
-		if (merge_alg == MergeAlgorithm::Horizontal)
-		{
-			ProfileEvents::increment(ProfileEvents::MergedRows, value.rows);
-			merge_entry->rows_read += value.rows;
-			merge_entry->progress = average_elem_progress * merge_entry->rows_read;
-		}
-		else
-		{
-			merge_entry->progress = average_elem_progress * merge_entry->rows_with_key_columns_read;
-		}
+		merge_entry->bytes_read_uncompressed += value.bytes;
+		merge_entry->rows_read += value.rows;
+		merge_entry->progress = average_elem_progress * merge_entry->rows_read;
 	};
 };
 
@@ -597,9 +588,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 		rows_written += block.rows();
 		to.write(block);
 
-		if (merge_alg == MergeAlgorithm::Horizontal)
-			merge_entry->rows_written = merged_stream->getProfileInfo().rows;
-		merge_entry->rows_with_key_columns_written = merged_stream->getProfileInfo().rows;
+		merge_entry->rows_written = merged_stream->getProfileInfo().rows;
 		merge_entry->bytes_written_uncompressed = merged_stream->getProfileInfo().bytes;
 
 		/// This update is unactual for VERTICAL algorithm sicne it requires more accurate per-column updates
@@ -619,7 +608,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 	/// Gather ordinary columns
 	if (merge_alg == MergeAlgorithm::Vertical)
 	{
-		size_t sum_input_rows_exact = merge_entry->rows_with_key_columns_read;
+		size_t sum_input_rows_exact = merge_entry->rows_read;
 		merge_entry->columns_written = merging_column_names.size();
 		merge_entry->progress = column_sizes.keyColumnsProgress(sum_input_rows_exact, sum_input_rows_exact);
 
