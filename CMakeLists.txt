@@ -3,7 +3,7 @@ cmake_minimum_required (VERSION 2.6)
 
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
 	# Require at least gcc 5
-	if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5)
+	if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
 		message (FATAL_ERROR "GCC version must be at least 5! For example, if GCC 5 is available under gcc-5, g++-5 names, do the following: export CC=gcc-5 CXX=g++-5; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
 	endif ()
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
@@ -19,8 +19,8 @@ if (APPLE)
 	set (APPLE_EXTRA_CXX_FLAG "-Dexp10=__exp10") # Also needed for libc++
 endif ()
 
-cmake_policy(SET CMP0014 OLD) # Ignore warning about CMakeLists.txt in each directory
-cmake_policy(SET CMP0012 NEW) # Don't dereference TRUE and FALSE
+cmake_policy (SET CMP0014 OLD) # Ignore warning about CMakeLists.txt in each directory
+cmake_policy (SET CMP0012 NEW) # Don't dereference TRUE and FALSE
 
 if (NOT CMAKE_BUILD_TYPE)
 	message (STATUS "CMAKE_BUILD_TYPE is not set, set to default = RELWITHDEBINFO")
@@ -96,7 +96,7 @@ set (CMAKE_C_FLAGS_DEBUG                 "-O0 -g3 -ggdb3 -fno-inline")
 
 if (NOT APPLE)
 	set (CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++ ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI}")
-endif()
+endif ()
 
 # -fuse-ld=gold - fix linkage for gcc-5.4, gcc-6.1 
 # See more in http://stackoverflow.com/questions/37603238/fsanitize-not-using-gold-linker-in-gcc-6-1
@@ -155,17 +155,6 @@ include_directories (${ClickHouse_SOURCE_DIR}/libs/libzkutil/include/)
 
 include_directories (${ClickHouse_SOURCE_DIR}/dbms/include)
 
-include_directories (/usr/local/include/glib-2.0/)
-include_directories (/usr/local/lib/glib-2.0/include/)
-include_directories (/usr/include/glib-2.0/)
-include_directories (/usr/lib64/glib-2.0/include/)
-
-if (AARCH64)
-	include_directories (/usr/lib/aarch64-linux-gnu/glib-2.0/include/)
-else ()
-	include_directories (/usr/lib/x86_64-linux-gnu/glib-2.0/include/)
-endif ()
-
 include_directories (/usr/local/include/)
 
 link_directories (/usr/local/lib)
@@ -174,6 +163,7 @@ include (cmake/find_openssl.cmake)
 include (cmake/find_icu4c.cmake)
 include (cmake/find_boost.cmake)
 include (cmake/find_libtool.cmake)
+include (cmake/find_libmysqlclient.cmake)
 
 # Directory for Yandex specific files
 set (CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)

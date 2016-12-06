@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <mysql/mysql.h>
+#include <mysql.h>
 #include <Poco/Types.h>
 
 #include <common/LocalDate.h>

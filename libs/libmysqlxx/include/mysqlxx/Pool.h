@@ -3,7 +3,7 @@
 #include <list>
 #include <memory>
 
-#include <mysql/mysqld_error.h>
+#include <mysqld_error.h>
 
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>

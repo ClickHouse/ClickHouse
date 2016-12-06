@@ -42,7 +42,7 @@ set_target_properties( "${LIBNAME}"
 
 target_link_libraries( "${LIBNAME}" ${SYSLIBS} PocoFoundation)
 
-if (ENABLE_TESTS)
+if (POCO_ENABLE_TESTS)
     add_subdirectory(samples)
     add_subdirectory(testsuite)
 endif ()

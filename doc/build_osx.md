@@ -54,7 +54,7 @@ export CXX=g++-6
 
 ## Disable MongoDB binding
 ```
-export DISABLE_MONGODB=1
+export ENABLE_MONGODB=0
 ```
 
 ## Detect number of threads
