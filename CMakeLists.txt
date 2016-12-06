@@ -173,16 +173,14 @@ link_directories (/usr/local/lib)
 # External libraries
 
 # 1. openssl
-include_directories ("/usr/local/opt/openssl/include")
-set (OPENSSL_HINTS "/usr/local/opt/openssl/lib")
-if (USE_STATIC_LIBRARIES)
-	find_library (LIBSSL libssl.a HINTS ${OPENSSL_HINTS})
-	find_library (LIBCRYPTO libcrypto.a HINTS ${OPENSSL_HINTS})
-else ()
-	find_library (LIBSSL ssl HINTS ${OPENSSL_HINTS})
-	find_library (LIBCRYPTO crypto HINTS ${OPENSSL_HINTS})
+set (OPENSSL_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})
+if (APPLE)
+	set (OPENSSL_ROOT_DIR "/usr/local/opt/openssl")
 endif ()
-set (OPENSSL_LIBS ${LIBSSL} ${LIBCRYPTO})
+find_package (OpenSSL)
+if (NOT OPENSSL_FOUND)
+	message (SEND_ERROR "OpenSSL is required")
+endif ()
 
 # 2. icu4c
 include_directories ("/usr/local/opt/icu4c/include")
@@ -199,19 +197,10 @@ endif ()
 set (ICU_LIBS ${ICUI18N} ${ICUUC} ${ICUDATA})
 
 # 3. boost
-set (BOOST_HINTS "/usr/local/opt/boost/lib")
-if (USE_STATIC_LIBRARIES)
-	find_library (BOOST_PROGRAM_OPTIONS_LIB libboost_program_options.a HINTS ${BOOST_HINTS})
-	find_library (BOOST_SYSTEM_LIB libboost_system.a HINTS ${BOOST_HINTS})
-	find_library (BOOST_FILESYSTEM_LIB libboost_filesystem.a HINTS ${BOOST_HINTS})
-	find_library (BOOST_REGEX_LIB libboost_regex.a HINTS ${BOOST_HINTS})
-	find_library (BOOST_THREAD_LIB libboost_thread.a HINTS ${BOOST_HINTS})
-else ()
-	find_library (BOOST_PROGRAM_OPTIONS_LIB boost_program_options HINTS ${BOOST_HINTS})
-	find_library (BOOST_SYSTEM_LIB boost_system HINTS ${BOOST_HINTS})
-	find_library (BOOST_FILESYSTEM_LIB boost_filesystem HINTS ${BOOST_HINTS})
-	find_library (BOOST_REGEX_LIB boost_regex HINTS ${BOOST_HINTS})
-	find_library (BOOST_THREAD_LIB boost_thread HINTS ${BOOST_HINTS})
+set (Boost_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})
+find_package (Boost 1.57 COMPONENTS program_options system filesystem regex thread)
+if (NOT Boost_FOUND)
+	message (SEND_ERROR "Boost is required")
 endif ()
 
 # 4. ltdl

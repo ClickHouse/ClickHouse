@@ -4,7 +4,7 @@ include_directories (/usr/include/mysql)
 add_subdirectory (src)
 
 if (ENABLE_MONGODB)
-	set (LINK_MONGOCLIENT libmongoclient.a ${OPENSSL_LIBS} ${BOOST_THREAD_LIB})
+	set (LINK_MONGOCLIENT libmongoclient.a ${OPENSSL_LIBRARIES} ${Boost_THREAD_LIBRARY})
 	add_definitions(-D ENABLE_MONGODB)
 endif ()
 
@@ -1010,10 +1010,10 @@ target_link_libraries(dbms
 	double-conversion
 	${LINK_LIBRARIES_ONLY_ON_X86_64}
 	re2 re2_st
-	${LIBCRYPTO}
-	${BOOST_SYSTEM_LIB}
+	${OPENSSL_CRYPTO_LIBRARY}
+	${Boost_SYSTEM_LIBRARY}
 	${LINK_MONGOCLIENT}
-	${BOOST_REGEX_LIB}
+	${Boost_REGEX_LIBRARY}
 	PocoData
 	PocoDataODBC
 	${APPLE_ICONV_LIB}

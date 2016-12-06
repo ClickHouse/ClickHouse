@@ -42,7 +42,7 @@ endif ()
 
 if (USE_STATIC_LIBRARIES)
 	set (MYSQLCLIENT_LIB ${CMAKE_CURRENT_BINARY_DIR}/libmysqlclient.a)
-	target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBS} ${Z_LIB} dl)
+	target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBRARIES} ${Z_LIB} dl)
 	add_custom_command(
 		OUTPUT ${MYSQLCLIENT_LIB}
 		COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/patch.sh ${STATIC_MYSQLCLIENT_LIB} ${MYSQLCLIENT_LIB}
@@ -52,7 +52,7 @@ if (USE_STATIC_LIBRARIES)
 	add_dependencies(mysqlxx our_mysql_client)
 endif ()
 
-target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBS} ${Z_LIB} dl)
+target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBRARIES} ${Z_LIB} dl)
 
 if (ENABLE_TESTS)
 	add_subdirectory (src/tests)
