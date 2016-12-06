@@ -197,11 +197,7 @@ endif ()
 set (ICU_LIBS ${ICUI18N} ${ICUUC} ${ICUDATA})
 
 # 3. boost
-set (Boost_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})
-find_package (Boost 1.57 COMPONENTS program_options system filesystem regex thread)
-if (NOT Boost_FOUND)
-	message (SEND_ERROR "Boost is required")
-endif ()
+include (cmake/find_boost.cmake)
 
 # 4. ltdl
 set (LTDL_HINTS "/usr/local/opt/libtool/lib")
