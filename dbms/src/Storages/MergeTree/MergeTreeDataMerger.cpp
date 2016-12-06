@@ -101,10 +101,16 @@ size_t MergeTreeDataMerger::getMaxPartsSizeForMerge(size_t pool_size, size_t poo
 	if (pool_used > pool_size)
 		throw Exception("Logical error: invalid arguments passed to getMaxPartsSizeForMerge: pool_used > pool_size", ErrorCodes::LOGICAL_ERROR);
 
-	size_t max_size = interpolateExponential(
-		data.settings.max_bytes_to_merge_at_min_space_in_pool,
-		data.settings.max_bytes_to_merge_at_max_space_in_pool,
-		static_cast<double>(pool_size - pool_used) / pool_size);
+	size_t free_entries = pool_size - pool_used;
+
+	size_t max_size = 0;
+	if (free_entries >= data.settings.number_of_free_entries_in_pool_to_lower_max_size_of_merge)
+		max_size = data.settings.max_bytes_to_merge_at_max_space_in_pool;
+	else
+		max_size = interpolateExponential(
+			data.settings.max_bytes_to_merge_at_min_space_in_pool,
+			data.settings.max_bytes_to_merge_at_max_space_in_pool,
+			static_cast<double>(free_entries) / data.settings.number_of_free_entries_in_pool_to_lower_max_size_of_merge);
 
 	return std::min(max_size, static_cast<size_t>(DiskSpaceMonitor::getUnreservedFreeSpace(data.full_path) / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }

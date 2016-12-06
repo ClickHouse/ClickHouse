@@ -16,12 +16,17 @@ struct MergeTreeSettings
 {
 	/** Merge settings. */
 
-	/// Maximum in total size of parts to merge, when there are maximum (minimum) free threads in background pool.
+	/// Maximum in total size of parts to merge, when there are maximum (minimum) free threads in background pool (or entries in replication queue).
 	size_t max_bytes_to_merge_at_max_space_in_pool = 100ULL * 1024 * 1024 * 1024;
 	size_t max_bytes_to_merge_at_min_space_in_pool = 1024 * 1024;
 
 	/// How many tasks of merging parts are allowed simultaneously in ReplicatedMergeTree queue.
 	size_t max_replicated_merges_in_queue = 16;
+
+	/// When there is less than specified number of free entries in pool (or replicated queue),
+	///  start to lower maximum size of merge to process (or to put in queue).
+	/// This is to allow small merges to process - not filling the pool with long running merges.
+	size_t number_of_free_entries_in_pool_to_lower_max_size_of_merge = 8;
 
 	/// How many seconds to keep obsolete parts.
 	time_t old_parts_lifetime = 8 * 60;
