@@ -1,4 +1,5 @@
 set (Boost_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})
+set (BOOST_ROOT "/usr/local")
 find_package (Boost 1.57 COMPONENTS program_options system filesystem regex thread)
 if (NOT Boost_FOUND)
 	# Try to find manually.
