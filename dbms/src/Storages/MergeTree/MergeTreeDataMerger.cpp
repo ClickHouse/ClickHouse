@@ -399,12 +399,12 @@ public:
 	void operator() (const Progress & value)
 	{
 		ProfileEvents::increment(ProfileEvents::MergedUncompressedBytes, value.bytes);
+		ProfileEvents::increment(ProfileEvents::MergedRows, value.rows);
 		merge_entry->bytes_read_uncompressed += value.bytes;
 		merge_entry->rows_with_key_columns_read += value.rows;
 
 		if (merge_alg == MergeAlgorithm::Horizontal)
 		{
-			ProfileEvents::increment(ProfileEvents::MergedRows, value.rows);
 			merge_entry->rows_read += value.rows;
 			merge_entry->progress = average_elem_progress * merge_entry->rows_read;
 		}
@@ -707,7 +707,7 @@ MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
 
 	bool enough_ordinary_cols = data.getColumnNamesList().size() > data.getSortDescription().size();
 
-	bool enough_total_rows = sum_rows_upper_bound >= DEFAULT_MERGE_BLOCK_SIZE;
+	bool enough_total_rows = sum_rows_upper_bound >= data.context.getMergeTreeSettings().vertical_merge_algorithm_min_rows_to_activate;
 
 	bool no_parts_overflow = parts.size() <= RowSourcePart::MAX_PARTS;
 
