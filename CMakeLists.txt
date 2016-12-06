@@ -113,7 +113,7 @@ endif (TEST_COVERAGE)
 # Run tests with "make check"
 if (ENABLE_TESTS)
 	message (STATUS "Tests are enabled")
-	include (add.test.cmake)
+	include (cmake/add_check.cmake)
 endif (ENABLE_TESTS)
 
 # Installation prefix
