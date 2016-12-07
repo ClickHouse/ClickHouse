@@ -72,3 +72,7 @@ cmake ..
 make -j $THREADS
 cd ..
 ```
+
+# Caveats
+
+If you intend to run clickhouse-server, make sure to increase system's maxfiles variable. See [MacOS.md](https://github.com/yandex/ClickHouse/blob/master/MacOS.md) for more details.
