@@ -29,6 +29,7 @@ namespace ProfileEvents
 {
 	extern const Event MergedRows;
 	extern const Event MergedUncompressedBytes;
+	extern const Event MergesTime;
 }
 
 namespace CurrentMetrics
@@ -386,25 +387,37 @@ public:
 class MergeProgressCallback : public ProgressCallback
 {
 public:
-	MergeProgressCallback(MergeList::Entry & merge_entry_) : merge_entry(merge_entry_) {}
+	MergeProgressCallback(MergeList::Entry & merge_entry_, UInt64 & watch_prev_elapsed_)
+	: merge_entry(merge_entry_), watch_prev_elapsed(watch_prev_elapsed_) {}
 
-	MergeProgressCallback(MergeList::Entry & merge_entry_, MergeTreeDataMerger::MergeAlgorithm merge_alg_, size_t num_total_rows,
-						  const ColumnSizeEstimator & column_sizes)
-	: merge_entry(merge_entry_), merge_alg(merge_alg_)
+	MergeProgressCallback(MergeList::Entry & merge_entry_, size_t num_total_rows, const ColumnSizeEstimator & column_sizes,
+		UInt64 & watch_prev_elapsed_, MergeTreeDataMerger::MergeAlgorithm merge_alg_ = MergeAlgorithm::Vertical)
+	: merge_entry(merge_entry_), watch_prev_elapsed(watch_prev_elapsed_), merge_alg(merge_alg_)
 	{
 		average_elem_progress = (merge_alg == MergeAlgorithm::Horizontal)
 			? 1.0 / num_total_rows
 			: column_sizes.keyColumnsProgress(1, num_total_rows);
+
+		updateWatch();
 	}
 
 	MergeList::Entry & merge_entry;
-	const MergeAlgorithm merge_alg{MergeAlgorithm::Vertical};
+	UInt64 & watch_prev_elapsed;
 	Float64 average_elem_progress;
+	const MergeAlgorithm merge_alg{MergeAlgorithm::Vertical};
+
+	void updateWatch()
+	{
+		UInt64 watch_curr_elapsed = merge_entry->watch.elapsed();
+		ProfileEvents::increment(ProfileEvents::MergesTime, watch_curr_elapsed - watch_prev_elapsed);
+		watch_prev_elapsed = watch_curr_elapsed;
+	}
 
 	void operator() (const Progress & value)
 	{
 		ProfileEvents::increment(ProfileEvents::MergedUncompressedBytes, value.bytes);
 		ProfileEvents::increment(ProfileEvents::MergedRows, value.rows);
+		updateWatch();
 
 		merge_entry->bytes_read_uncompressed += value.bytes;
 		merge_entry->rows_read += value.rows;
@@ -417,10 +430,11 @@ class MergeProgressCallbackVerticalStep : public MergeProgressCallback
 public:
 
 	MergeProgressCallbackVerticalStep(MergeList::Entry & merge_entry_, size_t num_total_rows_exact,
-								  const ColumnSizeEstimator & column_sizes, const String & column_name)
-	: MergeProgressCallback(merge_entry_), initial_progress(merge_entry->progress)
+		const ColumnSizeEstimator & column_sizes, const String & column_name, UInt64 & watch_prev_elapsed_)
+	: MergeProgressCallback(merge_entry_, watch_prev_elapsed_), initial_progress(merge_entry->progress)
 	{
 		average_elem_progress = column_sizes.columnProgress(column_name, 1, num_total_rows_exact);
+		updateWatch();
 	}
 
 	Float64 initial_progress;
@@ -431,6 +445,7 @@ public:
 	{
 		merge_entry->bytes_read_uncompressed += value.bytes;
 		ProfileEvents::increment(ProfileEvents::MergedUncompressedBytes, value.bytes);
+		updateWatch();
 
 		rows_read_internal += value.rows;
 		Float64 local_progress = average_elem_progress * rows_read_internal;
@@ -503,6 +518,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 	  * Попутно вычисляем выражение для сортировки.
 	  */
 	BlockInputStreams src_streams;
+	UInt64 watch_prev_elapsed = 0;
 
 	for (size_t i = 0; i < parts.size(); ++i)
 	{
@@ -512,7 +528,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 			part_path, DEFAULT_MERGE_BLOCK_SIZE, merging_column_names, data, parts[i],
 			MarkRanges(1, MarkRange(0, parts[i]->size)), false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
 
-		input->setProgressCallback(MergeProgressCallback{merge_entry, merge_alg, sum_input_rows_upper_bound, column_sizes});
+		input->setProgressCallback(
+			MergeProgressCallback{merge_entry, sum_input_rows_upper_bound, column_sizes, watch_prev_elapsed, merge_alg});
 
 		if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 			src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(
@@ -640,7 +657,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 					false, true);
 
 				column_part_stream->setProgressCallback(
-					MergeProgressCallbackVerticalStep{merge_entry, sum_input_rows_exact, column_sizes, column_name});
+					MergeProgressCallbackVerticalStep{merge_entry, sum_input_rows_exact, column_sizes, column_name, watch_prev_elapsed});
 
 				column_part_streams[part_num] = std::move(column_part_stream);
 			}
