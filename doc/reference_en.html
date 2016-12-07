@@ -441,7 +441,7 @@ By default, access is allowed from everywhere for the default user without a pas
 
 ===Installing from source===
 
-Build following the instructions in <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md">build.md</a>
+To build, follow the instructions in <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md">build.md</a> (for Linux) or in <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build_osx.md">build_osx.md</a> (for Mac OS X).
 
 You can compile packages and install them. You can also use programs without installing packages.
 
@@ -4753,6 +4753,8 @@ The same as &#39;substring&#39;, but for Unicode code points. Works under the as
 ===appendTrailingCharIfAbsent(s, c)===
 If the %%s%% string is non-empty and does not contain the %%c%% character at the end, it appends the %%c%% character to the end.
 
+===convertCharset(s, from, to)===
+Returns a string with the data %%s%% (encoded as %%from%% charset) that was converted to the %%to%% charset.
 
 ==Functions for searching strings==
 
@@ -4762,9 +4764,11 @@ The search substring or regular expression must be a constant in all these funct
 ===position(haystack, needle)===
 Searches for the &#39;needle&#39; substring in the &#39;haystack&#39; string.
 Returns the position (in bytes) of the found substring, starting from 1, or returns 0 if the substring was not found.
+There's also positionCaseInsensitive function.
 
 ===positionUTF8(haystack, needle)===
 The same as &#39;position&#39;, but the position is returned in Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn&#39;t throw an exception).
+There's also positionCaseInsensitiveUTF8 function.
 
 ===match(haystack, pattern)===
 Checks whether the string matches the &#39;pattern&#39; regular expression.
@@ -5894,6 +5898,78 @@ LIMIT 10
 └────────────────┴─────────┘
 %%
 
+===formatReadableSize(x)===
+
+Gets a size (number of bytes). Returns a string that contains rounded size with the suffix (KiB, MiB etc.).
+
+Example:
+
+%%
+SELECT
+    arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
+    formatReadableSize(filesize_bytes) AS filesize
+
+┌─filesize_bytes─┬─filesize───┐
+│              1 │ 1.00 B     │
+│           1024 │ 1.00 KiB   │
+│        1048576 │ 1.00 MiB   │
+│      192851925 │ 183.92 MiB │
+└────────────────┴────────────┘
+%%
+
+===least(a, b)===
+
+Returns the least element of a and b.
+
+===greatest(a, b)===
+
+Returns the greatest element of a and b.
+
+===uptime()===
+
+Returns server's uptime in seconds.
+
+===version()===
+
+Returns server's version as a string.
+
+===rowNumberInAllBlocks()===
+
+Returns an incremental row number within all blocks that were processed by this function.
+
+===runningDifference(x)===
+
+Calculates the difference between consecutive values in the data block.
+Result of the function depends on the order of the data in the blocks.
+
+It works only inside of the each processed block of data. Data splitting in the blocks is not explicitly controlled by the user. 
+If you specify ORDER BY in subquery and call runningDifference outside of it, you could get an expected result.
+
+Example:
+%%
+SELECT
+    EventID,
+    EventTime,
+    runningDifference(EventTime) AS delta
+FROM
+(
+    SELECT
+        EventID,
+        EventTime
+    FROM events
+    WHERE EventDate = '2016-11-24'
+    ORDER BY EventTime ASC
+    LIMIT 5
+)
+
+┌─EventID─┬───────────EventTime─┬─delta─┐
+│    1106 │ 2016-11-24 00:00:04 │     0 │
+│    1107 │ 2016-11-24 00:00:05 │     1 │
+│    1108 │ 2016-11-24 00:00:05 │     0 │
+│    1109 │ 2016-11-24 00:00:09 │     4 │
+│    1110 │ 2016-11-24 00:00:10 │     1 │
+└─────────┴─────────────────────┴───────┘
+%%
 
 ==arrayJoin function==
 
@@ -5925,14 +6001,6 @@ SELECT
 │   3 │ Hello     │ [1,2,3] │
 └─────┴───────────┴─────────┘
 %%
-
-===least(a, b)===
-
-Returns the least element of a and b.
-
-===greatest(a, b)===
-
-Returns the greatest element of a and b.
 
 </div>
 <div class="island">
