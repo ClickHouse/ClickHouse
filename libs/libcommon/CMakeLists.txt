@@ -59,36 +59,20 @@ add_library (common
 	${REVISIONFILE}
 )
 
-# TESTIRT-3687 DISABLE_LIBTCMALLOC - when testing for memory leaks, disable libtcmalloc
-IF($ENV{DISABLE_LIBTCMALLOC})
-	message(STATUS "Disabling libtcmalloc for valgrind better analysis")
-ELSE($ENV{DISABLE_LIBTCMALLOC})
-	IF($ENV{DEBUG_LIBTCMALLOC})
-		message(STATUS "Link libtcmalloc_minimal_debug for testing")
-		SET(MALLOC_LIBRARIES libtcmalloc_minimal_debug.a)
-	ELSE($ENV{DEBUG_LIBTCMALLOC})
-		message(STATUS "Link libtcmalloc_minimal")
-		SET(MALLOC_LIBRARIES tcmalloc_minimal_internal)
-	ENDIF($ENV{DEBUG_LIBTCMALLOC})
-ENDIF($ENV{DISABLE_LIBTCMALLOC})
-
-if (APPLE)
-	SET(RT_LIBRARIES "apple_rt")
-else()
-	SET(RT_LIBRARIES "librt.a")
-endif()
-
-set (GLIB_HINTS "/usr/local/opt/glib/lib")
-find_library (GLIB_LIB libglib-2.0.a HINTS ${GLIB_HINTS})
-if (APPLE)
-	set (INTL_HINTS "/usr/local/opt/gettext/lib")
-	find_library (INTL_LIB libintl.a HINTS ${INTL_HINTS})
-	find_library (CORE_FOUNDATION_LIB CoreFoundation)
-	find_library (CARBON_LIB Carbon)
-	set (GLIB_LIBS ${GLIB_LIB} ${INTL_LIB} libiconv.a ${CORE_FOUNDATION_LIB} ${CARBON_LIB})
+# When testing for memory leaks, disable libtcmalloc.
+if (ENABLE_LIBTCMALLOC)
+	if (DEBUG_LIBTCMALLOC)
+		message (STATUS "Link libtcmalloc_minimal_debug for testing")
+		set (MALLOC_LIBRARIES libtcmalloc_minimal_debug.a)
+	else ()
+		message (STATUS "Link libtcmalloc_minimal")
+		set (MALLOC_LIBRARIES tcmalloc_minimal_internal)
+	endif ()
 else ()
-	set (GLIB_LIBS ${GLIB_LIB})
+	message (STATUS "Disabling libtcmalloc for valgrind better analysis")
 endif ()
+
+include (${ClickHouse_SOURCE_DIR}/cmake/find_glib.cmake)
 
 target_link_libraries (
 	common
@@ -99,6 +83,6 @@ target_link_libraries (
 	${ICU_LIBS}
 	${RT_LIBRARIES})
 
-IF(TESTS)
+if (ENABLE_TESTS)
 	add_subdirectory (src/tests)
-ENDIF(TESTS)
+endif (ENABLE_TESTS)

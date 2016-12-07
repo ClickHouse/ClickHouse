@@ -65,8 +65,8 @@ target_link_libraries (io_operators dbms)
 
 if (NOT APPLE)
 	add_executable(write_buffer_aio write_buffer_aio.cpp)
-	target_link_libraries (write_buffer_aio dbms ${BOOST_FILESYSTEM_LIB})
+	target_link_libraries (write_buffer_aio dbms ${Boost_FILESYSTEM_LIBRARY})
 
 	add_executable(read_buffer_aio read_buffer_aio.cpp)
-	target_link_libraries (read_buffer_aio dbms ${BOOST_FILESYSTEM_LIB})
-endif()
+	target_link_libraries (read_buffer_aio dbms ${Boost_FILESYSTEM_LIBRARY})
+endif ()

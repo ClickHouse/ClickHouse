@@ -19,7 +19,7 @@ set_target_properties( "${LIBNAME}"
 
 target_link_libraries( "${LIBNAME}" PocoCrypto PocoNet PocoUtil PocoFoundation ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY} )
 
-if (ENABLE_TESTS)
+if (POCO_ENABLE_TESTS)
     add_subdirectory(samples)
     add_subdirectory(testsuite)
 endif ()

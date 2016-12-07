@@ -1,0 +1,6 @@
+set (LTDL_HINTS "/usr/local/opt/libtool/lib")
+if (USE_STATIC_LIBRARIES)
+	find_library (LTDL_LIB libltdl.a HINTS ${LTDL_HINTS})
+else ()
+	find_library (LTDL_LIB ltdl HINTS ${LTDL_HINTS})
+endif ()

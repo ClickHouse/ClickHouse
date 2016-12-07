@@ -189,6 +189,7 @@ void Compiler::compile(
 		" -shared -fPIC -fvisibility=hidden -fno-implement-inlines"
 		" -isystem /usr/share/clickhouse/headers/usr/local/include/"
 		" -isystem /usr/share/clickhouse/headers/usr/include/"
+		" -isystem /usr/share/clickhouse/headers/usr/include/mysql/"
 		" -isystem /usr/share/clickhouse/headers/usr/include/c++/*/"
 		" -isystem /usr/share/clickhouse/headers/usr/include/x86_64-linux-gnu/"
 		" -isystem /usr/share/clickhouse/headers/usr/include/x86_64-linux-gnu/c++/*/"

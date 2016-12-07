@@ -1,6 +1,6 @@
-==How to increase maxfiles on MacOS X==
+## How to increase maxfiles on Mac OS X
 
-To increase maxfiles on MacOS create the following file:
+To increase maxfiles on MacOS, create the following file:
 
 (Note: you'll need to use sudo)
 
@@ -29,11 +29,11 @@ To increase maxfiles on MacOS create the following file:
 </plist>
 ```
 
-execute the following command:
+Execute the following command:
 ```
 sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 ```
 
 Reboot.
 
-To check if it's working, you can use 'ulimit -n' command
+To check if it's working, you can use `ulimit -n` command.

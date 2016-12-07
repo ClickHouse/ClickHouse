@@ -24,7 +24,7 @@ brew install boost --cc=gcc-6
 ## Install required libraries
 
 ```
-brew install icu4c mysql openssl unixodbc glib libtool gettext
+brew install icu4c mysql openssl unixodbc glib libtool gettext homebrew/dupes/libiconv homebrew/dupes/zlib
 ```
 
 ## Install optional libraries
@@ -54,7 +54,7 @@ export CXX=g++-6
 
 ## Disable MongoDB binding
 ```
-export DISABLE_MONGODB=1
+export ENABLE_MONGODB=0
 ```
 
 ## Detect number of threads
@@ -72,3 +72,7 @@ cmake ..
 make -j $THREADS
 cd ..
 ```
+
+# Caveats
+
+If you intend to run clickhouse-server, make sure to increase system's maxfiles variable. See [MacOS.md](https://github.com/yandex/ClickHouse/blob/master/MacOS.md) for more details.

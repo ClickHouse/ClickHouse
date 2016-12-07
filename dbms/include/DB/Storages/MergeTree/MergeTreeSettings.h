@@ -16,12 +16,17 @@ struct MergeTreeSettings
 {
 	/** Merge settings. */
 
-	/// Maximum in total size of parts to merge, when there are maximum (minimum) free threads in background pool.
+	/// Maximum in total size of parts to merge, when there are maximum (minimum) free threads in background pool (or entries in replication queue).
 	size_t max_bytes_to_merge_at_max_space_in_pool = 100ULL * 1024 * 1024 * 1024;
 	size_t max_bytes_to_merge_at_min_space_in_pool = 1024 * 1024;
 
 	/// How many tasks of merging parts are allowed simultaneously in ReplicatedMergeTree queue.
 	size_t max_replicated_merges_in_queue = 16;
+
+	/// When there is less than specified number of free entries in pool (or replicated queue),
+	///  start to lower maximum size of merge to process (or to put in queue).
+	/// This is to allow small merges to process - not filling the pool with long running merges.
+	size_t number_of_free_entries_in_pool_to_lower_max_size_of_merge = 8;
 
 	/// How many seconds to keep obsolete parts.
 	time_t old_parts_lifetime = 8 * 60;
@@ -90,6 +95,9 @@ struct MergeTreeSettings
 	/// Minimal absolute delay to close, stop serving requests and not return Ok during status check.
 	size_t min_absolute_delay_to_close = 0;
 
+	/// Enable usage of Vertical merge algorithm.
+	size_t enable_vertical_merge_algorithm = 0;
+
 
 	void loadFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
 	{
@@ -124,6 +132,7 @@ struct MergeTreeSettings
 		SET_SIZE_T(min_relative_delay_to_yield_leadership);
 		SET_SIZE_T(min_relative_delay_to_close);
 		SET_SIZE_T(min_absolute_delay_to_close);
+		SET_SIZE_T(enable_vertical_merge_algorithm);
 
 	#undef SET_SIZE_T
 	#undef SET_DOUBLE
