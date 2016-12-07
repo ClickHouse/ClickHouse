@@ -259,6 +259,7 @@ int Server::main(const std::vector<std::string> & args)
 	  * Examples: do repair of local data; clone all replicated tables from replica.
 	  */
 	Poco::File(path + "flags/").createDirectories();
+	global_context->setFlagsPath(path + "flags/");
 
 	bool has_zookeeper = false;
 	if (config().has("zookeeper"))
