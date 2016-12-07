@@ -28,6 +28,7 @@
 	M(EphemeralNode) \
 	M(ZooKeeperWatch) \
 	M(DelayedInserts) \
+	M(ContextLockWait) \
 
 
 namespace CurrentMetrics

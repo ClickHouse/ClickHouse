@@ -98,6 +98,7 @@
 	M(LeaderElectionAcquiredLeadership) \
 	\
 	M(RegexpCreated) \
+	M(ContextLock) \
 
 namespace ProfileEvents
 {
