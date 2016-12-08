@@ -127,7 +127,6 @@ DictionarySourcePtr DictionarySourceFactory::create(
 	{
 		return std::make_unique<ODBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block);
 	}
-
 	else if ("executable" == source_type)
 	{
 		if (dict_struct.has_expressions)
@@ -137,7 +136,6 @@ DictionarySourcePtr DictionarySourceFactory::create(
 
 		return std::make_unique<ExecutableDictionarySource>(dict_struct, config, config_prefix + ".executable", sample_block, context);
 	}
-
 	else if ("http" == source_type)
 	{
 		if (dict_struct.has_expressions)

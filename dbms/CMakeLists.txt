@@ -5,6 +5,11 @@ add_subdirectory (src)
 
 if (ENABLE_MONGODB)
 	set (LINK_MONGOCLIENT libmongoclient.a ${OPENSSL_LIBRARIES} ${Boost_THREAD_LIBRARY})
+	set (MONGODB_FILES
+		include/DB/Dictionaries/MongoDBBlockInputStream.h
+		include/DB/Dictionaries/MongoDBDictionarySource.h
+		src/Dictionaries/MongoDBDictionarySource.cpp
+		src/Dictionaries/MongoDBBlockInputStream.cpp)
 	add_definitions(-D ENABLE_MONGODB)
 endif ()
 
@@ -308,8 +313,6 @@ add_library (dbms
 	include/DB/Dictionaries/IDictionary.h
 	include/DB/Dictionaries/MySQLBlockInputStream.h
 	include/DB/Dictionaries/MySQLDictionarySource.h
-	include/DB/Dictionaries/MongoDBBlockInputStream.h
-	include/DB/Dictionaries/MongoDBDictionarySource.h
 	include/DB/Dictionaries/ODBCBlockInputStream.h
 	include/DB/Dictionaries/ODBCDictionarySource.h
 	include/DB/Dictionaries/HashedDictionary.h
@@ -812,10 +815,8 @@ add_library (dbms
 	src/Dictionaries/MySQLDictionarySource.cpp
 	src/Dictionaries/ODBCDictionarySource.cpp
 	src/Dictionaries/ClickHouseDictionarySource.cpp
-	src/Dictionaries/MongoDBDictionarySource.cpp
 	src/Dictionaries/ExecutableDictionarySource.cpp
 	src/Dictionaries/HTTPDictionarySource.cpp
-	src/Dictionaries/MongoDBBlockInputStream.cpp
 	src/Dictionaries/MySQLBlockInputStream.cpp
 	src/Dictionaries/ODBCBlockInputStream.cpp
 	src/Dictionaries/ExternalQueryBuilder.cpp
@@ -972,6 +973,8 @@ add_library (dbms
 
 	src/Client/Connection.cpp
 	src/Client/MultiplexedConnections.cpp
+
+	${MONGODB_FILES}
 )
 
 if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
