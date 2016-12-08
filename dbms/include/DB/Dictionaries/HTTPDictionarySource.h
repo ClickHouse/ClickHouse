@@ -10,10 +10,7 @@ namespace DB
 /// Allows loading dictionaries from executable
 class HTTPDictionarySource final : public IDictionarySource
 {
-	static constexpr auto max_block_size = 8192;
-
 public:
-
 	HTTPDictionarySource(const DictionaryStructure & dict_struct_,
 		const Poco::Util::AbstractConfiguration & config,
 		const std::string & config_prefix,

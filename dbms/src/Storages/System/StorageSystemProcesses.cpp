@@ -4,6 +4,7 @@
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Storages/System/StorageSystemProcesses.h>
+#include <DB/Interpreters/Context.h>
 
 
 namespace DB

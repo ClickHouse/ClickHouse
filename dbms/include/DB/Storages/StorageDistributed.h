@@ -6,7 +6,6 @@
 #include <DB/Client/ConnectionPool.h>
 #include <DB/Client/ConnectionPoolWithFailover.h>
 #include <DB/Interpreters/Settings.h>
-#include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/Cluster.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <common/logger_useful.h>
@@ -14,6 +13,9 @@
 
 namespace DB
 {
+
+class Context;
+
 
 /** Распределённая таблица, находящаяся на нескольких серверах.
   * Использует данные заданной БД и таблицы на каждом сервере.

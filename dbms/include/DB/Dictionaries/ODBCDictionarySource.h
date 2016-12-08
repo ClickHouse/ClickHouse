@@ -1,13 +1,22 @@
 #pragma once
 
 #include <DB/Dictionaries/IDictionarySource.h>
-#include <DB/Dictionaries/ODBCBlockInputStream.h>
 #include <DB/Dictionaries/ExternalQueryBuilder.h>
-#include <ext/range.hpp>
-#include <mysqlxx/Pool.h>
+#include <DB/Dictionaries/DictionaryStructure.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Data/SessionPool.h>
+
+namespace Poco
+{
+	namespace Data
+	{
+		class SessionPool;
+	}
+
+	namespace Util
+	{
+		class AbstractConfiguration;
+	}
+}
 
 
 namespace DB
@@ -17,8 +26,6 @@ namespace DB
 /// Allows loading dictionaries from a ODBC source
 class ODBCDictionarySource final : public IDictionarySource
 {
-	static constexpr auto max_block_size = 8192;
-
 public:
 	ODBCDictionarySource(const DictionaryStructure & dict_struct_,
 		const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,

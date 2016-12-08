@@ -10,10 +10,7 @@ namespace DB
 /// Allows loading dictionaries from executable
 class ExecutableDictionarySource final : public IDictionarySource
 {
-	static constexpr auto max_block_size = 8192;
-
 public:
-
 	ExecutableDictionarySource(
 		const DictionaryStructure & dict_struct_,
 		const Poco::Util::AbstractConfiguration & config,

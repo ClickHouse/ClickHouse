@@ -1,11 +1,14 @@
+#include <Poco/Data/SessionPool.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <DB/Dictionaries/ODBCDictionarySource.h>
+#include <DB/Dictionaries/ODBCBlockInputStream.h>
 
 
 namespace DB
 {
 
 
-decltype(ODBCDictionarySource::max_block_size) ODBCDictionarySource::max_block_size;
+static const size_t max_block_size = 8192;
 
 
 ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_struct_,

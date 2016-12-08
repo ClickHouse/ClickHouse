@@ -9,6 +9,7 @@
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTFunction.h>
+#include <DB/Interpreters/Context.h>
 #include <zkutil/ZooKeeper.h>
 
 

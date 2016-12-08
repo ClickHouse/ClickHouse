@@ -5,7 +5,7 @@ namespace DB
 {
 
 
-decltype(MySQLDictionarySource::max_block_size) MySQLDictionarySource::max_block_size;
+static const size_t max_block_size = 8192;
 
 
 MySQLDictionarySource::MySQLDictionarySource(const DictionaryStructure & dict_struct_,

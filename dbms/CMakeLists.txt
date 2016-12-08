@@ -807,10 +807,19 @@ add_library (dbms
 	src/DataTypes/DataTypeTuple.cpp
 	src/DataTypes/FieldToDataType.cpp
 
+	src/Dictionaries/DictionarySourceFactory.cpp
+	src/Dictionaries/FileDictionarySource.cpp
 	src/Dictionaries/MySQLDictionarySource.cpp
 	src/Dictionaries/ODBCDictionarySource.cpp
+	src/Dictionaries/ClickHouseDictionarySource.cpp
+	src/Dictionaries/MongoDBDictionarySource.cpp
 	src/Dictionaries/ExecutableDictionarySource.cpp
 	src/Dictionaries/HTTPDictionarySource.cpp
+	src/Dictionaries/MongoDBBlockInputStream.cpp
+	src/Dictionaries/MySQLBlockInputStream.cpp
+	src/Dictionaries/ODBCBlockInputStream.cpp
+	src/Dictionaries/ExternalQueryBuilder.cpp
+	src/Dictionaries/ExternalResultDescription.cpp
 	src/Dictionaries/writeParenthesisedString.cpp
 	src/Dictionaries/DictionaryStructure.cpp
 	src/Dictionaries/FlatDictionary.cpp
