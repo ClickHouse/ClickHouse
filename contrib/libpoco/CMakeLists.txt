@@ -69,7 +69,7 @@ include(PocoMacros)
 
 # Allow enabling and disabling components
 option(POCO_ENABLE_XML "Enable the XML" ON)
-option(POCO_ENABLE_MONGODB "Enable MongoDB" ON)
+option(POCO_ENABLE_MONGODB "Enable MongoDB" OFF)
 option(POCO_ENABLE_PDF "Enable PDF" OFF)
 option(POCO_ENABLE_UTIL "Enable Util" ON)
 option(POCO_ENABLE_NET "Enable Net" ON)
@@ -85,8 +85,6 @@ option(POCO_ENABLE_ZIP "Enable Zip" ON)
 option(POCO_ENABLE_APACHECONNECTOR "Enable ApacheConnector" OFF)
 option(POCO_ENABLE_CPPPARSER "Enable C++ parser" OFF)
 option(POCO_ENABLE_POCODOC "Enable Poco Documentation Generator" OFF)
-option(POCO_ENABLE_PAGECOMPILER "Enable PageCompiler" ON)
-option(POCO_ENABLE_PAGECOMPILER_FILE2PAGE "Enable File2Page" ON)
 
 option(FORCE_OPENSSL "Force usage of OpenSSL even under windows" OFF)
 
@@ -261,16 +259,6 @@ endif()
 if(POCO_ENABLE_POCODOC)
 add_subdirectory(PocoDoc)
 list(APPEND Poco_COMPONENTS "PocoDoc")
-endif()
-
-if(POCO_ENABLE_PAGECOMPILER)
-add_subdirectory(PageCompiler)
-list(APPEND Poco_COMPONENTS "PageCompiler")
-endif()
-
-if(POCO_ENABLE_PAGECOMPILER_FILE2PAGE)
-add_subdirectory(PageCompiler/File2Page)
-list(APPEND Poco_COMPONENTS "File2Page")
 endif()
 
 #############################################################
