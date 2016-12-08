@@ -227,6 +227,9 @@ struct Settings
 	/** Skip columns with unknown names from input data (it works for JSONEachRow and TSKV formats). */ \
 	M(SettingBool, input_format_skip_unknown_fields, false) \
 	\
+	/** For Values format: if field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression. */ \
+	M(SettingBool, input_format_values_interpret_expressions, true) \
+	\
 	/** Controls quoting of 64-bit integers in JSON output format. */ \
 	M(SettingBool, output_format_json_quote_64bit_integers, true) \
 	\
