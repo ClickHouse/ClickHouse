@@ -312,7 +312,6 @@ add_library (dbms
 	include/DB/Dictionaries/MongoDBDictionarySource.h
 	include/DB/Dictionaries/ODBCBlockInputStream.h
 	include/DB/Dictionaries/ODBCDictionarySource.h
-	include/DB/Dictionaries/TypeCheckingBlockInputStream.h
 	include/DB/Dictionaries/HashedDictionary.h
 	include/DB/Dictionaries/FlatDictionary.h
 	include/DB/Dictionaries/ComplexKeyHashedDictionary.h
