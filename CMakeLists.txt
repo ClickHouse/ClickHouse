@@ -45,7 +45,7 @@ endif ()
 set (COMMON_WARNING_FLAGS "-Wall -Werror")
 set (CXX_WARNING_FLAGS "-Wnon-virtual-dtor -Wold-style-cast")
 
-set (ENABLE_CXX11_ABI FALSE CACHE BOOL "Enables C++11 ABI")
+set (CXX11_ABI "DEFAULT" CACHE STRING "Use C++11 ABI: DEFAULT, ENABLE, DISABLE")
 set (TEST_COVERAGE FALSE CACHE BOOL "Enables flags for test coverage")
 set (ENABLE_TESTS TRUE CACHE BOOL "Enables tests")
 
@@ -54,7 +54,7 @@ if (NOT $ENV{USE_STATIC_LIBRARIES})
 	set (USE_STATIC_LIBRARIES FALSE)
 endif ()
 
-set (GLIBC_COMPATIBILITY FALSE CACHE BOOL "Set to TRUE to enable compatibility with older glibc libraries")
+set (GLIBC_COMPATIBILITY FALSE CACHE BOOL "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan.")
 if ($ENV{GLIBC_COMPATIBILITY})
 	set (GLIBC_COMPATIBILITY TRUE)
 endif ()
@@ -79,35 +79,39 @@ if (GLIBC_COMPATIBILITY)
 	set (GLIBC_COMPATIBILITY_LINK_FLAGS      "-Wl,--wrap=memcpy")
 endif ()
 
-if (NOT ENABLE_CXX11_ABI)
-	set (CXX11_ABI "-D_GLIBCXX_USE_CXX11_ABI=0")
+if ("${CXX11_ABI}" STREQUAL ENABLE)
+	set (CXX11_ABI_FLAGS "-D_GLIBCXX_USE_CXX11_ABI=1")
+elseif ("${CXX11_ABI}" STREQUAL DISABLE)
+	set (CXX11_ABI_FLAGS "-D_GLIBCXX_USE_CXX11_ABI=0")
+else ()
+	set (CXX11_ABI_FLAGS "")
 endif ()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
-set (CMAKE_CXX_FLAGS                     "-std=gnu++1y ${APPLE_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI}")
+set (CMAKE_CXX_FLAGS                     "-std=gnu++1y ${APPLE_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI_FLAGS}")
 set (CMAKE_CXX_FLAGS_RELEASE             "-O3 -DNDEBUG")
 set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "-O3 -g")
 set (CMAKE_CXX_FLAGS_DEBUG               "-O0 -g3 -ggdb3 -fno-inline")
 
-set (CMAKE_C_FLAGS                       "-fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI}")
+set (CMAKE_C_FLAGS                       "-fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI_FLAGS}")
 set (CMAKE_C_FLAGS_RELEASE               "-O3 -DNDEBUG")
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "-O3 -g")
 set (CMAKE_C_FLAGS_DEBUG                 "-O0 -g3 -ggdb3 -fno-inline")
 
 if (NOT APPLE)
-	set (CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++ ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI}")
+	set (CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++ ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI_FLAGS}")
 endif ()
 
-# -fuse-ld=gold - fix linkage for gcc-5.4, gcc-6.1 
+# -fuse-ld=gold - fix linkage for gcc-5.4, gcc-6.1
 # See more in http://stackoverflow.com/questions/37603238/fsanitize-not-using-gold-linker-in-gcc-6-1
-set (CMAKE_CXX_FLAGS_ASAN                "-O3 -g -fsanitize=address -fno-omit-frame-pointer -fuse-ld=gold ${CXX11_ABI}")
-set (CMAKE_CXX_FLAGS_UBSAN               "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI}")
-set (CMAKE_C_FLAGS_ASAN                  "-O3 -g -fsanitize=address -fno-omit-frame-pointer -fuse-ld=gold ${CXX11_ABI}")
-set (CMAKE_C_FLAGS_UBSAN                 "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI}")
+set (CMAKE_CXX_FLAGS_ASAN                "-O3 -g -fsanitize=address -fno-omit-frame-pointer -fuse-ld=gold ${CXX11_ABI_FLAGS}")
+set (CMAKE_CXX_FLAGS_UBSAN               "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI_FLAGS}")
+set (CMAKE_C_FLAGS_ASAN                  "-O3 -g -fsanitize=address -fno-omit-frame-pointer -fuse-ld=gold ${CXX11_ABI_FLAGS}")
+set (CMAKE_C_FLAGS_UBSAN                 "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI_FLAGS}")
 
 # Flags for test coverage
 if (TEST_COVERAGE)
-	set (CMAKE_CXX_FLAGS_DEBUG "-O0 -g -fprofile-arcs -ftest-coverage -fPIC -DIS_DEBUG ${CXX11_ABI}")
+	set (CMAKE_CXX_FLAGS_DEBUG "-O0 -g -fprofile-arcs -ftest-coverage -fPIC -DIS_DEBUG ${CXX11_ABI_FLAGS}")
 endif (TEST_COVERAGE)
 
 # Run tests with "make check"
