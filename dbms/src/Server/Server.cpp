@@ -458,8 +458,10 @@ int Server::main(const std::vector<std::string> & args)
 				http_params);
 		}
 
-		http_server->start();
-		tcp_server->start();
+		if (http_server)
+			http_server->start();
+		if (tcp_server)
+			tcp_server->start();
 		if (interserver_io_http_server)
 			interserver_io_http_server->start();
 
@@ -481,8 +483,12 @@ int Server::main(const std::vector<std::string> & args)
 
 			is_cancelled = true;
 
-			http_server->stop();
-			tcp_server->stop();
+			if (http_server)
+				http_server->stop();
+			if (tcp_server)
+				tcp_server->stop();
+			if (interserver_io_http_server)
+				interserver_io_http_server->stop();
 
 			LOG_DEBUG(log, "Closed all connections.");
 
