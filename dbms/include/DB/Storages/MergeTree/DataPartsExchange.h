@@ -2,7 +2,6 @@
 
 #include <DB/Interpreters/InterserverIOHandler.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
-#include <DB/IO/ReadBufferFromHTTP.h>
 #include <DB/IO/HashingWriteBuffer.h>
 #include <DB/IO/copyData.h>
 

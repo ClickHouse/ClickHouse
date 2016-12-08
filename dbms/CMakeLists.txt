@@ -319,8 +319,11 @@ add_library (dbms
 	include/DB/Dictionaries/ComplexKeyCacheDictionary.h
 	include/DB/Dictionaries/IDictionarySource.h
 	include/DB/Dictionaries/OwningBufferBlockInputStream.h
+	include/DB/Dictionaries/OwningBlockInputStream.h
 	include/DB/Dictionaries/CacheDictionary.h
 	include/DB/Dictionaries/MySQLDictionarySource.h
+	include/DB/Dictionaries/ExecutableDictionarySource.h
+	include/DB/Dictionaries/HTTPDictionarySource.h
 	include/DB/Dictionaries/RangeHashedDictionary.h
 	include/DB/Dictionaries/writeParenthesisedString.h
 	include/DB/Dictionaries/Embedded/RegionsHierarchy.h
@@ -483,6 +486,7 @@ add_library (dbms
 	include/DB/IO/ReadHelpers.h
 	include/DB/IO/WriteBufferFromPocoSocket.h
 	include/DB/IO/ReadBufferFromHTTP.h
+	include/DB/IO/ReadWriteBufferFromHTTP.h
 	include/DB/IO/WriteBufferFromHTTPServerResponse.h
 	include/DB/IO/createReadBufferFromFileBase.h
 	include/DB/IO/WriteIntText.h
@@ -655,6 +659,7 @@ add_library (dbms
 
 	src/IO/InterserverWriteBuffer.cpp
 	src/IO/ReadBufferFromHTTP.cpp
+	src/IO/ReadWriteBufferFromHTTP.cpp
 
 	src/Columns/ColumnConst.cpp
 	src/Columns/ColumnArray.cpp
@@ -806,6 +811,8 @@ add_library (dbms
 
 	src/Dictionaries/MySQLDictionarySource.cpp
 	src/Dictionaries/ODBCDictionarySource.cpp
+	src/Dictionaries/ExecutableDictionarySource.cpp
+	src/Dictionaries/HTTPDictionarySource.cpp
 	src/Dictionaries/writeParenthesisedString.cpp
 	src/Dictionaries/DictionaryStructure.cpp
 	src/Dictionaries/FlatDictionary.cpp
