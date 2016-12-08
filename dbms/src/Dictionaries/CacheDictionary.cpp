@@ -2,6 +2,7 @@
 #include <DB/Dictionaries/CacheDictionary.h>
 #include <DB/Common/BitHelpers.h>
 #include <DB/Common/randomSeed.h>
+#include <DB/Common/HashTable/Hash.h>
 
 
 namespace DB
@@ -170,7 +171,7 @@ void CacheDictionary::getString(
 void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
 {
 	/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
-	MapType<std::vector<std::size_t>> outdated_ids;
+	std::unordered_map<Key, std::vector<std::size_t>> outdated_ids;
 
 	const auto rows = ext::size(ids);
 	{
@@ -344,7 +345,7 @@ void CacheDictionary::getItemsNumberImpl(
 	DefaultGetter && get_default) const
 {
 	/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
-	MapType<std::vector<std::size_t>> outdated_ids;
+	std::unordered_map<Key, std::vector<std::size_t>> outdated_ids;
 	auto & attribute_array = std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
 	const auto rows = ext::size(ids);
 
@@ -446,9 +447,9 @@ void CacheDictionary::getItemsString(
 	out->getOffsets().resize_assume_reserved(0);
 
 	/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
-	MapType<std::vector<std::size_t>> outdated_ids;
+	std::unordered_map<Key, std::vector<std::size_t>> outdated_ids;
 	/// we are going to store every string separately
-	MapType<String> map;
+	std::unordered_map<Key, String> map;
 
 	std::size_t total_length = 0;
 	{
@@ -513,7 +514,7 @@ void CacheDictionary::update(
 	const std::vector<Key> & requested_ids, PresentIdHandler && on_cell_updated,
 	AbsentIdHandler && on_id_not_found) const
 {
-	MapType<UInt8> remaining_ids{requested_ids.size()};
+	std::unordered_map<Key, UInt8> remaining_ids{requested_ids.size()};
 	for (const auto id : requested_ids)
 		remaining_ids.insert({ id, 0 });
 
