@@ -127,7 +127,7 @@ def generate_data():
                     'Float32_ float, Float64_ double, '
                     'String_ text, Date_ date, DateTime_ datetime, Parent bigint unsigned'
               ');'
-              'load data local infile \'{0}/source.tsv\' into table test.dictionary_source;" | mysql --local-infile=1'
+              'load data local infile \'{0}/source.tsv\' into table test.dictionary_source;" | mysql $MYSQL_OPTIONS --local-infile=1'
               .format(prefix), shell=True)
 
     # create MongoDB collection from complete_query via JSON file
@@ -325,10 +325,10 @@ def generate_dictionaries():
 
 def run_tests():
     keys = [ 'toUInt64(n)', '(n, n)', '(toString(n), n)' ]
-    dict_get_query_skeleton = "select dictGet{type}('{name}', '{type}_', {key}) array join range(8) as n;"
-    dict_has_query_skeleton = "select dictHas('{name}', {key}) array join range(8) as n;"
-    dict_get_or_default_query_skeleton = "select dictGet{type}OrDefault('{name}', '{type}_', {key}, to{type}({default})) array join range(8) as n;"
-    dict_hierarchy_query_skeleton = "select dictGetHierarchy('{name}' as d, key), dictIsIn(d, key, toUInt64(1)), dictIsIn(d, key, key) array join range(toUInt64(8)) as key;"
+    dict_get_query_skeleton = "select dictGet{type}('{name}', '{type}_', {key}) from system.one array join range(8) as n;"
+    dict_has_query_skeleton = "select dictHas('{name}', {key}) from system.one array join range(8) as n;"
+    dict_get_or_default_query_skeleton = "select dictGet{type}OrDefault('{name}', '{type}_', {key}, to{type}({default})) from system.one array join range(8) as n;"
+    dict_hierarchy_query_skeleton = "select dictGetHierarchy('{name}' as d, key), dictIsIn(d, key, toUInt64(1)), dictIsIn(d, key, key) from system.one array join range(toUInt64(8)) as key;"
 
     def test_query(dict, query, reference, name):
         result = system('{ch} --port 9001 --query "{query}" | diff - reference/{reference}.reference'.format(ch=clickhouse_binary, **locals()))

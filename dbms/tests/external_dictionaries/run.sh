@@ -35,7 +35,7 @@ if [ -z $LOCAL_INFILE_ENABLED ] || [ $LOCAL_INFILE_ENABLED != 1 ]; then
     sudo /etc/init.d/mysql start
 else
     echo 'Support for local-infile already present'
-    echo 'select 1;' | mysql &>/dev/null
+    echo 'select 1;' | mysql $MYSQL_OPTIONS &>/dev/null
     if [ $? -ne 0 ]; then
         sudo /etc/init.d/mysql start
     else
@@ -68,7 +68,7 @@ else
 fi
 
 # ClickHouse
-clickhouse-server &>/dev/null &
+clickhouse-server &> clickhouse.log &
 sleep 3
 result=$(clickhouse-client --port 9001 --query 'select 1')
 if [ $? -ne 0 ]; then
