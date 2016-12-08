@@ -3,7 +3,7 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/IDictionarySource.h>
-#include <DB/Dictionaries/OwningBufferBlockInputStream.h>
+#include <DB/Dictionaries/OwningBlockInputStream.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <Poco/Timestamp.h>
 #include <Poco/File.h>
@@ -35,7 +35,7 @@ public:
 			format, *in_ptr, sample_block, max_block_size);
 		last_modification = getLastModification();
 
-		return std::make_shared<OwningBufferBlockInputStream>(stream, std::move(in_ptr));
+		return std::make_shared<OwningBlockInputStream<ReadBuffer>>(stream, std::move(in_ptr));
 	}
 
 	BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override
