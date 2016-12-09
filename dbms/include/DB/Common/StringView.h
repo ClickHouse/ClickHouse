@@ -1,11 +1,17 @@
 #pragma once
 
 #include <cassert>
+#include <stdexcept>
 #include <string>
 
 /// A lightweight non-owning read-only view into a subsequence of a string.
 class StringView
 {
+public:
+	using size_type = size_t;
+
+	static constexpr size_type npos = size_type(-1);
+
 public:
 	inline StringView() noexcept
 		: str(nullptr)
@@ -41,9 +47,25 @@ public:
 		return str == nullptr;
 	}
 
-	inline size_t size() const noexcept
+	inline size_type size() const noexcept
 	{
 		return len;
+	}
+
+public:
+	/**
+	 * Returns a substring [pos, pos + count).
+	 * If the requested substring extends past the end of the string,
+	 * or if count == npos, the returned substring is [pos, size()).
+	 */
+	StringView substr(size_type pos, size_type count = npos) const
+	{
+		if (pos >= len)
+			throw std::out_of_range("pos must be less than len");
+		if (pos + count >= len || count == npos)
+			return StringView(str + pos, len - pos);
+		else
+			return StringView(str + pos, count);
 	}
 
 public:
@@ -54,7 +76,7 @@ public:
 
 private:
 	const char* str;
-	const size_t len;
+	size_t len;
 };
 
 

@@ -85,33 +85,21 @@ struct ExtractDomain
 
 	static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
 	{
-		res_data = data;
-		res_size = 0;
+		StringView host = getUrlHost(StringView(data, size));
 
-		Pos pos = data;
-		Pos end = pos + size;
+		if (host.empty())
+		{
+			res_data = data;
+			res_size = 0;
+		}
+		else
+		{
+			if (without_www && host.size() > 4 && !strncmp(host.data(), "www.", 4))
+				host = host.substr(4);
 
-		Pos tmp;
-		size_t protocol_length;
-		ExtractProtocol::execute(data, size, tmp, protocol_length);
-		pos += protocol_length + 3;
-
-		if (pos >= end || pos[-1] != '/' || pos[-2] != '/')
-			return;
-
-		if (without_www && pos + 4 < end && !strncmp(pos, "www.", 4))
-			pos += 4;
-
-		Pos domain_begin = pos;
-
-		while (pos < end && *pos != '/' && *pos != ':' && *pos != '?' && *pos != '#')
-			++pos;
-
-		if (pos == domain_begin)
-			return;
-
-		res_data = domain_begin;
-		res_size = pos - domain_begin;
+			res_data = host.data();
+			res_size = host.size();
+		}
 	}
 };
 

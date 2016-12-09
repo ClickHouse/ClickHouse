@@ -2,3 +2,8 @@ SELECT protocol('http://example.com') AS Scheme;
 SELECT protocol('https://example.com/') AS Scheme;
 SELECT protocol('svn+ssh://example.com?q=hello%20world') AS Scheme;
 SELECT protocol('ftp!://example.com/') AS Scheme;
+
+SELECT domain('http://paul@www.example.com:80/') AS Host;
+SELECT domain('http:/paul/example/com') AS Host;
+SELECT domain('http://www.example.com?q=4') AS Host;
+SELECT domainWithoutWWW('http://paul@www.example.com:80/') AS Host;
