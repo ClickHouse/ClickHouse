@@ -453,6 +453,7 @@ add_library (dbms
 	include/DB/Common/randomSeed.h
 	include/DB/Common/unaligned.h
 	include/DB/Common/ThreadPool.h
+	include/DB/Common/StringView.h
 	include/DB/IO/CompressedStream.h
 	include/DB/IO/ReadBufferFromFileDescriptor.h
 	include/DB/IO/CompressedWriteBuffer.h
@@ -627,6 +628,7 @@ add_library (dbms
 	src/Common/getNumberOfPhysicalCPUCores.cpp
 	src/Common/randomSeed.cpp
 	src/Common/ThreadPool.cpp
+	src/Common/UrlUtils.cpp
 
 	src/Core/Field.cpp
 	src/Core/FieldVisitors.cpp

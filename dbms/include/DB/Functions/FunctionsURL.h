@@ -3,6 +3,7 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Common/UrlUtils.h>
 #include <DB/Functions/FunctionsString.h>
 #include <DB/Functions/FunctionsStringSearch.h>
 #include <DB/Functions/FunctionsStringArray.h>
@@ -66,12 +67,10 @@ struct ExtractProtocol
 		res_data = data;
 		res_size = 0;
 
-		Pos pos = data;
+		StringView scheme = getUrlScheme(StringView(data, size));
+		Pos pos = data + scheme.size();
 
-		while (isAlphaNumericASCII(*pos))
-			++pos;
-
-		if (pos == data || pos + 3 >= data + size)
+		if (scheme.empty() || (data + size) - pos < 4)
 			return;
 
 		if (pos[0] == ':')
