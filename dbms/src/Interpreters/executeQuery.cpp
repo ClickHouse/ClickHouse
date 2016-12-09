@@ -207,8 +207,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 				stream->setProcessListElement(context.getProcessListElement());
 			}
 		}
-		if (!res.out || !dynamic_cast<CountingBlockOutputStream *>(res.out.get()))
-			LOG_DEBUG(&Logger::get("executeQuery"), "res.out " << res.out.get() << " is empty");
 
 		/// Everything related to query log.
 		{

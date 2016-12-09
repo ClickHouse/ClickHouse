@@ -383,7 +383,12 @@ public:
 	}
 };
 
-
+/** Progress callback. Is used by Horizontal merger and first step of Vertical merger.
+  * What it should update:
+  * - approximate progress
+  * - amount of merged rows and their size (PK columns subset is used in case of Vertical merge)
+  * - time elapsed for current merge.
+  */
 class MergeProgressCallback : public ProgressCallback
 {
 public:
@@ -425,6 +430,9 @@ public:
 	};
 };
 
+/** Progress callback for gathering step of Vertical merge.
+  * Updates: approximate progress, amount of merged bytes (TODO: two column case should be fixed), elapsed time.
+  */
 class MergeProgressCallbackVerticalStep : public MergeProgressCallback
 {
 public:
@@ -438,8 +446,7 @@ public:
 	}
 
 	Float64 initial_progress;
-	/// NOTE: not thread safe (to be copyable). It is OK in current single thread use case
-	size_t rows_read_internal{0};
+	size_t rows_read_internal{0}; // NOTE: not thread safe (to be copyable). It is OK in current single thread use case
 
 	void operator() (const Progress & value)
 	{
@@ -452,6 +459,7 @@ public:
 		merge_entry->progress = initial_progress + local_progress;
 	};
 };
+
 
 /// parts should be sorted.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart(

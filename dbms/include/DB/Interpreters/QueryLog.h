@@ -32,14 +32,15 @@ struct QueryLogElement
 	time_t query_start_time{};
 	UInt64 query_duration_ms{};
 
+	/// The data fetched from DB to execute the query
 	UInt64 read_rows{};
 	UInt64 read_bytes{};
 
+	/// The data written to DB
 	UInt64 written_rows{};
 	UInt64 written_bytes{};
 
-	/// NOTE: Not obvious metric.
-	/// It always approximately equal to read_rows or written_rows at the end of query execution.
+	/// The data sent to the client
 	UInt64 result_rows{};
 	UInt64 result_bytes{};
 
