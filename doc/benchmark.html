@@ -1434,7 +1434,7 @@ function generate_selectors(elem) {
         filter(function(run) { return run.data_size == current_data_size; }).
         map(function(run) { return run.system; });
 
-    for (var i in systems) {
+    for (var i = 0; i < systems.length; i++) {
         var selected = current_systems.indexOf(systems[i]) != -1;
         var available = available_systems_for_current_data_size.indexOf(systems[i]) != -1;
 
@@ -1449,7 +1449,7 @@ function generate_selectors(elem) {
 
     html += "Dataset size: ";
 
-    for (var i in data_sizes) {
+    for (var i = 0; i < data_sizes.length; i++) {
         html += "<span class='" + (data_sizes[i].id == current_data_size ? "selected" : "") + "' data-size-id='" + data_sizes[i].id + "'>" + data_sizes[i].name + "</span> ";
     }
 
@@ -1458,8 +1458,8 @@ function generate_selectors(elem) {
 
     html += "Run number: ";
 
-    for (var i in runs) {
-        html += "<span class='" + (current_runs.indexOf(i) != -1 ? "selected" : "") + "' data-run-id='" + i + "'>" + runs[i] + "</span> ";
+    for (var i = 0; i < runs.length; i++) {
+        html += "<span class='" + (current_runs.indexOf(String(i)) != -1 ? "selected" : "") + "' data-run-id='" + i + "'>" + runs[i] + "</span> ";
     }
 
     html += "</p>";
@@ -1555,13 +1555,13 @@ function generate_comparison_table() {
     html += "<tr>";
     html += "<th></th>";
     html += "<th style='text-align: left;'>Query</th>";
-    for (j in filtered_results) {
+    for (j = 0; j < filtered_results.length; j++) {
         html += "<th colspan='" + current_runs.length + "'>" + filtered_results[j].system +
             (filtered_results[j].version ? " (" + filtered_results[j].version + ")" : "") + "</th>";
     }
     html += "</tr>";
 
-    for (i in queries) {
+    for (i = 0; i < queries.length; i++) {
         html += "<tr>";
         html += "<td><input id='query_checkbox" + i + "' type='checkbox' " +
             ($('#query_checkbox' + i).length == 0 || $('#query_checkbox' + i).is(':checked') ? "checked" : "") + " /></td>";
@@ -1571,8 +1571,8 @@ function generate_comparison_table() {
         // Вычислим максимальное и минимальное время выполнения по системам, для каждого из трёх прогонов.
         var minimums = [0, 0, 0], maximums = [0, 0, 0];
 
-        for (j in filtered_results) {
-            for (current_run_idx in current_runs) {
+        for (j = 0; j < filtered_results.length; j++) {
+            for (current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
                 var k = current_runs[current_run_idx];
                 var value = filtered_results[j].result[i][k];
 
@@ -1591,12 +1591,12 @@ function generate_comparison_table() {
             }
         }
 
-        for (j in filtered_results) {
+        for (j = 0; j < filtered_results.length; j++) {
             if (!ratios[j]) {
                 ratios[j] = [];
             }
 
-            for (current_run_idx in current_runs) {
+            for (current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
                 var k = current_runs[current_run_idx];
                 var value = filtered_results[j].result[i][k];
 
@@ -1616,21 +1616,21 @@ function generate_comparison_table() {
         html += "</tr>";
     }
 
-    if (current_systems.length > 1) {
+    if (current_systems.length) {
         html += "<tr>";
         html += "<td rowspan='2'></td>";
         html += "<td rowspan='2'><div class='query_cell'>Geometric mean of ratios</div></td>";
 
-        for (j in filtered_results) {
-            for (k in current_runs) {
-                html += "<th id='totals" + j + "_" + k + "' class='number_cell' style='text-align: center; background-color: #FFF; font-weight: bold;'></th>";
+        for (j = 0; j < filtered_results.length; j++) {
+            for (k = 0; k < current_runs.length; k++) {
+                html += "<th id='totals" + j + "_" + current_runs[k] + "' class='number_cell' style='text-align: center; background-color: #FFF; font-weight: bold;'></th>";
             }
         }
 
         html += "</tr>";
         html += "<tr>";
 
-        for (j in filtered_results) {
+        for (j = 0; j < filtered_results.length; j++) {
             html += "<th id='absolute_totals" + j + "' colspan='" + current_runs.length + "' class='number_cell' style='text-align: center; background-color: #FFF; font-weight: bold;'></th>";
         }
 
@@ -1641,7 +1641,7 @@ function generate_comparison_table() {
 
     $('#comparison_table').html(html);
 
-    for (i in queries) {
+    for (i = 0; i < queries.length; i++) {
         $('#query_checkbox' + i).click(function() { calculate_totals(); generate_diagram(); } );
     }
 
@@ -1650,15 +1650,15 @@ function generate_comparison_table() {
 
 
 function calculate_totals() {
-    if (current_systems.length <= 1) return;
+    if (!current_systems.length) return;
 
     var filtered_results = results.filter(function(x) {
         return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1; });
 
     var total_ratios = [];
 
-    for (j in filtered_results) {
-        for (current_run_idx in current_runs) {
+    for (j = 0; j < filtered_results.length; j++) {
+        for (current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
             var k = current_runs[current_run_idx];
 
             var current_ratios = ratios[j][k].filter(
@@ -1677,7 +1677,7 @@ function calculate_totals() {
         }
     }
 
-    for (j in filtered_results) {
+    for (j = 0; j < filtered_results.length; j++) {
         var total_ratio = Math.pow(total_ratios[j], 1 / current_runs.length);
         $("#absolute_totals" + j).attr("data-ratio", total_ratio).html("x" + total_ratio.toFixed(2));
     }
@@ -1696,8 +1696,8 @@ function generate_diagram() {
     var max_total_ratio = 1;
     var min_total_ratio = 0;
 
-    for (j in filtered_results) {
-        for (current_run_idx in current_runs) {
+    for (j = 0; j < filtered_results.length; j++) {
+        for (current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
             var k = current_runs[current_run_idx];
             var ratio = +$("#totals" + j + "_" + k).attr("data-ratio");
 
@@ -1723,7 +1723,7 @@ function generate_diagram() {
 
     html += "<table style='width: 100%'>";
 
-    for (j in filtered_results) {
+    for (j = 0; j < filtered_results.length; j++) {
         var total_ratio = +$("#absolute_totals" + j).attr("data-ratio");
 
         html += "<tr>";
@@ -1732,7 +1732,7 @@ function generate_diagram() {
 
         html += "<td style='width: 100%; padding-right: 20px;'>";
 
-        for (current_run_idx in current_runs) {
+        for (current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
             var k = current_runs[current_run_idx];
 
             var ratio = +$("#totals" + j + "_" + k).attr("data-ratio");
@@ -1749,6 +1749,8 @@ function generate_diagram() {
 
         html += "</td>";
 
+        //min_total_ratio = 1;
+        //total_ratio = 1;
         html += "<td style='text-align: right; font-weight: bold;'>" + (total_ratio / min_total_ratio).toFixed(2) + "</td>";
         html += "</tr>";
     }
@@ -1788,20 +1790,20 @@ try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
 <div class='island'>
 
 <div style="float: left; margin-right: -100%; margin-top: -1px;">
-	<a href="/" title="Main page">
-		<svg xmlns="http://www.w3.org/2000/svg" width="45" height="40" viewBox="0 0 9 8">
-			<style>
-				.o{fill:#fc0}
-				.r{fill:#f00}
-			</style>
-			<path class="r" d="M0,7 h1 v1 h-1 z"/>
-			<path class="o" d="M0,0 h1 v7 h-1 z"/>
-			<path class="o" d="M2,0 h1 v8 h-1 z"/>
-			<path class="o" d="M4,0 h1 v8 h-1 z"/>
-			<path class="o" d="M6,0 h1 v8 h-1 z"/>
-			<path class="o" d="M8,3.25 h1 v1.5 h-1 z"/>
-		</svg>
-	</a>
+    <a href="/" title="Main page">
+        <svg xmlns="http://www.w3.org/2000/svg" width="45" height="40" viewBox="0 0 9 8">
+            <style>
+                .o{fill:#fc0}
+                .r{fill:#f00}
+            </style>
+            <path class="r" d="M0,7 h1 v1 h-1 z"/>
+            <path class="o" d="M0,0 h1 v7 h-1 z"/>
+            <path class="o" d="M2,0 h1 v8 h-1 z"/>
+            <path class="o" d="M4,0 h1 v8 h-1 z"/>
+            <path class="o" d="M6,0 h1 v8 h-1 z"/>
+            <path class="o" d="M8,3.25 h1 v1.5 h-1 z"/>
+        </svg>
+    </a>
 </div>
 
 <h1 class='title'>Performance comparison of analytical DBMS</h1>
