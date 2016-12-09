@@ -60,7 +60,7 @@ using Pos = const char *;
 
 struct ExtractProtocol
 {
-	static size_t getReserveLengthForElement() { return strlen("https") + 1; }
+	static size_t getReserveLengthForElement() { return MakeStringView("https").size() + 1; }
 
 	static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
 	{
