@@ -44,6 +44,11 @@ public:
 		return str[pos];
 	}
 
+	inline TChar back() const noexcept
+	{
+		return str[len - 1];
+	}
+
 	inline const TChar* data() const noexcept
 	{
 		return str;
@@ -52,6 +57,11 @@ public:
 	inline bool empty() const noexcept
 	{
 		return len == 0;
+	}
+
+	inline TChar front() const noexcept
+	{
+		return str[0];
 	}
 
 	inline bool null() const noexcept

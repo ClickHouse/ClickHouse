@@ -197,39 +197,27 @@ struct ExtractTopLevelDomain
 
 	static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
 	{
+		StringView host = getUrlHost(StringView(data, size));
+
 		res_data = data;
 		res_size = 0;
 
-		Pos pos = data;
-		Pos end = pos + size;
+		if (!host.empty())
+		{
+			if (host.back() == '.')
+				host = StringView(host.data(), host.size() - 1);
 
-		Pos tmp;
-		size_t protocol_length;
-		ExtractProtocol::execute(data, size, tmp, protocol_length);
-		pos += protocol_length + 3;
+			Pos last_dot = reinterpret_cast<Pos>(memrchr(host.data(), '.', host.size()));
 
-		if (pos >= end || pos[-1] != '/' || pos[-2] != '/')
-			return;
+			if (!last_dot)
+				return;
+			/// Для IPv4-адресов не выделяем ничего.
+			if (last_dot[1] <= '9')
+				return;
 
-		Pos domain_begin = pos;
-
-		while (pos < end && *pos != '/' && *pos != ':' && *pos != '?' && *pos != '#')
-			++pos;
-
-		if (pos == domain_begin)
-			return;
-
-		Pos last_dot = reinterpret_cast<Pos>(memrchr(domain_begin, '.', pos - domain_begin));
-
-		if (!last_dot)
-			return;
-
-		/// Для IPv4-адресов не выделяем ничего.
-		if (last_dot[1] <= '9')
-			return;
-
-		res_data = last_dot + 1;
-		res_size = pos - res_data;
+			res_data = last_dot + 1;
+			res_size = (host.data() + host.size()) - res_data;
+		}
 	}
 };
 
