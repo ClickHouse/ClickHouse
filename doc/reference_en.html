@@ -728,6 +728,10 @@ echo &#39;SELECT 1&#39; | curl &#39;http://user:password@localhost:8123/&#39; -d
 <pre class="terminal">
 echo &#39;SELECT 1&#39; | curl &#39;http://localhost:8123/?user=user&amp;password=password&#39; -d @-
 </pre>
+3. Using &#39;X-ClickHouse-User&#39; and &#39;X-ClickHouse-Key&#39; headers. Example:
+<pre class="terminal">
+echo &#39;SELECT 1&#39; | curl -H "X-ClickHouse-User: user" -H "X-ClickHouse-Key: password"  &#39;http://localhost:8123/&#39; -d @-
+</pre>
 If the user name is not indicated, the username &#39;default&#39; is used. If the password is not indicated, an empty password is used.
 
 
@@ -757,7 +761,7 @@ In contrast to the native interface, the HTTP interface does not support the con
 
 The optional &#39;query_id&#39; parameter can be passed as the query ID (any string). For more information, see the section &quot;Settings, replace_running_query&quot;.
 
-The optional &#39;quota_key&#39; parameter can be passed as the quota key (any string). For more information, see the section &quot;Quotas&quot;.
+The optional &#39;quota_key&#39; parameter can be passed as the quota key (any string). It can also be passed as &#39;X-ClickHouse-Quota&#39; header. For more information, see the section &quot;Quotas&quot;.
 
 The HTTP interface allows passing external data (external temporary tables) for querying. For more information, see the section &quot;External data for query processing&quot;.
 
