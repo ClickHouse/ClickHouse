@@ -177,7 +177,8 @@ void MergeTreeReader::fillMissingColumnsAndReorder(Block & res, const Names & or
 
 
 MergeTreeReader::Stream::Stream(
-	const String & path_prefix_, UncompressedCache * uncompressed_cache,
+	const String & path_prefix_, const String & extension_,
+	UncompressedCache * uncompressed_cache,
 	MarkCache * mark_cache, bool save_marks_in_cache,
 	const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size,
 	const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
@@ -265,7 +266,7 @@ MergeTreeReader::Stream::Stream(
 
 std::unique_ptr<MergeTreeReader::Stream> MergeTreeReader::Stream::createEmptyPtr()
 {
-	std::unique_ptr<Stream> res = std::make_unique<Stream>();
+	std::unique_ptr<Stream> res(new Stream);
 	res->is_empty = true;
 	return res;
 }
@@ -477,7 +478,7 @@ void MergeTreeReader::readData(const String & name, const IDataType & type, ICol
 		Stream & stream = *streams[name];
 
 		/// It means that data column of array column will be empty, and it will be replaced by const data column
-		if (stream.is_empty)
+		if (stream.isEmpty())
 			return;
 
 		double & avg_value_size_hint = avg_value_size_hints[name];

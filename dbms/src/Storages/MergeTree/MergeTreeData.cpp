@@ -893,7 +893,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 			false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
 
 		ExpressionBlockInputStream in(part_in, expression);
-		MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, CompressionMethod::LZ4);
+		MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, CompressionMethod::LZ4, false);
 		in.readPrefix();
 		out.writePrefix();
 

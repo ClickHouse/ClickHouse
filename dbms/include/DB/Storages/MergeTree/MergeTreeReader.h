@@ -58,6 +58,7 @@ public:
 private:
 	class Stream
 	{
+	public:
 		Stream(
 			const String & path_prefix_, const String & extension_,
 			UncompressedCache * uncompressed_cache,
@@ -70,6 +71,8 @@ private:
 		void loadMarks(MarkCache * cache, bool save_in_cache, bool is_null_stream);
 
 		void seekToMark(size_t index);
+
+		bool isEmpty() const { return is_empty; }
 
 		ReadBuffer * data_buffer;
 

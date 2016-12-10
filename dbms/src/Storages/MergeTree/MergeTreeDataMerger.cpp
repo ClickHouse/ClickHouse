@@ -17,6 +17,8 @@
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/ColumnGathererStream.h>
+#include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 #include <DB/Common/Increment.h>
 #include <DB/Common/interpolate.h>

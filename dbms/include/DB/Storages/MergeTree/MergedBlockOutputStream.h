@@ -57,17 +57,17 @@ protected:
 
 		void sync();
 
-		void addToChecksums(MergeTreeData::DataPart::Checksums & checksums, String name = "");
+		void addToChecksums(MergeTreeData::DataPart::Checksums & checksums);
 	};
 
 	using ColumnStreams = std::map<String, std::unique_ptr<ColumnStream>>;
 
-	void addStream(const String & path, const String & name, const IDataType & type, size_t estimated_size = 0,
-		size_t level = 0, const String & filename = "", bool skip_offsets = false);
+	void addStream(const String & path, const String & name, const IDataType & type, size_t estimated_size,
+		size_t level, const String & filename, bool skip_offsets);
 
 	/// Записать данные одного столбца.
 	void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns,
-		size_t level = 0, bool skip_offsets = false);
+		size_t level, bool skip_offsets);
 
 	MergeTreeData & storage;
 
@@ -158,7 +158,7 @@ class MergedColumnOnlyOutputStream : public IMergedBlockOutputStream
 {
 public:
 	MergedColumnOnlyOutputStream(
-		MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method, bool skip_offsets_ = false);
+		MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method, bool skip_offsets_);
 
 	void write(const Block & block) override;
 	void writeSuffix() override;
