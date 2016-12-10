@@ -742,6 +742,12 @@ void StorageLog::loadMarksImpl(bool load_null_marks)
 }
 
 
+size_t StorageLog::marksCount()
+{
+	return files.begin()->second.marks.size();
+}
+
+
 void StorageLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
 	Poco::ScopedWriteRWLock lock(rwlock);
