@@ -117,6 +117,9 @@ protected:
 	/// Нельзя вызывать с залоченным на запись rwlock.
 	void loadMarks();
 
+	/// Можно вызывать при любом состоянии rwlock.
+	size_t marksCount();
+
 	BlockInputStreams read(
 		size_t from_mark,
 		size_t to_mark,
