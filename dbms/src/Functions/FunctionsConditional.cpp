@@ -117,47 +117,40 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
 
 void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
 {
-	try
+	if (!blockHasSpecialBranches(block, args))
 	{
-		if (!blockHasSpecialBranches(block, args))
-		{
-			/// All the branch types are ordinary. No special processing required.
-			Conditional::NullMapBuilder builder;
-			perform(block, args, result, builder);
-			return;
-		}
-
-		/// From the block to be processed, deduce a block whose specified
-		/// columns are not nullable. We accept null columns because they
-		/// are processed independently later.
-		ColumnNumbers args_to_transform;
-		size_t else_arg = Conditional::elseArg(args);
-		for (size_t i = Conditional::firstThen(); i < else_arg; i = Conditional::nextThen(i))
-			args_to_transform.push_back(args[i]);
-		args_to_transform.push_back(args[else_arg]);
-
-		Block block_with_nested_cols = createBlockWithNestedColumns(block, args_to_transform);
-
-		/// Create an object that will incrementally build the null map of the
-		/// result column to be returned.
-		Conditional::NullMapBuilder builder{block};
-
-		/// Now perform multiIf.
-		perform(block_with_nested_cols, args, result, builder);
-
-		/// Store the result.
-		const ColumnWithTypeAndName & source_col = block_with_nested_cols.unsafeGetByPosition(result);
-		ColumnWithTypeAndName & dest_col = block.unsafeGetByPosition(result);
-
-		if (source_col.column->isNull())
-			dest_col.column = source_col.column;
-		else
-			dest_col.column = std::make_shared<ColumnNullable>(source_col.column, builder.getNullMap());
+		/// All the branch types are ordinary. No special processing required.
+		Conditional::NullMapBuilder builder;
+		perform(block, args, result, builder);
+		return;
 	}
-	catch (const Conditional::CondException & ex)
-	{
-		rethrowContextually(ex);
-	}
+
+	/// From the block to be processed, deduce a block whose specified
+	/// columns are not nullable. We accept null columns because they
+	/// are processed independently later.
+	ColumnNumbers args_to_transform;
+	size_t else_arg = Conditional::elseArg(args);
+	for (size_t i = Conditional::firstThen(); i < else_arg; i = Conditional::nextThen(i))
+		args_to_transform.push_back(args[i]);
+	args_to_transform.push_back(args[else_arg]);
+
+	Block block_with_nested_cols = createBlockWithNestedColumns(block, args_to_transform);
+
+	/// Create an object that will incrementally build the null map of the
+	/// result column to be returned.
+	Conditional::NullMapBuilder builder{block};
+
+	/// Now perform multiIf.
+	perform(block_with_nested_cols, args, result, builder);
+
+	/// Store the result.
+	const ColumnWithTypeAndName & source_col = block_with_nested_cols.unsafeGetByPosition(result);
+	ColumnWithTypeAndName & dest_col = block.unsafeGetByPosition(result);
+
+	if (source_col.column->isNull())
+		dest_col.column = source_col.column;
+	else
+		dest_col.column = std::make_shared<ColumnNullable>(source_col.column, builder.getNullMap());
 }
 
 DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
@@ -392,34 +385,6 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 
 	make_result(args[else_arg]);
 	return true;
-}
-
-/// Translate a context-free error into a contextual error.
-void FunctionMultiIf::rethrowContextually(const Conditional::CondException & ex) const
-{
-	if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE)
-		throw Exception{"Illegal type of column " + ex.getMsg1() +
-			" of function multiIf", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-	else if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_UPSCALING_ERROR)
-		throw Exception{"Arguments of function multiIf are not upscalable to a "
-			"common type without loss of precision: " + ex.getMsg1(),
-			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-	else if (ex.getCode() == Conditional::CondErrorCodes::NUMERIC_PERFORMER_ILLEGAL_COLUMN)
-		throw Exception{"Illegal argument " + ex.getMsg1() + " of function multiIf",
-			ErrorCodes::ILLEGAL_COLUMN};
-	else if (ex.getCode() == Conditional::CondErrorCodes::COND_SOURCE_ILLEGAL_COLUMN)
-		throw Exception{"Illegal column " + ex.getMsg1() + " of argument "
-			+ ex.getMsg2() + " of function multiIf. "
-			"Must be ColumnUInt8 or ColumnConstUInt8.", ErrorCodes::ILLEGAL_COLUMN};
-	else if (ex.getCode() == Conditional::CondErrorCodes::NUMERIC_EVALUATOR_ILLEGAL_ARGUMENT)
-		throw Exception{"Illegal type of argument " + ex.getMsg1() + " of function multiIf",
-			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-	else if (ex.getCode() == Conditional::CondErrorCodes::ARRAY_EVALUATOR_INVALID_TYPES)
-		throw Exception{"Internal logic error: one or more arguments of function "
-			"multiIf have invalid types", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-	else
-		throw Exception{"An unexpected error has occurred while performing multiIf",
-			ErrorCodes::LOGICAL_ERROR};
 }
 
 /// Implementation of FunctionCaseWithExpr.

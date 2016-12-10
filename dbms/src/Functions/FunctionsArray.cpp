@@ -5,53 +5,12 @@ namespace DB
 {
 
 
+/// Implementation of FunctionArray.
+
 String FunctionArray::getName() const
 {
 	return name;
 }
-
-String FunctionArrayElement::getName() const
-{
-	return name;
-}
-
-String FunctionArrayEnumerate::getName() const
-{
-	return name;
-}
-
-String FunctionArrayUniq::getName() const
-{
-	return name;
-}
-
-String FunctionArrayEnumerateUniq::getName() const
-{
-	return name;
-}
-
-String FunctionRange::getName() const
-{
-	return name;
-}
-
-String FunctionEmptyArrayToSingle::getName() const
-{
-	return name;
-}
-
-String FunctionArrayReverse::getName() const
-{
-	return name;
-}
-
-String FunctionArrayReduce::getName() const
-{
-	return name;
-}
-
-
-/// Implementation of FunctionArray.
 
 FunctionPtr FunctionArray::create(const Context & context)
 {
@@ -63,10 +22,6 @@ FunctionArray::FunctionArray(const Context & context)
 {
 }
 
-String FunctionArray::getName() const
-{
-	return name;
-}
 
 namespace
 {
@@ -2234,6 +2189,11 @@ bool FunctionEmptyArrayToSingle::executeString(
 }
 
 /// Implementation of FunctionRange.
+
+String FunctionRange::getName() const
+{
+	return name;
+}
 
 DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
 {
