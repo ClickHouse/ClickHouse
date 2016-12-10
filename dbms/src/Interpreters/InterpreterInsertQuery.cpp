@@ -16,6 +16,12 @@
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterInsertQuery.h>
 
+
+namespace ProfileEvents
+{
+	extern const Event InsertQuery;
+}
+
 namespace DB
 {
 

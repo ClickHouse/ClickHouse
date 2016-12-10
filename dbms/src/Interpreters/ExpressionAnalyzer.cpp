@@ -1,4 +1,5 @@
 #include <Poco/Util/Application.h>
+#include <Poco/String.h>
 
 #include <DB/DataTypes/FieldToDataType.h>
 
@@ -166,6 +167,9 @@ void ExpressionAnalyzer::init()
 	/// Выполнение скалярных подзапросов - замена их на значения-константы.
 	executeScalarSubqueries();
 
+	/// Optimize if with constant condition after constats are substituted instead of sclalar subqueries
+	optimizeIfWithConstantCondition();
+
 	/// GROUP BY injective function elimination.
 	optimizeGroupBy();
 
@@ -192,6 +196,99 @@ void ExpressionAnalyzer::init()
 	analyzeAggregation();
 }
 
+void ExpressionAnalyzer::optimizeIfWithConstantCondition()
+{
+	optimizeIfWithConstantConditionImpl(ast, aliases);
+}
+
+bool ExpressionAnalyzer::tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const
+{
+	/// numeric constant in condition
+	if (const ASTLiteral * literal = typeid_cast<ASTLiteral *>(condition.get()))
+	{
+		if (literal->value.getType() == Field::Types::Int64 ||
+			literal->value.getType() == Field::Types::UInt64)
+		{
+			value = literal->value.get<Int64>();
+			return true;
+		}
+	}
+
+	/// cast of numeric constant in condition to UInt8
+	if (const ASTFunction * function = typeid_cast<ASTFunction * >(condition.get()))
+	{
+		if (function->name == FunctionCast::name)
+		{
+			if (ASTExpressionList * expr_list = typeid_cast<ASTExpressionList *>(function->arguments.get()))
+			{
+				const ASTPtr & type_ast = expr_list->children.at(1);
+				if (const ASTLiteral * type_literal = typeid_cast<ASTLiteral *>(type_ast.get()))
+				{
+					if (type_literal->value.getType() == Field::Types::String &&
+						type_literal->value.get<std::string>() == "UInt8")
+						return tryExtractConstValueFromCondition(expr_list->children.at(0), value);
+				}
+			}
+		}
+	}
+
+	return false;
+}
+
+void ExpressionAnalyzer::optimizeIfWithConstantConditionImpl(ASTPtr & current_ast, ExpressionAnalyzer::Aliases & aliases) const
+{
+	if (!current_ast)
+		return;
+
+	for (ASTPtr & child : current_ast->children)
+	{
+		ASTFunction * function_node = typeid_cast<ASTFunction *>(child.get());
+		if (!function_node || function_node->name != FunctionIf::name)
+		{
+			optimizeIfWithConstantConditionImpl(child, aliases);
+			continue;
+		}
+
+		optimizeIfWithConstantConditionImpl(function_node->arguments, aliases);
+		ASTExpressionList * args = typeid_cast<ASTExpressionList *>(function_node->arguments.get());
+
+		ASTPtr condition_expr = args->children.at(0);
+		ASTPtr then_expr = args->children.at(1);
+		ASTPtr else_expr = args->children.at(2);
+
+
+		bool condition;
+		if (tryExtractConstValueFromCondition(condition_expr, condition))
+		{
+			ASTPtr replace_ast = condition ? then_expr : else_expr;
+			ASTPtr child_copy = child;
+			String replace_alias = replace_ast->tryGetAlias();
+			String if_alias = child->tryGetAlias();
+
+			if (replace_alias.empty())
+			{
+				replace_ast->setAlias(if_alias);
+				child = replace_ast;
+			}
+			else
+			{
+				/// Only copy of one node is required here.
+				/// But IAST has only method for deep copy of subtree.
+				/// This can be a reason of performance degradation in case of deep queries.
+				ASTPtr replace_ast_deep_copy = replace_ast->clone();
+				replace_ast_deep_copy->setAlias(if_alias);
+				child = replace_ast_deep_copy;
+			}
+
+			if (!if_alias.empty())
+			{
+				auto alias_it = aliases.find(if_alias);
+				if (alias_it != aliases.end() && alias_it->second.get() == child_copy.get())
+					alias_it->second = child;
+			}
+		}
+	}
+}
 
 void ExpressionAnalyzer::analyzeAggregation()
 {
@@ -1051,7 +1148,7 @@ void ExpressionAnalyzer::optimizeOrderBy()
 		return;
 
 	/// Уникализируем условия сортировки.
-	using NameAndLocale = std::pair<std::string, std::string>;
+	using NameAndLocale = std::pair<String, String>;
 	std::set<NameAndLocale> elems_set;
 
 	ASTs & elems = select_query->order_expression_list->children;
@@ -1063,13 +1160,8 @@ void ExpressionAnalyzer::optimizeOrderBy()
 		String name = elem->children.front()->getColumnName();
 		const ASTOrderByElement & order_by_elem = typeid_cast<const ASTOrderByElement &>(*elem);
 
-		if (elems_set.emplace(
-			std::piecewise_construct,
-			std::forward_as_tuple(name),
-			std::forward_as_tuple(order_by_elem.collator ? order_by_elem.collator->getLocale() : std::string())).second)
-		{
+		if (elems_set.emplace(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "").second)
 			unique_elems.emplace_back(elem);
-		}
 	}
 
 	if (unique_elems.size() < elems.size())
@@ -2239,7 +2331,7 @@ bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only
 	for (size_t i = 0; i < asts.size(); ++i)
 	{
 		ASTOrderByElement * ast = typeid_cast<ASTOrderByElement *>(asts[i].get());
-		if (!ast || ast->children.size() != 1)
+		if (!ast || ast->children.size() < 1)
 			throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
 		ASTPtr order_expression = ast->children.at(0);
 		step.required_output.push_back(order_expression->getColumnName());

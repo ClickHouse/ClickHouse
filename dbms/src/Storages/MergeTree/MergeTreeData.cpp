@@ -29,9 +29,27 @@
 #include <thread>
 
 
+namespace ProfileEvents
+{
+	extern const Event RejectedInserts;
+	extern const Event DelayedInserts;
+	extern const Event DelayedInsertsMilliseconds;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric DelayedInserts;
+}
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
 
 MergeTreeData::MergeTreeData(
 	const String & full_path_, NamesAndTypesListPtr columns_,
@@ -376,14 +394,14 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
 			if ((*curr_jt)->contains(**prev_jt))
 			{
-				(*prev_jt)->remove_time = time(0);
+				(*prev_jt)->remove_time = (*prev_jt)->modification_time;
 				data_parts.erase(prev_jt);
 				prev_jt = curr_jt;
 				++curr_jt;
 			}
 			else if ((*prev_jt)->contains(**curr_jt))
 			{
-				(*curr_jt)->remove_time = time(0);
+				(*curr_jt)->remove_time = (*curr_jt)->modification_time;
 				data_parts.erase(curr_jt++);
 			}
 			else
@@ -604,6 +622,9 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 	for (const NameAndTypePair & column : old_columns)
 		++nested_table_counts[DataTypeNested::extractNestedTableName(column.name)];
 
+	/// For every column that need to be converted: source column name, column name of calculated expression for conversion.
+	std::vector<std::pair<String, String>> conversions;
+
 	for (const NameAndTypePair & column : old_columns)
 	{
 		if (!new_types.count(column.name))
@@ -687,46 +708,73 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 					{ std::make_shared<ColumnConstString>(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
 
 				const FunctionPtr & function = FunctionFactory::instance().get("CAST", context);
-				out_expression->add(ExpressionAction::applyFunction(function, Names{
-					column.name, new_type_name_column
-				}), out_names);
+				out_expression->add(ExpressionAction::applyFunction(
+					function, Names{column.name, new_type_name_column}), out_names);
 
 				out_expression->add(ExpressionAction::removeColumn(new_type_name_column));
-
 				out_expression->add(ExpressionAction::removeColumn(column.name));
 
-				const String escaped_expr = escapeForFileName(out_names[0]);
-				const String escaped_column = escapeForFileName(column.name);
-
-				/// Information on how to update the column data.
-				out_rename_map[escaped_expr + ".bin"] = escaped_column + ".bin";
-				out_rename_map[escaped_expr + ".mrk"] = escaped_column + ".mrk";
-
-				/// Information on how to update the sizes if the column is an array.
-				auto array_type = typeid_cast<const DataTypeArray *>(observed_type);
-				if (array_type != nullptr)
-				{
-					size_t level = 1;
-					while ((array_type = typeid_cast<const DataTypeArray *>(
-						array_type->getNestedType().get())) != nullptr)
-						++level;
-
-					for (size_t i = 0; i < level; ++i)
-					{
-						const auto suffix = ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(i);
-						out_rename_map[escaped_expr + suffix + ".bin"] = escaped_column + suffix + ".bin";
-						out_rename_map[escaped_expr + suffix + ".mrk"] = escaped_column + suffix + ".mrk";
-					}
-				}
-
-				/// Information on how to update the null map if it is a nullable column.
-				if (is_nullable)
-				{
-					out_rename_map[escaped_expr + ".null"] = escaped_column + ".null";
-					out_rename_map[escaped_expr + ".null_mrk"] = escaped_column + ".null_mrk";
-				}
+				conversions.emplace_back(column.name, out_names.at(0));
 			}
 		}
+	}
+
+	if (!conversions.empty())
+	{
+		/// Give proper names for temporary columns with conversion results.
+
+		NamesWithAliases projection;
+		projection.reserve(conversions.size());
+
+		for (const auto & source_and_expression : conversions)
+		{
+			String converting_column_name = source_and_expression.first + " converting";
+			projection.emplace_back(source_and_expression.second, converting_column_name);
+
+			const String escaped_converted_column = escapeForFileName(converting_column_name);
+			const String escaped_source_column = escapeForFileName(source_and_expression.first);
+
+			/// After conversion, we need to rename temporary files into original.
+			out_rename_map[escaped_converted_column + ".bin"] = escaped_source_column + ".bin";
+			out_rename_map[escaped_converted_column + ".mrk"] = escaped_source_column + ".mrk";
+
+			const IDataType * new_type = new_types[converting_column_name].get();
+
+			bool is_nullable = new_type->isNullable();
+			const IDataType * observed_type;
+			if (is_nullable)
+			{
+				const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*new_type);
+				observed_type = nullable_type.getNestedType().get();
+			}
+			else
+				observed_type = new_type;
+
+			/// Information on how to update the sizes if the column is an array.
+			if (auto array_type = typeid_cast<const DataTypeArray *>(observed_type))
+			{
+				size_t level = 1;
+				while ((array_type = typeid_cast<const DataTypeArray *>(
+					array_type->getNestedType().get())) != nullptr)
+					++level;
+
+				for (size_t i = 0; i < level; ++i)
+				{
+					const auto suffix = ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(i);
+					out_rename_map[escaped_converted_column + suffix + ".bin"] = escaped_source_column + suffix + ".bin";
+					out_rename_map[escaped_converted_column + suffix + ".mrk"] = escaped_source_column + suffix + ".mrk";
+				}
+			}
+
+			/// Information on how to update the null map if it is a nullable column.
+			if (is_nullable)
+			{
+				out_rename_map[escaped_converted_column + ".null"] = escaped_source_column + ".null";
+				out_rename_map[escaped_converted_column + ".null_mrk"] = escaped_source_column + ".null_mrk";
+			}
+		}
+
+		out_expression->add(ExpressionAction::project(projection));
 	}
 }
 
@@ -989,10 +1037,8 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrem
 {
 	auto removed = renameTempPartAndReplace(part, increment, out_transaction);
 	if (!removed.empty())
-	{
-		LOG_ERROR(log, "Added part " << part->name << + " covers " << toString(removed.size())
-			<< " existing part(s) (including " << removed[0]->name << ")");
-	}
+		throw Exception("Added part " + part->name + " covers " + toString(removed.size())
+			+ " existing part(s) (including " + removed[0]->name + ")", ErrorCodes::LOGICAL_ERROR);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
@@ -1006,18 +1052,17 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 	String old_name = part->name;
 	String old_path = getFullPath() + old_name + "/";
 
-	/** Для StorageMergeTree важно, что получение номера куска происходит атомарно с добавлением этого куска в набор.
-	  * Иначе есть race condition - может произойти слияние пары кусков, диапазоны номеров которых
-	  *  содержат ещё не добавленный кусок.
-	  */
-	if (increment)
-		part->left = part->right = increment->get();
-
-	String new_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
-
 	DataPartsVector replaced;
 	{
 		std::lock_guard<std::mutex> lock(data_parts_mutex);
+
+		/** It is important that obtaining new block number and adding that block to parts set is done atomically.
+		  * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
+		  */
+		if (increment)
+			part->left = part->right = increment->get();
+
+		String new_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
 
 		part->is_temp = false;
 		part->name = new_name;
@@ -1211,7 +1256,6 @@ MergeTreeData::DataParts MergeTreeData::getDataParts() const
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector() const
 {
 	std::lock_guard<std::mutex> lock(data_parts_mutex);
-
 	return DataPartsVector(std::begin(data_parts), std::end(data_parts));
 }
 
@@ -1292,6 +1336,7 @@ void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 	const size_t parts_count = getMaxPartsCountForMonth();
 	if (parts_count < settings.parts_to_delay_insert)
 		return;
+
 	if (parts_count >= settings.parts_to_throw_insert)
 	{
 		ProfileEvents::increment(ProfileEvents::RejectedInserts);
@@ -1300,10 +1345,12 @@ void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 
 	const size_t max_k = settings.parts_to_throw_insert - settings.parts_to_delay_insert; /// always > 0
 	const size_t k = 1 + parts_count - settings.parts_to_delay_insert; /// from 1 to max_k
-	const double delay_sec = ::pow(settings.max_delay_to_insert, static_cast<double>(k)/static_cast<double>(max_k));
+	const double delay_sec = ::pow(settings.max_delay_to_insert, static_cast<double>(k) / max_k);
 
 	ProfileEvents::increment(ProfileEvents::DelayedInserts);
 	ProfileEvents::increment(ProfileEvents::DelayedInsertsMilliseconds, delay_sec * 1000);
+
+	CurrentMetrics::Increment metric_increment(CurrentMetrics::DelayedInserts);
 
 	LOG_INFO(log, "Delaying inserting block by "
 		<< std::fixed << std::setprecision(4) << delay_sec << " sec. because there are " << parts_count << " parts");

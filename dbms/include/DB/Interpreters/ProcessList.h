@@ -13,43 +13,43 @@
 #include <DB/Common/MemoryTracker.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Interpreters/QueryPriorities.h>
+#include <DB/Interpreters/ClientInfo.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/Common/CurrentMetrics.h>
 
 
+namespace CurrentMetrics
+{
+	extern const Metric Query;
+}
+
 namespace DB
 {
 
-/** Список исполняющихся в данный момент запросов.
-  * Также реализует ограничение на их количество.
+/** List of currently executing queries.
+  * Also implements limit on their number.
   */
 
-/** Информационная составляющая элемента списка процессов.
-  * Для вывода в SHOW PROCESSLIST. Не содержит никаких сложных объектов, которые что-то делают при копировании или в деструкторах.
+/** Information of process list element.
+  * To output in SHOW PROCESSLIST query. Does not contain any complex objects, that do something on copy or destructor.
   */
 struct ProcessInfo
 {
 	String query;
-	String user;
-	String query_id;
-	Poco::Net::IPAddress ip_address;
-	UInt16 port;
 	double elapsed_seconds;
 	size_t rows;
 	size_t bytes;
 	size_t total_rows;
 	Int64 memory_usage;
+	ClientInfo client_info;
 };
 
 
-/// Запрос и данные о его выполнении.
+/// Query and information about its execution.
 struct ProcessListElement
 {
 	String query;
-	String user;
-	String query_id;
-	Poco::Net::IPAddress ip_address;
-	UInt16 port;
+	ClientInfo client_info;
 
 	Stopwatch watch;
 
@@ -63,15 +63,17 @@ struct ProcessListElement
 
 	bool is_cancelled = false;
 
-	/// Здесь могут быть зарегистрированы временные таблицы. Изменять под mutex-ом.
+	/// Temporary tables could be registered here. Modify under mutex.
 	Tables temporary_tables;
 
 
-	ProcessListElement(const String & query_, const String & user_,
-		const String & query_id_, const Poco::Net::IPAddress & ip_address_,
-		UInt16 port_, size_t max_memory_usage, double memory_tracker_fault_probability,
+	ProcessListElement(
+		const String & query_,
+		const ClientInfo & client_info_,
+		size_t max_memory_usage,
+		double memory_tracker_fault_probability,
 		QueryPriorities::Handle && priority_handle_)
-		: query(query_), user(user_), query_id(query_id_), ip_address(ip_address_), port(port_), memory_tracker(max_memory_usage),
+		: query(query_), client_info(client_info_), memory_tracker(max_memory_usage),
 		priority_handle(std::move(priority_handle_))
 	{
 		memory_tracker.setDescription("(for query)");
@@ -91,37 +93,36 @@ struct ProcessListElement
 		progress.incrementPiecewiseAtomically(value);
 
 		if (priority_handle)
-			priority_handle->waitIfNeed(std::chrono::seconds(1));		/// NOTE Можно сделать настраиваемым таймаут.
+			priority_handle->waitIfNeed(std::chrono::seconds(1));		/// NOTE Could make timeout customizable.
 
 		return !is_cancelled;
 	}
 
 	ProcessInfo getInfo() const
 	{
-		return ProcessInfo{
-			.query 				= query,
-			.user 				= user,
-			.query_id 			= query_id,
-			.ip_address 		= ip_address,
-			.port				= port,
-			.elapsed_seconds 	= watch.elapsedSeconds(),
-			.rows 				= progress.rows,
-			.bytes 				= progress.bytes,
-			.total_rows 		= progress.total_rows,
-			.memory_usage 		= memory_tracker.get(),
-		};
+		ProcessInfo res;
+
+		res.query 			= query;
+		res.client_info 	= client_info;
+		res.elapsed_seconds = watch.elapsedSeconds();
+		res.rows 			= progress.rows;
+		res.bytes 			= progress.bytes;
+		res.total_rows 		= progress.total_rows;
+		res.memory_usage 	= memory_tracker.get();
+
+		return res;
 	}
 };
 
 
-/// Данные о запросах одного пользователя.
+/// Data about queries for one user.
 struct ProcessListForUser
 {
 	/// Query_id -> ProcessListElement *
 	using QueryToElement = std::unordered_map<String, ProcessListElement *>;
 	QueryToElement queries;
 
-	/// Ограничение и счётчик памяти на все одновременно выполняющиеся запросы одного пользователя.
+	/// Limit and counter for memory of all simultaneously running queries of single user.
 	MemoryTracker user_memory_tracker;
 };
 
@@ -129,7 +130,7 @@ struct ProcessListForUser
 class ProcessList;
 
 
-/// Держит итератор на список, и удаляет элемент из списка в деструкторе.
+/// Keeps iterator to process list and removes element in destructor.
 class ProcessListEntry
 {
 private:
@@ -158,7 +159,7 @@ public:
 	using Element = ProcessListElement;
 	using Entry = ProcessListEntry;
 
-	/// list, чтобы итераторы не инвалидировались. NOTE: можно заменить на cyclic buffer, но почти незачем.
+	/// list, for iterators not to invalidate. NOTE: could replace with cyclic buffer, but not worth.
 	using Container = std::list<Element>;
 	using Info = std::vector<ProcessInfo>;
 	/// User -> queries
@@ -166,15 +167,15 @@ public:
 
 private:
 	mutable std::mutex mutex;
-	mutable Poco::Condition have_space;		/// Количество одновременно выполняющихся запросов стало меньше максимального.
+	mutable Poco::Condition have_space;		/// Number of currently running queries has become less than maximum.
 
 	Container cont;
-	size_t cur_size;		/// В C++03 std::list::size не O(1).
-	size_t max_size;		/// Если 0 - не ограничено. Иначе, если пытаемся добавить больше - кидается исключение.
+	size_t cur_size;		/// In C++03 or C++11 and old ABI, std::list::size is not O(1).
+	size_t max_size;		/// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
 	UserToQueries user_to_queries;
 	QueryPriorities priorities;
 
-	/// Ограничение и счётчик памяти на все одновременно выполняющиеся запросы.
+	/// Limit and counter for memory of all simultaneously running queries.
 	MemoryTracker total_memory_tracker;
 
 public:
@@ -182,17 +183,16 @@ public:
 
 	using EntryPtr = std::shared_ptr<ProcessListEntry>;
 
-	/** Зарегистрировать выполняющийся запрос. Возвращает refcounted объект, который удаляет запрос из списка при уничтожении.
-	  * Если выполняющихся запросов сейчас слишком много - ждать не более указанного времени.
-	  * Если времени не хватило - кинуть исключение.
+	/** Register running query. Returns refcounted object, that will remove element from list in destructor.
+	  * If too much running queries - wait for not more than specified (see settings) amount of time.
+	  * If timeout is passed - throw an exception.
 	  */
-	EntryPtr insert(const String & query_, const String & user_, const String & query_id_, const Poco::Net::IPAddress & ip_address_,
-		UInt16 port_, const Settings & settings);
+	EntryPtr insert(const String & query_, const ClientInfo & client_info, const Settings & settings);
 
-	/// Количество одновременно выполняющихся запросов.
+	/// Number of currently executing queries.
 	size_t size() const { return cur_size; }
 
-	/// Получить текущее состояние списка запросов.
+	/// Get current state of process list.
 	Info getInfo() const
 	{
 		std::lock_guard<std::mutex> lock(mutex);
@@ -211,10 +211,10 @@ public:
 		max_size = max_size_;
 	}
 
-	/// Зарегистрировать временную таблицу. Потом её можно будет получить по query_id и по названию.
+	/// Register temporary table. Then it is accessible by query_id and name.
 	void addTemporaryTable(ProcessListElement & elem, const String & table_name, StoragePtr storage);
 
-	/// Найти временную таблицу по query_id и по названию. Замечание: плохо работает, если есть разные запросы с одним query_id.
+	/// Find temporary table by query_id and name. NOTE: doesn't work fine if there are many queries with same query_id.
 	StoragePtr tryGetTemporaryTable(const String & query_id, const String & table_name) const;
 };
 

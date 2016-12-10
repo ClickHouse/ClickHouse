@@ -5,6 +5,11 @@
 #include "Server.h"
 
 
+namespace CurrentMetrics
+{
+	extern const Metric HTTPConnection;
+}
+
 namespace DB
 {
 
@@ -21,7 +26,7 @@ public:
 	struct Output
 	{
 		std::shared_ptr<WriteBufferFromHTTPServerResponse> out;
-		/// Используется для выдачи ответа. Равен либо out, либо CompressedWriteBuffer(*out), в зависимости от настроек.
+		/// Used for sending response. Points to 'out', or to CompressedWriteBuffer(*out), depending on settings.
 		std::shared_ptr<WriteBuffer> out_maybe_compressed;
 	};
 
@@ -38,7 +43,7 @@ private:
 
 	Logger * log;
 
-	/// Функция также инициализирует used_output.
+	/// Also initializes 'used_output'.
 	void processQuery(
 		Poco::Net::HTTPServerRequest & request,
 		HTMLForm & params,

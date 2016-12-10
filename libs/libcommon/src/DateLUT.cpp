@@ -1,20 +1,18 @@
 #include <common/DateLUT.h>
 
+#pragma GCC diagnostic push
+#ifdef __APPLE__
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
 #include <unicode/timezone.h>
 #include <unicode/unistr.h>
+#pragma GCC diagnostic pop
 
 DateLUT::DateLUT()
 {
 	using namespace icu;
 
-	std::unique_ptr<TimeZone> tz(TimeZone::createDefault());
-	if (tz == nullptr)
-		throw Poco::Exception("Failed to determine the host time zone.");
-
-	UnicodeString u_out;
-	tz->getID(u_out);
-	std::string default_time_zone;
-	u_out.toUTF8String(default_time_zone);
+	/// Initialize the list of all time zones.
 
 	std::unique_ptr<StringEnumeration> time_zone_ids(TimeZone::createEnumeration());
 	if (time_zone_ids == nullptr)
@@ -76,34 +74,19 @@ DateLUT::DateLUT()
 	if (group_id == 0)
 		throw Poco::Exception("Could not find any time zone information.");
 
-	date_lut_impl_list = std::make_unique<DateLUTImplList>(group_id);
+	date_lut_impls.resize(group_id);
+	initialized_flags = std::vector<std::once_flag>(group_id);
 
-	/// Инициализация указателя на реализацию для часового пояса по-умолчанию.
-	auto it = time_zone_to_group.find(default_time_zone);
-	if (it == time_zone_to_group.end())
-		throw Poco::Exception("Failed to get default time zone information.");
-	default_group_id = it->second;
+	/// Initialize the pointer to the default DateLUTImpl.
 
-	default_date_lut_impl.reset(new DateLUTImpl(default_time_zone));
-	auto & wrapper = (*date_lut_impl_list)[default_group_id];
-	wrapper.store(default_date_lut_impl.get(), std::memory_order_seq_cst);
-}
+	std::unique_ptr<TimeZone> tz(TimeZone::createDefault());
+	if (tz == nullptr)
+		throw Poco::Exception("Failed to determine the host time zone.");
 
-const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone, size_t group_id) const
-{
-	auto & wrapper = (*date_lut_impl_list)[group_id];
+	UnicodeString u_out;
+	tz->getID(u_out);
+	std::string default_time_zone;
+	u_out.toUTF8String(default_time_zone);
 
-	DateLUTImpl * tmp = wrapper.load(std::memory_order_acquire);
-	if (tmp == nullptr)
-	{
-		std::lock_guard<std::mutex> guard(mutex);
-		tmp = wrapper.load(std::memory_order_relaxed);
-		if (tmp == nullptr)
-		{
-			tmp = new DateLUTImpl(time_zone);
-			wrapper.store(tmp, std::memory_order_release);
-		}
-	}
-
-	return *tmp;
+	default_impl.store(&getImplementation(default_time_zone), std::memory_order_release);
 }

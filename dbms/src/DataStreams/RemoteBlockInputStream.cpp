@@ -267,7 +267,7 @@ void RemoteBlockInputStream::sendQuery()
 
 	established = true;
 
-	multiplexed_connections->sendQuery(query, "", stage, true);
+	multiplexed_connections->sendQuery(query, "", stage, &context.getClientInfo(), true);
 
 	established = false;
 	sent_query = true;

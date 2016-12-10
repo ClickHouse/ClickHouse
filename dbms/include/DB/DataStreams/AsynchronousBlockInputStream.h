@@ -8,6 +8,11 @@
 #include <DB/Common/ThreadPool.h>
 
 
+namespace CurrentMetrics
+{
+	extern const Metric QueryThread;
+}
+
 namespace DB
 {
 

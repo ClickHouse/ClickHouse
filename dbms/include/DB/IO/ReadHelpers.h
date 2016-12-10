@@ -619,6 +619,15 @@ inline void readBinary(UInt8 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(UInt16 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(UInt32 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(UInt64 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
+#ifdef __APPLE__
+/**
+ * On Linux x86_64 'int64_t' maps to "long", but on Apple x86_64 it maps to 'long long'
+ * But on both platforms Int64 maps to 'long'. This is two different types
+ * with the same size==8, so we need extra functions here
+ */
+inline void readBinary(uint64_t & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(int64_t & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
+#endif
 inline void readBinary(Int8 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Int16 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Int32 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
@@ -639,6 +648,10 @@ inline void readText(UInt8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
 inline void readText(UInt16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
 inline void readText(UInt32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
 inline void readText(UInt64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+#ifdef __APPLE__
+inline void readText(uint64_t & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readText(int64_t & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+#endif
 inline void readText(Int8 & x, 		ReadBuffer & buf) { readIntText(x, buf); }
 inline void readText(Int16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
 inline void readText(Int32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }

@@ -14,6 +14,12 @@
 #include "Server.h"
 
 
+namespace CurrentMetrics
+{
+	extern const Metric TCPConnection;
+}
+
+
 namespace DB
 {
 
@@ -81,7 +87,10 @@ private:
 	Server & server;
 	Logger * log;
 
-	UInt64 client_revision;
+	String client_name;
+	UInt64 client_version_major = 0;
+	UInt64 client_version_minor = 0;
+	UInt64 client_revision = 0;
 
 	Context connection_context;
 	Context query_context;

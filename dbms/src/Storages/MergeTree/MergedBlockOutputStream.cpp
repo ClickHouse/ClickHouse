@@ -38,7 +38,15 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
 {
 }
 
-void IMergedBlockOutputStream::addStream(const String & path, const String & name, const IDataType & type, size_t estimated_size, size_t level, String filename)
+
+void IMergedBlockOutputStream::addStream(
+	const String & path,
+	const String & name,
+	const IDataType & type,
+	size_t estimated_size,
+	size_t level,
+	const String & filename,
+	bool skip_offsets)
 {
 	String escaped_column_name;
 	if (filename.size())
@@ -67,24 +75,28 @@ void IMergedBlockOutputStream::addStream(const String & path, const String & nam
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-		/// Для массивов используются отдельные потоки для размеров.
-		String size_name = DataTypeNested::extractNestedTableName(name)
-			+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
-			+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+		if (!skip_offsets)
+		{
+			/// Для массивов используются отдельные потоки для размеров.
+			String size_name = DataTypeNested::extractNestedTableName(name)
+				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+			String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
+				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
-		column_streams[size_name] = std::make_unique<ColumnStream>(
-			escaped_size_name,
-			path + escaped_size_name, DATA_FILE_EXTENSION,
-			path + escaped_size_name, MARKS_FILE_EXTENSION,
-			max_compress_block_size,
-			compression_method,
-			estimated_size,
-			aio_threshold);
+			column_streams[size_name] = std::make_unique<ColumnStream>(
+				escaped_size_name,
+				path + escaped_size_name, DATA_FILE_EXTENSION,
+				path + escaped_size_name, MARKS_FILE_EXTENSION,
+				max_compress_block_size,
+				compression_method,
+				estimated_size,
+				aio_threshold);
+		}
 
 		addStream(path, name, *type_arr->getNestedType(), estimated_size, level + 1);
 	}
 	else
+	{
 		column_streams[name] = std::make_unique<ColumnStream>(
 			escaped_column_name,
 			path + escaped_column_name, DATA_FILE_EXTENSION,
@@ -93,17 +105,29 @@ void IMergedBlockOutputStream::addStream(const String & path, const String & nam
 			compression_method,
 			estimated_size,
 			aio_threshold);
+	}
 }
 
 
-/// Записать данные одного столбца.
-void IMergedBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns, size_t level)
+void IMergedBlockOutputStream::writeData(
+	const String & name,
+	const IDataType & type,
+	const IColumn & column,
+	OffsetColumns & offset_columns,
+	size_t level)
 {
 	writeDataImpl(name, type, column, offset_columns, level, false);
 }
 
-void IMergedBlockOutputStream::writeDataImpl(const String & name, const IDataType & type,
-	const IColumn & column, OffsetColumns & offset_columns, size_t level, bool write_array_data)
+
+void IMergedBlockOutputStream::writeDataImpl(
+	const String & name,
+	const IDataType & type,
+	const IColumn & column,
+	OffsetColumns & offset_columns,
+	size_t level,
+	bool write_array_data,
+	bool skip_offsets)
 {
 	/// NOTE: the parameter write_array_data indicates whether we call this method
 	/// to write the contents of an array. This is to cope with the fact that
@@ -111,7 +135,7 @@ void IMergedBlockOutputStream::writeDataImpl(const String & name, const IDataTyp
 	/// what the other engines do.
 
 	size_t size = column.size();
-	const DataTypeArray * type_arr;
+	const DataTypeArray * type_arr = nullptr;
 
 	if (type.isNullable())
 	{
@@ -162,7 +186,7 @@ void IMergedBlockOutputStream::writeDataImpl(const String & name, const IDataTyp
 		String size_name = DataTypeNested::extractNestedTableName(name)
 			+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
-		if (offset_columns.count(size_name) == 0)
+		if (!skip_offsets && offset_columns.count(size_name) == 0)
 		{
 			offset_columns.insert(size_name);
 
@@ -238,6 +262,7 @@ void IMergedBlockOutputStream::writeDataImpl(const String & name, const IDataTyp
 	}
 }
 
+
 /// Implementation of IMergedBlockOutputStream::ColumnStream.
 
 IMergedBlockOutputStream::ColumnStream::ColumnStream(
@@ -286,6 +311,7 @@ void IMergedBlockOutputStream::ColumnStream::addToChecksums(MergeTreeData::DataP
 	checksums.files[name + marks_file_extension].file_size = marks.count();
 	checksums.files[name + marks_file_extension].file_hash = marks.getHash();
 }
+
 
 /// Implementation of MergedBlockOutputStream.
 
@@ -356,10 +382,15 @@ void MergedBlockOutputStream::writeSuffix()
 	throw Exception("Method writeSuffix is not supported by MergedBlockOutputStream", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-MergeTreeData::DataPart::Checksums MergedBlockOutputStream::writeSuffixAndGetChecksums()
+MergeTreeData::DataPart::Checksums MergedBlockOutputStream::writeSuffixAndGetChecksums(
+	const NamesAndTypesList & total_column_list,
+	MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
 	/// Заканчиваем запись и достаем чексуммы.
 	MergeTreeData::DataPart::Checksums checksums;
+
+	if (additional_column_checksums)
+		checksums = std::move(*additional_column_checksums);
 
 	if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 	{
@@ -388,7 +419,7 @@ MergeTreeData::DataPart::Checksums MergedBlockOutputStream::writeSuffixAndGetChe
 	{
 		/// Записываем файл с описанием столбцов.
 		WriteBufferFromFile out(part_path + "columns.txt", 4096);
-		columns_list.writeText(out);
+		total_column_list.writeText(out);
 	}
 
 	{
@@ -400,12 +431,16 @@ MergeTreeData::DataPart::Checksums MergedBlockOutputStream::writeSuffixAndGetChe
 	return checksums;
 }
 
+MergeTreeData::DataPart::Checksums MergedBlockOutputStream::writeSuffixAndGetChecksums()
+{
+	return writeSuffixAndGetChecksums(columns_list, nullptr);
+}
+
 MergeTreeData::DataPart::Index & MergedBlockOutputStream::getIndex()
 {
 	return index_columns;
 }
 
-/// Сколько засечек уже записано.
 size_t MergedBlockOutputStream::marksCount()
 {
 	return marks_count;
@@ -423,9 +458,7 @@ void MergedBlockOutputStream::init()
 	}
 }
 
-/** Если задана permutation, то переставляет значения в столбцах при записи.
-	* Это нужно, чтобы не держать целый блок в оперативке для его сортировки.
-	*/
+
 void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)
 {
 	size_t rows = block.rows();
@@ -491,34 +524,46 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 		}
 	}
 
-	/// Пишем индекс. Индекс содержит значение Primary Key для каждой index_granularity строки.
-	for (size_t i = index_offset; i < rows; i += storage.index_granularity)
 	{
-		if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
-		{
-			for (size_t j = 0, size = primary_columns.size(); j < size; ++j)
-			{
-				const IColumn & primary_column = *primary_columns[j].column.get();
-				index_columns[j].get()->insertFrom(primary_column, i);
-				primary_columns[j].type.get()->serializeBinary(primary_column, i, *index_stream);
-			}
-		}
+		/** While filling index (index_columns), disable memory tracker.
+		  * Because memory is allocated here (maybe in context of INSERT query),
+		  *  but then freed in completely different place (while merging parts), where query memory_tracker is not available.
+		  * And otherwise it will look like excessively growing memory consumption in context of query.
+		  *  (observed in long INSERT SELECTs)
+		  */
+		TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
 
-		++marks_count;
+		/// Пишем индекс. Индекс содержит значение Primary Key для каждой index_granularity строки.
+		for (size_t i = index_offset; i < rows; i += storage.index_granularity)
+		{
+			if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+			{
+				for (size_t j = 0, size = primary_columns.size(); j < size; ++j)
+				{
+					const IColumn & primary_column = *primary_columns[j].column.get();
+					index_columns[j].get()->insertFrom(primary_column, i);
+					primary_columns[j].type.get()->serializeBinary(primary_column, i, *index_stream);
+				}
+			}
+
+			++marks_count;
+		}
 	}
 
 	size_t written_for_last_mark = (storage.index_granularity - index_offset + rows) % storage.index_granularity;
 	index_offset = (storage.index_granularity - written_for_last_mark) % storage.index_granularity;
 }
 
+
 /// Implementation of MergedColumnOnlyOutputStream.
 
-MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method)
+MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
+	MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method, bool skip_offsets_)
 	: IMergedBlockOutputStream(
 		storage_, storage_.context.getSettings().min_compress_block_size,
 		storage_.context.getSettings().max_compress_block_size, compression_method,
 		storage_.context.getSettings().min_bytes_to_use_direct_io),
-	part_path(part_path_), sync(sync_)
+	part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_)
 {
 }
 

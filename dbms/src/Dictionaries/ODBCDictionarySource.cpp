@@ -1,11 +1,14 @@
+#include <Poco/Data/SessionPool.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <DB/Dictionaries/ODBCDictionarySource.h>
+#include <DB/Dictionaries/ODBCBlockInputStream.h>
 
 
 namespace DB
 {
 
 
-decltype(ODBCDictionarySource::max_block_size) ODBCDictionarySource::max_block_size;
+static const size_t max_block_size = 8192;
 
 
 ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_struct_,
@@ -43,7 +46,7 @@ BlockInputStreamPtr ODBCDictionarySource::loadAll()
 	return std::make_shared<ODBCBlockInputStream>(pool->get(), load_all_query, sample_block, max_block_size);
 }
 
-BlockInputStreamPtr ODBCDictionarySource::loadIds(const std::vector<std::uint64_t> & ids)
+BlockInputStreamPtr ODBCDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
 	const auto query = query_builder.composeLoadIdsQuery(ids);
 	return std::make_shared<ODBCBlockInputStream>(pool->get(), query, sample_block, max_block_size);

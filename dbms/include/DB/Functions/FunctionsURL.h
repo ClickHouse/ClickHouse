@@ -7,6 +7,9 @@
 #include <DB/Functions/FunctionsStringSearch.h>
 #include <DB/Functions/FunctionsStringArray.h>
 
+#ifdef __APPLE__
+#include <common/apple_memrchr.h>
+#endif
 
 namespace DB
 {
@@ -94,7 +97,7 @@ struct ExtractDomain
 		ExtractProtocol::execute(data, size, tmp, protocol_length);
 		pos += protocol_length + 3;
 
-		if (pos[-1] != '/' || pos[-2] != '/')
+		if (pos >= end || pos[-1] != '/' || pos[-2] != '/')
 			return;
 
 		if (without_www && pos + 4 < end && !strncmp(pos, "www.", 4))
@@ -218,7 +221,7 @@ struct ExtractTopLevelDomain
 		ExtractProtocol::execute(data, size, tmp, protocol_length);
 		pos += protocol_length + 3;
 
-		if (pos[-1] != '/' || pos[-2] != '/')
+		if (pos >= end || pos[-1] != '/' || pos[-2] != '/')
 			return;
 
 		Pos domain_begin = pos;
@@ -371,7 +374,7 @@ struct ExtractWWW
 		ExtractProtocol::execute(data, size, tmp, protocol_length);
 		pos += protocol_length + 3;
 
-		if (pos[-1] != '/' || pos[-2] != '/')
+		if (pos >= end || pos[-1] != '/' || pos[-2] != '/')
 			return;
 
 		if (pos + 4 < end && !strncmp(pos, "www.", 4))

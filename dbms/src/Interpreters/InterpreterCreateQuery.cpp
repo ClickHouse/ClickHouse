@@ -52,6 +52,7 @@ namespace ErrorCodes
 	extern const int ENGINE_REQUIRED;
 	extern const int TABLE_METADATA_ALREADY_EXISTS;
 	extern const int UNKNOWN_DATABASE_ENGINE;
+	extern const int DUPLICATE_COLUMN;
 }
 
 
@@ -381,7 +382,7 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
 	else
 		throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
-	/// Даже если в запросе был список столбцов, на всякий случай приведем его к стандартному виду (развернём Nested).
+	/// Even if query has list of columns, canonicalize it (unfold Nested columns).
 	ASTPtr new_columns = formatColumns(*res.columns, res.materialized_columns, res.alias_columns, res.column_defaults);
 	if (create.columns)
 	{
@@ -394,6 +395,21 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
 	else
 		create.children.push_back(new_columns);
 	create.columns = new_columns;
+
+	/// Check for duplicates
+	std::set<String> all_columns;
+	auto check_column_already_exists = [&all_columns](const NameAndTypePair & column_name_and_type)
+	{
+		if (!all_columns.emplace(column_name_and_type.name).second)
+			throw Exception("Column " + backQuoteIfNeed(column_name_and_type.name) + " already exists", ErrorCodes::DUPLICATE_COLUMN);
+	};
+
+	for (const auto & elem : *res.columns)
+		check_column_already_exists(elem);
+	for (const auto & elem : res.materialized_columns)
+		check_column_already_exists(elem);
+	for (const auto & elem : res.alias_columns)
+		check_column_already_exists(elem);
 
 	return res;
 }
@@ -472,7 +488,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 		as_storage_lock = as_storage->lockStructure(false);
 	}
 
-	/// Устанавливаем и получаем список столбцов.
+	/// Set and retrieve list of columns.
 	ColumnsInfo columns = setColumns(create, as_select_sample, as_storage);
 
 	/// Выбор нужного движка таблицы

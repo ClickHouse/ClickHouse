@@ -8,11 +8,12 @@
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
-#include <DB/Interpreters/Context.h>
 
 
 namespace DB
 {
+
+class Context;
 
 
 /** При вставке, буферизует данные в оперативке, пока не превышены некоторые пороги.

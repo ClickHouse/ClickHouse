@@ -5,7 +5,7 @@ namespace DB
 {
 
 
-decltype(MySQLDictionarySource::max_block_size) MySQLDictionarySource::max_block_size;
+static const size_t max_block_size = 8192;
 
 
 MySQLDictionarySource::MySQLDictionarySource(const DictionaryStructure & dict_struct_,
@@ -45,7 +45,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadAll()
 	return std::make_shared<MySQLBlockInputStream>(pool.Get(), load_all_query, sample_block, max_block_size);
 }
 
-BlockInputStreamPtr MySQLDictionarySource::loadIds(const std::vector<std::uint64_t> & ids)
+BlockInputStreamPtr MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
 	/// Здесь не логгируем и не обновляем время модификации, так как запрос может быть большим, и часто задаваться.
 

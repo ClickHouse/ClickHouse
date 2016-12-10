@@ -33,7 +33,13 @@
 #include <DB/TableFunctions/TableFunctionFactory.h>
 
 #include <DB/Core/Field.h>
+#include <DB/Common/Collator.h>
 
+
+namespace ProfileEvents
+{
+	extern const Event SelectQuery;
+}
 
 namespace DB
 {
@@ -1006,7 +1012,11 @@ static SortDescription getSortDescription(ASTSelectQuery & query)
 		String name = elem->children.front()->getColumnName();
 		const ASTOrderByElement & order_by_elem = typeid_cast<const ASTOrderByElement &>(*elem);
 
-		order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.collator);
+		std::shared_ptr<Collator> collator;
+		if (order_by_elem.collation)
+			collator = std::make_shared<Collator>(typeid_cast<const ASTLiteral &>(*order_by_elem.collation).value.get<String>());
+
+		order_descr.emplace_back(name, order_by_elem.direction, collator);
 	}
 
 	return order_descr;
@@ -1222,6 +1232,28 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(SubqueriesForSets &
 
 	executeUnion();
 	streams[0] = std::make_shared<CreatingSetsBlockInputStream>(streams[0], subqueries_for_sets, settings.limits);
+}
+
+template <typename Transform>
+void InterpreterSelectQuery::transformStreams(Transform && transform)
+{
+	for (auto & stream : streams)
+		transform(stream);
+
+	if (stream_with_non_joined_data)
+		transform(stream_with_non_joined_data);
+}
+
+
+bool InterpreterSelectQuery::hasNoData() const
+{
+	return streams.empty() && !stream_with_non_joined_data;
+}
+
+
+bool InterpreterSelectQuery::hasMoreThanOneStream() const
+{
+	return streams.size() + (stream_with_non_joined_data ? 1 : 0) > 1;
 }
 
 

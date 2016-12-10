@@ -24,8 +24,8 @@ namespace ErrorCodes
 }
 
 
-ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Context & context_)
-	: istr(istr_), context(context_)
+ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Context & context_, bool interpret_expressions_)
+	: istr(istr_), context(context_), interpret_expressions(interpret_expressions_)
 {
 	/// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
 	skipBOMIfExists(istr);
@@ -72,6 +72,9 @@ bool ValuesRowInputStream::read(Block & block)
 		}
 		catch (const Exception & e)
 		{
+			if (!interpret_expressions)
+				throw;
+
 			/** Обычный потоковый парсер не смог распарсить значение.
 			  * Попробуем распарсить его SQL-парсером как константное выражение.
 			  * Это исключительный случай.

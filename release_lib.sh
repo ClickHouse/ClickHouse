@@ -39,10 +39,13 @@ function make_control {
 			add_daemon_impl clickhouse-server-common "clickhouse-server-base(=1.1.$REVISION)" 'Common configuration files for clickhouse-server-base package'
 		;;
 		'clickhouse-client' )
-			add_daemon_impl clickhouse-client
+			add_daemon_impl clickhouse-client "clickhouse-server-base(=1.1.$REVISION)" "ClickHouse client and additional tools such as clickhouse-local and clickhouse-benchmark."
 		;;
 		'clickhouse-benchmark' )
-			add_daemon_impl clickhouse-benchmark
+			#skip it explicitly
+		;;
+		'clickhouse-local' )
+			#skip it explicitly
 		;;
 		* )
 			add_daemon_impl "${DAEMON_PKG}-metrika-yandex"

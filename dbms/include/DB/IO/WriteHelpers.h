@@ -608,6 +608,10 @@ inline void writeBinary(const Int8 & x, 	WriteBuffer & buf) { writePODBinary(x, 
 inline void writeBinary(const Int16 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Int32 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Int64 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
+#ifdef __APPLE__
+inline void writeBinary(const int64_t & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const uint64_t & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
+#endif
 inline void writeBinary(const Float32 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Float64 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const String & x,	WriteBuffer & buf) { writeStringBinary(x, buf); }
@@ -628,6 +632,10 @@ inline void writeText(const Int8 & x, 		WriteBuffer & buf) { writeIntText(x, buf
 inline void writeText(const Int16 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
 inline void writeText(const Int32 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
 inline void writeText(const Int64 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
+#ifdef __APPLE__
+inline void writeText(const int64_t & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+inline void writeText(const uint64_t & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+#endif
 inline void writeText(const Float32 & x, 	WriteBuffer & buf) { writeFloatText(x, buf); }
 inline void writeText(const Float64 & x, 	WriteBuffer & buf) { writeFloatText(x, buf); }
 inline void writeText(const String & x,		WriteBuffer & buf) { writeEscapedString(x, buf); }

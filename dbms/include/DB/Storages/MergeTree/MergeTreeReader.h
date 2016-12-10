@@ -3,28 +3,22 @@
 #include <DB/Storages/MarkCache.h>
 #include <DB/Storages/MergeTree/MarkRange.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
-#include <DB/Columns/ColumnNullable.h>
 #include <DB/Core/NamesAndTypes.h>
-#include <DB/IO/CachedCompressedReadBuffer.h>
-#include <DB/IO/CompressedReadBufferFromFile.h>
 
 
 namespace DB
 {
 
-
-namespace ErrorCodes
-{
-	extern const int NOT_FOUND_EXPECTED_DATA_PART;
-	extern const int MEMORY_LIMIT_EXCEEDED;
-}
+class IDataType;
+class CachedCompressedReadBuffer;
+class CompressedReadBufferFromFile;
 
 class IDataType;
 
 /** Умеет читать данные между парой засечек из одного куска. При чтении последовательных отрезков не делает лишних seek-ов.
   * При чтении почти последовательных отрезков делает seek-и быстро, не выбрасывая содержимое буфера.
   */
-class MergeTreeReader
+class MergeTreeReader : private boost::noncopyable
 {
 public:
 	using ValueSizeMap = std::map<std::string, double>;
@@ -40,8 +34,7 @@ public:
 		const ReadBufferFromFileBase::ProfileCallback & profile_callback = ReadBufferFromFileBase::ProfileCallback{},
 		clockid_t clock_type = CLOCK_MONOTONIC_COARSE);
 
-	MergeTreeReader(const MergeTreeReader &) = delete;
-	MergeTreeReader & operator=(const MergeTreeReader &) = delete;
+	~MergeTreeReader();
 
 	const ValueSizeMap & getAvgValueSizeHints() const;
 
@@ -63,19 +56,8 @@ public:
 	void fillMissingColumnsAndReorder(Block & res, const Names & ordered_names);
 
 private:
-	void addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
-		const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
-		size_t level = 0);
-
-	void readData(const String & name, const IDataType & type, IColumn & column, size_t from_mark, size_t max_rows_to_read,
-		size_t level = 0, bool read_offsets = true);
-
-	void fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder);
-
-private:
 	class Stream
 	{
-	public:
 		Stream(
 			const String & path_prefix_, const String & extension_,
 			UncompressedCache * uncompressed_cache,
@@ -83,27 +65,27 @@ private:
 			const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size,
 			const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
-		Stream(Stream &&) = default;
-		Stream & operator=(Stream &&) = default;
+		static std::unique_ptr<Stream> createEmptyPtr();
 
 		void loadMarks(MarkCache * cache, bool save_in_cache, bool is_null_stream);
 
 		void seekToMark(size_t index);
 
-	public:
 		ReadBuffer * data_buffer;
 
 	private:
+		Stream() = default;
+
 		MarkCache::MappedPtr marks;
 		std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
 		std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
 		std::string path_prefix;
 		std::string extension;
+		bool is_empty = false;
 	};
 
 	using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
 
-private:
 	/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
 	ValueSizeMap avg_value_size_hints;
 	String path;
@@ -122,6 +104,15 @@ private:
 	MarkRanges all_mark_ranges;
 	size_t aio_threshold;
 	size_t max_read_buffer_size;
+
+	void addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
+		const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
+		size_t level = 0);
+
+	void readData(const String & name, const IDataType & type, IColumn & column, size_t from_mark, size_t max_rows_to_read,
+		size_t level = 0, bool read_offsets = true);
+
+	void fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder);
 };
 
 }

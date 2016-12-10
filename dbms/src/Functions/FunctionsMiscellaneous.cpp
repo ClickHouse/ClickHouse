@@ -489,6 +489,54 @@ void FunctionVisibleWidth::perform(Block & block, const ColumnNumbers & argument
 }
 
 
+void FunctionHasColumnInTable::getReturnTypeAndPrerequisites(
+	const ColumnsWithTypeAndName & arguments,
+	DataTypePtr & out_return_type,
+	ExpressionActions::Actions & out_prerequisites)
+{
+	if (arguments.size() != number_of_arguments)
+		throw Exception("Function " + getName() + " requires exactly three arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+
+	static const std::string arg_pos_description[] = {"First", "Second", "Third"};
+	for (size_t i = 0; i < number_of_arguments; ++i)
+	{
+		const ColumnWithTypeAndName & argument = arguments[i];
+
+		const ColumnConstString * column = typeid_cast<const ColumnConstString *>(argument.column.get());
+		if (!column)
+		{
+			throw Exception(
+				arg_pos_description[i] + " argument for function " + getName() + " must be const String.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		}
+	}
+
+	out_return_type = std::make_shared<DataTypeUInt8>();
+}
+
+
+void FunctionHasColumnInTable::execute(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	auto get_string_from_block =
+		[&](size_t column_pos) -> const String &
+		{
+			DB::ColumnPtr column = block.getByPosition(column_pos).column;
+			const ColumnConstString * const_column = typeid_cast<const ColumnConstString *>(column.get());
+			return const_column->getData();
+		};
+
+	const DB::String & database_name = get_string_from_block(arguments[0]);
+	const DB::String & table_name = get_string_from_block(arguments[1]);
+	const DB::String & column_name = get_string_from_block(arguments[2]);
+
+	const DB::StoragePtr & table = global_context.getTable(database_name, table_name);
+	const bool has_column = table->hasColumn(column_name);
+
+	block.getByPosition(result).column = std::make_shared<ColumnConstUInt8>(
+		block.rowsInFirstColumn(), has_column);
+}
+
 }
 
 
@@ -514,6 +562,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 	factory.registerFunction<FunctionArrayJoin>();
 	factory.registerFunction<FunctionReplicate>();
 	factory.registerFunction<FunctionBar>();
+	factory.registerFunction<FunctionHasColumnInTable>();
 
 	factory.registerFunction<FunctionTuple>();
 	factory.registerFunction<FunctionTupleElement>();

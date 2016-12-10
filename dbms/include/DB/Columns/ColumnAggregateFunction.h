@@ -53,21 +53,21 @@ public:
 	using Container_t = PaddedPODArray<AggregateDataPtr>;
 
 private:
-	/// Пулы, в которых выделены состояния агрегатных функций.
+	/// Memory pools. Aggregate states are allocated from them.
 	Arenas arenas;
 
-	/// Используется для уничтожения состояний и для финализации значений.
+	/// Used for destroying states and for finalization of values.
 	AggregateFunctionPtr func;
 
-	/// Источник. Используется (удерживает источник от уничтожения),
-	///  если данный столбец создан из другого и использует все или часть его значений.
+	/// Source column. Used (holds source from destruction),
+	///  if this column has been constructed from another and uses all or part of its values.
 	std::shared_ptr<const ColumnAggregateFunction> src;
 
-	/// Массив указателей на состояния агрегатных функций, расположенных в пулах.
+	/// Array of pointers to aggregation states, that are placed in arenas.
 	Container_t data;
 
 public:
-	/// Создать столбец на основе другого.
+	/// Create a new column that has another column as a source.
 	ColumnAggregateFunction(const ColumnAggregateFunction & other)
 		: arenas(other.arenas), func(other.func), src(other.shared_from_this())
 	{
@@ -98,13 +98,13 @@ public:
 	AggregateFunctionPtr getAggregateFunction() { return func; }
 	AggregateFunctionPtr getAggregateFunction() const { return func; }
 
-	/// Захватить владение ареной.
+	/// Take shared ownership of Arena, that holds memory for states of aggregate functions.
 	void addArena(ArenaPtr arena_)
 	{
 		arenas.push_back(arena_);
 	}
 
-	/** Преобразовать столбец состояний агрегатной функции в столбец с готовыми значениями результатов.
+	/** Transform column with states of aggregate functions to column with final result values.
 	  */
 	ColumnPtr convertToValues() const;
 
@@ -153,10 +153,14 @@ public:
 
 	void insertFrom(const IColumn & src, size_t n) override
 	{
-		getData().push_back(static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
+		/// Must create new state of aggregate function and take ownership of it,
+		///  because ownership of states of aggregate function cannot be shared for individual rows,
+		///  (only as a whole, see comment above).
+		insertDefault();
+		insertMergeFrom(src, n);
 	}
 
-	/// Объединить состояние в последней строке с заданным
+	/// Merge state at last row with specified state in another column.
 	void insertMergeFrom(const IColumn & src, size_t n)
 	{
 		Arena & arena = createOrGetArena();

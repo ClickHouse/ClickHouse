@@ -2,9 +2,11 @@
 #include <Poco/DirectoryIterator.h>
 
 #include <DB/Databases/DatabaseOrdinary.h>
+#include <DB/Databases/DatabaseMemory.h>
 #include <DB/Databases/DatabasesCommon.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/StringUtils.h>
+#include <DB/Common/Stopwatch.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
@@ -88,7 +90,7 @@ static void loadTable(
 
 DatabaseOrdinary::DatabaseOrdinary(
 	const String & name_, const String & path_)
-	: name(name_), path(path_)
+	: DatabaseMemory(name_), path(path_)
 {
 }
 
@@ -186,79 +188,6 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
 }
 
 
-bool DatabaseOrdinary::isTableExist(const String & table_name) const
-{
-	std::lock_guard<std::mutex> lock(mutex);
-	return tables.count(table_name);
-}
-
-
-StoragePtr DatabaseOrdinary::tryGetTable(const String & table_name)
-{
-	std::lock_guard<std::mutex> lock(mutex);
-	auto it = tables.find(table_name);
-	if (it == tables.end())
-		return {};
-	return it->second;
-}
-
-
-/// Копирует список таблиц. Таким образом, итерируется по их снапшоту.
-class DatabaseOrdinaryIterator : public IDatabaseIterator
-{
-private:
-	Tables tables;
-	Tables::iterator it;
-
-public:
-	DatabaseOrdinaryIterator(Tables & tables_)
-		: tables(tables_), it(tables.begin()) {}
-
-	void next() override
-	{
-		++it;
-	}
-
-	bool isValid() const override
-	{
-		return it != tables.end();
-	}
-
-	const String & name() const override
-	{
-		return it->first;
-	}
-
-	StoragePtr & table() const override
-	{
-		return it->second;
-	}
-};
-
-
-DatabaseIteratorPtr DatabaseOrdinary::getIterator()
-{
-	std::lock_guard<std::mutex> lock(mutex);
-	return std::make_unique<DatabaseOrdinaryIterator>(tables);
-}
-
-
-bool DatabaseOrdinary::empty() const
-{
-	std::lock_guard<std::mutex> lock(mutex);
-	return tables.empty();
-}
-
-
-void DatabaseOrdinary::attachTable(const String & table_name, const StoragePtr & table)
-{
-	/// Добавляем таблицу в набор.
-	std::lock_guard<std::mutex> lock(mutex);
-	if (!tables.emplace(table_name, table).second)
-		throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-}
-
-
 void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine)
 {
 	/// Создаём файл с метаданными, если нужно - если запрос не ATTACH.
@@ -312,23 +241,6 @@ void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr &
 		Poco::File(table_metadata_tmp_path).remove();
 		throw;
 	}
-}
-
-
-StoragePtr DatabaseOrdinary::detachTable(const String & table_name)
-{
-	StoragePtr res;
-
-	{
-		std::lock_guard<std::mutex> lock(mutex);
-		auto it = tables.find(table_name);
-		if (it == tables.end())
-			throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::TABLE_ALREADY_EXISTS);
-		res = it->second;
-		tables.erase(it);
-	}
-
-	return res;
 }
 
 

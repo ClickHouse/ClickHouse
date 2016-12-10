@@ -33,7 +33,16 @@
 #include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeDate.h>
+#include <DB/DataTypes/DataTypeEnum.h>
 #include <DB/Common/VirtualColumnUtils.h>
+
+
+namespace ProfileEvents
+{
+	extern const Event SelectedParts;
+	extern const Event SelectedRanges;
+	extern const Event SelectedMarks;
+}
 
 
 namespace DB
@@ -43,6 +52,7 @@ namespace ErrorCodes
 {
 	extern const int INDEX_NOT_USED;
 	extern const int SAMPLING_NOT_SUPPORTED;
+	extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 
@@ -185,9 +195,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	SortDescription sort_descr = data.getSortDescription();
 
-	PKCondition key_condition(query, context, available_real_and_virtual_columns, sort_descr);
+	PKCondition key_condition(query, context, available_real_and_virtual_columns, sort_descr,
+		data.getPrimaryExpression()->getSampleBlock());
 	PKCondition date_condition(query, context, available_real_and_virtual_columns,
-		SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
+		SortDescription(1, SortColumnDescription(data.date_column_name, 1)),
+		Block{{DataTypeDate{}.createColumn(), std::make_shared<DataTypeDate>(), data.date_column_name}});
 
 	if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
 	{

@@ -5,6 +5,20 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+
+namespace ProfileEvents
+{
+	extern const Event FileOpen;
+	extern const Event FileOpenFailed;
+	extern const Event WriteBufferAIOWrite;
+	extern const Event WriteBufferAIOWriteBytes;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric Write;
+}
+
 namespace DB
 {
 
@@ -26,10 +40,10 @@ namespace ErrorCodes
 /// Примечание: выделяется дополнительная страница, которая содежрит те данные, которые
 /// не влезают в основной буфер.
 WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_, mode_t mode_,
-		char * existing_memory_)
-		: WriteBufferFromFileBase(buffer_size_ + DEFAULT_AIO_FILE_BLOCK_SIZE, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
-		flush_buffer(BufferWithOwnMemory<WriteBuffer>(this->memory.size(), nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
-		filename(filename_)
+	char * existing_memory_)
+	: WriteBufferFromFileBase(buffer_size_ + DEFAULT_AIO_FILE_BLOCK_SIZE, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
+	flush_buffer(BufferWithOwnMemory<WriteBuffer>(this->memory.size(), nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
+	filename(filename_)
 {
 	/// Исправить информацию о размере буферов, чтобы дополнительные страницы не касались базового класса BufferBase.
 	this->buffer().resize(this->buffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
@@ -45,6 +59,7 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 	fd = ::open(filename.c_str(), open_flags, mode_);
 	if (fd == -1)
 	{
+		ProfileEvents::increment(ProfileEvents::FileOpenFailed);
 		auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
 		throwFromErrno("Cannot open file " + filename, error_code);
 	}

@@ -401,7 +401,7 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & 
 			was_open = true;
 		}
 
-		if (!ParserList(ParserPtr(new ParserIdentifier), ParserPtr(new ParserString(","))).parse(pos, end, inner_arguments, max_parsed_pos, expected))
+		if (!ParserList(std::make_unique<ParserIdentifier>(), std::make_unique<ParserString>(",")).parse(pos, end, inner_arguments, max_parsed_pos, expected))
 			break;
 		ws.ignore(pos, end, max_parsed_pos, expected);
 
@@ -547,8 +547,8 @@ bool ParserArrayElementExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, 
 {
 	return ParserLeftAssociativeBinaryOperatorList{
 		operators,
-		ParserPtr(new ParserExpressionElement),
-		ParserPtr(new ParserExpressionWithOptionalAlias(false))
+		std::make_unique<ParserExpressionElement>(),
+		std::make_unique<ParserExpressionWithOptionalAlias>(false)
 	}.parse(pos, end, node, max_parsed_pos, expected);
 }
 
@@ -557,27 +557,30 @@ bool ParserTupleElementExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, 
 {
 	return ParserLeftAssociativeBinaryOperatorList{
 		operators,
-		ParserPtr(new ParserArrayElementExpression),
-		ParserPtr(new ParserUnsignedInteger)
+		std::make_unique<ParserArrayElementExpression>(),
+		std::make_unique<ParserUnsignedInteger>()
 	}.parse(pos, end, node, max_parsed_pos, expected);
 }
 
 
 ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword)
-	: impl(new ParserWithOptionalAlias(ParserPtr(new ParserLambdaExpression), allow_alias_without_as_keyword))
+	: impl(std::make_unique<ParserWithOptionalAlias>(std::make_unique<ParserLambdaExpression>(), allow_alias_without_as_keyword))
 {
 }
 
 
 ParserExpressionInCastExpression::ParserExpressionInCastExpression(bool allow_alias_without_as_keyword)
-	: impl(new ParserCastExpressionWithOptionalAlias(ParserPtr(new ParserLambdaExpression), allow_alias_without_as_keyword))
+	: impl(std::make_unique<ParserCastExpressionWithOptionalAlias>(std::make_unique<ParserLambdaExpression>(), allow_alias_without_as_keyword))
 {
 }
 
 
 bool ParserExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-	return ParserList(ParserPtr(new ParserExpressionWithOptionalAlias(allow_alias_without_as_keyword)), ParserPtr(new ParserString(","))).parse(pos, end, node, max_parsed_pos, expected);
+	return ParserList(
+		std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword),
+		std::make_unique<ParserString>(","))
+		.parse(pos, end, node, max_parsed_pos, expected);
 }
 
 
@@ -590,7 +593,8 @@ bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, 
 
 bool ParserOrderByExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-	return ParserList(ParserPtr(new ParserOrderByElement), ParserPtr(new ParserString(",")), false).parse(pos, end, node, max_parsed_pos, expected);
+	return ParserList(std::make_unique<ParserOrderByElement>(), std::make_unique<ParserString>(","), false)
+		.parse(pos, end, node, max_parsed_pos, expected);
 }
 
 

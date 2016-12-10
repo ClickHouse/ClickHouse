@@ -1,11 +1,15 @@
 #pragma once
 
 #include <string.h>
+#ifndef __APPLE__
 #include <malloc.h>
+#endif
+#include <cstdlib>
 #include <cstdint>
 #include <type_traits>
 
 #include <ext/bit_cast.hpp>
+#include <DB/Core/Types.h>
 #include <DB/Core/Defines.h>
 
 

@@ -1,17 +1,10 @@
+#include <DB/Common/typeid_cast.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTFunction.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-
-extern const int INVALID_FUNCTION_GENUS;
-extern const int LOGICAL_ERROR;
-
-}
 
 String ASTFunction::getColumnName() const
 {

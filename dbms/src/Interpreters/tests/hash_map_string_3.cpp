@@ -29,7 +29,7 @@ for file in MobilePhoneModel PageCharset Params URLDomain UTMSource Referer URL 
   echo
   BEST_METHOD=0
   BEST_RESULT=0
-  for method in {1..5}; do
+  for method in {1..10}; do
    echo -ne $file $size $method '';
    TOTAL_ELEMS=0
    for i in {0..1000}; do
@@ -234,13 +234,13 @@ struct SimpleHash
 
 		while (pos + 8 < end)
 		{
-			UInt64 word = *reinterpret_cast<const UInt64 *>(pos);
+			uint64_t word = *reinterpret_cast<const uint64_t *>(pos);
 			res = intHash64(word ^ res);
 
 			pos += 8;
 		}
 
-		UInt64 word = *reinterpret_cast<const UInt64 *>(end - 8);
+		uint64_t word = *reinterpret_cast<const uint64_t *>(end - 8);
 		res = intHash64(word ^ res);
 
 		return res;
@@ -269,14 +269,14 @@ struct VerySimpleHash
 
 		while (pos + 8 < end)
 		{
-			res ^= reinterpret_cast<const UInt64 *>(pos)[0];
+			res ^= reinterpret_cast<const uint64_t *>(pos)[0];
 			res ^= res >> 33;
 			res *= 0xff51afd7ed558ccdULL;
 
 			pos += 8;
 		}
 
-		res ^= *reinterpret_cast<const UInt64 *>(end - 8);
+		res ^= *reinterpret_cast<const uint64_t *>(end - 8);
 		res ^= res >> 33;
 		res *= 0xc4ceb9fe1a85ec53ULL;
 		res ^= res >> 33;
@@ -301,7 +301,7 @@ struct MetroHash64
 	size_t operator() (StringRef x) const
 	{
 		union {
-			std::uint64_t u64;
+			uint64_t u64;
 			std::uint8_t u8[sizeof(u64)];
 		};
 
@@ -334,13 +334,13 @@ struct MetroHash64
 
 		do
 		{
-			UInt64 word = *reinterpret_cast<const UInt64 *>(pos);
+			uint64_t word = *reinterpret_cast<const uint64_t *>(pos);
 			res = _mm_crc32_u64(res, word);
 
 			pos += 8;
 		} while (pos + 8 < end);
 
-		UInt64 word = *reinterpret_cast<const UInt64 *>(end - 8);
+		uint64_t word = *reinterpret_cast<const uint64_t *>(end - 8);
 		res = _mm_crc32_u64(res, word);
 
 		return res;
@@ -370,16 +370,16 @@ struct CRC32ILPHash
 
 		do
 		{
-			UInt64 word0 = reinterpret_cast<const UInt64 *>(pos)[0];
-			UInt64 word1 = reinterpret_cast<const UInt64 *>(pos)[1];
+			uint64_t word0 = reinterpret_cast<const uint64_t *>(pos)[0];
+			uint64_t word1 = reinterpret_cast<const uint64_t *>(pos)[1];
 			res0 = _mm_crc32_u64(res0, word0);
 			res1 = _mm_crc32_u64(res1, word1);
 
 			pos += 16;
 		} while (pos < end_16);
 
-		UInt64 word0 = *reinterpret_cast<const UInt64 *>(end - 8);
-		UInt64 word1 = *reinterpret_cast<const UInt64 *>(end - 16);
+		uint64_t word0 = *reinterpret_cast<const uint64_t *>(end - 8);
+		uint64_t word1 = *reinterpret_cast<const uint64_t *>(end - 16);
 
 	/*	return HashLen16(Rotate(word0 - word1, 43) + Rotate(res0, 30) + res1,
 			word0 + Rotate(word1 ^ k3, 20) - res0 + size);*/
@@ -394,7 +394,7 @@ struct CRC32ILPHash
 #endif
 
 
-using Value = UInt64;
+using Value = uint64_t;
 
 
 template <typename Key, typename Hash>
@@ -458,7 +458,7 @@ int main(int argc, char ** argv)
 			<< std::endl;
 	}
 
-	if (!m || m == 1) bench<StringRef_CompareMemcmp, DefaultHash<StringRef>>(data, "StringRef_CityHash64");
+	if (!m || m == 1) bench<StringRef_CompareMemcmp, StringRefHash64>(data, "StringRef_CityHash64");
 	if (!m || m == 2) bench<StringRef_CompareMemcmp, FastHash64>	(data, "StringRef_FastHash64");
 	if (!m || m == 3) bench<StringRef_CompareMemcmp, SimpleHash>	(data, "StringRef_SimpleHash");
 

@@ -78,8 +78,6 @@ public:
 
 	FunctionArray(const Context & context);
 
-	void setCaseMode();
-
 	bool hasSpecialSupportForNulls() const override { return true; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -98,14 +96,11 @@ private:
 
 private:
 	const Context & context;
-	bool is_case_mode = false;
 };
 
 namespace ArrayImpl
 {
-
-class NullMapBuilder;
-
+	class NullMapBuilder;
 }
 
 class FunctionArrayElement : public IFunction
@@ -1335,10 +1330,7 @@ public:
 	static FunctionPtr create(const Context &) { return std::make_shared<FunctionRange>(); }
 
 private:
-	String getName() const override
-	{
-		return name;
-	}
+	String getName() const override;
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 

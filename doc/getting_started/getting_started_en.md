@@ -33,7 +33,7 @@ https://github.com/yandex/ClickHouse/blob/master/doc/build.md
 
 Install required packages. After that let's run the following command from directory with source code of ClickHouse:
 ```
-~/ClickHouse$ DISABLE_MONGODB=1 ./release --standalone
+~/ClickHouse$ ENABLE_MONGODB=0 ./release --standalone
 ```
 
 The build successfully completed:
@@ -193,7 +193,7 @@ After that, add the data to ClickHouse:
 ```
 for i in *.zip; do
 	echo $i
-	unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="insert into ontime format CSVWithNames"
+	unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --query="insert into ontime format CSVWithNames"
 done
 ```
 

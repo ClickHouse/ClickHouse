@@ -82,6 +82,9 @@ void ReplicatedMergeTreeAlterThread::run()
 				/// Если описание столбцов изменилось, обновим структуру таблицы локально.
 				if (changed_version)
 				{
+					/// Temporarily cancel part checks to avoid locking for long time.
+					auto temporarily_stop_part_checks = storage.part_check_thread.temporarilyStop();
+
 					LOG_INFO(log, "Changed version of 'columns' node in ZooKeeper. Waiting for structure write lock.");
 
 					auto table_lock = storage.lockStructureForAlter();

@@ -24,7 +24,7 @@ public:
 	ASTOptimizeQuery(const StringRange range_) : IAST(range_) {}
 
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const override { return "OptimizeQuery_" + database + "_" + table + "_" + partition + "_" + toString(final); };
+	String getID() const override { return "OptimizeQuery_" + database + "_" + table + "_" + partition + "_" + (final ? "final" : ""); };
 
 	ASTPtr clone() const override { return std::make_shared<ASTOptimizeQuery>(*this); }
 

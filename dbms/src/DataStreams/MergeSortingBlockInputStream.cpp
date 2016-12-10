@@ -6,6 +6,12 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ExternalSortWritePart;
+	extern const Event ExternalSortMerge;
+}
+
 namespace DB
 {
 

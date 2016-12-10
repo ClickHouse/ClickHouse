@@ -5,7 +5,8 @@
 #include <time.h>
 #include <string>
 #include <thread>
-#include <atomic>
+#include <mutex>
+#include <condition_variable>
 #include <list>
 
 
@@ -95,7 +96,9 @@ private:
 	FilesChangesTracker last_main_config_files;
 	FilesChangesTracker last_users_config_files;
 
-	std::atomic<bool> quit{false};
+	bool quit {false};
+	std::mutex mutex;
+	std::condition_variable cond;
 	std::thread thread;
 
 	Poco::Logger * log = &Logger::get("ConfigReloader");

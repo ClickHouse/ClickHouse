@@ -86,3 +86,22 @@ public:
   * Таким образом, его нужно всего-лишь протащить во все потоки, в которых обрабатывается один запрос.
   */
 extern __thread MemoryTracker * current_memory_tracker;
+
+
+#include <boost/noncopyable.hpp>
+
+struct TemporarilyDisableMemoryTracker : private boost::noncopyable
+{
+	MemoryTracker * memory_tracker;
+
+	TemporarilyDisableMemoryTracker()
+	{
+		memory_tracker = current_memory_tracker;
+		current_memory_tracker = nullptr;
+	}
+
+	~TemporarilyDisableMemoryTracker()
+	{
+		current_memory_tracker = memory_tracker;
+	}
+};

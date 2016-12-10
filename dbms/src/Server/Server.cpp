@@ -20,6 +20,7 @@
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/ProcessList.h>
+#include <DB/Interpreters/AsynchronousMetrics.h>
 
 #include <DB/Storages/System/StorageSystemNumbers.h>
 #include <DB/Storages/System/StorageSystemTables.h>
@@ -38,6 +39,7 @@
 #include <DB/Storages/System/StorageSystemFunctions.h>
 #include <DB/Storages/System/StorageSystemClusters.h>
 #include <DB/Storages/System/StorageSystemMetrics.h>
+#include <DB/Storages/System/StorageSystemAsynchronousMetrics.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReshardingWorker.h>
 #include <DB/Databases/DatabaseOrdinary.h>
@@ -191,8 +193,8 @@ int Server::main(const std::vector<std::string> & args)
 	  *  settings, available functions, data types, aggregate functions, databases...
 	  */
 	global_context = std::make_unique<Context>();
-
 	global_context->setGlobalContext(*global_context);
+	global_context->setApplicationType(Context::ApplicationType::SERVER);
 	global_context->setPath(path);
 
 	std::string default_database = config().getString("default_database", "default");
@@ -203,7 +205,7 @@ int Server::main(const std::vector<std::string> & args)
 
 	StatusFile status{path + "status"};
 
-	/// Try to increase limit on number of opened files.
+	/// Try to increase limit on number of open files.
 	{
 		rlimit rlim;
 		if (getrlimit(RLIMIT_NOFILE, &rlim))
@@ -216,11 +218,13 @@ int Server::main(const std::vector<std::string> & args)
 		else
 		{
 			rlim_t old = rlim.rlim_cur;
-			rlim.rlim_cur = rlim.rlim_max;
-			if (setrlimit(RLIMIT_NOFILE, &rlim))
-				throw Poco::Exception("Cannot setrlimit");
+			rlim.rlim_cur = config().getUInt("max_open_files", rlim.rlim_max);
+			int rc = setrlimit(RLIMIT_NOFILE, &rlim);
+			if (rc != 0)
+				//throwFromErrno(std::string("Cannot setrlimit (tried rlim_cur = ") + std::to_string(rlim.rlim_cur) + "). Try to specify max_open_files according to your system limits");
+				throw DB::Exception(std::string("Cannot setrlimit (tried rlim_cur = ") + std::to_string(rlim.rlim_cur) + "). Try to specify max_open_files according to your system limits. error: " + strerror(errno));
 
-			LOG_DEBUG(log, "Set rlimit on number of file descriptors to " << rlim.rlim_cur << " (was " << old << ")");
+			LOG_DEBUG(log, "Set rlimit on number of file descriptors to " << rlim.rlim_cur << " (was " << old << ").");
 		}
 	}
 
@@ -255,6 +259,7 @@ int Server::main(const std::vector<std::string> & args)
 	  * Examples: do repair of local data; clone all replicated tables from replica.
 	  */
 	Poco::File(path + "flags/").createDirectories();
+	global_context->setFlagsPath(path + "flags/");
 
 	bool has_zookeeper = false;
 	if (config().has("zookeeper"))
@@ -360,8 +365,6 @@ int Server::main(const std::vector<std::string> & args)
 	}
 
 	SCOPE_EXIT(
-		LOG_DEBUG(log, "Closed all connections.");
-
 		/** Ask to cancel background jobs all table engines,
 		  *  and also query_log.
 		  * It is important to do early, not in destructor of Context, because
@@ -380,10 +383,6 @@ int Server::main(const std::vector<std::string> & args)
 	);
 
 	{
-		const auto metrics_transmitter = config().getBool("use_graphite", true)
-			? std::make_unique<MetricsTransmitter>()
-			: nullptr;
-
 		const std::string listen_host = config().getString("listen_host", "::");
 
 		Poco::Timespan keep_alive_timeout(config().getInt("keep_alive_timeout", 10), 0);
@@ -459,8 +458,10 @@ int Server::main(const std::vector<std::string> & args)
 				http_params);
 		}
 
-		http_server->start();
-		tcp_server->start();
+		if (http_server)
+			http_server->start();
+		if (tcp_server)
+			tcp_server->start();
 		if (interserver_io_http_server)
 			interserver_io_http_server->start();
 
@@ -480,12 +481,18 @@ int Server::main(const std::vector<std::string> & args)
 
 			LOG_DEBUG(log, "Waiting for current connections to close.");
 
-			     config_reloader.reset();
-
 			is_cancelled = true;
 
-			http_server->stop();
-			tcp_server->stop();
+			if (http_server)
+				http_server->stop();
+			if (tcp_server)
+				tcp_server->stop();
+			if (interserver_io_http_server)
+				interserver_io_http_server->stop();
+
+			LOG_DEBUG(log, "Closed all connections.");
+
+			config_reloader.reset();
 		);
 
 		/// try to load dictionaries immediately, throw on error and die
@@ -496,14 +503,23 @@ int Server::main(const std::vector<std::string> & args)
 				global_context->tryCreateDictionaries();
 				global_context->tryCreateExternalDictionaries();
 			}
-
-			waitForTerminationRequest();
 		}
 		catch (...)
 		{
 			LOG_ERROR(log, "Caught exception while loading dictionaries.");
 			throw;
 		}
+
+		/// This object will periodically calculate some metrics.
+		AsynchronousMetrics async_metrics(*global_context);
+
+		system_database->attachTable("asynchronous_metrics", StorageSystemAsynchronousMetrics::create("asynchronous_metrics", async_metrics));
+
+		const auto metrics_transmitter = config().getBool("use_graphite", true)
+			? std::make_unique<MetricsTransmitter>(async_metrics)
+			: nullptr;
+
+		waitForTerminationRequest();
 	}
 
 	return Application::EXIT_OK;
@@ -511,5 +527,4 @@ int Server::main(const std::vector<std::string> & args)
 
 }
 
-
-YANDEX_APP_SERVER_MAIN(DB::Server);
+YANDEX_APP_SERVER_MAIN_FUNC(DB::Server, mainEntryClickHouseServer);

@@ -9,6 +9,19 @@
 #include <mutex>
 #include <string>
 #include <common/logger_useful.h>
+#include <DB/Common/ProfileEvents.h>
+#include <DB/Common/CurrentMetrics.h>
+
+
+namespace ProfileEvents
+{
+	extern const Event CannotRemoveEphemeralNode;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric EphemeralNode;
+}
 
 
 namespace zkutil
@@ -181,7 +194,7 @@ public:
 	/** Использовать только для методов на чтение */
 	int32_t tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results = nullptr, size_t * attempt = nullptr);
 
-	int64_t getClientID();
+	Int64 getClientID();
 
 	/** Удаляет ноду вместе с поддеревом. Если в это время кто-то добавит иили удалит ноду в поддереве, результат не определен.
 	  */
@@ -432,13 +445,15 @@ public:
 		}
 		catch (const KeeperException & e)
 		{
-			LOG_ERROR(zookeeper.log, "~EphemeralNodeHolder(): " << e.displayText());
+			ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
+			DB::tryLogCurrentException(__PRETTY_FUNCTION__);
 		}
 	}
 
 private:
 	std::string path;
 	ZooKeeper & zookeeper;
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::EphemeralNode};
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;

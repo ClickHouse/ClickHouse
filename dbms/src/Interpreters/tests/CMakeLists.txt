@@ -48,6 +48,7 @@ target_link_libraries (logical_expressions_optimizer dbms)
 
 add_executable (in_join_subqueries_preprocessor in_join_subqueries_preprocessor.cpp)
 target_link_libraries (in_join_subqueries_preprocessor dbms)
+add_check(in_join_subqueries_preprocessor)
 
 add_executable (users users.cpp)
-target_link_libraries (users dbms libboost_filesystem.a)
+target_link_libraries (users dbms ${Boost_FILESYSTEM_LIBRARY})

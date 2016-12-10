@@ -26,16 +26,27 @@ add_library (mysqlxx
 
 add_dependencies (mysqlxx common)
 
-target_link_libraries (mysqlxx common libmysqlclient.a libssl.a libcrypto.a libz.a dl)
+set (Z_HINTS "/usr/local/opt/zlib/lib")
+if (USE_STATIC_LIBRARIES)
+	find_library (Z_LIB libz.a HINTS ${Z_HINTS})
+else ()
+	find_library (Z_LIB z HINTS ${Z_HINTS})
+endif ()
 
+if (USE_STATIC_LIBRARIES)
+	set (MYSQLCLIENT_LIB ${CMAKE_CURRENT_BINARY_DIR}/libmysqlclient.a)
+	target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBRARIES} ${Z_LIB} dl)
+	add_custom_command (
+		OUTPUT ${MYSQLCLIENT_LIB}
+		COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/patch.sh ${STATIC_MYSQLCLIENT_LIB} ${MYSQLCLIENT_LIB}
+		WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+		COMMENT "Patching mysqlclient library.")
+	add_custom_target (our_mysql_client DEPENDS ${MYSQLCLIENT_LIB})
+	add_dependencies (mysqlxx our_mysql_client)
+endif ()
 
-ADD_CUSTOM_COMMAND(
-    TARGET mysqlxx
-    POST_BUILD
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/patch.sh
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    COMMENT "Patching mysqlclient library.")
+target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBRARIES} ${Z_LIB} dl)
 
-IF(TESTS)
+if (ENABLE_TESTS)
 	add_subdirectory (src/tests)
-ENDIF(TESTS)
+endif (ENABLE_TESTS)

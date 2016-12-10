@@ -20,6 +20,11 @@
 #include <DB/Interpreters/executeQuery.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event Query;
+}
+
 namespace DB
 {
 
@@ -50,7 +55,7 @@ static String joinLines(const String & query)
 /// Log query into text log (not into system table).
 static void logQuery(const String & query, const Context & context)
 {
-	LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getIPAddress().toString() << ") " << joinLines(query));
+	LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getClientInfo().current_address.toString() << ") " << joinLines(query));
 }
 
 
@@ -73,19 +78,9 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 static void logException(Context & context, QueryLogElement & elem)
 {
 	LOG_ERROR(&Logger::get("executeQuery"), elem.exception
-		<< " (from " << context.getIPAddress().toString() << ")"
+		<< " (from " << context.getClientInfo().current_address.toString() << ")"
 		<< " (in query: " << joinLines(elem.query) << ")"
 		<< (!elem.stack_trace.empty() ? ", Stack trace:\n\n" + elem.stack_trace : ""));
-}
-
-
-static void setClientInfo(QueryLogElement & elem, Context & context)
-{
-	elem.interface = context.getInterface();
-	elem.http_method = context.getHTTPMethod();
-	elem.ip_address = context.getIPAddress();
-	elem.user = context.getUser();
-	elem.query_id = context.getCurrentQueryId();
 }
 
 
@@ -109,7 +104,8 @@ static void onExceptionBeforeStart(const String & query, Context & context, time
 		elem.query = query.substr(0, context.getSettingsRef().log_queries_cut_to_length);
 		elem.exception = getCurrentExceptionMessage(false);
 
-		setClientInfo(elem, context);
+		elem.client_info = context.getClientInfo();
+
 		setExceptionStackTrace(elem);
 		logException(context, elem);
 
@@ -181,10 +177,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 		{
 			process_list_entry = context.getProcessList().insert(
 				query,
-				context.getUser(),
-				context.getCurrentQueryId(),
-				context.getIPAddress(),
-				context.getPort(),
+				context.getClientInfo(),
 				settings);
 
 			context.setProcessListElement(&process_list_entry->get());
@@ -216,7 +209,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
 			elem.query = query.substr(0, settings.log_queries_cut_to_length);
 
-			setClientInfo(elem, context);
+			elem.client_info = context.getClientInfo();
 
 			bool log_queries = settings.log_queries && !internal;
 

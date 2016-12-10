@@ -4,6 +4,13 @@
 #include <DB/Common/setThreadName.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ReplicatedPartChecks;
+	extern const Event ReplicatedPartChecksFailed;
+	extern const Event ReplicatedDataLoss;
+}
+
 namespace DB
 {
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iostream>
 #include <DB/Core/Types.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/WriteBuffer.h>
@@ -116,7 +117,7 @@ inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 		if (istr.eof())
 			throwReadAfterEOF();
 
-		uint64_t byte = *istr.position();
+		UInt64 byte = *istr.position();
 		++istr.position();
 		x |= (byte & 0x7F) << (7 * i);
 
@@ -131,7 +132,7 @@ inline void readVarUInt(UInt64 & x, std::istream & istr)
 	x = 0;
 	for (size_t i = 0; i < 9; ++i)
 	{
-		uint64_t byte = istr.get();
+		UInt64 byte = istr.get();
 		x |= (byte & 0x7F) << (7 * i);
 
 		if (!(byte & 0x80))
@@ -149,7 +150,7 @@ inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
 		if (istr == end)
 			throwReadAfterEOF();
 
-		uint64_t byte = *istr;
+		UInt64 byte = *istr;
 		++istr;
 		x |= (byte & 0x7F) << (7 * i);
 

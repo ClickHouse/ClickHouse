@@ -52,7 +52,7 @@
 /// слишком маленький период может приводить, что ошибки исчезают сразу после создания.
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD 	(2 * DBMS_DEFAULT_SEND_TIMEOUT_SEC)
 #define DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS 						5000	/// Максимальное время ожидания в очереди запросов.
-#define DBMS_DEFAULT_BACKGROUND_POOL_SIZE						6
+#define DBMS_DEFAULT_BACKGROUND_POOL_SIZE						16
 
 /// Используется в методе reserve, когда известно число строк, но неизвестны их размеры.
 #define DBMS_APPROX_STRING_SIZE 64
@@ -63,9 +63,12 @@
 #define DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES					50264
 #define DBMS_MIN_REVISION_WITH_TOTAL_ROWS_IN_PROGRESS			51554
 #define DBMS_MIN_REVISION_WITH_BLOCK_INFO						51903
+#define DBMS_MIN_REVISION_WITH_CLIENT_INFO						54032
+#define DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE					54058
+#define DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO			54060
 
 /// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
-#define DBMS_TCP_PROTOCOL_VERSION								53694
+#define DBMS_TCP_PROTOCOL_VERSION								54060
 
 #define DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS		100
 

@@ -23,8 +23,26 @@ namespace ErrorCodes
 
 void throwFromErrno(const std::string & s, int code, int e)
 {
-	char buf[128];
+	const size_t buf_size = 128;
+	char buf[buf_size];
+#ifndef _GNU_SOURCE
+	const char * unknown_message = "Unknown error ";
+	int rc = strerror_r(e, buf, buf_size);
+#ifdef __APPLE__
+	if (rc != 0 && rc != EINVAL)
+#else
+	if (rc != 0)
+#endif
+	{
+		std::string tmp = std::to_string(code);
+		const char* code = tmp.c_str();
+		strcpy(buf, unknown_message);
+		strcpy(buf + strlen(unknown_message), code);
+	}
+	throw ErrnoException(s + ", errno: " + toString(e) + ", strerror: " + std::string(buf), code, e);
+#else
 	throw ErrnoException(s + ", errno: " + toString(e) + ", strerror: " + std::string(strerror_r(e, buf, sizeof(buf))), code, e);
+#endif
 }
 
 

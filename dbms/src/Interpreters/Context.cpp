@@ -43,6 +43,17 @@
 #include <zkutil/ZooKeeper.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ContextLock;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric ContextLockWait;
+}
+
+
 namespace DB
 {
 
@@ -62,18 +73,18 @@ namespace ErrorCodes
 class TableFunctionFactory;
 
 
-/** Набор известных объектов, которые могут быть использованы в запросе.
-  * Разделяемая часть. Порядок членов (порядок их уничтожения) очень важен.
+/** Set of known objects (environment), that could be used in query.
+  * Shared (global) part. Order of members (especially, order of destruction) is very important.
   */
 struct ContextShared
 {
-	Logger * log = &Logger::get("Context");					/// Логгер.
+	Logger * log = &Logger::get("Context");
 
-	/// Для доступа и модификации разделяемых объектов. Рекурсивный mutex.
+	/// For access of most of shared objects. Recursive mutex.
 	mutable Poco::Mutex mutex;
-	/// Для доступа к внешним словарям. Отдельный мьютекс, чтобы избежать локов при обращении сервера к самому себе.
+	/// Separate mutex for access of external dictionaries. Separate mutex to avoid locks when server doing request to itself.
 	mutable std::mutex external_dictionaries_mutex;
-	/// Отдельный mutex для переинициализации zookeeper-а. Эта операция может заблокироваться на существенное время и не должна мешать остальным.
+	/// Separate mutex for re-initialization of zookeer session. This operation could take a long time and must not interfere with another operations.
 	mutable std::mutex zookeeper_mutex;
 
 	mutable zkutil::ZooKeeperPtr zookeeper;					/// Клиент для ZooKeeper.
@@ -83,6 +94,7 @@ struct ContextShared
 
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	String tmp_path;										/// Путь ко временным файлам, возникающим при обработке запроса.
+	String flags_path;										///
 	Databases databases;									/// Список БД и таблиц в них.
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
@@ -127,6 +139,8 @@ struct ContextShared
 	mutable std::mutex ddl_guards_mutex;
 
 	Stopwatch uptime_watch;
+
+	Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
 
 	~ContextShared()
@@ -188,7 +202,14 @@ Context::~Context() = default;
 const TableFunctionFactory & Context::getTableFunctionFactory() const			{ return shared->table_function_factory; }
 const AggregateFunctionFactory & Context::getAggregateFunctionFactory() const	{ return shared->aggregate_function_factory; }
 InterserverIOHandler & Context::getInterserverIOHandler()						{ return shared->interserver_io_handler; }
-std::unique_lock<Poco::Mutex> Context::getLock() const							{ return std::unique_lock<Poco::Mutex>(shared->mutex); }
+
+std::unique_lock<Poco::Mutex> Context::getLock() const
+{
+	ProfileEvents::increment(ProfileEvents::ContextLock);
+	CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
+	return std::unique_lock<Poco::Mutex>(shared->mutex);
+}
+
 ProcessList & Context::getProcessList()											{ return shared->process_list; }
 const ProcessList & Context::getProcessList() const								{ return shared->process_list; }
 MergeList & Context::getMergeList() 											{ return shared->merge_list; }
@@ -256,6 +277,12 @@ String Context::getTemporaryPath() const
 	return shared->tmp_path;
 }
 
+String Context::getFlagsPath() const
+{
+	auto lock = getLock();
+	return shared->flags_path;
+}
+
 
 void Context::setPath(const String & path)
 {
@@ -267,6 +294,12 @@ void Context::setTemporaryPath(const String & path)
 {
 	auto lock = getLock();
 	shared->tmp_path = path;
+}
+
+void Context::setFlagsPath(const String & path)
+{
+	auto lock = getLock();
+	shared->flags_path = path;
 }
 
 
@@ -285,17 +318,19 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, UInt16 port, const String & quota_key)
+void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
 {
 	auto lock = getLock();
 
-	const User & user_props = shared->users.get(name, password, address);
+	const User & user_props = shared->users.get(name, password, address.host());
 	setSetting("profile", user_props.profile);
-	setQuota(user_props.quota, quota_key, name, address);
+	setQuota(user_props.quota, quota_key, name, address.host());
 
-	this->user = name;
-	this->ip_address = address;
-	this->port = port;
+	client_info.current_user = name;
+	client_info.current_address = address;
+
+	if (!quota_key.empty())
+		client_info.quota_key = quota_key;
 }
 
 
@@ -314,13 +349,13 @@ QuotaForIntervals & Context::getQuota()
 
 void Context::checkDatabaseAccessRights(const std::string & database_name) const
 {
-	if (user.empty() || (database_name == "system"))
+	if (client_info.current_user.empty() || (database_name == "system"))
 	{
 		/// Безымянный пользователь, т.е. сервер, имеет доступ ко всем БД.
 		/// Все пользователи имеют доступ к БД system.
 		return;
 	}
-	if (!shared->users.isAllowedDatabase(user, database_name))
+	if (!shared->users.isAllowedDatabase(client_info.current_user, database_name))
 		throw Exception("Access denied to database " + database_name, ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
@@ -658,7 +693,7 @@ String Context::getCurrentDatabase() const
 String Context::getCurrentQueryId() const
 {
 	auto lock = getLock();
-	return current_query_id;
+	return client_info.current_query_id;
 }
 
 
@@ -672,7 +707,7 @@ void Context::setCurrentDatabase(const String & name)
 
 void Context::setCurrentQueryId(const String & query_id)
 {
-	if (!current_query_id.empty())
+	if (!client_info.current_query_id.empty())
 		throw Exception("Logical error: attempt to set query_id twice", ErrorCodes::LOGICAL_ERROR);
 
 	String query_id_to_set = query_id;
@@ -680,7 +715,7 @@ void Context::setCurrentQueryId(const String & query_id)
 		query_id_to_set = shared->uuid_generator.createRandom().toString();
 
 	auto lock = getLock();
-	current_query_id = query_id_to_set;
+	client_info.current_query_id = query_id_to_set;
 }
 
 
@@ -708,6 +743,12 @@ void Context::setMacros(Macros && macros)
 	shared->macros = macros;
 }
 
+const Context & Context::getSessionContext() const
+{
+	if (!session_context)
+		throw Exception("There is no session", ErrorCodes::THERE_IS_NO_SESSION);
+	return *session_context;
+}
 
 Context & Context::getSessionContext()
 {
@@ -716,6 +757,12 @@ Context & Context::getSessionContext()
 	return *session_context;
 }
 
+const Context & Context::getGlobalContext() const
+{
+	if (!global_context)
+		throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
+	return *global_context;
+}
 
 Context & Context::getGlobalContext()
 {
@@ -984,7 +1031,8 @@ QueryLog & Context::getQueryLog()
 		size_t flush_interval_milliseconds = parse<size_t>(
 			config.getString("query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS_STR));
 
-		shared->query_log = std::make_unique<QueryLog>(*global_context, database, table, flush_interval_milliseconds);
+		shared->query_log = std::make_unique<QueryLog>(
+			*global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
 	}
 
 	return *shared->query_log;
@@ -1047,5 +1095,18 @@ void Context::shutdown()
 {
 	shared->shutdown();
 }
+
+
+Context::ApplicationType Context::getApplicationType() const
+{
+	return shared->application_type;
+}
+
+void Context::setApplicationType(ApplicationType type)
+{
+	/// Lock isn't required, you should set it at start
+	shared->application_type = type;
+}
+
 
 }

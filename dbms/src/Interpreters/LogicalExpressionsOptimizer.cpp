@@ -5,6 +5,8 @@
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTLiteral.h>
 
+#include <DB/Common/typeid_cast.h>
+
 #include <deque>
 
 

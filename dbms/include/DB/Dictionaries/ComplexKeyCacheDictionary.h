@@ -161,8 +161,8 @@ private:
 		using time_point_rep_t = time_point_t::rep;
 		using time_point_urep_t = std::make_unsigned_t<time_point_rep_t>;
 
-		static constexpr std::uint64_t EXPIRES_AT_MASK = std::numeric_limits<time_point_rep_t>::max();
-		static constexpr std::uint64_t IS_DEFAULT_MASK = ~EXPIRES_AT_MASK;
+		static constexpr UInt64 EXPIRES_AT_MASK = std::numeric_limits<time_point_rep_t>::max();
+		static constexpr UInt64 IS_DEFAULT_MASK = ~EXPIRES_AT_MASK;
 
 		StringRef key;
 		decltype(StringRefHash{}(key)) hash;
@@ -221,7 +221,7 @@ private:
 		const std::vector<std::size_t> & in_requested_rows, PresentKeyHandler && on_cell_updated,
 		AbsentKeyHandler && on_key_not_found) const;
 
-	std::uint64_t getCellIdx(const StringRef key) const;
+	UInt64 getCellIdx(const StringRef key) const;
 
 	void setDefaultAttributeValue(Attribute & attribute, const std::size_t idx) const;
 
@@ -251,7 +251,7 @@ private:
 
 	mutable Poco::RWLock rw_lock;
 	const std::size_t size;
-	const std::uint64_t zero_cell_idx{getCellIdx(StringRef{})};
+	const UInt64 zero_cell_idx{getCellIdx(StringRef{})};
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	mutable std::vector<Attribute> attributes;
 	mutable std::vector<CellMetadata> cells{size};

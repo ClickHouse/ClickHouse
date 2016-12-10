@@ -16,9 +16,17 @@ namespace ErrorCodes
 	extern const int LOGICAL_ERROR;
 }
 
+class IDataTypeEnum : public IDataType
+{
+public:
+
+	virtual Field castToName(const Field & value_or_name) const = 0;
+
+	virtual Field castToValue(const Field & value_or_name) const = 0;
+};
 
 template <typename Type>
-class DataTypeEnum final : public IDataType
+class DataTypeEnum final : public IDataTypeEnum
 {
 public:
 	using FieldType = Type;
@@ -69,6 +77,10 @@ public:
 
 		return it->second;
 	}
+
+	Field castToName(const Field & value_or_name) const override;
+
+	Field castToValue(const Field & value_or_name) const override;
 
 	DataTypePtr clone() const override;
 

@@ -4,34 +4,52 @@
 namespace DB
 {
 
-void registerFunctionsArray(FunctionFactory & factory)
+
+String FunctionArray::getName() const
 {
-	factory.registerFunction<FunctionArray>();
-	factory.registerFunction<FunctionArrayElement>();
-	factory.registerFunction<FunctionHas>();
-	factory.registerFunction<FunctionIndexOf>();
-	factory.registerFunction<FunctionCountEqual>();
-	factory.registerFunction<FunctionArrayEnumerate>();
-	factory.registerFunction<FunctionArrayEnumerateUniq>();
-	factory.registerFunction<FunctionArrayUniq>();
-	factory.registerFunction<FunctionEmptyArrayUInt8>();
-	factory.registerFunction<FunctionEmptyArrayUInt16>();
-	factory.registerFunction<FunctionEmptyArrayUInt32>();
-	factory.registerFunction<FunctionEmptyArrayUInt64>();
-	factory.registerFunction<FunctionEmptyArrayInt8>();
-	factory.registerFunction<FunctionEmptyArrayInt16>();
-	factory.registerFunction<FunctionEmptyArrayInt32>();
-	factory.registerFunction<FunctionEmptyArrayInt64>();
-	factory.registerFunction<FunctionEmptyArrayFloat32>();
-	factory.registerFunction<FunctionEmptyArrayFloat64>();
-	factory.registerFunction<FunctionEmptyArrayDate>();
-	factory.registerFunction<FunctionEmptyArrayDateTime>();
-	factory.registerFunction<FunctionEmptyArrayString>();
-	factory.registerFunction<FunctionEmptyArrayToSingle>();
-	factory.registerFunction<FunctionRange>();
-	factory.registerFunction<FunctionArrayReduce>();
-	factory.registerFunction<FunctionArrayReverse>();
+	return name;
 }
+
+String FunctionArrayElement::getName() const
+{
+	return name;
+}
+
+String FunctionArrayEnumerate::getName() const
+{
+	return name;
+}
+
+String FunctionArrayUniq::getName() const
+{
+	return name;
+}
+
+String FunctionArrayEnumerateUniq::getName() const
+{
+	return name;
+}
+
+String FunctionRange::getName() const
+{
+	return name;
+}
+
+String FunctionEmptyArrayToSingle::getName() const
+{
+	return name;
+}
+
+String FunctionArrayReverse::getName() const
+{
+	return name;
+}
+
+String FunctionArrayReduce::getName() const
+{
+	return name;
+}
+
 
 /// Implementation of FunctionArray.
 
@@ -47,7 +65,7 @@ FunctionArray::FunctionArray(const Context & context)
 
 String FunctionArray::getName() const
 {
-	return is_case_mode ? "CASE" : name;
+	return name;
 }
 
 namespace
@@ -167,12 +185,8 @@ bool FunctionArray::addField(DataTypePtr type_res, const Field & f, Array & arr)
 		return true;
 	else
 	{
-		if (is_case_mode)
-			throw Exception{"Illegal type encountered while processing the CASE construction.",
-				ErrorCodes::LOGICAL_ERROR};
-		else
-			throw Exception{"Illegal result type " + type_res->getName() + " of function " + getName(),
-							ErrorCodes::LOGICAL_ERROR};
+		throw Exception{"Illegal result type " + type_res->getName() + " of function " + getName(),
+			ErrorCodes::LOGICAL_ERROR};
 	}
 }
 
@@ -197,52 +211,26 @@ DataTypeTraits::EnrichedDataTypePtr FunctionArray::getLeastCommonType(const Data
 	catch (const Conditional::CondException & ex)
 	{
 		/// Translate a context-free error into a contextual error.
-		if (is_case_mode)
-		{
-			if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE)
-				throw Exception{"Illegal type of column " + ex.getMsg1() +
-					" in CASE construction", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			else if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_UPSCALING_ERROR)
-				throw Exception{"THEN/ELSE clause parameters in CASE construction are not upscalable to a "
-					"common type without loss of precision: " + ex.getMsg1(),
-					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			else
-				throw Exception{"An unexpected error has occurred in CASE expression",
-					ErrorCodes::LOGICAL_ERROR};
-		}
+		if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE)
+			throw Exception{"Illegal type of column " + ex.getMsg1() +
+				" in array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+		else if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_UPSCALING_ERROR)
+			throw Exception("Arguments of function " + getName() + " are not upscalable "
+				"to a common type without loss of precision.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		else
-		{
-			if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE)
-				throw Exception{"Illegal type of column " + ex.getMsg1() +
-					" in array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			else if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_UPSCALING_ERROR)
-				throw Exception("Arguments of function " + getName() + " are not upscalable "
-					"to a common type without loss of precision.",
-					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-			else
-				throw Exception{"An unexpected error has occurred in function " + getName(),
-					ErrorCodes::LOGICAL_ERROR};
-		}
+			throw Exception{"An unexpected error has occurred in function " + getName(),
+				ErrorCodes::LOGICAL_ERROR};
 	}
 
 	return result_type;
 }
 
-void FunctionArray::setCaseMode()
-{
-	is_case_mode = true;
-}
 
 DataTypePtr FunctionArray::getReturnTypeImpl(const DataTypes & arguments) const
 {
 	if (arguments.empty())
-	{
-		if (is_case_mode)
-			throw Exception{"Either WHEN clauses or THEN clauses are missing "
-				"in the CASE construction.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-		else
-			throw Exception{"Function array requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-	}
+		throw Exception{"Function array requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 	if (foundNumericType(arguments))
 	{
@@ -256,14 +244,7 @@ DataTypePtr FunctionArray::getReturnTypeImpl(const DataTypes & arguments) const
 	{
 		/// Otherwise all the arguments must have the same type up to nullability or nullity.
 		if (!hasArrayIdenticalTypes(arguments))
-		{
-			if (is_case_mode)
-				throw Exception{"Found type discrepancy in either WHEN "
-					"clauses or THEN clauses of the CASE construction",
-					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			else
-				throw Exception{"Arguments for function array must have same type or behave as number.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-		}
+			throw Exception{"Arguments for function array must have same type or behave as number.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
 		return std::make_shared<DataTypeArray>(getArrayElementType(arguments));
 	}
@@ -1272,7 +1253,8 @@ DataTypePtr FunctionArrayEnumerate::getReturnTypeImpl(const DataTypes & argument
 
 	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
 	if (!array_type)
-		throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		throw Exception("First argument for function " + getName() + " must be an array but it has type "
+			+ arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 	return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
 }
@@ -1341,8 +1323,8 @@ DataTypePtr FunctionArrayUniq::getReturnTypeImpl(const DataTypes & arguments) co
 	{
 		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
 		if (!array_type)
-			throw Exception("All arguments for function " + getName() + " must be arrays; argument " + toString(i + 1) + " isn't.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception("All arguments for function " + getName() + " must be arrays but argument " +
+				toString(i + 1) + " has type " + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
 	return std::make_shared<DataTypeUInt32>();
@@ -1667,8 +1649,8 @@ DataTypePtr FunctionArrayEnumerateUniq::getReturnTypeImpl(const DataTypes & argu
 	{
 		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
 		if (!array_type)
-			throw Exception("All arguments for function " + getName() + " must be arrays; argument " + toString(i + 1) + " isn't.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception("All arguments for function " + getName() + " must be arrays but argument " +
+				toString(i + 1) + " has type " + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
 	return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
@@ -1757,6 +1739,7 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
 			executeHashed(*offsets, original_data_columns, res_values);
 	}
 }
+
 
 template <typename T>
 bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values)
@@ -2726,8 +2709,8 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
 	{
 		const DataTypeArray * arg = typeid_cast<const DataTypeArray *>(arguments[i].type.get());
 		if (!arg)
-			throw Exception("Argument " + toString(i) + " for function " + getName() + " must be array.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception("Argument " + toString(i) + " for function " + getName() + " must be an array but it has type "
+				+ arguments[i].type->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		argument_types[i - 1] = arg->getNestedType()->clone();
 	}
@@ -2797,6 +2780,8 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
 	out_return_type = aggregate_function->getReturnType();
 }
 
+
+
 void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
 	IAggregateFunction & agg_func = *aggregate_function.get();
@@ -2858,6 +2843,36 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 		agg_func.destroy(place);
 		current_offset = next_offset;
 	}
+}
+
+
+void registerFunctionsArray(FunctionFactory & factory)
+{
+	factory.registerFunction<FunctionArray>();
+	factory.registerFunction<FunctionArrayElement>();
+	factory.registerFunction<FunctionHas>();
+	factory.registerFunction<FunctionIndexOf>();
+	factory.registerFunction<FunctionCountEqual>();
+	factory.registerFunction<FunctionArrayEnumerate>();
+	factory.registerFunction<FunctionArrayEnumerateUniq>();
+	factory.registerFunction<FunctionArrayUniq>();
+	factory.registerFunction<FunctionEmptyArrayUInt8>();
+	factory.registerFunction<FunctionEmptyArrayUInt16>();
+	factory.registerFunction<FunctionEmptyArrayUInt32>();
+	factory.registerFunction<FunctionEmptyArrayUInt64>();
+	factory.registerFunction<FunctionEmptyArrayInt8>();
+	factory.registerFunction<FunctionEmptyArrayInt16>();
+	factory.registerFunction<FunctionEmptyArrayInt32>();
+	factory.registerFunction<FunctionEmptyArrayInt64>();
+	factory.registerFunction<FunctionEmptyArrayFloat32>();
+	factory.registerFunction<FunctionEmptyArrayFloat64>();
+	factory.registerFunction<FunctionEmptyArrayDate>();
+	factory.registerFunction<FunctionEmptyArrayDateTime>();
+	factory.registerFunction<FunctionEmptyArrayString>();
+	factory.registerFunction<FunctionEmptyArrayToSingle>();
+	factory.registerFunction<FunctionRange>();
+	factory.registerFunction<FunctionArrayReduce>();
+	factory.registerFunction<FunctionArrayReverse>();
 }
 
 }

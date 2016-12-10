@@ -4,6 +4,7 @@
 #include <DB/Functions/IFunction.h>
 #include <ext/range.hpp>
 #include <math.h>
+#include <array>
 
 #define DEGREES_IN_RADIANS (M_PI / 180.0)
 

@@ -102,7 +102,7 @@ public:
 	  * Это возьмет дополнительный лок, не позволяющий начать ALTER MODIFY.
 	  *
 	  * WARNING: Вызывать методы из ITableDeclaration нужно под такой блокировкой. Без нее они не thread safe.
-	  * WARNING: Чтобы не было дедлоков, нельзя вызывать это метод при захваченном мьютексе в Context.
+	  * WARNING: To avoid deadlocks, this method must not be called under lock of Context.
 	  */
 	TableStructureReadLockPtr lockStructure(bool will_modify_data)
 	{

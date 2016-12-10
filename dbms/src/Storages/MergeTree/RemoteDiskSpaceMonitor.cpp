@@ -54,7 +54,7 @@ size_t Client::getFreeSpace(const InterserverIOEndpointLocation & location) cons
 		{"compress", "false"}
 	};
 
-	ReadBufferFromHTTP in{location.host, location.port, params};
+	ReadBufferFromHTTP in{location.host, location.port, "", params};
 
 	size_t free_disk_space;
 	readBinary(free_disk_space, in);

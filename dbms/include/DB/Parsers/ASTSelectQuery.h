@@ -2,9 +2,8 @@
 
 #include <DB/Parsers/IAST.h>
 #include <DB/Parsers/ASTQueryWithOutput.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTAsterisk.h>
+#include <DB/Core/Names.h>
+
 
 namespace DB
 {
@@ -33,7 +32,7 @@ public:
 	void renameColumns(const ASTSelectQuery & source);
 
 	/// Переписывает select_expression_list, чтобы вернуть только необходимые столбцы в правильном порядке.
-	void rewriteSelectExpressionList(const Names & column_names);
+	void rewriteSelectExpressionList(const Names & required_column_names);
 
 	bool isUnionAllHead() const { return (prev_union_all == nullptr) && next_union_all != nullptr; }
 

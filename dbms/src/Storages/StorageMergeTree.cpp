@@ -47,7 +47,7 @@ StorageMergeTree::StorageMergeTree(
 		 context_, primary_expr_ast_, date_column_name_,
 		 sampling_expression_, index_granularity_, merging_params_,
 		 settings_, database_name_ + "." + table_name, false),
-	reader(data), writer(data), merger(data),
+	reader(data), writer(data), merger(data, context.getBackgroundPool()),
 	increment(0),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
@@ -97,7 +97,7 @@ StoragePtr StorageMergeTree::create(
 		context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_, merging_params_, has_force_restore_data_flag_, settings_
 	);
-	res->merge_task_handle = res->background_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res.get(), std::placeholders::_1));
+	res->merge_task_handle = res->background_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res.get()));
 
 	return res;
 }
@@ -293,13 +293,15 @@ struct CurrentlyMergingPartsTagger
 bool StorageMergeTree::merge(
 	size_t aio_threshold,
 	bool aggressive,
-	BackgroundProcessingPool::Context * pool_context,
 	const String & partition,
 	bool final)
 {
-	/// Удаляем старые куски.
-	data.clearOldParts();
-	data.clearOldTemporaryDirectories();	/// TODO Делать это реже.
+	/// Clear old parts. It does not matter to do it more frequently than each second.
+	if (auto lock = time_after_previous_cleanup.lockTestAndRestartAfter(1))
+	{
+		data.clearOldParts();
+		data.clearOldTemporaryDirectories();
+	}
 
 	auto structure_lock = lockStructure(true);
 
@@ -319,17 +321,11 @@ bool StorageMergeTree::merge(
 			return !currently_merging.count(left) && !currently_merging.count(right);
 		};
 
-		/// Если слияние запущено из пула потоков, и хотя бы половина потоков сливает большие куски,
-		///  не будем сливать большие куски.
-		size_t big_merges = background_pool.getCounter("big merges");
-		bool only_small = pool_context && big_merges * 2 >= background_pool.getNumberOfThreads();
-
 		bool selected = false;
 
 		if (partition.empty())
 		{
-			selected = merger.selectPartsToMerge(parts, merged_name, disk_space, false, aggressive, only_small, can_merge)
-				|| merger.selectPartsToMerge(parts, merged_name, disk_space,  true, aggressive, only_small, can_merge);
+			selected = merger.selectPartsToMerge(parts, merged_name, aggressive, merger.getMaxPartsSizeForMerge(), can_merge);
 		}
 		else
 		{
@@ -341,19 +337,6 @@ bool StorageMergeTree::merge(
 			return false;
 
 		merging_tagger.emplace(parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(parts), *this);
-
-		/// Если собираемся сливать большие куски, увеличим счетчик потоков, сливающих большие куски.
-		if (pool_context)
-		{
-			for (const auto & part : parts)
-			{
-				if (part->size_in_bytes > data.settings.max_bytes_to_merge_parts_small)
-				{
-					pool_context->incrementCounter("big merges");
-					break;
-				}
-			}
-		}
 	}
 
 	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
@@ -366,7 +349,7 @@ bool StorageMergeTree::merge(
 	return true;
 }
 
-bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & background_processing_pool_context)
+bool StorageMergeTree::mergeTask()
 {
 	if (shutdown_called)
 		return false;
@@ -374,7 +357,7 @@ bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & background_
 	try
 	{
 		size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
-		return merge(aio_threshold, false, &background_processing_pool_context, {}, {});
+		return merge(aio_threshold, false, {}, {});
 	}
 	catch (Exception & e)
 	{

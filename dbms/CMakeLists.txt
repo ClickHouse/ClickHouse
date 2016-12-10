@@ -1,22 +1,37 @@
-include_directories(include)
-include_directories(/usr/include/mysql)
+include_directories (include)
+include_directories (/usr/include/mysql)
 
 add_subdirectory (src)
 
-set (DISABLE_MONGODB FALSE CACHE BOOL "Set to TRUE to disable MongoDB support as source for external dictionaries")
+if (ENABLE_MONGODB)
+	set (LINK_MONGOCLIENT libmongoclient.a ${OPENSSL_LIBRARIES} ${Boost_THREAD_LIBRARY})
+	set (MONGODB_FILES
+		include/DB/Dictionaries/MongoDBBlockInputStream.h
+		include/DB/Dictionaries/MongoDBDictionarySource.h
+		src/Dictionaries/MongoDBDictionarySource.cpp
+		src/Dictionaries/MongoDBBlockInputStream.cpp)
+	add_definitions(-D ENABLE_MONGODB)
+endif ()
 
-if ($ENV{DISABLE_MONGODB})
-	set (DISABLE_MONGODB TRUE)
-endif()
+if (NOT ENABLE_LIBTCMALLOC)
+	add_definitions(-D NO_TCMALLOC)
+endif ()
 
-if (DISABLE_MONGODB)
-	add_definitions(-D DISABLE_MONGODB)
+if (APPLE)
+	set (AIO_CPP_FILES "")
+	set (AIO_H_FILES "")
+	set (APPLE_ICONV_LIB iconv)
 else()
-	set (LINK_MONGOCLIENT libmongoclient.a libssl.a libcrypto.a libboost_thread.a)
+	set (AIO_H_FILES include/DB/Common/AIO.h
+		include/DB/IO/WriteBufferAIO.h
+		include/DB/IO/ReadBufferAIO.h)
+	set (AIO_CPP_FILES
+		src/IO/ReadBufferAIO.cpp
+		src/IO/WriteBufferAIO.cpp)
+	set (APPLE_ICONV_LIB "")
 endif()
 
-
-add_library(string_utils
+add_library (string_utils
 	include/DB/Common/StringUtils.h
 	src/Common/StringUtils.cpp)
 
@@ -276,6 +291,7 @@ add_library (dbms
 	include/DB/DataStreams/SquashingBlockOutputStream.h
 	include/DB/DataStreams/NullableAdapterBlockInputStream.h
 	include/DB/DataTypes/NullSymbol.h
+	include/DB/DataStreams/ColumnGathererStream.h
 	include/DB/DataTypes/IDataType.h
 	include/DB/DataTypes/IDataTypeDummy.h
 	include/DB/DataTypes/DataTypeSet.h
@@ -304,19 +320,18 @@ add_library (dbms
 	include/DB/Dictionaries/IDictionary.h
 	include/DB/Dictionaries/MySQLBlockInputStream.h
 	include/DB/Dictionaries/MySQLDictionarySource.h
-	include/DB/Dictionaries/MongoDBBlockInputStream.h
-	include/DB/Dictionaries/MongoDBDictionarySource.h
 	include/DB/Dictionaries/ODBCBlockInputStream.h
 	include/DB/Dictionaries/ODBCDictionarySource.h
-	include/DB/Dictionaries/TypeCheckingBlockInputStream.h
 	include/DB/Dictionaries/HashedDictionary.h
 	include/DB/Dictionaries/FlatDictionary.h
 	include/DB/Dictionaries/ComplexKeyHashedDictionary.h
 	include/DB/Dictionaries/ComplexKeyCacheDictionary.h
 	include/DB/Dictionaries/IDictionarySource.h
-	include/DB/Dictionaries/OwningBufferBlockInputStream.h
+	include/DB/Dictionaries/OwningBlockInputStream.h
 	include/DB/Dictionaries/CacheDictionary.h
 	include/DB/Dictionaries/MySQLDictionarySource.h
+	include/DB/Dictionaries/ExecutableDictionarySource.h
+	include/DB/Dictionaries/HTTPDictionarySource.h
 	include/DB/Dictionaries/RangeHashedDictionary.h
 	include/DB/Dictionaries/writeParenthesisedString.h
 	include/DB/Dictionaries/Embedded/RegionsHierarchy.h
@@ -371,13 +386,16 @@ add_library (dbms
 	include/DB/Interpreters/ExpressionAnalyzer.h
 	include/DB/Interpreters/InterpreterSelectQuery.h
 	include/DB/Interpreters/QueryPriorities.h
+	include/DB/Interpreters/SystemLog.h
 	include/DB/Interpreters/QueryLog.h
+	include/DB/Interpreters/ClientInfo.h
 	include/DB/Interpreters/getClusterName.h
 	include/DB/Interpreters/ClusterProxy/IQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/SelectQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/DescribeQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/AlterQueryConstructor.h
 	include/DB/Interpreters/ClusterProxy/Query.h
+	include/DB/Interpreters/AsynchronousMetrics.h
 	include/DB/Common/Allocator.h
 	include/DB/Common/CombinedCardinalityEstimator.h
 	include/DB/Common/ExternalTable.h
@@ -422,7 +440,6 @@ add_library (dbms
 	include/DB/Common/StringSearcher.h
 	include/DB/Common/SimpleCache.h
 	include/DB/Common/Stopwatch.h
-	include/DB/Common/AIO.h
 	include/DB/Common/CounterInFile.h
 	include/DB/Common/HyperLogLogCounter.h
 	include/DB/Common/Increment.h
@@ -454,34 +471,30 @@ add_library (dbms
 	include/DB/IO/BufferWithOwnMemory.h
 	include/DB/IO/WriteHelpers.h
 	include/DB/IO/ConcatReadBuffer.h
-	include/DB/IO/createWriteBufferFromFileBase.h
 	include/DB/IO/WriteBufferFromOStream.h
 	include/DB/IO/ReadBuffer.h
 	include/DB/IO/WriteBufferFromVector.h
-	include/DB/IO/ReadBufferFromFileBase.h
 	include/DB/IO/ReadBufferFromPocoSocket.h
 	include/DB/IO/RemoteReadBuffer.h
 	include/DB/IO/HashingWriteBuffer.h
 	include/DB/IO/ReadBufferFromString.h
 	include/DB/IO/CompressedReadBufferBase.h
-	include/DB/IO/WriteBufferAIO.h
 	include/DB/IO/HashingReadBuffer.h
 	include/DB/IO/Operators.h
 	include/DB/IO/WriteBufferFromFile.h
 	include/DB/IO/RemoteWriteBuffer.h
 	include/DB/IO/VarInt.h
 	include/DB/IO/copyData.h
-	include/DB/IO/ChunkedReadBuffer.h
 	include/DB/IO/LimitReadBuffer.h
 	include/DB/IO/HexWriteBuffer.h
 	include/DB/IO/CachedCompressedReadBuffer.h
 	include/DB/IO/BufferBase.h
 	include/DB/IO/AsynchronousWriteBuffer.h
-	include/DB/IO/ReadBufferAIO.h
+	${AIO_H_FILES}
 	include/DB/IO/ReadHelpers.h
-	include/DB/IO/ChunkedWriteBuffer.h
 	include/DB/IO/WriteBufferFromPocoSocket.h
 	include/DB/IO/ReadBufferFromHTTP.h
+	include/DB/IO/ReadWriteBufferFromHTTP.h
 	include/DB/IO/WriteBufferFromHTTPServerResponse.h
 	include/DB/IO/createReadBufferFromFileBase.h
 	include/DB/IO/WriteIntText.h
@@ -526,6 +539,7 @@ add_library (dbms
 	include/DB/Storages/AlterCommands.h
 	include/DB/Storages/System/StorageSystemFunctions.h
 	include/DB/Storages/StorageLog.h
+	include/DB/Storages/StorageFile.h
 	include/DB/Storages/IStorage.h
 	include/DB/Storages/ColumnsDescription.h
 	include/DB/Storages/System/StorageSystemMerges.h
@@ -549,6 +563,7 @@ add_library (dbms
 	include/DB/Storages/StorageStripeLog.h
 	include/DB/Storages/System/StorageSystemEvents.h
 	include/DB/Storages/System/StorageSystemMetrics.h
+	include/DB/Storages/System/StorageSystemAsynchronousMetrics.h
 	include/DB/Storages/System/StorageSystemTables.h
 	include/DB/Storages/MergeTree/MarkRange.h
 	include/DB/Storages/MergeTree/MergeTreeDataMerger.h
@@ -589,9 +604,14 @@ add_library (dbms
 	include/DB/Storages/MergeTree/ShardedPartitionUploader.h
 	include/DB/Storages/MergeTree/RemoteQueryExecutor.h
 	include/DB/Storages/MergeTree/RemotePartChecker.h
+	include/DB/Storages/MergeTree/MergeSelector.h
+	include/DB/Storages/MergeTree/SimpleMergeSelector.h
+	include/DB/Storages/MergeTree/LevelMergeSelector.h
+	include/DB/Storages/MergeTree/AllMergeSelector.h
 	include/DB/Storages/StorageNull.h
 	include/DB/Storages/System/StorageSystemSettings.h
 	include/DB/Databases/IDatabase.h
+	include/DB/Databases/DatabaseMemory.h
 	include/DB/Databases/DatabaseOrdinary.h
 	include/DB/Databases/DatabaseCloud.h
 	include/DB/Databases/DatabaseFactory.h
@@ -622,7 +642,17 @@ add_library (dbms
 	src/Core/BlockInfo.cpp
 	src/Core/NamesAndTypes.cpp
 	src/Core/ErrorCodes.cpp
+	src/Core/SortDescription.cpp
 
+	src/IO/CachedCompressedReadBuffer.cpp
+	src/IO/CompressedReadBuffer.cpp
+	src/IO/CompressedReadBufferBase.cpp
+	src/IO/CompressedReadBufferFromFile.cpp
+	src/IO/CompressedWriteBuffer.cpp
+	src/IO/ReadBufferFromFile.cpp
+	src/IO/ReadBufferFromFileDescriptor.cpp
+	src/IO/WriteBufferFromFile.cpp
+	src/IO/WriteBufferFromFileDescriptor.cpp
 	src/IO/ReadHelpers.cpp
 	src/IO/WriteHelpers.cpp
 	src/IO/WriteBufferValidUTF8.cpp
@@ -630,14 +660,15 @@ add_library (dbms
 	src/IO/ReadBufferFromPocoSocket.cpp
 	src/IO/WriteBufferFromPocoSocket.cpp
 	src/IO/HashingWriteBuffer.cpp
-	src/IO/ReadBufferAIO.cpp
-	src/IO/WriteBufferAIO.cpp
-	src/IO/createReadBufferFromFileBase.cpp
-	src/IO/createWriteBufferFromFileBase.cpp
 	src/IO/ReadBufferFromFileBase.cpp
 	src/IO/WriteBufferFromFileBase.cpp
+	${AIO_CPP_FILES}
+	src/IO/createReadBufferFromFileBase.cpp
+	src/IO/createWriteBufferFromFileBase.cpp
+
 	src/IO/InterserverWriteBuffer.cpp
 	src/IO/ReadBufferFromHTTP.cpp
+	src/IO/ReadWriteBufferFromHTTP.cpp
 
 	src/Columns/ColumnConst.cpp
 	src/Columns/ColumnArray.cpp
@@ -645,6 +676,7 @@ add_library (dbms
 	src/Columns/ColumnExpression.cpp
 	src/Columns/ColumnNullable.cpp
 	src/Columns/ColumnsCommon.cpp
+	src/Columns/ColumnString.cpp
 
 	src/Storages/StorageMaterializedView.cpp
 	src/Storages/StorageView.cpp
@@ -656,6 +688,7 @@ add_library (dbms
 	src/Storages/System/StorageSystemProcesses.cpp
 	src/Storages/System/StorageSystemEvents.cpp
 	src/Storages/System/StorageSystemMetrics.cpp
+	src/Storages/System/StorageSystemAsynchronousMetrics.cpp
 	src/Storages/System/StorageSystemMerges.cpp
 	src/Storages/System/StorageSystemSettings.cpp
 	src/Storages/System/StorageSystemZooKeeper.cpp
@@ -668,6 +701,7 @@ add_library (dbms
 	src/Storages/StorageLog.cpp
 	src/Storages/StorageTinyLog.cpp
 	src/Storages/StorageStripeLog.cpp
+	src/Storages/StorageFile.cpp
 	src/Storages/StorageMemory.cpp
 	src/Storages/StorageBuffer.cpp
 	src/Storages/StorageFactory.cpp
@@ -706,6 +740,13 @@ add_library (dbms
 	src/Storages/MergeTree/RemoteQueryExecutor.cpp
 	src/Storages/MergeTree/RemotePartChecker.cpp
 	src/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.cpp
+	src/Storages/MergeTree/SimpleMergeSelector.cpp
+	src/Storages/MergeTree/LevelMergeSelector.cpp
+	src/Storages/MergeTree/AllMergeSelector.cpp
+	src/Storages/MergeTree/MergeTreeReader.cpp
+	src/Storages/MergeTree/MergeTreeReadPool.cpp
+	src/Storages/MergeTree/MergeTreeBlockInputStream.cpp
+	src/Storages/MergeTree/MergeTreeThreadBlockInputStream.cpp
 	src/Storages/ITableDeclaration.cpp
 	src/Storages/AlterCommands.cpp
 	src/Storages/ColumnsDescription.cpp
@@ -770,6 +811,7 @@ add_library (dbms
 	src/DataStreams/SquashingBlockOutputStream.cpp
 	src/DataStreams/MaterializingBlockInputStream.cpp
 	src/DataStreams/NullableAdapterBlockInputStream.cpp
+	src/DataStreams/ColumnGathererStream.cpp
 
 	src/DataTypes/DataTypeString.cpp
 	src/DataTypes/DataTypeFixedString.cpp
@@ -784,8 +826,17 @@ add_library (dbms
 	src/DataTypes/NullSymbol.cpp
 	src/DataTypes/FieldToDataType.cpp
 
+	src/Dictionaries/DictionarySourceFactory.cpp
+	src/Dictionaries/FileDictionarySource.cpp
 	src/Dictionaries/MySQLDictionarySource.cpp
 	src/Dictionaries/ODBCDictionarySource.cpp
+	src/Dictionaries/ClickHouseDictionarySource.cpp
+	src/Dictionaries/ExecutableDictionarySource.cpp
+	src/Dictionaries/HTTPDictionarySource.cpp
+	src/Dictionaries/MySQLBlockInputStream.cpp
+	src/Dictionaries/ODBCBlockInputStream.cpp
+	src/Dictionaries/ExternalQueryBuilder.cpp
+	src/Dictionaries/ExternalResultDescription.cpp
 	src/Dictionaries/writeParenthesisedString.cpp
 	src/Dictionaries/DictionaryStructure.cpp
 	src/Dictionaries/FlatDictionary.cpp
@@ -796,13 +847,16 @@ add_library (dbms
 	src/Dictionaries/ComplexKeyCacheDictionary.cpp
 
 	src/Parsers/ASTSelectQuery.cpp
+	src/Parsers/ASTInsertQuery.cpp
 	src/Parsers/ASTAlterQuery.cpp
+	src/Parsers/ASTOrderByElement.cpp
 	src/Parsers/ASTLiteral.cpp
 	src/Parsers/ASTFunction.cpp
 	src/Parsers/ASTWithAlias.cpp
 	src/Parsers/ASTIdentifier.cpp
 	src/Parsers/ASTSampleRatio.cpp
 	src/Parsers/ASTTablesInSelectQuery.cpp
+	src/Parsers/CommonParsers.cpp
 	src/Parsers/IAST.cpp
 	src/Parsers/IParserBase.cpp
 	src/Parsers/ExpressionElementParsers.cpp
@@ -863,11 +917,13 @@ add_library (dbms
 	src/Interpreters/DictionaryFactory.cpp
 	src/Interpreters/ProcessList.cpp
 	src/Interpreters/QueryLog.cpp
+	src/Interpreters/ClientInfo.cpp
 	src/Interpreters/getClusterName.cpp
 	src/Interpreters/ClusterProxy/SelectQueryConstructor.cpp
 	src/Interpreters/ClusterProxy/DescribeQueryConstructor.cpp
 	src/Interpreters/ClusterProxy/AlterQueryConstructor.cpp
 	src/Interpreters/ClusterProxy/Query.cpp
+	src/Interpreters/AsynchronousMetrics.cpp
 
 	src/Functions/DataTypeTraits.cpp
 	src/Functions/IFunction.cpp
@@ -931,54 +987,56 @@ add_library (dbms
 	src/AggregateFunctions/AggregateFunctionUniqUpTo.cpp
 	src/AggregateFunctions/AggregateFunctionDebug.cpp
 
+	src/Databases/DatabaseMemory.cpp
 	src/Databases/DatabaseOrdinary.cpp
 	src/Databases/DatabaseFactory.cpp
 	src/Databases/DatabasesCommon.cpp
 
 	src/Client/Connection.cpp
 	src/Client/MultiplexedConnections.cpp
+
+	${MONGODB_FILES}
 )
 
 if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-    # Не генерируем отладочную информацию для файлов с большим количеством инстанцирований шаблонов
-    # - для более быстрой линковки и меньшего размера бинарника.
-    SET_SOURCE_FILES_PROPERTIES(
-        src/Functions/FunctionsArithmetic.cpp
-        src/Functions/FunctionsArray.cpp
-        src/Functions/FunctionsCoding.cpp
-        src/Functions/FunctionsComparison.cpp
-        src/Functions/FunctionsConditional.cpp
-        src/Functions/FunctionsConversion.cpp
-        src/Functions/FunctionsDateTime.cpp
-        src/Functions/FunctionsDictionaries.cpp
-        src/Functions/FunctionsFormatting.cpp
-        src/Functions/FunctionsHashing.cpp
-        src/Functions/FunctionsHigherOrder.cpp
-        src/Functions/FunctionsLogical.cpp
-        src/Functions/FunctionsRandom.cpp
-        src/Functions/FunctionsReinterpret.cpp
-        src/Functions/FunctionsRound.cpp
-        src/Functions/FunctionsString.cpp
-        src/Functions/FunctionsStringArray.cpp
-        src/Functions/FunctionsStringSearch.cpp
-        src/Functions/FunctionsURL.cpp
-        src/Functions/FunctionsVisitParam.cpp
-        src/Functions/FunctionsMath.cpp
-        src/Functions/FunctionsGeo.cpp
-        src/Functions/FunctionsMiscellaneous.cpp
-        src/Functions/FunctionsTransform.cpp
-        src/Dictionaries/FlatDictionary.cpp
-        src/Dictionaries/HashedDictionary.cpp
-        src/Dictionaries/CacheDictionary.cpp
-        src/Dictionaries/RangeHashedDictionary.cpp
-        src/Dictionaries/ComplexKeyHashedDictionary.cpp
-        src/Dictionaries/ComplexKeyCacheDictionary.cpp
-        PROPERTIES COMPILE_FLAGS -g0)
-endif()
+	# Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
+	set_source_files_properties(
+		src/Functions/FunctionsArithmetic.cpp
+		src/Functions/FunctionsArray.cpp
+		src/Functions/FunctionsCoding.cpp
+		src/Functions/FunctionsComparison.cpp
+		src/Functions/FunctionsConditional.cpp
+		src/Functions/FunctionsConversion.cpp
+		src/Functions/FunctionsDateTime.cpp
+		src/Functions/FunctionsDictionaries.cpp
+		src/Functions/FunctionsFormatting.cpp
+		src/Functions/FunctionsHashing.cpp
+		src/Functions/FunctionsHigherOrder.cpp
+		src/Functions/FunctionsLogical.cpp
+		src/Functions/FunctionsRandom.cpp
+		src/Functions/FunctionsReinterpret.cpp
+		src/Functions/FunctionsRound.cpp
+		src/Functions/FunctionsString.cpp
+		src/Functions/FunctionsStringArray.cpp
+		src/Functions/FunctionsStringSearch.cpp
+		src/Functions/FunctionsURL.cpp
+		src/Functions/FunctionsVisitParam.cpp
+		src/Functions/FunctionsMath.cpp
+		src/Functions/FunctionsGeo.cpp
+		src/Functions/FunctionsMiscellaneous.cpp
+		src/Functions/FunctionsTransform.cpp
+		src/Dictionaries/FlatDictionary.cpp
+		src/Dictionaries/HashedDictionary.cpp
+		src/Dictionaries/CacheDictionary.cpp
+		src/Dictionaries/RangeHashedDictionary.cpp
+		src/Dictionaries/ComplexKeyHashedDictionary.cpp
+		src/Dictionaries/ComplexKeyCacheDictionary.cpp
+		PROPERTIES COMPILE_FLAGS -g0)
+endif ()
 
-IF (NOT AARCH64)
-	SET(LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
-ENDIF()
+if (NOT AARCH64)
+	set (LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
+endif ()
 
 target_link_libraries(dbms
 	common
@@ -990,13 +1048,14 @@ target_link_libraries(dbms
 	double-conversion
 	${LINK_LIBRARIES_ONLY_ON_X86_64}
 	re2 re2_st
-	libcrypto.a
-	libboost_system.a
+	${OPENSSL_CRYPTO_LIBRARY}
+	${Boost_SYSTEM_LIBRARY}
 	${LINK_MONGOCLIENT}
-	libboost_regex.a
+	${Boost_REGEX_LIBRARY}
 	PocoData
 	PocoDataODBC
-	dl libltdl.a)
+	${APPLE_ICONV_LIB}
+	dl ${LTDL_LIB})
 
 add_dependencies (dbms
 	common

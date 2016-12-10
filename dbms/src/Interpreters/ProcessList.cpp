@@ -11,8 +11,7 @@ namespace ErrorCodes
 
 
 ProcessList::EntryPtr ProcessList::insert(
-	const String & query_, const String & user_, const String & query_id_, const Poco::Net::IPAddress & ip_address_,
-	UInt16 port_, const Settings & settings)
+	const String & query_, const ClientInfo & client_info, const Settings & settings)
 {
 	EntryPtr res;
 
@@ -23,24 +22,34 @@ ProcessList::EntryPtr ProcessList::insert(
 			&& (!settings.queue_max_wait_ms.totalMilliseconds() || !have_space.tryWait(mutex, settings.queue_max_wait_ms.totalMilliseconds())))
 			throw Exception("Too much simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
+		/** Why we use current user?
+		  * Because initial one is passed by client and credentials for it is not verified,
+		  *  and using initial_user for limits will be insecure.
+		  *
+		  * Why we use current_query_id?
+		  * Because we want to allow distributed queries that will run multiple secondary queries on same server,
+		  *  like SELECT count() FROM remote('127.0.0.{1,2}', system.numbers)
+		  *  so they must have different query_ids.
+		  */
+
 		{
-			UserToQueries::iterator user_process_list = user_to_queries.find(user_);
+			UserToQueries::iterator user_process_list = user_to_queries.find(client_info.current_user);
 
 			if (user_process_list != user_to_queries.end())
 			{
 				if (settings.max_concurrent_queries_for_user && user_process_list->second.queries.size() >= settings.max_concurrent_queries_for_user)
-					throw Exception("Too much simultaneous queries for user " + user_
+					throw Exception("Too much simultaneous queries for user " + client_info.current_user
 						+ ". Current: " + toString(user_process_list->second.queries.size())
 						+ ", maximum: " + toString(settings.max_concurrent_queries_for_user),
 						ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
-				if (!query_id_.empty())
+				if (!client_info.current_query_id.empty())
 				{
-					ProcessListForUser::QueryToElement::iterator element = user_process_list->second.queries.find(query_id_);
+					ProcessListForUser::QueryToElement::iterator element = user_process_list->second.queries.find(client_info.current_query_id);
 					if (element != user_process_list->second.queries.end())
 					{
 						if (!settings.replace_running_query)
-							throw Exception("Query with id = " + query_id_ + " is already running.",
+							throw Exception("Query with id = " + client_info.current_query_id + " is already running.",
 								ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
 
 						element->second->is_cancelled = true;
@@ -54,14 +63,14 @@ ProcessList::EntryPtr ProcessList::insert(
 		++cur_size;
 
 		res = std::make_shared<Entry>(*this, cont.emplace(cont.end(),
-			query_, user_, query_id_, ip_address_, port_,
+			query_, client_info,
 			settings.limits.max_memory_usage, settings.memory_tracker_fault_probability,
 			priorities.insert(settings.priority)));
 
-		if (!query_id_.empty())
+		if (!client_info.current_query_id.empty())
 		{
-			ProcessListForUser & user_process_list = user_to_queries[user_];
-			user_process_list.queries[query_id_] = &res->get();
+			ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
+			user_process_list.queries[client_info.current_query_id] = &res->get();
 
 			if (current_memory_tracker)
 			{
@@ -88,8 +97,8 @@ ProcessListEntry::~ProcessListEntry()
 
 	/// Важен порядок удаления memory_tracker-ов.
 
-	String user = it->user;
-	String query_id = it->query_id;
+	String user = it->client_info.current_user;
+	String query_id = it->client_info.current_query_id;
 	bool is_cancelled = it->is_cancelled;
 
 	/// Здесь удаляется memory_tracker одного запроса.

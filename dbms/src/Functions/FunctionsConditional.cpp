@@ -102,7 +102,7 @@ FunctionPtr FunctionMultiIf::create(const Context & context)
 
 String FunctionMultiIf::getName() const
 {
-	return is_case_mode ? "CASE" : name;
+	return name;
 }
 
 bool FunctionMultiIf::hasSpecialSupportForNulls() const
@@ -110,25 +110,9 @@ bool FunctionMultiIf::hasSpecialSupportForNulls() const
 	return true;
 }
 
-void FunctionMultiIf::setCaseMode()
-{
-	is_case_mode = true;
-}
-
 DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
 {
-	DataTypePtr data_type;
-
-	try
-	{
-		data_type = getReturnTypeInternal(args);
-	}
-	catch (const Conditional::CondException & ex)
-	{
-		rethrowContextually(ex);
-	}
-
-	return data_type;
+	return getReturnTypeInternal(args);
 }
 
 void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
@@ -179,14 +163,8 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
 DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 {
 	if (!Conditional::hasValidArgCount(args))
-	{
-		if (is_case_mode)
-			throw Exception{"Some mandatory parameters are missing in the CASE "
-				"construction", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-		else
-			throw Exception{"Invalid number of arguments for function " + getName(),
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-	}
+		throw Exception{"Invalid number of arguments for function " + getName(),
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 	/// Check that conditions have valid types.
 	for (size_t i = Conditional::firstCond(); i < Conditional::elseArg(args); i = Conditional::nextCond(i))
@@ -201,15 +179,9 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 			observed_type = args[i].get();
 
 		if (!typeid_cast<const DataTypeUInt8 *>(observed_type) && !observed_type->isNull())
-		{
-			if (is_case_mode)
-				throw Exception{"In CASE construction, illegal type of WHEN clause "
-				+ toString(i / 2) + ". Must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			else
-				throw Exception{"Illegal type of argument " + toString(i) + " (condition) "
-					"of function " + getName() + ". Must be UInt8.",
-					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-		}
+			throw Exception{"Illegal type of argument " + toString(i) + " (condition) "
+				"of function " + getName() + ". Must be UInt8.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 	}
 
 	bool has_special_types = hasSpecialDataTypes(args);
@@ -275,16 +247,9 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 		if (Conditional::hasFixedStrings(args))
 		{
 			if (!Conditional::hasFixedStringsOfIdenticalLength(args))
-			{
-				if (is_case_mode)
-					throw Exception{"THEN/ELSE clauses in CASE construction "
-						"have FixedString type and different sizes",
-						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-				else
-					throw Exception{"Branch (then, else) arguments of function " + getName() +
-						" have FixedString type and different sizes",
-						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			}
+				throw Exception{"Branch (then, else) arguments of function " + getName() +
+					" have FixedString type and different sizes",
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
 			auto type = getReturnTypeFromFirstNonNullBranch(args, has_special_types);
 			if (type)
@@ -303,16 +268,9 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 			return type;
 		}
 		else
-		{
-			if (is_case_mode)
-				throw Exception{"THEN/ELSE clauses in CASE construction "
-					"have incompatible arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			else
-				throw Exception{
-					"Incompatible branch (then, else) arguments for function " + getName(),
-					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-				};
-		}
+			throw Exception{
+				"Incompatible branch (then, else) arguments for function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 	}
 	else
 	{
@@ -336,13 +294,9 @@ void FunctionMultiIf::perform(Block & block, const ColumnNumbers & args, size_t 
 	if (Conditional::StringArrayEvaluator::perform(block, args, result, builder))
 		return;
 
-	if (is_case_mode)
-		throw Exception{"Some THEN/ELSE clauses in CASE construction have "
-			"illegal or incompatible types", ErrorCodes::ILLEGAL_COLUMN};
-	else
-		throw Exception{"One or more branch (then, else) columns of function "
-			+ getName() + " have illegal or incompatible types",
-			ErrorCodes::ILLEGAL_COLUMN};
+	throw Exception{"One or more branch (then, else) columns of function "
+		+ getName() + " have illegal or incompatible types",
+		ErrorCodes::ILLEGAL_COLUMN};
 }
 
 bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & args,
@@ -443,82 +397,29 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 /// Translate a context-free error into a contextual error.
 void FunctionMultiIf::rethrowContextually(const Conditional::CondException & ex) const
 {
-	if (is_case_mode)
-	{
-		/// CASE construction context.
-		if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE)
-			throw Exception{"Illegal type of column " + ex.getMsg1() +
-				" in CASE construction", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-		else if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_UPSCALING_ERROR)
-			throw Exception{"THEN/ELSE clause parameters in CASE construction are not upscalable to a "
-				"common type without loss of precision: " + ex.getMsg1(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-		else if (ex.getCode() == Conditional::CondErrorCodes::NUMERIC_PERFORMER_ILLEGAL_COLUMN)
-		{
-			size_t i = std::stoul(ex.getMsg1());
-			if ((i % 2) == 1)
-				throw Exception{"Illegal THEN clause " + toString(1 + (i - 1) / 2)
-					+ " in CASE construction", ErrorCodes::ILLEGAL_COLUMN};
-			else
-				throw Exception{"Illegal ELSE clause in CASE construction",
-					ErrorCodes::ILLEGAL_COLUMN};
-		}
-		else if (ex.getCode() == Conditional::CondErrorCodes::COND_SOURCE_ILLEGAL_COLUMN)
-		{
-			size_t i = std::stoul(ex.getMsg2());
-			if ((i % 2) == 1)
-				throw Exception{"Illegal column " + ex.getMsg1() + " of THEN clause "
-					+ toString(1 + (i - 1) / 2) + " in CASE construction."
-					"Must be ColumnUInt8 or ColumnConstUInt8", ErrorCodes::ILLEGAL_COLUMN};
-			else
-				throw Exception{"Illegal column " + ex.getMsg1() + " of ELSE clause "
-					" in CASE construction. Must be ColumnUInt8 or ColumnConstUInt8",
-					ErrorCodes::ILLEGAL_COLUMN};
-		}
-		else if (ex.getCode() == Conditional::CondErrorCodes::NUMERIC_EVALUATOR_ILLEGAL_ARGUMENT)
-		{
-			size_t i = std::stoul(ex.getMsg1());
-			if ((i % 2) == 1)
-				throw Exception{"Illegal type of THEN clause " + toString(1 + (i - 1) / 2)
-					+ " in CASE construction", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			else
-				throw Exception{"Illegal type of ELSE clause in CASE construction",
-					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-		}
-		else if (ex.getCode() == Conditional::CondErrorCodes::ARRAY_EVALUATOR_INVALID_TYPES)
-			throw Exception{"Internal logic error: one or more THEN/ELSE clauses of "
-				"CASE construction have invalid types", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-		else
-			throw Exception{"An unexpected error has occurred in CASE construction",
-				ErrorCodes::LOGICAL_ERROR};
-	}
+	if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE)
+		throw Exception{"Illegal type of column " + ex.getMsg1() +
+			" of function multiIf", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+	else if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_UPSCALING_ERROR)
+		throw Exception{"Arguments of function multiIf are not upscalable to a "
+			"common type without loss of precision: " + ex.getMsg1(),
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+	else if (ex.getCode() == Conditional::CondErrorCodes::NUMERIC_PERFORMER_ILLEGAL_COLUMN)
+		throw Exception{"Illegal argument " + ex.getMsg1() + " of function multiIf",
+			ErrorCodes::ILLEGAL_COLUMN};
+	else if (ex.getCode() == Conditional::CondErrorCodes::COND_SOURCE_ILLEGAL_COLUMN)
+		throw Exception{"Illegal column " + ex.getMsg1() + " of argument "
+			+ ex.getMsg2() + " of function multiIf. "
+			"Must be ColumnUInt8 or ColumnConstUInt8.", ErrorCodes::ILLEGAL_COLUMN};
+	else if (ex.getCode() == Conditional::CondErrorCodes::NUMERIC_EVALUATOR_ILLEGAL_ARGUMENT)
+		throw Exception{"Illegal type of argument " + ex.getMsg1() + " of function multiIf",
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+	else if (ex.getCode() == Conditional::CondErrorCodes::ARRAY_EVALUATOR_INVALID_TYPES)
+		throw Exception{"Internal logic error: one or more arguments of function "
+			"multiIf have invalid types", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 	else
-	{
-		/// multiIf function context.
-		if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE)
-			throw Exception{"Illegal type of column " + ex.getMsg1() +
-				" of function multiIf", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-		else if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_UPSCALING_ERROR)
-			throw Exception{"Arguments of function multiIf are not upscalable to a "
-				"common type without loss of precision: " + ex.getMsg1(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-		else if (ex.getCode() == Conditional::CondErrorCodes::NUMERIC_PERFORMER_ILLEGAL_COLUMN)
-			throw Exception{"Illegal argument " + ex.getMsg1() + " of function multiIf",
-				ErrorCodes::ILLEGAL_COLUMN};
-		else if (ex.getCode() == Conditional::CondErrorCodes::COND_SOURCE_ILLEGAL_COLUMN)
-			throw Exception{"Illegal column " + ex.getMsg1() + " of argument "
-				+ ex.getMsg2() + " of function multiIf. "
-				"Must be ColumnUInt8 or ColumnConstUInt8.", ErrorCodes::ILLEGAL_COLUMN};
-		else if (ex.getCode() == Conditional::CondErrorCodes::NUMERIC_EVALUATOR_ILLEGAL_ARGUMENT)
-			throw Exception{"Illegal type of argument " + ex.getMsg1() + " of function multiIf",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-		else if (ex.getCode() == Conditional::CondErrorCodes::ARRAY_EVALUATOR_INVALID_TYPES)
-			throw Exception{"Internal logic error: one or more arguments of function "
-				"multiIf have invalid types", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-		else
-			throw Exception{"An unexpected error has occurred while performing multiIf",
-				ErrorCodes::LOGICAL_ERROR};
-	}
+		throw Exception{"An unexpected error has occurred while performing multiIf",
+			ErrorCodes::LOGICAL_ERROR};
 }
 
 /// Implementation of FunctionCaseWithExpr.
@@ -556,14 +457,12 @@ DataTypePtr FunctionCaseWithExpr::getReturnTypeImpl(const DataTypes & args) cons
 	}
 
 	FunctionArray fun_array{context};
-	fun_array.setCaseMode();
 
 	DataTypePtr src_array_type = fun_array.getReturnTypeImpl(src_array_types);
 	DataTypePtr dst_array_type = fun_array.getReturnTypeImpl(dst_array_types);
 
 	/// Finally get the return type of the transform function.
 	FunctionTransform fun_transform;
-	fun_transform.setCaseMode();
 	return fun_transform.getReturnTypeImpl({args.front(), src_array_type, dst_array_type, args.back()});
 }
 
@@ -599,7 +498,6 @@ void FunctionCaseWithExpr::executeImpl(Block & block, const ColumnNumbers & args
 	}
 
 	FunctionArray fun_array{context};
-	fun_array.setCaseMode();
 
 	DataTypePtr src_array_type = fun_array.getReturnTypeImpl(src_array_types);
 	DataTypePtr dst_array_type = fun_array.getReturnTypeImpl(dst_array_types);
@@ -617,7 +515,6 @@ void FunctionCaseWithExpr::executeImpl(Block & block, const ColumnNumbers & args
 
 	/// Execute transform.
 	FunctionTransform fun_transform;
-	fun_transform.setCaseMode();
 
 	ColumnNumbers transform_args{args.front(), src_array_pos, dst_array_pos, args.back()};
 	fun_transform.executeImpl(temp_block, transform_args, result);
@@ -646,7 +543,6 @@ bool FunctionCaseWithoutExpr::hasSpecialSupportForNulls() const
 DataTypePtr FunctionCaseWithoutExpr::getReturnTypeImpl(const DataTypes & args) const
 {
 	FunctionMultiIf fun_multi_if;
-	fun_multi_if.setCaseMode();
 	return fun_multi_if.getReturnTypeImpl(args);
 }
 
@@ -654,7 +550,6 @@ void FunctionCaseWithoutExpr::executeImpl(Block & block, const ColumnNumbers & a
 {
 	/// A CASE construction without any expression is a straightforward multiIf.
 	FunctionMultiIf fun_multi_if;
-	fun_multi_if.setCaseMode();
 	fun_multi_if.executeImpl(block, args, result);
 }
 

@@ -20,9 +20,6 @@ private:
 	bool just_put_replacement = false;
 	std::string replacement;
 
-	/// Таблица взята из ConvertUTF.c от Unicode, Inc. Позволяет узнать длину последовательности по первому байту.
-	static const char trailingBytesForUTF8[256];
-
 	void putReplacement();
 	void putValid(char * data, size_t len);
 

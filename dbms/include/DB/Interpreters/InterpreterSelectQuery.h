@@ -99,7 +99,13 @@ private:
 
 	/** Оставить в каждом запросе цепочки UNION ALL только нужные столбцы секции SELECT.
 	 *  Однако, если используется хоть один DISTINCT в цепочке, то все столбцы считаются нужными,
-	 *  так как иначе DISTINCT работал бы по-другому.
+	 *   так как иначе DISTINCT работал бы по-другому.
+	 *
+	 *  Always leave arrayJoin, because it changes number of rows.
+	 *
+	 *  TODO If query doesn't have GROUP BY, but have aggregate functions,
+	 *   then leave at least one aggregate function,
+	 *   In order that fact of aggregation has not been lost.
 	 */
 	void rewriteExpressionList(const Names & required_column_names);
 
@@ -138,25 +144,11 @@ private:
 	void executeSubqueriesInSetsAndJoins(std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
 
 	template <typename Transform>
-	void transformStreams(Transform && transform)
-	{
-		for (auto & stream : streams)
-			transform(stream);
+	void transformStreams(Transform && transform);
 
-		if (stream_with_non_joined_data)
-			transform(stream_with_non_joined_data);
-	}
+	bool hasNoData() const;
 
-	bool hasNoData() const
-	{
-		return streams.empty() && !stream_with_non_joined_data;
-	}
-
-	bool hasMoreThanOneStream() const
-	{
-		return streams.size() + (stream_with_non_joined_data ? 1 : 0) > 1;
-	}
-
+	bool hasMoreThanOneStream() const;
 
 	void ignoreWithTotals();
 

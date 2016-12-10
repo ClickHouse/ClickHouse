@@ -20,6 +20,12 @@ DistinctBlockInputStream::DistinctBlockInputStream(BlockInputStreamPtr input_, c
 	children.push_back(input_);
 }
 
+String DistinctBlockInputStream::getID() const
+{
+	std::stringstream res;
+	res << "Distinct(" << children.back()->getID() << ")";
+	return res.str();
+}
 
 Block DistinctBlockInputStream::readImpl()
 {
@@ -112,6 +118,15 @@ Block DistinctBlockInputStream::readImpl()
 
 		return block;
 	}
+}
+
+bool DistinctBlockInputStream::checkLimits() const
+{
+	if (max_rows && set.size() > max_rows)
+		return false;
+	if (max_bytes && set.getBufferSizeInBytes() > max_bytes)
+		return false;
+	return true;
 }
 
 }

@@ -43,8 +43,12 @@ public:
 	void sendExternalTablesData(std::vector<ExternalTablesData> & data);
 
 	/// Отправить запрос на реплики.
-	void sendQuery(const String & query, const String & query_id = "",
-		UInt64 stage = QueryProcessingStage::Complete, bool with_pending_data = false);
+	void sendQuery(
+		const String & query,
+		const String & query_id = "",
+		UInt64 stage = QueryProcessingStage::Complete,
+		const ClientInfo * client_info = nullptr,
+		bool with_pending_data = false);
 
 	/// Получить пакет от какой-нибудь реплики.
 	Connection::Packet receivePacket();

@@ -28,10 +28,11 @@ int main(int argc, const char ** argv)
 
 	Context context;
 	NamesAndTypesList columns{{"key", std::make_shared<DataTypeUInt64>()}};
+	Block sample_block{{DataTypeUInt64{}.createColumn(), std::make_shared<DataTypeUInt64>(), "key"}};
 	SortDescription sort_descr;
 	sort_descr.push_back(SortColumnDescription("key", 1));
 
-	cond = std::make_unique<PKCondition>(ast, context, columns, sort_descr);
+	cond = std::make_unique<PKCondition>(ast, context, columns, sort_descr, sample_block);
 	std::cout << "condition: " << cond->toString() << std::endl;
 
 	check(100, 1000, false);

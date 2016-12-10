@@ -1489,7 +1489,6 @@ public:
 	bool hasSpecialSupportForNulls() const override;
 	DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
 	void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
-	void setCaseMode();
 
 private:
 	DataTypePtr getReturnTypeInternal(const DataTypes & args) const;
@@ -1504,12 +1503,6 @@ private:
 	/// the conditions are constant. The same remark as above applies with regards to
 	/// the builder parameter.
 	bool performTrivialCase(Block & block, const ColumnNumbers & args, size_t result, Conditional::NullMapBuilder & builder);
-
-	/// Translate a context-free error into a contextual error.
-	void rethrowContextually(const Conditional::CondException & ex) const;
-
-private:
-	bool is_case_mode = false;
 };
 
 /// Function caseWithExpr which implements the CASE construction when it is

@@ -16,7 +16,7 @@ if(WIN32)
     else()    
         set(SYSLIBS ${SYSLIBS} "ws2_32.lib" "iphlpapi.lib")
     endif()    
-else()
+elseif(NOT APPLE)
     set(SYSLIBS ${SYSLIBS} "libanl.a")
 endif(WIN32)
 
@@ -30,7 +30,7 @@ set_target_properties( "${LIBNAME}"
 
 target_link_libraries( "${LIBNAME}" PocoFoundation ${SYSLIBS})
 
-if (ENABLE_TESTS)
+if (POCO_ENABLE_TESTS)
     add_subdirectory(samples)
     add_subdirectory(testsuite)
 endif ()

@@ -41,7 +41,7 @@ public:
 		  * Он нужен, чтобы знать, какие блоки передавать в метод write.
 		  */
 
-		connection.sendQuery(query, "", QueryProcessingStage::Complete, settings);
+		connection.sendQuery(query, "", QueryProcessingStage::Complete, settings, nullptr);
 
 		Connection::Packet packet = connection.receivePacket();
 

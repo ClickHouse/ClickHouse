@@ -864,11 +864,11 @@ struct ImplMetroHash64
 	static auto Hash64(const char * const s, const std::size_t len)
 	{
 		union {
-			std::uint64_t u64;
-			std::uint8_t u8[sizeof(u64)];
+			UInt64 u64;
+			UInt8 u8[sizeof(u64)];
 		};
 
-		metrohash64_1(reinterpret_cast<const std::uint8_t *>(s), len, 0, u8);
+		metrohash64_1(reinterpret_cast<const UInt8 *>(s), len, 0, u8);
 
 		return u64;
 	}

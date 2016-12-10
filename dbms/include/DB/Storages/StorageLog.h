@@ -103,17 +103,6 @@ protected:
 
 	Poco::RWLock rwlock;
 
-	/// Название виртуального столбца, отвечающего за имя таблицы, из которой идет чтение. (Например "_table")
-	/// По умолчанию виртуальный столбец не поддерживается, но, например, он поддерживается в StorageChunks
-	String _table_column_name;
-
-	/// По номеру засечки получить имя таблицы, из которой идет чтение и номер последней засечки из этой таблицы.
-	/// По умолчанию виртуальный столбец не поддерживается, а значит при попытке его чтения нужно выбросить исключение.
-	virtual std::pair<String, size_t> getTableFromMark(size_t mark) const
-	{
-		throw Exception("There is no column " + _table_column_name + " in table " + getTableName(), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-	}
-
 	StorageLog(
 		const std::string & path_,
 		const std::string & name_,

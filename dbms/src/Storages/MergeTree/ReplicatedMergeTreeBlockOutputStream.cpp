@@ -33,13 +33,6 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
 }
 
 
-void ReplicatedMergeTreeBlockOutputStream::writePrefix()
-{
-	/// TODO Можно ли здесь не блокировать структуру таблицы?
-	storage.data.delayInsertIfNeeded(&storage.restarting_thread->getWakeupEvent());
-}
-
-
 /// Позволяет проверить, что сессия в ZooKeeper ещё жива.
 static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
 {
@@ -53,6 +46,9 @@ static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
 
 void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 {
+	/// TODO Можно ли здесь не блокировать структуру таблицы?
+	storage.data.delayInsertIfNeeded(&storage.restarting_thread->getWakeupEvent());
+
 	auto zookeeper = storage.getZooKeeper();
 
 	assertSessionIsNotExpired(zookeeper);
@@ -130,7 +126,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 		union
 		{
 			char bytes[16];
-			UInt64 lo, hi;
+			UInt64 words[2];
 		} hash_value;
 		hash.get128(hash_value.bytes);
 
@@ -141,7 +137,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 		///       Можно для этого сделать настройку или синтаксис в запросе (например, ID=null).
 		if (block_id.empty())
 		{
-			block_id = toString(hash_value.lo) + "_" + toString(hash_value.hi);
+			block_id = toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 
 			if (block_id.empty())
 				throw Exception("Logical error: block_id is empty.", ErrorCodes::LOGICAL_ERROR);

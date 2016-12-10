@@ -17,6 +17,7 @@
 
 #include <DB/Core/StringRef.h>
 #include <DB/Core/Field.h>
+#include <DB/Common/Stopwatch.h>
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/ReadHelpers.h>
@@ -158,7 +159,7 @@ struct Dictionary
 	std::unique_ptr<ArenaWithFreeLists> string_arena;
 
 	/// Эта функция компилируется в точно такой же машинный код, как в продакшене, когда был баг.
-	void NO_INLINE setAttributeValue(Attribute & attribute, const uint64_t idx, const Field & value) const
+	void NO_INLINE setAttributeValue(Attribute & attribute, const UInt64 idx, const Field & value) const
 	{
 		switch (attribute.type)
 		{

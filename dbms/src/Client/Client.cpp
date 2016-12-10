@@ -203,7 +203,9 @@ private:
 		else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
 			loadConfiguration("/etc/clickhouse-client/config.xml");
 
-		/// settings и limits могли так же быть указаны в кофигурационном файле, но уже записанные настройки имеют больший приоритет.
+		context.setApplicationType(Context::ApplicationType::CLIENT);
+
+		/// settings and limits could be specified in config file, but passed settings has higher priority
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
 		if (config().has(#NAME) && !context.getSettingsRef().NAME.changed) \
 			context.setSetting(#NAME, config().getString(#NAME));
@@ -325,6 +327,33 @@ private:
 
 		connect();
 
+		/// Инициализируем DateLUT, чтобы потраченное время не отображалось, как время, потраченное на запрос.
+		DateLUT::instance();
+		if (!context.getSettingsRef().use_client_time_zone)
+		{
+			const auto & time_zone = connection->getServerTimezone();
+			if (!time_zone.empty())
+			{
+				try
+				{
+					DateLUT::setDefaultTimezone(time_zone);
+				}
+				catch (...)
+				{
+					std::cerr << "Warning: could not switch to server time zone: " << time_zone
+						<< ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
+						<< "Proceeding with local time zone."
+						<< std::endl << std::endl;
+				}
+			}
+			else
+			{
+				std::cerr << "Warning: could not determine server time zone. "
+					<< "Proceeding with local time zone."
+					<< std::endl << std::endl;
+			}
+		}
+
 		if (is_interactive)
 		{
 			if (print_time_to_stderr)
@@ -352,9 +381,6 @@ private:
 				else	/// Создаём файл с историей.
 					Poco::File(history_file).createFile();
 			}
-
-			/// Инициализируем DateLUT, чтобы потраченное время не отображалось, как время, потраченное на запрос.
-			DateLUT::instance();
 
 			loop();
 
@@ -465,7 +491,7 @@ private:
 			{
 				if (query != prev_query)
 				{
-					// Заменяем переводы строк на пробелы, а то возникает следуцющая проблема.
+					// Заменяем переводы строк на пробелы, а то возникает следующая проблема.
 					// Каждая строчка многострочного запроса сохраняется в истории отдельно. Если
 					// выйти из клиента и войти заново, то при нажатии клавиши "вверх" выводится не
 					// весь многострочный запрос, а каждая его строчка по-отдельности.
@@ -699,7 +725,7 @@ private:
 	/// Обработать запрос, который не требует передачи блоков данных на сервер.
 	void processOrdinaryQuery()
 	{
-		connection->sendQuery(query, "", QueryProcessingStage::Complete, &context.getSettingsRef(), true);
+		connection->sendQuery(query, "", QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
 		sendExternalTables();
 		receiveResult();
 	}
@@ -717,7 +743,7 @@ private:
 		if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
 			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, &context.getSettingsRef(), true);
+		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
 		sendExternalTables();
 
 		/// Receive description of table structure.
@@ -1304,7 +1330,7 @@ public:
 }
 
 
-int main(int argc, char ** argv)
+int mainEntryClickhouseClient(int argc, char ** argv)
 {
 	DB::Client client;
 

@@ -111,7 +111,7 @@ This is rarely used but enabled by default.
 
 If you don't need it, you could set variable and skip installation step:
 ```
-export DISABLE_MONGODB=1
+export ENABLE_MONGODB=0
 ```
 
 Otherwise:

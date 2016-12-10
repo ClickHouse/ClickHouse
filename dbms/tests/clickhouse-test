@@ -15,28 +15,17 @@ from subprocess import CalledProcessError
 from datetime import datetime
 from time import sleep
 from errno import ESRCH
+from termcolor import colored
 
-if sys.stdout.isatty():
-	COLORS = {
-		"COLOR_RESET": "\033[0m",
-		"COLOR_WHITE": "\033[1;37m",
-		"COLOR_FAIL": "\033[1;31m",
-		"COLOR_UNKNOWN": "\033[1;30m",
-		"COLOR_OK": "\033[1;32m",
-		"COLOR_SKIPPED": "\033[1;34m" }
-else:
-	COLORS = {
-		"COLOR_RESET": "",
-		"COLOR_WHITE": "",
-		"COLOR_FAIL": "",
-		"COLOR_UNKNOWN": "",
-		"COLOR_OK": "",
-		"COLOR_SKIPPED": "" }
 
-MSG_FAIL = "{COLOR_WHITE}[ {COLOR_FAIL}FAIL{COLOR_WHITE} ]{COLOR_RESET}".format(**COLORS)
-MSG_UNKNOWN = "{COLOR_WHITE}[ {COLOR_UNKNOWN}UNKNOWN{COLOR_WHITE} ]{COLOR_RESET}".format(**COLORS)
-MSG_OK = "{COLOR_WHITE}[ {COLOR_OK}OK{COLOR_WHITE} ]{COLOR_RESET}".format(**COLORS)
-MSG_SKIPPED = "{COLOR_WHITE}[ {COLOR_SKIPPED}SKIPPED{COLOR_WHITE} ]{COLOR_RESET}".format(**COLORS)
+OP_SQUARE_BRACKET = colored("[", attrs=['bold'])
+CL_SQUARE_BRACKET = colored("]", attrs=['bold'])
+
+MSG_FAIL = OP_SQUARE_BRACKET + colored(" FAIL ", "red", attrs=['bold']) + CL_SQUARE_BRACKET
+MSG_UNKNOWN = OP_SQUARE_BRACKET + colored(" UNKNOWN ", "yellow", attrs=['bold']) + CL_SQUARE_BRACKET
+MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", "green", attrs=['bold']) + CL_SQUARE_BRACKET
+MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
+
 
 def main(args):
 
@@ -82,7 +71,10 @@ def main(args):
 			break
 		
 		suite_dir = os.path.join(base_dir, suite)
-		suite = re.search('^[0-9]+_(.*)$', suite).group(1)
+		suite_re_obj = re.search('^[0-9]+_(.*)$', suite)
+		if not suite_re_obj: #skip .gitignore and so on
+			continue
+		suite = suite_re_obj.group(1)
 		if os.path.isdir(suite_dir):
 			print("\nRunning {} tests.\n".format(suite))
 			
@@ -101,10 +93,11 @@ def main(args):
 					report_testcase = et.Element("testcase", attrib = {"name": name})
 					
 					print "{0:70}".format(name + ": "),
+					sys.stdout.flush()
 					
 					if not args.zookeeper and 'zookeeper' in name:
 						report_testcase.append(et.Element("skipped", attrib = {"message": "no zookeeper"}))
-						print(MSG_SKIPPED, " - no zookeeper")
+						print(MSG_SKIPPED + " - no zookeeper")
 					else:
 						reference_file = os.path.join(suite_dir, name) + '.reference'
 						stdout_file = os.path.join(suite_dir, name) + '.stdout'
@@ -134,7 +127,9 @@ def main(args):
 							print("{0} - Timeout!".format(MSG_FAIL))
 						else:
 							stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
+							stdout = unicode(stdout, errors='replace', encoding='utf-8')
 							stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
+							stderr = unicode(stderr, errors='replace', encoding='utf-8')
 							
 							if proc.returncode != 0:
 								failure = et.Element("failure", attrib = {"message": "return code {}".format(proc.returncode)})
@@ -205,10 +200,10 @@ def main(args):
 			failures_total = failures_total + failures
 	
 	if failures_total > 0:
-		print("\n{COLOR_FAIL}Having {0} errors!{COLOR_RESET}".format(failures_total, **COLORS))
+		print(colored("\nHaving {0} errors!".format(failures_total), "red", attrs=["bold"]))
 		sys.exit(1)
 	else:
-		print("\n{COLOR_OK}All tests passed.{COLOR_RESET}".format(**COLORS))
+		print(colored("\nAll tests passed.", "green", attrs=["bold"]))
 		sys.exit(0)
 			
 

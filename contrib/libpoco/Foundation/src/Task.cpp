@@ -64,7 +64,10 @@ void Task::run()
 		/** Task can be already cancelled.
 		 *  To prevent endless executing already cancelled task _state is assigned to TASK_RUNNING only if _state != TASK_CANCELLING
 		 */
+		#pragma clang diagnostic push
+		#pragma clang diagnostic ignored "-Wmissing-braces"
 		std::array<TaskState, 3> allowed_states{TASK_IDLE, TASK_STARTING, TASK_FINISHED};
+		#pragma clang diagnostic pop
 		for (auto & expected : allowed_states)
 			if (_state.compare_exchange_strong(expected, TASK_RUNNING))
 				break;

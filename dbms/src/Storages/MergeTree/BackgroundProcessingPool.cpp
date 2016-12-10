@@ -7,6 +7,12 @@
 
 #include <random>
 
+
+namespace CurrentMetrics
+{
+	extern const Metric BackgroundPoolTask;
+}
+
 namespace DB
 {
 
@@ -50,12 +56,6 @@ BackgroundProcessingPool::BackgroundProcessingPool(int size_) : size(size_)
 		thread = std::thread([this] { threadFunction(); });
 }
 
-
-int BackgroundProcessingPool::getCounter(const String & name)
-{
-	std::unique_lock<std::mutex> lock(counters_mutex);
-	return counters[name];
-}
 
 BackgroundProcessingPool::TaskHandle BackgroundProcessingPool::addTask(const Task & task)
 {
@@ -114,7 +114,6 @@ void BackgroundProcessingPool::threadFunction()
 
 	while (!shutdown)
 	{
-		Counters counters_diff;
 		bool done_work = false;
 		TaskHandle task;
 
@@ -167,22 +166,12 @@ void BackgroundProcessingPool::threadFunction()
 
 			{
 				CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundPoolTask};
-
-				Context context(*this, counters_diff);
-				done_work = task->function(context);
+				done_work = task->function();
 			}
 		}
 		catch (...)
 		{
 			tryLogCurrentException(__PRETTY_FUNCTION__);
-		}
-
-		/// Subtract counters backwards.
-		if (!counters_diff.empty())
-		{
-			std::unique_lock<std::mutex> lock(counters_mutex);
-			for (const auto & it : counters_diff)
-				counters[it.first] -= it.second;
 		}
 
 		if (shutdown)
@@ -196,7 +185,7 @@ void BackgroundProcessingPool::threadFunction()
 			std::unique_lock<std::mutex> lock(tasks_mutex);
 
 			if (task->removed)
-				return;
+				continue;
 
 			tasks.erase(task->iterator);
 			task->iterator = tasks.emplace(next_time_to_execute, task);

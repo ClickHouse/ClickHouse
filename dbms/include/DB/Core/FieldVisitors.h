@@ -250,8 +250,14 @@ public:
 };
 
 
-/// Преобразование строки с датой или датой-с-временем в UInt64, содержащим числовое значение даты или даты-с-временем.
+/// Converts string with date or datetime (in format 'YYYY-MM-DD hh:mm:ss') to UInt64 containing numeric value of date (or datetime)
 UInt64 stringToDateOrDateTime(const String & s);
+
+/// Converts string with date to UInt16 (which is alias of DayNum_t) containing numeric value of date
+DayNum_t stringToDate(const String & s);
+
+/// Converts string with date to UInt64 containing numeric value of datetime
+UInt64 stringToDateTime(const String & s);
 
 
 /** More precise comparison, used for index.

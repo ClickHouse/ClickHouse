@@ -86,7 +86,7 @@ private:
 	/** Можно ли сейчас попробовать выполнить это действие. Если нет, нужно оставить его в очереди и попробовать выполнить другое.
 	  * Вызывается под queue_mutex.
 	  */
-	bool shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason, MergeTreeDataMerger & merger);
+	bool shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason, MergeTreeDataMerger & merger, MergeTreeData & data);
 
 	/// После удаления элемента очереди, обновить времена insert-ов в оперативке. Выполняется под queue_mutex.
 	/// Возвращает информацию, какие времена изменились - эту информацию можно передать в updateTimesInZooKeeper.
@@ -149,7 +149,7 @@ public:
 	  * merger используется только чтобы проверить, не приостановлены ли мерджи.
 	  */
 	using SelectedEntry = std::pair<ReplicatedMergeTreeQueue::LogEntryPtr, std::unique_ptr<CurrentlyExecuting>>;
-	SelectedEntry selectEntryToProcess(MergeTreeDataMerger & merger);
+	SelectedEntry selectEntryToProcess(MergeTreeDataMerger & merger, MergeTreeData & data);
 
 	/** Выполнить функцию func для обработки действия.
 	  * При этом, на время выполнения, отметить элемент очереди как выполняющийся
@@ -157,7 +157,7 @@ public:
 	  * Если в процессе обработки было исключение - сохраняет его в entry.
 	  * Возвращает true, если в процессе обработки не было исключений.
 	  */
-	bool processEntry(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
+	bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
 	/// Будет ли кусок в будущем слит в более крупный (или мерджи кусков в данном диапазоне запрещены)?
 	bool partWillBeMergedOrMergesDisabled(const String & part_name) const;
@@ -166,7 +166,7 @@ public:
 	void disableMergesInRange(const String & part_name);
 
 	/// Посчитать количество слияний в очереди.
-	void countMerges(size_t & all_merges, size_t & big_merges, size_t max_big_merges, const std::function<bool(const String &)> & is_part_big);
+	size_t countMerges();
 
 	struct Status
 	{

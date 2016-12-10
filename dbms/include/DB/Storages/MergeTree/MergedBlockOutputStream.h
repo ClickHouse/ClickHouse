@@ -6,6 +6,8 @@
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 
+#include <DB/Columns/ColumnArray.h>
+
 
 namespace DB
 {
@@ -60,10 +62,12 @@ protected:
 
 	using ColumnStreams = std::map<String, std::unique_ptr<ColumnStream>>;
 
-	void addStream(const String & path, const String & name, const IDataType & type, size_t estimated_size = 0, size_t level = 0, String filename = "");
+	void addStream(const String & path, const String & name, const IDataType & type, size_t estimated_size = 0,
+		size_t level = 0, const String & filename = "", bool skip_offsets = false);
 
 	/// Записать данные одного столбца.
-	void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns, size_t level = 0);
+	void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns,
+		size_t level = 0, bool skip_offsets = false);
 
 	MergeTreeData & storage;
 
@@ -82,7 +86,7 @@ protected:
 private:
 	/// Internal version of writeData.
 	void writeDataImpl(const String & name, const IDataType & type, const IColumn & column,
-		OffsetColumns & offset_columns, size_t level, bool write_array_data);
+		OffsetColumns & offset_columns, size_t level, bool write_array_data, bool skip_offsets);
 };
 
 
@@ -118,6 +122,10 @@ public:
 
 	void writeSuffix() override;
 
+	MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums(
+		const NamesAndTypesList & total_column_list,
+		MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+
 	MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums();
 
 	MergeTreeData::DataPart::Index & getIndex();
@@ -149,7 +157,9 @@ private:
 class MergedColumnOnlyOutputStream : public IMergedBlockOutputStream
 {
 public:
-	MergedColumnOnlyOutputStream(MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method);
+	MergedColumnOnlyOutputStream(
+		MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method, bool skip_offsets_ = false);
+
 	void write(const Block & block) override;
 	void writeSuffix() override;
 	MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums();
@@ -159,6 +169,7 @@ private:
 
 	bool initialized = false;
 	bool sync;
+	bool skip_offsets;
 };
 
 }
