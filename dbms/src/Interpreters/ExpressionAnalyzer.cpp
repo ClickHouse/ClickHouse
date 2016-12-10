@@ -217,7 +217,7 @@ bool ExpressionAnalyzer::tryExtractConstValueFromCondition(const ASTPtr & condit
 	/// cast of numeric constant in condition to UInt8
 	if (const ASTFunction * function = typeid_cast<ASTFunction * >(condition.get()))
 	{
-		if (function->name == FunctionCast::name)
+		if (function->name == "CAST")
 		{
 			if (ASTExpressionList * expr_list = typeid_cast<ASTExpressionList *>(function->arguments.get()))
 			{
@@ -243,7 +243,7 @@ void ExpressionAnalyzer::optimizeIfWithConstantConditionImpl(ASTPtr & current_as
 	for (ASTPtr & child : current_ast->children)
 	{
 		ASTFunction * function_node = typeid_cast<ASTFunction *>(child.get());
-		if (!function_node || function_node->name != FunctionIf::name)
+		if (!function_node || function_node->name != "if")
 		{
 			optimizeIfWithConstantConditionImpl(child, aliases);
 			continue;
