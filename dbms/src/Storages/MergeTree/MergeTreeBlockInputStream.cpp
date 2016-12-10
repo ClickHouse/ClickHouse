@@ -1,5 +1,6 @@
 #include <DB/Storages/MergeTree/MergeTreeReader.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
+#include <DB/Columns/ColumnNullable.h>
 
 
 namespace DB
@@ -260,10 +261,19 @@ Block MergeTreeBlockInputStream::readImpl()
 
 			size_t pre_bytes = res.bytes();
 
+			ColumnPtr observed_column;
+			if (column->isNullable())
+			{
+				const ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column);
+				observed_column = nullable_col.getNestedColumn();
+			}
+			else
+				observed_column = column;
+
 			/** Если фильтр - константа (например, написано PREWHERE 1),
 				*  то либо вернём пустой блок, либо вернём блок без изменений.
 				*/
-			if (ColumnConstUInt8 * column_const = typeid_cast<ColumnConstUInt8 *>(&*column))
+			if (const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(observed_column.get()))
 			{
 				if (!column_const->getData())
 				{
@@ -279,7 +289,7 @@ Block MergeTreeBlockInputStream::readImpl()
 
 				progressImpl(Progress(0, res.bytes() - pre_bytes));
 			}
-			else if (ColumnUInt8 * column_vec = typeid_cast<ColumnUInt8 *>(&*column))
+			else if (const ColumnUInt8 * column_vec = typeid_cast<const ColumnUInt8 *>(observed_column.get()))
 			{
 				size_t index_granularity = storage.index_granularity;
 

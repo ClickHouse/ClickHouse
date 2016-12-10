@@ -6,7 +6,6 @@
 namespace DB
 {
 
-
 String ASTFunction::getColumnName() const
 {
 	String res;

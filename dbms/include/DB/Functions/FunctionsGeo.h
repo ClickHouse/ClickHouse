@@ -48,7 +48,7 @@ private:
 
 	String getName() const override { return name; }
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 4)
 			throw Exception(
@@ -115,7 +115,7 @@ private:
 	}
 
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto size = block.rowsInFirstColumn();
 

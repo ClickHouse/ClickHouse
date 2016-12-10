@@ -9,6 +9,7 @@
 
 #include <DB/Storages/IStorage.h>
 #include <DB/Common/FileChecker.h>
+#include <DB/Common/escapeForFileName.h>
 
 
 namespace DB
@@ -122,6 +123,7 @@ protected:
 	BlockInputStreams read(
 		size_t from_mark,
 		size_t to_mark,
+		size_t from_null_mark,
 		const Names & column_names,
 		ASTPtr query,
 		const Context & context,
@@ -134,15 +136,22 @@ private:
 	Files_t files; /// name -> data
 
 	Names column_names; /// column_index -> name
+	Names null_map_filenames;
 
 	Poco::File marks_file;
+	Poco::File null_marks_file;
+
+	void loadMarksImpl(bool load_null_marks);
 
 	/// Порядок добавления файлов не должен меняться: он соответствует порядку столбцов в файле с засечками.
 	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 
 	bool loaded_marks;
+	bool has_nullable_columns = false;
 
 	size_t max_compress_block_size;
+	size_t file_count = 0;
+	size_t null_file_count = 0;
 
 protected:
 	FileChecker file_checker;
@@ -156,6 +165,8 @@ private:
 	  * Вернуть первую попавшуюся группу засечек, в которых указано количество строчек, а не внутренностей массивов.
 	  */
 	const Marks & getMarksWithRealRowCount() const;
+
+	std::string getFullPath() const { return path + escapeForFileName(name) + '/';}
 };
 
 }

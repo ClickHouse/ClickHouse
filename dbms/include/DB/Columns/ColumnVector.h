@@ -250,9 +250,23 @@ public:
 
 	std::string getName() const override { return "ColumnVector<" + TypeName<T>::get() + ">"; }
 
-	ColumnPtr cloneEmpty() const override
+	ColumnPtr cloneResized(size_t size) const override
 	{
-		return std::make_shared<ColumnVector<T>>();
+		ColumnPtr new_col_holder = std::make_shared<Self>();
+
+		if (size > 0)
+		{
+			auto & new_col = static_cast<Self &>(*new_col_holder);
+			new_col.data.resize(size);
+
+			size_t count = std::min(this->size(), size);
+			memcpy(&new_col.data[0], &data[0], count * sizeof(data[0]));
+
+			if (size > count)
+				memset(&new_col.data[count], value_type(), size - count);
+		}
+
+		return new_col_holder;
 	}
 
 	Field operator[](size_t n) const override
@@ -436,6 +450,7 @@ public:
 		min = typename NearestFieldType<T>::Type(cur_min);
 		max = typename NearestFieldType<T>::Type(cur_max);
 	}
+
 
 	/** Более эффективные методы манипуляции */
 	Container_t & getData()

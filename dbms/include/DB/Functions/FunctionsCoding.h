@@ -175,7 +175,7 @@ public:
 
 	String getName() const override { return name; }
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -192,7 +192,7 @@ public:
 		return std::make_shared<DataTypeString>();
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto & col_name_type = block.getByPosition(arguments[0]);
 		const ColumnPtr & column = col_name_type.column;
@@ -261,7 +261,7 @@ public:
 
 	String getName() const override { return name; }
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 3)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -288,7 +288,7 @@ public:
 		return std::make_shared<DataTypeString>();
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto & col_name_type = block.getByPosition(arguments[0]);
 		const ColumnPtr & column = col_name_type.column;
@@ -427,7 +427,7 @@ public:
 
 	String getName() const override { return name; }
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -592,7 +592,7 @@ public:
 		memcpy(dst, tmp, sizeof(tmp));
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr & column = block.getByPosition(arguments[0]).column;
 
@@ -645,7 +645,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -694,7 +694,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 
@@ -750,7 +750,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -788,7 +788,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 
@@ -836,7 +836,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -888,7 +888,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 
@@ -939,7 +939,7 @@ public:
 
 	String getName() const override { return name; }
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -953,7 +953,7 @@ public:
 		return std::make_shared<DataTypeFixedString>(16);
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto & col_name_type = block.getByPosition(arguments[0]);
 		const ColumnPtr & column = col_name_type.column;
@@ -1009,7 +1009,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1224,7 +1224,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const IColumn * column = block.getByPosition(arguments[0]).column.get();
 		ColumnPtr & res_column = block.getByPosition(result).column;
@@ -1257,7 +1257,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1296,7 +1296,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 
@@ -1365,7 +1365,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1444,7 +1444,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const IColumn * in_column = block.getByPosition(arguments[0]).column.get();
 		ColumnPtr & out_column = block.getByPosition(result).column;
@@ -1478,7 +1478,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1594,7 +1594,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const IColumn * column = block.getByPosition(arguments[0]).column.get();
 		ColumnPtr & res_column = block.getByPosition(result).column;
@@ -1621,7 +1621,7 @@ public:
 
 	String getName() const override { return name; }
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 2)
 			throw Exception{
@@ -1658,7 +1658,7 @@ public:
 		return std::make_shared<DataTypeUInt8>();
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto value_col = block.getByPosition(arguments.front()).column.get();
 
@@ -1802,7 +1802,7 @@ public:
 
 	String getName() const override { return name; }
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() < 2)
 			throw Exception{
@@ -1837,7 +1837,7 @@ public:
 		return std::make_shared<DataTypeUInt8>();
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto value_col = block.getByPosition(arguments.front()).column.get();
 

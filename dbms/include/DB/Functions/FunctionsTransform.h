@@ -52,79 +52,45 @@ public:
 
 	String getName() const override
 	{
-		return is_case_mode ? "CASE" : name;
+		return name;
 	}
 
-	void setCaseMode()
-	{
-		is_case_mode = true;
-	}
-
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		const auto args_size = arguments.size();
 		if (args_size != 3 && args_size != 4)
-		{
-			if (is_case_mode)
-				throw Exception{"Some mandatory parameters are missing in CASE construction",
-					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-			else
-				throw Exception{
-					"Number of arguments for function " + getName() + " doesn't match: passed " +
-						toString(args_size) + ", should be 3 or 4",
-					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-		}
+			throw Exception{
+				"Number of arguments for function " + getName() + " doesn't match: passed " +
+					toString(args_size) + ", should be 3 or 4",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 		const IDataType * type_x = arguments[0].get();
 
 		if (!type_x->isNumeric() && !typeid_cast<const DataTypeString *>(type_x))
-		{
-			if (is_case_mode)
-				throw Exception{"Unsupported type " + type_x->getName()
-					+ " of parameter of the CASE clause"
-					+ ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			else
-				throw Exception{"Unsupported type " + type_x->getName()
-					+ " of first argument of function " + getName()
-					+ ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-		}
+			throw Exception{"Unsupported type " + type_x->getName()
+				+ " of first argument of function " + getName()
+				+ ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
 		const DataTypeArray * type_arr_from = typeid_cast<const DataTypeArray *>(arguments[1].get());
 
 		if (!type_arr_from)
-		{
-			if (is_case_mode)
-				throw Exception{"An internal error has been encountered while checking WHEN clauses "
-					"in CASE construction", ErrorCodes::LOGICAL_ERROR};
-			else
-				throw Exception{"Second argument of function " + getName()
-					+ ", must be array of source values to transform from.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-		}
+			throw Exception{"Second argument of function " + getName()
+				+ ", must be array of source values to transform from.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
 		const auto type_arr_from_nested = type_arr_from->getNestedType();
 
 		if ((type_x->isNumeric() != type_arr_from_nested->isNumeric())
 			|| (!!typeid_cast<const DataTypeString *>(type_x) != !!typeid_cast<const DataTypeString *>(type_arr_from_nested.get())))
 		{
-			if (is_case_mode)
-				throw Exception{"The CASE clause and WHEN clauses in CASE construction "
-					"must have compatible types: both numeric or both strings", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			else
-				throw Exception{"First argument and elements of array of second argument of function " + getName()
-					+ " must have compatible types: both numeric or both strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+			throw Exception{"First argument and elements of array of second argument of function " + getName()
+				+ " must have compatible types: both numeric or both strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 		}
 
 		const DataTypeArray * type_arr_to = typeid_cast<const DataTypeArray *>(arguments[2].get());
 
 		if (!type_arr_to)
-		{
-			if (is_case_mode)
-				throw Exception{"An internal error has been encountered while checking THEN clauses "
-					"in CASE construction", ErrorCodes::LOGICAL_ERROR};
-			else
-				throw Exception{"Third argument of function " + getName()
-					+ ", must be array of destination values to transform to.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-		}
+			throw Exception{"Third argument of function " + getName()
+				+ ", must be array of destination values to transform to.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
 		const auto enriched_type_arr_to_nested = type_arr_to->getEnrichedNestedType();
 		const auto & type_arr_to_nested = enriched_type_arr_to_nested.first;
@@ -133,18 +99,9 @@ public:
 		{
 			if ((type_x->isNumeric() != type_arr_to_nested->isNumeric())
 				|| (!!typeid_cast<const DataTypeString *>(type_x) != !!typeid_cast<const DataTypeString *>(type_arr_to_nested.get())))
-			{
-				if (is_case_mode)
-					throw Exception{"CASE constructions must satisfy either of the following two conditions: "
-						"1. CASE clause and THEN clauses have common type T; "
-						"ELSE clause and WHEN clauses have common type U; "
-						"2. The CASE construction has no ELSE clause; "
-						"All the clauses have common type T", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-				else
-					throw Exception{"Function " + getName()
-						+ " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
-						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			}
+				throw Exception{"Function " + getName()
+					+ " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
 			return type_x->clone();
 		}
@@ -153,31 +110,15 @@ public:
 			const IDataType * type_default = arguments[3].get();
 
 			if (!type_default->isNumeric() && !typeid_cast<const DataTypeString *>(type_default))
-			{
-				if (is_case_mode)
-					throw Exception{"Unsupported type " + type_default->getName()
-						+ " of the ELSE clause of the CASE expression,"
-						+ ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-				else
-					throw Exception{"Unsupported type " + type_default->getName()
-						+ " of fourth argument (default value) of function " + getName()
-						+ ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			}
+				throw Exception{"Unsupported type " + type_default->getName()
+					+ " of fourth argument (default value) of function " + getName()
+					+ ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
 			if ((type_default->isNumeric() != type_arr_to_nested->isNumeric())
 				|| (!!typeid_cast<const DataTypeString *>(type_default) != !!typeid_cast<const DataTypeString *>(type_arr_to_nested.get())))
-			{
-				if (is_case_mode)
-					throw Exception{"CASE constructions must satisfy either of the following two conditions: "
-						"1. CASE clause and THEN clauses have common type T; "
-						"ELSE clause and WHEN clauses have common type U; "
-						"2. The CASE construction has no ELSE clause; "
-						"All the clauses have common type T", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-				else
-					throw Exception{"Function " + getName()
-						+ " have signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
-						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			}
+				throw Exception{"Function " + getName()
+					+ " have signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
 			if (type_arr_to_nested->behavesAsNumber() && type_default->behavesAsNumber())
 			{
@@ -191,19 +132,13 @@ public:
 		}
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const ColumnConstArray * array_from = typeid_cast<const ColumnConstArray *>(block.getByPosition(arguments[1]).column.get());
 		const ColumnConstArray * array_to = typeid_cast<const ColumnConstArray *>(block.getByPosition(arguments[2]).column.get());
 
 		if (!array_from || !array_to)
-		{
-			if (is_case_mode)
-				throw Exception{"WHEN clauses and THEN clauses in CASE construction "
-					"must provide constant data", ErrorCodes::ILLEGAL_COLUMN};
-			else
-				throw Exception{"Second and third arguments of function " + getName() + " must be constant arrays.", ErrorCodes::ILLEGAL_COLUMN};
-		}
+			throw Exception{"Second and third arguments of function " + getName() + " must be constant arrays.", ErrorCodes::ILLEGAL_COLUMN};
 
 		prepare(array_from->getData(), array_to->getData(), block, arguments);
 
@@ -234,13 +169,9 @@ public:
 			&& !executeNum<Float64>(in, out, default_column)
 			&& !executeString(in, out, default_column))
 		{
-			if (is_case_mode)
-				throw Exception{"Illegal parameter in the CASE clause in CASE construction",
-					ErrorCodes::ILLEGAL_COLUMN};
-			else
-				throw Exception{
-					"Illegal column " + in->getName() + " of first argument of function " + getName(),
-					ErrorCodes::ILLEGAL_COLUMN};
+			throw Exception{
+				"Illegal column " + in->getName() + " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN};
 		}
 
 		block.getByPosition(result).column = column_result;
@@ -284,14 +215,10 @@ private:
 				auto out = typeid_cast<ColumnVector<T> *>(out_untyped);
 				if (!out)
 				{
-					if (is_case_mode)
-						throw Exception{"Illegal column " + out_untyped->getName() + "provided to THEN clauses"
-							" in CASE construction. Must be " + in->getName(), ErrorCodes::ILLEGAL_COLUMN};
-					else
-						throw Exception{
-							"Illegal column " + out_untyped->getName() + " of elements of array of third argument of function " + getName()
-							+ ", must be " + in->getName(),
-							ErrorCodes::ILLEGAL_COLUMN};
+					throw Exception{
+						"Illegal column " + out_untyped->getName() + " of elements of array of third argument of function " + getName()
+						+ ", must be " + in->getName(),
+						ErrorCodes::ILLEGAL_COLUMN};
 				}
 
 				executeImplNumToNum<T>(in->getData(), out->getData());
@@ -310,14 +237,9 @@ private:
 					&& !executeNumToNumWithConstDefault<T, Float64>(in, out_untyped)
 					&& !executeNumToStringWithConstDefault<T>(in, out_untyped))
 				{
-					if (is_case_mode)
-						throw Exception{
-							"Illegal column " + in->getName() + " provided to WHEN clauses in CASE construction",
-							ErrorCodes::ILLEGAL_COLUMN};
-					else
-						throw Exception{
-							"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-							ErrorCodes::ILLEGAL_COLUMN};
+					throw Exception{
+						"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
+						ErrorCodes::ILLEGAL_COLUMN};
 				}
 			}
 			else
@@ -334,14 +256,9 @@ private:
 					&& !executeNumToNumWithNonConstDefault<T, Float64>(in, out_untyped, default_untyped)
 					&& !executeNumToStringWithNonConstDefault<T>(in, out_untyped, default_untyped))
 				{
-					if (is_case_mode)
-						throw Exception{
-							"Illegal column " + in->getName() + " provided to WHEN clauses in CASE construction",
-							ErrorCodes::ILLEGAL_COLUMN};
-					else
-						throw Exception{
-							"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-							ErrorCodes::ILLEGAL_COLUMN};
+					throw Exception{
+						"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
+						ErrorCodes::ILLEGAL_COLUMN};
 				}
 			}
 
@@ -359,14 +276,9 @@ private:
 			{
 				if (!executeStringToString(in, out_untyped))
 				{
-					if (is_case_mode)
-						throw Exception{
-							"Illegal column " + in->getName() + " provided to WHEN clauses in CASE construction",
-							ErrorCodes::ILLEGAL_COLUMN};
-					else
-						throw Exception{
-							"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-							ErrorCodes::ILLEGAL_COLUMN};
+					throw Exception{
+						"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
+						ErrorCodes::ILLEGAL_COLUMN};
 				}
 			}
 			else if (default_untyped->isConst())
@@ -383,14 +295,9 @@ private:
 					&& !executeStringToNumWithConstDefault<Float64>(in, out_untyped)
 					&& !executeStringToStringWithConstDefault(in, out_untyped))
 				{
-					if (is_case_mode)
-						throw Exception{
-							"Illegal column " + in->getName() + " provided to WHEN clauses in CASE construction",
-							ErrorCodes::ILLEGAL_COLUMN};
-					else
-						throw Exception{
-							"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-							ErrorCodes::ILLEGAL_COLUMN};
+					throw Exception{
+						"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
+						ErrorCodes::ILLEGAL_COLUMN};
 				}
 			}
 			else
@@ -407,14 +314,9 @@ private:
 					&& !executeStringToNumWithNonConstDefault<Float64>(in, out_untyped, default_untyped)
 					&& !executeStringToStringWithNonConstDefault(in, out_untyped, default_untyped))
 				{
-					if (is_case_mode)
-						throw Exception{
-							"Illegal column " + in->getName() + " provided to WHEN clauses in CASE construction",
-							ErrorCodes::ILLEGAL_COLUMN};
-					else
-						throw Exception{
-							"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-							ErrorCodes::ILLEGAL_COLUMN};
+					throw Exception{
+						"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
+						ErrorCodes::ILLEGAL_COLUMN};
 				}
 			}
 
@@ -453,14 +355,9 @@ private:
 			&& !executeNumToNumWithNonConstDefault2<T, U, Float32>(in, out, default_untyped)
 			&& !executeNumToNumWithNonConstDefault2<T, U, Float64>(in, out, default_untyped))
 		{
-			if (is_case_mode)
-				throw Exception{"Illegal column " + default_untyped->getName()
-					+ " provided to the ELSE clause in CASE construction",
-					ErrorCodes::ILLEGAL_COLUMN};
-			else
-				throw Exception(
-					"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-					ErrorCodes::ILLEGAL_COLUMN);
+			throw Exception(
+				"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
 		}
 
 		return true;
@@ -500,12 +397,8 @@ private:
 		auto default_col = typeid_cast<const ColumnString *>(default_untyped);
 		if (!default_col)
 		{
-			if (is_case_mode)
-				throw Exception{"Illegal column " + default_untyped->getName()
-					+ " provided to the ELSE clause in CASE construction", ErrorCodes::ILLEGAL_COLUMN};
-			else
-				throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-					ErrorCodes::ILLEGAL_COLUMN};
+			throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN};
 		}
 
 		executeImplNumToStringWithNonConstDefault<T>(
@@ -545,12 +438,8 @@ private:
 			&& !executeStringToNumWithNonConstDefault2<U, Float32>(in, out, default_untyped)
 			&& !executeStringToNumWithNonConstDefault2<U, Float64>(in, out, default_untyped))
 		{
-			if (is_case_mode)
-				throw Exception{"Illegal column " + default_untyped->getName()
-					+ " provided to the ELSE clause in CASE construction", ErrorCodes::ILLEGAL_COLUMN};
-			else
-				throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-					ErrorCodes::ILLEGAL_COLUMN};
+			throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN};
 		}
 
 		return true;
@@ -598,12 +487,8 @@ private:
 		auto default_col = typeid_cast<const ColumnString *>(default_untyped);
 		if (!default_col)
 		{
-			if (is_case_mode)
-				throw Exception{"Illegal column " + default_untyped->getName()
-					+ " provided to the ELSE clause in CASE construction", ErrorCodes::ILLEGAL_COLUMN};
-			else
-				throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-					ErrorCodes::ILLEGAL_COLUMN};
+			throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN};
 		}
 
 		executeImplStringToStringWithNonConstDefault(
@@ -857,12 +742,7 @@ private:
 
 		const size_t size = from.size();
 		if (0 == size)
-		{
-			if (is_case_mode)
-				throw Exception{"CASE constructions require WHEN and THEN clauses", ErrorCodes::BAD_ARGUMENTS};
-			else
-				throw Exception{"Empty arrays are illegal in function " + getName(), ErrorCodes::BAD_ARGUMENTS};
-		}
+			throw Exception{"Empty arrays are illegal in function " + getName(), ErrorCodes::BAD_ARGUMENTS};
 
 		std::lock_guard<std::mutex> lock(mutex);
 
@@ -870,12 +750,7 @@ private:
 			return;
 
 		if (from.size() != to.size())
-		{
-			if (is_case_mode)
-				throw Exception{"Imbalance between WHEN and THEN clauses", ErrorCodes::BAD_ARGUMENTS};
-			else
-				throw Exception{"Second and third arguments of function " + getName() + " must be arrays of same size", ErrorCodes::BAD_ARGUMENTS};
-		}
+			throw Exception{"Second and third arguments of function " + getName() + " must be arrays of same size", ErrorCodes::BAD_ARGUMENTS};
 
 		Array converted_to;
 		const Array * used_to = &to;
@@ -960,9 +835,6 @@ private:
 
 		prepared = true;
 	}
-
-private:
-	bool is_case_mode = false;
 };
 
 }

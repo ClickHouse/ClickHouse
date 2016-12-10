@@ -46,6 +46,7 @@ add_library (dbms
 	src/Server/ReplicasStatusHandler.h
 	src/Client/InterruptListener.h
 	include/DB/Functions/FunctionsLogical.h
+	include/DB/Functions/FunctionsNull.h
 	include/DB/Functions/FunctionsReinterpret.h
 	include/DB/Functions/FunctionFactory.h
 	include/DB/Functions/FunctionsArray.h
@@ -58,6 +59,7 @@ add_library (dbms
 	include/DB/Functions/FunctionsTransform.h
 	include/DB/Functions/Conditional/CondException.h
 	include/DB/Functions/Conditional/common.h
+	include/DB/Functions/Conditional/NullMapBuilder.h
 	include/DB/Functions/Conditional/getArrayType.h
 	include/DB/Functions/Conditional/ArgsInfo.h
 	include/DB/Functions/Conditional/CondSource.h
@@ -149,6 +151,7 @@ add_library (dbms
 	include/DB/Parsers/ParserCase.h
 	include/DB/Parsers/ASTTablesInSelectQuery.h
 	include/DB/Parsers/ParserTablesInSelectQuery.h
+	include/DB/AggregateFunctions/AggregateFunctionNull.h
 	include/DB/AggregateFunctions/AggregateFunctionMerge.h
 	include/DB/AggregateFunctions/AggregateFunctionUniqUpTo.h
 	include/DB/AggregateFunctions/AggregateFunctionIf.h
@@ -286,6 +289,8 @@ add_library (dbms
 	include/DB/DataStreams/SquashingTransform.h
 	include/DB/DataStreams/SquashingBlockInputStream.h
 	include/DB/DataStreams/SquashingBlockOutputStream.h
+	include/DB/DataStreams/NullableAdapterBlockInputStream.h
+	include/DB/DataTypes/NullSymbol.h
 	include/DB/DataStreams/ColumnGathererStream.h
 	include/DB/DataTypes/IDataType.h
 	include/DB/DataTypes/IDataTypeDummy.h
@@ -305,6 +310,8 @@ add_library (dbms
 	include/DB/DataTypes/DataTypeExpression.h
 	include/DB/DataTypes/DataTypeDateTime.h
 	include/DB/DataTypes/DataTypesNumberFixed.h
+	include/DB/DataTypes/DataTypeNull.h
+	include/DB/DataTypes/DataTypeNullable.h
 	include/DB/Dictionaries/FileDictionarySource.h
 	include/DB/Dictionaries/DictionarySourceFactory.h
 	include/DB/Dictionaries/DictionaryStructure.h
@@ -511,6 +518,7 @@ add_library (dbms
 	include/DB/Columns/ColumnSet.h
 	include/DB/Columns/ColumnArray.h
 	include/DB/Columns/ColumnsNumber.h
+	include/DB/Columns/ColumnNullable.h
 	include/DB/Client/MultiplexedConnections.h
 	include/DB/Client/ConnectionPoolWithFailover.h
 	include/DB/Client/Connection.h
@@ -666,6 +674,7 @@ add_library (dbms
 	src/Columns/ColumnArray.cpp
 	src/Columns/ColumnAggregateFunction.cpp
 	src/Columns/ColumnExpression.cpp
+	src/Columns/ColumnNullable.cpp
 	src/Columns/ColumnsCommon.cpp
 	src/Columns/ColumnString.cpp
 
@@ -712,8 +721,10 @@ add_library (dbms
 	src/Storages/MergeTree/MergeTreeData.cpp
 	src/Storages/MergeTree/MergeTreeDataPart.cpp
 	src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp
+	src/Storages/MergeTree/MergeTreeReader.cpp
 	src/Storages/MergeTree/MergeTreeDataWriter.cpp
 	src/Storages/MergeTree/MergeTreeDataMerger.cpp
+	src/Storages/MergeTree/MergedBlockOutputStream.cpp
 	src/Storages/MergeTree/MergeTreePartChecker.cpp
 	src/Storages/MergeTree/ReplicatedMergeTreeLogEntry.cpp
 	src/Storages/MergeTree/ReplicatedMergeTreeQueue.cpp
@@ -798,6 +809,8 @@ add_library (dbms
 	src/DataStreams/SquashingTransform.cpp
 	src/DataStreams/SquashingBlockInputStream.cpp
 	src/DataStreams/SquashingBlockOutputStream.cpp
+	src/DataStreams/MaterializingBlockInputStream.cpp
+	src/DataStreams/NullableAdapterBlockInputStream.cpp
 	src/DataStreams/ColumnGathererStream.cpp
 
 	src/DataTypes/DataTypeString.cpp
@@ -808,6 +821,9 @@ add_library (dbms
 	src/DataTypes/DataTypeAggregateFunction.cpp
 	src/DataTypes/DataTypeEnum.cpp
 	src/DataTypes/DataTypeTuple.cpp
+	src/DataTypes/DataTypeNull.cpp
+	src/DataTypes/DataTypeNullable.cpp
+	src/DataTypes/NullSymbol.cpp
 	src/DataTypes/FieldToDataType.cpp
 
 	src/Dictionaries/DictionarySourceFactory.cpp
@@ -909,6 +925,8 @@ add_library (dbms
 	src/Interpreters/ClusterProxy/Query.cpp
 	src/Interpreters/AsynchronousMetrics.cpp
 
+	src/Functions/DataTypeTraits.cpp
+	src/Functions/IFunction.cpp
 	src/Functions/FunctionFactory.cpp
 	src/Functions/FunctionsArithmetic.cpp
 	src/Functions/FunctionsArray.cpp
@@ -922,6 +940,7 @@ add_library (dbms
 	src/Functions/FunctionsHashing.cpp
 	src/Functions/FunctionsHigherOrder.cpp
 	src/Functions/FunctionsLogical.cpp
+	src/Functions/FunctionsNull.cpp
 	src/Functions/FunctionsRandom.cpp
 	src/Functions/FunctionsReinterpret.cpp
 	src/Functions/FunctionsRound.cpp
@@ -938,11 +957,13 @@ add_library (dbms
 	src/Functions/Conditional/getArrayType.cpp
 	src/Functions/Conditional/ArgsInfo.cpp
 	src/Functions/Conditional/CondSource.cpp
+	src/Functions/Conditional/NullMapBuilder.cpp
 	src/Functions/Conditional/NumericPerformer.cpp
 	src/Functions/Conditional/StringEvaluator.cpp
 	src/Functions/Conditional/StringArrayEvaluator.cpp
 
 	src/AggregateFunctions/UniqCombinedBiasData.cpp
+	src/AggregateFunctions/AggregateFunctionNull.cpp
 	src/AggregateFunctions/AggregateFunctionFactory.cpp
 	src/AggregateFunctions/AggregateFunctionArray.cpp
 	src/AggregateFunctions/AggregateFunctionAvg.cpp

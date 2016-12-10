@@ -53,11 +53,6 @@ public:
 		throw Exception("Method updateHashWithValue is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void getExtremes(Field & min, Field & max) const override
-	{
-		throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-	}
-
 	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
 	{
 		s += length;
@@ -89,6 +84,11 @@ public:
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		return cloneDummy(s == 0 ? 0 : offsets.back());
+	}
+
+	void getExtremes(Field & min, Field & max) const override
+	{
+		throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 private:

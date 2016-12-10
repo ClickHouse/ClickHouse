@@ -785,7 +785,7 @@ public:
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -859,7 +859,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const auto & col_with_type_and_name_left = block.getByPosition(arguments[0]);
 		const auto & col_with_type_and_name_right = block.getByPosition(arguments[1]);
@@ -904,57 +904,5 @@ using FunctionLess = FunctionComparison<LessOp, 				NameLess>			;
 using FunctionGreater = FunctionComparison<GreaterOp, 			NameGreater>		;
 using FunctionLessOrEquals = FunctionComparison<LessOrEqualsOp, 		NameLessOrEquals>	;
 using FunctionGreaterOrEquals = FunctionComparison<GreaterOrEqualsOp,	NameGreaterOrEquals>;
-
-
-template <>
-void FunctionComparison<EqualsOp, NameEquals>::executeTupleImpl(
-	Block & block, size_t result, const ColumnTuple * x, const ColumnTuple * y, size_t tuple_size)
-{
-	return executeTupleEqualityImpl<FunctionComparison<EqualsOp, NameEquals>, FunctionAnd>(block, result, x, y, tuple_size);
-}
-
-template <>
-void FunctionComparison<NotEqualsOp, NameNotEquals>::executeTupleImpl(
-	Block & block, size_t result, const ColumnTuple * x, const ColumnTuple * y, size_t tuple_size)
-{
-	return executeTupleEqualityImpl<FunctionComparison<NotEqualsOp, NameNotEquals>, FunctionOr>(block, result, x, y, tuple_size);
-}
-
-template <>
-void FunctionComparison<LessOp, NameLess>::executeTupleImpl(
-	Block & block, size_t result, const ColumnTuple * x, const ColumnTuple * y, size_t tuple_size)
-{
-	return executeTupleLessGreaterImpl<
-		FunctionComparison<LessOp, NameLess>,
-		FunctionComparison<LessOp, NameLess>>(block, result, x, y, tuple_size);
-}
-
-template <>
-void FunctionComparison<GreaterOp, NameGreater>::executeTupleImpl(
-	Block & block, size_t result, const ColumnTuple * x, const ColumnTuple * y, size_t tuple_size)
-{
-	return executeTupleLessGreaterImpl<
-		FunctionComparison<GreaterOp, NameGreater>,
-		FunctionComparison<GreaterOp, NameGreater>>(block, result, x, y, tuple_size);
-}
-
-template <>
-void FunctionComparison<LessOrEqualsOp, NameLessOrEquals>::executeTupleImpl(
-	Block & block, size_t result, const ColumnTuple * x, const ColumnTuple * y, size_t tuple_size)
-{
-	return executeTupleLessGreaterImpl<
-		FunctionComparison<LessOp, NameLess>,
-		FunctionComparison<LessOrEqualsOp, NameLessOrEquals>>(block, result, x, y, tuple_size);
-}
-
-template <>
-void FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>::executeTupleImpl(
-	Block & block, size_t result, const ColumnTuple * x, const ColumnTuple * y, size_t tuple_size)
-{
-	return executeTupleLessGreaterImpl<
-		FunctionComparison<GreaterOp, NameGreater>,
-		FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>>(block, result, x, y, tuple_size);
-}
-
 
 }
