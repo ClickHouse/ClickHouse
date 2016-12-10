@@ -1434,10 +1434,11 @@ public:
 
 	String getName() const override { return name; }
 
-	void getReturnTypeAndPrerequisites(const ColumnsWithTypeAndName & arguments,
-										DataTypePtr & out_return_type,
-										ExpressionActions::Actions & out_prerequisites) override;
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override;
+	void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
+		DataTypePtr & out_return_type,
+		ExpressionActions::Actions & out_prerequisites) override;
+
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 private:
 	const Context & global_context;

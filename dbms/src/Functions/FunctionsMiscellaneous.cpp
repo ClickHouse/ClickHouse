@@ -489,7 +489,7 @@ void FunctionVisibleWidth::perform(Block & block, const ColumnNumbers & argument
 }
 
 
-void FunctionHasColumnInTable::getReturnTypeAndPrerequisites(
+void FunctionHasColumnInTable::getReturnTypeAndPrerequisitesImpl(
 	const ColumnsWithTypeAndName & arguments,
 	DataTypePtr & out_return_type,
 	ExpressionActions::Actions & out_prerequisites)
@@ -516,7 +516,7 @@ void FunctionHasColumnInTable::getReturnTypeAndPrerequisites(
 }
 
 
-void FunctionHasColumnInTable::execute(Block & block, const ColumnNumbers & arguments, size_t result)
+void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
 	auto get_string_from_block =
 		[&](size_t column_pos) -> const String &
