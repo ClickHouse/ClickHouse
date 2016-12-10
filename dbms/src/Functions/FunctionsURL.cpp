@@ -27,6 +27,7 @@ void registerFunctionsURL(FunctionFactory & factory)
 	factory.registerFunction<FunctionCutFragment>();
 	factory.registerFunction<FunctionCutQueryStringAndFragment>();
 	factory.registerFunction<FunctionCutURLParameter>();
+	factory.registerFunction<FunctionUnquoteUrl>();
 }
 
 }

@@ -1,6 +1,59 @@
 #include <DB/Common/StringUtils.h>
 #include <DB/Common/UrlUtils.h>
 
+const char* const char2DigitTable = ("\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+                                     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+                                     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+                                     "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\xff\xff\xff\xff\xff\xff" //0-9
+                                     "\xff\x0a\x0b\x0c\x0d\x0e\x0f\xff\xff\xff\xff\xff\xff\xff\xff\xff" //A-Z
+                                     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+                                     "\xff\x0a\x0b\x0c\x0d\x0e\x0f\xff\xff\xff\xff\xff\xff\xff\xff\xff" //a-z
+                                     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+                                     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+                                     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+                                     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+                                     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+                                     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+                                     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+                                     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+                                     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff");
+
+std::string decodeUrl(const StringView& url)
+{
+	const char* p = url.data();
+	const char* st = url.data();
+	const char* end = url.data() + url.size();
+	std::string result;
+
+	for (; p < end; ++p)
+	{
+		if (*p != '%' || end - p < 3)
+			continue;
+
+		unsigned char h = char2DigitTable[static_cast<unsigned char>(p[1])];
+		unsigned char l = char2DigitTable[static_cast<unsigned char>(p[2])];
+
+		if (h != 0xFF && l != 0xFF)
+		{
+			unsigned char digit = (h << 4) + l;
+
+			if (digit < 127) {
+				result.append(st, p - st + 1);
+				result.back() = digit;
+				st = p + 3;
+			}
+		}
+
+		p += 2;
+	}
+
+	if (st == url.data())
+		return std::string(url.data(), url.size());
+	if (st < p)
+		result.append(st, p - st);
+	return result;
+}
+
 StringView getUrlScheme(const StringView& url)
 {
 	// scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )

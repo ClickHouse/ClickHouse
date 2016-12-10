@@ -971,6 +971,47 @@ struct CutSubstringImpl
 };
 
 
+struct UrlDecodeImpl
+{
+	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
+		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
+	{
+		res_data.reserve(data.size());
+		size_t size = offsets.size();
+		res_offsets.resize(size);
+
+		size_t prev_offset = 0;
+		size_t res_offset = 0;
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			const char * current = reinterpret_cast<const char *>(&data[prev_offset]);
+			std::string url = decodeUrl(StringView(current, offsets[i] - prev_offset - 1));
+
+			res_data.resize(res_data.size() + url.size() + 1);
+			memcpy(&res_data[res_offset], url.data(), url.size());
+			res_offset += url.size() + 1;
+			res_data[res_offset - 1] = 0;
+
+			res_offsets[i] = res_offset;
+			prev_offset = offsets[i];
+		}
+	}
+
+	static void constant(const std::string & data,
+		std::string & res_data)
+	{
+		res_data = decodeUrl(data);
+	}
+
+	static void vector_fixed(const ColumnString::Chars_t & data, size_t n,
+		ColumnString::Chars_t & res_data)
+	{
+		throw Exception("Column of type FixedString is not supported by URL functions", ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+
 struct NameProtocol 					{ static constexpr auto name = "protocol"; };
 struct NameDomain 						{ static constexpr auto name = "domain"; };
 struct NameDomainWithoutWWW 			{ static constexpr auto name = "domainWithoutWWW"; };
@@ -981,6 +1022,7 @@ struct NamePathFull						{ static constexpr auto name = "pathFull"; };
 struct NameQueryString					{ static constexpr auto name = "queryString"; };
 struct NameFragment 					{ static constexpr auto name = "fragment"; };
 struct NameQueryStringAndFragment		{ static constexpr auto name = "queryStringAndFragment"; };
+struct NameUnquoteUrl                   { static constexpr auto name = "unquoteUrl"; };
 
 struct NameCutToFirstSignificantSubdomain { static constexpr auto name = "cutToFirstSignificantSubdomain"; };
 
@@ -1002,6 +1044,7 @@ using FunctionPathFull = FunctionStringToString<ExtractSubstringImpl<ExtractPath
 using FunctionQueryString = FunctionStringToString<ExtractSubstringImpl<ExtractQueryString<true> >, 	NameQueryString>	;
 using FunctionFragment = FunctionStringToString<ExtractSubstringImpl<ExtractFragment<true> >, 		NameFragment>		;
 using FunctionQueryStringAndFragment = FunctionStringToString<ExtractSubstringImpl<ExtractQueryStringAndFragment<true> >, NameQueryStringAndFragment>;
+using FunctionUnquoteUrl = FunctionStringToString<UrlDecodeImpl, NameUnquoteUrl>;
 
 using FunctionCutToFirstSignificantSubdomain = FunctionStringToString<ExtractSubstringImpl<CutToFirstSignificantSubdomain>, NameCutToFirstSignificantSubdomain>;
 
