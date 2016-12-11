@@ -686,25 +686,36 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 				else
 					observed_type = new_type;
 
-				// When ALTERing between Enums with same underlying type, don't modify columns, just update columns.txt.
+				/// When ALTERing between Enums with same underlying type, don't modify columns, just update columns.txt.
+				/// Same for Arrays of Enums, arbitary depth.
 				if (part)
 				{
-					if ((typeid_cast<const DataTypeEnum8 *>(observed_type) && typeid_cast<const DataTypeEnum8 *>(old_type))
-						|| (typeid_cast<const DataTypeEnum16 *>(observed_type) && typeid_cast<const DataTypeEnum16 *>(old_type)))
+					const IDataType * type_from = old_type;
+					const IDataType * type_to = observed_type;
+
+					bool enums_with_same_type = false;
+					while (true)
 					{
-						out_force_update_metadata = true;
-						continue;
+						if ((typeid_cast<const DataTypeEnum8 *>(type_to) && typeid_cast<const DataTypeEnum8 *>(type_from))
+							|| (typeid_cast<const DataTypeEnum16 *>(type_to) && typeid_cast<const DataTypeEnum16 *>(type_from)))
+						{
+							enums_with_same_type = true;
+							break;
+						}
+
+						const DataTypeArray * arr_from = typeid_cast<const DataTypeArray *>(type_from);
+						const DataTypeArray * arr_to = typeid_cast<const DataTypeArray *>(type_to);
+
+						if (arr_from && arr_to)
+						{
+							type_from = arr_from->getNestedType().get();
+							type_to = arr_to->getNestedType().get();
+						}
+						else
+							break;
 					}
 
-					/// Same for Arrays of Enums
-					const DataTypeArray * arr_from = typeid_cast<const DataTypeArray *>(old_type);
-					const DataTypeArray * arr_to = typeid_cast<const DataTypeArray *>(observed_type);
-
-					if (arr_from && arr_to
-						&& ((typeid_cast<const DataTypeEnum8 *>(arr_to->getNestedType().get())
-								&& typeid_cast<const DataTypeEnum8 *>(arr_from->getNestedType().get()))
-							|| (typeid_cast<const DataTypeEnum16 *>(arr_to->getNestedType().get())
-								&& typeid_cast<const DataTypeEnum16 *>(arr_from->getNestedType().get()))))
+					if (enums_with_same_type)
 					{
 						out_force_update_metadata = true;
 						continue;
