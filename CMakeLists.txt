@@ -59,11 +59,6 @@ if ($ENV{GLIBC_COMPATIBILITY})
 	set (GLIBC_COMPATIBILITY TRUE)
 endif ()
 
-set (ENABLE_MONGODB TRUE CACHE BOOL "Set to TRUE to enable MongoDB support as source for external dictionaries")
-if (NOT $ENV{ENABLE_MONGODB})
-	set (ENABLE_MONGODB FALSE)
-endif ()
-
 set (ENABLE_LIBTCMALLOC TRUE CACHE BOOL "Set to TRUE to enable libtcmalloc.")
 if (NOT $ENV{ENABLE_LIBTCMALLOC})
 	set (ENABLE_LIBTCMALLOC FALSE)

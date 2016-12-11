@@ -104,25 +104,6 @@ On Ubuntu 15.10 or newer.
 sudo apt-get install libboost-dev libboost-thread-dev libboost-program-options-dev libboost-system-dev libboost-regex-dev libboost-filesystem-dev
 ```
 
-## Install mongoclient (optional)
-
-This library is needed only for 'external dictionaries' with MongoDB source.
-This is rarely used but enabled by default.
-
-If you don't need it, you could set variable and skip installation step:
-```
-export ENABLE_MONGODB=0
-```
-
-Otherwise:
-```
-sudo apt-get install scons
-git clone -b legacy https://github.com/mongodb/mongo-cxx-driver.git
-cd mongo-cxx-driver
-sudo scons --c++11 --release --cc=$CC --cxx=$CXX --ssl=0 --disable-warnings-as-errors -j $THREADS --prefix=/usr/local install
-cd ..
-```
-
 # Checkout ClickHouse sources
 
 ```

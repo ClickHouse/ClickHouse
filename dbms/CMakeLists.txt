@@ -3,16 +3,6 @@ include_directories (/usr/include/mysql)
 
 add_subdirectory (src)
 
-if (ENABLE_MONGODB)
-	set (LINK_MONGOCLIENT libmongoclient.a ${OPENSSL_LIBRARIES} ${Boost_THREAD_LIBRARY})
-	set (MONGODB_FILES
-		include/DB/Dictionaries/MongoDBBlockInputStream.h
-		include/DB/Dictionaries/MongoDBDictionarySource.h
-		src/Dictionaries/MongoDBDictionarySource.cpp
-		src/Dictionaries/MongoDBBlockInputStream.cpp)
-	add_definitions(-D ENABLE_MONGODB)
-endif ()
-
 if (NOT ENABLE_LIBTCMALLOC)
 	add_definitions(-D NO_TCMALLOC)
 endif ()
@@ -320,6 +310,8 @@ add_library (dbms
 	include/DB/Dictionaries/IDictionary.h
 	include/DB/Dictionaries/MySQLBlockInputStream.h
 	include/DB/Dictionaries/MySQLDictionarySource.h
+	include/DB/Dictionaries/MongoDBBlockInputStream.h
+	include/DB/Dictionaries/MongoDBDictionarySource.h
 	include/DB/Dictionaries/ODBCBlockInputStream.h
 	include/DB/Dictionaries/ODBCDictionarySource.h
 	include/DB/Dictionaries/HashedDictionary.h
@@ -829,11 +821,13 @@ add_library (dbms
 	src/Dictionaries/DictionarySourceFactory.cpp
 	src/Dictionaries/FileDictionarySource.cpp
 	src/Dictionaries/MySQLDictionarySource.cpp
+	src/Dictionaries/MongoDBDictionarySource.cpp
 	src/Dictionaries/ODBCDictionarySource.cpp
 	src/Dictionaries/ClickHouseDictionarySource.cpp
 	src/Dictionaries/ExecutableDictionarySource.cpp
 	src/Dictionaries/HTTPDictionarySource.cpp
 	src/Dictionaries/MySQLBlockInputStream.cpp
+	src/Dictionaries/MongoDBBlockInputStream.cpp
 	src/Dictionaries/ODBCBlockInputStream.cpp
 	src/Dictionaries/ExternalQueryBuilder.cpp
 	src/Dictionaries/ExternalResultDescription.cpp
@@ -994,8 +988,6 @@ add_library (dbms
 
 	src/Client/Connection.cpp
 	src/Client/MultiplexedConnections.cpp
-
-	${MONGODB_FILES}
 )
 
 if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -1050,10 +1042,9 @@ target_link_libraries(dbms
 	re2 re2_st
 	${OPENSSL_CRYPTO_LIBRARY}
 	${Boost_SYSTEM_LIBRARY}
-	${LINK_MONGOCLIENT}
-	${Boost_REGEX_LIBRARY}
 	PocoData
 	PocoDataODBC
+	PocoMongoDB
 	${APPLE_ICONV_LIB}
 	dl ${LTDL_LIB})
 

@@ -1,10 +1,15 @@
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/MD5Engine.h>
+
+#include <Poco/MongoDB/Connection.h>
+#include <Poco/MongoDB/Database.h>
+#include <Poco/MongoDB/Cursor.h>
+#include <Poco/MongoDB/Array.h>
+
 #include <DB/Dictionaries/MongoDBBlockInputStream.h>
 #include <DB/Dictionaries/MongoDBDictionarySource.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <mongo/client/dbclient.h>
-#include <ext/collection_cast.hpp>
+#include <DB/Core/FieldVisitors.h>
 #include <ext/enumerate.hpp>
-#include <ext/size.hpp>
 
 
 namespace DB
@@ -14,76 +19,126 @@ namespace ErrorCodes
 {
 	extern const int UNSUPPORTED_METHOD;
 	extern const int WRONG_PASSWORD;
-	extern const int MONGODB_INIT_FAILED;
+	extern const int MONGODB_CANNOT_AUTHENTICATE;
 }
 
 
 static const size_t max_block_size = 8192;
 
-/// mongo-cxx driver requires global initialization before using any functionality
-static void init()
+
+/// See https://pocoproject.org/forum/viewtopic.php?f=10&t=6326&p=11426&hilit=mongodb+auth#p11485
+static void authenticate(Poco::MongoDB::Connection & connection,
+	const std::string & database, const std::string & user, const std::string & password)
 {
-	static const auto mongo_init_status = mongo::client::initialize();
+	Poco::MongoDB::Database db(database);
 
-	if (!mongo_init_status.isOK())
-		throw DB::Exception{
-			"mongo::client::initialize() failed: " + mongo_init_status.toString(),
-			ErrorCodes::MONGODB_INIT_FAILED
-		};
+	/// Challenge-response authentication.
+	std::string nonce;
 
-	LOG_TRACE(&Logger::get("MongoDBDictionarySource"), "mongo::client::initialize() ok");
+	/// First step: request nonce.
+	{
+		auto command = db.createCommand();
+		command->setNumberToReturn(1);
+		command->selector().add<Int32>("getnonce", 1);
+
+		Poco::MongoDB::ResponseMessage response;
+		connection.sendRequest(*command, response);
+
+		if (response.documents().empty())
+			throw Exception("Cannot authenticate in MongoDB: server returned empty response for 'getnonce' command",
+				ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+
+		auto doc = response.documents()[0];
+		try
+		{
+			double ok = doc->get<double>("ok", 0);
+			if (ok != 1)
+				throw Exception("Cannot authenticate in MongoDB: server returned response for 'getnonce' command that"
+					" has field 'ok' missing or having wrong value", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+
+			nonce = doc->get<std::string>("nonce", "");
+			if (nonce.empty())
+				throw Exception("Cannot authenticate in MongoDB: server returned response for 'getnonce' command that"
+					" has field 'nonce' missing or empty", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+		}
+		catch (Poco::NotFoundException & e)
+		{
+			throw Exception("Cannot authenticate in MongoDB: server returned response for 'getnonce' command that has missing required field: "
+				+ e.displayText(), ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+		}
+	}
+
+	/// Second step: use nonce to calculate digest and send it back to the server.
+	/// Digest is hex_md5(n.nonce + username + hex_md5(username + ":mongo:" + password))
+	{
+		std::string first = user + ":mongo:" + password;
+
+		Poco::MD5Engine md5;
+		md5.update(first);
+		std::string digest_first(Poco::DigestEngine::digestToHex(md5.digest()));
+		std::string second    =  nonce + user + digest_first;
+		md5.reset();
+		md5.update(second);
+		std::string digest_second(Poco::DigestEngine::digestToHex(md5.digest()));
+
+		auto command = db.createCommand();
+		command->setNumberToReturn(1);
+		command->selector()
+			.add<Int32>("authenticate", 1)
+			.add<std::string>("user", user)
+			.add<std::string>("nonce", nonce)
+			.add<std::string>("key", digest_second);
+
+		Poco::MongoDB::ResponseMessage response;
+		connection.sendRequest(*command, response);
+
+		if (response.empty())
+			throw Exception("Cannot authenticate in MongoDB: server returned empty response for 'authenticate' command",
+				ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+
+		auto doc = response.documents()[0];
+		try
+		{
+			double ok = doc->get<double>("ok", 0);
+			if (ok != 1)
+				throw Exception("Cannot authenticate in MongoDB: server returned response for 'authenticate' command that"
+					" has field 'ok' missing or having wrong value", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+		}
+		catch (Poco::NotFoundException & e)
+		{
+			throw Exception("Cannot authenticate in MongoDB: server returned response for 'authenticate' command that has missing required field: "
+				+ e.displayText(), ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+		}
+	}
 }
 
 
-
 MongoDBDictionarySource::MongoDBDictionarySource(
-	const DictionaryStructure & dict_struct, const std::string & host, const std::string & port,
+	const DictionaryStructure & dict_struct, const std::string & host, UInt16 port,
 	const std::string & user, const std::string & password,
 	const std::string & db, const std::string & collection,
 	const Block & sample_block)
 	: dict_struct{dict_struct}, host{host}, port{port}, user{user}, password{password},
 		db{db}, collection{collection}, sample_block{sample_block},
-		connection{std::make_unique<mongo::DBClientConnection>(true)}
+		connection{std::make_shared<Poco::MongoDB::Connection>(host, port)}
 {
-	init();
-
-	connection->connect(host + ':' + port);
-
-	/// @todo: should connection.auth be called after or before .connect ?
 	if (!user.empty())
-	{
-		std::string error;
-		if (!connection->auth(db, user, password, error))
-			throw DB::Exception{
-				"Could not authenticate to a MongoDB database " + db + " with provided credentials: " + error,
-				ErrorCodes::WRONG_PASSWORD
-			};
-	}
-
-	/// compose BSONObj containing all requested fields
-	mongo::BSONObjBuilder builder;
-	builder << "_id" << 0;
-
-	for (const auto & column : sample_block.getColumns())
-		builder << column.name << 1;
-
-	fields_to_query = std::make_unique<mongo::BSONObj>(builder.obj());
+		authenticate(*connection, db, user, password);
 }
 
 
 MongoDBDictionarySource::MongoDBDictionarySource(
 	const DictionaryStructure & dict_struct, const Poco::Util::AbstractConfiguration & config,
 	const std::string & config_prefix, Block & sample_block)
-	: MongoDBDictionarySource{
+	: MongoDBDictionarySource(
 		dict_struct,
 		config.getString(config_prefix + ".host"),
-		config.getString(config_prefix + ".port"),
+		config.getUInt(config_prefix + ".port"),
 		config.getString(config_prefix + ".user", ""),
 		config.getString(config_prefix + ".password", ""),
 		config.getString(config_prefix + ".db", ""),
 		config.getString(config_prefix + ".collection"),
-		sample_block
-	}
+		sample_block)
 {
 }
 
@@ -99,11 +154,26 @@ MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource &
 MongoDBDictionarySource::~MongoDBDictionarySource() = default;
 
 
+static std::unique_ptr<Poco::MongoDB::Cursor> createCursor(
+	const std::string & database, const std::string & collection, const Block & sample_block_to_select)
+{
+	auto cursor = std::make_unique<Poco::MongoDB::Cursor>(database, collection);
+
+	/// Looks like selecting _id column is implicit by default.
+	if (!sample_block_to_select.has("_id"))
+		cursor->query().returnFieldSelector().add("_id", 0);
+
+	for (const auto & column : sample_block_to_select.getColumns())
+		cursor->query().returnFieldSelector().add(column.name, 1);
+
+	return cursor;
+}
+
+
 BlockInputStreamPtr MongoDBDictionarySource::loadAll()
 {
 	return std::make_shared<MongoDBBlockInputStream>(
-		connection->query(db + '.' + collection, {}, 0, 0, fields_to_query.get()),
-		sample_block, max_block_size);
+		connection, createCursor(db, collection, sample_block), sample_block, max_block_size);
 }
 
 
@@ -112,13 +182,17 @@ BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> &
 	if (!dict_struct.id)
 		throw Exception{"'id' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
 
-	/// mongo::BSONObj has shitty design and does not use fixed width integral types
-	const auto query = BSON(
-		dict_struct.id.value().name << BSON("$in" << ext::collection_cast<std::vector<long long int>>(ids)));
+	auto cursor = createCursor(db, collection, sample_block);
+
+	Poco::MongoDB::Array::Ptr ids_array(new Poco::MongoDB::Array);
+	for (const UInt64 id : ids)
+		ids_array->add("", Int32(id));
+
+	cursor->query().selector().addNewDocument(dict_struct.id.value().name)
+		.add("$in", ids_array);
 
 	return std::make_shared<MongoDBBlockInputStream>(
-		connection->query(db + '.' + collection, query, 0, 0, fields_to_query.get()),
-		sample_block, max_block_size);
+		connection, std::move(cursor), sample_block, max_block_size);
 }
 
 
@@ -128,49 +202,51 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
 	if (!dict_struct.key)
 		throw Exception{"'key' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
 
-	std::string query_string;
+	auto cursor = createCursor(db, collection, sample_block);
 
+	Poco::MongoDB::Array::Ptr keys_array(new Poco::MongoDB::Array);
+	for (const auto row_idx : requested_rows)
 	{
-		WriteBufferFromString out{query_string};
+		auto & key = keys_array->addNewDocument("");
 
-		writeString("{$or:[", out);
-
-		auto first = true;
-
-		for (const auto row : requested_rows)
+		for (const auto attr : ext::enumerate(*dict_struct.key))
 		{
-			if (!first)
-				writeChar(',', out);
-
-			first = false;
-
-			writeChar('{', out);
-
-			for (const auto idx_key : ext::enumerate(*dict_struct.key))
+			switch (attr.second.underlying_type)
 			{
-				if (idx_key.first != 0)
-					writeChar(',', out);
+				case AttributeUnderlyingType::UInt8:
+				case AttributeUnderlyingType::UInt16:
+				case AttributeUnderlyingType::UInt32:
+				case AttributeUnderlyingType::UInt64:
+				case AttributeUnderlyingType::Int8:
+				case AttributeUnderlyingType::Int16:
+				case AttributeUnderlyingType::Int32:
+				case AttributeUnderlyingType::Int64:
+					key.add(attr.second.name, Int32(key_columns[attr.first]->get64(row_idx)));
+					break;
 
-				writeString(idx_key.second.name, out);
-				writeChar(':', out);
-				idx_key.second.type->serializeTextQuoted(*key_columns[idx_key.first], row, out);
+				case AttributeUnderlyingType::Float32:
+				case AttributeUnderlyingType::Float64:
+					key.add(attr.second.name, apply_visitor(FieldVisitorConvertToNumber<Float64>(), (*key_columns[attr.first])[row_idx]));
+					break;
+
+				case AttributeUnderlyingType::String:
+					key.add(attr.second.name, get<String>((*key_columns[attr.first])[row_idx]));
+					break;
 			}
-
-			writeChar('}', out);
 		}
-
-		writeString("]}", out);
 	}
 
+	cursor->query().selector().addNewDocument(dict_struct.id.value().name)
+		.add("$or", keys_array);
+
 	return std::make_shared<MongoDBBlockInputStream>(
-		connection->query(db + '.' + collection, query_string, 0, 0, fields_to_query.get()),
-		sample_block, max_block_size);
+		connection, std::move(cursor), sample_block, max_block_size);
 }
 
 
 std::string MongoDBDictionarySource::toString() const
 {
-	return "MongoDB: " + db + '.' + collection + ',' + (user.empty() ? " " : " " + user + '@') + host + ':' + port;
+	return "MongoDB: " + db + '.' + collection + ',' + (user.empty() ? " " : " " + user + '@') + host + ':' + DB::toString(port);
 }
 
 }

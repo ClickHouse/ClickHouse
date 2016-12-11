@@ -296,7 +296,7 @@ namespace ErrorCodes
 	extern const int LIMIT_EXCEEDED = 290;
 	extern const int DATABASE_ACCESS_DENIED = 291;
 	extern const int LEADERSHIP_CHANGED = 292;
-	extern const int MONGODB_INIT_FAILED = 293;
+	extern const int MONGODB_CANNOT_AUTHENTICATE = 293;
 	extern const int INVALID_BLOCK_EXTRA_INFO = 294;
 	extern const int RECEIVED_EMPTY_DATA = 295;
 	extern const int NO_REMOTE_SHARD_FOUND = 296;
