@@ -768,7 +768,10 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 		}
 
 		out_expression->add(ExpressionAction::project(projection));
+	}
 
+	if (part && !out_rename_map.empty())
+	{
 		std::string message;
 		{
 			WriteBufferFromString out(message);
@@ -781,8 +784,9 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 				first = false;
 				out << from_to.first << " to " << from_to.second;
 			}
+			out << " in part " << part->name;
 		}
-		LOG_INFO(log, message);
+		LOG_DEBUG(log, message);
 	}
 }
 
