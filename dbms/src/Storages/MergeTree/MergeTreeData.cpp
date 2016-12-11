@@ -23,6 +23,7 @@
 #include <DB/Common/Increment.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/StringUtils.h>
+#include <DB/IO/Operators.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -685,16 +686,32 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 				else
 					observed_type = new_type;
 
-				// При ALTER между Enum с одинаковым подлежащим типом столбцы не трогаем, лишь просим обновить columns.txt
-				if (part
-					&& ((typeid_cast<const DataTypeEnum8 *>(observed_type) && typeid_cast<const DataTypeEnum8 *>(old_type))
-						|| (typeid_cast<const DataTypeEnum16 *>(observed_type) && typeid_cast<const DataTypeEnum16 *>(old_type))))
+				// When ALTERing between Enums with same underlying type, don't modify columns, just update columns.txt.
+				if (part)
 				{
-					out_force_update_metadata = true;
-					continue;
+					if ((typeid_cast<const DataTypeEnum8 *>(observed_type) && typeid_cast<const DataTypeEnum8 *>(old_type))
+						|| (typeid_cast<const DataTypeEnum16 *>(observed_type) && typeid_cast<const DataTypeEnum16 *>(old_type)))
+					{
+						out_force_update_metadata = true;
+						continue;
+					}
+
+					/// Same for Arrays of Enums
+					const DataTypeArray * arr_from = typeid_cast<const DataTypeArray *>(old_type);
+					const DataTypeArray * arr_to = typeid_cast<const DataTypeArray *>(observed_type);
+
+					if (arr_from && arr_to
+						&& ((typeid_cast<const DataTypeEnum8 *>(arr_to->getNestedType().get())
+								&& typeid_cast<const DataTypeEnum8 *>(arr_from->getNestedType().get()))
+							|| (typeid_cast<const DataTypeEnum16 *>(arr_to->getNestedType().get())
+								&& typeid_cast<const DataTypeEnum16 *>(arr_from->getNestedType().get()))))
+					{
+						out_force_update_metadata = true;
+						continue;
+					}
 				}
 
-				/// Нужно изменить тип столбца.
+				/// Need to modify column type.
 				if (!out_expression)
 					out_expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), context.getSettingsRef());
 
@@ -738,36 +755,12 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 			out_rename_map[escaped_converted_column + ".bin"] = escaped_source_column + ".bin";
 			out_rename_map[escaped_converted_column + ".mrk"] = escaped_source_column + ".mrk";
 
-			const IDataType * new_type = new_types[converting_column_name].get();
+			const IDataType * new_type = new_types[source_and_expression.first].get();
 
-			bool is_nullable = new_type->isNullable();
-			const IDataType * observed_type;
-			if (is_nullable)
-			{
-				const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*new_type);
-				observed_type = nullable_type.getNestedType().get();
-			}
-			else
-				observed_type = new_type;
-
-			/// Information on how to update the sizes if the column is an array.
-			if (auto array_type = typeid_cast<const DataTypeArray *>(observed_type))
-			{
-				size_t level = 1;
-				while ((array_type = typeid_cast<const DataTypeArray *>(
-					array_type->getNestedType().get())) != nullptr)
-					++level;
-
-				for (size_t i = 0; i < level; ++i)
-				{
-					const auto suffix = ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(i);
-					out_rename_map[escaped_converted_column + suffix + ".bin"] = escaped_source_column + suffix + ".bin";
-					out_rename_map[escaped_converted_column + suffix + ".mrk"] = escaped_source_column + suffix + ".mrk";
-				}
-			}
+			/// NOTE Sizes of arrays are not updated during conversion.
 
 			/// Information on how to update the null map if it is a nullable column.
-			if (is_nullable)
+			if (new_type->isNullable())
 			{
 				out_rename_map[escaped_converted_column + ".null"] = escaped_source_column + ".null";
 				out_rename_map[escaped_converted_column + ".null_mrk"] = escaped_source_column + ".null_mrk";
@@ -775,6 +768,21 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 		}
 
 		out_expression->add(ExpressionAction::project(projection));
+
+		std::string message;
+		{
+			WriteBufferFromString out(message);
+			out << "Will rename ";
+			bool first = true;
+			for (const auto & from_to : out_rename_map)
+			{
+				if (!first)
+					out << ", ";
+				first = false;
+				out << from_to.first << " to " << from_to.second;
+			}
+		}
+		LOG_INFO(log, message);
 	}
 }
 
