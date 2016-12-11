@@ -629,6 +629,7 @@ add_library (dbms
 	src/Common/randomSeed.cpp
 	src/Common/ThreadPool.cpp
 	src/Common/UrlUtils.cpp
+	src/Common/hex.cpp
 
 	src/Core/Field.cpp
 	src/Core/FieldVisitors.cpp
