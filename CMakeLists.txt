@@ -43,7 +43,7 @@ if (NOT AARCH64)
 endif ()
 
 set (COMMON_WARNING_FLAGS "-Wall -Werror")
-set (CXX_WARNING_FLAGS "-Wnon-virtual-dtor -Wold-style-cast")
+set (CXX_WARNING_FLAGS "-Wnon-virtual-dtor")
 
 set (CXX11_ABI "DEFAULT" CACHE STRING "Use C++11 ABI: DEFAULT, ENABLE, DISABLE")
 set (TEST_COVERAGE FALSE CACHE BOOL "Enables flags for test coverage")
@@ -52,6 +52,11 @@ set (ENABLE_TESTS TRUE CACHE BOOL "Enables tests")
 set (USE_STATIC_LIBRARIES TRUE CACHE BOOL "Set to FALSE to use shared libraries")
 if (NOT $ENV{USE_STATIC_LIBRARIES})
 	set (USE_STATIC_LIBRARIES FALSE)
+endif ()
+
+set (USE_INTERNAL_BOOST_LIBRARY TRUE CACHE BOOL "Set to FALSE to use system boost library instead of bundled")
+if (NOT $ENV{USE_INTERNAL_BOOST_LIBRARY})
+	set (USE_INTERNAL_BOOST_LIBRARY FALSE)
 endif ()
 
 set (GLIBC_COMPATIBILITY FALSE CACHE BOOL "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan.")
@@ -144,6 +149,7 @@ include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/XML/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/JSON/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/MongoDB/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Zip/include/)
+include_directories (${ClickHouse_SOURCE_DIR}/contrib/libboost/boost_1_62_0/)
 
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libcommon/include/)
 include_directories (${ClickHouse_BINARY_DIR}/libs/libcommon/include/)
