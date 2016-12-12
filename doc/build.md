@@ -79,31 +79,6 @@ export CXX=g++-6
 sudo apt-get install libicu-dev libglib2.0-dev libreadline-dev libmysqlclient-dev libssl-dev unixodbc-dev
 ```
 
-## Install recent version of boost
-
-Version 1.57 or newer will be Ok.
-
-There are several ways to do it.
-
-### 1. Install from sources.
-
-```
-wget http://downloads.sourceforge.net/project/boost/boost/1.60.0/boost_1_60_0.tar.bz2
-tar xf boost_1_60_0.tar.bz2
-cd boost_1_60_0
-./bootstrap.sh
-./b2 --toolset=gcc-6 -j $THREADS
-sudo ./b2 install --toolset=gcc-6 -j $THREADS
-cd ..
-```
-
-### 2. Install from package.
-
-On Ubuntu 15.10 or newer.
-```
-sudo apt-get install libboost-dev libboost-thread-dev libboost-program-options-dev libboost-system-dev libboost-regex-dev libboost-filesystem-dev
-```
-
 # Checkout ClickHouse sources
 
 ```

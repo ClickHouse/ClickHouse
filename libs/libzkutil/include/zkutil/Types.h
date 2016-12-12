@@ -2,18 +2,14 @@
 #include <common/Common.h>
 #include <future>
 #include <memory>
-#include <boost/noncopyable.hpp>
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-	#include <boost/ptr_container/ptr_vector.hpp>
-#pragma GCC diagnostic pop
-
+#include <vector>
 #include <zookeeper/zookeeper.h>
 #include <Poco/Event.h>
 
+
 namespace zkutil
 {
+
 using ACLPtr = const ACL_vector *;
 using Stat = Stat;
 
@@ -112,7 +108,7 @@ struct OpResult : public zoo_op_result_t
 	/// Поэтому деструктор не нужен
 };
 
-using Ops = boost::ptr_vector<Op>;
+using Ops = std::vector<std::unique_ptr<Op>>;
 using OpResults = std::vector<OpResult>;
 using OpResultsPtr = std::shared_ptr<OpResults>;
 using Strings = std::vector<std::string>;

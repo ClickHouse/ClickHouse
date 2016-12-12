@@ -172,9 +172,9 @@ void ReplicatedMergeTreeAlterThread::run()
 
 						/// Обновим метаданные куска в ZooKeeper.
 						zkutil::Ops ops;
-						ops.push_back(new zkutil::Op::SetData(
+						ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
 							storage.replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
-						ops.push_back(new zkutil::Op::SetData(
+						ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
 							storage.replica_path + "/parts/" + part->name + "/checksums", transaction->getNewChecksums().toString(), -1));
 
 						try

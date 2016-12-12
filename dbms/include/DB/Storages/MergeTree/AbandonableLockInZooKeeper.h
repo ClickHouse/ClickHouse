@@ -72,8 +72,8 @@ public:
 	/// Добавляет в список действия, эквивалентные unlock().
 	void getUnlockOps(zkutil::Ops & ops)
 	{
-		ops.push_back(new zkutil::Op::Remove(path, -1));
-		ops.push_back(new zkutil::Op::Remove(holder_path, -1));
+		ops.emplace_back(std::make_unique<zkutil::Op::Remove>(path, -1));
+		ops.emplace_back(std::make_unique<zkutil::Op::Remove>(holder_path, -1));
 	}
 
 	~AbandonableLockInZooKeeper()
