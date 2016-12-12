@@ -58,14 +58,6 @@ sudo ln -s /usr/local/bin/g++ /usr/local/bin/c++
 # /usr/local/bin/ should be in $PATH
 ```
 
-Note that these ways of installation differs.
-When installing from PPA, by default, "old C++ ABI" is used,
- and when installing from sources, "new C++ ABI" is used.
-When using different C++ ABI, you need to recompile all C++ libraries,
- otherwise libraries will not link.
-ClickHouse works with both old and new C++ ABI,
- but production releases is built with old C++ ABI.
-
 ## Use GCC 6 for builds
 
 ```
