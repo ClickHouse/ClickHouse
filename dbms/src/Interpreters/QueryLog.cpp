@@ -28,6 +28,9 @@ Block QueryLogElement::createBlock()
 		{std::make_shared<ColumnUInt64>(), 	std::make_shared<DataTypeUInt64>(), 	"read_rows"},
 		{std::make_shared<ColumnUInt64>(), 	std::make_shared<DataTypeUInt64>(), 	"read_bytes"},
 
+		{std::make_shared<ColumnUInt64>(), 	std::make_shared<DataTypeUInt64>(), 	"written_rows"},
+		{std::make_shared<ColumnUInt64>(), 	std::make_shared<DataTypeUInt64>(), 	"written_bytes"},
+
 		{std::make_shared<ColumnUInt64>(), 	std::make_shared<DataTypeUInt64>(), 	"result_rows"},
 		{std::make_shared<ColumnUInt64>(), 	std::make_shared<DataTypeUInt64>(), 	"result_bytes"},
 
@@ -101,6 +104,9 @@ void QueryLogElement::appendToBlock(Block & block) const
 
 	block.unsafeGetByPosition(i++).column->insert(UInt64(read_rows));
 	block.unsafeGetByPosition(i++).column->insert(UInt64(read_bytes));
+
+	block.unsafeGetByPosition(i++).column->insert(UInt64(written_rows));
+	block.unsafeGetByPosition(i++).column->insert(UInt64(written_bytes));
 
 	block.unsafeGetByPosition(i++).column->insert(UInt64(result_rows));
 	block.unsafeGetByPosition(i++).column->insert(UInt64(result_bytes));

@@ -86,6 +86,7 @@
 	\
 	M(MergedRows) \
 	M(MergedUncompressedBytes) \
+	M(MergesTime)\
 	\
 	M(MergeTreeDataWriterRows) \
 	M(MergeTreeDataWriterUncompressedBytes) \

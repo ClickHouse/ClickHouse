@@ -46,32 +46,34 @@ set (COMMON_WARNING_FLAGS "-Wall -Werror")
 set (CXX_WARNING_FLAGS "-Wnon-virtual-dtor")
 
 set (CXX11_ABI "ENABLE" CACHE STRING "Use C++11 ABI: DEFAULT, ENABLE, DISABLE")
-set (TEST_COVERAGE FALSE CACHE BOOL "Enables flags for test coverage")
-set (ENABLE_TESTS TRUE CACHE BOOL "Enables tests")
+option (TEST_COVERAGE "Enables flags for test coverage" OFF)
+option (ENABLE_TESTS "Enables tests" ON)
 
-set (USE_STATIC_LIBRARIES TRUE CACHE BOOL "Set to FALSE to use shared libraries")
+option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
 if (NOT $ENV{USE_STATIC_LIBRARIES})
 	set (USE_STATIC_LIBRARIES FALSE)
 endif ()
+
+
 
 set (USE_INTERNAL_BOOST_LIBRARY TRUE CACHE BOOL "Set to FALSE to use system boost library instead of bundled")
 if (NOT $ENV{USE_INTERNAL_BOOST_LIBRARY})
 	set (USE_INTERNAL_BOOST_LIBRARY FALSE)
 endif ()
 
-set (GLIBC_COMPATIBILITY FALSE CACHE BOOL "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan.")
+option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan." OFF)
 if ($ENV{GLIBC_COMPATIBILITY})
 	set (GLIBC_COMPATIBILITY TRUE)
 endif ()
 
-set (ENABLE_LIBTCMALLOC TRUE CACHE BOOL "Set to TRUE to enable libtcmalloc.")
+option (ENABLE_LIBTCMALLOC "Set to TRUE to enable libtcmalloc." ON)
 if (NOT $ENV{ENABLE_LIBTCMALLOC})
 	set (ENABLE_LIBTCMALLOC FALSE)
 endif ()
 
-set (DEBUG_LIBTCMALLOC FALSE CACHE BOOL "Set to TRUE to use debug version of libtcmalloc.")
+option (DEBUG_LIBTCMALLOC "Set to TRUE to use debug version of libtcmalloc." OFF)
 if ($ENV{DEBUG_LIBTCMALLOC})
-	set (ENABLE_LIBTCMALLOC TRUE)
+	set (DEBUG_LIBTCMALLOC TRUE)
 endif ()
 
 if (GLIBC_COMPATIBILITY)

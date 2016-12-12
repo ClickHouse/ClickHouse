@@ -98,6 +98,9 @@ struct MergeTreeSettings
 	/// Enable usage of Vertical merge algorithm.
 	size_t enable_vertical_merge_algorithm = 0;
 
+	/// Minimal (approximate) sum of rows in merging parts to activate Vertical merge algorithm
+	size_t vertical_merge_algorithm_min_rows_to_activate = 16 * DEFAULT_MERGE_BLOCK_SIZE;
+
 
 	void loadFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
 	{
@@ -133,6 +136,7 @@ struct MergeTreeSettings
 		SET_SIZE_T(min_relative_delay_to_close);
 		SET_SIZE_T(min_absolute_delay_to_close);
 		SET_SIZE_T(enable_vertical_merge_algorithm);
+		SET_SIZE_T(vertical_merge_algorithm_min_rows_to_activate);
 
 	#undef SET_SIZE_T
 	#undef SET_DOUBLE
