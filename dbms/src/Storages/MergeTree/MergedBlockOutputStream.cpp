@@ -558,12 +558,12 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 /// Implementation of MergedColumnOnlyOutputStream.
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
-	MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method)
+	MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method, bool skip_offsets_)
 	: IMergedBlockOutputStream(
 		storage_, storage_.context.getSettings().min_compress_block_size,
 		storage_.context.getSettings().max_compress_block_size, compression_method,
 		storage_.context.getSettings().min_bytes_to_use_direct_io),
-	part_path(part_path_), sync(sync_)
+	part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_)
 {
 }
 
@@ -575,7 +575,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
 		for (size_t i = 0; i < block.columns(); ++i)
 		{
 			addStream(part_path, block.getByPosition(i).name,
-				*block.getByPosition(i).type, 0, 0, block.getByPosition(i).name, false);
+				*block.getByPosition(i).type, 0, 0, block.getByPosition(i).name, skip_offsets);
 		}
 		initialized = true;
 	}
@@ -586,7 +586,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		const ColumnWithTypeAndName & column = block.getByPosition(i);
-		writeData(column.name, *column.type, *column.column, offset_columns, 0, false);
+		writeData(column.name, *column.type, *column.column, offset_columns, 0, skip_offsets);
 	}
 
 	size_t written_for_last_mark = (storage.index_granularity - index_offset + rows) % storage.index_granularity;
