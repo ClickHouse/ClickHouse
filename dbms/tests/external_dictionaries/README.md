@@ -1,5 +1,4 @@
-# autotest-external-dictionaries
-Automatic tests for external dictionaries
+# Automatic tests for external dictionaries
 
 Example:
 ```

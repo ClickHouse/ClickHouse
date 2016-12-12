@@ -728,6 +728,10 @@ echo &#39;SELECT 1&#39; | curl &#39;http://user:password@localhost:8123/&#39; -d
 <pre class="terminal">
 echo &#39;SELECT 1&#39; | curl &#39;http://localhost:8123/?user=user&amp;password=password&#39; -d @-
 </pre>
+3. Using &#39;X-ClickHouse-User&#39; and &#39;X-ClickHouse-Key&#39; headers. Example:
+<pre class="terminal">
+echo &#39;SELECT 1&#39; | curl -H "X-ClickHouse-User: user" -H "X-ClickHouse-Key: password"  &#39;http://localhost:8123/&#39; -d @-
+</pre>
 If the user name is not indicated, the username &#39;default&#39; is used. If the password is not indicated, an empty password is used.
 
 
@@ -757,7 +761,7 @@ In contrast to the native interface, the HTTP interface does not support the con
 
 The optional &#39;query_id&#39; parameter can be passed as the query ID (any string). For more information, see the section &quot;Settings, replace_running_query&quot;.
 
-The optional &#39;quota_key&#39; parameter can be passed as the quota key (any string). For more information, see the section &quot;Quotas&quot;.
+The optional &#39;quota_key&#39; parameter can be passed as the quota key (any string). It can also be passed as &#39;X-ClickHouse-Quota&#39; header. For more information, see the section &quot;Quotas&quot;.
 
 The HTTP interface allows passing external data (external temporary tables) for querying. For more information, see the section &quot;External data for query processing&quot;.
 
@@ -5365,6 +5369,12 @@ Accepts a string, number, date, or date with time. Returns a string containing t
 ===unhex(str)===
 Accepts a string containing any number of hexadecimal digits, and returns a string containing the corresponding bytes. Supports both uppercase and lowercase letters A-F. The number of hexadecimal digits doesn&#39;t have to be even. If it is odd, the last digit is interpreted as the younger half of the 00-0F byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn&#39;t thrown).
 If you want to convert the result to a number, you can use the functions &#39;reverse&#39; and &#39;reinterpretAs<i>Type</i>&#39;.
+
+===UUIDStringToNum(str)===
+Accepts a string containing the UUID in the text format (%%123e4567-e89b-12d3-a456-426655440000%%). Returns a binary representation of the UUID in FixedString(16).
+
+===UUIDNumToString(str)===
+Accepts a FixedString(16) value containing the UUID in the binary format. Returns a readable string containing the UUID in the text format.
 
 ===bitmaskToList(num)===
 Accepts an integer. Returns a string containing the list of powers of two that total the source number when summed. They are comma-separated without spaces in text format, in ascending order.

@@ -41,13 +41,11 @@
 #include <DB/Dictionaries/IDictionary.h>
 
 #include <DB/Common/typeid_cast.h>
+#include <DB/Common/StringUtils.h>
 
 #include <DB/Parsers/formatAST.h>
 
 #include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/FunctionsTransform.h>
-#include <DB/Functions/FunctionsConditional.h>
-#include <DB/Functions/FunctionsArray.h>
 
 #include <ext/range.hpp>
 #include <DB/DataTypes/DataTypeFactory.h>
@@ -219,7 +217,7 @@ bool ExpressionAnalyzer::tryExtractConstValueFromCondition(const ASTPtr & condit
 	/// cast of numeric constant in condition to UInt8
 	if (const ASTFunction * function = typeid_cast<ASTFunction * >(condition.get()))
 	{
-		if (function->name == FunctionCast::name)
+		if (function->name == "CAST")
 		{
 			if (ASTExpressionList * expr_list = typeid_cast<ASTExpressionList *>(function->arguments.get()))
 			{
@@ -245,7 +243,7 @@ void ExpressionAnalyzer::optimizeIfWithConstantConditionImpl(ASTPtr & current_as
 	for (ASTPtr & child : current_ast->children)
 	{
 		ASTFunction * function_node = typeid_cast<ASTFunction *>(child.get());
-		if (!function_node || function_node->name != FunctionIf::name)
+		if (!function_node || function_node->name != "if")
 		{
 			optimizeIfWithConstantConditionImpl(child, aliases);
 			continue;
@@ -354,7 +352,7 @@ void ExpressionAnalyzer::analyzeAggregation()
 					/// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
 					if (!aggregate_descriptions.empty() || size > 1)
 					{
-						if (i + 1 < size)
+						if (i + 1 < static_cast<ssize_t>(size))
 							group_asts[i] = std::move(group_asts.back());
 
 						group_asts.pop_back();

@@ -7,6 +7,7 @@
 #include <DB/DataStreams/NullAndDoCopyBlockInputStream.h>
 #include <DB/DataStreams/SquashingBlockOutputStream.h>
 #include <DB/DataStreams/CountingBlockOutputStream.h>
+#include <DB/DataStreams/NullableAdapterBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTInsertQuery.h>
@@ -117,10 +118,11 @@ BlockIO InterpreterInsertQuery::execute()
 	else
 	{
 		InterpreterSelectQuery interpreter_select{query.select, context};
-		BlockInputStreamPtr in = interpreter_select.execute().in;
-
-		res.in = std::make_shared<NullAndDoCopyBlockInputStream>(in, out);
 		res.in_sample = interpreter_select.getSampleBlock();
+
+		BlockInputStreamPtr in = interpreter_select.execute().in;
+		res.in = std::make_shared<NullableAdapterBlockInputStream>(in, res.in_sample, res.out_sample, required_columns);
+		res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out);
 	}
 
 	return res;

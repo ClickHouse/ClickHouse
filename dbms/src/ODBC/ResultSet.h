@@ -102,7 +102,7 @@ public:
 		++rows;
 		const Row & row = *iterator;
 		++iterator;
-		return std::move(row);
+		return row;
 	}
 
 private:

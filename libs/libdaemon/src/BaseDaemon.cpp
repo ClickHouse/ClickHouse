@@ -500,7 +500,7 @@ public:
 		/// For syslog: tag must be before message and first whitespace.
 		if (options & ADD_LAYER_TAG)
 		{
-			boost::optional<size_t> layer = daemon.getLayer();
+			auto layer = daemon.getLayer();
 			if (layer)
 			{
 				writeCString("layer[", wb);

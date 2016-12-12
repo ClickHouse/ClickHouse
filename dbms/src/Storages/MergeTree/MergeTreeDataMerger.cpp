@@ -17,6 +17,8 @@
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/ColumnGathererStream.h>
+#include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 #include <DB/Common/Increment.h>
 #include <DB/Common/interpolate.h>
@@ -1021,7 +1023,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
 	merged_stream->readSuffix();
 
-	/// Завершить инициализацию куски новых партиций.
+	/// Завершить инициализацию кусков новых партиций.
 	for (size_t shard_no = 0; shard_no < job.paths.size(); ++shard_no)
 	{
 		abortReshardPartitionIfRequested();

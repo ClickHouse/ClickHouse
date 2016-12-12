@@ -780,7 +780,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -796,7 +796,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
@@ -876,7 +876,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -891,7 +891,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
@@ -933,11 +933,10 @@ public:
 	/// Получить имя функции.
 	String getName() const override;
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override;
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override;
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
 
@@ -955,7 +954,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() < 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -976,7 +975,7 @@ public:
 		return std::make_shared<DataTypeString>();
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		if (arguments.size() == 2)
 			executeBinary(block, arguments, result);
@@ -1434,7 +1433,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 3)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1453,7 +1452,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column_string = block.getByPosition(arguments[0]).column;
 		const ColumnPtr column_start = block.getByPosition(arguments[1]).column;
@@ -1520,9 +1519,8 @@ public:
 	String getName() const override;
 
 private:
-	DataTypePtr getReturnType(const DataTypes & arguments) const override;
-
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override;
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override;
 };
 
 

@@ -8,6 +8,8 @@
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/Functions/DataTypeTraits.h>
 
 #include <DB/Core/FieldVisitors.h>
 
@@ -33,6 +35,9 @@ namespace ErrorCodes
   * Если не попадает - возвращается Field(Null).
   */
 
+namespace
+{
+
 template <typename From, typename To>
 static Field convertNumericTypeImpl(const Field & from)
 {
@@ -54,12 +59,12 @@ static Field convertNumericType(const Field & from, const IDataType & type)
 	if (from.getType() == Field::Types::Float64)
 		return convertNumericTypeImpl<Float64, To>(from);
 
-	throw Exception("Type mismatch in IN or VALUES section: " + type.getName() + " expected, "
-		+ Field::Types::toString(from.getType()) + " got", ErrorCodes::TYPE_MISMATCH);
+	throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
+		+ Field::Types::toString(from.getType()), ErrorCodes::TYPE_MISMATCH);
 }
 
 
-Field convertFieldToType(const Field & src, const IDataType & type)
+Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
 {
 	if (type.isNumeric())
 	{
@@ -106,27 +111,23 @@ Field convertFieldToType(const Field & src, const IDataType & type)
 			}
 		}
 
-		throw Exception("Type mismatch in IN or VALUES section: " + type.getName() + " expected, "
-			+ Field::Types::toString(src.getType()) + " got", ErrorCodes::TYPE_MISMATCH);
+		throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
+			+ Field::Types::toString(src.getType()), ErrorCodes::TYPE_MISMATCH);
 	}
 	else if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type))
 	{
 		if (src.getType() != Field::Types::Array)
-			throw Exception("Type mismatch in IN or VALUES section: " + type.getName() + " expected, "
-				+ Field::Types::toString(src.getType()) + " got", ErrorCodes::TYPE_MISMATCH);
+			throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
+				+ Field::Types::toString(src.getType()), ErrorCodes::TYPE_MISMATCH);
 
-		const IDataType & nested_type = *type_array->getNestedType();
+		const IDataType & nested_type = *DataTypeTraits::removeNullable(type_array->getNestedType());
 
 		const Array & src_arr = src.get<Array>();
 		size_t src_arr_size = src_arr.size();
 
 		Array res(src_arr_size);
 		for (size_t i = 0; i < src_arr_size; ++i)
-		{
 			res[i] = convertFieldToType(src_arr[i], nested_type);
-			if (res[i].isNull())
-				return {};
-		}
 
 		return res;
 	}
@@ -135,16 +136,30 @@ Field convertFieldToType(const Field & src, const IDataType & type)
 		if (src.getType() == Field::Types::UInt64
 			|| src.getType() == Field::Types::Int64
 			|| src.getType() == Field::Types::Float64
-			|| src.getType() == Field::Types::Null
 			|| src.getType() == Field::Types::Array
 			|| (src.getType() == Field::Types::String
 				&& !typeid_cast<const DataTypeString *>(&type)
 				&& !typeid_cast<const DataTypeFixedString *>(&type)))
-			throw Exception("Type mismatch in IN or VALUES section: " + type.getName() + " expected, "
-				+ Field::Types::toString(src.getType()) + " got", ErrorCodes::TYPE_MISMATCH);
+			throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
+				+ Field::Types::toString(src.getType()), ErrorCodes::TYPE_MISMATCH);
 	}
 
 	return src;
 }
+
+}
+
+Field convertFieldToType(const Field & src, const IDataType & type)
+{
+	if (type.isNullable())
+	{
+		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
+		const DataTypePtr & nested_type = nullable_type.getNestedType();
+		return convertFieldToTypeImpl(src, *nested_type);
+	}
+	else
+		return convertFieldToTypeImpl(src, type);
+}
+
 
 }

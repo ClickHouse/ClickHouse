@@ -141,7 +141,7 @@ public:
 		return name;
 	}
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 3)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -156,7 +156,7 @@ public:
 		return std::make_shared<DataTypeString>();
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnWithTypeAndName & arg_from = block.unsafeGetByPosition(arguments[0]);
 		const ColumnWithTypeAndName & arg_charset_from = block.unsafeGetByPosition(arguments[1]);

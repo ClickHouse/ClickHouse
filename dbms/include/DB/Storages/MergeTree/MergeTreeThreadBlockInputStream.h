@@ -16,7 +16,8 @@ class MarkCache;
 
 
 /** Used in conjunction with MergeTreeReadPool, asking it for more work to do and performing whatever reads it is asked
- *	to perform. */
+  * to perform.
+  */
 class MergeTreeThreadBlockInputStream : public IProfilingBlockInputStream
 {
 	/// "thread" index (there are N threads and each thread is assigned index in interval [0..N-1])
@@ -43,7 +44,6 @@ protected:
 private:
 	/// Requests read task from MergeTreeReadPool and signals whether it got one
 	bool getNewTask();
-
 	Block readFromPart();
 
 	void injectVirtualColumns(Block & block);

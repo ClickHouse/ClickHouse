@@ -323,7 +323,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		Generator::checkArguments(arguments);
 
@@ -331,7 +331,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		Generator generator;
 		generator.init(block, arguments);
@@ -419,7 +419,7 @@ public:
 class FunctionArrayStringConcat : public IFunction
 {
 private:
-	void executeImpl(
+	void executeInternal(
 		const ColumnString::Chars_t & src_chars,
 		const ColumnString::Offsets_t & src_string_offsets,
 		const ColumnArray::Offsets_t & src_array_offsets,
@@ -488,7 +488,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1 && arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -507,7 +507,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		String delimiter;
 		if (arguments.size() == 2)
@@ -541,7 +541,7 @@ public:
 			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.getByPosition(result).column = col_res;
 
-			executeImpl(
+			executeInternal(
 				col_string.getChars(), col_string.getOffsets(), col_arr.getOffsets(),
 				delimiter.data(), delimiter.size(),
 				col_res->getChars(), col_res->getOffsets());

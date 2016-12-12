@@ -93,8 +93,11 @@ Block SummingSortedBlockInputStream::readImpl()
 			else
 			{
 				/// Оставляем только числовые типы. При чём, даты и даты-со-временем здесь такими не считаются.
-				if (!column.type->isNumeric() || column.type->getName() == "Date" ||
-												 column.type->getName() == "DateTime")
+				if (!column.type->isNumeric() ||
+					column.type->getName() == "Date" ||
+					column.type->getName() == "DateTime" ||
+					column.type->getName() == "Nullable(Date)" ||
+					column.type->getName() == "Nullable(DateTime)")
 					continue;
 
 				/// Входят ли в PK?

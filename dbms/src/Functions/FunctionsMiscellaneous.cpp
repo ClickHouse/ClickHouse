@@ -3,7 +3,12 @@
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/FunctionsArithmetic.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
+#include <DB/Functions/DataTypeTraits.h>
 #include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/DataTypes/NullSymbol.h>
+#include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/Columns/ColumnNullable.h>
+#include <common/ClickHouseRevision.h>
 #include <ext/enumerate.hpp>
 
 
@@ -172,7 +177,74 @@ namespace VisibleWidth
 }
 
 
-void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & arguments, size_t result)
+void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	auto & element = block.getByPosition(arguments[0]);
+
+	auto & res_element = block.getByPosition(result);
+	auto & res_col = res_element.column;
+
+	size_t row_count = block.rowsInFirstColumn();
+
+	if (element.column->isNull())
+	{
+		/// The input column has the Null type.
+		res_col = std::make_shared<ColumnConstUInt64>(row_count, strlen(NullSymbol::Escaped::name));
+	}
+	else if (element.column->isNullable())
+	{
+		/// Perform visibleWidth on a block that holds the nested column
+		/// of the input column.
+		auto & nullable_col = static_cast<ColumnNullable &>(*element.column);
+		auto & nested_col = nullable_col.getNestedColumn();
+
+		auto & nullable_type = static_cast<DataTypeNullable &>(*element.type);
+		auto & nested_type = nullable_type.getNestedType();
+
+		Block block_with_nested_col =
+		{
+			{
+				nested_col,
+				nested_type,
+				element.name
+			},
+
+			{
+				nullptr,
+				res_element.type,
+				""
+			}
+		};
+
+		perform(block_with_nested_col, {0, 1}, 1);
+
+		/// Create the result. If any row of the input column holds a NULL value,
+		/// we assign the corresponding row of the result the length of the NULL
+		/// symbol.
+		res_col = std::make_shared<ColumnUInt64>(row_count);
+		auto & res_data = static_cast<ColumnUInt64 &>(*res_col).getData();
+
+		const auto & src = static_cast<const ColumnUInt64 &>(
+			*block_with_nested_col.unsafeGetByPosition(1).column
+		).getData();
+
+		for (size_t row = 0; row < row_count; ++row)
+		{
+			if (nullable_col.isNullAt(row))
+				res_data[row] = strlen(NullSymbol::Escaped::name);
+			else
+				res_data[row] = src[row];
+		}
+	}
+	else
+	{
+		/// The input column has an ordinary type.
+		perform(block, arguments, result);
+	}
+}
+
+
+void FunctionVisibleWidth::perform(Block & block, const ColumnNumbers & arguments, size_t result)
 {
 	const ColumnPtr column = block.getByPosition(arguments[0]).column;
 	const DataTypePtr type = block.getByPosition(arguments[0]).type;
@@ -243,21 +315,31 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 		nested_result.type = std::make_shared<DataTypeUInt64>();
 		nested_block.insert(nested_result);
 
-		ColumnNumbers nested_argument_numbers(1, 0);
-		execute(nested_block, nested_argument_numbers, 1);
+		executeImpl(nested_block, {0}, 1);
 
 		/// Then accumulate and place into result.
 		auto res = std::make_shared<ColumnUInt64>(rows);
 		block.getByPosition(result).column = res;
 		ColumnUInt64::Container_t & vec = res->getData();
 
+		/// If the elements of the array are nullable, we have to check whether
+		/// an element is a NULL for it is not surrounded by a pair of quotes.
+		const PaddedPODArray<UInt8> * null_map = nullptr;
+		if (nested_values.type->isNullable())
+		{
+			const auto & nullable_col = static_cast<const ColumnNullable &>(col->getData());
+			null_map = &static_cast<const ColumnUInt8 &>(*nullable_col.getNullValuesByteMap()).getData();
+		}
+
+		const auto & observed_type = DataTypeTraits::removeNullable(nested_values.type);
+
 		size_t additional_symbols = 0;	/// Quotes.
-		if (typeid_cast<const DataTypeDate *>(nested_values.type.get())
-			|| typeid_cast<const DataTypeDateTime *>(nested_values.type.get())
-			|| typeid_cast<const DataTypeString *>(nested_values.type.get())
-			|| typeid_cast<const DataTypeFixedString *>(nested_values.type.get())
-			|| typeid_cast<const DataTypeEnum8 *>(nested_values.type.get())
-			|| typeid_cast<const DataTypeEnum16 *>(nested_values.type.get()))
+		if (typeid_cast<const DataTypeDate *>(observed_type.get())
+			|| typeid_cast<const DataTypeDateTime *>(observed_type.get())
+			|| typeid_cast<const DataTypeString *>(observed_type.get())
+			|| typeid_cast<const DataTypeFixedString *>(observed_type.get())
+			|| typeid_cast<const DataTypeEnum8 *>(observed_type.get())
+			|| typeid_cast<const DataTypeEnum16 *>(observed_type.get()))
 			additional_symbols = 2;
 
 		if (ColumnUInt64 * nested_result_column = typeid_cast<ColumnUInt64 *>(nested_block.getByPosition(1).column.get()))
@@ -267,21 +349,49 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 			size_t j = 0;
 			for (size_t i = 0; i < rows; ++i)
 			{
-				/** If empty array - then two characters: [];
-				  * if not - then character '[', and one excessive character for each element: either ',' or ']'.
+				/** If empty array, then two characters: [];
+				  * if not, then character '[', and one extra character for each element: either ',' or ']'.
 				  */
-				vec[i] = j == col->getOffsets()[i] ? 2 : 1;
+				vec[i] = (j == col->getOffsets()[i]) ? 2 : 1;
 
 				for (; j < col->getOffsets()[i]; ++j)
-					vec[i] += 1 + additional_symbols + nested_res[j];
+				{
+					size_t effective_additional_symbols;
+					if ((null_map != nullptr) && ((*null_map)[j] == 1))
+					{
+						/// The NULL value is not quoted.
+						effective_additional_symbols = 0;
+					}
+					else
+						effective_additional_symbols = additional_symbols;
+
+					vec[i] += 1 + effective_additional_symbols + nested_res[j];
+				}
 			}
 		}
 		else if (ColumnConstUInt64 * nested_result_column = typeid_cast<ColumnConstUInt64 *>(nested_block.getByPosition(1).column.get()))
 		{
-			size_t nested_length = nested_result_column->getData() + additional_symbols + 1;
+			size_t j = 0;
 			for (size_t i = 0; i < rows; ++i)
-				vec[i] = 1 + std::max(static_cast<size_t>(1),
-					(i == 0 ? col->getOffsets()[0] : (col->getOffsets()[i] - col->getOffsets()[i - 1])) * nested_length);
+			{
+				size_t width = 0;
+
+				for (; j < col->getOffsets()[i]; ++j)
+				{
+					size_t effective_additional_symbols;
+					if ((null_map != nullptr) && ((*null_map)[j] == 1))
+					{
+						/// The NULL value is not quoted.
+						effective_additional_symbols = 0;
+					}
+					else
+						effective_additional_symbols = additional_symbols;
+
+					width += 1 + effective_additional_symbols + nested_result_column->getData();
+				}
+
+				vec[i] = 1 + std::max(static_cast<size_t>(1), width);
+			}
 		}
 	}
 	else if (const ColumnTuple * col = typeid_cast<const ColumnTuple *>(column.get()))
@@ -380,7 +490,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 }
 
 
-void FunctionHasColumnInTable::getReturnTypeAndPrerequisites(
+void FunctionHasColumnInTable::getReturnTypeAndPrerequisitesImpl(
 	const ColumnsWithTypeAndName & arguments,
 	DataTypePtr & out_return_type,
 	ExpressionActions::Actions & out_prerequisites)
@@ -407,7 +517,7 @@ void FunctionHasColumnInTable::getReturnTypeAndPrerequisites(
 }
 
 
-void FunctionHasColumnInTable::execute(Block & block, const ColumnNumbers & arguments, size_t result)
+void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
 	auto get_string_from_block =
 		[&](size_t column_pos) -> const String &
@@ -428,11 +538,14 @@ void FunctionHasColumnInTable::execute(Block & block, const ColumnNumbers & argu
 		block.rowsInFirstColumn(), has_column);
 }
 
+
+std::string FunctionVersion::getVersion() const
+{
+	std::ostringstream os;
+	os << DBMS_VERSION_MAJOR << "." << DBMS_VERSION_MINOR << "." << ClickHouseRevision::get();
+	return os.str();
 }
 
-
-namespace DB
-{
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {

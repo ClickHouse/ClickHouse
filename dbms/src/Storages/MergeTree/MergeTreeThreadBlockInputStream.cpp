@@ -1,6 +1,7 @@
 #include <DB/Storages/MergeTree/MergeTreeReader.h>
 #include <DB/Storages/MergeTree/MergeTreeReadPool.h>
 #include <DB/Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
+#include <DB/Columns/ColumnNullable.h>
 #include <ext/range.hpp>
 
 
@@ -164,10 +165,19 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 
 			const auto pre_bytes = res.bytes();
 
+			ColumnPtr observed_column;
+			if (column->isNullable())
+			{
+				ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column);
+				observed_column = nullable_col.getNestedColumn();
+			}
+			else
+				observed_column = column;
+
 			/** Если фильтр - константа (например, написано PREWHERE 1),
 				*  то либо вернём пустой блок, либо вернём блок без изменений.
 				*/
-			if (const auto column_const = typeid_cast<const ColumnConstUInt8 *>(column.get()))
+			if (const auto column_const = typeid_cast<const ColumnConstUInt8 *>(observed_column.get()))
 			{
 				if (!column_const->getData())
 				{
@@ -180,7 +190,7 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 
 				progressImpl({ 0, res.bytes() - pre_bytes });
 			}
-			else if (const auto column_vec = typeid_cast<const ColumnUInt8 *>(column.get()))
+			else if (const auto column_vec = typeid_cast<const ColumnUInt8 *>(observed_column.get()))
 			{
 				size_t index_granularity = storage.index_granularity;
 

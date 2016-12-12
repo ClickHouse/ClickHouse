@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <memory>
+#include <functional>
 
 #include <Poco/Process.h>
 #include <Poco/ThreadPool.h>
@@ -21,7 +22,7 @@
 
 #include <daemon/GraphiteWriter.h>
 
-#include <boost/optional.hpp>
+#include <experimental/optional>
 #include <zkutil/ZooKeeperHolder.h>
 
 
@@ -92,7 +93,7 @@ public:
 	}
 
 	/// return none if daemon doesn't exist, reference to the daemon otherwise
-	static boost::optional<BaseDaemon &> tryGetInstance() { return tryGetInstance<BaseDaemon>(); }
+	static std::experimental::optional<std::reference_wrapper<BaseDaemon>> tryGetInstance() { return tryGetInstance<BaseDaemon>(); }
 
 	/// Спит заданное количество секунд или до события wakeup
 	void sleep(double seconds);
@@ -121,7 +122,7 @@ public:
 
 	GraphiteWriter * getGraphiteWriter() { return graphite_writer.get(); }
 
-	boost::optional<size_t> getLayer() const
+	std::experimental::optional<size_t> getLayer() const
 	{
 		return layer;	/// layer выставляется в классе-наследнике BaseDaemonApplication.
 	}
@@ -146,7 +147,7 @@ protected:
 	virtual void onInterruptSignals(int signal_id);
 
 	template <class Daemon>
-	static boost::optional<Daemon &> tryGetInstance();
+	static std::experimental::optional<std::reference_wrapper<Daemon>> tryGetInstance();
 
 	std::unique_ptr<Poco::TaskManager> task_manager;
 
@@ -193,7 +194,7 @@ protected:
 
 	std::unique_ptr<GraphiteWriter> graphite_writer;
 
-	boost::optional<size_t> layer;
+	std::experimental::optional<size_t> layer;
 
 	std::mutex signal_handler_mutex;
 	std::condition_variable signal_event;
@@ -203,7 +204,7 @@ protected:
 
 
 template <class Daemon>
-boost::optional<Daemon &> BaseDaemon::tryGetInstance()
+std::experimental::optional<std::reference_wrapper<Daemon>> BaseDaemon::tryGetInstance()
 {
 	Daemon * ptr = nullptr;
 	try
@@ -216,7 +217,7 @@ boost::optional<Daemon &> BaseDaemon::tryGetInstance()
 	}
 
 	if (ptr)
-		return boost::optional<Daemon &>(*ptr);
+		return std::experimental::optional<std::reference_wrapper<Daemon>>(*ptr);
 	else
-		return boost::none;
+		return {};
 }

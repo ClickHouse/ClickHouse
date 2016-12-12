@@ -4,11 +4,14 @@
 #include <map>
 #include <initializer_list>
 
+#include <DB/Common/Exception.h>
 #include <DB/Core/BlockInfo.h>
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Core/ColumnWithTypeAndName.h>
 #include <DB/Core/ColumnsWithTypeAndName.h>
+#include <DB/Core/ColumnNumbers.h>
 #include <DB/Common/Exception.h>
+
 
 
 namespace DB

@@ -7,6 +7,7 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Common/VirtualColumnUtils.h>
+#include <DB/Parsers/queryToString.h>
 #include <DB/Databases/IDatabase.h>
 
 

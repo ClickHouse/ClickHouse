@@ -43,9 +43,9 @@ if (NOT AARCH64)
 endif ()
 
 set (COMMON_WARNING_FLAGS "-Wall -Werror")
-set (CXX_WARNING_FLAGS "-Wnon-virtual-dtor -Wold-style-cast")
+set (CXX_WARNING_FLAGS "-Wnon-virtual-dtor")
 
-set (CXX11_ABI "DEFAULT" CACHE STRING "Use C++11 ABI: DEFAULT, ENABLE, DISABLE")
+set (CXX11_ABI "ENABLE" CACHE STRING "Use C++11 ABI: DEFAULT, ENABLE, DISABLE")
 option (TEST_COVERAGE "Enables flags for test coverage" OFF)
 option (ENABLE_TESTS "Enables tests" ON)
 
@@ -54,14 +54,16 @@ if (NOT $ENV{USE_STATIC_LIBRARIES})
 	set (USE_STATIC_LIBRARIES FALSE)
 endif ()
 
+
+
+set (USE_INTERNAL_BOOST_LIBRARY TRUE CACHE BOOL "Set to FALSE to use system boost library instead of bundled")
+if (NOT $ENV{USE_INTERNAL_BOOST_LIBRARY})
+	set (USE_INTERNAL_BOOST_LIBRARY FALSE)
+endif ()
+
 option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan." OFF)
 if ($ENV{GLIBC_COMPATIBILITY})
 	set (GLIBC_COMPATIBILITY TRUE)
-endif ()
-
-option (ENABLE_MONGODB "Set to TRUE to enable MongoDB support as source for external dictionaries" ON)
-if (NOT $ENV{ENABLE_MONGODB})
-	set (ENABLE_MONGODB FALSE)
 endif ()
 
 option (ENABLE_LIBTCMALLOC "Set to TRUE to enable libtcmalloc." ON)
@@ -149,6 +151,7 @@ include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/XML/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/JSON/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/MongoDB/include/)
 include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Zip/include/)
+include_directories (${ClickHouse_SOURCE_DIR}/contrib/libboost/boost_1_62_0/)
 
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libcommon/include/)
 include_directories (${ClickHouse_BINARY_DIR}/libs/libcommon/include/)

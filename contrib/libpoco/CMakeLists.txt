@@ -69,7 +69,7 @@ include(PocoMacros)
 
 # Allow enabling and disabling components
 option(POCO_ENABLE_XML "Enable the XML" ON)
-option(POCO_ENABLE_MONGODB "Enable MongoDB" OFF)
+option(POCO_ENABLE_MONGODB "Enable MongoDB" ON)
 option(POCO_ENABLE_PDF "Enable PDF" OFF)
 option(POCO_ENABLE_UTIL "Enable Util" ON)
 option(POCO_ENABLE_NET "Enable Net" ON)

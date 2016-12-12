@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DB/Storages/IStorage.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/IInterpreter.h>
 
