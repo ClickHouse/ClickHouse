@@ -1,5 +1,3 @@
-#pragma once
-
 #include <DB/DataStreams/BlocksListBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
