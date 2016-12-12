@@ -182,7 +182,7 @@ MergeTreeReader::Stream::Stream(
 	MarkCache * mark_cache, bool save_marks_in_cache,
 	const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size,
 	const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
-	: path_prefix(path_prefix_)
+	: path_prefix(path_prefix_), extension(extension_)
 {
 	loadMarks(mark_cache, save_marks_in_cache, isNullStream(extension));
 
@@ -254,7 +254,7 @@ MergeTreeReader::Stream::Stream(
 	else
 	{
 		auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-			path_prefix + ".bin", estimated_size, aio_threshold, buffer_size);
+			path_prefix + extension, estimated_size, aio_threshold, buffer_size);
 
 		if (profile_callback)
 			buffer->setProfileCallback(profile_callback, clock_type);
@@ -345,7 +345,7 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 	String escaped_column_name = escapeForFileName(name);
 
 	const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type);
-	bool data_file_exists = Poco::File(path + escaped_column_name + ".bin").exists();
+	bool data_file_exists = Poco::File(path + escaped_column_name + DATA_FILE_EXTENSION).exists();
 	bool is_column_of_nested_type = type_arr && level == 0 && DataTypeNested::extractNestedTableName(name) != name;
 
 	/** If data file is missing then we will not try to open it.
@@ -377,7 +377,7 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 			+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
 			+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		String size_path = path + escaped_size_name + ".bin";
+		String size_path = path + escaped_size_name + DATA_FILE_EXTENSION;
 
 		/// We don't have neither offsets neither data -> skipping, default values will be filled after
 		if (!data_file_exists && !Poco::File(size_path).exists())
