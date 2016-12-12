@@ -4,8 +4,6 @@
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/DataStreams/NativeBlockInputStream.h>
-#include <common/ClickHouseRevision.h>
 
 
 namespace DB
@@ -55,8 +53,7 @@ protected:
 		CompressedReadBuffer compressed_in;
 		BlockInputStreamPtr block_in;
 
-		TemporaryFileStream(const std::string & path)
-			: file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get())) {}
+		TemporaryFileStream(const std::string & path);
 	};
 	std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
 

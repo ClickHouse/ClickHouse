@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Poco/Net/DNS.h>
-#include <common/ClickHouseRevision.h>
 
 #include <DB/Core/Defines.h>
 #include <DB/Core/FieldVisitors.h>
@@ -1176,12 +1175,7 @@ public:
 	}
 
 private:
-	std::string getVersion() const
-	{
-		std::ostringstream os;
-		os << DBMS_VERSION_MAJOR << "." << DBMS_VERSION_MINOR << "." << ClickHouseRevision::get();
-		return os.str();
-	}
+	std::string getVersion() const;
 };
 
 

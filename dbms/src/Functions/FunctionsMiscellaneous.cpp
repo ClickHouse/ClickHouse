@@ -8,6 +8,7 @@
 #include <DB/DataTypes/NullSymbol.h>
 #include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/Columns/ColumnNullable.h>
+#include <common/ClickHouseRevision.h>
 #include <ext/enumerate.hpp>
 
 
@@ -537,11 +538,14 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
 		block.rowsInFirstColumn(), has_column);
 }
 
+
+std::string FunctionVersion::getVersion() const
+{
+	std::ostringstream os;
+	os << DBMS_VERSION_MAJOR << "." << DBMS_VERSION_MINOR << "." << ClickHouseRevision::get();
+	return os.str();
 }
 
-
-namespace DB
-{
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {

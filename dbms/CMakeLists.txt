@@ -772,6 +772,7 @@ add_library (dbms
 	src/DataStreams/VerticalRowOutputStream.cpp
 	src/DataStreams/MergingAggregatedBlockInputStream.cpp
 	src/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.cpp
+	src/DataStreams/ParallelAggregatingBlockInputStream.cpp
 	src/DataStreams/MergingSortedBlockInputStream.cpp
 	src/DataStreams/CollapsingSortedBlockInputStream.cpp
 	src/DataStreams/CollapsingFinalBlockInputStream.cpp
