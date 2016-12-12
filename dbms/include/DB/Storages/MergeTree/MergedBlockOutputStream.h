@@ -158,7 +158,7 @@ class MergedColumnOnlyOutputStream : public IMergedBlockOutputStream
 {
 public:
 	MergedColumnOnlyOutputStream(
-		MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method, bool skip_offsets_);
+		MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method);
 
 	void write(const Block & block) override;
 	void writeSuffix() override;
@@ -169,7 +169,6 @@ private:
 
 	bool initialized = false;
 	bool sync;
-	bool skip_offsets;
 };
 
 }
