@@ -364,6 +364,26 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
 AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes) const
 {
+	/// Check if at least one of the specified keys is nullable.
+	/// Create a set of nested key columns from the corresponding key columns.
+	/// Here "nested" means that, if a key column is nullable, we take its nested
+	/// column; otherwise we take the key column as is.
+	ConstColumnPlainPtrs nested_key_columns;
+	nested_key_columns.reserve(key_columns.size());
+	bool has_nullable_key = false;
+
+	for (const auto & col : key_columns)
+	{
+		if (col->isNullable())
+		{
+			const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
+			nested_key_columns.push_back(nullable_col.getNestedColumn().get());
+			has_nullable_key = true;
+		}
+		else
+			nested_key_columns.push_back(col);
+	}
+
 	/** Returns ordinary (not two-level) methods, because we start from them.
 	  * Later, during aggregation process, data may be converted (partitioned) to two-level structure, if cardinality is high.
 	  */
@@ -375,22 +395,26 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 	bool has_arrays_of_non_fixed_elems = false;
 	bool all_non_array_keys_are_fixed = true;
 	bool has_tuples = false;
+	bool has_arrays_of_nullable = false;
 
 	key_sizes.resize(params.keys_size);
 	for (size_t j = 0; j < params.keys_size; ++j)
 	{
-		if (key_columns[j]->isFixed())
+		if (nested_key_columns[j]->isFixed())
 		{
-			key_sizes[j] = key_columns[j]->sizeOfField();
+			key_sizes[j] = nested_key_columns[j]->sizeOfField();
 			keys_bytes += key_sizes[j];
 		}
 		else
 		{
 			all_fixed = false;
 
-			if (const ColumnArray * arr = typeid_cast<const ColumnArray *>(key_columns[j]))
+			if (const ColumnArray * arr = typeid_cast<const ColumnArray *>(nested_key_columns[j]))
 			{
 				++num_array_keys;
+
+				if (arr->getData().isNullable())
+					has_arrays_of_nullable = true;
 
 				if (!arr->getData().isFixed())
 					has_arrays_of_non_fixed_elems = true;
@@ -399,7 +423,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 			{
 				all_non_array_keys_are_fixed = false;
 
-				if (typeid_cast<const ColumnTuple *>(key_columns[j]))
+				if (typeid_cast<const ColumnTuple *>(nested_key_columns[j]))
 					has_tuples = true;
 			}
 		}
@@ -409,10 +433,55 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 	if (params.keys_size == 0)
 		return AggregatedDataVariants::Type::without_key;
 
-	/// Single numeric key.
-	if (params.keys_size == 1 && key_columns[0]->isNumeric())
+	if (has_nullable_key || has_arrays_of_nullable)
 	{
-		size_t size_of_field = key_columns[0]->sizeOfField();
+		/// At least one key is nullable. Therefore we choose an aggregation method
+		/// that takes into account this fact.
+		if ((params.keys_size == 1) && (nested_key_columns[0]->isNumeric()))
+		{
+			/// We have exactly one key and it is nullable. We shall add it a tag
+			/// which specifies whether its value is null or not.
+			size_t size_of_field = nested_key_columns[0]->sizeOfField();
+			if ((size_of_field == 1) || (size_of_field == 2) || (size_of_field == 4) || (size_of_field == 8))
+				return AggregatedDataVariants::Type::nullable_keys128;
+			else
+				throw Exception{"Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.",
+					ErrorCodes::LOGICAL_ERROR};
+		}
+
+		if (all_fixed)
+		{
+			/// Pack if possible all the keys along with information about which key values are nulls
+			/// into a fixed 16- or 32-byte blob.
+			if (keys_bytes > (std::numeric_limits<size_t>::max() - std::tuple_size<KeysNullMap<UInt128>>::value))
+				throw Exception{"Aggregator: keys sizes overflow", ErrorCodes::LOGICAL_ERROR};
+			if ((std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes) <= 16)
+				return AggregatedDataVariants::Type::nullable_keys128;
+			if ((std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes) <= 32)
+				return AggregatedDataVariants::Type::nullable_keys256;
+		}
+
+		/// XXX Aggregation with Array(Nullable(T)) keys can be done much more efficiently.
+		if (has_arrays_of_nullable)
+			return AggregatedDataVariants::Type::serialized;
+
+		/// For the following two cases, see the comments below on the non-nullable variant,
+		/// since it is similar.
+		if (num_array_keys == 1 && !has_arrays_of_non_fixed_elems && all_non_array_keys_are_fixed)
+			return AggregatedDataVariants::Type::nullable_concat;
+		if (num_array_keys == 0 && !has_tuples)
+			return AggregatedDataVariants::Type::nullable_concat;
+
+		/// Fallback case.
+		return AggregatedDataVariants::Type::serialized;
+	}
+
+	/// No key has been found to be nullable.
+
+	/// Single numeric key.
+	if ((params.keys_size == 1) && nested_key_columns[0]->isNumericNotNullable())
+	{
+		size_t size_of_field = nested_key_columns[0]->sizeOfField();
 		if (size_of_field == 1)
 			return AggregatedDataVariants::Type::key8;
 		if (size_of_field == 2)
@@ -431,10 +500,10 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 		return AggregatedDataVariants::Type::keys256;
 
 	/// If single string key - will use hash table with references to it. Strings itself are stored separately in Arena.
-	if (params.keys_size == 1 && typeid_cast<const ColumnString *>(key_columns[0]))
+	if (params.keys_size == 1 && typeid_cast<const ColumnString *>(nested_key_columns[0]))
 		return AggregatedDataVariants::Type::key_string;
 
-	if (params.keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
+	if (params.keys_size == 1 && typeid_cast<const ColumnFixedString *>(nested_key_columns[0]))
 		return AggregatedDataVariants::Type::key_fixed_string;
 
 	/** If some keys are arrays.

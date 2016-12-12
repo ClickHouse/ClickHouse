@@ -45,7 +45,7 @@ Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & k
 		keys_fit_128_bits = false;
 
 	/// Если есть один числовой ключ, который помещается в 64 бита
-	if (keys_size == 1 && key_columns[0]->isNumeric())
+	if (keys_size == 1 && key_columns[0]->isNumericNotNullable())
 		return Type::KEY_64;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним

@@ -91,8 +91,9 @@ void HTTPHandler::processQuery(
 		used_output.out_maybe_compressed = used_output.out;
 
 	/// Имя пользователя и пароль могут быть заданы как в параметрах URL, так и с помощью HTTP Basic authentification (и то, и другое не секъюрно).
-	std::string user = params.get("user", "default");
-	std::string password = params.get("password", "");
+	/// The user and password can be passed by headers (similar to X-Auth-*), which is used by load balancers to pass authentication information
+	std::string user = request.get("X-ClickHouse-User", params.get("user", "default"));
+	std::string password = request.get("X-ClickHouse-Key", params.get("password", ""));
 
 	if (request.hasCredentials())
 	{
@@ -102,7 +103,7 @@ void HTTPHandler::processQuery(
 		password = credentials.getPassword();
 	}
 
-	std::string quota_key = params.get("quota_key", "");
+	std::string quota_key = request.get("X-ClickHouse-Quota", params.get("quota_key", ""));
 	std::string query_id = params.get("query_id", "");
 
 	Context context = *server.global_context;

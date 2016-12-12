@@ -63,9 +63,42 @@ public:
 		return chars.size() + offsets.size() * sizeof(offsets[0]);
 	}
 
-	ColumnPtr cloneEmpty() const override
+	ColumnPtr cloneResized(size_t size) const override
 	{
-		return std::make_shared<ColumnString>();
+		ColumnPtr new_col_holder = std::make_shared<ColumnString>();
+
+		if (size > 0)
+		{
+			auto & new_col = static_cast<ColumnString &>(*new_col_holder);
+			size_t count = std::min(this->size(), size);
+
+			/// First create the offsets.
+			new_col.offsets.resize(size);
+			new_col.offsets.assign(offsets.begin(), offsets.begin() + count);
+
+			size_t byte_count = new_col.offsets.back();
+
+			if (size > count)
+			{
+				/// Create offsets for the (size - count) new empty strings.
+				for (size_t i = count; i < size; ++i)
+					new_col.offsets[i] = new_col.offsets[i - 1] + 1;
+			}
+
+			/// Then store the strings.
+			new_col.chars.resize(new_col.offsets.back());
+			new_col.chars.assign(chars.begin(), chars.begin() + byte_count);
+
+			if (size > count)
+			{
+				/// Create (size - count) empty strings.
+				size_t from = new_col.offsets[count];
+				size_t n = new_col.offsets.back() - from;
+				memset(&new_col.chars[from], '\0', n);
+			}
+		}
+
+		return new_col_holder;
 	}
 
 	Field operator[](size_t n) const override
@@ -413,18 +446,17 @@ public:
 		chars.reserve(n * DBMS_APPROX_STRING_SIZE);
 	}
 
-	void getExtremes(Field & min, Field & max) const override
-	{
-		min = String();
-		max = String();
-	}
-
-
 	Chars_t & getChars() { return chars; }
 	const Chars_t & getChars() const { return chars; }
 
 	Offsets_t & getOffsets() { return offsets; }
 	const Offsets_t & getOffsets() const { return offsets; }
+
+	void getExtremes(Field & min, Field & max) const override
+	{
+		min = String();
+		max = String();
+	}
 };
 
 

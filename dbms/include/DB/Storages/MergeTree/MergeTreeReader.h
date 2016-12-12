@@ -13,28 +13,30 @@ class IDataType;
 class CachedCompressedReadBuffer;
 class CompressedReadBufferFromFile;
 
+class IDataType;
 
 /** Умеет читать данные между парой засечек из одного куска. При чтении последовательных отрезков не делает лишних seek-ов.
   * При чтении почти последовательных отрезков делает seek-и быстро, не выбрасывая содержимое буфера.
   */
-class MergeTreeReader
+class MergeTreeReader : private boost::noncopyable
 {
-	using OffsetColumns = std::map<std::string, ColumnPtr>;
-
 public:
 	using ValueSizeMap = std::map<std::string, double>;
 
 	MergeTreeReader(const String & path, /// Путь к куску
 		const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
-		UncompressedCache * uncompressed_cache, MarkCache * mark_cache, bool save_marks_in_cache,
+		UncompressedCache * uncompressed_cache,
+		MarkCache * mark_cache,
+		bool save_marks_in_cache,
 		MergeTreeData & storage, const MarkRanges & all_mark_ranges,
-		size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints = ValueSizeMap{},
+		size_t aio_threshold, size_t max_read_buffer_size,
+		const ValueSizeMap & avg_value_size_hints = ValueSizeMap{},
 		const ReadBufferFromFileBase::ProfileCallback & profile_callback = ReadBufferFromFileBase::ProfileCallback{},
 		clockid_t clock_type = CLOCK_MONOTONIC_COARSE);
 
 	~MergeTreeReader();
 
-	const ValueSizeMap & getAvgValueSizeHints() const { return avg_value_size_hints; }
+	const ValueSizeMap & getAvgValueSizeHints() const;
 
 	/** Если столбцов нет в блоке, добавляет их, если есть - добавляет прочитанные значения к ним в конец.
 	  * Не добавляет столбцы, для которых нет файлов. Чтобы их добавить, нужно вызвать fillMissingColumns.
@@ -54,30 +56,35 @@ public:
 	void fillMissingColumnsAndReorder(Block & res, const Names & ordered_names);
 
 private:
-	struct Stream
+	class Stream
 	{
-		MarkCache::MappedPtr marks;
-		ReadBuffer * data_buffer;
-		std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
-		std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
-		std::string path_prefix;
-		size_t max_mark_range;
-		bool is_empty = false;
-
+	public:
 		Stream(
-			const String & path_prefix_, UncompressedCache * uncompressed_cache,
+			const String & path_prefix_, const String & extension_,
+			UncompressedCache * uncompressed_cache,
 			MarkCache * mark_cache, bool save_marks_in_cache,
 			const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size,
 			const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
 		static std::unique_ptr<Stream> createEmptyPtr();
 
-		void loadMarks(MarkCache * cache, bool save_in_cache);
+		void loadMarks(MarkCache * cache, bool save_in_cache, bool is_null_stream);
 
 		void seekToMark(size_t index);
 
+		bool isEmpty() const { return is_empty; }
+
+		ReadBuffer * data_buffer;
+
 	private:
 		Stream() = default;
+
+		MarkCache::MappedPtr marks;
+		std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
+		std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
+		std::string path_prefix;
+		std::string extension;
+		bool is_empty = false;
 	};
 
 	using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;

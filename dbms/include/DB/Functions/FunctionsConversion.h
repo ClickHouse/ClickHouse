@@ -17,10 +17,12 @@
 #include <DB/DataTypes/DataTypeEnum.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeTuple.h>
+#include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnNullable.h>
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Functions/IFunction.h>
@@ -42,6 +44,7 @@ namespace ErrorCodes
 	extern const int CANNOT_PARSE_DATETIME;
 	extern const int CANNOT_PARSE_TEXT;
 }
+
 
 /** Type conversion functions.
   * toType - conversion in "natural way";
@@ -1303,16 +1306,16 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		return getReturnTypeImpl(arguments);
+		return getReturnTypeInternal(arguments);
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		try
 		{
-			executeImpl(block, arguments, result);
+			executeInternal(block, arguments, result);
 		}
 		catch (Exception & e)
 		{
@@ -1352,7 +1355,7 @@ public:
 	}
 
 private:
-	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+	void executeInternal(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
@@ -1386,7 +1389,7 @@ private:
 	}
 
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
+	DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
 		typename std::enable_if<!(std::is_same<ToDataType2, DataTypeString>::value ||
 			std::is_same<Name2, NameToUnixTimestamp>::value ||
 			std::is_same<Name2, NameToDate>::value)>::type * = nullptr) const
@@ -1402,7 +1405,7 @@ private:
 	/** Conversion of anything to String. For DateTime, it allows second optional argument - time zone.
 	  */
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
+	DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
 		typename std::enable_if<std::is_same<ToDataType2, DataTypeString>::value>::type * = nullptr) const
 	{
 		if ((arguments.size() < 1) || (arguments.size() > 2))
@@ -1429,7 +1432,7 @@ private:
 	}
 
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
+	DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
 		typename std::enable_if<std::is_same<Name2, NameToUnixTimestamp>::value, void>::type * = nullptr) const
 	{
 		if ((arguments.size() < 1) || (arguments.size() > 2))
@@ -1456,7 +1459,7 @@ private:
 	}
 
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
+	DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
 		typename std::enable_if<std::is_same<Name2, NameToDate>::value>::type * = nullptr) const
 	{
 		if ((arguments.size() < 1) || (arguments.size() > 2))
@@ -1494,12 +1497,12 @@ public:
 		return name;
 	}
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		return getReturnTypeImpl(arguments);
+		return getReturnTypeInternal(arguments);
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
@@ -1511,7 +1514,7 @@ public:
 	}
 
 private:
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const
+	DataTypePtr getReturnTypeInternal(const DataTypes & arguments) const
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1541,7 +1544,7 @@ public:
 	  * Если функция неприменима для данных аргументов - кинуть исключение.
 	  * Для неконстантных столбцов arguments[i].column = nullptr.
 	  */
-	void getReturnTypeAndPrerequisites(const ColumnsWithTypeAndName & arguments,
+	void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
 		DataTypePtr & out_return_type,
 		std::vector<ExpressionAction> & out_prerequisites) override
 	{
@@ -1561,7 +1564,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto n = getSize(block.getByPosition(arguments[1]));
 		return execute(block, arguments, result, n);
@@ -1917,7 +1920,7 @@ private:
 			};
 
 		/// Prepare nested type conversion
-		const auto nested_function = prepare(from_nested_type, to_nested_type.get());
+		const auto nested_function = prepareImpl(from_nested_type, to_nested_type.get());
 
 		return [nested_function, from_nested_type, to_nested_type] (
 			Block & block, const ColumnNumbers & arguments, const size_t result)
@@ -1996,7 +1999,7 @@ private:
 
 		/// Create conversion wrapper for each element in tuple
 		for (const auto & idx_type : ext::enumerate(from_type->getElements()))
-			element_wrappers.push_back(prepare(idx_type.second, to_element_types[idx_type.first].get()));
+			element_wrappers.push_back(prepareImpl(idx_type.second, to_element_types[idx_type.first].get()));
 
 		auto function_tuple = FunctionTuple::create(context);
 		return [element_wrappers, function_tuple, from_element_types, to_element_types]
@@ -2140,7 +2143,93 @@ private:
 		};
 	}
 
-	WrapperType prepare(const DataTypePtr & from_type, const IDataType * const to_type)
+	/// Actions to be taken when performing a conversion.
+	struct Action
+	{
+		/// If neither the input type nor the output type is nullable or null,
+		/// we perform the conversion without any pre and/or processing.
+		static constexpr auto NONE = UInt64(0);
+		/// The input has a nullable type. We must extract its nested type
+		/// before performing any conversion.
+		static constexpr auto UNWRAP_NULLABLE_INPUT = UInt64(1) << 0;
+		/// The output has a nullable type. We must wrap the result from the
+		/// conversion into a ColumnNullable.
+		static constexpr auto WRAP_RESULT_INTO_NULLABLE = UInt64(1) << 1;
+		/// The input is the NULL value. Before performing any conversion,
+		/// we will turn it into a single UInt8 zero value.
+		static constexpr auto CONVERT_NULL = UInt64(1) << 2;
+	};
+
+	WrapperType prepare(const DataTypePtr & from_type, const IDataType * const to_type, const uint64_t action)
+	{
+		auto wrapper = prepareImpl((action & Action::CONVERT_NULL) ?
+										std::make_shared<DataTypeUInt8>() :
+										from_type,
+									to_type);
+
+		if (action & Action::WRAP_RESULT_INTO_NULLABLE)
+		{
+			return [wrapper, action] (Block & block, const ColumnNumbers & arguments, const size_t result)
+			{
+				/// Create a temporary block on which to perform the operation.
+				auto & res = block.getByPosition(result);
+				const auto & ret_type = res.type;
+				const auto & nullable_type = static_cast<const DataTypeNullable &>(*ret_type);
+				const auto & nested_type = nullable_type.getNestedType();
+
+				Block tmp_block;
+				if (action & Action::UNWRAP_NULLABLE_INPUT)
+					tmp_block = createBlockWithNestedColumns(block, arguments);
+				else if (action & Action::CONVERT_NULL)
+				{
+					/// The input is replaced by a trivial UInt8 column
+					/// which contains only one row whose value is 0.
+					tmp_block = block;
+					auto & elem = tmp_block.unsafeGetByPosition(arguments[0]);
+					elem.column = std::make_shared<ColumnUInt8>(1, 0);
+					elem.type = std::make_shared<DataTypeUInt8>();
+				}
+				else
+					tmp_block = block;
+
+				size_t tmp_res_index = block.columns();
+				tmp_block.insert({nullptr, nested_type, ""});
+
+				/// Perform the requested conversion.
+				wrapper(tmp_block, arguments, tmp_res_index);
+
+				/// Wrap the result into a nullable column.
+				ColumnPtr null_map;
+
+				if (action & Action::UNWRAP_NULLABLE_INPUT)
+				{
+					/// This is a conversion from a nullable to a nullable type.
+					/// So we just keep the null map of the input argument.
+					const auto & col = block.getByPosition(arguments[0]).column;
+					const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
+					null_map = nullable_col.getNullValuesByteMap();
+				}
+				else if (action & Action::CONVERT_NULL)
+				{
+					/// A NULL value has been converted to a nullable type.
+					null_map = std::make_shared<ColumnUInt8>(block.rowsInFirstColumn(), 1);
+				}
+				else
+				{
+					/// This is a conversion from an ordinary type to a nullable type.
+					/// So we create a trivial null map.
+					null_map = std::make_shared<ColumnUInt8>(block.rowsInFirstColumn(), 0);
+				}
+
+				const auto & tmp_res = tmp_block.getByPosition(tmp_res_index);
+				res.column = std::make_shared<ColumnNullable>(tmp_res.column, null_map);
+			};
+		}
+		else
+			return wrapper;
+	}
+
+	WrapperType prepareImpl(const DataTypePtr & from_type, const IDataType * const to_type)
 	{
 		if (const auto to_actual_type = typeid_cast<const DataTypeUInt8 *>(to_type))
 			return createWrapper(from_type, to_actual_type);
@@ -2238,7 +2327,9 @@ public:
 
 	String getName() const override { return name; }
 
-	void getReturnTypeAndPrerequisites(
+	bool hasSpecialSupportForNulls() const override { return true; }
+
+	void getReturnTypeAndPrerequisitesImpl(
 		const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type,
 		std::vector<ExpressionAction> & out_prerequisites) override
 	{
@@ -2254,12 +2345,58 @@ public:
 
 		out_return_type = DataTypeFactory::instance().get(type_col->getData());
 
-		wrapper_function = prepare(arguments.front().type, out_return_type.get());
+		/// Determine whether pre-processing and/or post-processing must take
+		/// place during conversion.
+		uint64_t action = Action::NONE;
+		const auto & from_type = arguments.front().type;
 
-		prepareMonotonicityInformation(arguments.front().type, out_return_type.get());
+		if (from_type->isNullable())
+			action |= Action::UNWRAP_NULLABLE_INPUT;
+		else if (from_type->isNull())
+			action |= Action::CONVERT_NULL;
+
+		if (out_return_type->isNullable())
+			action |= Action::WRAP_RESULT_INTO_NULLABLE;
+
+		/// Check that the requested conversion is allowed.
+		if (!(action & Action::WRAP_RESULT_INTO_NULLABLE))
+		{
+			if (action & Action::CONVERT_NULL)
+				throw Exception{"Cannot convert NULL into a non-nullable type",
+					ErrorCodes::CANNOT_CONVERT_TYPE};
+			else if (action & Action::UNWRAP_NULLABLE_INPUT)
+				throw Exception{"Cannot convert data from a nullable type to a non-nullable type",
+					ErrorCodes::CANNOT_CONVERT_TYPE};
+		}
+
+		DataTypePtr from_inner_type;
+		const IDataType * to_inner_type;
+
+		/// Create the requested conversion.
+		if (action & Action::WRAP_RESULT_INTO_NULLABLE)
+		{
+			if (action & Action::UNWRAP_NULLABLE_INPUT)
+			{
+				const auto & nullable_type = static_cast<const DataTypeNullable &>(*from_type);
+				from_inner_type = nullable_type.getNestedType();
+			}
+			else
+				from_inner_type = from_type;
+
+			const auto & nullable_type = static_cast<const DataTypeNullable &>(*out_return_type);
+			to_inner_type = nullable_type.getNestedType().get();
+		}
+		else
+		{
+			from_inner_type = from_type;
+			to_inner_type = out_return_type.get();
+		}
+
+		wrapper_function = prepare(from_inner_type, to_inner_type, action);
+		prepareMonotonicityInformation(from_inner_type, to_inner_type);
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		/// drop second argument, pass others
 		ColumnNumbers new_arguments{arguments.front()};

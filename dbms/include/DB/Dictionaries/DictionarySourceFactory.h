@@ -16,7 +16,7 @@ namespace DB
 {
 
 class Context;
-class DictionaryStructure;
+struct DictionaryStructure;
 
 /// creates IDictionarySource instance from config and DictionaryStructure
 class DictionarySourceFactory : public Singleton<DictionarySourceFactory>

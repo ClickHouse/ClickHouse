@@ -11,7 +11,7 @@ String FunctionReverse::getName() const
 }
 
 
-DataTypePtr FunctionReverse::getReturnType(const DataTypes & arguments) const
+DataTypePtr FunctionReverse::getReturnTypeImpl(const DataTypes & arguments) const
 {
 	if (arguments.size() != 1)
 		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -27,7 +27,7 @@ DataTypePtr FunctionReverse::getReturnType(const DataTypes & arguments) const
 }
 
 
-void FunctionReverse::execute(Block & block, const ColumnNumbers & arguments, size_t result)
+void FunctionReverse::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
 	const ColumnPtr column = block.getByPosition(arguments[0]).column;
 	if (const ColumnString * col = typeid_cast<const ColumnString *>(column.get()))
@@ -69,7 +69,7 @@ String FunctionAppendTrailingCharIfAbsent::getName() const
 }
 
 
-DataTypePtr FunctionAppendTrailingCharIfAbsent::getReturnType(const DataTypes & arguments) const
+DataTypePtr FunctionAppendTrailingCharIfAbsent::getReturnTypeImpl(const DataTypes & arguments) const
 {
 	if (arguments.size() != 2)
 		throw Exception{
@@ -94,7 +94,7 @@ DataTypePtr FunctionAppendTrailingCharIfAbsent::getReturnType(const DataTypes & 
 }
 
 
-void FunctionAppendTrailingCharIfAbsent::execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+void FunctionAppendTrailingCharIfAbsent::executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result)
 {
 	const auto & column = block.getByPosition(arguments[0]).column;
 	const auto & column_char = block.getByPosition(arguments[1]).column;

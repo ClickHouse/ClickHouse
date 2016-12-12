@@ -3,16 +3,6 @@ include_directories (/usr/include/mysql)
 
 add_subdirectory (src)
 
-if (ENABLE_MONGODB)
-	set (LINK_MONGOCLIENT libmongoclient.a ${OPENSSL_LIBRARIES} ${Boost_THREAD_LIBRARY})
-	set (MONGODB_FILES
-		include/DB/Dictionaries/MongoDBBlockInputStream.h
-		include/DB/Dictionaries/MongoDBDictionarySource.h
-		src/Dictionaries/MongoDBDictionarySource.cpp
-		src/Dictionaries/MongoDBBlockInputStream.cpp)
-	add_definitions(-D ENABLE_MONGODB)
-endif ()
-
 if (NOT ENABLE_LIBTCMALLOC)
 	add_definitions(-D NO_TCMALLOC)
 endif ()
@@ -46,6 +36,7 @@ add_library (dbms
 	src/Server/ReplicasStatusHandler.h
 	src/Client/InterruptListener.h
 	include/DB/Functions/FunctionsLogical.h
+	include/DB/Functions/FunctionsNull.h
 	include/DB/Functions/FunctionsReinterpret.h
 	include/DB/Functions/FunctionFactory.h
 	include/DB/Functions/FunctionsArray.h
@@ -58,6 +49,7 @@ add_library (dbms
 	include/DB/Functions/FunctionsTransform.h
 	include/DB/Functions/Conditional/CondException.h
 	include/DB/Functions/Conditional/common.h
+	include/DB/Functions/Conditional/NullMapBuilder.h
 	include/DB/Functions/Conditional/getArrayType.h
 	include/DB/Functions/Conditional/ArgsInfo.h
 	include/DB/Functions/Conditional/CondSource.h
@@ -149,6 +141,7 @@ add_library (dbms
 	include/DB/Parsers/ParserCase.h
 	include/DB/Parsers/ASTTablesInSelectQuery.h
 	include/DB/Parsers/ParserTablesInSelectQuery.h
+	include/DB/AggregateFunctions/AggregateFunctionNull.h
 	include/DB/AggregateFunctions/AggregateFunctionMerge.h
 	include/DB/AggregateFunctions/AggregateFunctionUniqUpTo.h
 	include/DB/AggregateFunctions/AggregateFunctionIf.h
@@ -286,6 +279,8 @@ add_library (dbms
 	include/DB/DataStreams/SquashingTransform.h
 	include/DB/DataStreams/SquashingBlockInputStream.h
 	include/DB/DataStreams/SquashingBlockOutputStream.h
+	include/DB/DataStreams/NullableAdapterBlockInputStream.h
+	include/DB/DataTypes/NullSymbol.h
 	include/DB/DataStreams/ColumnGathererStream.h
 	include/DB/DataTypes/IDataType.h
 	include/DB/DataTypes/IDataTypeDummy.h
@@ -305,6 +300,8 @@ add_library (dbms
 	include/DB/DataTypes/DataTypeExpression.h
 	include/DB/DataTypes/DataTypeDateTime.h
 	include/DB/DataTypes/DataTypesNumberFixed.h
+	include/DB/DataTypes/DataTypeNull.h
+	include/DB/DataTypes/DataTypeNullable.h
 	include/DB/Dictionaries/FileDictionarySource.h
 	include/DB/Dictionaries/DictionarySourceFactory.h
 	include/DB/Dictionaries/DictionaryStructure.h
@@ -313,6 +310,8 @@ add_library (dbms
 	include/DB/Dictionaries/IDictionary.h
 	include/DB/Dictionaries/MySQLBlockInputStream.h
 	include/DB/Dictionaries/MySQLDictionarySource.h
+	include/DB/Dictionaries/MongoDBBlockInputStream.h
+	include/DB/Dictionaries/MongoDBDictionarySource.h
 	include/DB/Dictionaries/ODBCBlockInputStream.h
 	include/DB/Dictionaries/ODBCDictionarySource.h
 	include/DB/Dictionaries/HashedDictionary.h
@@ -512,6 +511,7 @@ add_library (dbms
 	include/DB/Columns/ColumnSet.h
 	include/DB/Columns/ColumnArray.h
 	include/DB/Columns/ColumnsNumber.h
+	include/DB/Columns/ColumnNullable.h
 	include/DB/Client/MultiplexedConnections.h
 	include/DB/Client/ConnectionPoolWithFailover.h
 	include/DB/Client/Connection.h
@@ -630,6 +630,7 @@ add_library (dbms
 	src/Common/ThreadPool.cpp
 	src/Common/URLUtils.cpp
 	src/Common/hex.cpp
+	src/Common/escapeForFileName.cpp
 
 	src/Core/Field.cpp
 	src/Core/FieldVisitors.cpp
@@ -669,6 +670,7 @@ add_library (dbms
 	src/Columns/ColumnArray.cpp
 	src/Columns/ColumnAggregateFunction.cpp
 	src/Columns/ColumnExpression.cpp
+	src/Columns/ColumnNullable.cpp
 	src/Columns/ColumnsCommon.cpp
 	src/Columns/ColumnString.cpp
 
@@ -707,6 +709,7 @@ add_library (dbms
 	src/Storages/StorageJoin.cpp
 	src/Storages/VirtualColumnFactory.cpp
 	src/Storages/Distributed/DistributedBlockOutputStream.cpp
+	src/Storages/Distributed/DirectoryMonitor.cpp
 	src/Storages/MergeTree/PKCondition.cpp
 	src/Storages/MergeTree/DiskSpaceMonitor.cpp
 	src/Storages/MergeTree/RemoteDiskSpaceMonitor.cpp
@@ -715,8 +718,10 @@ add_library (dbms
 	src/Storages/MergeTree/MergeTreeData.cpp
 	src/Storages/MergeTree/MergeTreeDataPart.cpp
 	src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp
+	src/Storages/MergeTree/MergeTreeReader.cpp
 	src/Storages/MergeTree/MergeTreeDataWriter.cpp
 	src/Storages/MergeTree/MergeTreeDataMerger.cpp
+	src/Storages/MergeTree/MergedBlockOutputStream.cpp
 	src/Storages/MergeTree/MergeTreePartChecker.cpp
 	src/Storages/MergeTree/ReplicatedMergeTreeLogEntry.cpp
 	src/Storages/MergeTree/ReplicatedMergeTreeQueue.cpp
@@ -770,6 +775,7 @@ add_library (dbms
 	src/DataStreams/VerticalRowOutputStream.cpp
 	src/DataStreams/MergingAggregatedBlockInputStream.cpp
 	src/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.cpp
+	src/DataStreams/ParallelAggregatingBlockInputStream.cpp
 	src/DataStreams/MergingSortedBlockInputStream.cpp
 	src/DataStreams/CollapsingSortedBlockInputStream.cpp
 	src/DataStreams/CollapsingFinalBlockInputStream.cpp
@@ -801,6 +807,8 @@ add_library (dbms
 	src/DataStreams/SquashingTransform.cpp
 	src/DataStreams/SquashingBlockInputStream.cpp
 	src/DataStreams/SquashingBlockOutputStream.cpp
+	src/DataStreams/MaterializingBlockInputStream.cpp
+	src/DataStreams/NullableAdapterBlockInputStream.cpp
 	src/DataStreams/ColumnGathererStream.cpp
 
 	src/DataTypes/DataTypeString.cpp
@@ -811,16 +819,21 @@ add_library (dbms
 	src/DataTypes/DataTypeAggregateFunction.cpp
 	src/DataTypes/DataTypeEnum.cpp
 	src/DataTypes/DataTypeTuple.cpp
+	src/DataTypes/DataTypeNull.cpp
+	src/DataTypes/DataTypeNullable.cpp
+	src/DataTypes/NullSymbol.cpp
 	src/DataTypes/FieldToDataType.cpp
 
 	src/Dictionaries/DictionarySourceFactory.cpp
 	src/Dictionaries/FileDictionarySource.cpp
 	src/Dictionaries/MySQLDictionarySource.cpp
+	src/Dictionaries/MongoDBDictionarySource.cpp
 	src/Dictionaries/ODBCDictionarySource.cpp
 	src/Dictionaries/ClickHouseDictionarySource.cpp
 	src/Dictionaries/ExecutableDictionarySource.cpp
 	src/Dictionaries/HTTPDictionarySource.cpp
 	src/Dictionaries/MySQLBlockInputStream.cpp
+	src/Dictionaries/MongoDBBlockInputStream.cpp
 	src/Dictionaries/ODBCBlockInputStream.cpp
 	src/Dictionaries/ExternalQueryBuilder.cpp
 	src/Dictionaries/ExternalResultDescription.cpp
@@ -912,6 +925,8 @@ add_library (dbms
 	src/Interpreters/ClusterProxy/Query.cpp
 	src/Interpreters/AsynchronousMetrics.cpp
 
+	src/Functions/DataTypeTraits.cpp
+	src/Functions/IFunction.cpp
 	src/Functions/FunctionFactory.cpp
 	src/Functions/FunctionsArithmetic.cpp
 	src/Functions/FunctionsArray.cpp
@@ -925,6 +940,7 @@ add_library (dbms
 	src/Functions/FunctionsHashing.cpp
 	src/Functions/FunctionsHigherOrder.cpp
 	src/Functions/FunctionsLogical.cpp
+	src/Functions/FunctionsNull.cpp
 	src/Functions/FunctionsRandom.cpp
 	src/Functions/FunctionsReinterpret.cpp
 	src/Functions/FunctionsRound.cpp
@@ -941,11 +957,13 @@ add_library (dbms
 	src/Functions/Conditional/getArrayType.cpp
 	src/Functions/Conditional/ArgsInfo.cpp
 	src/Functions/Conditional/CondSource.cpp
+	src/Functions/Conditional/NullMapBuilder.cpp
 	src/Functions/Conditional/NumericPerformer.cpp
 	src/Functions/Conditional/StringEvaluator.cpp
 	src/Functions/Conditional/StringArrayEvaluator.cpp
 
 	src/AggregateFunctions/UniqCombinedBiasData.cpp
+	src/AggregateFunctions/AggregateFunctionNull.cpp
 	src/AggregateFunctions/AggregateFunctionFactory.cpp
 	src/AggregateFunctions/AggregateFunctionArray.cpp
 	src/AggregateFunctions/AggregateFunctionAvg.cpp
@@ -976,8 +994,6 @@ add_library (dbms
 
 	src/Client/Connection.cpp
 	src/Client/MultiplexedConnections.cpp
-
-	${MONGODB_FILES}
 )
 
 if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -1032,10 +1048,9 @@ target_link_libraries(dbms
 	re2 re2_st
 	${OPENSSL_CRYPTO_LIBRARY}
 	${Boost_SYSTEM_LIBRARY}
-	${LINK_MONGOCLIENT}
-	${Boost_REGEX_LIBRARY}
 	PocoData
 	PocoDataODBC
+	PocoMongoDB
 	${APPLE_ICONV_LIB}
 	dl ${LTDL_LIB})
 

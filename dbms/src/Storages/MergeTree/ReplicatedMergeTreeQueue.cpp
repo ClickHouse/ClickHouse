@@ -140,11 +140,11 @@ void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
 	zkutil::Ops ops;
 
 	if (min_unprocessed_insert_time_changed)
-		ops.push_back(new zkutil::Op::SetData(
+		ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
 			replica_path + "/min_unprocessed_insert_time", toString(min_unprocessed_insert_time), -1));
 
 	if (max_processed_insert_time_changed)
-		ops.push_back(new zkutil::Op::SetData(
+		ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
 			replica_path + "/max_processed_insert_time", toString(max_processed_insert_time), -1));
 
 	if (!ops.empty())
@@ -303,7 +303,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 				zkutil::ZooKeeper::ValueAndStat res = future.second.get();
 				copied_entries.emplace_back(LogEntry::parse(res.value, res.stat));
 
-				ops.push_back(new zkutil::Op::Create(
+				ops.emplace_back(std::make_unique<zkutil::Op::Create>(
 					replica_path + "/queue/queue-", res.value, zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
 
 				const auto & entry = *copied_entries.back();
@@ -317,11 +317,11 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 				}
 			}
 
-			ops.push_back(new zkutil::Op::SetData(
+			ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
 				replica_path + "/log_pointer", toString(last_entry_index + 1), -1));
 
 			if (min_unprocessed_insert_time_changed)
-				ops.push_back(new zkutil::Op::SetData(
+				ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
 					replica_path + "/min_unprocessed_insert_time", toString(min_unprocessed_insert_time), -1));
 
 			auto results = zookeeper->multi(ops);
@@ -334,7 +334,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
 				for (size_t i = 0, size = copied_entries.size(); i < size; ++i)
 				{
-					String path_created = dynamic_cast<zkutil::Op::Create &>(ops[i]).getPathCreated();
+					String path_created = dynamic_cast<zkutil::Op::Create &>(*ops[i]).getPathCreated();
 					copied_entries[i]->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
 
 					insertUnlocked(copied_entries[i]);

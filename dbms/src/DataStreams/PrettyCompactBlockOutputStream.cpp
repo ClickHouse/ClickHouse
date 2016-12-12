@@ -7,6 +7,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+
+extern const int ILLEGAL_COLUMN;
+
+}
+
 void PrettyCompactBlockOutputStream::writeHeader(
 	const Block & block,
 	const Widths_t & max_widths,

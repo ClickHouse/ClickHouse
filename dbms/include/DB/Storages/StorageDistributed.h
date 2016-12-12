@@ -15,6 +15,7 @@ namespace DB
 {
 
 class Context;
+class StorageDistributedDirectoryMonitor;
 
 
 /** Распределённая таблица, находящаяся на нескольких серверах.
@@ -27,7 +28,7 @@ class StorageDistributed : private ext::shared_ptr_helper<StorageDistributed>, p
 {
 	friend class ext::shared_ptr_helper<StorageDistributed>;
 	friend class DistributedBlockOutputStream;
-	friend class DirectoryMonitor;
+	friend class StorageDistributedDirectoryMonitor;
 
 public:
 	static StoragePtr create(
@@ -154,8 +155,7 @@ private:
 	String sharding_key_column_name;
 	String path;	/// Может быть пустым, если data_path_ пустой. В этом случае, директория для данных для отправки не создаётся.
 
-	class DirectoryMonitor;
-	std::unordered_map<std::string, std::unique_ptr<DirectoryMonitor>> directory_monitors;
+	std::unordered_map<std::string, std::unique_ptr<StorageDistributedDirectoryMonitor>> directory_monitors;
 };
 
 }

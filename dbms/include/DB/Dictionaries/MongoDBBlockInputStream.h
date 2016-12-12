@@ -5,21 +5,28 @@
 #include <DB/Dictionaries/ExternalResultDescription.h>
 
 
-namespace mongo
+namespace Poco
 {
-	class DBClientCursor;
+	namespace MongoDB
+	{
+		class Connection;
+		class Cursor;
+	}
 }
 
 
 namespace DB
 {
 
-/// Converts mongo::DBClientCursor to a stream of DB::Block`s
+/// Converts MongoDB Cursor to a stream of Blocks
 class MongoDBBlockInputStream final : public IProfilingBlockInputStream
 {
 public:
 	MongoDBBlockInputStream(
-		std::unique_ptr<mongo::DBClientCursor> cursor_, const Block & sample_block, const size_t max_block_size);
+		std::shared_ptr<Poco::MongoDB::Connection> & connection_,
+		std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
+		const Block & sample_block,
+		const size_t max_block_size);
 
     ~MongoDBBlockInputStream() override;
 
@@ -35,7 +42,8 @@ private:
 		column->insertFrom(sample_column, 0);
 	}
 
-	std::unique_ptr<mongo::DBClientCursor> cursor;
+	std::shared_ptr<Poco::MongoDB::Connection> connection;
+	std::unique_ptr<Poco::MongoDB::Cursor> cursor;
 	const size_t max_block_size;
 	ExternalResultDescription description;
 };

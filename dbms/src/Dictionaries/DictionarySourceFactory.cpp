@@ -6,11 +6,7 @@
 #include <DB/Dictionaries/ClickHouseDictionarySource.h>
 #include <DB/Dictionaries/ExecutableDictionarySource.h>
 #include <DB/Dictionaries/HTTPDictionarySource.h>
-
-#ifdef ENABLE_MONGODB
 #include <DB/Dictionaries/MongoDBDictionarySource.h>
-#endif
-
 #include <DB/Dictionaries/ODBCDictionarySource.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeDate.h>
@@ -116,12 +112,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
 	}
 	else if ("mongodb" == source_type)
 	{
-	#ifdef ENABLE_MONGODB
 		return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
-	#else
-		throw Exception{
-			"MongoDB dictionary source was disabled at build time", ErrorCodes::SUPPORT_IS_DISABLED};
-	#endif
 	}
 	else if ("odbc" == source_type)
 	{

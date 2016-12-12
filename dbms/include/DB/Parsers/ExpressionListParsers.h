@@ -222,11 +222,21 @@ protected:
 };
 
 
+/** Parser for nullity checking with IS (NOT) NULL.
+  */
+class ParserNullityChecking : public IParserBase
+{
+protected:
+	const char * getName() const override { return "nullity checking"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) override;
+};
+
+
 class ParserLogicalNotExpression : public IParserBase
 {
 private:
 	static const char * operators[];
-	ParserPrefixUnaryOperatorExpression operator_parser {operators, std::make_unique<ParserComparisonExpression>()};
+	ParserPrefixUnaryOperatorExpression operator_parser {operators, std::make_unique<ParserNullityChecking>()};
 
 protected:
 	const char * getName() const { return "logical-NOT expression"; }

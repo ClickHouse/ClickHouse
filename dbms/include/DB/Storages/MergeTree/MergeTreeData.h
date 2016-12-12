@@ -525,7 +525,7 @@ private:
 	  * Если !part, просто проверяет, что все нужные преобразования типов допустимы.
 	  */
 	void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-		ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata);
+		ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const;
 
 	/// Рассчитывает размеры столбцов в сжатом виде для текущего состояния data_parts. Вызывается под блокировкой.
 	void calculateColumnSizes();

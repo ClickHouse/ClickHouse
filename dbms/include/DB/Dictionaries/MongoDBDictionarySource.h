@@ -10,12 +10,11 @@ namespace Poco
 	{
 		class AbstractConfiguration;
 	}
-}
 
-namespace mongo
-{
-	class DBClientConnection;
-	class BSONObj;
+	namespace MongoDB
+	{
+		class Connection;
+	}
 }
 
 
@@ -26,7 +25,7 @@ namespace DB
 class MongoDBDictionarySource final : public IDictionarySource
 {
 	MongoDBDictionarySource(
-		const DictionaryStructure & dict_struct, const std::string & host, const std::string & port,
+		const DictionaryStructure & dict_struct, const std::string & host, UInt16 port,
 		const std::string & user, const std::string & password,
 		const std::string & db, const std::string & collection,
 		const Block & sample_block);
@@ -50,7 +49,7 @@ public:
 		const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows) override;
 
 	/// @todo: for MongoDB, modification date can somehow be determined from the `_id` object field
-	bool isModified() const override { return false; }
+	bool isModified() const override { return true; }
 
 	DictionarySourcePtr clone() const override { return std::make_unique<MongoDBDictionarySource>(*this); }
 
@@ -59,15 +58,14 @@ public:
 private:
 	const DictionaryStructure dict_struct;
 	const std::string host;
-	const std::string port;
+	const UInt16 port;
 	const std::string user;
 	const std::string password;
 	const std::string db;
 	const std::string collection;
 	Block sample_block;
 
-	std::unique_ptr<mongo::DBClientConnection> connection;
-	std::unique_ptr<mongo::BSONObj> fields_to_query;
+	std::shared_ptr<Poco::MongoDB::Connection> connection;
 };
 
 }
