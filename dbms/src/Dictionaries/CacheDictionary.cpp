@@ -382,15 +382,18 @@ void CacheDictionary::getItemsNumberImpl(
 		[] (auto & pair) { return pair.first; });
 
 	/// request new values
-	update(required_ids, [&] (const auto id, const auto cell_idx) {
-		const auto attribute_value = attribute_array[cell_idx];
+	update(required_ids, [&] (const auto id, const auto cell_idx)
+		{
+			const auto attribute_value = attribute_array[cell_idx];
 
-		for (const auto row : outdated_ids[id])
-			out[row] = attribute_value;
-	}, [&] (const auto id, const auto cell_idx) {
-		for (const auto row : outdated_ids[id])
-			out[row] = get_default(row);
-	});
+			for (const auto row : outdated_ids[id])
+				out[row] = attribute_value;
+		},
+		[&] (const auto id, const auto cell_idx)
+		{
+			for (const auto row : outdated_ids[id])
+				out[row] = get_default(row);
+		});
 }
 
 template <typename DefaultGetter>

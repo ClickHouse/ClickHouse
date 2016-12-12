@@ -2151,7 +2151,7 @@ private:
 			/// used for storing and handling result of ::toParent call
 			auto out_array = std::make_unique<PaddedPODArray<UInt64>>(size);
 			/// resulting hierarchies
-			std::vector<std::vector<IDictionary::Key>> hierarchies(size);
+			std::vector<std::vector<IDictionary::Key>> hierarchies(size);	/// TODO Bad code, poor performance.
 
 			/// total number of non-zero elements, used for allocating all the required memory upfront
 			std::size_t total_count = 0;
@@ -2345,8 +2345,7 @@ private:
 			const auto size = child_id_col->size();
 			data.resize(size);
 
-			for (const auto idx : ext::range(0, size))
-				data[idx] = dictionary->in(child_ids[idx], ancestor_ids[idx]);
+			dictionary->isIn(child_ids, ancestor_ids, data);
 		}
 		else if (const auto ancestor_id_col = typeid_cast<const ColumnConst<UInt64> *>(ancestor_id_col_untyped))
 		{
@@ -2359,8 +2358,7 @@ private:
 			const auto size = child_id_col->size();
 			data.resize(size);
 
-			for (const auto idx : ext::range(0, size))
-				data[idx] = dictionary->in(child_ids[idx], ancestor_id);
+			dictionary->isIn(child_ids, ancestor_id, data);
 		}
 		else
 		{
@@ -2388,14 +2386,15 @@ private:
 			const auto size = child_id_col->size();
 			data.resize(size);
 
-			for (const auto idx : ext::range(0, size))
-				data[idx] = dictionary->in(child_id, ancestor_ids[idx]);
+			dictionary->isIn(child_id, ancestor_ids, data);
 		}
 		else if (const auto ancestor_id_col = typeid_cast<const ColumnConst<UInt64> *>(ancestor_id_col_untyped))
 		{
+			UInt8 res = 0;
+			dictionary->isIn(child_id_col->getData(), ancestor_id_col->getData(), res);
+
 			block.getByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(
-				child_id_col->size(),
-				dictionary->in(child_id_col->getData(), ancestor_id_col->getData()));
+				child_id_col->size(), res);
 		}
 		else
 		{
