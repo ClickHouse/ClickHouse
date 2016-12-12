@@ -176,7 +176,7 @@ public:
 			if (!data)
 				return;
 			++data->ref_count;
-			my_thread_init();
+			mysql_thread_init();
 		}
 
 		void decrementRefCount()
@@ -184,7 +184,7 @@ public:
 			if (!data)
 				return;
 			--data->ref_count;
-			my_thread_end();
+			mysql_thread_end();
 		}
 	};
 

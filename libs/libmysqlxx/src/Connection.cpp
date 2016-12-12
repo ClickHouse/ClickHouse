@@ -30,7 +30,7 @@ Connection::Connection(
 Connection::~Connection()
 {
 	disconnect();
-	my_thread_end();
+	mysql_thread_end();
 }
 
 void Connection::connect(const char* db,
