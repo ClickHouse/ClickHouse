@@ -71,7 +71,7 @@ endif ()
 
 option (DEBUG_LIBTCMALLOC "Set to TRUE to use debug version of libtcmalloc." OFF)
 if ($ENV{DEBUG_LIBTCMALLOC})
-	set (ENABLE_LIBTCMALLOC TRUE)
+	set (DEBUG_LIBTCMALLOC TRUE)
 endif ()
 
 if (GLIBC_COMPATIBILITY)

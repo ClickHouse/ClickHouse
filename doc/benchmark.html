@@ -1553,15 +1553,15 @@ function generate_comparison_table() {
     html += "<table class='comparison_table'>";
 
     html += "<tr>";
-    html += "<th></th>";
+    html += "<th><input id='query_checkbox_toggler' type='checkbox' checked /></th>";
     html += "<th style='text-align: left;'>Query</th>";
-    for (j = 0; j < filtered_results.length; j++) {
+    for (var j = 0; j < filtered_results.length; j++) {
         html += "<th colspan='" + current_runs.length + "'>" + filtered_results[j].system +
             (filtered_results[j].version ? " (" + filtered_results[j].version + ")" : "") + "</th>";
     }
     html += "</tr>";
 
-    for (i = 0; i < queries.length; i++) {
+    for (var i = 0; i < queries.length; i++) {
         html += "<tr>";
         html += "<td><input id='query_checkbox" + i + "' type='checkbox' " +
             ($('#query_checkbox' + i).length == 0 || $('#query_checkbox' + i).is(':checked') ? "checked" : "") + " /></td>";
@@ -1571,8 +1571,8 @@ function generate_comparison_table() {
         // Вычислим максимальное и минимальное время выполнения по системам, для каждого из трёх прогонов.
         var minimums = [0, 0, 0], maximums = [0, 0, 0];
 
-        for (j = 0; j < filtered_results.length; j++) {
-            for (current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
+        for (var j = 0; j < filtered_results.length; j++) {
+            for (var current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
                 var k = current_runs[current_run_idx];
                 var value = filtered_results[j].result[i][k];
 
@@ -1591,12 +1591,12 @@ function generate_comparison_table() {
             }
         }
 
-        for (j = 0; j < filtered_results.length; j++) {
+        for (var j = 0; j < filtered_results.length; j++) {
             if (!ratios[j]) {
                 ratios[j] = [];
             }
 
-            for (current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
+            for (var current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
                 var k = current_runs[current_run_idx];
                 var value = filtered_results[j].result[i][k];
 
@@ -1621,8 +1621,8 @@ function generate_comparison_table() {
         html += "<td rowspan='2'></td>";
         html += "<td rowspan='2'><div class='query_cell'>Geometric mean of ratios</div></td>";
 
-        for (j = 0; j < filtered_results.length; j++) {
-            for (k = 0; k < current_runs.length; k++) {
+        for (var j = 0; j < filtered_results.length; j++) {
+            for (var k = 0; k < current_runs.length; k++) {
                 html += "<th id='totals" + j + "_" + current_runs[k] + "' class='number_cell' style='text-align: center; background-color: #FFF; font-weight: bold;'></th>";
             }
         }
@@ -1630,7 +1630,7 @@ function generate_comparison_table() {
         html += "</tr>";
         html += "<tr>";
 
-        for (j = 0; j < filtered_results.length; j++) {
+        for (var j = 0; j < filtered_results.length; j++) {
             html += "<th id='absolute_totals" + j + "' colspan='" + current_runs.length + "' class='number_cell' style='text-align: center; background-color: #FFF; font-weight: bold;'></th>";
         }
 
@@ -1641,9 +1641,15 @@ function generate_comparison_table() {
 
     $('#comparison_table').html(html);
 
-    for (i = 0; i < queries.length; i++) {
+    for (var i = 0; i < queries.length; i++) {
         $('#query_checkbox' + i).click(function() { calculate_totals(); generate_diagram(); } );
     }
+    $('#query_checkbox_toggler').click(function() {
+        for (var i = 0; i < queries.length; i++) {
+            var item = $('#query_checkbox' + i);
+            item.prop("checked", !item.prop("checked"));
+        }
+    });
 
     calculate_totals();
 }
@@ -1657,8 +1663,8 @@ function calculate_totals() {
 
     var total_ratios = [];
 
-    for (j = 0; j < filtered_results.length; j++) {
-        for (current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
+    for (var j = 0; j < filtered_results.length; j++) {
+        for (var current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
             var k = current_runs[current_run_idx];
 
             var current_ratios = ratios[j][k].filter(
@@ -1677,7 +1683,7 @@ function calculate_totals() {
         }
     }
 
-    for (j = 0; j < filtered_results.length; j++) {
+    for (var j = 0; j < filtered_results.length; j++) {
         var total_ratio = Math.pow(total_ratios[j], 1 / current_runs.length);
         $("#absolute_totals" + j).attr("data-ratio", total_ratio).html("x" + total_ratio.toFixed(2));
     }
@@ -1696,8 +1702,8 @@ function generate_diagram() {
     var max_total_ratio = 1;
     var min_total_ratio = 0;
 
-    for (j = 0; j < filtered_results.length; j++) {
-        for (current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
+    for (var j = 0; j < filtered_results.length; j++) {
+        for (var current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
             var k = current_runs[current_run_idx];
             var ratio = +$("#totals" + j + "_" + k).attr("data-ratio");
 
@@ -1723,7 +1729,7 @@ function generate_diagram() {
 
     html += "<table style='width: 100%'>";
 
-    for (j = 0; j < filtered_results.length; j++) {
+    for (var j = 0; j < filtered_results.length; j++) {
         var total_ratio = +$("#absolute_totals" + j).attr("data-ratio");
 
         html += "<tr>";
@@ -1732,7 +1738,7 @@ function generate_diagram() {
 
         html += "<td style='width: 100%; padding-right: 20px;'>";
 
-        for (current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
+        for (var current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
             var k = current_runs[current_run_idx];
 
             var ratio = +$("#totals" + j + "_" + k).attr("data-ratio");
