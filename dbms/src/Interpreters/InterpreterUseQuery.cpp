@@ -1,4 +1,5 @@
 #include <DB/Parsers/ASTUseQuery.h>
+#include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/InterpreterUseQuery.h>
 
 
