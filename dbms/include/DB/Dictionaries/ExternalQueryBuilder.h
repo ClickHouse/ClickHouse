@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class DictionaryStructure;
+struct DictionaryStructure;
 class WriteBuffer;
 
 
