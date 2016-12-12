@@ -334,7 +334,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
 				for (size_t i = 0, size = copied_entries.size(); i < size; ++i)
 				{
-					String path_created = dynamic_cast<zkutil::Op::Create &>(ops[i]).getPathCreated();
+					String path_created = dynamic_cast<zkutil::Op::Create &>(*ops[i]).getPathCreated();
 					copied_entries[i]->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
 
 					insertUnlocked(copied_entries[i]);
