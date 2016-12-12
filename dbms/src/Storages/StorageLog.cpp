@@ -58,7 +58,6 @@ public:
 		mark_number(mark_number_),
 		null_mark_number(0),
 		rows_limit(rows_limit_),
-		current_mark(mark_number_),
 		max_read_buffer_size(max_read_buffer_size_)
 	{
 	}
@@ -73,7 +72,6 @@ public:
 		mark_number(mark_number_),
 		null_mark_number(null_mark_number_),
 		rows_limit(rows_limit_),
-		current_mark(mark_number_),
 		max_read_buffer_size(max_read_buffer_size_)
 	{
 	}
@@ -104,7 +102,6 @@ private:
 	size_t null_mark_number;
 	size_t rows_limit;		/// Максимальное количество строк, которых можно прочитать
 	size_t rows_read = 0;
-	size_t current_mark;
 	size_t max_read_buffer_size;
 
 	struct Stream
