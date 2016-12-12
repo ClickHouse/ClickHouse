@@ -4,6 +4,7 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/Cluster.h>
 #include <DB/Interpreters/IInterpreter.h>
+#include <DB/Parsers/queryToString.h>
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 
 

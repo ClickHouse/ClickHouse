@@ -5,6 +5,8 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Parsers/ParserQuery.h>
 #include <DB/Parsers/ExpressionListParsers.h>
+#include <DB/Parsers/queryToString.h>
+
 
 namespace DB
 {

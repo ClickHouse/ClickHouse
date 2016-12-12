@@ -744,6 +744,7 @@ add_library (dbms
 	src/Storages/ITableDeclaration.cpp
 	src/Storages/AlterCommands.cpp
 	src/Storages/ColumnsDescription.cpp
+	src/Storages/ColumnDefault.cpp
 
 	src/DataStreams/AggregatingSortedBlockInputStream.cpp
 	src/DataStreams/IRowOutputStream.cpp
@@ -896,6 +897,13 @@ add_library (dbms
 	src/Interpreters/InterpreterDropQuery.cpp
 	src/Interpreters/InterpreterRenameQuery.cpp
 	src/Interpreters/InterpreterShowTablesQuery.cpp
+	src/Interpreters/InterpreterDescribeQuery.cpp
+	src/Interpreters/InterpreterExistsQuery.cpp
+	src/Interpreters/InterpreterOptimizeQuery.cpp
+	src/Interpreters/InterpreterSetQuery.cpp
+	src/Interpreters/InterpreterShowCreateQuery.cpp
+	src/Interpreters/InterpreterShowProcesslistQuery.cpp
+	src/Interpreters/InterpreterUseQuery.cpp
 	src/Interpreters/InterpreterFactory.cpp
 	src/Interpreters/Aggregator.cpp
 	src/Interpreters/executeQuery.cpp
