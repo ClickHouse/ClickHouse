@@ -5,7 +5,7 @@
 namespace DB
 {
 
-BlockIO InterpreterUseQuery::execute() override
+BlockIO InterpreterUseQuery::execute()
 {
 	const String & new_database = typeid_cast<const ASTUseQuery &>(*query_ptr).database;
 	context.getSessionContext().setCurrentDatabase(new_database);
