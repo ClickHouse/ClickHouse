@@ -1827,7 +1827,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
 	auto results = zookeeper->multi(ops);
 
-	String path_created = dynamic_cast<zkutil::Op::Create &>(ops[0]).getPathCreated();
+	String path_created = dynamic_cast<zkutil::Op::Create &>(*ops[0]).getPathCreated();
 	log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
 	queue.insert(zookeeper, log_entry);
 }
@@ -2772,7 +2772,7 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 		size_t i = 0;
 		for (LogEntry & entry : entries)
 		{
-			String log_znode_path = dynamic_cast<zkutil::Op::Create &>(ops[i]).getPathCreated();
+			String log_znode_path = dynamic_cast<zkutil::Op::Create &>(*ops[i]).getPathCreated();
 			entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
 			if (settings.replication_alter_partitions_sync == 1)
