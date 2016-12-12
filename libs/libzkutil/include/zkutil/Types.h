@@ -3,7 +3,12 @@
 #include <future>
 #include <memory>
 #include <boost/noncopyable.hpp>
-#include <boost/ptr_container/ptr_vector.hpp>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+	#include <boost/ptr_container/ptr_vector.hpp>
+#pragma GCC diagnostic pop
+
 #include <zookeeper/zookeeper.h>
 #include <Poco/Event.h>
 
