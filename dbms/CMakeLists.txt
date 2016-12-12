@@ -706,6 +706,7 @@ add_library (dbms
 	src/Storages/StorageJoin.cpp
 	src/Storages/VirtualColumnFactory.cpp
 	src/Storages/Distributed/DistributedBlockOutputStream.cpp
+	src/Storages/Distributed/DirectoryMonitor.cpp
 	src/Storages/MergeTree/PKCondition.cpp
 	src/Storages/MergeTree/DiskSpaceMonitor.cpp
 	src/Storages/MergeTree/RemoteDiskSpaceMonitor.cpp

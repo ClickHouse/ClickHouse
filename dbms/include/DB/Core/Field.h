@@ -5,8 +5,6 @@
 #include <type_traits>
 #include <functional>
 
-#include <boost/static_assert.hpp>
-
 #include <DB/Common/Exception.h>
 #include <DB/Core/Types.h>
 #include <common/strong_typedef.h>

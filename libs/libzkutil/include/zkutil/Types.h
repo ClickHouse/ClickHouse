@@ -1,6 +1,5 @@
 #pragma once
 #include <common/Common.h>
-#include <boost/function.hpp>
 #include <future>
 #include <memory>
 #include <boost/noncopyable.hpp>
@@ -97,7 +96,7 @@ struct Op::Check : public Op
 	}
 
 	std::string describe() override { return "command: check, path: " + path; }
-	
+
 private:
 	std::string path;
 };
