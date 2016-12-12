@@ -1,8 +1,8 @@
 #include <DB/Common/hex.h>
 #include <DB/Common/StringUtils.h>
-#include <DB/Common/UrlUtils.h>
+#include <DB/Common/URLUtils.h>
 
-std::string decodeUrl(const StringView& url)
+std::string decodeUrl(const StringView & url)
 {
 	const char* p = url.data();
 	const char* st = url.data();
@@ -14,8 +14,8 @@ std::string decodeUrl(const StringView& url)
 		if (*p != '%' || end - p < 3)
 			continue;
 
-		unsigned char h = char2DigitTable[static_cast<unsigned char>(p[1])];
-		unsigned char l = char2DigitTable[static_cast<unsigned char>(p[2])];
+		unsigned char h = char_to_digit_table[static_cast<unsigned char>(p[1])];
+		unsigned char l = char_to_digit_table[static_cast<unsigned char>(p[2])];
 
 		if (h != 0xFF && l != 0xFF)
 		{
@@ -38,7 +38,7 @@ std::string decodeUrl(const StringView& url)
 	return result;
 }
 
-StringView getUrlScheme(const StringView& url)
+StringView getUrlScheme(const StringView & url)
 {
 	// scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
 	const char* p = url.data();
@@ -61,7 +61,7 @@ StringView getUrlScheme(const StringView& url)
 }
 
 
-StringView getUrlHost(const StringView& url)
+StringView getUrlHost(const StringView & url)
 {
 	StringView scheme = getUrlScheme(url);
 	const char* p = url.data() + scheme.size();

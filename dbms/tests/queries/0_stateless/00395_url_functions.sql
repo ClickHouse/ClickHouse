@@ -15,4 +15,4 @@ SELECT topLevelDomain('http://127.0.0.1:443/') AS Domain;
 SELECT topLevelDomain('svn+ssh://example.ru?q=hello%20world') AS Domain;
 SELECT topLevelDomain('svn+ssh://example.ru.?q=hello%20world') AS Domain;
 
-SELECT unquoteUrl('http://127.0.0.1/?query=hello%20world+foo%2Bbar') AS Url;
+SELECT decodeURLComponent(pathFull('http://127.0.0.1/?query=hello%20world+foo%2Bbar')) AS Path;

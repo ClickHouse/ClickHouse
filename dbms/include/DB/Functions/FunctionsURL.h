@@ -3,7 +3,7 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
-#include <DB/Common/UrlUtils.h>
+#include <DB/Common/URLUtils.h>
 #include <DB/Functions/FunctionsString.h>
 #include <DB/Functions/FunctionsStringSearch.h>
 #include <DB/Functions/FunctionsStringArray.h>
@@ -60,7 +60,7 @@ using Pos = const char *;
 
 struct ExtractProtocol
 {
-	static size_t getReserveLengthForElement() { return MakeStringView("https").size() + 1; }
+	static size_t getReserveLengthForElement() { return makeStringView("https").size() + 1; }
 
 	static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
 	{
@@ -971,7 +971,7 @@ struct CutSubstringImpl
 };
 
 
-struct UrlDecodeImpl
+struct DecodeURLComponentImpl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
@@ -986,7 +986,7 @@ struct UrlDecodeImpl
 		for (size_t i = 0; i < size; ++i)
 		{
 			const char * current = reinterpret_cast<const char *>(&data[prev_offset]);
-			std::string url = decodeUrl(StringView(current, offsets[i] - prev_offset - 1));
+			std::string url(decodeUrl(StringView(current, offsets[i] - prev_offset - 1)));
 
 			res_data.resize(res_data.size() + url.size() + 1);
 			memcpy(&res_data[res_offset], url.data(), url.size());
@@ -1022,7 +1022,7 @@ struct NamePathFull						{ static constexpr auto name = "pathFull"; };
 struct NameQueryString					{ static constexpr auto name = "queryString"; };
 struct NameFragment 					{ static constexpr auto name = "fragment"; };
 struct NameQueryStringAndFragment		{ static constexpr auto name = "queryStringAndFragment"; };
-struct NameUnquoteUrl                   { static constexpr auto name = "unquoteUrl"; };
+struct NameDecodeURLComponent           { static constexpr auto name = "decodeURLComponent"; };
 
 struct NameCutToFirstSignificantSubdomain { static constexpr auto name = "cutToFirstSignificantSubdomain"; };
 
@@ -1044,7 +1044,7 @@ using FunctionPathFull = FunctionStringToString<ExtractSubstringImpl<ExtractPath
 using FunctionQueryString = FunctionStringToString<ExtractSubstringImpl<ExtractQueryString<true> >, 	NameQueryString>	;
 using FunctionFragment = FunctionStringToString<ExtractSubstringImpl<ExtractFragment<true> >, 		NameFragment>		;
 using FunctionQueryStringAndFragment = FunctionStringToString<ExtractSubstringImpl<ExtractQueryStringAndFragment<true> >, NameQueryStringAndFragment>;
-using FunctionUnquoteUrl = FunctionStringToString<UrlDecodeImpl, NameUnquoteUrl>;
+using FunctionDecodeURLComponent = FunctionStringToString<DecodeURLComponentImpl, NameDecodeURLComponent>;
 
 using FunctionCutToFirstSignificantSubdomain = FunctionStringToString<ExtractSubstringImpl<CutToFirstSignificantSubdomain>, NameCutToFirstSignificantSubdomain>;
 
