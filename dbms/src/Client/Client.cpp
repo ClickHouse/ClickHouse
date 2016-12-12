@@ -304,10 +304,7 @@ private:
 		std::cerr << std::fixed << std::setprecision(3);
 
 		if (is_interactive)
-			std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
-				<< "." << DBMS_VERSION_MINOR
-				<< "." << ClickHouseRevision::get()
-				<< "." << std::endl;
+			showClientVersion();
 
 		if (config().has("vertical"))
 			format = config().getString("format", "Vertical");
@@ -1157,6 +1154,14 @@ private:
 			std::cout << "Ok." << std::endl;
 	}
 
+	void showClientVersion()
+	{
+		std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
+			<< "." << DBMS_VERSION_MINOR
+			<< "." << ClickHouseRevision::get()
+			<< "." << std::endl;
+	}
+
 public:
 	void init(int argc, char ** argv)
 	{
@@ -1222,6 +1227,7 @@ public:
 			("time,t",			"print query execution time to stderr in non-interactive mode (for benchmarks)")
 			("stacktrace",		"print stack traces of exceptions")
 			("progress",		"print progress even in non-interactive mode")
+			("version,V",		"print version information and exit")
 			("echo",			"in batch mode, print query before execution")
 			("compression",		boost::program_options::value<bool>(),			"enable or disable compression")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
@@ -1245,6 +1251,12 @@ public:
 			common_arguments.size(), common_arguments.data()).options(main_description).run();
 		boost::program_options::variables_map options;
 		boost::program_options::store(parsed, options);
+
+		if (options.count("version") || options.count("V"))
+		{
+			showClientVersion();
+			exit(0);
+		}
 
 		/// Output of help message.
 		if (options.count("help")
