@@ -627,6 +627,7 @@ add_library (dbms
 	src/Common/getNumberOfPhysicalCPUCores.cpp
 	src/Common/randomSeed.cpp
 	src/Common/ThreadPool.cpp
+	src/Common/escapeForFileName.cpp
 
 	src/Core/Field.cpp
 	src/Core/FieldVisitors.cpp
