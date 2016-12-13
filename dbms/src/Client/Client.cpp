@@ -1304,14 +1304,14 @@ public:
 		/// Сохраняем полученные данные во внутренний конфиг
 		if (options.count("config-file"))
 			config().setString("config-file", options["config-file"].as<std::string>());
-		if (options.count("host"))
+		if (options.count("host") && !options["host"].defaulted())
 			config().setString("host", options["host"].as<std::string>());
 		if (options.count("query"))
 			config().setString("query", options["query"].as<std::string>());
 		if (options.count("database"))
 			config().setString("database", options["database"].as<std::string>());
 
-		if (options.count("port"))
+		if (options.count("port") && !options["port"].defaulted())
 			config().setInt("port", options["port"].as<int>());
 		if (options.count("user"))
 			config().setString("user", options["user"].as<std::string>());
