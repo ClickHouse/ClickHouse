@@ -1,4 +1,5 @@
 #include <DB/DataStreams/ColumnGathererStream.h>
+#include <iomanip>
 
 namespace DB
 {
@@ -106,6 +107,19 @@ Block ColumnGathererStream::readImpl()
 	pos_global = pos_finish;
 
 	return block_res;
+}
+
+
+void ColumnGathererStream::readSuffixImpl()
+{
+	const BlockStreamProfileInfo & profile_info = getProfileInfo();
+	double seconds = profile_info.total_stopwatch.elapsedSeconds();
+	LOG_DEBUG(log, std::fixed << std::setprecision(2)
+		<< "Gathred column " << column.name << " " << column.type->getName()
+		<< " (" << static_cast<double>(profile_info.bytes) / profile_info.rows << " bytes/elem.)"
+		<< " in " << seconds << " sec., "
+		<< profile_info.rows / seconds << " rows/sec., "
+		<< profile_info.bytes / 1000000.0 / seconds << " MiB/sec.");
 }
 
 }

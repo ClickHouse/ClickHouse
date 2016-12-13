@@ -312,6 +312,10 @@ void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, 
 
 void MergingSortedBlockInputStream::readSuffixImpl()
 {
+	/// Don't print performance info if Vertical algorithm is used
+	if (out_row_sources)
+		return;
+
 	const BlockStreamProfileInfo & profile_info = getProfileInfo();
 	double seconds = profile_info.total_stopwatch.elapsedSeconds();
 	LOG_DEBUG(log, std::fixed << std::setprecision(2)

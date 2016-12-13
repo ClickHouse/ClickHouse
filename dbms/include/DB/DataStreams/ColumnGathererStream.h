@@ -66,6 +66,8 @@ public:
 
 	Block readImpl() override;
 
+	void readSuffixImpl() override;
+
 private:
 
 	String name;
