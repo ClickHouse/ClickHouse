@@ -17,7 +17,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const DictionaryStructure
 	const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
 	Block & sample_block, const Context & context) :
 	dict_struct{dict_struct_},
-	path{config.getString(config_prefix + ".path")},
+	command{config.getString(config_prefix + ".command")},
 	format{config.getString(config_prefix + ".format")},
 	sample_block{sample_block},
 	context(context)
@@ -26,7 +26,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const DictionaryStructure
 
 ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionarySource & other) :
 	  dict_struct{other.dict_struct},
-	  path{other.path},
+	  command{other.command},
 	  format{other.format},
 	  sample_block{other.sample_block},
 	  context(other.context)
@@ -36,7 +36,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 {
 	LOG_TRACE(log, "loadAll " + toString());
-	auto process = ShellCommand::execute(path);
+	auto process = ShellCommand::execute(command);
 	auto stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
 	return std::make_shared<OwningBlockInputStream<ShellCommand>>(stream, std::move(process));
 }
@@ -89,7 +89,7 @@ void columnsToBuffer(const Context & context, const std::string & format, Block 
 BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
 	LOG_TRACE(log, "loadIds " + toString() + " ids=" + std::to_string(ids.size()));
-	auto process = ShellCommand::execute(path);
+	auto process = ShellCommand::execute(command);
 	idsToBuffer(context, format, sample_block, process->in, ids);
 	process->in.close();
 
@@ -107,7 +107,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadKeys(
 	const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows)
 {
 	LOG_TRACE(log, "loadKeys " + toString() + " rows=" + std::to_string(requested_rows.size()));
-	auto process = ShellCommand::execute(path);
+	auto process = ShellCommand::execute(command);
 
 	columnsToBuffer(context, format, sample_block, process->in, dict_struct, key_columns, requested_rows);
 	process->in.close();
@@ -139,7 +139,7 @@ DictionarySourcePtr ExecutableDictionarySource::clone() const
 
 std::string ExecutableDictionarySource::toString() const
 {
-	return "Executable: " + path;
+	return "Executable: " + command;
 }
 
 }
