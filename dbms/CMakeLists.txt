@@ -16,7 +16,7 @@ add_library(string_utils
 set(dbms_headers)
 set(dbms_sources)
 
-include(../cmake/dbms_glob_sources.cmake)
+include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 add_headers_and_sources(dbms Functions)
 add_headers_and_sources(dbms Functions/Conditional)
 add_headers_and_sources(dbms TableFunctions)
