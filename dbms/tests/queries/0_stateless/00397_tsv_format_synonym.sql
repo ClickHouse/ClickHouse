@@ -9,6 +9,3 @@ SELECT arrayJoin([1, 2, 3]), 'hello', 'world' FORMAT TSVWithNamesAndTypes;
 
 SELECT arrayJoin([1, 2, 3]), 'hello', 'world' FORMAT TabSeparatedRaw;
 SELECT arrayJoin([1, 2, 3]), 'hello', 'world' FORMAT TSVRaw;
-
-SELECT arrayJoin([1, 2, 3]), 'hello', 'world' FORMAT BlockTabSeparated;
-SELECT arrayJoin([1, 2, 3]), 'hello', 'world' FORMAT TSVBlock;

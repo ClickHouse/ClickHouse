@@ -76,7 +76,6 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 	else if (name == "TabSeparatedRaw"
 		|| name == "TSVRaw"
 		|| name == "BlockTabSeparated"
-		|| name == "TSVBlock"
 		|| name == "Pretty"
 		|| name == "PrettyCompact"
 		|| name == "PrettyCompactMonoBlock"
@@ -114,7 +113,7 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRowOutputStream>(buf, sample, true, true));
 	else if (name == "TabSeparatedRaw" || name == "TSVRaw")
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRawRowOutputStream>(buf, sample));
-	else if (name == "BlockTabSeparated" || name == "TSVBlock")
+	else if (name == "BlockTabSeparated")
 		return std::make_shared<TabSeparatedBlockOutputStream>(buf);
 	else if (name == "CSV")
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample));
