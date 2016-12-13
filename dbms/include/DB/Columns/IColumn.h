@@ -45,9 +45,18 @@ public:
 	  */
 	virtual bool isNumeric() const { return false; }
 
+	/// Is this column numeric and not nullable?
+	virtual bool isNumericNotNullable() const { return isNumeric(); }
+
 	/** Столбец представляет собой константу.
 	  */
 	virtual bool isConst() const { return false; }
+
+	/// Is this column a container for nullable values?
+	virtual bool isNullable() const { return false; }
+
+	/// Is this a null column?
+	virtual bool isNull() const { return false; }
 
 	/** Если столбец не константа - возвращает nullptr (либо может вернуть самого себя).
 	  * Если столбец константа, то превращает его в полноценный столбец (если тип столбца предполагает такую возможность) и возвращает его.
@@ -243,6 +252,7 @@ public:
 	  * Если столбец пустой - функция должна возвращать значения по-умолчанию.
 	  */
 	virtual void getExtremes(Field & min, Field & max) const = 0;
+
 
 	/** Если возможно - зарезервировать место для указанного количества элементов. Если невозможно или не поддерживается - ничего не делать.
 	  * Функция влияет только на производительность.

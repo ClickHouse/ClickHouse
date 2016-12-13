@@ -1,11 +1,6 @@
 #pragma once
 
 #include <DB/Parsers/IAST.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTSubquery.h>
-#include <DB/Parsers/ASTSampleRatio.h>
-#include <DB/Parsers/ASTExpressionList.h>
 
 
 namespace DB

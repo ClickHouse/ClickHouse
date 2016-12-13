@@ -2,10 +2,16 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/ExpressionActions.h>
+#include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/DataTypes/DataTypeDate.h>
+#include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/DataTypes/DataTypeString.h>
 #include <DB/Columns/ColumnSet.h>
 #include <DB/Columns/ColumnTuple.h>
 #include <DB/Parsers/ASTSet.h>
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Core/FieldVisitors.h>
+#include <DB/Interpreters/convertFieldToType.h>
 
 
 namespace DB
@@ -126,7 +132,7 @@ const PKCondition::AtomMap PKCondition::atom_map{
 	},
 	{
 		"in",
-		[] (RPNElement & out, const Field & value, ASTPtr & node)
+		[] (RPNElement & out, const Field &, ASTPtr & node)
 		{
 			out.function = RPNElement::FUNCTION_IN_SET;
 			out.in_function = node;
@@ -135,7 +141,7 @@ const PKCondition::AtomMap PKCondition::atom_map{
 	},
 	{
 		"notIn",
-		[] (RPNElement & out, const Field & value, ASTPtr & node)
+		[] (RPNElement & out, const Field &, ASTPtr & node)
 		{
 			out.function = RPNElement::FUNCTION_NOT_IN_SET;
 			out.in_function = node;
@@ -187,8 +193,9 @@ Block PKCondition::getBlockWithConstants(
 }
 
 
-PKCondition::PKCondition(ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns, const SortDescription & sort_descr_)
-	: sort_descr(sort_descr_)
+PKCondition::PKCondition(ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns,
+						 const SortDescription & sort_descr_, const Block & pk_sample_block_)
+	: sort_descr(sort_descr_), pk_sample_block(pk_sample_block_)
 {
 	for (size_t i = 0; i < sort_descr.size(); ++i)
 	{
@@ -202,7 +209,7 @@ PKCondition::PKCondition(ASTPtr & query, const Context & context, const NamesAnd
 	  */
 	Block block_with_constants = getBlockWithConstants(query, context, all_columns);
 
-	/// Преобразуем секцию WHERE в обратную польскую строку.
+	/// Trasform WHERE section to Reverse Polish notation
 	ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*query);
 	if (select.where_expression)
 	{
@@ -233,23 +240,26 @@ bool PKCondition::addCondition(const String & column, const Range & range)
 	return true;
 }
 
-/** Получить значение константного выражения.
-  * Вернуть false, если выражение не константно.
+/** Computes value of constant expression and it data type.
+  * Returns false, if expression isn't constant.
   */
-static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field & value)
+static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
 {
 	String column_name = expr->getColumnName();
 
-	if (const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(&*expr))
+	if (const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(expr.get()))
 	{
-		/// литерал
-		value = lit->value;
+		/// Simple literal
+		out_value = lit->value;
+		out_type = block_with_constants.getByName(column_name).type;
 		return true;
 	}
 	else if (block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isConst())
 	{
-		/// выражение, вычислившееся в константу
-		value = (*block_with_constants.getByName(column_name).column)[0];
+		/// An expression which is dependent on constants only
+		const auto & expr_info = block_with_constants.getByName(column_name);
+		out_value = (*expr_info.column)[0];
+		out_type = expr_info.type;
 		return true;
 	}
 	else
@@ -293,11 +303,13 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
 	const ASTPtr & node,
 	const Context & context,
 	size_t & out_primary_key_column_num,
+	DataTypePtr & out_primary_key_res_column_type,
 	RPNElement::MonotonicFunctionsChain & out_functions_chain)
 {
 	std::vector<const ASTFunction *> chain_not_tested_for_monotonicity;
+	DataTypePtr primary_key_column_type;
 
-	if (!isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(node, out_primary_key_column_num, chain_not_tested_for_monotonicity))
+	if (!isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(node, out_primary_key_column_num, primary_key_column_type, chain_not_tested_for_monotonicity))
 		return false;
 
 	for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
@@ -306,8 +318,11 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
 		if (!func || !func->hasInformationAboutMonotonicity())
 			return false;
 
+		primary_key_column_type = func->getReturnType({primary_key_column_type});
 		out_functions_chain.push_back(func);
 	}
+
+	out_primary_key_res_column_type = primary_key_column_type;
 
 	return true;
 }
@@ -316,6 +331,7 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
 bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 	const ASTPtr & node,
 	size_t & out_primary_key_column_num,
+	DataTypePtr & out_primary_key_column_type,
 	std::vector<const ASTFunction *> & out_functions_chain)
 {
 	/** Сам по себе, столбец первичного ключа может быть функциональным выражением. Например, intHash32(UserID).
@@ -327,6 +343,7 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 	if (pk_columns.end() != it)
 	{
 		out_primary_key_column_num = it->second;
+		out_primary_key_column_type = pk_sample_block.getByName(name).type;
 		return true;
 	}
 
@@ -338,7 +355,8 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 
 		out_functions_chain.push_back(func);
 
-		if (!isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_primary_key_column_num, out_functions_chain))
+		if (!isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_primary_key_column_num, out_primary_key_column_type,
+																 out_functions_chain))
 			return false;
 
 		return true;
@@ -348,47 +366,70 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 }
 
 
+static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const ASTPtr & node)
+{
+	if (desired_type->getName() == src_type->getName())
+		return;
+
+	try
+	{
+		/// NOTE: We don't need accurate info about src_type at this moment
+		src_value = convertFieldToType(src_value, *desired_type);
+	}
+	catch (...)
+	{
+		throw Exception("Primary key expression contains comparison between inconvertible types: " +
+			desired_type->getName() + " and " + src_type->getName() +
+			" inside " + DB::toString(node->range),
+			ErrorCodes::BAD_TYPE_OF_FIELD);
+	}
+}
+
+
 bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
 {
 	/** Функции < > = != <= >= in notIn, у которых один агрумент константа, другой - один из столбцов первичного ключа,
 	  *  либо он же, завёрнутый в цепочку возможно-монотонных функций,
 	  *  либо константное выражение - число.
 	  */
-	Field value;
-	if (const ASTFunction * func = typeid_cast<const ASTFunction *>(&*node))
+	Field const_value;
+	DataTypePtr const_type;
+	if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
 	{
 		const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
 
 		if (args.size() != 2)
 			return false;
 
-		/// Если true, слева константа.
-		bool inverted;
-		size_t column;
+		DataTypePtr key_expr_type;	/// Type of expression containing primary key column
+		size_t key_arg_pos;			/// Position of argument with primary key column (non-const argument)
+		size_t key_column_num;		/// Number of a primary key column (inside sort_descr array)
 		RPNElement::MonotonicFunctionsChain chain;
+		bool is_set_const = false;
 
-		if (getConstant(args[1], block_with_constants, value)
-			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, column, chain))
+		if (getConstant(args[1], block_with_constants, const_value, const_type)
+			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
 		{
-			inverted = false;
+			key_arg_pos = 0;
 		}
-		else if (getConstant(args[0], block_with_constants, value)
-			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[1], context, column, chain))
+		else if (getConstant(args[0], block_with_constants, const_value, const_type)
+			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
 		{
-			inverted = true;
+			key_arg_pos = 1;
 		}
 		else if (typeid_cast<const ASTSet *>(args[1].get())
-			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, column, chain))
+			&& isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
 		{
-			inverted = false;
+			key_arg_pos = 0;
+			is_set_const = true;
 		}
 		else
 			return false;
 
 		std::string func_name = func->name;
 
-		/// Заменим <const> <sign> <column> на <column> <-sign> <const>
-		if (inverted)
+		/// Replace <const> <sign> <data> on to <data> <-sign> <const>
+		if (key_arg_pos == 1)
 		{
 			if (func_name == "less")
 				func_name = "greater";
@@ -400,28 +441,31 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 				func_name = "greaterOrEquals";
 			else if (func_name == "in" || func_name == "notIn" || func_name == "like")
 			{
-				/// const IN x не имеет смысла (в отличие от x IN const).
+				/// "const IN data_column" doesn't make sense (unlike "data_column IN const")
 				return false;
 			}
 		}
 
-		out.key_column = column;
+		out.key_column = key_column_num;
 		out.monotonic_functions_chain = std::move(chain);
 
 		const auto atom_it = atom_map.find(func_name);
 		if (atom_it == std::end(atom_map))
 			return false;
 
-		return atom_it->second(out, value, node);
+		if (!is_set_const) /// Set args are already casted inside Set::createFromAST
+			castValueToType(key_expr_type, const_value, const_type, node);
+
+		return atom_it->second(out, const_value, node);
 	}
-	else if (getConstant(node, block_with_constants, value))	/// Для случаев, когда написано, например, WHERE 0 AND something
+	else if (getConstant(node, block_with_constants, const_value, const_type))	/// Для случаев, когда написано, например, WHERE 0 AND something
 	{
-		if (value.getType() == Field::Types::UInt64
-			|| value.getType() == Field::Types::Int64
-			|| value.getType() == Field::Types::Float64)
+		if (const_value.getType() == Field::Types::UInt64
+			|| const_value.getType() == Field::Types::Int64
+			|| const_value.getType() == Field::Types::Float64)
 		{
 			/// Ноль во всех типах представлен в памяти так же, как в UInt64.
-			out.function = value.get<UInt64>()
+			out.function = const_value.get<UInt64>()
 				? RPNElement::ALWAYS_TRUE
 				: RPNElement::ALWAYS_FALSE;
 

@@ -55,11 +55,11 @@ namespace ErrorCodes
   * Структура файлов:
   *  / min-date _ max-date _ min-id _ max-id _ level / - директория с куском.
   * Внутри директории с куском:
-  *  checksums.txt - список файлов с их размерами и контрольными суммами.
-  *  columns.txt - список столбцов с их типами.
+  *  checksums.txt - содержит список файлов с их размерами и контрольными суммами.
+  *  columns.txt - содержит список столбцов с их типами.
   *  primary.idx - индексный файл.
-  *  Column.bin - данные столбца
-  *  Column.mrk - засечки, указывающие, откуда начинать чтение, чтобы пропустить n * k строк.
+  *  [Column].bin - данные столбца
+  *  [Column].mrk - засечки, указывающие, откуда начинать чтение, чтобы пропустить n * k строк.
   *
   * Имеется несколько режимов работы, определяющих, что делать при мердже:
   * - Ordinary - ничего дополнительно не делать;
@@ -525,7 +525,7 @@ private:
 	  * Если !part, просто проверяет, что все нужные преобразования типов допустимы.
 	  */
 	void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-		ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata);
+		ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const;
 
 	/// Рассчитывает размеры столбцов в сжатом виде для текущего состояния data_parts. Вызывается под блокировкой.
 	void calculateColumnSizes();

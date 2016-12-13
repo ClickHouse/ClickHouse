@@ -1,17 +1,10 @@
 #pragma once
 
-#include <list>
 #include <set>
-#include <sstream>
-#include <iostream>
 #include <memory>
-#include <set>
-
-#include <common/Common.h>
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
-#include <DB/IO/WriteHelpers.h>
 #include <DB/Parsers/StringRange.h>
 
 
@@ -113,25 +106,7 @@ public:
 	/** Получить текст, который идентифицирует этот элемент и всё поддерево.
 	  * Обычно он содержит идентификатор элемента и getTreeID от всех детей.
 	  */
-	String getTreeID() const
-	{
-		std::stringstream s;
-		s << getID();
-
-		if (!children.empty())
-		{
-			s << "(";
-			for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
-			{
-				if (it != children.begin())
-					s << ", ";
-				s << (*it)->getTreeID();
-			}
-			s << ")";
-		}
-
-		return s.str();
-	}
+	String getTreeID() const;
 
 	void dumpTree(std::ostream & ostr, size_t indent = 0) const
 	{
@@ -152,17 +127,7 @@ public:
 
 	/** То же самое для общего количества элементов дерева.
 	  */
-	size_t checkSize(size_t max_size) const
-	{
-		size_t res = 1;
-		for (const auto & child : children)
-			res += child->checkSize(max_size);
-
-		if (res > max_size)
-			throw Exception("AST is too big. Maximum: " + toString(max_size), ErrorCodes::TOO_BIG_AST);
-
-		return res;
-	}
+	size_t checkSize(size_t max_size) const;
 
 	/**  Получить set из имен индентификаторов
 	 */
@@ -235,18 +200,7 @@ protected:
 	static const char * hilite_none;
 
 private:
-	size_t checkDepthImpl(size_t max_depth, size_t level) const
-	{
-		size_t res = level + 1;
-		for (const auto & child : children)
-		{
-			if (level >= max_depth)
-				throw Exception("AST is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_AST);
-			res = std::max(res, child->checkDepthImpl(max_depth, level + 1));
-		}
-
-		return res;
-	}
+	size_t checkDepthImpl(size_t max_depth, size_t level) const;
 };
 
 

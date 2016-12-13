@@ -7,14 +7,13 @@ namespace DB
 {
 
 
-/** Позволяет логгировать информацию о выполнении запросов:
-  * - о начале выполнения запроса;
-  * - метрики производительности, после выполнения запроса;
-  * - об ошибках при выполнении запроса.
+/** Allows to log information about queries execution:
+  * - info about start of query execution;
+  * - performance metrics (are set at the end of query execution);
+  * - info about errors of query execution.
   */
 
-/** Что логгировать.
-  */
+/// A struct which will be inserted as row into query_log table
 struct QueryLogElement
 {
 	enum Type
@@ -27,15 +26,21 @@ struct QueryLogElement
 
 	Type type = QUERY_START;
 
-	/// В зависимости от типа, не все поля могут быть заполнены.
+	/// Depending on the type of query and type of stage, not all the fields may be filled.
 
 	time_t event_time{};
 	time_t query_start_time{};
 	UInt64 query_duration_ms{};
 
+	/// The data fetched from DB to execute the query
 	UInt64 read_rows{};
 	UInt64 read_bytes{};
 
+	/// The data written to DB
+	UInt64 written_rows{};
+	UInt64 written_bytes{};
+
+	/// The data sent to the client
 	UInt64 result_rows{};
 	UInt64 result_bytes{};
 

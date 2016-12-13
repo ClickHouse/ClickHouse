@@ -62,7 +62,7 @@ private:
 inline void BSONWriter::writeCString(const std::string& value)
 {
 	_writer.writeRaw(value);
-	_writer << (unsigned char) 0x00;
+	_writer << static_cast<unsigned char>(0x00);
 }
 
 

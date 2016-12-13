@@ -82,6 +82,9 @@ void ReplicatedMergeTreeAlterThread::run()
 				/// Если описание столбцов изменилось, обновим структуру таблицы локально.
 				if (changed_version)
 				{
+					/// Temporarily cancel part checks to avoid locking for long time.
+					auto temporarily_stop_part_checks = storage.part_check_thread.temporarilyStop();
+
 					LOG_INFO(log, "Changed version of 'columns' node in ZooKeeper. Waiting for structure write lock.");
 
 					auto table_lock = storage.lockStructureForAlter();
@@ -169,9 +172,9 @@ void ReplicatedMergeTreeAlterThread::run()
 
 						/// Обновим метаданные куска в ZooKeeper.
 						zkutil::Ops ops;
-						ops.push_back(new zkutil::Op::SetData(
+						ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
 							storage.replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
-						ops.push_back(new zkutil::Op::SetData(
+						ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
 							storage.replica_path + "/parts/" + part->name + "/checksums", transaction->getNewChecksums().toString(), -1));
 
 						try

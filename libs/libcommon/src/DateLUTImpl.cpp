@@ -1,6 +1,9 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
-#include <glib.h>
+#if __clang__
+	#pragma GCC diagnostic ignored "-Wdeprecated-register"
+#endif
+	#include <glib.h>
 #pragma GCC diagnostic pop
 
 #include <common/DateLUTImpl.h>
@@ -96,7 +99,8 @@ GDateTimePtr toNextDay(const GTimeZonePtr & p_tz, const GDateTimePtr & p_dt)
 
 }}
 
-DateLUTImpl::DateLUTImpl(const std::string & time_zone)
+DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
+	: time_zone(time_zone_)
 {
 	details::GTimeZonePtr p_tz = details::createGTimeZone(time_zone);
 

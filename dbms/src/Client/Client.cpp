@@ -304,10 +304,7 @@ private:
 		std::cerr << std::fixed << std::setprecision(3);
 
 		if (is_interactive)
-			std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
-				<< "." << DBMS_VERSION_MINOR
-				<< "." << ClickHouseRevision::get()
-				<< "." << std::endl;
+			showClientVersion();
 
 		if (config().has("vertical"))
 			format = config().getString("format", "Vertical");
@@ -326,6 +323,33 @@ private:
 		}
 
 		connect();
+
+		/// Инициализируем DateLUT, чтобы потраченное время не отображалось, как время, потраченное на запрос.
+		DateLUT::instance();
+		if (!context.getSettingsRef().use_client_time_zone)
+		{
+			const auto & time_zone = connection->getServerTimezone();
+			if (!time_zone.empty())
+			{
+				try
+				{
+					DateLUT::setDefaultTimezone(time_zone);
+				}
+				catch (...)
+				{
+					std::cerr << "Warning: could not switch to server time zone: " << time_zone
+						<< ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
+						<< "Proceeding with local time zone."
+						<< std::endl << std::endl;
+				}
+			}
+			else
+			{
+				std::cerr << "Warning: could not determine server time zone. "
+					<< "Proceeding with local time zone."
+					<< std::endl << std::endl;
+			}
+		}
 
 		if (is_interactive)
 		{
@@ -354,9 +378,6 @@ private:
 				else	/// Создаём файл с историей.
 					Poco::File(history_file).createFile();
 			}
-
-			/// Инициализируем DateLUT, чтобы потраченное время не отображалось, как время, потраченное на запрос.
-			DateLUT::instance();
 
 			loop();
 
@@ -1133,6 +1154,14 @@ private:
 			std::cout << "Ok." << std::endl;
 	}
 
+	void showClientVersion()
+	{
+		std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
+			<< "." << DBMS_VERSION_MINOR
+			<< "." << ClickHouseRevision::get()
+			<< "." << std::endl;
+	}
+
 public:
 	void init(int argc, char ** argv)
 	{
@@ -1189,7 +1218,7 @@ public:
 			("port", 			boost::program_options::value<int>()->default_value(9000), "server port")
 			("user,u", 			boost::program_options::value<std::string>(),	"user")
 			("password", 		boost::program_options::value<std::string>(),	"password")
-			("query,q,e", 		boost::program_options::value<std::string>(), 	"query")
+			("query,q", 		boost::program_options::value<std::string>(), 	"query")
 			("database,d", 		boost::program_options::value<std::string>(), 	"database")
 			("multiline,m",														"multiline")
 			("multiquery,n",													"multiquery")
@@ -1198,6 +1227,7 @@ public:
 			("time,t",			"print query execution time to stderr in non-interactive mode (for benchmarks)")
 			("stacktrace",		"print stack traces of exceptions")
 			("progress",		"print progress even in non-interactive mode")
+			("version,V",		"print version information and exit")
 			("echo",			"in batch mode, print query before execution")
 			("compression",		boost::program_options::value<bool>(),			"enable or disable compression")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
@@ -1221,6 +1251,12 @@ public:
 			common_arguments.size(), common_arguments.data()).options(main_description).run();
 		boost::program_options::variables_map options;
 		boost::program_options::store(parsed, options);
+
+		if (options.count("version") || options.count("V"))
+		{
+			showClientVersion();
+			exit(0);
+		}
 
 		/// Output of help message.
 		if (options.count("help")

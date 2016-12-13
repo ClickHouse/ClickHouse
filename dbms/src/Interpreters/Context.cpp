@@ -43,6 +43,17 @@
 #include <zkutil/ZooKeeper.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ContextLock;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric ContextLockWait;
+}
+
+
 namespace DB
 {
 
@@ -62,18 +73,18 @@ namespace ErrorCodes
 class TableFunctionFactory;
 
 
-/** Набор известных объектов, которые могут быть использованы в запросе.
-  * Разделяемая часть. Порядок членов (порядок их уничтожения) очень важен.
+/** Set of known objects (environment), that could be used in query.
+  * Shared (global) part. Order of members (especially, order of destruction) is very important.
   */
 struct ContextShared
 {
-	Logger * log = &Logger::get("Context");					/// Логгер.
+	Logger * log = &Logger::get("Context");
 
-	/// Для доступа и модификации разделяемых объектов. Рекурсивный mutex.
+	/// For access of most of shared objects. Recursive mutex.
 	mutable Poco::Mutex mutex;
-	/// Для доступа к внешним словарям. Отдельный мьютекс, чтобы избежать локов при обращении сервера к самому себе.
+	/// Separate mutex for access of external dictionaries. Separate mutex to avoid locks when server doing request to itself.
 	mutable std::mutex external_dictionaries_mutex;
-	/// Отдельный mutex для переинициализации zookeeper-а. Эта операция может заблокироваться на существенное время и не должна мешать остальным.
+	/// Separate mutex for re-initialization of zookeer session. This operation could take a long time and must not interfere with another operations.
 	mutable std::mutex zookeeper_mutex;
 
 	mutable zkutil::ZooKeeperPtr zookeeper;					/// Клиент для ZooKeeper.
@@ -191,7 +202,14 @@ Context::~Context() = default;
 const TableFunctionFactory & Context::getTableFunctionFactory() const			{ return shared->table_function_factory; }
 const AggregateFunctionFactory & Context::getAggregateFunctionFactory() const	{ return shared->aggregate_function_factory; }
 InterserverIOHandler & Context::getInterserverIOHandler()						{ return shared->interserver_io_handler; }
-std::unique_lock<Poco::Mutex> Context::getLock() const							{ return std::unique_lock<Poco::Mutex>(shared->mutex); }
+
+std::unique_lock<Poco::Mutex> Context::getLock() const
+{
+	ProfileEvents::increment(ProfileEvents::ContextLock);
+	CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
+	return std::unique_lock<Poco::Mutex>(shared->mutex);
+}
+
 ProcessList & Context::getProcessList()											{ return shared->process_list; }
 const ProcessList & Context::getProcessList() const								{ return shared->process_list; }
 MergeList & Context::getMergeList() 											{ return shared->merge_list; }
@@ -310,6 +328,9 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
 	client_info.current_user = name;
 	client_info.current_address = address;
+
+	if (!quota_key.empty())
+		client_info.quota_key = quota_key;
 }
 
 
@@ -722,6 +743,12 @@ void Context::setMacros(Macros && macros)
 	shared->macros = macros;
 }
 
+const Context & Context::getSessionContext() const
+{
+	if (!session_context)
+		throw Exception("There is no session", ErrorCodes::THERE_IS_NO_SESSION);
+	return *session_context;
+}
 
 Context & Context::getSessionContext()
 {
@@ -730,6 +757,12 @@ Context & Context::getSessionContext()
 	return *session_context;
 }
 
+const Context & Context::getGlobalContext() const
+{
+	if (!global_context)
+		throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
+	return *global_context;
+}
 
 Context & Context::getGlobalContext()
 {

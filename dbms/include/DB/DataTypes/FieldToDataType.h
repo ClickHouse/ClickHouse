@@ -5,18 +5,13 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNull.h>
 
 #include <DB/Common/Exception.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-	extern const int NOT_IMPLEMENTED;
-}
-
 
 /** Для заданного значения Field возвращает минимальный тип данных, позволяющий хранить значение этого типа.
   * В случае, если Field - массив, конвертирует все элементы к общему типу.
@@ -26,7 +21,7 @@ class FieldToDataType : public StaticVisitor<DataTypePtr>
 public:
 	DataTypePtr operator() (Null 	& x) const
 	{
-		throw Exception("NULL literals are not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
+		return std::make_shared<DataTypeNull>();
 	}
 
 	DataTypePtr operator() (UInt64 	& x) const

@@ -2,9 +2,8 @@
 
 #include <DB/Parsers/IAST.h>
 #include <DB/Parsers/ASTQueryWithOutput.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTAsterisk.h>
+#include <DB/Core/Names.h>
+
 
 namespace DB
 {

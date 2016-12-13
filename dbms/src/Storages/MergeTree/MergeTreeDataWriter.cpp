@@ -33,7 +33,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 	/// Минимальная и максимальная дата.
 	UInt16 min_date = std::numeric_limits<UInt16>::max();
 	UInt16 max_date = std::numeric_limits<UInt16>::min();
-	for (ColumnUInt16::Container_t::const_iterator it = dates.begin(); it != dates.end(); ++it)
+	for (auto it = dates.begin(); it != dates.end(); ++it)
 	{
 		if (*it < min_date)
 			min_date = *it;

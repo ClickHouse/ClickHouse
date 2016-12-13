@@ -1,11 +1,12 @@
 #pragma once
 
-#include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/IInterpreter.h>
 
 
 namespace DB
 {
+
+class Context;
 
 class InterpreterFactory
 {

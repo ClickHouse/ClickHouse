@@ -29,7 +29,7 @@ for file in MobilePhoneModel PageCharset Params URLDomain UTMSource Referer URL 
   echo
   BEST_METHOD=0
   BEST_RESULT=0
-  for method in {1..5}; do
+  for method in {1..10}; do
    echo -ne $file $size $method '';
    TOTAL_ELEMS=0
    for i in {0..1000}; do
@@ -458,7 +458,7 @@ int main(int argc, char ** argv)
 			<< std::endl;
 	}
 
-	if (!m || m == 1) bench<StringRef_CompareMemcmp, DefaultHash<StringRef>>(data, "StringRef_CityHash64");
+	if (!m || m == 1) bench<StringRef_CompareMemcmp, StringRefHash64>(data, "StringRef_CityHash64");
 	if (!m || m == 2) bench<StringRef_CompareMemcmp, FastHash64>	(data, "StringRef_FastHash64");
 	if (!m || m == 3) bench<StringRef_CompareMemcmp, SimpleHash>	(data, "StringRef_SimpleHash");
 

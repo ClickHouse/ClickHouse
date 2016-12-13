@@ -47,7 +47,7 @@ StorageMergeTree::StorageMergeTree(
 		 context_, primary_expr_ast_, date_column_name_,
 		 sampling_expression_, index_granularity_, merging_params_,
 		 settings_, database_name_ + "." + table_name, false),
-	reader(data), writer(data), merger(data),
+	reader(data), writer(data), merger(data, context.getBackgroundPool()),
 	increment(0),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
@@ -296,9 +296,12 @@ bool StorageMergeTree::merge(
 	const String & partition,
 	bool final)
 {
-	/// Удаляем старые куски.
-	data.clearOldParts();
-	data.clearOldTemporaryDirectories();	/// TODO Делать это реже.
+	/// Clear old parts. It does not matter to do it more frequently than each second.
+	if (auto lock = time_after_previous_cleanup.lockTestAndRestartAfter(1))
+	{
+		data.clearOldParts();
+		data.clearOldTemporaryDirectories();
+	}
 
 	auto structure_lock = lockStructure(true);
 

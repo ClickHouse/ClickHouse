@@ -59,37 +59,30 @@ add_library (common
 	${REVISIONFILE}
 )
 
-# TESTIRT-3687 DISABLE_LIBTCMALLOC - when testing for memory leaks, disable libtcmalloc
-IF($ENV{DISABLE_LIBTCMALLOC})
-	message(STATUS "Disabling libtcmalloc for valgrind better analysis")
-ELSE($ENV{DISABLE_LIBTCMALLOC})
-	IF($ENV{DEBUG_LIBTCMALLOC})
-		message(STATUS "Link libtcmalloc_minimal_debug for testing")
-		SET(MALLOC_LIBRARIES libtcmalloc_minimal_debug.a)
-	ELSE($ENV{DEBUG_LIBTCMALLOC})
-		message(STATUS "Link libtcmalloc_minimal")
-		SET(MALLOC_LIBRARIES tcmalloc_minimal_internal)
-	ENDIF($ENV{DEBUG_LIBTCMALLOC})
-ENDIF($ENV{DISABLE_LIBTCMALLOC})
+# When testing for memory leaks, disable libtcmalloc.
+if (ENABLE_LIBTCMALLOC)
+	if (DEBUG_LIBTCMALLOC)
+		message (STATUS "Link libtcmalloc_minimal_debug for testing")
+		set (MALLOC_LIBRARIES libtcmalloc_minimal_debug.a)
+	else ()
+		message (STATUS "Link libtcmalloc_minimal")
+		set (MALLOC_LIBRARIES tcmalloc_minimal_internal)
+	endif ()
+else ()
+	message (STATUS "Disabling libtcmalloc for valgrind better analysis")
+endif ()
 
-if (APPLE)
-	SET(RT_LIBRARIES "apple_rt")
-else()
-	SET(RT_LIBRARIES "librt.a")
-endif()
-
-set (GLIB_HINTS "/usr/local/opt/glib/lib")
-find_library (GLIB_LIB libglib-2.0.a HINTS ${GLIB_HINTS})
+include (${ClickHouse_SOURCE_DIR}/cmake/find_glib.cmake)
 
 target_link_libraries (
 	common
 	pocoext
 	${MALLOC_LIBRARIES}
 	pthread
-	${GLIB_LIB}
+	${GLIB_LIBS}
 	${ICU_LIBS}
 	${RT_LIBRARIES})
 
-IF(TESTS)
+if (ENABLE_TESTS)
 	add_subdirectory (src/tests)
-ENDIF(TESTS)
+endif (ENABLE_TESTS)

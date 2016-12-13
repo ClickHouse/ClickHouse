@@ -1,11 +1,12 @@
 #pragma once
 
-#include <DB/Interpreters/Set.h>
 #include <DB/Parsers/IAST.h>
 
 
 namespace DB
 {
+
+class Set;
 
 /** Множество. В процессе вычисления, на множество заменяется выражение в секции IN
   *  - подзапрос или явное перечисление значений.
@@ -13,7 +14,7 @@ namespace DB
 class ASTSet : public IAST
 {
 public:
-	SetPtr set;
+	std::shared_ptr<Set> set;
 	String column_name;
 	bool is_explicit = false;
 

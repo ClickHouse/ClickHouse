@@ -4,7 +4,6 @@
 #include <Poco/URI.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <Poco/Net/NetException.h>
 
 #include <common/logger_useful.h>
 

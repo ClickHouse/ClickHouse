@@ -6,6 +6,7 @@
 #include <DB/Storages/System/StorageSystemTables.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Databases/IDatabase.h>
+#include <DB/Interpreters/Context.h>
 
 
 namespace DB

@@ -1,7 +1,12 @@
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Parsers/ASTSetQuery.h>
+#include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/ASTAsterisk.h>
+#include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ASTSubquery.h>
 #include <DB/Parsers/ASTTablesInSelectQuery.h>
+#include <DB/Common/typeid_cast.h>
 
 
 namespace DB

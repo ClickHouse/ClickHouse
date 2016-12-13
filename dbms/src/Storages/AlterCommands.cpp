@@ -210,7 +210,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
 			{
 				if (std::end(columns) != column_it)
 					throw Exception{
-						"Cannot add column " + column_name + ": column with this name already exisits",
+						"Cannot add column " + column_name + ": column with this name already exists",
 						DB::ErrorCodes::ILLEGAL_COLUMN
 					};
 			}

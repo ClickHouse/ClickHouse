@@ -3,7 +3,7 @@
 #include <list>
 #include <memory>
 
-#include <mysql/mysqld_error.h>
+#include <mysqld_error.h>
 
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -176,7 +176,7 @@ public:
 			if (!data)
 				return;
 			++data->ref_count;
-			my_thread_init();
+			mysql_thread_init();
 		}
 
 		void decrementRefCount()
@@ -184,7 +184,7 @@ public:
 			if (!data)
 				return;
 			--data->ref_count;
-			my_thread_end();
+			mysql_thread_end();
 		}
 	};
 

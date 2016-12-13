@@ -67,7 +67,7 @@ bool Client::executeQuery(const InterserverIOEndpointLocation & location, const 
 		{"query", query}
 	};
 
-	ReadBufferFromHTTP in{location.host, location.port, params};
+	ReadBufferFromHTTP in{location.host, location.port, "", params};
 
 	bool flag;
 	readBinary(flag, in);

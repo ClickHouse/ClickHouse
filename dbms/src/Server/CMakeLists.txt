@@ -44,5 +44,5 @@ INSTALL(
     COMPONENT clickhouse)
 
 # Adding init.d support
-INCLUDE(${PROJECT_SOURCE_DIR}/tools/init.d/CMakeLists.init)
-CREATE_INIT_SCRIPT(clickhouse-server clickhouse-server)
+include (${ClickHouse_SOURCE_DIR}/cmake/create_init_script.cmake)
+create_init_script (clickhouse-server clickhouse-server)

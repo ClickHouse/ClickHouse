@@ -54,28 +54,28 @@ public:
 
 	Type type;
 
-	/// Для ADD/REMOVE/COPY_COLUMN.
+	/// For ADD/REMOVE/COPY_COLUMN.
 	std::string source_name;
 	std::string result_name;
 	DataTypePtr result_type;
 
-	/// Для ADD_COLUMN.
+	/// For ADD_COLUMN.
 	ColumnPtr added_column;
 
-	/// Для APPLY_FUNCTION.
+	/// For APPLY_FUNCTION.
 	mutable FunctionPtr function; /// mutable - чтобы можно было делать execute.
 	Names argument_names;
 	Names prerequisite_names;
 
-	/// Для ARRAY_JOIN
+	/// For ARRAY_JOIN
 	NameSet array_joined_columns;
 	bool array_join_is_left = false;
 
-	/// Для JOIN
+	/// For JOIN
 	std::shared_ptr<const Join> join;
 	NamesAndTypesList columns_added_by_join;
 
-	/// Для PROJECT.
+	/// For PROJECT.
 	NamesWithAliases projection;
 
 	/// Если result_name_ == "", в качестве имени используется "имя_функции(аргументы через запятую)".

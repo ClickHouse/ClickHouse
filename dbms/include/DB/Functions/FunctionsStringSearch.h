@@ -1048,7 +1048,7 @@ struct ReplaceStringImpl
 			/// Определим, к какому индексу оно относится.
 			while (i < size && begin + n * (i + 1) <= match)
 			{
-				res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos);
+				res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos) + 1;
 				++i;
 			}
 			res_offset += (match - pos);
@@ -1061,7 +1061,7 @@ struct ReplaceStringImpl
 			bool can_finish_current_string = false;
 
 			/// Проверяем, что вхождение не переходит через границы строк.
-			if (match + needle.size() < begin + n * (i + 1))
+			if (match + needle.size() - 1 < begin + n * (i + 1))
 			{
 				res_data.resize(res_data.size() + replacement.size());
 				memcpy(&res_data[res_offset], replacement.data(), replacement.size());
@@ -1084,6 +1084,10 @@ struct ReplaceStringImpl
 				res_offsets[i] = res_offset;
 				pos = begin + n * (i + 1);
 			}
+		}
+
+		if (i < size) {
+			res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos) + 1;
 		}
 	}
 
@@ -1126,7 +1130,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 3)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1149,7 +1153,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column_src = block.getByPosition(arguments[0]).column;
 		const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
@@ -1213,7 +1217,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1232,7 +1236,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		using ResultType = typename Impl::ResultType;
 
@@ -1298,7 +1302,7 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1317,7 +1321,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 		const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;

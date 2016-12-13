@@ -12,7 +12,7 @@ if id metrika > /dev/null 2>&1; then
 	mkdir -p /opt/clickhouse/metadata/default/
 	mkdir -p /opt/cores/
 	chown metrika: /opt/clickhouse /opt/cores /opt/clickhouse/data /opt/clickhouse/metadata /opt/clickhouse/data/default /opt/clickhouse/metadata/default
-	# Очистка старых результатов динамической компиляции.
+	# Clean old dynamic compilation results
 	if [ -d "/opt/clickhouse/build" ]; then
 		rm -f /opt/clickhouse/build/*.cpp /opt/clickhouse/build/*.so ||:
 	fi

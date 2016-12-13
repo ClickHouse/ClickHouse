@@ -14,6 +14,8 @@ void registerFunctionsHigherOrder(FunctionFactory & factory)
 	factory.registerFunction<FunctionArraySum>();
 	factory.registerFunction<FunctionArrayFirst>();
 	factory.registerFunction<FunctionArrayFirstIndex>();
+	factory.registerFunction<FunctionArraySort>();
+	factory.registerFunction<FunctionArrayReverseSort>();
 }
 
 }

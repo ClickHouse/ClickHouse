@@ -151,13 +151,17 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 		.callback(Poco::Util::OptionCallback<LocalServer>(this, &LocalServer::handleHelp)));
 
 #define DECLARE_SETTING(TYPE, NAME, DEFAULT) \
-	_options.addOption(Poco::Util::Option(#NAME, "", "Settings.h").group("settings").required(false).repeatable(false).binding(#NAME));
-	APPLY_FOR_SETTINGS(DECLARE_SETTING)
+	{ \
+		_options.addOption(Poco::Util::Option(#NAME, "", "Settings.h").group("settings").required(false).repeatable(false).binding(#NAME)); \
+		APPLY_FOR_SETTINGS(DECLARE_SETTING) \
+	}
 #undef DECLARE_SETTING
 
 #define DECLARE_SETTING(TYPE, NAME, DEFAULT) \
-	_options.addOption(Poco::Util::Option(#NAME, "", "Limits.h").group("limits").required(false).repeatable(false).binding(#NAME));
-	APPLY_FOR_LIMITS(DECLARE_SETTING)
+	{ \
+		_options.addOption(Poco::Util::Option(#NAME, "", "Limits.h").group("limits").required(false).repeatable(false).binding(#NAME)); \
+		APPLY_FOR_LIMITS(DECLARE_SETTING) \
+	}
 #undef DECLARE_SETTING
 }
 
@@ -215,8 +219,12 @@ int LocalServer::main(const std::vector<std::string> & args)
 {
 	if (!config().has("query") && !config().has("table-structure")) /// Nothing to process
 	{
-		std::cerr << "There are no queries to process.\n";
-		displayHelp();
+		if (!config().has("help"))
+		{
+			std::cerr << "There are no queries to process.\n";
+			displayHelp();
+		}
+
 		return Application::EXIT_OK;
 	}
 
@@ -273,6 +281,9 @@ int LocalServer::main(const std::vector<std::string> & args)
 	attachSystemTables();
 
 	processQueries();
+
+	context->shutdown();
+	context.reset();
 
 	return Application::EXIT_OK;
 }

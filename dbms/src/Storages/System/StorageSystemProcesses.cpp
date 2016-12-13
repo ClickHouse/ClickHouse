@@ -4,6 +4,7 @@
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Storages/System/StorageSystemProcesses.h>
+#include <DB/Interpreters/Context.h>
 
 
 namespace DB
@@ -37,12 +38,16 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
 		{ "http_method",			std::make_shared<DataTypeUInt8>() },
 		{ "http_user_agent",		std::make_shared<DataTypeString>() },
 
+		{ "quota_key",			std::make_shared<DataTypeString>() },
+
 		{ "elapsed", 			std::make_shared<DataTypeFloat64>()	},
-		{ "rows_read", 			std::make_shared<DataTypeUInt64>()	},
-		{ "bytes_read",			std::make_shared<DataTypeUInt64>()	},
-		{ "total_rows_approx",	std::make_shared<DataTypeUInt64>() },
+		{ "read_rows",			std::make_shared<DataTypeUInt64>()	},
+		{ "read_bytes",			std::make_shared<DataTypeUInt64>()	},
+		{ "total_rows_approx",	std::make_shared<DataTypeUInt64>()	},
+		{ "written_rows",		std::make_shared<DataTypeUInt64>()	},
+		{ "written_bytes",		std::make_shared<DataTypeUInt64>()	},
 		{ "memory_usage",		std::make_shared<DataTypeInt64>()	},
-		{ "query", 				std::make_shared<DataTypeString>()	},
+		{ "query", 				std::make_shared<DataTypeString>()	}
 	}
 {
 }
@@ -90,10 +95,13 @@ BlockInputStreams StorageSystemProcesses::read(
 		block.unsafeGetByPosition(i++).column->insert(UInt64(process.client_info.client_revision));
 		block.unsafeGetByPosition(i++).column->insert(UInt64(process.client_info.http_method));
 		block.unsafeGetByPosition(i++).column->insert(process.client_info.http_user_agent);
+		block.unsafeGetByPosition(i++).column->insert(process.client_info.quota_key);
 		block.unsafeGetByPosition(i++).column->insert(process.elapsed_seconds);
-		block.unsafeGetByPosition(i++).column->insert(process.rows);
-		block.unsafeGetByPosition(i++).column->insert(process.bytes);
+		block.unsafeGetByPosition(i++).column->insert(process.read_rows);
+		block.unsafeGetByPosition(i++).column->insert(process.read_bytes);
 		block.unsafeGetByPosition(i++).column->insert(process.total_rows);
+		block.unsafeGetByPosition(i++).column->insert(process.written_rows);
+		block.unsafeGetByPosition(i++).column->insert(process.written_bytes);
 		block.unsafeGetByPosition(i++).column->insert(process.memory_usage);
 		block.unsafeGetByPosition(i++).column->insert(process.query);
 	}
