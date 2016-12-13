@@ -1,4 +1,5 @@
 add_definitions(-DBOOST_SYSTEM_NO_DEPRECATED)
+add_definitions(-Wno-unused-variable)
 
 add_library(boost_program_options_internal
 boost_1_62_0/libs/program_options/src/cmdline.cpp

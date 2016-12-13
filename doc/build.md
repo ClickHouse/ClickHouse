@@ -58,14 +58,6 @@ sudo ln -s /usr/local/bin/g++ /usr/local/bin/c++
 # /usr/local/bin/ should be in $PATH
 ```
 
-Note that these ways of installation differs.
-When installing from PPA, by default, "old C++ ABI" is used,
- and when installing from sources, "new C++ ABI" is used.
-When using different C++ ABI, you need to recompile all C++ libraries,
- otherwise libraries will not link.
-ClickHouse works with both old and new C++ ABI,
- but production releases is built with old C++ ABI.
-
 ## Use GCC 6 for builds
 
 ```
@@ -81,15 +73,16 @@ sudo apt-get install libicu-dev libglib2.0-dev libreadline-dev libmysqlclient-de
 
 # Checkout ClickHouse sources
 
+To get latest stable version:
 ```
-git clone git@github.com:yandex/ClickHouse.git
-# or: git clone https://github.com/yandex/ClickHouse.git
+git clone -b stable git@github.com:yandex/ClickHouse.git
+# or: git clone -b stable https://github.com/yandex/ClickHouse.git
 
 cd ClickHouse
 ```
 
-Note that master branch is not stable.
-For stable version, switch to some release branch.
+For development, switch to `master` branch.
+For latest release candidate, switch to `testing` branch.
 
 # Build ClickHouse
 

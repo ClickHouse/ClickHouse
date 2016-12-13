@@ -1,6 +1,9 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
-#include <glib.h>
+#if __clang__
+	#pragma GCC diagnostic ignored "-Wdeprecated-register"
+#endif
+	#include <glib.h>
 #pragma GCC diagnostic pop
 
 #include <common/DateLUTImpl.h>

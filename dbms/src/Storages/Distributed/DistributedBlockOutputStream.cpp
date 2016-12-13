@@ -2,6 +2,7 @@
 #include <DB/Storages/StorageDistributed.h>
 
 #include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/queryToString.h>
 
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/CompressedWriteBuffer.h>

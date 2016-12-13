@@ -37,9 +37,11 @@ struct ProcessInfo
 {
 	String query;
 	double elapsed_seconds;
-	size_t rows;
-	size_t bytes;
+	size_t read_rows;
+	size_t read_bytes;
 	size_t total_rows;
+	size_t written_rows;
+	size_t written_bytes;
 	Int64 memory_usage;
 	ClientInfo client_info;
 };
@@ -53,7 +55,10 @@ struct ProcessListElement
 
 	Stopwatch watch;
 
-	Progress progress;
+	/// Progress of input stream
+	Progress progress_in;
+	/// Progress of output stream
+	Progress progress_out;
 
 	MemoryTracker memory_tracker;
 
@@ -88,15 +93,22 @@ struct ProcessListElement
 		current_memory_tracker = nullptr;
 	}
 
-	bool update(const Progress & value)
+	bool updateProgressIn(const Progress & value)
 	{
-		progress.incrementPiecewiseAtomically(value);
+		progress_in.incrementPiecewiseAtomically(value);
 
 		if (priority_handle)
 			priority_handle->waitIfNeed(std::chrono::seconds(1));		/// NOTE Could make timeout customizable.
 
 		return !is_cancelled;
 	}
+
+	bool updateProgressOut(const Progress & value)
+	{
+		progress_out.incrementPiecewiseAtomically(value);
+		return !is_cancelled;
+	}
+
 
 	ProcessInfo getInfo() const
 	{
@@ -105,9 +117,11 @@ struct ProcessListElement
 		res.query 			= query;
 		res.client_info 	= client_info;
 		res.elapsed_seconds = watch.elapsedSeconds();
-		res.rows 			= progress.rows;
-		res.bytes 			= progress.bytes;
-		res.total_rows 		= progress.total_rows;
+		res.read_rows 		= progress_in.rows;
+		res.read_bytes		= progress_in.bytes;
+		res.total_rows		= progress_in.total_rows;
+		res.written_rows	= progress_out.rows;
+		res.written_bytes	= progress_out.bytes;
 		res.memory_usage 	= memory_tracker.get();
 
 		return res;

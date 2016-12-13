@@ -1,7 +1,9 @@
 #pragma once
 
-#include <DB/Parsers/queryToString.h>
+#include <string>
 #include <unordered_map>
+
+#include <DB/Parsers/IAST.h>
 
 
 namespace DB
@@ -33,30 +35,8 @@ namespace DB
 {
 
 
-inline ColumnDefaultType columnDefaultTypeFromString(const String & str)
-{
-	static const std::unordered_map<String, ColumnDefaultType> map{
-		{ "DEFAULT", ColumnDefaultType::Default },
-		{ "MATERIALIZED", ColumnDefaultType::Materialized },
-		{ "ALIAS", ColumnDefaultType::Alias }
-	};
-
-	const auto it = map.find(str);
-	return it != std::end(map) ? it->second : throw Exception{"Unknown column default specifier: " + str};
-}
-
-
-inline String toString(const ColumnDefaultType type)
-{
-	static const std::unordered_map<ColumnDefaultType, String> map{
-		{ ColumnDefaultType::Default, "DEFAULT" },
-		{ ColumnDefaultType::Materialized, "MATERIALIZED" },
-		{ ColumnDefaultType::Alias, "ALIAS" }
-	};
-
-	const auto it = map.find(type);
-	return it != std::end(map) ? it->second : throw Exception{"Invalid ColumnDefaultType"};
-}
+ColumnDefaultType columnDefaultTypeFromString(const std::string & str);
+std::string toString(const ColumnDefaultType type);
 
 
 struct ColumnDefault
@@ -66,13 +46,10 @@ struct ColumnDefault
 };
 
 
-inline bool operator==(const ColumnDefault & lhs, const ColumnDefault & rhs)
-{
-	return lhs.type == rhs.type && queryToString(lhs.expression) == queryToString(rhs.expression);
-}
+bool operator==(const ColumnDefault & lhs, const ColumnDefault & rhs);
 
 
-using ColumnDefaults = std::unordered_map<String, ColumnDefault>;
+using ColumnDefaults = std::unordered_map<std::string, ColumnDefault>;
 
 
 }

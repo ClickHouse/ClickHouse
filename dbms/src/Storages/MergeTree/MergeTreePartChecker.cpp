@@ -386,7 +386,7 @@ void MergeTreePartChecker::checkDataPart(
 		bool ok = false;
 		try
 		{
-			if (!settings.require_column_files && !Poco::File(path + escapeForFileName(column.name) + ".bin").exists())
+			if (!settings.require_column_files && !Poco::File(path + escapeForFileName(column.name) + DATA_FILE_EXTENSION).exists())
 			{
 				if (settings.verbose)
 					std::cerr << " no files" << std::endl;

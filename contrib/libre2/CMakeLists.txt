@@ -43,7 +43,7 @@ add_library (re2_st ${re2_headers})
 
 set_target_properties (re2_st PROPERTIES COMPILE_DEFINITIONS "NO_THREADS;re2=re2_st")
 
-message ("Creating headers for re2_st library.")
+message (STATUS "Creating headers for re2_st library.")
 file (MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/re2_st)
 foreach (FILENAME filtered_re2.h re2.h set.h stringpiece.h variadic_function.h)
 	file (READ ${CMAKE_CURRENT_SOURCE_DIR}/re2/${FILENAME} CONTENT)
