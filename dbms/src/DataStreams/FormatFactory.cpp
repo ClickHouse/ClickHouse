@@ -50,11 +50,11 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 		return std::make_shared<NativeBlockInputStream>(buf);
 	else if (name == "RowBinary")
 		return std::make_shared<BlockInputStreamFromRowInputStream>(std::make_shared<BinaryRowInputStream>(buf), sample, max_block_size);
-	else if (name == "TabSeparated")
+	else if (name == "TabSeparated" || name == "TSV") /// TSV is a synonym/alias for the original TabSeparated format
 		return std::make_shared<BlockInputStreamFromRowInputStream>(std::make_shared<TabSeparatedRowInputStream>(buf, sample), sample, max_block_size);
-	else if (name == "TabSeparatedWithNames")
+	else if (name == "TabSeparatedWithNames" || name == "TSVWithNames")
 		return std::make_shared<BlockInputStreamFromRowInputStream>(std::make_shared<TabSeparatedRowInputStream>(buf, sample, true), sample, max_block_size);
-	else if (name == "TabSeparatedWithNamesAndTypes")
+	else if (name == "TabSeparatedWithNamesAndTypes" || name == "TSVWithNamesAndTypes")
 		return std::make_shared<BlockInputStreamFromRowInputStream>(std::make_shared<TabSeparatedRowInputStream>(buf, sample, true, true), sample, max_block_size);
 	else if (name == "Values")
 		return std::make_shared<BlockInputStreamFromRowInputStream>(std::make_shared<ValuesRowInputStream>(
@@ -74,7 +74,9 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 		return std::make_shared<BlockInputStreamFromRowInputStream>(std::move(row_stream), sample, max_block_size);
 	}
 	else if (name == "TabSeparatedRaw"
+		|| name == "TSVRaw"
 		|| name == "BlockTabSeparated"
+		|| name == "TSVBlock"
 		|| name == "Pretty"
 		|| name == "PrettyCompact"
 		|| name == "PrettyCompactMonoBlock"
@@ -104,15 +106,15 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
 		return std::make_shared<NativeBlockOutputStream>(buf);
 	else if (name == "RowBinary")
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<BinaryRowOutputStream>(buf));
-	else if (name == "TabSeparated")
+	else if (name == "TabSeparated" || name == "TSV")
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRowOutputStream>(buf, sample));
-	else if (name == "TabSeparatedWithNames")
+	else if (name == "TabSeparatedWithNames" || name == "TSVWithNames")
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRowOutputStream>(buf, sample, true));
-	else if (name == "TabSeparatedWithNamesAndTypes")
+	else if (name == "TabSeparatedWithNamesAndTypes" || name == "TSVWithNamesAndTypes")
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRowOutputStream>(buf, sample, true, true));
-	else if (name == "TabSeparatedRaw")
+	else if (name == "TabSeparatedRaw" || name == "TSVRaw")
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRawRowOutputStream>(buf, sample));
-	else if (name == "BlockTabSeparated")
+	else if (name == "BlockTabSeparated" || name == "TSVBlock")
 		return std::make_shared<TabSeparatedBlockOutputStream>(buf);
 	else if (name == "CSV")
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample));
