@@ -67,25 +67,25 @@ struct IDictionary : IDictionaryBase
 
 	/// Methods for hierarchy.
 
-	virtual void isIn(const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const
+	virtual void isInVectorVector(const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const
 	{
 		throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	virtual void isIn(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const
+	virtual void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const
 	{
 		throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	virtual void isIn(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const
+	virtual void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const
 	{
 		throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	virtual void isIn(const Key child_id, const Key ancestor_id, UInt8 & out) const
+	void isInConstantConstant(const Key child_id, const Key ancestor_id, UInt8 & out) const
 	{
 		PaddedPODArray<UInt8> out_arr(1);
-		isIn(PaddedPODArray<Key>(1, child_id), PaddedPODArray<Key>(1, ancestor_id), out_arr);
+		isInVectorConstant(PaddedPODArray<Key>(1, child_id), ancestor_id, out_arr);
 		out = out_arr[0];
 	}
 };

@@ -831,7 +831,7 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatchSimple(
-		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
+		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
@@ -872,7 +872,7 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatchComplex(
-		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
+		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
@@ -997,7 +997,7 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatch(
-		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
+		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
@@ -1045,7 +1045,7 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatchComplex(
-		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
+		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
@@ -1092,7 +1092,7 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatchRange(
-		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
+		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
@@ -1130,8 +1130,8 @@ private:
 
 	template <typename DictionaryType>
 	void executeRange(
-		Block & block, const size_t result, const DictionaryType * const dictionary, const std::string & attr_name,
-		const ColumnUInt64 * const id_col, const IColumn * const date_col_untyped)
+		Block & block, const size_t result, const DictionaryType * dictionary, const std::string & attr_name,
+		const ColumnUInt64 * id_col, const IColumn * date_col_untyped)
 	{
 		if (const auto date_col = typeid_cast<const ColumnUInt16 *>(date_col_untyped))
 		{
@@ -1157,8 +1157,8 @@ private:
 
 	template <typename DictionaryType>
 	void executeRange(
-		Block & block, const size_t result, const DictionaryType * const dictionary, const std::string & attr_name,
-		const ColumnConst<UInt64> * const id_col, const IColumn * const date_col_untyped)
+		Block & block, const size_t result, const DictionaryType * dictionary, const std::string & attr_name,
+		const ColumnConst<UInt64> * id_col, const IColumn * date_col_untyped)
 	{
 		if (const auto date_col = typeid_cast<const ColumnUInt16 *>(date_col_untyped))
 		{
@@ -1267,7 +1267,7 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatch(
-		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
+		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
@@ -1302,8 +1302,8 @@ private:
 
 	template <typename DictionaryType>
 	void executeDispatch(
-		Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * const dictionary,
-		const std::string & attr_name, const ColumnUInt64 * const id_col)
+		Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dictionary,
+		const std::string & attr_name, const ColumnUInt64 * id_col)
 	{
 		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
@@ -1336,8 +1336,8 @@ private:
 
 	template <typename DictionaryType>
 	void executeDispatch(
-		Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * const dictionary,
-		const std::string & attr_name, const ColumnConst<UInt64> * const id_col)
+		Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dictionary,
+		const std::string & attr_name, const ColumnConst<UInt64> * id_col)
 	{
 		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
@@ -1372,7 +1372,7 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatchComplex(
-		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
+		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
@@ -1433,35 +1433,35 @@ template <> struct DictGetTraits<DATA_TYPE>\
 {\
 	template <typename DictionaryType>\
 	static void get(\
-		const DictionaryType * const dict, const std::string & name, const PaddedPODArray<UInt64> & ids,\
+		const DictionaryType * dict, const std::string & name, const PaddedPODArray<UInt64> & ids,\
 		PaddedPODArray<TYPE> & out)\
 	{\
 		dict->get##TYPE(name, ids, out);\
 	}\
 	template <typename DictionaryType>\
 	static void get(\
-		const DictionaryType * const dict, const std::string & name, const ConstColumnPlainPtrs & key_columns,\
+		const DictionaryType * dict, const std::string & name, const ConstColumnPlainPtrs & key_columns,\
 		const DataTypes & key_types, PaddedPODArray<TYPE> & out)\
 	{\
 		dict->get##TYPE(name, key_columns, key_types, out);\
 	}\
 	template <typename DictionaryType>\
 	static void get(\
-		const DictionaryType * const dict, const std::string & name, const PaddedPODArray<UInt64> & ids,\
+		const DictionaryType * dict, const std::string & name, const PaddedPODArray<UInt64> & ids,\
 		const PaddedPODArray<UInt16> & dates, PaddedPODArray<TYPE> & out)\
 	{\
 		dict->get##TYPE(name, ids, dates, out);\
 	}\
 	template <typename DictionaryType, typename DefaultsType>\
 	static void getOrDefault(\
-		const DictionaryType * const dict, const std::string & name, const PaddedPODArray<UInt64> & ids,\
+		const DictionaryType * dict, const std::string & name, const PaddedPODArray<UInt64> & ids,\
 		const DefaultsType & def, PaddedPODArray<TYPE> & out)\
 	{\
 		dict->get##TYPE(name, ids, def, out);\
 	}\
 	template <typename DictionaryType, typename DefaultsType>\
 	static void getOrDefault(\
-		const DictionaryType * const dict, const std::string & name, const ConstColumnPlainPtrs & key_columns,\
+		const DictionaryType * dict, const std::string & name, const ConstColumnPlainPtrs & key_columns,\
 		const DataTypes & key_types, const DefaultsType & def, PaddedPODArray<TYPE> & out)\
 	{\
 		dict->get##TYPE(name, key_columns, key_types, def, out);\
@@ -1567,7 +1567,7 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-		const IDictionaryBase * const dictionary)
+		const IDictionaryBase * dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
@@ -1618,7 +1618,7 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatchComplex(
-		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
+		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
@@ -1667,7 +1667,7 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatchRange(
-		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
+		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
@@ -1705,8 +1705,8 @@ private:
 
 	template <typename DictionaryType>
 	void executeRange(
-		Block & block, const size_t result, const DictionaryType * const dictionary, const std::string & attr_name,
-		const ColumnUInt64 * const id_col, const IColumn * const date_col_untyped)
+		Block & block, const size_t result, const DictionaryType * dictionary, const std::string & attr_name,
+		const ColumnUInt64 * id_col, const IColumn * date_col_untyped)
 	{
 		if (const auto date_col = typeid_cast<const ColumnUInt16 *>(date_col_untyped))
 		{
@@ -1742,8 +1742,8 @@ private:
 
 	template <typename DictionaryType>
 	void executeRange(
-		Block & block, const size_t result, const DictionaryType * const dictionary, const std::string & attr_name,
-		const ColumnConst<UInt64> * const id_col, const IColumn * const date_col_untyped)
+		Block & block, const size_t result, const DictionaryType * dictionary, const std::string & attr_name,
+		const ColumnConst<UInt64> * id_col, const IColumn * date_col_untyped)
 	{
 		if (const auto date_col = typeid_cast<const ColumnUInt16 *>(date_col_untyped))
 		{
@@ -1880,7 +1880,7 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-		const IDictionaryBase * const dictionary)
+		const IDictionaryBase * dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
@@ -1915,8 +1915,8 @@ private:
 
 	template <typename DictionaryType>
 	void executeDispatch(
-		Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * const dictionary,
-		const std::string & attr_name, const ColumnUInt64 * const id_col)
+		Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dictionary,
+		const std::string & attr_name, const ColumnUInt64 * id_col)
 	{
 		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
@@ -1952,8 +1952,8 @@ private:
 
 	template <typename DictionaryType>
 	void executeDispatch(
-		Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * const dictionary,
-		const std::string & attr_name, const ColumnConst<UInt64> * const id_col)
+		Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dictionary,
+		const std::string & attr_name, const ColumnConst<UInt64> * id_col)
 	{
 		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
@@ -1990,7 +1990,7 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatchComplex(
-		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
+		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
@@ -2132,7 +2132,7 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-		const IDictionaryBase * const dictionary)
+		const IDictionaryBase * dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
@@ -2303,7 +2303,7 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-		const IDictionaryBase * const dictionary)
+		const IDictionaryBase * dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
@@ -2331,8 +2331,8 @@ private:
 	}
 
 	template <typename DictionaryType>
-	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
-		const ColumnUInt64 * const child_id_col, const IColumn * const ancestor_id_col_untyped)
+	bool execute(Block & block, const size_t result, const DictionaryType * dictionary,
+		const ColumnUInt64 * child_id_col, const IColumn * ancestor_id_col_untyped)
 	{
 		if (const auto ancestor_id_col = typeid_cast<const ColumnUInt64 *>(ancestor_id_col_untyped))
 		{
@@ -2345,7 +2345,7 @@ private:
 			const auto size = child_id_col->size();
 			data.resize(size);
 
-			dictionary->isIn(child_ids, ancestor_ids, data);
+			dictionary->isInVectorVector(child_ids, ancestor_ids, data);
 		}
 		else if (const auto ancestor_id_col = typeid_cast<const ColumnConst<UInt64> *>(ancestor_id_col_untyped))
 		{
@@ -2358,7 +2358,7 @@ private:
 			const auto size = child_id_col->size();
 			data.resize(size);
 
-			dictionary->isIn(child_ids, ancestor_id, data);
+			dictionary->isInVectorConstant(child_ids, ancestor_id, data);
 		}
 		else
 		{
@@ -2372,8 +2372,8 @@ private:
 	}
 
 	template <typename DictionaryType>
-	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
-		const ColumnConst<UInt64> * const child_id_col, const IColumn * const ancestor_id_col_untyped)
+	bool execute(Block & block, const size_t result, const DictionaryType * dictionary,
+		const ColumnConst<UInt64> * child_id_col, const IColumn * ancestor_id_col_untyped)
 	{
 		if (const auto ancestor_id_col = typeid_cast<const ColumnUInt64 *>(ancestor_id_col_untyped))
 		{
@@ -2386,12 +2386,15 @@ private:
 			const auto size = child_id_col->size();
 			data.resize(size);
 
-			dictionary->isIn(child_id, ancestor_ids, data);
+			dictionary->isInConstantVector(child_id, ancestor_ids, data);
 		}
 		else if (const auto ancestor_id_col = typeid_cast<const ColumnConst<UInt64> *>(ancestor_id_col_untyped))
 		{
+			const auto child_id = child_id_col->getData();
+			const auto ancestor_id = ancestor_id_col->getData();
 			UInt8 res = 0;
-			dictionary->isIn(child_id_col->getData(), ancestor_id_col->getData(), res);
+
+			dictionary->isInConstantConstant(child_id, ancestor_id, res);
 
 			block.getByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(
 				child_id_col->size(), res);

@@ -84,7 +84,7 @@ void HashedDictionary::isInImpl(
 	query_count.fetch_add(rows, std::memory_order_relaxed);
 }
 
-void HashedDictionary::isIn(
+void HashedDictionary::isInVectorVector(
 	const PaddedPODArray<Key> & child_ids,
 	const PaddedPODArray<Key> & ancestor_ids,
 	PaddedPODArray<UInt8> & out) const
@@ -92,7 +92,7 @@ void HashedDictionary::isIn(
 	isInImpl(child_ids, ancestor_ids, out);
 }
 
-void HashedDictionary::isIn(
+void HashedDictionary::isInVectorConstant(
 	const PaddedPODArray<Key> & child_ids,
 	const Key ancestor_id,
 	PaddedPODArray<UInt8> & out) const
@@ -100,7 +100,7 @@ void HashedDictionary::isIn(
 	isInImpl(child_ids, ancestor_id, out);
 }
 
-void HashedDictionary::isIn(
+void HashedDictionary::isInConstantVector(
 	const Key child_id,
 	const PaddedPODArray<Key> & ancestor_ids,
 	PaddedPODArray<UInt8> & out) const

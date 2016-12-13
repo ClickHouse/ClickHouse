@@ -87,7 +87,7 @@ void FlatDictionary::isInImpl(
 }
 
 
-void FlatDictionary::isIn(
+void FlatDictionary::isInVectorVector(
 	const PaddedPODArray<Key> & child_ids,
 	const PaddedPODArray<Key> & ancestor_ids,
 	PaddedPODArray<UInt8> & out) const
@@ -95,7 +95,7 @@ void FlatDictionary::isIn(
 	isInImpl(child_ids, ancestor_ids, out);
 }
 
-void FlatDictionary::isIn(
+void FlatDictionary::isInVectorConstant(
 	const PaddedPODArray<Key> & child_ids,
 	const Key ancestor_id,
 	PaddedPODArray<UInt8> & out) const
@@ -103,7 +103,7 @@ void FlatDictionary::isIn(
 	isInImpl(child_ids, ancestor_id, out);
 }
 
-void FlatDictionary::isIn(
+void FlatDictionary::isInConstantVector(
 	const Key child_id,
 	const PaddedPODArray<Key> & ancestor_ids,
 	PaddedPODArray<UInt8> & out) const

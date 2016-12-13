@@ -54,6 +54,22 @@ void CacheDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<K
 }
 
 
+/*void CacheDictionary::isIn(
+	const PaddedPODArray<Key> & child_ids,
+	const PaddedPODArray<Key> & ancestor_ids,
+	PaddedPODArray<UInt8> & out) const
+{
+	memset(out.data(), 0, out.size() * sizeof(out[0]));
+
+	const PaddedPODArray<Key> * current_child_ids = &child_ids;
+	PaddedPODArray<Key> child_ids_buffer;
+	PaddedPODArray<Key> parents(out.size());
+
+	toParent(*current_child_ids, parents);
+	for (size_t i = 0,)
+}*/
+
+
 #define DECLARE(TYPE)\
 void CacheDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const\
 {\
