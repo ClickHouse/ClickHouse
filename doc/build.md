@@ -81,8 +81,8 @@ git clone -b stable git@github.com:yandex/ClickHouse.git
 cd ClickHouse
 ```
 
-For development, switch to `master` branch.
-For latest release candidate, switch to `testing` branch.
+For development, switch to the `master` branch.
+For latest release candidate, switch to the `testing` branch.
 
 # Build ClickHouse
 
@@ -96,7 +96,7 @@ sudo apt-get install devscripts dupload fakeroot debhelper
 
 ### Install recent version of clang.
 
-Clang is embedded into ClickHouse package and used at runtime. Minimal version is 3.8.0. It is optional.
+Clang is embedded into ClickHouse package and used at runtime. Minimum version is 3.8.0. It is optional.
 
 There are two variants:
 #### 1. Build clang from sources.
