@@ -3599,11 +3599,16 @@ The TabSeparated format supports outputting total values (when using WITH TOTALS
 2014-03-23      1406958
 %%
 
+It's also available as %%TSV%%.
+
+
 ==TabSeparatedWithNames==
 
 Differs from the TabSeparated format in that the column names are output in the first row.
 For parsing, the first row is completely ignored. You can&#39;t use column names to determine their position or to check their correctness.
 (Support for using header while parsing could be added in future.)
+
+It's also available as %%TSVWithNames%%.
 
 
 ==TabSeparatedWithNamesAndTypes==
@@ -3611,11 +3616,14 @@ For parsing, the first row is completely ignored. You can&#39;t use column names
 Differs from the TabSeparated format in that the column names are output to the first row, while the column types are in the second row.
 For parsing, the first and second rows are completely ignored.
 
+It's also available as %%TSVWithNamesAndTypes%%.
 
 ==TabSeparatedRaw==
 
 Differs from the TabSeparated format in that the rows are formatted without escaping.
 This format is only appropriate for outputting a query result, but not for parsing data to insert into a table.
+
+It's also available as %%TSVRaw%%.
 
 
 ==BlockTabSeparated==
