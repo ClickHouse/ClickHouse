@@ -4581,7 +4581,22 @@ Converts a String type argument to a FixedString(N) type (a string with fixed le
 
 ===toStringCutToZero(s)===
 
-Accepts a String or FixedString argument. Returns a String and removes the null bytes from the end of the string.
+Accepts a String or FixedString argument. Returns a String that is cut to a first null byte occurrence.
+
+Example:
+%%
+:) SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
+
+┌─s─────────────┬─s_cut─┐
+│ foo\0\0\0\0\0 │ foo   │
+└───────────────┴───────┘
+
+:) SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
+
+┌─s──────────┬─s_cut─┐
+│ foo\0bar\0 │ foo   │
+└────────────┴───────┘
+%%
 
 ===reinterpretAsUInt8, reinterpretAsUInt16, reinterpretAsUInt32, reinterpretAsUInt64===
 ===reinterpretAsInt8, reinterpretAsInt16, reinterpretAsInt32, reinterpretAsInt64===
