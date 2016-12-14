@@ -4637,7 +4637,22 @@ SELECT
 
 ===toStringCutToZero(s)===
 
-Принимает аргумент типа String или FixedString. Возвращает String, удаляя нулевые байты с конца строки.
+Принимает аргумент типа String или FixedString. Возвращает String, вырезая содержимое строки до первого найденного нулевого байта.
+
+Пример:
+%%
+:) SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
+
+┌─s─────────────┬─s_cut─┐
+│ foo\0\0\0\0\0 │ foo   │
+└───────────────┴───────┘
+
+:) SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
+
+┌─s──────────┬─s_cut─┐
+│ foo\0bar\0 │ foo   │
+└────────────┴───────┘
+%%
 
 ===reinterpretAsUInt8, reinterpretAsUInt16, reinterpretAsUInt32, reinterpretAsUInt64===
 ===reinterpretAsInt8, reinterpretAsInt16, reinterpretAsInt32, reinterpretAsInt64===
