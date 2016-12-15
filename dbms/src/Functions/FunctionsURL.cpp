@@ -5,12 +5,13 @@
 namespace DB
 {
 
-template <typename T>
-static void decodeUrl(const StringView & url, T & dest, size_t & offset)
+/// We assume that size of the buf isn't less than url.size().
+static size_t decodeUrl(const StringView & url, char* dst)
 {
 	const char* p = url.data();
 	const char* st = url.data();
-	const char* end = url.data() + url.size();
+	const char* const end = url.data() + url.size();
+	char* buf = dst;
 
 	for (; p < end; ++p)
 	{
@@ -24,15 +25,11 @@ static void decodeUrl(const StringView & url, T & dest, size_t & offset)
 		{
 			unsigned char digit = (h << 4) + l;
 
-			if (digit < 127) {
-				dest.resize(dest.size() + p - st + 1);
-				memcpy(&dest[offset], st, p - st);
-				offset += p - st;
-				dest[offset] = digit;
-				offset++;
-
-				st = p + 3;
-			}
+			memcpy(buf, st, p - st);
+			buf += p - st;
+			*buf = digit;
+			++buf;
+			st = p + 3;
 		}
 
 		p += 2;
@@ -40,17 +37,16 @@ static void decodeUrl(const StringView & url, T & dest, size_t & offset)
 
 	if (st == url.data())
 	{
-		dest.resize(dest.size() + url.size() + 1);
-		memcpy(&dest[offset], url.data(), url.size());
-		offset += url.size() + 1;
-		dest[offset - 1] = 0;
+		memcpy(buf, url.data(), url.size());
+		return url.size();
 	}
 	else if (st < p)
 	{
-		dest.resize(dest.size() + p - st);
-		memcpy(&dest[offset], st, p - st);
-		offset += p - st;
+		memcpy(buf, st, p - st);
+		buf += p - st;
 	}
+
+	return buf - dst;
 }
 
 
@@ -90,8 +86,14 @@ void DecodeURLComponentImpl::vector(const ColumnString::Chars_t & data, const Co
 	{
 		const char * current = reinterpret_cast<const char *>(&data[prev_offset]);
 		const StringView url(current, offsets[i] - prev_offset - 1);
+		size_t prev_size = res_data.size();
 
-		decodeUrl(url, res_data, res_offset);
+		res_data.resize(prev_size + url.size() + 1);
+		size_t len = decodeUrl(url, reinterpret_cast<char *>(res_data.data() + res_offset));
+		res_data.resize(prev_size + len);
+		res_offset += len;
+		res_data[res_offset] = 0;
+		res_offset++;
 
 		res_offsets[i] = res_offset;
 		prev_offset = offsets[i];
@@ -102,8 +104,9 @@ void DecodeURLComponentImpl::vector(const ColumnString::Chars_t & data, const Co
 void DecodeURLComponentImpl::constant(const std::string & data,
 	std::string & res_data)
 {
-	size_t offset = 0;
-	decodeUrl(data, res_data, offset);
+	res_data.resize(data.size());
+	size_t len = decodeUrl(data, &res_data[0]);
+	res_data.resize(len);
 }
 
 
