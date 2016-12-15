@@ -3,7 +3,8 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
-#include <DB/Common/URLUtils.h>
+#include <DB/Common/StringUtils.h>
+#include <DB/Common/StringView.h>
 #include <DB/Functions/FunctionsString.h>
 #include <DB/Functions/FunctionsStringSearch.h>
 #include <DB/Functions/FunctionsStringArray.h>
@@ -58,24 +59,70 @@ namespace DB
 
 using Pos = const char *;
 
+
+/// Extracts scheme from given url.
+inline StringView getUrlScheme(const StringView & url)
+{
+	// scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+	const char* p = url.data();
+	const char* end = url.data() + url.size();
+
+	if (isAlphaASCII(*p))
+	{
+		for (++p; p < end; ++p)
+		{
+			if (!(isAlphaNumericASCII(*p) || *p == '+' || *p == '-' || *p == '.'))
+			{
+				break;
+			}
+		}
+
+		return StringView(url.data(), p - url.data());
+	}
+
+	return StringView();
+}
+
+
+/// Extracts host from given url.
+inline StringView getUrlHost(const StringView & url)
+{
+	StringView scheme = getUrlScheme(url);
+	const char* p = url.data() + scheme.size();
+	const char* end = url.data() + url.size();
+
+	// Colon must follows after scheme.
+	if (p == end || *p != ':')
+		return StringView();
+	// Authority component must starts with "//".
+	if (end - p < 2 || (p[1] != '/' || p[2] != '/'))
+		return StringView();
+	else
+		p += 3;
+
+	const char* st = p;
+
+	for (; p < end; ++p)
+	{
+		if (*p == '@')
+		{
+			st = p + 1;
+		}
+		else if (*p == ':' || *p == '/' || *p == '?' || *p == '#')
+		{
+			break;
+		}
+	}
+
+	return (p == st) ? StringView() : StringView(st, p - st);
+}
+
+
 struct ExtractProtocol
 {
-	static size_t getReserveLengthForElement() { return makeStringView("https").size() + 1; }
+	static size_t getReserveLengthForElement();
 
-	static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
-	{
-		res_data = data;
-		res_size = 0;
-
-		StringView scheme = getUrlScheme(StringView(data, size));
-		Pos pos = data + scheme.size();
-
-		if (scheme.empty() || (data + size) - pos < 4)
-			return;
-
-		if (pos[0] == ':')
-			res_size = pos - data;
-	}
+	static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size);
 };
 
 template <bool without_www>
@@ -971,44 +1018,17 @@ struct CutSubstringImpl
 };
 
 
+/// Percent decode of url data.
 struct DecodeURLComponentImpl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
-	{
-		res_data.reserve(data.size());
-		size_t size = offsets.size();
-		res_offsets.resize(size);
-
-		size_t prev_offset = 0;
-		size_t res_offset = 0;
-
-		for (size_t i = 0; i < size; ++i)
-		{
-			const char * current = reinterpret_cast<const char *>(&data[prev_offset]);
-			std::string url(decodeUrl(StringView(current, offsets[i] - prev_offset - 1)));
-
-			res_data.resize(res_data.size() + url.size() + 1);
-			memcpy(&res_data[res_offset], url.data(), url.size());
-			res_offset += url.size() + 1;
-			res_data[res_offset - 1] = 0;
-
-			res_offsets[i] = res_offset;
-			prev_offset = offsets[i];
-		}
-	}
+		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets);
 
 	static void constant(const std::string & data,
-		std::string & res_data)
-	{
-		res_data = decodeUrl(data);
-	}
+		std::string & res_data);
 
 	static void vector_fixed(const ColumnString::Chars_t & data, size_t n,
-		ColumnString::Chars_t & res_data)
-	{
-		throw Exception("Column of type FixedString is not supported by URL functions", ErrorCodes::ILLEGAL_COLUMN);
-	}
+		ColumnString::Chars_t & res_data);
 };
 
 
