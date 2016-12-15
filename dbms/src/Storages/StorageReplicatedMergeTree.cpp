@@ -1632,6 +1632,21 @@ bool StorageReplicatedMergeTree::canMergeParts(
 			return false;
 	}
 
+	/// Won't merge last_part even if quorum is satisfied, because we gonna check if replica has this part
+	/// on SELECT execution.
+	String quorum_last_part;
+	if (zookeeper->tryGet(zookeeper_path + "/quorum/last_part", quorum_last_part) && quorum_last_part.empty() == false)
+	{
+		ActiveDataPartSet::Part part_info;
+		ActiveDataPartSet::parsePartName(quorum_last_part, part_info);
+
+		if (part_info.left != part_info.right)
+			throw Exception("Logical error: part written with quorum covers more than one block numbers", ErrorCodes::LOGICAL_ERROR);
+
+		if (left->right <= part_info.left && right->left >= part_info.right)
+			return false;
+	}
+
 	/// Можно слить куски, если все номера между ними заброшены - не соответствуют никаким блокам.
 	for (Int64 number = left->right + 1; number <= right->left - 1; ++number)
 	{
