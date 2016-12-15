@@ -6,52 +6,56 @@
 namespace DB
 {
 
-/// We assume that size of the buf isn't less than url.size().
-static size_t decodeURL(const StringView & url, char * dst)
+/// We assume that size of the dst buf isn't less than src_size.
+static size_t decodeURL(const char * src, size_t src_size, char * dst)
 {
-	const char * p = url.data();
-	const char * st = url.data();
-	const char * const end = url.data() + url.size();
-	char * buf = dst;
+	const char * src_prev_pos = src;
+	const char * src_curr_pos = src;
+	const char * const src_end = src + src_size;
+	char * dst_pos = dst;
 
 	while (true)
 	{
-		p = find_first_symbols<'%'>(p, end);
+		src_curr_pos = find_first_symbols<'%'>(src_curr_pos, src_end);
 
-		if (p == end)
+		if (src_curr_pos == src_end)
 			break;
-		else if (end - p < 3)
+		else if (src_end - src_curr_pos < 3)
 		{
-			p = end;
+			src_curr_pos = src_end;
 			break;
 		}
 		else
 		{
-			unsigned char h = char_to_digit_table[static_cast<unsigned char>(p[1])];
-			unsigned char l = char_to_digit_table[static_cast<unsigned char>(p[2])];
+			unsigned char high = char_to_digit_table[static_cast<unsigned char>(src_curr_pos[1])];
+			unsigned char low = char_to_digit_table[static_cast<unsigned char>(src_curr_pos[2])];
 
-			if (h != 0xFF && l != 0xFF)
+			if (high != 0xFF && low != 0xFF)
 			{
-				unsigned char digit = (h << 4) + l;
+				unsigned char octet = (high << 4) + low;
 
-				memcpy(buf, st, p - st);
-				buf += p - st;
-				*buf = digit;
-				++buf;
-				st = p + 3;
+				size_t bytes_to_copy = src_curr_pos - src_prev_pos;
+				memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
+				dst_pos += bytes_to_copy;
+
+				*dst_pos = octet;
+				++dst_pos;
+
+				src_prev_pos = src_curr_pos + 3;
 			}
 
-			p = p + 3;
+			src_curr_pos += 3;
 		}
 	}
 
-	if (st < p)
+	if (src_prev_pos < src_curr_pos)
 	{
-		memcpy(buf, st, p - st);
-		buf += p - st;
+		size_t bytes_to_copy = src_curr_pos - src_prev_pos;
+		memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
+		dst_pos += bytes_to_copy;
 	}
 
-	return buf - dst;
+	return dst_pos - dst;
 }
 
 
@@ -80,7 +84,7 @@ void ExtractProtocol::execute(Pos data, size_t size, Pos & res_data, size_t & re
 void DecodeURLComponentImpl::vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 	ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 {
-	res_data.reserve(data.size());
+	res_data.resize(data.size());
 	size_t size = offsets.size();
 	res_offsets.resize(size);
 
@@ -89,28 +93,24 @@ void DecodeURLComponentImpl::vector(const ColumnString::Chars_t & data, const Co
 
 	for (size_t i = 0; i < size; ++i)
 	{
-		const char * current = reinterpret_cast<const char *>(&data[prev_offset]);
-		const StringView url(current, offsets[i] - prev_offset - 1);
-		size_t prev_size = res_data.size();
+		const char * src_data = reinterpret_cast<const char *>(&data[prev_offset]);
+		size_t src_size = offsets[i] - prev_offset;
+		size_t dst_size = decodeURL(src_data, src_size, reinterpret_cast<char *>(res_data.data() + res_offset));
 
-		res_data.resize(prev_size + url.size() + 1);
-		size_t len = decodeURL(url, reinterpret_cast<char *>(res_data.data() + res_offset));
-		res_data.resize(prev_size + len);
-		res_offset += len;
-		res_data[res_offset] = 0;
-		res_offset++;
-
+		res_offset += dst_size;
 		res_offsets[i] = res_offset;
 		prev_offset = offsets[i];
 	}
+
+	res_data.resize(res_offset);
 }
 
 
-void DecodeURLComponentImpl::constant(const std::string & data,
+void DecodeURLComponentImpl::constant(const std::string & str,
 	std::string & res_data)
 {
-	res_data.resize(data.size());
-	size_t len = decodeURL(data, &res_data[0]);
+	res_data.resize(str.size());
+	size_t len = decodeURL(str.data(), str.size(), &res_data[0]);
 	res_data.resize(len);
 }
 
