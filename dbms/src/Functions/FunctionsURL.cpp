@@ -5,7 +5,6 @@
 namespace DB
 {
 
-<<<<<<< HEAD
 /// We assume that size of the buf isn't less than url.size().
 static size_t decodeUrl(const StringView & url, char* dst)
 {
