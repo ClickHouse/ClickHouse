@@ -1,6 +1,7 @@
 #include <DB/Common/hex.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/FunctionsURL.h>
+#include <common/find_first_symbols.h>
 
 namespace DB
 {
@@ -13,34 +14,38 @@ static size_t decodeUrl(const StringView & url, char* dst)
 	const char* const end = url.data() + url.size();
 	char* buf = dst;
 
-	for (; p < end; ++p)
+	while (true)
 	{
-		if (*p != '%' || end - p < 3)
-			continue;
+		p = find_first_symbols<'%'>(p, end);
 
-		unsigned char h = char_to_digit_table[static_cast<unsigned char>(p[1])];
-		unsigned char l = char_to_digit_table[static_cast<unsigned char>(p[2])];
-
-		if (h != 0xFF && l != 0xFF)
+		if (p == end)
+			break;
+		else if (end - p < 3)
 		{
-			unsigned char digit = (h << 4) + l;
-
-			memcpy(buf, st, p - st);
-			buf += p - st;
-			*buf = digit;
-			++buf;
-			st = p + 3;
+			p = end;
+			break;
 		}
+		else
+		{
+			unsigned char h = char_to_digit_table[static_cast<unsigned char>(p[1])];
+			unsigned char l = char_to_digit_table[static_cast<unsigned char>(p[2])];
 
-		p += 2;
+			if (h != 0xFF && l != 0xFF)
+			{
+				unsigned char digit = (h << 4) + l;
+
+				memcpy(buf, st, p - st);
+				buf += p - st;
+				*buf = digit;
+				++buf;
+				st = p + 3;
+			}
+
+			p = p + 3;
+		}
 	}
 
-	if (st == url.data())
-	{
-		memcpy(buf, url.data(), url.size());
-		return url.size();
-	}
-	else if (st < p)
+	if (st < p)
 	{
 		memcpy(buf, st, p - st);
 		buf += p - st;
