@@ -64,8 +64,8 @@ using Pos = const char *;
 inline StringView getURLScheme(const StringView & url)
 {
 	// scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
-	const char* p = url.data();
-	const char* end = url.data() + url.size();
+	const char * p = url.data();
+	const char * end = url.data() + url.size();
 
 	if (isAlphaASCII(*p))
 	{
@@ -88,8 +88,8 @@ inline StringView getURLScheme(const StringView & url)
 inline StringView getURLHost(const StringView & url)
 {
 	StringView scheme = getURLScheme(url);
-	const char* p = url.data() + scheme.size();
-	const char* end = url.data() + url.size();
+	const char * p = url.data() + scheme.size();
+	const char * end = url.data() + url.size();
 
 	// Colon must follows after scheme.
 	if (p == end || *p != ':')
@@ -100,7 +100,7 @@ inline StringView getURLHost(const StringView & url)
 	else
 		p += 3;
 
-	const char* st = p;
+	const char * st = p;
 
 	for (; p < end; ++p)
 	{
