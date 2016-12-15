@@ -109,9 +109,13 @@ void DecodeURLComponentImpl::vector(const ColumnString::Chars_t & data, const Co
 void DecodeURLComponentImpl::constant(const std::string & str,
 	std::string & res_data)
 {
-	res_data.resize(str.size() + 15);	/// This is needed for memcpySmallAllowReadWriteOverflow15 function, that is used inside decodeURL.
-	size_t len = decodeURL(str.data(), str.size(), &res_data[0]);
-	res_data.resize(len);
+	ColumnString src;
+	ColumnString dst;
+	src.insert(str);
+
+	vector(src.getChars(), src.getOffsets(), dst.getChars(), dst.getOffsets());
+
+	res_data = dst[0].get<String>();
 }
 
 
