@@ -1,3 +1,4 @@
+#include <DB/Common/hex.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/FunctionsURL.h>
 #include <common/find_first_symbols.h>
@@ -6,12 +7,12 @@ namespace DB
 {
 
 /// We assume that size of the buf isn't less than url.size().
-static size_t decodeUrl(const StringView & url, char* dst)
+static size_t decodeURL(const StringView & url, char * dst)
 {
-	const char* p = url.data();
-	const char* st = url.data();
-	const char* const end = url.data() + url.size();
-	char* buf = dst;
+	const char * p = url.data();
+	const char * st = url.data();
+	const char * const end = url.data() + url.size();
+	char * buf = dst;
 
 	while (true)
 	{
@@ -93,7 +94,7 @@ void DecodeURLComponentImpl::vector(const ColumnString::Chars_t & data, const Co
 		size_t prev_size = res_data.size();
 
 		res_data.resize(prev_size + url.size() + 1);
-		size_t len = decodeUrl(url, reinterpret_cast<char *>(res_data.data() + res_offset));
+		size_t len = decodeURL(url, reinterpret_cast<char *>(res_data.data() + res_offset));
 		res_data.resize(prev_size + len);
 		res_offset += len;
 		res_data[res_offset] = 0;
@@ -109,7 +110,7 @@ void DecodeURLComponentImpl::constant(const std::string & data,
 	std::string & res_data)
 {
 	res_data.resize(data.size());
-	size_t len = decodeUrl(data, &res_data[0]);
+	size_t len = decodeURL(data, &res_data[0]);
 	res_data.resize(len);
 }
 
@@ -144,6 +145,7 @@ void registerFunctionsURL(FunctionFactory & factory)
 	factory.registerFunction<FunctionCutFragment>();
 	factory.registerFunction<FunctionCutQueryStringAndFragment>();
 	factory.registerFunction<FunctionCutURLParameter>();
+	factory.registerFunction<FunctionDecodeURLComponent>();
 }
 
 }
