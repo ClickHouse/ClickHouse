@@ -558,7 +558,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 	{
 		case MergeTreeData::MergingParams::Ordinary:
 			merged_stream = std::make_unique<MergingSortedBlockInputStream>(
-				src_streams, sort_desc, DEFAULT_MERGE_BLOCK_SIZE, 0, merged_rows_sources_ptr);
+				src_streams, sort_desc, DEFAULT_MERGE_BLOCK_SIZE, 0, merged_rows_sources_ptr, true);
 			break;
 
 		case MergeTreeData::MergingParams::Collapsing:
@@ -665,7 +665,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 			{
 				String part_path = data.getFullPath() + parts[part_num]->name + '/';
 
-				/// TODO: test perfomance with more accurate settings
 				auto column_part_stream = std::make_shared<MergeTreeBlockInputStream>(
 					part_path, DEFAULT_MERGE_BLOCK_SIZE, column_name_, data, parts[part_num],
 					MarkRanges(1, MarkRange(0, parts[part_num]->size)), false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE,
@@ -677,8 +676,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 				column_part_streams[part_num] = std::move(column_part_stream);
 			}
 
-			ColumnGathererStream column_gathered_stream(column_part_streams, column_name, merged_rows_sources, DEFAULT_BLOCK_SIZE);
-			MergedColumnOnlyOutputStream column_to(data, new_part_tmp_path, true, compression_method, offset_written);
+			/// Block size should match with block size of column_part_stream to enable fast gathering via copying of column pointer
+			ColumnGathererStream column_gathered_stream(column_part_streams, column_name, merged_rows_sources, DEFAULT_MERGE_BLOCK_SIZE);
+			MergedColumnOnlyOutputStream column_to(data, new_part_tmp_path, false, compression_method, offset_written);
 
 			column_to.writePrefix();
 			while ((block = column_gathered_stream.read()))
@@ -700,13 +700,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 		}
 	}
 
-	/// Print overall profiling info
+	/// Print overall profiling info. NOTE: it may duplicates previous messages
 	{
 		double elapsed_seconds = merge_entry->watch.elapsedSeconds();
 		LOG_DEBUG(log, std::fixed << std::setprecision(2)
 			<< "Merge sorted " << merge_entry->rows_read << " rows"
 			<< ", containing " << all_column_names.size() << " columns"
-			<< " (" << merging_column_names.size() << " were merged, " << gathering_column_names.size() << " were gathered)"
+			<< " (" << merging_column_names.size() << " merged, " << gathering_column_names.size() << " gathered)"
 			<< " in " << elapsed_seconds << " sec., "
 			<< merge_entry->rows_read / elapsed_seconds << " rows/sec., "
 			<< merge_entry->bytes_read_uncompressed / 1000000.0 / elapsed_seconds << " MiB/sec.");

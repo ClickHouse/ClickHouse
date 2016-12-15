@@ -58,7 +58,7 @@ class ColumnGathererStream : public IProfilingBlockInputStream
 {
 public:
 	ColumnGathererStream(const BlockInputStreams & source_streams, const String & column_name_,
-						 const MergedRowSources & pos_to_source_idx_, size_t block_size_ = DEFAULT_BLOCK_SIZE);
+						 const MergedRowSources & row_source_, size_t block_size_ = DEFAULT_MERGE_BLOCK_SIZE);
 
 	String getName() const override { return "ColumnGatherer"; }
 
@@ -72,7 +72,7 @@ private:
 
 	String name;
 	ColumnWithTypeAndName column;
-	const MergedRowSources & pos_to_source_idx;
+	const MergedRowSources & row_source;
 
 	/// Cache required fileds
 	struct Source
@@ -97,7 +97,7 @@ private:
 
 	std::vector<Source> sources;
 
-	size_t pos_global = 0;
+	size_t pos_global_start = 0;
 	size_t block_size;
 
 	Logger * log = &Logger::get("ColumnGathererStream");
