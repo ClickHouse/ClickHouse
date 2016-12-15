@@ -65,7 +65,7 @@ void ExtractProtocol::execute(Pos data, size_t size, Pos & res_data, size_t & re
 	res_data = data;
 	res_size = 0;
 
-	StringView scheme = getUrlScheme(StringView(data, size));
+	StringView scheme = getURLScheme(StringView(data, size));
 	Pos pos = data + scheme.size();
 
 	if (scheme.empty() || (data + size) - pos < 4)

@@ -61,7 +61,7 @@ using Pos = const char *;
 
 
 /// Extracts scheme from given url.
-inline StringView getUrlScheme(const StringView & url)
+inline StringView getURLScheme(const StringView & url)
 {
 	// scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
 	const char* p = url.data();
@@ -85,9 +85,9 @@ inline StringView getUrlScheme(const StringView & url)
 
 
 /// Extracts host from given url.
-inline StringView getUrlHost(const StringView & url)
+inline StringView getURLHost(const StringView & url)
 {
-	StringView scheme = getUrlScheme(url);
+	StringView scheme = getURLScheme(url);
 	const char* p = url.data() + scheme.size();
 	const char* end = url.data() + url.size();
 
@@ -132,7 +132,7 @@ struct ExtractDomain
 
 	static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
 	{
-		StringView host = getUrlHost(StringView(data, size));
+		StringView host = getURLHost(StringView(data, size));
 
 		if (host.empty())
 		{
@@ -244,7 +244,7 @@ struct ExtractTopLevelDomain
 
 	static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
 	{
-		StringView host = getUrlHost(StringView(data, size));
+		StringView host = getURLHost(StringView(data, size));
 
 		res_data = data;
 		res_size = 0;
