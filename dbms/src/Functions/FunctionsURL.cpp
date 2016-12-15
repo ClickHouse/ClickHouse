@@ -1,4 +1,3 @@
-#include <DB/Common/hex.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/FunctionsURL.h>
 #include <common/find_first_symbols.h>
@@ -6,6 +5,7 @@
 namespace DB
 {
 
+<<<<<<< HEAD
 /// We assume that size of the buf isn't less than url.size().
 static size_t decodeUrl(const StringView & url, char* dst)
 {
@@ -145,7 +145,6 @@ void registerFunctionsURL(FunctionFactory & factory)
 	factory.registerFunction<FunctionCutFragment>();
 	factory.registerFunction<FunctionCutQueryStringAndFragment>();
 	factory.registerFunction<FunctionCutURLParameter>();
-	factory.registerFunction<FunctionDecodeURLComponent>();
 }
 
 }
