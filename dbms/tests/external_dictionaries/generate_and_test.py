@@ -38,6 +38,8 @@ SERVER_DIED = False
 prefix = base_dir = os.path.dirname(os.path.realpath(__file__))
 generated_prefix = prefix + '/generated/'
 
+clickhouse_port = '9001'
+
 
 # [ name, key_type, has_parent ]
 dictionaries = [
@@ -142,7 +144,7 @@ def generate_data(args):
 
     print 'Creating ClickHouse table'
     # create ClickHouse table via insert select
-    system('cat {source} | {ch} -m -n --query "'
+    system('cat {source} | {ch} --port={port} -m -n --query "'
               'create database if not exists test;'
               'drop table if exists test.dictionary_source;'
               'create table test.dictionary_source ('
@@ -153,14 +155,14 @@ def generate_data(args):
                     'String_ String,'
                     'Date_ Date, DateTime_ DateTime, Parent UInt64'
               ') engine=Log; insert into test.dictionary_source format TabSeparated'
-              '"'.format(source=args.source,ch=args.client))
+              '"'.format(source = args.source, ch = args.client, port = clickhouse_port))
 
     # generate 3 files with different key types
     print 'Creating .tsv files'
     file_source_query = 'select %s from test.dictionary_source format TabSeparated;'
     for file, keys in zip(files, key_columns):
         query = file_source_query % comma_separated(chain(keys, columns(), [ 'Parent' ] if 1 == len(keys) else []))
-        call([ args.client, '--query', query ], 'generated/' + file)
+        call([ args.client, '--port', clickhouse_port, '--query', query ], 'generated/' + file)
 
     # create MySQL table from complete_query
     print 'Creating MySQL table'
@@ -181,6 +183,8 @@ def generate_data(args):
     print 'Creating MongoDB collection'
     table_rows = json.loads(subprocess.check_output([
         args.client,
+        '--port',
+        clickhouse_port,
         '--query',
         "select * from test.dictionary_source where not ignore(" \
             "concat('new Date(\\'', toString(Date_), '\\')') as Date_, " \
@@ -247,16 +251,18 @@ def generate_dictionaries(args):
         <format>TabSeparated</format>
     </file>
     '''
+
     source_clickhouse = '''
     <clickhouse>
         <host>127.0.0.1</host>
-        <port>9000</port>
+        <port>%s</port>
         <user>default</user>
         <password></password>
         <db>test</db>
         <table>dictionary_source</table>
     </clickhouse>
-    '''
+    ''' % clickhouse_port
+
     source_mysql = '''
     <mysql>
         <host>127.0.0.1</host>
@@ -267,6 +273,7 @@ def generate_dictionaries(args):
         <table>dictionary_source</table>
     </mysql>
     '''
+
     source_mongodb = '''
     <mongodb>
         <host>127.0.0.1</host>
@@ -391,7 +398,7 @@ def run_tests(args):
         stdout_file = os.path.join(args.reference, reference) + '.stdout'
         stderr_file = os.path.join(args.reference, reference) + '.stderr'
 
-        command = '{ch} --query "{query}" > {stdout_file}  2> {stderr_file}'.format(ch=args.client, query=query, stdout_file=stdout_file, stderr_file=stderr_file)
+        command = '{ch} --port {port} --query "{query}" > {stdout_file}  2> {stderr_file}'.format(ch = args.client, port = clickhouse_port, query = query, stdout_file = stdout_file, stderr_file = stderr_file)
         proc = Popen(command, shell = True)
         start_time = datetime.now()
         while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
