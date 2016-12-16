@@ -38,8 +38,6 @@ SERVER_DIED = False
 prefix = base_dir = os.path.dirname(os.path.realpath(__file__))
 generated_prefix = prefix + '/generated/'
 
-clickhouse_port = '9001'
-
 
 # [ name, key_type, has_parent ]
 dictionaries = [
@@ -155,14 +153,14 @@ def generate_data(args):
                     'String_ String,'
                     'Date_ Date, DateTime_ DateTime, Parent UInt64'
               ') engine=Log; insert into test.dictionary_source format TabSeparated'
-              '"'.format(source = args.source, ch = args.client, port = clickhouse_port))
+              '"'.format(source = args.source, ch = args.client, port = args.port))
 
     # generate 3 files with different key types
     print 'Creating .tsv files'
     file_source_query = 'select %s from test.dictionary_source format TabSeparated;'
     for file, keys in zip(files, key_columns):
         query = file_source_query % comma_separated(chain(keys, columns(), [ 'Parent' ] if 1 == len(keys) else []))
-        call([ args.client, '--port', clickhouse_port, '--query', query ], 'generated/' + file)
+        call([ args.client, '--port', args.port, '--query', query ], 'generated/' + file)
 
     # create MySQL table from complete_query
     print 'Creating MySQL table'
@@ -184,7 +182,7 @@ def generate_data(args):
     table_rows = json.loads(subprocess.check_output([
         args.client,
         '--port',
-        clickhouse_port,
+        args.port,
         '--query',
         "select * from test.dictionary_source where not ignore(" \
             "concat('new Date(\\'', toString(Date_), '\\')') as Date_, " \
@@ -261,7 +259,7 @@ def generate_dictionaries(args):
         <db>test</db>
         <table>dictionary_source</table>
     </clickhouse>
-    ''' % clickhouse_port
+    ''' % args.port
 
     source_mysql = '''
     <mysql>
@@ -398,7 +396,7 @@ def run_tests(args):
         stdout_file = os.path.join(args.reference, reference) + '.stdout'
         stderr_file = os.path.join(args.reference, reference) + '.stderr'
 
-        command = '{ch} --port {port} --query "{query}" > {stdout_file}  2> {stderr_file}'.format(ch = args.client, port = clickhouse_port, query = query, stdout_file = stdout_file, stderr_file = stderr_file)
+        command = '{ch} --port {port} --query "{query}" > {stdout_file}  2> {stderr_file}'.format(ch = args.client, port = args.port, query = query, stdout_file = stdout_file, stderr_file = stderr_file)
         proc = Popen(command, shell = True)
         start_time = datetime.now()
         while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
@@ -538,6 +536,7 @@ if __name__ == '__main__':
     parser.add_argument('-g', '--generated', default = 'generated', help = 'Path to directory with generated data')
     parser.add_argument('-r', '--reference', default = 'reference', help = 'Path to directory with reference data')
     parser.add_argument('-c', '--client', default = 'clickhouse-client', help = 'Client program')
+    parser.add_argument('-p', '--port', default = 9001, help = 'ClickHouse port')
     parser.add_argument('-o', '--output', default = 'output', help = 'Output xUnit compliant test report directory')
     parser.add_argument('-t', '--timeout', type = int, default = 10, help = 'Timeout for each test case in seconds')
 
