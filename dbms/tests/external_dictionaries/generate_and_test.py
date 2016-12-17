@@ -536,7 +536,7 @@ if __name__ == '__main__':
     parser.add_argument('-g', '--generated', default = 'generated', help = 'Path to directory with generated data')
     parser.add_argument('-r', '--reference', default = 'reference', help = 'Path to directory with reference data')
     parser.add_argument('-c', '--client', default = 'clickhouse-client', help = 'Client program')
-    parser.add_argument('-p', '--port', default = 9001, help = 'ClickHouse port')
+    parser.add_argument('-p', '--port', default = '9001', help = 'ClickHouse port')
     parser.add_argument('-o', '--output', default = 'output', help = 'Output xUnit compliant test report directory')
     parser.add_argument('-t', '--timeout', type = int, default = 10, help = 'Timeout for each test case in seconds')
 
