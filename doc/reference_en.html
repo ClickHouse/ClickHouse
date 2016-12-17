@@ -5353,7 +5353,7 @@ SipHash is a cryptographic hash function. It works at least three times faster t
 ===sipHash128===
 Calculates SipHash from a string.
 Accepts a String-type argument. Returns FixedString(16).
-Differs from sipHash64 in that the final xor-folding state is only done up to 128 bytes.
+Differs from sipHash64 in that the final xor-folding state is only done up to 128 bits.
 
 ===cityHash64===
 Calculates CityHash64 from a string or a similar hash function for any number of any type of arguments.
@@ -5975,7 +5975,7 @@ Returns an incremental row number within all blocks that were processed by this 
 Calculates the difference between consecutive values in the data block.
 Result of the function depends on the order of the data in the blocks.
 
-It works only inside of the each processed block of data. Data splitting in the blocks is not explicitly controlled by the user. 
+It works only inside of the each processed block of data. Data splitting in the blocks is not explicitly controlled by the user.
 If you specify ORDER BY in subquery and call runningDifference outside of it, you could get an expected result.
 
 Example:
