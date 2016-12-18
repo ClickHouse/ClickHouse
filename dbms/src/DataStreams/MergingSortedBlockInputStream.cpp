@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 
-MergingSortedBlockInputStream::MergingSortedBlockInputStream( BlockInputStreams & inputs_, const SortDescription & description_,
+MergingSortedBlockInputStream::MergingSortedBlockInputStream(BlockInputStreams & inputs_, const SortDescription & description_,
 	size_t max_block_size_, size_t limit_, MergedRowSources * out_row_sources_, bool quiet_)
 	: description(description_), max_block_size(max_block_size_), limit(limit_), quiet(quiet_),
 	source_blocks(inputs_.size()), cursors(inputs_.size()), out_row_sources(out_row_sources_)
@@ -351,7 +351,7 @@ void MergingSortedBlockInputStream::readSuffixImpl()
 		<< "Merge sorted " << profile_info.blocks << " blocks, " << profile_info.rows << " rows"
 		<< " in " << seconds << " sec., "
 		<< profile_info.rows / seconds << " rows/sec., "
-		<< profile_info.bytes / 1000000.0 / seconds << " MiB/sec.");
+		<< profile_info.bytes / 1000000.0 / seconds << " MB/sec.");
 }
 
 }

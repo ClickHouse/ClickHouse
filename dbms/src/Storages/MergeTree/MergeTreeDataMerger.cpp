@@ -709,7 +709,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 			<< " (" << merging_column_names.size() << " merged, " << gathering_column_names.size() << " gathered)"
 			<< " in " << elapsed_seconds << " sec., "
 			<< merge_entry->rows_read / elapsed_seconds << " rows/sec., "
-			<< merge_entry->bytes_read_uncompressed / 1000000.0 / elapsed_seconds << " MiB/sec.");
+			<< merge_entry->bytes_read_uncompressed / 1000000.0 / elapsed_seconds << " MB/sec.");
 	}
 
 	new_data_part->columns = all_columns;
