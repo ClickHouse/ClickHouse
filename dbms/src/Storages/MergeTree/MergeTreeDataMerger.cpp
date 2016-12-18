@@ -25,6 +25,7 @@
 
 #include <cmath>
 #include <numeric>
+#include <iomanip>
 
 
 namespace ProfileEvents
@@ -557,7 +558,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 	{
 		case MergeTreeData::MergingParams::Ordinary:
 			merged_stream = std::make_unique<MergingSortedBlockInputStream>(
-				src_streams, sort_desc, DEFAULT_MERGE_BLOCK_SIZE, 0, merged_rows_sources_ptr);
+				src_streams, sort_desc, DEFAULT_MERGE_BLOCK_SIZE, 0, merged_rows_sources_ptr, true);
 			break;
 
 		case MergeTreeData::MergingParams::Collapsing:
@@ -618,19 +619,25 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 		merge_entry->rows_written = merged_stream->getProfileInfo().rows;
 		merge_entry->bytes_written_uncompressed = merged_stream->getProfileInfo().bytes;
 
-		/// This update is unactual for VERTICAL algorithm sicne it requires more accurate per-column updates
 		/// Reservation updates is not performed yet, during the merge it may lead to higher free space requirements
-		if (disk_reservation && merge_alg == MergeAlgorithm::Horizontal)
+		if (disk_reservation)
 		{
-			Float64 relative_rows_written = std::min(1., 1. * rows_written / sum_input_rows_upper_bound);
-			disk_reservation->update(static_cast<size_t>((1. - relative_rows_written) * initial_reservation));
+			/// The same progress from merge_entry could be used for both algorithms (it should be more accurate)
+			/// But now we are using inaccurate row-based estimation in Horizontal case for backward compability
+			Float64 progress = (merge_alg == MergeAlgorithm::Horizontal)
+				? std::min(1., 1. * rows_written / sum_input_rows_upper_bound)
+				: std::min(1., merge_entry->progress);
+
+			disk_reservation->update(static_cast<size_t>((1. - progress) * initial_reservation));
 		}
 	}
+	merged_stream->readSuffix();
+	merged_stream.reset();
 
 	if (isCancelled())
 		throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
-	MergeTreeData::DataPart::Checksums checksums_ordinary_columns;
+	MergeTreeData::DataPart::Checksums checksums_gathered_columns;
 
 	/// Gather ordinary columns
 	if (merge_alg == MergeAlgorithm::Vertical)
@@ -649,18 +656,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 			const String & column_name = it_name_and_type->name;
 			const DataTypePtr & column_type = it_name_and_type->type;
 			const String offset_column_name = DataTypeNested::extractNestedTableName(column_name);
-			Names column_name_(1, column_name);
-			NamesAndTypesList column_name_and_type_(1, *it_name_and_type);
+			Names column_name_{column_name};
+			NamesAndTypesList column_name_and_type_{*it_name_and_type};
 			Float64 progress_before = merge_entry->progress;
 			bool offset_written = offset_columns_written.count(offset_column_name);
-
-			LOG_TRACE(log, "Gathering column " << column_name <<  " " << column_type->getName());
 
 			for (size_t part_num = 0; part_num < parts.size(); ++part_num)
 			{
 				String part_path = data.getFullPath() + parts[part_num]->name + '/';
 
-				/// TODO: test perfomance with more accurate settings
 				auto column_part_stream = std::make_shared<MergeTreeBlockInputStream>(
 					part_path, DEFAULT_MERGE_BLOCK_SIZE, column_name_, data, parts[part_num],
 					MarkRanges(1, MarkRange(0, parts[part_num]->size)), false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE,
@@ -672,16 +676,17 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 				column_part_streams[part_num] = std::move(column_part_stream);
 			}
 
-			ColumnGathererStream column_gathered_stream(column_part_streams, column_name, merged_rows_sources, DEFAULT_BLOCK_SIZE);
-			MergedColumnOnlyOutputStream column_to(data, new_part_tmp_path, true, compression_method, offset_written);
+			/// Block size should match with block size of column_part_stream to enable fast gathering via copying of column pointer
+			ColumnGathererStream column_gathered_stream(column_part_streams, column_name, merged_rows_sources, DEFAULT_MERGE_BLOCK_SIZE);
+			MergedColumnOnlyOutputStream column_to(data, new_part_tmp_path, false, compression_method, offset_written);
 
 			column_to.writePrefix();
 			while ((block = column_gathered_stream.read()))
 			{
 				column_to.write(block);
 			}
-			/// NOTE: nested column contains duplicates checksums (and files)
-			checksums_ordinary_columns.add(column_to.writeSuffixAndGetChecksums());
+			column_gathered_stream.readSuffix();
+			checksums_gathered_columns.add(column_to.writeSuffixAndGetChecksums());
 
 			if (typeid_cast<const DataTypeArray *>(column_type.get()))
 				offset_columns_written.emplace(offset_column_name);
@@ -695,12 +700,23 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 		}
 	}
 
-	merged_stream->readSuffix();
+	/// Print overall profiling info. NOTE: it may duplicates previous messages
+	{
+		double elapsed_seconds = merge_entry->watch.elapsedSeconds();
+		LOG_DEBUG(log, std::fixed << std::setprecision(2)
+			<< "Merge sorted " << merge_entry->rows_read << " rows"
+			<< ", containing " << all_column_names.size() << " columns"
+			<< " (" << merging_column_names.size() << " merged, " << gathering_column_names.size() << " gathered)"
+			<< " in " << elapsed_seconds << " sec., "
+			<< merge_entry->rows_read / elapsed_seconds << " rows/sec., "
+			<< merge_entry->bytes_read_uncompressed / 1000000.0 / elapsed_seconds << " MB/sec.");
+	}
+
 	new_data_part->columns = all_columns;
 	if (merge_alg != MergeAlgorithm::Vertical)
 		new_data_part->checksums = to.writeSuffixAndGetChecksums();
 	else
-		new_data_part->checksums = to.writeSuffixAndGetChecksums(all_columns, &checksums_ordinary_columns);
+		new_data_part->checksums = to.writeSuffixAndGetChecksums(all_columns, &checksums_gathered_columns);
 	new_data_part->index.swap(to.getIndex());
 
 	/// Для удобства, даже CollapsingSortedBlockInputStream не может выдать ноль строк.

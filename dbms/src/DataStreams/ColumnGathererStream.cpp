@@ -1,4 +1,5 @@
 #include <DB/DataStreams/ColumnGathererStream.h>
+#include <iomanip>
 
 namespace DB
 {
@@ -13,8 +14,8 @@ namespace ErrorCodes
 }
 
 ColumnGathererStream::ColumnGathererStream(const BlockInputStreams & source_streams, const String & column_name_,
-										   const MergedRowSources & pos_to_source_idx_, size_t block_size_)
-: name(column_name_), pos_to_source_idx(pos_to_source_idx_), block_size(block_size_)
+										   const MergedRowSources & row_source_, size_t block_size_)
+: name(column_name_), row_source(row_source_), block_size(block_size_)
 {
 	if (source_streams.empty())
 		throw Exception("There are no streams to gather", ErrorCodes::EMPTY_DATA_PASSED);
@@ -63,19 +64,20 @@ Block ColumnGathererStream::readImpl()
 	if (children.size() == 1)
 		return children[0]->read();
 
-	if (pos_global >= pos_to_source_idx.size())
+	if (pos_global_start >= row_source.size())
 		return Block();
 
 	Block block_res{column.cloneEmpty()};
 	IColumn & column_res = *block_res.unsafeGetByPosition(0).column;
 
-	size_t pos_finish = std::min(pos_global + block_size, pos_to_source_idx.size());
-	column_res.reserve(pos_finish - pos_global);
+	size_t pos_global_finish = std::min(pos_global_start + block_size, row_source.size());
+	size_t curr_block_size = pos_global_finish - pos_global_start;
+	column_res.reserve(curr_block_size);
 
-	for (size_t pos = pos_global; pos < pos_finish; ++pos)
+	for (size_t pos_global = pos_global_start; pos_global < pos_global_finish;)
 	{
-		auto source_id = pos_to_source_idx[pos].getSourceNum();
-		bool skip = pos_to_source_idx[pos].getSkipFlag();
+		auto source_id = row_source[pos_global].getSourceNum();
+		bool skip = row_source[pos_global].getSkipFlag();
 		Source & source = sources[source_id];
 
 		if (source.pos >= source.size) /// Fetch new block
@@ -98,14 +100,44 @@ Block ColumnGathererStream::readImpl()
 			}
 		}
 
+		/// Consecutive optimization. TODO: precompute lens
+		size_t len = 1;
+		size_t max_len = std::min(pos_global_finish - pos_global, source.size - source.pos); // interval should be in the same block
+		for (; len < max_len && row_source[pos_global].getData() == row_source[pos_global + len].getData(); ++len);
+
 		if (!skip)
-			column_res.insertFrom(*source.column, source.pos); //TODO: vectorize
-		++source.pos;
+		{
+			if (column_res.size() == 0 && source.pos == 0 && curr_block_size == len && source.size == len)
+			{
+				// Whole block could be produced via copying pointer from current block
+				block_res.unsafeGetByPosition(0).column = source.block.getByName(name).column;
+			}
+			else
+			{
+				column_res.insertRangeFrom(*source.column, source.pos, len);
+			}
+		}
+
+		source.pos += len;
+		pos_global += len;
 	}
 
-	pos_global = pos_finish;
+	pos_global_start = pos_global_finish;
 
 	return block_res;
+}
+
+
+void ColumnGathererStream::readSuffixImpl()
+{
+	const BlockStreamProfileInfo & profile_info = getProfileInfo();
+	double seconds = profile_info.total_stopwatch.elapsedSeconds();
+	LOG_DEBUG(log, std::fixed << std::setprecision(2)
+		<< "Gathred column " << column.name << " " << column.type->getName()
+		<< " (" << static_cast<double>(profile_info.bytes) / profile_info.rows << " bytes/elem.)"
+		<< " in " << seconds << " sec., "
+		<< profile_info.rows / seconds << " rows/sec., "
+		<< profile_info.bytes / 1000000.0 / seconds << " MiB/sec.");
 }
 
 }
