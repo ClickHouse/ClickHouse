@@ -61,6 +61,10 @@ if (NOT $ENV{USE_INTERNAL_BOOST_LIBRARY})
 	set (USE_INTERNAL_BOOST_LIBRARY FALSE)
 endif ()
 
+if (USE_INTERNAL_BOOST_LIBRARY)
+	add_definitions(-DBOOST_SYSTEM_NO_DEPRECATED)
+endif ()
+
 option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan." OFF)
 if ($ENV{GLIBC_COMPATIBILITY})
 	set (GLIBC_COMPATIBILITY TRUE)
