@@ -42,38 +42,38 @@ generated_prefix = prefix + '/generated/'
 # [ name, key_type, has_parent ]
 dictionaries = [
     # Simple key dictionaries
-    [ 'file_flat', 0, True ],
-    [ 'clickhouse_flat', 0, True ],
-    [ 'mysql_flat', 0, True ],
+#    [ 'file_flat', 0, True ],
+#    [ 'clickhouse_flat', 0, True ],
+#    [ 'mysql_flat', 0, True ],
     [ 'mongodb_flat', 0, True ],
 
-    [ 'file_hashed', 0, True ],
-    [ 'clickhouse_hashed', 0, True ],
-    [ 'mysql_hashed', 0, True ],
+#    [ 'file_hashed', 0, True ],
+#    [ 'clickhouse_hashed', 0, True ],
+#    [ 'mysql_hashed', 0, True ],
     [ 'mongodb_hashed', 0, True ],
 
-    [ 'clickhouse_cache', 0, True ],
-    [ 'mysql_cache', 0, True ],
+#    [ 'clickhouse_cache', 0, True ],
+#    [ 'mysql_cache', 0, True ],
     [ 'mongodb_cache', 0, True ],
 
     # Complex key dictionaries with (UInt8, UInt8) key
-    [ 'file_complex_integers_key_hashed', 1, False ],
-    [ 'clickhouse_complex_integers_key_hashed', 1, False ],
-    [ 'mysql_complex_integers_key_hashed', 1, False ],
+#    [ 'file_complex_integers_key_hashed', 1, False ],
+#    [ 'clickhouse_complex_integers_key_hashed', 1, False ],
+#    [ 'mysql_complex_integers_key_hashed', 1, False ],
     [ 'mongodb_complex_integers_key_hashed', 1, False ],
 
-    [ 'clickhouse_complex_integers_key_cache', 1, False ],
-    [ 'mysql_complex_integers_key_cache', 1, False ],
+#    [ 'clickhouse_complex_integers_key_cache', 1, False ],
+#    [ 'mysql_complex_integers_key_cache', 1, False ],
     [ 'mongodb_complex_integers_key_cache', 1, False ],
 
     # Complex key dictionaries with (String, UInt8) key
-    [ 'file_complex_mixed_key_hashed', 2, False ],
-    [ 'clickhouse_complex_mixed_key_hashed', 2, False ],
-    [ 'mysql_complex_mixed_key_hashed', 2, False ],
+#    [ 'file_complex_mixed_key_hashed', 2, False ],
+#    [ 'clickhouse_complex_mixed_key_hashed', 2, False ],
+#    [ 'mysql_complex_mixed_key_hashed', 2, False ],
     [ 'mongodb_complex_mixed_key_hashed', 2, False ],
 
-    [ 'clickhouse_complex_mixed_key_cache', 2, False ],
-    [ 'mysql_complex_mixed_key_cache', 2, False ],
+#    [ 'clickhouse_complex_mixed_key_cache', 2, False ],
+#    [ 'mysql_complex_mixed_key_cache', 2, False ],
     [ 'mongodb_complex_mixed_key_cache', 2, False ],
 ]
 
@@ -183,17 +183,14 @@ def generate_data(args):
         args.client,
         '--port',
         args.port,
+        '--output_format_json_quote_64bit_integers',
+        '0',
         '--query',
         "select * from test.dictionary_source where not ignore(" \
             "concat('new Date(\\'', toString(Date_), '\\')') as Date_, " \
             "concat('new Date(\\'', toString(DateTime_), '\\')') as DateTime_" \
         ") format JSON"
     ]))['data']
-
-    # ClickHouse outputs 64-bit wide integers in double-quotes, convert them
-    for row in table_rows:
-        for column in [u'id', u'UInt64_', u'Int64_', u'Parent']:
-            row[column] = int(row[column])
 
     source_for_mongo = json.dumps(table_rows).replace(')"', ')').replace('"new', 'new')
     open('generated/full.json', 'w').write('db.dictionary_source.drop(); db.dictionary_source.insert(%s);' % source_for_mongo)
