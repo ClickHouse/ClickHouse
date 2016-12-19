@@ -76,9 +76,9 @@ public:
 	{
 	}
 
-	String getName() const { return "Log"; }
+	String getName() const override { return "Log"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "Log(" << storage.getTableName() << ", " << &storage << ", " << mark_number << ", " << rows_limit;
@@ -91,7 +91,7 @@ public:
 	}
 
 protected:
-	Block readImpl();
+	Block readImpl() override;
 
 private:
 	size_t block_size;
@@ -140,7 +140,7 @@ public:
 			addStream(column.name, *column.type);
 	}
 
-	~LogBlockOutputStream()
+	~LogBlockOutputStream() override
 	{
 		try
 		{
@@ -152,8 +152,8 @@ public:
 		}
 	}
 
-	void write(const Block & block);
-	void writeSuffix();
+	void write(const Block & block) override;
+	void writeSuffix() override;
 
 private:
 	StorageLog & storage;

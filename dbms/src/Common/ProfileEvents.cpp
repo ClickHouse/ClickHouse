@@ -100,6 +100,8 @@
 	\
 	M(RegexpCreated) \
 	M(ContextLock) \
+	\
+	M(StorageBufferErrorOnFlush) \
 
 namespace ProfileEvents
 {

@@ -29,6 +29,8 @@
 	M(ZooKeeperWatch) \
 	M(DelayedInserts) \
 	M(ContextLockWait) \
+	M(StorageBufferRows) \
+	M(StorageBufferBytes) \
 
 
 namespace CurrentMetrics

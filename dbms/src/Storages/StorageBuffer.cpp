@@ -8,9 +8,22 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/CurrentMetrics.h>
 #include <Poco/Ext/ThreadNumber.h>
 
 #include <ext/range.hpp>
+
+
+namespace ProfileEvents
+{
+	extern const Event StorageBufferErrorOnFlush;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric StorageBufferRows;
+	extern const Metric StorageBufferBytes;
+}
 
 
 namespace DB
@@ -159,6 +172,11 @@ static void appendBlock(const Block & from, Block & to)
 		throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
 
 	size_t rows = from.rows();
+	size_t bytes = from.bytes();
+
+	CurrentMetrics::add(CurrentMetrics::StorageBufferRows, rows);
+	CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, bytes);
+
 	for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
 	{
 		const IColumn & col_from = *from.getByPosition(column_no).column.get();
@@ -178,7 +196,7 @@ class BufferBlockOutputStream : public IBlockOutputStream
 public:
 	BufferBlockOutputStream(StorageBuffer & storage_) : storage(storage_) {}
 
-	void write(const Block & block)
+	void write(const Block & block) override
 	{
 		if (!block)
 			return;
@@ -269,7 +287,7 @@ private:
 			  */
 
 			lock.unlock();
-			storage.flushBuffer(buffer, false);
+			storage.flushBuffer(buffer, true);
 			lock.lock();
 		}
 
@@ -365,14 +383,6 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 	size_t bytes = 0;
 	time_t time_passed = 0;
 
-	/** Довольно много проблем из-за того, что хотим блокировать буфер лишь на короткое время.
-	  * Под блокировкой, получаем из буфера блок, и заменяем в нём блок на новый пустой.
-	  * Затем пытаемся записать полученный блок в подчинённую таблицу.
-	  * Если этого не получилось - кладём данные обратно в буфер.
-	  * Замечание: может быть, стоит избавиться от такой сложности.
-	  *
-	  * NOTE During flush, data is not seen by SELECTs.
-	  */
 	{
 		std::lock_guard<std::mutex> lock(buffer.mutex);
 
@@ -396,39 +406,42 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 
 		buffer.data.swap(block_to_write);
 		buffer.first_write_time = 0;
-	}
 
-	LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
+		CurrentMetrics::sub(CurrentMetrics::StorageBufferRows, block_to_write.rows());
+		CurrentMetrics::sub(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
 
-	if (no_destination)
-		return;
+		LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
 
-	try
-	{
-		writeBlockToDestination(block_to_write, context.tryGetTable(destination_database, destination_table));
-	}
-	catch (...)
-	{
-		/// Возвращаем блок на место в буфер.
+		if (no_destination)
+			return;
 
-		std::lock_guard<std::mutex> lock(buffer.mutex);
-
-		if (buffer.data)
+		/** For simplicity, buffer is locked during write.
+		  * We could unlock buffer temporary, but it would lead to too much difficulties:
+		  * - data, that is written, will not be visible for SELECTs;
+		  * - new data could be appended to buffer, and in case of exception, we must merge it with old data, that has not been written;
+		  * - this could lead to infinite memory growth.
+		  */
+		try
 		{
-			/** Так как структура таблицы не изменилась, можно склеить два блока.
-			  * Замечание: остаётся проблема - из-за того, что в разных попытках вставляются разные блоки,
-			  *  теряется идемпотентность вставки в ReplicatedMergeTree.
-			  */
-			appendBlock(buffer.data, block_to_write);
+			writeBlockToDestination(block_to_write, context.tryGetTable(destination_database, destination_table));
 		}
+		catch (...)
+		{
+			ProfileEvents::increment(ProfileEvents::StorageBufferErrorOnFlush);
 
-		buffer.data.swap(block_to_write);
+			/// Возвращаем блок на место в буфер.
 
-		if (!buffer.first_write_time)
-			buffer.first_write_time = current_time;
+			CurrentMetrics::add(CurrentMetrics::StorageBufferRows, block_to_write.rows());
+			CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
 
-		/// Через некоторое время будет следующая попытка записать.
-		throw;
+			buffer.data.swap(block_to_write);
+
+			if (!buffer.first_write_time)
+				buffer.first_write_time = current_time;
+
+			/// Через некоторое время будет следующая попытка записать.
+			throw;
+		}
 	}
 }
 

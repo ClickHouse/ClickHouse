@@ -16,9 +16,9 @@ public:
 	MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_)
 		: column_names(column_names_), begin(begin_), end(end_), it(begin) {}
 
-	String getName() const { return "Memory"; }
+	String getName() const override { return "Memory"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "Memory(" << &*begin << ", " << &*end;
@@ -31,7 +31,7 @@ public:
 	}
 
 protected:
-	Block readImpl()
+	Block readImpl() override
 	{
 		if (it == end)
 		{
@@ -63,7 +63,7 @@ class MemoryBlockOutputStream : public IBlockOutputStream
 public:
 	MemoryBlockOutputStream(StorageMemory & storage_) : storage(storage_) {}
 
-	void write(const Block & block)
+	void write(const Block & block) override
 	{
 		storage.check(block, true);
 		std::lock_guard<std::mutex> lock(storage.mutex);

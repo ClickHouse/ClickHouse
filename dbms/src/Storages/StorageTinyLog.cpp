@@ -54,12 +54,12 @@ public:
 		: block_size(block_size_), column_names(column_names_), column_types(column_names.size()),
 		storage(storage_), max_read_buffer_size(max_read_buffer_size_) {}
 
-	String getName() const { return "TinyLog"; }
+	String getName() const override { return "TinyLog"; }
 
-	String getID() const;
+	String getID() const override;
 
 protected:
-	Block readImpl();
+	Block readImpl() override;
 private:
 	size_t block_size;
 	Names column_names;
@@ -98,7 +98,7 @@ public:
 			addStream(col.name, *col.type);
 	}
 
-	~TinyLogBlockOutputStream()
+	~TinyLogBlockOutputStream() override
 	{
 		try
 		{
@@ -110,8 +110,8 @@ public:
 		}
 	}
 
-	void write(const Block & block);
-	void writeSuffix();
+	void write(const Block & block) override;
+	void writeSuffix() override;
 
 private:
 	StorageTinyLog & storage;
