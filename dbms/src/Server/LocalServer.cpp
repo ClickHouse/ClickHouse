@@ -160,15 +160,24 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 		.binding("help")
 		.callback(Poco::Util::OptionCallback<LocalServer>(this, &LocalServer::handleHelp)));
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT) \
-		_options.addOption(Poco::Util::Option(#NAME, "", "Settings.h").group("Settings").required(false).repeatable(false).binding(#NAME));
+	/// These arrays prevent "variable tracking size limit exceeded" compiler notice.
+	static const char * settings_names[] = {
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT) #NAME,
 	APPLY_FOR_SETTINGS(DECLARE_SETTING)
 #undef DECLARE_SETTING
+	nullptr};
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT) \
-		_options.addOption(Poco::Util::Option(#NAME, "", "Limits.h").group("Limits").required(false).repeatable(false).binding(#NAME));
+	static const char * limits_names[] = {
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT) #NAME,
 	APPLY_FOR_LIMITS(DECLARE_SETTING)
 #undef DECLARE_SETTING
+	nullptr};
+
+	for (const char ** name = settings_names; *name; ++name)
+		_options.addOption(Poco::Util::Option(*name, "", "Settings.h").group("Settings").required(false).repeatable(false).binding(*name));
+
+	for (const char ** name = limits_names; *name; ++name)
+		_options.addOption(Poco::Util::Option(*name, "", "Limits.h").group("Limits").required(false).repeatable(false).binding(*name));
 }
 
 
