@@ -132,6 +132,9 @@ namespace
 
 Block MongoDBBlockInputStream::readImpl()
 {
+	if (all_read)
+		return {};
+
 	Block block = description.sample_block.cloneEmpty();
 
 	/// cache pointers returned by the calls to getByPosition
@@ -146,8 +149,6 @@ Block MongoDBBlockInputStream::readImpl()
 	{
 		Poco::MongoDB::ResponseMessage & response = cursor->next(*connection);
 
-		if (response.cursorID() == 0)
-			break;
 
 		for (const auto & document : response.documents())
 		{
@@ -163,6 +164,12 @@ Block MongoDBBlockInputStream::readImpl()
 				else
 					insertValue(columns[idx], description.types[idx], *value, name);
 			}
+		}
+
+		if (response.cursorID() == 0)
+		{
+			all_read = true;
+			break;
 		}
 	}
 
