@@ -2,6 +2,13 @@
 
 #include <atomic>
 #include <common/Common.h>
+#include <DB/Common/CurrentMetrics.h>
+
+
+namespace CurrentMetrics
+{
+	extern const Metric MemoryTracking;
+}
 
 
 /** Отслеживает потребление памяти.
@@ -19,6 +26,9 @@ class MemoryTracker
 
 	/// Односвязный список. Вся информация будет передаваться в следующие MemoryTracker-ы тоже. Они должны жить во время жизни данного MemoryTracker.
 	MemoryTracker * next = nullptr;
+
+	/// You could specify custom metric to track memory usage.
+	CurrentMetrics::Metric metric = CurrentMetrics::MemoryTracking;
 
 	/// Если задано (например, "for user") - в сообщениях в логе будет указываться это описание.
 	const char * description = nullptr;
@@ -65,6 +75,11 @@ public:
 	void setNext(MemoryTracker * elem)
 	{
 		next = elem;
+	}
+
+	void setMetric(CurrentMetrics::Metric metric_)
+	{
+		metric = metric_;
 	}
 
 	void setDescription(const char * description_)

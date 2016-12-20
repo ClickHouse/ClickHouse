@@ -24,6 +24,7 @@
 	M(ReadonlyReplica) \
 	M(LeaderReplica) \
 	M(MemoryTracking) \
+	M(MemoryTrackingInBackgroundProcessingPool) \
 	M(LeaderElection) \
 	M(EphemeralNode) \
 	M(ZooKeeperWatch) \
