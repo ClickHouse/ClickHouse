@@ -184,9 +184,13 @@ BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> &
 
 	auto cursor = createCursor(db, collection, sample_block);
 
+	/** NOTE: While building array, Poco::MongoDB requires passing of different unused element names, along with values.
+	  * In general, Poco::MongoDB is quite inefficient and bulky.
+	  */
+
 	Poco::MongoDB::Array::Ptr ids_array(new Poco::MongoDB::Array);
 	for (const UInt64 id : ids)
-		ids_array->add("", Int32(id));
+		ids_array->add(DB::toString(id), Int32(id));
 
 	cursor->query().selector().addNewDocument(dict_struct.id.value().name)
 		.add("$in", ids_array);
@@ -207,7 +211,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
 	Poco::MongoDB::Array::Ptr keys_array(new Poco::MongoDB::Array);
 	for (const auto row_idx : requested_rows)
 	{
-		auto & key = keys_array->addNewDocument("");
+		auto & key = keys_array->addNewDocument(DB::toString(row_idx));
 
 		for (const auto attr : ext::enumerate(*dict_struct.key))
 		{
@@ -236,8 +240,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
 		}
 	}
 
-	cursor->query().selector().addNewDocument(dict_struct.id.value().name)
-		.add("$or", keys_array);
+	cursor->query().selector().add("$or", keys_array);
 
 	return std::make_shared<MongoDBBlockInputStream>(
 		connection, std::move(cursor), sample_block, max_block_size);
