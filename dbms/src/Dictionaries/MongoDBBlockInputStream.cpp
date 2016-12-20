@@ -147,7 +147,7 @@ Block MongoDBBlockInputStream::readImpl()
 		Poco::MongoDB::ResponseMessage & response = cursor->next(*connection);
 
 		if (response.cursorID() == 0)
-			return {};
+			break;
 
 		for (const auto & document : response.documents())
 		{
@@ -165,6 +165,9 @@ Block MongoDBBlockInputStream::readImpl()
 			}
 		}
 	}
+
+	if (num_rows == 0)
+		return {};
 
 	return block;
 }
