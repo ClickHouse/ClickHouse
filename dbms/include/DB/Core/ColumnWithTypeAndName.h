@@ -31,6 +31,24 @@ struct ColumnWithTypeAndName
 
 		return res;
 	}
+
+	bool operator==(const ColumnWithTypeAndName & other) const
+	{
+		return name == other.name
+			&& ((!type && !other.type) || (type && other.type && type->getName() == other.type->getName()))
+			&& ((!column && !other.column) || (column && other.column && column->getName() == other.column->getName()));
+	}
+
+	std::string prettyPrint() const
+	{
+		std::stringstream str;
+		str << name << ' ';
+		if (type)
+			str << type->getName() << ' ';
+		if (column)
+			str << column->getName();
+		return str.str();
+	}
 };
 
 }
