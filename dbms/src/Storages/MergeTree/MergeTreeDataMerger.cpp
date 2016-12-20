@@ -679,8 +679,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 				column_part_streams[part_num] = std::move(column_part_stream);
 			}
 
-			/// Block size should match with block size of column_part_stream to enable fast gathering via copying of column pointer
-			ColumnGathererStream column_gathered_stream(column_part_streams, column_name, merged_rows_sources, DEFAULT_MERGE_BLOCK_SIZE);
+			ColumnGathererStream column_gathered_stream(column_part_streams, column_name, merged_rows_sources, DEFAULT_BLOCK_SIZE);
 			MergedColumnOnlyOutputStream column_to(data, new_part_tmp_path, false, compression_method, offset_written);
 
 			column_to.writePrefix();
