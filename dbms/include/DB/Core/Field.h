@@ -98,11 +98,9 @@ public:
 		create(rhs);
 	}
 
-	Field & operator= (const Field & rhs)
+	Field(Field && rhs)
 	{
-		destroy();
-		create(rhs);
-		return *this;
+		move(std::move(rhs));
 	}
 
 	template <typename T>
@@ -132,6 +130,25 @@ public:
 	{
 		destroy();
 		create(data, size);
+	}
+
+	Field & operator= (const Field & rhs)
+	{
+		if (this != &rhs)
+		{
+			destroy();
+			create(rhs);
+		}
+		return *this;
+	}
+
+	Field & operator= (Field && rhs)
+	{
+		if (this != &rhs)
+		{
+			move(std::move(rhs));
+		}
+		return *this;
 	}
 
 	template <typename T>
@@ -312,7 +329,6 @@ private:
 		create(reinterpret_cast<const char *>(data), size);
 	}
 
-
 	__attribute__((__always_inline__)) void destroy()
 	{
 		if (which < Types::MIN_NON_POD)
@@ -339,6 +355,31 @@ private:
 	{
 		T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(storage);
 		ptr->~T();
+	}
+
+	template <typename T>
+	void moveValue(Field && x)
+	{
+		T * __attribute__((__may_alias__)) ptr_this = reinterpret_cast<T*>(storage);
+		T * __attribute__((__may_alias__)) ptr_x    = reinterpret_cast<T*>(x.storage);
+
+		new (ptr_this) T(std::move(*ptr_x));
+	}
+
+	void move(Field && x)
+	{
+		which = x.which;
+
+		switch (x.which)
+		{
+			case Types::Null: 				create(Null());							break;
+			case Types::UInt64: 			create(x.get<UInt64>());				break;
+			case Types::Int64: 				create(x.get<Int64>());					break;
+			case Types::Float64: 			create(x.get<Float64>());				break;
+			case Types::String: 			moveValue<String>(std::move(x));		break;
+			case Types::Array: 				moveValue<Array>(std::move(x));			break;
+			case Types::Tuple: 				moveValue<Tuple>(std::move(x));			break;
+		}
 	}
 };
 
