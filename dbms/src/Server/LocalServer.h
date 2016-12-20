@@ -33,6 +33,8 @@ private:
 	  */
 	std::string getInitialCreateTableQuery();
 
+	void tryInitPath();
+
 	void applyOptions();
 
 	void attachSystemTables();
@@ -48,6 +50,7 @@ private:
 protected:
 
 	std::unique_ptr<Context> context;
+	std::string path;
 };
 
 }

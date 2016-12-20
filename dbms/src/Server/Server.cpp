@@ -178,16 +178,20 @@ public:
 };
 
 
-int Server::main(const std::vector<std::string> & args)
+static std::string getCanonicalPath(std::string && path)
 {
-	Logger * log = &logger();
-
-	std::string path = config().getString("path");
 	Poco::trimInPlace(path);
 	if (path.empty())
 		throw Exception("path configuration parameter is empty");
 	if (path.back() != '/')
 		path += '/';
+	return path;
+}
+
+
+int Server::main(const std::vector<std::string> & args)
+{
+	Logger * log = &logger();
 
 	/** Context contains all that query execution is dependent:
 	  *  settings, available functions, data types, aggregate functions, databases...
@@ -195,9 +199,11 @@ int Server::main(const std::vector<std::string> & args)
 	global_context = std::make_unique<Context>();
 	global_context->setGlobalContext(*global_context);
 	global_context->setApplicationType(Context::ApplicationType::SERVER);
-	global_context->setPath(path);
 
+	std::string path = getCanonicalPath(config().getString("path"));
 	std::string default_database = config().getString("default_database", "default");
+
+	global_context->setPath(path);
 
 	/// Create directories for 'path' and for default database, if not exist.
 	Poco::File(path + "data/" + default_database).createDirectories();

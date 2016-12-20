@@ -252,7 +252,7 @@ private:
 					<< e.getStackTrace().toString();
 			}
 
-			/// В случае нулевого кода исключения, надо всё-равно вернуть ненулевой код возврата.
+			/// If exception code isn't zero, we should return non-zero return code anyway.
 			return e.code() ? e.code() : -1;
 		}
 		catch (const Poco::Exception & e)

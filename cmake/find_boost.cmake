@@ -1,11 +1,11 @@
-if (${USE_INTERNAL_BOOST_LIBRARY})
+if (USE_INTERNAL_BOOST_LIBRARY)
 	set (Boost_PROGRAM_OPTIONS_LIBRARY boost_program_options_internal)
 	set (Boost_SYSTEM_LIBRARY boost_system_internal)
 	set (Boost_FILESYSTEM_LIBRARY boost_filesystem_internal)
 else ()
 	set (Boost_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})
 	set (BOOST_ROOT "/usr/local")
-	find_package (Boost 1.62 COMPONENTS program_options system filesystem regex thread)
+	find_package (Boost 1.58 COMPONENTS program_options system filesystem regex thread)
 	if (NOT Boost_FOUND)
 		# Try to find manually.
 		set (BOOST_HINTS "")
