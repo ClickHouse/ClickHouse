@@ -1,6 +1,9 @@
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast")
 
-add_subdirectory (libboost)
+if (USE_INTERNAL_BOOST_LIBRARY)
+	add_subdirectory (libboost)
+endif ()
+
 add_subdirectory (libpoco)
 add_subdirectory (liblz4)
 add_subdirectory (libzstd)
