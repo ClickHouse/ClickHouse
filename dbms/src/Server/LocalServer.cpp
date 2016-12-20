@@ -160,19 +160,14 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 		.binding("help")
 		.callback(Poco::Util::OptionCallback<LocalServer>(this, &LocalServer::handleHelp)));
 
-	/// Additional curly braces prevents "variable tracking size limit exceeded" compiler notice.
 #define DECLARE_SETTING(TYPE, NAME, DEFAULT) \
-	{ \
-		_options.addOption(Poco::Util::Option(#NAME, "", "Settings.h").group("Settings").required(false).repeatable(false).binding(#NAME)); \
-		APPLY_FOR_SETTINGS(DECLARE_SETTING) \
-	}
+		_options.addOption(Poco::Util::Option(#NAME, "", "Settings.h").group("Settings").required(false).repeatable(false).binding(#NAME));
+	APPLY_FOR_SETTINGS(DECLARE_SETTING)
 #undef DECLARE_SETTING
 
 #define DECLARE_SETTING(TYPE, NAME, DEFAULT) \
-	{ \
-		_options.addOption(Poco::Util::Option(#NAME, "", "Limits.h").group("Limits").required(false).repeatable(false).binding(#NAME)); \
-		APPLY_FOR_LIMITS(DECLARE_SETTING) \
-	}
+		_options.addOption(Poco::Util::Option(#NAME, "", "Limits.h").group("Limits").required(false).repeatable(false).binding(#NAME));
+	APPLY_FOR_LIMITS(DECLARE_SETTING)
 #undef DECLARE_SETTING
 }
 
