@@ -280,6 +280,11 @@ String Context::getTemporaryPath() const
 String Context::getFlagsPath() const
 {
 	auto lock = getLock();
+	if (!shared->flags_path.empty())
+		return shared->flags_path;
+
+	shared->flags_path = shared->path + "flags/";
+	Poco::File(shared->flags_path).createDirectories();
 	return shared->flags_path;
 }
 
