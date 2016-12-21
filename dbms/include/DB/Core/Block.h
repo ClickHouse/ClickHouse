@@ -134,11 +134,13 @@ private:
 using Blocks = std::vector<Block>;
 using BlocksList = std::list<Block>;
 
+
 /// Сравнить типы столбцов у блоков. Порядок столбцов имеет значение. Имена не имеют значения.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
 
-/// Записать различные столбцы у блоков.
-void getColumnDiff(const Block & lhs, const Block & rhs, std::string & lhs_diff, std::string & rhs_diff);
+/// Calculate difference in structure of blocks and write description into output strings.
+void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff);
+
 
 /** Дополнительные данные к блокам. Они пока нужны только для запроса
   * DESCRIBE TABLE с Distributed-таблицами.

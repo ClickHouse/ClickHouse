@@ -11,6 +11,8 @@
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/Operators.h>
 
 #include <DB/Parsers/ASTExpressionList.h>
 #include <memory>
@@ -297,33 +299,39 @@ size_t Block::bytes() const
 
 std::string Block::dumpNames() const
 {
-	std::stringstream res;
-	for (auto it = data.begin(); it != data.end(); ++it)
+	std::string res;
 	{
-		if (it != data.begin())
-			res << ", ";
-		res << it->name;
+		WriteBufferFromString out(res);
+		for (auto it = data.begin(); it != data.end(); ++it)
+		{
+			if (it != data.begin())
+				out << ", ";
+			out << it->name;
+		}
 	}
-	return res.str();
+	return res;
 }
 
 
 std::string Block::dumpStructure() const
 {
-	std::stringstream res;
-	for (auto it = data.begin(); it != data.end(); ++it)
+	std::string res;
 	{
-		if (it != data.begin())
-			res << ", ";
+		WriteBufferFromString out(res);
+		for (auto it = data.begin(); it != data.end(); ++it)
+		{
+			if (it != data.begin())
+				out << ", ";
 
-		res << it->name << ' ' << it->type->getName();
+			out << it->name << ' ' << it->type->getName();
 
-		if (it->column)
-			res << ' ' << it->column->getName() << ' ' << it->column->size();
-		else
-			res << " nullptr";
+			if (it->column)
+				out << ' ' << it->column->getName() << ' ' << it->column->size();
+			else
+				out << " nullptr";
+		}
 	}
-	return res.str();
+	return res;
 }
 
 
@@ -455,29 +463,35 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 	return true;
 }
 
-void getColumnDiff(const Block & lhs, const Block & rhs, std::string & lhs_diff, std::string & rhs_diff)
+
+void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff)
 {
 	/// Традиционная задача: наибольшая общая подпоследовательность (LCS).
-	/// Полагаем, что порядок важен. Если это когда-то станет не так, упростим: например, намутим 2 set'а.
-	std::vector<std::vector<int>> LCS;
-	LCS.resize(lhs.columns() + 1);
-	for (auto & v : LCS)
-		v.resize(rhs.columns() + 1, 0);
+	/// Полагаем, что порядок важен. Если это когда-то станет не так, упростим: например, сделаем 2 set'а.
+
+	std::vector<std::vector<int>> lcs(lhs.columns() + 1);
+	for (auto & v : lcs)
+		v.resize(rhs.columns() + 1);
+
 	for (size_t i = 1; i <= lhs.columns(); ++i)
+	{
 		for (size_t j = 1; j <= rhs.columns(); ++j)
 		{
-			if (lhs.getByPosition(i-1) == rhs.getByPosition(j-1))
-				LCS[i][j] = LCS[i-1][j-1] + 1;
+			if (lhs.getByPosition(i - 1) == rhs.getByPosition(j - 1))
+				lcs[i][j] = lcs[i - 1][j - 1] + 1;
 			else
-				LCS[i][j] = std::max(LCS[i-1][j], LCS[i][j-1]);
+				lcs[i][j] = std::max(lcs[i - 1][j], lcs[i][j - 1]);
 		}
+	}
 
 	/// Теперь идем обратно и собираем ответ.
-	std::vector<std::string> left_columns, right_columns;
-	size_t l = lhs.columns(), r = rhs.columns();
+	std::vector<std::string> left_columns;
+	std::vector<std::string> right_columns;
+	size_t l = lhs.columns();
+	size_t r = rhs.columns();
 	while (l > 0 && r > 0)
 	{
-		if (lhs.getByPosition(l-1) == rhs.getByPosition(r-1))
+		if (lhs.getByPosition(l - 1) == rhs.getByPosition(r - 1))
 		{
 			/// Данный элемент в обеих последовательностях, значит, в diff не попадает.
 			--l;
@@ -488,7 +502,7 @@ void getColumnDiff(const Block & lhs, const Block & rhs, std::string & lhs_diff,
 			/// Маленькая эвристика: чаще всего используется при получении разницы для (expected_block, actual_block).
 			/// Поэтому предпочтение будем отдавать полю, которое есть в левом блоке (expected_block), поэтому
 			/// в diff попадет столбец из actual_block.
-			if (LCS[l][r-1] >= LCS[l-1][r])
+			if (lcs[l][r - 1] >= lcs[l - 1][r])
 				right_columns.push_back(rhs.getByPosition(--r).prettyPrint());
 			else
 				left_columns.push_back(lhs.getByPosition(--l).prettyPrint());
@@ -500,14 +514,13 @@ void getColumnDiff(const Block & lhs, const Block & rhs, std::string & lhs_diff,
 	while (r > 0)
 		right_columns.push_back(rhs.getByPosition(--r).prettyPrint());
 
-	std::stringstream lhs_columns_diff, rhs_columns_diff;
-	for (auto it = left_columns.rbegin(); it != left_columns.rend(); ++it)
-		lhs_columns_diff << *it << '\n';
-	for (auto it = right_columns.rbegin(); it != right_columns.rend(); ++it)
-		rhs_columns_diff << *it << '\n';
+	WriteBufferFromString lhs_diff_writer(out_lhs_diff);
+	WriteBufferFromString rhs_diff_writer(out_rhs_diff);
 
-	lhs_diff = lhs_columns_diff.str();
-	rhs_diff = rhs_columns_diff.str();
+	for (auto it = left_columns.rbegin(); it != left_columns.rend(); ++it)
+		lhs_diff_writer << *it << '\n';
+	for (auto it = right_columns.rbegin(); it != right_columns.rend(); ++it)
+		rhs_diff_writer << *it << '\n';
 }
 
 
