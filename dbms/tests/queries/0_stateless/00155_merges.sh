@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 function create {
 	clickhouse-client --query="DROP TABLE IF EXISTS test.summing"

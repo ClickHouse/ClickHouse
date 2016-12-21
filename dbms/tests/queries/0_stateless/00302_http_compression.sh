@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 curl -sS 'http://localhost:8123/?enable_http_compression=1'                                     -d 'SELECT number FROM system.numbers LIMIT 10';
 curl -sS 'http://localhost:8123/?enable_http_compression=0' -H 'Accept-Encoding: gzip'          -d 'SELECT number FROM system.numbers LIMIT 10';
