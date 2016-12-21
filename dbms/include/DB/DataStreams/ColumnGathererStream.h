@@ -24,7 +24,7 @@ struct RowSourcePart
 	/// Data is equal to getSourceNum() if flag is false
 	UInt8 getData() const		{ return data; }
 
-	size_t getSourceNum()const 	{ return data & MASK_NUMBER; }
+	size_t getSourceNum() const { return data & MASK_NUMBER; }
 
 	/// In CollapsingMergeTree case flag means "skip this rows"
 	bool getSkipFlag() const 	{ return (data & MASK_FLAG) != 0; }
