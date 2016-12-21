@@ -1,4 +1,7 @@
-#!/usr/bin/env bash -e
+#!/usr/bin/env bash
+
+set -o errexit
+set -o pipefail
 
 # Скрипт довольно хрупкий.
 
