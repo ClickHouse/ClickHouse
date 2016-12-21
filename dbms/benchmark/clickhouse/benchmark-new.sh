@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 QUERIES_FILE="queries.sql"
 TABLE=$1

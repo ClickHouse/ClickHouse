@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/usr/bin/env bash -e
 
 echo "
     DROP TABLE IF EXISTS test.two_blocks; 

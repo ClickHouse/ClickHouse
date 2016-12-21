@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/usr/bin/env bash -e
 
 clickhouse-client -n --query="
     DROP TABLE IF EXISTS test.users;
