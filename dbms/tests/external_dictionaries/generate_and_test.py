@@ -188,7 +188,7 @@ def generate_data(args):
         '--query',
         "select * from test.dictionary_source where not ignore(" \
             "concat('new Date(\\'', toString(Date_), '\\')') as Date_, " \
-            "concat('new Date(\\'', toString(DateTime_), '\\')') as DateTime_" \
+            "concat('new ISODate(\\'', replaceOne(toString(DateTime_, 'UTC'), ' ', 'T'), 'Z\\')') as DateTime_" \
         ") format JSON"
     ]))['data']
 
