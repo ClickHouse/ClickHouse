@@ -26,11 +26,12 @@ String DistinctBlockInputStream::getID() const
 }
 
 Block DistinctBlockInputStream::readImpl()
-{
-	/// Пока не встретится блок, после фильтрации которого что-нибудь останется, или поток не закончится.
+{.
+	/// Execute until end of stream or until
+	/// a block with some new records will be gotten.
 	while (1)
 	{
-		/// Если уже прочитали достаточно строк - то больше читать не будем.
+		/// Stop reading if we already reach the limit.
 		if (limit_hint && data.getTotalRowCount() >= limit_hint)
 			return Block();
 
@@ -47,7 +48,6 @@ Block DistinctBlockInputStream::readImpl()
 
 		const size_t old_set_size = data.getTotalRowCount();
 		const size_t rows = block.rows();
-		/// Будем фильтровать блок, оставляя там только строки, которых мы ещё не видели.
 		IColumn::Filter filter(rows);
 
 		switch (data.type)
@@ -62,7 +62,7 @@ Block DistinctBlockInputStream::readImpl()
 	#undef M
 		}
 
-		/// Если ни одной новой строки не было в блоке - перейдём к следующему блоку.
+		/// Just go to the next block if there isn't any new record in the current one.
 		if (data.getTotalRowCount() == old_set_size)
 			continue;
 
@@ -109,13 +109,13 @@ void DistinctBlockInputStream::buildFilter(
 	typename Method::State state;
 	state.init(columns);
 
-	/// Для всех строчек
 	for (size_t i = 0; i < rows; ++i)
 	{
-		/// Строим ключ
+		/// Make a key.
 		typename Method::Key key = state.getKey(columns, columns.size(), i, key_sizes);
 
-		/// Если вставилось в множество - строчку оставляем, иначе - удаляем.
+		/// Emit the record if there is no such key in the current set yet.
+		/// Skip it otherwise.
 		filter[i] = method.data.insert(key).second;
 	}
 }
@@ -133,7 +133,7 @@ ConstColumnPlainPtrs DistinctBlockInputStream::getKeyColumns(const Block & block
 			? block.getByPosition(i).column
 			: block.getByName(columns_names[i]).column;
 
-		/// Игнорируем все константные столбцы.
+		/// Ignore all constant columns.
 		if (!column->isConst())
 			column_ptrs.emplace_back(column.get());
 	}
