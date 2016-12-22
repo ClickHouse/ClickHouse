@@ -16,7 +16,7 @@ class DistinctBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	/// Пустой columns_ значит все столбцы.
-	DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_, Names columns_);
+	DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_hint_, Names columns_);
 
 	String getName() const override { return "Distinct"; }
 
@@ -41,7 +41,7 @@ private:
 	Names columns_names;
 	SetVariants data;
 	Sizes key_sizes;
-	size_t limit;
+	size_t limit_hint;
 
 	/// Ограничения на максимальный размер множества
 	size_t max_rows;

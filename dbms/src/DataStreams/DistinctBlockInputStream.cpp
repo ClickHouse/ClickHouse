@@ -8,12 +8,12 @@ namespace ErrorCodes
 	extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-DistinctBlockInputStream::DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_, Names columns_)
-	: columns_names(columns_),
-	limit(limit_),
-	max_rows(limits.max_rows_in_distinct),
-	max_bytes(limits.max_bytes_in_distinct),
-	overflow_mode(limits.distinct_overflow_mode)
+DistinctBlockInputStream::DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_hint_, Names columns_)
+	: columns_names(columns_)
+	, limit_hint(limit_hint_)
+	, max_rows(limits.max_rows_in_distinct)
+	, max_bytes(limits.max_bytes_in_distinct)
+	, overflow_mode(limits.distinct_overflow_mode)
 {
 	children.push_back(input_);
 }
@@ -31,7 +31,7 @@ Block DistinctBlockInputStream::readImpl()
 	while (1)
 	{
 		/// Если уже прочитали достаточно строк - то больше читать не будем.
-		if (limit && data.getTotalRowCount() >= limit)
+		if (limit_hint && data.getTotalRowCount() >= limit_hint)
 			return Block();
 
 		Block block = children[0]->read();
@@ -117,12 +117,6 @@ void DistinctBlockInputStream::buildFilter(
 
 		/// Если вставилось в множество - строчку оставляем, иначе - удаляем.
 		filter[i] = method.data.insert(key).second;
-
-		if (limit && data.getTotalRowCount() == limit)
-		{
-			memset(&filter[i + 1], 0, (rows - (i + 1)) * sizeof(IColumn::Filter::value_type));
-			break;
-		}
 	}
 }
 
