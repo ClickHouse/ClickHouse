@@ -186,10 +186,11 @@ void Compiler::compile(
 		" /usr/share/clickhouse/bin/clang"
 		" -B /usr/share/clickhouse/bin/"
 		" -x c++ -std=gnu++1y -O3 -g -Wall -Werror -Wnon-virtual-dtor -march=native -msse4 -mpopcnt -D NDEBUG"
-#ifdef _GLIBCXX_USE_CXX11_ABI
-	#define GLIBCXX_USE_CXX11_ABI_STR #_GLIBCXX_USE_CXX11_ABI
-		" -D_GLIBCXX_USE_CXX11_ABI=" GLIBCXX_USE_CXX11_ABI_STR
-#endif
+	#if _GLIBCXX_USE_CXX11_ABI == 0
+		" -D_GLIBCXX_USE_CXX11_ABI=0"
+	#elif _GLIBCXX_USE_CXX11_ABI == 1
+		" -D_GLIBCXX_USE_CXX11_ABI=1"
+	#endif
 		" -shared -fPIC -fvisibility=hidden -fno-implement-inlines"
 		" -isystem /usr/share/clickhouse/headers/usr/local/include/"
 		" -isystem /usr/share/clickhouse/headers/usr/include/"
