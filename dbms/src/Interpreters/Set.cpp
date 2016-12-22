@@ -25,7 +25,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int UNKNOWN_SET_DATA_VARIANT;
 	extern const int LOGICAL_ERROR;
 	extern const int SET_SIZE_LIMIT_EXCEEDED;
 	extern const int TYPE_MISMATCH;
@@ -128,14 +127,17 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 	if (empty())
 		data.init(data.chooseMethod(key_columns, key_sizes));
 
-	if (false) {}
+	switch (data.type)
+	{
+		case SetVariants::Type::EMPTY:
+			break;
 #define M(NAME) \
-	else if (data.type == SetVariants::Type::NAME) \
-		insertFromBlockImpl(*data.NAME, key_columns, rows, data);
+		case SetVariants::Type::NAME: \
+			insertFromBlockImpl(*data.NAME, key_columns, rows, data); \
+			break;
 		APPLY_FOR_SET_VARIANTS(M)
 #undef M
-	else
-		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+	}
 
 	if (create_ordered_set)
 		for (size_t i = 0; i < rows; ++i)
@@ -392,14 +394,17 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 {
 	size_t rows = key_columns[0]->size();
 
-	if (false) {}
+	switch (data.type)
+	{
+		case SetVariants::Type::EMPTY:
+			break;
 #define M(NAME) \
-	else if (data.type == SetVariants::Type::NAME) \
-		executeImpl(*data.NAME, key_columns, vec_res, negative, rows);
+		case SetVariants::Type::NAME: \
+			executeImpl(*data.NAME, key_columns, vec_res, negative, rows); \
+			break;
 	APPLY_FOR_SET_VARIANTS(M)
 #undef M
-	else
-		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+	}
 }
 
 void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const
@@ -408,14 +413,17 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 	const ColumnArray::Offsets_t & offsets = key_column->getOffsets();
 	const IColumn & nested_column = key_column->getData();
 
-	if (false) {}
+	switch (data.type)
+	{
+		case SetVariants::Type::EMPTY:
+			break;
 #define M(NAME) \
-	else if (data.type == SetVariants::Type::NAME) \
-		executeArrayImpl(*data.NAME, ConstColumnPlainPtrs{&nested_column}, offsets, vec_res, negative, rows);
+		case SetVariants::Type::NAME: \
+			executeArrayImpl(*data.NAME, ConstColumnPlainPtrs{&nested_column}, offsets, vec_res, negative, rows); \
+			break;
 	APPLY_FOR_SET_VARIANTS(M)
 #undef M
-	else
-		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+	}
 }
 
 
