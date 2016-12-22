@@ -73,12 +73,14 @@ std::string createMergedPartName(const MergeTreeData::DataPartsVector & parts)
 
 }
 
-/// Не будем соглашаться мерджить куски, если места на диске менее чем во столько раз больше суммарного размера кусков.
-static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 1.6;
+/// Do not start to merge parts, if free space is less than sum size of parts times specified coefficient.
+/// This value is chosen to not allow big merges to eat all free space. Thus allowing small merges to proceed.
+static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
 
-/// Объединяя куски, зарезервируем столько места на диске. Лучше сделать немного меньше, чем DISK_USAGE_COEFFICIENT_TO_SELECT,
-/// потому что между выбором кусков и резервированием места места может стать немного меньше.
-static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.4;
+/// To do merge, reserve amount of space equals to sum size of parts times specified coefficient.
+/// Must be strictly less than DISK_USAGE_COEFFICIENT_TO_SELECT,
+///  because between selecting parts to merge and doing merge, amount of free space could have decreased.
+static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 
 MergeTreeDataMerger::MergeTreeDataMerger(MergeTreeData & data_, const BackgroundProcessingPool & pool_)
 	: data(data_), pool(pool_), log(&Logger::get(data.getLogName() + " (Merger)"))
