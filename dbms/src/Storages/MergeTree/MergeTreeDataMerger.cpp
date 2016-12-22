@@ -651,13 +651,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
 		auto it_name_and_type = gathering_columns.cbegin();
 
-		for (size_t column_num = 0; column_num < gathering_column_names.size(); ++column_num, it_name_and_type++)
+		for (size_t column_num = 0, gathering_column_names_size = gathering_column_names.size();
+			column_num < gathering_column_names_size;
+			++column_num, ++it_name_and_type)
 		{
 			const String & column_name = it_name_and_type->name;
 			const DataTypePtr & column_type = it_name_and_type->type;
 			const String offset_column_name = DataTypeNested::extractNestedTableName(column_name);
 			Names column_name_{column_name};
-			NamesAndTypesList column_name_and_type_{*it_name_and_type};
 			Float64 progress_before = merge_entry->progress;
 			bool offset_written = offset_columns_written.count(offset_column_name);
 
