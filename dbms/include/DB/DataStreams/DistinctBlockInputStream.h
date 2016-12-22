@@ -28,8 +28,10 @@ protected:
 private:
 	bool checkLimits() const;
 
+	ConstColumnPlainPtrs getKeyColumns(const Block & block) const;
+
 	template <typename Method>
-	void executeImpl(
+	void buildFilter(
 		Method & method,
 		const ConstColumnPlainPtrs & key_columns,
 		IColumn::Filter & filter,

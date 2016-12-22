@@ -35,36 +35,20 @@ Block DistinctBlockInputStream::readImpl()
 			return Block();
 
 		Block block = children[0]->read();
-
 		if (!block)
 			return Block();
 
-		size_t rows = block.rows();
-		size_t columns = columns_names.empty() ? block.columns() : columns_names.size();
-
-		ConstColumnPlainPtrs column_ptrs;
-		column_ptrs.reserve(columns);
-
-		for (size_t i = 0; i < columns; ++i)
-		{
-			auto & column = columns_names.empty()
-				? block.getByPosition(i).column
-				: block.getByName(columns_names[i]).column;
-
-			/// Игнорируем все константные столбцы.
-			if (!column->isConst())
-				column_ptrs.emplace_back(column.get());
-		}
-
-		columns = column_ptrs.size();
+		const ConstColumnPlainPtrs column_ptrs(getKeyColumns(block));
+		if (column_ptrs.empty())
+			return block;
 
 		if (data.empty())
 			data.init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
+		const size_t old_set_size = data.getTotalRowCount();
+		const size_t rows = block.rows();
 		/// Будем фильтровать блок, оставляя там только строки, которых мы ещё не видели.
 		IColumn::Filter filter(rows);
-
-		size_t old_set_size = data.getTotalRowCount();
 
 		switch (data.type)
 		{
@@ -72,7 +56,7 @@ Block DistinctBlockInputStream::readImpl()
 				break;
 	#define M(NAME) \
 			case SetVariants::Type::NAME: \
-				{ executeImpl(*data.NAME, column_ptrs, filter, rows); } \
+				buildFilter(*data.NAME, column_ptrs, filter, rows); \
 				break;
 		APPLY_FOR_SET_VARIANTS(M)
 	#undef M
@@ -106,8 +90,17 @@ Block DistinctBlockInputStream::readImpl()
 	}
 }
 
+bool DistinctBlockInputStream::checkLimits() const
+{
+	if (max_rows && data.getTotalRowCount() > max_rows)
+		return false;
+	if (max_bytes && data.getTotalByteCount() > max_bytes)
+		return false;
+	return true;
+}
+
 template <typename Method>
-void DistinctBlockInputStream::executeImpl(
+void DistinctBlockInputStream::buildFilter(
 	Method & method,
 	const ConstColumnPlainPtrs & columns,
 	IColumn::Filter & filter,
@@ -115,13 +108,12 @@ void DistinctBlockInputStream::executeImpl(
 {
 	typename Method::State state;
 	state.init(columns);
-	size_t keys_size = columns.size();
 
 	/// Для всех строчек
 	for (size_t i = 0; i < rows; ++i)
 	{
 		/// Строим ключ
-		typename Method::Key key = state.getKey(columns, keys_size, i, key_sizes);
+		typename Method::Key key = state.getKey(columns, columns.size(), i, key_sizes);
 
 		/// Если вставилось в множество - строчку оставляем, иначе - удаляем.
 		filter[i] = method.data.insert(key).second;
@@ -134,13 +126,25 @@ void DistinctBlockInputStream::executeImpl(
 	}
 }
 
-bool DistinctBlockInputStream::checkLimits() const
+ConstColumnPlainPtrs DistinctBlockInputStream::getKeyColumns(const Block & block) const
 {
-	if (max_rows && data.getTotalRowCount() > max_rows)
-		return false;
-	if (max_bytes && data.getTotalByteCount() > max_bytes)
-		return false;
-	return true;
+	size_t columns = columns_names.empty() ? block.columns() : columns_names.size();
+
+	ConstColumnPlainPtrs column_ptrs;
+	column_ptrs.reserve(columns);
+
+	for (size_t i = 0; i < columns; ++i)
+	{
+		auto & column = columns_names.empty()
+			? block.getByPosition(i).column
+			: block.getByName(columns_names[i]).column;
+
+		/// Игнорируем все константные столбцы.
+		if (!column->isConst())
+			column_ptrs.emplace_back(column.get());
+	}
+
+	return column_ptrs;
 }
 
 }
