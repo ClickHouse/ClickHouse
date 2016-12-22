@@ -512,7 +512,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
 	MergedRowSources merged_rows_sources;
 	MergedRowSources * merged_rows_sources_ptr = &merged_rows_sources;
-	MergeAlgorithm merge_alg = chooseMergeAlgorithm(data, parts, sum_input_rows_upper_bound, merged_rows_sources);
+	MergeAlgorithm merge_alg = chooseMergeAlgorithm(data, parts, sum_input_rows_upper_bound, gathering_columns, merged_rows_sources);
 
 	LOG_DEBUG(log, "Selected MergeAlgorithm: " << ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Horizontal"));
 
@@ -679,8 +679,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 				column_part_streams[part_num] = std::move(column_part_stream);
 			}
 
-			/// Block size should match with block size of column_part_stream to enable fast gathering via copying of column pointer
-			ColumnGathererStream column_gathered_stream(column_part_streams, column_name, merged_rows_sources, DEFAULT_MERGE_BLOCK_SIZE);
+			ColumnGathererStream column_gathered_stream(column_part_streams, column_name, merged_rows_sources, DEFAULT_BLOCK_SIZE);
 			MergedColumnOnlyOutputStream column_to(data, new_part_tmp_path, false, compression_method, offset_written);
 
 			column_to.writePrefix();
@@ -736,8 +735,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
 
 MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
-	const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
-	size_t sum_rows_upper_bound, MergedRowSources & rows_sources_to_alloc) const
+	const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts, size_t sum_rows_upper_bound,
+	const NamesAndTypesList & gathering_columns, MergedRowSources & rows_sources_to_alloc) const
 {
 	if (data.context.getMergeTreeSettings().enable_vertical_merge_algorithm == 0)
 		return MergeAlgorithm::Horizontal;
@@ -746,7 +745,7 @@ MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
 		data.merging_params.mode == MergeTreeData::MergingParams::Ordinary ||
 		data.merging_params.mode == MergeTreeData::MergingParams::Collapsing;
 
-	bool enough_ordinary_cols = data.getColumnNamesList().size() > data.getSortDescription().size();
+	bool enough_ordinary_cols = gathering_columns.size() >= data.context.getMergeTreeSettings().vertical_merge_algorithm_min_columns_to_activate;
 
 	bool enough_total_rows = sum_rows_upper_bound >= data.context.getMergeTreeSettings().vertical_merge_algorithm_min_rows_to_activate;
 
