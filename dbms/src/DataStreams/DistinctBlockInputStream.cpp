@@ -1,6 +1,5 @@
 #include <DB/DataStreams/DistinctBlockInputStream.h>
 
-
 namespace DB
 {
 
@@ -8,7 +7,6 @@ namespace ErrorCodes
 {
 	extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
-
 
 DistinctBlockInputStream::DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_, Names columns_)
 	: columns_names(columns_),
@@ -33,7 +31,7 @@ Block DistinctBlockInputStream::readImpl()
 	while (1)
 	{
 		/// Если уже прочитали достаточно строк - то больше читать не будем.
-		if (limit && set.size() >= limit)
+		if (limit && data.getTotalRowCount() >= limit)
 			return Block();
 
 		Block block = children[0]->read();
@@ -60,49 +58,37 @@ Block DistinctBlockInputStream::readImpl()
 
 		columns = column_ptrs.size();
 
+		if (data.empty())
+			data.init(SetVariants::chooseMethod(column_ptrs, key_sizes));
+
 		/// Будем фильтровать блок, оставляя там только строки, которых мы ещё не видели.
 		IColumn::Filter filter(rows);
 
-		size_t old_set_size = set.size();
+		size_t old_set_size = data.getTotalRowCount();
 
-		for (size_t i = 0; i < rows; ++i)
+		switch (data.type)
 		{
-			/** Uniqueness of rows are checked with set of SipHash128 values.
-			  * Following assumptions are made:
-			  * 1. Inaccurate work is allowed in case of SipHash128 collisions.
-			  *
-			  * NOTE For optimization, it's possible to add another more efficient methods, see Set.h.
-			  */
-
-			UInt128 key;
-			SipHash hash;
-
-			for (size_t j = 0; j < columns; ++j)
-				column_ptrs[j]->updateHashWithValue(i, hash);
-
-			hash.get128(key.first, key.second);
-
-			/// Если вставилось в множество - строчку оставляем, иначе - удаляем.
-			filter[i] = set.insert(key).second;
-
-			if (limit && set.size() == limit)
-			{
-				memset(&filter[i + 1], 0, (rows - (i + 1)) * sizeof(IColumn::Filter::value_type));
+			case SetVariants::Type::EMPTY:
 				break;
-			}
+	#define M(NAME) \
+			case SetVariants::Type::NAME: \
+				{ executeImpl(*data.NAME, column_ptrs, filter, rows); } \
+				break;
+		APPLY_FOR_SET_VARIANTS(M)
+	#undef M
 		}
 
 		/// Если ни одной новой строки не было в блоке - перейдём к следующему блоку.
-		if (set.size() == old_set_size)
+		if (data.getTotalRowCount() == old_set_size)
 			continue;
 
 		if (!checkLimits())
 		{
 			if (overflow_mode == OverflowMode::THROW)
 				throw Exception("DISTINCT-Set size limit exceeded."
-					" Rows: " + toString(set.size()) +
+					" Rows: " + toString(data.getTotalRowCount()) +
 					", limit: " + toString(max_rows) +
-					". Bytes: " + toString(set.getBufferSizeInBytes()) +
+					". Bytes: " + toString(data.getTotalByteCount()) +
 					", limit: " + toString(max_bytes) + ".",
 					ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 
@@ -120,11 +106,39 @@ Block DistinctBlockInputStream::readImpl()
 	}
 }
 
+template <typename Method>
+void DistinctBlockInputStream::executeImpl(
+	Method & method,
+	const ConstColumnPlainPtrs & columns,
+	IColumn::Filter & filter,
+	size_t rows) const
+{
+	typename Method::State state;
+	state.init(columns);
+	size_t keys_size = columns.size();
+
+	/// Для всех строчек
+	for (size_t i = 0; i < rows; ++i)
+	{
+		/// Строим ключ
+		typename Method::Key key = state.getKey(columns, keys_size, i, key_sizes);
+
+		/// Если вставилось в множество - строчку оставляем, иначе - удаляем.
+		filter[i] = method.data.insert(key).second;
+
+		if (limit && data.getTotalRowCount() == limit)
+		{
+			memset(&filter[i + 1], 0, (rows - (i + 1)) * sizeof(IColumn::Filter::value_type));
+			break;
+		}
+	}
+}
+
 bool DistinctBlockInputStream::checkLimits() const
 {
-	if (max_rows && set.size() > max_rows)
+	if (max_rows && data.getTotalRowCount() > max_rows)
 		return false;
-	if (max_bytes && set.getBufferSizeInBytes() > max_bytes)
+	if (max_bytes && data.getTotalByteCount() > max_bytes)
 		return false;
 	return true;
 }

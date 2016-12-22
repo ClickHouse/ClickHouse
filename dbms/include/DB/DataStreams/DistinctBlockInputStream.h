@@ -1,10 +1,8 @@
 #pragma once
 
-#include <DB/Common/HashTable/HashSet.h>
-#include <DB/Common/SipHash.h>
-#include <DB/Common/UInt128.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Interpreters/Limits.h>
+#include <DB/Interpreters/SetVariants.h>
 
 namespace DB
 {
@@ -30,17 +28,23 @@ protected:
 private:
 	bool checkLimits() const;
 
-	Names columns_names;
+	template <typename Method>
+	void executeImpl(
+		Method & method,
+		const ConstColumnPlainPtrs & key_columns,
+		IColumn::Filter & filter,
+		size_t rows) const;
 
+
+	Names columns_names;
+	SetVariants data;
+	Sizes key_sizes;
 	size_t limit;
 
 	/// Ограничения на максимальный размер множества
 	size_t max_rows;
 	size_t max_bytes;
 	OverflowMode overflow_mode;
-
-	using SetHashed = HashSet<UInt128, UInt128TrivialHash>;
-	SetHashed set;
 };
 
 }

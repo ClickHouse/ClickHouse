@@ -1,10 +1,12 @@
 #pragma once
 
 #include <DB/Columns/ColumnNullable.h>
+#include <DB/Columns/ColumnString.h>
 #include <DB/Interpreters/AggregationCommon.h>
 
 #include <DB/Common/Arena.h>
 #include <DB/Common/HashTable/HashSet.h>
+#include <DB/Common/UInt128.h>
 
 namespace DB
 {
