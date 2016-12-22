@@ -137,7 +137,7 @@ void ColumnGathererStream::readSuffixImpl()
 		<< " (" << static_cast<double>(profile_info.bytes) / profile_info.rows << " bytes/elem.)"
 		<< " in " << seconds << " sec., "
 		<< profile_info.rows / seconds << " rows/sec., "
-		<< profile_info.bytes / 1000000.0 / seconds << " MiB/sec.");
+		<< profile_info.bytes / 1048576.0 / seconds << " MiB/sec.");
 }
 
 }
