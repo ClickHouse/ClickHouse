@@ -506,3 +506,4 @@ INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, [NULL], 'ACDEBFGH');
 INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, [NULL], 'ACDEFBGH');
 
 SELECT col1, col2, count() FROM test.test1 GROUP BY col1, col2;
+SELECT DISTINCT col1, col2 FROM test.test1 ORDER BY col1, col2;
