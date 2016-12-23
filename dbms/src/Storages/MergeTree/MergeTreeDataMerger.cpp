@@ -32,7 +32,7 @@ namespace ProfileEvents
 {
 	extern const Event MergedRows;
 	extern const Event MergedUncompressedBytes;
-	extern const Event MergesTime;
+	extern const Event MergesTimeMilliseconds;
 }
 
 namespace CurrentMetrics
@@ -419,7 +419,7 @@ public:
 	void updateWatch()
 	{
 		UInt64 watch_curr_elapsed = merge_entry->watch.elapsed();
-		ProfileEvents::increment(ProfileEvents::MergesTime, watch_curr_elapsed - watch_prev_elapsed);
+		ProfileEvents::increment(ProfileEvents::MergesTimeMilliseconds, (watch_curr_elapsed - watch_prev_elapsed) / 1000000);
 		watch_prev_elapsed = watch_curr_elapsed;
 	}
 
@@ -840,7 +840,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 	std::string merged_name = createMergedPartName(parts);
 
 	MergeList::EntryPtr merge_entry_ptr = data.context.getMergeList().insert(job.database_name,
-		job.table_name, merged_name);
+		job.table_name, merged_name, data.context);
 	MergeList::Entry & merge_entry = *merge_entry_ptr;
 	merge_entry->num_parts = parts.size();
 

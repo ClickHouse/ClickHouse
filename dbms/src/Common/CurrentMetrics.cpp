@@ -25,6 +25,7 @@
 	M(LeaderReplica) \
 	M(MemoryTracking) \
 	M(MemoryTrackingInBackgroundProcessingPool) \
+	M(MemoryTrackingForMerges) \
 	M(LeaderElection) \
 	M(EphemeralNode) \
 	M(ZooKeeperWatch) \
