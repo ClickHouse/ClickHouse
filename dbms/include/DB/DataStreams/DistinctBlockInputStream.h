@@ -7,15 +7,17 @@
 namespace DB
 {
 
-/** Из потока блоков оставляет только уникальные строки.
-  * Для реализации SELECT DISTINCT ... .
-  * Если указан ненулевой limit - прекращает выдавать строки после того, как накопилось limit строк
-  *  - для оптимизации SELECT DISTINCT ... LIMIT ... .
+/** This class is intended for implementation of SELECT DISTINCT clause and
+  * leaves only unique rows in the stream.
+  *
+  * To optimize the SELECT DISTINCT ... LIMIT clause we can
+  * set limit_hint to non zero value. So we stop emitting new rows after
+  * count of already emitted rows will reach the limit_hint.
   */
 class DistinctBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	/// Пустой columns_ значит все столбцы.
+	/// Empty columns_ means all collumns.
 	DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_hint_, Names columns_);
 
 	String getName() const override { return "Distinct"; }
@@ -43,7 +45,7 @@ private:
 	Sizes key_sizes;
 	size_t limit_hint;
 
-	/// Ограничения на максимальный размер множества
+	/// Restrictions on the maximum size of the output data.
 	size_t max_rows;
 	size_t max_bytes;
 	OverflowMode overflow_mode;

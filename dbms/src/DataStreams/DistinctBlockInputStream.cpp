@@ -26,7 +26,7 @@ String DistinctBlockInputStream::getID() const
 }
 
 Block DistinctBlockInputStream::readImpl()
-{.
+{
 	/// Execute until end of stream or until
 	/// a block with some new records will be gotten.
 	while (1)
