@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 
+
+OS_NAME=`lsb_release -s -c`
+
+if [ -z $(which python) ]; then
+    sudo apt-get -y install python-lxml python-termcolor
+fi
+
 # MySQL
 if [ -z $(which mysqld) ] || [ -z $(which mysqld) ]; then
     echo 'Installing MySQL'
@@ -31,13 +38,13 @@ if [ -z $LOCAL_INFILE_ENABLED ] || [ $LOCAL_INFILE_ENABLED != 1 ]; then
     sudo sed -i "$MY_CNF_PATTERN" $MY_CNF
 
     echo 'Enabled local-infile support for mysql'
-    sudo /etc/init.d/mysql stop
-    sudo /etc/init.d/mysql start
+    sudo service mysql stop
+    sudo service mysql start
 else
     echo 'Support for local-infile already present'
     echo 'select 1;' | mysql $MYSQL_OPTIONS &>/dev/null
     if [ $? -ne 0 ]; then
-        sudo /etc/init.d/mysql start
+        sudo service mysql start
     else
         echo 'MySQL already started'
     fi
@@ -46,18 +53,25 @@ fi
 # MongoDB
 if [ -z $(which mongod) ] || [ -z $(which mongo) ]; then
     echo 'Installing MongoDB'
-    MONGODB_ORG_VERSION=3.0.6
-    sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 7F0CEB10 &>/dev/null
-    echo "deb http://repo.mongodb.org/apt/ubuntu trusty/mongodb-org/3.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-3.0.list >/dev/null
-    sudo apt-get update &>/dev/null
-    sudo apt-get install -y mongodb-org=$MONGODB_ORG_VERSION >/dev/null
-    which mongod >/dev/null
-    if [ $? -ne 0 ]; then
-        echo 'Failed installing mongodb-org'
-        exit -1
+
+    if [ $OS_NAME == "trusty" ]; then
+        MONGODB_ORG_VERSION=3.0.6
+        sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 7F0CEB10 &>/dev/null
+        #echo "deb http://repo.mongodb.org/apt/ubuntu trusty/mongodb-org/3.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-3.0.list >/dev/null
+        sudo apt-get update &>/dev/null
+        sudo apt-get install -y mongodb-org=$MONGODB_ORG_VERSION >/dev/null
+
+        which mongod >/dev/null
+        if [ $? -ne 0 ]; then
+            echo 'Failed installing mongodb-org'
+            exit -1
+        fi
+
+        echo "Installed mongodb-org $MONGODB_ORG_VERSION"
+    else
+        sudo apt-get install -y mongodb
     fi
 
-    echo "Installed mongodb-org $MONGODB_ORG_VERSION"
 fi
 
 echo | mongo &>/dev/null
@@ -66,6 +80,9 @@ if [ $? -ne 0 ]; then
 else
     echo 'MongoDB already started'
 fi
+
+python http_server.py &
+http_pid=$!
 
 # ClickHouse
 clickhouse-server &> clickhouse.log &
@@ -84,3 +101,5 @@ fi
 kill -SIGTERM $PID
 #wait $PID
 echo 'Stopped ClickHouse server'
+
+kill $http_pid
