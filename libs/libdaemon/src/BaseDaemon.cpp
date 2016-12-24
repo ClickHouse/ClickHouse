@@ -284,10 +284,12 @@ private:
 
 #if defined(__x86_64__)
 		/// Get the address at the time the signal was raised from the RIP (x86-64)
-		#ifndef __APPLE__
-		caller_address = reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
-		#else
+		#if defined(__FreeBSD__)
+		caller_address = reinterpret_cast<void *>(context.uc_mcontext.mc_rip);
+		#elif defined(__APPLE__)
 		caller_address = reinterpret_cast<void *>(context.uc_mcontext->__ss.__rip);
+		#else
+		caller_address = reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
 		#endif
 #elif defined(__aarch64__)
 		caller_address = reinterpret_cast<void *>(context.uc_mcontext.pc);

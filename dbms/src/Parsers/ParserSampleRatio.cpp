@@ -1,3 +1,5 @@
+#include <common/exp10.h>
+
 #include <DB/Parsers/CommonParsers.h>
 #include <DB/Parsers/ParserSampleRatio.h>
 #include <DB/Parsers/ASTSampleRatio.h>
