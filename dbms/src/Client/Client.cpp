@@ -1191,21 +1191,21 @@ public:
 			}
 			/// Options with value after equal sign.
 			else if (in_external_group
-				 || 0 == strncmp(arg, "--file=", 		strlen("--file="))
+				&& (0 == strncmp(arg, "--file=", 		strlen("--file="))
 				 || 0 == strncmp(arg, "--name=", 		strlen("--name="))
 				 || 0 == strncmp(arg, "--format=", 		strlen("--format="))
 				 || 0 == strncmp(arg, "--structure=", 	strlen("--structure="))
-				 || 0 == strncmp(arg, "--types=", 		strlen("--types=")))
+				 || 0 == strncmp(arg, "--types=", 		strlen("--types="))))
 			{
 				external_tables_arguments.back().emplace_back(arg);
 			}
 			/// Options with value after whitespace.
 			else if (in_external_group
-				|| 0 == strcmp(arg, "--file")
-				|| 0 == strcmp(arg, "--name")
-				|| 0 == strcmp(arg, "--format")
-				|| 0 == strcmp(arg, "--structure")
-				|| 0 == strcmp(arg, "--types"))
+				&& (0 == strcmp(arg, "--file")
+				 || 0 == strcmp(arg, "--name")
+				 || 0 == strcmp(arg, "--format")
+				 || 0 == strcmp(arg, "--structure")
+				 || 0 == strcmp(arg, "--types")))
 			{
 				if (arg_num + 1 < argc)
 				{
