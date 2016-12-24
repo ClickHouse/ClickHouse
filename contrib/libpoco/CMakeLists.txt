@@ -138,18 +138,22 @@ if (UNIX AND NOT ANDROID )
 	# Standard 'must be' defines
 	if (APPLE)
 		add_definitions( -DPOCO_HAVE_IPv6 -DPOCO_NO_STAT64)
-		set(SYSLIBS  dl)
-	else (APPLE)
+		set(SYSLIBS  ${CMAKE_DL_LIBS})
+	elseif (CMAKE_SYSTEM MATCHES "FreeBSD")
+		add_definitions(-D__BSD_VISIBLE ) # better #include <sys/cdefs.h>
+		add_definitions(-D_XOPEN_SOURCE=700 -D_REENTRANT -D_THREAD_SAFE -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE -DPOCO_HAVE_IPv6)
+		set(SYSLIBS  pthread ${CMAKE_DL_LIBS} rt)
+	else ()
 		add_definitions(-D_XOPEN_SOURCE=500 -D_REENTRANT -D_THREAD_SAFE -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE -DPOCO_HAVE_FD_EPOLL -DPOCO_HAVE_IPv6)
-		set(SYSLIBS  pthread dl rt)
-	endif (APPLE)
+		set(SYSLIBS  pthread ${CMAKE_DL_LIBS} rt)
+	endif ()
 endif(UNIX AND NOT ANDROID )
 
 if (CMAKE_SYSTEM MATCHES "SunOS")
 	add_definitions( -DPOCO_OS_FAMILY_UNIX )
 	# Standard 'must be' defines
 	add_definitions( -D_XOPEN_SOURCE=500 -D_REENTRANT -D_THREAD_SAFE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 )
-	set(SYSLIBS  pthread socket xnet nsl resolv rt dl)
+	set(SYSLIBS  pthread socket xnet nsl resolv rt ${CMAKE_DL_LIBS})
 endif(CMAKE_SYSTEM MATCHES "SunOS")
 
 if (CMAKE_COMPILER_IS_MINGW)

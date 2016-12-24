@@ -17,7 +17,7 @@ macro (create_init_script daemonname)
 	set (tmp_file_name ${filename}.init)
 
 	set (SED_INPLACE_SUFFIX "")
-	if (APPLE)
+	if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
 		set (SED_INPLACE_SUFFIX "''")
 	endif ()
 	add_custom_command (OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${tmp_file_name}

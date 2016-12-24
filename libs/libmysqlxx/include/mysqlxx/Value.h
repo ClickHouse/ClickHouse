@@ -8,6 +8,7 @@
 #include <string>
 #include <limits>
 
+#include <common/exp10.h>
 #include <common/Common.h>
 #include <common/DateLUT.h>
 
