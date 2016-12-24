@@ -30,7 +30,7 @@ void QuotaValues<Counter>::initFromConfig(const String & config_elem, Poco::Util
 	result_bytes 	= parse<UInt64>(config.getString(config_elem + ".result_bytes",	"0"));
 	read_rows 		= parse<UInt64>(config.getString(config_elem + ".read_rows", 	"0"));
 	read_bytes 		= parse<UInt64>(config.getString(config_elem + ".read_bytes", 	"0"));
-	execution_time_usec = config.getInt(config_elem + ".execution_time", 0) * 1000000;
+	execution_time_usec = config.getUInt64(config_elem + ".execution_time", 0) * 1000000ULL;
 }
 
 template void QuotaValues<size_t>::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
