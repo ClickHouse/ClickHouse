@@ -10,6 +10,7 @@
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/ParserTablesInSelectQuery.h>
 
+#include <iostream>
 
 namespace DB
 {
@@ -151,9 +152,47 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		ws.ignore(pos, end);
 	}
 
-	/// LIMIT length или LIMIT offset, length
+	/// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list
 	if (s_limit.ignore(pos, end, max_parsed_pos, expected))
 	{
+		ws.ignore(pos, end);
+
+		ParserString s_comma(",");
+		ParserNumber num;
+
+		if (!num.parse(pos, end, select_query->limit_length, max_parsed_pos, expected))
+			return false;
+
+		ws.ignore(pos, end);
+
+		if (s_comma.ignore(pos, end, max_parsed_pos, expected))
+		{
+			select_query->limit_offset = select_query->limit_length;
+			if (!num.parse(pos, end, select_query->limit_length, max_parsed_pos, expected))
+				return false;
+
+			ws.ignore(pos, end);
+		}
+		else if (s_by.ignore(pos, end, max_parsed_pos, expected))
+		{
+			select_query->limit_by_value = select_query->limit_length;
+			select_query->limit_length = nullptr;
+
+			ws.ignore(pos, end);
+
+			if (!exp_list.parse(pos, end, select_query->limit_by_expression_list, max_parsed_pos, expected))
+				return false;
+
+			ws.ignore(pos, end);
+		}
+	}
+
+	/// LIMIT length | LIMIT offset, length
+	if (s_limit.ignore(pos, end, max_parsed_pos, expected))
+	{
+		if (!select_query->limit_by_value || select_query->limit_length)
+			return false;
+
 		ws.ignore(pos, end);
 
 		ParserString s_comma(",");

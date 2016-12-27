@@ -57,6 +57,8 @@ public:
 	bool group_by_with_totals = false;
 	ASTPtr having_expression;
 	ASTPtr order_expression_list;
+	ASTPtr limit_by_value;
+	ASTPtr limit_by_expression_list;
 	ASTPtr limit_offset;
 	ASTPtr limit_length;
 	ASTPtr settings;
