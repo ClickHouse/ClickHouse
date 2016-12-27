@@ -530,7 +530,7 @@ StoragePtr StorageFactory::get(
 		  * SummingMergeTree(date, [sample_key], primary_key, index_granularity, [columns_to_sum])
 		  * AggregatingMergeTree(date, [sample_key], primary_key, index_granularity)
 		  * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column])
-		  * GraphiteMergeTree(date, [sample_key], primary_key, index_granularity, Path, Time, Value, Version)
+		  * GraphiteMergeTree(date, [sample_key], primary_key, index_granularity, 'config_element')
 		  * UnsortedMergeTree(date, index_granularity)	TODO Добавить описание ниже.
 		  */
 
