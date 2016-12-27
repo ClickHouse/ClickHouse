@@ -9,7 +9,7 @@ int main(int argc, char ** argv)
 
 	const auto & date_lut = DateLUT::instance();
 
-	std::cerr << date_lut.toHourInaccurate(TIME) << std::endl;
+	std::cerr << date_lut.toHour(TIME) << std::endl;
 	std::cerr << date_lut.toDayNum(TIME) << std::endl;
 
 	const auto * values = reinterpret_cast<const DateLUTImpl::Values *>(&date_lut);

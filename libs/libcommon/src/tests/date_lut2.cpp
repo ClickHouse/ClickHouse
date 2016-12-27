@@ -34,11 +34,11 @@ static time_t orderedIdentifierToDate(unsigned value)
 void loop(time_t begin, time_t end, int step)
 {
 	const auto & date_lut = DateLUT::instance();
-	
+
 	for (time_t t = begin; t < end; t += step)
 		std::cout << toString(t)
-			<< ", " << toString(date_lut.toTimeInaccurate(t))
-			<< ", " << date_lut.toHourInaccurate(t)
+			<< ", " << toString(date_lut.toTime(t))
+			<< ", " << date_lut.toHour(t)
 			<< std::endl;
 }
 

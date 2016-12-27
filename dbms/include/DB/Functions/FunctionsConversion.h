@@ -504,7 +504,7 @@ time_t convertTimestamp(time_t source_timestamp, const DateLUTImpl & from_date_l
 	{
 		const auto & values = from_date_lut.getValues(source_timestamp);
 		return to_date_lut.makeDateTime(values.year, values.month, values.day_of_month,
-										from_date_lut.toHourInaccurate(source_timestamp),
+										from_date_lut.toHour(source_timestamp),
 										from_date_lut.toMinuteInaccurate(source_timestamp),
 										from_date_lut.toSecondInaccurate(source_timestamp));
 	}
