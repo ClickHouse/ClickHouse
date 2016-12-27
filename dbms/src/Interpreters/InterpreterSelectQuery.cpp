@@ -190,19 +190,25 @@ void InterpreterSelectQuery::initQueryAnalyzer()
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
 	size_t subquery_depth_, BlockInputStreamPtr input_)
-	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
-	context(context_), to_stage(to_stage_), subquery_depth(subquery_depth_),
-	is_first_select_inside_union_all(query.isUnionAllHead()),
-	log(&Logger::get("InterpreterSelectQuery"))
+	: query_ptr(query_ptr_)
+	, query(typeid_cast<ASTSelectQuery &>(*query_ptr))
+	, context(context_)
+	, to_stage(to_stage_)
+	, subquery_depth(subquery_depth_)
+	, is_first_select_inside_union_all(query.isUnionAllHead())
+	, log(&Logger::get("InterpreterSelectQuery"))
 {
 	init(input_);
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, ASTPtr query_ptr_, const Context & context_)
-	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
-	context(context_), to_stage(QueryProcessingStage::Complete), subquery_depth(0),
-	is_first_select_inside_union_all(false), only_analyze(true),
-	log(&Logger::get("InterpreterSelectQuery"))
+	: query_ptr(query_ptr_)
+	, query(typeid_cast<ASTSelectQuery &>(*query_ptr))
+	, context(context_)
+	, to_stage(QueryProcessingStage::Complete)
+	, subquery_depth(0)
+	, is_first_select_inside_union_all(false), only_analyze(true)
+	, log(&Logger::get("InterpreterSelectQuery"))
 {
 	init({});
 }
@@ -217,10 +223,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_,
 	const Names & required_column_names_,
 	const NamesAndTypesList & table_column_names_, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
-	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
-	context(context_), to_stage(to_stage_), subquery_depth(subquery_depth_), table_column_names(table_column_names_),
-	is_first_select_inside_union_all(query.isUnionAllHead()),
-	log(&Logger::get("InterpreterSelectQuery"))
+	: query_ptr(query_ptr_)
+	, query(typeid_cast<ASTSelectQuery &>(*query_ptr))
+	, context(context_)
+	, to_stage(to_stage_)
+	, subquery_depth(subquery_depth_)
+	, table_column_names(table_column_names_)
+	, is_first_select_inside_union_all(query.isUnionAllHead())
+	, log(&Logger::get("InterpreterSelectQuery"))
 {
 	init(input_, required_column_names_);
 }
@@ -305,7 +315,7 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 DataTypes InterpreterSelectQuery::getReturnTypes()
 {
 	DataTypes res;
-	NamesAndTypesList columns = query_analyzer->getSelectSampleBlock().getColumnsList();
+	const NamesAndTypesList & columns = query_analyzer->getSelectSampleBlock().getColumnsList();
 	for (auto & column : columns)
 		res.push_back(column.type);
 
