@@ -271,6 +271,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		select_query->children.push_back(select_query->having_expression);
 	if (select_query->order_expression_list)
 		select_query->children.push_back(select_query->order_expression_list);
+	if (select_query->limit_by_value)
+		select_query->children.push_back(select_query->limit_by_value);
+	if (select_query->limit_by_expression_list)
+		select_query->children.push_back(select_query->limit_by_expression_list);
 	if (select_query->limit_offset)
 		select_query->children.push_back(select_query->limit_offset);
 	if (select_query->limit_length)

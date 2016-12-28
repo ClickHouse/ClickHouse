@@ -3,6 +3,7 @@
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
 #include <DB/DataStreams/LimitBlockInputStream.h>
+#include <DB/DataStreams/LimitByBlockInputStream.h>
 #include <DB/DataStreams/PartialSortingBlockInputStream.h>
 #include <DB/DataStreams/MergeSortingBlockInputStream.h>
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
@@ -644,6 +645,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 				if (need_second_distinct_pass)
 					executeDistinct(false, Names());
 
+				executeLimitBy();
 				executeLimit();
 			}
 		}
@@ -1172,6 +1174,28 @@ void InterpreterSelectQuery::executePreLimit()
 		if (hasMoreThanOneStream())
 			union_within_single_query = true;
 	}
+}
+
+
+void InterpreterSelectQuery::executeLimitBy()
+{
+	if (!query.limit_by_value)
+		return;
+
+	Names columns;
+	size_t value = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_by_value).value);
+
+	for (const auto & elem : query.limit_by_expression_list->children)
+	{
+		columns.emplace_back(elem->getColumnName());
+	}
+
+	transformStreams([&](auto & stream)
+	{
+		stream = std::make_shared<LimitByBlockInputStream>(
+			stream, value, columns
+		);
+	});
 }
 
 
