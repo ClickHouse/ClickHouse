@@ -70,11 +70,25 @@ struct ZeroTransform
 
 struct ToDateImpl
 {
-	static inline UInt8 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	static inline UInt32 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
 	{
 		return remote_date_lut.toDate(t);
 	}
-	static inline UInt8 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	static inline UInt16 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	{
+		return d;
+	}
+
+	using FactorTransform = ZeroTransform;
+};
+
+struct ToStartOfDayImpl
+{
+	static inline UInt32 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	{
+		return remote_date_lut.toDate(t);
+	}
+	static inline UInt16 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
 	{
 		return d;
 	}
@@ -1017,6 +1031,7 @@ struct NameToDayOfWeek			{ static constexpr auto name = "toDayOfWeek"; };
 struct NameToHour	 			{ static constexpr auto name = "toHour"; };
 struct NameToMinute				{ static constexpr auto name = "toMinute"; };
 struct NameToSecond				{ static constexpr auto name = "toSecond"; };
+struct NameToStartOfDay			{ static constexpr auto name = "toStartOfDay"; };
 struct NameToMonday				{ static constexpr auto name = "toMonday"; };
 struct NameToStartOfMonth		{ static constexpr auto name = "toStartOfMonth"; };
 struct NameToStartOfQuarter		{ static constexpr auto name = "toStartOfQuarter"; };
@@ -1041,6 +1056,7 @@ using FunctionToDayOfWeek = FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToD
 using FunctionToHour = FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToHourImpl, 		NameToHour> 	;
 using FunctionToMinute = FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToMinuteImpl, 		NameToMinute> 	;
 using FunctionToSecond = FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToSecondImpl, 		NameToSecond> 	;
+using FunctionToStartOfDay = FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfDayImpl, NameToStartOfDay>;
 using FunctionToMonday = FunctionDateOrDateTimeToSomething<DataTypeDate,		ToMondayImpl, 		NameToMonday> 	;
 using FunctionToStartOfMonth = FunctionDateOrDateTimeToSomething<DataTypeDate,		ToStartOfMonthImpl, NameToStartOfMonth>;
 using FunctionToStartOfQuarter = FunctionDateOrDateTimeToSomething<DataTypeDate,	ToStartOfQuarterImpl, 	NameToStartOfQuarter> ;
