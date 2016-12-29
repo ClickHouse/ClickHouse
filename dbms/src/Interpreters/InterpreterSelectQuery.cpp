@@ -1187,7 +1187,7 @@ void InterpreterSelectQuery::executeLimitBy()
 
 	for (const auto & elem : query.limit_by_expression_list->children)
 	{
-		columns.emplace_back(elem->getColumnName());
+		columns.emplace_back(elem->getAliasOrColumnName());
 	}
 
 	transformStreams([&](auto & stream)
