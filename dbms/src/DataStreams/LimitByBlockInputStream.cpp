@@ -25,20 +25,10 @@ Block LimitByBlockInputStream::readImpl()
 		if (!block)
 			return Block();
 
-		size_t rows = block.rows();
-		size_t old_set_size = set.size();
+		const ConstColumnPlainPtrs column_ptrs(getKeyColumns(block));
+		const size_t rows = block.rows();
+		const size_t old_set_size = set.size();
 		IColumn::Filter filter(rows);
-
-		ConstColumnPlainPtrs column_ptrs;
-		column_ptrs.reserve(columns_names.size());
-
-		for (size_t i = 0; i < columns_names.size(); ++i)
-		{
-			auto & column = block.getByName(columns_names[i]).column;
-
-			if (!column->isConst())
-				column_ptrs.emplace_back(column.get());
-		}
 
 		for (size_t i = 0; i < rows; ++i)
 		{
@@ -74,6 +64,23 @@ Block LimitByBlockInputStream::readImpl()
 
 		return block;
 	}
+}
+
+ConstColumnPlainPtrs LimitByBlockInputStream::getKeyColumns(Block & block) const
+{
+	ConstColumnPlainPtrs column_ptrs;
+	column_ptrs.reserve(columns_names.size());
+
+	for (const auto & name : columns_names)
+	{
+		auto & column = block.getByName(name).column;
+
+		/// Ignore all constant columns.
+		if (!column->isConst())
+			column_ptrs.emplace_back(column.get());
+	}
+
+	return column_ptrs;
 }
 
 }

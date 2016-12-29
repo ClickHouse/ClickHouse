@@ -22,6 +22,9 @@ protected:
 	Block readImpl() override;
 
 private:
+	ConstColumnPlainPtrs getKeyColumns(Block & block) const;
+
+private:
 	using MapHashed = HashMap<UInt128, UInt64, UInt128TrivialHash>;
 
 	Names columns_names;
