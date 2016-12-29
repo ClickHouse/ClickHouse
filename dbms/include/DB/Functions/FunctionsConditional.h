@@ -1318,14 +1318,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 3; }
+
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 3)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 3.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		if (!typeid_cast<const DataTypeUInt8 *>(&*arguments[0]))
 			throw Exception("Illegal type of first argument (condition) of function if. Must be UInt8.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1486,6 +1483,8 @@ public:
 
 public:
 	String getName() const override;
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
 	bool hasSpecialSupportForNulls() const override;
 	DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
 	void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
@@ -1515,6 +1514,8 @@ public:
 
 public:
 	FunctionCaseWithExpr(const Context & context_);
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
 	String getName() const override;
 	DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
 	void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
@@ -1533,6 +1534,8 @@ public:
 
 public:
 	String getName() const override;
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
 	bool hasSpecialSupportForNulls() const override;
 	DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
 	void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;

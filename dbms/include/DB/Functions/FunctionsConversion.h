@@ -1305,6 +1305,9 @@ public:
 		return name;
 	}
 
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
@@ -1497,31 +1500,23 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 1; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		return getReturnTypeInternal(arguments);
+		return std::make_shared<ToDataType>();
 	}
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
-		if (typeid_cast<const DataTypeString *>(from_type)) ConvertOrZeroImpl<ToDataType, Name>::execute(block, arguments, result);
+		if (typeid_cast<const DataTypeString *>(from_type))
+			ConvertOrZeroImpl<ToDataType, Name>::execute(block, arguments, result);
 		else
 			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName()
 				+ ". Only String argument is accepted for try-conversion function. For other arguments, use function without 'try'.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-
-private:
-	DataTypePtr getReturnTypeInternal(const DataTypes & arguments) const
-	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		return std::make_shared<ToDataType>();
 	}
 };
 
@@ -1540,6 +1535,8 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 2; }
+
 	/** Получить тип результата по типам аргументов и значениям константных аргументов.
 	  * Если функция неприменима для данных аргументов - кинуть исключение.
 	  * Для неконстантных столбцов arguments[i].column = nullptr.
@@ -1548,10 +1545,6 @@ public:
 		DataTypePtr & out_return_type,
 		std::vector<ExpressionAction> & out_prerequisites) override
 	{
-		if (arguments.size() != 2)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 2.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		if (!arguments[1].column)
 			throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
 		if (!typeid_cast<const DataTypeString *>(arguments[0].type.get()) &&
@@ -2329,15 +2322,12 @@ public:
 
 	bool hasSpecialSupportForNulls() const override { return true; }
 
+	size_t getNumberOfArguments() const override { return 2; }
+
 	void getReturnTypeAndPrerequisitesImpl(
 		const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type,
 		std::vector<ExpressionAction> & out_prerequisites) override
 	{
-		if (arguments.size() != 2)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 2.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		const auto type_col = typeid_cast<const ColumnConstString *>(arguments.back().column.get());
 		if (!type_col)
 			throw Exception("Second argument to " + getName() + " must be a constant string describing type",

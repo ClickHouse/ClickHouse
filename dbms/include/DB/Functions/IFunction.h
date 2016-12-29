@@ -49,6 +49,16 @@ public:
 	/// Получить основное имя функции.
 	virtual String getName() const = 0;
 
+	/// Override and return true if function could take different number of arguments.
+	virtual bool isVariadic() const { return false; }
+
+	/// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
+	virtual size_t getNumberOfArguments() const = 0;
+
+	/// Throw if number of arguments is incorrect. Default implementation will check only in non-variadic case.
+	/// It is called inside getReturnType.
+	virtual void checkNumberOfArguments(size_t number_of_arguments) const;
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	/// Перегрузка для тех, кому не нужны prerequisites и значения константных аргументов. Снаружи не вызывается.
 	DataTypePtr getReturnType(const DataTypes & arguments) const;

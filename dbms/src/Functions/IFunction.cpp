@@ -168,31 +168,46 @@ DataTypes toNestedDataTypes(const DataTypes & args)
 
 }
 
+
+void IFunction::checkNumberOfArguments(size_t number_of_arguments) const
+{
+	if (isVariadic())
+		return;
+
+	size_t expected_number_of_arguments = getNumberOfArguments();
+
+	if (number_of_arguments != expected_number_of_arguments)
+		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ toString(number_of_arguments) + ", should be " + toString(expected_number_of_arguments),
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+}
+
+
 DataTypePtr IFunction::getReturnType(const DataTypes & arguments) const
 {
+	checkNumberOfArguments(arguments.size());
+
 	auto category = hasSpecialDataTypes(arguments);
 
-	if (category == Category::IS_ORDINARY)
+	switch (category)
 	{
+		case Category::IS_ORDINARY:
+			break;
+
+		case Category::IS_NULL:
+			if (!hasSpecialSupportForNulls())
+				return std::make_shared<DataTypeNull>();
+			break;
+
+		case Category::IS_NULLABLE:
+			if (!hasSpecialSupportForNulls())
+				return getReturnTypeImpl(toNestedDataTypes(arguments));
+			break;
 	}
-	else if (category == Category::IS_NULL)
-	{
-		if (!hasSpecialSupportForNulls())
-			return std::make_shared<DataTypeNull>();
-	}
-	else if (category == Category::IS_NULLABLE)
-	{
-		if (!hasSpecialSupportForNulls())
-		{
-			const DataTypes new_args = toNestedDataTypes(arguments);
-			return getReturnTypeImpl(new_args);
-		}
-	}
-	else
-		throw Exception{"IFunction: internal error", ErrorCodes::LOGICAL_ERROR};
 
 	return getReturnTypeImpl(arguments);
 }
+
 
 void IFunction::getReturnTypeAndPrerequisites(
 	const ColumnsWithTypeAndName & arguments,
@@ -201,60 +216,62 @@ void IFunction::getReturnTypeAndPrerequisites(
 {
 	auto category = hasSpecialColumns(arguments);
 
-	if (category == Category::IS_ORDINARY)
+	switch (category)
 	{
+		case Category::IS_ORDINARY:
+			break;
+
+		case Category::IS_NULL:
+			if (!hasSpecialSupportForNulls())
+			{
+				out_return_type = std::make_shared<DataTypeNull>();
+				return;
+			}
+			break;
+
+		case Category::IS_NULLABLE:
+			if (!hasSpecialSupportForNulls())
+			{
+				const ColumnsWithTypeAndName new_args = toNestedColumns(arguments);
+				getReturnTypeAndPrerequisitesImpl(new_args, out_return_type, out_prerequisites);
+				out_return_type = std::make_shared<DataTypeNullable>(out_return_type);
+				return;
+			}
+			break;
 	}
-	else if (category == Category::IS_NULL)
-	{
-		if (!hasSpecialSupportForNulls())
-		{
-			out_return_type = std::make_shared<DataTypeNull>();
-			return;
-		}
-	}
-	else if (category == Category::IS_NULLABLE)
-	{
-		if (!hasSpecialSupportForNulls())
-		{
-			const ColumnsWithTypeAndName new_args = toNestedColumns(arguments);
-			getReturnTypeAndPrerequisitesImpl(new_args, out_return_type, out_prerequisites);
-			out_return_type = std::make_shared<DataTypeNullable>(out_return_type);
-			return;
-		}
-	}
-	else
-		throw Exception{"IFunction: internal error", ErrorCodes::LOGICAL_ERROR};
 
 	getReturnTypeAndPrerequisitesImpl(arguments, out_return_type, out_prerequisites);
 }
+
 
 void IFunction::getLambdaArgumentTypes(DataTypes & arguments) const
 {
 	auto category = hasSpecialDataTypes(arguments);
 
-	if (category == Category::IS_ORDINARY)
+	switch (category)
 	{
+		case Category::IS_ORDINARY:
+			break;
+
+		case Category::IS_NULL:
+			if (!hasSpecialSupportForNulls())
+				return;
+			break;
+
+		case Category::IS_NULLABLE:
+			if (!hasSpecialSupportForNulls())
+			{
+				DataTypes new_args = toNestedDataTypes(arguments);
+				getLambdaArgumentTypesImpl(new_args);
+				arguments = std::move(new_args);
+				return;
+			}
+			break;
 	}
-	else if (category == Category::IS_NULL)
-	{
-		if (!hasSpecialSupportForNulls())
-			return;
-	}
-	else if (category == Category::IS_NULLABLE)
-	{
-		if (!hasSpecialSupportForNulls())
-		{
-			DataTypes new_args = toNestedDataTypes(arguments);
-			getLambdaArgumentTypesImpl(new_args);
-			arguments = std::move(new_args);
-			return;
-		}
-	}
-	else
-		throw Exception{"IFunction: internal error", ErrorCodes::LOGICAL_ERROR};
 
 	getLambdaArgumentTypesImpl(arguments);
 }
+
 
 void IFunction::execute(Block & block, const ColumnNumbers & args, size_t result)
 {
@@ -270,6 +287,7 @@ void IFunction::execute(Block & block, const ColumnNumbers & args, size_t result
 	postProcessResult(strategy, block, processed_block, args, result);
 }
 
+
 void IFunction::execute(Block & block, const ColumnNumbers & args, const ColumnNumbers & prerequisites, size_t result)
 {
 	auto strategy = chooseStrategy(block, args);
@@ -284,28 +302,30 @@ void IFunction::execute(Block & block, const ColumnNumbers & args, const ColumnN
 	postProcessResult(strategy, block, processed_block, args, result);
 }
 
+
 IFunction::Strategy IFunction::chooseStrategy(const Block & block, const ColumnNumbers & args)
 {
 	auto category = blockHasSpecialColumns(block, args);
 
-	if (category == Category::IS_ORDINARY)
+	switch (category)
 	{
+		case Category::IS_ORDINARY:
+			break;
+
+		case Category::IS_NULL:
+			if (!hasSpecialSupportForNulls())
+				return RETURN_NULL;
+			break;
+
+		case Category::IS_NULLABLE:
+			if (!hasSpecialSupportForNulls())
+				return PROCESS_NULLABLE_COLUMNS;
+			break;
 	}
-	else if (category == Category::IS_NULL)
-	{
-		if (!hasSpecialSupportForNulls())
-			return RETURN_NULL;
-	}
-	else if (category == Category::IS_NULLABLE)
-	{
-		if (!hasSpecialSupportForNulls())
-			return PROCESS_NULLABLE_COLUMNS;
-	}
-	else
-		throw Exception{"IFunction: internal error", ErrorCodes::LOGICAL_ERROR};
 
 	return DIRECTLY_EXECUTE;
 }
+
 
 Block IFunction::preProcessBlock(Strategy strategy, const Block & block, const ColumnNumbers & args, size_t result)
 {
@@ -320,8 +340,9 @@ Block IFunction::preProcessBlock(Strategy strategy, const Block & block, const C
 		return createBlockWithNestedColumns(block, args, result);
 	}
 	else
-		throw Exception{"IFunction: internal error", ErrorCodes::LOGICAL_ERROR};
+		throw Exception{"IFunction: logical error, unknown execution strategy.", ErrorCodes::LOGICAL_ERROR};
 }
+
 
 void IFunction::postProcessResult(Strategy strategy, Block & block, const Block & processed_block,
 	const ColumnNumbers & args, size_t result)
@@ -349,8 +370,9 @@ void IFunction::postProcessResult(Strategy strategy, Block & block, const Block 
 		createNullValuesByteMap(block, args, result);
 	}
 	else
-		throw Exception{"IFunction: internal error", ErrorCodes::LOGICAL_ERROR};
+		throw Exception{"IFunction: logical error, unknown execution strategy.", ErrorCodes::LOGICAL_ERROR};
 }
+
 
 Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers args)
 {
@@ -388,6 +410,7 @@ Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers
 
 	return res;
 }
+
 
 Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size_t result)
 {

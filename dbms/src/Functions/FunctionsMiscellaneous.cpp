@@ -495,12 +495,8 @@ void FunctionHasColumnInTable::getReturnTypeAndPrerequisitesImpl(
 	DataTypePtr & out_return_type,
 	ExpressionActions::Actions & out_prerequisites)
 {
-	if (arguments.size() != number_of_arguments)
-		throw Exception("Function " + getName() + " requires exactly three arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-
 	static const std::string arg_pos_description[] = {"First", "Second", "Third"};
-	for (size_t i = 0; i < number_of_arguments; ++i)
+	for (size_t i = 0; i < getNumberOfArguments(); ++i)
 	{
 		const ColumnWithTypeAndName & argument = arguments[i];
 

@@ -13,11 +13,6 @@ String FunctionReverse::getName() const
 
 DataTypePtr FunctionReverse::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	if (arguments.size() != 1)
-		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 	if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0])
 		&& !typeid_cast<const DataTypeArray *>(&*arguments[0]))
 		throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
@@ -71,13 +66,6 @@ String FunctionAppendTrailingCharIfAbsent::getName() const
 
 DataTypePtr FunctionAppendTrailingCharIfAbsent::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	if (arguments.size() != 2)
-		throw Exception{
-			"Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 2.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-		};
-
 	if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 		throw Exception{
 			"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),

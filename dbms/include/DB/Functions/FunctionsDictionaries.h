@@ -203,6 +203,9 @@ public:
 		return name;
 	}
 
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
@@ -295,6 +298,9 @@ public:
 	{
 		return name;
 	}
+
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -428,6 +434,9 @@ public:
 	{
 		return name;
 	}
+
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -702,6 +711,9 @@ public:
 		return name;
 	}
 
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
@@ -784,14 +796,10 @@ public:
 	String getName() const override { return name; }
 
 private:
+	size_t getNumberOfArguments() const override { return 2; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 2)
-			throw Exception{
-				"Number of arguments for function " + getName() + " doesn't match: passed "
-					+ toString(arguments.size()) + ", should be 2.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 			throw Exception{
 				"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -837,12 +845,6 @@ private:
 		if (!dict)
 			return false;
 
-		if (arguments.size() != 2)
-			throw Exception{
-				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
-					" requires exactly 2 arguments",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
 		const auto id_col_untyped = block.getByPosition(arguments[1]).column.get();
 		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 		{
@@ -877,12 +879,6 @@ private:
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
 			return false;
-
-		if (arguments.size() != 2)
-			throw Exception{
-				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
-					" requires exactly 2 arguments",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 		const auto key_col_with_type = block.getByPosition(arguments[1]);
 		if (typeid_cast<const ColumnTuple *>(key_col_with_type.column.get())
@@ -929,6 +925,9 @@ public:
 	String getName() const override { return name; }
 
 private:
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 3 && arguments.size() != 4)
@@ -1206,14 +1205,10 @@ public:
 	String getName() const override { return name; }
 
 private:
+	size_t getNumberOfArguments() const override { return 4; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 4)
-			throw Exception{
-				"Number of arguments for function " + getName() + " doesn't match: passed " +
-					toString(arguments.size()) + ", should be 4.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 			throw Exception{
 				"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() +
@@ -1272,12 +1267,6 @@ private:
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
 			return false;
-
-		if (arguments.size() != 4)
-			throw Exception{
-				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
-					" requires exactly 4 arguments",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
@@ -1377,12 +1366,6 @@ private:
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
 			return false;
-
-		if (arguments.size() != 4)
-			throw Exception{
-				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
-					" requires exactly 4 arguments",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
@@ -1499,14 +1482,11 @@ public:
 	String getName() const override { return name; }
 
 private:
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 3 && arguments.size() != 4)
-			throw Exception{
-				"Number of arguments for function " + getName() + " doesn't match: passed "
-					+ toString(arguments.size()) + ", should be 3 or 4.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 		{
 			throw Exception{
@@ -1813,14 +1793,10 @@ public:
 	String getName() const override { return name; }
 
 private:
+	size_t getNumberOfArguments() const override { return 4; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 4)
-			throw Exception{
-				"Number of arguments for function " + getName() + " doesn't match: passed "
-					+ toString(arguments.size()) + ", should be 4.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 		{
 			throw Exception{
@@ -1885,12 +1861,6 @@ private:
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
 			return false;
-
-		if (arguments.size() != 4)
-			throw Exception{
-				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
-				" requires exactly 4 arguments.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
@@ -1996,12 +1966,6 @@ private:
 		if (!dict)
 			return false;
 
-		if (arguments.size() != 4)
-			throw Exception{
-				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
-					" requires exactly 4 arguments",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
 		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
 			throw Exception{
@@ -2084,14 +2048,10 @@ public:
 	String getName() const override { return name; }
 
 private:
+	size_t getNumberOfArguments() const override { return 2; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 2)
-			throw Exception{
-				"Number of arguments for function " + getName() + " doesn't match: passed "
-					+ toString(arguments.size()) + ", should be 2.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 		{
 			throw Exception{
@@ -2247,14 +2207,10 @@ public:
 	String getName() const override { return name; }
 
 private:
+	size_t getNumberOfArguments() const override { return 3; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 3)
-			throw Exception{
-				"Number of arguments for function " + getName() + " doesn't match: passed "
-					+ toString(arguments.size()) + ", should be 3.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 		{
 			throw Exception{

@@ -1035,11 +1035,6 @@ String FunctionArrayElement::getName() const
 
 DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	if (arguments.size() != 2)
-		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 2.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
 	if (!array_type)
 		throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1201,11 +1196,6 @@ String FunctionArrayEnumerate::getName() const
 
 DataTypePtr FunctionArrayEnumerate::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	if (arguments.size() != 1)
-		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
 	if (!array_type)
 		throw Exception("First argument for function " + getName() + " must be an array but it has type "
@@ -1904,11 +1894,6 @@ String FunctionEmptyArrayToSingle::getName() const
 
 DataTypePtr FunctionEmptyArrayToSingle::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	if (arguments.size() != 1)
-		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
 	if (!array_type)
 		throw Exception("Argument for function " + getName() + " must be array.",
@@ -2197,13 +2182,6 @@ String FunctionRange::getName() const
 
 DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	if (arguments.size() != 1)
-		throw Exception{
-			"Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-		};
-
 	const auto arg = arguments.front().get();
 
 	if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
@@ -2334,11 +2312,6 @@ String FunctionArrayReverse::getName() const
 
 DataTypePtr FunctionArrayReverse::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	if (arguments.size() != 1)
-		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
 	if (!array_type)
 		throw Exception("Argument for function " + getName() + " must be array.",
