@@ -199,7 +199,14 @@ static void setGraphitePatternsFromConfig(const Context & context,
 		}
 		else if (key == "default")
 		{
-			/// Ниже.
+			/// See below.
+		}
+		else if (key == "path_column_name"
+			|| key == "time_column_name"
+			|| key == "value_column_name"
+			|| key == "version_column_name")
+		{
+			/// See above.
 		}
 		else
 			throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
