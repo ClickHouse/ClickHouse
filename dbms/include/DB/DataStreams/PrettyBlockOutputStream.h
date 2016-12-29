@@ -2,8 +2,6 @@
 
 #include <DB/DataStreams/IBlockOutputStream.h>
 
-#define PRETTY_FORMAT_DEFAULT_MAX_ROWS 10000
-
 
 namespace DB
 {
@@ -17,7 +15,7 @@ class PrettyBlockOutputStream : public IBlockOutputStream
 {
 public:
 	/// no_escapes - не использовать ANSI escape sequences - для отображения в браузере, а не в консоли.
-	PrettyBlockOutputStream(WriteBuffer & ostr_, bool no_escapes_ = false, size_t max_rows_ = PRETTY_FORMAT_DEFAULT_MAX_ROWS);
+	PrettyBlockOutputStream(WriteBuffer & ostr_, bool no_escapes_, size_t max_rows_);
 
 	void write(const Block & block) override;
 	void writeSuffix() override;

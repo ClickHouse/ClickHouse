@@ -233,6 +233,9 @@ struct Settings
 	/** Controls quoting of 64-bit integers in JSON output format. */ \
 	M(SettingBool, output_format_json_quote_64bit_integers, true) \
 	\
+	/** Rows limit for Pretty formats. */ \
+	M(SettingUInt64, output_format_pretty_max_rows, 10000) \
+	\
 	/** Use client timezone for interpreting DateTime string values, instead of adopting server timezone. */ \
 	M(SettingBool, use_client_time_zone, false)
 
