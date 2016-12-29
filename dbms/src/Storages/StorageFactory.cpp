@@ -771,11 +771,18 @@ For further info please read the documentation: https://clickhouse.yandex/
 		else if (merging_params.mode == MergeTreeData::MergingParams::Graphite)
 		{
 			String graphite_config_name;
+			String error_msg = "Last parameter of GraphiteMergeTree must be name (in single quotes) of element in configuration file with Graphite options";
+			error_msg += verbose_help;
 
 			if (auto ast = typeid_cast<ASTLiteral *>(&*args.back()))
+			{
+				if (ast->value.getType() != Field::Types::String)
+					throw Exception(error_msg, ErrorCodes::BAD_ARGUMENTS);
+
 				graphite_config_name = ast->value.get<String>();
+			}
 			else
-				throw Exception(String("Last parameter of GraphiteMergeTree must be name (in single quotes) of element in configuration file with Graphite options") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+				throw Exception(error_msg, ErrorCodes::BAD_ARGUMENTS);
 
 			args.pop_back();
 			setGraphitePatternsFromConfig(context, graphite_config_name, merging_params.graphite_params);
