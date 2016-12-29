@@ -636,44 +636,37 @@ For further info please read the documentation: https://clickhouse.yandex/
 		if (args_func.size() == 1)
 			args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
-		/// NOTE Слегка запутанно.
+		/// NOTE Quite complicated.
 		size_t num_additional_params = (replicated ? 2 : 0)
 			+ (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
 			+ (merging_params.mode == MergeTreeData::MergingParams::Graphite);
 
-		if (merging_params.mode == MergeTreeData::MergingParams::Unsorted
-			&& args.size() != num_additional_params + 2)
-		{
-			String params;
-
-			if (replicated)
-				params +=
+		String params_for_replicated;
+		if (replicated)
+			params_for_replicated =
 				"\npath in ZooKeeper,"
 				"\nreplica name,";
 
-			params +=
+		if (merging_params.mode == MergeTreeData::MergingParams::Unsorted
+			&& args.size() != num_additional_params + 2)
+		{
+			String params =
 				"\nname of column with date,"
 				"\nindex granularity\n";
 
 			throw Exception("Storage " + name + " requires "
-				+ toString(num_additional_params + 2) + " parameters: " + params + verbose_help,
+				+ toString(num_additional_params + 2) + " parameters: " + params_for_replicated + params + verbose_help,
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
 
 		if (merging_params.mode != MergeTreeData::MergingParams::Summing
 			&& merging_params.mode != MergeTreeData::MergingParams::Replacing
 			&& merging_params.mode != MergeTreeData::MergingParams::Unsorted
+			&& merging_params.mode != MergeTreeData::MergingParams::Graphite
 			&& args.size() != num_additional_params + 3
 			&& args.size() != num_additional_params + 4)
 		{
-			String params;
-
-			if (replicated)
-				params +=
-					"\npath in ZooKeeper,"
-					"\nreplica name,";
-
-			params +=
+			String params =
 				"\nname of column with date,"
 				"\n[sampling element of primary key],"
 				"\nprimary key expression,"
@@ -684,7 +677,24 @@ For further info please read the documentation: https://clickhouse.yandex/
 
 			throw Exception("Storage " + name + " requires "
 				+ toString(num_additional_params + 3) + " or "
-				+ toString(num_additional_params + 4) + " parameters: " + params + verbose_help,
+				+ toString(num_additional_params + 4) + " parameters: " + params_for_replicated + params + verbose_help,
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		}
+
+		if (merging_params.mode == MergeTreeData::MergingParams::Graphite
+			&& args.size() != num_additional_params + 4
+			&& args.size() != num_additional_params + 5)
+		{
+			String params =
+				"\nname of column with date,"
+				"\n[sampling element of primary key],"
+				"\nprimary key expression,"
+				"\nindex granularity,"
+				"\n'config_element_for_graphite_schema'\n";
+
+			throw Exception("Storage " + name + " requires "
+				+ toString(num_additional_params + 4) + " or "
+				+ toString(num_additional_params + 5) + " parameters: " + params_for_replicated + params + verbose_help,
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
 
@@ -694,14 +704,7 @@ For further info please read the documentation: https://clickhouse.yandex/
 			&& args.size() != num_additional_params + 4
 			&& args.size() != num_additional_params + 5)
 		{
-			String params;
-
-			if (replicated)
-				params +=
-					"\npath in ZooKeeper,"
-					"\nreplica name,";
-
-			params +=
+			String params =
 				"\nname of column with date,"
 				"\n[sampling element of primary key],"
 				"\nprimary key expression,"
@@ -715,7 +718,7 @@ For further info please read the documentation: https://clickhouse.yandex/
 			throw Exception("Storage " + name + " requires "
 				+ toString(num_additional_params + 3) + " or "
 				+ toString(num_additional_params + 4) + " or "
-				+ toString(num_additional_params + 5) + " parameters: " + params + verbose_help,
+				+ toString(num_additional_params + 5) + " parameters: " + params_for_replicated + params + verbose_help,
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
 
