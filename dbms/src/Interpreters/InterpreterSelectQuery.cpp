@@ -630,10 +630,13 @@ void InterpreterSelectQuery::executeSingleQuery()
 			/** Оптимизация - если источников несколько и есть LIMIT, то сначала применим предварительный LIMIT,
 				* ограничивающий число записей в каждом до offset + limit.
 				*/
-			if (query.limit_length && hasMoreThanOneStream() && !query.distinct)
+			if (query.limit_length && hasMoreThanOneStream() && !query.distinct && !query.limit_by_expression_list)
 				executePreLimit();
 
 			if (need_second_distinct_pass)
+				union_within_single_query = true;
+
+			if (query.limit_by_expression_list && hasMoreThanOneStream())
 				union_within_single_query = true;
 
 			if (union_within_single_query || stream_with_non_joined_data)
@@ -782,7 +785,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 	size_t limit_offset = 0;
 	getLimitLengthAndOffset(query, limit_length, limit_offset);
 
-	/** Оптимизация - если не указаны DISTINCT, WHERE, GROUP, HAVING, ORDER, но указан LIMIT, и limit + offset < max_block_size,
+	/** Оптимизация - если не указаны DISTINCT, WHERE, GROUP, HAVING, ORDER, LIMIT BY но указан LIMIT, и limit + offset < max_block_size,
 	 *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено),
 	 *  а также установим количество потоков в 1.
 	 */
@@ -792,6 +795,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 		&& !query.group_expression_list
 		&& !query.having_expression
 		&& !query.order_expression_list
+		&& !query.limit_by_expression_list
 		&& query.limit_length
 		&& !query_analyzer->hasAggregation()
 		&& limit_length + limit_offset < settings.max_block_size)
