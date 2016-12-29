@@ -662,7 +662,6 @@ For further info please read the documentation: https://clickhouse.yandex/
 		if (merging_params.mode != MergeTreeData::MergingParams::Summing
 			&& merging_params.mode != MergeTreeData::MergingParams::Replacing
 			&& merging_params.mode != MergeTreeData::MergingParams::Unsorted
-			&& merging_params.mode != MergeTreeData::MergingParams::Graphite
 			&& args.size() != num_additional_params + 3
 			&& args.size() != num_additional_params + 4)
 		{
@@ -673,28 +672,14 @@ For further info please read the documentation: https://clickhouse.yandex/
 				"\nindex granularity\n";
 
 			if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
-				params += ", sign column";
+				params += ", sign column\n";
+
+			if (merging_params.mode == MergeTreeData::MergingParams::Graphite)
+				params += ", 'config_element_for_graphite_schema'\n";
 
 			throw Exception("Storage " + name + " requires "
 				+ toString(num_additional_params + 3) + " or "
 				+ toString(num_additional_params + 4) + " parameters: " + params_for_replicated + params + verbose_help,
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		}
-
-		if (merging_params.mode == MergeTreeData::MergingParams::Graphite
-			&& args.size() != num_additional_params + 4
-			&& args.size() != num_additional_params + 5)
-		{
-			String params =
-				"\nname of column with date,"
-				"\n[sampling element of primary key],"
-				"\nprimary key expression,"
-				"\nindex granularity,"
-				"\n'config_element_for_graphite_schema'\n";
-
-			throw Exception("Storage " + name + " requires "
-				+ toString(num_additional_params + 4) + " or "
-				+ toString(num_additional_params + 5) + " parameters: " + params_for_replicated + params + verbose_help,
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
 
