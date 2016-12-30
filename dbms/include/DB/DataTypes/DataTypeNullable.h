@@ -14,10 +14,13 @@ public:
 	DataTypeNullable(DataTypePtr nested_data_type_);
 	std::string getName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
 	bool isNullable() const override { return true; }
-	bool isNumeric() const override { return nested_data_type->isNumeric(); }
+
+	bool isNumeric() const override { return nested_data_type->isNumeric(); }	/// TODO Absolutely wrong.
 	bool isNumericNotNullable() const override { return false; }
-	bool behavesAsNumber() const override { return nested_data_type->behavesAsNumber(); }
+	bool behavesAsNumber() const override { return nested_data_type->behavesAsNumber(); }	/// TODO Absolutely wrong.
+
 	DataTypePtr clone() const override { return std::make_shared<DataTypeNullable>(nested_data_type->clone()); }
+
 	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override;
 	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const override { nested_data_type->serializeBinary(field, ostr); }
@@ -35,10 +38,14 @@ public:
 	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
 	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 	void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+
 	ColumnPtr createColumn() const override;
 	ColumnPtr createConstColumn(size_t size, const Field & field) const override;
-	Field getDefault() const override { return nested_data_type->getDefault(); }
-	size_t getSizeOfField() const override { return nested_data_type->getSizeOfField(); }
+
+	Field getDefault() const override { return Null(); }
+
+	size_t getSizeOfField() const override { return nested_data_type->getSizeOfField(); }	/// TODO Absolutely wrong.
+
 	DataTypePtr & getNestedType() { return nested_data_type; }
 	const DataTypePtr & getNestedType() const { return nested_data_type; }
 

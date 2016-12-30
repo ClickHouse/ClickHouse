@@ -29,7 +29,6 @@ public:
 	bool isNull() const override
 	{
 		return true;
-
 	}
 
 	DataTypePtr clone() const override
@@ -52,10 +51,10 @@ public:
 
 	Field getDefault() const override
 	{
-		return Field{};
+		return Null();
 	}
 
-	size_t getSizeOfField() const override
+	size_t getSizeOfField() const override		/// TODO Check where it is needed.
 	{
 		/// NULL has the size of the smallest non-null type.
 		return sizeof(UInt8);
@@ -71,7 +70,7 @@ public:
 	{
 		UInt8 x;
 		readBinary(x, istr);
-		field = Field{};
+		field = Null();
 	}
 
 	void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override

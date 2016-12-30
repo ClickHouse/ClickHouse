@@ -52,7 +52,7 @@ public:
 
 	Field getDefault() const override
 	{
-		return String("");
+		return String();
 	}
 };
 

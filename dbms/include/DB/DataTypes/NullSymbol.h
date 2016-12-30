@@ -10,7 +10,7 @@ namespace NullSymbol
 
 struct Plain
 {
-	static constexpr auto name = "\\N";
+	static constexpr auto name = "NULL";
 };
 
 struct Escaped
