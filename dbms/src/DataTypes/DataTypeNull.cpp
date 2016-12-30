@@ -11,7 +11,8 @@ void DataTypeNull::serializeBinary(const IColumn & column, WriteBuffer & ostr, s
 		limit = size - offset;
 
 	UInt8 x = 1;
-	writeBinary(x, limit, ostr);
+	for (size_t i = 0; i < limit; ++i)
+		writeBinary(x, ostr);
 }
 
 void DataTypeNull::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
