@@ -564,8 +564,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 			  *  но есть ORDER или LIMIT,
 			  *  то выполним предварительную сортировку и LIMIT на удалёном сервере.
 			  */
-			if (!second_stage
-				&& !need_aggregate && !has_having)
+			if (!second_stage && !need_aggregate && !has_having)
 			{
 				if (has_order_by)
 					executeOrder();
@@ -636,6 +635,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 			if (need_second_distinct_pass)
 				union_within_single_query = true;
 
+			/// To execute LIMIT BY we should merge all streams together.
 			if (query.limit_by_expression_list && hasMoreThanOneStream())
 				union_within_single_query = true;
 
@@ -644,7 +644,9 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 			if (streams.size() == 1)
 			{
-				/// Если было более одного источника - то нужно выполнить DISTINCT ещё раз после их слияния.
+				/** If there was more than one stream,
+				  * then DISTINCT needs to be performed once again after merging all streams.
+				  */
 				if (need_second_distinct_pass)
 					executeDistinct(false, Names());
 
@@ -1172,7 +1174,7 @@ void InterpreterSelectQuery::executePreLimit()
 	{
 		transformStreams([&](auto & stream)
 		{
-			stream = std::make_shared<LimitBlockInputStream>(stream, limit_length + limit_offset, 0);
+			stream = std::make_shared<LimitBlockInputStream>(stream, limit_length + limit_offset, false);
 		});
 
 		if (hasMoreThanOneStream())

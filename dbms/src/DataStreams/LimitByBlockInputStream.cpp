@@ -3,9 +3,9 @@
 namespace DB
 {
 
-LimitByBlockInputStream::LimitByBlockInputStream(BlockInputStreamPtr input_, size_t value_, Names columns_)
+LimitByBlockInputStream::LimitByBlockInputStream(BlockInputStreamPtr input_, size_t group_size_, Names columns_)
 	: columns_names(columns_)
-	, value(value_)
+	, group_size(group_size_)
 {
 	children.push_back(input_);
 }
@@ -13,7 +13,7 @@ LimitByBlockInputStream::LimitByBlockInputStream(BlockInputStreamPtr input_, siz
 String LimitByBlockInputStream::getID() const
 {
 	std::stringstream res;
-	res << "LimitBy(" << children.back()->getID() << ")";
+	res << "LimitBy(" << this << ")";
 	return res.str();
 }
 
@@ -27,35 +27,25 @@ Block LimitByBlockInputStream::readImpl()
 
 		const ConstColumnPlainPtrs column_ptrs(getKeyColumns(block));
 		const size_t rows = block.rows();
-		const size_t old_set_size = set.size();
 		IColumn::Filter filter(rows);
+		bool inserted = false;
 
 		for (size_t i = 0; i < rows; ++i)
 		{
 			UInt128 key;
 			SipHash hash;
 
-			for (size_t j = 0; j < column_ptrs.size(); ++j)
-				column_ptrs[j]->updateHashWithValue(i, hash);
+			for (auto & column : column_ptrs)
+				column->updateHashWithValue(i, hash);
 
 			hash.get128(key.first, key.second);
 
-			MapHashed::iterator si = set.find(key);
-			if (si == set.end())
-				si = set.insert(MapHashed::value_type(key, 0)).first;
-
-			if (si->second < value)
-			{
-				si->second++;
-				filter[i] = 1;
-			}
-			else
-			{
-				filter[i] = 0;
-			}
+			const bool valid = (keys_counts[key]++ < group_size);
+			filter[i] = valid;
+			inserted |= valid;
 		}
 
-		if (set.size() == old_set_size)
+		if (!inserted)
 			continue;
 
 		size_t all_columns = block.columns();

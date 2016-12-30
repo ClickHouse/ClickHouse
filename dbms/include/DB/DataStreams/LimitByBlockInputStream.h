@@ -12,7 +12,7 @@ namespace DB
 class LimitByBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	LimitByBlockInputStream(BlockInputStreamPtr input_, size_t value_, Names columns_);
+	LimitByBlockInputStream(BlockInputStreamPtr input_, size_t group_size_, Names columns_);
 
 	String getName() const override { return "LimitBy"; }
 
@@ -28,9 +28,8 @@ private:
 	using MapHashed = HashMap<UInt128, UInt64, UInt128TrivialHash>;
 
 	Names columns_names;
-	size_t value;
-
-	MapHashed set;
+	size_t group_size;
+	MapHashed keys_counts;
 };
 
 }
