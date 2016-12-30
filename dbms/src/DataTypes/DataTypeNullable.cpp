@@ -164,7 +164,7 @@ void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
 {
 	safeDeserialize(column,
 		[&istr] { return checkStringByFirstCharacterAndAssertTheRest("\\N", istr); },
-		[this, &istr] (IColumn & nested) { nested_data_type->deserializeTextCSV(nested, istr); } );
+		[this, &istr] (IColumn & nested) { nested_data_type->deserializeTextCSV(nested, istr, delimiter); } );
 }
 
 void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
