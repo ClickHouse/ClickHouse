@@ -19,6 +19,8 @@ String LimitByBlockInputStream::getID() const
 
 Block LimitByBlockInputStream::readImpl()
 {
+	/// Execute until end of stream or until
+	/// a block with some new records will be gotten.
 	while (true)
 	{
 		Block block = children[0]->read();
@@ -28,7 +30,7 @@ Block LimitByBlockInputStream::readImpl()
 		const ConstColumnPlainPtrs column_ptrs(getKeyColumns(block));
 		const size_t rows = block.rows();
 		IColumn::Filter filter(rows);
-		bool inserted = false;
+		size_t inserted_count = 0;
 
 		for (size_t i = 0; i < rows; ++i)
 		{
@@ -40,17 +42,22 @@ Block LimitByBlockInputStream::readImpl()
 
 			hash.get128(key.first, key.second);
 
-			const bool valid = (keys_counts[key]++ < group_size);
-			filter[i] = valid;
-			inserted |= valid;
+			if (keys_counts[key]++ < group_size)
+			{
+				inserted_count++;
+				filter[i] = 1;
+			}
+			else
+				filter[i] = 0;
 		}
 
-		if (!inserted)
+		/// Just go to the next block if there isn't any new records in the current one.
+		if (!inserted_count)
 			continue;
 
 		size_t all_columns = block.columns();
 		for (size_t i = 0; i < all_columns; ++i)
-			block.getByPosition(i).column = block.getByPosition(i).column->filter(filter, -1);
+			block.getByPosition(i).column = block.getByPosition(i).column->filter(filter, inserted_count);
 
 		return block;
 	}
