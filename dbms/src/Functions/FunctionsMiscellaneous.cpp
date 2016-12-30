@@ -316,9 +316,8 @@ void FunctionVisibleWidth::perform(Block & block, const ColumnNumbers & argument
 	}
 	else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(column.get()))
 	{
-		UInt64 res = 0;
+		UInt64 res = stringWidthConstant(col->getData());
 		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(rows, res);
-		stringWidthConstant(col->getData(), res);
 	}
 	else if (const ColumnArray * col = typeid_cast<const ColumnArray *>(column.get()))
 	{
