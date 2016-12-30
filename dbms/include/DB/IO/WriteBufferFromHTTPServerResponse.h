@@ -9,6 +9,7 @@
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
+#include <DB/IO/HTTPCommon.h>
 #include <DB/Common/NetException.h>
 
 
@@ -52,6 +53,8 @@ private:
 			{
 				response.set("Access-Control-Allow-Origin","*");
 			}
+
+			setResponseDefaultHeaders(response);
 
 			if (compress && offset())	/// Пустой ответ сжимать не нужно.
 			{
