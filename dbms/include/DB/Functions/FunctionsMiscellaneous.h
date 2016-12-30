@@ -163,10 +163,6 @@ public:
 
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
-
-private:
-	/// Internal version of visibleWidth.
-	void perform(Block & block, const ColumnNumbers & arguments, size_t result);
 };
 
 
