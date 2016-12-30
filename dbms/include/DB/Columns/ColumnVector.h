@@ -124,7 +124,7 @@ template <> inline UInt64 unionCastToUInt64(Float32 x)
 template <typename T>
 inline bool isNaN(T x)
 {
-	return std::is_floating_point<T>::value ? isnan(x) : false;
+	return std::is_floating_point<T>::value ? std::isnan(x) : false;
 }
 
 
