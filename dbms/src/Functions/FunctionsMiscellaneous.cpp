@@ -16,6 +16,24 @@ namespace DB
 {
 
 
+static inline UInt64 stringWidth(const UInt8 * pos, const UInt8 * end)
+{
+	UInt64 res = 0;
+	for (; pos < end; ++pos)
+	{
+		if (*pos == '\b' || *pos == '\f' || *pos == '\n' || *pos == '\r' || *pos == '\t' || *pos == '\0' || *pos == '\'' || *pos == '\\')
+			++res;
+		if (*pos <= 0x7F || *pos >= 0xC0)
+			++res;
+	}
+	return res;
+}
+
+static inline UInt64 stringWidthConstant(const String & data)
+{
+	return stringWidth(reinterpret_cast<const UInt8 *>(data.data()), reinterpret_cast<const UInt8 *>(data.data()) + data.size());
+}
+
 template <typename T>
 static void numWidthVector(const PaddedPODArray<T> & a, PaddedPODArray<UInt64> & c)
 {
