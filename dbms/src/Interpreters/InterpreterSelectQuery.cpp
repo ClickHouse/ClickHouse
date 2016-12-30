@@ -1042,9 +1042,9 @@ static SortDescription getSortDescription(ASTSelectQuery & query)
 
 static size_t getLimitForSorting(ASTSelectQuery & query)
 {
-	/// Если есть LIMIT и нет DISTINCT - можно делать частичную сортировку.
+	/// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY.
 	size_t limit = 0;
-	if (!query.distinct)
+	if (!query.distinct && !query.limit_by_expression_list)
 	{
 		size_t limit_length = 0;
 		size_t limit_offset = 0;
