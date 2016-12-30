@@ -21,8 +21,10 @@ public:
 
 	DataTypePtr clone() const override { return std::make_shared<DataTypeNullable>(nested_data_type->clone()); }
 
+	/// Bulk serialization and deserialization is processing only nested columns. You should process null byte map separately.
 	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override;
 	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const override { nested_data_type->serializeBinary(field, ostr); }
 	void deserializeBinary(Field & field, ReadBuffer & istr) const override { nested_data_type->deserializeBinary(field, istr); }
 	void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -31,8 +33,18 @@ public:
 	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override;
 	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
+
 	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+
+	/** It is questionable, how NULL values could be represented in CSV. There are three variants:
+	  * 1. \N
+	  * 2. empty string (without quotes)
+	  * 3. NULL
+	  * Now we support only first.
+	  * In CSV, non-NULL string value, starting with \N characters, must be placed in quotes, to avoid ambiguity.
+	  */
 	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
+
 	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr,
 		bool force_quoting_64bit_integers) const override;
 	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;

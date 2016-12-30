@@ -54,7 +54,7 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
 		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(column);
 		IColumn & nested_col = *nullable_col.getNestedColumn();
 
-		IColumn & null_map = *nullable_col.getNullValuesByteMap();
+		IColumn & null_map = *nullable_col.getNullMapColumn();
 		DataTypeUInt8{}.deserializeBinary(null_map, istr, rows, 0);
 
 		readData(nested_type, nested_col, istr, rows);

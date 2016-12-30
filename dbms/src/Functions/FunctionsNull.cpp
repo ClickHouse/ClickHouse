@@ -56,7 +56,7 @@ void FunctionIsNull::executeImpl(Block & block, const ColumnNumbers & arguments,
 	{
 		/// Merely return the embedded null map.
 		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*elem.column);
-		block.getByPosition(result).column = nullable_col.getNullValuesByteMap();
+		block.getByPosition(result).column = nullable_col.getNullMapColumn();
 	}
 	else
 	{

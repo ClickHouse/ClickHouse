@@ -52,7 +52,7 @@ Block NullableAdapterBlockInputStream::readImpl()
 			const auto & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
 			const auto & nullable_type = static_cast<const DataTypeNullable &>(*elem.type);
 
-			const auto & null_map = static_cast<const ColumnUInt8 &>(*nullable_col.getNullValuesByteMap()).getData();
+			const auto & null_map = nullable_col.getNullMap();
 			bool has_nulls = std::any_of(null_map.begin(), null_map.end(), [](UInt8 val){ return val == 1; });
 
 			if (has_nulls)

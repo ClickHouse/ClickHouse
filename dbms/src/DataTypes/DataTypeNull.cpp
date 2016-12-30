@@ -10,7 +10,7 @@ void DataTypeNull::serializeBinary(const IColumn & column, WriteBuffer & ostr, s
 	if ((limit == 0) || ((offset + limit) > size))
 		limit = size - offset;
 
-	UInt8 x = 0;
+	UInt8 x = 1;
 	writeBinary(x, limit, ostr);
 }
 

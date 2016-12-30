@@ -300,7 +300,7 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 		IColumn & nested_col = *nullable_col.getNestedColumn();
 
 		/// First read from the null map.
-		DataTypeUInt8{}.deserializeBinary(*nullable_col.getNullValuesByteMap(),
+		DataTypeUInt8{}.deserializeBinary(*nullable_col.getNullMapColumn(),
 			streams[name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION]->compressed, limit, 0);
 
 		/// Then read data.
@@ -372,7 +372,7 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(column);
 		const IColumn & nested_col = *nullable_col.getNestedColumn();
 
-		DataTypeUInt8{}.serializeBinary(*nullable_col.getNullValuesByteMap(),
+		DataTypeUInt8{}.serializeBinary(*nullable_col.getNullMapColumn(),
 			streams[name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION]->compressed);
 
 		/// Then write data.

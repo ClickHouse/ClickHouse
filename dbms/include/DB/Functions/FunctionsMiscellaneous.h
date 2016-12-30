@@ -178,6 +178,11 @@ public:
 		return name;
 	}
 
+	bool hasSpecialSupportForNulls() const override
+	{
+		return true;
+	}
+
 	size_t getNumberOfArguments() const override { return 1; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -205,6 +210,11 @@ public:
 	String getName() const override
 	{
 		return name;
+	}
+
+	bool hasSpecialSupportForNulls() const override
+	{
+		return true;
 	}
 
 	size_t getNumberOfArguments() const override { return 1; }
@@ -668,6 +678,8 @@ public:
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
 
+	bool hasSpecialSupportForNulls() const override { return true; }
+
 	String getName() const override { return name; }
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return std::make_shared<DataTypeUInt8>(); }
 
@@ -699,6 +711,8 @@ public:
 
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
+
+	bool hasSpecialSupportForNulls() const override { return true; }
 
 	String getName() const override	{ return name; }
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return std::make_shared<DataTypeUInt8>(); }
@@ -1197,9 +1211,9 @@ public:
 		IColumn & result_column = *result_column_ptr;
 		result_column.reserve(column_with_states->size());
 
-		auto arena = (agg_func.allocatesMemoryInArena()) ?
-						arenas_pool.get(0, []{ return new Arena(); }) :
-						nullptr;
+		auto arena = (agg_func.allocatesMemoryInArena())
+			? arenas_pool.get(0, []{ return new Arena(); })
+			: nullptr;
 
 		const auto & states = column_with_states->getData();
 		for (const auto & state_to_add : states)

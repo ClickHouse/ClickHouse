@@ -170,7 +170,7 @@ void IMergedBlockOutputStream::writeDataImpl(
 				writeIntBinary(stream.compressed.offset(), stream.marks);
 			}
 
-			DataTypeUInt8{}.serializeBinary(*(nullable_col.getNullValuesByteMap()), stream.compressed);
+			DataTypeUInt8{}.serializeBinary(*(nullable_col.getNullMapColumn()), stream.compressed);
 
 			/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
 			stream.compressed.nextIfAtEnd();

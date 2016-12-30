@@ -66,7 +66,7 @@ namespace Conditional
 		else if (from.isNullable())
 		{
 			const auto & nullable_col = static_cast<const ColumnNullable &>(from);
-			null_map = nullable_col.getNullValuesByteMap();
+			null_map = nullable_col.getNullMapColumn();
 		}
 		else
 			null_map = std::make_shared<ColumnUInt8>(row_count, 0);

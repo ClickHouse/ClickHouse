@@ -1119,7 +1119,7 @@ public:
 				data.type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[0]).type).getNestedType();
 
 				auto & null_map = source_block.unsafeGetByPosition(2);
-				null_map.column = nullable_col.getNullValuesByteMap();
+				null_map.column = nullable_col.getNullMapColumn();
 				null_map.type = std::make_shared<DataTypeUInt8>();
 			}
 			else
@@ -1138,7 +1138,7 @@ public:
 				arg.type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[1]).type).getNestedType();
 
 				auto & null_map = source_block.unsafeGetByPosition(3);
-				null_map.column = nullable_col.getNullValuesByteMap();
+				null_map.column = nullable_col.getNullMapColumn();
 				null_map.type = std::make_shared<DataTypeUInt8>();
 			}
 			else

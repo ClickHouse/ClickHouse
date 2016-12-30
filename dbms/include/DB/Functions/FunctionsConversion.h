@@ -2200,7 +2200,7 @@ private:
 					/// So we just keep the null map of the input argument.
 					const auto & col = block.getByPosition(arguments[0]).column;
 					const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
-					null_map = nullable_col.getNullValuesByteMap();
+					null_map = nullable_col.getNullMapColumn();
 				}
 				else if (action & Action::CONVERT_NULL)
 				{
