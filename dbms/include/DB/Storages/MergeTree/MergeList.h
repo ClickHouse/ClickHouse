@@ -65,13 +65,12 @@ struct MergeListElement : boost::noncopyable
 
 	MemoryTracker memory_tracker;
 	MemoryTracker * background_pool_task_memory_tracker;
-	MemoryTracker * global_merges_memory_tracker;
 
 	/// Poco thread number used in logs
 	UInt32 thread_number;
 
 
-	MergeListElement(const std::string & database, const std::string & table, const std::string & result_part_name, const Context & context);
+	MergeListElement(const std::string & database, const std::string & table, const std::string & result_part_name);
 
 	MergeInfo getInfo() const;
 

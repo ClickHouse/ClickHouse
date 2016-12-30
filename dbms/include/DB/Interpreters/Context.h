@@ -235,9 +235,6 @@ public:
 	MergeList & getMergeList();
 	const MergeList & getMergeList() const;
 
-	/// Global memory tracker for merges
-	MemoryTracker * getMergesMemoryTracker() const;
-
 	/// Создать кэш разжатых блоков указанного размера. Это можно сделать только один раз.
 	void setUncompressedCache(size_t max_size_in_bytes);
 	std::shared_ptr<UncompressedCache> getUncompressedCache() const;

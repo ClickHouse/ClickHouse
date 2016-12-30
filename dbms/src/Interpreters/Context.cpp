@@ -128,9 +128,6 @@ struct ContextShared
 
 	Poco::UUIDGenerator uuid_generator;
 
-	/// Aggregates memory trackers from all merges
-	mutable std::unique_ptr<MemoryTracker> merges_memory_tracker;
-
 	bool shutdown_called = false;
 
 	/// Позволяют запретить одновременное выполнение DDL запросов над одной и той же таблицей.
@@ -218,18 +215,6 @@ ProcessList & Context::getProcessList()											{ return shared->process_list;
 const ProcessList & Context::getProcessList() const								{ return shared->process_list; }
 MergeList & Context::getMergeList() 											{ return shared->merge_list; }
 const MergeList & Context::getMergeList() const 								{ return shared->merge_list; }
-
-MemoryTracker * Context::getMergesMemoryTracker() const
-{
-	auto lock = getLock();
-	if (!shared->merges_memory_tracker)
-	{
-		shared->merges_memory_tracker = std::make_unique<MemoryTracker>();
-		shared->merges_memory_tracker->setMetric(CurrentMetrics::MemoryTrackingForMerges);
-	}
-
-	return shared->merges_memory_tracker.get();
-}
 
 
 const Databases Context::getDatabases() const

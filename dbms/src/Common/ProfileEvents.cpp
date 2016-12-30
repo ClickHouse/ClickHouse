@@ -46,6 +46,8 @@
 	M(ReplicatedPartChecksFailed) \
 	M(ReplicatedDataLoss) \
 	\
+	M(InsertedRows) \
+	M(InsertedBytes) \
 	M(DelayedInserts) \
 	M(RejectedInserts) \
 	M(DelayedInsertsMilliseconds) \

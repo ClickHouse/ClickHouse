@@ -840,7 +840,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 	std::string merged_name = createMergedPartName(parts);
 
 	MergeList::EntryPtr merge_entry_ptr = data.context.getMergeList().insert(job.database_name,
-		job.table_name, merged_name, data.context);
+		job.table_name, merged_name);
 	MergeList::Entry & merge_entry = *merge_entry_ptr;
 	merge_entry->num_parts = parts.size();
 
