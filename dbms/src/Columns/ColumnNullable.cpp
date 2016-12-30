@@ -126,7 +126,7 @@ void ColumnNullable::insert(const Field & x)
 void ColumnNullable::insertDefault()
 {
 	nested_column->insertDefault();
-	getNullMapContent().insert(0);
+	getNullMapContent().insert(1);
 }
 
 void ColumnNullable::popBack(size_t n)
