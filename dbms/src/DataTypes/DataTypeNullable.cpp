@@ -100,7 +100,7 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
 	{
 		safeDeserialize(column,
 			[&istr] { return false; },
-			[this, &istr] (IColumn & nested) { nested_data_type->deserializeTextQuoted(nested, istr); } );
+			[this, &istr] (IColumn & nested) { nested_data_type->deserializeTextEscaped(nested, istr); } );
 	}
 	else
 	{
@@ -127,7 +127,7 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
 				ReadBuffer prefix(const_cast<char *>("\\"), 1, 0);
 				ConcatReadBuffer prepended_istr(prefix, istr);
 
-				nested_data_type->deserializeTextQuoted(nested, prepended_istr);
+				nested_data_type->deserializeTextEscaped(nested, prepended_istr);
 			});
 	}
 }
@@ -164,7 +164,7 @@ void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
 {
 	safeDeserialize(column,
 		[&istr] { return checkStringByFirstCharacterAndAssertTheRest("\\N", istr); },
-		[this, &istr] (IColumn & nested) { nested_data_type->deserializeTextQuoted(nested, istr); } );
+		[this, &istr] (IColumn & nested) { nested_data_type->deserializeTextCSV(nested, istr); } );
 }
 
 void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -193,7 +193,7 @@ void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr) 
 {
 	safeDeserialize(column,
 		[&istr] { return checkStringByFirstCharacterAndAssertTheRest("null", istr); },
-		[this, &istr] (IColumn & nested) { nested_data_type->deserializeTextQuoted(nested, istr); } );
+		[this, &istr] (IColumn & nested) { nested_data_type->deserializeTextJSON(nested, istr); } );
 }
 
 void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
