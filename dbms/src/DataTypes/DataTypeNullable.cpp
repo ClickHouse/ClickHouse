@@ -122,12 +122,25 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
 			},
 			[this, &istr] (IColumn & nested)
 			{
-				/// We need to place backslash back in front of istr.
+				if (istr.position() != istr.buffer().begin())
+				{
+					/// We could step back to consume backslash again.
+					--istr.position();
+					nested_data_type->deserializeTextEscaped(nested, istr);
+				}
+				else
+				{
+					/// Otherwise, we need to place backslash back in front of istr.
+					ReadBuffer prefix(const_cast<char *>("\\"), 1, 0);
+					ConcatReadBuffer prepended_istr(prefix, istr);
 
-				ReadBuffer prefix(const_cast<char *>("\\"), 1, 0);
-				ConcatReadBuffer prepended_istr(prefix, istr);
+					nested_data_type->deserializeTextEscaped(nested, prepended_istr);
 
-				nested_data_type->deserializeTextEscaped(nested, prepended_istr);
+					/// Synchronise cursor position in original buffer.
+
+					if (prepended_istr.count() > 1)
+						istr.position() = prepended_istr.position();
+				}
 			});
 	}
 }
