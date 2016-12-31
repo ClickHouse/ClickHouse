@@ -176,6 +176,9 @@ void ExpressionAnalyzer::init()
 	/// Удалить из ORDER BY повторяющиеся элементы.
 	optimizeOrderBy();
 
+	// Remove duplicated elements from LIMIT BY clause.
+	optimizeLimitBy();
+
 	/// array_join_alias_to_name, array_join_result_to_source.
 	getArrayJoinedColumns();
 
@@ -1162,6 +1165,31 @@ void ExpressionAnalyzer::optimizeOrderBy()
 
 		if (elems_set.emplace(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "").second)
 			unique_elems.emplace_back(elem);
+	}
+
+	if (unique_elems.size() < elems.size())
+		elems = unique_elems;
+}
+
+
+void ExpressionAnalyzer::optimizeLimitBy()
+{
+	if (!(select_query && select_query->limit_by_expression_list))
+		return;
+
+	std::set<String> elems_set;
+
+	ASTs & elems = select_query->limit_by_expression_list->children;
+	ASTs unique_elems;
+	unique_elems.reserve(elems.size());
+
+	for (const auto & elem : elems)
+	{
+		if (const auto id = typeid_cast<const ASTIdentifier*>(elem.get()))
+		{
+			if (elems_set.emplace(id->getColumnName()).second)
+				unique_elems.emplace_back(elem);
+		}
 	}
 
 	if (unique_elems.size() < elems.size())

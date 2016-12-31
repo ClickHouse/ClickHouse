@@ -202,6 +202,8 @@ ASTPtr ASTSelectQuery::cloneImpl(bool traverse_union_all) const
 	CLONE(group_expression_list)
 	CLONE(having_expression)
 	CLONE(order_expression_list)
+	CLONE(limit_by_value)
+	CLONE(limit_by_expression_list)
 	CLONE(limit_offset)
 	CLONE(limit_length)
 	CLONE(settings)
@@ -285,6 +287,14 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 		s.one_line
 			? order_expression_list->formatImpl(s, state, frame)
 			: typeid_cast<const ASTExpressionList &>(*order_expression_list).formatImplMultiline(s, state, frame);
+	}
+
+	if (limit_by_value)
+	{
+		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "LIMIT BY " << (s.hilite ? hilite_none : "");
+		s.one_line
+			? limit_by_expression_list->formatImpl(s, state, frame)
+			: typeid_cast<const ASTExpressionList &>(*limit_by_expression_list).formatImplMultiline(s, state, frame);
 	}
 
 	if (limit_length)

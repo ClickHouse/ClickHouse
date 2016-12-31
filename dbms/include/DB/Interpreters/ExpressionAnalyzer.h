@@ -230,6 +230,8 @@ private:
 	/// Удалить из ORDER BY повторяющиеся элементы.
 	void optimizeOrderBy();
 
+	void optimizeLimitBy();
+
 	/// remove Function_if AST if condition is constant
 	void optimizeIfWithConstantCondition();
 	void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast, Aliases & aliases) const;
