@@ -51,6 +51,7 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
 	extern const Metric ContextLockWait;
+	extern const Metric MemoryTrackingForMerges;
 }
 
 

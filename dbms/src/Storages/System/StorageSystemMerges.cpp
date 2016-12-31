@@ -25,7 +25,9 @@ StorageSystemMerges::StorageSystemMerges(const std::string & name)
 		{ "rows_read",						std::make_shared<DataTypeUInt64>() },
 		{ "bytes_written_uncompressed", 	std::make_shared<DataTypeUInt64>() },
 		{ "rows_written",					std::make_shared<DataTypeUInt64>() },
-		{ "columns_written",				std::make_shared<DataTypeUInt64>() }
+		{ "columns_written",				std::make_shared<DataTypeUInt64>() },
+		{ "memory_usage",					std::make_shared<DataTypeUInt64>() },
+		{ "thread_number",					std::make_shared<DataTypeUInt64>() },
 	}
 {
 }
@@ -54,17 +56,19 @@ BlockInputStreams StorageSystemMerges::read(
 		size_t i = 0;
 		block.unsafeGetByPosition(i++).column->insert(merge.database);
 		block.unsafeGetByPosition(i++).column->insert(merge.table);
-		block.unsafeGetByPosition(i++).column->insert(merge.watch.elapsedSeconds());
+		block.unsafeGetByPosition(i++).column->insert(merge.elapsed);
 		block.unsafeGetByPosition(i++).column->insert(std::min(1., merge.progress)); /// little cheat
 		block.unsafeGetByPosition(i++).column->insert(merge.num_parts);
 		block.unsafeGetByPosition(i++).column->insert(merge.result_part_name);
 		block.unsafeGetByPosition(i++).column->insert(merge.total_size_bytes_compressed);
 		block.unsafeGetByPosition(i++).column->insert(merge.total_size_marks);
-		block.unsafeGetByPosition(i++).column->insert(merge.bytes_read_uncompressed.load(std::memory_order_relaxed));
-		block.unsafeGetByPosition(i++).column->insert(merge.rows_read.load(std::memory_order_relaxed));
-		block.unsafeGetByPosition(i++).column->insert(merge.bytes_written_uncompressed.load(std::memory_order_relaxed));
-		block.unsafeGetByPosition(i++).column->insert(merge.rows_written.load(std::memory_order_relaxed));
-		block.unsafeGetByPosition(i++).column->insert(merge.columns_written.load(std::memory_order_relaxed));
+		block.unsafeGetByPosition(i++).column->insert(merge.bytes_read_uncompressed);
+		block.unsafeGetByPosition(i++).column->insert(merge.rows_read);
+		block.unsafeGetByPosition(i++).column->insert(merge.bytes_written_uncompressed);
+		block.unsafeGetByPosition(i++).column->insert(merge.rows_written);
+		block.unsafeGetByPosition(i++).column->insert(merge.columns_written);
+		block.unsafeGetByPosition(i++).column->insert(merge.memory_usage);
+		block.unsafeGetByPosition(i++).column->insert(merge.thread_number);
 	}
 
 	return BlockInputStreams{1, std::make_shared<OneBlockInputStream>(block)};
