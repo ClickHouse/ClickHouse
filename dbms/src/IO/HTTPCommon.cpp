@@ -5,7 +5,8 @@
 namespace DB
 {
 
-void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response) {
+void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response)
+{
 	if (!response.getKeepAlive())
 		return;
 
