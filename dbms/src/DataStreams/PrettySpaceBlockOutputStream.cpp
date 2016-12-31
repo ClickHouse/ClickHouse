@@ -105,7 +105,7 @@ void PrettySpaceBlockOutputStream::writeSuffix()
 	{
 		writeCString("\nShowed first ", ostr);
 		writeIntText(max_rows, ostr);
-		writeCString(".", ostr);
+		writeCString(".\n", ostr);
 	}
 
 	total_rows = 0;

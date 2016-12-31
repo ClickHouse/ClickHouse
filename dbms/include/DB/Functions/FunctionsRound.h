@@ -1067,6 +1067,9 @@ namespace
 			return name;
 		}
 
+		bool isVariadic() const override { return true; }
+		size_t getNumberOfArguments() const override { return 0; }
+
 		/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 		DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 		{

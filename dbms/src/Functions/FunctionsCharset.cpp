@@ -141,13 +141,10 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 3; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 3)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 3.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		for (size_t i : ext::range(0, 3))
 			if (!typeid_cast<const DataTypeString *>(&*arguments[i]))
 				throw Exception("Illegal type " + arguments[i]->getName() + " of argument of function " + getName()

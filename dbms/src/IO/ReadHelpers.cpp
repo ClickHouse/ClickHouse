@@ -50,7 +50,7 @@ bool checkString(const char * s, ReadBuffer & buf)
 }
 
 
-static bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf)
+bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf)
 {
 	for (; *s; ++s)
 	{
@@ -58,7 +58,7 @@ static bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf)
 			return false;
 
 		char c = *buf.position();
-		if (!(*s == c || (isAlphaASCII(*s) && alternateCaseIfAlphaASCII(*s) == c)))
+		if (!equalsCaseInsensitive(*s, c))
 			return false;
 
 		++buf.position();
@@ -87,6 +87,36 @@ void assertEOF(ReadBuffer & buf)
 {
 	if (!buf.eof())
 		throwAtAssertionFailed("eof", buf);
+}
+
+
+void assertStringCaseInsensitive(const char * s, ReadBuffer & buf)
+{
+	if (!checkStringCaseInsensitive(s, buf))
+		throwAtAssertionFailed(s, buf);
+}
+
+
+bool checkStringByFirstCharacterAndAssertTheRest(const char * s, ReadBuffer & buf)
+{
+	if (buf.eof() || *buf.position() != *s)
+		return false;
+
+	assertString(s, buf);
+	return true;
+}
+
+bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const char * s, ReadBuffer & buf)
+{
+	if (buf.eof())
+		return false;
+
+	char c = *buf.position();
+	if (!equalsCaseInsensitive(*s, c))
+		return false;
+
+	assertStringCaseInsensitive(s, buf);
+	return true;
 }
 
 
@@ -173,6 +203,11 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
 		readPODBinary(c1, buf);
 		readPODBinary(c2, buf);
 		s.push_back(static_cast<char>(unhex(c1) * 16 + unhex(c2)));
+	}
+	else if (*buf.position() == 'N')
+	{
+		/// Support for NULLs: \N sequence must be parsed as empty string.
+		++buf.position();
 	}
 	else
 	{

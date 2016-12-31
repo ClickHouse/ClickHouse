@@ -80,6 +80,9 @@ public:
 
 	bool hasSpecialSupportForNulls() const override { return true; }
 
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -111,6 +114,8 @@ public:
 
 	/// Получить имя функции.
 	String getName() const override;
+
+	size_t getNumberOfArguments() const override { return 2; }
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -1015,14 +1020,11 @@ public:
 		return true;
 	}
 
+	size_t getNumberOfArguments() const override { return 2; }
+
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 2)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 2.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
 		if (!array_type)
 			throw Exception("First argument for function " + getName() + " must be an array.",
@@ -1117,7 +1119,7 @@ public:
 				data.type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[0]).type).getNestedType();
 
 				auto & null_map = source_block.unsafeGetByPosition(2);
-				null_map.column = nullable_col.getNullValuesByteMap();
+				null_map.column = nullable_col.getNullMapColumn();
 				null_map.type = std::make_shared<DataTypeUInt8>();
 			}
 			else
@@ -1136,7 +1138,7 @@ public:
 				arg.type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[1]).type).getNestedType();
 
 				auto & null_map = source_block.unsafeGetByPosition(3);
-				null_map.column = nullable_col.getNullValuesByteMap();
+				null_map.column = nullable_col.getNullMapColumn();
 				null_map.type = std::make_shared<DataTypeUInt8>();
 			}
 			else
@@ -1189,6 +1191,8 @@ public:
 	/// Получить имя функции.
 	String getName() const override;
 
+	size_t getNumberOfArguments() const override { return 2; }
+
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1207,6 +1211,9 @@ public:
 
 	/// Получить имя функции.
 	String getName() const override;
+
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -1247,6 +1254,9 @@ public:
 
 	/// Получить имя функции.
 	String getName() const override;
+
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -1299,13 +1309,10 @@ private:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 0; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 0)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 0.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return std::make_shared<DataTypeArray>(std::make_shared<DataType>());
 	}
 
@@ -1332,6 +1339,8 @@ public:
 private:
 	String getName() const override;
 
+	size_t getNumberOfArguments() const override { return 1; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
 	template <typename T>
@@ -1349,6 +1358,8 @@ public:
 
 	/// Получить имя функции.
 	String getName() const override;
+
+	size_t getNumberOfArguments() const override { return 1; }
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -1388,6 +1399,8 @@ public:
 
 	/// Получить имя функции.
 	String getName() const override;
+
+	size_t getNumberOfArguments() const override { return 1; }
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -1430,6 +1443,9 @@ public:
 
 	/// Получить имя функции.
 	String getName() const override;
+
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
 
 	void getReturnTypeAndPrerequisitesImpl(
 		const ColumnsWithTypeAndName & arguments,

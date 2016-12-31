@@ -417,7 +417,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 bool ParserNull::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
-	ParserString nested_parser("NULL", true);
+	ParserString nested_parser("NULL", true, true);
 	if (nested_parser.parse(pos, end, node, max_parsed_pos, expected))
 	{
 		node = std::make_shared<ASTLiteral>(StringRange(StringRange(begin, pos)), Null());

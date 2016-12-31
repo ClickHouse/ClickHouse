@@ -1035,11 +1035,6 @@ String FunctionArrayElement::getName() const
 
 DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	if (arguments.size() != 2)
-		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 2.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
 	if (!array_type)
 		throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1201,11 +1196,6 @@ String FunctionArrayEnumerate::getName() const
 
 DataTypePtr FunctionArrayEnumerate::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	if (arguments.size() != 1)
-		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
 	if (!array_type)
 		throw Exception("First argument for function " + getName() + " must be an array but it has type "
@@ -1331,7 +1321,7 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
 			has_nullable_columns = true;
 			const auto & nullable_col = static_cast<const ColumnNullable &>(*data_columns[i]);
 			data_columns[i] = nullable_col.getNestedColumn().get();
-			null_maps[i] = nullable_col.getNullValuesByteMap().get();
+			null_maps[i] = nullable_col.getNullMapColumn().get();
 		}
 		else
 			null_maps[i] = nullptr;
@@ -1655,7 +1645,7 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
 			has_nullable_columns = true;
 			const auto & nullable_col = static_cast<const ColumnNullable &>(*data_columns[i]);
 			data_columns[i] = nullable_col.getNestedColumn().get();
-			null_maps[i] = nullable_col.getNullValuesByteMap().get();
+			null_maps[i] = nullable_col.getNullMapColumn().get();
 		}
 		else
 			null_maps[i] = nullptr;
@@ -1904,11 +1894,6 @@ String FunctionEmptyArrayToSingle::getName() const
 
 DataTypePtr FunctionEmptyArrayToSingle::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	if (arguments.size() != 1)
-		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
 	if (!array_type)
 		throw Exception("Argument for function " + getName() + " must be array.",
@@ -2016,7 +2001,7 @@ bool FunctionEmptyArrayToSingle::executeNumber(
 		res_data.reserve(src_data.size());
 
 		if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
-			nullable_res_col->getNullValuesByteMap() = nullable_col->getNullValuesByteMap();
+			nullable_res_col->getNullMapColumn() = nullable_col->getNullMapColumn();
 
 		ColumnArray::Offset_t src_prev_offset = 0;
 		ColumnArray::Offset_t res_prev_offset = 0;
@@ -2069,7 +2054,7 @@ bool FunctionEmptyArrayToSingle::executeFixedString(
 		res_data.reserve(src_data.size());
 
 		if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
-			nullable_res_col->getNullValuesByteMap() = nullable_col->getNullValuesByteMap();
+			nullable_res_col->getNullMapColumn() = nullable_col->getNullMapColumn();
 
 		ColumnArray::Offset_t src_prev_offset = 0;
 		ColumnArray::Offset_t res_prev_offset = 0;
@@ -2131,7 +2116,7 @@ bool FunctionEmptyArrayToSingle::executeString(
 		res_data.reserve(src_data.size());
 
 		if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
-			nullable_res_col->getNullValuesByteMap() = nullable_col->getNullValuesByteMap();
+			nullable_res_col->getNullMapColumn() = nullable_col->getNullMapColumn();
 
 		ColumnArray::Offset_t src_array_prev_offset = 0;
 		ColumnArray::Offset_t res_array_prev_offset = 0;
@@ -2197,13 +2182,6 @@ String FunctionRange::getName() const
 
 DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	if (arguments.size() != 1)
-		throw Exception{
-			"Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-		};
-
 	const auto arg = arguments.front().get();
 
 	if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
@@ -2334,11 +2312,6 @@ String FunctionArrayReverse::getName() const
 
 DataTypePtr FunctionArrayReverse::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	if (arguments.size() != 1)
-		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
 	if (!array_type)
 		throw Exception("Argument for function " + getName() + " must be array.",
@@ -2469,8 +2442,8 @@ bool FunctionArrayReverse::executeNumber(
 		if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
 		{
 			/// Make a reverted null map.
-			const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullValuesByteMap()).getData();
-			auto & res_null_map = static_cast<ColumnUInt8 &>(*nullable_res_col->getNullValuesByteMap()).getData();
+			const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumn()).getData();
+			auto & res_null_map = static_cast<ColumnUInt8 &>(*nullable_res_col->getNullMapColumn()).getData();
 			res_null_map.resize(src_data.size());
 			do_reverse(src_null_map, src_offsets, res_null_map);
 		}
@@ -2521,8 +2494,8 @@ bool FunctionArrayReverse::executeFixedString(
 		if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
 		{
 			/// Make a reverted null map.
-			const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullValuesByteMap()).getData();
-			auto & res_null_map = static_cast<ColumnUInt8 &>(*nullable_res_col->getNullValuesByteMap()).getData();
+			const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumn()).getData();
+			auto & res_null_map = static_cast<ColumnUInt8 &>(*nullable_res_col->getNullMapColumn()).getData();
 			res_null_map.resize(src_null_map.size());
 
 			ColumnArray::Offset_t src_prev_offset = 0;
@@ -2601,8 +2574,8 @@ bool FunctionArrayReverse::executeString(
 		if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
 		{
 			/// Make a reverted null map.
-			const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullValuesByteMap()).getData();
-			auto & res_null_map = static_cast<ColumnUInt8 &>(*nullable_res_col->getNullValuesByteMap()).getData();
+			const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumn()).getData();
+			auto & res_null_map = static_cast<ColumnUInt8 &>(*nullable_res_col->getNullMapColumn()).getData();
 			res_null_map.resize(src_string_offsets.size());
 
 			size_t size = src_string_offsets.size();

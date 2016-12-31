@@ -14,8 +14,8 @@ callgrind.out.*
 *.kdev4
 *.kdev_include_paths
 
-# ignore Qt-creator files
-CMakeLists.txt.user
+# Qt Creator files
+*.user
 
 # ignore perf output
 */perf.data

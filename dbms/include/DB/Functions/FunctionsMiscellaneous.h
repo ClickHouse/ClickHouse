@@ -75,24 +75,6 @@ namespace ErrorCodes
   */
 
 
-static inline UInt64 stringWidth(const UInt8 * pos, const UInt8 * end)
-{
-	UInt64 res = 0;
- 	for (; pos < end; ++pos)
-	{
-		if (*pos == '\b' || *pos == '\f' || *pos == '\n' || *pos == '\r' || *pos == '\t' || *pos == '\0' || *pos == '\'' || *pos == '\\')
-			++res;
-		if (*pos <= 0x7F || *pos >= 0xC0)
-			++res;
-	}
-	return res;
-}
-
-static inline void stringWidthConstant(const String & data, UInt64 & res)
-{
-	res = stringWidth(reinterpret_cast<const UInt8 *>(data.data()), reinterpret_cast<const UInt8 *>(data.data()) + data.size());
-}
-
 class FunctionCurrentDatabase : public IFunction
 {
 	const String db_name;
@@ -107,13 +89,10 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 0; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 0)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 0.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return std::make_shared<DataTypeString>();
 	}
 
@@ -137,14 +116,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 0)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 0.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return std::make_shared<DataTypeString>();
 	}
 
@@ -177,23 +153,16 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 1; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return std::make_shared<DataTypeUInt64>();
 	}
 
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
-
-private:
-	/// Internal version of visibleWidth.
-	void perform(Block & block, const ColumnNumbers & arguments, size_t result);
 };
 
 
@@ -209,14 +178,16 @@ public:
 		return name;
 	}
 
+	bool hasSpecialSupportForNulls() const override
+	{
+		return true;
+	}
+
+	size_t getNumberOfArguments() const override { return 1; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return std::make_shared<DataTypeString>();
 	}
 
@@ -241,13 +212,15 @@ public:
 		return name;
 	}
 
+	bool hasSpecialSupportForNulls() const override
+	{
+		return true;
+	}
+
+	size_t getNumberOfArguments() const override { return 1; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return std::make_shared<DataTypeString>();
 	}
 
@@ -271,14 +244,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (!arguments.empty())
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 0.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return std::make_shared<DataTypeUInt64>();
 	}
 
@@ -303,14 +273,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (!arguments.empty())
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 0.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return std::make_shared<DataTypeUInt64>();
 	}
 
@@ -345,14 +312,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (!arguments.empty())
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 0.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return std::make_shared<DataTypeUInt64>();
 	}
 
@@ -381,14 +345,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (!arguments.empty())
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 0.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return std::make_shared<DataTypeUInt64>();
 	}
 
@@ -421,14 +382,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 1; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		if (!typeid_cast<const DataTypeFloat64 *>(&*arguments[0]) &&
 			!typeid_cast<const DataTypeFloat32 *>(&*arguments[0]) &&
 			!typeid_cast<const DataTypeUInt64 *>(&*arguments[0]) &&
@@ -491,14 +449,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 1; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return arguments[0];
 	}
 
@@ -531,14 +486,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 2; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 2)
-			throw Exception("Number of arguments for function '" + getName() + "' doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 2.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return std::make_shared<DataTypeUInt8>();
 	}
 
@@ -580,6 +532,11 @@ public:
 	{
 		return name;
 	}
+
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
+	bool hasSpecialSupportForNulls() const override { return true; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -649,14 +606,12 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 2; }
+
 	void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
 										DataTypePtr & out_return_type,
 										ExpressionActions::Actions & out_prerequisites) override
 	{
-		if (arguments.size() != 2)
-			throw Exception("Function " + getName() + " requires exactly two arguments: tuple and element index.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		const ColumnConstUInt8 * index_col = typeid_cast<const ColumnConstUInt8 *>(&*arguments[1].column);
 		if (!index_col)
 			throw Exception("Second argument to " + getName() + " must be a constant UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -720,6 +675,11 @@ public:
 	static constexpr auto name = "ignore";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIgnore>(); }
 
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
+	bool hasSpecialSupportForNulls() const override { return true; }
+
 	String getName() const override { return name; }
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return std::make_shared<DataTypeUInt8>(); }
 
@@ -749,6 +709,11 @@ public:
 	static constexpr auto name = "indexHint";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIndexHint>(); }
 
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
+	bool hasSpecialSupportForNulls() const override { return true; }
+
 	String getName() const override	{ return name; }
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return std::make_shared<DataTypeUInt8>(); }
 
@@ -772,13 +737,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 1; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 1)
-			throw Exception("Function " + getName() + " requires exactly one argument.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return arguments.front()->clone();
 	}
 
@@ -803,12 +766,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 1; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 1)
-			throw Exception("Function " + getName() + " requires exactly one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		const DataTypeArray * arr = typeid_cast<const DataTypeArray *>(&*arguments[0]);
 		if (!arr)
 			throw Exception("Argument for function " + getName() + " must be Array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -839,14 +801,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 2; }
+
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 2)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-							+ toString(arguments.size()) + ", should be 2.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*arguments[1]);
 		if (!array_type)
 			throw Exception("Second argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -890,6 +849,9 @@ public:
 	{
 		return name;
 	}
+
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -1048,16 +1010,10 @@ public:
 
 	String getName() const override { return name; }
 
+	size_t getNumberOfArguments() const override { return 1; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		const auto args_size = arguments.size();
-		if (args_size != 1)
-			throw Exception{
-				"Number of arguments for function " + getName() + " doesn't match: passed " +
-					toString(args_size) + ", should be 1",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-			};
-
 		const auto arg = arguments.front().get();
 		if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
 			!typeid_cast<const DataTypeUInt16 *>(arg) &&
@@ -1161,10 +1117,10 @@ public:
 
 	String getName() const override { return name; }
 
+	size_t getNumberOfArguments() const override { return 0; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (!arguments.empty())
-			throw Exception("Function " + getName() + " must be called without arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		return std::make_shared<DataTypeString>();
 	}
 
@@ -1191,10 +1147,10 @@ public:
 
 	String getName() const override { return name; }
 
+	size_t getNumberOfArguments() const override { return 0; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (!arguments.empty())
-			throw Exception("Function " + getName() + " must be called without arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		return std::make_shared<DataTypeUInt32>();
 	}
 
@@ -1222,11 +1178,10 @@ public:
 
 	String getName() const override { return name; }
 
+	size_t getNumberOfArguments() const override { return 1; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 1)
-			throw Exception("Function " + getName() + " requires exactly one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		const DataTypeAggregateFunction * type = typeid_cast<const DataTypeAggregateFunction *>(&*arguments[0]);
 		if (!type)
 			throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
@@ -1256,9 +1211,9 @@ public:
 		IColumn & result_column = *result_column_ptr;
 		result_column.reserve(column_with_states->size());
 
-		auto arena = (agg_func.allocatesMemoryInArena()) ?
-						arenas_pool.get(0, []{ return new Arena(); }) :
-						nullptr;
+		auto arena = (agg_func.allocatesMemoryInArena())
+			? arenas_pool.get(0, []{ return new Arena(); })
+			: nullptr;
 
 		const auto & states = column_with_states->getData();
 		for (const auto & state_to_add : states)
@@ -1335,11 +1290,10 @@ public:
 
 	String getName() const override { return name; }
 
+	size_t getNumberOfArguments() const override { return 1; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 1)
-			throw Exception("Function " + getName() + " requires exactly one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		DataTypePtr res;
 		dispatchForSourceType(*arguments[0], [&] (auto field_type_tag)
 		{
@@ -1384,11 +1338,10 @@ public:
 
 	String getName() const override { return name; }
 
+	size_t getNumberOfArguments() const override { return 1; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 1)
-			throw Exception("Function " + getName() + " requires exactly one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		const DataTypeAggregateFunction * type = typeid_cast<const DataTypeAggregateFunction *>(&*arguments[0]);
 		if (!type)
 			throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
@@ -1417,12 +1370,13 @@ class FunctionHasColumnInTable : public IFunction
 {
 public:
 	static constexpr auto name = "hasColumnInTable";
-	static constexpr size_t number_of_arguments = 3;
+
+	size_t getNumberOfArguments() const override { return 3; }
 
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionHasColumnInTable>(context.getGlobalContext()); }
 
 	FunctionHasColumnInTable(const Context & global_context_)
-	: global_context(global_context_)
+		: global_context(global_context_)
 	{
 	}
 

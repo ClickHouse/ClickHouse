@@ -103,6 +103,9 @@ bool TabSeparatedRowInputStream::read(Block & block)
 	}
 	catch (Exception & e)
 	{
+		if (istr.eof())		/// Buffer has gone, cannot extract information about what has been parsed.
+			throw;
+
 		String verbose_diagnostic;
 		{
 			WriteBufferFromString diagnostic_out(verbose_diagnostic);

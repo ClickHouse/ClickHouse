@@ -180,6 +180,36 @@ inline bool checkChar(char c, ReadBuffer & buf)
 	return true;
 }
 
+bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf);
+inline bool checkStringCaseInsensitive(const String & s, ReadBuffer & buf)
+{
+	return checkStringCaseInsensitive(s.c_str(), buf);
+}
+
+void assertStringCaseInsensitive(const char * s, ReadBuffer & buf);
+inline void assertStringCaseInsensitive(const String & s, ReadBuffer & buf)
+{
+	return assertStringCaseInsensitive(s.c_str(), buf);
+}
+
+/** Check that next character in buf matches first character of s.
+  * If true, then check all characters in s and throw exception if it doesn't match.
+  * If false, then return false, and leave position in buffer unchanged.
+  */
+bool checkStringByFirstCharacterAndAssertTheRest(const char * s, ReadBuffer & buf);
+bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const char * s, ReadBuffer & buf);
+
+inline bool checkStringByFirstCharacterAndAssertTheRest(const String & s, ReadBuffer & buf)
+{
+	return checkStringByFirstCharacterAndAssertTheRest(s.c_str(), buf);
+}
+
+inline bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const String & s, ReadBuffer & buf)
+{
+	return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(s.c_str(), buf);
+}
+
+
 inline void readBoolText(bool & x, ReadBuffer & buf)
 {
 	char tmp = '0';

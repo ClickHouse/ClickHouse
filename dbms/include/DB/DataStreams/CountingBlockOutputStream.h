@@ -31,19 +31,7 @@ public:
 		return progress;
 	}
 
-	void write(const Block & block) override
-	{
-		stream->write(block);
-
-		Progress local_progress(block.rowsInFirstColumn(), block.bytes(), 0);
-		progress.incrementPiecewiseAtomically(local_progress);
-
-		if (process_elem)
-			process_elem->updateProgressOut(local_progress);
-
-		if (progress_callback)
-			progress_callback(local_progress);
-	}
+	void write(const Block & block) override;
 
 	void writePrefix() override 						{ stream->writePrefix(); }
 	void writeSuffix() override 						{ stream->writeSuffix(); }

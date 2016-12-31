@@ -32,14 +32,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 1; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		const IDataType * type = &*arguments[0];
 		if (!type->isNumeric() &&
 			!typeid_cast<const DataTypeDate *>(type) &&
@@ -130,14 +127,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 1; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		const IDataType * type = &*arguments[0];
 		if (!typeid_cast<const DataTypeString *>(type) &&
 			!typeid_cast<const DataTypeFixedString *>(type))

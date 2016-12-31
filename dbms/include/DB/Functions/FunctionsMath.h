@@ -24,15 +24,10 @@ public:
 private:
 	String getName() const override { return name; }
 
+	size_t getNumberOfArguments() const override { return 0; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 0)
-			throw Exception{
-				"Number of arguments for function " + getName() + "doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 0",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-			};
-
 		return std::make_shared<DataTypeFloat64>();
 	}
 
@@ -45,7 +40,8 @@ private:
 };
 
 
-template <typename Impl> class FunctionMathUnaryFloat64 : public IFunction
+template <typename Impl>
+class FunctionMathUnaryFloat64 : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
@@ -55,15 +51,10 @@ public:
 private:
 	String getName() const override { return name; }
 
+	size_t getNumberOfArguments() const override { return 1; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 1)
-			throw Exception{
-				"Number of arguments for function " + getName() + "doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-			};
-
 		const auto check_argument_type = [this] (const IDataType * const arg) {
 			if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
 				!typeid_cast<const DataTypeUInt16 *>(arg) &&
@@ -196,7 +187,8 @@ struct UnaryFunctionVectorized
 #endif
 
 
-template <typename Impl> class FunctionMathBinaryFloat64 : public IFunction
+template <typename Impl>
+class FunctionMathBinaryFloat64 : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
@@ -206,15 +198,10 @@ public:
 private:
 	String getName() const override { return name; }
 
+	size_t getNumberOfArguments() const override { return 2; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 2)
-			throw Exception{
-				"Number of arguments for function " + getName() + "doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 2",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-			};
-
 		const auto check_argument_type = [this] (const IDataType * const arg) {
 			if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
 				!typeid_cast<const DataTypeUInt16 *>(arg) &&
@@ -229,8 +216,7 @@ private:
 			{
 				throw Exception{
 					"Illegal type " + arg->getName() + " of argument of function " + getName(),
-					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-				};
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 			}
 		};
 

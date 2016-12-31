@@ -304,7 +304,7 @@ protected:
 			{
 				const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
 				actual_columns.push_back(nullable_col.getNestedColumn().get());
-				null_maps.push_back(nullable_col.getNullValuesByteMap().get());
+				null_maps.push_back(nullable_col.getNullMapColumn().get());
 			}
 			else
 			{
@@ -450,7 +450,7 @@ struct AggregationMethodKeysFixed
 			{
 				ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
 				observed_column = nullable_col.getNestedColumn().get();
-				null_map = static_cast<ColumnUInt8 *>(nullable_col.getNullValuesByteMap().get());
+				null_map = static_cast<ColumnUInt8 *>(nullable_col.getNullMapColumn().get());
 			}
 			else
 			{
@@ -597,7 +597,7 @@ private:
 				{
 					ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
 					observed_column = nullable_col.getNestedColumn().get();
-					ColumnUInt8 & null_map = static_cast<ColumnUInt8 &>(*nullable_col.getNullValuesByteMap());
+					ColumnUInt8 & null_map = static_cast<ColumnUInt8 &>(*nullable_col.getNullMapColumn());
 
 					size_t bucket = i / 8;
 					size_t offset = i % 8;
@@ -625,7 +625,7 @@ private:
 				{
 					ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
 					observed_column = nullable_col.getNestedColumn().get();
-					null_map = static_cast<ColumnUInt8 *>(nullable_col.getNullValuesByteMap().get());
+					null_map = static_cast<ColumnUInt8 *>(nullable_col.getNullMapColumn().get());
 				}
 				else
 				{

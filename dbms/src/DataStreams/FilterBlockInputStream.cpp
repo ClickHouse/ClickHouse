@@ -171,7 +171,7 @@ Block FilterBlockInputStream::readImpl()
 			auto & filter_col = actual_col.getData();
 
 			/// Access the null values byte map content.
-			ColumnPtr & null_map = nullable_col.getNullValuesByteMap();
+			ColumnPtr & null_map = nullable_col.getNullMapColumn();
 			ColumnUInt8 & content = static_cast<ColumnUInt8 &>(*null_map);
 			auto & data = content.getData();
 

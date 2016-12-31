@@ -190,6 +190,9 @@ public:
 		return Name::get();
 	}
 
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{

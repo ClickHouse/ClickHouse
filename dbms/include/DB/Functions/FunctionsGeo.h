@@ -20,21 +20,21 @@ const Float64 EARTH_RADIUS_IN_METERS = 6372797.560856;
 
 static inline Float64 degToRad(Float64 angle) { return angle * DEGREES_IN_RADIANS; }
 static inline Float64 radToDeg(Float64 angle) { return angle / DEGREES_IN_RADIANS; }
-  
+
 /**
  *  The function calculates distance in meters between two points on Earth specified by longitude and latitude in degrees.
- *  The function uses great circle distance formula https://en.wikipedia.org/wiki/Great-circle_distance. 
- *  Throws exception when one or several input values are not within reasonable bounds. 
+ *  The function uses great circle distance formula https://en.wikipedia.org/wiki/Great-circle_distance.
+ *  Throws exception when one or several input values are not within reasonable bounds.
  *  Latitude must be in [-90, 90], longitude must be [-180, 180]
- * 
+ *
  */
 class FunctionGreatCircleDistance : public IFunction
 {
 public:
-	
+
 	static constexpr auto name = "greatCircleDistance";
 	static FunctionPtr create(const Context &) { return std::make_shared<FunctionGreatCircleDistance>(); }
-	
+
 private:
 
 	enum class instr_type : uint8_t
@@ -48,14 +48,10 @@ private:
 
 	String getName() const override { return name; }
 
+	size_t getNumberOfArguments() const override { return 4; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 4)
-			throw Exception(
-				"Number of arguments for function " + getName() + "doesn't match: passed "
-					+ toString(arguments.size()) + ", should be 4",
-					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		for (const auto arg_idx : ext::range(0, arguments.size()))
 		{
 			const auto arg = arguments[arg_idx].get();
@@ -94,7 +90,7 @@ private:
 		return result;
 	}
 
-	/// https://en.wikipedia.org/wiki/Great-circle_distance 
+	/// https://en.wikipedia.org/wiki/Great-circle_distance
 	Float64 greatCircleDistance(Float64 lon1Deg, Float64 lat1Deg, Float64 lon2Deg, Float64 lat2Deg)
 	{
 		if (lon1Deg < -180 || lon1Deg > 180 ||
@@ -132,7 +128,7 @@ private:
 			Float64 res = greatCircleDistance(colLon1, colLat1, colLon2, colLat2);
 			block.getByPosition(result).column = std::make_shared<ColumnConst<Float64>>(size, res);
 		}
-		else 
+		else
 		{
 			const auto dst = std::make_shared<ColumnVector<Float64>>();
 			block.getByPosition(result).column = dst;
@@ -147,7 +143,7 @@ private:
 						vals[idx] = static_cast<const ColumnVector<Float64> *>(instrs[idx].second)->getData()[row];
 					else if (instr_type::get_const_float_64 == instrs[idx].first)
 						vals[idx] = static_cast<const ColumnConst<Float64> *>(instrs[idx].second)->getData();
-					else 
+					else
 						throw std::logic_error{"unknown instr_type"};
 				}
 				dst_data[row] = greatCircleDistance(vals[0], vals[1], vals[2], vals[3]);

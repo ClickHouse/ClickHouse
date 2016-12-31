@@ -94,7 +94,7 @@ const PaddedPODArray<UInt8> & CondSource::initNullMap(const Block & block, const
 	if (col->isNullable())
 	{
 		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
-		const ColumnPtr & null_map = nullable_col.getNullValuesByteMap();
+		const ColumnPtr & null_map = nullable_col.getNullMapColumn();
 		const ColumnUInt8 & content = static_cast<const ColumnUInt8 &>(*null_map);
 
 		return content.getData();

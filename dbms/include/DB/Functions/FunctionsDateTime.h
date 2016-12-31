@@ -70,11 +70,25 @@ struct ZeroTransform
 
 struct ToDateImpl
 {
-	static inline UInt8 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	static inline UInt32 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
 	{
 		return remote_date_lut.toDate(t);
 	}
-	static inline UInt8 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	static inline UInt16 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	{
+		return d;
+	}
+
+	using FactorTransform = ZeroTransform;
+};
+
+struct ToStartOfDayImpl
+{
+	static inline UInt32 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	{
+		return remote_date_lut.toDate(t);
+	}
+	static inline UInt16 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
 	{
 		return d;
 	}
@@ -144,7 +158,7 @@ struct ToTimeImpl
 	/// При переводе во время, дату будем приравнивать к 1970-01-02.
 	static inline UInt32 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
 	{
-		time_t remote_ts = remote_date_lut.toTimeInaccurate(t) + 86400;
+		time_t remote_ts = remote_date_lut.toTime(t) + 86400;
 
 		if (&remote_date_lut == &local_date_lut)
 			return remote_ts;
@@ -152,7 +166,7 @@ struct ToTimeImpl
 		{
 			const auto & values = remote_date_lut.getValues(remote_ts);
 			return local_date_lut.makeDateTime(values.year, values.month, values.day_of_month,
-											remote_date_lut.toHourInaccurate(remote_ts),
+											remote_date_lut.toHour(remote_ts),
 											remote_date_lut.toMinuteInaccurate(remote_ts),
 											remote_date_lut.toSecondInaccurate(remote_ts));
 		}
@@ -174,12 +188,12 @@ struct ToStartOfMinuteImpl
 			return local_date_lut.toStartOfMinuteInaccurate(t);
 		else
 		{
-			time_t remote_ts = remote_date_lut.toTimeInaccurate(t) + 86400;
+			time_t remote_ts = remote_date_lut.toTime(t) + 86400;
 			remote_ts = remote_date_lut.toStartOfMinuteInaccurate(remote_ts);
 
 			const auto & values = remote_date_lut.getValues(t);
 			return local_date_lut.makeDateTime(values.year, values.month, values.day_of_month,
-											remote_date_lut.toHourInaccurate(remote_ts),
+											remote_date_lut.toHour(remote_ts),
 											remote_date_lut.toMinuteInaccurate(remote_ts),
 											remote_date_lut.toSecondInaccurate(remote_ts));
 		}
@@ -200,12 +214,12 @@ struct ToStartOfFiveMinuteImpl
 			return local_date_lut.toStartOfFiveMinuteInaccurate(t);
 		else
 		{
-			time_t remote_ts = remote_date_lut.toTimeInaccurate(t) + 86400;
+			time_t remote_ts = remote_date_lut.toTime(t) + 86400;
 			remote_ts = remote_date_lut.toStartOfFiveMinuteInaccurate(remote_ts);
 
 			const auto & values = remote_date_lut.getValues(t);
 			return local_date_lut.makeDateTime(values.year, values.month, values.day_of_month,
-											remote_date_lut.toHourInaccurate(remote_ts),
+											remote_date_lut.toHour(remote_ts),
 											remote_date_lut.toMinuteInaccurate(remote_ts),
 											remote_date_lut.toSecondInaccurate(remote_ts));
 		}
@@ -226,12 +240,12 @@ struct ToStartOfHourImpl
 			return local_date_lut.toStartOfHourInaccurate(t);
 		else
 		{
-			time_t remote_ts = remote_date_lut.toTimeInaccurate(t) + 86400;
+			time_t remote_ts = remote_date_lut.toTime(t) + 86400;
 			remote_ts = remote_date_lut.toStartOfHourInaccurate(remote_ts);
 
 			const auto & values = remote_date_lut.getValues(t);
 			return local_date_lut.makeDateTime(values.year, values.month, values.day_of_month,
-											remote_date_lut.toHourInaccurate(remote_ts),
+											remote_date_lut.toHour(remote_ts),
 											remote_date_lut.toMinuteInaccurate(remote_ts),
 											remote_date_lut.toSecondInaccurate(remote_ts));
 		}
@@ -304,7 +318,7 @@ struct ToHourImpl
 {
 	static inline UInt8 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
 	{
-		return remote_date_lut.toHourInaccurate(t);
+		return remote_date_lut.toHour(t);
 	}
 	static inline UInt8 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
 	{
@@ -615,6 +629,9 @@ public:
 		return name;
 	}
 
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
@@ -713,14 +730,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 0)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 0.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return std::make_shared<DataTypeDateTime>();
 	}
 
@@ -746,14 +760,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 0)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 0.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return std::make_shared<DataTypeDate>();
 	}
 
@@ -779,14 +790,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 0)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 0.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return std::make_shared<DataTypeDate>();
 	}
 
@@ -812,14 +820,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 1; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		if (!typeid_cast<const DataTypeDateTime *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -948,14 +953,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 2; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 2)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 2.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		if (!typeid_cast<const DataTypeDateTime *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1017,6 +1019,7 @@ struct NameToDayOfWeek			{ static constexpr auto name = "toDayOfWeek"; };
 struct NameToHour	 			{ static constexpr auto name = "toHour"; };
 struct NameToMinute				{ static constexpr auto name = "toMinute"; };
 struct NameToSecond				{ static constexpr auto name = "toSecond"; };
+struct NameToStartOfDay			{ static constexpr auto name = "toStartOfDay"; };
 struct NameToMonday				{ static constexpr auto name = "toMonday"; };
 struct NameToStartOfMonth		{ static constexpr auto name = "toStartOfMonth"; };
 struct NameToStartOfQuarter		{ static constexpr auto name = "toStartOfQuarter"; };
@@ -1041,6 +1044,7 @@ using FunctionToDayOfWeek = FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToD
 using FunctionToHour = FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToHourImpl, 		NameToHour> 	;
 using FunctionToMinute = FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToMinuteImpl, 		NameToMinute> 	;
 using FunctionToSecond = FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToSecondImpl, 		NameToSecond> 	;
+using FunctionToStartOfDay = FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfDayImpl, NameToStartOfDay>;
 using FunctionToMonday = FunctionDateOrDateTimeToSomething<DataTypeDate,		ToMondayImpl, 		NameToMonday> 	;
 using FunctionToStartOfMonth = FunctionDateOrDateTimeToSomething<DataTypeDate,		ToStartOfMonthImpl, NameToStartOfMonth>;
 using FunctionToStartOfQuarter = FunctionDateOrDateTimeToSomething<DataTypeDate,	ToStartOfQuarterImpl, 	NameToStartOfQuarter> ;
