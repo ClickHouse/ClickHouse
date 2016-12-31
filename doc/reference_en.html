@@ -3138,6 +3138,11 @@ Contains information about the number of events that have occurred in the system
 Example: The number of processed SELECT queries.
 Columns: &#39;event String&#39; - the event name, and &#39;value UInt64&#39; - the quantity.
 
+==system.metrics==
+==system.asynchronous_metrics==
+Like system.events, but show info about currently executing events or consuming resources.
+Example: The number of currently executing SELECT queries; memory consumption of the system.
+
 ==system.clusters==
 
 Contains information about clusters available in the config file and the servers in them.
