@@ -597,7 +597,7 @@ private:
 				{
 					ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
 					observed_column = nullable_col.getNestedColumn().get();
-					ColumnUInt8 & null_map = static_cast<ColumnUInt8 &>(*nullable_col.getNullMapColumn());
+					ColumnUInt8 & null_map = nullable_col.getNullMapConcreteColumn();
 
 					size_t bucket = i / 8;
 					size_t offset = i % 8;
@@ -625,7 +625,7 @@ private:
 				{
 					ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
 					observed_column = nullable_col.getNestedColumn().get();
-					null_map = static_cast<ColumnUInt8 *>(nullable_col.getNullMapColumn().get());
+					null_map = &nullable_col.getNullMapConcreteColumn();
 				}
 				else
 				{

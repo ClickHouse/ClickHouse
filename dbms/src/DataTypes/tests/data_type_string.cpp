@@ -39,7 +39,7 @@ try
 		WriteBufferFromOStream out_buf(ostr);
 
 		stopwatch.restart();
-		data_type.serializeBinaryBulk(*column, out_buf);
+		data_type.serializeBinaryBulk(*column, out_buf, 0, 0);
 		stopwatch.stop();
 
 		std::cout << "Writing, elapsed: " << stopwatch.elapsedSeconds() << std::endl;

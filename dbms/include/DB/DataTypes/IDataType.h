@@ -61,9 +61,14 @@ public:
 	virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const = 0;
 
 	/** Serialization/deserialization of individual values.
-	  * For complex data types (like arrays) it may differ from bulk serde.
-	  * For example, if you serialize single array, it will be represented as its size and values in single contiguous stream,
-	  *  but if you serialize column with arrays as bulk, then sizes and values will be written to separate streams.
+	  *
+	  * These are helper methods for implementation of various formats to input/output for user (like CSV, JSON, etc.).
+	  * There is no one-to-one correspondence between formats and these methods.
+	  * For example, TabSeparated and Pretty formats could use same helper method serializeTextEscaped.
+	  *
+	  * For complex data types (like arrays) binary serde for individual values may differ from bulk serde.
+	  * For example, if you serialize single array, it will be represented as its size and elements in single contiguous stream,
+	  *  but if you bulk serialize column with arrays, then sizes and elements will be written to separate streams.
 	  */
 
 	/// Для бинарной сериализации есть два варианта. Один вариант работает с Field.

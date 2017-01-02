@@ -416,7 +416,7 @@ void MergeTreeReader::readData(const String & name, const IDataType & type, ICol
 
 		Stream & stream = *(streams.at(filename));
 		stream.seekToMark(from_mark);
-		IColumn & col8 = *(nullable_col.getNullMapColumn());
+		IColumn & col8 = nullable_col.getNullMapConcreteColumn();
 		DataTypeUInt8{}.deserializeBinaryBulk(col8, *stream.data_buffer, max_rows_to_read, 0);
 
 		/// Then read data.

@@ -300,7 +300,7 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 		IColumn & nested_col = *nullable_col.getNestedColumn();
 
 		/// First read from the null map.
-		DataTypeUInt8{}.deserializeBinaryBulk(*nullable_col.getNullMapColumn(),
+		DataTypeUInt8{}.deserializeBinaryBulk(nullable_col.getNullMapConcreteColumn(),
 			streams[name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION]->compressed, limit, 0);
 
 		/// Then read data.
@@ -372,8 +372,8 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(column);
 		const IColumn & nested_col = *nullable_col.getNestedColumn();
 
-		DataTypeUInt8{}.serializeBinaryBulk(*nullable_col.getNullMapColumn(),
-			streams[name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION]->compressed);
+		DataTypeUInt8{}.serializeBinaryBulk(nullable_col.getNullMapConcreteColumn(),
+			streams[name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION]->compressed, 0, 0);
 
 		/// Then write data.
 		writeData(name, nested_type, nested_col, offset_columns, level);
@@ -394,7 +394,7 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 		writeData(name, *type_arr->getNestedType(), typeid_cast<const ColumnArray &>(column).getData(), offset_columns, level + 1);
 	}
 	else
-		type.serializeBinaryBulk(column, streams[name]->compressed);
+		type.serializeBinaryBulk(column, streams[name]->compressed, 0, 0);
 }
 
 
