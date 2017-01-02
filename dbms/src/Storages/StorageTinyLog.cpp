@@ -386,9 +386,7 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 		if (offset_columns.count(size_name) == 0)
 		{
 			offset_columns.insert(size_name);
-			type_arr->serializeOffsets(
-				column,
-				streams[size_name]->compressed);
+			type_arr->serializeOffsets(column, streams[size_name]->compressed, 0, 0);
 		}
 
 		writeData(name, *type_arr->getNestedType(), typeid_cast<const ColumnArray &>(column).getData(), offset_columns, level + 1);

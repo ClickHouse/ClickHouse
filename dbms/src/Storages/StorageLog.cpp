@@ -511,7 +511,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 
 			out_marks.push_back(std::make_pair(storage.files[size_name].column_index, mark));
 
-			type_arr->serializeOffsets(column, streams[size_name]->compressed);
+			type_arr->serializeOffsets(column, streams[size_name]->compressed, 0, 0);
 			streams[size_name]->compressed.next();
 		}
 
