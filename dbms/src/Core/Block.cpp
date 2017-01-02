@@ -264,7 +264,7 @@ void Block::checkNumberOfRows() const
 			throw Exception("Column " + elem.name + " in block is nullptr, in method checkNumberOfRows."
 				, ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		size_t size = elem.column->size();
+		ssize_t size = elem.column->size();
 
 		if (rows == -1)
 			rows = size;
