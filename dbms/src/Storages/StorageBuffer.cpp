@@ -171,6 +171,9 @@ static void appendBlock(const Block & from, Block & to)
 	if (!to)
 		throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
 
+	from.checkNumberOfRows();
+	to.checkNumberOfRows();
+
 	size_t rows = from.rows();
 	size_t bytes = from.bytes();
 

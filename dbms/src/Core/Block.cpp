@@ -255,30 +255,30 @@ size_t Block::getPositionByName(const std::string & name) const
 }
 
 
-size_t Block::rows() const
+void Block::checkNumberOfRows() const
 {
-	size_t res = 0;
+	ssize_t rows = -1;
 	for (const auto & elem : data)
 	{
-		size_t size = elem.column->size();
-
-		if (res != 0 && size != res)
-			throw Exception("Sizes of columns doesn't match: "
-				+ data.begin()->name + ": " + toString(res)
-				+ ", " + elem.name + ": " + toString(size)
+		if (!elem.column)
+			throw Exception("Column " + elem.name + " in block is nullptr, in method checkNumberOfRows."
 				, ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		res = size;
-	}
+		size_t size = elem.column->size();
 
-	return res;
+		if (rows == -1)
+			rows = size;
+		else if (rows != size)
+			throw Exception("Sizes of columns doesn't match: "
+				+ data.front().name + ": " + toString(rows)
+				+ ", " + elem.name + ": " + toString(size)
+				, ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+	}
 }
 
 
-size_t Block::rowsInFirstColumn() const
+size_t Block::rows() const
 {
-	if (data.empty())
-		return 0;
 	for (const auto & elem : data)
 		if (elem.column)
 			return elem.column->size();

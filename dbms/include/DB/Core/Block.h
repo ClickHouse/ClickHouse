@@ -17,9 +17,11 @@
 namespace DB
 {
 
-/** Тип данных для представления подмножества строк и столбцов в оперативке.
-  * Содержит также метаданные (типы) столбцов и их имена.
-  * Позволяет вставлять, удалять столбцы в любом порядке, менять порядок столбцов.
+/** Container for set of columns for bunch of rows in memory.
+  * This is unit of data processing.
+  * Also contains metadata - data types of columns and their names
+  *  (either original names from a table, or generated names during temporary calculations).
+  * Allows to insert, remove columns in arbitary position, to change order of columns.
   */
 
 class Context;
@@ -81,18 +83,15 @@ public:
 	ColumnsWithTypeAndName getColumns() const;
 	NamesAndTypesList getColumnsList() const;
 
-	/** Возвращает количество строк в блоке.
-	  * Заодно проверяет, что все столбцы содержат одинаковое число значений.
-	  */
+	/// Returns number of rows from first column in block, not equal to nullptr. If no columns, returns 0.
 	size_t rows() const;
-
-	/** То же самое, но без проверки - берёт количество строк из первого столбца, если он есть или возвращает 0.
-	  */
-	size_t rowsInFirstColumn() const;
 
 	size_t columns() const { return data.size(); }
 
-	/// Приблизительное количество байт в оперативке - для профайлинга.
+	/// Checks that every column in block is not nullptr and has same number of elements.
+	void checkNumberOfRows() const;
+
+	/// Approximate number of bytes in memory - for profiling and limits.
 	size_t bytes() const;
 
 	operator bool() const { return !data.empty(); }
