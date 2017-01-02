@@ -27,7 +27,7 @@ static size_t widthOfUTF8String(const String & s)
 void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
 	auto & src = block.safeGetByPosition(arguments[0]);
-	size_t size = block.rowsInFirstColumn();
+	size_t size = block.rows();
 
 	if (!src.column->isConst())
 	{
@@ -102,7 +102,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
 	const bool has_column = table->hasColumn(column_name);
 
 	block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(
-		block.rowsInFirstColumn(), has_column);
+		block.rows(), has_column);
 }
 
 

@@ -113,7 +113,7 @@ private:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		const auto size = block.rowsInFirstColumn();
+		const auto size = block.rows();
 
 		bool result_is_const{};
 		auto instrs = getInstructions(block, arguments, result_is_const);

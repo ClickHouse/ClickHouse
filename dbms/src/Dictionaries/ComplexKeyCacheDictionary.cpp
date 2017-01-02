@@ -585,7 +585,7 @@ void ComplexKeyCacheDictionary::update(
 				return block.safeGetByPosition(keys_size + attribute_idx).column.get();
 			});
 
-		const auto rows = block.rowsInFirstColumn();
+		const auto rows = block.rows();
 
 		for (const auto row : ext::range(0, rows))
 		{

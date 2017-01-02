@@ -140,7 +140,7 @@ size_t Join::getTotalRowCount() const
 	if (type == Type::CROSS)
 	{
 		for (const auto & block : blocks)
-			res += block.rowsInFirstColumn();
+			res += block.rows();
 	}
 	else
 	{
@@ -646,7 +646,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 		block.insert(std::move(new_column));
 	}
 
-	size_t rows = block.rowsInFirstColumn();
+	size_t rows = block.rows();
 
 	/// Используется при ANY INNER JOIN
 	std::unique_ptr<IColumn::Filter> filter;
@@ -780,7 +780,7 @@ void Join::joinBlockImplCross(Block & block) const
 		res.insert(std::move(new_column));
 	}
 
-	size_t rows_left = block.rowsInFirstColumn();
+	size_t rows_left = block.rows();
 
 	/// NOTE Было бы оптимальнее использовать reserve, а также методы replicate для размножения значений левого блока.
 
@@ -788,7 +788,7 @@ void Join::joinBlockImplCross(Block & block) const
 	{
 		for (const Block & block_right : blocks)
 		{
-			size_t rows_right = block_right.rowsInFirstColumn();
+			size_t rows_right = block_right.rows();
 
 			for (size_t col_num = 0; col_num < num_existing_columns; ++col_num)
 				for (size_t j = 0; j < rows_right; ++j)

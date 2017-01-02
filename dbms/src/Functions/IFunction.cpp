@@ -354,7 +354,7 @@ void IFunction::postProcessResult(Strategy strategy, Block & block, const Block 
 	{
 		/// We have found at least one NULL argument. Therefore we return NULL.
 		ColumnWithTypeAndName & dest_col = block.safeGetByPosition(result);
-		dest_col.column =  std::make_shared<ColumnNull>(block.rowsInFirstColumn(), Null());
+		dest_col.column =  std::make_shared<ColumnNull>(block.rows(), Null());
 	}
 	else if (strategy == PROCESS_NULLABLE_COLUMNS)
 	{
@@ -362,7 +362,7 @@ void IFunction::postProcessResult(Strategy strategy, Block & block, const Block 
 		ColumnWithTypeAndName & dest_col = block.safeGetByPosition(result);
 
 		/// Initialize the result column.
-		ColumnPtr null_map = std::make_shared<ColumnUInt8>(block.rowsInFirstColumn(), 0);
+		ColumnPtr null_map = std::make_shared<ColumnUInt8>(block.rows(), 0);
 		dest_col.column = std::make_shared<ColumnNullable>(source_col.column, null_map);
 
 		/// Deduce the null map of the result from the null maps of the

@@ -167,7 +167,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 
 	/// Append a fallback NULL column.
 	ColumnWithTypeAndName elem;
-	elem.column = std::make_shared<ColumnNull>(temp_block.rowsInFirstColumn(), Null());
+	elem.column = std::make_shared<ColumnNull>(temp_block.rows(), Null());
 	elem.type = std::make_shared<DataTypeNull>();
 	elem.name = "NULL";
 
@@ -253,7 +253,7 @@ void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments,
 
 	/// Append a NULL column.
 	ColumnWithTypeAndName null_elem;
-	null_elem.column = std::make_shared<ColumnNull>(temp_block.rowsInFirstColumn(), Null());
+	null_elem.column = std::make_shared<ColumnNull>(temp_block.rows(), Null());
 	null_elem.type = std::make_shared<DataTypeNull>();
 	null_elem.name = "NULL";
 

@@ -180,7 +180,7 @@ public:
 
 		typename ColumnVector<ToType>::Container_t & vec_to = col_to->getData();
 
-		size_t size = block.rowsInFirstColumn();
+		size_t size = block.rows();
 		vec_to.resize(size);
 		Impl::execute(vec_to);
 	}
@@ -232,7 +232,7 @@ public:
 			value = vec_to[0];
 		}
 
-		block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ToType>>(block.rowsInFirstColumn(), value);
+		block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ToType>>(block.rows(), value);
 	}
 };
 

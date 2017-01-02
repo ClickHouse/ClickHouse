@@ -461,6 +461,7 @@ void MergedBlockOutputStream::init()
 
 void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)
 {
+	block.checkNumberOfRows();
 	size_t rows = block.rows();
 
 	/// Множество записанных столбцов со смещениями, чтобы не писать общие для вложенных структур столбцы несколько раз

@@ -204,7 +204,7 @@ private:
 		execute(tmp_block, tmp_arguments, tmp_result);
 
 		block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createConstColumn(
-			block.rowsInFirstColumn(),
+			block.rows(),
 			(*tmp_block.safeGetByPosition(tmp_result).column)[0]);
 	}
 

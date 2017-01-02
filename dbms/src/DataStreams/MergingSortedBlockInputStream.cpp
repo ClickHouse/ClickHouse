@@ -62,7 +62,7 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 
 			shared_block_ptr = new detail::SharedBlock(children[i]->read());
 
-			const size_t rows = shared_block_ptr->rowsInFirstColumn();
+			const size_t rows = shared_block_ptr->rows();
 
 			if (rows == 0)
 				continue;

@@ -99,7 +99,7 @@ public:
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(
-			block.rowsInFirstColumn(), db_name);
+			block.rows(), db_name);
 	}
 };
 
@@ -130,7 +130,7 @@ public:
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column = ColumnConstString(
-			block.rowsInFirstColumn(),
+			block.rows(),
 			Poco::Net::DNS::hostName()).convertToFullColumn();
 	}
 };
@@ -195,7 +195,7 @@ public:
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(
-			block.rowsInFirstColumn(), block.safeGetByPosition(arguments[0]).type->getName());
+			block.rows(), block.safeGetByPosition(arguments[0]).type->getName());
 	}
 };
 
@@ -227,7 +227,7 @@ public:
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(
-			block.rowsInFirstColumn(), block.safeGetByPosition(arguments[0]).column->getName());
+			block.rows(), block.safeGetByPosition(arguments[0]).column->getName());
 	}
 };
 
@@ -255,7 +255,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		size_t size = block.rowsInFirstColumn();
+		size_t size = block.rows();
 		block.safeGetByPosition(result).column = ColumnConstUInt64(size, size).convertToFullColumn();
 	}
 };
@@ -284,7 +284,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		size_t size = block.rowsInFirstColumn();
+		size_t size = block.rows();
 		auto column = std::make_shared<ColumnUInt64>();
 		auto & data = column->getData();
 		data.resize(size);
@@ -324,7 +324,7 @@ public:
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t current_block_number = block_number++;
-		block.safeGetByPosition(result).column = ColumnConstUInt64(block.rowsInFirstColumn(), current_block_number).convertToFullColumn();
+		block.safeGetByPosition(result).column = ColumnConstUInt64(block.rows(), current_block_number).convertToFullColumn();
 	}
 };
 
@@ -356,7 +356,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		size_t rows_in_block = block.rowsInFirstColumn();
+		size_t rows_in_block = block.rows();
 		size_t current_row_number = rows.fetch_add(rows_in_block);
 
 		auto column = std::make_shared<ColumnUInt64>();
@@ -573,7 +573,7 @@ public:
 				tuple_block.getByPosition(i).column->get(0, tuple[i]);
 
 			block.safeGetByPosition(result).column = std::make_shared<ColumnConstTuple>(
-				block.rowsInFirstColumn(), Tuple(tuple), block.safeGetByPosition(result).type);
+				block.rows(), Tuple(tuple), block.safeGetByPosition(result).type);
 		}
 		else
 		{
@@ -663,7 +663,7 @@ public:
 		{
 			const TupleBackend & data = const_tuple_col->getData();
 			block.safeGetByPosition(result).column = static_cast<const DataTypeTuple &>(*block.safeGetByPosition(arguments[0]).type)
-				.getElements()[index - 1]->createConstColumn(block.rowsInFirstColumn(), data[index - 1]);
+				.getElements()[index - 1]->createConstColumn(block.rows(), data[index - 1]);
 		}
 	}
 };
@@ -686,7 +686,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rowsInFirstColumn(), 0);
+		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rows(), 0);
 	}
 };
 
@@ -720,7 +720,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rowsInFirstColumn(), 1);
+		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rows(), 1);
 	}
 };
 
@@ -889,7 +889,7 @@ public:
 
 		if (src.isConst())
 		{
-			auto res_column = std::make_shared<ColumnConstString>(block.rowsInFirstColumn(), "");
+			auto res_column = std::make_shared<ColumnConstString>(block.rows(), "");
 			block.safeGetByPosition(result).column = res_column;
 
 			if (   executeConstNumber<UInt8>	(src, *res_column, min, max, max_width)
@@ -1127,7 +1127,7 @@ public:
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		static const std::string version = getVersion();
-		block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(block.rowsInFirstColumn(), version);
+		block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(block.rows(), version);
 	}
 
 private:
@@ -1156,7 +1156,7 @@ public:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt32>(block.rowsInFirstColumn(), uptime);
+		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt32>(block.rows(), uptime);
 	}
 
 private:
@@ -1311,7 +1311,7 @@ public:
 		/// When column is constant, its difference is zero.
 		if (src.column->isConst())
 		{
-			res.column = res.type->createConstColumn(block.rowsInFirstColumn(), res.type->getDefault());
+			res.column = res.type->createConstColumn(block.rows(), res.type->getDefault());
 			return;
 		}
 

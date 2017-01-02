@@ -67,7 +67,7 @@ std::vector<IColumn::Filter> DistributedBlockOutputStream::createFilters(Block b
 	const auto it = creators.find(key_column.type->getName());
 
 	return it != std::end(creators)
-		? (*it->second)(block.rowsInFirstColumn(), key_column.column.get(), *cluster)
+		? (*it->second)(block.rows(), key_column.column.get(), *cluster)
 		: throw Exception{
 			"Sharding key expression does not evaluate to an integer type",
 			ErrorCodes::TYPE_MISMATCH
@@ -86,7 +86,7 @@ void DistributedBlockOutputStream::writeSplit(const Block & block)
 
 	const auto num_shards = cluster->getShardsInfo().size();
 
-	ssize_t size_hint = ((block.rowsInFirstColumn() + num_shards - 1) / num_shards) * 1.1;	/// Число 1.1 выбрано наугад.
+	ssize_t size_hint = ((block.rows() + num_shards - 1) / num_shards) * 1.1;	/// Число 1.1 выбрано наугад.
 
 	for (size_t i = 0; i < num_shards; ++i)
 	{
@@ -95,7 +95,7 @@ void DistributedBlockOutputStream::writeSplit(const Block & block)
 		for (size_t col = 0; col < num_cols; ++col)
 			target_block.safeGetByPosition(col).column = columns[col]->filter(filters[i], size_hint);
 
-		if (target_block.rowsInFirstColumn())
+		if (target_block.rows())
 			writeImpl(target_block, i);
 	}
 }

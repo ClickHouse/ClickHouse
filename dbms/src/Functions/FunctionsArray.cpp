@@ -251,7 +251,7 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
 	}
 	else
 	{
-		size_t block_size = block.rowsInFirstColumn();
+		size_t block_size = block.rows();
 
 		/** If part of columns have not same type as common type of all elements of array,
 		  *  then convert them to common type.
@@ -890,7 +890,7 @@ bool FunctionArrayElement::executeConstConst(Block & block, const ColumnNumbers 
 		value = DataTypeString{}.getDefault();
 
 	block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createConstColumn(
-		block.rowsInFirstColumn(),
+		block.rows(),
 		value);
 
 	if (builder)
@@ -1158,7 +1158,7 @@ void FunctionArrayElement::perform(Block & block, const ColumnNumbers & argument
 		Field index = (*block.safeGetByPosition(arguments[1]).column)[0];
 
 		if (builder)
-			builder.initSink(block.rowsInFirstColumn());
+			builder.initSink(block.rows());
 
 		if (index == UInt64(0))
 			throw Exception("Array indices is 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
@@ -1967,7 +1967,7 @@ bool FunctionEmptyArrayToSingle::executeConst(Block & block, const ColumnNumbers
 			auto nested_type = typeid_cast<const DataTypeArray &>(*block.safeGetByPosition(arguments[0]).type).getNestedType();
 
 			block.safeGetByPosition(result).column = std::make_shared<ColumnConstArray>(
-				block.rowsInFirstColumn(),
+				block.rows(),
 				Array{nested_type->getDefault()},
 				nested_type->clone());
 		}
@@ -2389,7 +2389,7 @@ bool FunctionArrayReverse::executeConst(Block & block, const ColumnNumbers & arg
 			res[i] = arr[size - i - 1];
 
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConstArray>(
-			block.rowsInFirstColumn(),
+			block.rows(),
 			res,
 			block.safeGetByPosition(arguments[0]).type->clone());
 
@@ -2721,7 +2721,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 	std::unique_ptr<char[]> place_holder { new char[agg_func.sizeOfData()] };
 	AggregateDataPtr place = place_holder.get();
 
-	size_t rows = block.rowsInFirstColumn();
+	size_t rows = block.rows();
 
 	/// Агрегатные функции не поддерживают константные столбцы. Поэтому, материализуем их.
 	std::vector<ColumnPtr> materialized_columns;

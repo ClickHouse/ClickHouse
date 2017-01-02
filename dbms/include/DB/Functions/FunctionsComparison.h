@@ -614,7 +614,7 @@ private:
 			if (!in.eof())
 				throw Exception("String is too long for Date: " + column_string->getData());
 
-			ColumnConst<DataTypeDate::FieldType> parsed_const_date(block.rowsInFirstColumn(), date);
+			ColumnConst<DataTypeDate::FieldType> parsed_const_date(block.rows(), date);
 			executeNumLeftType<DataTypeDate::FieldType>(block, result,
 				left_is_num ? col_left_untyped : &parsed_const_date,
 				left_is_num ? &parsed_const_date : col_right_untyped);
@@ -627,7 +627,7 @@ private:
 			if (!in.eof())
 				throw Exception("String is too long for DateTime: " + column_string->getData());
 
-			ColumnConst<DataTypeDateTime::FieldType> parsed_const_date_time(block.rowsInFirstColumn(), date_time);
+			ColumnConst<DataTypeDateTime::FieldType> parsed_const_date_time(block.rows(), date_time);
 			executeNumLeftType<DataTypeDateTime::FieldType>(block, result,
 				left_is_num ? col_left_untyped : &parsed_const_date_time,
 				left_is_num ? &parsed_const_date_time : col_right_untyped);
@@ -649,7 +649,7 @@ private:
 		const auto type = static_cast<const EnumType *>(type_untyped);
 
 		const Field x = nearestFieldType(type->getValue(column_string->getData()));
-		const auto enum_col = type->createConstColumn(block.rowsInFirstColumn(), x);
+		const auto enum_col = type->createConstColumn(block.rows(), x);
 
 		executeNumLeftType<typename EnumType::FieldType>(block, result,
 			left_is_num ? column_number : enum_col.get(),

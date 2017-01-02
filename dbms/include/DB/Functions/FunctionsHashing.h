@@ -597,7 +597,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		size_t rows = block.rowsInFirstColumn();
+		size_t rows = block.rows();
 		auto col_to = std::make_shared<ColumnUInt64>(rows);
 		block.safeGetByPosition(result).column = col_to;
 

@@ -234,7 +234,7 @@ void ComplexKeyHashedDictionary::loadData()
 
 	while (const auto block = stream->read())
 	{
-		const auto rows = block.rowsInFirstColumn();
+		const auto rows = block.rows();
 		element_count += rows;
 
 		const auto key_column_ptrs = ext::map<ConstColumnPlainPtrs>(ext::range(0, keys_size),

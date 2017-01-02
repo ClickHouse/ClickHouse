@@ -51,7 +51,7 @@ static void removeConstantsFromSortDescription(const Block & sample_block, SortD
   */
 static void enrichBlockWithConstants(Block & block, const Block & sample_block)
 {
-	size_t rows = block.rowsInFirstColumn();
+	size_t rows = block.rows();
 	size_t columns = sample_block.columns();
 
 	for (size_t i = 0; i < columns; ++i)
@@ -155,7 +155,7 @@ MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
 	Blocks nonempty_blocks;
 	for (const auto & block : blocks)
 	{
-		if (block.rowsInFirstColumn() == 0)
+		if (block.rows() == 0)
 			continue;
 
 		nonempty_blocks.push_back(block);

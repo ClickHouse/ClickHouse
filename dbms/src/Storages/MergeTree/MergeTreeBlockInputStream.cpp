@@ -249,7 +249,7 @@ Block MergeTreeBlockInputStream::readImpl()
 			if (!res)
 				return res;
 
-			progressImpl(Progress(res.rowsInFirstColumn(), res.bytes()));
+			progressImpl(Progress(res.rows(), res.bytes()));
 			pre_reader->fillMissingColumns(res, ordered_names, should_reorder);
 
 			/// Вычислим выражение в PREWHERE.
@@ -387,7 +387,7 @@ Block MergeTreeBlockInputStream::readImpl()
 		if (!res)
 			return res;
 
-		progressImpl(Progress(res.rowsInFirstColumn(), res.bytes()));
+		progressImpl(Progress(res.rows(), res.bytes()));
 		reader->fillMissingColumns(res, ordered_names);
 	}
 

@@ -1127,7 +1127,7 @@ private:
 
 	void executeNAry(Block & block, const ColumnNumbers & arguments, const size_t result)
 	{
-		const auto size = block.rowsInFirstColumn();
+		const auto size = block.rows();
 		std::size_t result_length{};
 		bool result_is_const{};
 		auto instrs = getInstructions(block, arguments, result_length, result_is_const);

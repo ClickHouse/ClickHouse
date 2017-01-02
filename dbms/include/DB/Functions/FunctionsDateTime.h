@@ -742,7 +742,7 @@ public:
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt32>(
-			block.rowsInFirstColumn(),
+			block.rows(),
 			time(0));
 	}
 };
@@ -772,7 +772,7 @@ public:
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt16>(
-			block.rowsInFirstColumn(),
+			block.rows(),
 			DateLUT::instance().toDayNum(time(0)));
 	}
 };
@@ -802,7 +802,7 @@ public:
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt16>(
-			block.rowsInFirstColumn(),
+			block.rows(),
 			DateLUT::instance().toDayNum(time(0)) - 1);
 	}
 };
@@ -852,7 +852,7 @@ public:
 		}
 		else if (const ColumnConstUInt32 * const_times = typeid_cast<const ColumnConstUInt32 *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
-			block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt32>(block.rowsInFirstColumn(), const_times->getData() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt32>(block.rows(), const_times->getData() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
 		}
 		else
 			throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -1001,7 +1001,7 @@ public:
 		{
 			Array const_res;
 			TimeSlotsImpl<UInt32>::constant_constant(const_starts->getData(), const_durations->getData(), const_res);
-			block.safeGetByPosition(result).column = std::make_shared<ColumnConstArray>(block.rowsInFirstColumn(), const_res, std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()));
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConstArray>(block.rows(), const_res, std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()));
 		}
 		else
 			throw Exception("Illegal columns " + block.safeGetByPosition(arguments[0]).column->getName()

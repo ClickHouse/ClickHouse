@@ -1322,7 +1322,7 @@ private:
 
 		block.safeGetByPosition(result).column = std::make_shared<ColumnArray>(
 			std::make_shared<UnderlyingColumnType>(),
-			std::make_shared<ColumnArray::ColumnOffsets_t>(block.rowsInFirstColumn(), 0));
+			std::make_shared<ColumnArray::ColumnOffsets_t>(block.rows(), 0));
 	}
 };
 

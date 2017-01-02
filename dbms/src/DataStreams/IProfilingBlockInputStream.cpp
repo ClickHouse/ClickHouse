@@ -68,7 +68,7 @@ Block IProfilingBlockInputStream::read()
 		cancel();
 	}
 
-	progress(Progress(res.rowsInFirstColumn(), res.bytes()));
+	progress(Progress(res.rows(), res.bytes()));
 
 	return res;
 }
@@ -207,7 +207,7 @@ void IProfilingBlockInputStream::checkQuota(Block & block)
 			time_t current_time = time(0);
 			double total_elapsed = info.total_stopwatch.elapsedSeconds();
 
-			quota->checkAndAddResultRowsBytes(current_time, block.rowsInFirstColumn(), block.bytes());
+			quota->checkAndAddResultRowsBytes(current_time, block.rows(), block.bytes());
 			quota->checkAndAddExecutionTime(current_time, Poco::Timespan((total_elapsed - prev_elapsed) * 1000000.0));
 
 			prev_elapsed = total_elapsed;

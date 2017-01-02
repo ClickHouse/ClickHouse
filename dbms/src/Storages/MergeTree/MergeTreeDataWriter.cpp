@@ -23,6 +23,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 
 	const auto & date_lut = DateLUT::instance();
 
+	block.checkNumberOfRows();
 	size_t rows = block.rows();
 	size_t columns = block.columns();
 

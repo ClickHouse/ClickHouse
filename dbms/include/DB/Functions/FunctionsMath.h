@@ -34,7 +34,7 @@ private:
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Float64>>(
-			block.rowsInFirstColumn(),
+			block.rows(),
 			Impl::value);
 	}
 };

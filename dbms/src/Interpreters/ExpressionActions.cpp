@@ -364,7 +364,7 @@ void ExpressionAction::execute(Block & block) const
 			break;
 
 		case ADD_COLUMN:
-			block.insert({ added_column->cloneResized(block.rowsInFirstColumn()), result_type, result_name });
+			block.insert({ added_column->cloneResized(block.rows()), result_type, result_name });
 			break;
 
 		case COPY_COLUMN:

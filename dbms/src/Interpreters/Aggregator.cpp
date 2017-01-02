@@ -987,11 +987,11 @@ void Aggregator::writeToTemporaryFileImpl(
 		Block block = convertOneBucketToBlock(data_variants, method, false, bucket);
 		out.write(block);
 
-		size_t block_size_rows = block.rowsInFirstColumn();
+		size_t block_size_rows = block.rows();
 		size_t block_size_bytes = block.bytes();
 
 		if (block_size_rows > max_temporary_block_size_rows)
-			max_temporary_block_size_rows = block.rowsInFirstColumn();
+			max_temporary_block_size_rows = block.rows();
 		if (block_size_bytes > max_temporary_block_size_bytes)
 			max_temporary_block_size_bytes = block_size_bytes;
 	}
@@ -1403,7 +1403,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 
 	for (const auto & block : blocks)
 	{
-		rows += block.rowsInFirstColumn();
+		rows += block.rows();
 		bytes += block.bytes();
 	}
 
@@ -1881,7 +1881,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 
 	/// Для всех строчек.
 	StringRefs keys(params.keys_size);
-	size_t rows = block.rowsInFirstColumn();
+	size_t rows = block.rows();
 	for (size_t i = 0; i < rows; ++i)
 	{
 		typename Table::iterator it;
@@ -2017,7 +2017,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 		if (isCancelled())
 			return;
 
-		total_input_rows += block.rowsInFirstColumn();
+		total_input_rows += block.rows();
 		++total_input_blocks;
 		bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
 	}
@@ -2256,7 +2256,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
 		for (const auto & block : merged_blocks)
 		{
-			if (block && block.rowsInFirstColumn() && !block.info.is_overflows)
+			if (block && block.rows() && !block.info.is_overflows)
 				has_nonempty_nonoverflows = true;
 			else if (block.info.is_overflows)
 				has_overflows = true;
@@ -2277,7 +2277,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 		{
 			for (auto it = merged_blocks.begin(); it != merged_blocks.end(); ++it)
 			{
-				if (!*it || it->rowsInFirstColumn() == 0)
+				if (!*it || it->rows() == 0)
 				{
 					merged_blocks.erase(it);
 					break;
@@ -2313,7 +2313,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
 	typename Method::State state;
 	state.init(key_columns);
 
-	size_t rows = source.rowsInFirstColumn();
+	size_t rows = source.rows();
 	size_t columns = source.columns();
 
 	/// Для каждого номера корзины создадим фильтр, где будут отмечены строки, относящиеся к этой корзине.
@@ -2339,7 +2339,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
 		filter[i] = 1;
 	}
 
-	ssize_t size_hint = ((source.rowsInFirstColumn() + method.data.NUM_BUCKETS - 1)
+	ssize_t size_hint = ((source.rows() + method.data.NUM_BUCKETS - 1)
 		/ method.data.NUM_BUCKETS) * 1.1;	/// Число 1.1 выбрано наугад.
 
 	for (size_t bucket = 0, size = destinations.size(); bucket < size; ++bucket)

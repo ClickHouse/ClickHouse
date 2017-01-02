@@ -2205,13 +2205,13 @@ private:
 				else if (action & Action::CONVERT_NULL)
 				{
 					/// A NULL value has been converted to a nullable type.
-					null_map = std::make_shared<ColumnUInt8>(block.rowsInFirstColumn(), 1);
+					null_map = std::make_shared<ColumnUInt8>(block.rows(), 1);
 				}
 				else
 				{
 					/// This is a conversion from an ordinary type to a nullable type.
 					/// So we create a trivial null map.
-					null_map = std::make_shared<ColumnUInt8>(block.rowsInFirstColumn(), 0);
+					null_map = std::make_shared<ColumnUInt8>(block.rows(), 0);
 				}
 
 				const auto & tmp_res = tmp_block.safeGetByPosition(tmp_res_index);

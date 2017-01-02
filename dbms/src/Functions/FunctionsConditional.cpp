@@ -331,7 +331,7 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 		}
 	}
 
-	size_t row_count = block.rowsInFirstColumn();
+	size_t row_count = block.rows();
 	auto & res_col = block.safeGetByPosition(result).column;
 
 	if (!type)
