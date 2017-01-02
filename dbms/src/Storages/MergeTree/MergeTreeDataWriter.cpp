@@ -152,7 +152,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	new_data_part->index.swap(out.getIndex());
 	new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(part_tmp_path);
 
-	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rowsInFirstColumn());
+	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->size_in_bytes);
 
