@@ -38,7 +38,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
 		if (i != 0)
 			writeCString("   ", ostr);
 
-		const ColumnWithTypeAndName & col = block.getByPosition(i);
+		const ColumnWithTypeAndName & col = block.safeGetByPosition(i);
 
 		if (col.type->isNumeric())
 		{
@@ -72,11 +72,11 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
 			if (j != 0)
 				writeCString("   ", ostr);
 
-			const ColumnWithTypeAndName & col = block.getByPosition(j);
+			const ColumnWithTypeAndName & col = block.safeGetByPosition(j);
 
 			if (col.type->isNumeric())
 			{
-				size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[i]);
+				size_t width = get<UInt64>((*block.safeGetByPosition(columns + j).column)[i]);
 				for (ssize_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[j] - width)); ++k)
 					writeChar(' ', ostr);
 
@@ -86,7 +86,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
 			{
 				col.type->serializeTextEscaped(*col.column.get(), i, ostr);
 
-				size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[i]);
+				size_t width = get<UInt64>((*block.safeGetByPosition(columns + j).column)[i]);
 				for (ssize_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[j] - width)); ++k)
 					writeChar(' ', ostr);
 			}

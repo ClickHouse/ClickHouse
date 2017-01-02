@@ -47,7 +47,7 @@ protected:
 	static bool appendBranchInfo(size_t index, const Block & block,
 		const ColumnNumbers & args, Branches & branches)
 	{
-		const IColumn * col = block.getByPosition(args[index]).column.get();
+		const IColumn * col = block.safeGetByPosition(args[index]).column.get();
 
 		const ColumnVector<TType> * vec_col = nullptr;
 		const ColumnConst<TType> * const_col = nullptr;
@@ -125,7 +125,7 @@ protected:
 	static bool appendBranchInfo(size_t index, const Block & block,
 		const ColumnNumbers & args, Branches & branches)
 	{
-		const IColumn * col = block.getByPosition(args[index]).column.get();
+		const IColumn * col = block.safeGetByPosition(args[index]).column.get();
 		const ColumnNull * const_col = typeid_cast<const ColumnNull *>(col);
 
 		if (const_col == nullptr)

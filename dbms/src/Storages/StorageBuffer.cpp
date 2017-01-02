@@ -183,8 +183,8 @@ static void appendBlock(const Block & from, Block & to)
 	{
 		for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
 		{
-			const IColumn & col_from = *from.getByPosition(column_no).column.get();
-			IColumn & col_to = *to.getByPosition(column_no).column.get();
+			const IColumn & col_from = *from.safeGetByPosition(column_no).column.get();
+			IColumn & col_to = *to.safeGetByPosition(column_no).column.get();
 
 			if (col_from.getName() != col_to.getName())
 				throw Exception("Cannot append block to another: different type of columns at index " + toString(column_no)
@@ -200,7 +200,7 @@ static void appendBlock(const Block & from, Block & to)
 		{
 			for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
 			{
-				ColumnPtr & col_to = to.getByPosition(column_no).column;
+				ColumnPtr & col_to = to.safeGetByPosition(column_no).column;
 				if (col_to->size() != old_rows)
 					col_to = col_to->cut(0, old_rows);
 			}
@@ -495,7 +495,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 	columns_intersection.reserve(block.columns());
 	for (size_t i : ext::range(0, structure_of_destination_table.columns()))
 	{
-		auto dst_col = structure_of_destination_table.unsafeGetByPosition(i);
+		auto dst_col = structure_of_destination_table.getByPosition(i);
 		if (block.has(dst_col.name))
 		{
 			if (block.getByName(dst_col.name).type->getName() != dst_col.type->getName())

@@ -404,7 +404,7 @@ void LogBlockOutputStream::write(const Block & block)
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		const ColumnWithTypeAndName & column = block.getByPosition(i);
+		const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
 		writeData(column.name, *column.type, *column.column, marks, null_marks, offset_columns);
 	}
 

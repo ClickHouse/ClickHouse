@@ -78,7 +78,7 @@ Block SummingSortedBlockInputStream::readImpl()
 		  */
 		for (size_t i = 0; i < num_columns; ++i)
 		{
-			ColumnWithTypeAndName & column = merged_block.getByPosition(i);
+			ColumnWithTypeAndName & column = merged_block.safeGetByPosition(i);
 
 			/// Discover nested Maps and find columns for summation
 			if (typeid_cast<const DataTypeArray *>(column.type.get()))
@@ -123,7 +123,7 @@ Block SummingSortedBlockInputStream::readImpl()
 			/// no elements of map could be in primary key
 			auto column_num_it = map.second.begin();
 			for (; column_num_it != map.second.end(); ++column_num_it)
-				if (isInPrimaryKey(description, merged_block.getByPosition(*column_num_it).name, *column_num_it))
+				if (isInPrimaryKey(description, merged_block.safeGetByPosition(*column_num_it).name, *column_num_it))
 					break;
 			if (column_num_it != map.second.end())
 				continue;
@@ -134,7 +134,7 @@ Block SummingSortedBlockInputStream::readImpl()
 			column_num_it = map.second.begin();
 			for (; column_num_it != map.second.end(); ++column_num_it)
 			{
-				const ColumnWithTypeAndName & key_col = merged_block.getByPosition(*column_num_it);
+				const ColumnWithTypeAndName & key_col = merged_block.safeGetByPosition(*column_num_it);
 				const String & name = key_col.name;
 				const IDataType & nested_type = *static_cast<const DataTypeArray *>(key_col.type.get())->getNestedType();
 

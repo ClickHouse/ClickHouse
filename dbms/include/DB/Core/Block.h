@@ -65,11 +65,11 @@ public:
 
 	/// References are invalidated after calling functions above.
 
-	ColumnWithTypeAndName & getByPosition(size_t position);
-	const ColumnWithTypeAndName & getByPosition(size_t position) const;
+	ColumnWithTypeAndName & getByPosition(size_t position) { return data[position]; }
+	const ColumnWithTypeAndName & getByPosition(size_t position) const { return data[position]; }
 
-	ColumnWithTypeAndName & unsafeGetByPosition(size_t position) { return data[position]; }
-	const ColumnWithTypeAndName & unsafeGetByPosition(size_t position) const { return data[position]; }
+	ColumnWithTypeAndName & safeGetByPosition(size_t position);
+	const ColumnWithTypeAndName & safeGetByPosition(size_t position) const;
 
 	ColumnWithTypeAndName & getByName(const std::string & name);
 	const ColumnWithTypeAndName & getByName(const std::string & name) const;

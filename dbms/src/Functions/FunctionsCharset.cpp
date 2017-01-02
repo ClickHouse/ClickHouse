@@ -155,10 +155,10 @@ public:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const ColumnWithTypeAndName & arg_from = block.unsafeGetByPosition(arguments[0]);
-		const ColumnWithTypeAndName & arg_charset_from = block.unsafeGetByPosition(arguments[1]);
-		const ColumnWithTypeAndName & arg_charset_to = block.unsafeGetByPosition(arguments[2]);
-		ColumnWithTypeAndName & res = block.unsafeGetByPosition(result);
+		const ColumnWithTypeAndName & arg_from = block.getByPosition(arguments[0]);
+		const ColumnWithTypeAndName & arg_charset_from = block.getByPosition(arguments[1]);
+		const ColumnWithTypeAndName & arg_charset_to = block.getByPosition(arguments[2]);
+		ColumnWithTypeAndName & res = block.getByPosition(result);
 
 		const ColumnConstString * col_charset_from = typeid_cast<const ColumnConstString *>(arg_charset_from.column.get());
 		const ColumnConstString * col_charset_to = typeid_cast<const ColumnConstString *>(arg_charset_to.column.get());

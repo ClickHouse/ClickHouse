@@ -64,8 +64,8 @@ void SquashingTransform::append(Block && block)
 	size_t rows = block.rowsInFirstColumn();
 
 	for (size_t i = 0; i < columns; ++i)
-		accumulated_block.unsafeGetByPosition(i).column->insertRangeFrom(
-			*block.unsafeGetByPosition(i).column, 0, rows);
+		accumulated_block.getByPosition(i).column->insertRangeFrom(
+			*block.getByPosition(i).column, 0, rows);
 }
 
 

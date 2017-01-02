@@ -276,7 +276,7 @@ public:
 		ColumnPlainPtrs in(arguments.size());
 		for (size_t i = 0; i < arguments.size(); ++i)
 		{
-			in[i] = block.getByPosition(arguments[i]).column.get();
+			in[i] = block.safeGetByPosition(arguments[i]).column.get();
 		}
 		size_t n = in[0]->size();
 
@@ -290,7 +290,7 @@ public:
 			if (!in.empty())
 				const_val = Impl<UInt8>::apply(const_val, 0);
 			auto col_res = std::make_shared<ColumnConst<UInt8>>(n, const_val);
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 			return;
 		}
 
@@ -299,7 +299,7 @@ public:
 			has_consts = false;
 
 		auto col_res = std::make_shared<ColumnUInt8>();
-		block.getByPosition(result).column = col_res;
+		block.safeGetByPosition(result).column = col_res;
 		UInt8Container & vec_res = col_res->getData();
 
 		if (has_consts)
@@ -372,10 +372,10 @@ private:
 	template <typename T>
 	bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(block.getByPosition(arguments[0]).column.get()))
+		if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			auto col_res = std::make_shared<ColumnUInt8>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			typename ColumnUInt8::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col->getData().size());
@@ -383,13 +383,13 @@ private:
 
 			return true;
 		}
-		else if (ColumnConst<T> * col = typeid_cast<ColumnConst<T> *>(block.getByPosition(arguments[0]).column.get()))
+		else if (ColumnConst<T> * col = typeid_cast<ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			UInt8 res = 0;
 			UnaryOperationImpl<T, Impl<T> >::constant(col->getData(), res);
 
 			auto col_res = std::make_shared<ColumnConst<UInt8>>(col->size(), res);
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			return true;
 		}
@@ -431,7 +431,7 @@ public:
 			||	executeType<Int64>(block, arguments, result)
 			||	executeType<Float32>(block, arguments, result)
 			||	executeType<Float64>(block, arguments, result)))
-		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+		   throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 					+ " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}

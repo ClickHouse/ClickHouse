@@ -83,7 +83,7 @@ struct SortCursorImpl
 		size_t num_columns = block.columns();
 
 		for (size_t j = 0; j < num_columns; ++j)
-			all_columns.push_back(block.getByPosition(j).column.get());
+			all_columns.push_back(block.safeGetByPosition(j).column.get());
 
 		for (size_t j = 0, size = desc.size(); j < size; ++j)
 		{
@@ -91,7 +91,7 @@ struct SortCursorImpl
 				? block.getPositionByName(desc[j].column_name)
 				: desc[j].column_number;
 
-			sort_columns.push_back(block.getByPosition(column_number).column.get());
+			sort_columns.push_back(block.safeGetByPosition(column_number).column.get());
 
 			need_collation[j] = desc[j].collator != nullptr && sort_columns.back()->getName() == "ColumnString";
 			has_collation |= need_collation[j];

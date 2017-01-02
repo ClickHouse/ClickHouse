@@ -46,8 +46,8 @@ BlockInputStreams StorageSystemEvents::read(
 
 		if (0 != value)
 		{
-			block.unsafeGetByPosition(0).column->insert(String(ProfileEvents::getDescription(ProfileEvents::Event(i))));
-			block.unsafeGetByPosition(1).column->insert(value);
+			block.getByPosition(0).column->insert(String(ProfileEvents::getDescription(ProfileEvents::Event(i))));
+			block.getByPosition(1).column->insert(value);
 		}
 	}
 

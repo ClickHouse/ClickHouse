@@ -795,11 +795,11 @@ public:
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const ColumnPtr column = block.getByPosition(arguments[0]).column;
+		const ColumnPtr column = block.safeGetByPosition(arguments[0]).column;
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
 		{
 			auto col_res = std::make_shared<ColumnVector<ResultType>>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col->size());
@@ -814,12 +814,12 @@ public:
 				Impl::vector_fixed_to_constant(col->getChars(), col->getN(), res);
 
 				auto col_res = std::make_shared<ColumnConst<ResultType>>(col->size(), res);
-				block.getByPosition(result).column = col_res;
+				block.safeGetByPosition(result).column = col_res;
 			}
 			else
 			{
 				auto col_res = std::make_shared<ColumnVector<ResultType>>();
-				block.getByPosition(result).column = col_res;
+				block.safeGetByPosition(result).column = col_res;
 
 				typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 				vec_res.resize(col->size());
@@ -832,12 +832,12 @@ public:
 			Impl::constant(col->getData(), res);
 
 			auto col_res = std::make_shared<ColumnConst<ResultType>>(col->size(), res);
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 		}
 		else if (const ColumnArray * col = typeid_cast<const ColumnArray *>(&*column))
 		{
 			auto col_res = std::make_shared<ColumnVector<ResultType>>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col->size());
@@ -849,10 +849,10 @@ public:
 			Impl::constant_array(col->getData(), res);
 
 			auto col_res = std::make_shared<ColumnConst<ResultType>>(col->size(), res);
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 		}
 		else
-		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+		   throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 				+ " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -887,18 +887,18 @@ public:
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const ColumnPtr column = block.getByPosition(arguments[0]).column;
+		const ColumnPtr column = block.safeGetByPosition(arguments[0]).column;
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
 		{
 			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 			Impl::vector(col->getChars(), col->getOffsets(),
 				col_res->getChars(), col_res->getOffsets());
 		}
 		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column))
 		{
 			auto col_res = std::make_shared<ColumnFixedString>(col->getN());
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 			Impl::vector_fixed(col->getChars(), col->getN(),
 				col_res->getChars());
 		}
@@ -907,10 +907,10 @@ public:
 			String res;
 			Impl::constant(col->getData(), res);
 			auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 		}
 		else
-		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+		   throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 				+ " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -1009,7 +1009,7 @@ private:
 		size_t rows{};
 		for (const auto arg_pos : arguments)
 		{
-			const auto column = block.getByPosition(arg_pos).column.get();
+			const auto column = block.safeGetByPosition(arg_pos).column.get();
 
 			if (const auto col = typeid_cast<const ColumnString *>(column))
 			{
@@ -1052,8 +1052,8 @@ private:
 
 	void executeBinary(Block & block, const ColumnNumbers & arguments, const size_t result)
 	{
-		const IColumn * c0 = block.getByPosition(arguments[0]).column.get();
-		const IColumn * c1 = block.getByPosition(arguments[1]).column.get();
+		const IColumn * c0 = block.safeGetByPosition(arguments[0]).column.get();
+		const IColumn * c1 = block.safeGetByPosition(arguments[1]).column.get();
 
 		const ColumnString * c0_string = typeid_cast<const ColumnString *>(c0);
 		const ColumnString * c1_string = typeid_cast<const ColumnString *>(c1);
@@ -1066,13 +1066,13 @@ private:
 		if (c0_const && c1_const)
 		{
 			auto c_res = std::make_shared<ColumnConstString>(c0_const->size(), "");
-			block.getByPosition(result).column = c_res;
+			block.safeGetByPosition(result).column = c_res;
 			constant_constant(c0_const->getData(), c1_const->getData(), c_res->getData());
 		}
 		else
 		{
 			auto c_res = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = c_res;
+			block.safeGetByPosition(result).column = c_res;
 			ColumnString::Chars_t & vec_res = c_res->getChars();
 			ColumnString::Offsets_t & offsets_res = c_res->getOffsets();
 
@@ -1118,8 +1118,8 @@ private:
 					vec_res, offsets_res);
 			else
 				throw Exception("Illegal columns "
-					+ block.getByPosition(arguments[0]).column->getName() + " and "
-					+ block.getByPosition(arguments[1]).column->getName()
+					+ block.safeGetByPosition(arguments[0]).column->getName() + " and "
+					+ block.safeGetByPosition(arguments[1]).column->getName()
 					+ " of arguments of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
@@ -1135,7 +1135,7 @@ private:
 		if (result_is_const)
 		{
 			const auto out = std::make_shared<ColumnConstString>(size, "");
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			auto & data = out->getData();
 			data.reserve(result_length);
@@ -1146,7 +1146,7 @@ private:
 		else
 		{
 			const auto out = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			auto & out_data = out->getChars();
 			out_data.resize(result_length + size);
@@ -1449,15 +1449,15 @@ public:
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const ColumnPtr column_string = block.getByPosition(arguments[0]).column;
-		const ColumnPtr column_start = block.getByPosition(arguments[1]).column;
-		const ColumnPtr column_length = block.getByPosition(arguments[2]).column;
+		const ColumnPtr column_string = block.safeGetByPosition(arguments[0]).column;
+		const ColumnPtr column_start = block.safeGetByPosition(arguments[1]).column;
+		const ColumnPtr column_length = block.safeGetByPosition(arguments[2]).column;
 
 		if (!column_start->isConst() || !column_length->isConst())
 			throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
 
-		Field start_field = (*block.getByPosition(arguments[1]).column)[0];
-		Field length_field = (*block.getByPosition(arguments[2]).column)[0];
+		Field start_field = (*block.safeGetByPosition(arguments[1]).column)[0];
+		Field length_field = (*block.safeGetByPosition(arguments[2]).column)[0];
 
 		if (start_field.getType() != Field::Types::UInt64
 			|| length_field.getType() != Field::Types::UInt64)
@@ -1477,7 +1477,7 @@ public:
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column_string))
 		{
 			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 			Impl::vector(col->getChars(), col->getOffsets(),
 				start, length,
 				col_res->getChars(), col_res->getOffsets());
@@ -1485,7 +1485,7 @@ public:
 		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column_string))
 		{
 			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 			Impl::vector_fixed(col->getChars(), col->getN(),
 				start, length,
 				col_res->getChars(), col_res->getOffsets());
@@ -1495,10 +1495,10 @@ public:
 			String res;
 			Impl::constant(col->getData(), start, length, res);
 			auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 		}
 		else
-		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+		   throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 				+ " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}

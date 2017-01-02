@@ -18,11 +18,11 @@ namespace
 /// arguments.
 void createNullValuesByteMap(Block & block, const ColumnNumbers & args, size_t result)
 {
-	ColumnNullable & res_col = static_cast<ColumnNullable &>(*block.unsafeGetByPosition(result).column);
+	ColumnNullable & res_col = static_cast<ColumnNullable &>(*block.getByPosition(result).column);
 
 	for (const auto & arg : args)
 	{
-		const ColumnWithTypeAndName & elem = block.unsafeGetByPosition(arg);
+		const ColumnWithTypeAndName & elem = block.getByPosition(arg);
 		if (elem.column->isNullable())
 		{
 			const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
@@ -52,7 +52,7 @@ Category blockHasSpecialColumns(const Block & block, const ColumnNumbers & args)
 
 	for (const auto & arg : args)
 	{
-		const auto & elem = block.unsafeGetByPosition(arg);
+		const auto & elem = block.getByPosition(arg);
 
 		if (!found_null && elem.column->isNull())
 		{
@@ -353,13 +353,13 @@ void IFunction::postProcessResult(Strategy strategy, Block & block, const Block 
 	else if (strategy == RETURN_NULL)
 	{
 		/// We have found at least one NULL argument. Therefore we return NULL.
-		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
+		ColumnWithTypeAndName & dest_col = block.safeGetByPosition(result);
 		dest_col.column =  std::make_shared<ColumnNull>(block.rowsInFirstColumn(), Null());
 	}
 	else if (strategy == PROCESS_NULLABLE_COLUMNS)
 	{
-		const ColumnWithTypeAndName & source_col = processed_block.getByPosition(result);
-		ColumnWithTypeAndName & dest_col = block.getByPosition(result);
+		const ColumnWithTypeAndName & source_col = processed_block.safeGetByPosition(result);
+		ColumnWithTypeAndName & dest_col = block.safeGetByPosition(result);
 
 		/// Initialize the result column.
 		ColumnPtr null_map = std::make_shared<ColumnUInt8>(block.rowsInFirstColumn(), 0);
@@ -383,7 +383,7 @@ Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers
 	size_t j = 0;
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		const auto & col = block.unsafeGetByPosition(i);
+		const auto & col = block.getByPosition(i);
 		bool is_inserted = false;
 
 		if ((j < args.size()) && (i == args[j]))
@@ -421,7 +421,7 @@ Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers
 	size_t j = 0;
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		const auto & col = block.unsafeGetByPosition(i);
+		const auto & col = block.getByPosition(i);
 		bool is_inserted = false;
 
 		if ((j < args.size()) && (i == args[j]))

@@ -478,14 +478,14 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
 		String name = !descr.column_name.empty()
 			? descr.column_name
-			: block.getByPosition(descr.column_number).name;
+			: block.safeGetByPosition(descr.column_number).name;
 
 		if (!primary_columns_name_to_position.emplace(name, i).second)
 			throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
 
 		primary_columns[i] = !descr.column_name.empty()
 			? block.getByName(descr.column_name)
-			: block.getByPosition(descr.column_number);
+			: block.safeGetByPosition(descr.column_number);
 
 		/// Столбцы первичного ключа переупорядочиваем заранее и складываем в primary_columns.
 		if (permutation)
@@ -574,8 +574,8 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
 		column_streams.clear();
 		for (size_t i = 0; i < block.columns(); ++i)
 		{
-			addStream(part_path, block.getByPosition(i).name,
-				*block.getByPosition(i).type, 0, 0, block.getByPosition(i).name, skip_offsets);
+			addStream(part_path, block.safeGetByPosition(i).name,
+				*block.safeGetByPosition(i).type, 0, 0, block.safeGetByPosition(i).name, skip_offsets);
 		}
 		initialized = true;
 	}
@@ -585,7 +585,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
 	OffsetColumns offset_columns;
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		const ColumnWithTypeAndName & column = block.getByPosition(i);
+		const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
 		writeData(column.name, *column.type, *column.column, offset_columns, 0, skip_offsets);
 	}
 

@@ -59,7 +59,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 
 	ColumnPlainPtrs src_columns(columns);
 	for (size_t i = 0; i < columns; ++i)
-		src_columns[i] = block.getByPosition(i).column.get();
+		src_columns[i] = block.safeGetByPosition(i).column.get();
 
 	for (size_t i = 0; i < rows; ++i)
 	{
@@ -75,7 +75,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 		block_for_month->updateDates(dates[i]);
 
 		for (size_t j = 0; j < columns; ++j)
-			block_for_month->block.unsafeGetByPosition(j).column->insertFrom(*src_columns[j], i);
+			block_for_month->block.getByPosition(j).column->insertFrom(*src_columns[j], i);
 	}
 
 	return res;

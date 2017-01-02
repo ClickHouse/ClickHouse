@@ -54,21 +54,21 @@ BlockInputStreams StorageSystemMerges::read(
 	for (const auto & merge : context.getMergeList().get())
 	{
 		size_t i = 0;
-		block.unsafeGetByPosition(i++).column->insert(merge.database);
-		block.unsafeGetByPosition(i++).column->insert(merge.table);
-		block.unsafeGetByPosition(i++).column->insert(merge.elapsed);
-		block.unsafeGetByPosition(i++).column->insert(std::min(1., merge.progress)); /// little cheat
-		block.unsafeGetByPosition(i++).column->insert(merge.num_parts);
-		block.unsafeGetByPosition(i++).column->insert(merge.result_part_name);
-		block.unsafeGetByPosition(i++).column->insert(merge.total_size_bytes_compressed);
-		block.unsafeGetByPosition(i++).column->insert(merge.total_size_marks);
-		block.unsafeGetByPosition(i++).column->insert(merge.bytes_read_uncompressed);
-		block.unsafeGetByPosition(i++).column->insert(merge.rows_read);
-		block.unsafeGetByPosition(i++).column->insert(merge.bytes_written_uncompressed);
-		block.unsafeGetByPosition(i++).column->insert(merge.rows_written);
-		block.unsafeGetByPosition(i++).column->insert(merge.columns_written);
-		block.unsafeGetByPosition(i++).column->insert(merge.memory_usage);
-		block.unsafeGetByPosition(i++).column->insert(merge.thread_number);
+		block.getByPosition(i++).column->insert(merge.database);
+		block.getByPosition(i++).column->insert(merge.table);
+		block.getByPosition(i++).column->insert(merge.elapsed);
+		block.getByPosition(i++).column->insert(std::min(1., merge.progress)); /// little cheat
+		block.getByPosition(i++).column->insert(merge.num_parts);
+		block.getByPosition(i++).column->insert(merge.result_part_name);
+		block.getByPosition(i++).column->insert(merge.total_size_bytes_compressed);
+		block.getByPosition(i++).column->insert(merge.total_size_marks);
+		block.getByPosition(i++).column->insert(merge.bytes_read_uncompressed);
+		block.getByPosition(i++).column->insert(merge.rows_read);
+		block.getByPosition(i++).column->insert(merge.bytes_written_uncompressed);
+		block.getByPosition(i++).column->insert(merge.rows_written);
+		block.getByPosition(i++).column->insert(merge.columns_written);
+		block.getByPosition(i++).column->insert(merge.memory_usage);
+		block.getByPosition(i++).column->insert(merge.thread_number);
 	}
 
 	return BlockInputStreams{1, std::make_shared<OneBlockInputStream>(block)};

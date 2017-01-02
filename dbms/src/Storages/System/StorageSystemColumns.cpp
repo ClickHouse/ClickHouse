@@ -89,7 +89,7 @@ BlockInputStreams StorageSystemColumns::read(
 
 		for (size_t i = 0; i < block.columns(); ++i)
 		{
-			ColumnPtr & column = block.getByPosition(i).column;
+			ColumnPtr & column = block.safeGetByPosition(i).column;
 			column = column->replicate(offsets);
 		}
 

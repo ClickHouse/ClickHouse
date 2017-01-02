@@ -44,7 +44,7 @@ Block NullableAdapterBlockInputStream::readImpl()
 
 	for (size_t i = 0; i < s; ++i)
 	{
-		const auto & elem = block.unsafeGetByPosition(i);
+		const auto & elem = block.getByPosition(i);
 		ColumnWithTypeAndName new_elem;
 
 		if (actions[i] == TO_ORDINARY)
@@ -101,10 +101,10 @@ NullableAdapterBlockInputStream::Actions NullableAdapterBlockInputStream::getAct
 	size_t j = 0;
 	for (size_t i = 0; i < in_size; ++i)
 	{
-		const auto & in_elem = in_sample.unsafeGetByPosition(i);
+		const auto & in_elem = in_sample.getByPosition(i);
 		while (j < out_size)
 		{
-			const auto & out_elem = out_sample.unsafeGetByPosition(j);
+			const auto & out_elem = out_sample.getByPosition(j);
 			if (in_elem.name == out_elem.name)
 			{
 				bool is_in_nullable = in_elem.type->isNullable();

@@ -41,13 +41,13 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 	{
 		ColumnWithTypeAndName column;
 		column.type = std::make_shared<DataTypeUInt64>();
-		column.name = "visibleWidth(" + block.unsafeGetByPosition(i).name + ")";
+		column.name = "visibleWidth(" + block.getByPosition(i).name + ")";
 
 		size_t result_number = block.columns();
 		block.insert(column);
 
 		visible_width_func->execute(block, {i}, result_number);
-		column.column = block.getByPosition(result_number).column;
+		column.column = block.safeGetByPosition(result_number).column;
 
 		if (const ColumnUInt64 * col = typeid_cast<const ColumnUInt64 *>(&*column.column))
 		{
@@ -70,7 +70,7 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 
 		/// And also calculate widths for names of columns.
 		{
-			const String & name = block.unsafeGetByPosition(i).name;
+			const String & name = block.getByPosition(i).name;
 
 			Block block_with_name
 			{
@@ -80,7 +80,7 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 
 			visible_width_func->execute(block_with_name, {0}, 1);
 
-			name_widths[i] = typeid_cast<const ColumnConstUInt64 &>(*block_with_name.unsafeGetByPosition(1).column).getData();
+			name_widths[i] = typeid_cast<const ColumnConstUInt64 &>(*block_with_name.getByPosition(1).column).getData();
 
 			if (name_widths[i] > max_widths[i])
 				max_widths[i] = name_widths[i];
@@ -155,7 +155,7 @@ void PrettyBlockOutputStream::write(const Block & block_)
 		if (i != 0)
 			writeCString(" ┃ ", ostr);
 
-		const ColumnWithTypeAndName & col = block.getByPosition(i);
+		const ColumnWithTypeAndName & col = block.safeGetByPosition(i);
 
 		if (!no_escapes)
 			writeCString("\033[1m", ostr);
@@ -194,11 +194,11 @@ void PrettyBlockOutputStream::write(const Block & block_)
 			if (j != 0)
 				writeCString(" │ ", ostr);
 
-			const ColumnWithTypeAndName & col = block.getByPosition(j);
+			const ColumnWithTypeAndName & col = block.safeGetByPosition(j);
 
 			if (col.type->isNumeric())
 			{
-				size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[i]);
+				size_t width = get<UInt64>((*block.safeGetByPosition(columns + j).column)[i]);
 				for (size_t k = 0; k < max_widths[j] - width; ++k)
 					writeChar(' ', ostr);
 
@@ -208,7 +208,7 @@ void PrettyBlockOutputStream::write(const Block & block_)
 			{
 				col.type->serializeTextEscaped(*col.column.get(), i, ostr);
 
-				size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[i]);
+				size_t width = get<UInt64>((*block.safeGetByPosition(columns + j).column)[i]);
 				for (size_t k = 0; k < max_widths[j] - width; ++k)
 					writeChar(' ', ostr);
 			}

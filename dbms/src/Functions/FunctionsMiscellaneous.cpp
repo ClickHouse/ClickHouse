@@ -26,14 +26,14 @@ static size_t widthOfUTF8String(const String & s)
 
 void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-	auto & src = block.getByPosition(arguments[0]);
+	auto & src = block.safeGetByPosition(arguments[0]);
 	size_t size = block.rowsInFirstColumn();
 
 	if (!src.column->isConst())
 	{
 		auto res_col = std::make_shared<ColumnUInt64>(size);
 		auto & res_data = static_cast<ColumnUInt64 &>(*res_col).getData();
-		block.getByPosition(result).column = res_col;
+		block.safeGetByPosition(result).column = res_col;
 
 		/// For simplicity reasons, function is implemented by serializing into temporary buffer.
 
@@ -56,7 +56,7 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
 			src.type->serializeTextEscaped(*src.column->cut(0, 1)->convertToFullColumnIfConst(), 0, out);
 		}
 
-		block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(size, widthOfUTF8String(tmp));
+		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt64>(size, widthOfUTF8String(tmp));
 	}
 }
 
@@ -89,7 +89,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
 	auto get_string_from_block =
 		[&](size_t column_pos) -> const String &
 		{
-			ColumnPtr column = block.getByPosition(column_pos).column;
+			ColumnPtr column = block.safeGetByPosition(column_pos).column;
 			const ColumnConstString * const_column = typeid_cast<const ColumnConstString *>(column.get());
 			return const_column->getData();
 		};
@@ -101,7 +101,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
 	const StoragePtr & table = global_context.getTable(database_name, table_name);
 	const bool has_column = table->hasColumn(column_name);
 
-	block.getByPosition(result).column = std::make_shared<ColumnConstUInt8>(
+	block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(
 		block.rowsInFirstColumn(), has_column);
 }
 

@@ -331,7 +331,7 @@ Block InterpreterSelectQuery::getSampleBlock()
 	/// писать (читать) с помощью BlockOut(In)putStream'ов
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		ColumnWithTypeAndName & col = block.getByPosition(i);
+		ColumnWithTypeAndName & col = block.safeGetByPosition(i);
 		col.column = col.type->createColumn();
 	}
 	return block;

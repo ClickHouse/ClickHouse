@@ -33,7 +33,7 @@ private:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		block.getByPosition(result).column = std::make_shared<ColumnConst<Float64>>(
+		block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Float64>>(
 			block.rowsInFirstColumn(),
 			Impl::value);
 	}
@@ -85,7 +85,7 @@ private:
 		if (const auto col = typeid_cast<const ColumnVector<FieldType> *>(arg))
 		{
 			const auto dst = std::make_shared<ColumnVector<Float64>>();
-			block.getByPosition(result).column = dst;
+			block.safeGetByPosition(result).column = dst;
 
 			const auto & src_data = col->getData();
 			const auto src_size = src_data.size();
@@ -119,7 +119,7 @@ private:
 
 			Impl::execute(src, dst);
 
-			block.getByPosition(result).column = std::make_shared<ColumnConst<Float64>>(col->size(), dst[0]);
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Float64>>(col->size(), dst[0]);
 
 			return true;
 		}
@@ -129,7 +129,7 @@ private:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		const auto arg = block.getByPosition(arguments[0]).column.get();
+		const auto arg = block.safeGetByPosition(arguments[0]).column.get();
 
 		if (!execute<UInt8>(block, arg, result) &&
 			!execute<UInt16>(block, arg, result) &&
@@ -233,7 +233,7 @@ private:
 		if (const auto right_arg_typed = typeid_cast<const ColumnVector<RightType> *>(right_arg))
 		{
 			const auto dst = std::make_shared<ColumnVector<Float64>>();
-			block.getByPosition(result).column = dst;
+			block.safeGetByPosition(result).column = dst;
 
 			LeftType left_src_data[Impl::rows_per_iteration];
 			std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->getData());
@@ -270,7 +270,7 @@ private:
 
 			Impl::execute(left_src, right_src, dst);
 
-			block.getByPosition(result).column = std::make_shared<ColumnConst<Float64>>(left_arg->size(), dst[0]);
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Float64>>(left_arg->size(), dst[0]);
 
 			return true;
 		}
@@ -285,7 +285,7 @@ private:
 		if (const auto right_arg_typed = typeid_cast<const ColumnVector<RightType> *>(right_arg))
 		{
 			const auto dst = std::make_shared<ColumnVector<Float64>>();
-			block.getByPosition(result).column = dst;
+			block.safeGetByPosition(result).column = dst;
 
 			const auto & left_src_data = left_arg->getData();
 			const auto & right_src_data = right_arg_typed->getData();
@@ -319,7 +319,7 @@ private:
 		else if (const auto right_arg_typed = typeid_cast<const ColumnConst<RightType> *>(right_arg))
 		{
 			const auto dst = std::make_shared<ColumnVector<Float64>>();
-			block.getByPosition(result).column = dst;
+			block.safeGetByPosition(result).column = dst;
 
 			const auto & left_src_data = left_arg->getData();
 			RightType right_src_data[Impl::rows_per_iteration];
@@ -358,7 +358,7 @@ private:
 	{
 		if (const auto left_arg_typed = typeid_cast<const LeftColumnType<LeftType> *>(left_arg))
 		{
-			const auto right_arg = block.getByPosition(arguments[1]).column.get();
+			const auto right_arg = block.safeGetByPosition(arguments[1]).column.get();
 
 			if (executeRight<LeftType, UInt8>(block, result, left_arg_typed, right_arg) ||
 				executeRight<LeftType, UInt16>(block, result, left_arg_typed, right_arg) ||
@@ -376,7 +376,7 @@ private:
 			else
 			{
 				throw Exception{
-					"Illegal column " + block.getByPosition(arguments[1]).column->getName() +
+					"Illegal column " + block.safeGetByPosition(arguments[1]).column->getName() +
 					" of second argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN
 				};
@@ -399,7 +399,7 @@ private:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		const auto left_arg = block.getByPosition(arguments[0]).column.get();
+		const auto left_arg = block.safeGetByPosition(arguments[0]).column.get();
 
 		if (!executeLeft<UInt8>(block, arguments, result, left_arg) &&
 			!executeLeft<UInt16>(block, arguments, result, left_arg) &&

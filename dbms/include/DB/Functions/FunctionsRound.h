@@ -975,7 +975,7 @@ namespace
 		static inline void apply(Block & block, ColumnVector<T> * col, const ColumnNumbers & arguments, size_t result, size_t scale)
 		{
 			auto col_res = std::make_shared<ColumnVector<T>>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			typename ColumnVector<T>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col->getData().size());
@@ -990,7 +990,7 @@ namespace
 		{
 			T res = Op::apply(col->getData(), scale);
 			auto col_res = std::make_shared<ColumnConst<T>>(col->size(), res);
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 		}
 	};
 
@@ -1005,7 +1005,7 @@ namespace
 			size_t scale;
 
 			if (arguments.size() == 2)
-				ScaleForLeftType<T>::apply(block.getByPosition(arguments[1]).column, scale_mode, scale);
+				ScaleForLeftType<T>::apply(block.safeGetByPosition(arguments[1]).column, scale_mode, scale);
 			else
 			{
 				scale_mode = ZeroScale;
@@ -1046,12 +1046,12 @@ namespace
 		template<typename T>
 		bool executeForType(Block & block, const ColumnNumbers & arguments, size_t result)
 		{
-			if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(block.getByPosition(arguments[0]).column.get()))
+			if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
 			{
 				Dispatcher<T, ColumnVector, rounding_mode>::apply(block, col, arguments, result);
 				return true;
 			}
-			else if (ColumnConst<T> * col = typeid_cast<ColumnConst<T> *>(block.getByPosition(arguments[0]).column.get()))
+			else if (ColumnConst<T> * col = typeid_cast<ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
 			{
 				Dispatcher<T, ColumnConst, rounding_mode>::apply(block, col, arguments, result);
 				return true;
@@ -1119,7 +1119,7 @@ namespace
 				||	executeForType<Float32>(block, arguments, result)
 				||	executeForType<Float64>(block, arguments, result)))
 			{
-				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+				throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 						+ " of argument of function " + getName(),
 						ErrorCodes::ILLEGAL_COLUMN);
 			}

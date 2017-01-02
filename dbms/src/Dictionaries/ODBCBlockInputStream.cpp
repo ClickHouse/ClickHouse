@@ -78,7 +78,7 @@ Block ODBCBlockInputStream::readImpl()
 	/// cache pointers returned by the calls to getByPosition
 	std::vector<IColumn *> columns(block.columns());
 	for (const auto i : ext::range(0, columns.size()))
-		columns[i] = block.getByPosition(i).column.get();
+		columns[i] = block.safeGetByPosition(i).column.get();
 
 	size_t num_rows = 0;
 	while (iterator != result.end())

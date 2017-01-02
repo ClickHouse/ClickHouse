@@ -25,13 +25,13 @@ VerticalRowOutputStream::VerticalRowOutputStream(WriteBuffer & ostr_, const Bloc
 		{
 			Block block_with_name
 			{
-				{ std::make_shared<ColumnConstString>(1, sample.unsafeGetByPosition(i).name), std::make_shared<DataTypeString>(), "name" },
+				{ std::make_shared<ColumnConstString>(1, sample.getByPosition(i).name), std::make_shared<DataTypeString>(), "name" },
 				{ nullptr, std::make_shared<DataTypeUInt64>(), "width" }
 			};
 
 			visible_width_func->execute(block_with_name, {0}, 1);
 
-			name_widths[i] = (*block_with_name.unsafeGetByPosition(1).column)[0].get<UInt64>();
+			name_widths[i] = (*block_with_name.getByPosition(1).column)[0].get<UInt64>();
 		}
 
 		if (name_widths[i] > max_name_width)
@@ -42,7 +42,7 @@ VerticalRowOutputStream::VerticalRowOutputStream(WriteBuffer & ostr_, const Bloc
 	for (size_t i = 0; i < columns; ++i)
 	{
 		WriteBufferFromString out(names_and_paddings[i]);
-		writeEscapedString(sample.unsafeGetByPosition(i).name, out);
+		writeEscapedString(sample.getByPosition(i).name, out);
 		writeCString(": ", out);
 	}
 

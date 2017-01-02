@@ -299,7 +299,7 @@ bool createStringArraySources(StringArraySources & sources, const Block & block,
 {
 	auto append_source = [&](size_t i) -> bool
 	{
-		const IColumn * col = block.getByPosition(args[i]).column.get();
+		const IColumn * col = block.safeGetByPosition(args[i]).column.get();
 		const ColumnArray * col_arr = typeid_cast<const ColumnArray *>(col);
 		const ColumnString * var_col = col_arr ? typeid_cast<const ColumnString *>(&col_arr->getData()) : nullptr;
 		const ColumnConstArray * const_col = typeid_cast<const ColumnConstArray *>(col);
@@ -385,7 +385,7 @@ VarStringArraySink createSink(Block & block, const StringArraySources & sources,
 
 	std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 	auto var_col_res = std::make_shared<ColumnArray>(col_res);
-	block.getByPosition(result).column = var_col_res;
+	block.safeGetByPosition(result).column = var_col_res;
 
 	return VarStringArraySink{col_res->getChars(), col_res->getOffsets(),
 		var_col_res->getOffsets(), data_size, offsets_size, row_count};

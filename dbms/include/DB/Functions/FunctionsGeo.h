@@ -71,7 +71,7 @@ private:
 
 		for (const auto arg_idx : ext::range(0, arguments.size()))
 		{
-			const auto column = block.getByPosition(arguments[arg_idx]).column.get();
+			const auto column = block.safeGetByPosition(arguments[arg_idx]).column.get();
 
 			if (const auto col = typeid_cast<const ColumnVector<Float64> *>(column))
 			{
@@ -120,18 +120,18 @@ private:
 
 		if (result_is_const)
 		{
-			const auto & colLon1 = static_cast<const ColumnConst<Float64> *>(block.getByPosition(arguments[0]).column.get())->getData();
-			const auto & colLat1 = static_cast<const ColumnConst<Float64> *>(block.getByPosition(arguments[1]).column.get())->getData();
-			const auto & colLon2 = static_cast<const ColumnConst<Float64> *>(block.getByPosition(arguments[2]).column.get())->getData();
-			const auto & colLat2 = static_cast<const ColumnConst<Float64> *>(block.getByPosition(arguments[3]).column.get())->getData();
+			const auto & colLon1 = static_cast<const ColumnConst<Float64> *>(block.safeGetByPosition(arguments[0]).column.get())->getData();
+			const auto & colLat1 = static_cast<const ColumnConst<Float64> *>(block.safeGetByPosition(arguments[1]).column.get())->getData();
+			const auto & colLon2 = static_cast<const ColumnConst<Float64> *>(block.safeGetByPosition(arguments[2]).column.get())->getData();
+			const auto & colLat2 = static_cast<const ColumnConst<Float64> *>(block.safeGetByPosition(arguments[3]).column.get())->getData();
 
 			Float64 res = greatCircleDistance(colLon1, colLat1, colLon2, colLat2);
-			block.getByPosition(result).column = std::make_shared<ColumnConst<Float64>>(size, res);
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Float64>>(size, res);
 		}
 		else
 		{
 			const auto dst = std::make_shared<ColumnVector<Float64>>();
-			block.getByPosition(result).column = dst;
+			block.safeGetByPosition(result).column = dst;
 			auto & dst_data = dst->getData();
 			dst_data.resize(size);
 			Float64 vals[instrs.size()];

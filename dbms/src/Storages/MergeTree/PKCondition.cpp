@@ -532,7 +532,7 @@ static void applyFunction(
 
 	func->execute(block, {0}, 1);
 
-	block.getByPosition(1).column->get(0, res_value);
+	block.safeGetByPosition(1).column->get(0, res_value);
 }
 
 

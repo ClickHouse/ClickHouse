@@ -84,7 +84,7 @@ Block DistinctBlockInputStream::readImpl()
 
 		size_t all_columns = block.columns();
 		for (size_t i = 0; i < all_columns; ++i)
-			block.getByPosition(i).column = block.getByPosition(i).column->filter(filter, -1);
+			block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(filter, -1);
 
 		return block;
 	}
@@ -130,7 +130,7 @@ ConstColumnPlainPtrs DistinctBlockInputStream::getKeyColumns(const Block & block
 	for (size_t i = 0; i < columns; ++i)
 	{
 		auto & column = columns_names.empty()
-			? block.getByPosition(i).column
+			? block.safeGetByPosition(i).column
 			: block.getByName(columns_names[i]).column;
 
 		/// Ignore all constant columns.

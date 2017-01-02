@@ -137,15 +137,15 @@ public:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		const ColumnConstArray * array_from = typeid_cast<const ColumnConstArray *>(block.getByPosition(arguments[1]).column.get());
-		const ColumnConstArray * array_to = typeid_cast<const ColumnConstArray *>(block.getByPosition(arguments[2]).column.get());
+		const ColumnConstArray * array_from = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[1]).column.get());
+		const ColumnConstArray * array_to = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[2]).column.get());
 
 		if (!array_from || !array_to)
 			throw Exception{"Second and third arguments of function " + getName() + " must be constant arrays.", ErrorCodes::ILLEGAL_COLUMN};
 
 		prepare(array_from->getData(), array_to->getData(), block, arguments);
 
-		const auto in = block.getByPosition(arguments.front()).column.get();
+		const auto in = block.safeGetByPosition(arguments.front()).column.get();
 
 		if (in->isConst())
 		{
@@ -155,9 +155,9 @@ public:
 
 		const IColumn * default_column = nullptr;
 		if (arguments.size() == 4)
-			default_column = block.getByPosition(arguments[3]).column.get();
+			default_column = block.safeGetByPosition(arguments[3]).column.get();
 
-		auto column_result = block.getByPosition(result).type->createColumn();
+		auto column_result = block.safeGetByPosition(result).type->createColumn();
 		auto out = column_result.get();
 
 		if (!executeNum<UInt8>(in, out, default_column)
@@ -177,7 +177,7 @@ public:
 				ErrorCodes::ILLEGAL_COLUMN};
 		}
 
-		block.getByPosition(result).column = column_result;
+		block.safeGetByPosition(result).column = column_result;
 	}
 
 private:
@@ -188,24 +188,24 @@ private:
 		Block tmp_block;
 		ColumnNumbers tmp_arguments;
 
-		tmp_block.insert(block.getByPosition(arguments[0]));
-		tmp_block.getByPosition(0).column = static_cast<IColumnConst *>(tmp_block.getByPosition(0).column->cloneResized(1).get())->convertToFullColumn();
+		tmp_block.insert(block.safeGetByPosition(arguments[0]));
+		tmp_block.safeGetByPosition(0).column = static_cast<IColumnConst *>(tmp_block.safeGetByPosition(0).column->cloneResized(1).get())->convertToFullColumn();
 		tmp_arguments.push_back(0);
 
 		for (size_t i = 1; i < arguments.size(); ++i)
 		{
-			tmp_block.insert(block.getByPosition(arguments[i]));
+			tmp_block.insert(block.safeGetByPosition(arguments[i]));
 			tmp_arguments.push_back(i);
 		}
 
-		tmp_block.insert(block.getByPosition(result));
+		tmp_block.insert(block.safeGetByPosition(result));
 		size_t tmp_result = arguments.size();
 
 		execute(tmp_block, tmp_arguments, tmp_result);
 
-		block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
+		block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createConstColumn(
 			block.rowsInFirstColumn(),
-			(*tmp_block.getByPosition(tmp_result).column)[0]);
+			(*tmp_block.safeGetByPosition(tmp_result).column)[0]);
 	}
 
 	template <typename T>
@@ -762,7 +762,7 @@ private:
 
 		if (arguments.size() == 4)
 		{
-			const IColumn * default_col = block.getByPosition(arguments[3]).column.get();
+			const IColumn * default_col = block.safeGetByPosition(arguments[3]).column.get();
 			const IColumnConst * const_default_col = dynamic_cast<const IColumnConst *>(default_col);
 
 			if (const_default_col)

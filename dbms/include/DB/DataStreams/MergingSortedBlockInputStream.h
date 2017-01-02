@@ -167,7 +167,7 @@ protected:
 				{
 					if (i < block->columns())
 					{
-						column_name = block->getByPosition(i).name;
+						column_name = block->safeGetByPosition(i).name;
 						break;
 					}
 				}

@@ -46,23 +46,23 @@ DataTypePtr FunctionIsNull::getReturnTypeImpl(const DataTypes & arguments) const
 
 void FunctionIsNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-	ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
+	ColumnWithTypeAndName & elem = block.safeGetByPosition(arguments[0]);
 	if (elem.column->isNull())
 	{
 		/// Trivial case.
-		block.getByPosition(result).column = std::make_shared<ColumnConstUInt8>(elem.column->size(), 1);
+		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(elem.column->size(), 1);
 	}
 	else if (elem.column->isNullable())
 	{
 		/// Merely return the embedded null map.
 		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*elem.column);
-		block.getByPosition(result).column = nullable_col.getNullMapColumn();
+		block.safeGetByPosition(result).column = nullable_col.getNullMapColumn();
 	}
 	else
 	{
 		/// Since no element is nullable, return a zero-constant column representing
 		/// a zero-filled null map.
-		block.getByPosition(result).column = std::make_shared<ColumnConstUInt8>(elem.column->size(), 0);
+		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(elem.column->size(), 0);
 	}
 }
 
@@ -92,7 +92,7 @@ void FunctionIsNotNull::executeImpl(Block & block, const ColumnNumbers & argumen
 {
 	Block temp_block
 	{
-		block.getByPosition(arguments[0]),
+		block.safeGetByPosition(arguments[0]),
 		{
 			nullptr,
 			std::make_shared<DataTypeUInt8>(),
@@ -108,7 +108,7 @@ void FunctionIsNotNull::executeImpl(Block & block, const ColumnNumbers & argumen
 	FunctionIsNull{}.executeImpl(temp_block, {0}, 1);
 	FunctionNot{}.executeImpl(temp_block, {1}, 2);
 
-	block.getByPosition(result).column = std::move(temp_block.getByPosition(2).column);
+	block.safeGetByPosition(result).column = std::move(temp_block.safeGetByPosition(2).column);
 }
 
 /// Implementation of coalesce.
@@ -175,7 +175,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 
 	FunctionMultiIf{}.executeImpl(temp_block, multi_if_args, result);
 
-	block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
+	block.safeGetByPosition(result).column = std::move(temp_block.safeGetByPosition(result).column);
 }
 
 /// Implementation of ifNull.
@@ -212,7 +212,7 @@ void FunctionIfNull::executeImpl(Block & block, const ColumnNumbers & arguments,
 	FunctionIsNotNull{}.executeImpl(temp_block, {arguments[0]}, res_pos);
 	FunctionMultiIf{}.executeImpl(temp_block, {res_pos, arguments[0], arguments[1]}, result);
 
-	block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
+	block.safeGetByPosition(result).column = std::move(temp_block.safeGetByPosition(result).column);
 }
 
 /// Implementation of nullIf.
@@ -261,7 +261,7 @@ void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments,
 
 	FunctionMultiIf{}.executeImpl(temp_block, {res_pos, null_pos, arguments[0]}, result);
 
-	block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
+	block.safeGetByPosition(result).column = std::move(temp_block.safeGetByPosition(result).column);
 }
 
 /// Implementation of assumeNotNull.
@@ -296,8 +296,8 @@ DataTypePtr FunctionAssumeNotNull::getReturnTypeImpl(const DataTypes & arguments
 
 void FunctionAssumeNotNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-	const ColumnPtr & col = block.getByPosition(arguments[0]).column;
-	ColumnPtr & res_col = block.getByPosition(result).column;
+	const ColumnPtr & col = block.safeGetByPosition(arguments[0]).column;
+	ColumnPtr & res_col = block.safeGetByPosition(result).column;
 
 	if (col->isNull())
 		throw Exception{"NULL is an invalid value for function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};

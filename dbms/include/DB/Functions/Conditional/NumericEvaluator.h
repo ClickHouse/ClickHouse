@@ -54,7 +54,7 @@ public:
 	{
 		size_t index = br.index;
 
-		const ColumnPtr & col = block.getByPosition(args[index]).column;
+		const ColumnPtr & col = block.safeGetByPosition(args[index]).column;
 		const auto * const_col = typeid_cast<const ColumnConst<TType> *>(&*col);
 		if (const_col == nullptr)
 			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
@@ -101,7 +101,7 @@ private:
 		const ColumnNumbers & args, const Branch & br)
 	{
 		size_t index = br.index;
-		const ColumnPtr & col = block.getByPosition(args[index]).column;
+		const ColumnPtr & col = block.safeGetByPosition(args[index]).column;
 		const auto * vec_col = typeid_cast<const ColumnVector<TType> *>(&*col);
 		if (vec_col == nullptr)
 			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
@@ -184,7 +184,7 @@ private:
 	static PaddedPODArray<TResult> & createSink(Block & block, size_t result, size_t size)
 	{
 		std::shared_ptr<ColumnVector<TResult>> col_res = std::make_shared<ColumnVector<TResult>>();
-		block.getByPosition(result).column = col_res;
+		block.safeGetByPosition(result).column = col_res;
 
 		typename ColumnVector<TResult>::Container_t & vec_res = col_res->getData();
 		vec_res.resize(size);

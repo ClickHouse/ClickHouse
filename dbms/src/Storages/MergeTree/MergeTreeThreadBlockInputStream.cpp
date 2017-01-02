@@ -252,7 +252,7 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 				size_t rows = 0;
 				for (const auto i : ext::range(0, res.columns()))
 				{
-					auto & col = res.getByPosition(i);
+					auto & col = res.safeGetByPosition(i);
 					if (col.name == prewhere_column && res.columns() > 1)
 						continue;
 					col.column =

@@ -149,7 +149,7 @@ void NativeBlockOutputStream::write(const Block & block)
 			mark.offset_in_decompressed_block = ostr_concrete->getRemainingBytes();
 		}
 
-		const ColumnWithTypeAndName & column = block.getByPosition(i);
+		const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
 
 		/// Name
 		writeStringBinary(column.name, ostr);

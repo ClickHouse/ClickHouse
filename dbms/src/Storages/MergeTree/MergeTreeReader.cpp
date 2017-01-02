@@ -519,7 +519,7 @@ void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_
 		OffsetColumns offset_columns;
 		for (size_t i = 0; i < res.columns(); ++i)
 		{
-			const ColumnWithTypeAndName & column = res.getByPosition(i);
+			const ColumnWithTypeAndName & column = res.safeGetByPosition(i);
 
 			IColumn * observed_column;
 			std::string column_name;

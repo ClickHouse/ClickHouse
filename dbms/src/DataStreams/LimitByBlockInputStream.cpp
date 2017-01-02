@@ -57,7 +57,7 @@ Block LimitByBlockInputStream::readImpl()
 
 		size_t all_columns = block.columns();
 		for (size_t i = 0; i < all_columns; ++i)
-			block.getByPosition(i).column = block.getByPosition(i).column->filter(filter, inserted_count);
+			block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(filter, inserted_count);
 
 		return block;
 	}

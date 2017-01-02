@@ -45,7 +45,7 @@ ShardedBlocksWithDateIntervals MergeTreeSharder::shardBlock(const Block & block)
 	/// cache column pointers for later reuse
 	std::vector<const IColumn *> columns(num_cols);
 	for (size_t i = 0; i < columns.size(); ++i)
-		columns[i] = block.getByPosition(i).column.get();
+		columns[i] = block.safeGetByPosition(i).column.get();
 
 	auto filters = createFilters(block);
 
@@ -58,7 +58,7 @@ ShardedBlocksWithDateIntervals MergeTreeSharder::shardBlock(const Block & block)
 		auto target_block = block.cloneEmpty();
 
 		for (size_t col = 0; col < num_cols; ++col)
-			target_block.getByPosition(col).column = columns[col]->filter(filters[shard_no], size_hint);
+			target_block.safeGetByPosition(col).column = columns[col]->filter(filters[shard_no], size_hint);
 
 		if (target_block.rowsInFirstColumn())
 		{

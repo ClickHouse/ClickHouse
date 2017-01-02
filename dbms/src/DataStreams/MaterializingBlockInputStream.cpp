@@ -33,7 +33,7 @@ Block MaterializingBlockInputStream::readImpl()
 	size_t columns = res.columns();
 	for (size_t i = 0; i < columns; ++i)
 	{
-		auto & element = res.getByPosition(i);
+		auto & element = res.safeGetByPosition(i);
 		auto & src = element.column;
 		ColumnPtr converted = src->convertToFullColumnIfConst();
 		if (converted)

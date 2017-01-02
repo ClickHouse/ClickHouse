@@ -985,9 +985,9 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 		size_t columns = block.columns();
 		if (columns == 1)
 		{
-			auto lit = std::make_unique<ASTLiteral>(ast->range, (*block.getByPosition(0).column)[0]);
+			auto lit = std::make_unique<ASTLiteral>(ast->range, (*block.safeGetByPosition(0).column)[0]);
 			lit->alias = subquery->alias;
-			ast = addTypeConversion(std::move(lit), block.getByPosition(0).type->getName());
+			ast = addTypeConversion(std::move(lit), block.safeGetByPosition(0).type->getName());
 		}
 		else
 		{
@@ -1004,8 +1004,8 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 			for (size_t i = 0; i < columns; ++i)
 			{
 				exp_list->children[i] = addTypeConversion(
-					std::make_unique<ASTLiteral>(ast->range, (*block.getByPosition(i).column)[0]),
-					block.getByPosition(i).type->getName());
+					std::make_unique<ASTLiteral>(ast->range, (*block.safeGetByPosition(i).column)[0]),
+					block.safeGetByPosition(i).type->getName());
 			}
 		}
 	}
@@ -1568,7 +1568,7 @@ struct ExpressionAnalyzer::ScopeStack
 
 		const Block & sample_block = actions->getSampleBlock();
 		for (size_t i = 0, size = sample_block.columns(); i < size; ++i)
-			stack.back().new_columns.insert(sample_block.unsafeGetByPosition(i).name);
+			stack.back().new_columns.insert(sample_block.getByPosition(i).name);
 	}
 
 	void pushLevel(const NamesAndTypesList & input_columns)
@@ -1589,7 +1589,7 @@ struct ExpressionAnalyzer::ScopeStack
 		const Block & prev_sample_block = prev.actions->getSampleBlock();
 		for (size_t i = 0, size = prev_sample_block.columns(); i < size; ++i)
 		{
-			const ColumnWithTypeAndName & col = prev_sample_block.unsafeGetByPosition(i);
+			const ColumnWithTypeAndName & col = prev_sample_block.getByPosition(i);
 			if (!new_names.count(col.name))
 				all_columns.push_back(col);
 		}
@@ -2619,7 +2619,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 
 	for (const auto i : ext::range(0, nested_result_sample.columns()))
 	{
-		const auto & col = nested_result_sample.getByPosition(i);
+		const auto & col = nested_result_sample.safeGetByPosition(i);
 		if (join_key_names_right.end() == std::find(join_key_names_right.begin(), join_key_names_right.end(), col.name)
 			&& !joined_columns.count(col.name))	/// Дублирующиеся столбцы в подзапросе для JOIN-а не имеют смысла.
 		{
