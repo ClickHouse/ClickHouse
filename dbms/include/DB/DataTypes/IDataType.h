@@ -53,14 +53,18 @@ public:
 	  * offset + limit может быть больше размера столбца
 	  *  - в этом случае, столбец сериализуется до конца.
 	  */
-	virtual void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const = 0;
+	virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const = 0;
 
 	/** Считать не более limit значений и дописать их в конец столбца.
 	  * avg_value_size_hint - если не 0, то может использоваться, чтобы избежать реаллокаций при чтении строкового столбца.
 	  */
-	virtual void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const = 0;
+	virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const = 0;
 
-	/// Сериализация единичных значений.
+	/** Serialization/deserialization of individual values.
+	  * For complex data types (like arrays) it may differ from bulk serde.
+	  * For example, if you serialize single array, it will be represented as its size and values in single contiguous stream,
+	  *  but if you serialize column with arrays as bulk, then sizes and values will be written to separate streams.
+	  */
 
 	/// Для бинарной сериализации есть два варианта. Один вариант работает с Field.
 	virtual void serializeBinary(const Field & field, WriteBuffer & ostr) const = 0;

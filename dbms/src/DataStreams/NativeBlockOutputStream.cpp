@@ -62,7 +62,7 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 		const ColumnPtr & nested_col = nullable_col.getNestedColumn();
 
 		const IColumn & null_map = *nullable_col.getNullMapColumn();
-		DataTypeUInt8{}.serializeBinary(null_map, ostr, offset, limit);
+		DataTypeUInt8{}.serializeBinaryBulk(null_map, ostr, offset, limit);
 
 		writeData(nested_type, nested_col, ostr, offset, limit);
 	}
@@ -71,7 +71,7 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 		/** Для массивов требуется сначала сериализовать смещения, а потом значения.
 		  */
 		const ColumnArray & column_array = typeid_cast<const ColumnArray &>(*full_column);
-		type_arr->getOffsetsType()->serializeBinary(*column_array.getOffsetsColumn(), ostr, offset, limit);
+		type_arr->getOffsetsType()->serializeBinaryBulk(*column_array.getOffsetsColumn(), ostr, offset, limit);
 
 		if (!typeid_cast<const ColumnArray &>(*full_column).getData().empty())
 		{
@@ -111,7 +111,7 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 		}
 	}
 	else
-		type.serializeBinary(*full_column, ostr, offset, limit);
+		type.serializeBinaryBulk(*full_column, ostr, offset, limit);
 }
 
 

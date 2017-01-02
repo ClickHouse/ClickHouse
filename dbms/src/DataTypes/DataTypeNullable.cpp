@@ -16,16 +16,16 @@ DataTypeNullable::DataTypeNullable(DataTypePtr nested_data_type_)
 {
 }
 
-void DataTypeNullable::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void DataTypeNullable::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
 	const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
-	nested_data_type->serializeBinary(*col.getNestedColumn(), ostr, offset, limit);
+	nested_data_type->serializeBinaryBulk(*col.getNestedColumn(), ostr, offset, limit);
 }
 
-void DataTypeNullable::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeNullable::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
 	ColumnNullable & col = static_cast<ColumnNullable &>(column);
-	nested_data_type->deserializeBinary(*col.getNestedColumn(), istr, limit, avg_value_size_hint);
+	nested_data_type->deserializeBinaryBulk(*col.getNestedColumn(), istr, limit, avg_value_size_hint);
 }
 
 

@@ -216,14 +216,14 @@ void DataTypeTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
 	});
 }
 
-void DataTypeTuple::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void DataTypeTuple::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
 	const ColumnTuple & real_column = static_cast<const ColumnTuple &>(column);
 	for (size_t i = 0, size = elems.size(); i < size; ++i)
 		NativeBlockOutputStream::writeData(*elems[i], real_column.getData().safeGetByPosition(i).column, ostr, offset, limit);
 }
 
-void DataTypeTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeTuple::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
 	ColumnTuple & real_column = static_cast<ColumnTuple &>(column);
 	for (size_t i = 0, size = elems.size(); i < size; ++i)

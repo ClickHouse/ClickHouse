@@ -3,7 +3,7 @@
 namespace DB
 {
 
-void DataTypeNull::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void DataTypeNull::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
 	size_t size = column.size();
 
@@ -15,7 +15,7 @@ void DataTypeNull::serializeBinary(const IColumn & column, WriteBuffer & ostr, s
 		writeBinary(x, ostr);
 }
 
-void DataTypeNull::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeNull::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
 	ColumnNull & null_col = static_cast<ColumnNull &>(column);
 

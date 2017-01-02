@@ -170,7 +170,7 @@ void IMergedBlockOutputStream::writeDataImpl(
 				writeIntBinary(stream.compressed.offset(), stream.marks);
 			}
 
-			DataTypeUInt8{}.serializeBinary(*(nullable_col.getNullMapColumn()), stream.compressed);
+			DataTypeUInt8{}.serializeBinaryBulk(*(nullable_col.getNullMapColumn()), stream.compressed);
 
 			/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
 			stream.compressed.nextIfAtEnd();
@@ -253,7 +253,7 @@ void IMergedBlockOutputStream::writeDataImpl(
 				writeIntBinary(stream.compressed.offset(), stream.marks);
 			}
 
-			type.serializeBinary(column, stream.compressed, prev_mark, limit);
+			type.serializeBinaryBulk(column, stream.compressed, prev_mark, limit);
 
 			/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
 			stream.compressed.nextIfAtEnd();

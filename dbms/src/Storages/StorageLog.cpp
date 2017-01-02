@@ -359,7 +359,7 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(column);
 		IColumn & nested_col = *nullable_col.getNestedColumn();
 
-		DataTypeUInt8{}.deserializeBinary(*nullable_col.getNullMapColumn(),
+		DataTypeUInt8{}.deserializeBinaryBulk(*nullable_col.getNullMapColumn(),
 			streams[name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION]->compressed, max_rows_to_read, 0);
 		/// Then read data.
 		readData(name, nested_type, nested_col, max_rows_to_read, level, read_offsets);
@@ -384,7 +384,7 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 				level + 1);
 	}
 	else
-		type.deserializeBinary(column, streams[name]->compressed, max_rows_to_read, 0);	/// TODO Использовать avg_value_size_hint.
+		type.deserializeBinaryBulk(column, streams[name]->compressed, max_rows_to_read, 0);	/// TODO Использовать avg_value_size_hint.
 }
 
 
@@ -490,8 +490,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 
 		out_null_marks.emplace_back(storage.files[filename].column_index, mark);
 
-		DataTypeUInt8{}.serializeBinary(*nullable_col.getNullMapColumn(),
-			streams[filename]->compressed);
+		DataTypeUInt8{}.serializeBinaryBulk(*nullable_col.getNullMapColumn(), streams[filename]->compressed);
 		streams[filename]->compressed.next();
 
 		/// Then write data.
@@ -527,7 +526,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 
 		out_marks.push_back(std::make_pair(storage.files[name].column_index, mark));
 
-		type.serializeBinary(column, streams[name]->compressed);
+		type.serializeBinaryBulk(column, streams[name]->compressed);
 		streams[name]->compressed.next();
 	}
 }

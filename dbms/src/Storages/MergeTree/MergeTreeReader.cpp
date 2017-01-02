@@ -417,7 +417,7 @@ void MergeTreeReader::readData(const String & name, const IDataType & type, ICol
 		Stream & stream = *(streams.at(filename));
 		stream.seekToMark(from_mark);
 		IColumn & col8 = *(nullable_col.getNullMapColumn());
-		DataTypeUInt8{}.deserializeBinary(col8, *stream.data_buffer, max_rows_to_read, 0);
+		DataTypeUInt8{}.deserializeBinaryBulk(col8, *stream.data_buffer, max_rows_to_read, 0);
 
 		/// Then read data.
 		readData(name, nested_type, nested_col, from_mark, max_rows_to_read, level, read_offsets);
@@ -483,7 +483,7 @@ void MergeTreeReader::readData(const String & name, const IDataType & type, ICol
 
 		double & avg_value_size_hint = avg_value_size_hints[name];
 		stream.seekToMark(from_mark);
-		type.deserializeBinary(column, *stream.data_buffer, max_rows_to_read, avg_value_size_hint);
+		type.deserializeBinaryBulk(column, *stream.data_buffer, max_rows_to_read, avg_value_size_hint);
 
 		/// Вычисление подсказки о среднем размере значения.
 		size_t column_size = column.size();
