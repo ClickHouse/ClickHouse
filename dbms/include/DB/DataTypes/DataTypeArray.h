@@ -61,12 +61,7 @@ public:
 	  * Это нужно, так как при реализации вложенных структур, несколько массивов могут иметь общие размеры.
 	  */
 
-	/** Записать только значения, без размеров. Вызывающая сторона также должна куда-нибудь записать смещения. */
 	void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-
-	/** Прочитать только значения, без размеров.
-	  * При этом, в column уже заранее должны быть считаны все размеры.
-	  */
 	void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
 	/** Записать размеры. */

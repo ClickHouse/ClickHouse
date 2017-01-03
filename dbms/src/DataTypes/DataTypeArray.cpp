@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+	extern const int DATA_TYPE_SHOULD_BE_SERIALIZED_INTO_MULTIPLE_STREAMS;
 }
 
 
@@ -94,6 +95,19 @@ void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 	}
 
 	offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
+}
+
+
+void DataTypeArray::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+{
+	throw Exception("Data type Array should be serialized into multiple streams",
+		ErrorCodes::DATA_TYPE_SHOULD_BE_SERIALIZED_INTO_MULTIPLE_STREAMS);
+}
+
+void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+{
+	throw Exception("Data type Array should be serialized into multiple streams",
+		ErrorCodes::DATA_TYPE_SHOULD_BE_SERIALIZED_INTO_MULTIPLE_STREAMS);
 }
 
 

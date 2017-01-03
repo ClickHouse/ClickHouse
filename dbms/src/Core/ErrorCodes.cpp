@@ -353,6 +353,7 @@ namespace ErrorCodes
 	extern const int RESHARDING_NULLABLE_SHARDING_KEY = 348;
 	extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN = 349;
 	extern const int INCOMPATIBLE_SOURCE_TABLES = 350;
+	extern const int DATA_TYPE_SHOULD_BE_SERIALIZED_INTO_MULTIPLE_STREAMS = 351;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;

@@ -60,6 +60,34 @@ public:
 	  */
 	virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const = 0;
 
+
+	/** More generic methods, suitable for case, when data reside in multiple streams
+	  *  (or when it is read/written from/to single stream, but in separate chunks).
+	  * For example, for Array data type, array sizes and array elements are written to two different streams
+	  *  (and in case of multidimensional arrays, there are even more streams).
+	  */
+
+	/** For streams, where data should be read/written, push back to 'out_descriptions' some strings, suitable to be concatenated with file name.
+	  * Example: '.size0', '.size1', ''.
+	  */
+	virtual void describeMultipleStreams(std::vector<std::string> & out_descriptions, size_t level) const
+	{
+		out_descriptions.emplace_back();	/// Only one stream. Empty string.
+	}
+
+	virtual void serializeBinaryBulkWithMupltipleStreams(
+		IColumn & column, WriteBuffer * streams, size_t num_streams, bool position_independent_encoding, size_t offset, size_t limit) const
+	{
+		serializeBinaryBulk(column, streams[0], offset, limit);
+	}
+
+	virtual void deserializeBinaryBulkWithMultipleStreams(
+		IColumn & column, ReadBuffer * streams, size_t num_streams, bool position_independent_encoding, size_t limit, double avg_value_size_hint) const
+	{
+		deserializeBinaryBulk(column, streams[0], limit, avg_value_size_hint);
+	}
+
+
 	/** Serialization/deserialization of individual values.
 	  *
 	  * These are helper methods for implementation of various formats to input/output for user (like CSV, JSON, etc.).
