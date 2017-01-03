@@ -1201,7 +1201,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 
 			for (size_t i = 0; i < size; ++i)
 			{
-				ReadBufferFromMemory read_buffer(&data_from[i * n], n, 0);
+				ReadBufferFromMemory read_buffer(&data_from[i * n], n);
 				const char * end = read_buffer.buffer().end();
 				parseImpl<ToDataType>(vec_to[i], read_buffer);
 
