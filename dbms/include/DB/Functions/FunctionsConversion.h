@@ -8,6 +8,7 @@
 #include <DB/IO/WriteBufferFromVector.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/Operators.h>
+#include <DB/IO/ReadBufferFromMemory.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -785,8 +786,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 
 			for (size_t i = 0; i < size; ++i)
 			{
-				ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(
-					&chars[current_offset])), offsets[i] - current_offset - 1, 0);
+				ReadBufferFromMemory read_buffer(&chars[current_offset], offsets[i] - current_offset - 1);
 
 				parseImpl<ToDataType>(vec_to[i], read_buffer);
 
@@ -860,8 +860,7 @@ struct ConvertOrZeroImpl
 
 			for (size_t i = 0; i < size; ++i)
 			{
-				ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(
-					&chars[current_offset])), offsets[i] - current_offset - 1, 0);
+				ReadBufferFromMemory read_buffer(&chars[current_offset], offsets[i] - current_offset - 1);
 
 				/// NOTE Need to implement for Date and DateTime too.
 				if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer) || !read_buffer.eof())
@@ -915,8 +914,7 @@ struct ConvertImplGenericFromString
 
 			for (size_t i = 0; i < size; ++i)
 			{
-				ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(
-					&chars[current_offset])), offsets[i] - current_offset - 1, 0);
+				ReadBufferFromMemory read_buffer(&chars[current_offset], offsets[i] - current_offset - 1);
 
 				data_type_to.deserializeTextEscaped(column_to, read_buffer);
 
@@ -959,7 +957,7 @@ struct StringToTimestampConverter
 							  const ColumnString::Offsets_t & offsets, PaddedPODArray<ToFieldType> & vec_to)
 	{
 		const auto & local_date_lut = DateLUT::instance();
-		ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(&vec_from[0])), vec_from.size(), 0);
+		ReadBufferFromMemory read_buffer(&vec_from[0], vec_from.size());
 
 		ColumnString::Offset_t prev_offset = 0;
 
@@ -989,7 +987,7 @@ struct StringToTimestampConverter
 	{
 		const auto & local_date_lut = DateLUT::instance();
 		const auto & remote_date_lut = DateLUT::instance(data);
-		ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(&vec_from[0])), vec_from.size(), 0);
+		ReadBufferFromMemory read_buffer(&vec_from[0], vec_from.size());
 
 		char zero = 0;
 		for (size_t i = 0; i < vec_to.size(); ++i)
@@ -1008,7 +1006,7 @@ struct StringToTimestampConverter
 
 	static void vector_constant(const ColumnString::Chars_t & vec_from, PaddedPODArray<ToFieldType> & vec_to)
 	{
-		ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(&vec_from[0])), vec_from.size(), 0);
+		ReadBufferFromMemory read_buffer(&vec_from[0], vec_from.size());
 
 		char zero = 0;
 		for (size_t i = 0; i < vec_to.size(); ++i)
@@ -1203,9 +1201,8 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 
 			for (size_t i = 0; i < size; ++i)
 			{
-				char * begin = const_cast<char *>(reinterpret_cast<const char *>(&data_from[i * n]));
-				char * end = begin + n;
-				ReadBuffer read_buffer(begin, n, 0);
+				ReadBufferFromMemory read_buffer(&data_from[i * n], n, 0);
+				const char * end = read_buffer.buffer().end();
 				parseImpl<ToDataType>(vec_to[i], read_buffer);
 
 				if (!read_buffer.eof())

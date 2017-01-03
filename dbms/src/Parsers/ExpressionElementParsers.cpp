@@ -2,6 +2,7 @@
 #include <cstdlib>
 
 #include <DB/IO/ReadHelpers.h>
+#include <DB/IO/ReadBufferFromMemory.h>
 
 #include <DB/Parsers/IAST.h>
 #include <DB/Parsers/ASTExpressionList.h>
@@ -138,7 +139,7 @@ bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 	/// Идентификатор в обратных кавычках
 	if (pos != end && *pos == '`')
 	{
-		ReadBuffer buf(const_cast<char *>(pos), end - pos, 0);
+		ReadBufferFromMemory buf(pos, end - pos);
 		String s;
 		readBackQuotedString(s, buf);
 
@@ -497,7 +498,7 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 		return false;
 
 	UInt64 x = 0;
-	ReadBuffer in(const_cast<char *>(pos), end - pos, 0);
+	ReadBufferFromMemory in(pos, end - pos);
 	if (!tryReadIntText(x, in) || in.count() == 0)
 	{
 		expected = "unsigned integer";
@@ -522,7 +523,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
 		return false;
 	}
 
-	ReadBuffer in(const_cast<char *>(pos), end - pos, 0);
+	ReadBufferFromMemory in(pos, end - pos);
 
 	try
 	{

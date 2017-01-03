@@ -22,6 +22,7 @@
 #include <DB/Common/Arena.h>
 
 #include <DB/IO/ReadBuffer.h>
+#include <DB/IO/ReadBufferFromMemory.h>
 #include <DB/IO/VarInt.h>
 #include <city.h>
 
@@ -936,7 +937,7 @@ template <typename T>
 inline T parse(const char * data, size_t size)
 {
 	T res;
-	ReadBuffer buf(const_cast<char *>(data), size, 0);
+	ReadBufferFromMemory buf(data, size);
 	readText(res, buf);
 	return res;
 }

@@ -1,6 +1,7 @@
 #include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/Columns/ColumnNullable.h>
 #include <DB/IO/ReadBuffer.h>
+#include <DB/IO/ReadBufferFromMemory.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteHelpers.h>
@@ -131,7 +132,7 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
 				else
 				{
 					/// Otherwise, we need to place backslash back in front of istr.
-					ReadBuffer prefix(const_cast<char *>("\\"), 1, 0);
+					ReadBufferFromMemory prefix("\\", 1);
 					ConcatReadBuffer prepended_istr(prefix, istr);
 
 					nested_data_type->deserializeTextEscaped(nested, prepended_istr);

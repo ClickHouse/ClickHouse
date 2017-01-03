@@ -26,6 +26,7 @@
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/ReadBufferFromMemory.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 
@@ -795,7 +796,7 @@ private:
 		if (parsed_insert_query->data)
 		{
 			/// Отправляем данные из запроса.
-			ReadBuffer data_in(const_cast<char *>(parsed_insert_query->data), parsed_insert_query->end - parsed_insert_query->data, 0);
+			ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
 			sendDataFrom(data_in, sample);
 		}
 		else if (!is_interactive)
