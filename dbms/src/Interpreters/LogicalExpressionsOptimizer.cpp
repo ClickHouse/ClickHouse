@@ -39,7 +39,7 @@ void LogicalExpressionsOptimizer::perform()
 {
 	if (select_query == nullptr)
 		return;
-	if (select_query->attributes & IAST::IsVisited)
+	if (visited_nodes.count(select_query))
 		return;
 
 	size_t position = 0;
@@ -90,7 +90,7 @@ void LogicalExpressionsOptimizer::reorderColumns()
 
 void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 {
-	if (select_query->attributes & IAST::IsVisited)
+	if (visited_nodes.count(select_query))
 		return;
 
 	using Edge = std::pair<IAST *, IAST *>;
@@ -137,7 +137,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 			}
 		}
 
-		to_node->attributes |= IAST::IsVisited;
+		visited_nodes.insert(to_node);
 
 		if (found_chain)
 		{
@@ -153,9 +153,9 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 		{
 			for (auto & child : to_node->children)
 			{
-				if (typeid_cast<ASTSelectQuery *>(&*child) == nullptr)
+				if (typeid_cast<ASTSelectQuery *>(child.get()) == nullptr)
 				{
-					if (!(child->attributes & IAST::IsVisited))
+					if (!visited_nodes.count(child.get()))
 						to_visit.push_back(Edge(to_node, &*child));
 					else
 					{

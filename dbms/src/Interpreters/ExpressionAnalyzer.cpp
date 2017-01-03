@@ -150,7 +150,7 @@ void ExpressionAnalyzer::init()
 
 	/// В зависимости от профиля пользователя проверить наличие прав на выполнение
 	/// распределённых подзапросов внутри секций IN или JOIN и обработать эти подзапросы.
-	InJoinSubqueriesPreprocessor<>(select_query, context, storage).perform();
+	InJoinSubqueriesPreprocessor(context).process(select_query);
 
 	/// Оптимизирует логические выражения.
 	LogicalExpressionsOptimizer(select_query, settings).perform();

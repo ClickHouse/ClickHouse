@@ -16,6 +16,16 @@
 #include <utility>
 #include <string>
 
+
+namespace DB
+{
+	namespace ErrorCodes
+	{
+		extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
+	}
+}
+
+
 /// Упрощённый вариант класса StorageDistributed.
 class StorageDistributedFake : private ext::shared_ptr_helper<StorageDistributedFake>, public DB::IStorage
 {
@@ -49,6 +59,33 @@ private:
 	DB::NamesAndTypesList names_and_types;
 };
 
+
+class InJoinSubqueriesPreprocessorMock : public DB::InJoinSubqueriesPreprocessor
+{
+public:
+	using DB::InJoinSubqueriesPreprocessor::InJoinSubqueriesPreprocessor;
+
+	bool hasAtLeastTwoShards(const DB::IStorage & table) const override
+	{
+		if (!table.isRemote())
+			return false;
+
+		const StorageDistributedFake * distributed = typeid_cast<const StorageDistributedFake *>(&table);
+		if (!distributed)
+			return false;
+
+		return distributed->getShardCount() >= 2;
+	}
+
+	std::pair<std::string, std::string>
+	getRemoteDatabaseAndTableName(const DB::IStorage & table) const override
+	{
+		const StorageDistributedFake & distributed = typeid_cast<const StorageDistributedFake &>(table);
+		return { distributed.getRemoteDatabaseName(), distributed.getRemoteTableName() };
+	}
+};
+
+
 struct TestEntry
 {
 	unsigned int line_num;
@@ -66,6 +103,7 @@ TestResult check(const TestEntry & entry);
 bool parse(DB::ASTPtr  & ast, const std::string & query);
 bool equals(const DB::ASTPtr & lhs, const DB::ASTPtr & rhs);
 void reorder(DB::IAST * ast);
+
 
 TestEntries entries =
 {
@@ -1196,8 +1234,7 @@ TestResult check(const TestEntry & entry)
 
 		try
 		{
-			DB::InJoinSubqueriesPreprocessor<StorageDistributedFake> preprocessor(select_query, context, storage_distributed_visits);
-			preprocessor.perform();
+			InJoinSubqueriesPreprocessorMock(context).process(select_query);
 		}
 		catch (const DB::Exception & ex)
 		{
