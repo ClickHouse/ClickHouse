@@ -477,7 +477,8 @@ public:
 	/// slightly altered implementation from http://svn.apache.org/repos/asf/apr/apr/trunk/network_io/unix/inet_pton.c
 	static void ipv6_scan(const char *  src, unsigned char * dst)
 	{
-		const auto clear_dst = [dst] {
+		const auto clear_dst = [dst]
+		{
 			memset(dst, '\0', ipv6_bytes_length);
 		};
 
@@ -487,7 +488,8 @@ public:
 				return clear_dst();
 
 		/// get integer value for a hexademical char digit, or -1
-		const auto number_by_char = [] (const char ch) {
+		const auto number_by_char = [] (const char ch)
+		{
 			if ('A' <= ch && ch <= 'F')
 				return 10 + ch - 'A';
 
@@ -1861,7 +1863,8 @@ public:
 
 namespace
 {
-	template <typename T1, typename T2> UInt8 bitTest(const T1 val, const T2 pos) { return (val >> pos) & 1; };
+	template <typename T1, typename T2>
+	UInt8 bitTest(const T1 val, const T2 pos) { return (val >> pos) & 1; };
 }
 
 class FunctionBitTest : public IFunction
@@ -1887,9 +1890,7 @@ public:
 			!typeid_cast<const DataTypeInt64 *>(first_arg))
 			throw Exception{
 				"Illegal type " + first_arg->getName() + " of first argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-			};
-
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
 		const auto second_arg = arguments.back().get();
 		if (!typeid_cast<const DataTypeUInt8 *>(second_arg) &&
@@ -1898,8 +1899,7 @@ public:
 			!typeid_cast<const DataTypeUInt64 *>(second_arg))
 			throw Exception{
 				"Illegal type " + second_arg->getName() + " of second argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-			};
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
 		return std::make_shared<DataTypeUInt8>();
 	}
@@ -1918,8 +1918,7 @@ public:
 			!execute<Int64>(block, arguments, result, value_col))
 			throw Exception{
 				"Illegal column " + value_col->getName() + " of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN
-			};
+				ErrorCodes::ILLEGAL_COLUMN};
 	}
 
 private:
@@ -1934,8 +1933,7 @@ private:
 			if (!execute(block, arguments, result, value_col, pos_col))
 				throw Exception{
 					"Illegal column " + pos_col->getName() + " of argument of function " + getName(),
-					ErrorCodes::ILLEGAL_COLUMN
-				};
+					ErrorCodes::ILLEGAL_COLUMN};
 
 			return true;
 		}
@@ -1946,8 +1944,7 @@ private:
 			if (!execute(block, arguments, result, value_col, pos_col))
 				throw Exception{
 					"Illegal column " + pos_col->getName() + " of argument of function " + getName(),
-					ErrorCodes::ILLEGAL_COLUMN
-				};
+					ErrorCodes::ILLEGAL_COLUMN};
 
 			return true;
 		}
@@ -2057,8 +2054,7 @@ public:
 			throw Exception{
 				"Number of arguments for function " + getName() + " doesn't match: passed "
 				+ toString(arguments.size()) + ", should be at least 2.",
-				ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION
-			};
+				ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
 
 		const auto first_arg = arguments.front().get();
 		if (!typeid_cast<const DataTypeUInt8 *>(first_arg) && !typeid_cast<const DataTypeUInt16 *>(first_arg) &&
@@ -2067,8 +2063,7 @@ public:
 			!typeid_cast<const DataTypeInt32 *>(first_arg) && !typeid_cast<const DataTypeInt64 *>(first_arg))
 			throw Exception{
 				"Illegal type " + first_arg->getName() + " of first argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-			};
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
 
 		for (const auto i : ext::range(1, arguments.size()))
@@ -2079,8 +2074,7 @@ public:
 				!typeid_cast<const DataTypeUInt32 *>(pos_arg) && !typeid_cast<const DataTypeUInt64 *>(pos_arg))
 				throw Exception{
 					"Illegal type " + pos_arg->getName() + " of " + toString(i) + " argument of function " + getName(),
-					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-				};
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 		}
 
 		return std::make_shared<DataTypeUInt8>();
@@ -2100,8 +2094,7 @@ public:
 			!execute<Int64>(block, arguments, result, value_col))
 			throw Exception{
 				"Illegal column " + value_col->getName() + " of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN
-			};
+				ErrorCodes::ILLEGAL_COLUMN};
 	}
 
 private:
@@ -2206,8 +2199,7 @@ private:
 				!addToMaskImpl<UInt32>(mask, pos_col) && !addToMaskImpl<UInt64>(mask, pos_col))
 				throw Exception{
 					"Illegal column " + pos_col->getName() + " of argument of function " + getName(),
-					ErrorCodes::ILLEGAL_COLUMN
-				};
+					ErrorCodes::ILLEGAL_COLUMN};
 		}
 
 		return mask;
