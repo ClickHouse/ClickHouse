@@ -72,6 +72,7 @@ namespace ErrorCodes
 	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 	extern const int ILLEGAL_AGGREGATION;
 	extern const int SUPPORT_IS_DISABLED;
+	extern const int TOO_DEEP_AST;
 }
 
 
