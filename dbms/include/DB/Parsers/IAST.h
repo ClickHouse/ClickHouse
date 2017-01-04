@@ -14,8 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int NOT_A_COLUMN;
-	extern const int TOO_BIG_AST;
-	extern const int TOO_DEEP_AST;
 	extern const int UNKNOWN_TYPE_OF_AST_NODE;
 	extern const int UNKNOWN_ELEMENT_IN_AST;
 }

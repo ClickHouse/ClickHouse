@@ -7,6 +7,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int TOO_BIG_AST;
+	extern const int TOO_DEEP_AST;
+}
+
+
 const char * IAST::hilite_keyword 		= "\033[1m";
 const char * IAST::hilite_identifier 	= "\033[0;36m";
 const char * IAST::hilite_function 		= "\033[0;33m";
