@@ -382,7 +382,7 @@ void ColumnNullable::applyNullValuesByteMap(const ColumnNullable & other)
 	if (arr1.size() != arr2.size())
 		throw Exception{"Inconsistent sizes of ColumnNullable objects", ErrorCodes::LOGICAL_ERROR};
 
-	for (size_t i = 0; i < arr1.size(); ++i)
+	for (size_t i = 0, size = arr1.size(); i < size; ++i)
 		arr1[i] |= arr2[i];
 }
 
