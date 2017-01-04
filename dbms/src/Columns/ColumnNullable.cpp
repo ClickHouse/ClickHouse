@@ -38,10 +38,23 @@ void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
 }
 
 
-ColumnPtr ColumnNullable::cloneResized(size_t size) const
+ColumnPtr ColumnNullable::cloneResized(size_t new_size) const
 {
-	ColumnPtr new_nested_col = nested_column->cloneResized(size);
-	ColumnPtr new_null_map = getNullMapConcreteColumn().cloneResized(size);		/// TODO Completely wrong.
+	ColumnPtr new_nested_col = nested_column->cloneResized(new_size);
+	auto new_null_map = std::make_shared<ColumnUInt8>();
+
+	if (new_size > 0)
+	{
+		new_null_map->getData().resize(new_size);
+
+		size_t count = std::min(size(), new_size);
+		memcpy(new_null_map->getData().data(), getNullMap().data(), count * sizeof(getNullMap()[0]));
+
+		/// If resizing to bigger one, set all new values to NULLs.
+		if (new_size > count)
+			memset(&new_null_map->getData()[count], 1, new_size - count);
+	}
+
 	return std::make_shared<ColumnNullable>(new_nested_col, new_null_map);
 }
 
