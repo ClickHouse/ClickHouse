@@ -1,8 +1,10 @@
 ' ' -> String = ' '. AST: ' '
 'Hello' -> String = 'Hello'. AST: 'Hello'
+'Hello, world' -> String = 'Hello, world'. AST: 'Hello, world'
 'World' -> String = 'World'. AST: 'World'
 0.5 -> Float64 = 0.5. AST: 0.5
 1 -> UInt8 = 1. AST: 1
+20 -> UInt8 = 20. AST: 20
 [1, -1, 0.1] -> Array(Float64) = [1., -1., 0.1]. AST: [1, -1, 0.1]
 concat('Hello', ' ', 'World') -> String = 'Hello World'. AST: concat('Hello', ' ', 'World') AS world
 count() -> UInt64. AST: count()
@@ -15,3 +17,6 @@ rand() -> UInt32. AST: rand()
 sleep(1) -> UInt8. AST: sleep(1)
 sum(e) -> Float64. AST: sum(e)
 system.numbers.number -> UInt64. AST: system.numbers.number
+toFixedString('Hello, world', 20) -> FixedString(20) = 'Hello, world\0\0\0\0\0\0\0\0'. AST: toFixedString('Hello, world', 20)
+tuple('Hello', 1) -> Tuple(String, UInt8) = ('Hello', 1). AST: ('Hello', 1)
+tupleElement(tuple('Hello', 1), 1) -> String = 'Hello'. AST: ('Hello', 1).1
