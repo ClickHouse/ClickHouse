@@ -382,6 +382,9 @@ public:
 		return name;
 	}
 
+	/// Do not sleep during query analysis.
+	bool isSuitableForConstantFolding() const { return false; }
+
 	size_t getNumberOfArguments() const override { return 1; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.

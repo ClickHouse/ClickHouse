@@ -137,8 +137,8 @@ void ExpressionAction::prepare(Block & sample_block)
 
 			ColumnPtr new_column;
 
-			/// Если все аргументы и требуемые столбцы - константы, выполним функцию.
-			if (all_const)
+			/// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
+			if (all_const && function->isSuitableForConstantFolding())
 			{
 				size_t result_position = sample_block.columns();
 
