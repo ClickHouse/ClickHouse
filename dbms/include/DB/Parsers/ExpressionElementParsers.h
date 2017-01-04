@@ -57,6 +57,25 @@ protected:
 };
 
 
+/// Just *
+class ParserAsterisk : public IParserBase
+{
+protected:
+	const char * getName() const { return "asterisk"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+};
+
+
+/** Something like t.* or db.table.*
+  */
+class ParserQualifiedAsterisk : public IParserBase
+{
+protected:
+	const char * getName() const { return "qualified asterisk"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+};
+
+
 /** Функция, например, f(x, y + 1, g(z)).
   * Или агрегатная функция: sum(x + f(y)), corr(x, y). По синтаксису - такая же, как обычная функция.
   * Или параметрическая агрегатная функция: quantile(0.9)(x + y).
