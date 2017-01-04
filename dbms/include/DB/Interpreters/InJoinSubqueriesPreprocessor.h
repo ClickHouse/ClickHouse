@@ -14,28 +14,22 @@ class ASTSelectQuery;
 class Context;
 
 
-struct Attributes
-{
-	/// Указатель на начало секции [NOT]IN или JOIN в которой включен этот узел,
-	/// если имеется такая секция.
-	IAST * enclosing_in_or_join = nullptr;
-
-	/** Глубина одного узла N - это глубина того запроса SELECT, которому принадлежит N.
-	 *  Дальше глубина одного запроса SELECT определяется следующим образом:
-	 *  - если запрос Q корневой, то select_query_depth(Q) = 0
-	 *  - если запрос S является непосредственным подзапросом одного запроса R,
-	 *  то select_query_depth(S) = select_query_depth(R) + 1
-	 */
-	UInt32 select_query_depth = 0;
-
-	bool is_in = false;
-	bool is_join = false;
-
-	bool is_global = false;
-};
-
-using ASTProperties = std::unordered_map<void *, Attributes>;
-
+/** Scheme of operation:
+  *
+  * If "main" table in a query is distributed enough (thus, have at least two shards),
+  *  and there are non-GLOBAL subqueries in IN or JOIN,
+  *  and in that subqueries, there is a table
+  *   (in any nesting level in that subquery or in more deep subqueries),
+  *   that exist on local server and (according to information on local server) is also distributed enough
+  * then, according to setting 'distributed_product_mode',
+  * either
+  * - throw an exception;
+  * - or add GLOBAL to top subquery;
+  * - or replace database and table name in subquery to remote database and table name,
+  *   as Distributed storage on local server knows it.
+  *
+  * Do not recursively preprocess subqueries, as it will be done by calling code.
+  */
 
 class InJoinSubqueriesPreprocessor
 {
@@ -49,9 +43,6 @@ public:
 	virtual ~InJoinSubqueriesPreprocessor() {}
 
 private:
-	void preprocessSubquery(ASTSelectQuery & sub_select_query, ASTProperties & shadow_ast, SettingDistributedProductMode distributed_product_mode) const;
-	IStorage * getDistributedStorage(const ASTSelectQuery & select_query) const;
-
 	const Context & context;
 };
 
