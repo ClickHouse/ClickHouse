@@ -11,7 +11,7 @@ namespace DB
 class ASTIdentifier : public ASTWithAlias
 {
 public:
-	enum Kind
+	enum Kind	/// TODO This is semantic, not syntax. Remove it.
 	{
 		Column,
 		Database,

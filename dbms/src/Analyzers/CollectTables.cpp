@@ -124,6 +124,8 @@ void CollectTables::process(const ASTPtr & ast, Context & context, const Collect
 		else
 			throw Exception("Logical error: no known elements in ASTTableExpression", ErrorCodes::LOGICAL_ERROR);
 	}
+
+	/// TODO Control that tables don't have conflicting names.
 }
 
 
