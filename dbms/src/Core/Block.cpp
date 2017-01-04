@@ -89,6 +89,25 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
 }
 
 
+Block::Block(std::initializer_list<ColumnWithTypeAndName> il) : data{il}
+{
+	initializeIndexByName();
+}
+
+
+Block::Block(const ColumnsWithTypeAndName & data_) : data{data_}
+{
+	initializeIndexByName();
+}
+
+
+void Block::initializeIndexByName()
+{
+	for (size_t i = 0, size = data.size(); i < size; ++i)
+		index_by_name[data[i].name] = i;
+}
+
+
 void Block::insert(size_t position, const ColumnWithTypeAndName & elem)
 {
 	if (position > data.size())
@@ -359,7 +378,7 @@ Block Block::sortColumns() const
 
 ColumnsWithTypeAndName Block::getColumns() const
 {
-	return ColumnsWithTypeAndName(data.begin(), data.end());
+	return data;
 }
 
 

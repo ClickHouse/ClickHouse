@@ -17,9 +17,9 @@ namespace ErrorCodes
 
 
 template <typename T>
-static void convertArrayToCommonType(Array & arr)
+static void convertArrayToCommonType(const Array & arr)
 {
-	for (auto & elem : arr)
+	for (const auto & elem : arr)
 	{
 		if (!elem.isNull())
 			elem = apply_visitor(FieldVisitorConvertToNumber<T>(), elem);
@@ -27,7 +27,7 @@ static void convertArrayToCommonType(Array & arr)
 }
 
 
-DataTypePtr FieldToDataType::operator() (Array & x) const
+DataTypePtr FieldToDataType::operator() (const Array & x) const
 {
 	if (x.empty())
 		throw Exception("Cannot infer type of empty array", ErrorCodes::EMPTY_DATA_PASSED);
@@ -207,16 +207,16 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 }
 
 
-DataTypePtr FieldToDataType::operator() (Tuple & x) const
+DataTypePtr FieldToDataType::operator() (const Tuple & x) const
 {
-	auto & tuple = static_cast<TupleBackend &>(x);
+	const auto & tuple = static_cast<const TupleBackend &>(x);
 	if (tuple.empty())
 		throw Exception("Cannot infer type of an empty tuple", ErrorCodes::EMPTY_DATA_PASSED);
 
 	DataTypes element_types;
 	element_types.reserve(ext::size(tuple));
 
-	for (auto & element : tuple)
+	for (const auto & element : tuple)
 		element_types.push_back(apply_visitor(FieldToDataType{}, element));
 
 	return std::make_shared<DataTypeTuple>(element_types);

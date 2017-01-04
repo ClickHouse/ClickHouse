@@ -29,7 +29,7 @@ class Context;
 class Block
 {
 private:
-	using Container = std::vector<ColumnWithTypeAndName>;
+	using Container = ColumnsWithTypeAndName;
 	using IndexByName = std::map<String, size_t>;
 
 	Container data;
@@ -39,15 +39,8 @@ public:
 	BlockInfo info;
 
 	Block() = default;
-	Block(std::initializer_list<ColumnWithTypeAndName> il) : data{il}
-	{
-		size_t i = 0;
-		for (const auto & elem : il)
-		{
-			index_by_name[elem.name] = i;
-			++i;
-		}
-	}
+	Block(std::initializer_list<ColumnWithTypeAndName> il);
+	Block(const ColumnsWithTypeAndName & data_);
 
 	/// вставить столбец в заданную позицию
 	void insert(size_t position, const ColumnWithTypeAndName & elem);
@@ -128,6 +121,7 @@ public:
 
 private:
 	void eraseImpl(size_t position);
+	void initializeIndexByName();
 };
 
 using Blocks = std::vector<Block>;
