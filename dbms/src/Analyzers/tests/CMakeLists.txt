@@ -6,3 +6,6 @@ target_link_libraries(collect_tables dbms)
 
 add_executable(analyze_columns analyze_columns.cpp)
 target_link_libraries(analyze_columns dbms)
+
+add_executable(type_and_constant_inference type_and_constant_inference.cpp)
+target_link_libraries(type_and_constant_inference dbms)
