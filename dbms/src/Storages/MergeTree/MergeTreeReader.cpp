@@ -19,7 +19,7 @@ namespace
 	using OffsetColumns = std::map<std::string, ColumnPtr>;
 
 	constexpr auto DATA_FILE_EXTENSION = ".bin";
-	constexpr auto NULL_MAP_EXTENSION = ".null";
+	constexpr auto NULL_MAP_EXTENSION = ".null.bin";
 
 	bool isNullStream(const std::string & extension)
 	{
@@ -277,7 +277,7 @@ void MergeTreeReader::Stream::loadMarks(MarkCache * cache, bool save_in_cache, b
 	std::string path;
 
 	if (is_null_stream)
-		path = path_prefix + ".null_mrk";
+		path = path_prefix + ".null.mrk";
 	else
 		path = path_prefix + ".mrk";
 

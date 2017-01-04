@@ -32,7 +32,7 @@
 #include <Poco/DirectoryIterator.h>
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION 	".bin"
-#define DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION ".null"
+#define DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION ".null.bin"
 
 
 namespace DB

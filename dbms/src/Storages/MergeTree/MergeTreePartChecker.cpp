@@ -36,9 +36,9 @@ namespace
 {
 
 constexpr auto DATA_FILE_EXTENSION = ".bin";
-constexpr auto NULL_MAP_FILE_EXTENSION = ".null";
+constexpr auto NULL_MAP_FILE_EXTENSION = ".null.bin";
 constexpr auto MARKS_FILE_EXTENSION = ".mrk";
-constexpr auto NULL_MARKS_FILE_EXTENSION = ".null_mrk";
+constexpr auto NULL_MARKS_FILE_EXTENSION = ".null.mrk";
 
 struct Stream
 {

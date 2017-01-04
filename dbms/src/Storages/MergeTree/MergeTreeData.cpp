@@ -650,8 +650,8 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 				if (is_nullable)
 				{
-					out_rename_map[escaped_column + ".null"] = "";
-					out_rename_map[escaped_column + ".null_mrk"] = "";
+					out_rename_map[escaped_column + ".null.bin"] = "";
+					out_rename_map[escaped_column + ".null.mrk"] = "";
 				}
 
 				/// Если это массив или последний столбец вложенной структуры, нужно удалить файлы с размерами.
@@ -773,8 +773,8 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 			/// Information on how to update the null map if it is a nullable column.
 			if (new_type->isNullable())
 			{
-				out_rename_map[escaped_converted_column + ".null"] = escaped_source_column + ".null";
-				out_rename_map[escaped_converted_column + ".null_mrk"] = escaped_source_column + ".null_mrk";
+				out_rename_map[escaped_converted_column + ".null.bin"] = escaped_source_column + ".null.bin";
+				out_rename_map[escaped_converted_column + ".null.mrk"] = escaped_source_column + ".null.mrk";
 			}
 		}
 
