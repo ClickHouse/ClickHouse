@@ -15,3 +15,10 @@ echo "SELECT
     toFixedString('Hello, world', 20),
     ('Hello', 1).1
 FROM system.numbers" | ./type_and_constant_inference
+
+echo
+echo "SELECT t.x FROM (SELECT 1 AS x) AS t" | ./type_and_constant_inference
+echo
+echo "SELECT x FROM (SELECT 1 AS x)" | ./type_and_constant_inference
+echo
+echo "SELECT t.x, x, 1 FROM (SELECT 1 AS x) AS t" | ./type_and_constant_inference

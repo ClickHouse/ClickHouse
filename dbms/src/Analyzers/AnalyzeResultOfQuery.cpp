@@ -21,6 +21,12 @@ namespace ErrorCodes
 
 void AnalyzeResultOfQuery::process(ASTPtr & ast, Context & context)
 {
+	const ASTSelectQuery * select = typeid_cast<const ASTSelectQuery *>(ast.get());
+	if (!select)
+		throw Exception("AnalyzeResultOfQuery::process was called for not a SELECT query", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+	if (!select->select_expression_list)
+		throw Exception("SELECT query doesn't have select_expression_list", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+
 	CollectAliases collect_aliases;
 	collect_aliases.process(ast);
 
@@ -33,13 +39,6 @@ void AnalyzeResultOfQuery::process(ASTPtr & ast, Context & context)
 	TypeAndConstantInference inference;
 	inference.process(ast, context, collect_aliases, analyze_columns);
 
-	const ASTSelectQuery * select = typeid_cast<const ASTSelectQuery *>(ast.get());
-	if (!select)
-		throw Exception("AnalyzeResultOfQuery::process was called for not a SELECT query", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
-	if (!select->select_expression_list)
-		throw Exception("SELECT query doesn't have select_expression_list", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
-
-	result.reserve(select->select_expression_list->children.size());
 	for (const ASTPtr & child : select->select_expression_list->children)
 	{
 		auto it = inference.info.find(child->getColumnName());
@@ -49,24 +48,17 @@ void AnalyzeResultOfQuery::process(ASTPtr & ast, Context & context)
 		String name = child->getAliasOrColumnName();
 		const TypeAndConstantInference::ExpressionInfo & info = it->second;
 
-		result.emplace_back(std::move(name), info.data_type);
+		result.insert(ColumnWithTypeAndName(
+			info.is_constant_expression ? info.data_type->createConstColumn(1, info.value) : nullptr,
+			info.data_type,
+			std::move(name)));
 	}
 }
 
 
 void AnalyzeResultOfQuery::dump(WriteBuffer & out) const
 {
-	for (size_t i = 0, size = result.size(); i < size; ++i)
-	{
-		const NameAndTypePair & name_type = result[i];
-
-		writeProbablyBackQuotedString(name_type.name, out);
-		writeChar(' ', out);
-		writeString(name_type.type->getName(), out);
-		if (i + 1 < size)
-			writeChar(',', out);
-		writeChar('\n', out);
-	}
+	writeString(result.dumpStructure(), out);
 }
 
 

@@ -24,7 +24,7 @@ class WriteBuffer;
   */
 struct CollectTables
 {
-	void process(const ASTPtr & ast, Context & context, const CollectAliases & aliases);
+	void process(ASTPtr & ast, Context & context, const CollectAliases & aliases);
 
 	enum class Kind
 	{
@@ -40,7 +40,7 @@ struct CollectTables
 		String table_name;
 		String alias;
 		StoragePtr storage;
-		NamesAndTypesList structure_of_subquery;
+		Block structure_of_subquery;
 	};
 
 	using Tables = std::vector<TableInfo>;

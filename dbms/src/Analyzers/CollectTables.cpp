@@ -1,11 +1,13 @@
 #include <DB/Analyzers/CollectTables.h>
 #include <DB/Analyzers/CollectAliases.h>
+#include <DB/Analyzers/AnalyzeResultOfQuery.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTTablesInSelectQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/ASTSubquery.h>
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteHelpers.h>
 
@@ -75,18 +77,20 @@ static CollectTables::TableInfo processNoTables(const Context & context)
 }
 
 
-static CollectTables::TableInfo processSubquery(const ASTPtr & ast_subquery, const Context & context)
+static CollectTables::TableInfo processSubquery(ASTPtr & ast_subquery, Context & context)
 {
+	AnalyzeResultOfQuery analyzer;
+	analyzer.process(typeid_cast<ASTSubquery &>(*ast_subquery).children.at(0), context);
+
 	CollectTables::TableInfo res;
 	res.node = ast_subquery;
 	res.alias = ast_subquery->tryGetAlias();
-
-	/// TODO Not implemented yet.
+	res.structure_of_subquery = analyzer.result;
 	return res;
 }
 
 
-void CollectTables::process(const ASTPtr & ast, Context & context, const CollectAliases & aliases)
+void CollectTables::process(ASTPtr & ast, Context & context, const CollectAliases & aliases)
 {
 	const ASTSelectQuery * select = typeid_cast<const ASTSelectQuery *>(ast.get());
 	if (!select)
@@ -100,12 +104,12 @@ void CollectTables::process(const ASTPtr & ast, Context & context, const Collect
 
 	for (auto & child : select->tables->children)
 	{
-		const ASTTablesInSelectQueryElement & element = static_cast<const ASTTablesInSelectQueryElement &>(*child);
+		ASTTablesInSelectQueryElement & element = static_cast<ASTTablesInSelectQueryElement &>(*child);
 
 		if (!element.table_expression)		/// This is ARRAY JOIN
 			continue;
 
-		const ASTTableExpression & table_expression = static_cast<const ASTTableExpression &>(*element.table_expression);
+		ASTTableExpression & table_expression = static_cast<ASTTableExpression &>(*element.table_expression);
 
 		if (table_expression.database_and_table_name)
 		{
@@ -119,7 +123,7 @@ void CollectTables::process(const ASTPtr & ast, Context & context, const Collect
 		}
 		else if (table_expression.subquery)
 		{
-			tables.emplace_back(processSubquery(table_expression.table_function, context));
+			tables.emplace_back(processSubquery(table_expression.subquery, context));
 		}
 		else
 			throw Exception("Logical error: no known elements in ASTTableExpression", ErrorCodes::LOGICAL_ERROR);
@@ -158,10 +162,10 @@ void CollectTables::dump(WriteBuffer & out) const
 			writeProbablyBackQuotedString(table.storage->getName(), out);
 
 		writeCString(". Structure of subquery: ", out);
-		if (table.structure_of_subquery.empty())
+		if (!table.structure_of_subquery)
 			writeCString("(none)", out);
 		else
-			table.structure_of_subquery.writeText(out);
+			writeString(table.structure_of_subquery.dumpStructure(), out);
 
 		writeCString(". AST: ", out);
 		if (!table.node)

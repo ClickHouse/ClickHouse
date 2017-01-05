@@ -98,17 +98,14 @@ static const CollectTables::TableInfo * findTableWithUnqualifiedName(const Colle
 
 	for (const auto & table : tables.tables)
 	{
-		if (!table.structure_of_subquery.empty())
+		if (table.structure_of_subquery)
 		{
-			for (const auto & name_type : table.structure_of_subquery)
+			if (table.structure_of_subquery.has(column_name))
 			{
-				if (name_type.name == column_name)
-				{
-					if (res)
-						throw Exception("Ambiguous column name " + backQuoteIfNeed(column_name), ErrorCodes::AMBIGUOUS_COLUMN_NAME);
-					res = &table;
-					break;
-				}
+				if (res)
+					throw Exception("Ambiguous column name " + backQuoteIfNeed(column_name), ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+				res = &table;
+				break;
 			}
 		}
 		else if (table.storage)
@@ -175,8 +172,8 @@ static void createASTsForAllColumnsInTable(const CollectTables::TableInfo & tabl
 		for (const auto & name : table.storage->getColumnNamesList())
 			res.emplace_back(createASTIdentifierForColumnInTable(name, table));
 	else
-		for (const auto & name_type : table.structure_of_subquery)
-			res.emplace_back(createASTIdentifierForColumnInTable(name_type.name, table));
+		for (size_t i = 0, size = table.structure_of_subquery.columns(); i < size; ++i)
+			res.emplace_back(createASTIdentifierForColumnInTable(table.structure_of_subquery.getByPosition(i).name, table));
 }
 
 
@@ -300,19 +297,12 @@ static void processIdentifier(
 	info.table = *table;
 	info.name_in_table = column_name;
 
-	if (!table->structure_of_subquery.empty())
+	if (table->structure_of_subquery)
 	{
-		for (const auto & name_type : table->structure_of_subquery)
-		{
-			if (name_type.name == column_name)
-			{
-				info.data_type = name_type.type;
-				break;
-			}
-		}
-
-		if (!info.data_type)
+		if (!table->structure_of_subquery.has(column_name))
 			throw Exception("Cannot find column " + backQuoteIfNeed(column_name) + " in subquery", ErrorCodes::LOGICAL_ERROR);
+
+		info.data_type = table->structure_of_subquery.getByName(column_name).type;
 	}
 	else if (table->storage)
 	{

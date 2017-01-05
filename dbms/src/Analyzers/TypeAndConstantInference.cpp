@@ -34,14 +34,21 @@ static void processImpl(
 	TypeAndConstantInference::Info & info)
 {
 	/// Depth-first
-	for (auto & child : ast->children)
-	{
-		/// Don't go into subqueries and table-like expressions.
-		if (typeid_cast<const ASTSelectQuery *>(child.get())
-			|| typeid_cast<const ASTTableExpression *>(child.get()))
-			continue;
 
-		processImpl(child, context, aliases, columns, info);
+	/// Don't go into components of compound identifiers.
+	if (!typeid_cast<const ASTIdentifier *>(ast.get()))
+	{
+		for (auto & child : ast->children)
+		{
+			/** Don't go into subqueries and table-like expressions.
+			* Also don't go into components of compound identifiers.
+			*/
+			if (typeid_cast<const ASTSelectQuery *>(child.get())
+				|| typeid_cast<const ASTTableExpression *>(child.get()))
+				continue;
+
+			processImpl(child, context, aliases, columns, info);
+		}
 	}
 
 	const ASTLiteral * literal = nullptr;
@@ -82,6 +89,24 @@ static void processImpl(
 			TypeAndConstantInference::ExpressionInfo expression_info;
 			expression_info.node = ast;
 			expression_info.data_type = it->second.data_type;
+
+			/// If it comes from subquery and we know, that it is constant expression.
+			const Block & structure_of_subquery = it->second.table.structure_of_subquery;
+			if (structure_of_subquery)
+			{
+				const ColumnWithTypeAndName & column_from_subquery = structure_of_subquery.getByName(it->second.name_in_table);
+				if (column_from_subquery.column)
+				{
+					if (!column_from_subquery.column->isConst())
+						throw Exception("Logical error: expected that column is constant", ErrorCodes::LOGICAL_ERROR);
+					if (column_from_subquery.column->size() != 1)
+						throw Exception("Logical error: expected that column with constant has single element", ErrorCodes::LOGICAL_ERROR);
+
+					expression_info.is_constant_expression = true;
+					expression_info.value = (*column_from_subquery.column)[0];
+				}
+			}
+
 			info.emplace(column_name, std::move(expression_info));
 		}
 		else

@@ -20,3 +20,11 @@ system.numbers.number -> UInt64. AST: system.numbers.number
 toFixedString('Hello, world', 20) -> FixedString(20) = 'Hello, world\0\0\0\0\0\0\0\0'. AST: toFixedString('Hello, world', 20)
 tuple('Hello', 1) -> Tuple(String, UInt8) = ('Hello', 1). AST: ('Hello', 1)
 tupleElement(tuple('Hello', 1), 1) -> String = 'Hello'. AST: ('Hello', 1).1
+
+t.x -> UInt8 = 1. AST: t.x
+
+x -> UInt8 = 1. AST: x
+
+1 -> UInt8 = 1. AST: 1
+t.x -> UInt8 = 1. AST: t.x
+x -> UInt8 = 1. AST: x
