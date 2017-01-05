@@ -23,7 +23,7 @@ class AnalyzeColumns;
   */
 struct TypeAndConstantInference
 {
-	void process(ASTPtr & ast, const Context & context, const CollectAliases & aliases, const AnalyzeColumns & columns);
+	void process(ASTPtr & ast, Context & context, CollectAliases & aliases, const AnalyzeColumns & columns);
 
 	struct ExpressionInfo
 	{

@@ -28,3 +28,7 @@ x -> UInt8 = 1. AST: x
 1 -> UInt8 = 1. AST: 1
 t.x -> UInt8 = 1. AST: t.x
 x -> UInt8 = 1. AST: x
+
+x -> Tuple(UInt8, UInt8) = (1, 2). AST: x
+y -> Tuple(UInt8, UInt8) = (3, 4). AST: y
+z -> String = 'Hello, world'. AST: z
