@@ -292,7 +292,6 @@ static void processImpl(
 	if (!literal && !identifier && !function && !subquery)
 		return;
 
-	/// TODO Scalar subqueries.
 	/// TODO Subqueries in IN.
 
 	/// Same expression is already processed.
