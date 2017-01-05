@@ -1,3 +1,4 @@
+#include <Poco/String.h>
 #include <DB/Analyzers/TypeAndConstantInference.h>
 #include <DB/Analyzers/CollectAliases.h>
 #include <DB/Analyzers/AnalyzeColumns.h>
@@ -103,10 +104,10 @@ static void processIdentifier(const String & column_name, const ASTPtr & ast, Ty
 }
 
 
-static void processFunction(const String & column_name, const ASTPtr & ast, TypeAndConstantInference::Info & info,
+static void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantInference::Info & info,
 	const Context & context)
 {
-	const ASTFunction * function = static_cast<const ASTFunction *>(ast.get());
+	ASTFunction * function = static_cast<ASTFunction *>(ast.get());
 
 	/// TODO Special case for lambda functions
 
@@ -124,76 +125,110 @@ static void processFunction(const String & column_name, const ASTPtr & ast, Type
 		}
 	}
 
+	/// Special cases for COUNT(DISTINCT ...) function.
+	bool column_name_changed = false;
+	String func_name_lowercase = Poco::toLower(function->name);
+	if (func_name_lowercase == "countdistinct")	/// It comes in that form from parser.
+	{
+		/// Select implementation of countDistinct based on settings.
+		/// Important that it is done as query rewrite. It means rewritten query
+		///  will be sent to remote servers during distributed query execution,
+		///  and on all remote servers, function implementation will be same.
+		function->name = context.getSettingsRef().count_distinct_implementation;
+		column_name_changed = true;
+	}
+
+	/// Aggregate function.
 	if (AggregateFunctionPtr aggregate_function_ptr = context.getAggregateFunctionFactory().tryGet(function->name, argument_types))
 	{
-		/// Aggregate function.
 		/// NOTE Not considering aggregate function parameters in type inference. It could become needed in future.
 		/// Note that aggregate function could never be constant expression.
 
 		aggregate_function_ptr->setArguments(argument_types);
 
+		/// Replace function name to canonical one. Because same function could be referenced by different names.
+		// function->name = aggregate_function_ptr->getName();
+
 		TypeAndConstantInference::ExpressionInfo expression_info;
 		expression_info.node = ast;
 		expression_info.data_type = aggregate_function_ptr->getReturnType();
-		info.emplace(column_name, std::move(expression_info));
+		expression_info.aggregate_function = aggregate_function_ptr;
+		info.emplace(column_name_changed ? ast->getColumnName() : column_name, std::move(expression_info));
+		return;
 	}
-	else
+
+	/// Ordinary function.
+	if (function->parameters)
+		throw Exception("The only parametric functions (functions with two separate parenthesis pairs) are aggregate functions"
+			", and '" + function->name + "' is not an aggregate function.", ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS);
+
+	/// IN operator. This is special case, because subqueries in right hand side are not scalar subqueries.
+	if (function->name == "in"
+		|| function->name == "notIn"
+		|| function->name == "globalIn"
+		|| function->name == "globalNotIn")
 	{
-		/// Ordinary function.
-		if (function->parameters)
-			throw Exception("The only parametric functions (functions with two separate parenthesis pairs) are aggregate functions"
-				", and '" + function->name + "' is not an aggregate function.", ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS);
-
-		const FunctionPtr & function_ptr = FunctionFactory::instance().get(function->name, context);
-
-		ColumnsWithTypeAndName columns_for_analysis;
-		columns_for_analysis.reserve(argument_types.size());
-
-		bool all_consts = true;
-		if (function->arguments)
-		{
-			for (const auto & child : function->arguments->children)
-			{
-				String child_name = child->getColumnName();
-				const TypeAndConstantInference::ExpressionInfo & child_info = info.at(child_name);
-				columns_for_analysis.emplace_back(
-					child_info.is_constant_expression ? child_info.data_type->createConstColumn(1, child_info.value) : nullptr,
-					child_info.data_type,
-					child_name);
-
-				if (!child_info.is_constant_expression)
-					all_consts = false;
-			}
-		}
-
+		/// For simplicity reasons, do not consider this as constant expression. We may change it in future.
 		TypeAndConstantInference::ExpressionInfo expression_info;
 		expression_info.node = ast;
-		std::vector<ExpressionAction> unused_prerequisites;
-		function_ptr->getReturnTypeAndPrerequisites(columns_for_analysis, expression_info.data_type, unused_prerequisites);
-
-		if (all_consts && function_ptr->isSuitableForConstantFolding())
-		{
-			Block block_with_constants(columns_for_analysis);
-
-			ColumnNumbers argument_numbers(columns_for_analysis.size());
-			for (size_t i = 0, size = argument_numbers.size(); i < size; ++i)
-				argument_numbers[i] = i;
-
-			size_t result_position = argument_numbers.size();
-			block_with_constants.insert({nullptr, expression_info.data_type, column_name});
-
-			function_ptr->execute(block_with_constants, argument_numbers, result_position);
-
-			const auto & result_column = block_with_constants.getByPosition(result_position).column;
-			if (result_column->isConst())
-			{
-				expression_info.is_constant_expression = true;
-				expression_info.value = (*result_column)[0];
-			}
-		}
-
+		expression_info.data_type = std::make_shared<DataTypeUInt8>();
 		info.emplace(column_name, std::move(expression_info));
+		return;
 	}
+
+	const FunctionPtr & function_ptr = FunctionFactory::instance().get(function->name, context);
+
+	/// Replace function name to canonical one. Because same function could be referenced by different names.
+	// function->name = function_ptr->getName();
+
+	ColumnsWithTypeAndName columns_for_analysis;
+	columns_for_analysis.reserve(argument_types.size());
+
+	bool all_consts = true;
+	if (function->arguments)
+	{
+		for (const auto & child : function->arguments->children)
+		{
+			String child_name = child->getColumnName();
+			const TypeAndConstantInference::ExpressionInfo & child_info = info.at(child_name);
+			columns_for_analysis.emplace_back(
+				child_info.is_constant_expression ? child_info.data_type->createConstColumn(1, child_info.value) : nullptr,
+				child_info.data_type,
+				child_name);
+
+			if (!child_info.is_constant_expression)
+				all_consts = false;
+		}
+	}
+
+	TypeAndConstantInference::ExpressionInfo expression_info;
+	expression_info.node = ast;
+	expression_info.function = function_ptr;
+	std::vector<ExpressionAction> unused_prerequisites;
+	function_ptr->getReturnTypeAndPrerequisites(columns_for_analysis, expression_info.data_type, unused_prerequisites);
+
+	if (all_consts && function_ptr->isSuitableForConstantFolding())
+	{
+		Block block_with_constants(columns_for_analysis);
+
+		ColumnNumbers argument_numbers(columns_for_analysis.size());
+		for (size_t i = 0, size = argument_numbers.size(); i < size; ++i)
+			argument_numbers[i] = i;
+
+		size_t result_position = argument_numbers.size();
+		block_with_constants.insert({nullptr, expression_info.data_type, column_name});
+
+		function_ptr->execute(block_with_constants, argument_numbers, result_position);
+
+		const auto & result_column = block_with_constants.getByPosition(result_position).column;
+		if (result_column->isConst())
+		{
+			expression_info.is_constant_expression = true;
+			expression_info.value = (*result_column)[0];
+		}
+	}
+
+	info.emplace(column_name, std::move(expression_info));
 }
 
 
@@ -291,8 +326,6 @@ static void processImpl(
 
 	if (!literal && !identifier && !function && !subquery)
 		return;
-
-	/// TODO Subqueries in IN.
 
 	/// Same expression is already processed.
 	String column_name = ast->getColumnName();

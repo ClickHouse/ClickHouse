@@ -1286,6 +1286,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 
 /// Declared early because used below.
 struct NameToDate			{ static constexpr auto name = "toDate"; };
+struct NameToString			{ static constexpr auto name = "toString"; };
 
 
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
@@ -1304,6 +1305,7 @@ public:
 
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
+	bool isInjective(const Block &) override { return std::is_same<Name, NameToString>::value; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -1533,6 +1535,7 @@ public:
 	}
 
 	size_t getNumberOfArguments() const override { return 2; }
+	bool isInjective(const Block &) override { return true; }
 
 	/** Получить тип результата по типам аргументов и значениям константных аргументов.
 	  * Если функция неприменима для данных аргументов - кинуть исключение.
@@ -1777,7 +1780,6 @@ struct NameToInt64			{ static constexpr auto name = "toInt64"; };
 struct NameToFloat32		{ static constexpr auto name = "toFloat32"; };
 struct NameToFloat64		{ static constexpr auto name = "toFloat64"; };
 struct NameToDateTime		{ static constexpr auto name = "toDateTime"; };
-struct NameToString			{ static constexpr auto name = "toString"; };
 
 using FunctionToUInt8 		= FunctionConvert<DataTypeUInt8,	NameToUInt8,	ToIntMonotonicity<UInt8>>;
 using FunctionToUInt16 		= FunctionConvert<DataTypeUInt16,	NameToUInt16,	ToIntMonotonicity<UInt16>>;

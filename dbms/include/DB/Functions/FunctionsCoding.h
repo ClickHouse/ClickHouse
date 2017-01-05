@@ -180,6 +180,7 @@ public:
 	String getName() const override { return name; }
 
 	size_t getNumberOfArguments() const override { return 1; }
+	bool isInjective(const Block &) override { return true; }
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
@@ -646,6 +647,7 @@ public:
 	}
 
 	size_t getNumberOfArguments() const override { return 1; }
+	bool isInjective(const Block &) override { return true; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -934,6 +936,7 @@ public:
 	String getName() const override { return name; }
 
 	size_t getNumberOfArguments() const override { return 1; }
+	bool isInjective(const Block &) override { return true; }
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
@@ -1044,6 +1047,7 @@ public:
 	}
 
 	size_t getNumberOfArguments() const override { return 1; }
+	bool isInjective(const Block &) override { return true; }
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
@@ -1155,6 +1159,7 @@ public:
 	}
 
 	size_t getNumberOfArguments() const override { return 1; }
+	bool isInjective(const Block &) override { return true; }
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
@@ -1274,6 +1279,7 @@ public:
 	}
 
 	size_t getNumberOfArguments() const override { return 1; }
+	bool isInjective(const Block &) override { return true; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -1519,6 +1525,7 @@ public:
 	}
 
 	size_t getNumberOfArguments() const override { return 1; }
+	bool isInjective(const Block &) override { return true; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -1624,6 +1631,7 @@ public:
 	}
 
 	size_t getNumberOfArguments() const override { return 1; }
+	bool isInjective(const Block &) override { return true; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

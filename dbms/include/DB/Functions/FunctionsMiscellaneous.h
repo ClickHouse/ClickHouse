@@ -85,10 +85,7 @@ public:
 
 	explicit FunctionCurrentDatabase(const String & db_name) : db_name{db_name} {}
 
-	String getName() const override {
-		return name;
-	}
-
+	String getName() const override { return name; }
 	size_t getNumberOfArguments() const override { return 0; }
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -115,6 +112,8 @@ public:
 	{
 		return name;
 	}
+
+	bool isDeterministicInScopeOfQuery() override { return false; }
 
 	size_t getNumberOfArguments() const override { return 0; }
 
@@ -244,6 +243,8 @@ public:
 		return name;
 	}
 
+	bool isDeterministicInScopeOfQuery() override { return false; }
+
 	size_t getNumberOfArguments() const override { return 0; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -274,6 +275,8 @@ public:
 	}
 
 	size_t getNumberOfArguments() const override { return 0; }
+
+	bool isDeterministicInScopeOfQuery() override { return false; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -314,6 +317,8 @@ public:
 
 	size_t getNumberOfArguments() const override { return 0; }
 
+	bool isDeterministicInScopeOfQuery() override { return false; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
@@ -346,6 +351,8 @@ public:
 	}
 
 	size_t getNumberOfArguments() const override { return 0; }
+
+	bool isDeterministicInScopeOfQuery() override { return false; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -538,6 +545,7 @@ public:
 
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
+	bool isInjective(const Block &) override { return true; }
 
 	bool hasSpecialSupportForNulls() const override { return true; }
 
@@ -770,6 +778,9 @@ public:
 	}
 
 	size_t getNumberOfArguments() const override { return 1; }
+
+	/** It could return many different values for single argument. */
+	bool isDeterministicInScopeOfQuery() override { return false; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -1186,6 +1197,8 @@ public:
 
 	size_t getNumberOfArguments() const override { return 1; }
 
+	bool isDeterministicInScopeOfQuery() override { return false; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		const DataTypeAggregateFunction * type = typeid_cast<const DataTypeAggregateFunction *>(&*arguments[0]);
@@ -1297,6 +1310,8 @@ public:
 	String getName() const override { return name; }
 
 	size_t getNumberOfArguments() const override { return 1; }
+
+	bool isDeterministicInScopeOfQuery() override { return false; }
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{

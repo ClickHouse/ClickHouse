@@ -21,7 +21,8 @@ class CollectTables;
   * Also:
   * - expand asterisks (such as *, t.*, db.table.* and (TODO) even db.table.nested.*) to corresponding list of columns;
   * - translate count(*) to count();
-  * - expand alias columns that come from table definition.
+  * - TODO expand alias columns that come from table definition;
+  * - TODO replace column names to fully qualified names: identical columns will have same names.
   *
   * If column is not found or in case of ambiguity, throw an exception.
   */

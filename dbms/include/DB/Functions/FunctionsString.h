@@ -859,7 +859,7 @@ public:
 };
 
 
-template <typename Impl, typename Name>
+template <typename Impl, typename Name, bool is_injective = false>
 class FunctionStringToString : public IFunction
 {
 public:
@@ -873,6 +873,7 @@ public:
 	}
 
 	size_t getNumberOfArguments() const override { return 1; }
+	bool isInjective(const Block &) override { return is_injective; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -928,6 +929,7 @@ public:
 	String getName() const override;
 
 	size_t getNumberOfArguments() const override { return 1; }
+	bool isInjective(const Block &) override { return true; }
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
 	/// Выполнить функцию над блоком.
@@ -935,7 +937,7 @@ public:
 };
 
 
-template <typename Name>
+template <typename Name, bool is_injective>
 class ConcatImpl : public IFunction
 {
 public:
@@ -950,6 +952,7 @@ public:
 
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
+	bool isInjective(const Block &) override { return is_injective; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -1534,10 +1537,10 @@ struct NameSubstringUTF8	{ static constexpr auto name = "substringUTF8"; };
 struct NameConcat			{ static constexpr auto name = "concat"; };
 struct NameConcatAssumeInjective	{ static constexpr auto name = "concatAssumeInjective"; };
 
-using FunctionEmpty = FunctionStringOrArrayToT<EmptyImpl<false>,		NameEmpty,		UInt8> ;
-using FunctionNotEmpty = FunctionStringOrArrayToT<EmptyImpl<true>, 		NameNotEmpty,	UInt8> ;
-using FunctionLength = FunctionStringOrArrayToT<LengthImpl, 			NameLength,		UInt64>;
-using FunctionLengthUTF8 = FunctionStringOrArrayToT<LengthUTF8Impl, 		NameLengthUTF8,	UInt64>;
+using FunctionEmpty = FunctionStringOrArrayToT<EmptyImpl<false>, NameEmpty,	UInt8> ;
+using FunctionNotEmpty = FunctionStringOrArrayToT<EmptyImpl<true>, NameNotEmpty, UInt8> ;
+using FunctionLength = FunctionStringOrArrayToT<LengthImpl, NameLength, UInt64>;
+using FunctionLengthUTF8 = FunctionStringOrArrayToT<LengthUTF8Impl, NameLengthUTF8,	UInt64>;
 using FunctionLower = FunctionStringToString<LowerUpperImpl<'A', 'Z'>, NameLower>;
 using FunctionUpper = FunctionStringToString<LowerUpperImpl<'a', 'z'>, NameUpper>;
 typedef FunctionStringToString<
@@ -1546,11 +1549,11 @@ typedef FunctionStringToString<
 typedef FunctionStringToString<
 	LowerUpperUTF8Impl<'a', 'z', Poco::Unicode::toUpper, UTF8CyrillicToCase<false>>,
 	NameUpperUTF8>	FunctionUpperUTF8;
-using FunctionReverseUTF8 = FunctionStringToString<ReverseUTF8Impl,			NameReverseUTF8>	;
-using FunctionSubstring = FunctionStringNumNumToString<SubstringImpl,		NameSubstring>		;
-using FunctionSubstringUTF8 = FunctionStringNumNumToString<SubstringUTF8Impl,	NameSubstringUTF8>	;
-using FunctionConcat = ConcatImpl<NameConcat>;
-using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective>;
+using FunctionReverseUTF8 = FunctionStringToString<ReverseUTF8Impl, NameReverseUTF8, true>;
+using FunctionSubstring = FunctionStringNumNumToString<SubstringImpl, NameSubstring>;
+using FunctionSubstringUTF8 = FunctionStringNumNumToString<SubstringUTF8Impl, NameSubstringUTF8>;
+using FunctionConcat = ConcatImpl<NameConcat, false>;
+using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective, true>;
 
 
 }

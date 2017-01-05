@@ -1143,13 +1143,13 @@ namespace
 	struct NameCeil				{ static constexpr auto name = "ceil"; };
 	struct NameFloor			{ static constexpr auto name = "floor"; };
 
-	using FunctionRoundToExp2 = FunctionUnaryArithmetic<RoundToExp2Impl,	NameRoundToExp2> ;
-	using FunctionRoundDuration = FunctionUnaryArithmetic<RoundDurationImpl,	NameRoundDuration>;
-	using FunctionRoundAge = FunctionUnaryArithmetic<RoundAgeImpl,		NameRoundAge>	;
+	using FunctionRoundToExp2 = FunctionUnaryArithmetic<RoundToExp2Impl, NameRoundToExp2, false>;
+	using FunctionRoundDuration = FunctionUnaryArithmetic<RoundDurationImpl, NameRoundDuration, false>;
+	using FunctionRoundAge = FunctionUnaryArithmetic<RoundAgeImpl, NameRoundAge, false>;
 
-	using FunctionRound = FunctionRounding<NameRound,	_MM_FROUND_NINT>;
-	using FunctionFloor = FunctionRounding<NameFloor,	_MM_FROUND_FLOOR>;
-	using FunctionCeil = FunctionRounding<NameCeil,	_MM_FROUND_CEIL>;
+	using FunctionRound = FunctionRounding<NameRound, _MM_FROUND_NINT>;
+	using FunctionFloor = FunctionRounding<NameFloor, _MM_FROUND_FLOOR>;
+	using FunctionCeil = FunctionRounding<NameCeil, _MM_FROUND_CEIL>;
 
 
 	struct PositiveMonotonicity

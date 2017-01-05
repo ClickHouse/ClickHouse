@@ -65,6 +65,38 @@ public:
 	  */
 	virtual bool isSuitableForConstantFolding() const { return true; }
 
+	/** Function is called "injective" if it returns different result for different values of arguments.
+	  * Example: hex, negate, tuple...
+	  *
+	  * Function could be injective with some arguments fixed to some constant values.
+	  * Examples:
+	  *  plus(const, x);
+	  *  multiply(const, x) where x is an integer and constant is not divisable by two;
+	  *  concat(x, 'const');
+	  *  concat(x, 'const', y) where const contain at least one non-numeric character;
+	  *  concat with FixedString
+	  *  dictGet... functions takes name of dictionary as its argument,
+	  *   and some dictionaries could be explicitly defined as injective.
+	  *
+	  * It could be used, for example, to remove useless function applications from GROUP BY.
+	  *
+	  * Sometimes, function is not really injective, but considered as injective, for purpose of query optimization.
+	  * For example, toString function is not injective for Float64 data type,
+	  *  as it returns 'nan' for many different representation of NaNs.
+	  * But we assume, that it is injective. This could be documented as implementation-specific behaviour.
+	  *
+	  * sample_block should contain data types of arguments and values of constants, if relevant.
+	  */
+	virtual bool isInjective(const Block & sample_block) { return false; }
+
+	/** Function is called "deterministic", if it returns same result for same values of arguments.
+	  * Most of functions are deterministic. Notable counterexample is rand().
+	  * Sometimes, functions are "deterministic" in scope of single query
+	  *  (even for distributed query), but not deterministic it general.
+	  * Example: now(). Another example: functions that work with periodically updated dictionaries.
+	  */
+	virtual bool isDeterministicInScopeOfQuery() { return true; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	/// Перегрузка для тех, кому не нужны prerequisites и значения константных аргументов. Снаружи не вызывается.
 	DataTypePtr getReturnType(const DataTypes & arguments) const;

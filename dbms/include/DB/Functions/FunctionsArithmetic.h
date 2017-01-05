@@ -721,7 +721,7 @@ template <typename FunctionName>
 struct FunctionUnaryArithmeticMonotonicity;
 
 
-template <template <typename> class Op, typename Name>
+template <template <typename> class Op, typename Name, bool is_injective>
 class FunctionUnaryArithmetic : public IFunction
 {
 public:
@@ -781,6 +781,7 @@ public:
 	}
 
 	size_t getNumberOfArguments() const override { return 1; }
+	bool isInjective(const Block &) override { return is_injective; }
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -851,23 +852,23 @@ struct NameBitShiftRight	{ static constexpr auto name = "bitShiftRight"; };
 struct NameLeast			{ static constexpr auto name = "least"; };
 struct NameGreatest			{ static constexpr auto name = "greatest"; };
 
-using FunctionPlus = FunctionBinaryArithmetic<PlusImpl,				NamePlus> 			;
-using FunctionMinus = FunctionBinaryArithmetic<MinusImpl, 			NameMinus> 			;
-using FunctionMultiply = FunctionBinaryArithmetic<MultiplyImpl,			NameMultiply> 		;
-using FunctionDivideFloating = FunctionBinaryArithmetic<DivideFloatingImpl, 	NameDivideFloating>	 ;
-using FunctionDivideIntegral = FunctionBinaryArithmetic<DivideIntegralImpl, 	NameDivideIntegral> ;
+using FunctionPlus = FunctionBinaryArithmetic<PlusImpl, NamePlus>;
+using FunctionMinus = FunctionBinaryArithmetic<MinusImpl, NameMinus>;
+using FunctionMultiply = FunctionBinaryArithmetic<MultiplyImpl, NameMultiply>;
+using FunctionDivideFloating = FunctionBinaryArithmetic<DivideFloatingImpl, NameDivideFloating>;
+using FunctionDivideIntegral = FunctionBinaryArithmetic<DivideIntegralImpl, NameDivideIntegral>;
 using FunctionDivideIntegralOrZero = FunctionBinaryArithmetic<DivideIntegralOrZeroImpl, NameDivideIntegralOrZero>;
-using FunctionModulo = FunctionBinaryArithmetic<ModuloImpl, 			NameModulo> 		;
-using FunctionNegate = FunctionUnaryArithmetic<NegateImpl, 			NameNegate> 		;
-using FunctionAbs = FunctionUnaryArithmetic<AbsImpl,	 			NameAbs>	 		;
-using FunctionBitAnd = FunctionBinaryArithmetic<BitAndImpl,			NameBitAnd> 		;
-using FunctionBitOr = FunctionBinaryArithmetic<BitOrImpl,				NameBitOr> 			;
-using FunctionBitXor = FunctionBinaryArithmetic<BitXorImpl,			NameBitXor> 		;
-using FunctionBitNot = FunctionUnaryArithmetic<BitNotImpl,				NameBitNot> 		;
-using FunctionBitShiftLeft = FunctionBinaryArithmetic<BitShiftLeftImpl,		NameBitShiftLeft> 	;
-using FunctionBitShiftRight = FunctionBinaryArithmetic<BitShiftRightImpl,		NameBitShiftRight> 	;
-using FunctionLeast = FunctionBinaryArithmetic<LeastImpl,				NameLeast> 			;
-using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl,			NameGreatest> 		;
+using FunctionModulo = FunctionBinaryArithmetic<ModuloImpl, NameModulo>;
+using FunctionNegate = FunctionUnaryArithmetic<NegateImpl, NameNegate, true>;
+using FunctionAbs = FunctionUnaryArithmetic<AbsImpl, NameAbs, false>;
+using FunctionBitAnd = FunctionBinaryArithmetic<BitAndImpl,	NameBitAnd>;
+using FunctionBitOr = FunctionBinaryArithmetic<BitOrImpl, NameBitOr>;
+using FunctionBitXor = FunctionBinaryArithmetic<BitXorImpl, NameBitXor>;
+using FunctionBitNot = FunctionUnaryArithmetic<BitNotImpl, NameBitNot, true>;
+using FunctionBitShiftLeft = FunctionBinaryArithmetic<BitShiftLeftImpl,	NameBitShiftLeft>;
+using FunctionBitShiftRight = FunctionBinaryArithmetic<BitShiftRightImpl, NameBitShiftRight>;
+using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
+using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
 
 /// Свойства монотонности для некоторых функций.
 

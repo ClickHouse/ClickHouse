@@ -31,6 +31,7 @@ public:
 	}
 
 	size_t getNumberOfArguments() const override { return 1; }
+	bool isInjective(const Block &) override { return true; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	virtual DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

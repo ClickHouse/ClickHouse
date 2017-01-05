@@ -87,7 +87,6 @@ const std::unordered_set<String> injective_function_names
 	"reverseUTF8",
 	"toString",
 	"toFixedString",
-	"toStringCutToZero",
 	"IPv4NumToString",
 	"IPv4StringToNum",
 	"hex",

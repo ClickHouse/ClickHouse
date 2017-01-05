@@ -714,6 +714,10 @@ public:
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
 
+	/// For the purpose of query optimization, we assume this function to be injective
+	///  even in face of fact that there are many different cities named Moscow.
+	bool isInjective(const Block &) override { return true; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
@@ -910,6 +914,27 @@ private:
 };
 
 
+static bool isDictGetFunctionInjective(const ExternalDictionaries & dictionaries, const Block & sample_block)
+{
+	if (sample_block.columns() != 3 && sample_block.columns() != 4)
+		throw Exception{"Function dictGet... takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
+	const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(sample_block.getByPosition(0).column.get());
+	if (!dict_name_col)
+		throw Exception{
+			"First argument of function dictGet... must be a constant string",
+			ErrorCodes::ILLEGAL_COLUMN};
+
+	const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(sample_block.getByPosition(1).column.get());
+	if (!attr_name_col)
+		throw Exception{
+			"Second argument of function dictGet... must be a constant string",
+			ErrorCodes::ILLEGAL_COLUMN};
+
+	return dictionaries.getDictionary(dict_name_col->getData())->isInjective(attr_name_col->getData());
+}
+
+
 class FunctionDictGetString final : public IFunction
 {
 public:
@@ -927,6 +952,11 @@ public:
 private:
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
+
+	bool isInjective(const Block & sample_block) override
+	{
+		return isDictGetFunctionInjective(dictionaries, sample_block);
+	}
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
@@ -1485,8 +1515,16 @@ private:
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
 
+	bool isInjective(const Block & sample_block) override
+	{
+		return isDictGetFunctionInjective(dictionaries, sample_block);
+	}
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
+		if (arguments.size() != 3 && arguments.size() != 4)
+			throw Exception{"Function " + getName() + " takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 		{
 			throw Exception{
@@ -2049,6 +2087,7 @@ public:
 
 private:
 	size_t getNumberOfArguments() const override { return 2; }
+	bool isInjective(const Block & sample_block) override { return true; }
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
