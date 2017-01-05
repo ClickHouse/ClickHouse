@@ -786,6 +786,9 @@ public:
 	{
 		throw Exception("Function " + getName() + " must not be executed directly.", ErrorCodes::FUNCTION_IS_SPECIAL);
 	}
+
+	/// Because of function cannot be executed directly.
+	bool isSuitableForConstantFolding() const { return false; }
 };
 
 

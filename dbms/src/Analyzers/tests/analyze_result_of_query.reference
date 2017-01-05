@@ -1,0 +1,5 @@
+1 UInt8,
+`plus(2, 3)` UInt16,
+x FixedString(20),
+y String,
+z Int16
