@@ -1452,8 +1452,6 @@ To make settings that persist after a server restart, you can only use the serve
 Asks the table engine to do something for optimization.
 Supported only by *MergeTree engines, in which this query initializes a non-scheduled merge of data parts.
 
-For replicated tables, the OPTIMIZE query is only applied to non-replicated data (this data exists only after converting non-replicated tables to replicated ones). If there isn&#39;t any, the query doesn&#39;t do anything.
-
 
 ===INSERT===
 
