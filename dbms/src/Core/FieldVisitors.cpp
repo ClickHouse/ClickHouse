@@ -5,6 +5,7 @@
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/Core/FieldVisitors.h>
+#include <DB/Common/SipHash.h>
 
 
 namespace DB
@@ -49,14 +50,13 @@ String FieldVisitorDump::operator() (const Array & x) const
 {
 	String res;
 	WriteBufferFromString wb(res);
-	FieldVisitorDump visitor;
 
 	wb.write("Array_[", 7);
-	for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
+	for (auto it = x.begin(); it != x.end(); ++it)
 	{
 		if (it != x.begin())
 			wb.write(", ", 2);
-		writeString(apply_visitor(visitor, *it), wb);
+		writeString(apply_visitor(*this, *it), wb);
 	}
 	writeChar(']', wb);
 
@@ -68,16 +68,15 @@ String FieldVisitorDump::operator() (const Tuple & x_def) const
 	auto & x = x_def.t;
 	String res;
 	WriteBufferFromString wb(res);
-	FieldVisitorDump visitor;
 
-	wb.write("Tuple_[", 7);
+	wb.write("Tuple_(", 7);
 	for (auto it = x.begin(); it != x.end(); ++it)
 	{
 		if (it != x.begin())
 			wb.write(", ", 2);
-		writeString(apply_visitor(visitor, *it), wb);
+		writeString(apply_visitor(*this, *it), wb);
 	}
-	writeChar(']', wb);
+	writeChar(')', wb);
 
 	return res;
 }
@@ -116,14 +115,13 @@ String FieldVisitorToString::operator() (const Array & x) const
 {
 	String res;
 	WriteBufferFromString wb(res);
-	FieldVisitorToString visitor;
 
 	writeChar('[', wb);
 	for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
 	{
 		if (it != x.begin())
 			wb.write(", ", 2);
-		writeString(apply_visitor(visitor, *it), wb);
+		writeString(apply_visitor(*this, *it), wb);
 	}
 	writeChar(']', wb);
 
@@ -135,14 +133,13 @@ String FieldVisitorToString::operator() (const Tuple & x_def) const
 	auto & x = x_def.t;
 	String res;
 	WriteBufferFromString wb(res);
-	FieldVisitorToString visitor;
 
 	writeChar('(', wb);
 	for (auto it = x.begin(); it != x.end(); ++it)
 	{
 		if (it != x.begin())
 			wb.write(", ", 2);
-		writeString(apply_visitor(visitor, *it), wb);
+		writeString(apply_visitor(*this, *it), wb);
 	}
 	writeChar(')', wb);
 
