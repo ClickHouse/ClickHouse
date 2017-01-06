@@ -71,25 +71,25 @@ typename Visitor::ResultType apply_visitor(Visitor && visitor, F1 && field1, F2 
 	{
 		case Field::Types::Null:
 			return apply_binary_visitor_impl(
-				std::forward<Visitor>(visitor), field1.template get<Null>(), std::forward<Field>(field2));
+				std::forward<Visitor>(visitor), field1.template get<Null>(), std::forward<F2>(field2));
 		case Field::Types::UInt64:
 			return apply_binary_visitor_impl(
-				std::forward<Visitor>(visitor), field1.template get<UInt64>(), std::forward<Field>(field2));
+				std::forward<Visitor>(visitor), field1.template get<UInt64>(), std::forward<F2>(field2));
 		case Field::Types::Int64:
 			return apply_binary_visitor_impl(
-				std::forward<Visitor>(visitor), field1.template get<Int64>(), std::forward<Field>(field2));
+				std::forward<Visitor>(visitor), field1.template get<Int64>(), std::forward<F2>(field2));
 		case Field::Types::Float64:
 			return apply_binary_visitor_impl(
-				std::forward<Visitor>(visitor), field1.template get<Float64>(), std::forward<Field>(field2));
+				std::forward<Visitor>(visitor), field1.template get<Float64>(), std::forward<F2>(field2));
 		case Field::Types::String:
 			return apply_binary_visitor_impl(
-				std::forward<Visitor>(visitor), field1.template get<String>(), std::forward<Field>(field2));
+				std::forward<Visitor>(visitor), field1.template get<String>(), std::forward<F2>(field2));
 		case Field::Types::Array:
 			return apply_binary_visitor_impl(
-				std::forward<Visitor>(visitor), field1.template get<Array>(), std::forward<Field>(field2));
+				std::forward<Visitor>(visitor), field1.template get<Array>(), std::forward<F2>(field2));
 		case Field::Types::Tuple:
 			return apply_binary_visitor_impl(
-				std::forward<Visitor>(visitor), field1.template get<Tuple>(), std::forward<Field>(field2));
+				std::forward<Visitor>(visitor), field1.template get<Tuple>(), std::forward<F2>(field2));
 
 		default:
 			throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
