@@ -34,7 +34,7 @@ struct TypeAndConstantInference
 	struct ExpressionInfo
 	{
 		/// Must identify identical expressions.
-		/// For example following two expressions in query are the same: SELECT sum(x) AS a, SUM(t.x) AS b FROM t
+		/// For example following three expressions in query are the same: SELECT sum(x) AS a, SUM(t.x) AS b, a FROM t
 		UInt128 id {};
 		ASTPtr node;
 		DataTypePtr data_type;

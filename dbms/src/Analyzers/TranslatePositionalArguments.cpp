@@ -27,7 +27,7 @@ static void processElement(ASTPtr & element, const ASTPtr & select_expression_li
 			if (!literal->alias.empty())
 				throw Exception("Unsigned numeric literal " + toString(position) + " in " + toString(description)
 					+ " section is interpreted as positional argument, "
-					"but is has alias " + backQuoteIfNeed(literal->alias) + " that is not expected", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+					"but it has alias " + backQuoteIfNeed(literal->alias) + " that is not expected", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
 			if (position == 0)
 				throw Exception("Unsigned numeric literal 0 in " + toString(description) + " section is interpreted as positional argument, "
