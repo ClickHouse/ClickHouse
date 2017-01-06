@@ -522,7 +522,7 @@ std::string Set::describe() const
 	ss << "{";
 	for (const Field & f : *ordered_set_elements)
 	{
-		ss << (first ? "" : ", ") << apply_visitor(FieldVisitorToString(), f);
+		ss << (first ? "" : ", ") << applyVisitor(FieldVisitorToString(), f);
 		first = false;
 	}
 	ss << "}";

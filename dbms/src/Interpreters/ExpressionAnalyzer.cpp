@@ -1994,7 +1994,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 	}
 	else if (ASTLiteral * node = typeid_cast<ASTLiteral *>(ast.get()))
 	{
-		DataTypePtr type = apply_visitor(FieldToDataType(), node->value);
+		DataTypePtr type = applyVisitor(FieldToDataType(), node->value);
 
 		ColumnWithTypeAndName column;
 		column.column = type->createConstColumn(1, node->value);

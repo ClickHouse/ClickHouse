@@ -781,13 +781,13 @@ private:
 			{
 				converted_to.resize(to.size());
 				for (size_t i = 0, size = to.size(); i < size; ++i)
-					converted_to[i] = apply_visitor(FieldVisitorConvertToNumber<Float64>(), to[i]);
+					converted_to[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), to[i]);
 				used_to = &converted_to;
 			}
 			else if (!default_col_is_float && to_is_float)
 			{
 				if (const_default_col)
-					const_default_value = apply_visitor(FieldVisitorConvertToNumber<Float64>(), const_default_value);
+					const_default_value = applyVisitor(FieldVisitorConvertToNumber<Float64>(), const_default_value);
 			}
 		}
 

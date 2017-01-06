@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 
 /** StaticVisitor (and its descendants) - class with overloaded operator() for all types of fields.
-  * You could call visitor for field using function 'apply_visitor'.
+  * You could call visitor for field using function 'applyVisitor'.
   * Also "binary visitor" is supported - its operator() takes two arguments.
   */
 template <typename R = void>
@@ -28,7 +28,7 @@ struct StaticVisitor
 
 /// F is template parameter, to allow universal reference for field, that is useful for const and non-const values.
 template <typename Visitor, typename F>
-typename std::decay<Visitor>::type::ResultType apply_visitor(Visitor && visitor, F && field)
+typename std::decay<Visitor>::type::ResultType applyVisitor(Visitor && visitor, F && field)
 {
 	switch (field.getType())
 	{
@@ -47,7 +47,7 @@ typename std::decay<Visitor>::type::ResultType apply_visitor(Visitor && visitor,
 
 
 template <typename Visitor, typename F1, typename F2>
-static typename std::decay<Visitor>::type::ResultType apply_binary_visitor_impl(Visitor && visitor, F1 && field1, F2 && field2)
+static typename std::decay<Visitor>::type::ResultType applyBinaryVisitorImpl(Visitor && visitor, F1 && field1, F2 && field2)
 {
 	switch (field2.getType())
 	{
@@ -65,30 +65,30 @@ static typename std::decay<Visitor>::type::ResultType apply_binary_visitor_impl(
 }
 
 template <typename Visitor, typename F1, typename F2>
-typename std::decay<Visitor>::type::ResultType apply_visitor(Visitor && visitor, F1 && field1, F2 && field2)
+typename std::decay<Visitor>::type::ResultType applyVisitor(Visitor && visitor, F1 && field1, F2 && field2)
 {
 	switch (field1.getType())
 	{
 		case Field::Types::Null:
-			return apply_binary_visitor_impl(
+			return applyBinaryVisitorImpl(
 				std::forward<Visitor>(visitor), field1.template get<Null>(), std::forward<F2>(field2));
 		case Field::Types::UInt64:
-			return apply_binary_visitor_impl(
+			return applyBinaryVisitorImpl(
 				std::forward<Visitor>(visitor), field1.template get<UInt64>(), std::forward<F2>(field2));
 		case Field::Types::Int64:
-			return apply_binary_visitor_impl(
+			return applyBinaryVisitorImpl(
 				std::forward<Visitor>(visitor), field1.template get<Int64>(), std::forward<F2>(field2));
 		case Field::Types::Float64:
-			return apply_binary_visitor_impl(
+			return applyBinaryVisitorImpl(
 				std::forward<Visitor>(visitor), field1.template get<Float64>(), std::forward<F2>(field2));
 		case Field::Types::String:
-			return apply_binary_visitor_impl(
+			return applyBinaryVisitorImpl(
 				std::forward<Visitor>(visitor), field1.template get<String>(), std::forward<F2>(field2));
 		case Field::Types::Array:
-			return apply_binary_visitor_impl(
+			return applyBinaryVisitorImpl(
 				std::forward<Visitor>(visitor), field1.template get<Array>(), std::forward<F2>(field2));
 		case Field::Types::Tuple:
-			return apply_binary_visitor_impl(
+			return applyBinaryVisitorImpl(
 				std::forward<Visitor>(visitor), field1.template get<Tuple>(), std::forward<F2>(field2));
 
 		default:

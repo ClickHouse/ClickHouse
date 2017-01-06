@@ -19,27 +19,27 @@ int main(int argc, char ** argv)
 	FieldVisitorToString to_string;
 
 	Field field = UInt64(0);
-	std::cerr << apply_visitor(to_string, field) << std::endl;
+	std::cerr << applyVisitor(to_string, field) << std::endl;
 
 	field = std::string("Hello, world!");
-	std::cerr << apply_visitor(to_string, field) << std::endl;
+	std::cerr << applyVisitor(to_string, field) << std::endl;
 
 	field = Null();
-	std::cerr << apply_visitor(to_string, field) << std::endl;
+	std::cerr << applyVisitor(to_string, field) << std::endl;
 
 	Field field2;
 	field2 = field;
-	std::cerr << apply_visitor(to_string, field2) << std::endl;
+	std::cerr << applyVisitor(to_string, field2) << std::endl;
 
 	Array array;
 	array.push_back(UInt64(123));
 	array.push_back(Int64(-123));
 	array.push_back(String("Hello"));
 	field = array;
-	std::cerr << apply_visitor(to_string, field) << std::endl;
+	std::cerr << applyVisitor(to_string, field) << std::endl;
 
 	get<Array &>(field).push_back(field);
-	std::cerr << apply_visitor(to_string, field) << std::endl;
+	std::cerr << applyVisitor(to_string, field) << std::endl;
 
 	std::cerr << (field < field2) << std::endl;
 	std::cerr << (field2 < field) << std::endl;

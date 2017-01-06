@@ -318,7 +318,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 			if (it != ast_set.changes.begin())
 				s.ostr << ", ";
 
-			s.ostr << it->name << " = " << apply_visitor(FieldVisitorToString(), it->value);
+			s.ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
 		}
 	}
 

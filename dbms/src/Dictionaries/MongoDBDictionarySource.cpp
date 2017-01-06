@@ -230,7 +230,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
 
 				case AttributeUnderlyingType::Float32:
 				case AttributeUnderlyingType::Float64:
-					key.add(attr.second.name, apply_visitor(FieldVisitorConvertToNumber<Float64>(), (*key_columns[attr.first])[row_idx]));
+					key.add(attr.second.name, applyVisitor(FieldVisitorConvertToNumber<Float64>(), (*key_columns[attr.first])[row_idx]));
 					break;
 
 				case AttributeUnderlyingType::String:

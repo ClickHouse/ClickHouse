@@ -2574,7 +2574,7 @@ void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partiti
 			unreplicated_data->replaceParts({part}, {}, false);
 	}
 
-	LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " unreplicated parts inside " << apply_visitor(FieldVisitorToString(), partition) << ".");
+	LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " unreplicated parts inside " << applyVisitor(FieldVisitorToString(), partition) << ".");
 }
 
 

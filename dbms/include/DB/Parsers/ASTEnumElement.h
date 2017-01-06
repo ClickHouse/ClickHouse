@@ -30,7 +30,7 @@ protected:
 		frame.need_parens = false;
 
 		const std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-		settings.ostr << settings.nl_or_ws << indent_str << '\'' << name << "' = " << apply_visitor(FieldVisitorToString{}, value);
+		settings.ostr << settings.nl_or_ws << indent_str << '\'' << name << "' = " << applyVisitor(FieldVisitorToString{}, value);
 	}
 };
 

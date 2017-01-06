@@ -316,7 +316,7 @@ bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & 
 		bool has_non_zero = false;
 		size_t size = dst.size();
 		for (size_t i = 0; i < size; ++i)
-			if (apply_visitor(FieldVisitorSum(src[i]), dst[i]))
+			if (applyVisitor(FieldVisitorSum(src[i]), dst[i]))
 				has_non_zero = true;
 		return has_non_zero;
 	};
@@ -373,7 +373,7 @@ bool SummingSortedBlockInputStream::addRow(Row & row, TSortCursor & cursor)
 	for (size_t i = 0, size = column_numbers_to_sum.size(); i < size; ++i)
 	{
 		size_t j = column_numbers_to_sum[i];
-		if (apply_visitor(FieldVisitorSum((*cursor->all_columns[j])[cursor->pos]), row[j]))
+		if (applyVisitor(FieldVisitorSum((*cursor->all_columns[j])[cursor->pos]), row[j]))
 			res = true;
 	}
 

@@ -16,13 +16,13 @@ String ASTLiteral::getColumnName() const
 		&& value.get<const Array &>().size() > 100)		/// 100 - just arbitary value.
 	{
 		SipHash hash;
-		apply_visitor(FieldVisitorHash(hash), value);
+		applyVisitor(FieldVisitorHash(hash), value);
 		UInt64 low, high;
 		hash.get128(low, high);
 		return "__array_" + toString(low) + "_" + toString(high);
 	}
 
-	return apply_visitor(FieldVisitorToString(), value);
+	return applyVisitor(FieldVisitorToString(), value);
 }
 
 }

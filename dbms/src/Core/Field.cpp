@@ -14,7 +14,7 @@ namespace mysqlxx
 {
 	std::ostream & operator<< (mysqlxx::EscapeManipResult res, const DB::Array & value)
 	{
-		return res.ostr << DB::apply_visitor(DB::FieldVisitorToString(), DB::Field(value));
+		return res.ostr << DB::applyVisitor(DB::FieldVisitorToString(), DB::Field(value));
 	}
 
 	std::ostream & operator<< (mysqlxx::QuoteManipResult res, const DB::Array & value)
@@ -35,7 +35,7 @@ namespace mysqlxx
 
 	std::ostream & operator<< (mysqlxx::EscapeManipResult res, const DB::Tuple & value)
 	{
-		return res.ostr << DB::apply_visitor(DB::FieldVisitorToString(), DB::Field(value));
+		return res.ostr << DB::applyVisitor(DB::FieldVisitorToString(), DB::Field(value));
 	}
 
 	std::ostream & operator<< (mysqlxx::QuoteManipResult res, const DB::Tuple & value)
@@ -169,7 +169,7 @@ namespace DB
 
 	void writeText(const Array & x, WriteBuffer & buf)
 	{
-		DB::String res = apply_visitor(DB::FieldVisitorToString(), DB::Field(x));
+		DB::String res = applyVisitor(DB::FieldVisitorToString(), DB::Field(x));
 		buf.write(res.data(), res.size());
 	}
 }
@@ -291,7 +291,7 @@ namespace DB
 
 	void writeText(const Tuple & x, WriteBuffer & buf)
 	{
-		DB::String res = apply_visitor(DB::FieldVisitorToString(), DB::Field(x));
+		DB::String res = applyVisitor(DB::FieldVisitorToString(), DB::Field(x));
 		buf.write(res.data(), res.size());
 	}
 }

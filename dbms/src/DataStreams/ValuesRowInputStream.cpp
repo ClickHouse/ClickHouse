@@ -134,7 +134,7 @@ bool ValuesRowInputStream::read(Block & block)
 					}
 
 					if (!is_null_allowed)
-						throw Exception{"Expression returns value " + apply_visitor(FieldVisitorToString(), value)
+						throw Exception{"Expression returns value " + applyVisitor(FieldVisitorToString(), value)
 							+ ", that is out of range of type " + type.getName()
 							+ ", at: " + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
 							ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};

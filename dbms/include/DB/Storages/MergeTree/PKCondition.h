@@ -190,12 +190,12 @@ public:
 		if (!left_bounded)
 			str << "(-inf, ";
 		else
-			str << (left_included ? '[' : '(') << apply_visitor(FieldVisitorToString(), left) << ", ";
+			str << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
 
 		if (!right_bounded)
 			str << "+inf)";
 		else
-			str << apply_visitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
+			str << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
 
 		return str.str();
 	}

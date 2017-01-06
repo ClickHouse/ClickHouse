@@ -56,7 +56,7 @@ String FieldVisitorDump::operator() (const Array & x) const
 	{
 		if (it != x.begin())
 			wb.write(", ", 2);
-		writeString(apply_visitor(*this, *it), wb);
+		writeString(applyVisitor(*this, *it), wb);
 	}
 	writeChar(']', wb);
 
@@ -74,7 +74,7 @@ String FieldVisitorDump::operator() (const Tuple & x_def) const
 	{
 		if (it != x.begin())
 			wb.write(", ", 2);
-		writeString(apply_visitor(*this, *it), wb);
+		writeString(applyVisitor(*this, *it), wb);
 	}
 	writeChar(')', wb);
 
@@ -121,7 +121,7 @@ String FieldVisitorToString::operator() (const Array & x) const
 	{
 		if (it != x.begin())
 			wb.write(", ", 2);
-		writeString(apply_visitor(*this, *it), wb);
+		writeString(applyVisitor(*this, *it), wb);
 	}
 	writeChar(']', wb);
 
@@ -139,7 +139,7 @@ String FieldVisitorToString::operator() (const Tuple & x_def) const
 	{
 		if (it != x.begin())
 			wb.write(", ", 2);
-		writeString(apply_visitor(*this, *it), wb);
+		writeString(applyVisitor(*this, *it), wb);
 	}
 	writeChar(')', wb);
 
@@ -193,7 +193,7 @@ void FieldVisitorHash::operator() (const Array & x) const
 	hash.update(reinterpret_cast<const char *>(&size), sizeof(size));
 
 	for (const auto & elem : x)
-		apply_visitor(*this, elem);
+		applyVisitor(*this, elem);
 }
 
 
