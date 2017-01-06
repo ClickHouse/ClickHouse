@@ -3,6 +3,7 @@
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTOrderByElement.h>
 #include <DB/Common/typeid_cast.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB
