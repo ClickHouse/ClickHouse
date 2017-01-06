@@ -9,3 +9,11 @@ FROM
     FROM system.numbers 
 ) 
 GROUP BY number
+
+SELECT number
+FROM system.numbers 
+GROUP BY number
+ORDER BY 
+    number ASC, 
+    rand() ASC, 
+    toString(rand()) ASC COLLATE 'tr'

@@ -59,8 +59,8 @@ static void processClause(ASTPtr & ast, const ASTPtr & select_expression_list, c
 				throw Exception("Child of ORDER BY clause is not an ASTOrderByElement", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
 			/// It has ASC|DESC and COLLATE inplace, and expression as its only child.
-			if (child->children.size() != 1)
-				throw Exception("ORDER BY element has more than one children", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+			if (child->children.empty())
+				throw Exception("ORDER BY element has no children", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
 			processElement(child->children[0], select_expression_list, description);
 		}
