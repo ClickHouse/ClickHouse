@@ -5039,6 +5039,15 @@ SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
 
 This is necessary when using ARRAY JOIN with a nested data structure and further aggregation across multiple elements in this structure.
 
+
+===arrayUniq(arr, ...)===
+
+If a single array is passed, returns a number of unique elements in that array.
+If multiple arrays of the same size are passed as arguments to the function, returns a number of unique tuples of elements in the same positions in all the arrays.
+
+If you need an array of the unique elements, you can use %%arrayReduce('groupUniqArray', arr)%%.
+
+
 ===arrayJoin(arr)===
 A special function. See the section &quot;arrayJoin function&quot;.
 
