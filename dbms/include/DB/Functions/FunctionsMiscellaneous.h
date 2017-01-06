@@ -959,7 +959,7 @@ private:
 		if (!column.isConst())
 			throw Exception(which_argument + String(" argument for function ") + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
-		return apply_visitor(FieldVisitorConvertToNumber<T>(), column[0]);
+		return applyVisitor(FieldVisitorConvertToNumber<T>(), column[0]);
 	}
 
 	template <typename T>

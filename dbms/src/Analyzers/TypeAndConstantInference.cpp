@@ -56,7 +56,7 @@ static void processLiteral(const String & column_name, const ASTPtr & ast, TypeA
 	expression_info.node = ast;
 	expression_info.is_constant_expression = true;
 	expression_info.value = literal->value;
-	expression_info.data_type = apply_visitor(FieldToDataType(), expression_info.value);
+	expression_info.data_type = applyVisitor(FieldToDataType(), expression_info.value);
 	info.emplace(column_name, std::move(expression_info));
 }
 
@@ -368,7 +368,7 @@ void TypeAndConstantInference::dump(WriteBuffer & out) const
 		if (it->second.is_constant_expression)
 		{
 			writeCString(" = ", out);
-			String value = apply_visitor(FieldVisitorToString(), it->second.value);
+			String value = applyVisitor(FieldVisitorToString(), it->second.value);
 			writeString(value, out);
 		}
 

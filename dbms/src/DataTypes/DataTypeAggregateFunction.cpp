@@ -24,7 +24,7 @@ std::string DataTypeAggregateFunction::getName() const
 		{
 			if (i)
 				stream << ", ";
-			stream << apply_visitor(DB::FieldVisitorToString(), parameters[i]);
+			stream << applyVisitor(DB::FieldVisitorToString(), parameters[i]);
 		}
 		stream << ")";
 	}

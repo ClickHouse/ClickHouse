@@ -12,10 +12,13 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeTuple.h>
+#include <DB/DataTypes/DataTypeEnum.h>
 
 #include <DB/Functions/FunctionsLogical.h>
 #include <DB/Functions/IFunction.h>
-#include <DB/DataTypes/DataTypeEnum.h>
+
+#include <DB/IO/ReadBufferFromString.h>
+#include <DB/IO/ReadHelpers.h>
 
 
 namespace DB

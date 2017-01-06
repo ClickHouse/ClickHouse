@@ -402,7 +402,7 @@ void StorageMergeTree::dropPartition(ASTPtr query, const Field & partition, bool
 			data.replaceParts({part}, {}, false);
 	}
 
-	LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << apply_visitor(FieldVisitorToString(), partition) << ".");
+	LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << applyVisitor(FieldVisitorToString(), partition) << ".");
 }
 
 

@@ -21,13 +21,12 @@ namespace ErrorCodes
 }
 
 class Field;
-using Array = std::vector<Field>; /// Значение типа "массив"
+using Array = std::vector<Field>;
 using TupleBackend = std::vector<Field>;
-STRONG_TYPEDEF(TupleBackend, Tuple); /// Значение типа "кортеж"
+STRONG_TYPEDEF(TupleBackend, Tuple); /// Array and Tuple are different types with equal representation inside Field.
 
 
-/** 32 хватает с запасом (достаточно 28), но выбрано круглое число,
-  * чтобы арифметика при использовании массивов из Field была проще (не содержала умножения).
+/** 32 is enough. Round number is used for alignment and for better arithmetic inside std::vector.
   */
 #define DBMS_MIN_FIELD_SIZE 32
 

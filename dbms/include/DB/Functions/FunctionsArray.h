@@ -897,7 +897,7 @@ private:
 
 			for (size_t i = 0, size = arr.size(); i < size; ++i)
 			{
-				if (apply_visitor(FieldVisitorAccurateEquals(), arr[i], value))
+				if (applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
 				{
 					if (!IndexConv::apply(i, current))
 						break;
@@ -940,7 +940,7 @@ private:
 						if (null_map && ((*null_map)[row] == 1))
 								hit = true;
 					}
-					else if (apply_visitor(FieldVisitorAccurateEquals(), arr[i], value))
+					else if (applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
 						hit = true;
 
 					if (hit)

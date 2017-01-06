@@ -116,7 +116,7 @@ bool tryAddField(DataTypePtr type_res, const Field & f, Array & arr)
 		if (f.isNull())
 			arr.emplace_back();
 		else
-			arr.push_back(apply_visitor(FieldVisitorConvertToNumber<typename T1::FieldType>(), f));
+			arr.push_back(applyVisitor(FieldVisitorConvertToNumber<typename T1::FieldType>(), f));
 		return true;
 	}
 	return false;

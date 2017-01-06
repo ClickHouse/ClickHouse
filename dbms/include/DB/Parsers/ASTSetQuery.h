@@ -43,7 +43,7 @@ protected:
 			if (it != changes.begin())
 				settings.ostr << ", ";
 
-			settings.ostr << it->name << " = " << apply_visitor(FieldVisitorToString(), it->value);
+			settings.ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
 		}
 	}
 };
