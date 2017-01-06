@@ -355,6 +355,7 @@ namespace ErrorCodes
 	extern const int INCOMPATIBLE_SOURCE_TABLES = 350;
 	extern const int AMBIGUOUS_TABLE_NAME = 351;
 	extern const int AMBIGUOUS_COLUMN_NAME = 352;
+	extern const int INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE = 353;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;

@@ -12,3 +12,6 @@ target_link_libraries(type_and_constant_inference dbms)
 
 add_executable(analyze_result_of_query analyze_result_of_query.cpp)
 target_link_libraries(analyze_result_of_query dbms)
+
+add_executable(translate_positional_arguments translate_positional_arguments.cpp)
+target_link_libraries(translate_positional_arguments dbms)

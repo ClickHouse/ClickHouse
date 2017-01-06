@@ -25,7 +25,7 @@ class IAggregateFunction;
   * Notable examples: tupleElement(tuple, N) and toFixedString(s, N) functions.
   *
   * Also creates and stores function objects.
-  * Also calculate ids for expressions, that will identify common subexpressions.
+  * TODO (?) Also calculate ids for expressions, that will identify common subexpressions.
   */
 struct TypeAndConstantInference
 {
