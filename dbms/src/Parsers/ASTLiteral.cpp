@@ -10,9 +10,10 @@ namespace DB
 
 String ASTLiteral::getColumnName() const
 {
-	/// Отдельный случай для очень больших массивов. Вместо указания всех элементов, будем использовать хэш от содержимого.
+	/// Special case for very large arrays. Instead of listing all elements, will use hash of them.
+	/// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
 	if (value.getType() == Field::Types::Array
-		&& value.get<const Array &>().size() > 100)		/// 100 - наугад.
+		&& value.get<const Array &>().size() > 100)		/// 100 - just arbitary value.
 	{
 		SipHash hash;
 		apply_visitor(FieldVisitorHash(hash), value);
