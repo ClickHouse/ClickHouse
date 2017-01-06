@@ -28,7 +28,7 @@ struct StaticVisitor
 
 /// F is template parameter, to allow universal reference for field, that is useful for const and non-const values.
 template <typename Visitor, typename F>
-typename Visitor::ResultType apply_visitor(Visitor && visitor, F && field)
+typename std::decay<Visitor>::type::ResultType apply_visitor(Visitor && visitor, F && field)
 {
 	switch (field.getType())
 	{
@@ -47,7 +47,7 @@ typename Visitor::ResultType apply_visitor(Visitor && visitor, F && field)
 
 
 template <typename Visitor, typename F1, typename F2>
-static typename Visitor::ResultType apply_binary_visitor_impl(Visitor && visitor, F1 && field1, F2 && field2)
+static typename std::decay<Visitor>::type::ResultType apply_binary_visitor_impl(Visitor && visitor, F1 && field1, F2 && field2)
 {
 	switch (field2.getType())
 	{
@@ -65,7 +65,7 @@ static typename Visitor::ResultType apply_binary_visitor_impl(Visitor && visitor
 }
 
 template <typename Visitor, typename F1, typename F2>
-typename Visitor::ResultType apply_visitor(Visitor && visitor, F1 && field1, F2 && field2)
+typename std::decay<Visitor>::type::ResultType apply_visitor(Visitor && visitor, F1 && field1, F2 && field2)
 {
 	switch (field1.getType())
 	{
