@@ -117,9 +117,9 @@ endif ()
 
 if (POCO_UNBUNDLED)
 	add_definitions( -DPOCO_UNBUNDLED)
-	message(STATUS "Build with using external sqlite, libz, pcre, expat ...")
+	message(STATUS "Build with using external sqlite, pcre, expat ...")
 else ()
-	message(STATUS "Build with using internal copy of sqlite, libz, pcre, expat, ...")
+	message(STATUS "Build with using internal copy of sqlite, pcre, expat, ...")
 endif ()
 
 include(CheckTypeSize)
