@@ -158,8 +158,12 @@ public:
 		return name;
 	}
 
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+	bool isDeterministicInScopeOfQuery() override { return false; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() > 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -170,14 +174,14 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		auto col_to = std::make_shared<ColumnVector<ToType>>();
-		block.getByPosition(result).column = col_to;
+		block.safeGetByPosition(result).column = col_to;
 
 		typename ColumnVector<ToType>::Container_t & vec_to = col_to->getData();
 
-		size_t size = block.rowsInFirstColumn();
+		size_t size = block.rows();
 		vec_to.resize(size);
 		Impl::execute(vec_to);
 	}
@@ -204,8 +208,11 @@ public:
 		return name;
 	}
 
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() > 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -216,7 +223,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (!is_initialized)
 		{
@@ -226,7 +233,7 @@ public:
 			value = vec_to[0];
 		}
 
-		block.getByPosition(result).column = std::make_shared<ColumnConst<ToType>>(block.rowsInFirstColumn(), value);
+		block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ToType>>(block.rows(), value);
 	}
 };
 

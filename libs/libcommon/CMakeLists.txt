@@ -27,6 +27,7 @@ endif()
 add_library (common
 	src/DateLUT.cpp
 	src/DateLUTImpl.cpp
+	src/exp10.cpp
 	src/ClickHouseRevision.cpp
 	src/JSON.cpp
 
@@ -37,6 +38,7 @@ add_library (common
 	include/common/LocalDate.h
 	include/common/LocalDateTime.h
 	include/common/ErrorHandlers.h
+	include/common/exp10.h
 	include/common/likely.h
 	include/common/logger_useful.h
 	include/common/MultiVersion.h

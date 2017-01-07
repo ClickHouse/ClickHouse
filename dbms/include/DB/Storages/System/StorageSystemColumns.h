@@ -1,12 +1,13 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.hpp>
-
 #include <DB/Storages/IStorage.h>
-#include <DB/Interpreters/Context.h>
+
 
 namespace DB
 {
+
+class Context;
 
 /** Реализует системную таблицу columns, которая позволяет получить информацию
   * о столбцах каждой таблицы для всех баз данных.

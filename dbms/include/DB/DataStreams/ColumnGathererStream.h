@@ -21,10 +21,10 @@ struct RowSourcePart
 		setSkipFlag(flag);
 	}
 
-	/// is equal to getSourceNum() if flag is false
-	size_t getData() const		{ return data; }
+	/// Data is equal to getSourceNum() if flag is false
+	UInt8 getData() const		{ return data; }
 
-	size_t getSourceNum()const 	{ return data & MASK_NUMBER; }
+	size_t getSourceNum() const { return data & MASK_NUMBER; }
 
 	/// In CollapsingMergeTree case flag means "skip this rows"
 	bool getSkipFlag() const 	{ return (data & MASK_FLAG) != 0; }
@@ -58,7 +58,7 @@ class ColumnGathererStream : public IProfilingBlockInputStream
 {
 public:
 	ColumnGathererStream(const BlockInputStreams & source_streams, const String & column_name_,
-						 const MergedRowSources & pos_to_source_idx_, size_t block_size_ = DEFAULT_BLOCK_SIZE);
+						 const MergedRowSources & row_source_, size_t block_preferred_size_ = DEFAULT_MERGE_BLOCK_SIZE);
 
 	String getName() const override { return "ColumnGatherer"; }
 
@@ -66,11 +66,13 @@ public:
 
 	Block readImpl() override;
 
+	void readSuffixImpl() override;
+
 private:
 
 	String name;
 	ColumnWithTypeAndName column;
-	const MergedRowSources & pos_to_source_idx;
+	const MergedRowSources & row_source;
 
 	/// Cache required fileds
 	struct Source
@@ -93,10 +95,12 @@ private:
 		}
 	};
 
+	void fetchNewBlock(Source & source, size_t source_num);
+
 	std::vector<Source> sources;
 
-	size_t pos_global = 0;
-	size_t block_size;
+	size_t pos_global_start = 0;
+	size_t block_preferred_size;
 
 	Logger * log = &Logger::get("ColumnGathererStream");
 };

@@ -441,7 +441,7 @@ By default, access is allowed from everywhere for the default user without a pas
 
 ===Installing from source===
 
-Build following the instructions in <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md">build.md</a>
+To build, follow the instructions in <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md">build.md</a> (for Linux) or in <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build_osx.md">build_osx.md</a> (for Mac OS X).
 
 You can compile packages and install them. You can also use programs without installing packages.
 
@@ -728,6 +728,10 @@ echo &#39;SELECT 1&#39; | curl &#39;http://user:password@localhost:8123/&#39; -d
 <pre class="terminal">
 echo &#39;SELECT 1&#39; | curl &#39;http://localhost:8123/?user=user&amp;password=password&#39; -d @-
 </pre>
+3. Using &#39;X-ClickHouse-User&#39; and &#39;X-ClickHouse-Key&#39; headers. Example:
+<pre class="terminal">
+echo &#39;SELECT 1&#39; | curl -H "X-ClickHouse-User: user" -H "X-ClickHouse-Key: password"  &#39;http://localhost:8123/&#39; -d @-
+</pre>
 If the user name is not indicated, the username &#39;default&#39; is used. If the password is not indicated, an empty password is used.
 
 
@@ -757,7 +761,7 @@ In contrast to the native interface, the HTTP interface does not support the con
 
 The optional &#39;query_id&#39; parameter can be passed as the query ID (any string). For more information, see the section &quot;Settings, replace_running_query&quot;.
 
-The optional &#39;quota_key&#39; parameter can be passed as the quota key (any string). For more information, see the section &quot;Quotas&quot;.
+The optional &#39;quota_key&#39; parameter can be passed as the quota key (any string). It can also be passed as &#39;X-ClickHouse-Quota&#39; header. For more information, see the section &quot;Quotas&quot;.
 
 The HTTP interface allows passing external data (external temporary tables) for querying. For more information, see the section &quot;External data for query processing&quot;.
 
@@ -826,7 +830,7 @@ Only works in non-interactive mode.
 --config-file - Name of the configuration file that has additional settings or changed defaults for the settings listed above.
 By default, files are searched for in this order:
 ./clickhouse-client.xml
-~/./clickhouse-client/config.xml
+~/.clickhouse-client/config.xml
 /etc/clickhouse-client/config.xml
 Settings are only taken from the first file found.
 
@@ -1447,8 +1451,6 @@ To make settings that persist after a server restart, you can only use the serve
 
 Asks the table engine to do something for optimization.
 Supported only by *MergeTree engines, in which this query initializes a non-scheduled merge of data parts.
-
-For replicated tables, the OPTIMIZE query is only applied to non-replicated data (this data exists only after converting non-replicated tables to replicated ones). If there isn&#39;t any, the query doesn&#39;t do anything.
 
 
 ===INSERT===
@@ -3134,6 +3136,11 @@ Contains information about the number of events that have occurred in the system
 Example: The number of processed SELECT queries.
 Columns: &#39;event String&#39; - the event name, and &#39;value UInt64&#39; - the quantity.
 
+==system.metrics==
+==system.asynchronous_metrics==
+Like system.events, but show info about currently executing events or consuming resources.
+Example: The number of currently executing SELECT queries; memory consumption of the system.
+
 ==system.clusters==
 
 Contains information about clusters available in the config file and the servers in them.
@@ -3595,11 +3602,16 @@ The TabSeparated format supports outputting total values (when using WITH TOTALS
 2014-03-23      1406958
 %%
 
+It's also available as %%TSV%%.
+
+
 ==TabSeparatedWithNames==
 
 Differs from the TabSeparated format in that the column names are output in the first row.
 For parsing, the first row is completely ignored. You can&#39;t use column names to determine their position or to check their correctness.
 (Support for using header while parsing could be added in future.)
+
+It's also available as %%TSVWithNames%%.
 
 
 ==TabSeparatedWithNamesAndTypes==
@@ -3607,11 +3619,14 @@ For parsing, the first row is completely ignored. You can&#39;t use column names
 Differs from the TabSeparated format in that the column names are output to the first row, while the column types are in the second row.
 For parsing, the first and second rows are completely ignored.
 
+It's also available as %%TSVWithNamesAndTypes%%.
 
 ==TabSeparatedRaw==
 
 Differs from the TabSeparated format in that the rows are formatted without escaping.
 This format is only appropriate for outputting a query result, but not for parsing data to insert into a table.
+
+It's also available as %%TSVRaw%%.
 
 
 ==BlockTabSeparated==
@@ -4569,7 +4584,22 @@ Converts a String type argument to a FixedString(N) type (a string with fixed le
 
 ===toStringCutToZero(s)===
 
-Accepts a String or FixedString argument. Returns a String and removes the null bytes from the end of the string.
+Accepts a String or FixedString argument. Returns a String that is cut to a first null byte occurrence.
+
+Example:
+%%
+:) SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
+
+┌─s─────────────┬─s_cut─┐
+│ foo\0\0\0\0\0 │ foo   │
+└───────────────┴───────┘
+
+:) SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
+
+┌─s──────────┬─s_cut─┐
+│ foo\0bar\0 │ foo   │
+└────────────┴───────┘
+%%
 
 ===reinterpretAsUInt8, reinterpretAsUInt16, reinterpretAsUInt32, reinterpretAsUInt64===
 ===reinterpretAsInt8, reinterpretAsInt16, reinterpretAsInt32, reinterpretAsInt64===
@@ -4753,6 +4783,8 @@ The same as &#39;substring&#39;, but for Unicode code points. Works under the as
 ===appendTrailingCharIfAbsent(s, c)===
 If the %%s%% string is non-empty and does not contain the %%c%% character at the end, it appends the %%c%% character to the end.
 
+===convertCharset(s, from, to)===
+Returns a string with the data %%s%% (encoded as %%from%% charset) that was converted to the %%to%% charset.
 
 ==Functions for searching strings==
 
@@ -4762,9 +4794,11 @@ The search substring or regular expression must be a constant in all these funct
 ===position(haystack, needle)===
 Searches for the &#39;needle&#39; substring in the &#39;haystack&#39; string.
 Returns the position (in bytes) of the found substring, starting from 1, or returns 0 if the substring was not found.
+There's also positionCaseInsensitive function.
 
 ===positionUTF8(haystack, needle)===
 The same as &#39;position&#39;, but the position is returned in Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn&#39;t throw an exception).
+There's also positionCaseInsensitiveUTF8 function.
 
 ===match(haystack, pattern)===
 Checks whether the string matches the &#39;pattern&#39; regular expression.
@@ -5004,6 +5038,15 @@ SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
 %%
 
 This is necessary when using ARRAY JOIN with a nested data structure and further aggregation across multiple elements in this structure.
+
+
+===arrayUniq(arr, ...)===
+
+If a single array is passed, returns a number of unique elements in that array.
+If multiple arrays of the same size are passed as arguments to the function, returns a number of unique tuples of elements in the same positions in all the arrays.
+
+If you need an array of the unique elements, you can use %%arrayReduce('groupUniqArray', arr)%%.
+
 
 ===arrayJoin(arr)===
 A special function. See the section &quot;arrayJoin function&quot;.
@@ -5322,7 +5365,7 @@ SipHash is a cryptographic hash function. It works at least three times faster t
 ===sipHash128===
 Calculates SipHash from a string.
 Accepts a String-type argument. Returns FixedString(16).
-Differs from sipHash64 in that the final xor-folding state is only done up to 128 bytes.
+Differs from sipHash64 in that the final xor-folding state is only done up to 128 bits.
 
 ===cityHash64===
 Calculates CityHash64 from a string or a similar hash function for any number of any type of arguments.
@@ -5361,6 +5404,12 @@ Accepts a string, number, date, or date with time. Returns a string containing t
 ===unhex(str)===
 Accepts a string containing any number of hexadecimal digits, and returns a string containing the corresponding bytes. Supports both uppercase and lowercase letters A-F. The number of hexadecimal digits doesn&#39;t have to be even. If it is odd, the last digit is interpreted as the younger half of the 00-0F byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn&#39;t thrown).
 If you want to convert the result to a number, you can use the functions &#39;reverse&#39; and &#39;reinterpretAs<i>Type</i>&#39;.
+
+===UUIDStringToNum(str)===
+Accepts a string containing the UUID in the text format (%%123e4567-e89b-12d3-a456-426655440000%%). Returns a binary representation of the UUID in FixedString(16).
+
+===UUIDNumToString(str)===
+Accepts a FixedString(16) value containing the UUID in the binary format. Returns a readable string containing the UUID in the text format.
 
 ===bitmaskToList(num)===
 Accepts an integer. Returns a string containing the list of powers of two that total the source number when summed. They are comma-separated without spaces in text format, in ascending order.
@@ -5894,6 +5943,78 @@ LIMIT 10
 └────────────────┴─────────┘
 %%
 
+===formatReadableSize(x)===
+
+Gets a size (number of bytes). Returns a string that contains rounded size with the suffix (KiB, MiB etc.).
+
+Example:
+
+%%
+SELECT
+    arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
+    formatReadableSize(filesize_bytes) AS filesize
+
+┌─filesize_bytes─┬─filesize───┐
+│              1 │ 1.00 B     │
+│           1024 │ 1.00 KiB   │
+│        1048576 │ 1.00 MiB   │
+│      192851925 │ 183.92 MiB │
+└────────────────┴────────────┘
+%%
+
+===least(a, b)===
+
+Returns the least element of a and b.
+
+===greatest(a, b)===
+
+Returns the greatest element of a and b.
+
+===uptime()===
+
+Returns server's uptime in seconds.
+
+===version()===
+
+Returns server's version as a string.
+
+===rowNumberInAllBlocks()===
+
+Returns an incremental row number within all blocks that were processed by this function.
+
+===runningDifference(x)===
+
+Calculates the difference between consecutive values in the data block.
+Result of the function depends on the order of the data in the blocks.
+
+It works only inside of the each processed block of data. Data splitting in the blocks is not explicitly controlled by the user.
+If you specify ORDER BY in subquery and call runningDifference outside of it, you could get an expected result.
+
+Example:
+%%
+SELECT
+    EventID,
+    EventTime,
+    runningDifference(EventTime) AS delta
+FROM
+(
+    SELECT
+        EventID,
+        EventTime
+    FROM events
+    WHERE EventDate = '2016-11-24'
+    ORDER BY EventTime ASC
+    LIMIT 5
+)
+
+┌─EventID─┬───────────EventTime─┬─delta─┐
+│    1106 │ 2016-11-24 00:00:04 │     0 │
+│    1107 │ 2016-11-24 00:00:05 │     1 │
+│    1108 │ 2016-11-24 00:00:05 │     0 │
+│    1109 │ 2016-11-24 00:00:09 │     4 │
+│    1110 │ 2016-11-24 00:00:10 │     1 │
+└─────────┴─────────────────────┴───────┘
+%%
 
 ==arrayJoin function==
 
@@ -5925,14 +6046,6 @@ SELECT
 │   3 │ Hello     │ [1,2,3] │
 └─────┴───────────┴─────────┘
 %%
-
-===least(a, b)===
-
-Returns the least element of a and b.
-
-===greatest(a, b)===
-
-Returns the greatest element of a and b.
 
 </div>
 <div class="island">
@@ -6380,6 +6493,23 @@ The dictionary config file has the following format:
 			&lt;/clickhouse>
 			&lt;!- - If the address is similar to localhost, the request is made without network interaction. For fault tolerance, you can create a Distributed table on localhost and enter it. - ->
 			-->
+
+			&lt;!-- or the source is a executable. If layout.complex_key_cache - list of needed keys will be written in STDIN of program -->
+			&lt;executable>
+				&lt;!-- Path on the local file system or name located in one of env PATH dirs. -->
+				&lt;command>cat /opt/dictionaries/os.tsv&lt;/command>
+				&lt;!-- Which format to use for reading/writing stream. -->
+				&lt;format>TabSeparated&lt;/format>
+			&lt;/executable>
+
+			&lt;!-- or the source is a http server. If layout.complex_key_cache - list of needed keys will be sent as POST  -->
+			&lt;http>
+				&lt;!-- Host. -->
+				&lt;url>http://[::1]/os.tsv&lt;/url>
+				&lt;!-- Which format to use for reading answer and making POST. -->
+				&lt;format>TabSeparated&lt;/format>
+			&lt;/http>
+
 		&lt;/source>
 
 		&lt;!-- Update interval for fully loaded dictionaries. 0 - never update. -->
@@ -6445,7 +6575,7 @@ This is the most effective method. It works if all keys are smaller than 500,000
 This method is slightly less effective than the first one. The dictionary is also loaded to RAM in its entirety, and can contain any number of items with any identifiers. In practice, it makes sense to use up to tens of millions of items, while there is enough RAM.
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
-3. %%cache%% - This is the least effective method. It is appropriate if the dictionary doesn&#39;t fit in RAM. It is a cache of a fixed number of cells, where frequently-used data can be located. MySQL and ClickHouse sources are supported, but file sources are not supported. When searching a dictionary, the cache is searched first. For each data block, all keys not found in the cache (or expired keys) are collected in a package, which is sent to the source with the query %%SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)%%. The received data is then written to the cache.
+3. %%cache%% - This is the least effective method. It is appropriate if the dictionary doesn&#39;t fit in RAM. It is a cache of a fixed number of cells, where frequently-used data can be located. MySQL, ClickHouse, executable, http sources are supported, but file sources are not supported. When searching a dictionary, the cache is searched first. For each data block, all keys not found in the cache (or expired keys) are collected in a package, which is sent to the source with the query %%SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)%%. The received data is then written to the cache.
 
 We recommend using the flat method when possible, or hashed. The speed of the dictionaries is impeccable with this type of memory storage.
 
@@ -6546,7 +6676,7 @@ There usually isn&#39;t any reason to change this setting.
 The maximum part of a query that can be taken to RAM for parsing with the SQL parser.
 The INSERT query also contains data for INSERT that is processed by a separate stream parser (that consumes O(1) RAM), which is not included in this restriction.
 
-By default, 64 KiB.
+By default, 256 KiB.
 
 
 ==interactive_delay==

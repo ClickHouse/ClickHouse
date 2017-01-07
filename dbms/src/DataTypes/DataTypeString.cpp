@@ -74,7 +74,7 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr) cons
 }
 
 
-void DataTypeString::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void DataTypeString::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
 	const ColumnString & column_string = typeid_cast<const ColumnString &>(column);
 	const ColumnString::Chars_t & data = column_string.getChars();
@@ -167,7 +167,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, Column
 }
 
 
-void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
 	ColumnString & column_string = typeid_cast<ColumnString &>(column);
 	ColumnString::Chars_t & data = column_string.getChars();

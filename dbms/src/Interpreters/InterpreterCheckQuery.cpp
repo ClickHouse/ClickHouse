@@ -249,7 +249,7 @@ BlockIO InterpreterCheckQuery::execute()
 	else
 	{
 		result = Block{{ std::make_shared<ColumnUInt8>(), std::make_shared<DataTypeUInt8>(), "result" }};
-		result.getByPosition(0).column->insert(Field(UInt64(table->checkData())));
+		result.safeGetByPosition(0).column->insert(Field(UInt64(table->checkData())));
 
 		BlockIO res;
 		res.in = std::make_shared<OneBlockInputStream>(result);

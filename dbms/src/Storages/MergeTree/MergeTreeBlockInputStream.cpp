@@ -1,5 +1,6 @@
 #include <DB/Storages/MergeTree/MergeTreeReader.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
+#include <DB/Columns/ColumnNullable.h>
 
 
 namespace DB
@@ -248,7 +249,7 @@ Block MergeTreeBlockInputStream::readImpl()
 			if (!res)
 				return res;
 
-			progressImpl(Progress(res.rowsInFirstColumn(), res.bytes()));
+			progressImpl(Progress(res.rows(), res.bytes()));
 			pre_reader->fillMissingColumns(res, ordered_names, should_reorder);
 
 			/// Вычислим выражение в PREWHERE.
@@ -260,10 +261,19 @@ Block MergeTreeBlockInputStream::readImpl()
 
 			size_t pre_bytes = res.bytes();
 
+			ColumnPtr observed_column;
+			if (column->isNullable())
+			{
+				const ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column);
+				observed_column = nullable_col.getNestedColumn();
+			}
+			else
+				observed_column = column;
+
 			/** Если фильтр - константа (например, написано PREWHERE 1),
 				*  то либо вернём пустой блок, либо вернём блок без изменений.
 				*/
-			if (ColumnConstUInt8 * column_const = typeid_cast<ColumnConstUInt8 *>(&*column))
+			if (const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(observed_column.get()))
 			{
 				if (!column_const->getData())
 				{
@@ -279,7 +289,7 @@ Block MergeTreeBlockInputStream::readImpl()
 
 				progressImpl(Progress(0, res.bytes() - pre_bytes));
 			}
-			else if (ColumnUInt8 * column_vec = typeid_cast<ColumnUInt8 *>(&*column))
+			else if (const ColumnUInt8 * column_vec = typeid_cast<const ColumnUInt8 *>(observed_column.get()))
 			{
 				size_t index_granularity = storage.index_granularity;
 
@@ -338,7 +348,7 @@ Block MergeTreeBlockInputStream::readImpl()
 				size_t rows = 0;
 				for (size_t i = 0; i < res.columns(); ++i)
 				{
-					ColumnWithTypeAndName & column = res.getByPosition(i);
+					ColumnWithTypeAndName & column = res.safeGetByPosition(i);
 					if (column.name == prewhere_column && res.columns() > 1)
 						continue;
 					column.column = column.column->filter(column_name_set.count(column.name) ? post_filter : pre_filter, -1);
@@ -377,7 +387,7 @@ Block MergeTreeBlockInputStream::readImpl()
 		if (!res)
 			return res;
 
-		progressImpl(Progress(res.rowsInFirstColumn(), res.bytes()));
+		progressImpl(Progress(res.rows(), res.bytes()));
 		reader->fillMissingColumns(res, ordered_names);
 	}
 

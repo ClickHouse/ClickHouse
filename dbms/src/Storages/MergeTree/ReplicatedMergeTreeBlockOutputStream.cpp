@@ -159,20 +159,20 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 		zkutil::Ops ops;
 		auto acl = zookeeper->getDefaultACL();
 
-		ops.push_back(
-			new zkutil::Op::Create(
+		ops.emplace_back(
+			std::make_unique<zkutil::Op::Create>(
 				storage.zookeeper_path + "/blocks/" + block_id,
 				"",
 				acl,
 				zkutil::CreateMode::Persistent));
-		ops.push_back(
-			new zkutil::Op::Create(
+		ops.emplace_back(
+			std::make_unique<zkutil::Op::Create>(
 				storage.zookeeper_path + "/blocks/" + block_id + "/checksum",
 				checksum,
 				acl,
 				zkutil::CreateMode::Persistent));
-		ops.push_back(
-			new zkutil::Op::Create(
+		ops.emplace_back(
+			std::make_unique<zkutil::Op::Create>(
 				storage.zookeeper_path + "/blocks/" + block_id + "/number",
 				toString(part_number),
 				acl,
@@ -182,7 +182,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 		storage.addNewPartToZooKeeper(part, ops, part_name);
 
 		/// Лог репликации.
-		ops.push_back(new zkutil::Op::Create(
+		ops.emplace_back(std::make_unique<zkutil::Op::Create>(
 			storage.zookeeper_path + "/log/log-",
 			log_entry.toString(),
 			acl,
@@ -209,24 +209,24 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 				*  что говорит о том, что кворум достигнут.
 				*/
 
-			ops.push_back(
-				new zkutil::Op::Create(
+			ops.emplace_back(
+				std::make_unique<zkutil::Op::Create>(
 					quorum_status_path,
 					quorum_entry.toString(),
 					acl,
 					zkutil::CreateMode::Persistent));
 
 			/// Удостоверяемся, что за время вставки, реплика не была переинициализирована или выключена (при завершении сервера).
-			ops.push_back(
-				new zkutil::Op::Check(
+			ops.emplace_back(
+				std::make_unique<zkutil::Op::Check>(
 					storage.replica_path + "/is_active",
 					is_active_node_version));
 
 			/// К сожалению, одной лишь проверки выше недостаточно, потому что узел is_active может удалиться и появиться заново с той же версией.
 			/// Но тогда изменится значение узла host. Будем проверять это.
 			/// Замечательно, что эти два узла меняются в одной транзакции (см. MergeTreeRestartingThread).
-			ops.push_back(
-				new zkutil::Op::Check(
+			ops.emplace_back(
+				std::make_unique<zkutil::Op::Check>(
 					storage.replica_path + "/host",
 					host_node_version));
 		}

@@ -3,7 +3,6 @@
 #include <DB/Dictionaries/IDictionary.h>
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
-#include <DB/Common/HashTable/HashMap.h>
 #include <DB/Common/ArenaWithFreeLists.h>
 #include <DB/Columns/ColumnString.h>
 #include <ext/scope_guard.hpp>
@@ -138,7 +137,6 @@ public:
 	void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
 private:
-	template <typename Value> using MapType = HashMap<Key, Value>;
 	template <typename Value> using ContainerType = Value[];
 	template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
 

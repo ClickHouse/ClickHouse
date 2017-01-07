@@ -23,9 +23,10 @@ public:
 	CondSource & operator=(CondSource &&) = default;
 
 	/// Get the value of this condition for a given row.
-	inline UInt8 get(size_t row) const
+	inline bool get(size_t row) const
 	{
-		return data_array[row];
+		bool is_null = !null_map.empty() ? (null_map[row] != 0) : false;
+		return is_null ? false : static_cast<bool>(data_array[row]);
 	}
 
 	inline size_t getSize() const
@@ -39,10 +40,15 @@ private:
 	static const PaddedPODArray<UInt8> & initDataArray(const Block & block, const ColumnNumbers & args,
 		size_t i, const ColumnPtr & materialized_col_);
 
+	static const PaddedPODArray<UInt8> & initNullMap(const Block & block, const ColumnNumbers & args, size_t i);
+
 private:
 	const ColumnPtr materialized_col;
 	const PaddedPODArray<UInt8> & data_array;
+	const PaddedPODArray<UInt8> & null_map;
+
 	static const ColumnPtr null_materialized_col;
+	static const PaddedPODArray<UInt8> empty_null_map;
 };
 
 using CondSources = std::vector<CondSource>;

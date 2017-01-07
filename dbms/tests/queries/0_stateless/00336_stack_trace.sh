@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 curl -sS 'http://localhost:8123/' -d 'SELECT a' | wc -l
 curl -sS 'http://localhost:8123/?stacktrace=0' -d 'SELECT a' | wc -l

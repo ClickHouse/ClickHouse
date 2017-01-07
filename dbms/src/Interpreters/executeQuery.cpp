@@ -6,6 +6,8 @@
 #include <DB/DataStreams/BlockIO.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/InputStreamFromASTInsertQuery.h>
+#include <DB/DataStreams/CountingBlockOutputStream.h>
 
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTShowProcesslistQuery.h>
@@ -87,7 +89,7 @@ static void logException(Context & context, QueryLogElement & elem)
 static void onExceptionBeforeStart(const String & query, Context & context, time_t current_time)
 {
 	/// Эксепшен до начала выполнения запроса.
-	context.getQuota().addError(current_time);
+	context.getQuota().addError();
 
 	bool log_queries = context.getSettingsRef().log_queries;
 
@@ -168,7 +170,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
 		QuotaForIntervals & quota = context.getQuota();
 
-		quota.addQuery(current_time);
+		quota.addQuery();	/// NOTE Seems that when new time interval has come, first query is not accounted in number of queries.
 		quota.checkExceeded(current_time);
 
 		/// Put query to process list. But don't put SHOW PROCESSLIST query itself.
@@ -191,9 +193,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
 		if (res.in)
 		{
-			if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(res.in.get()))
+			if (auto stream = dynamic_cast<IProfilingBlockInputStream *>(res.in.get()))
 			{
 				stream->setProgressCallback(context.getProgressCallback());
+				stream->setProcessListElement(context.getProcessListElement());
+			}
+		}
+
+		if (res.out)
+		{
+			if (auto stream = dynamic_cast<CountingBlockOutputStream *>(res.out.get()))
+			{
 				stream->setProcessListElement(context.getProcessListElement());
 			}
 		}
@@ -218,7 +228,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 				context.getQueryLog().add(elem);
 
 			/// Also make possible for caller to log successful query finish and exception during execution.
-			res.finish_callback = [elem, &context, log_queries] (IBlockInputStream * stream) mutable
+			res.finish_callback = [elem, &context, log_queries] (IBlockInputStream * stream_in, IBlockOutputStream * stream_out) mutable
 			{
 				ProcessListElement * process_list_elem = context.getProcessListElement();
 
@@ -232,20 +242,33 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 				elem.event_time = time(0);
 				elem.query_duration_ms = elapsed_seconds * 1000;
 
-				elem.read_rows = process_list_elem->progress.rows;
-				elem.read_bytes = process_list_elem->progress.bytes;
+				elem.read_rows = process_list_elem->progress_in.rows;
+				elem.read_bytes = process_list_elem->progress_in.bytes;
+
+				elem.written_rows = process_list_elem->progress_out.rows;
+				elem.written_bytes = process_list_elem->progress_out.bytes;
 
 				auto memory_usage = process_list_elem->memory_tracker.getPeak();
 				elem.memory_usage = memory_usage > 0 ? memory_usage : 0;
 
-				if (stream)
+				if (stream_in)
 				{
-					if (IProfilingBlockInputStream * profiling_stream = dynamic_cast<IProfilingBlockInputStream *>(stream))
+					if (auto profiling_stream = dynamic_cast<const IProfilingBlockInputStream *>(stream_in))
 					{
 						const BlockStreamProfileInfo & info = profiling_stream->getProfileInfo();
 
+						/// NOTE: INSERT SELECT query contains zero metrics
 						elem.result_rows = info.rows;
 						elem.result_bytes = info.bytes;
+					}
+				}
+				else if (stream_out) /// will be used only for ordinary INSERT queries
+				{
+					if (auto counting_stream = dynamic_cast<const CountingBlockOutputStream *>(stream_out))
+					{
+						/// NOTE: Redundancy. The same values could be extracted from process_list_elem->progress_out.
+						elem.result_rows = counting_stream->getProgress().rows;
+						elem.result_bytes = counting_stream->getProgress().bytes;
 					}
 				}
 
@@ -262,9 +285,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 					context.getQueryLog().add(elem);
 			};
 
-			res.exception_callback = [elem, &context, log_queries, current_time] () mutable
+			res.exception_callback = [elem, &context, log_queries] () mutable
 			{
-				context.getQuota().addError(current_time);
+				context.getQuota().addError();
 
 				elem.type = QueryLogElement::EXCEPTION_WHILE_PROCESSING;
 
@@ -280,8 +303,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
 					elem.query_duration_ms = elapsed_seconds * 1000;
 
-					elem.read_rows = process_list_elem->progress.rows;
-					elem.read_bytes = process_list_elem->progress.bytes;
+					elem.read_rows = process_list_elem->progress_in.rows;
+					elem.read_bytes = process_list_elem->progress_in.bytes;
 
 					auto memory_usage = process_list_elem->memory_tracker.getPeak();
 					elem.memory_usage = memory_usage > 0 ? memory_usage : 0;
@@ -369,35 +392,8 @@ void executeQuery(
 	{
 		if (streams.out)
 		{
-			const ASTInsertQuery * ast_insert_query = dynamic_cast<const ASTInsertQuery *>(ast.get());
-
-			if (!ast_insert_query)
-				throw Exception("Logical error: query requires data to insert, but it is not INSERT query", ErrorCodes::LOGICAL_ERROR);
-
-			String format = ast_insert_query->format;
-			if (format.empty())
-				format = "Values";
-
-			/// Data could be in parsed (ast_insert_query.data) and in not parsed yet (istr) part of query.
-
-			ConcatReadBuffer::ReadBuffers buffers;
-			ReadBuffer buf1(const_cast<char *>(ast_insert_query->data), ast_insert_query->data ? ast_insert_query->end - ast_insert_query->data : 0, 0);
-
-			if (ast_insert_query->data)
-				buffers.push_back(&buf1);
-			buffers.push_back(&istr);
-
-			/** NOTE Must not read from 'istr' before read all between 'ast_insert_query.data' and 'ast_insert_query.end'.
-			  * - because 'query.data' could refer to memory piece, used as buffer for 'istr'.
-			  */
-
-			ConcatReadBuffer data_istr(buffers);
-
-			BlockInputStreamPtr in{
-				context.getInputFormat(
-					format, data_istr, streams.out_sample, context.getSettings().max_insert_block_size)};
-
-			copyData(*in, *streams.out);
+			InputStreamFromASTInsertQuery in(ast, istr, streams, context);
+			copyData(in, *streams.out);
 		}
 
 		if (streams.in)
@@ -410,7 +406,7 @@ void executeQuery(
 
 			BlockOutputStreamPtr out = context.getOutputFormat(format_name, ostr, streams.in_sample);
 
-			if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(streams.in.get()))
+			if (auto stream = dynamic_cast<IProfilingBlockInputStream *>(streams.in.get()))
 			{
 				/// NOTE Progress callback takes shared ownership of 'out'.
 				stream->setProgressCallback([out] (const Progress & progress) { out->onProgress(progress); });

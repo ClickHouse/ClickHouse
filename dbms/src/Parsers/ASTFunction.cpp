@@ -1,11 +1,12 @@
 #include <DB/Common/typeid_cast.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTFunction.h>
+#include <DB/IO/WriteHelpers.h>
+#include <DB/IO/WriteBufferFromString.h>
 
 
 namespace DB
 {
-
 
 String ASTFunction::getColumnName() const
 {

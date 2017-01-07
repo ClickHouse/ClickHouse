@@ -1,6 +1,7 @@
 #include <DB/Storages/MergeTree/MergeTreeReader.h>
 #include <DB/Storages/MergeTree/MergeTreeReadPool.h>
 #include <DB/Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
+#include <DB/Columns/ColumnNullable.h>
 #include <ext/range.hpp>
 
 
@@ -152,7 +153,7 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 			if (!res)
 				return res;
 
-			progressImpl({ res.rowsInFirstColumn(), res.bytes() });
+			progressImpl({ res.rows(), res.bytes() });
 			pre_reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
 
 			/// Вычислим выражение в PREWHERE.
@@ -164,10 +165,19 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 
 			const auto pre_bytes = res.bytes();
 
+			ColumnPtr observed_column;
+			if (column->isNullable())
+			{
+				ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column);
+				observed_column = nullable_col.getNestedColumn();
+			}
+			else
+				observed_column = column;
+
 			/** Если фильтр - константа (например, написано PREWHERE 1),
 				*  то либо вернём пустой блок, либо вернём блок без изменений.
 				*/
-			if (const auto column_const = typeid_cast<const ColumnConstUInt8 *>(column.get()))
+			if (const auto column_const = typeid_cast<const ColumnConstUInt8 *>(observed_column.get()))
 			{
 				if (!column_const->getData())
 				{
@@ -180,7 +190,7 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 
 				progressImpl({ 0, res.bytes() - pre_bytes });
 			}
-			else if (const auto column_vec = typeid_cast<const ColumnUInt8 *>(column.get()))
+			else if (const auto column_vec = typeid_cast<const ColumnUInt8 *>(observed_column.get()))
 			{
 				size_t index_granularity = storage.index_granularity;
 
@@ -242,7 +252,7 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 				size_t rows = 0;
 				for (const auto i : ext::range(0, res.columns()))
 				{
-					auto & col = res.getByPosition(i);
+					auto & col = res.safeGetByPosition(i);
 					if (col.name == prewhere_column && res.columns() > 1)
 						continue;
 					col.column =
@@ -286,7 +296,7 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 		if (!res)
 			return res;
 
-		progressImpl({ res.rowsInFirstColumn(), res.bytes() });
+		progressImpl({ res.rows(), res.bytes() });
 		reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
 	}
 
@@ -296,7 +306,7 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 
 void MergeTreeThreadBlockInputStream::injectVirtualColumns(Block & block)
 {
-	const auto rows = block.rowsInFirstColumn();
+	const auto rows = block.rows();
 
 	/// add virtual columns
 	/// Кроме _sample_factor, который добавляется снаружи.

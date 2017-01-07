@@ -1,13 +1,27 @@
 #pragma once
 
-#include <DB/Common/ThreadPool.h>
 #include <DB/Core/Types.h>
-#include <DB/Parsers/IAST.h>
-#include <DB/Storages/IStorage.h>
+#include <DB/Core/NamesAndTypes.h>
+#include <DB/Storages/ColumnDefault.h>
 #include <ctime>
+#include <memory>
+#include <functional>
+
+
+class ThreadPool;
+
 
 namespace DB
 {
+
+class Context;
+
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
+
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
+
 
 /** Позволяет проитерироваться по списку таблиц.
   */

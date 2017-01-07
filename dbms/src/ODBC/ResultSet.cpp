@@ -2,6 +2,8 @@
 #include "Statement.h"
 #include "Log.h"
 
+#include <Poco/Types.h>
+
 
 void ResultSet::init(Statement & statement_)
 {
@@ -11,7 +13,7 @@ void ResultSet::init(Statement & statement_)
 		return;
 
 	/// Заголовок: количество столбцов, их имена и типы.
-	UInt64 num_columns = 0;
+	Poco::UInt64 num_columns = 0;
 	readSize(num_columns, in());
 
 	if (!num_columns)

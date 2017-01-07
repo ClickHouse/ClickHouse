@@ -7,8 +7,12 @@
 #include <DB/Storages/ColumnDefault.h>
 
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnNullable.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/Operators.h>
 
 #include <DB/Parsers/ASTExpressionList.h>
 #include <memory>
@@ -77,11 +81,30 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
 			  */
 			column_to_add.column = dynamic_cast<IColumnConst &>(
 				*column_to_add.type->createConstColumn(
-					rowsInFirstColumn(), column_to_add.type->getDefault())).convertToFullColumn();
+					rows(), column_to_add.type->getDefault())).convertToFullColumn();
 		}
 
 		insert(std::move(column_to_add));
 	}
+}
+
+
+Block::Block(std::initializer_list<ColumnWithTypeAndName> il) : data{il}
+{
+	initializeIndexByName();
+}
+
+
+Block::Block(const ColumnsWithTypeAndName & data_) : data{data_}
+{
+	initializeIndexByName();
+}
+
+
+void Block::initializeIndexByName()
+{
+	for (size_t i = 0, size = data.size(); i < size; ++i)
+		index_by_name[data[i].name] = i;
 }
 
 
@@ -182,14 +205,14 @@ void Block::erase(const String & name)
 }
 
 
-ColumnWithTypeAndName & Block::getByPosition(size_t position)
+ColumnWithTypeAndName & Block::safeGetByPosition(size_t position)
 {
 	if (data.empty())
 		throw Exception("Block is empty", ErrorCodes::POSITION_OUT_OF_BOUND);
 
 	if (position >= data.size())
 		throw Exception("Position " + toString(position)
-			+ " is out of bound in Block::getByPosition(), max position = "
+			+ " is out of bound in Block::safeGetByPosition(), max position = "
 			+ toString(data.size() - 1)
 			+ ", there are columns: " + dumpNames(), ErrorCodes::POSITION_OUT_OF_BOUND);
 
@@ -197,14 +220,14 @@ ColumnWithTypeAndName & Block::getByPosition(size_t position)
 }
 
 
-const ColumnWithTypeAndName & Block::getByPosition(size_t position) const
+const ColumnWithTypeAndName & Block::safeGetByPosition(size_t position) const
 {
 	if (data.empty())
 		throw Exception("Block is empty", ErrorCodes::POSITION_OUT_OF_BOUND);
 
 	if (position >= data.size())
 		throw Exception("Position " + toString(position)
-			+ " is out of bound in Block::getByPosition(), max position = "
+			+ " is out of bound in Block::safeGetByPosition(), max position = "
 			+ toString(data.size() - 1)
 			+ ", there are columns: " + dumpNames(), ErrorCodes::POSITION_OUT_OF_BOUND);
 
@@ -251,30 +274,30 @@ size_t Block::getPositionByName(const std::string & name) const
 }
 
 
-size_t Block::rows() const
+void Block::checkNumberOfRows() const
 {
-	size_t res = 0;
+	ssize_t rows = -1;
 	for (const auto & elem : data)
 	{
-		size_t size = elem.column->size();
-
-		if (res != 0 && size != res)
-			throw Exception("Sizes of columns doesn't match: "
-				+ data.begin()->name + ": " + toString(res)
-				+ ", " + elem.name + ": " + toString(size)
+		if (!elem.column)
+			throw Exception("Column " + elem.name + " in block is nullptr, in method checkNumberOfRows."
 				, ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		res = size;
-	}
+		ssize_t size = elem.column->size();
 
-	return res;
+		if (rows == -1)
+			rows = size;
+		else if (rows != size)
+			throw Exception("Sizes of columns doesn't match: "
+				+ data.front().name + ": " + toString(rows)
+				+ ", " + elem.name + ": " + toString(size)
+				, ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+	}
 }
 
 
-size_t Block::rowsInFirstColumn() const
+size_t Block::rows() const
 {
-	if (data.empty())
-		return 0;
 	for (const auto & elem : data)
 		if (elem.column)
 			return elem.column->size();
@@ -295,33 +318,39 @@ size_t Block::bytes() const
 
 std::string Block::dumpNames() const
 {
-	std::stringstream res;
-	for (auto it = data.begin(); it != data.end(); ++it)
+	std::string res;
 	{
-		if (it != data.begin())
-			res << ", ";
-		res << it->name;
+		WriteBufferFromString out(res);
+		for (auto it = data.begin(); it != data.end(); ++it)
+		{
+			if (it != data.begin())
+				out << ", ";
+			out << it->name;
+		}
 	}
-	return res.str();
+	return res;
 }
 
 
 std::string Block::dumpStructure() const
 {
-	std::stringstream res;
-	for (auto it = data.begin(); it != data.end(); ++it)
+	std::string res;
 	{
-		if (it != data.begin())
-			res << ", ";
+		WriteBufferFromString out(res);
+		for (auto it = data.begin(); it != data.end(); ++it)
+		{
+			if (it != data.begin())
+				out << ", ";
 
-		res << it->name << ' ' << it->type->getName();
+			out << it->name << ' ' << it->type->getName();
 
-		if (it->column)
-			res << ' ' << it->column->getName() << ' ' << it->column->size();
-		else
-			res << " nullptr";
+			if (it->column)
+				out << ' ' << it->column->getName() << ' ' << it->column->size();
+			else
+				out << " nullptr";
+		}
 	}
-	return res.str();
+	return res;
 }
 
 
@@ -349,7 +378,7 @@ Block Block::sortColumns() const
 
 ColumnsWithTypeAndName Block::getColumns() const
 {
-	return ColumnsWithTypeAndName(data.begin(), data.end());
+	return data;
 }
 
 
@@ -372,7 +401,16 @@ void Block::checkNestedArraysOffsets() const
 
 	for (const auto & elem : data)
 	{
-		if (const ColumnArray * column_array = typeid_cast<const ColumnArray *>(&*elem.column))
+		const IColumn * observed_col;
+		if (elem.column->isNullable())
+		{
+			const auto & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
+			observed_col = nullable_col.getNestedColumn().get();
+		}
+		else
+			observed_col = elem.column.get();
+
+		if (const ColumnArray * column_array = typeid_cast<const ColumnArray *>(observed_col))
 		{
 			String name = DataTypeNested::extractNestedTableName(elem.name);
 
@@ -397,7 +435,16 @@ void Block::optimizeNestedArraysOffsets()
 
 	for (auto & elem : data)
 	{
-		if (ColumnArray * column_array = typeid_cast<ColumnArray *>(&*elem.column))
+		IColumn * observed_col;
+		if (elem.column->isNullable())
+		{
+			auto & nullable_col = static_cast<ColumnNullable &>(*elem.column);
+			observed_col = nullable_col.getNestedColumn().get();
+		}
+		else
+			observed_col = elem.column.get();
+
+		if (ColumnArray * column_array = typeid_cast<ColumnArray *>(observed_col))
 		{
 			String name = DataTypeNested::extractNestedTableName(elem.name);
 
@@ -425,14 +472,80 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 
 	for (size_t i = 0; i < columns; ++i)
 	{
-		const IDataType & lhs_type = *lhs.getByPosition(i).type;
-		const IDataType & rhs_type = *rhs.getByPosition(i).type;
+		const IDataType & lhs_type = *lhs.safeGetByPosition(i).type;
+		const IDataType & rhs_type = *rhs.safeGetByPosition(i).type;
 
 		if (lhs_type.getName() != rhs_type.getName())
 			return false;
 	}
 
 	return true;
+}
+
+
+void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff)
+{
+	/// Традиционная задача: наибольшая общая подпоследовательность (LCS).
+	/// Полагаем, что порядок важен. Если это когда-то станет не так, упростим: например, сделаем 2 set'а.
+
+	std::vector<std::vector<int>> lcs(lhs.columns() + 1);
+	for (auto & v : lcs)
+		v.resize(rhs.columns() + 1);
+
+	for (size_t i = 1; i <= lhs.columns(); ++i)
+	{
+		for (size_t j = 1; j <= rhs.columns(); ++j)
+		{
+			if (lhs.safeGetByPosition(i - 1) == rhs.safeGetByPosition(j - 1))
+				lcs[i][j] = lcs[i - 1][j - 1] + 1;
+			else
+				lcs[i][j] = std::max(lcs[i - 1][j], lcs[i][j - 1]);
+		}
+	}
+
+	/// Теперь идем обратно и собираем ответ.
+	ColumnsWithTypeAndName left_columns;
+	ColumnsWithTypeAndName right_columns;
+	size_t l = lhs.columns();
+	size_t r = rhs.columns();
+	while (l > 0 && r > 0)
+	{
+		if (lhs.safeGetByPosition(l - 1) == rhs.safeGetByPosition(r - 1))
+		{
+			/// Данный элемент в обеих последовательностях, значит, в diff не попадает.
+			--l;
+			--r;
+		}
+		else
+		{
+			/// Маленькая эвристика: чаще всего используется при получении разницы для (expected_block, actual_block).
+			/// Поэтому предпочтение будем отдавать полю, которое есть в левом блоке (expected_block), поэтому
+			/// в diff попадет столбец из actual_block.
+			if (lcs[l][r - 1] >= lcs[l - 1][r])
+				right_columns.push_back(rhs.safeGetByPosition(--r));
+			else
+				left_columns.push_back(lhs.safeGetByPosition(--l));
+		}
+	}
+
+	while (l > 0)
+		left_columns.push_back(lhs.safeGetByPosition(--l));
+	while (r > 0)
+		right_columns.push_back(rhs.safeGetByPosition(--r));
+
+	WriteBufferFromString lhs_diff_writer(out_lhs_diff);
+	WriteBufferFromString rhs_diff_writer(out_rhs_diff);
+
+	for (auto it = left_columns.rbegin(); it != left_columns.rend(); ++it)
+	{
+		lhs_diff_writer << it->prettyPrint();
+		lhs_diff_writer << ", position: " << lhs.getPositionByName(it->name) << '\n';
+	}
+	for (auto it = right_columns.rbegin(); it != right_columns.rend(); ++it)
+	{
+		rhs_diff_writer << it->prettyPrint();
+		rhs_diff_writer << ", position: " << rhs.getPositionByName(it->name) << '\n';
+	}
 }
 
 

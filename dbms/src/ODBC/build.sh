@@ -2,8 +2,8 @@
 
 # First, compile and install Poco library with static libraries and -fPIC option enabled.
 
-g++ \
-    -std=c++11 \
+g++-5 \
+    -std=c++14 \
     -Wall -Werror \
     -O2 \
     -g \

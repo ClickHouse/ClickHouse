@@ -14,11 +14,16 @@
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/Common/localBackup.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <Poco/DirectoryIterator.h>
 #include <DB/Common/Increment.h>
+#include <DB/Common/escapeForFileName.h>
 #include <DB/Common/StringUtils.h>
+#include <DB/IO/Operators.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -125,18 +130,24 @@ void MergeTreeData::initPrimaryKey()
 
 	size_t primary_key_size = primary_key_sample.columns();
 
-	/// Primary key cannot contain constants. It is meaningless.
+	/// A primary key cannot contain constants. It is meaningless.
 	///  (And also couldn't work because primary key is serialized with method of IDataType that doesn't support constants).
+	/// Also a primary key must not contain any nullable column.
 	for (size_t i = 0; i < primary_key_size; ++i)
 	{
-		const ColumnPtr & column = primary_key_sample.unsafeGetByPosition(i).column;
+		const auto & element = primary_key_sample.getByPosition(i);
+
+		const ColumnPtr & column = element.column;
 		if (column && column->isConst())
-			throw Exception("Primary key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN);
+				throw Exception{"Primary key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN};
+
+		if (element.type->isNullable())
+			throw Exception{"Primary key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN};
 	}
 
 	primary_key_data_types.resize(primary_key_size);
 	for (size_t i = 0; i < primary_key_size; ++i)
-		primary_key_data_types[i] = primary_key_sample.unsafeGetByPosition(i).type;
+		primary_key_data_types[i] = primary_key_sample.getByPosition(i).type;
 }
 
 
@@ -593,12 +604,10 @@ void MergeTreeData::checkAlter(const AlterCommands & params)
 		std::begin(new_materialized_columns), std::end(new_materialized_columns));
 
 	createConvertExpression(nullptr, getColumnsList(), new_columns, unused_expression, unused_map, unused_bool);
-
-
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-	ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata)
+	ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
 {
 	out_expression = nullptr;
 	out_rename_map = {};
@@ -607,16 +616,12 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 	using NameToType = std::map<String, DataTypePtr>;
 	NameToType new_types;
 	for (const NameAndTypePair & column : new_columns)
-	{
-		new_types[column.name] = column.type;
-	}
+		new_types.emplace(column.name, column.type);
 
 	/// Сколько столбцов сейчас в каждой вложенной структуре. Столбцы не из вложенных структур сюда тоже попадут и не помешают.
-	std::map<String, int> nested_table_counts;
+	std::map<String, size_t> nested_table_counts;
 	for (const NameAndTypePair & column : old_columns)
-	{
 		++nested_table_counts[DataTypeNested::extractNestedTableName(column.name)];
-	}
 
 	/// For every column that need to be converted: source column name, column name of calculated expression for conversion.
 	std::vector<std::pair<String, String>> conversions;
@@ -625,16 +630,32 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 	{
 		if (!new_types.count(column.name))
 		{
+			bool is_nullable = column.type.get()->isNullable();
+
 			if (!part || part->hasColumnFiles(column.name))
 			{
 				/// Столбец нужно удалить.
+				const IDataType * observed_type;
+				if (is_nullable)
+				{
+					const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*column.type);
+					observed_type = nullable_type.getNestedType().get();
+				}
+				else
+					observed_type = column.type.get();
 
 				String escaped_column = escapeForFileName(column.name);
 				out_rename_map[escaped_column + ".bin"] = "";
 				out_rename_map[escaped_column + ".mrk"] = "";
 
+				if (is_nullable)
+				{
+					out_rename_map[escaped_column + ".null.bin"] = "";
+					out_rename_map[escaped_column + ".null.mrk"] = "";
+				}
+
 				/// Если это массив или последний столбец вложенной структуры, нужно удалить файлы с размерами.
-				if (typeid_cast<const DataTypeArray *>(&*column.type))
+				if (typeid_cast<const DataTypeArray *>(observed_type))
 				{
 					String nested_table = DataTypeNested::extractNestedTableName(column.name);
 					/// Если это был последний столбец, относящийся к этим файлам .size0, удалим файлы.
@@ -655,16 +676,53 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 			if (new_type_name != old_type->getName() && (!part || part->hasColumnFiles(column.name)))
 			{
-				// При ALTER между Enum с одинаковым подлежащим типом столбцы не трогаем, лишь просим обновить columns.txt
-				if (part
-					&& ((typeid_cast<const DataTypeEnum8 *>(new_type) && typeid_cast<const DataTypeEnum8 *>(old_type))
-						|| (typeid_cast<const DataTypeEnum16 *>(new_type) && typeid_cast<const DataTypeEnum16 *>(old_type))))
+				bool is_nullable = new_type->isNullable();
+				const IDataType * observed_type;
+				if (is_nullable)
 				{
-					out_force_update_metadata = true;
-					continue;
+					const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*new_type);
+					observed_type = nullable_type.getNestedType().get();
+				}
+				else
+					observed_type = new_type;
+
+				/// When ALTERing between Enums with same underlying type, don't modify columns, just update columns.txt.
+				/// Same for Arrays of Enums, arbitary depth.
+				if (part)
+				{
+					const IDataType * type_from = old_type;
+					const IDataType * type_to = observed_type;
+
+					bool enums_with_same_type = false;
+					while (true)
+					{
+						if ((typeid_cast<const DataTypeEnum8 *>(type_to) && typeid_cast<const DataTypeEnum8 *>(type_from))
+							|| (typeid_cast<const DataTypeEnum16 *>(type_to) && typeid_cast<const DataTypeEnum16 *>(type_from)))
+						{
+							enums_with_same_type = true;
+							break;
+						}
+
+						const DataTypeArray * arr_from = typeid_cast<const DataTypeArray *>(type_from);
+						const DataTypeArray * arr_to = typeid_cast<const DataTypeArray *>(type_to);
+
+						if (arr_from && arr_to)
+						{
+							type_from = arr_from->getNestedType().get();
+							type_to = arr_to->getNestedType().get();
+						}
+						else
+							break;
+					}
+
+					if (enums_with_same_type)
+					{
+						out_force_update_metadata = true;
+						continue;
+					}
 				}
 
-				/// Нужно изменить тип столбца.
+				/// Need to modify column type.
 				if (!out_expression)
 					out_expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), context.getSettingsRef());
 
@@ -707,9 +765,39 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 			/// After conversion, we need to rename temporary files into original.
 			out_rename_map[escaped_converted_column + ".bin"] = escaped_source_column + ".bin";
 			out_rename_map[escaped_converted_column + ".mrk"] = escaped_source_column + ".mrk";
+
+			const IDataType * new_type = new_types[source_and_expression.first].get();
+
+			/// NOTE Sizes of arrays are not updated during conversion.
+
+			/// Information on how to update the null map if it is a nullable column.
+			if (new_type->isNullable())
+			{
+				out_rename_map[escaped_converted_column + ".null.bin"] = escaped_source_column + ".null.bin";
+				out_rename_map[escaped_converted_column + ".null.mrk"] = escaped_source_column + ".null.mrk";
+			}
 		}
 
 		out_expression->add(ExpressionAction::project(projection));
+	}
+
+	if (part && !out_rename_map.empty())
+	{
+		std::string message;
+		{
+			WriteBufferFromString out(message);
+			out << "Will rename ";
+			bool first = true;
+			for (const auto & from_to : out_rename_map)
+			{
+				if (!first)
+					out << ", ";
+				first = false;
+				out << from_to.first << " to " << from_to.second;
+			}
+			out << " in part " << part->name;
+		}
+		LOG_DEBUG(log, message);
 	}
 }
 
@@ -776,7 +864,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 		ssize_t prev_position_of_existing_column = -1;
 		for (size_t i = 0; i < new_key_size; ++i)
 		{
-			const String & column_name = new_primary_key_sample.getByPosition(i).name;
+			const String & column_name = new_primary_key_sample.safeGetByPosition(i).name;
 
 			if (primary_key_sample.has(column_name))
 			{
@@ -790,7 +878,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 			}
 			else
 			{
-				const IDataType & type = *new_primary_key_sample.getByPosition(i).type;
+				const IDataType & type = *new_primary_key_sample.safeGetByPosition(i).type;
 				new_index[i] = type.createConstColumn(part->size, type.getDefault())->convertToFullColumnIfConst();
 			}
 		}
@@ -804,7 +892,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
 		for (size_t i = 0, size = part->size; i < size; ++i)
 			for (size_t j = 0; j < new_key_size; ++j)
-				new_primary_key_sample.unsafeGetByPosition(j).type.get()->serializeBinary(*new_index[j].get(), i, index_stream);
+				new_primary_key_sample.getByPosition(j).type.get()->serializeBinary(*new_index[j].get(), i, index_stream);
 
 		transaction->rename_map["primary.idx.tmp"] = "primary.idx";
 
@@ -828,7 +916,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 			false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
 
 		ExpressionBlockInputStream in(part_in, expression);
-		MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, CompressionMethod::LZ4);
+		MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, CompressionMethod::LZ4, false);
 		in.readPrefix();
 		out.writePrefix();
 
@@ -885,20 +973,25 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 
 		String path = data_part->storage.full_path + data_part->name + "/";
 
+		/// NOTE: checking that a file exists before renaming or deleting it
+		/// is justified by the fact that, when converting an ordinary column
+		/// to a nullable column, new files are created which did not exist
+		/// before, i.e. they do not have older versions.
+
 		/// 1) Переименуем старые файлы.
 		for (auto it : rename_map)
 		{
 			String name = it.second.empty() ? it.first : it.second;
-			Poco::File(path + name).renameTo(path + name + ".tmp2");
+			Poco::File file{path + name};
+			if (file.exists())
+				file.renameTo(path + name + ".tmp2");
 		}
 
 		/// 2) Переместим на их место новые и обновим метаданные в оперативке.
 		for (auto it : rename_map)
 		{
 			if (!it.second.empty())
-			{
-				Poco::File(path + it.first).renameTo(path + it.second);
-			}
+				Poco::File{path + it.first}.renameTo(path + it.second);
 		}
 
 		DataPart & mutable_part = const_cast<DataPart &>(*data_part);
@@ -909,7 +1002,9 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 		for (auto it : rename_map)
 		{
 			String name = it.second.empty() ? it.first : it.second;
-			Poco::File(path + name + ".tmp2").remove();
+			Poco::File file{path + name + ".tmp2"};
+			if (file.exists())
+				file.remove();
 		}
 
 		mutable_part.size_in_bytes = MergeTreeData::DataPart::calcTotalSize(path);

@@ -172,8 +172,8 @@ const PKCondition::AtomMap PKCondition::atom_map{
 };
 
 
-inline bool Range::equals(const Field & lhs, const Field & rhs) { return apply_visitor(FieldVisitorAccurateEquals(), lhs, rhs); }
-inline bool Range::less(const Field & lhs, const Field & rhs) { return apply_visitor(FieldVisitorAccurateLess(), lhs, rhs); }
+inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
+inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
 
 
 Block PKCondition::getBlockWithConstants(
@@ -532,7 +532,7 @@ static void applyFunction(
 
 	func->execute(block, {0}, 1);
 
-	block.getByPosition(1).column->get(0, res_value);
+	block.safeGetByPosition(1).column->get(0, res_value);
 }
 
 
@@ -666,13 +666,13 @@ bool PKCondition::mayBeTrueInRange(
 
 /*	std::cerr << "Checking for: [";
 	for (size_t i = 0; i != used_key_size; ++i)
-		std::cerr << (i != 0 ? ", " : "") << apply_visitor(FieldVisitorToString(), left_pk[i]);
+		std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), left_pk[i]);
 	std::cerr << " ... ";
 
 	if (right_bounded)
 	{
 		for (size_t i = 0; i != used_key_size; ++i)
-			std::cerr << (i != 0 ? ", " : "") << apply_visitor(FieldVisitorToString(), right_pk[i]);
+			std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), right_pk[i]);
 		std::cerr << "]\n";
 	}
 	else
@@ -726,8 +726,8 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
 				/*	std::cerr << "Function " << func->getName() << " is " << (monotonicity.is_monotonic ? "" : "not ")
 						<< "monotonic " << (monotonicity.is_monotonic ? (monotonicity.is_positive ? "(positive) " : "(negative) ") : "")
 						<< "in range "
-						<< "[" << apply_visitor(FieldVisitorToString(), key_range_transformed.left)
-						<< ", " << apply_visitor(FieldVisitorToString(), key_range_transformed.right) << "]\n";*/
+						<< "[" << applyVisitor(FieldVisitorToString(), key_range_transformed.left)
+						<< ", " << applyVisitor(FieldVisitorToString(), key_range_transformed.right) << "]\n";*/
 
 					if (!monotonicity.is_monotonic)
 					{

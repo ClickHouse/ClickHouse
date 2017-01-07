@@ -56,7 +56,7 @@ public:
 		}
 	};
 
-	TemporarilyStop temporarilyStop() { return std::move(TemporarilyStop(this)); }
+	TemporarilyStop temporarilyStop() { return TemporarilyStop(this); }
 
 	/// Добавить кусок (для которого есть подозрения, что он отсутствует, повреждён или не нужен) в очередь для проверки.
 	/// delay_to_check_seconds - проверять не раньше чем через указанное количество секунд.

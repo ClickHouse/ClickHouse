@@ -41,13 +41,11 @@
 #include <DB/Dictionaries/IDictionary.h>
 
 #include <DB/Common/typeid_cast.h>
+#include <DB/Common/StringUtils.h>
 
 #include <DB/Parsers/formatAST.h>
 
 #include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/FunctionsTransform.h>
-#include <DB/Functions/FunctionsConditional.h>
-#include <DB/Functions/FunctionsArray.h>
 
 #include <ext/range.hpp>
 #include <DB/DataTypes/DataTypeFactory.h>
@@ -74,6 +72,7 @@ namespace ErrorCodes
 	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 	extern const int ILLEGAL_AGGREGATION;
 	extern const int SUPPORT_IS_DISABLED;
+	extern const int TOO_DEEP_AST;
 }
 
 
@@ -88,7 +87,6 @@ const std::unordered_set<String> injective_function_names
 	"reverseUTF8",
 	"toString",
 	"toFixedString",
-	"toStringCutToZero",
 	"IPv4NumToString",
 	"IPv4StringToNum",
 	"hex",
@@ -152,7 +150,7 @@ void ExpressionAnalyzer::init()
 
 	/// В зависимости от профиля пользователя проверить наличие прав на выполнение
 	/// распределённых подзапросов внутри секций IN или JOIN и обработать эти подзапросы.
-	InJoinSubqueriesPreprocessor<>(select_query, context, storage).perform();
+	InJoinSubqueriesPreprocessor(context).process(select_query);
 
 	/// Оптимизирует логические выражения.
 	LogicalExpressionsOptimizer(select_query, settings).perform();
@@ -177,6 +175,9 @@ void ExpressionAnalyzer::init()
 
 	/// Удалить из ORDER BY повторяющиеся элементы.
 	optimizeOrderBy();
+
+	// Remove duplicated elements from LIMIT BY clause.
+	optimizeLimitBy();
 
 	/// array_join_alias_to_name, array_join_result_to_source.
 	getArrayJoinedColumns();
@@ -219,7 +220,7 @@ bool ExpressionAnalyzer::tryExtractConstValueFromCondition(const ASTPtr & condit
 	/// cast of numeric constant in condition to UInt8
 	if (const ASTFunction * function = typeid_cast<ASTFunction * >(condition.get()))
 	{
-		if (function->name == FunctionCast::name)
+		if (function->name == "CAST")
 		{
 			if (ASTExpressionList * expr_list = typeid_cast<ASTExpressionList *>(function->arguments.get()))
 			{
@@ -245,7 +246,7 @@ void ExpressionAnalyzer::optimizeIfWithConstantConditionImpl(ASTPtr & current_as
 	for (ASTPtr & child : current_ast->children)
 	{
 		ASTFunction * function_node = typeid_cast<ASTFunction *>(child.get());
-		if (!function_node || function_node->name != FunctionIf::name)
+		if (!function_node || function_node->name != "if")
 		{
 			optimizeIfWithConstantConditionImpl(child, aliases);
 			continue;
@@ -354,7 +355,7 @@ void ExpressionAnalyzer::analyzeAggregation()
 					/// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
 					if (!aggregate_descriptions.empty() || size > 1)
 					{
-						if (i + 1 < size)
+						if (i + 1 < static_cast<ssize_t>(size))
 							group_asts[i] = std::move(group_asts.back());
 
 						group_asts.pop_back();
@@ -984,9 +985,9 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 		size_t columns = block.columns();
 		if (columns == 1)
 		{
-			auto lit = std::make_unique<ASTLiteral>(ast->range, (*block.getByPosition(0).column)[0]);
+			auto lit = std::make_unique<ASTLiteral>(ast->range, (*block.safeGetByPosition(0).column)[0]);
 			lit->alias = subquery->alias;
-			ast = addTypeConversion(std::move(lit), block.getByPosition(0).type->getName());
+			ast = addTypeConversion(std::move(lit), block.safeGetByPosition(0).type->getName());
 		}
 		else
 		{
@@ -1003,8 +1004,8 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 			for (size_t i = 0; i < columns; ++i)
 			{
 				exp_list->children[i] = addTypeConversion(
-					std::make_unique<ASTLiteral>(ast->range, (*block.getByPosition(i).column)[0]),
-					block.getByPosition(i).type->getName());
+					std::make_unique<ASTLiteral>(ast->range, (*block.safeGetByPosition(i).column)[0]),
+					block.safeGetByPosition(i).type->getName());
 			}
 		}
 	}
@@ -1164,6 +1165,31 @@ void ExpressionAnalyzer::optimizeOrderBy()
 
 		if (elems_set.emplace(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "").second)
 			unique_elems.emplace_back(elem);
+	}
+
+	if (unique_elems.size() < elems.size())
+		elems = unique_elems;
+}
+
+
+void ExpressionAnalyzer::optimizeLimitBy()
+{
+	if (!(select_query && select_query->limit_by_expression_list))
+		return;
+
+	std::set<String> elems_set;
+
+	ASTs & elems = select_query->limit_by_expression_list->children;
+	ASTs unique_elems;
+	unique_elems.reserve(elems.size());
+
+	for (const auto & elem : elems)
+	{
+		if (const auto id = typeid_cast<const ASTIdentifier*>(elem.get()))
+		{
+			if (elems_set.emplace(id->getColumnName()).second)
+				unique_elems.emplace_back(elem);
+		}
 	}
 
 	if (unique_elems.size() < elems.size())
@@ -1542,7 +1568,7 @@ struct ExpressionAnalyzer::ScopeStack
 
 		const Block & sample_block = actions->getSampleBlock();
 		for (size_t i = 0, size = sample_block.columns(); i < size; ++i)
-			stack.back().new_columns.insert(sample_block.unsafeGetByPosition(i).name);
+			stack.back().new_columns.insert(sample_block.getByPosition(i).name);
 	}
 
 	void pushLevel(const NamesAndTypesList & input_columns)
@@ -1563,7 +1589,7 @@ struct ExpressionAnalyzer::ScopeStack
 		const Block & prev_sample_block = prev.actions->getSampleBlock();
 		for (size_t i = 0, size = prev_sample_block.columns(); i < size; ++i)
 		{
-			const ColumnWithTypeAndName & col = prev_sample_block.unsafeGetByPosition(i);
+			const ColumnWithTypeAndName & col = prev_sample_block.getByPosition(i);
 			if (!new_names.count(col.name))
 				all_columns.push_back(col);
 		}
@@ -1968,7 +1994,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 	}
 	else if (ASTLiteral * node = typeid_cast<ASTLiteral *>(ast.get()))
 	{
-		DataTypePtr type = apply_visitor(FieldToDataType(), node->value);
+		DataTypePtr type = applyVisitor(FieldToDataType(), node->value);
 
 		ColumnWithTypeAndName column;
 		column.column = type->createConstColumn(1, node->value);
@@ -2593,7 +2619,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 
 	for (const auto i : ext::range(0, nested_result_sample.columns()))
 	{
-		const auto & col = nested_result_sample.getByPosition(i);
+		const auto & col = nested_result_sample.safeGetByPosition(i);
 		if (join_key_names_right.end() == std::find(join_key_names_right.begin(), join_key_names_right.end(), col.name)
 			&& !joined_columns.count(col.name))	/// Дублирующиеся столбцы в подзапросе для JOIN-а не имеют смысла.
 		{

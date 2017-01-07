@@ -52,44 +52,21 @@ inline void intrusive_ptr_release(detail::SharedBlock * ptr)
 }
 
 
-/** Соединяет несколько сортированных потоков в один.
+/** Merges several sorted streams into one sorted stream.
   */
 class MergingSortedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	/// limit - if isn't 0, then we can produce only first limit rows in sorted order.
-	/// out_row_sources - if isn't nullptr, then at the end of execution it should contain part numbers of each readed row (and needed flag)
-	MergingSortedBlockInputStream(BlockInputStreams & inputs_, const SortDescription & description_,
-								  size_t max_block_size_, size_t limit_ = 0, MergedRowSources * out_row_sources_ = nullptr)
-		: description(description_), max_block_size(max_block_size_), limit(limit_),
-		source_blocks(inputs_.size()), cursors(inputs_.size()), out_row_sources(out_row_sources_)
-	{
-		children.insert(children.end(), inputs_.begin(), inputs_.end());
-	}
+	/** limit - if isn't 0, then we can produce only first limit rows in sorted order.
+	  * out_row_sources - if isn't nullptr, then at the end of execution it should contain part numbers of each readed row (and needed flag)
+	  * quiet - don't log profiling info
+	  */
+	MergingSortedBlockInputStream(BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
+								  size_t limit_ = 0, MergedRowSources * out_row_sources_ = nullptr, bool quiet_ = false);
 
 	String getName() const override { return "MergingSorted"; }
 
-	String getID() const override
-	{
-		std::stringstream res;
-		res << "MergingSorted(";
-
-		Strings children_ids(children.size());
-		for (size_t i = 0; i < children.size(); ++i)
-			children_ids[i] = children[i]->getID();
-
-		/// Порядок не имеет значения.
-		std::sort(children_ids.begin(), children_ids.end());
-
-		for (size_t i = 0; i < children_ids.size(); ++i)
-			res << (i == 0 ? "" : ", ") << children_ids[i];
-
-		for (size_t i = 0; i < description.size(); ++i)
-			res << ", " << description[i].getID();
-
-		res << ")";
-		return res.str();
-	}
+	String getID() const override;
 
 protected:
 	struct RowRef
@@ -144,6 +121,7 @@ protected:
 
 	bool first = true;
 	bool has_collation = false;
+	bool quiet = false;
 
 	/// May be smaller or equal to max_block_size. To do 'reserve' for columns.
 	size_t expected_block_size = 0;
@@ -189,7 +167,7 @@ protected:
 				{
 					if (i < block->columns())
 					{
-						column_name = block->getByPosition(i).name;
+						column_name = block->safeGetByPosition(i).name;
 						break;
 					}
 				}

@@ -4,19 +4,24 @@
 #include <map>
 #include <initializer_list>
 
+#include <DB/Common/Exception.h>
 #include <DB/Core/BlockInfo.h>
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Core/ColumnWithTypeAndName.h>
 #include <DB/Core/ColumnsWithTypeAndName.h>
+#include <DB/Core/ColumnNumbers.h>
 #include <DB/Common/Exception.h>
+
 
 
 namespace DB
 {
 
-/** Тип данных для представления подмножества строк и столбцов в оперативке.
-  * Содержит также метаданные (типы) столбцов и их имена.
-  * Позволяет вставлять, удалять столбцы в любом порядке, менять порядок столбцов.
+/** Container for set of columns for bunch of rows in memory.
+  * This is unit of data processing.
+  * Also contains metadata - data types of columns and their names
+  *  (either original names from a table, or generated names during temporary calculations).
+  * Allows to insert, remove columns in arbitary position, to change order of columns.
   */
 
 class Context;
@@ -24,7 +29,7 @@ class Context;
 class Block
 {
 private:
-	using Container = std::vector<ColumnWithTypeAndName>;
+	using Container = ColumnsWithTypeAndName;
 	using IndexByName = std::map<String, size_t>;
 
 	Container data;
@@ -34,15 +39,8 @@ public:
 	BlockInfo info;
 
 	Block() = default;
-	Block(std::initializer_list<ColumnWithTypeAndName> il) : data{il}
-	{
-		size_t i = 0;
-		for (const auto & elem : il)
-		{
-			index_by_name[elem.name] = i;
-			++i;
-		}
-	}
+	Block(std::initializer_list<ColumnWithTypeAndName> il);
+	Block(const ColumnsWithTypeAndName & data_);
 
 	/// вставить столбец в заданную позицию
 	void insert(size_t position, const ColumnWithTypeAndName & elem);
@@ -62,11 +60,11 @@ public:
 
 	/// References are invalidated after calling functions above.
 
-	ColumnWithTypeAndName & getByPosition(size_t position);
-	const ColumnWithTypeAndName & getByPosition(size_t position) const;
+	ColumnWithTypeAndName & getByPosition(size_t position) { return data[position]; }
+	const ColumnWithTypeAndName & getByPosition(size_t position) const { return data[position]; }
 
-	ColumnWithTypeAndName & unsafeGetByPosition(size_t position) { return data[position]; }
-	const ColumnWithTypeAndName & unsafeGetByPosition(size_t position) const { return data[position]; }
+	ColumnWithTypeAndName & safeGetByPosition(size_t position);
+	const ColumnWithTypeAndName & safeGetByPosition(size_t position) const;
 
 	ColumnWithTypeAndName & getByName(const std::string & name);
 	const ColumnWithTypeAndName & getByName(const std::string & name) const;
@@ -78,18 +76,15 @@ public:
 	ColumnsWithTypeAndName getColumns() const;
 	NamesAndTypesList getColumnsList() const;
 
-	/** Возвращает количество строк в блоке.
-	  * Заодно проверяет, что все столбцы содержат одинаковое число значений.
-	  */
+	/// Returns number of rows from first column in block, not equal to nullptr. If no columns, returns 0.
 	size_t rows() const;
-
-	/** То же самое, но без проверки - берёт количество строк из первого столбца, если он есть или возвращает 0.
-	  */
-	size_t rowsInFirstColumn() const;
 
 	size_t columns() const { return data.size(); }
 
-	/// Приблизительное количество байт в оперативке - для профайлинга.
+	/// Checks that every column in block is not nullptr and has same number of elements.
+	void checkNumberOfRows() const;
+
+	/// Approximate number of bytes in memory - for profiling and limits.
 	size_t bytes() const;
 
 	operator bool() const { return !data.empty(); }
@@ -126,13 +121,19 @@ public:
 
 private:
 	void eraseImpl(size_t position);
+	void initializeIndexByName();
 };
 
 using Blocks = std::vector<Block>;
 using BlocksList = std::list<Block>;
 
+
 /// Сравнить типы столбцов у блоков. Порядок столбцов имеет значение. Имена не имеют значения.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
+
+/// Calculate difference in structure of blocks and write description into output strings.
+void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff);
+
 
 /** Дополнительные данные к блокам. Они пока нужны только для запроса
   * DESCRIBE TABLE с Distributed-таблицами.

@@ -6,12 +6,13 @@
 namespace DB
 {
 
-/** Элемент выражения, после которого стоит ASC или DESC
+/** Element of expression with ASC or DESC,
+  *  and possibly with COLLATE.
   */
 class ASTOrderByElement : public IAST
 {
 public:
-	int direction;	/// 1, если ASC, -1, если DESC
+	int direction;	/// 1 for ASC, -1 for DESC
 
 	/** Collation for locale-specific string comparison. If empty, then sorting done by bytes. */
 	ASTPtr collation;
@@ -20,7 +21,6 @@ public:
 	ASTOrderByElement(const StringRange range_, const int direction_, ASTPtr & collation_)
 		: IAST(range_), direction(direction_), collation(collation_) {}
 
-	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "OrderByElement"; }
 
 	ASTPtr clone() const override { return std::make_shared<ASTOrderByElement>(*this); }

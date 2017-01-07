@@ -89,7 +89,7 @@ public:
 typedef std::set<Element::Ptr, ElementComparator> ElementSet;
 
 
-template<typename T> 
+template<typename T>
 struct ElementTraits
 {
 };
@@ -181,7 +181,7 @@ inline void BSONReader::read<std::string>(std::string& to)
 template<>
 inline void BSONWriter::write<std::string>(std::string& from)
 {
-	_writer << (Poco::Int32) (from.length() + 1);
+	_writer << static_cast<Poco::Int32>(from.length() + 1);
 	writeCString(from);
 }
 
@@ -318,7 +318,7 @@ public:
 	{
 	}
 
-	
+
 	T value() const
 	{
 		return _value;
@@ -330,7 +330,7 @@ public:
 		return ElementTraits<T>::toString(_value, indent);
 	}
 
-	
+
 	int type() const
 	{
 		return ElementTraits<T>::TypeId;

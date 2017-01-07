@@ -29,12 +29,12 @@ int main()
 		zk.remove("/test");
 
 		Ops ops;
-		ops.push_back(new Op::Create("/test", "multi1", zk.getDefaultACL(), CreateMode::Persistent));
-		ops.push_back(new Op::SetData("/test", "multi2", -1));
-		ops.push_back(new Op::Remove("/test", -1));
+		ops.emplace_back(std::make_unique<Op::Create>("/test", "multi1", zk.getDefaultACL(), CreateMode::Persistent));
+		ops.emplace_back(std::make_unique<Op::SetData>("/test", "multi2", -1));
+		ops.emplace_back(std::make_unique<Op::Remove>("/test", -1));
 		std::cout << "multi" << std::endl;
 		OpResultsPtr res = zk.multi(ops);
-		std::cout << "path created: " << dynamic_cast<Op::Create &>(ops[0]).getPathCreated() << std::endl;
+		std::cout << "path created: " << dynamic_cast<Op::Create &>(*ops[0]).getPathCreated() << std::endl;
 	}
 	catch (KeeperException & e)
 	{

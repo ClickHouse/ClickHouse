@@ -43,6 +43,18 @@
 #include <zkutil/ZooKeeper.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ContextLock;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric ContextLockWait;
+	extern const Metric MemoryTrackingForMerges;
+}
+
+
 namespace DB
 {
 
@@ -191,7 +203,14 @@ Context::~Context() = default;
 const TableFunctionFactory & Context::getTableFunctionFactory() const			{ return shared->table_function_factory; }
 const AggregateFunctionFactory & Context::getAggregateFunctionFactory() const	{ return shared->aggregate_function_factory; }
 InterserverIOHandler & Context::getInterserverIOHandler()						{ return shared->interserver_io_handler; }
-std::unique_lock<Poco::Mutex> Context::getLock() const							{ return std::unique_lock<Poco::Mutex>(shared->mutex); }
+
+std::unique_lock<Poco::Mutex> Context::getLock() const
+{
+	ProfileEvents::increment(ProfileEvents::ContextLock);
+	CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
+	return std::unique_lock<Poco::Mutex>(shared->mutex);
+}
+
 ProcessList & Context::getProcessList()											{ return shared->process_list; }
 const ProcessList & Context::getProcessList() const								{ return shared->process_list; }
 MergeList & Context::getMergeList() 											{ return shared->merge_list; }
@@ -210,10 +229,20 @@ Databases Context::getDatabases()
 	return shared->databases;
 }
 
+
+static String resolveDatabase(const String & database_name, const String & current_database)
+{
+	String res = database_name.empty() ? current_database : database_name;
+	if (res.empty())
+		throw Exception("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
+	return res;
+}
+
+
 const DatabasePtr Context::getDatabase(const String & database_name) const
 {
 	auto lock = getLock();
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	assertDatabaseExists(db);
 	return shared->databases[db];
 }
@@ -221,7 +250,7 @@ const DatabasePtr Context::getDatabase(const String & database_name) const
 DatabasePtr Context::getDatabase(const String & database_name)
 {
 	auto lock = getLock();
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	assertDatabaseExists(db);
 	return shared->databases[db];
 }
@@ -229,7 +258,7 @@ DatabasePtr Context::getDatabase(const String & database_name)
 const DatabasePtr Context::tryGetDatabase(const String & database_name) const
 {
 	auto lock = getLock();
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	auto it = shared->databases.find(db);
 	if (it == shared->databases.end())
 		return {};
@@ -239,7 +268,7 @@ const DatabasePtr Context::tryGetDatabase(const String & database_name) const
 DatabasePtr Context::tryGetDatabase(const String & database_name)
 {
 	auto lock = getLock();
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	auto it = shared->databases.find(db);
 	if (it == shared->databases.end())
 		return {};
@@ -262,6 +291,11 @@ String Context::getTemporaryPath() const
 String Context::getFlagsPath() const
 {
 	auto lock = getLock();
+	if (!shared->flags_path.empty())
+		return shared->flags_path;
+
+	shared->flags_path = shared->path + "flags/";
+	Poco::File(shared->flags_path).createDirectories();
 	return shared->flags_path;
 }
 
@@ -361,7 +395,7 @@ Dependencies Context::getDependencies(const String & database_name, const String
 {
 	auto lock = getLock();
 
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	checkDatabaseAccessRights(db);
 
 	ViewDependencies::const_iterator iter = shared->view_dependencies.find(DatabaseAndTableName(db, table_name));
@@ -375,7 +409,7 @@ bool Context::isTableExist(const String & database_name, const String & table_na
 {
 	auto lock = getLock();
 
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	checkDatabaseAccessRights(db);
 
 	Databases::const_iterator it = shared->databases.find(db);
@@ -387,7 +421,7 @@ bool Context::isTableExist(const String & database_name, const String & table_na
 bool Context::isDatabaseExist(const String & database_name) const
 {
 	auto lock = getLock();
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	checkDatabaseAccessRights(db);
 	return shared->databases.end() != shared->databases.find(db);
 }
@@ -397,7 +431,7 @@ void Context::assertTableExists(const String & database_name, const String & tab
 {
 	auto lock = getLock();
 
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	checkDatabaseAccessRights(db);
 
 	Databases::const_iterator it = shared->databases.find(db);
@@ -413,7 +447,7 @@ void Context::assertTableDoesntExist(const String & database_name, const String 
 {
 	auto lock = getLock();
 
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	if (check_database_access_rights)
 		checkDatabaseAccessRights(db);
 
@@ -427,7 +461,7 @@ void Context::assertDatabaseExists(const String & database_name, bool check_data
 {
 	auto lock = getLock();
 
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	if (check_database_access_rights)
 		checkDatabaseAccessRights(db);
 
@@ -440,7 +474,7 @@ void Context::assertDatabaseDoesntExist(const String & database_name) const
 {
 	auto lock = getLock();
 
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	checkDatabaseAccessRights(db);
 
 	if (shared->databases.end() != shared->databases.find(db))
@@ -522,7 +556,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 			return res;
 	}
 
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	checkDatabaseAccessRights(db);
 
 	Databases::const_iterator it = shared->databases.find(db);
@@ -617,7 +651,7 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 {
 	auto lock = getLock();
 
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	assertDatabaseExists(db);
 
 	return shared->databases[db]->getCreateQuery(table_name);

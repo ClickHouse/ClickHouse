@@ -230,7 +230,7 @@ void MergeTreeDataPartChecksums::add(MergeTreeDataPartChecksums && rhs_checksums
 	rhs_checksums.files.clear();
 }
 
-/// Контрольная сумма от множества контрольных сумм .bin файлов.
+/// Control sum computed from the set of control sums of .bin files.
 void MergeTreeDataPartChecksums::summaryDataChecksum(SipHash & hash) const
 {
 	/// Пользуемся тем, что итерирование в детерминированном (лексикографическом) порядке.
@@ -238,8 +238,10 @@ void MergeTreeDataPartChecksums::summaryDataChecksum(SipHash & hash) const
 	{
 		const String & name = it.first;
 		const Checksum & sum = it.second;
+
 		if (!endsWith(name, ".bin"))
 			continue;
+
 		size_t len = name.size();
 		hash.update(reinterpret_cast<const char *>(&len), sizeof(len));
 		hash.update(name.data(), len);
@@ -269,7 +271,7 @@ MergeTreeDataPartChecksums MergeTreeDataPartChecksums::parse(const String & s)
 }
 
 
-/// Returns the size of .bin file for column `name` if found, zero otherwise
+/// Returns the size of .bin file for column `name` if found, zero otherwise.
 std::size_t MergeTreeDataPart::getColumnSize(const String & name) const
 {
 	if (checksums.empty())
@@ -282,7 +284,7 @@ std::size_t MergeTreeDataPart::getColumnSize(const String & name) const
 	if (0 == files.count(bin_file_name))
 		return {};
 
-	return files.find(bin_file_name)->second.file_size;
+	return files.at(bin_file_name).file_size;
 }
 
 /** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
@@ -565,30 +567,36 @@ void MergeTreeDataPart::checkNotBroken(bool require_part_metadata)
 
 		/// Проверяем, что все засечки непусты и имеют одинаковый размер.
 
-		ssize_t marks_size = -1;
-		for (const NameAndTypePair & it : columns)
+		auto check_marks = [](const std::string & path, const NamesAndTypesList & columns, const std::string & extension)
 		{
-			Poco::File marks_file(path + "/" + escapeForFileName(it.name) + ".mrk");
-
-			/// При добавлении нового столбца в таблицу файлы .mrk не создаются. Не будем ничего удалять.
-			if (!marks_file.exists())
-				continue;
-
-			if (marks_size == -1)
+			ssize_t marks_size = -1;
+			for (const NameAndTypePair & it : columns)
 			{
-				marks_size = marks_file.getSize();
+				Poco::File marks_file(path + "/" + escapeForFileName(it.name) + extension);
 
-				if (0 == marks_size)
-					throw Exception("Part " + path + " is broken: " + marks_file.path() + " is empty.",
-						ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+				/// При добавлении нового столбца в таблицу файлы .mrk не создаются. Не будем ничего удалять.
+				if (!marks_file.exists())
+					continue;
+
+				if (marks_size == -1)
+				{
+					marks_size = marks_file.getSize();
+
+					if (0 == marks_size)
+						throw Exception("Part " + path + " is broken: " + marks_file.path() + " is empty.",
+							ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+				}
+				else
+				{
+					if (static_cast<ssize_t>(marks_file.getSize()) != marks_size)
+						throw Exception("Part " + path + " is broken: marks have different sizes.",
+							ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+				}
 			}
-			else
-			{
-				if (static_cast<ssize_t>(marks_file.getSize()) != marks_size)
-					throw Exception("Part " + path + " is broken: marks have different sizes.",
-						ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-			}
-		}
+		};
+
+		check_marks(path, columns, ".mrk");
+		check_marks(path, columns, ".null.mrk");
 	}
 }
 

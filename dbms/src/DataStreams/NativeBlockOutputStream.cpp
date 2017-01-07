@@ -6,8 +6,12 @@
 
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnNullable.h>
+#include <DB/Columns/ColumnsNumber.h>
 
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 
 #include <DB/DataStreams/MarkInCompressedFile.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
@@ -15,7 +19,6 @@
 
 namespace DB
 {
-
 
 NativeBlockOutputStream::NativeBlockOutputStream(
 	WriteBuffer & ostr_, UInt64 client_revision_,
@@ -50,12 +53,25 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 	else
 		full_column = column;
 
-	/** Для массивов требуется сначала сериализовать смещения, а потом значения.
-	  */
-	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	if (type.isNullable())
 	{
+		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
+		const IDataType & nested_type = *nullable_type.getNestedType();
+
+		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*full_column.get());
+		const ColumnPtr & nested_col = nullable_col.getNestedColumn();
+
+		const IColumn & null_map = nullable_col.getNullMapConcreteColumn();
+		DataTypeUInt8{}.serializeBinaryBulk(null_map, ostr, offset, limit);
+
+		writeData(nested_type, nested_col, ostr, offset, limit);
+	}
+	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	{
+		/** Для массивов требуется сначала сериализовать смещения, а потом значения.
+		  */
 		const ColumnArray & column_array = typeid_cast<const ColumnArray &>(*full_column);
-		type_arr->getOffsetsType()->serializeBinary(*column_array.getOffsetsColumn(), ostr, offset, limit);
+		type_arr->getOffsetsType()->serializeBinaryBulk(*column_array.getOffsetsColumn(), ostr, offset, limit);
 
 		if (!typeid_cast<const ColumnArray &>(*full_column).getData().empty())
 		{
@@ -79,12 +95,23 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 				? offsets[end - 1] - nested_offset
 				: 0;
 
+			const DataTypePtr & nested_type = type_arr->getNestedType();
+
+			DataTypePtr actual_type;
+			if (nested_type->isNull())
+			{
+				/// Special case: an array of Null is actually an array of Nullable(UInt8).
+				actual_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+			}
+			else
+				actual_type = nested_type;
+
 			if (limit == 0 || nested_limit)
-				writeData(*type_arr->getNestedType(), typeid_cast<const ColumnArray &>(*full_column).getDataPtr(), ostr, nested_offset, nested_limit);
+				writeData(*actual_type, typeid_cast<const ColumnArray &>(*full_column).getDataPtr(), ostr, nested_offset, nested_limit);
 		}
 	}
 	else
-		type.serializeBinary(*full_column, ostr, offset, limit);
+		type.serializeBinaryBulk(*full_column, ostr, offset, limit);
 }
 
 
@@ -122,7 +149,7 @@ void NativeBlockOutputStream::write(const Block & block)
 			mark.offset_in_decompressed_block = ostr_concrete->getRemainingBytes();
 		}
 
-		const ColumnWithTypeAndName & column = block.getByPosition(i);
+		const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
 
 		/// Name
 		writeStringBinary(column.name, ostr);

@@ -13,6 +13,8 @@
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
 
+#include <common/exp10.h>
+
 #include <DB/Core/Types.h>
 #include <DB/Core/StringRef.h>
 #include <DB/Common/Exception.h>
@@ -20,6 +22,7 @@
 #include <DB/Common/Arena.h>
 
 #include <DB/IO/ReadBuffer.h>
+#include <DB/IO/ReadBufferFromMemory.h>
 #include <DB/IO/VarInt.h>
 #include <city.h>
 
@@ -177,6 +180,36 @@ inline bool checkChar(char c, ReadBuffer & buf)
 	++buf.position();
 	return true;
 }
+
+bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf);
+inline bool checkStringCaseInsensitive(const String & s, ReadBuffer & buf)
+{
+	return checkStringCaseInsensitive(s.c_str(), buf);
+}
+
+void assertStringCaseInsensitive(const char * s, ReadBuffer & buf);
+inline void assertStringCaseInsensitive(const String & s, ReadBuffer & buf)
+{
+	return assertStringCaseInsensitive(s.c_str(), buf);
+}
+
+/** Check that next character in buf matches first character of s.
+  * If true, then check all characters in s and throw exception if it doesn't match.
+  * If false, then return false, and leave position in buffer unchanged.
+  */
+bool checkStringByFirstCharacterAndAssertTheRest(const char * s, ReadBuffer & buf);
+bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const char * s, ReadBuffer & buf);
+
+inline bool checkStringByFirstCharacterAndAssertTheRest(const String & s, ReadBuffer & buf)
+{
+	return checkStringByFirstCharacterAndAssertTheRest(s.c_str(), buf);
+}
+
+inline bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const String & s, ReadBuffer & buf)
+{
+	return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(s.c_str(), buf);
+}
+
 
 inline void readBoolText(bool & x, ReadBuffer & buf)
 {
@@ -904,7 +937,7 @@ template <typename T>
 inline T parse(const char * data, size_t size)
 {
 	T res;
-	ReadBuffer buf(const_cast<char *>(data), size, 0);
+	ReadBufferFromMemory buf(data, size);
 	readText(res, buf);
 	return res;
 }

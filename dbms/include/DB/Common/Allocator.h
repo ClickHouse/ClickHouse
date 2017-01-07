@@ -1,6 +1,6 @@
 #pragma once
 
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
 #endif
 #include <cstdlib>
@@ -133,7 +133,7 @@ public:
 	  */
 	void * realloc(void * buf, size_t old_size, size_t new_size, size_t alignment = 0)
 	{
-		#ifndef __APPLE__
+	#if !defined(__APPLE__) && !defined(__FreeBSD__)
 		if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD && alignment <= MALLOC_MIN_ALIGNMENT)
 		{
 			if (current_memory_tracker)
@@ -158,22 +158,23 @@ public:
 
 			/// Заполнение нулями не нужно.
 		}
-		#else
+	#else
 		// TODO: We need to use mmap/calloc on Apple too.
 		if ((old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD && alignment <= MALLOC_MIN_ALIGNMENT) ||
-			(old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD)) {
+			(old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD))
+		{
 			if (current_memory_tracker)
-                                current_memory_tracker->realloc(old_size, new_size);
+				current_memory_tracker->realloc(old_size, new_size);
 
-                        buf = ::realloc(buf, new_size);
+			buf = ::realloc(buf, new_size);
 
-                        if (nullptr == buf)
-                                DB::throwFromErrno("Allocator: Cannot realloc.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+			if (nullptr == buf)
+				DB::throwFromErrno("Allocator: Cannot realloc.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
-                        if (clear_memory)
-                                memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
+			if (clear_memory)
+				memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
 		}
-		#endif
+	#endif
 		else
 		{
 			void * new_buf = alloc(new_size, alignment);

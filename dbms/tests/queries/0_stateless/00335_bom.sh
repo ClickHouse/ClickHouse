@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 echo 'DROP TABLE IF EXISTS test.bom' | curl -sS 'http://localhost:8123/' --data-binary @-
 echo 'CREATE TABLE test.bom (a UInt8, b UInt8, c UInt8) ENGINE = Memory' | curl -sS 'http://localhost:8123/' --data-binary @-

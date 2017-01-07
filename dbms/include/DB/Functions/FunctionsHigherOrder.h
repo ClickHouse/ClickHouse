@@ -607,9 +607,12 @@ public:
 		return name;
 	}
 
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Вызывается, если хоть один агрумент функции - лямбда-выражение.
 	/// Для аргументов-лямбда-выражений определяет типы аргументов этих выражений.
-	void getLambdaArgumentTypes(DataTypes & arguments) const override
+	void getLambdaArgumentTypesImpl(DataTypes & arguments) const override
 	{
 		if (arguments.size() < 1)
 			throw Exception("Function " + getName() + " needs at least one argument; passed "
@@ -639,7 +642,7 @@ public:
 		arguments[0] = std::make_shared<DataTypeExpression>(nested_types);
 	}
 
-	void getReturnTypeAndPrerequisites(const ColumnsWithTypeAndName & arguments,
+	void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
 										DataTypePtr & out_return_type,
 										ExpressionActions::Actions & out_prerequisites) override
 	{
@@ -713,11 +716,11 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result) override
 	{
 		if (arguments.size() == 1)
 		{
-			ColumnPtr column_array_ptr = block.getByPosition(arguments[0]).column;
+			ColumnPtr column_array_ptr = block.safeGetByPosition(arguments[0]).column;
 			const ColumnArray * column_array = typeid_cast<const ColumnArray *>(&*column_array_ptr);
 
 			if (!column_array)
@@ -729,11 +732,11 @@ public:
 				column_array = static_cast<const ColumnArray *>(&*column_array_ptr);
 			}
 
-			block.getByPosition(result).column = Impl::execute(*column_array, column_array->getDataPtr());
+			block.safeGetByPosition(result).column = Impl::execute(*column_array, column_array->getDataPtr());
 		}
 		else
 		{
-			const auto & column_with_type_and_name = block.getByPosition(arguments[0]);
+			const auto & column_with_type_and_name = block.safeGetByPosition(arguments[0]);
 
 			if (!column_with_type_and_name.column)
 				throw Exception("First argument for function " + getName() + " must be an expression.",
@@ -758,7 +761,7 @@ public:
 				const std::string & argument_name = expression_arguments[i].name;
 				DataTypePtr argument_type = expression_arguments[i].type;
 
-				ColumnPtr column_array_ptr = block.getByPosition(arguments[i + 1]).column;
+				ColumnPtr column_array_ptr = block.safeGetByPosition(arguments[i + 1]).column;
 				const ColumnArray * column_array = typeid_cast<const ColumnArray *>(&*column_array_ptr);
 
 				if (!column_array)
@@ -808,7 +811,7 @@ public:
 				if (argument_names.count(name))
 					continue;
 
-				ColumnWithTypeAndName replicated_column = block.getByPosition(prerequisites[prerequisite_index]);
+				ColumnWithTypeAndName replicated_column = block.safeGetByPosition(prerequisites[prerequisite_index]);
 
 				replicated_column.name = name;
 				replicated_column.column = typeid_cast<ColumnArray &>(*replicated_column.column).getDataPtr();
@@ -820,7 +823,7 @@ public:
 
 			expression.execute(temp_block);
 
-			block.getByPosition(result).column = Impl::execute(*column_first_array, temp_block.getByName(column_expression->getReturnName()).column);
+			block.safeGetByPosition(result).column = Impl::execute(*column_first_array, temp_block.getByName(column_expression->getReturnName()).column);
 		}
 	}
 };

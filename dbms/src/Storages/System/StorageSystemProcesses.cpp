@@ -4,6 +4,7 @@
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Storages/System/StorageSystemProcesses.h>
+#include <DB/Interpreters/Context.h>
 
 
 namespace DB
@@ -40,11 +41,13 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
 		{ "quota_key",			std::make_shared<DataTypeString>() },
 
 		{ "elapsed", 			std::make_shared<DataTypeFloat64>()	},
-		{ "rows_read", 			std::make_shared<DataTypeUInt64>()	},
-		{ "bytes_read",			std::make_shared<DataTypeUInt64>()	},
-		{ "total_rows_approx",	std::make_shared<DataTypeUInt64>() },
+		{ "read_rows",			std::make_shared<DataTypeUInt64>()	},
+		{ "read_bytes",			std::make_shared<DataTypeUInt64>()	},
+		{ "total_rows_approx",	std::make_shared<DataTypeUInt64>()	},
+		{ "written_rows",		std::make_shared<DataTypeUInt64>()	},
+		{ "written_bytes",		std::make_shared<DataTypeUInt64>()	},
 		{ "memory_usage",		std::make_shared<DataTypeInt64>()	},
-		{ "query", 				std::make_shared<DataTypeString>()	},
+		{ "query", 				std::make_shared<DataTypeString>()	}
 	}
 {
 }
@@ -74,31 +77,33 @@ BlockInputStreams StorageSystemProcesses::read(
 	for (const auto & process : info)
 	{
 		size_t i = 0;
-		block.unsafeGetByPosition(i++).column->insert(UInt64(process.client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY));
-		block.unsafeGetByPosition(i++).column->insert(process.client_info.current_user);
-		block.unsafeGetByPosition(i++).column->insert(process.client_info.current_query_id);
-		block.unsafeGetByPosition(i++).column->insert(process.client_info.current_address.host().toString());
-		block.unsafeGetByPosition(i++).column->insert(UInt64(process.client_info.current_address.port()));
-		block.unsafeGetByPosition(i++).column->insert(process.client_info.initial_user);
-		block.unsafeGetByPosition(i++).column->insert(process.client_info.initial_query_id);
-		block.unsafeGetByPosition(i++).column->insert(process.client_info.initial_address.host().toString());
-		block.unsafeGetByPosition(i++).column->insert(UInt64(process.client_info.initial_address.port()));
-		block.unsafeGetByPosition(i++).column->insert(UInt64(process.client_info.interface));
-		block.unsafeGetByPosition(i++).column->insert(process.client_info.os_user);
-		block.unsafeGetByPosition(i++).column->insert(process.client_info.client_hostname);
-		block.unsafeGetByPosition(i++).column->insert(process.client_info.client_name);
-		block.unsafeGetByPosition(i++).column->insert(process.client_info.client_version_major);
-		block.unsafeGetByPosition(i++).column->insert(process.client_info.client_version_minor);
-		block.unsafeGetByPosition(i++).column->insert(UInt64(process.client_info.client_revision));
-		block.unsafeGetByPosition(i++).column->insert(UInt64(process.client_info.http_method));
-		block.unsafeGetByPosition(i++).column->insert(process.client_info.http_user_agent);
-		block.unsafeGetByPosition(i++).column->insert(process.client_info.quota_key);
-		block.unsafeGetByPosition(i++).column->insert(process.elapsed_seconds);
-		block.unsafeGetByPosition(i++).column->insert(process.rows);
-		block.unsafeGetByPosition(i++).column->insert(process.bytes);
-		block.unsafeGetByPosition(i++).column->insert(process.total_rows);
-		block.unsafeGetByPosition(i++).column->insert(process.memory_usage);
-		block.unsafeGetByPosition(i++).column->insert(process.query);
+		block.getByPosition(i++).column->insert(UInt64(process.client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY));
+		block.getByPosition(i++).column->insert(process.client_info.current_user);
+		block.getByPosition(i++).column->insert(process.client_info.current_query_id);
+		block.getByPosition(i++).column->insert(process.client_info.current_address.host().toString());
+		block.getByPosition(i++).column->insert(UInt64(process.client_info.current_address.port()));
+		block.getByPosition(i++).column->insert(process.client_info.initial_user);
+		block.getByPosition(i++).column->insert(process.client_info.initial_query_id);
+		block.getByPosition(i++).column->insert(process.client_info.initial_address.host().toString());
+		block.getByPosition(i++).column->insert(UInt64(process.client_info.initial_address.port()));
+		block.getByPosition(i++).column->insert(UInt64(process.client_info.interface));
+		block.getByPosition(i++).column->insert(process.client_info.os_user);
+		block.getByPosition(i++).column->insert(process.client_info.client_hostname);
+		block.getByPosition(i++).column->insert(process.client_info.client_name);
+		block.getByPosition(i++).column->insert(process.client_info.client_version_major);
+		block.getByPosition(i++).column->insert(process.client_info.client_version_minor);
+		block.getByPosition(i++).column->insert(UInt64(process.client_info.client_revision));
+		block.getByPosition(i++).column->insert(UInt64(process.client_info.http_method));
+		block.getByPosition(i++).column->insert(process.client_info.http_user_agent);
+		block.getByPosition(i++).column->insert(process.client_info.quota_key);
+		block.getByPosition(i++).column->insert(process.elapsed_seconds);
+		block.getByPosition(i++).column->insert(process.read_rows);
+		block.getByPosition(i++).column->insert(process.read_bytes);
+		block.getByPosition(i++).column->insert(process.total_rows);
+		block.getByPosition(i++).column->insert(process.written_rows);
+		block.getByPosition(i++).column->insert(process.written_bytes);
+		block.getByPosition(i++).column->insert(process.memory_usage);
+		block.getByPosition(i++).column->insert(process.query);
 	}
 
 	return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));

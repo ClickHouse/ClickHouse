@@ -44,7 +44,8 @@ static NamesAndTypesList chooseColumns(const String & source_database, const Str
 	}
 
 	if (!any_table)
-		throw Exception("Error while executing table function merge. In database " + source_database + " no one matches regular 						 				 expression: " + table_name_regexp_, ErrorCodes::UNKNOWN_TABLE);
+		throw Exception("Error while executing table function merge. In database " + source_database + " no one matches regular expression: "
+			+ table_name_regexp_, ErrorCodes::UNKNOWN_TABLE);
 
 	return any_table->getColumnsList();
 }

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # См. таску METR-9006
 # Удалим increment.txt из StorageMergeTree таблицы и попробуем сделать INSERT в нее. Перезапустим сервер и попробуем сделать INSERT снова.

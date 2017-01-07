@@ -35,15 +35,18 @@ brew install readline
 
 # Checkout ClickHouse sources
 
+To get the latest stable version:
+
 ```
-git clone git@github.com:yandex/ClickHouse.git
-# or: git clone https://github.com/yandex/ClickHouse.git
+git clone -b stable git@github.com:yandex/ClickHouse.git
+# or: git clone -b stable https://github.com/yandex/ClickHouse.git
 
 cd ClickHouse
 ```
 
-Note that master branch is not stable.
-For stable version, switch to some release branch.
+For development, switch to the `master` branch.
+For the latest release candidate, switch to the `testing` branch.
+
 
 ## Use GCC 6 for builds
 
@@ -72,3 +75,7 @@ cmake ..
 make -j $THREADS
 cd ..
 ```
+
+# Caveats
+
+If you intend to run clickhouse-server, make sure to increase system's maxfiles variable. See [MacOS.md](https://github.com/yandex/ClickHouse/blob/master/MacOS.md) for more details.

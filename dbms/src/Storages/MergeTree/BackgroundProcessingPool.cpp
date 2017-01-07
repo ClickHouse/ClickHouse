@@ -1,6 +1,7 @@
 #include <DB/Common/Exception.h>
 #include <DB/Common/setThreadName.h>
 #include <DB/Common/CurrentMetrics.h>
+#include <DB/Common/MemoryTracker.h>
 #include <DB/IO/WriteHelpers.h>
 #include <common/logger_useful.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
@@ -11,6 +12,7 @@
 namespace CurrentMetrics
 {
 	extern const Metric BackgroundPoolTask;
+	extern const Metric MemoryTrackingInBackgroundProcessingPool;
 }
 
 namespace DB
@@ -109,6 +111,10 @@ void BackgroundProcessingPool::threadFunction()
 {
 	setThreadName("BackgrProcPool");
 
+	MemoryTracker memory_tracker;
+	memory_tracker.setMetric(CurrentMetrics::MemoryTrackingInBackgroundProcessingPool);
+	current_memory_tracker = &memory_tracker;
+
 	std::mt19937 rng(reinterpret_cast<intptr_t>(&rng));
 	std::this_thread::sleep_for(std::chrono::duration<double>(std::uniform_real_distribution<double>(0, sleep_seconds_random_part)(rng)));
 
@@ -191,6 +197,8 @@ void BackgroundProcessingPool::threadFunction()
 			task->iterator = tasks.emplace(next_time_to_execute, task);
 		}
 	}
+
+	current_memory_tracker = nullptr;
 }
 
 }

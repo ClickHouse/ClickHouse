@@ -441,6 +441,8 @@ void *do_io(void *v)
         // if it is_unrecoverable()
         if(is_unrecoverable(zh))
             break;
+		
+		rc += 0; // silent "variable not used" warning
     }
     api_epilog(zh, 0);    
     LOG_DEBUG(("IO thread terminated"));

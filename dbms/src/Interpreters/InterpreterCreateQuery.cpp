@@ -377,7 +377,7 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
 	{
 		res.columns = std::make_shared<NamesAndTypesList>();
 		for (size_t i = 0; i < as_select_sample.columns(); ++i)
-			res.columns->push_back(NameAndTypePair(as_select_sample.getByPosition(i).name, as_select_sample.getByPosition(i).type));
+			res.columns->push_back(NameAndTypePair(as_select_sample.safeGetByPosition(i).name, as_select_sample.safeGetByPosition(i).type));
 	}
 	else
 		throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);

@@ -26,6 +26,7 @@
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/ReadBufferFromMemory.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 
@@ -252,7 +253,7 @@ private:
 					<< e.getStackTrace().toString();
 			}
 
-			/// В случае нулевого кода исключения, надо всё-равно вернуть ненулевой код возврата.
+			/// If exception code isn't zero, we should return non-zero return code anyway.
 			return e.code() ? e.code() : -1;
 		}
 		catch (const Poco::Exception & e)
@@ -304,10 +305,7 @@ private:
 		std::cerr << std::fixed << std::setprecision(3);
 
 		if (is_interactive)
-			std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
-				<< "." << DBMS_VERSION_MINOR
-				<< "." << ClickHouseRevision::get()
-				<< "." << std::endl;
+			showClientVersion();
 
 		if (config().has("vertical"))
 			format = config().getString("format", "Vertical");
@@ -798,7 +796,7 @@ private:
 		if (parsed_insert_query->data)
 		{
 			/// Отправляем данные из запроса.
-			ReadBuffer data_in(const_cast<char *>(parsed_insert_query->data), parsed_insert_query->end - parsed_insert_query->data, 0);
+			ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
 			sendDataFrom(data_in, sample);
 		}
 		else if (!is_interactive)
@@ -1157,6 +1155,14 @@ private:
 			std::cout << "Ok." << std::endl;
 	}
 
+	void showClientVersion()
+	{
+		std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
+			<< "." << DBMS_VERSION_MINOR
+			<< "." << ClickHouseRevision::get()
+			<< "." << std::endl;
+	}
+
 public:
 	void init(int argc, char ** argv)
 	{
@@ -1184,14 +1190,33 @@ public:
 				in_external_group = true;
 				external_tables_arguments.emplace_back(Arguments{""});
 			}
+			/// Options with value after equal sign.
 			else if (in_external_group
-				&& (0 == strncmp(arg, "--file", 		strlen("--file"))	/// slightly inaccurate because --filesuffix is also matched.
-				 || 0 == strncmp(arg, "--name", 		strlen("--name"))
-				 || 0 == strncmp(arg, "--format", 		strlen("--format"))
-				 || 0 == strncmp(arg, "--structure", 	strlen("--structure"))
-				 || 0 == strncmp(arg, "--types", 		strlen("--types"))))
+				&& (0 == strncmp(arg, "--file=", 		strlen("--file="))
+				 || 0 == strncmp(arg, "--name=", 		strlen("--name="))
+				 || 0 == strncmp(arg, "--format=", 		strlen("--format="))
+				 || 0 == strncmp(arg, "--structure=", 	strlen("--structure="))
+				 || 0 == strncmp(arg, "--types=", 		strlen("--types="))))
 			{
 				external_tables_arguments.back().emplace_back(arg);
+			}
+			/// Options with value after whitespace.
+			else if (in_external_group
+				&& (0 == strcmp(arg, "--file")
+				 || 0 == strcmp(arg, "--name")
+				 || 0 == strcmp(arg, "--format")
+				 || 0 == strcmp(arg, "--structure")
+				 || 0 == strcmp(arg, "--types")))
+			{
+				if (arg_num + 1 < argc)
+				{
+					external_tables_arguments.back().emplace_back(arg);
+					++arg_num;
+					arg = argv[arg_num];
+					external_tables_arguments.back().emplace_back(arg);
+				}
+				else
+					break;
 			}
 			else
 			{
@@ -1213,7 +1238,7 @@ public:
 			("port", 			boost::program_options::value<int>()->default_value(9000), "server port")
 			("user,u", 			boost::program_options::value<std::string>(),	"user")
 			("password", 		boost::program_options::value<std::string>(),	"password")
-			("query,q,e", 		boost::program_options::value<std::string>(), 	"query")
+			("query,q", 		boost::program_options::value<std::string>(), 	"query")
 			("database,d", 		boost::program_options::value<std::string>(), 	"database")
 			("multiline,m",														"multiline")
 			("multiquery,n",													"multiquery")
@@ -1222,6 +1247,7 @@ public:
 			("time,t",			"print query execution time to stderr in non-interactive mode (for benchmarks)")
 			("stacktrace",		"print stack traces of exceptions")
 			("progress",		"print progress even in non-interactive mode")
+			("version,V",		"print version information and exit")
 			("echo",			"in batch mode, print query before execution")
 			("compression",		boost::program_options::value<bool>(),			"enable or disable compression")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
@@ -1245,6 +1271,12 @@ public:
 			common_arguments.size(), common_arguments.data()).options(main_description).run();
 		boost::program_options::variables_map options;
 		boost::program_options::store(parsed, options);
+
+		if (options.count("version") || options.count("V"))
+		{
+			showClientVersion();
+			exit(0);
+		}
 
 		/// Output of help message.
 		if (options.count("help")
@@ -1292,14 +1324,14 @@ public:
 		/// Сохраняем полученные данные во внутренний конфиг
 		if (options.count("config-file"))
 			config().setString("config-file", options["config-file"].as<std::string>());
-		if (options.count("host"))
+		if (options.count("host") && !options["host"].defaulted())
 			config().setString("host", options["host"].as<std::string>());
 		if (options.count("query"))
 			config().setString("query", options["query"].as<std::string>());
 		if (options.count("database"))
 			config().setString("database", options["database"].as<std::string>());
 
-		if (options.count("port"))
+		if (options.count("port") && !options["port"].defaulted())
 			config().setInt("port", options["port"].as<int>());
 		if (options.count("user"))
 			config().setString("user", options["user"].as<std::string>());

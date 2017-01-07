@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 clickhouse-client --query="DROP TABLE IF EXISTS test.tskv";
 clickhouse-client --query="CREATE TABLE test.tskv (tskv_format String, timestamp DateTime, timezone String, text String, binary_data String) ENGINE = Memory";

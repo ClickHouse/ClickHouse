@@ -24,10 +24,15 @@
 	M(ReadonlyReplica) \
 	M(LeaderReplica) \
 	M(MemoryTracking) \
+	M(MemoryTrackingInBackgroundProcessingPool) \
+	M(MemoryTrackingForMerges) \
 	M(LeaderElection) \
 	M(EphemeralNode) \
 	M(ZooKeeperWatch) \
 	M(DelayedInserts) \
+	M(ContextLockWait) \
+	M(StorageBufferRows) \
+	M(StorageBufferBytes) \
 
 
 namespace CurrentMetrics

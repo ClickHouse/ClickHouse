@@ -12,8 +12,8 @@ namespace DB
 class PrettyCompactMonoBlockOutputStream : public PrettyCompactBlockOutputStream
 {
 public:
-	PrettyCompactMonoBlockOutputStream(WriteBuffer & ostr_, bool no_escapes_ = false, size_t max_rows_ = PRETTY_FORMAT_DEFAULT_MAX_ROWS)
-		: PrettyCompactBlockOutputStream(ostr_, no_escapes_, max_rows_) {}
+	PrettyCompactMonoBlockOutputStream(WriteBuffer & ostr_, bool no_escapes_, size_t max_rows_, const Context & context_)
+		: PrettyCompactBlockOutputStream(ostr_, no_escapes_, max_rows_, context_) {}
 
 	void write(const Block & block) override;
 	void writeSuffix() override;
