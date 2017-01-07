@@ -352,6 +352,8 @@ namespace ErrorCodes
 	extern const int CANNOT_LOAD_CONFIG = 347;
 	extern const int RESHARDING_NULLABLE_SHARDING_KEY = 348;
 	extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN = 349;
+	extern const int ZLIB_INFLATE_FAILED = 350;
+	extern const int ZLIB_DEFLATE_FAILED = 351;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;

@@ -3,12 +3,13 @@
 #include <experimental/optional>
 
 #include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/DeflatingStream.h>
 
 #include <DB/Common/Exception.h>
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
+#include <DB/IO/WriteBufferFromOStream.h>
+#include <DB/IO/ZlibDeflatingWriteBuffer.h>
 #include <DB/Common/NetException.h>
 
 
@@ -17,60 +18,62 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int CANNOT_WRITE_TO_OSTREAM;
 	extern const int LOGICAL_ERROR;
 }
 
 
-/** Отличается от WriteBufferFromOStream тем, что инициализируется не std::ostream, а Poco::Net::HTTPServerResponse.
-  * При первом сбросе данных, получает из него std::ostream (с помощью метода send).
-  * Это нужно в HTTP серверах, чтобы после передачи в какой-нибудь метод WriteBuffer-а,
-  *  но до вывода первых данных клиенту, можно было изменить какие-нибудь HTTP заголовки (например, код ответа).
-  * (После вызова Poco::Net::HTTPServerResponse::send() изменить заголовки уже нельзя.)
-  * То есть, суть в том, чтобы вызывать метод Poco::Net::HTTPServerResponse::send() не сразу.
-  *
-  * Дополнительно, позволяет сжимать тело HTTP-ответа, выставив соответствующий заголовок Content-Encoding.
-  */
+/// The difference from WriteBufferFromOStream is that this buffer gets the underlying std::ostream
+/// (using response.send()) only after data is flushed for the first time. This is needed in HTTP
+/// servers to change some HTTP headers (e.g. response code) before any data is sent to the client
+/// (headers can't be changed after response.send() is called).
+///
+/// In short, it allows delaying the call to response.send().
+///
+/// Additionally, supports HTTP response compression (in this case corresponding Content-Encoding
+/// header will be set).
 class WriteBufferFromHTTPServerResponse : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
 	Poco::Net::HTTPServerResponse & response;
+
 	bool add_cors_header;
 	bool compress;
-	Poco::DeflatingStreamBuf::StreamType compression_method;
+	ZlibCompressionMethod compression_method;
 	int compression_level = Z_DEFAULT_COMPRESSION;
 
-	std::ostream * response_ostr = nullptr;	/// Сюда записывается тело HTTP ответа, возможно, сжатое.
-	std::experimental::optional<Poco::DeflatingOutputStream> deflating_stream;
-	std::ostream * ostr = nullptr;	/// Куда записывать несжатое тело HTTP ответа. Указывает туда же, куда response_ostr или на deflating_stream.
+	std::unique_ptr<WriteBufferFromOStream> out_raw;
+	std::experimental::optional<ZlibDeflatingWriteBuffer> deflating_buf;
+
+	WriteBuffer * out = nullptr; 	/// Uncompressed HTTP body is written to this buffer. Points to out_raw or possibly to deflating_buf.
 
 	void sendHeaders()
 	{
-		if (!ostr)
+		if (!out)
 		{
 			if (add_cors_header)
 			{
 				response.set("Access-Control-Allow-Origin","*");
 			}
 
-			if (compress && offset())	/// Пустой ответ сжимать не нужно.
+			if (compress && offset())	/// Empty response need not be compressed.
 			{
-				if (compression_method == Poco::DeflatingStreamBuf::STREAM_GZIP)
+				if (compression_method == ZlibCompressionMethod::Gzip)
 					response.set("Content-Encoding", "gzip");
-				else if (compression_method == Poco::DeflatingStreamBuf::STREAM_ZLIB)
+				else if (compression_method == ZlibCompressionMethod::Zlib)
 					response.set("Content-Encoding", "deflate");
 				else
 					throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
 						ErrorCodes::LOGICAL_ERROR);
 
-				response_ostr = &response.send();
-				deflating_stream.emplace(*response_ostr, compression_method, compression_level);
-				ostr = &deflating_stream.value();
+				out_raw = std::make_unique<WriteBufferFromOStream>(response.send());
+				/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
+				deflating_buf.emplace(*out_raw, compression_method, compression_level, working_buffer.size(), working_buffer.begin());
+				out = &deflating_buf.value();
 			}
 			else
 			{
-				response_ostr = &response.send();
-				ostr = response_ostr;
+				out_raw = std::make_unique<WriteBufferFromOStream>(response.send(), working_buffer.size(), working_buffer.begin());
+				out = out_raw.get();
 			}
 		}
 	}
@@ -82,53 +85,43 @@ private:
 
 		sendHeaders();
 
-		ostr->write(working_buffer.begin(), offset());
-		ostr->flush();
-
-		if (!ostr->good())
-			throw NetException("Cannot write to ostream", ErrorCodes::CANNOT_WRITE_TO_OSTREAM);
+		out->position() = position();
+		out->next();
 	}
 
 public:
 	WriteBufferFromHTTPServerResponse(
 		Poco::Net::HTTPServerResponse & response_,
-		bool compress_ = false,		/// Если true - выставить заголовок Content-Encoding и сжимать результат.
-		Poco::DeflatingStreamBuf::StreamType compression_method_ = Poco::DeflatingStreamBuf::STREAM_GZIP,	/// Как сжимать результат (gzip, deflate).
+		bool compress_ = false,		/// If true - set Content-Encoding header and compress the result.
+		ZlibCompressionMethod compression_method_ = ZlibCompressionMethod::Gzip,
 		size_t size = DBMS_DEFAULT_BUFFER_SIZE)
 		: BufferWithOwnMemory<WriteBuffer>(size), response(response_),
 		compress(compress_), compression_method(compression_method_) {}
 
-	/** Если данные ещё не были отправлены - отправить хотя бы HTTP заголовки.
-	  * Используйте эту функцию после того, как данные, возможно, были отправлены,
-	  *  и не было ошибок (вы не планируете поменять код ответа).
-	  */
+	/// Send at least HTTP headers if no data has been sent yet.
+	/// Use after the data has possibly been sent and no error happened (and thus you do not plan
+	/// to change response HTTP code.
 	void finalize()
 	{
 		sendHeaders();
 	}
 
-	/** Включить или отключить сжатие.
-	  * Работает только перед тем, как были отправлены HTTP заголовки.
-	  * Иначе - не имеет эффекта.
-	  */
+	/// Turn compression on or off.
+	/// The setting has any effect only if HTTP headers haven't been sent yet.
 	void setCompression(bool enable_compression)
 	{
 		compress = enable_compression;
 	}
 
-	/** Установить уровень сжатия, если данные будут сжиматься.
-	  * Работает только перед тем, как были отправлены HTTP заголовки.
-	  * Иначе - не имеет эффекта.
-	  */
+	/// Set compression level if the compression is turned on.
+	/// The setting has any effect only if HTTP headers haven't been sent yet.
 	void setCompressionLevel(int level)
 	{
 		compression_level = level;
 	}
 
-	/** Включить или отключить CORS.
-	  * Работает только перед тем, как были отправлены HTTP заголовки.
-	  * Иначе - не имеет эффекта.
-	  */
+	/// Turn CORS on or off.
+	/// The setting has any effect only if HTTP headers haven't been sent yet.
 	void addHeaderCORS(bool enable_cors)
 	{
 		add_cors_header = enable_cors;
@@ -142,9 +135,6 @@ public:
 		try
 		{
 			next();
-
-			if (deflating_stream)
-				deflating_stream->close();
 		}
 		catch (...)
 		{
