@@ -13,6 +13,7 @@ add_subdirectory (libzookeeper)
 add_subdirectory (libcityhash)
 add_subdirectory (libfarmhash)
 add_subdirectory (libmetrohash)
+add_subdirectory (libzlib-ng)
 
 if (ENABLE_LIBTCMALLOC)
 	add_subdirectory (libtcmalloc)

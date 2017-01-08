@@ -116,6 +116,13 @@ else()
     set(PLATFORM_LIBS "")
 endif()
 
+if (USE_STATIC_LIBRARIES)
+	set (Z_LIB zlibstatic)
+else()
+	set (Z_HINTS "/usr/local/opt/zlib/lib")
+	find_library (Z_LIB z HINTS ${Z_HINTS})
+endif ()
+
 target_link_libraries(dbms
 	common
 	zkutil
@@ -124,6 +131,7 @@ target_link_libraries(dbms
 	lz4 zstd
 	string_utils
 	double-conversion
+	${Z_LIB}
 	${LINK_LIBRARIES_ONLY_ON_X86_64}
 	re2 re2_st
 	${OPENSSL_CRYPTO_LIBRARY}

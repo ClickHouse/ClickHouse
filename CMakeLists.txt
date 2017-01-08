@@ -167,6 +167,10 @@ include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libpoco/MongoDB/inc
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libpoco/Zip/include/)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libboost/boost_1_62_0/)
 
+if (USE_STATIC_LIBRARIES)
+	include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libzlib-ng/)
+endif ()
+
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/libs/libcommon/include/)
 include_directories (BEFORE ${ClickHouse_BINARY_DIR}/libs/libcommon/include/)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include/)

@@ -44,10 +44,6 @@ if (POCO_UNBUNDLED)
         src/pcre_ucd.c
         src/pcre_tables.c
     )
-
-    find_package(ZLIB REQUIRED)
-    set(SYSLIBS ${SYSLIBS} ${ZLIB_LIBRARIES})
-    include_directories(${ZLIB_INCLUDE_DIRS})
 else()
     # pcre
     POCO_SOURCES( SRCS pcre
@@ -73,26 +69,17 @@ else()
         src/pcre_valid_utf8.c
         src/pcre_xclass.c
     )
-
-    # zlib
-    POCO_HEADERS( SRCS zlib
-        include/Poco/zconf.h
-        include/Poco/zlib.h
-        )
-
-    POCO_SOURCES( SRCS zlib
-        src/adler32.c
-        src/compress.c
-        src/crc32.c
-        src/deflate.c
-        src/infback.c
-        src/inffast.c
-        src/inflate.c
-        src/inftrees.c
-        src/trees.c
-        src/zutil.c
-    )
 endif (POCO_UNBUNDLED)
+
+if (USE_STATIC_LIBRARIES)
+	# Use zlib from clickhouse contrib.
+	set(SYSLIBS ${SYSLIBS} zlibstatic)
+	include_directories("${ClickHouse_SOURCE_DIR}/contrib/libzlib-ng/")
+else()
+	find_package(ZLIB REQUIRED)
+	set(SYSLIBS ${SYSLIBS} ${ZLIB_LIBRARIES})
+	include_directories(${ZLIB_INCLUDE_DIRS})
+endif (USE_STATIC_LIBRARIES)
 
 if(WIN32)
     set(SYSLIBS ${SYSLIBS} iphlpapi)

@@ -1,6 +1,7 @@
 # emacs files
 *~
 *\#
+.tramp_history
 
 # auto generated files
 *.logrt
