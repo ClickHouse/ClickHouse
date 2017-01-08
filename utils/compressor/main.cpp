@@ -53,7 +53,7 @@ int main(int argc, char ** argv)
 	boost::program_options::options_description desc("Allowed options");
 	desc.add_options()
 		("help,h", "produce help message")
-		("d,decompress", "decompress")
+		("decompress,d", "decompress")
 		("block-size,b", boost::program_options::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
 		("hc", "use LZ4HC instead of LZ4")
 	#ifdef USE_QUICKLZ
