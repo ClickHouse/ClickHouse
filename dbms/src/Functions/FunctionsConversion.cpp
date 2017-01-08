@@ -9,7 +9,7 @@ void throwExceptionForIncompletelyParsedValue(
 {
 	std::string message;
 	{
-		const IDataType & to_type = *block.getByPosition(result).type;
+		const IDataType & to_type = *block.safeGetByPosition(result).type;
 
 		WriteBufferFromString message_buf(message);
 		message_buf << "Cannot parse string " << quote << String(read_buffer.buffer().begin(), read_buffer.buffer().size())

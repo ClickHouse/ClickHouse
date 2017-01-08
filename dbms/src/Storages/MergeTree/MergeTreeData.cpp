@@ -135,7 +135,7 @@ void MergeTreeData::initPrimaryKey()
 	/// Also a primary key must not contain any nullable column.
 	for (size_t i = 0; i < primary_key_size; ++i)
 	{
-		const auto & element = primary_key_sample.unsafeGetByPosition(i);
+		const auto & element = primary_key_sample.getByPosition(i);
 
 		const ColumnPtr & column = element.column;
 		if (column && column->isConst())
@@ -147,7 +147,7 @@ void MergeTreeData::initPrimaryKey()
 
 	primary_key_data_types.resize(primary_key_size);
 	for (size_t i = 0; i < primary_key_size; ++i)
-		primary_key_data_types[i] = primary_key_sample.unsafeGetByPosition(i).type;
+		primary_key_data_types[i] = primary_key_sample.getByPosition(i).type;
 }
 
 
@@ -650,8 +650,8 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 				if (is_nullable)
 				{
-					out_rename_map[escaped_column + ".null"] = "";
-					out_rename_map[escaped_column + ".null_mrk"] = "";
+					out_rename_map[escaped_column + ".null.bin"] = "";
+					out_rename_map[escaped_column + ".null.mrk"] = "";
 				}
 
 				/// Если это массив или последний столбец вложенной структуры, нужно удалить файлы с размерами.
@@ -773,8 +773,8 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 			/// Information on how to update the null map if it is a nullable column.
 			if (new_type->isNullable())
 			{
-				out_rename_map[escaped_converted_column + ".null"] = escaped_source_column + ".null";
-				out_rename_map[escaped_converted_column + ".null_mrk"] = escaped_source_column + ".null_mrk";
+				out_rename_map[escaped_converted_column + ".null.bin"] = escaped_source_column + ".null.bin";
+				out_rename_map[escaped_converted_column + ".null.mrk"] = escaped_source_column + ".null.mrk";
 			}
 		}
 
@@ -864,7 +864,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 		ssize_t prev_position_of_existing_column = -1;
 		for (size_t i = 0; i < new_key_size; ++i)
 		{
-			const String & column_name = new_primary_key_sample.getByPosition(i).name;
+			const String & column_name = new_primary_key_sample.safeGetByPosition(i).name;
 
 			if (primary_key_sample.has(column_name))
 			{
@@ -878,7 +878,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 			}
 			else
 			{
-				const IDataType & type = *new_primary_key_sample.getByPosition(i).type;
+				const IDataType & type = *new_primary_key_sample.safeGetByPosition(i).type;
 				new_index[i] = type.createConstColumn(part->size, type.getDefault())->convertToFullColumnIfConst();
 			}
 		}
@@ -892,7 +892,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
 		for (size_t i = 0, size = part->size; i < size; ++i)
 			for (size_t j = 0; j < new_key_size; ++j)
-				new_primary_key_sample.unsafeGetByPosition(j).type.get()->serializeBinary(*new_index[j].get(), i, index_stream);
+				new_primary_key_sample.getByPosition(j).type.get()->serializeBinary(*new_index[j].get(), i, index_stream);
 
 		transaction->rename_map["primary.idx.tmp"] = "primary.idx";
 

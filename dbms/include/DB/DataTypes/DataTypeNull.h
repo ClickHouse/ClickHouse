@@ -1,12 +1,12 @@
 #pragma once
 
 #include <DB/DataTypes/IDataType.h>
-#include <DB/DataTypes/NullSymbol.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -21,7 +21,7 @@ public:
 	using FieldType = Null;
 
 public:
-	std::string getName() const override
+	String getName() const override
 	{
 		return "Null";
 	}
@@ -29,7 +29,6 @@ public:
 	bool isNull() const override
 	{
 		return true;
-
 	}
 
 	DataTypePtr clone() const override
@@ -37,8 +36,8 @@ public:
 		return std::make_shared<DataTypeNull>();
 	}
 
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override;
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+	void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
+	void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
 	ColumnPtr createColumn() const override
 	{
@@ -52,10 +51,10 @@ public:
 
 	Field getDefault() const override
 	{
-		return Field{};
+		return Null();
 	}
 
-	size_t getSizeOfField() const override
+	size_t getSizeOfField() const override		/// TODO Check where it is needed.
 	{
 		/// NULL has the size of the smallest non-null type.
 		return sizeof(UInt8);
@@ -63,7 +62,7 @@ public:
 
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const override
 	{
-		UInt8 x = 0;
+		UInt8 x = 1;	/// Value is 1 to be consistent with NULLs serialization in DataTypeNullable.
 		writeBinary(x, ostr);
 	}
 
@@ -71,12 +70,12 @@ public:
 	{
 		UInt8 x;
 		readBinary(x, istr);
-		field = Field{};
+		field = Null();
 	}
 
 	void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		UInt8 x = 0;
+		UInt8 x = 1;
 		writeBinary(x, ostr);
 	}
 
@@ -89,48 +88,48 @@ public:
 
 	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		writeCString(NullSymbol::Escaped::name, ostr);
+		writeCString("\\N", ostr);
 	}
 
 	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override
 	{
-		assertString(NullSymbol::Escaped::name, istr);
+		assertString("\\N", istr);
 	}
 
 	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		writeCString(NullSymbol::Quoted::name, ostr);
+		writeCString("NULL", ostr);
 	}
 
 	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override
 	{
-		assertString(NullSymbol::Quoted::name, istr);
+		assertStringCaseInsensitive("NULL", istr);
 	}
 
 	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		writeCString(NullSymbol::CSV::name, ostr);
+		writeCString("\\N", ostr);
 	}
 
 	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override
 	{
-		assertString(NullSymbol::CSV::name, istr);
+		assertString("\\N", istr);
 	}
 
 	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
 	{
-		writeCString(NullSymbol::Plain::name, ostr);
+		writeCString("NULL", ostr);
 	}
 
 	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr,
 		bool force_quoting_64bit_integers) const override
 	{
-		writeCString(NullSymbol::JSON::name, ostr);
+		writeCString("null", ostr);
 	}
 
 	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override
 	{
-		assertString(NullSymbol::JSON::name, istr);
+		assertString("null", istr);
 	}
 };
 

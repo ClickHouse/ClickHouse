@@ -19,7 +19,7 @@ namespace
 	using OffsetColumns = std::map<std::string, ColumnPtr>;
 
 	constexpr auto DATA_FILE_EXTENSION = ".bin";
-	constexpr auto NULL_MAP_EXTENSION = ".null";
+	constexpr auto NULL_MAP_EXTENSION = ".null.bin";
 
 	bool isNullStream(const std::string & extension)
 	{
@@ -277,7 +277,7 @@ void MergeTreeReader::Stream::loadMarks(MarkCache * cache, bool save_in_cache, b
 	std::string path;
 
 	if (is_null_stream)
-		path = path_prefix + ".null_mrk";
+		path = path_prefix + ".null.mrk";
 	else
 		path = path_prefix + ".mrk";
 
@@ -416,8 +416,8 @@ void MergeTreeReader::readData(const String & name, const IDataType & type, ICol
 
 		Stream & stream = *(streams.at(filename));
 		stream.seekToMark(from_mark);
-		IColumn & col8 = *(nullable_col.getNullValuesByteMap());
-		DataTypeUInt8{}.deserializeBinary(col8, *stream.data_buffer, max_rows_to_read, 0);
+		IColumn & col8 = nullable_col.getNullMapConcreteColumn();
+		DataTypeUInt8{}.deserializeBinaryBulk(col8, *stream.data_buffer, max_rows_to_read, 0);
 
 		/// Then read data.
 		readData(name, nested_type, nested_col, from_mark, max_rows_to_read, level, read_offsets);
@@ -483,7 +483,7 @@ void MergeTreeReader::readData(const String & name, const IDataType & type, ICol
 
 		double & avg_value_size_hint = avg_value_size_hints[name];
 		stream.seekToMark(from_mark);
-		type.deserializeBinary(column, *stream.data_buffer, max_rows_to_read, avg_value_size_hint);
+		type.deserializeBinaryBulk(column, *stream.data_buffer, max_rows_to_read, avg_value_size_hint);
 
 		/// Вычисление подсказки о среднем размере значения.
 		size_t column_size = column.size();
@@ -519,7 +519,7 @@ void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_
 		OffsetColumns offset_columns;
 		for (size_t i = 0; i < res.columns(); ++i)
 		{
-			const ColumnWithTypeAndName & column = res.getByPosition(i);
+			const ColumnWithTypeAndName & column = res.safeGetByPosition(i);
 
 			IColumn * observed_column;
 			std::string column_name;

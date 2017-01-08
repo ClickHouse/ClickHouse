@@ -6,8 +6,6 @@
 namespace DB
 {
 
-/** Звёздочка.
-  */
 class ASTAsterisk : public IAST
 {
 public:

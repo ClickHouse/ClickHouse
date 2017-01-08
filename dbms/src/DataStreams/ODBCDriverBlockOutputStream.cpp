@@ -27,7 +27,7 @@ void ODBCDriverBlockOutputStream::write(const Block & block)
 		/// Имена и типы столбцов.
 		for (size_t j = 0; j < columns; ++j)
 		{
-			const ColumnWithTypeAndName & col = block.unsafeGetByPosition(j);
+			const ColumnWithTypeAndName & col = block.getByPosition(j);
 
 			writeStringBinary(col.name, out);
 			writeStringBinary(col.type->getName(), out);
@@ -40,7 +40,7 @@ void ODBCDriverBlockOutputStream::write(const Block & block)
 		for (size_t j = 0; j < columns; ++j)
 		{
 			text_value.resize(0);
-			const ColumnWithTypeAndName & col = block.unsafeGetByPosition(j);
+			const ColumnWithTypeAndName & col = block.getByPosition(j);
 
 			{
 				WriteBufferFromString text_out(text_value);

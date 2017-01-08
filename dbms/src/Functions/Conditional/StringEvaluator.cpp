@@ -353,7 +353,7 @@ bool createStringSources(StringSources & sources, const Block & block,
 {
 	auto append_source = [&](size_t i)
 	{
-		const IColumn * col = block.getByPosition(args[i]).column.get();
+		const IColumn * col = block.safeGetByPosition(args[i]).column.get();
 		const ColumnString * var_col = typeid_cast<const ColumnString *>(col);
 		const ColumnFixedString * fixed_col = typeid_cast<const ColumnFixedString *>(col);
 		const ColumnConstString * const_col = typeid_cast<const ColumnConstString *>(col);
@@ -508,7 +508,7 @@ private:
 		size_t first_data_size = sources[0]->getDataSize();
 
 		auto col_res = std::make_shared<ColumnFixedString>(first_size);
-		block.getByPosition(result).column = col_res;
+		block.safeGetByPosition(result).column = col_res;
 		return FixedStringSink{col_res->getChars(), first_size, first_data_size};
 	}
 };
@@ -535,7 +535,7 @@ private:
 		size_t data_size = computeResultSize(sources, row_count);
 
 		std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-		block.getByPosition(result).column = col_res;
+		block.safeGetByPosition(result).column = col_res;
 		return VarStringSink{col_res->getChars(), col_res->getOffsets(),
 			data_size, offsets_size};
 	}

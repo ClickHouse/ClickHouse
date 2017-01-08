@@ -65,7 +65,7 @@ private:
 					? block.getPositionByName(desc[i].column_name)
 					: desc[i].column_number;
 
-				sort_columns[i] = block.getByPosition(column_number).column.get();
+				sort_columns[i] = block.safeGetByPosition(column_number).column.get();
 			}
 
 			const IColumn * sign_icolumn = block.getByName(sign_column_name).column.get();

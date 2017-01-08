@@ -68,7 +68,7 @@ Block ColumnGathererStream::readImpl()
 		return Block();
 
 	Block block_res{column.cloneEmpty()};
-	IColumn & column_res = *block_res.unsafeGetByPosition(0).column;
+	IColumn & column_res = *block_res.getByPosition(0).column;
 
 	size_t global_size = row_source.size();
 	size_t curr_block_preferred_size = std::min(global_size - pos_global_start,  block_preferred_size);
@@ -101,7 +101,7 @@ Block ColumnGathererStream::readImpl()
 				if (column_res.size() != 0)
 					break;
 
-				block_res.unsafeGetByPosition(0).column = source.block.getByName(name).column;
+				block_res.getByPosition(0).column = source.block.getByName(name).column;
 				source.pos += len;
 				pos_global += len;
 				break;

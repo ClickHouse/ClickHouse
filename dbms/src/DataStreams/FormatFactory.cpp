@@ -120,23 +120,23 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
 	else if (name == "CSVWithNames")
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample, true));
 	else if (name == "Pretty")
-		return std::make_shared<PrettyBlockOutputStream>(buf);
+		return std::make_shared<PrettyBlockOutputStream>(buf, false, settings.output_format_pretty_max_rows, context);
 	else if (name == "PrettyCompact")
-		return std::make_shared<PrettyCompactBlockOutputStream>(buf);
+		return std::make_shared<PrettyCompactBlockOutputStream>(buf, false, settings.output_format_pretty_max_rows, context);
 	else if (name == "PrettyCompactMonoBlock")
-		return std::make_shared<PrettyCompactMonoBlockOutputStream>(buf);
+		return std::make_shared<PrettyCompactMonoBlockOutputStream>(buf, false, settings.output_format_pretty_max_rows, context);
 	else if (name == "PrettySpace")
-		return std::make_shared<PrettySpaceBlockOutputStream>(buf);
+		return std::make_shared<PrettySpaceBlockOutputStream>(buf, false, settings.output_format_pretty_max_rows, context);
 	else if (name == "PrettyNoEscapes")
-		return std::make_shared<PrettyBlockOutputStream>(buf, true);
+		return std::make_shared<PrettyBlockOutputStream>(buf, true, settings.output_format_pretty_max_rows, context);
 	else if (name == "PrettyCompactNoEscapes")
-		return std::make_shared<PrettyCompactBlockOutputStream>(buf, true);
+		return std::make_shared<PrettyCompactBlockOutputStream>(buf, true, settings.output_format_pretty_max_rows, context);
 	else if (name == "PrettySpaceNoEscapes")
-		return std::make_shared<PrettySpaceBlockOutputStream>(buf, true);
+		return std::make_shared<PrettySpaceBlockOutputStream>(buf, true, settings.output_format_pretty_max_rows, context);
 	else if (name == "Vertical")
-		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRowOutputStream>(buf, sample));
+		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRowOutputStream>(buf, sample, context));
 	else if (name == "VerticalRaw")
-		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRawRowOutputStream>(buf, sample));
+		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRawRowOutputStream>(buf, sample, context));
 	else if (name == "Values")
 		return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<ValuesRowOutputStream>(buf));
 	else if (name == "JSON")

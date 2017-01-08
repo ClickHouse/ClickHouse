@@ -2,7 +2,7 @@
 
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 #include <DB/DataTypes/IDataType.h>
-#include <boost/iterator/transform_iterator.hpp>
+
 
 namespace DB
 {

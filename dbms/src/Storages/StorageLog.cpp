@@ -30,7 +30,7 @@
 #define DBMS_STORAGE_LOG_MARKS_FILE_EXTENSION	".mrk"
 #define DBMS_STORAGE_LOG_MARKS_FILE_NAME 		"__marks.mrk"
 #define DBMS_STORAGE_LOG_NULL_MARKS_FILE_NAME 	"__null_marks.mrk"
-#define DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION ".null"
+#define DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION ".null.bin"
 
 
 namespace DB
@@ -359,7 +359,7 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(column);
 		IColumn & nested_col = *nullable_col.getNestedColumn();
 
-		DataTypeUInt8{}.deserializeBinary(*nullable_col.getNullValuesByteMap(),
+		DataTypeUInt8{}.deserializeBinaryBulk(nullable_col.getNullMapConcreteColumn(),
 			streams[name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION]->compressed, max_rows_to_read, 0);
 		/// Then read data.
 		readData(name, nested_type, nested_col, max_rows_to_read, level, read_offsets);
@@ -384,7 +384,7 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 				level + 1);
 	}
 	else
-		type.deserializeBinary(column, streams[name]->compressed, max_rows_to_read, 0);	/// TODO Использовать avg_value_size_hint.
+		type.deserializeBinaryBulk(column, streams[name]->compressed, max_rows_to_read, 0);	/// TODO Использовать avg_value_size_hint.
 }
 
 
@@ -404,7 +404,7 @@ void LogBlockOutputStream::write(const Block & block)
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		const ColumnWithTypeAndName & column = block.getByPosition(i);
+		const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
 		writeData(column.name, *column.type, *column.column, marks, null_marks, offset_columns);
 	}
 
@@ -490,8 +490,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 
 		out_null_marks.emplace_back(storage.files[filename].column_index, mark);
 
-		DataTypeUInt8{}.serializeBinary(*nullable_col.getNullValuesByteMap(),
-			streams[filename]->compressed);
+		DataTypeUInt8{}.serializeBinaryBulk(nullable_col.getNullMapConcreteColumn(), streams[filename]->compressed, 0, 0);
 		streams[filename]->compressed.next();
 
 		/// Then write data.
@@ -512,7 +511,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 
 			out_marks.push_back(std::make_pair(storage.files[size_name].column_index, mark));
 
-			type_arr->serializeOffsets(column, streams[size_name]->compressed);
+			type_arr->serializeOffsets(column, streams[size_name]->compressed, 0, 0);
 			streams[size_name]->compressed.next();
 		}
 
@@ -527,7 +526,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 
 		out_marks.push_back(std::make_pair(storage.files[name].column_index, mark));
 
-		type.serializeBinary(column, streams[name]->compressed);
+		type.serializeBinaryBulk(column, streams[name]->compressed, 0, 0);
 		streams[name]->compressed.next();
 	}
 }

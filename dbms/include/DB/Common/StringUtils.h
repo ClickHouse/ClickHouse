@@ -121,3 +121,9 @@ inline char alternateCaseIfAlphaASCII(char c)
 {
 	return c ^ 0x20;
 }
+
+inline bool equalsCaseInsensitive(char a, char b)
+{
+	return a == b || (isAlphaASCII(a) && alternateCaseIfAlphaASCII(a) == b);
+}
+

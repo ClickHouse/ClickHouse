@@ -62,7 +62,7 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 
 			shared_block_ptr = new detail::SharedBlock(children[i]->read());
 
-			const size_t rows = shared_block_ptr->rowsInFirstColumn();
+			const size_t rows = shared_block_ptr->rows();
 
 			if (rows == 0)
 				continue;
@@ -122,9 +122,9 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 
 		for (size_t i = 0; i < src_columns; ++i)
 		{
-			if (shared_block_ptr->getByPosition(i).name != merged_block.getByPosition(i).name
-				|| shared_block_ptr->getByPosition(i).type->getName() != merged_block.getByPosition(i).type->getName()
-				|| shared_block_ptr->getByPosition(i).column->getName() != merged_block.getByPosition(i).column->getName())
+			if (shared_block_ptr->safeGetByPosition(i).name != merged_block.safeGetByPosition(i).name
+				|| shared_block_ptr->safeGetByPosition(i).type->getName() != merged_block.safeGetByPosition(i).type->getName()
+				|| shared_block_ptr->safeGetByPosition(i).column->getName() != merged_block.safeGetByPosition(i).column->getName())
 			{
 				throw Exception("Merging blocks has different names or types of columns:\n"
 					+ shared_block_ptr->dumpStructure() + "\nand\n" + merged_block.dumpStructure(),
@@ -135,7 +135,7 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 
 	for (size_t i = 0; i < num_columns; ++i)
 	{
-		merged_columns.emplace_back(merged_block.getByPosition(i).column.get());
+		merged_columns.emplace_back(merged_block.safeGetByPosition(i).column.get());
 		merged_columns.back()->reserve(expected_block_size);
 	}
 }
@@ -232,7 +232,7 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 					throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
 
 				for (size_t i = 0; i < num_columns; ++i)
-					merged_block.unsafeGetByPosition(i).column = source_blocks[source_num]->unsafeGetByPosition(i).column;
+					merged_block.getByPosition(i).column = source_blocks[source_num]->getByPosition(i).column;
 
 	//			std::cerr << "copied columns\n";
 
@@ -243,7 +243,7 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 					merged_rows = limit - total_merged_rows;
 					for (size_t i = 0; i < num_columns; ++i)
 					{
-						auto & column = merged_block.unsafeGetByPosition(i).column;
+						auto & column = merged_block.getByPosition(i).column;
 						column = column->cut(0, merged_rows);
 					}
 

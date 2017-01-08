@@ -6,6 +6,8 @@
 #include <vector>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
+
 
 namespace DB
 {
@@ -97,6 +99,8 @@ private:
 	FunctionParentMap or_parent_map;
 	/// Позиция каждого столбца.
 	ColumnToPosition column_to_position;
+	/// Set of nodes, that was visited.
+	std::unordered_set<void *> visited_nodes;
 };
 
 }

@@ -56,7 +56,7 @@ Block LimitBlockInputStream::readImpl()
 		static_cast<Int64>(limit) + static_cast<Int64>(offset) - static_cast<Int64>(pos) + static_cast<Int64>(rows)));
 
 	for (size_t i = 0; i < res.columns(); ++i)
-		res.getByPosition(i).column = res.getByPosition(i).column->cut(start, length);
+		res.safeGetByPosition(i).column = res.safeGetByPosition(i).column->cut(start, length);
 
 	return res;
 }

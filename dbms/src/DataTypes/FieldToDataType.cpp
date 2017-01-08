@@ -22,7 +22,7 @@ static void convertArrayToCommonType(Array & arr)
 	for (auto & elem : arr)
 	{
 		if (!elem.isNull())
-			elem = apply_visitor(FieldVisitorConvertToNumber<T>(), elem);
+			elem = applyVisitor(FieldVisitorConvertToNumber<T>(), elem);
 	}
 }
 
@@ -217,7 +217,7 @@ DataTypePtr FieldToDataType::operator() (Tuple & x) const
 	element_types.reserve(ext::size(tuple));
 
 	for (auto & element : tuple)
-		element_types.push_back(apply_visitor(FieldToDataType{}, element));
+		element_types.push_back(applyVisitor(FieldToDataType{}, element));
 
 	return std::make_shared<DataTypeTuple>(element_types);
 }

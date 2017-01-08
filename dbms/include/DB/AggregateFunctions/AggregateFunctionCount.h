@@ -1,7 +1,6 @@
 #pragma once
 
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/VarInt.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 

@@ -541,7 +541,7 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 	s[8] += values.day_of_month / 10;
 	s[9] += values.day_of_month % 10;
 
-	UInt8 hour = date_lut.toHourInaccurate(datetime);
+	UInt8 hour = date_lut.toHour(datetime);
 	UInt8 minute = date_lut.toMinuteInaccurate(datetime);
 	UInt8 second = date_lut.toSecondInaccurate(datetime);
 
@@ -811,14 +811,6 @@ inline String toString(const T & x)
 		writeText(x, buf);
 	}
 	return res;
-}
-
-/// Write a specified number of times a given value into a write buffer.
-template <typename T>
-inline void writeBinary(const T & x, size_t count, WriteBuffer & buf)
-{
-	for (size_t i = 0; i < count; ++i)
-		writeBinary(x, buf);
 }
 
 }

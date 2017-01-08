@@ -530,7 +530,7 @@ void CacheDictionary::update(
 
 	while (const auto block = stream->read())
 	{
-		const auto id_column = typeid_cast<const ColumnUInt64 *>(block.getByPosition(0).column.get());
+		const auto id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
 		if (!id_column)
 			throw Exception{
 				name + ": id column has type different from UInt64.",
@@ -540,7 +540,7 @@ void CacheDictionary::update(
 
 		/// cache column pointers
 		const auto column_ptrs = ext::map<std::vector>(ext::range(0, attributes.size()), [&block] (const auto & i) {
-			return block.getByPosition(i + 1).column.get();
+			return block.safeGetByPosition(i + 1).column.get();
 		});
 
 		for (const auto i : ext::range(0, ids.size()))

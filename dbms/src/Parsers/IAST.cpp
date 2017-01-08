@@ -7,12 +7,12 @@
 namespace DB
 {
 
-constexpr IAST::Attributes IAST::IsVisited;
-constexpr IAST::Attributes IAST::IsPreprocessedForInJoinSubqueries;
-constexpr IAST::Attributes IAST::IsIn;
-constexpr IAST::Attributes IAST::IsNotIn;
-constexpr IAST::Attributes IAST::IsJoin;
-constexpr IAST::Attributes IAST::IsGlobal;
+namespace ErrorCodes
+{
+	extern const int TOO_BIG_AST;
+	extern const int TOO_DEEP_AST;
+}
+
 
 const char * IAST::hilite_keyword 		= "\033[1m";
 const char * IAST::hilite_identifier 	= "\033[0;36m";

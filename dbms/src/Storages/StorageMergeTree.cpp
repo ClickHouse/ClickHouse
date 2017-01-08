@@ -339,10 +339,10 @@ bool StorageMergeTree::merge(
 		merging_tagger.emplace(parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(parts), *this);
 	}
 
-	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
+	MergeList::EntryPtr merge_entry_ptr = context.getMergeList().insert(database_name, table_name, merged_name);
 
 	auto new_part = merger.mergePartsToTemporaryPart(
-		merging_tagger->parts, merged_name, *merge_entry, aio_threshold, time(0), merging_tagger->reserved_space.get());
+		merging_tagger->parts, merged_name, *merge_entry_ptr, aio_threshold, time(0), merging_tagger->reserved_space.get());
 
 	merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
 
@@ -402,7 +402,7 @@ void StorageMergeTree::dropPartition(ASTPtr query, const Field & partition, bool
 			data.replaceParts({part}, {}, false);
 	}
 
-	LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << apply_visitor(FieldVisitorToString(), partition) << ".");
+	LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << applyVisitor(FieldVisitorToString(), partition) << ".");
 }
 
 

@@ -13,11 +13,6 @@ String FunctionReverse::getName() const
 
 DataTypePtr FunctionReverse::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	if (arguments.size() != 1)
-		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 	if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0])
 		&& !typeid_cast<const DataTypeArray *>(&*arguments[0]))
 		throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
@@ -29,18 +24,18 @@ DataTypePtr FunctionReverse::getReturnTypeImpl(const DataTypes & arguments) cons
 
 void FunctionReverse::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-	const ColumnPtr column = block.getByPosition(arguments[0]).column;
+	const ColumnPtr column = block.safeGetByPosition(arguments[0]).column;
 	if (const ColumnString * col = typeid_cast<const ColumnString *>(column.get()))
 	{
 		std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-		block.getByPosition(result).column = col_res;
+		block.safeGetByPosition(result).column = col_res;
 		ReverseImpl::vector(col->getChars(), col->getOffsets(),
 						col_res->getChars(), col_res->getOffsets());
 	}
 	else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(column.get()))
 	{
 		auto col_res = std::make_shared<ColumnFixedString>(col->getN());
-		block.getByPosition(result).column = col_res;
+		block.safeGetByPosition(result).column = col_res;
 		ReverseImpl::vector_fixed(col->getChars(), col->getN(),
 							col_res->getChars());
 	}
@@ -49,14 +44,14 @@ void FunctionReverse::executeImpl(Block & block, const ColumnNumbers & arguments
 		String res;
 		ReverseImpl::constant(col->getData(), res);
 		auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
-		block.getByPosition(result).column = col_res;
+		block.safeGetByPosition(result).column = col_res;
 	}
 	else if (typeid_cast<const ColumnArray *>(column.get()) || typeid_cast<const ColumnConstArray *>(column.get()))
 	{
 		FunctionArrayReverse().execute(block, arguments, result);
 	}
 	else
-		throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+		throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 			+ " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_COLUMN);
 }
@@ -71,13 +66,6 @@ String FunctionAppendTrailingCharIfAbsent::getName() const
 
 DataTypePtr FunctionAppendTrailingCharIfAbsent::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	if (arguments.size() != 2)
-		throw Exception{
-			"Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 2.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-		};
-
 	if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 		throw Exception{
 			"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
@@ -96,8 +84,8 @@ DataTypePtr FunctionAppendTrailingCharIfAbsent::getReturnTypeImpl(const DataType
 
 void FunctionAppendTrailingCharIfAbsent::executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result)
 {
-	const auto & column = block.getByPosition(arguments[0]).column;
-	const auto & column_char = block.getByPosition(arguments[1]).column;
+	const auto & column = block.safeGetByPosition(arguments[0]).column;
+	const auto & column_char = block.safeGetByPosition(arguments[1]).column;
 
 	if (!typeid_cast<const ColumnConstString *>(column_char.get()))
 		throw Exception{
@@ -116,7 +104,7 @@ void FunctionAppendTrailingCharIfAbsent::executeImpl(Block & block, const Column
 	if (const auto col = typeid_cast<const ColumnString *>(&*column))
 	{
 		auto col_res = std::make_shared<ColumnString>();
-		block.getByPosition(result).column = col_res;
+		block.safeGetByPosition(result).column = col_res;
 
 		const auto & src_data = col->getChars();
 		const auto & src_offsets = col->getOffsets();
@@ -154,14 +142,14 @@ void FunctionAppendTrailingCharIfAbsent::executeImpl(Block & block, const Column
 	{
 		const auto & in_data = col->getData();
 
-		block.getByPosition(result).column = std::make_shared<ColumnConstString>(
+		block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(
 			col->size(),
 			in_data.size() == 0 ? in_data :
 				in_data.back() == trailing_char_str.front() ? in_data : in_data + trailing_char_str);
 	}
 	else
 		throw Exception{
-			"Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			"Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 			+ " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_COLUMN
 		};

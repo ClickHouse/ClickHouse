@@ -332,7 +332,7 @@ inline StringRef ALWAYS_INLINE extractKeysAndPlaceInPoolContiguous<true>(
 		{
 			const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*key_columns[j]);
 			observed_column = nullable_col.getNestedColumn().get();
-			const auto & null_map = static_cast<const ColumnUInt8 &>(*nullable_col.getNullValuesByteMap()).getData();
+			const auto & null_map = nullable_col.getNullMap();
 			is_null = null_map[i] == 1;
 		}
 		else

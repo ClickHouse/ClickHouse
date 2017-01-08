@@ -1,0 +1,8 @@
+dummy -> dummy UInt8. Database name: system. Table name: one. Alias: (none). Storage: SystemOne. AST: dummy
+number -> number UInt64. Database name: system. Table name: numbers. Alias: t. Storage: SystemNumbers. AST: number
+numbers.number -> number UInt64. Database name: system. Table name: numbers. Alias: t. Storage: SystemNumbers. AST: numbers.number
+one.dummy -> dummy UInt8. Database name: system. Table name: one. Alias: (none). Storage: SystemOne. AST: one.dummy
+system.numbers.number -> number UInt64. Database name: system. Table name: numbers. Alias: t. Storage: SystemNumbers. AST: system.numbers.number
+system.one.dummy -> dummy UInt8. Database name: system. Table name: one. Alias: (none). Storage: SystemOne. AST: system.one.dummy
+t.number -> number UInt64. Database name: system. Table name: numbers. Alias: t. Storage: SystemNumbers. AST: t.number
+SELECT dummy, number, one.dummy, numbers.number, system.one.dummy, system.numbers.number, system.one.dummy, system.numbers.number, system.one.dummy, system.numbers.number, system.one.dummy, system.numbers.number, system.numbers.number, t.number FROM system.one  , system.numbers AS t 

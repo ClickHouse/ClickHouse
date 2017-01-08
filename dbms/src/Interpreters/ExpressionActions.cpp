@@ -121,7 +121,7 @@ void ExpressionAction::prepare(Block & sample_block)
 			for (size_t i = 0; i < argument_names.size(); ++i)
 			{
 				arguments[i] = sample_block.getPositionByName(argument_names[i]);
-				ColumnPtr col = sample_block.getByPosition(arguments[i]).column;
+				ColumnPtr col = sample_block.safeGetByPosition(arguments[i]).column;
 				if (!col || !col->isConst())
 					all_const = false;
 			}
@@ -130,15 +130,15 @@ void ExpressionAction::prepare(Block & sample_block)
 			for (size_t i = 0; i < prerequisite_names.size(); ++i)
 			{
 				prerequisites[i] = sample_block.getPositionByName(prerequisite_names[i]);
-				ColumnPtr col = sample_block.getByPosition(prerequisites[i]).column;
+				ColumnPtr col = sample_block.safeGetByPosition(prerequisites[i]).column;
 				if (!col || !col->isConst())
 					all_const = false;
 			}
 
 			ColumnPtr new_column;
 
-			/// Если все аргументы и требуемые столбцы - константы, выполним функцию.
-			if (all_const)
+			/// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
+			if (all_const && function->isSuitableForConstantFolding())
 			{
 				size_t result_position = sample_block.columns();
 
@@ -150,7 +150,7 @@ void ExpressionAction::prepare(Block & sample_block)
 				function->execute(sample_block, arguments, prerequisites, result_position);
 
 				/// Если получилась не константа, на всякий случай будем считать результат неизвестным.
-				ColumnWithTypeAndName & col = sample_block.getByPosition(result_position);
+				ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
 				if (!col.column->isConst())
 					col.column = nullptr;
 			}
@@ -296,7 +296,7 @@ void ExpressionAction::execute(Block & block) const
 					Block tmp_block{src_col, {{}, src_col.type, {}}};
 
 					FunctionEmptyArrayToSingle().execute(tmp_block, {0}, 1);
-					non_empty_array_columns[name] = tmp_block.getByPosition(1).column;
+					non_empty_array_columns[name] = tmp_block.safeGetByPosition(1).column;
 				}
 
 				any_array_ptr = non_empty_array_columns.begin()->second;
@@ -306,7 +306,7 @@ void ExpressionAction::execute(Block & block) const
 			size_t columns = block.columns();
 			for (size_t i = 0; i < columns; ++i)
 			{
-				ColumnWithTypeAndName & current = block.getByPosition(i);
+				ColumnWithTypeAndName & current = block.safeGetByPosition(i);
 
 				if (array_joined_columns.count(current.name))
 				{
@@ -364,7 +364,7 @@ void ExpressionAction::execute(Block & block) const
 			break;
 
 		case ADD_COLUMN:
-			block.insert({ added_column->cloneResized(block.rowsInFirstColumn()), result_type, result_name });
+			block.insert({ added_column->cloneResized(block.rows()), result_type, result_name });
 			break;
 
 		case COPY_COLUMN:
@@ -469,15 +469,15 @@ void ExpressionActions::checkLimits(Block & block) const
 	{
 		size_t non_const_columns = 0;
 		for (size_t i = 0, size = block.columns(); i < size; ++i)
-			if (block.getByPosition(i).column && !block.getByPosition(i).column->isConst())
+			if (block.safeGetByPosition(i).column && !block.safeGetByPosition(i).column->isConst())
 				++non_const_columns;
 
 		if (non_const_columns > limits.max_temporary_non_const_columns)
 		{
 			std::stringstream list_of_non_const_columns;
 			for (size_t i = 0, size = block.columns(); i < size; ++i)
-				if (!block.getByPosition(i).column->isConst())
-					list_of_non_const_columns << "\n" << block.getByPosition(i).name;
+				if (!block.safeGetByPosition(i).column->isConst())
+					list_of_non_const_columns << "\n" << block.safeGetByPosition(i).name;
 
 			throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
 				+ ". Maximum: " + toString(limits.max_temporary_non_const_columns),

@@ -1,5 +1,5 @@
-include_directories (include)
-include_directories (/usr/include/mysql)
+include_directories (BEFORE include)
+#include_directories (/usr/include/mysql)
 
 add_subdirectory (src)
 
@@ -21,6 +21,7 @@ add_headers_and_sources(dbms Functions)
 add_headers_and_sources(dbms Functions/Conditional)
 add_headers_and_sources(dbms TableFunctions)
 add_headers_and_sources(dbms Parsers)
+add_headers_and_sources(dbms Analyzers)
 add_headers_and_sources(dbms AggregateFunctions)
 add_headers_and_sources(dbms Core)
 add_headers_and_sources(dbms DataStreams)
@@ -50,7 +51,7 @@ list(REMOVE_ITEM dbms_sources
 	src/Databases/DatabaseCloud.cpp
 	src/Common/StringUtils.cpp)
 
-if (APPLE)
+if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
 	list(REMOVE_ITEM dbms_headers
 		include/DB/Common/AIO.h
 		include/DB/IO/WriteBufferAIO.h
@@ -109,6 +110,12 @@ if (APPLE)
 	set(APPLE_ICONV_LIB iconv)
 endif()
 
+if (CMAKE_SYSTEM MATCHES "FreeBSD")
+    set(PLATFORM_LIBS "execinfo")
+else()
+    set(PLATFORM_LIBS "")
+endif()
+
 target_link_libraries(dbms
 	common
 	zkutil
@@ -125,7 +132,9 @@ target_link_libraries(dbms
 	PocoDataODBC
 	PocoMongoDB
 	${APPLE_ICONV_LIB}
-	dl ${LTDL_LIB})
+	${PLATFORM_LIBS}
+	${CMAKE_DL_LIBS}
+	${LTDL_LIB})
 
 add_dependencies (dbms
 	common

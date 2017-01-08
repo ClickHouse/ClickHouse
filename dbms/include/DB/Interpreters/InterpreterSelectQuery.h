@@ -138,6 +138,7 @@ private:
 	void executeMergeSorted();
 	void executePreLimit();
 	void executeUnion();
+	void executeLimitBy();
 	void executeLimit();
 	void executeProjection(ExpressionActionsPtr expression);
 	void executeDistinct(bool before_order, Names columns);

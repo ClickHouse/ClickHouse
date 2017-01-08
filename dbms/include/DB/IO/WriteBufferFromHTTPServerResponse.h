@@ -10,6 +10,7 @@
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/ZlibDeflatingWriteBuffer.h>
+#include <DB/IO/HTTPCommon.h>
 #include <DB/Common/NetException.h>
 
 
@@ -54,6 +55,8 @@ private:
 			{
 				response.set("Access-Control-Allow-Origin","*");
 			}
+
+			setResponseDefaultHeaders(response);
 
 			if (compress && offset())	/// Empty response need not be compressed.
 			{

@@ -142,7 +142,7 @@ Block MongoDBBlockInputStream::readImpl()
 	const size_t size = columns.size();
 
 	for (const auto i : ext::range(0, size))
-		columns[i] = block.getByPosition(i).column.get();
+		columns[i] = block.safeGetByPosition(i).column.get();
 
 	size_t num_rows = 0;
 	while (num_rows < max_block_size)

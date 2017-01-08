@@ -17,6 +17,7 @@
 #include <DB/Common/Macros.h>
 #include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Common/StringUtils.h>
+#include <DB/IO/HTTPCommon.h>
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/ProcessList.h>
@@ -73,6 +74,7 @@ public:
 	{
 		try
 		{
+			setResponseDefaultHeaders(response);
 			const char * data = "Ok.\n";
 			response.sendBuffer(data, strlen(data));
 		}
@@ -413,7 +415,11 @@ int Server::main(const std::vector<std::string> & args)
 			catch (const Poco::Net::DNSException & e)
 			{
 				/// Better message when IPv6 is disabled on host.
-				if (e.code() == EAI_ADDRFAMILY)
+				if (e.code() == EAI_FAMILY
+#if defined(EAI_ADDRFAMILY)
+					|| e.code() == EAI_ADDRFAMILY
+#endif
+				)
 				{
 					LOG_ERROR(log, "Cannot resolve listen_host (" << listen_host + "), error: " << e.message() << ". "
 						"If it is an IPv6 address and your host has disabled IPv6, then consider to specify IPv4 address to listen in <listen_host> element of configuration file. Example: <listen_host>0.0.0.0</listen_host>");

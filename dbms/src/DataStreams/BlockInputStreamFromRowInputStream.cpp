@@ -41,7 +41,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 		throw;
 	}
 
-	if (res.rowsInFirstColumn() == 0)
+	if (res.rows() == 0)
 		res.clear();
 	else
 		res.optimizeNestedArraysOffsets();

@@ -41,7 +41,7 @@ private:
 
 		for (const auto i : ext::range(0, block.columns()))
 		{
-			auto & element = block.getByPosition(i);
+			auto & element = block.safeGetByPosition(i);
 			auto & src = element.column;
 			ColumnPtr converted = src->convertToFullColumnIfConst();
 			if (converted)

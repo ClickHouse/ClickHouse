@@ -23,7 +23,7 @@ namespace Conditional
 		cols_properties.resize(block.columns());
 		for (const auto & arg : args)
 		{
-			const auto & col = *block.unsafeGetByPosition(arg).column;
+			const auto & col = *block.getByPosition(arg).column;
 			if (col.isNullable())
 				cols_properties[arg] = IS_NULLABLE;
 			else if (col.isNull())
@@ -35,7 +35,7 @@ namespace Conditional
 
 	void NullMapBuilder::update(size_t index, size_t row)
 	{
-		const IColumn & from = *block.unsafeGetByPosition(index).column;
+		const IColumn & from = *block.getByPosition(index).column;
 
 		bool is_null;
 
@@ -59,14 +59,14 @@ namespace Conditional
 
 	void NullMapBuilder::build(size_t index)
 	{
-		const IColumn & from = *block.unsafeGetByPosition(index).column;
+		const IColumn & from = *block.getByPosition(index).column;
 
 		if (from.isNull())
 			null_map = std::make_shared<ColumnUInt8>(row_count, 1);
 		else if (from.isNullable())
 		{
 			const auto & nullable_col = static_cast<const ColumnNullable &>(from);
-			null_map = nullable_col.getNullValuesByteMap();
+			null_map = nullable_col.getNullMapColumn();
 		}
 		else
 			null_map = std::make_shared<ColumnUInt8>(row_count, 0);
