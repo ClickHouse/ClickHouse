@@ -144,7 +144,7 @@ struct ToTimeImpl
 	/// При переводе во время, дату будем приравнивать к 1970-01-02.
 	static inline UInt32 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
 	{
-		time_t remote_ts = remote_date_lut.toTimeInaccurate(t) + 86400;
+		time_t remote_ts = remote_date_lut.toTime(t) + 86400;
 
 		if (&remote_date_lut == &local_date_lut)
 			return remote_ts;
@@ -152,7 +152,7 @@ struct ToTimeImpl
 		{
 			const auto & values = remote_date_lut.getValues(remote_ts);
 			return local_date_lut.makeDateTime(values.year, values.month, values.day_of_month,
-											remote_date_lut.toHourInaccurate(remote_ts),
+											remote_date_lut.toHour(remote_ts),
 											remote_date_lut.toMinuteInaccurate(remote_ts),
 											remote_date_lut.toSecondInaccurate(remote_ts));
 		}
@@ -174,12 +174,12 @@ struct ToStartOfMinuteImpl
 			return local_date_lut.toStartOfMinuteInaccurate(t);
 		else
 		{
-			time_t remote_ts = remote_date_lut.toTimeInaccurate(t) + 86400;
+			time_t remote_ts = remote_date_lut.toTime(t) + 86400;
 			remote_ts = remote_date_lut.toStartOfMinuteInaccurate(remote_ts);
 
 			const auto & values = remote_date_lut.getValues(t);
 			return local_date_lut.makeDateTime(values.year, values.month, values.day_of_month,
-											remote_date_lut.toHourInaccurate(remote_ts),
+											remote_date_lut.toHour(remote_ts),
 											remote_date_lut.toMinuteInaccurate(remote_ts),
 											remote_date_lut.toSecondInaccurate(remote_ts));
 		}
@@ -200,12 +200,12 @@ struct ToStartOfFiveMinuteImpl
 			return local_date_lut.toStartOfFiveMinuteInaccurate(t);
 		else
 		{
-			time_t remote_ts = remote_date_lut.toTimeInaccurate(t) + 86400;
+			time_t remote_ts = remote_date_lut.toTime(t) + 86400;
 			remote_ts = remote_date_lut.toStartOfFiveMinuteInaccurate(remote_ts);
 
 			const auto & values = remote_date_lut.getValues(t);
 			return local_date_lut.makeDateTime(values.year, values.month, values.day_of_month,
-											remote_date_lut.toHourInaccurate(remote_ts),
+											remote_date_lut.toHour(remote_ts),
 											remote_date_lut.toMinuteInaccurate(remote_ts),
 											remote_date_lut.toSecondInaccurate(remote_ts));
 		}
@@ -226,12 +226,12 @@ struct ToStartOfHourImpl
 			return local_date_lut.toStartOfHourInaccurate(t);
 		else
 		{
-			time_t remote_ts = remote_date_lut.toTimeInaccurate(t) + 86400;
+			time_t remote_ts = remote_date_lut.toTime(t) + 86400;
 			remote_ts = remote_date_lut.toStartOfHourInaccurate(remote_ts);
 
 			const auto & values = remote_date_lut.getValues(t);
 			return local_date_lut.makeDateTime(values.year, values.month, values.day_of_month,
-											remote_date_lut.toHourInaccurate(remote_ts),
+											remote_date_lut.toHour(remote_ts),
 											remote_date_lut.toMinuteInaccurate(remote_ts),
 											remote_date_lut.toSecondInaccurate(remote_ts));
 		}
@@ -304,7 +304,7 @@ struct ToHourImpl
 {
 	static inline UInt8 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
 	{
-		return remote_date_lut.toHourInaccurate(t);
+		return remote_date_lut.toHour(t);
 	}
 	static inline UInt8 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
 	{

@@ -485,8 +485,8 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
 	}
 
 	/// Теперь идем обратно и собираем ответ.
-	std::vector<std::string> left_columns;
-	std::vector<std::string> right_columns;
+	ColumnsWithTypeAndName left_columns;
+	ColumnsWithTypeAndName right_columns;
 	size_t l = lhs.columns();
 	size_t r = rhs.columns();
 	while (l > 0 && r > 0)
@@ -503,24 +503,30 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
 			/// Поэтому предпочтение будем отдавать полю, которое есть в левом блоке (expected_block), поэтому
 			/// в diff попадет столбец из actual_block.
 			if (lcs[l][r - 1] >= lcs[l - 1][r])
-				right_columns.push_back(rhs.getByPosition(--r).prettyPrint());
+				right_columns.push_back(rhs.getByPosition(--r));
 			else
-				left_columns.push_back(lhs.getByPosition(--l).prettyPrint());
+				left_columns.push_back(lhs.getByPosition(--l));
 		}
 	}
 
 	while (l > 0)
-		left_columns.push_back(lhs.getByPosition(--l).prettyPrint());
+		left_columns.push_back(lhs.getByPosition(--l));
 	while (r > 0)
-		right_columns.push_back(rhs.getByPosition(--r).prettyPrint());
+		right_columns.push_back(rhs.getByPosition(--r));
 
 	WriteBufferFromString lhs_diff_writer(out_lhs_diff);
 	WriteBufferFromString rhs_diff_writer(out_rhs_diff);
 
 	for (auto it = left_columns.rbegin(); it != left_columns.rend(); ++it)
-		lhs_diff_writer << *it << '\n';
+	{
+		lhs_diff_writer << it->prettyPrint();
+		lhs_diff_writer << ", position: " << lhs.getPositionByName(it->name) << '\n';
+	}
 	for (auto it = right_columns.rbegin(); it != right_columns.rend(); ++it)
-		rhs_diff_writer << *it << '\n';
+	{
+		rhs_diff_writer << it->prettyPrint();
+		rhs_diff_writer << ", position: " << rhs.getPositionByName(it->name) << '\n';
+	}
 }
 
 

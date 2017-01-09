@@ -5,6 +5,7 @@
 #include <Poco/NumberParser.h>
 #include <common/JSON.h>
 #include <common/find_first_symbols.h>
+#include <common/exp10.h>
 
 #include <iostream>
 

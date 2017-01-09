@@ -89,7 +89,7 @@ static void logException(Context & context, QueryLogElement & elem)
 static void onExceptionBeforeStart(const String & query, Context & context, time_t current_time)
 {
 	/// Эксепшен до начала выполнения запроса.
-	context.getQuota().addError(current_time);
+	context.getQuota().addError();
 
 	bool log_queries = context.getSettingsRef().log_queries;
 
@@ -170,7 +170,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
 		QuotaForIntervals & quota = context.getQuota();
 
-		quota.addQuery(current_time);
+		quota.addQuery();	/// NOTE Seems that when new time interval has come, first query is not accounted in number of queries.
 		quota.checkExceeded(current_time);
 
 		/// Put query to process list. But don't put SHOW PROCESSLIST query itself.
@@ -285,9 +285,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 					context.getQueryLog().add(elem);
 			};
 
-			res.exception_callback = [elem, &context, log_queries, current_time] () mutable
+			res.exception_callback = [elem, &context, log_queries] () mutable
 			{
-				context.getQuota().addError(current_time);
+				context.getQuota().addError();
 
 				elem.type = QueryLogElement::EXCEPTION_WHILE_PROCESSING;
 

@@ -13,6 +13,8 @@
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
 
+#include <common/exp10.h>
+
 #include <DB/Core/Types.h>
 #include <DB/Core/StringRef.h>
 #include <DB/Common/Exception.h>

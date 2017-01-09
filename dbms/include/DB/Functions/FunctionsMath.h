@@ -1,5 +1,7 @@
 #pragma once
 
+#include <common/exp10.h>
+
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Functions/IFunction.h>
 

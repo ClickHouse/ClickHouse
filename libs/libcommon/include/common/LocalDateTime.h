@@ -46,7 +46,7 @@ private:
 		m_year = values.year;
 		m_month = values.month;
 		m_day = values.day_of_month;
-		m_hour = date_lut.toHourInaccurate(time);
+		m_hour = date_lut.toHour(time);
 		m_minute = date_lut.toMinuteInaccurate(time);
 		m_second = date_lut.toSecondInaccurate(time);
 	}

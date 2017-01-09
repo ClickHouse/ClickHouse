@@ -1,6 +1,6 @@
 #pragma once
 
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
 #endif
 #include <cstdlib>
@@ -133,7 +133,7 @@ public:
 	  */
 	void * realloc(void * buf, size_t old_size, size_t new_size, size_t alignment = 0)
 	{
-	#ifndef __APPLE__
+	#if !defined(__APPLE__) && !defined(__FreeBSD__)
 		if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD && alignment <= MALLOC_MIN_ALIGNMENT)
 		{
 			if (current_memory_tracker)

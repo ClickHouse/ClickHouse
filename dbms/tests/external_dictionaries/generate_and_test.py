@@ -28,9 +28,11 @@ MSG_UNKNOWN = OP_SQUARE_BRACKET + colored(" UNKNOWN ", "yellow", attrs=['bold'])
 MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", "green", attrs=['bold']) + CL_SQUARE_BRACKET
 MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
 
+#Not complete disable
+use_mysql = True
+use_mongo = True
 
 wait_for_loading_sleep_time_sec = 3
-continue_on_error = False
 
 failures = 0
 SERVER_DIED = False
@@ -46,35 +48,49 @@ dictionaries = [
     [ 'clickhouse_flat', 0, True ],
     [ 'mysql_flat', 0, True ],
     [ 'mongodb_flat', 0, True ],
+    [ 'executable_flat', 0, True ],
+    [ 'http_flat', 0, True ],
 
     [ 'file_hashed', 0, True ],
     [ 'clickhouse_hashed', 0, True ],
     [ 'mysql_hashed', 0, True ],
     [ 'mongodb_hashed', 0, True ],
+    [ 'executable_hashed', 0, True ],
+    [ 'http_hashed', 0, True ],
 
     [ 'clickhouse_cache', 0, True ],
     [ 'mysql_cache', 0, True ],
     [ 'mongodb_cache', 0, True ],
+    [ 'executable_cache', 0, True ],
+    [ 'http_cache', 0, True ],
 
     # Complex key dictionaries with (UInt8, UInt8) key
     [ 'file_complex_integers_key_hashed', 1, False ],
     [ 'clickhouse_complex_integers_key_hashed', 1, False ],
     [ 'mysql_complex_integers_key_hashed', 1, False ],
     [ 'mongodb_complex_integers_key_hashed', 1, False ],
+    [ 'executable_complex_integers_key_hashed', 1, False ],
+    [ 'http_complex_integers_key_hashed', 1, False ],
 
     [ 'clickhouse_complex_integers_key_cache', 1, False ],
     [ 'mysql_complex_integers_key_cache', 1, False ],
     [ 'mongodb_complex_integers_key_cache', 1, False ],
+    [ 'executable_complex_integers_key_cache', 1, False ],
+    [ 'http_complex_integers_key_cache', 1, False ],
 
     # Complex key dictionaries with (String, UInt8) key
     [ 'file_complex_mixed_key_hashed', 2, False ],
     [ 'clickhouse_complex_mixed_key_hashed', 2, False ],
     [ 'mysql_complex_mixed_key_hashed', 2, False ],
     [ 'mongodb_complex_mixed_key_hashed', 2, False ],
+    [ 'executable_complex_mixed_key_hashed', 2, False ],
+    [ 'http_complex_mixed_key_hashed', 2, False ],
 
     [ 'clickhouse_complex_mixed_key_cache', 2, False ],
     [ 'mysql_complex_mixed_key_cache', 2, False ],
     [ 'mongodb_complex_mixed_key_cache', 2, False ],
+    [ 'executable_complex_mixed_key_hashed', 2, False ],
+    [ 'http_complex_mixed_key_hashed', 2, False ],
 ]
 
 
@@ -178,26 +194,27 @@ def generate_data(args):
               .format(prefix), shell=True)
 
     # create MongoDB collection from complete_query via JSON file
-    print 'Creating MongoDB collection'
-    table_rows = json.loads(subprocess.check_output([
-        args.client,
-        '--port',
-        args.port,
-        '--output_format_json_quote_64bit_integers',
-        '0',
-        '--query',
-        "select * from test.dictionary_source where not ignore(" \
-            "concat('new Date(\\'', toString(Date_), '\\')') as Date_, " \
-            "concat('new ISODate(\\'', replaceOne(toString(DateTime_, 'UTC'), ' ', 'T'), 'Z\\')') as DateTime_" \
-        ") format JSON"
-    ]))['data']
+    if use_mongo:
+        print 'Creating MongoDB collection'
+        table_rows = json.loads(subprocess.check_output([
+            args.client,
+            '--port',
+            args.port,
+            '--output_format_json_quote_64bit_integers',
+            '0',
+            '--query',
+            "select * from test.dictionary_source where not ignore(" \
+                "concat('new Date(\\'', toString(Date_), '\\')') as Date_, " \
+                "concat('new ISODate(\\'', replaceOne(toString(DateTime_, 'UTC'), ' ', 'T'), 'Z\\')') as DateTime_" \
+            ") format JSON"
+        ]))['data']
 
-    source_for_mongo = json.dumps(table_rows).replace(')"', ')').replace('"new', 'new')
-    open('generated/full.json', 'w').write('db.dictionary_source.drop(); db.dictionary_source.insert(%s);' % source_for_mongo)
-    result = system('cat {0}/full.json | mongo --quiet > /dev/null'.format(args.generated))
-    if result != 0:
-        print 'Could not create MongoDB collection'
-        exit(-1)
+        source_for_mongo = json.dumps(table_rows).replace(')"', ')').replace('"new', 'new')
+        open('generated/full.json', 'w').write('db.dictionary_source.drop(); db.dictionary_source.insert(%s);' % source_for_mongo)
+        result = system('cat {0}/full.json | mongo --quiet > /dev/null'.format(args.generated))
+        if result != 0:
+            print 'Could not create MongoDB collection'
+            exit(-1)
 
 
 def generate_dictionaries(args):
@@ -280,6 +297,20 @@ def generate_dictionaries(args):
     </mongodb>
     '''
 
+    source_executable = '''
+    <executable>
+        <command>cat %s</command>
+        <format>TabSeparated</format>
+    </executable>
+    '''
+
+    source_http = '''
+    <http>
+        <url>http://localhost:58000/generated/%s</url>
+        <format>TabSeparated</format>
+    </http>
+    '''
+
     layout_flat = '<flat />'
     layout_hashed = '<hashed />'
     layout_cache = '<cache><size_in_cells>128</size_in_cells></cache>'
@@ -335,35 +366,49 @@ def generate_dictionaries(args):
         [ source_clickhouse, layout_flat ],
         [ source_mysql, layout_flat ],
         [ source_mongodb, layout_flat ],
+        [ source_executable % (generated_prefix + files[0]), layout_flat ],
+        [ source_http % (files[0]), layout_flat ],
 
         [ source_file % (generated_prefix + files[0]), layout_hashed],
         [ source_clickhouse, layout_hashed ],
         [ source_mysql, layout_hashed ],
         [ source_mongodb, layout_hashed ],
+        [ source_executable % (generated_prefix + files[0]), layout_hashed ],
+        [ source_http % (files[0]), layout_hashed ],
 
         [ source_clickhouse, layout_cache ],
         [ source_mysql, layout_cache ],
         [ source_mongodb, layout_cache ],
+        [ source_executable % (generated_prefix + files[0]), layout_cache ],
+        [ source_http % (files[0]), layout_cache ],
 
         # Complex key dictionaries with (UInt8, UInt8) key
         [ source_file % (generated_prefix + files[1]), layout_complex_key_hashed],
         [ source_clickhouse, layout_complex_key_hashed ],
         [ source_mysql, layout_complex_key_hashed ],
         [ source_mongodb, layout_complex_key_hashed ],
+        [ source_executable % (generated_prefix + files[1]), layout_complex_key_hashed ],
+        [ source_http % (files[1]), layout_complex_key_hashed ],
 
         [ source_clickhouse, layout_complex_key_cache ],
         [ source_mysql, layout_complex_key_cache ],
         [ source_mongodb, layout_complex_key_cache ],
+        [ source_executable % (generated_prefix + files[1]), layout_complex_key_cache ],
+        [ source_http % (files[1]), layout_complex_key_cache ],
 
         # Complex key dictionaries with (String, UInt8) key
         [ source_file % (generated_prefix + files[2]), layout_complex_key_hashed],
         [ source_clickhouse, layout_complex_key_hashed ],
         [ source_mysql, layout_complex_key_hashed ],
         [ source_mongodb, layout_complex_key_hashed ],
+        [ source_executable % (generated_prefix + files[2]), layout_complex_key_hashed ],
+        [ source_http % (files[2]), layout_complex_key_hashed ],
 
         [ source_clickhouse, layout_complex_key_cache ],
         [ source_mysql, layout_complex_key_cache ],
         [ source_mongodb, layout_complex_key_cache ],
+        [ source_executable % (generated_prefix + files[2]), layout_complex_key_cache ],
+        [ source_http % (files[2]), layout_complex_key_cache ],
     ]
 
     for (name, key_idx, has_parent), (source, layout) in zip(dictionaries, sources_and_layouts):
