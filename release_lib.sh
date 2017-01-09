@@ -34,7 +34,7 @@ function make_control {
 	do
 		case "$DAEMON_PKG" in
 		'clickhouse-server' )
-			add_daemon_impl clickhouse-server-base '' 'clickhouse-server binary'
+			add_daemon_impl clickhouse-server-base 'adduser' 'clickhouse-server binary'
 			[ -n "$BUILD_PACKAGE_FOR_METRIKA" ] && add_daemon_impl clickhouse-server-metrika "clickhouse-server-base(=1.1.$REVISION)" 'Configuration files specific for Metrika project for clickhouse-server-base package'
 			add_daemon_impl clickhouse-server-common "clickhouse-server-base(=1.1.$REVISION)" 'Common configuration files for clickhouse-server-base package'
 		;;

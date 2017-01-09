@@ -149,6 +149,8 @@ protected:
 	template <class Daemon>
 	static std::experimental::optional<std::reference_wrapper<Daemon>> tryGetInstance();
 
+	virtual std::string getDefaultCorePath() const;
+
 	std::unique_ptr<Poco::TaskManager> task_manager;
 
 	/// Создание и автоматическое удаление pid файла.

@@ -1,24 +1,55 @@
 #!/bin/sh
 set -e
 
-if [ -x "/etc/init.d/clickhouse-server" ]; then
-	update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
-fi
+if [ "$1" = configure ]; then
 
-useradd -p "" metrika ||:
+	if [ -x "/etc/init.d/clickhouse-server" ]; then
+		update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
+	fi
 
-if id metrika > /dev/null 2>&1; then
-	mkdir -p /opt/clickhouse/data/default/
-	mkdir -p /opt/clickhouse/metadata/default/
-	mkdir -p /opt/cores/
-	chown metrika: /opt/clickhouse /opt/cores /opt/clickhouse/data /opt/clickhouse/metadata /opt/clickhouse/data/default /opt/clickhouse/metadata/default
+	# Make sure the administrative user exists
+	if ! getent passwd metrika > /dev/null; then
+		adduser --system --disabled-login --no-create-home --home /nonexistent \
+			--shell /bin/false --group --gecos "Clickhouse server" metrika > /dev/null
+	fi
+
+	# if the user was created manually, make sure the group is there as well
+	if ! getent group metrika > /dev/null; then
+		addgroup --system metrika > /dev/null
+	fi
+
+	# make sure user is in the correct group
+	if ! id -Gn metrika | grep -qw metrika; then
+		adduser metrika metrika > /dev/null
+	fi
+
+	# check validity of user and group
+	if [ "`id -u metrika`" -eq 0 ]; then
+		echo "The metrika system user must not have uid 0 (root).
+Please fix this and reinstall this package." >&2
+		exit 1
+	fi
+
+	if [ "`id -g metrika`" -eq 0 ]; then
+		echo "The metrika system user must not have root as primary group.
+Please fix this and reinstall this package." >&2
+		exit 1
+	fi
+
+	if [ ! -d "/opt/clickhouse" ]; then
+		# ensure home directory ownership
+		mkdir -p /opt/clickhouse
+		#su -s /bin/sh metrika -c "test -O /opt/clickhouse && test -G /opt/clickhouse" || \
+		chown metrika:metrika /opt/clickhouse
+		chmod 0700 /opt/clickhouse
+	fi
+
 	# Clean old dynamic compilation results
 	if [ -d "/opt/clickhouse/build" ]; then
 		rm -f /opt/clickhouse/build/*.cpp /opt/clickhouse/build/*.so ||:
 	fi
-else
-	echo "User metrika doesn't exist."
-	exit 1
+
 fi
+
 
 exit 0

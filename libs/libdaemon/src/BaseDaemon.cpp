@@ -701,6 +701,11 @@ void BaseDaemon::closeLogs()
 		logger().warning("Logging to console but received signal to close log file (ignoring).");
 }
 
+std::string BaseDaemon::getDefaultCorePath () const
+{
+	return "/opt/cores/";
+}
+
 void BaseDaemon::initialize(Application& self)
 {
 	task_manager.reset(new Poco::TaskManager);
@@ -775,14 +780,18 @@ void BaseDaemon::initialize(Application& self)
 		  * Делаем это после buildLoggers, чтобы не менять текущую директорию раньше.
 		  * Это важно, если конфиги расположены в текущей директории.
 		  */
-		Poco::File opt_cores = "/opt/cores";
 
-		std::string core_path = config().getString("core_path",
-			opt_cores.exists() && opt_cores.isDirectory()
-				? "/opt/cores/"
-				: (!log_path.empty()
-					? log_path
-					: "/opt/"));
+		std::string core_path = config().getString("core_path", "");
+		if (core_path.empty())
+			core_path = getDefaultCorePath();
+		Poco::File(core_path).createDirectories();
+
+		Poco::File cores = core_path;
+		if (!( cores.exists() && cores.isDirectory() ))
+		{
+			core_path = !log_path.empty() ? log_path : "/opt/";
+			Poco::File(core_path).createDirectories();
+		}
 
 		if (0 != chdir(core_path.c_str()))
 			throw Poco::Exception("Cannot change directory to " + core_path);

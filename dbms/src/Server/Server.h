@@ -61,6 +61,8 @@ protected:
 private:
 
 	void attachSystemTables(const std::string & path, bool has_zookeeper) const;
+
+	std::string getDefaultCorePath() const override;
 };
 
 }
