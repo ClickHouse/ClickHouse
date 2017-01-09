@@ -291,7 +291,9 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
 	if (limit_by_value)
 	{
-		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "LIMIT BY " << (s.hilite ? hilite_none : "");
+		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "LIMIT " << (s.hilite ? hilite_none : "");
+		limit_by_value->formatImpl(s, state, frame);
+		s.ostr << (s.hilite ? hilite_keyword : "") << " BY " << (s.hilite ? hilite_none : "");
 		s.one_line
 			? limit_by_expression_list->formatImpl(s, state, frame)
 			: typeid_cast<const ASTExpressionList &>(*limit_by_expression_list).formatImplMultiline(s, state, frame);
