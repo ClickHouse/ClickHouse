@@ -169,6 +169,7 @@ include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libboost/boost_1_62
 
 if (USE_STATIC_LIBRARIES)
 	include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libzlib-ng/)
+	include_directories (BEFORE ${ClickHouse_BINARY_DIR}/contrib/libzlib-ng/)
 endif ()
 
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/libs/libcommon/include/)

@@ -74,7 +74,6 @@ endif (POCO_UNBUNDLED)
 if (USE_STATIC_LIBRARIES)
 	# Use zlib from clickhouse contrib.
 	set(SYSLIBS ${SYSLIBS} zlibstatic)
-	include_directories("${ClickHouse_SOURCE_DIR}/contrib/libzlib-ng/")
 else()
 	find_package(ZLIB REQUIRED)
 	set(SYSLIBS ${SYSLIBS} ${ZLIB_LIBRARIES})
