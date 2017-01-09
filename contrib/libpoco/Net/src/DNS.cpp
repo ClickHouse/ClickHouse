@@ -34,7 +34,7 @@
 /// set default DNS timeout to 60 seconds
 const Poco::Timespan Poco::Net::DNS::DEFAULT_DNS_TIMEOUT = Poco::Timespan(60, 0);
 
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
+#if HAVE_GETADDRINFO_A
 /** getaddrinfo иногда работает бесконечно долго.
  *  Этот код использует getaddrinfo_a c некоторым таймаутом.
  *
@@ -224,7 +224,7 @@ HostEntry DNS::hostByName(const std::string& hostname, const Poco::Timespan * ti
 	struct addrinfo hints;
 	std::memset(&hints, 0, sizeof(hints));
 	hints.ai_flags = hintFlags;
-	#if !defined(__APPLE__) && !defined(__FreeBSD__)
+	#if HAVE_GETADDRINFO_A
 	int rc = GetAddrinfo::instance().getaddrinfo(hostname.c_str(), NULL, &hints, &pAI, timeout_);
 	#else
 	(void)timeout_;
@@ -278,7 +278,7 @@ HostEntry DNS::hostByAddress(const IPAddress& address, const Poco::Timespan * ti
 		struct addrinfo hints;
 		std::memset(&hints, 0, sizeof(hints));
 		hints.ai_flags = hintFlags;
-		#if !defined(__APPLE__) && !defined(__FreeBSD__)
+		#if HAVE_GETADDRINFO_A
 		int rc = GetAddrinfo::instance().getaddrinfo(fqname, NULL, &hints, &pAI, timeout_);
 		#else
 		(void)timeout_;
