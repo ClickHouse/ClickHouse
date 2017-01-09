@@ -1185,11 +1185,8 @@ void ExpressionAnalyzer::optimizeLimitBy()
 
 	for (const auto & elem : elems)
 	{
-		if (const auto id = typeid_cast<const ASTIdentifier*>(elem.get()))
-		{
-			if (elems_set.emplace(id->getColumnName()).second)
-				unique_elems.emplace_back(elem);
-		}
+		if (elems_set.emplace(elem->getColumnName()).second)
+			unique_elems.emplace_back(elem);
 	}
 
 	if (unique_elems.size() < elems.size())

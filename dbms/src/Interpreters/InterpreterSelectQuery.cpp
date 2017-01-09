@@ -1185,7 +1185,7 @@ void InterpreterSelectQuery::executePreLimit()
 
 void InterpreterSelectQuery::executeLimitBy()
 {
-	if (!query.limit_by_value)
+	if (!query.limit_by_value || !query.limit_by_expression_list)
 		return;
 
 	Names columns;

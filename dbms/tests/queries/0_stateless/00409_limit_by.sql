@@ -23,4 +23,10 @@ SELECT Num, count(*) FROM test.limit_by GROUP BY Num ORDER BY Num LIMIT 2 BY Num
 -- LIMIT BY can be combined with LIMIT
 SELECT Num, Name FROM test.limit_by ORDER BY Num LIMIT 1 BY Num, Name LIMIT 3;
 
+-- Distributed LIMIT BY
+SELECT dummy FROM remote('127.0.0.{1,2}', system.one) LIMIT 1 BY dummy;
+SELECT dummy FROM remote('127.0.0.{1,2}', system.one) LIMIT 2 BY dummy;
+
+SELECT 1 as one FROM remote('127.0.0.{1,2}', system.one) LIMIT 1 BY one;
+
 DROP TABLE IF EXISTS test.limit_by;
