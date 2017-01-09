@@ -55,7 +55,8 @@ if (WITH_GZFILEOP)
 endif (WITH_GZFILEOP)
 
 option(WITH_OPTIM "Build with optimisation" ON)
-option(WITH_NEW_STRATEGIES "Use new strategies" ON)
+option(WITH_NEW_QUICK_STRATEGY "Use new quick strategy for compression level 1" OFF) # this option produces corrupt gzip stream so turn it off for now.
+option(WITH_NEW_MEDIUM_STRATEGY "Use new medium strategy for compression levels 4-6" ON)
 option(WITH_NATIVE_INSTRUCTIONS
     "Instruct the compiler to use the full instruction set on this host (gcc/clang -march=native)" OFF)
 
@@ -127,7 +128,8 @@ endif()
 add_feature_info(ZLIB_COMPAT ZLIB_COMPAT "Provide a zlib-compatible API")
 add_feature_info(WITH_GZFILEOP WITH_GZFILEOP "Compile with support for gzFile-related functions")
 add_feature_info(WITH_OPTIM WITH_OPTIM "Build with optimisation")
-add_feature_info(WITH_NEW_STRATEGIES WITH_NEW_STRATEGIES "Use new strategies")
+add_feature_info(WITH_NEW_QUICK_STRATEGY WITH_NEW_QUICK_STRATEGY "Use new quick strategy for compression level 1")
+add_feature_info(WITH_NEW_MEDIUM_STRATEGY WITH_NEW_MEDIUM_STRATEGY "Use new medium strategy for compression levels 4-6")
 
 #
 # Check to see if we have large file support
@@ -294,7 +296,7 @@ endif()
 #
 # Enable deflate_medium at level 4-6
 #
-if(WITH_NEW_STRATEGIES)
+if(WITH_NEW_MEDIUM_STRATEGY)
     add_definitions(-DMEDIUM_STRATEGY)
 endif()
 
@@ -338,7 +340,7 @@ if(WITH_OPTIM)
         set(ZLIB_ARCH_SRCS ${ZLIB_ARCH_SRCS} ${ARCHDIR}/insert_string_sse.c)
         add_feature_info(SSE4_CRC 1 "Support CRC hash generation using the SSE4.2 instruction set, using \"${SSE4FLAG}\"")
         add_intrinsics_option("${SSE4FLAG}")
-        if(WITH_NEW_STRATEGIES)
+        if(WITH_NEW_QUICK_STRATEGY)
             add_definitions(-DX86_QUICK_STRATEGY)
             set(ZLIB_ARCH_SRCS ${ZLIB_ARCH_SRCS} ${ARCHDIR}/deflate_quick.c)
             add_feature_info(SSE4DEFLATE 1 "Support SSE4.2-accelerated quick decompression")
