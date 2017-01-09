@@ -77,10 +77,10 @@ public:
 		return nested_func->alignOfData();
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
 	{
 		if (static_cast<const ColumnUInt8 &>(*columns[num_agruments - 1]).getData()[row_num])
-			nested_func->add(place, columns, row_num, nullptr);
+			nested_func->add(place, columns, row_num, arena);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
