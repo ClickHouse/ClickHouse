@@ -11,6 +11,6 @@ mkdir -p tmp
 cd tmp
 
 ar x $LIB
-ar t $LIB | grep -v 'my_new.cc.o' | egrep -v $ZLIB_OBJS_REGEX | xargs ar rcs $OUT
+ar t $LIB | grep -v 'my_new.cc.o' | egrep --word-regex -v $ZLIB_OBJS_REGEX | xargs ar rcs $OUT
 
 cd ..
