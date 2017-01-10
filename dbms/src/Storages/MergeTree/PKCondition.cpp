@@ -249,6 +249,12 @@ static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field
 
 	if (const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(expr.get()))
 	{
+		/// By default block_with_constants has only one column named "_dummy".
+		/// If block contains only constants it's may not be preprocessed by
+		//  ExpressionAnalyzer, so try to look up in the default column.
+		if (!block_with_constants.has(column_name))
+			column_name = "_dummy";
+
 		/// Simple literal
 		out_value = lit->value;
 		out_type = block_with_constants.getByName(column_name).type;
