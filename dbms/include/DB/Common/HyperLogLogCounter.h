@@ -24,6 +24,14 @@ namespace ErrorCodes
 }
 
 
+/// Настройка типа знаменателя.
+enum class DenominatorMode
+{
+	Compact,		/// Компактный знаменатель
+	StableIfBig,	/// Устойчивый знаменатель (в случае больших хранилищ, иначе Compact)
+	ExactType		/// Знаменатель заданного простого типа
+};
+
 namespace details
 {
 
@@ -74,7 +82,7 @@ template<UInt64 MaxValue> struct MinCounterType
 /** Знаменатель формулы алгоритма HyperLogLog
   */
 template<UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
-	bool stable_denominator_if_big, typename Enable = void>
+	DenominatorMode denominator_mode, typename Enable = void>
 class __attribute__ ((packed)) Denominator;
 
 namespace
@@ -90,19 +98,25 @@ constexpr bool isBigRankStore(UInt8 precision)
 
 /** Тип употребляемый для вычисления знаменателя.
   */
-template <typename HashValueType>
+template <typename HashValueType, typename DenominatorType, DenominatorMode denominator_mode, typename Enable = void>
 struct IntermediateDenominator;
 
-template <>
-struct IntermediateDenominator<UInt32>
+template <typename DenominatorType, DenominatorMode denominator_mode>
+struct IntermediateDenominator<UInt32, DenominatorType, denominator_mode, typename std::enable_if<denominator_mode != DenominatorMode::ExactType>::type>
 {
 	using Type = double;
 };
 
-template <>
-struct IntermediateDenominator<UInt64>
+template <typename DenominatorType, DenominatorMode denominator_mode>
+struct IntermediateDenominator<UInt64, DenominatorType, denominator_mode>
 {
 	using Type = long double;
+};
+
+template <typename HashValueType, typename DenominatorType>
+struct IntermediateDenominator<HashValueType, DenominatorType, DenominatorMode::ExactType>
+{
+	using Type = DenominatorType;
 };
 
 /** "Лёгкая" реализация знаменателя формулы HyperLogLog.
@@ -110,13 +124,13 @@ struct IntermediateDenominator<UInt64>
   * Подходит, когда хранилище для рангов небольшое.
   */
 template<UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
-	bool stable_denominator_if_big>
+	DenominatorMode denominator_mode>
 class __attribute__ ((packed)) Denominator<precision, max_rank, HashValueType, DenominatorType,
-	stable_denominator_if_big,
-	typename std::enable_if<!details::isBigRankStore(precision) || !stable_denominator_if_big>::type>
+	denominator_mode,
+	typename std::enable_if<!details::isBigRankStore(precision) || !(denominator_mode == DenominatorMode::StableIfBig)>::type>
 {
 private:
-	using T = typename IntermediateDenominator<HashValueType>::Type;
+	using T = typename IntermediateDenominator<HashValueType, DenominatorType, denominator_mode>::Type;
 
 public:
 	Denominator(DenominatorType initial_value)
@@ -155,10 +169,10 @@ private:
   * Подходит, когда хранилище для рангов довольно большое.
   */
 template<UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
-	bool stable_denominator_if_big>
+	DenominatorMode denominator_mode>
 class __attribute__ ((packed)) Denominator<precision, max_rank, HashValueType, DenominatorType,
-	stable_denominator_if_big,
-	typename std::enable_if<details::isBigRankStore(precision) && stable_denominator_if_big>::type>
+	denominator_mode,
+	typename std::enable_if<details::isBigRankStore(precision) && denominator_mode == DenominatorMode::StableIfBig>::type>
 {
 public:
 	Denominator(DenominatorType initial_value)
@@ -273,7 +287,7 @@ template <
 	typename DenominatorType = double,
 	typename BiasEstimator = TrivialBiasEstimator,
 	HyperLogLogMode mode = HyperLogLogMode::FullFeatured,
-	bool stable_denominator_if_big = true>
+	DenominatorMode denominator_mode = DenominatorMode::StableIfBig>
 class __attribute__ ((packed)) HyperLogLogCounter : private Hash
 {
 private:
@@ -522,7 +536,7 @@ private:
 	RankStore rank_store;
 
 	/// Знаменатель формулы алгоритма HyperLogLog.
-	using DenominatorCalculatorType = details::Denominator<precision, max_rank, HashValueType, DenominatorType, stable_denominator_if_big>;
+	using DenominatorCalculatorType = details::Denominator<precision, max_rank, HashValueType, DenominatorType, denominator_mode>;
 	DenominatorCalculatorType denominator{bucket_count};
 
 	/// Число нулей в хранилище для рангов.
@@ -545,7 +559,7 @@ template
 	typename DenominatorType,
 	typename BiasEstimator,
 	HyperLogLogMode mode,
-	bool stable_denominator_if_big
+	DenominatorMode denominator_mode
 >
 details::LogLUT<precision> HyperLogLogCounter
 <
@@ -555,18 +569,18 @@ details::LogLUT<precision> HyperLogLogCounter
 	DenominatorType,
 	BiasEstimator,
 	mode,
-	stable_denominator_if_big
+	denominator_mode
 >::log_lut;
 
 
 /// Для Metrage, используется лёгкая реализация знаменателя формулы HyperLogLog,
 /// чтобы формат сериализации не изменился.
-typedef HyperLogLogCounter<
+using HLL12 = HyperLogLogCounter<
 	12,
 	IntHash32<UInt64>,
 	UInt32,
 	double,
 	TrivialBiasEstimator,
 	HyperLogLogMode::FullFeatured,
-	false
-> HLL12;
+	DenominatorMode::Compact
+>;
