@@ -199,7 +199,27 @@
 5. При написании библиотеки, разместите подробный комментарий о том, что это такое, в самом главном заголовочном файле.
 
 6. Нельзя писать комментарии, которые не дают дополнительной информации. В частности, нельзя писать пустые комментарии.
-	~~ /* /* Procedure Name: /* /* Original procedure name: /* /* Author: /* /* Date of creation: /* /* Dates of modification: /* /* Modification authors: /* /* Original file name: /* /* Purpose: /* /* Intent: /* /* Designation: /* /* Classes used: /* /* Constants: /* /* Local variables: /* /* Parameters: /* /* Date of creation: /* /* Purpose: */~~
+
+	  <strike>
+	  /\*<br>
+       \* Procedure Name: <br>
+       \* Original procedure name: <br>
+       \* Author: <br>
+       \* Date of creation: <br>
+       \* Dates of modification: <br>
+       \* Modification authors: <br>
+       \* Original file name: <br>
+       \* Purpose: <br>
+       \* Intent: <br>
+       \* Designation: <br>
+       \* Classes used: <br>
+       \* Constants: <br>
+       \* Local variables: <br>
+       \* Parameters: <br>
+       \* Date of creation: <br>
+       \* Purpose: <br>
+       */</strike>
+
 	(пример взят отсюда: http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/)
 
 7. Нельзя писать мусорные комментарии (автор, дата создания...) в начале каждого файла.
