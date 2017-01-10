@@ -5297,6 +5297,18 @@ URLPathHierarchy('https://example.com/browse/CONV-6788') =
 ]
 %%
 
+<h4>decodeURLComponent(URL)</h4>
+Возвращает декодированный URL.
+
+Пример:
+%%
+:) SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS DecodedURL;
+
+┌─DecodedURL─────────────────────────────┐
+│ http://127.0.0.1:8123/?query=SELECT 1; │
+└────────────────────────────────────────┘
+%%
+
 ===Функции, удаляющие часть из URL-а.===
 
 Если в URL-е нет ничего похожего, то URL остаётся без изменений.
