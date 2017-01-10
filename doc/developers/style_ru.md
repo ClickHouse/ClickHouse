@@ -199,7 +199,27 @@
 5. При написании библиотеки, разместите подробный комментарий о том, что это такое, в самом главном заголовочном файле.
 
 6. Нельзя писать комментарии, которые не дают дополнительной информации. В частности, нельзя писать пустые комментарии.
-	~~ /* /* Procedure Name: /* /* Original procedure name: /* /* Author: /* /* Date of creation: /* /* Dates of modification: /* /* Modification authors: /* /* Original file name: /* /* Purpose: /* /* Intent: /* /* Designation: /* /* Classes used: /* /* Constants: /* /* Local variables: /* /* Parameters: /* /* Date of creation: /* /* Purpose: */~~
+
+	  <strike>
+	  /\*<br>
+       \* Procedure Name: <br>
+       \* Original procedure name: <br>
+       \* Author: <br>
+       \* Date of creation: <br>
+       \* Dates of modification: <br>
+       \* Modification authors: <br>
+       \* Original file name: <br>
+       \* Purpose: <br>
+       \* Intent: <br>
+       \* Designation: <br>
+       \* Classes used: <br>
+       \* Constants: <br>
+       \* Local variables: <br>
+       \* Parameters: <br>
+       \* Date of creation: <br>
+       \* Purpose: <br>
+       */</strike>
+
 	(пример взят отсюда: http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/)
 
 7. Нельзя писать мусорные комментарии (автор, дата создания...) в начале каждого файла.
@@ -244,7 +264,7 @@
 	class StorageMemory : public IStorage
 	```
 
-4. Имена typedef/using-ов - также, как классов, либо можно добавить _t на конце.
+4. Имена using-ов - также, как классов, либо можно добавить _t на конце.
 
 5. Имена типов - параметров шаблонов: в простых случаях - T; T, U; T1, T2.
 	В более сложных случаях - либо также, как имена классов, либо можно добавить в начало букву T.
@@ -599,7 +619,7 @@
 
 3. Не нужно писать код, если вы ещё не знаете, что будет делать ваша программа, и как будет работать её внутренний цикл.
 
-4. В простейших случаях, используйте using/typedef вместо классов/структур.
+4. В простейших случаях, используйте using вместо классов/структур.
 
 5. Если есть возможность - не пишите конструкторы копирования, операторы присваивания, деструктор (кроме виртуального, если класс содержит хотя бы одну виртуальную функцию), move-конструкторы и move-присваивания. То есть, чтобы соответствущие функции, генерируемые компилятором, работали правильно. Можно использовать default.
 
