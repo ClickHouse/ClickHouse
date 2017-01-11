@@ -6,6 +6,7 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
+#include <experimental/optional>
 
 #include <unordered_set>
 #include <algorithm>
@@ -25,6 +26,7 @@
 
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
+#include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/ReadBufferFromMemory.h>
 #include <DB/IO/ReadHelpers.h>
@@ -40,6 +42,7 @@
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTQueryWithOutput.h>
+#include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/parseQuery.h>
@@ -140,6 +143,7 @@ private:
 	String query;						/// Текущий запрос.
 
 	String format;						/// Формат вывода результата в консоль.
+	bool is_default_format = true;    /// false, если взяли формат из конфига или командной строки.
 	size_t format_max_block_size = 0;	/// Максимальный размер блока при выводе в консоль.
 	String insert_format;				/// Формат данных для INSERT-а при чтении их из stdin в batch режиме
 	size_t insert_format_max_block_size = 0; /// Максимальный размер блока при чтении данных INSERT-а.
@@ -153,7 +157,9 @@ private:
 
 	/// Вывод в консоль
 	WriteBufferFromFileDescriptor std_out {STDOUT_FILENO};
-	BlockOutputStreamPtr block_std_out;
+	/// Клиент может попросить вывести результат в файл.
+	std::experimental::optional<WriteBufferFromFile> out_file_buf;
+	BlockOutputStreamPtr block_out_stream;
 
 	String home_path;
 
@@ -307,6 +313,7 @@ private:
 		if (is_interactive)
 			showClientVersion();
 
+		is_default_format = !config().has("vertical") && !config().has("format");
 		if (config().has("vertical"))
 			format = config().getString("format", "Vertical");
 		else
@@ -842,7 +849,12 @@ private:
 	/** Сбросить все данные, что ещё остались в буферах. */
 	void resetOutput()
 	{
-		block_std_out = nullptr;
+		block_out_stream = nullptr;
+		if (out_file_buf)
+		{
+			out_file_buf->next();
+			out_file_buf = std::experimental::nullopt;
+		}
 		std_out.next();
 	}
 
@@ -957,27 +969,39 @@ private:
 
 	void initBlockOutputStream(const Block & block)
 	{
-		if (!block_std_out)
+		if (!block_out_stream)
 		{
+			WriteBuffer * out_buf = &std_out;
 			String current_format = format;
 
 			/// Формат может быть указан в запросе.
 			if (ASTQueryWithOutput * query_with_output = dynamic_cast<ASTQueryWithOutput *>(&*parsed_query))
 			{
-				if (query_with_output->getFormat() != nullptr)
+				if (query_with_output->out_file != nullptr)
+				{
+					const auto & out_file_node = typeid_cast<const ASTLiteral &>(*query_with_output->out_file);
+					const auto & out_file = out_file_node.value.safeGet<std::string>();
+					out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
+					out_buf = &out_file_buf.value();
+
+					// We are writing to file, so default format is the same as in non-interactive mode.
+					if (is_interactive && is_default_format)
+						current_format = "TabSeparated";
+				}
+				if (query_with_output->format != nullptr)
 				{
 					if (has_vertical_output_suffix)
 						throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
-					if (const ASTIdentifier * id = typeid_cast<const ASTIdentifier *>(query_with_output->getFormat()))
-						current_format = id->name;
+					const auto & id = typeid_cast<const ASTIdentifier &>(*query_with_output->format);
+					current_format = id.name;
 				}
 			}
 
 			if (has_vertical_output_suffix)
 				current_format = "Vertical";
 
-			block_std_out = context.getOutputFormat(current_format, std_out, block);
-			block_std_out->writePrefix();
+			block_out_stream = context.getOutputFormat(current_format, *out_buf, block);
+			block_out_stream->writePrefix();
 		}
 	}
 
@@ -993,36 +1017,36 @@ private:
 		processed_rows += block.rows();
 		initBlockOutputStream(block);
 
-		/// Заголовочный блок с нулем строк использовался для инициализации block_std_out,
+		/// Заголовочный блок с нулем строк использовался для инициализации block_out_stream,
 		/// выводить его не нужно
 		if (block.rows() != 0)
 		{
-			block_std_out->write(block);
+			block_out_stream->write(block);
 			written_first_block = true;
 		}
 
 		/// Полученный блок данных сразу выводится клиенту.
-		block_std_out->flush();
+		block_out_stream->flush();
 	}
 
 
 	void onTotals(Block & block)
 	{
 		initBlockOutputStream(block);
-		block_std_out->setTotals(block);
+		block_out_stream->setTotals(block);
 	}
 
 	void onExtremes(Block & block)
 	{
 		initBlockOutputStream(block);
-		block_std_out->setExtremes(block);
+		block_out_stream->setExtremes(block);
 	}
 
 
 	void onProgress(const Progress & value)
 	{
 		progress.incrementPiecewiseAtomically(value);
-		block_std_out->onProgress(value);
+		block_out_stream->onProgress(value);
 		writeProgress();
 	}
 
@@ -1139,15 +1163,15 @@ private:
 
 	void onProfileInfo(const BlockStreamProfileInfo & profile_info)
 	{
-		if (profile_info.hasAppliedLimit() && block_std_out)
-			block_std_out->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
+		if (profile_info.hasAppliedLimit() && block_out_stream)
+			block_out_stream->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
 	}
 
 
 	void onEndOfStream()
 	{
-		if (block_std_out)
-			block_std_out->writeSuffix();
+		if (block_out_stream)
+			block_out_stream->writeSuffix();
 
 		resetOutput();
 

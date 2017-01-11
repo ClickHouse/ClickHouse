@@ -439,7 +439,7 @@ void LocalServer::processQueries()
 		if (verbose)
 			LOG_INFO(log, "Executing query: " << query);
 
-		executeQuery(read_buf, write_buf, *context, plan, nullptr);
+		executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, *context, plan, nullptr);
 	}
 }
 

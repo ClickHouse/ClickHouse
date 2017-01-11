@@ -45,7 +45,7 @@ try
 	WriteBufferFromOStream out(std::cout);
 	BlockInputStreamPtr query_plan;
 
-	executeQuery(in, out, context, query_plan, {});
+	executeQuery(in, out, /* allow_into_outfile = */ false, context, query_plan, {});
 
 	if (query_plan)
 	{

@@ -13,6 +13,7 @@ namespace DB
 void executeQuery(
 	ReadBuffer & istr,					/// Откуда читать запрос (а также данные для INSERT-а, если есть)
 	WriteBuffer & ostr,					/// Куда писать результат
+	bool allow_into_outfile,			/// If true and the query contains INTO OUTFILE section, output will be redirected to that file.
 	Context & context,					/// БД, таблицы, типы данных, движки таблиц, функции, агрегатные функции...
 	BlockInputStreamPtr & query_plan,	/// Сюда может быть записано описание, как выполнялся запрос
 	std::function<void(const String &)> set_content_type /// Может быть передан колбэк, с помощью которого может быть сообщён Content-Type формата.

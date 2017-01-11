@@ -24,7 +24,7 @@ bool IParserBase::parse(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos,
 	if (new_max_parsed_pos > max_parsed_pos)
 		max_parsed_pos = new_max_parsed_pos;
 
-	if (new_max_parsed_pos >= max_parsed_pos)
+	if (!res && new_max_parsed_pos >= max_parsed_pos)
 		expected = new_expected;
 
 	if (pos > end)
