@@ -51,22 +51,6 @@ template <typename A, typename B> struct GreaterOp 			{ static UInt8 apply(A a, 
 template <typename A, typename B> struct LessOrEqualsOp 	{ static UInt8 apply(A a, B b) { return accurate::lessOrEqualsOp(a, b); } };
 template <typename A, typename B> struct GreaterOrEqualsOp 	{ static UInt8 apply(A a, B b) { return accurate::greaterOrEqualsOp(a, b); } };
 
-// /** Игнорируем warning о сравнении signed и unsigned.
-//   * (Результат может быть некорректным.)
-//   */
-// #pragma GCC diagnostic push
-// #pragma GCC diagnostic ignored "-Wsign-compare"
-//
-// template <typename A, typename B> struct EqualsOp 			{ static UInt8 apply(A a, B b) { return a == b; } };
-// template <typename A, typename B> struct NotEqualsOp 		{ static UInt8 apply(A a, B b) { return a != b; } };
-// template <typename A, typename B> struct LessOp 			{ static UInt8 apply(A a, B b) { return a < b; 	} };
-// template <typename A, typename B> struct GreaterOp 			{ static UInt8 apply(A a, B b) { return a > b; 	} };
-// template <typename A, typename B> struct LessOrEqualsOp 	{ static UInt8 apply(A a, B b) { return a <= b; } };
-// template <typename A, typename B> struct GreaterOrEqualsOp 	{ static UInt8 apply(A a, B b) { return a >= b; } };
-//
-// #pragma GCC diagnostic pop
-
-
 
 template<typename A, typename B, typename Op>
 struct NumComparisonImpl

@@ -32,17 +32,6 @@ using bool_if_safe_convervsion = std::enable_if_t<is_safe_convervsion<A, B>::val
 template <typename A, typename B>
 using bool_if_not_safe_convervsion = std::enable_if_t<!is_safe_convervsion<A, B>::value, bool>;
 
-// template <typename A, typename B>
-// bool_if_safe_convervsion<A, B> greaterOpTmpl(A a, B b)
-// {
-// 	return a > b;
-// }
-//
-// template <typename A, typename B>
-// bool_if_safe_convervsion<A, B> equalsOpTmpl(A a, B b)
-// {
-// 	return a == b;
-// }
 
 /// Case 2. Are params IntXX and UIntYY ?
 template <typename TInt, typename TUInt>
@@ -162,7 +151,7 @@ inline bool_if_safe_convervsion<A, B> greaterOp(A a, B b)
 }
 
 // Case 3b. 64-bit integers vs floats comparison.
-// See hint at https://github.com/JuliaLang/julia/issues/257
+// See hint at https://github.com/JuliaLang/julia/issues/257 (but it doesn't work properly for -2**63)
 
 constexpr DB::Int64 MAX_INT64_WITH_EXACT_FLOAT64_REPR = 9007199254740992LL; // 2^53
 
