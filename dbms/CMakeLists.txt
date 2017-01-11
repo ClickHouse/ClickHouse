@@ -123,6 +123,8 @@ else()
 	find_library (Z_LIB z HINTS ${Z_HINTS})
 endif ()
 
+find_package (Threads)
+
 target_link_libraries(dbms
 	common
 	zkutil
@@ -142,7 +144,9 @@ target_link_libraries(dbms
 	${APPLE_ICONV_LIB}
 	${PLATFORM_LIBS}
 	${CMAKE_DL_LIBS}
-	${LTDL_LIB})
+	${LTDL_LIB}
+	${CMAKE_THREAD_LIBS_INIT}
+	)
 
 add_dependencies (dbms
 	common

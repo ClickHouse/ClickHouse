@@ -13,7 +13,7 @@ endif ()
 
 find_library (ANL_LIB NAMES ${ANL_LIB_NAME})
 
-set (CMAKE_REQUIRED_LIBRARIES "${CMAKE_REQUIRED_LIBRARIES}" "${ANL_LIB}" Threads::Threads)
+set (CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} ${ANL_LIB} ${CMAKE_THREAD_LIBS_INIT})
 
 check_cxx_source_runs("
 	#include <netdb.h>
