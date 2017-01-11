@@ -76,11 +76,13 @@ endif ()
 
 include (${ClickHouse_SOURCE_DIR}/cmake/find_glib.cmake)
 
+find_package (Threads)
+
 target_link_libraries (
 	common
 	pocoext
 	${MALLOC_LIBRARIES}
-	pthread
+	${CMAKE_THREAD_LIBS_INIT}
 	${GLIB_LIBS}
 	${ICU_LIBS}
 	${RT_LIBRARIES})
