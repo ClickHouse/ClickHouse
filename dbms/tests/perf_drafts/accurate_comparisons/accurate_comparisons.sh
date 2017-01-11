@@ -7,7 +7,9 @@ clickhouse-client -q "INSERT INTO test.comparisons SELECT toInt64(rand64()) + nu
 
 function test_cmp {
 	echo -n "$1 : "
-	echo -n $(clickhouse-client --max_threads=1 --time -q "SELECT sum(ignore($i)) FROM test.comparisons" 1>/dev/null)
+	echo "SELECT count() FROM test.comparisons WHERE ($1)" | clickhouse-benchmark --max_threads=1 -i 20 -d 0 --json test.json 1>&2 2>/dev/null
+	python2 -c "import json; print json.load(open('test.json'))['query_time_percentiles']['0']"
+	rm test.json
 }
 
 test_cmp "u64 =  i64"
