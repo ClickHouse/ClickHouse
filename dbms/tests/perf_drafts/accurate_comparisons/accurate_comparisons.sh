@@ -1,0 +1,25 @@
+#!/bin/bash
+set -e
+
+clickhouse-client -q "DROP TABLE IF EXISTS test.comparisons"
+clickhouse-client -q "CREATE TABLE test.comparisons (i64 Int64, u64 UInt64, f64 Float64) ENGINE = Memory"
+clickhouse-client -q "INSERT INTO test.comparisons SELECT toInt64(rand64()) + number AS i64, number AS u64, reinterpretAsFloat64(reinterpretAsString(rand64())) AS f64 FROM system.numbers LIMIT 90000000"
+
+function test_cmp {
+	echo -n "$1 : "
+	echo -n $(clickhouse-client --max_threads=1 --time -q "SELECT sum(ignore($i)) FROM test.comparisons" 1>/dev/null)
+}
+
+test_cmp "u64 =  i64"
+test_cmp "u64 >= i64"
+
+test_cmp "i64 >  -1 "
+test_cmp "i64 =  0  "
+test_cmp "u64 != 0  "
+
+test_cmp "i64 =  f64"
+test_cmp "i64 <  f64"
+
+test_cmp "f64 >= 0  "
+
+clickhouse-client -q "DROP TABLE IF EXISTS test.comparisons"

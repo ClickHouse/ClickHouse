@@ -44,16 +44,16 @@ namespace DB
   * TODO Массивы.
   */
 
-template <typename A, typename B> struct EqualsOp 			{ static UInt8 apply(A a, B b) { return accurate::equalsOp<A, B>(a, b); } };
-template <typename A, typename B> struct NotEqualsOp 		{ static UInt8 apply(A a, B b) { return accurate::notEqualsOp<A, B>(a, b); } };
-template <typename A, typename B> struct LessOp 			{ static UInt8 apply(A a, B b) { return accurate::lessOp<A, B>(a, b); } };
-template <typename A, typename B> struct GreaterOp 			{ static UInt8 apply(A a, B b) { return accurate::greaterOp<A, B>(a, b); } };
-template <typename A, typename B> struct LessOrEqualsOp 	{ static UInt8 apply(A a, B b) { return accurate::lessOrEqualsOp<A, B>(a, b); } };
-template <typename A, typename B> struct GreaterOrEqualsOp 	{ static UInt8 apply(A a, B b) { return accurate::greaterOrEqualsOp<A, B>(a, b); } };
+template <typename A, typename B> struct EqualsOp 			{ static UInt8 apply(A a, B b) { return accurate::equalsOp(a, b); } };
+template <typename A, typename B> struct NotEqualsOp 		{ static UInt8 apply(A a, B b) { return accurate::notEqualsOp(a, b); } };
+template <typename A, typename B> struct LessOp 			{ static UInt8 apply(A a, B b) { return accurate::lessOp(a, b); } };
+template <typename A, typename B> struct GreaterOp 			{ static UInt8 apply(A a, B b) { return accurate::greaterOp(a, b); } };
+template <typename A, typename B> struct LessOrEqualsOp 	{ static UInt8 apply(A a, B b) { return accurate::lessOrEqualsOp(a, b); } };
+template <typename A, typename B> struct GreaterOrEqualsOp 	{ static UInt8 apply(A a, B b) { return accurate::greaterOrEqualsOp(a, b); } };
 
-/** Игнорируем warning о сравнении signed и unsigned.
-  * (Результат может быть некорректным.)
-  */
+// /** Игнорируем warning о сравнении signed и unsigned.
+//   * (Результат может быть некорректным.)
+//   */
 // #pragma GCC diagnostic push
 // #pragma GCC diagnostic ignored "-Wsign-compare"
 //
