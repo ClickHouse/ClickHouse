@@ -1,32 +1,57 @@
 #include <DB/Core/Types.h>
 
+/** Preceptually-correct number comparisons.
+  * Example: Int8(-1) != UInt8(255)
+*/
+
 namespace accurate
 {
 
 /** Cases:
-	1) int vs uint
+	1) Safe conversion (in case of default C++ operators)
+		a) int vs any int
+		b) uint vs any uint
+		c) float vs any float
+	2) int vs uint
 		a) sizeof(int) <= sizeof(uint). Accurate comparison with MAX_INT tresholds
 		b) sizeof(int)  > sizeof(uint). Casting to int
-	2) integral_type vs floating_type
+	3) integral_type vs floating_type
 		a) sizeof(integral_type) <= 4. Comparison via casting arguments to Float64
 		b) sizeof(integral_type) == 8. Accurate comparison. Consider 3 sets of intervals:
 			1) interval between adjacent floats less or equal 1
 			2) interval between adjacent floats greater then 2
 			3) float is outside [MIN_INT64; MAX_INT64]
-	3) Safe conversion
-		a) int vs any int
-		b) uint vs any uint
-		c) float vs any float
 */
 
-/// Are params IntXX and UIntYY ?
+// Case 1. Is pair of floats or pair of ints or pair of uints
+template <typename A, typename B>
+using is_safe_convervsion = std::integral_constant<bool, (std::is_floating_point<A>::value && std::is_floating_point<B>::value)
+	|| (std::is_integral<A>::value && std::is_integral<B>::value && !(std::is_signed<A>::value ^ std::is_signed<B>::value))>;
+template <typename A, typename B>
+using bool_if_safe_convervsion = std::enable_if_t<is_safe_convervsion<A, B>::value, bool>;
+template <typename A, typename B>
+using bool_if_not_safe_convervsion = std::enable_if_t<!is_safe_convervsion<A, B>::value, bool>;
+
+// template <typename A, typename B>
+// bool_if_safe_convervsion<A, B> greaterOpTmpl(A a, B b)
+// {
+// 	return a > b;
+// }
+//
+// template <typename A, typename B>
+// bool_if_safe_convervsion<A, B> equalsOpTmpl(A a, B b)
+// {
+// 	return a == b;
+// }
+
+/// Case 2. Are params IntXX and UIntYY ?
 template <typename TInt, typename TUInt>
 using is_any_int_vs_uint = std::integral_constant<bool,
 							std::is_integral<TInt>::value && std::is_integral<TUInt>::value &&
 					  	 	std::is_signed<TInt>::value && std::is_unsigned<TUInt>::value>;
 
 
-/// Are params IntXX and UIntYY and sizeof(IntXX) >= sizeof(UIntYY) (in such case will use accurate compare)
+// Case 2a. Are params IntXX and UIntYY and sizeof(IntXX) >= sizeof(UIntYY) (in such case will use accurate compare)
 template <typename TInt, typename TUInt>
 using is_le_int_vs_uint_t = std::integral_constant<bool, is_any_int_vs_uint<TInt, TUInt>::value && (sizeof(TInt) <= sizeof(TUInt))>;
 
@@ -58,27 +83,7 @@ bool_if_le_int_vs_uint_t<TInt, TUInt> equalsOpTmpl(TUInt a, TInt b)
 }
 
 
-/// Is pair of floats or pair of ints or pair of uints
-template <typename A, typename B>
-using is_safe_convervsion = std::integral_constant<bool, (std::is_floating_point<A>::value && std::is_floating_point<B>::value)
-	|| (std::is_integral<A>::value && std::is_integral<B>::value && !(std::is_signed<A>::value ^ std::is_signed<B>::value))>;
-template <typename A, typename B>
-using bool_if_safe_convervsion = std::enable_if_t<is_safe_convervsion<A, B>::value, bool>;
-
-template <typename A, typename B>
-bool_if_safe_convervsion<A, B> greaterOpTmpl(A a, B b)
-{
-	return a > b;
-}
-
-template <typename A, typename B>
-bool_if_safe_convervsion<A, B> equalsOpTmpl(A a, B b)
-{
-	return a == b;
-}
-
-
-/// Are params IntXX and UIntYY and sizeof(IntXX) > sizeof(UIntYY) (in such case will cast UIntYY to IntXX and compare)
+// Case 2b. Are params IntXX and UIntYY and sizeof(IntXX) > sizeof(UIntYY) (in such case will cast UIntYY to IntXX and compare)
 template <typename TInt, typename TUInt>
 using is_gt_int_vs_uint = std::integral_constant<bool, is_any_int_vs_uint<TInt, TUInt>::value && (sizeof(TInt) > sizeof(TUInt))>;
 
@@ -110,6 +115,7 @@ bool_if_gt_int_vs_uint<TInt, TUInt> equalsOpTmpl(TUInt a, TInt b)
 }
 
 
+// Case 3a. Comparison via conversion to double.
 template <typename TAInt, typename TAFloat>
 using bool_if_double_can_be_used = std::enable_if_t<
 										std::is_integral<TAInt>::value && (sizeof(TAInt) <= 4) && std::is_floating_point<TAFloat>::value,
@@ -140,13 +146,24 @@ bool_if_double_can_be_used<TAInt, TAFloat> equalsOpTmpl(TAFloat a, TAInt b)
 }
 
 
+/* Final realiztions */
+
+
 template <typename A, typename B>
-inline bool greaterOp(A a, B b)
+inline bool_if_not_safe_convervsion<A, B> greaterOp(A a, B b)
 {
 	return greaterOpTmpl(a, b);
 }
 
+template <typename A, typename B>
+inline bool_if_safe_convervsion<A, B> greaterOp(A a, B b)
+{
+	return a > b;
+}
+
+// Case 3b. 64-bit integers vs floats comparison.
 // See hint at https://github.com/JuliaLang/julia/issues/257
+
 constexpr DB::Int64 MAX_INT64_WITH_EXACT_FLOAT64_REPR = 9007199254740992LL; // 2^53
 
 template<>
@@ -155,7 +172,7 @@ inline bool greaterOp<DB::Float64, DB::Int64>(DB::Float64 f, DB::Int64 i)
 	if (-MAX_INT64_WITH_EXACT_FLOAT64_REPR <= i && i <= MAX_INT64_WITH_EXACT_FLOAT64_REPR)
 		return f > static_cast<DB::Float64>(i);
 
-	return (f >= static_cast<DB::Float64>(std::numeric_limits<DB::Int64>::max()))
+	return (f >= static_cast<DB::Float64>(std::numeric_limits<DB::Int64>::max())) // rhs is 2**63 (not 2^63 - 1)
 			|| (f > static_cast<DB::Float64>(std::numeric_limits<DB::Int64>::min()) && static_cast<DB::Int64>(f) > i);
 }
 
@@ -165,7 +182,7 @@ inline bool greaterOp<DB::Int64, DB::Float64>(DB::Int64 i, DB::Float64 f)
 	if (-MAX_INT64_WITH_EXACT_FLOAT64_REPR <= i && i <= MAX_INT64_WITH_EXACT_FLOAT64_REPR)
 		return f < static_cast<DB::Float64>(i);
 
-	return (f <= static_cast<DB::Float64>(std::numeric_limits<DB::Int64>::min()))
+	return (f < static_cast<DB::Float64>(std::numeric_limits<DB::Int64>::min()))
 			|| (f < static_cast<DB::Float64>(std::numeric_limits<DB::Int64>::max()) && i > static_cast<DB::Int64>(f));
 }
 
@@ -189,7 +206,7 @@ inline bool greaterOp<DB::UInt64, DB::Float64>(DB::UInt64 u, DB::Float64 f)
 			|| (f < static_cast<DB::Float64>(std::numeric_limits<DB::UInt64>::max()) && u > static_cast<UInt64>(f));
 }
 
-
+// Case 3b for float32
 template<>
 inline bool greaterOp<DB::Float32, DB::Int64>(DB::Float32 f, DB::Int64 i)
 {
@@ -216,9 +233,15 @@ inline bool greaterOp<DB::UInt64, DB::Float32>(DB::UInt64 u, DB::Float32 f)
 
 
 template <typename A, typename B>
-inline bool equalsOp(A a, B b)
+inline bool_if_not_safe_convervsion<A, B> equalsOp(A a, B b)
 {
 	return equalsOpTmpl(a, b);
+}
+
+template <typename A, typename B>
+inline bool_if_safe_convervsion<A, B> equalsOp(A a, B b)
+{
+	return a == b;
 }
 
 template<>
@@ -270,32 +293,55 @@ inline bool equalsOp<DB::Int64, DB::Float32>(DB::Int64 u, DB::Float32 f)
 }
 
 
-
 template <typename A, typename B>
-inline bool notEqualsOp(A a, B b)
+inline bool_if_not_safe_convervsion<A, B> notEqualsOp(A a, B b)
 {
 	return !equalsOp(a, b);
 }
 
+template <typename A, typename B>
+inline bool_if_safe_convervsion<A, B> notEqualsOp(A a, B b)
+{
+	return a != b;
+}
+
 
 template <typename A, typename B>
-inline bool lessOp(A a, B b)
+inline bool_if_not_safe_convervsion<A, B> lessOp(A a, B b)
 {
 	return greaterOp(b, a);
 }
 
-
 template <typename A, typename B>
-inline bool lessOrEqualsOp(A a, B b)
+inline bool_if_safe_convervsion<A, B> lessOp(A a, B b)
 {
-	return !greaterOp(a, b);
+	return a < b;
 }
 
 
 template <typename A, typename B>
-inline bool greaterOrEqualsOp(A a, B b)
+inline bool_if_not_safe_convervsion<A, B> lessOrEqualsOp(A a, B b)
+{
+	return !greaterOp(a, b);
+}
+
+template <typename A, typename B>
+inline bool_if_safe_convervsion<A, B> lessOrEqualsOp(A a, B b)
+{
+	return a <= b;
+}
+
+
+template <typename A, typename B>
+inline bool_if_not_safe_convervsion<A, B> greaterOrEqualsOp(A a, B b)
 {
 	return !greaterOp(b, a);
+}
+
+template <typename A, typename B>
+inline bool_if_safe_convervsion<A, B> greaterOrEqualsOp(A a, B b)
+{
+	return a >= b;
 }
 
 
