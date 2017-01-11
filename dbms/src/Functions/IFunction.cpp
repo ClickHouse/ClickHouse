@@ -214,6 +214,8 @@ void IFunction::getReturnTypeAndPrerequisites(
 	DataTypePtr & out_return_type,
 	std::vector<ExpressionAction> & out_prerequisites)
 {
+	checkNumberOfArguments(arguments.size());
+
 	auto category = hasSpecialColumns(arguments);
 
 	switch (category)
@@ -246,6 +248,8 @@ void IFunction::getReturnTypeAndPrerequisites(
 
 void IFunction::getLambdaArgumentTypes(DataTypes & arguments) const
 {
+	checkNumberOfArguments(arguments.size());
+
 	auto category = hasSpecialDataTypes(arguments);
 
 	switch (category)
