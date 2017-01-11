@@ -11,7 +11,7 @@ namespace DB
   * или
   * SHOW DATABASES.
   */
-class ParserShowTablesQuery : public ParserQueryWithOutput
+class ParserShowTablesQuery : public IParserBase
 {
 protected:
 	const char * getName() const { return "SHOW TABLES|DATABASES query"; }

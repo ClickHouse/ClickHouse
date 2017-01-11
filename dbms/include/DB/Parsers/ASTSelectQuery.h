@@ -41,11 +41,8 @@ public:
 	/// Получить глубокую копию дерева первого запроса SELECT.
 	ASTPtr cloneFirstSelect() const;
 
-	/// Возвращает указатель на формат из последнего SELECT'а цепочки UNION ALL.
-	const IAST * getFormat() const override;
-
 private:
-	ASTPtr cloneImpl(bool traverse_union_all) const;
+	std::shared_ptr<ASTSelectQuery> cloneImpl(bool traverse_union_all) const;
 
 public:
 	bool distinct = false;
@@ -85,7 +82,7 @@ public:
 	IAST * prev_union_all = nullptr;
 
 protected:
-	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+	void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

@@ -28,6 +28,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	auto select_query = std::make_shared<ASTSelectQuery>();
 	node = select_query;
 
+	ParserWhiteSpaceOrComments ws;
 	ParserString s_select("SELECT", true, true);
 	ParserString s_distinct("DISTINCT", true, true);
 	ParserString s_from("FROM", true, true);
@@ -226,10 +227,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		ws.ignore(pos, end);
 	}
 
-	/// FORMAT format_name
-	if (!parseFormat(*select_query, pos, end, node, max_parsed_pos, expected))
-		return false;
-
 	// UNION ALL select query
 	if (s_union.ignore(pos, end, max_parsed_pos, expected))
 	{
@@ -237,13 +234,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
 		if (s_all.ignore(pos, end, max_parsed_pos, expected))
 		{
-			if (select_query->format)
-			{
-				/// FORMAT может быть задан только в последнем запросе цепочки UNION ALL.
-				expected = "FORMAT only in the last SELECT of the UNION ALL chain";
-				return false;
-			}
-
 			ParserSelectQuery select_p;
 			if (!select_p.parse(pos, end, select_query->next_union_all, max_parsed_pos, expected))
 				return false;
@@ -281,8 +271,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		select_query->children.push_back(select_query->limit_length);
 	if (select_query->settings)
 		select_query->children.push_back(select_query->settings);
-	if (select_query->format)
-		select_query->children.push_back(select_query->format);
 	if (select_query->next_union_all)
 		select_query->children.push_back(select_query->next_union_all);
 

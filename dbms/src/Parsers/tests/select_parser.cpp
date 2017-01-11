@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include <DB/Parsers/ParserSelectQuery.h>
+#include <DB/Parsers/ParserQueryWithOutput.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/parseQuery.h>
@@ -17,9 +17,11 @@ int main(int argc, char ** argv)
 		" GROUP BY UniqID"
 		" HAVING SUM(Refresh) > 100"
 		" ORDER BY Visits, PageViews"
-		" LIMIT 1000, 10";
+		" LIMIT 1000, 10"
+		" INTO OUTFILE 'test.out'"
+		" FORMAT TabSeparated";
 
-	ParserSelectQuery parser;
+	ParserQueryWithOutput parser;
 	ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
 
 	std::cout << "Success." << std::endl;
