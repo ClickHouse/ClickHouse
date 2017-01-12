@@ -175,6 +175,31 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 				arguments->children[1]->formatImpl(settings, state, nested_need_parens);
 				written = true;
 			}
+
+			if (!written && 0 == strcmp(name.c_str(), "lambda"))
+			{
+				/// Special case: one-element tuple in lhs of lambda is printed as its element.
+
+				if (frame.need_parens)
+					settings.ostr << '(';
+
+				const ASTFunction * first_arg_func = typeid_cast<const ASTFunction *>(arguments->children[0].get());
+				if (first_arg_func
+					&& first_arg_func->name == "tuple"
+					&& first_arg_func->arguments
+					&& first_arg_func->arguments->children.size() == 1)
+				{
+					first_arg_func->arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+				}
+				else
+					arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+
+				settings.ostr << (settings.hilite ? hilite_operator : "") << " -> " << (settings.hilite ? hilite_none : "");
+				arguments->children[1]->formatImpl(settings, state, nested_need_parens);
+				if (frame.need_parens)
+					settings.ostr << ')';
+				written = true;
+			}
 		}
 
 		if (!written && arguments->children.size() >= 2)
