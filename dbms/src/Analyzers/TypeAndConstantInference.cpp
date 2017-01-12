@@ -32,7 +32,10 @@ namespace ErrorCodes
 }
 
 
-static Field getValueFromConstantColumn(const ColumnPtr & column)
+namespace
+{
+
+Field getValueFromConstantColumn(const ColumnPtr & column)
 {
 	if (!column->isConst())
 		throw Exception("Logical error: expected that column is constant", ErrorCodes::LOGICAL_ERROR);
@@ -42,13 +45,36 @@ static Field getValueFromConstantColumn(const ColumnPtr & column)
 }
 
 
-static void processImpl(
+/// Description of single parameter of lambda expression.
+struct LambdaParameter
+{
+	String name;
+	DataTypePtr type;
+};
+
+/** Description of all parameters of lambda expression.
+  * For example, "x -> x + 1" have single parameter x. And "(x, y) -> x + y" have two paramters: x and y.
+  */
+using LambdaParameters = std::vector<LambdaParameter>;
+
+/** Nested scopes of lambda expressions.
+  * For example,
+  *  arrayMap(x -> arrayMap(y -> x[y], x), [[1], [2, 3]])
+  * have two scopes: first with parameter x and second with parameter y.
+  *
+  * In x[y] expression, all scopes will be visible.
+  */
+using LambdaScopes = std::vector<LambdaParameters>;
+
+
+void processImpl(
 	ASTPtr & ast, Context & context,
 	CollectAliases & aliases, const AnalyzeColumns & columns,
-	TypeAndConstantInference::Info & info);
+	TypeAndConstantInference::Info & info,
+	LambdaScopes & lambda_scopes);
 
 
-static void processLiteral(const String & column_name, const ASTPtr & ast, TypeAndConstantInference::Info & info)
+void processLiteral(const String & column_name, const ASTPtr & ast, TypeAndConstantInference::Info & info)
 {
 	const ASTLiteral * literal = static_cast<const ASTLiteral *>(ast.get());
 
@@ -61,8 +87,9 @@ static void processLiteral(const String & column_name, const ASTPtr & ast, TypeA
 }
 
 
-static void processIdentifier(const String & column_name, const ASTPtr & ast, TypeAndConstantInference::Info & info,
-	Context & context, CollectAliases & aliases, const AnalyzeColumns & columns)
+void processIdentifier(const String & column_name, const ASTPtr & ast, TypeAndConstantInference::Info & info,
+	Context & context, CollectAliases & aliases, const AnalyzeColumns & columns,
+	LambdaScopes & lambda_scopes)
 {
 	/// Column from table
 	auto it = columns.columns.find(column_name);
@@ -97,14 +124,14 @@ static void processIdentifier(const String & column_name, const ASTPtr & ast, Ty
 			if (it->second.kind != CollectAliases::Kind::Expression)
 				throw Exception("Logical error: unexpected kind of alias", ErrorCodes::LOGICAL_ERROR);
 
-			processImpl(it->second.node, context, aliases, columns, info);
+			processImpl(it->second.node, context, aliases, columns, info, lambda_scopes);
 			info[column_name] = info[it->second.node->getColumnName()];
 		}
 	}
 }
 
 
-static void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantInference::Info & info,
+void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantInference::Info & info,
 	const Context & context)
 {
 	ASTFunction * function = static_cast<ASTFunction *>(ast.get());
@@ -232,7 +259,7 @@ static void processFunction(const String & column_name, ASTPtr & ast, TypeAndCon
 }
 
 
-static void processScalarSubquery(const String & column_name, ASTPtr & ast, TypeAndConstantInference::Info & info,
+void processScalarSubquery(const String & column_name, ASTPtr & ast, TypeAndConstantInference::Info & info,
 	Context & context)
 {
 	ASTSubquery * subquery = static_cast<ASTSubquery *>(ast.get());
@@ -290,10 +317,11 @@ static void processScalarSubquery(const String & column_name, ASTPtr & ast, Type
 }
 
 
-static void processImpl(
+void processImpl(
 	ASTPtr & ast, Context & context,
 	CollectAliases & aliases, const AnalyzeColumns & columns,
-	TypeAndConstantInference::Info & info)
+	TypeAndConstantInference::Info & info,
+	LambdaScopes & lambda_scopes)
 {
 	/// Depth-first
 
@@ -303,13 +331,13 @@ static void processImpl(
 		for (auto & child : ast->children)
 		{
 			/** Don't go into subqueries and table-like expressions.
-			* Also don't go into components of compound identifiers.
-			*/
+			  * Also don't go into components of compound identifiers.
+			  */
 			if (typeid_cast<const ASTSelectQuery *>(child.get())
 				|| typeid_cast<const ASTTableExpression *>(child.get()))
 				continue;
 
-			processImpl(child, context, aliases, columns, info);
+			processImpl(child, context, aliases, columns, info, lambda_scopes);
 		}
 	}
 
@@ -335,17 +363,20 @@ static void processImpl(
 	if (literal)
 		processLiteral(column_name, ast, info);
 	else if (identifier)
-		processIdentifier(column_name, ast, info, context, aliases, columns);
+		processIdentifier(column_name, ast, info, context, aliases, columns, lambda_scopes);
 	else if (function)
 		processFunction(column_name, ast, info, context);
 	else if (subquery)
 		processScalarSubquery(column_name, ast, info, context);
 }
 
+}
+
 
 void TypeAndConstantInference::process(ASTPtr & ast, Context & context, CollectAliases & aliases, const AnalyzeColumns & columns)
 {
-	processImpl(ast, context, aliases, columns, info);
+	LambdaScopes lambda_scopes;
+	processImpl(ast, context, aliases, columns, info, lambda_scopes);
 }
 
 
