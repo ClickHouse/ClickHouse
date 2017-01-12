@@ -139,6 +139,9 @@ endif (ENABLE_TESTS)
 # Installation prefix
 if (NOT CMAKE_SYSTEM MATCHES "FreeBSD")
 	set (CMAKE_INSTALL_PREFIX /usr)
+	set (CLICKHOUSE_ETC_DIR /etc)
+else ()
+	set (CLICKHOUSE_ETC_DIR ${CMAKE_INSTALL_PREFIX}/etc)
 endif ()
 
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcityhash/include/)
