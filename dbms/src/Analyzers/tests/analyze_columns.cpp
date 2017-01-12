@@ -50,9 +50,9 @@ try
 	analyze_columns.dump(out);
 	out.next();
 
-	std::cerr << "\n";
+	std::cout << "\n";
 	formatAST(*ast, std::cout, 0, false, true);
-	std::cerr << "\n";
+	std::cout << "\n";
 
 	return 0;
 }

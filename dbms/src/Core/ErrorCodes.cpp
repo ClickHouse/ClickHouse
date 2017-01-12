@@ -358,6 +358,7 @@ namespace ErrorCodes
 	extern const int INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE = 353;
 	extern const int ZLIB_INFLATE_FAILED = 354;
 	extern const int ZLIB_DEFLATE_FAILED = 355;
+	extern const int BAD_LAMBDA = 356;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;
