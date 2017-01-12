@@ -37,7 +37,8 @@ private:
 		Method & method,
 		const ConstColumnPlainPtrs & key_columns,
 		IColumn::Filter & filter,
-		size_t rows) const;
+		size_t rows,
+		SetVariants & variants) const;
 
 
 	Names columns_names;

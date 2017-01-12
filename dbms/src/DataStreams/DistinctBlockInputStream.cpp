@@ -56,7 +56,7 @@ Block DistinctBlockInputStream::readImpl()
 				break;
 	#define M(NAME) \
 			case SetVariants::Type::NAME: \
-				buildFilter(*data.NAME, column_ptrs, filter, rows); \
+				buildFilter(*data.NAME, column_ptrs, filter, rows, data); \
 				break;
 		APPLY_FOR_SET_VARIANTS(M)
 	#undef M
@@ -104,7 +104,8 @@ void DistinctBlockInputStream::buildFilter(
 	Method & method,
 	const ConstColumnPlainPtrs & columns,
 	IColumn::Filter & filter,
-	size_t rows) const
+	size_t rows,
+	SetVariants & variants) const
 {
 	typename Method::State state;
 	state.init(columns);
@@ -114,9 +115,16 @@ void DistinctBlockInputStream::buildFilter(
 		/// Make a key.
 		typename Method::Key key = state.getKey(columns, columns.size(), i, key_sizes);
 
+		typename Method::Data::iterator it = method.data.find(key);
+		bool inserted;
+		method.data.emplace(key, it, inserted);
+
+		if (inserted)
+			method.onNewKey(*it, columns.size(), i, variants.string_pool);
+
 		/// Emit the record if there is no such key in the current set yet.
 		/// Skip it otherwise.
-		filter[i] = method.data.insert(key).second;
+		filter[i] = inserted;
 	}
 }
 
