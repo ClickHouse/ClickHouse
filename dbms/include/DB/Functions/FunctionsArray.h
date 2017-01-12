@@ -1191,7 +1191,7 @@ public:
 	/// Получить имя функции.
 	String getName() const override;
 
-	size_t getNumberOfArguments() const override { return 2; }
+	size_t getNumberOfArguments() const override { return 1; }
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
