@@ -46,9 +46,13 @@ void LogicalExpressionsOptimizer::perform()
 	for (auto & column : select_query->select_expression_list->children)
 	{
 		bool inserted = column_to_position.emplace(column.get(), position).second;
+
+		/// Do not run, if AST was already converted to DAG.
+		/// TODO This is temporary solution. We must completely eliminate conversion of AST to DAG.
+		/// (see ExpressionAnalyzer::normalizeTree)
 		if (!inserted)
-			throw Exception("LogicalExpressionsOptimizer: corrupted SELECT query",
-				ErrorCodes::LOGICAL_ERROR);
+			return;
+
 		++position;
 	}
 
