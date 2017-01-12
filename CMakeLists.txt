@@ -1,6 +1,8 @@
 project (ClickHouse)
 cmake_minimum_required (VERSION 2.6)
 
+message(STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 	# Require at least gcc 5
 	if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
@@ -189,7 +191,7 @@ include (cmake/find_openssl.cmake)
 include (cmake/find_icu4c.cmake)
 include (cmake/find_boost.cmake)
 include (cmake/find_libtool.cmake)
-include (cmake/find_libmysqlclient.cmake)
+include (cmake/find_mysqlclient.cmake)
 include (cmake/find_rt.cmake)
 
 # Directory for Yandex specific files
