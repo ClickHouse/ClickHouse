@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sstream>
+#include <mysqlxx/Types.h>
 #include <Poco/Exception.h>
 
 
