@@ -1,6 +1,8 @@
 project (ClickHouse)
 cmake_minimum_required (VERSION 2.6)
 
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
+
 message(STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -71,6 +73,9 @@ if (USE_INTERNAL_BOOST_LIBRARY)
 	add_definitions(-DBOOST_SYSTEM_NO_DEPRECATED)
 endif ()
 
+option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ON)
+option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ON)
+
 option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan." OFF)
 if ($ENV{GLIBC_COMPATIBILITY})
 	set (GLIBC_COMPATIBILITY TRUE)
@@ -100,15 +105,15 @@ else ()
 endif ()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
-set (CMAKE_CXX_FLAGS                     "-std=gnu++1y ${PLATFORM_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI_FLAGS}")
-set (CMAKE_CXX_FLAGS_RELEASE             "-O3 -DNDEBUG")
-set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "-O3 -g")
-set (CMAKE_CXX_FLAGS_DEBUG               "-O0 -g3 -ggdb3 -fno-inline")
+set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} -std=gnu++1y ${PLATFORM_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI_FLAGS}")
+#set (CMAKE_CXX_FLAGS_RELEASE            "${CMAKE_CXX_FLAGS_RELEASE}")
+set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3")
+set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline")
 
-set (CMAKE_C_FLAGS                       "-fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI_FLAGS}")
-set (CMAKE_C_FLAGS_RELEASE               "-O3 -DNDEBUG")
-set (CMAKE_C_FLAGS_RELWITHDEBINFO        "-O3 -g")
-set (CMAKE_C_FLAGS_DEBUG                 "-O0 -g3 -ggdb3 -fno-inline")
+set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI_FLAGS}")
+#set (CMAKE_C_FLAGS_RELEASE              "${CMAKE_C_FLAGS_RELEASE}")
+set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3")
+set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline")
 
 if (NOT APPLE AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_SYSTEM MATCHES "FreeBSD"))
 	set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
@@ -120,10 +125,10 @@ endif ()
 
 # -fuse-ld=gold - fix linkage for gcc-5.4, gcc-6.1
 # See more in http://stackoverflow.com/questions/37603238/fsanitize-not-using-gold-linker-in-gcc-6-1
-set (CMAKE_CXX_FLAGS_ASAN                "-O3 -g -fsanitize=address -fno-omit-frame-pointer -fuse-ld=gold ${CXX11_ABI_FLAGS}")
-set (CMAKE_CXX_FLAGS_UBSAN               "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI_FLAGS}")
-set (CMAKE_C_FLAGS_ASAN                  "-O3 -g -fsanitize=address -fno-omit-frame-pointer -fuse-ld=gold ${CXX11_ABI_FLAGS}")
-set (CMAKE_C_FLAGS_UBSAN                 "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI_FLAGS}")
+set (CMAKE_CXX_FLAGS_ASAN                "${CMAKE_CXX_FLAGS_ASAN} -O3 -g -fsanitize=address -fno-omit-frame-pointer -fuse-ld=gold ${CXX11_ABI_FLAGS}")
+set (CMAKE_CXX_FLAGS_UBSAN               "${CMAKE_CXX_FLAGS_UBSAN} -O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI_FLAGS}")
+set (CMAKE_C_FLAGS_ASAN                  "${CMAKE_C_FLAGS_ASAN} -O3 -g -fsanitize=address -fno-omit-frame-pointer -fuse-ld=gold ${CXX11_ABI_FLAGS}")
+set (CMAKE_C_FLAGS_UBSAN                 "${CMAKE_C_FLAGS_UBSAN} -O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI_FLAGS}")
 
 # Flags for test coverage
 if (TEST_COVERAGE)
@@ -156,27 +161,6 @@ include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libsparsehash/)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libre2/)
 include_directories (BEFORE ${ClickHouse_BINARY_DIR}/contrib/libre2/)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libzookeeper/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libtcmalloc/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libpoco/Foundation/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libpoco/Util/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libpoco/Net/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libpoco/NetSSL_OpenSSL/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libpoco/Data/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libpoco/Data/MySQL/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libpoco/Data/ODBC/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libpoco/Data/SQLite/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libpoco/Crypto/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libpoco/XML/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libpoco/JSON/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libpoco/MongoDB/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libpoco/Zip/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libboost/boost_1_62_0/)
-
-if (USE_STATIC_LIBRARIES)
-	include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libzlib-ng/)
-	include_directories (BEFORE ${ClickHouse_BINARY_DIR}/contrib/libzlib-ng/)
-endif ()
-
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/libs/libcommon/include/)
 include_directories (BEFORE ${ClickHouse_BINARY_DIR}/libs/libcommon/include/)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include/)
@@ -186,16 +170,16 @@ include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/libs/libzkutil/include/)
 
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/dbms/include)
 
-include_directories (/usr/local/include/)
-
-link_directories (/usr/local/lib)
-
 include (cmake/find_openssl.cmake)
 include (cmake/find_icu4c.cmake)
 include (cmake/find_boost.cmake)
+include (cmake/find_poco.cmake)
 include (cmake/find_libtool.cmake)
 include (cmake/find_mysqlclient.cmake)
 include (cmake/find_rt.cmake)
+if (ENABLE_LIBTCMALLOC)
+    include (cmake/find_gperftools.cmake)
+endif ()
 
 # Directory for Yandex specific files
 set (CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)

@@ -11,6 +11,8 @@ POCO_HEADERS_AUTO( SRCS ${HDRS_G})
 
 #add_definitions(-D_USRDLL)
 
+include_directories (BEFORE include)
+
 add_library( "${LIBNAME}" ${LIB_MODE} ${SRCS} )
 set_target_properties( "${LIBNAME}"
     PROPERTIES

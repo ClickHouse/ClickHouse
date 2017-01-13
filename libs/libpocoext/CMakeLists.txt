@@ -5,5 +5,7 @@ add_library (pocoext
 	include/Poco/Ext/LevelFilterChannel.h
 	include/Poco/Ext/ThreadNumber.h)
 
-add_dependencies (pocoext PocoUtil PocoNet PocoXML PocoFoundation)
-target_link_libraries(pocoext PocoUtil PocoNet PocoXML PocoFoundation)
+if (USE_INTERNAL_POCO_LIBRARY)
+	add_dependencies (pocoext ${Poco_Util_LIBRARY} ${Poco_Net_LIBRARY} ${Poco_XML_LIBRARY} ${Poco_Foundation_LIBRARY})
+endif ()
+target_link_libraries(pocoext ${Poco_Util_LIBRARY} ${Poco_Net_LIBRARY} ${Poco_XML_LIBRARY} ${Poco_Foundation_LIBRARY})

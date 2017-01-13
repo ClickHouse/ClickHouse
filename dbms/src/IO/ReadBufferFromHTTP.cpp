@@ -70,7 +70,11 @@ ReadBufferFromHTTP::ReadBufferFromHTTP(
 	session.setHost(resolveHost(host).toString());	/// Cache DNS forever (until server restart)
 	session.setPort(port);
 
+#if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000
 	session.setTimeout(connection_timeout, send_timeout, receive_timeout);
+#else
+	session.setTimeout(connection_timeout);
+#endif
 
 	Poco::Net::HTTPRequest request(method, path_params.str());
 	Poco::Net::HTTPResponse response;
