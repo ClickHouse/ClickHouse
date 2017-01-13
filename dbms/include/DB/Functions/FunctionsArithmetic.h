@@ -271,9 +271,9 @@ struct BitShiftRightImpl
 
 
 template<typename A, typename B>
-struct LeastImpl
+struct LeastBaseImpl
 {
-	using ResultType = typename NumberTraits::ResultOfIf<A, B>::Type;
+	using ResultType = NumberTraits::ResultOfLeast<A, B>;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -283,10 +283,37 @@ struct LeastImpl
 	}
 };
 
-template<typename A, typename B>
-struct GreatestImpl
+template<typename A>
+struct LeastSpecialImpl
 {
-	using ResultType = typename NumberTraits::ResultOfIf<A, B>::Type;
+	using ResultType = std::make_signed_t<A>;
+	using SecondType = std::make_unsigned_t<A>;
+
+	template <typename Result = ResultType>
+	static inline Result apply(ResultType a, SecondType b)
+	{
+		static_assert(std::is_same<Result, ResultType>::value, "typeof(a) != Result");
+		return (a < static_cast<Result>(b) || a < 0 || b > static_cast<SecondType>(std::numeric_limits<ResultType>::max()))
+			? a : static_cast<Result>(b);
+	}
+
+	template <typename Result = ResultType>
+	static inline Result apply(SecondType a, ResultType b)
+	{
+		static_assert(std::is_same<Result, ResultType>::value, "typeof(b) != Result");
+		return (b < static_cast<Result>(a) || b < 0 || a > static_cast<SecondType>(std::numeric_limits<ResultType>::max()))
+			? b : static_cast<Result>(a);
+	}
+};
+
+template<typename A, typename B>
+using LeastImpl = std::conditional_t<!NumberTraits::GreatestAndLeastSpecialCase<A, B>::value, LeastBaseImpl<A, B>, LeastSpecialImpl<A>>;
+
+
+template<typename A, typename B>
+struct GreatestBaseImpl
+{
+	using ResultType = NumberTraits::ResultOfGreatest<A, B>;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -294,6 +321,33 @@ struct GreatestImpl
 		return static_cast<Result>(a) > static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
 	}
 };
+
+template<typename A>
+struct GreatestSpecialImpl
+{
+	using ResultType = std::make_unsigned_t<A>;
+	using SecondType = std::make_signed_t<A>;
+
+	template <typename Result = ResultType>
+	static inline Result apply(ResultType a, SecondType b)
+	{
+		static_assert(std::is_same<Result, ResultType>::value, "typeof(a) != Result");
+		return (a > static_cast<Result>(b) || b < 0 || a > static_cast<Result>((std::numeric_limits<SecondType>::max())))
+			? a : static_cast<Result>(b);
+	}
+
+	template <typename Result = ResultType>
+	static inline Result apply(SecondType a, ResultType b)
+	{
+		static_assert(std::is_same<Result, ResultType>::value, "typeof(b) != Result");
+		return (b > static_cast<Result>(a) || a < 0 || b > static_cast<Result>((std::numeric_limits<SecondType>::max())))
+			? b : static_cast<Result>(a);
+	}
+};
+
+template<typename A, typename B>
+using GreatestImpl = std::conditional_t<!NumberTraits::GreatestAndLeastSpecialCase<A, B>::value, GreatestBaseImpl<A, B>, GreatestSpecialImpl<A>>;
+
 
 template<typename A>
 struct NegateImpl
