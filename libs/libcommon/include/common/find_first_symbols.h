@@ -35,6 +35,7 @@ inline bool is_in(char x)
 	return x == s0 || is_in<s1, tail...>(x);
 }
 
+#if defined(__x86_64__)
 template <char s0>
 inline __m128i mm_is_in(__m128i bytes)
 {
@@ -49,6 +50,7 @@ inline __m128i mm_is_in(__m128i bytes)
 	__m128i eq = mm_is_in<s1, tail...>(bytes);
 	return _mm_or_si128(eq0, eq);
 }
+#endif
 
 
 template <char... symbols>
