@@ -350,17 +350,19 @@ template <typename A> struct ToInteger
 
 
 // CLICKHOUSE-29. The same depth, different signs
+// NOTE: This case is applied for 64-bit integers only (for backward compability), but colud be used for any-bit integers
 template <typename A, typename B>
-using GreatestAndLeastSpecialCase = std::integral_constant<bool, std::is_integral<A>::value && std::is_integral<B>::value
-									&& (sizeof(A) == sizeof(B)) && (std::is_signed<A>::value ^ std::is_signed<B>::value)>;
+using LeastGreatestSpecialCase = std::integral_constant<bool, std::is_integral<A>::value && std::is_integral<B>::value
+									&& (8 == sizeof(A) && sizeof(A) == sizeof(B))
+									&& (std::is_signed<A>::value ^ std::is_signed<B>::value)>;
 
 template <typename A, typename B>
-using ResultOfLeast = std::conditional_t<GreatestAndLeastSpecialCase<A, B>::value,
+using ResultOfLeast = std::conditional_t<LeastGreatestSpecialCase<A, B>::value,
 											typename Construct<Signed, Integer, typename Traits<A>::Bits, HasNoNull>::Type,
 											typename ResultOfIf<A, B>::Type>;
 
 template <typename A, typename B>
-using ResultOfGreatest = std::conditional_t<GreatestAndLeastSpecialCase<A, B>::value,
+using ResultOfGreatest = std::conditional_t<LeastGreatestSpecialCase<A, B>::value,
 											typename Construct<Unsigned, Integer, typename Traits<A>::Bits, HasNoNull>::Type,
 											typename ResultOfIf<A, B>::Type>;
 
