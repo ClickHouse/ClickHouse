@@ -123,6 +123,10 @@ if (NOT APPLE)
 	set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI_FLAGS}")
 endif ()
 
+if (USE_STATIC_LIBRARIES)
+	set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -no-pie")
+endif ()
+
 # -fuse-ld=gold - fix linkage for gcc-5.4, gcc-6.1
 # See more in http://stackoverflow.com/questions/37603238/fsanitize-not-using-gold-linker-in-gcc-6-1
 set (CMAKE_CXX_FLAGS_ASAN                "${CMAKE_CXX_FLAGS_ASAN} -O3 -g -fsanitize=address -fno-omit-frame-pointer -fuse-ld=gold ${CXX11_ABI_FLAGS}")
