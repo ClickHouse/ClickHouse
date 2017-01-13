@@ -15,6 +15,9 @@ callgrind.out.*
 *.kdev4
 *.kdev_include_paths
 
+# ignore sublime project files
+*.sublime-*
+
 # Qt Creator files
 *.user
 
