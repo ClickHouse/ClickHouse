@@ -14,7 +14,7 @@ Value Row::operator[] (const char * name) const
 		if (!strcmp(name, fields[i].name))
 			return operator[](i);
 
-		throw Exception(std::string("Unknown column ") + name);
+	throw Exception(std::string("Unknown column ") + name);
 }
 
 }
