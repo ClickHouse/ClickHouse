@@ -138,9 +138,10 @@ target_link_libraries(dbms
 	re2 re2_st
 	${OPENSSL_CRYPTO_LIBRARY}
 	${Boost_SYSTEM_LIBRARY}
-	PocoData
-	PocoDataODBC
-	PocoMongoDB
+	${Poco_Data_LIBRARY}
+	${Poco_DataODBC_LIBRARY}
+	${Poco_MongoDB_LIBRARY}
+	${Poco_Foundation_LIBRARY}
 	${APPLE_ICONV_LIB}
 	${PLATFORM_LIBS}
 	${CMAKE_DL_LIBS}

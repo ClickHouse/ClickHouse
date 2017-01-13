@@ -90,6 +90,8 @@ endif (${CMAKE_CXX_COMPILER_ID} MATCHES "SunPro")
 # TODO: Why is this here?
 add_definitions( -DPCRE_STATIC)
 
+include_directories (BEFORE include)
+
 add_library( "${LIBNAME}" ${LIB_MODE} ${SRCS})
 set_target_properties( "${LIBNAME}"
     PROPERTIES

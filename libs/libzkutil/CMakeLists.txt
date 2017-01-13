@@ -18,6 +18,6 @@ add_library(zkutil
 
 find_package (Threads)
 
-target_link_libraries(zkutil zookeeper  PocoFoundation ${CMAKE_THREAD_LIBS_INIT} string_utils)
+target_link_libraries(zkutil zookeeper ${Poco_Foundation_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} string_utils)
 
 add_subdirectory (src)

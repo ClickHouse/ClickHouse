@@ -49,7 +49,11 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 	session.setHost(resolveHost(uri.getHost()).toString());	/// Cache DNS forever (until server restart)
 	session.setPort(uri.getPort());
 
+#if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000
 	session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
+#else
+	session.setTimeout(timeouts.connection_timeout);
+#endif
 
 	Poco::Net::HTTPRequest request(method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
 	if (out_stream_callback)
