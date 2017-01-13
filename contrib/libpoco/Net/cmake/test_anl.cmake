@@ -19,6 +19,8 @@ if (ANL_LIB)
 	set (CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} ${ANL_LIB})
 endif ()
 
+set (CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} ${CMAKE_EXE_LINKER_FLAGS}")
+
 check_cxx_source_runs("
 	#include <netdb.h>
 	int main() {
