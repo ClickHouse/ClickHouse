@@ -1,3 +1,4 @@
+#pragma once
 #include <DB/Core/Types.h>
 
 /** Preceptually-correct number comparisons.
@@ -48,27 +49,27 @@ template <typename TInt, typename TUInt>
 using bool_if_le_int_vs_uint_t = std::enable_if_t<is_le_int_vs_uint_t<TInt, TUInt>::value, bool>;
 
 template <typename TInt, typename TUInt>
-bool_if_le_int_vs_uint_t<TInt, TUInt> greaterOpTmpl(TInt a, TUInt b)
+inline bool_if_le_int_vs_uint_t<TInt, TUInt> greaterOpTmpl(TInt a, TUInt b)
 {
-	return (b > static_cast<TUInt>(std::numeric_limits<TInt>::max()) || a < 0) ? false : static_cast<TUInt>(a) > b;
+	return static_cast<TUInt>(a) > b && a >= 0 && b <= static_cast<TUInt>(std::numeric_limits<TInt>::max());
 }
 
 template <typename TUInt, typename TInt>
-bool_if_le_int_vs_uint_t<TInt, TUInt> greaterOpTmpl(TUInt a, TInt b)
+inline bool_if_le_int_vs_uint_t<TInt, TUInt> greaterOpTmpl(TUInt a, TInt b)
 {
-	return (a > static_cast<TUInt>(std::numeric_limits<TInt>::max()) || b < 0) ? true : a > static_cast<TUInt>(b);
+	return a > static_cast<TUInt>(b) || b < 0 || a > static_cast<TUInt>(std::numeric_limits<TInt>::max());
 }
 
 template <typename TInt, typename TUInt>
-bool_if_le_int_vs_uint_t<TInt, TUInt> equalsOpTmpl(TInt a, TUInt b)
+inline bool_if_le_int_vs_uint_t<TInt, TUInt> equalsOpTmpl(TInt a, TUInt b)
 {
-	return (a < 0 || b > static_cast<TUInt>(std::numeric_limits<TInt>::max())) ? false : static_cast<TUInt>(a) == b;
+	return static_cast<TUInt>(a) == b && a >= 0 && b <= static_cast<TUInt>(std::numeric_limits<TInt>::max());
 }
 
 template <typename TUInt, typename TInt>
-bool_if_le_int_vs_uint_t<TInt, TUInt> equalsOpTmpl(TUInt a, TInt b)
+inline bool_if_le_int_vs_uint_t<TInt, TUInt> equalsOpTmpl(TUInt a, TInt b)
 {
-	return (b < 0 || a > static_cast<TUInt>(std::numeric_limits<TInt>::max())) ? false : a == static_cast<TUInt>(b);
+	return a == static_cast<TUInt>(b) && b >= 0 && a <= static_cast<TUInt>(std::numeric_limits<TInt>::max());
 }
 
 
@@ -80,25 +81,25 @@ template <typename TInt, typename TUInt>
 using bool_if_gt_int_vs_uint = std::enable_if_t<is_gt_int_vs_uint<TInt, TUInt>::value, bool>;
 
 template <typename TInt, typename TUInt>
-bool_if_gt_int_vs_uint<TInt, TUInt> greaterOpTmpl(TInt a, TUInt b)
+inline bool_if_gt_int_vs_uint<TInt, TUInt> greaterOpTmpl(TInt a, TUInt b)
 {
 	return static_cast<TInt>(a) > static_cast<TInt>(b);
 }
 
 template <typename TInt, typename TUInt>
-bool_if_gt_int_vs_uint<TInt, TUInt> greaterOpTmpl(TUInt a, TInt b)
+inline bool_if_gt_int_vs_uint<TInt, TUInt> greaterOpTmpl(TUInt a, TInt b)
 {
 	return static_cast<TInt>(a) > static_cast<TInt>(b);
 }
 
 template <typename TInt, typename TUInt>
-bool_if_gt_int_vs_uint<TInt, TUInt> equalsOpTmpl(TInt a, TUInt b)
+inline bool_if_gt_int_vs_uint<TInt, TUInt> equalsOpTmpl(TInt a, TUInt b)
 {
 	return static_cast<TInt>(a) == static_cast<TInt>(b);
 }
 
 template <typename TInt, typename TUInt>
-bool_if_gt_int_vs_uint<TInt, TUInt> equalsOpTmpl(TUInt a, TInt b)
+inline bool_if_gt_int_vs_uint<TInt, TUInt> equalsOpTmpl(TUInt a, TInt b)
 {
 	return static_cast<TInt>(a) == static_cast<TInt>(b);
 }
@@ -111,25 +112,25 @@ using bool_if_double_can_be_used = std::enable_if_t<
 										bool>;
 
 template <typename TAInt, typename TAFloat>
-bool_if_double_can_be_used<TAInt, TAFloat> greaterOpTmpl(TAInt a, TAFloat b)
+inline bool_if_double_can_be_used<TAInt, TAFloat> greaterOpTmpl(TAInt a, TAFloat b)
 {
 	return static_cast<double>(a) > static_cast<double>(b);
 }
 
 template <typename TAInt, typename TAFloat>
-bool_if_double_can_be_used<TAInt, TAFloat> greaterOpTmpl(TAFloat a, TAInt b)
+inline bool_if_double_can_be_used<TAInt, TAFloat> greaterOpTmpl(TAFloat a, TAInt b)
 {
 	return static_cast<double>(a) > static_cast<double>(b);
 }
 
 template <typename TAInt, typename TAFloat>
-bool_if_double_can_be_used<TAInt, TAFloat> equalsOpTmpl(TAInt a, TAFloat b)
+inline bool_if_double_can_be_used<TAInt, TAFloat> equalsOpTmpl(TAInt a, TAFloat b)
 {
 	return static_cast<double>(a) == static_cast<double>(b);
 }
 
 template <typename TAInt, typename TAFloat>
-bool_if_double_can_be_used<TAInt, TAFloat> equalsOpTmpl(TAFloat a, TAInt b)
+inline bool_if_double_can_be_used<TAInt, TAFloat> equalsOpTmpl(TAFloat a, TAInt b)
 {
 	return static_cast<double>(a) == static_cast<double>(b);
 }

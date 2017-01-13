@@ -13,6 +13,7 @@
 
 #include <DB/Core/Types.h>
 #include <tuple>
+#include <type_traits>
 
 namespace DB
 {
@@ -263,6 +264,7 @@ template <typename A> struct ResultOfBitNot
 		typename Traits<A>::Nullity>::Type Type;
 };
 
+
 /** Приведение типов для функции if:
 	* 1)     void,      Type ->  Type
 	* 2)  UInt<x>,   UInt<y> ->  UInt<max(x,y)>
@@ -302,7 +304,7 @@ struct ResultOfIf
 							typename Traits<B>::Floatness,
 							typename Traits<B>::Bits,
 							typename ExactNext<typename Traits<B>::Bits>::Type>::type>::type,
-					Bits32>::type, 
+					Bits32>::type,
 					typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type>::Type,
 		/// 2) and 3)
 		typename boost::mpl::if_<
@@ -342,9 +344,27 @@ template <typename A> struct ToInteger
 			typename Traits<A>::Floatness,
 			Bits64,
 			typename Traits<A>::Bits>::type,
-			typename Traits<A>::Nullity
+		typename Traits<A>::Nullity
 	>::Type Type;
 };
+
+
+// CLICKHOUSE-29. The same depth, different signs
+// NOTE: This case is applied for 64-bit integers only (for backward compability), but colud be used for any-bit integers
+template <typename A, typename B>
+using LeastGreatestSpecialCase = std::integral_constant<bool, std::is_integral<A>::value && std::is_integral<B>::value
+									&& (8 == sizeof(A) && sizeof(A) == sizeof(B))
+									&& (std::is_signed<A>::value ^ std::is_signed<B>::value)>;
+
+template <typename A, typename B>
+using ResultOfLeast = std::conditional_t<LeastGreatestSpecialCase<A, B>::value,
+											typename Construct<Signed, Integer, typename Traits<A>::Bits, HasNoNull>::Type,
+											typename ResultOfIf<A, B>::Type>;
+
+template <typename A, typename B>
+using ResultOfGreatest = std::conditional_t<LeastGreatestSpecialCase<A, B>::value,
+											typename Construct<Unsigned, Integer, typename Traits<A>::Bits, HasNoNull>::Type,
+											typename ResultOfIf<A, B>::Type>;
 
 /// Notes on type composition.
 ///
