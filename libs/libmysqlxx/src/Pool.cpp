@@ -2,6 +2,10 @@
 #include <mysqld_error.h>
 #include <mysqlxx/Pool.h>
 
+#include <Poco/Util/Application.h>
+#include <Poco/Util/LayeredConfiguration.h>
+#include <Poco/NumberFormatter.h>
+
 
 namespace mysqlxx
 {
@@ -65,7 +69,7 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
 Pool::~Pool()
 {
-	Poco::ScopedLock<Poco::FastMutex> locker(lock);
+	std::lock_guard<std::mutex> lock(mutex);
 
 	for (Connections::iterator it = connections.begin(); it != connections.end(); it++)
 		delete static_cast<Connection *>(*it);
@@ -74,7 +78,7 @@ Pool::~Pool()
 
 Pool::Entry Pool::Get()
 {
-	Poco::ScopedLock<Poco::FastMutex> locker(lock);
+	std::unique_lock<std::mutex> lock(mutex);
 
 	initialize();
 	for (;;)
@@ -101,7 +105,7 @@ Pool::Entry Pool::Get()
 
 Pool::Entry Pool::tryGet()
 {
-	Poco::ScopedLock<Poco::FastMutex> locker(lock);
+	std::lock_guard<std::mutex> lock(mutex);
 
 	initialize();
 
@@ -125,6 +129,38 @@ Pool::Entry Pool::tryGet()
 		return Entry(conn, this);
 
 	return Entry();
+}
+
+
+void Pool::Entry::forceConnected() const
+{
+	if (data == nullptr)
+		throw Poco::RuntimeException("Tried to access NULL database connection.");
+
+	Poco::Util::Application & app = Poco::Util::Application::instance();
+
+	if (data->conn.ping())
+		return;
+
+	bool first = true;
+	do
+	{
+		if (first)
+			first = false;
+		else
+			::sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
+
+		app.logger().information("MYSQL: Reconnecting to " + pool->description);
+		data->conn.connect(
+			pool->db.c_str(),
+						   pool->server.c_str(),
+						   pool->user.c_str(),
+						   pool->password.c_str(),
+						   pool->port,
+					 pool->connect_timeout,
+					 pool->rw_timeout);
+	}
+	while (!data->conn.ping());
 }
 
 

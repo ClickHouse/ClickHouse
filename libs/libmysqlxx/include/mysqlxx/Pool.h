@@ -2,14 +2,9 @@
 
 #include <list>
 #include <memory>
+#include <mutex>
 
-#include <Poco/Util/Application.h>
-#include <Poco/Util/LayeredConfiguration.h>
-#include <Poco/NumberFormatter.h>
-#include <Poco/Mutex.h>
 #include <Poco/Exception.h>
-
-#include <common/logger_useful.h>
 #include <mysqlxx/Connection.h>
 
 
@@ -125,43 +120,13 @@ public:
 		Pool * pool = nullptr;
 
 		/** Переподключается к базе данных в случае необходимости. Если не удалось - подождать и попробовать снова. */
-		void forceConnected() const
-		{
-			if (data == nullptr)
-				throw Poco::RuntimeException("Tried to access NULL database connection.");
-
-			Poco::Util::Application & app = Poco::Util::Application::instance();
-
-			if (data->conn.ping())
-				return;
-
-			bool first = true;
-			do
-			{
-				if (first)
-					first = false;
-				else
-					::sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
-
-				app.logger().information("MYSQL: Reconnecting to " + pool->description);
-				data->conn.connect(
-					pool->db.c_str(),
-					pool->server.c_str(),
-					pool->user.c_str(),
-					pool->password.c_str(),
-					pool->port,
-					pool->connect_timeout,
-					pool->rw_timeout);
-			}
-			while (!data->conn.ping());
-		}
+		void forceConnected() const;
 
 		/** Переподключается к базе данных в случае необходимости. Если не удалось - вернуть false. */
 		bool tryForceConnected() const
 		{
 			return data->conn.ping();
 		}
-
 
 		void incrementRefCount();
 		void decrementRefCount();
@@ -250,7 +215,7 @@ private:
 	/** Список соединений. */
 	Connections connections;
 	/** Замок для доступа к списку соединений. */
-	Poco::FastMutex lock;
+	std::mutex mutex;
 	/** Описание соединения. */
 	std::string description;
 
