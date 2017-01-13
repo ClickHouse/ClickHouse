@@ -484,7 +484,10 @@ int32_t inc_ref_counter(zhandle_t* zh,int i)
 
 int32_t fetch_and_add(volatile int32_t* operand, int incr)
 {
-#ifndef WIN32
+#if defined(__ARM_ARCH)
+    // this is gcc-specific func https://gcc.gnu.org/onlinedocs/gcc-6.3.0/gcc/_005f_005fatomic-Builtins.html
+    return __atomic_fetch_add(operand, incr, __ATOMIC_RELAXED);
+#elif !defined(WIN32)
     int32_t result;
     asm __volatile__(
          "lock xaddl %0,%1\n"
