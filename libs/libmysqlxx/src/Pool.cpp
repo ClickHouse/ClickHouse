@@ -23,6 +23,46 @@ void Pool::Entry::decrementRefCount()
 }
 
 
+Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & config_name,
+	 unsigned default_connections_, unsigned max_connections_,
+	 const char * parent_config_name_)
+	: default_connections(default_connections_), max_connections(max_connections_)
+{
+	server = cfg.getString(config_name + ".host");
+
+	if (parent_config_name_)
+	{
+		const std::string parent_config_name(parent_config_name_);
+		db = cfg.getString(config_name + ".db", cfg.getString(parent_config_name + ".db", ""));
+		user = cfg.has(config_name + ".user")
+			? cfg.getString(config_name + ".user")
+			: cfg.getString(parent_config_name + ".user");
+		password = cfg.has(config_name + ".password")
+			? cfg.getString(config_name + ".password")
+			: cfg.getString(parent_config_name + ".password");
+		port = cfg.has(config_name + ".port")
+			? cfg.getInt(config_name + ".port")
+			: cfg.getInt(parent_config_name + ".port");
+	}
+	else
+	{
+		db = cfg.getString(config_name + ".db", "");
+		user = cfg.getString(config_name + ".user");
+		password = cfg.getString(config_name + ".password");
+		port = cfg.getInt(config_name + ".port");
+	}
+
+	connect_timeout = cfg.getInt(config_name + ".connect_timeout",
+		cfg.getInt("mysql_connect_timeout",
+			MYSQLXX_DEFAULT_TIMEOUT));
+
+	rw_timeout =
+		cfg.getInt(config_name + ".rw_timeout",
+			cfg.getInt("mysql_rw_timeout",
+				MYSQLXX_DEFAULT_RW_TIMEOUT));
+}
+
+
 Pool::~Pool()
 {
 	Poco::ScopedLock<Poco::FastMutex> locker(lock);
@@ -102,7 +142,7 @@ void Pool::initialize()
 }
 
 
-Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
+Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
 {
 	Poco::Util::Application & app = Poco::Util::Application::instance();
 
