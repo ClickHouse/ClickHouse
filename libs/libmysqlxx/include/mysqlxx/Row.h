@@ -51,18 +51,8 @@ public:
 		return Value(row[n], lengths[n], res);
 	}
 
-	/** Получить значение по имени. Слегка менее эффективно. */
-	Value operator[] (const char * name) const
-	{
-		unsigned n = res->getNumFields();
-		MYSQL_FIELDS fields = res->getFields();
-
-		for (unsigned i = 0; i < n; ++i)
-			if (!strcmp(name, fields[i].name))
-				return operator[](i);
-
-		throw Exception(std::string("Unknown column ") + name);
-	}
+	/** Get value by column name. Less efficient. */
+	Value operator[] (const char * name) const;
 
 	Value operator[] (const std::string & name) const
 	{
