@@ -546,7 +546,7 @@ Otherwise, you could use one of available public datasets, described <a href="ht
 If you are Yandex employee, use internal ClickHouse maillist.
 You can subscribe to this list to get announcements, information on new developments, and questions that other users have.
 
-Otherwise, you could ask questions on <a href="https://stackoverflow.com/">Stackoverflow</a>; discuss in <a href="https://groups.google.com/group/clickhouse">Google Groups</a>; or send private message to developers to address <a href="mailto:clickhouse-feedback@yandex-team.com">clickhouse-feedback@yandex-team.com</a>.
+Otherwise, you could ask questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse">Stack Overflow</a>; discuss in <a href="https://groups.google.com/group/clickhouse">Google Groups</a>; or send private message to developers to address <a href="mailto:clickhouse-feedback@yandex-team.com">clickhouse-feedback@yandex-team.com</a>.
 
 
 
@@ -6837,9 +6837,11 @@ any (only for group_by_overflow_mode) - Continuing aggregation for the keys that
 
 ===readonly===
 
-If set to 1, run only queries that don&#39;t change data or settings.
-As an example, SELECT and SHOW queries are allowed, but INSERT and SET are forbidden.
-After you write %%SET readonly = 1%%, you can&#39;t disable readonly mode in the current session.
+If set to 0, allows to run any queries.
+If set to 1, allows to run only queries that don&#39;t change data or settings (e.g. SELECT or SHOW). INSERT and SET are forbidden.
+If set to 2, allows to run queries that don&#39;t change data (SELECT, SHOW) and allows to change settings (SET).
+
+After you set the read-only mode, you won&#39;t be able to disable it in the current session.
 
 When using the GET method in the HTTP interface, &#39;readonly = 1&#39; is set automatically. In other words, for queries that modify data, you can only use the POST method. You can send the query itself either in the POST body, or in the URL parameter.
 
