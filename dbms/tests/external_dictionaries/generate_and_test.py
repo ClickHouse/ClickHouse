@@ -266,7 +266,7 @@ def generate_dictionaries(args):
 
     source_clickhouse = '''
     <clickhouse>
-        <host>127.0.0.1</host>
+        <host>localhost</host>
         <port>%s</port>
         <user>default</user>
         <password></password>
@@ -277,7 +277,7 @@ def generate_dictionaries(args):
 
     source_mysql = '''
     <mysql>
-        <host>127.0.0.1</host>
+        <host>localhost</host>
         <port>3306</port>
         <user>root</user>
         <password></password>
@@ -288,7 +288,7 @@ def generate_dictionaries(args):
 
     source_mongodb = '''
     <mongodb>
-        <host>127.0.0.1</host>
+        <host>localhost</host>
         <port>27017</port>
         <user></user>
         <password></password>

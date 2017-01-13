@@ -3,7 +3,7 @@ from __future__ import print_function
 import os, itertools, urllib
 
 def get_ch_answer(query):
-	return urllib.urlopen('http://127.0.0.1:8123', data=query).read()
+	return urllib.urlopen('http://localhost:8123', data=query).read()
 
 def check_answers(query, answer):
 	ch_answer = get_ch_answer(query)
