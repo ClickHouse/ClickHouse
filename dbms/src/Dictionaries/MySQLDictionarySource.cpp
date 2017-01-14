@@ -18,7 +18,7 @@ MySQLDictionarySource::MySQLDictionarySource(const DictionaryStructure & dict_st
 	  dont_check_update_time{config.getBool(config_prefix + ".dont_check_update_time", false)},
 	  sample_block{sample_block},
 	  pool{config, config_prefix},
-	  query_builder{dict_struct, db, table, where},
+	  query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
 	  load_all_query{query_builder.composeLoadAllQuery()}
 {
 }
@@ -32,7 +32,7 @@ MySQLDictionarySource::MySQLDictionarySource(const MySQLDictionarySource & other
 	  dont_check_update_time{other.dont_check_update_time},
 	  sample_block{other.sample_block},
 	  pool{other.pool},
-	  query_builder{dict_struct, db, table, where},
+	  query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
 	  load_all_query{other.load_all_query}, last_modification{other.last_modification}
 {
 }

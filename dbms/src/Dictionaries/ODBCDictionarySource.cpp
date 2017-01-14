@@ -22,7 +22,7 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
 	  pool{std::make_shared<Poco::Data::SessionPool>(
 		  config.getString(config_prefix + ".connector", "ODBC"),
 		  config.getString(config_prefix + ".connection_string"))},
-	  query_builder{dict_struct, db, table, where},
+	  query_builder{dict_struct, db, table, where, ExternalQueryBuilder::None},	/// NOTE Better to obtain quoting style via ODBC interface.
 	  load_all_query{query_builder.composeLoadAllQuery()}
 {
 }
@@ -35,7 +35,7 @@ ODBCDictionarySource::ODBCDictionarySource(const ODBCDictionarySource & other)
 	  where{other.where},
 	  sample_block{other.sample_block},
 	  pool{other.pool},
-	  query_builder{dict_struct, db, table, where},
+	  query_builder{dict_struct, db, table, where, ExternalQueryBuilder::None},
 	  load_all_query{other.load_all_query}
 {
 }
