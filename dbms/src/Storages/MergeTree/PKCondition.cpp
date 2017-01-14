@@ -14,6 +14,7 @@
 #include <DB/Functions/IFunction.h>
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Interpreters/convertFieldToType.h>
+#include <DB/Interpreters/Set.h>
 
 
 namespace DB

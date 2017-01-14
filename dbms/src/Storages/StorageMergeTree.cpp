@@ -10,6 +10,7 @@
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/ASTSelectQuery.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>

@@ -20,7 +20,9 @@
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergeTreeReadPool.h>
 #include <DB/Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
+#include <DB/Storages/MergeTree/PKCondition.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTSampleRatio.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>

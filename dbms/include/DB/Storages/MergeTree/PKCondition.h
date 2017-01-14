@@ -275,6 +275,7 @@ public:
 		const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns);
 
 	using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, ASTPtr & node)>;
+	static const AtomMap atom_map;
 
 private:
 	using RPN = std::vector<RPNElement>;
