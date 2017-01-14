@@ -1,4 +1,5 @@
 #include <DB/Storages/MergeTree/PKCondition.h>
+#include <DB/Storages/MergeTree/BoolMask.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/ExpressionActions.h>
@@ -16,6 +17,23 @@
 
 namespace DB
 {
+
+String Range::toString() const
+{
+	std::stringstream str;
+
+	if (!left_bounded)
+		str << "(-inf, ";
+	else
+		str << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
+
+	if (!right_bounded)
+		str << "+inf)";
+	else
+		str << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
+
+	return str.str();
+}
 
 
 /// Пример: для строки Hello\_World%... возвращает Hello_World, а для строки %test% возвращает пустую строку.
@@ -75,82 +93,85 @@ static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & pr
 }
 
 
-const PKCondition::AtomMap PKCondition::atom_map{
+/// Словарь, содержащий действия к соответствующим функциям по превращению их в RPNElement
+using AtomMap = std::unordered_map<std::string, bool(*)(PKCondition::RPNElement & out, const Field & value, ASTPtr & node)>;
+static const AtomMap atom_map
+{
 	{
 		"notEquals",
-		[] (RPNElement & out, const Field & value, ASTPtr &)
+		[] (PKCondition::RPNElement & out, const Field & value, ASTPtr &)
 		{
-			out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+			out.function = PKCondition::RPNElement::FUNCTION_NOT_IN_RANGE;
 			out.range = Range(value);
 			return true;
 		}
 	},
 	{
 		"equals",
-		[] (RPNElement & out, const Field & value, ASTPtr &)
+		[] (PKCondition::RPNElement & out, const Field & value, ASTPtr &)
 		{
-			out.function = RPNElement::FUNCTION_IN_RANGE;
+			out.function = PKCondition::RPNElement::FUNCTION_IN_RANGE;
 			out.range = Range(value);
 			return true;
 		}
 	},
 	{
 		"less",
-		[] (RPNElement & out, const Field & value, ASTPtr &)
+		[] (PKCondition::RPNElement & out, const Field & value, ASTPtr &)
 		{
-			out.function = RPNElement::FUNCTION_IN_RANGE;
+			out.function = PKCondition::RPNElement::FUNCTION_IN_RANGE;
 			out.range = Range::createRightBounded(value, false);
 			return true;
 		}
 	},
 	{
 		"greater",
-		[] (RPNElement & out, const Field & value, ASTPtr &)
+		[] (PKCondition::RPNElement & out, const Field & value, ASTPtr &)
 		{
-			out.function = RPNElement::FUNCTION_IN_RANGE;
+			out.function = PKCondition::RPNElement::FUNCTION_IN_RANGE;
 			out.range = Range::createLeftBounded(value, false);
 			return true;
 		}
 	},
 	{
 		"lessOrEquals",
-		[] (RPNElement & out, const Field & value, ASTPtr &)
+		[] (PKCondition::RPNElement & out, const Field & value, ASTPtr &)
 		{
-			out.function = RPNElement::FUNCTION_IN_RANGE;
+			out.function = PKCondition::RPNElement::FUNCTION_IN_RANGE;
 			out.range = Range::createRightBounded(value, true);
 			return true;
 		}
 	},
 	{
 		"greaterOrEquals",
-		[] (RPNElement & out, const Field & value, ASTPtr &)
+		[] (PKCondition::RPNElement & out, const Field & value, ASTPtr &)
 		{
-			out.function = RPNElement::FUNCTION_IN_RANGE;
+			out.function = PKCondition::RPNElement::FUNCTION_IN_RANGE;
 			out.range = Range::createLeftBounded(value, true);
 			return true;
 		}
 	},
 	{
 		"in",
-		[] (RPNElement & out, const Field &, ASTPtr & node)
+		[] (PKCondition::RPNElement & out, const Field &, ASTPtr & node)
 		{
-			out.function = RPNElement::FUNCTION_IN_SET;
+			out.function = PKCondition::RPNElement::FUNCTION_IN_SET;
 			out.in_function = node;
 			return true;
 		}
 	},
 	{
 		"notIn",
-		[] (RPNElement & out, const Field &, ASTPtr & node)
+		[] (PKCondition::RPNElement & out, const Field &, ASTPtr & node)
 		{
-			out.function = RPNElement::FUNCTION_NOT_IN_SET;
+			out.function = PKCondition::RPNElement::FUNCTION_NOT_IN_SET;
 			out.in_function = node;
 			return true;
 		}
 	},
 	{
 		"like",
-		[] (RPNElement & out, const Field & value, ASTPtr & node)
+		[] (PKCondition::RPNElement & out, const Field & value, ASTPtr & node)
 		{
 			if (value.getType() != Field::Types::String)
 				return false;
@@ -161,7 +182,7 @@ const PKCondition::AtomMap PKCondition::atom_map{
 
 			String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
-			out.function = RPNElement::FUNCTION_IN_RANGE;
+			out.function = PKCondition::RPNElement::FUNCTION_IN_RANGE;
 			out.range = !right_bound.empty()
 				? Range(prefix, true, right_bound, false)
 				: Range::createLeftBounded(prefix, true);
@@ -176,6 +197,9 @@ inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVi
 inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
 
 
+/** Calculate expressions, that depend only on constants.
+  * For index to work when something like "WHERE Date = toDate(now())" is written.
+  */
 Block PKCondition::getBlockWithConstants(
 	const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns)
 {
