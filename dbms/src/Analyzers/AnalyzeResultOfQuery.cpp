@@ -41,7 +41,7 @@ void AnalyzeResultOfQuery::process(ASTPtr & ast, Context & context)
 	analyze_columns.process(ast, collect_aliases, collect_tables);
 
 	TypeAndConstantInference inference;
-	inference.process(ast, context, collect_aliases, analyze_columns);
+	inference.process(ast, context, collect_aliases, analyze_columns, analyze_lambdas);
 
 	for (const ASTPtr & child : select->select_expression_list->children)
 	{

@@ -55,7 +55,7 @@ try
 	analyze_columns.process(ast, collect_aliases, collect_tables);
 
 	TypeAndConstantInference inference;
-	inference.process(ast, context, collect_aliases, analyze_columns);
+	inference.process(ast, context, collect_aliases, analyze_columns, analyze_lambdas);
 
 	TranslatePositionalArguments translation;
 	translation.process(ast);

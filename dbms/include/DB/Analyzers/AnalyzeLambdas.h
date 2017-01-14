@@ -20,6 +20,11 @@ struct AnalyzeLambdas
 {
 	void process(ASTPtr & ast);
 
+	/// Parameters of lambda expressions.
+	using LambdaParameters = std::vector<String>;
+	static LambdaParameters extractLambdaParameters(ASTPtr & ast);
+
+
 	using HigherOrderFunctions = std::vector<ASTPtr>;
 	HigherOrderFunctions higher_order_functions;
 

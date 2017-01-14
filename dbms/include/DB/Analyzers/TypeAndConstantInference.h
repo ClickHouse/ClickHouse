@@ -13,6 +13,7 @@ class Context;
 class WriteBuffer;
 class CollectAliases;
 class AnalyzeColumns;
+class AnalyzeLambdas;
 class IFunction;
 class IAggregateFunction;
 
@@ -29,7 +30,10 @@ class IAggregateFunction;
   */
 struct TypeAndConstantInference
 {
-	void process(ASTPtr & ast, Context & context, CollectAliases & aliases, const AnalyzeColumns & columns);
+	void process(ASTPtr & ast, Context & context,
+		CollectAliases & aliases,
+		const AnalyzeColumns & columns,
+		const AnalyzeLambdas & analyze_lambdas);
 
 	struct ExpressionInfo
 	{

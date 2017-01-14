@@ -6,8 +6,7 @@
 namespace DB
 {
 
-/**
-  * Лямбда-выражение.
+/** Special data type, representing lambda expression.
   */
 class DataTypeExpression final : public IDataTypeDummy
 {
@@ -16,29 +15,11 @@ private:
 	DataTypePtr return_type;
 
 public:
-	/// Некоторые типы могут быть еще не известны.
+	/// Some types could be still unknown.
 	DataTypeExpression(DataTypes argument_types_ = DataTypes(), DataTypePtr return_type_ = nullptr)
 		: argument_types(argument_types_), return_type(return_type_) {}
 
-	std::string getName() const override
-	{
-		std::string res = "Expression(";
-		if (argument_types.size() > 1)
-			res += "(";
-		for (size_t i = 0; i < argument_types.size(); ++i)
-		{
-			if (i > 0)
-				res += ", ";
-			const DataTypePtr & type = argument_types[i];
-			res += type ? type->getName() : "?";
-		}
-		if (argument_types.size() > 1)
-			res += ")";
-		res += " -> ";
-		res += return_type ? return_type->getName() : "?";
-		res += ")";
-		return res;
-	}
+	std::string getName() const override;
 
 	DataTypePtr clone() const override
 	{

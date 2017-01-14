@@ -19,18 +19,7 @@ namespace ErrorCodes
 }
 
 
-namespace
-{
-
-/// Parameters of lambda expressions.
-using LambdaParameters = std::vector<String>;
-
-/// Currently visible parameters in all scopes of lambda expressions.
-/// Lambda expressions could be nested: arrayMap(x -> arrayMap(y -> x[y], x), [[1], [2, 3]])
-using LambdaScopes = std::vector<LambdaParameters>;
-
-
-LambdaParameters extractLambdaParameters(ASTPtr & ast)
+AnalyzeLambdas::LambdaParameters AnalyzeLambdas::extractLambdaParameters(ASTPtr & ast)
 {
 	/// Lambda parameters could be specified in AST in two forms:
 	/// - just as single parameter: x -> x + 1
@@ -89,6 +78,14 @@ LambdaParameters extractLambdaParameters(ASTPtr & ast)
 }
 
 
+namespace
+{
+
+
+/// Currently visible parameters in all scopes of lambda expressions.
+/// Lambda expressions could be nested: arrayMap(x -> arrayMap(y -> x[y], x), [[1], [2, 3]])
+using LambdaScopes = std::vector<AnalyzeLambdas::LambdaParameters>;
+
 void processIdentifier(ASTPtr & ast, LambdaScopes & lambda_scopes)
 {
 	ASTIdentifier & identifier = static_cast<ASTIdentifier &>(*ast);
@@ -144,7 +141,7 @@ void processImpl(
 				throw Exception("Lambda expression ('->' or 'lambda' function) must have exactly two arguments."
 					" Found " + toString(num_arguments) + " instead.", ErrorCodes::BAD_LAMBDA);
 
-			lambda_scopes.emplace_back(extractLambdaParameters(func->arguments->children[0]));
+			lambda_scopes.emplace_back(AnalyzeLambdas::extractLambdaParameters(func->arguments->children[0]));
 			for (size_t i = 0; i < num_arguments; ++i)
 				processImpl(func->arguments->children[i], lambda_scopes, nullptr, higher_order_functions);
 			lambda_scopes.pop_back();
