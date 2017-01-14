@@ -142,7 +142,7 @@ protected:
 	virtual void handleSignal(int signal_id);
 
 	/// реализация обработки сигналов завершения через pipe не требует блокировки сигнала с помощью sigprocmask во всех потоках
-	void waitForTerminationRequest()
+	void waitForTerminationRequest() override
 #if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000 // in old upstream poco not vitrual
 	override
 #endif
