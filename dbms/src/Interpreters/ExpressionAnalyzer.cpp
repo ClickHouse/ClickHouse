@@ -46,6 +46,7 @@
 #include <DB/Parsers/formatAST.h>
 
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
 
 #include <ext/range.hpp>
 #include <DB/DataTypes/DataTypeFactory.h>
