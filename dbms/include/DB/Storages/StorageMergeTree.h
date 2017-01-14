@@ -120,7 +120,7 @@ private:
 	MergeTreeDataMerger merger;
 
 	/// For block numbers.
-	SimpleIncrement increment;
+	SimpleIncrement increment{0};
 
 	/// For clearOldParts, clearOldTemporaryDirectories.
 	StopwatchWithLock time_after_previous_cleanup;

@@ -15,7 +15,8 @@ using ASTPtr = std::shared_ptr<IAST>;
 class ASTSelectQuery;
 class ASTFunction;
 class MergeTreeData;
-class Logger;
+
+namespace Poco { class Logger; }
 
 using IdentifierNameSet = std::set<std::string>;
 
