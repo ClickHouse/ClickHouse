@@ -38,7 +38,7 @@ public:
 
 	MergeTreeWhereOptimizer(
 		ASTPtr & query, const Context & context, const MergeTreeData & data, const Names & column_names,
-		Logger * log);
+		Poco::Logger * log);
 
 private:
 	void optimize(ASTSelectQuery & select) const;
