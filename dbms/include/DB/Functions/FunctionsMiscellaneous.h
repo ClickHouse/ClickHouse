@@ -393,7 +393,7 @@ public:
 	}
 
 	/// Do not sleep during query analysis.
-	bool isSuitableForConstantFolding() const { return false; }
+	bool isSuitableForConstantFolding() const override { return false; }
 
 	size_t getNumberOfArguments() const override { return 1; }
 
@@ -802,7 +802,7 @@ public:
 	}
 
 	/// Because of function cannot be executed directly.
-	bool isSuitableForConstantFolding() const { return false; }
+	bool isSuitableForConstantFolding() const override { return false; }
 };
 
 
