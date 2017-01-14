@@ -274,6 +274,8 @@ public:
 	static Block getBlockWithConstants(
 		const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns);
 
+	using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, ASTPtr & node)>;
+
 private:
 	using RPN = std::vector<RPNElement>;
 	using ColumnIndices = std::map<String, size_t>;
