@@ -1,5 +1,6 @@
 #include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
+#include <DB/Storages/MergeTree/PKCondition.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -278,7 +279,7 @@ bool MergeTreeWhereOptimizer::isConditionGood(const IAST * condition) const
 }
 
 
-static void MergeTreeWhereOptimizer::collectIdentifiersNoSubqueries(const IAST * const ast, IdentifierNameSet & set)
+void MergeTreeWhereOptimizer::collectIdentifiersNoSubqueries(const IAST * const ast, IdentifierNameSet & set)
 {
 	if (const auto identifier = typeid_cast<const ASTIdentifier *>(ast))
 		return (void) set.insert(identifier->name);
