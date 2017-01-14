@@ -2,6 +2,7 @@
 #include <unistd.h>
 
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataStreams/PrettyBlockOutputStream.h>

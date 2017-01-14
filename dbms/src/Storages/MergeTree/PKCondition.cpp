@@ -11,6 +11,7 @@
 #include <DB/Columns/ColumnTuple.h>
 #include <DB/Parsers/ASTSet.h>
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Interpreters/convertFieldToType.h>
 
