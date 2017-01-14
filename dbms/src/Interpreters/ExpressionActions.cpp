@@ -115,7 +115,7 @@ ExpressionAction ExpressionAction::project(const Names & projected_columns_)
 	return a;
 }
 
-ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left)
+ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context)
 {
 	if (array_joined_columns.empty())
 		throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
@@ -125,7 +125,7 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
 	a.array_join_is_left = array_join_is_left;
 
 	if (array_join_is_left)
-		a.function = FunctionFactory::instance().get("emptyArrayToSingle");
+		a.function = FunctionFactory::instance().get("emptyArrayToSingle", context);
 
 	return a;
 }

@@ -93,7 +93,7 @@ public:
 	static ExpressionAction copyColumn(const std::string & from_name, const std::string & to_name);
 	static ExpressionAction project(const NamesWithAliases & projected_columns_);
 	static ExpressionAction project(const Names & projected_columns_);
-	static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left);
+	static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
 	static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypesList & columns_added_by_join_);
 
 	/// Какие столбцы нужны, чтобы выполнить это действие.
