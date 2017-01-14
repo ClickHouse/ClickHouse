@@ -9,8 +9,8 @@ namespace DB
 {
 
 class WriteBuffer;
-class CollectAliases;
-class CollectTables;
+struct CollectAliases;
+struct CollectTables;
 
 
 /** For every ARRAY JOIN, collect a map:

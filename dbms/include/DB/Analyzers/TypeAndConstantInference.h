@@ -11,9 +11,9 @@ namespace DB
 
 class Context;
 class WriteBuffer;
-class CollectAliases;
-class AnalyzeColumns;
-class AnalyzeLambdas;
+struct CollectAliases;
+struct AnalyzeColumns;
+struct AnalyzeLambdas;
 class IFunction;
 class IAggregateFunction;
 

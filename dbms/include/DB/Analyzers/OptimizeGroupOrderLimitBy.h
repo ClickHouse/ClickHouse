@@ -8,7 +8,7 @@ namespace DB
 
 class Context;
 class WriteBuffer;
-class TypeAndConstantInference;
+struct TypeAndConstantInference;
 
 
 /** Transform GROUP BY, ORDER BY and LIMIT BY sections.

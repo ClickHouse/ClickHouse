@@ -9,8 +9,8 @@ namespace DB
 {
 
 class WriteBuffer;
-class CollectAliases;
-class CollectTables;
+struct CollectAliases;
+struct CollectTables;
 
 
 /** For every identifier, that is not an alias,
