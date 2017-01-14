@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Poco/RWLock.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/DataStreams/IBlockInputStream.h>
@@ -10,6 +11,7 @@
 #include <DB/Storages/MergeTree/PKCondition.h>
 
 #include <common/logger_useful.h>
+
 
 namespace DB
 {

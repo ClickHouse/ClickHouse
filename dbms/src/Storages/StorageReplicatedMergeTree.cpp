@@ -32,6 +32,7 @@
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Common/formatReadable.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/escapeForFileName.h>
 #include <DB/Common/StringUtils.h>
 
 #include <Poco/DirectoryIterator.h>
