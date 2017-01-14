@@ -26,9 +26,12 @@
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/ObjectPool.h>
 #include <DB/Interpreters/ExpressionActions.h>
+#include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/Set.h>
 #include <ext/range.hpp>
 
 #include <cmath>
+
 
 namespace DB
 {

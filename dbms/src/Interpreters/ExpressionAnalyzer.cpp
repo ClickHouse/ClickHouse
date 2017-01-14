@@ -27,6 +27,8 @@
 #include <DB/Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <DB/Interpreters/LogicalExpressionsOptimizer.h>
 #include <DB/Interpreters/ExternalDictionaries.h>
+#include <DB/Interpreters/Set.h>
+#include <DB/Interpreters/Join.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -142,6 +144,23 @@ void removeDuplicateColumns(NamesAndTypesList & columns)
 }
 
 }
+
+
+ExpressionAnalyzer::ExpressionAnalyzer(
+	const ASTPtr & ast_,
+	const Context & context_,
+	StoragePtr storage_,
+	const NamesAndTypesList & columns_,
+	size_t subquery_depth_,
+	bool do_global_)
+	: ast(ast_), context(context_), settings(context.getSettings()),
+	subquery_depth(subquery_depth_), columns(columns_),
+	storage(storage_ ? storage_ : getTable()),
+	do_global(do_global_)
+{
+	init();
+}
+
 
 void ExpressionAnalyzer::init()
 {

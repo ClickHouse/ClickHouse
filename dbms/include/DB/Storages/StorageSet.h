@@ -3,11 +3,13 @@
 #include <ext/shared_ptr_helper.hpp>
 
 #include <DB/Storages/IStorage.h>
-#include <DB/Interpreters/Set.h>
 
 
 namespace DB
 {
+
+class Set;
+using SetPtr = std::shared_ptr<Set>;
 
 
 /** Общая часть StorageSet и StorageJoin.
@@ -79,7 +81,7 @@ public:
 	SetPtr & getSet() { return set; }
 
 private:
-	SetPtr set { new Set{Limits{}} };
+	SetPtr set;
 
 	StorageSet(
 		const String & path_,

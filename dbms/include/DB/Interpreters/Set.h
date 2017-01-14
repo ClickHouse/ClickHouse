@@ -8,13 +8,15 @@
 #include <DB/Interpreters/SetVariants.h>
 #include <DB/Parsers/IAST.h>
 #include <DB/Storages/MergeTree/BoolMask.h>
-#include <DB/Storages/MergeTree/PKCondition.h>
 
 #include <common/logger_useful.h>
 
 
 namespace DB
 {
+
+class Range;
+
 
 /** Структура данных для реализации выражения IN.
   */

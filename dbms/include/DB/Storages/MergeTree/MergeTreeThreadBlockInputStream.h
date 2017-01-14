@@ -2,7 +2,6 @@
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
-#include <DB/Storages/MergeTree/PKCondition.h>
 
 
 namespace DB
