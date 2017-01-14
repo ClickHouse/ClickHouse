@@ -19,6 +19,7 @@
 #include <DB/DataTypes/DataTypeTuple.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/Functions/FunctionFactory.h>
+
 #include <ext/range.hpp>
 
 
@@ -29,6 +30,7 @@ namespace ErrorCodes
 {
 	extern const int LOGICAL_ERROR;
 	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
+	extern const int BAD_LAMBDA;
 }
 
 
@@ -173,7 +175,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
 
 		aggregate_function_ptr->setArguments(argument_types);
 
-		/// Replace function name to canonical one. Because same function could be referenced by different names.
+		/// (?) Replace function name to canonical one. Because same function could be referenced by different names.
 		// function->name = aggregate_function_ptr->getName();
 
 		TypeAndConstantInference::ExpressionInfo expression_info;
@@ -323,7 +325,8 @@ void processImpl(
 	TypeAndConstantInference::Info & info,
 	LambdaScopes & lambda_scopes)
 {
-	/// Depth-first
+	/// Top down part - collection of lambda scopes
+
 
 	/// Don't go into components of compound identifiers.
 	if (!typeid_cast<const ASTIdentifier *>(ast.get()))
@@ -341,15 +344,16 @@ void processImpl(
 		}
 	}
 
+	/// Bottom up part
+
 	const ASTLiteral * literal = nullptr;
 	const ASTIdentifier * identifier = nullptr;
 	const ASTFunction * function = nullptr;
 	const ASTSubquery * subquery = nullptr;
 
-	false
+	function
 		|| (literal = typeid_cast<const ASTLiteral *>(ast.get()))
 		|| (identifier = typeid_cast<const ASTIdentifier *>(ast.get()))
-		|| (function = typeid_cast<const ASTFunction *>(ast.get()))
 		|| (subquery = typeid_cast<const ASTSubquery *>(ast.get()));
 
 	if (!literal && !identifier && !function && !subquery)

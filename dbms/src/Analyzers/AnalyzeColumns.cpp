@@ -24,7 +24,6 @@ namespace ErrorCodes
 	extern const int AMBIGUOUS_COLUMN_NAME;
 	extern const int UNKNOWN_TABLE;
 	extern const int THERE_IS_NO_COLUMN;
-	extern const int BAD_LAMBDA;
 }
 
 
@@ -222,17 +221,8 @@ ASTs expandQualifiedAsterisk(
 }
 
 
-/// Parameters of lambda expressions.
-using LambdaParameters = std::vector<String>;
-
-/// Currently visible parameters in all scopes of lambda expressions.
-/// Lambda expressions could be nested: arrayMap(x -> arrayMap(y -> x[y], x), [[1], [2, 3]])
-using LambdaScopes = std::vector<LambdaParameters>;
-
-
 void processIdentifier(
-	const ASTPtr & ast, AnalyzeColumns::Columns & columns, const CollectAliases & aliases, const CollectTables & tables,
-	const LambdaScopes & lambda_scopes)
+	const ASTPtr & ast, AnalyzeColumns::Columns & columns, const CollectAliases & aliases, const CollectTables & tables)
 {
 	const ASTIdentifier & identifier = static_cast<const ASTIdentifier &>(*ast);
 
@@ -248,13 +238,10 @@ void processIdentifier(
 	if (identifier.children.empty())
 	{
 		/** Lambda parameters are not columns from table. Just skip them.
-		  * If identifier name are known as lambda parameter in any currently visible scope of lambda expressions.
+		  * This step requires AnalyzeLambdas to be done on AST.
 		  */
-		if (lambda_scopes.end() != std::find_if(lambda_scopes.begin(), lambda_scopes.end(),
-			[&identifier] (const LambdaParameters & names) { return names.end() != std::find(names.begin(), names.end(), identifier.name); }))
-		{
+		if (startsWith(identifier.name, "_lambda"))
 			return;
-		}
 
 		table = findTableWithUnqualifiedName(tables, identifier.name);
 		if (table)
@@ -338,67 +325,7 @@ void processIdentifier(
 }
 
 
-LambdaParameters extractLambdaParameters(ASTPtr & ast)
-{
-	/// Lambda parameters could be specified in AST in two forms:
-	/// - just as single parameter: x -> x + 1
-	/// - parameters in tuple: (x, y) -> x + 1
-
-#define LAMBDA_ERROR_MESSAGE " There are two valid forms of lambda expressions: x -> ... and (x, y...) -> ..."
-
-	if (!ast->tryGetAlias().empty())
-		throw Exception("Lambda parameters cannot have aliases."
-			LAMBDA_ERROR_MESSAGE, ErrorCodes::BAD_LAMBDA);
-
-	if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(ast.get()))
-	{
-		return { identifier->name };
-	}
-	else if (const ASTFunction * function = typeid_cast<const ASTFunction *>(ast.get()))
-	{
-		if (function->name != "tuple")
-			throw Exception("Left hand side of '->' or first argument of 'lambda' is a function, but this function is not tuple."
-				LAMBDA_ERROR_MESSAGE " Found function '" + function->name + "' instead.", ErrorCodes::BAD_LAMBDA);
-
-		if (!function->arguments || function->arguments->children.empty())
-			throw Exception("Left hand side of '->' or first argument of 'lambda' is empty tuple."
-				LAMBDA_ERROR_MESSAGE, ErrorCodes::BAD_LAMBDA);
-
-		LambdaParameters res;
-		res.reserve(function->arguments->children.size());
-
-		for (const ASTPtr & arg : function->arguments->children)
-		{
-			const ASTIdentifier * arg_identifier = typeid_cast<const ASTIdentifier *>(arg.get());
-
-			if (!arg_identifier)
-				throw Exception("Left hand side of '->' or first argument of 'lambda' contains something that is not just identifier."
-					LAMBDA_ERROR_MESSAGE, ErrorCodes::BAD_LAMBDA);
-
-			if (!arg_identifier->children.empty())
-				throw Exception("Left hand side of '->' or first argument of 'lambda' contains compound identifier."
-					LAMBDA_ERROR_MESSAGE, ErrorCodes::BAD_LAMBDA);
-
-			if (!arg_identifier->alias.empty())
-				throw Exception("Lambda parameters cannot have aliases."
-					LAMBDA_ERROR_MESSAGE, ErrorCodes::BAD_LAMBDA);
-
-			res.emplace_back(arg_identifier->name);
-		}
-
-		return res;
-
-	}
-	else
-		throw Exception("Unexpected left hand side of '->' or first argument of 'lambda'."
-			LAMBDA_ERROR_MESSAGE, ErrorCodes::BAD_LAMBDA);
-
-#undef LAMBDA_ERROR_MESSAGE
-}
-
-
-void processImpl(ASTPtr & ast, AnalyzeColumns::Columns & columns, const CollectAliases & aliases, const CollectTables & tables,
-	LambdaScopes & lambda_scopes)
+void processImpl(ASTPtr & ast, AnalyzeColumns::Columns & columns, const CollectAliases & aliases, const CollectTables & tables)
 {
 	/// Don't go into subqueries and table-like expressions.
 	if (typeid_cast<const ASTSelectQuery *>(ast.get())
@@ -415,25 +342,6 @@ void processImpl(ASTPtr & ast, AnalyzeColumns::Columns & columns, const CollectA
 			&& typeid_cast<const ASTAsterisk *>(func->arguments->children[0].get()))
 		{
 			func->arguments->children.clear();
-		}
-
-		/** Special case for lambda functions, like (x, y) -> x + y + column.
-		  * We must memoize parameters from left hand side (x, y)
-		  *  and then analyze right hand side, skipping that parameters.
-		  * In example, from right hand side "x + y + column", only "column" should be searched in tables,
-		  *  because x and y are just lambda parameters.
-		  */
-		if (func->name == "lambda")
-		{
-			auto num_arguments = func->arguments->children.size();
-			if (num_arguments != 2)
-				throw Exception("Lambda expression ('->' or 'lambda' function) must have exactly two arguments."
-					" Found " + toString(num_arguments) + " instead.", ErrorCodes::BAD_LAMBDA);
-
-			lambda_scopes.emplace_back(extractLambdaParameters(func->arguments->children[0]));
-			processImpl(func->arguments->children[1], columns, aliases, tables, lambda_scopes);
-			lambda_scopes.pop_back();
-			return;
 		}
 	}
 	else if (typeid_cast<ASTExpressionList *>(ast.get()))
@@ -458,12 +366,12 @@ void processImpl(ASTPtr & ast, AnalyzeColumns::Columns & columns, const CollectA
 	}
 	else if (typeid_cast<const ASTIdentifier *>(ast.get()))
 	{
-		processIdentifier(ast, columns, aliases, tables, lambda_scopes);
+		processIdentifier(ast, columns, aliases, tables);
 		return;
 	}
 
 	for (auto & child : ast->children)
-		processImpl(child, columns, aliases, tables, lambda_scopes);
+		processImpl(child, columns, aliases, tables);
 }
 
 }
@@ -471,9 +379,8 @@ void processImpl(ASTPtr & ast, AnalyzeColumns::Columns & columns, const CollectA
 
 void AnalyzeColumns::process(ASTPtr & ast, const CollectAliases & aliases, const CollectTables & tables)
 {
-	LambdaScopes lambda_scopes;
 	for (auto & child : ast->children)
-		processImpl(child, columns, aliases, tables, lambda_scopes);
+		processImpl(child, columns, aliases, tables);
 }
 
 

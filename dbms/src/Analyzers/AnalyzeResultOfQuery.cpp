@@ -1,6 +1,7 @@
 #include <DB/Analyzers/AnalyzeResultOfQuery.h>
 #include <DB/Analyzers/CollectAliases.h>
 #include <DB/Analyzers/CollectTables.h>
+#include <DB/Analyzers/AnalyzeLambdas.h>
 #include <DB/Analyzers/AnalyzeColumns.h>
 #include <DB/Analyzers/TypeAndConstantInference.h>
 #include <DB/Interpreters/Context.h>
@@ -26,6 +27,9 @@ void AnalyzeResultOfQuery::process(ASTPtr & ast, Context & context)
 		throw Exception("AnalyzeResultOfQuery::process was called for not a SELECT query", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 	if (!select->select_expression_list)
 		throw Exception("SELECT query doesn't have select_expression_list", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+
+	AnalyzeLambdas analyze_lambdas;
+	analyze_lambdas.process(ast);
 
 	CollectAliases collect_aliases;
 	collect_aliases.process(ast);

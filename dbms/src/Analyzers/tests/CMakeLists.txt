@@ -18,3 +18,6 @@ target_link_libraries(translate_positional_arguments dbms)
 
 add_executable(optimize_group_order_limit_by optimize_group_order_limit_by.cpp)
 target_link_libraries(optimize_group_order_limit_by dbms)
+
+add_executable(analyze_lambdas analyze_lambdas.cpp)
+target_link_libraries(analyze_lambdas dbms)
