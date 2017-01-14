@@ -15,7 +15,7 @@
 namespace DB
 {
 
-class Range;
+struct Range;
 
 
 /** Структура данных для реализации выражения IN.
