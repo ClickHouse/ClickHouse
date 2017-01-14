@@ -6,6 +6,8 @@
 #include <DB/Core/Block.h>
 
 
+namespace Poco { class Logger; }
+
 namespace DB
 {
 
@@ -15,8 +17,6 @@ using ASTPtr = std::shared_ptr<IAST>;
 class ASTSelectQuery;
 class ASTFunction;
 class MergeTreeData;
-
-namespace Poco { class Logger; }
 
 using IdentifierNameSet = std::set<std::string>;
 
