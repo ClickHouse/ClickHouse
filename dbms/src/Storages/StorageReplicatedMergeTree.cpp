@@ -16,6 +16,7 @@
 
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/ASTInsertQuery.h>
+#include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/queryToString.h>
 
 #include <DB/IO/ReadBufferFromString.h>

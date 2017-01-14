@@ -27,7 +27,7 @@ using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
-using Tables = std::vector<StoragePtr>;
+using Tables = std::map<String, StoragePtr>;
 
 class ASTFunction;
 class ASTExpressionList;

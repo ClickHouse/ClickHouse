@@ -26,6 +26,7 @@
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTOrderByElement.h>
+#include <DB/Parsers/ASTTablesInSelectQuery.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterSetQuery.h>

@@ -101,6 +101,10 @@ StorageSet::StorageSet(
 }
 
 
+void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block); }
+size_t StorageSet::getSize() const { return set->getTotalRowCount(); };
+
+
 void StorageSetOrJoinBase::restore()
 {
 	Poco::File tmp_dir(path + "tmp/");

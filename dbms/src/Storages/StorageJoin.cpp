@@ -53,7 +53,7 @@ void StorageJoin::assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Stric
 }
 
 
-void StorageJoin::insertBlock(const Block & block) override { join->insertFromBlock(block); }
-size_t StorageJoin::getSize() const override { return join->getTotalRowCount(); };
+void StorageJoin::insertBlock(const Block & block) { join->insertFromBlock(block); }
+size_t StorageJoin::getSize() const { return join->getTotalRowCount(); };
 
 }

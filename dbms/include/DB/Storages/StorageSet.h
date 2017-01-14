@@ -91,8 +91,8 @@ private:
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_);
 
-	void insertBlock(const Block & block) override { set->insertFromBlock(block); }
-	size_t getSize() const override { return set->getTotalRowCount(); };
+	void insertBlock(const Block & block) override;
+	size_t getSize() const override;
 };
 
 }
