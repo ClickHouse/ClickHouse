@@ -48,6 +48,7 @@ namespace ErrorCodes
 	extern const int NO_ELEMENTS_IN_CONFIG;
 	extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 	extern const int UNKNOWN_IDENTIFIER;
+	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 }
 
 

@@ -16,6 +16,7 @@
 
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/ASTInsertQuery.h>
+#include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/queryToString.h>
 
 #include <DB/IO/ReadBufferFromString.h>
@@ -32,6 +33,7 @@
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Common/formatReadable.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/escapeForFileName.h>
 #include <DB/Common/StringUtils.h>
 
 #include <Poco/DirectoryIterator.h>

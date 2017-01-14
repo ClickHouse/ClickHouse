@@ -1,4 +1,5 @@
 #include <DB/Storages/StorageJoin.h>
+#include <DB/Interpreters/Join.h>
 
 
 namespace DB
@@ -51,5 +52,8 @@ void StorageJoin::assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Stric
 		throw Exception("Table " + name + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 }
 
+
+void StorageJoin::insertBlock(const Block & block) { join->insertFromBlock(block); }
+size_t StorageJoin::getSize() const { return join->getTotalRowCount(); };
 
 }

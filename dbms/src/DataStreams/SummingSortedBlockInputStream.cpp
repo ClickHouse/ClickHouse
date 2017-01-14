@@ -2,7 +2,8 @@
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Common/StringUtils.h>
-#include <boost/range/iterator_range_core.hpp>
+#include <DB/Core/FieldVisitors.h>
+#include <common/logger_useful.h>
 
 
 namespace DB

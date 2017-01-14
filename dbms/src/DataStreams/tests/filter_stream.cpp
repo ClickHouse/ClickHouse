@@ -20,6 +20,7 @@
 
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/ExpressionActions.h>
+#include <DB/Interpreters/Context.h>
 
 
 int main(int argc, char ** argv)

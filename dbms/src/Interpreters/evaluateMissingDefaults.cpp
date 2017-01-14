@@ -3,6 +3,8 @@
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Interpreters/evaluateMissingDefaults.h>
+#include <DB/Parsers/ASTExpressionList.h>
+#include <DB/Parsers/ASTWithAlias.h>
 #include <utility>
 
 

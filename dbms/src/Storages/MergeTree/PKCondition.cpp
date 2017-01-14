@@ -1,4 +1,5 @@
 #include <DB/Storages/MergeTree/PKCondition.h>
+#include <DB/Storages/MergeTree/BoolMask.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/ExpressionActions.h>
@@ -10,12 +11,31 @@
 #include <DB/Columns/ColumnTuple.h>
 #include <DB/Parsers/ASTSet.h>
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Interpreters/convertFieldToType.h>
+#include <DB/Interpreters/Set.h>
 
 
 namespace DB
 {
+
+String Range::toString() const
+{
+	std::stringstream str;
+
+	if (!left_bounded)
+		str << "(-inf, ";
+	else
+		str << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
+
+	if (!right_bounded)
+		str << "+inf)";
+	else
+		str << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
+
+	return str.str();
+}
 
 
 /// Пример: для строки Hello\_World%... возвращает Hello_World, а для строки %test% возвращает пустую строку.
@@ -75,7 +95,9 @@ static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & pr
 }
 
 
-const PKCondition::AtomMap PKCondition::atom_map{
+/// Словарь, содержащий действия к соответствующим функциям по превращению их в RPNElement
+const PKCondition::AtomMap PKCondition::atom_map
+{
 	{
 		"notEquals",
 		[] (RPNElement & out, const Field & value, ASTPtr &)
@@ -176,6 +198,9 @@ inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVi
 inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
 
 
+/** Calculate expressions, that depend only on constants.
+  * For index to work when something like "WHERE Date = toDate(now())" is written.
+  */
 Block PKCondition::getBlockWithConstants(
 	const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns)
 {

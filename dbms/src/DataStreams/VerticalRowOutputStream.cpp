@@ -1,4 +1,5 @@
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>

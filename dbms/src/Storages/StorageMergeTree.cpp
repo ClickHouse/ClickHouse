@@ -10,7 +10,10 @@
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/ASTSelectQuery.h>
+
 #include <Poco/DirectoryIterator.h>
+#include <Poco/File.h>
 
 
 namespace DB
@@ -48,32 +51,12 @@ StorageMergeTree::StorageMergeTree(
 		 sampling_expression_, index_granularity_, merging_params_,
 		 settings_, database_name_ + "." + table_name, false),
 	reader(data), writer(data), merger(data, context.getBackgroundPool()),
-	increment(0),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
 	data.loadDataParts(has_force_restore_data_flag);
 	data.clearOldParts();
 	data.clearOldTemporaryDirectories();
 	increment.set(data.getMaxDataPartIndex());
-
-	/** Если остался старый (не использующийся сейчас) файл increment.txt, то удалим его.
-	  * Это нужно сделать, чтобы избежать ситуации, когда из-за копирования данных
-	  *  от сервера с новой версией (но с оставшимся некорректным и неиспользуемым increment.txt)
-	  *  на сервер со старой версией (где increment.txt используется),
-	  * будет скопирован и использован некорректный increment.txt.
-	  *
-	  * Это - защита от очень редкого гипотетического случая.
-	  * Он может достигаться в БК, где довольно медленно обновляют ПО,
-	  *  но зато часто делают копирование данных rsync-ом.
-	  */
-	{
-		Poco::File obsolete_increment_txt(full_path + "increment.txt");
-		if (obsolete_increment_txt.exists())
-		{
-			LOG_INFO(log, "Removing obsolete file " << full_path << "increment.txt");
-			obsolete_increment_txt.remove();
-		}
-	}
 }
 
 StoragePtr StorageMergeTree::create(

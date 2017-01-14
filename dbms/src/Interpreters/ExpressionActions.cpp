@@ -4,7 +4,8 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/Functions/FunctionsArray.h>
+#include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
 #include <set>
 
 
@@ -44,6 +45,7 @@ Names ExpressionAction::getNeededColumns() const
 	return res;
 }
 
+
 ExpressionAction ExpressionAction::applyFunction(const FunctionPtr & function_,
 	const std::vector<std::string> & argument_names_,
 	std::string result_name_)
@@ -67,6 +69,76 @@ ExpressionAction ExpressionAction::applyFunction(const FunctionPtr & function_,
 	a.argument_names = argument_names_;
 	return a;
 }
+
+ExpressionAction ExpressionAction::addColumn(const ColumnWithTypeAndName & added_column_)
+{
+	ExpressionAction a;
+	a.type = ADD_COLUMN;
+	a.result_name = added_column_.name;
+	a.result_type = added_column_.type;
+	a.added_column = added_column_.column;
+	return a;
+}
+
+ExpressionAction ExpressionAction::removeColumn(const std::string & removed_name)
+{
+	ExpressionAction a;
+	a.type = REMOVE_COLUMN;
+	a.source_name = removed_name;
+	return a;
+}
+
+ExpressionAction ExpressionAction::copyColumn(const std::string & from_name, const std::string & to_name)
+{
+	ExpressionAction a;
+	a.type = COPY_COLUMN;
+	a.source_name = from_name;
+	a.result_name = to_name;
+	return a;
+}
+
+ExpressionAction ExpressionAction::project(const NamesWithAliases & projected_columns_)
+{
+	ExpressionAction a;
+	a.type = PROJECT;
+	a.projection = projected_columns_;
+	return a;
+}
+
+ExpressionAction ExpressionAction::project(const Names & projected_columns_)
+{
+	ExpressionAction a;
+	a.type = PROJECT;
+	a.projection.resize(projected_columns_.size());
+	for (size_t i = 0; i < projected_columns_.size(); ++i)
+		a.projection[i] = NameWithAlias(projected_columns_[i], "");
+	return a;
+}
+
+ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context)
+{
+	if (array_joined_columns.empty())
+		throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
+	ExpressionAction a;
+	a.type = ARRAY_JOIN;
+	a.array_joined_columns = array_joined_columns;
+	a.array_join_is_left = array_join_is_left;
+
+	if (array_join_is_left)
+		a.function = FunctionFactory::instance().get("emptyArrayToSingle", context);
+
+	return a;
+}
+
+ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypesList & columns_added_by_join_)
+{
+	ExpressionAction a;
+	a.type = JOIN;
+	a.join = join_;
+	a.columns_added_by_join = columns_added_by_join_;
+	return a;
+}
+
 
 ExpressionActions::Actions ExpressionAction::getPrerequisites(Block & sample_block)
 {
@@ -295,7 +367,7 @@ void ExpressionAction::execute(Block & block) const
 
 					Block tmp_block{src_col, {{}, src_col.type, {}}};
 
-					FunctionEmptyArrayToSingle().execute(tmp_block, {0}, 1);
+					function->execute(tmp_block, {0}, 1);
 					non_empty_array_columns[name] = tmp_block.safeGetByPosition(1).column;
 				}
 

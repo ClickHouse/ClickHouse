@@ -20,6 +20,7 @@
 #include <DB/Parsers/ASTColumnDeclaration.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/parseQuery.h>
 

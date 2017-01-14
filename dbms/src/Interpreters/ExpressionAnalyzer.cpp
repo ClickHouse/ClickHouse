@@ -27,6 +27,8 @@
 #include <DB/Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <DB/Interpreters/LogicalExpressionsOptimizer.h>
 #include <DB/Interpreters/ExternalDictionaries.h>
+#include <DB/Interpreters/Set.h>
+#include <DB/Interpreters/Join.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -46,6 +48,7 @@
 #include <DB/Parsers/formatAST.h>
 
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
 
 #include <ext/range.hpp>
 #include <DB/DataTypes/DataTypeFactory.h>
@@ -141,6 +144,23 @@ void removeDuplicateColumns(NamesAndTypesList & columns)
 }
 
 }
+
+
+ExpressionAnalyzer::ExpressionAnalyzer(
+	const ASTPtr & ast_,
+	const Context & context_,
+	StoragePtr storage_,
+	const NamesAndTypesList & columns_,
+	size_t subquery_depth_,
+	bool do_global_)
+	: ast(ast_), context(context_), settings(context.getSettings()),
+	subquery_depth(subquery_depth_), columns(columns_),
+	storage(storage_ ? storage_ : getTable()),
+	do_global(do_global_)
+{
+	init();
+}
+
 
 void ExpressionAnalyzer::init()
 {
@@ -1794,7 +1814,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				actions_stack.addAction(ExpressionAction::copyColumn(arg->getColumnName(), result_name));
 				NameSet joined_columns;
 				joined_columns.insert(result_name);
-				actions_stack.addAction(ExpressionAction::arrayJoin(joined_columns, false));
+				actions_stack.addAction(ExpressionAction::arrayJoin(joined_columns, false, context));
 			}
 
 			return;
@@ -2136,7 +2156,7 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actio
 		result_columns.insert(result_source.first);
 	}
 
-	actions->add(ExpressionAction::arrayJoin(result_columns, select_query->array_join_is_left()));
+	actions->add(ExpressionAction::arrayJoin(result_columns, select_query->array_join_is_left(), context));
 }
 
 bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)

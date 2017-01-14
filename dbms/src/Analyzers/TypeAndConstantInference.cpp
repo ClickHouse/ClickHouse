@@ -21,6 +21,7 @@
 #include <DB/DataTypes/DataTypeExpression.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
 
 
 namespace DB
@@ -125,9 +126,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
 	/// Special case for lambda functions. Lambda function has special return type "Expression".
 	if (function->name == "lambda")
 	{
-		size_t number_of_lambda_parameters = typeid_cast<const ASTIdentifier *>(function->arguments->children.at(0).get())
-			? 1
-			: typeid_cast<const ASTFunction &>(*function->arguments->children.at(0)).arguments->children.size();
+		size_t number_of_lambda_parameters = AnalyzeLambdas::extractLambdaParameters(function->arguments->children.at(0)).size();
 
 		TypeAndConstantInference::ExpressionInfo expression_info;
 		expression_info.node = ast;

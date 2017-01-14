@@ -19,6 +19,7 @@
 #include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/Common/localBackup.h>
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
 #include <Poco/DirectoryIterator.h>
 #include <DB/Common/Increment.h>
 #include <DB/Common/escapeForFileName.h>
