@@ -78,7 +78,7 @@ private:
 	const string_set_t primary_key_columns;
 	const string_set_t table_columns;
 	const Block block_with_constants;
-	Logger * log;
+	Poco::Logger * log;
 	std::unordered_map<std::string, std::size_t> column_sizes{};
 	std::size_t total_column_size{};
 	NameSet array_joined_names;
