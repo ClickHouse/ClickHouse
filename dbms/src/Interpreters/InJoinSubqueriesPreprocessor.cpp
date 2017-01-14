@@ -131,17 +131,25 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
 	if (distributed_product_mode == DistributedProductMode::ALLOW)
 		return;
 
-	ASTPtr table = query->table();
-	if (!table)
+	if (!query->tables)
 		return;
 
+	ASTTablesInSelectQuery & tables_in_select_query = static_cast<ASTTablesInSelectQuery &>(*query->tables);
+	if (tables_in_select_query.children.empty())
+		return;
+
+	ASTTablesInSelectQueryElement & tables_element = static_cast<ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[0]);
+	if (!tables_element.table_expression)
+		return;
+
+	ASTTableExpression * table_expression = static_cast<ASTTableExpression *>(tables_element.table_expression.get());
+
 	/// If not ordinary table, skip it.
-	auto table_expression = typeid_cast<ASTIdentifier *>(table.get());
-	if (!table_expression)
+	if (!table_expression || !table_expression->database_and_table_name)
 		return;
 
 	/// If not really distributed table, skip it.
-	StoragePtr storage = tryGetTable(table, context);
+	StoragePtr storage = tryGetTable(table_expression->database_and_table_name, context);
 	if (!storage || !hasAtLeastTwoShards(*storage))
 		return;
 
