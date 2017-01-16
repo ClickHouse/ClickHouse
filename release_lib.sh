@@ -61,6 +61,9 @@ function gen_revision_author {
 
 	if [[ $STANDALONE != 'yes' ]]
 	then
+		#needed for libs/libcommon/src/get_revision_lib.sh
+		git fetch --tags
+
 		# Создадим номер ревизии и попытаемся залить на сервер.
 		succeeded=0
 		attempts=0
