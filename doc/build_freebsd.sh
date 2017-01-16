@@ -3,11 +3,14 @@
 # How to build ClickHouse under freebsd 11+
 # [temporary solution before port created]
 
+# pkg install -y curl sudo
+# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/doc/build_freebsd.sh | sh
+
 # install compiler and libs
-pkg install -y git cmake gcc6 bash glib mysql57-client icu libltdl unixODBC
+sudo pkg install -y git cmake gcc6 bash glib mysql57-client icu libltdl unixODBC
 
 # install testing only stuff if you want:
-pkg install -y python py27-lxml py27-termcolor
+sudo pkg install -y python py27-lxml py27-termcolor curl perl5
 
 # Checkout ClickHouse sources
 git clone https://github.com/yandex/ClickHouse.git
