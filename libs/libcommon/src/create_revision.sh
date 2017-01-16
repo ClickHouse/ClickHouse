@@ -26,7 +26,7 @@ then
 
 else
 	# берем последний тэг из текущего коммита
-	revision=$(get_revision)
+	revision=$(echo ${LIBCOMMON_REVISION} | cut -d '.' -f3)
 
 	if [[ "$revision" == "" ]]; then
 		# в крайнем случае выбирем любую версию как версию демона
