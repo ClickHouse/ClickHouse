@@ -2,7 +2,6 @@
 #include <DB/Common/CurrentMetrics.h>
 #include <Poco/Ext/ThreadNumber.h>
 
-
 namespace CurrentMetrics
 {
 	extern const Metric MemoryTrackingForMerges;
@@ -12,9 +11,14 @@ namespace CurrentMetrics
 namespace DB
 {
 
-MergeListElement::MergeListElement(const std::string & database, const std::string & table, const std::string & result_part_name)
-	: database{database}, table{table}, result_part_name{result_part_name}, thread_number{Poco::ThreadNumber::get()}
+MergeListElement::MergeListElement(const std::string & database, const std::string & table, const std::string & result_part_name,
+	const MergeTreeData::DataPartsVector & source_parts)
+		: database{database}, table{table}, result_part_name{result_part_name}, num_parts{source_parts.size()},
+		thread_number{Poco::ThreadNumber::get()}
 {
+	for (const auto & source_part : source_parts)
+		source_part_names.emplace_back(source_part->name);
+
 	/// Each merge is executed into separate background processing pool thread
 	background_pool_task_memory_tracker = current_memory_tracker;
 	if (background_pool_task_memory_tracker)
@@ -42,6 +46,9 @@ MergeInfo MergeListElement::getInfo() const
 	res.columns_written = columns_written.load(std::memory_order_relaxed);
 	res.memory_usage = memory_tracker.get();
 	res.thread_number = thread_number;
+
+	for (const auto & source_part_name : source_part_names)
+		res.source_part_names.emplace_back(source_part_name);
 
 	return res;
 }

@@ -4,6 +4,7 @@
 #include <DB/Common/CurrentMetrics.h>
 #include <DB/Common/MemoryTracker.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <memory>
 #include <list>
 #include <mutex>
@@ -22,12 +23,12 @@ namespace CurrentMetrics
 namespace DB
 {
 
-
 struct MergeInfo
 {
 	std::string database;
 	std::string table;
 	std::string result_part_name;
+	Array source_part_names;
 	Float64 elapsed;
 	Float64 progress;
 	UInt64 num_parts;
@@ -51,6 +52,7 @@ struct MergeListElement : boost::noncopyable
 	Stopwatch watch;
 	Float64 progress{};
 	UInt64 num_parts{};
+	Names source_part_names;
 	UInt64 total_size_bytes_compressed{};
 	UInt64 total_size_marks{};
 	std::atomic<UInt64> bytes_read_uncompressed{};
@@ -70,7 +72,8 @@ struct MergeListElement : boost::noncopyable
 	UInt32 thread_number;
 
 
-	MergeListElement(const std::string & database, const std::string & table, const std::string & result_part_name);
+	MergeListElement(const std::string & database, const std::string & table, const std::string & result_part_name,
+					 const MergeTreeData::DataPartsVector & source_parts);
 
 	MergeInfo getInfo() const;
 

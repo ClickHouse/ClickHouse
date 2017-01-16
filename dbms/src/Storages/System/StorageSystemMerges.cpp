@@ -1,6 +1,7 @@
 #include <DB/Storages/System/StorageSystemMerges.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Interpreters/Context.h>
@@ -18,6 +19,7 @@ StorageSystemMerges::StorageSystemMerges(const std::string & name)
 		{ "elapsed",						std::make_shared<DataTypeFloat64>() },
 		{ "progress",						std::make_shared<DataTypeFloat64>() },
 		{ "num_parts",						std::make_shared<DataTypeUInt64>() },
+		{ "source_part_names",				std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
 		{ "result_part_name",				std::make_shared<DataTypeString>() },
 		{ "total_size_bytes_compressed",	std::make_shared<DataTypeUInt64>() },
 		{ "total_size_marks",				std::make_shared<DataTypeUInt64>() },
@@ -59,6 +61,7 @@ BlockInputStreams StorageSystemMerges::read(
 		block.getByPosition(i++).column->insert(merge.elapsed);
 		block.getByPosition(i++).column->insert(std::min(1., merge.progress)); /// little cheat
 		block.getByPosition(i++).column->insert(merge.num_parts);
+		block.getByPosition(i++).column->insert(merge.source_part_names);
 		block.getByPosition(i++).column->insert(merge.result_part_name);
 		block.getByPosition(i++).column->insert(merge.total_size_bytes_compressed);
 		block.getByPosition(i++).column->insert(merge.total_size_marks);

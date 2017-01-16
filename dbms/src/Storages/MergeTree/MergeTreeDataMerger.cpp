@@ -474,13 +474,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 	if (isCancelled())
 		throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
-	merge_entry->num_parts = parts.size();
-
 	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name << " into " << merged_name);
 
 	String merged_dir = data.getFullPath() + merged_name;
 	if (Poco::File(merged_dir).exists())
 		throw Exception("Directory " + merged_dir + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+
+	merge_entry->num_parts = parts.size();
 
 	for (const MergeTreeData::DataPartPtr & part : parts)
 	{
@@ -840,7 +840,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 	std::string merged_name = createMergedPartName(parts);
 
 	MergeList::EntryPtr merge_entry_ptr = data.context.getMergeList().insert(job.database_name,
-		job.table_name, merged_name);
+		job.table_name, merged_name, parts);
 	MergeList::Entry & merge_entry = *merge_entry_ptr;
 	merge_entry->num_parts = parts.size();
 
