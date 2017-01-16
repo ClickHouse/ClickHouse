@@ -322,7 +322,7 @@ bool StorageMergeTree::merge(
 		merging_tagger.emplace(parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(parts), *this);
 	}
 
-	MergeList::EntryPtr merge_entry_ptr = context.getMergeList().insert(database_name, table_name, merged_name);
+	MergeList::EntryPtr merge_entry_ptr = context.getMergeList().insert(database_name, table_name, merged_name, merging_tagger->parts);
 
 	auto new_part = merger.mergePartsToTemporaryPart(
 		merging_tagger->parts, merged_name, *merge_entry_ptr, aio_threshold, time(0), merging_tagger->reserved_space.get());
