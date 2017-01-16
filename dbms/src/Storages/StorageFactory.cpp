@@ -5,6 +5,7 @@
 #include <DB/Common/StringUtils.h>
 
 #include <DB/Parsers/ASTCreateQuery.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
 

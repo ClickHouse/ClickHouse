@@ -18,6 +18,7 @@
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Parsers/ASTColumnDeclaration.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
