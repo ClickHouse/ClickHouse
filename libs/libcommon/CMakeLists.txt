@@ -9,7 +9,10 @@ set_source_files_properties(
 	src/ClickHouseRevision.cpp PROPERTIES OBJECT_DEPENDS ${REVISIONFILE}
 )
 
+include_directories (include)
+# for generated revision.h:
 include_directories (${CMAKE_CURRENT_BINARY_DIR}/src/)
+include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 if (APPLE)
 	if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.1.0")

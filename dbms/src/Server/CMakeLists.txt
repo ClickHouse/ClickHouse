@@ -28,15 +28,17 @@ install_symlink_to_clickhouse(clickhouse-local)
 install_symlink_to_clickhouse(clickhouse-benchmark)
 
 INSTALL(
-    FILES config.xml users.xml
-    DESTINATION  ${CLICKHOUSE_ETC_DIR}/clickhouse-server
-    COMPONENT clickhouse)
+	FILES config.xml users.xml
+	DESTINATION  ${CLICKHOUSE_ETC_DIR}/clickhouse-server
+	COMPONENT clickhouse)
 
-INSTALL(
-    FILES ${CLICKHOUSE_PRIVATE_DIR}/Server/metrika/config.xml ${CLICKHOUSE_PRIVATE_DIR}/Server/metrika/users.xml
-    DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-server/metrika
-    COMPONENT clickhouse
-    OPTIONAL)
+if (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
+	INSTALL(
+		FILES ${CLICKHOUSE_PRIVATE_DIR}/Server/metrika/config.xml ${CLICKHOUSE_PRIVATE_DIR}/Server/metrika/users.xml
+		DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-server/metrika
+		COMPONENT clickhouse
+	OPTIONAL)
+endif ()
 
 if (NOT CMAKE_SYSTEM MATCHES "FreeBSD")
 	INSTALL(

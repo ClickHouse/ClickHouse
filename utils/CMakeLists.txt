@@ -1,3 +1,5 @@
+include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
+
 add_subdirectory (compressor)
 add_subdirectory (iotest)
 add_subdirectory (corrector_utf8)
