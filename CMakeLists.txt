@@ -123,8 +123,9 @@ if (NOT APPLE)
 	set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI_FLAGS}")
 endif ()
 
-if (USE_STATIC_LIBRARIES)
-	set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -no-pie")
+if (USE_STATIC_LIBRARIES AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+	set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} -no-pie")
+	set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} -no-pie")
 endif ()
 
 # -fuse-ld=gold - fix linkage for gcc-5.4, gcc-6.1
@@ -197,7 +198,8 @@ if (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
 	add_subdirectory (private)
 endif ()
 
-message (STATUS "C_FLAGS:  =${CMAKE_C_FLAGS}")
-message (STATUS "CXX_FLAGS:=${CMAKE_CXX_FLAGS}")
+message (STATUS "C_FLAGS    = ${CMAKE_C_FLAGS}")
+message (STATUS "CXX_FLAGS  = ${CMAKE_CXX_FLAGS}")
+message (STATUS "LINK_FLAGS = ${CMAKE_EXE_LINKER_FLAGS}")
 
 include (cmake/print_include_directories.cmake)
