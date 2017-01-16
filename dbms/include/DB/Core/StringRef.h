@@ -1,17 +1,15 @@
 #pragma once
 
-#include <string.h>
-#include <city.h>
-
 #include <string>
 #include <vector>
-
 #include <functional>
 #include <ostream>
 
 #if defined(__x86_64__)
 	#include <emmintrin.h>
 #endif
+
+#include <city.h>
 
 #include <DB/Core/Types.h>
 #include <DB/Common/unaligned.h>
@@ -215,11 +213,11 @@ inline size_t hashLessThan8(const char * data, size_t size)
 
 	if (size > 0)
 	{
-		uint8 a = data[0];
-		uint8 b = data[size >> 1];
-		uint8 c = data[size - 1];
-		uint32 y = static_cast<uint32>(a) + (static_cast<uint32>(b) << 8);
-		uint32 z = size + (static_cast<uint32>(c) << 2);
+		uint8_t a = data[0];
+		uint8_t b = data[size >> 1];
+		uint8_t c = data[size - 1];
+		uint32_t y = static_cast<uint32_t>(a) + (static_cast<uint32_t>(b) << 8);
+		uint32_t z = size + (static_cast<uint32_t>(c) << 2);
 		return shiftMix(y * k2 ^ z * k3) * k2;
 	}
 

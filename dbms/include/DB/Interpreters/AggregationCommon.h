@@ -1,6 +1,5 @@
 #pragma once
 
-#include <city.h>
 #include <openssl/md5.h>
 
 #include <DB/Common/SipHash.h>
