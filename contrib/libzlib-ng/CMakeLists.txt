@@ -540,6 +540,10 @@ endif()
 # Example binaries
 #============================================================================
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+	set (CMAKE_EXE_LINKER_FLAGS "")
+endif ()
+
 add_executable(example test/example.c)
 target_link_libraries(example zlib)
 add_test(example example)
