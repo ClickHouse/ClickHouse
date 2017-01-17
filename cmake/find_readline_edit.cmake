@@ -1,5 +1,4 @@
 if (NOT READLINE_PATHS)
-
 	set (READLINE_PATHS "/usr/local/opt/readline/lib")
 	if (USE_STATIC_LIBRARIES)
 		find_library (READLINE_LIB NAMES libreadline.a PATHS ${READLINE_PATHS})
@@ -27,7 +26,6 @@ if (NOT READLINE_PATHS)
 	if (READLINE_LIB)
 		set(READLINE_INCLUDE_PATHS "/usr/local/opt/readline/include")
 		find_path (READLINE_INCLUDE_DIR NAMES readline.h PATH_SUFFIXES readline PATHS ${READLINE_INCLUDE_PATHS})
-	message(STATUS "READLINE_INCLUDE_DIR=${READLINE_INCLUDE_DIR}")
 		if (INE_INCLUDE_DIR)
 			include_directories (${READLINE_INCLUDE_DIR})
 		endif ()
