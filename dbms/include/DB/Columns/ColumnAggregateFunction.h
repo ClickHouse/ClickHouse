@@ -221,6 +221,16 @@ public:
 		return res;
 	}
 
+	size_t allocatedSize() const override
+	{
+		size_t res = getData().allocated_size() * sizeof(getData()[0]);
+
+		for (const auto & arena : arenas)
+			res += arena.get()->size();
+
+		return res;
+	}
+
 	void insertRangeFrom(const IColumn & from, size_t start, size_t length) override
 	{
 		const ColumnAggregateFunction & from_concrete = static_cast<const ColumnAggregateFunction &>(from);

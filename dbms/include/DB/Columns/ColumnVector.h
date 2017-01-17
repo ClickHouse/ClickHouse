@@ -214,6 +214,11 @@ public:
 		return data.size() * sizeof(data[0]);
 	}
 
+	size_t allocatedSize() const override
+	{
+		return data.allocated_size() * sizeof(data[0]);
+	}
+
 	void insert(const T value)
 	{
 		data.push_back(value);

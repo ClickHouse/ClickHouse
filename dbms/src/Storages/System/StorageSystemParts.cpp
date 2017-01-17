@@ -34,6 +34,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
 		{"max_block_number",	std::make_shared<DataTypeInt64>()},
 		{"level",				std::make_shared<DataTypeUInt32>()},
 		{"primary_key_bytes_in_memory", std::make_shared<DataTypeUInt64>()},
+		{"primary_key_bytes_in_memory_allocated", std::make_shared<DataTypeUInt64>()},
 
 		{"database", 			std::make_shared<DataTypeString>()},
 		{"table", 				std::make_shared<DataTypeString>()},
@@ -243,6 +244,7 @@ BlockInputStreams StorageSystemParts::read(
 				block.getByPosition(i++).column->insert(part->right);
 				block.getByPosition(i++).column->insert(static_cast<UInt64>(part->level));
 				block.getByPosition(i++).column->insert(part->getIndexSizeInBytes());
+				block.getByPosition(i++).column->insert(part->getIndexSizeInAllocatedBytes());
 
 				block.getByPosition(i++).column->insert(database);
 				block.getByPosition(i++).column->insert(table);

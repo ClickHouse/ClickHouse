@@ -162,6 +162,7 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
 
 	/// For data in RAM ('index').
 	size_t getIndexSizeInBytes() const;
+	size_t getIndexSizeInAllocatedBytes() const;
 };
 
 }
