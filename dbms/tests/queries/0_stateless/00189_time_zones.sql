@@ -231,11 +231,11 @@ SELECT toString(toDateTime(x), 'Europe/London') FROM foo ORDER BY x ASC;
 
 /* toUnixTimestamp */
 
-SELECT toUnixTimestamp(toString(toDateTime(1426415400)), 'Europe/Moscow');
-SELECT toUnixTimestamp(toString(toDateTime(1426415400)), 'Europe/Paris');
-SELECT toUnixTimestamp(toString(toDateTime(1426415400)), 'Europe/London');
-SELECT toUnixTimestamp(toString(toDateTime(1426415400)), 'Asia/Tokyo');
-SELECT toUnixTimestamp(toString(toDateTime(1426415400)), 'Pacific/Pitcairn');
+SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Europe/Moscow'), 'Europe/Paris');
+SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Europe/Moscow'), 'Europe/London');
+SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Europe/Moscow'), 'Asia/Tokyo');
+SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Europe/Moscow'), 'Pacific/Pitcairn');
 
 SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Europe/Moscow'), 'Europe/Moscow');
 SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Europe/Paris'), 'Europe/Paris');
@@ -243,6 +243,6 @@ SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Europe/London'), 'Europ
 SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Asia/Tokyo'), 'Asia/Tokyo');
 SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Pacific/Pitcairn'), 'Pacific/Pitcairn');
 
-SELECT toUnixTimestamp(toString(toDateTime(x)), y) FROM foo ORDER BY y ASC;
-SELECT toUnixTimestamp(toString(toDateTime(1426415400)), y) FROM foo ORDER BY y ASC;
-SELECT toUnixTimestamp(toString(toDateTime(x)), 'Europe/Paris') FROM foo ORDER BY x ASC;
+SELECT toUnixTimestamp(toString(toDateTime(x), 'Europe/Moscow'), y) FROM foo ORDER BY y ASC;
+SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Europe/Moscow'), y) FROM foo ORDER BY y ASC;
+SELECT toUnixTimestamp(toString(toDateTime(x), 'Europe/Moscow'), 'Europe/Paris') FROM foo ORDER BY x ASC;
