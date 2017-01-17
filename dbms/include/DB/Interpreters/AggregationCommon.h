@@ -1,6 +1,6 @@
 #pragma once
 
-#include <openssl/md5.h>
+#include <array>
 
 #include <DB/Common/SipHash.h>
 #include <DB/Common/Arena.h>
