@@ -609,4 +609,20 @@ bool MergeTreeDataPart::hasColumnFiles(const String & column) const
 }
 
 
+size_t MergeTreeDataPart::getIndexSizeInBytes() const
+{
+	size_t res = 0;
+	for (const ColumnPtr & column : index)
+		res += column->byteSize();
+	return res;
+}
+
+size_t MergeTreeDataPart::getIndexSizeInAllocatedBytes() const
+{
+	size_t res = 0;
+	for (const ColumnPtr & column : index)
+		res += column->allocatedSize();
+	return res;
+}
+
 }

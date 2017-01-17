@@ -270,6 +270,11 @@ public:
 		return getData().byteSize() + getOffsets().size() * sizeof(getOffsets()[0]);
 	}
 
+	size_t allocatedSize() const override
+	{
+		return getData().allocatedSize() + getOffsets().allocated_size() * sizeof(getOffsets()[0]);
+	}
+
 	bool hasEqualOffsets(const ColumnArray & other) const
 	{
 		if (offsets == other.offsets)
