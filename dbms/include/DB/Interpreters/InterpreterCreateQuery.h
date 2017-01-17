@@ -60,6 +60,9 @@ private:
 	ColumnsInfo setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
 	String setEngine(ASTCreateQuery & create, const StoragePtr & as_storage) const;
 
+	/// Makes structure of Distributed engine for the given CREATE ... ON CLUSTER.
+	ASTPtr createDistributedEngine(ASTCreateQuery & create) const;
+
 	ASTPtr query_ptr;
 	Context context;
 

@@ -572,9 +572,53 @@ BlockIO InterpreterCreateQuery::execute()
 		createDatabase(create);
 		return {};
 	}
+	else if (!create.cluster.empty())
+	{
+		// 1.
+		ASTPtr cloned_ptr = create.clone();
+		ASTCreateQuery & create_local = typeid_cast<ASTCreateQuery &>(*cloned_ptr);
+		create_local.cluster.clear();
+		create_local.table += "_local";
+
+		createTable(create_local);
+
+		// 2.
+		create.storage = createDistributedEngine(create);
+
+		createTable(create);
+
+		return {};
+	}
 	else
 		return createTable(create);
 }
 
+ASTPtr InterpreterCreateQuery::createDistributedEngine(ASTCreateQuery & create) const
+{
+	std::string query("ENGINE = Distributed(");
+	ASTPtr engine_ast;
+
+	query += create.cluster;
+	query += ", ";
+
+	if (!create.database.empty())
+	{
+		query += create.database;
+		query += ".";
+	}
+
+	query += create.table;
+	query += ")";
+
+	Expected expected = "";
+	IParser::Pos pos = query.data();
+	IParser::Pos end = pos + query.size();
+	IParser::Pos max_parsed_pos = pos;
+
+	if (!ParserEngine().parse(pos, end, engine_ast, max_parsed_pos, expected))
+		return nullptr;
+
+	return engine_ast;
+}
 
 }
