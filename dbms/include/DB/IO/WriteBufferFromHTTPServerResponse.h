@@ -42,6 +42,7 @@ private:
 	Poco::Net::HTTPServerResponse & response;
 
 	bool add_cors_header;
+	bool add_authenticate_header = false;
 	bool compress;
 	ZlibCompressionMethod compression_method;
 	int compression_level = Z_DEFAULT_COMPRESSION;
@@ -75,6 +76,11 @@ private:
 
 			if (add_cors_header)
 				response.set("Access-Control-Allow-Origin", "*");
+
+			if (add_authenticate_header)
+			{
+				response.set("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
+			}
 
 			setResponseDefaultHeaders(response);
 
@@ -215,6 +221,10 @@ public:
 		send_progress_interval_ms = send_progress_interval_ms_;
 	}
 
+	void addAuthenticateRequest()
+	{
+		add_authenticate_header = true;
+	}
 
 	~WriteBufferFromHTTPServerResponse()
 	{
