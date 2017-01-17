@@ -1447,10 +1447,12 @@ To make settings that persist after a server restart, you can only use the serve
 
 ===OPTIMIZE===
 
-%%OPTIMIZE TABLE [db.]name%%
+%%OPTIMIZE TABLE [db.]name [PARTITION partition] [FINAL]%%
 
 Asks the table engine to do something for optimization.
 Supported only by *MergeTree engines, in which this query initializes a non-scheduled merge of data parts.
+If PARTITION is specified, then only specified partition will be optimized.
+If FINAL is specified, then optimization will be performed even if data inside the partition already optimized (i. e. all data is in single part).
 
 
 ===INSERT===
