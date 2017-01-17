@@ -22,6 +22,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/IFunction.h>
+#include <DB/Columns/ColumnExpression.h>
 
 
 namespace DB
@@ -49,11 +50,6 @@ Field getValueFromConstantColumn(const ColumnPtr & column)
 }
 
 
-/// Description of single parameter of lambda expression: name -> type.
-/// Note, that after AnalyzeLambda step, names of lambda parameters are unique in single select query.
-using LambdaParameters = std::unordered_map<String, DataTypePtr>;
-
-
 void processImpl(
 	ASTPtr & ast, Context & context,
 	CollectAliases & aliases, const AnalyzeColumns & columns,
@@ -64,12 +60,13 @@ void processImpl(
 void processLiteral(const String & column_name, const ASTPtr & ast, TypeAndConstantInference::Info & info)
 {
 	const ASTLiteral * literal = static_cast<const ASTLiteral *>(ast.get());
+	Field value = literal->value;
 
 	TypeAndConstantInference::ExpressionInfo expression_info;
 	expression_info.node = ast;
 	expression_info.is_constant_expression = true;
-	expression_info.value = literal->value;
-	expression_info.data_type = applyVisitor(FieldToDataType(), expression_info.value);
+	expression_info.data_type = applyVisitor(FieldToDataType(), value);
+	expression_info.value = expression_info.data_type->createConstColumn(1, value);
 	info.emplace(column_name, std::move(expression_info));
 }
 
@@ -94,7 +91,7 @@ void processIdentifier(const String & column_name, const ASTPtr & ast, TypeAndCo
 			if (column_from_subquery.column)
 			{
 				expression_info.is_constant_expression = true;
-				expression_info.value = getValueFromConstantColumn(column_from_subquery.column);
+				expression_info.value = column_from_subquery.column;
 			}
 		}
 
@@ -121,6 +118,8 @@ void processIdentifier(const String & column_name, const ASTPtr & ast, TypeAndCo
 void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantInference::Info & info,
 	const Context & context)
 {
+	std::cerr << "processFunction: " << ast->getColumnName() << "\n";
+
 	ASTFunction * function = static_cast<ASTFunction *>(ast.get());
 
 	/// Special case for lambda functions. Lambda function has special return type "Expression".
@@ -215,8 +214,9 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
 		{
 			String child_name = child->getColumnName();
 			const TypeAndConstantInference::ExpressionInfo & child_info = info.at(child_name);
+
 			columns_for_analysis.emplace_back(
-				child_info.is_constant_expression ? child_info.data_type->createConstColumn(1, child_info.value) : nullptr,
+				child_info.value,
 				child_info.data_type,
 				child_name);
 
@@ -248,7 +248,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
 		if (result_column->isConst())
 		{
 			expression_info.is_constant_expression = true;
-			expression_info.value = (*result_column)[0];
+			expression_info.value = result_column;
 		}
 	}
 
@@ -278,7 +278,7 @@ void processScalarSubquery(const String & column_name, ASTPtr & ast, TypeAndCons
 		if (elem.column)
 		{
 			expression_info.is_constant_expression = true;
-			expression_info.value = getValueFromConstantColumn(elem.column);
+			expression_info.value = elem.column;
 		}
 	}
 	else
@@ -306,7 +306,7 @@ void processScalarSubquery(const String & column_name, ASTPtr & ast, TypeAndCons
 				value[i] = getValueFromConstantColumn(analyzer.result.getByPosition(i).column);
 
 			expression_info.is_constant_expression = true;
-			expression_info.value = Tuple(std::move(value));
+			expression_info.value = expression_info.data_type->createConstColumn(1, Tuple(std::move(value)));
 		}
 	}
 
@@ -320,6 +320,8 @@ void processHigherOrderFunction(const String & column_name,
 	TypeAndConstantInference::Info & info,
 	const AnalyzeLambdas & lambdas)
 {
+	std::cerr << "processHigherOrderFunction\n";
+
 	ASTFunction * function = static_cast<ASTFunction *>(ast.get());
 
 	const FunctionPtr & function_ptr = FunctionFactory::instance().get(function->name, context);
@@ -334,9 +336,16 @@ void processHigherOrderFunction(const String & column_name,
 		String child_name = child->getColumnName();
 		const TypeAndConstantInference::ExpressionInfo & child_info = info.at(child_name);
 		types.emplace_back(child_info.data_type);
+
+		std::cerr << child_info.data_type->getName() << "\n";
 	}
 
 	function_ptr->getLambdaArgumentTypes(types);
+
+	std::cerr << "\n";
+	for (const auto & type : types)
+		std::cerr << type->getName() << "\n";
+	std::cerr << "\n";
 
 	/// For every lambda expression, dive into it.
 
@@ -368,6 +377,7 @@ void processHigherOrderFunction(const String & column_name,
 				throw Exception("DataTypeExpression for lambda function has different number of argument types than number of lambda parameters",
 					ErrorCodes::LOGICAL_ERROR);
 
+			NamesAndTypesList lambda_names_and_types;
 			for (size_t param_idx = 0, num_params = parameters.size(); param_idx < num_params; ++param_idx)
 			{
 				TypeAndConstantInference::ExpressionInfo expression_info;
@@ -378,11 +388,27 @@ void processHigherOrderFunction(const String & column_name,
 				expression_info.data_type = lambda_argument_types[param_idx];
 
 				info.emplace(parameters[param_idx], std::move(expression_info));
+
+				lambda_names_and_types.emplace_back(parameters[param_idx], lambda_argument_types[param_idx]);
 			}
 
 			/// Now dive into.
 
 			processImpl(lambda->arguments->children[1], context, aliases, columns, info, lambdas);
+
+			/// Update information about lambda.
+
+			TypeAndConstantInference::ExpressionInfo & lambda_info = info[lambda->getColumnName()];
+			lambda_info.node = child;
+			lambda_info.data_type = types[i];
+			lambda_info.is_constant_expression = true;
+
+			TypeAndConstantInference::ExpressionInfo & lambda_return_info = info[lambda->arguments->children[1]->getColumnName()];
+
+			/// TODO Rewrite ColumnExpression and ExpressionActions
+			ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(lambda_names_and_types, Settings());
+			lambda_info.value = std::make_shared<ColumnExpression>(1, actions,
+				lambda_names_and_types, lambda_return_info.data_type, lambda_return_info.node->getColumnName());
 		}
 	}
 }
@@ -394,7 +420,7 @@ void processImpl(
 	TypeAndConstantInference::Info & info,
 	const AnalyzeLambdas & lambdas)
 {
-	const ASTFunction * function = typeid_cast<const ASTFunction *>(ast.get());
+	std::cerr << "processImpl: " << ast->getTreeID() << "\n";
 
 	/// Bottom-up.
 
@@ -410,6 +436,8 @@ void processImpl(
 				|| typeid_cast<const ASTTableExpression *>(child.get()))
 				continue;
 
+			const ASTFunction * child_function = typeid_cast<const ASTFunction *>(child.get());
+
 			/** Postpone diving into lambda expressions.
 			  * We must first infer types of other arguments of higher-order function,
 			  *  and then process lambda expression.
@@ -419,18 +447,23 @@ void processImpl(
 			  * Then, ask function arrayMap, what types will have 'x' and 'y'.
 			  * And then, infer type of 'x + y'.
 			  */
-			if (function && function->name == "lambda")
+			if (child_function && child_function->name == "lambda")
+			{
+				processFunction(child->getColumnName(), child, info, context);
 				continue;
+			}
 
 			processImpl(child, context, aliases, columns, info, lambdas);
 		}
 	}
 
+	const ASTFunction * function = nullptr;
 	const ASTLiteral * literal = nullptr;
 	const ASTIdentifier * identifier = nullptr;
 	const ASTSubquery * subquery = nullptr;
 
-	function
+	false
+		|| (function = typeid_cast<const ASTFunction *>(ast.get()))
 		|| (literal = typeid_cast<const ASTLiteral *>(ast.get()))
 		|| (identifier = typeid_cast<const ASTIdentifier *>(ast.get()))
 		|| (subquery = typeid_cast<const ASTSubquery *>(ast.get()));
@@ -488,7 +521,7 @@ void TypeAndConstantInference::dump(WriteBuffer & out) const
 		if (it->second.is_constant_expression)
 		{
 			writeCString(" = ", out);
-			String value = applyVisitor(FieldVisitorToString(), it->second.value);
+			String value = applyVisitor(FieldVisitorToString(), (*it->second.value)[0]);
 			writeString(value, out);
 		}
 

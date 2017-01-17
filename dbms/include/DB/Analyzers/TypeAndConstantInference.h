@@ -43,7 +43,7 @@ struct TypeAndConstantInference
 		ASTPtr node;
 		DataTypePtr data_type;
 		bool is_constant_expression = false;
-		Field value;	/// Has meaning if is_constant_expression == true.
+		ColumnPtr value;	/// Constant column. Has meaning if is_constant_expression == true.
 		std::shared_ptr<IFunction> function;
 		std::shared_ptr<IAggregateFunction> aggregate_function;
 	};
