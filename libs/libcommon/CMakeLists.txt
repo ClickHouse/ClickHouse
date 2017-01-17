@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 2.8)
-
 SET(CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_version.h)
 SET(CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
 
