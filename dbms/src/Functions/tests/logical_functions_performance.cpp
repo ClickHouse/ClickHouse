@@ -185,7 +185,7 @@ private:
 
 public:
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return Name::get();
 	}
