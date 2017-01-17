@@ -39,6 +39,7 @@ public:
 	const char * deserializeAndInsertFromArena(const char * pos) override;
 	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;;
 	void insert(const Field & x) override;
+	void insertFrom(const IColumn & src, size_t n) override;
 	void insertDefault() override;
 	void popBack(size_t n) override;
 	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;

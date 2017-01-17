@@ -141,6 +141,13 @@ void ColumnNullable::insert(const Field & x)
 	}
 }
 
+void ColumnNullable::insertFrom(const IColumn & src, size_t n)
+{
+	const ColumnNullable & src_concrete = static_cast<const ColumnNullable &>(src);
+	nested_column->insertFrom(*src_concrete.getNestedColumn(), n);
+	getNullMap().push_back(src_concrete.getNullMap()[n]);
+}
+
 void ColumnNullable::insertDefault()
 {
 	nested_column->insertDefault();
