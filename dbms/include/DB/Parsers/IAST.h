@@ -2,6 +2,7 @@
 
 #include <set>
 #include <memory>
+#include <ostream>
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>

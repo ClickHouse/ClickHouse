@@ -1,6 +1,9 @@
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/FunctionsArray.h>
 
+#include <tuple>
+#include <array>
+
 namespace DB
 {
 
