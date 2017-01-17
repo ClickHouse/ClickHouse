@@ -1,4 +1,4 @@
-set (re2_headers
+set (re2_sources
 	./re2/tostring.cc
 	./re2/dfa.cc
 	./re2/prefilter.cc
@@ -38,19 +38,20 @@ set (re2_headers
 # In order to avoid redundant locks in some cases, we use not thread-safe version of the library (re2_st).
 add_definitions (-DNDEBUG)
 
-add_library (re2 ${re2_headers})
-add_library (re2_st ${re2_headers})
+include_directories (BEFORE .)
+
+add_library (re2 ${re2_sources})
+add_library (re2_st ${re2_sources})
 
 set_target_properties (re2_st PROPERTIES COMPILE_DEFINITIONS "NO_THREADS;re2=re2_st")
 
-message (STATUS "Creating headers for re2_st library.")
 file (MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/re2_st)
 foreach (FILENAME filtered_re2.h re2.h set.h stringpiece.h variadic_function.h)
-	file (READ ${CMAKE_CURRENT_SOURCE_DIR}/re2/${FILENAME} CONTENT)
-	string (REGEX REPLACE "using re2::RE2;" "" CONTENT "${CONTENT}")
-	string (REGEX REPLACE "namespace re2" "namespace re2_st" CONTENT "${CONTENT}")
-	string (REGEX REPLACE "re2::" "re2_st::" CONTENT "${CONTENT}")
-	string (REGEX REPLACE "\"re2/" "\"re2_st/" CONTENT "${CONTENT}")
-	string (REGEX REPLACE "(.\\*?_H)" "\\1_ST" CONTENT "${CONTENT}")
-	file (WRITE ${CMAKE_CURRENT_BINARY_DIR}/re2_st/${FILENAME} "${CONTENT}")
+	add_custom_command (OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/re2_st/${FILENAME}"
+		COMMAND ${CMAKE_COMMAND} -DSOURCE_FILENAME="${CMAKE_CURRENT_SOURCE_DIR}/re2/${FILENAME}"
+					-DTARGET_FILENAME="${CMAKE_CURRENT_BINARY_DIR}/re2_st/${FILENAME}"
+					-P "${CMAKE_CURRENT_SOURCE_DIR}/re2_transform.cmake"
+		COMMENT "Creating ${FILENAME} for re2_st library.")
+	add_custom_target (transform_${FILENAME} DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/re2_st/${FILENAME}")
+	add_dependencies (re2_st transform_${FILENAME})
 endforeach ()

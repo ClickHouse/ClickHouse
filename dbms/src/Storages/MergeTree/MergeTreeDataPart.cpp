@@ -596,7 +596,7 @@ void MergeTreeDataPart::checkNotBroken(bool require_part_metadata)
 		};
 
 		check_marks(path, columns, ".mrk");
-		check_marks(path, columns, ".null_mrk");
+		check_marks(path, columns, ".null.mrk");
 	}
 }
 

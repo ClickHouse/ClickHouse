@@ -1,8 +1,8 @@
 DROP TABLE IF EXISTS test.buffer;
-DROP TABLE IF EXISTS test.null;
+DROP TABLE IF EXISTS test.null_sink;
 
-CREATE TABLE test.null (a UInt8, b String, c Array(UInt32)) ENGINE = Null;
-CREATE TABLE test.buffer (a UInt8, b String, c Array(UInt32)) ENGINE = Buffer(test, null, 1, 1000, 1000, 1000, 1000, 1000000, 1000000);
+CREATE TABLE test.null_sink (a UInt8, b String, c Array(UInt32)) ENGINE = Null;
+CREATE TABLE test.buffer (a UInt8, b String, c Array(UInt32)) ENGINE = Buffer(test, null_sink, 1, 1000, 1000, 1000, 1000, 1000000, 1000000);
 
 INSERT INTO test.buffer VALUES (1, '2', [3]);
 
@@ -59,4 +59,4 @@ SELECT b FROM test.buffer ORDER BY a, b, c;
 SELECT c FROM test.buffer ORDER BY a, b, c;
 
 DROP TABLE test.buffer;
-DROP TABLE test.null;
+DROP TABLE test.null_sink;

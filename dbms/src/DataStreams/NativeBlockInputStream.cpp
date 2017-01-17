@@ -54,8 +54,8 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
 		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(column);
 		IColumn & nested_col = *nullable_col.getNestedColumn();
 
-		IColumn & null_map = *nullable_col.getNullValuesByteMap();
-		DataTypeUInt8{}.deserializeBinary(null_map, istr, rows, 0);
+		IColumn & null_map = nullable_col.getNullMapConcreteColumn();
+		DataTypeUInt8{}.deserializeBinaryBulk(null_map, istr, rows, 0);
 
 		readData(nested_type, nested_col, istr, rows);
 
@@ -66,7 +66,7 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
 		/** Для массивов требуется сначала десериализовать смещения, а потом значения.
 		*/
 		IColumn & offsets_column = *typeid_cast<ColumnArray &>(column).getOffsetsColumn();
-		type_arr->getOffsetsType()->deserializeBinary(offsets_column, istr, rows, 0);
+		type_arr->getOffsetsType()->deserializeBinaryBulk(offsets_column, istr, rows, 0);
 
 		if (offsets_column.size() != rows)
 			throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);
@@ -79,7 +79,7 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
 				typeid_cast<const ColumnArray &>(column).getOffsets()[rows - 1]);
 	}
 	else
-		type.deserializeBinary(column, istr, rows, 0);	/// TODO Использовать avg_value_size_hint.
+		type.deserializeBinaryBulk(column, istr, rows, 0);	/// TODO Использовать avg_value_size_hint.
 
 	if (column.size() != rows)
 		throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);

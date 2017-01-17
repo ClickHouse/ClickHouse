@@ -34,8 +34,12 @@ private:
 	}
 
 public:
-	WriteBufferFromOStream(std::ostream & ostr_, size_t size = DBMS_DEFAULT_BUFFER_SIZE)
-		: BufferWithOwnMemory<WriteBuffer>(size), ostr(ostr_) {}
+	WriteBufferFromOStream(
+			std::ostream & ostr_,
+			size_t size = DBMS_DEFAULT_BUFFER_SIZE,
+			char * existing_memory = nullptr,
+			size_t alignment = 0)
+		: BufferWithOwnMemory<WriteBuffer>(size, existing_memory, alignment), ostr(ostr_) {}
 
 	~WriteBufferFromOStream() override
 	{

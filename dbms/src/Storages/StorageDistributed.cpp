@@ -20,6 +20,7 @@
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ASTWeightedZooKeeperPath.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/queryToString.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>

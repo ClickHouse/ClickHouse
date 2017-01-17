@@ -12,10 +12,17 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeTuple.h>
+#include <DB/DataTypes/DataTypeEnum.h>
 
 #include <DB/Functions/FunctionsLogical.h>
 #include <DB/Functions/IFunction.h>
-#include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/Functions/AccurateComparison.h>
+
+#include <DB/IO/ReadBufferFromString.h>
+#include <DB/IO/ReadHelpers.h>
+
+#include <limits>
+#include <type_traits>
 
 
 namespace DB
@@ -37,21 +44,12 @@ namespace DB
   * TODO Массивы.
   */
 
-/** Игнорируем warning о сравнении signed и unsigned.
-  * (Результат может быть некорректным.)
-  */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-
-template <typename A, typename B> struct EqualsOp 			{ static UInt8 apply(A a, B b) { return a == b; } };
-template <typename A, typename B> struct NotEqualsOp 		{ static UInt8 apply(A a, B b) { return a != b; } };
-template <typename A, typename B> struct LessOp 			{ static UInt8 apply(A a, B b) { return a < b; 	} };
-template <typename A, typename B> struct GreaterOp 			{ static UInt8 apply(A a, B b) { return a > b; 	} };
-template <typename A, typename B> struct LessOrEqualsOp 	{ static UInt8 apply(A a, B b) { return a <= b; } };
-template <typename A, typename B> struct GreaterOrEqualsOp 	{ static UInt8 apply(A a, B b) { return a >= b; } };
-
-#pragma GCC diagnostic pop
-
+template <typename A, typename B> struct EqualsOp 			{ static UInt8 apply(A a, B b) { return accurate::equalsOp(a, b); } };
+template <typename A, typename B> struct NotEqualsOp 		{ static UInt8 apply(A a, B b) { return accurate::notEqualsOp(a, b); } };
+template <typename A, typename B> struct LessOp 			{ static UInt8 apply(A a, B b) { return accurate::lessOp(a, b); } };
+template <typename A, typename B> struct GreaterOp 			{ static UInt8 apply(A a, B b) { return accurate::greaterOp(a, b); } };
+template <typename A, typename B> struct LessOrEqualsOp 	{ static UInt8 apply(A a, B b) { return accurate::lessOrEqualsOp(a, b); } };
+template <typename A, typename B> struct GreaterOrEqualsOp 	{ static UInt8 apply(A a, B b) { return accurate::greaterOrEqualsOp(a, b); } };
 
 
 template<typename A, typename B, typename Op>
@@ -413,7 +411,7 @@ private:
 		if (const ColumnVector<T1> * col_right = typeid_cast<const ColumnVector<T1> *>(col_right_untyped))
 		{
 			std::shared_ptr<ColumnUInt8> col_res = std::make_shared<ColumnUInt8>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			ColumnUInt8::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col_left->getData().size());
@@ -424,7 +422,7 @@ private:
 		else if (const ColumnConst<T1> * col_right = typeid_cast<const ColumnConst<T1> *>(col_right_untyped))
 		{
 			std::shared_ptr<ColumnUInt8> col_res = std::make_shared<ColumnUInt8>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			ColumnUInt8::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col_left->getData().size());
@@ -442,7 +440,7 @@ private:
 		if (const ColumnVector<T1> * col_right = typeid_cast<const ColumnVector<T1> *>(col_right_untyped))
 		{
 			std::shared_ptr<ColumnUInt8> col_res = std::make_shared<ColumnUInt8>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			ColumnUInt8::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col_left->size());
@@ -456,7 +454,7 @@ private:
 			NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->getData(), col_right->getData(), res);
 
 			auto col_res = std::make_shared<ColumnConstUInt8>(col_left->size(), res);
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			return true;
 		}
@@ -521,13 +519,13 @@ private:
 		if (c0_const && c1_const)
 		{
 			auto c_res = std::make_shared<ColumnConstUInt8>(c0_const->size(), 0);
-			block.getByPosition(result).column = c_res;
+			block.safeGetByPosition(result).column = c_res;
 			StringImpl::constant_constant(c0_const->getData(), c1_const->getData(), c_res->getData());
 		}
 		else
 		{
 			auto c_res = std::make_shared<ColumnUInt8>();
-			block.getByPosition(result).column = c_res;
+			block.safeGetByPosition(result).column = c_res;
 			ColumnUInt8::Container_t & vec_res = c_res->getData();
 			vec_res.resize(c0->size());
 
@@ -614,7 +612,7 @@ private:
 			if (!in.eof())
 				throw Exception("String is too long for Date: " + column_string->getData());
 
-			ColumnConst<DataTypeDate::FieldType> parsed_const_date(block.rowsInFirstColumn(), date);
+			ColumnConst<DataTypeDate::FieldType> parsed_const_date(block.rows(), date);
 			executeNumLeftType<DataTypeDate::FieldType>(block, result,
 				left_is_num ? col_left_untyped : &parsed_const_date,
 				left_is_num ? &parsed_const_date : col_right_untyped);
@@ -627,7 +625,7 @@ private:
 			if (!in.eof())
 				throw Exception("String is too long for DateTime: " + column_string->getData());
 
-			ColumnConst<DataTypeDateTime::FieldType> parsed_const_date_time(block.rowsInFirstColumn(), date_time);
+			ColumnConst<DataTypeDateTime::FieldType> parsed_const_date_time(block.rows(), date_time);
 			executeNumLeftType<DataTypeDateTime::FieldType>(block, result,
 				left_is_num ? col_left_untyped : &parsed_const_date_time,
 				left_is_num ? &parsed_const_date_time : col_right_untyped);
@@ -649,7 +647,7 @@ private:
 		const auto type = static_cast<const EnumType *>(type_untyped);
 
 		const Field x = nearestFieldType(type->getValue(column_string->getData()));
-		const auto enum_col = type->createConstColumn(block.rowsInFirstColumn(), x);
+		const auto enum_col = type->createConstColumn(block.rows(), x);
 
 		executeNumLeftType<typename EnumType::FieldType>(block, result,
 			left_is_num ? column_number : enum_col.get(),
@@ -712,8 +710,8 @@ private:
 		Block tmp_block;
 		for (size_t i = 0; i < tuple_size; ++i)
 		{
-			tmp_block.insert(x->getData().getByPosition(i));
-			tmp_block.insert(y->getData().getByPosition(i));
+			tmp_block.insert(x->getData().safeGetByPosition(i));
+			tmp_block.insert(y->getData().safeGetByPosition(i));
 
 			/// Сравнение элементов.
 			tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
@@ -728,7 +726,7 @@ private:
 			convolution_args[i] = i * 3 + 2;
 
 		func_convolution.execute(tmp_block, convolution_args, tuple_size * 3);
-		block.getByPosition(result).column = tmp_block.getByPosition(tuple_size * 3).column;
+		block.safeGetByPosition(result).column = tmp_block.safeGetByPosition(tuple_size * 3).column;
 	}
 
 	template <typename HeadComparisonFunction, typename TailComparisonFunction>
@@ -745,8 +743,8 @@ private:
 		/// Попарное сравнение на неравенство всех элементов; на равенство всех элементов кроме последнего.
 		for (size_t i = 0; i < tuple_size; ++i)
 		{
-			tmp_block.insert(x->getData().getByPosition(i));
-			tmp_block.insert(y->getData().getByPosition(i));
+			tmp_block.insert(x->getData().safeGetByPosition(i));
+			tmp_block.insert(y->getData().safeGetByPosition(i));
 
 			tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 
@@ -773,7 +771,7 @@ private:
 			--i;
 		}
 
-		block.getByPosition(result).column = tmp_block.getByPosition(tmp_block.columns() - 1).column;
+		block.safeGetByPosition(result).column = tmp_block.safeGetByPosition(tmp_block.columns() - 1).column;
 	}
 
 
@@ -784,14 +782,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 2; }
+
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 2)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 2.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		bool left_is_date = false;
 		bool left_is_date_time = false;
 		bool left_is_enum8 = false;
@@ -861,8 +856,8 @@ public:
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const auto & col_with_type_and_name_left = block.getByPosition(arguments[0]);
-		const auto & col_with_type_and_name_right = block.getByPosition(arguments[1]);
+		const auto & col_with_type_and_name_left = block.safeGetByPosition(arguments[0]);
+		const auto & col_with_type_and_name_right = block.safeGetByPosition(arguments[1]);
 		const IColumn * col_left_untyped = col_with_type_and_name_left.column.get();
 		const IColumn * col_right_untyped = col_with_type_and_name_right.column.get();
 

@@ -132,6 +132,9 @@ namespace
 
 Block MongoDBBlockInputStream::readImpl()
 {
+	if (all_read)
+		return {};
+
 	Block block = description.sample_block.cloneEmpty();
 
 	/// cache pointers returned by the calls to getByPosition
@@ -139,15 +142,12 @@ Block MongoDBBlockInputStream::readImpl()
 	const size_t size = columns.size();
 
 	for (const auto i : ext::range(0, size))
-		columns[i] = block.getByPosition(i).column.get();
+		columns[i] = block.safeGetByPosition(i).column.get();
 
 	size_t num_rows = 0;
 	while (num_rows < max_block_size)
 	{
 		Poco::MongoDB::ResponseMessage & response = cursor->next(*connection);
-
-		if (response.cursorID() == 0)
-			break;
 
 		for (const auto & document : response.documents())
 		{
@@ -164,7 +164,16 @@ Block MongoDBBlockInputStream::readImpl()
 					insertValue(columns[idx], description.types[idx], *value, name);
 			}
 		}
+
+		if (response.cursorID() == 0)
+		{
+			all_read = true;
+			break;
+		}
 	}
+
+	if (num_rows == 0)
+		return {};
 
 	return block;
 }

@@ -1,3 +1,8 @@
+include_directories (include)
+include_directories (${CMAKE_SOURCE_DIR}/libs/libcommon/include)
+
+include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
+
 add_library(zkutil
 	src/ZooKeeper.cpp
 	src/Lock.cpp
@@ -16,6 +21,8 @@ add_library(zkutil
     include/zkutil/Types.h
     include/zkutil/ZooKeeperHolder.h)
 
-target_link_libraries(zkutil zookeeper pthread PocoFoundation string_utils)
+find_package (Threads)
+
+target_link_libraries(zkutil zookeeper ${Poco_Foundation_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} string_utils)
 
 add_subdirectory (src)

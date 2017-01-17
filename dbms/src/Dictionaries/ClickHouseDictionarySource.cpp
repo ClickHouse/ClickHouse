@@ -33,7 +33,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(const DictionaryStructure
 		db{config.getString(config_prefix + ".db", "")},
 		table{config.getString(config_prefix + ".table")},
 		where{config.getString(config_prefix + ".where", "")},
-		query_builder{dict_struct, db, table, where},
+		query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
 		sample_block{sample_block}, context(context),
 		is_local{isLocalAddress({ host, port })},
 		pool{is_local ? nullptr : std::make_shared<ConnectionPool>(
@@ -49,7 +49,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionar
 		host{other.host}, port{other.port}, user{other.user}, password{other.password},
 		db{other.db}, table{other.table},
 		where{other.where},
-		query_builder{dict_struct, db, table, where},
+		query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
 		sample_block{other.sample_block}, context(other.context),
 		is_local{other.is_local},
 		pool{is_local ? nullptr : std::make_shared<ConnectionPool>(

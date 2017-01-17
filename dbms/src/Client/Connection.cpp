@@ -426,7 +426,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 		elem.first->readPrefix();
 		while (Block block = elem.first->read())
 		{
-			rows += block.rowsInFirstColumn();
+			rows += block.rows();
 			sendData(block, elem.second);
 		}
 		elem.first->readSuffix();

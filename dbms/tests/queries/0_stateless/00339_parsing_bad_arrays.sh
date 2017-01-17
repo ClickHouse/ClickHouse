@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 curl -sS 'http://localhost:8123/' -d 'DROP TABLE IF EXISTS test.bad_arrays'
 curl -sS 'http://localhost:8123/' -d 'CREATE TABLE test.bad_arrays (a Array(String)) ENGINE = Memory'

@@ -13,6 +13,7 @@ void registerFunctionsDateTime(FunctionFactory & factory)
 	factory.registerFunction<FunctionToHour>();
 	factory.registerFunction<FunctionToMinute>();
 	factory.registerFunction<FunctionToSecond>();
+	factory.registerFunction<FunctionToStartOfDay>();
 	factory.registerFunction<FunctionToMonday>();
 	factory.registerFunction<FunctionToStartOfMonth>();
 	factory.registerFunction<FunctionToStartOfQuarter>();

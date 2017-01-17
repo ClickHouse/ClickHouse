@@ -56,7 +56,7 @@ bool ValuesRowInputStream::read(Block & block)
 		char * prev_istr_position = istr.position();
 		size_t prev_istr_bytes = istr.count() - istr.offset();
 
-		auto & col = block.unsafeGetByPosition(i);
+		auto & col = block.getByPosition(i);
 
 		bool rollback_on_exception = false;
 		try
@@ -95,7 +95,7 @@ bool ValuesRowInputStream::read(Block & block)
 				if (rollback_on_exception)
 					col.column.get()->popBack(1);
 
-				IDataType & type = *block.getByPosition(i).type;
+				IDataType & type = *block.safeGetByPosition(i).type;
 
 				IParser::Pos pos = prev_istr_position;
 
@@ -134,7 +134,7 @@ bool ValuesRowInputStream::read(Block & block)
 					}
 
 					if (!is_null_allowed)
-						throw Exception{"Expression returns value " + apply_visitor(FieldVisitorToString(), value)
+						throw Exception{"Expression returns value " + applyVisitor(FieldVisitorToString(), value)
 							+ ", that is out of range of type " + type.getName()
 							+ ", at: " + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
 							ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};

@@ -13,6 +13,7 @@
 #include <DB/Common/Volnitsky.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/FunctionsStringSearch.h>
+#include <DB/IO/ReadBufferFromMemory.h>
 
 /** Функции для извлечения параметров визитов.
  *  Реализованы через шаблоны из FunctionsStringSearch.h.
@@ -51,7 +52,7 @@ struct ExtractNumericType
 
 	static ResultType extract(const UInt8 * begin, const UInt8 * end)
 	{
-		ReadBuffer in(const_cast<char *>(reinterpret_cast<const char *>(begin)), end - begin, 0);
+		ReadBufferFromMemory in(begin, end - begin);
 
 		/// Учимся читать числа в двойных кавычках
 		if (!in.eof() && *in.position() == '"')

@@ -1,12 +1,9 @@
 #pragma once
 
-#include <DB/DataTypes/IDataType.h>
-#include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Core/Names.h>
 #include <DB/Core/ColumnWithTypeAndName.h>
 #include <DB/Core/Block.h>
-#include <DB/Functions/IFunction.h>
 
 #include <unordered_set>
 #include <unordered_map>
@@ -24,6 +21,15 @@ using NameWithAlias = std::pair<std::string, std::string>;
 using NamesWithAliases = std::vector<NameWithAlias>;
 
 class Join;
+
+class IFunction;
+using FunctionPtr = std::shared_ptr<IFunction>;
+
+class IDataType;
+using DataTypePtr = std::shared_ptr<IDataType>;
+
+class IBlockInputStream;
+using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
 
 /** Действие над блоком.
@@ -62,8 +68,8 @@ public:
 	/// For ADD_COLUMN.
 	ColumnPtr added_column;
 
-	/// For APPLY_FUNCTION.
-	mutable FunctionPtr function; /// mutable - чтобы можно было делать execute.
+	/// For APPLY_FUNCTION and LEFT ARRAY JOIN.
+	mutable FunctionPtr function; /// mutable - to allow execute.
 	Names argument_names;
 	Names prerequisite_names;
 
@@ -82,70 +88,13 @@ public:
 	static ExpressionAction applyFunction(
 		const FunctionPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
 
-	static ExpressionAction addColumn(const ColumnWithTypeAndName & added_column_)
-	{
-		ExpressionAction a;
-		a.type = ADD_COLUMN;
-		a.result_name = added_column_.name;
-		a.result_type = added_column_.type;
-		a.added_column = added_column_.column;
-		return a;
-	}
-
-	static ExpressionAction removeColumn(const std::string & removed_name)
-	{
-		ExpressionAction a;
-		a.type = REMOVE_COLUMN;
-		a.source_name = removed_name;
-		return a;
-	}
-
-	static ExpressionAction copyColumn(const std::string & from_name, const std::string & to_name)
-	{
-		ExpressionAction a;
-		a.type = COPY_COLUMN;
-		a.source_name = from_name;
-		a.result_name = to_name;
-		return a;
-	}
-
-	static ExpressionAction project(const NamesWithAliases & projected_columns_)
-	{
-		ExpressionAction a;
-		a.type = PROJECT;
-		a.projection = projected_columns_;
-		return a;
-	}
-
-	static ExpressionAction project(const Names & projected_columns_)
-	{
-		ExpressionAction a;
-		a.type = PROJECT;
-		a.projection.resize(projected_columns_.size());
-		for (size_t i = 0; i < projected_columns_.size(); ++i)
-			a.projection[i] = NameWithAlias(projected_columns_[i], "");
-		return a;
-	}
-
-	static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left)
-	{
-		if (array_joined_columns.empty())
-			throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
-		ExpressionAction a;
-		a.type = ARRAY_JOIN;
-		a.array_joined_columns = array_joined_columns;
-		a.array_join_is_left = array_join_is_left;
-		return a;
-	}
-
-	static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypesList & columns_added_by_join_)
-	{
-		ExpressionAction a;
-		a.type = JOIN;
-		a.join = join_;
-		a.columns_added_by_join = columns_added_by_join_;
-		return a;
-	}
+	static ExpressionAction addColumn(const ColumnWithTypeAndName & added_column_);
+	static ExpressionAction removeColumn(const std::string & removed_name);
+	static ExpressionAction copyColumn(const std::string & from_name, const std::string & to_name);
+	static ExpressionAction project(const NamesWithAliases & projected_columns_);
+	static ExpressionAction project(const Names & projected_columns_);
+	static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
+	static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypesList & columns_added_by_join_);
 
 	/// Какие столбцы нужны, чтобы выполнить это действие.
 	/// Если этот Action еще не добавлен в ExpressionActions, возвращаемый список может быть неполным, потому что не учтены prerequisites.

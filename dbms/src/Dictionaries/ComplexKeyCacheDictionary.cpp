@@ -575,17 +575,17 @@ void ComplexKeyCacheDictionary::update(
 			ext::range(0, keys_size),
 			[&] (const size_t attribute_idx)
 			{
-				return block.getByPosition(attribute_idx).column.get();
+				return block.safeGetByPosition(attribute_idx).column.get();
 			});
 
 		const auto attribute_columns = ext::map<ConstColumnPlainPtrs>(
 			ext::range(0, attributes_size),
 			[&] (const size_t attribute_idx)
 			{
-				return block.getByPosition(keys_size + attribute_idx).column.get();
+				return block.safeGetByPosition(keys_size + attribute_idx).column.get();
 			});
 
-		const auto rows = block.rowsInFirstColumn();
+		const auto rows = block.rows();
 
 		for (const auto row : ext::range(0, rows))
 		{

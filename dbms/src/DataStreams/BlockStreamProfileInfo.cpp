@@ -61,7 +61,7 @@ bool BlockStreamProfileInfo::hasAppliedLimit() const
 void BlockStreamProfileInfo::update(Block & block)
 {
 	++blocks;
-	rows += block.rowsInFirstColumn();
+	rows += block.rows();
 	bytes += block.bytes();
 }
 

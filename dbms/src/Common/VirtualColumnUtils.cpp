@@ -3,10 +3,14 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/ExpressionActions.h>
+
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTSelectQuery.h>
+
+#include <DB/Columns/ColumnsNumber.h>
 
 #include <DB/Common/VirtualColumnUtils.h>
 
@@ -171,7 +175,7 @@ bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context)
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		ColumnPtr & column = block.getByPosition(i).column;
+		ColumnPtr & column = block.safeGetByPosition(i).column;
 		column = column->filter(filter, -1);
 	}
 

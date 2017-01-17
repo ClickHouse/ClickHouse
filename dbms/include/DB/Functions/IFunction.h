@@ -49,6 +49,54 @@ public:
 	/// Получить основное имя функции.
 	virtual String getName() const = 0;
 
+	/// Override and return true if function could take different number of arguments.
+	virtual bool isVariadic() const { return false; }
+
+	/// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
+	virtual size_t getNumberOfArguments() const = 0;
+
+	/// Throw if number of arguments is incorrect. Default implementation will check only in non-variadic case.
+	/// It is called inside getReturnType.
+	virtual void checkNumberOfArguments(size_t number_of_arguments) const;
+
+	/** Should we evaluate this function while constant folding, if arguments are constants?
+	  * Usually this is true. Notable counterexample is function 'sleep'.
+	  * If we will call it during query analysis, we will sleep extra amount of time.
+	  */
+	virtual bool isSuitableForConstantFolding() const { return true; }
+
+	/** Function is called "injective" if it returns different result for different values of arguments.
+	  * Example: hex, negate, tuple...
+	  *
+	  * Function could be injective with some arguments fixed to some constant values.
+	  * Examples:
+	  *  plus(const, x);
+	  *  multiply(const, x) where x is an integer and constant is not divisable by two;
+	  *  concat(x, 'const');
+	  *  concat(x, 'const', y) where const contain at least one non-numeric character;
+	  *  concat with FixedString
+	  *  dictGet... functions takes name of dictionary as its argument,
+	  *   and some dictionaries could be explicitly defined as injective.
+	  *
+	  * It could be used, for example, to remove useless function applications from GROUP BY.
+	  *
+	  * Sometimes, function is not really injective, but considered as injective, for purpose of query optimization.
+	  * For example, toString function is not injective for Float64 data type,
+	  *  as it returns 'nan' for many different representation of NaNs.
+	  * But we assume, that it is injective. This could be documented as implementation-specific behaviour.
+	  *
+	  * sample_block should contain data types of arguments and values of constants, if relevant.
+	  */
+	virtual bool isInjective(const Block & sample_block) { return false; }
+
+	/** Function is called "deterministic", if it returns same result for same values of arguments.
+	  * Most of functions are deterministic. Notable counterexample is rand().
+	  * Sometimes, functions are "deterministic" in scope of single query
+	  *  (even for distributed query), but not deterministic it general.
+	  * Example: now(). Another example: functions that work with periodically updated dictionaries.
+	  */
+	virtual bool isDeterministicInScopeOfQuery() { return true; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	/// Перегрузка для тех, кому не нужны prerequisites и значения константных аргументов. Снаружи не вызывается.
 	DataTypePtr getReturnType(const DataTypes & arguments) const;
@@ -80,8 +128,9 @@ public:
 		out_return_type = getReturnTypeImpl(types);
 	}
 
-	/// Вызывается, если хоть один агрумент функции - лямбда-выражение.
-	/// Для аргументов-лямбда-выражений определяет типы аргументов этих выражений и кладет результат в arguments.
+	/// For higher-order functions (functions, that have lambda expression as at least one argument).
+	/// You pass data types with empty DataTypeExpression for lambda arguments.
+	/// This function will replace it with DataTypeExpression containing actual types.
 	void getLambdaArgumentTypes(DataTypes & arguments) const;
 
 	virtual void getLambdaArgumentTypesImpl(DataTypes & arguments) const

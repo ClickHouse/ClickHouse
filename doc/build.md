@@ -73,15 +73,16 @@ sudo apt-get install libicu-dev libglib2.0-dev libreadline-dev libmysqlclient-de
 
 # Checkout ClickHouse sources
 
+To get latest stable version:
 ```
-git clone git@github.com:yandex/ClickHouse.git
-# or: git clone https://github.com/yandex/ClickHouse.git
+git clone -b stable git@github.com:yandex/ClickHouse.git
+# or: git clone -b stable https://github.com/yandex/ClickHouse.git
 
 cd ClickHouse
 ```
 
-Note that master branch is not stable.
-For stable version, switch to some release branch.
+For development, switch to the `master` branch.
+For latest release candidate, switch to the `testing` branch.
 
 # Build ClickHouse
 
@@ -95,7 +96,7 @@ sudo apt-get install devscripts dupload fakeroot debhelper
 
 ### Install recent version of clang.
 
-Clang is embedded into ClickHouse package and used at runtime. Minimal version is 3.8.0. It is optional.
+Clang is embedded into ClickHouse package and used at runtime. Minimum version is 3.8.0. It is optional.
 
 There are two variants:
 #### 1. Build clang from sources.

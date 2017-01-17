@@ -63,10 +63,13 @@ add_check (hashing_read_buffer)
 add_executable (io_operators operators.cpp ${SRCS})
 target_link_libraries (io_operators dbms)
 
-if (NOT APPLE)
+if (NOT APPLE AND NOT CMAKE_SYSTEM MATCHES "FreeBSD")
 	add_executable(write_buffer_aio write_buffer_aio.cpp)
 	target_link_libraries (write_buffer_aio dbms ${Boost_FILESYSTEM_LIBRARY})
 
 	add_executable(read_buffer_aio read_buffer_aio.cpp)
 	target_link_libraries (read_buffer_aio dbms ${Boost_FILESYSTEM_LIBRARY})
 endif ()
+
+add_executable (zlib_buffers zlib_buffers.cpp ${SRCS})
+target_link_libraries (zlib_buffers dbms)

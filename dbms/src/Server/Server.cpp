@@ -17,6 +17,7 @@
 #include <DB/Common/Macros.h>
 #include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Common/StringUtils.h>
+#include <DB/IO/HTTPCommon.h>
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/ProcessList.h>
@@ -73,6 +74,7 @@ public:
 	{
 		try
 		{
+			setResponseDefaultHeaders(response);
 			const char * data = "Ok.\n";
 			response.sendBuffer(data, strlen(data));
 		}
@@ -178,16 +180,24 @@ public:
 };
 
 
-int Server::main(const std::vector<std::string> & args)
+static std::string getCanonicalPath(std::string && path)
 {
-	Logger * log = &logger();
-
-	std::string path = config().getString("path");
 	Poco::trimInPlace(path);
 	if (path.empty())
 		throw Exception("path configuration parameter is empty");
 	if (path.back() != '/')
 		path += '/';
+	return path;
+}
+
+std::string Server::getDefaultCorePath() const
+{
+	return getCanonicalPath(config().getString("path")) + "cores";
+}
+
+int Server::main(const std::vector<std::string> & args)
+{
+	Logger * log = &logger();
 
 	/** Context contains all that query execution is dependent:
 	  *  settings, available functions, data types, aggregate functions, databases...
@@ -195,9 +205,11 @@ int Server::main(const std::vector<std::string> & args)
 	global_context = std::make_unique<Context>();
 	global_context->setGlobalContext(*global_context);
 	global_context->setApplicationType(Context::ApplicationType::SERVER);
-	global_context->setPath(path);
 
+	std::string path = getCanonicalPath(config().getString("path"));
 	std::string default_database = config().getString("default_database", "default");
+
+	global_context->setPath(path);
 
 	/// Create directories for 'path' and for default database, if not exist.
 	Poco::File(path + "data/" + default_database).createDirectories();
@@ -407,7 +419,11 @@ int Server::main(const std::vector<std::string> & args)
 			catch (const Poco::Net::DNSException & e)
 			{
 				/// Better message when IPv6 is disabled on host.
-				if (e.code() == EAI_ADDRFAMILY)
+				if (e.code() == EAI_FAMILY
+#if defined(EAI_ADDRFAMILY)
+					|| e.code() == EAI_ADDRFAMILY
+#endif
+				)
 				{
 					LOG_ERROR(log, "Cannot resolve listen_host (" << listen_host + "), error: " << e.message() << ". "
 						"If it is an IPv6 address and your host has disabled IPv6, then consider to specify IPv4 address to listen in <listen_host> element of configuration file. Example: <listen_host>0.0.0.0</listen_host>");

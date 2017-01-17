@@ -202,6 +202,8 @@ ASTPtr ASTSelectQuery::cloneImpl(bool traverse_union_all) const
 	CLONE(group_expression_list)
 	CLONE(having_expression)
 	CLONE(order_expression_list)
+	CLONE(limit_by_value)
+	CLONE(limit_by_expression_list)
 	CLONE(limit_offset)
 	CLONE(limit_length)
 	CLONE(settings)
@@ -287,6 +289,16 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 			: typeid_cast<const ASTExpressionList &>(*order_expression_list).formatImplMultiline(s, state, frame);
 	}
 
+	if (limit_by_value)
+	{
+		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "LIMIT " << (s.hilite ? hilite_none : "");
+		limit_by_value->formatImpl(s, state, frame);
+		s.ostr << (s.hilite ? hilite_keyword : "") << " BY " << (s.hilite ? hilite_none : "");
+		s.one_line
+			? limit_by_expression_list->formatImpl(s, state, frame)
+			: typeid_cast<const ASTExpressionList &>(*limit_by_expression_list).formatImplMultiline(s, state, frame);
+	}
+
 	if (limit_length)
 	{
 		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "LIMIT " << (s.hilite ? hilite_none : "");
@@ -308,7 +320,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 			if (it != ast_set.changes.begin())
 				s.ostr << ", ";
 
-			s.ostr << it->name << " = " << apply_visitor(FieldVisitorToString(), it->value);
+			s.ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
 		}
 	}
 

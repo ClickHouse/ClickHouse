@@ -2,8 +2,6 @@
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Core/Row.h>
 
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnTuple.h>
 
@@ -21,73 +19,20 @@
 #include <DB/Interpreters/convertFieldToType.h>
 #include <DB/Interpreters/evaluateConstantExpression.h>
 
+#include <DB/Storages/MergeTree/PKCondition.h>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-	extern const int UNKNOWN_SET_DATA_VARIANT;
 	extern const int LOGICAL_ERROR;
 	extern const int SET_SIZE_LIMIT_EXCEEDED;
 	extern const int TYPE_MISMATCH;
 	extern const int INCORRECT_ELEMENT_OF_SET;
 	extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
-
-
-void SetVariants::init(Type type_)
-{
-	type = type_;
-
-	switch (type)
-	{
-		case Type::EMPTY: break;
-
-	#define M(NAME) \
-		case Type::NAME: NAME = std::make_unique<decltype(NAME)::element_type>(); break;
-		APPLY_FOR_SET_VARIANTS(M)
-	#undef M
-
-		default:
-			throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
-	}
-}
-
-
-size_t SetVariants::getTotalRowCount() const
-{
-	switch (type)
-	{
-		case Type::EMPTY: return 0;
-
-	#define M(NAME) \
-		case Type::NAME: return NAME->data.size();
-		APPLY_FOR_SET_VARIANTS(M)
-	#undef M
-
-		default:
-			throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
-	}
-}
-
-
-size_t SetVariants::getTotalByteCount() const
-{
-	switch (type)
-	{
-		case Type::EMPTY: return 0;
-
-	#define M(NAME) \
-		case Type::NAME: return NAME->data.getBufferSizeInBytes();
-		APPLY_FOR_SET_VARIANTS(M)
-	#undef M
-
-		default:
-			throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
-	}
-}
-
 
 bool Set::checkSetSizeLimits() const
 {
@@ -97,110 +42,6 @@ bool Set::checkSetSizeLimits() const
 		return false;
 	return true;
 }
-
-
-SetVariants::Type SetVariants::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes)
-{
-	/// Check if at least one of the specified keys is nullable.
-	/// Create a set of nested key columns from the corresponding key columns.
-	/// Here "nested" means that, if a key column is nullable, we take its nested
-	/// column; otherwise we take the key column as is.
-	ConstColumnPlainPtrs nested_key_columns;
-	nested_key_columns.reserve(key_columns.size());
-	bool has_nullable_key = false;
-
-	for (const auto & col : key_columns)
-	{
-		if (col->isNullable())
-		{
-			const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
-			nested_key_columns.push_back(nullable_col.getNestedColumn().get());
-			has_nullable_key = true;
-		}
-		else
-			nested_key_columns.push_back(col);
-	}
-
-	size_t keys_size = nested_key_columns.size();
-
-	bool all_fixed = true;
-	size_t keys_bytes = 0;
-	key_sizes.resize(keys_size);
-	for (size_t j = 0; j < keys_size; ++j)
-	{
-		if (!nested_key_columns[j]->isFixed())
-		{
-			all_fixed = false;
-			break;
-		}
-		key_sizes[j] = nested_key_columns[j]->sizeOfField();
-		keys_bytes += key_sizes[j];
-	}
-
-	if (has_nullable_key)
-	{
-		/// At least one key is nullable. Therefore we choose a method
-		/// that takes into account this fact.
-		if ((keys_size == 1) && (nested_key_columns[0]->isNumeric()))
-		{
-			/// We have exactly one key and it is nullable. We shall add it a tag
-			/// which specifies whether its value is null or not.
-			size_t size_of_field = nested_key_columns[0]->sizeOfField();
-			if ((size_of_field == 1) || (size_of_field == 2) || (size_of_field == 4) || (size_of_field == 8))
-				return SetVariants::Type::nullable_keys128;
-			else
-				throw Exception{"Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.",
-					ErrorCodes::LOGICAL_ERROR};
-		}
-
-		if (all_fixed)
-		{
-			/// Pack if possible all the keys along with information about which key values are nulls
-			/// into a fixed 16- or 32-byte blob.
-			if (keys_bytes > (std::numeric_limits<size_t>::max() - std::tuple_size<KeysNullMap<UInt128>>::value))
-				throw Exception{"Aggregator: keys sizes overflow", ErrorCodes::LOGICAL_ERROR};
-			if ((std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes) <= 16)
-				return SetVariants::Type::nullable_keys128;
-			if ((std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes) <= 32)
-				return SetVariants::Type::nullable_keys256;
-		}
-
-		/// Fallback case.
-		return SetVariants::Type::hashed;
-	}
-
-	/// Если есть один числовой ключ, который помещается в 64 бита
-	if (keys_size == 1 && nested_key_columns[0]->isNumericNotNullable())
-	{
-		size_t size_of_field = nested_key_columns[0]->sizeOfField();
-		if (size_of_field == 1)
-			return SetVariants::Type::key8;
-		if (size_of_field == 2)
-			return SetVariants::Type::key16;
-		if (size_of_field == 4)
-			return SetVariants::Type::key32;
-		if (size_of_field == 8)
-			return SetVariants::Type::key64;
-		throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
-	}
-
-	/// Если ключи помещаются в N бит, будем использовать хэш-таблицу по упакованным в N-бит ключам
-	if (all_fixed && keys_bytes <= 16)
-		return SetVariants::Type::keys128;
-	if (all_fixed && keys_bytes <= 32)
-		return SetVariants::Type::keys256;
-
-	/// If there is single string key, use hash table of it's values.
-	if (keys_size == 1 && (typeid_cast<const ColumnString *>(nested_key_columns[0]) || typeid_cast<const ColumnConstString *>(nested_key_columns[0])))
-		return SetVariants::Type::key_string;
-
-	if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(nested_key_columns[0]))
-		return SetVariants::Type::key_fixed_string;
-
-	/// Otherwise, will use set of cryptographic hashes of unambiguously serialized values.
-	return SetVariants::Type::hashed;
-}
-
 
 template <typename Method>
 void NO_INLINE Set::insertFromBlockImpl(
@@ -249,10 +90,10 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 	/// Запоминаем столбцы, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
 	{
-		key_columns.emplace_back(block.getByPosition(i).column.get());
+		key_columns.emplace_back(block.safeGetByPosition(i).column.get());
 
 		if (empty())
-			data_types.emplace_back(block.getByPosition(i).type);
+			data_types.emplace_back(block.safeGetByPosition(i).type);
 
 		if (auto converted = key_columns.back()->convertToFullColumnIfConst())
 		{
@@ -277,7 +118,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 				data_types.pop_back();
 				const Block & tuple_block = tuple->getData();
 				for (size_t i = 0, size = tuple_block.columns(); i < size; ++i)
-					data_types.push_back(tuple_block.unsafeGetByPosition(i).type);
+					data_types.push_back(tuple_block.getByPosition(i).type);
 			}
 		}
 	}
@@ -288,14 +129,17 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 	if (empty())
 		data.init(data.chooseMethod(key_columns, key_sizes));
 
-	if (false) {}
+	switch (data.type)
+	{
+		case SetVariants::Type::EMPTY:
+			break;
 #define M(NAME) \
-	else if (data.type == SetVariants::Type::NAME) \
-		insertFromBlockImpl(*data.NAME, key_columns, rows, data);
+		case SetVariants::Type::NAME: \
+			insertFromBlockImpl(*data.NAME, key_columns, rows, data); \
+			break;
 		APPLY_FOR_SET_VARIANTS(M)
 #undef M
-	else
-		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+	}
 
 	if (create_ordered_set)
 		for (size_t i = 0; i < rows; ++i)
@@ -357,7 +201,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 			Field value = extractValueFromNode(*it, *data_types[0], context);
 
 			if (!value.isNull())
-				block.getByPosition(0).column->insert(value);
+				block.safeGetByPosition(0).column->insert(value);
 		}
 		else if (ASTFunction * func = typeid_cast<ASTFunction *>(it->get()))
 		{
@@ -385,7 +229,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 
 			if (j == tuple_size)
 				for (j = 0; j < tuple_size; ++j)
-					block.getByPosition(j).column->insert(tuple_values[j]);
+					block.safeGetByPosition(j).column->insert(tuple_values[j]);
 		}
 		else
 			throw Exception("Incorrect element of set", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
@@ -413,7 +257,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
 	auto res = std::make_shared<ColumnUInt8>();
 	ColumnUInt8::Container_t & vec_res = res->getData();
-	vec_res.resize(block.getByPosition(0).column->size());
+	vec_res.resize(block.safeGetByPosition(0).column->size());
 
 	Poco::ScopedReadRWLock lock(rwlock);
 
@@ -427,7 +271,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 		return res;
 	}
 
-	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(block.getByPosition(0).type.get());
+	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(block.safeGetByPosition(0).type.get());
 
 	if (array_type)
 	{
@@ -439,7 +283,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 				" on the right, " + array_type->getNestedType()->getName() + " on the left.",
 				ErrorCodes::TYPE_MISMATCH);
 
-		const IColumn * in_column = block.getByPosition(0).column.get();
+		const IColumn * in_column = block.safeGetByPosition(0).column.get();
 
 		/// Константный столбец слева от IN поддерживается не напрямую. Для этого, он сначала материализуется.
 		ColumnPtr materialized_column = in_column->convertToFullColumnIfConst();
@@ -470,12 +314,12 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
 		for (size_t i = 0; i < num_key_columns; ++i)
 		{
-			key_columns.push_back(block.getByPosition(i).column.get());
+			key_columns.push_back(block.safeGetByPosition(i).column.get());
 
 			if (DataTypeTraits::removeNullable(data_types[i])->getName() !=
-				DataTypeTraits::removeNullable(block.getByPosition(i).type)->getName())
+				DataTypeTraits::removeNullable(block.safeGetByPosition(i).type)->getName())
 				throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: "
-					+ data_types[i]->getName() + " on the right, " + block.getByPosition(i).type->getName() +
+					+ data_types[i]->getName() + " on the right, " + block.safeGetByPosition(i).type->getName() +
 					" on the left.", ErrorCodes::TYPE_MISMATCH);
 
 			if (auto converted = key_columns.back()->convertToFullColumnIfConst())
@@ -552,14 +396,17 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 {
 	size_t rows = key_columns[0]->size();
 
-	if (false) {}
+	switch (data.type)
+	{
+		case SetVariants::Type::EMPTY:
+			break;
 #define M(NAME) \
-	else if (data.type == SetVariants::Type::NAME) \
-		executeImpl(*data.NAME, key_columns, vec_res, negative, rows);
+		case SetVariants::Type::NAME: \
+			executeImpl(*data.NAME, key_columns, vec_res, negative, rows); \
+			break;
 	APPLY_FOR_SET_VARIANTS(M)
 #undef M
-	else
-		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+	}
 }
 
 void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const
@@ -568,14 +415,17 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 	const ColumnArray::Offsets_t & offsets = key_column->getOffsets();
 	const IColumn & nested_column = key_column->getData();
 
-	if (false) {}
+	switch (data.type)
+	{
+		case SetVariants::Type::EMPTY:
+			break;
 #define M(NAME) \
-	else if (data.type == SetVariants::Type::NAME) \
-		executeArrayImpl(*data.NAME, ConstColumnPlainPtrs{&nested_column}, offsets, vec_res, negative, rows);
+		case SetVariants::Type::NAME: \
+			executeArrayImpl(*data.NAME, ConstColumnPlainPtrs{&nested_column}, offsets, vec_res, negative, rows); \
+			break;
 	APPLY_FOR_SET_VARIANTS(M)
 #undef M
-	else
-		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+	}
 }
 
 
@@ -674,7 +524,7 @@ std::string Set::describe() const
 	ss << "{";
 	for (const Field & f : *ordered_set_elements)
 	{
-		ss << (first ? "" : ", ") << apply_visitor(FieldVisitorToString(), f);
+		ss << (first ? "" : ", ") << applyVisitor(FieldVisitorToString(), f);
 		first = false;
 	}
 	ss << "}";

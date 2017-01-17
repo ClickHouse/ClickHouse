@@ -68,7 +68,7 @@ Block IProfilingBlockInputStream::read()
 		cancel();
 	}
 
-	progress(Progress(res.rowsInFirstColumn(), res.bytes()));
+	progress(Progress(res.rows(), res.bytes()));
 
 	return res;
 }
@@ -105,9 +105,9 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
 			Field min_value;
 			Field max_value;
 
-			block.getByPosition(i).column->getExtremes(min_value, max_value);
+			block.safeGetByPosition(i).column->getExtremes(min_value, max_value);
 
-			ColumnPtr & column = extremes.getByPosition(i).column;
+			ColumnPtr & column = extremes.safeGetByPosition(i).column;
 
 			if (auto converted = column->convertToFullColumnIfConst())
 				column = converted;
@@ -120,7 +120,7 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
 	{
 		for (size_t i = 0; i < columns; ++i)
 		{
-			ColumnPtr & column = extremes.getByPosition(i).column;
+			ColumnPtr & column = extremes.safeGetByPosition(i).column;
 
 			Field min_value = (*column)[0];
 			Field max_value = (*column)[1];
@@ -128,7 +128,7 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
 			Field cur_min_value;
 			Field cur_max_value;
 
-			block.getByPosition(i).column->getExtremes(cur_min_value, cur_max_value);
+			block.safeGetByPosition(i).column->getExtremes(cur_min_value, cur_max_value);
 
 			if (cur_min_value < min_value)
 				min_value = cur_min_value;
@@ -207,7 +207,7 @@ void IProfilingBlockInputStream::checkQuota(Block & block)
 			time_t current_time = time(0);
 			double total_elapsed = info.total_stopwatch.elapsedSeconds();
 
-			quota->checkAndAddResultRowsBytes(current_time, block.rowsInFirstColumn(), block.bytes());
+			quota->checkAndAddResultRowsBytes(current_time, block.rows(), block.bytes());
 			quota->checkAndAddExecutionTime(current_time, Poco::Timespan((total_elapsed - prev_elapsed) * 1000000.0));
 
 			prev_elapsed = total_elapsed;

@@ -4,6 +4,7 @@
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Common/HTMLForm.h>
 #include <DB/Databases/IDatabase.h>
+#include <DB/IO/HTTPCommon.h>
 
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -59,6 +60,8 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
 					<< ":\tAbsolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".\n";
 			}
 		}
+
+		setResponseDefaultHeaders(response);
 
 		if (ok && !verbose)
 		{

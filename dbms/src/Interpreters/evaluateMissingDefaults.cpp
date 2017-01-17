@@ -3,6 +3,8 @@
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Interpreters/evaluateMissingDefaults.h>
+#include <DB/Parsers/ASTExpressionList.h>
+#include <DB/Parsers/ASTWithAlias.h>
 #include <utility>
 
 
@@ -43,7 +45,7 @@ void evaluateMissingDefaults(Block & block,
 
 	NamesAndTypesList available_columns;
 	for (size_t i = 0, size = block.columns(); i < size; ++i)
-		available_columns.emplace_back(block.unsafeGetByPosition(i).name, block.unsafeGetByPosition(i).type);
+		available_columns.emplace_back(block.getByPosition(i).name, block.getByPosition(i).type);
 
 	ExpressionAnalyzer{default_expr_list, context, {}, available_columns}.getActions(true)->execute(copy_block);
 

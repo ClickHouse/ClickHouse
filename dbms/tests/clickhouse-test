@@ -88,7 +88,7 @@ def main(args):
 					break
 
 				case_file = os.path.join(suite_dir, case)
-				if os.path.isfile(case_file) and (case.endswith('.sh') or case.endswith('.sql')):
+				if os.path.isfile(case_file) and (case.endswith('.sh') or case.endswith('.py') or case.endswith('.sql')):
 					(name, ext) = os.path.splitext(case)
 					report_testcase = et.Element("testcase", attrib = {"name": name})
 

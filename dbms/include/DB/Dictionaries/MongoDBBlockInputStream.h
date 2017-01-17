@@ -46,6 +46,7 @@ private:
 	std::unique_ptr<Poco::MongoDB::Cursor> cursor;
 	const size_t max_block_size;
 	ExternalResultDescription description;
+	bool all_read = false;
 };
 
 }

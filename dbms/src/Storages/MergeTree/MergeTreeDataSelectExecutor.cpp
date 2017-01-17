@@ -20,7 +20,9 @@
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergeTreeReadPool.h>
 #include <DB/Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
+#include <DB/Storages/MergeTree/PKCondition.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTSampleRatio.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
@@ -53,6 +55,7 @@ namespace ErrorCodes
 	extern const int INDEX_NOT_USED;
 	extern const int SAMPLING_NOT_SUPPORTED;
 	extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+	extern const int ILLEGAL_COLUMN;
 }
 
 

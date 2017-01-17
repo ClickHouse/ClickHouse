@@ -45,7 +45,7 @@
 #define TC_VERSION_STRING "gperftools 2.5"
 
 /* For struct mallinfo, if it's defined. */
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 # include <malloc.h>
 #else
 struct mallinfo {

@@ -1,5 +1,15 @@
-include_directories (include)
-include_directories (/usr/include/mysql)
+include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
+
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/liblz4/include/)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include/)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libzstd/include/)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libsparsehash)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libre2/)
+include_directories (BEFORE ${ClickHouse_BINARY_DIR}/contrib/libre2/)
+include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include/)
 
 add_subdirectory (src)
 
@@ -16,11 +26,12 @@ add_library(string_utils
 set(dbms_headers)
 set(dbms_sources)
 
-include(../cmake/dbms_glob_sources.cmake)
+include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 add_headers_and_sources(dbms Functions)
 add_headers_and_sources(dbms Functions/Conditional)
 add_headers_and_sources(dbms TableFunctions)
 add_headers_and_sources(dbms Parsers)
+add_headers_and_sources(dbms Analyzers)
 add_headers_and_sources(dbms AggregateFunctions)
 add_headers_and_sources(dbms Core)
 add_headers_and_sources(dbms DataStreams)
@@ -50,7 +61,7 @@ list(REMOVE_ITEM dbms_sources
 	src/Databases/DatabaseCloud.cpp
 	src/Common/StringUtils.cpp)
 
-if (APPLE)
+if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
 	list(REMOVE_ITEM dbms_headers
 		include/DB/Common/AIO.h
 		include/DB/IO/WriteBufferAIO.h
@@ -109,6 +120,21 @@ if (APPLE)
 	set(APPLE_ICONV_LIB iconv)
 endif()
 
+if (CMAKE_SYSTEM MATCHES "FreeBSD")
+    set(PLATFORM_LIBS "execinfo")
+else()
+    set(PLATFORM_LIBS "")
+endif()
+
+if (USE_STATIC_LIBRARIES)
+	set (Z_LIB zlibstatic)
+else()
+	set (Z_HINTS "/usr/local/opt/zlib/lib")
+	find_library (Z_LIB z HINTS ${Z_HINTS})
+endif ()
+
+find_package (Threads)
+
 target_link_libraries(dbms
 	common
 	zkutil
@@ -117,15 +143,21 @@ target_link_libraries(dbms
 	lz4 zstd
 	string_utils
 	double-conversion
+	${Z_LIB}
 	${LINK_LIBRARIES_ONLY_ON_X86_64}
 	re2 re2_st
 	${OPENSSL_CRYPTO_LIBRARY}
 	${Boost_SYSTEM_LIBRARY}
-	PocoData
-	PocoDataODBC
-	PocoMongoDB
+	${Poco_Data_LIBRARY}
+	${Poco_DataODBC_LIBRARY}
+	${Poco_MongoDB_LIBRARY}
+	${Poco_Foundation_LIBRARY}
 	${APPLE_ICONV_LIB}
-	dl ${LTDL_LIB})
+	${PLATFORM_LIBS}
+	${CMAKE_DL_LIBS}
+	${LTDL_LIB}
+	${CMAKE_THREAD_LIBS_INIT}
+	)
 
 add_dependencies (dbms
 	common

@@ -48,6 +48,7 @@ namespace ErrorCodes
 	extern const int NO_ELEMENTS_IN_CONFIG;
 	extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 	extern const int UNKNOWN_IDENTIFIER;
+	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 }
 
 
@@ -199,7 +200,14 @@ static void setGraphitePatternsFromConfig(const Context & context,
 		}
 		else if (key == "default")
 		{
-			/// Ниже.
+			/// See below.
+		}
+		else if (key == "path_column_name"
+			|| key == "time_column_name"
+			|| key == "value_column_name"
+			|| key == "version_column_name")
+		{
+			/// See above.
 		}
 		else
 			throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
@@ -491,14 +499,14 @@ StoragePtr StorageFactory::get(
 		String destination_database = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
 		String destination_table 	= static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 
-		size_t num_buckets = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[2]).value);
+		size_t num_buckets = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[2]).value);
 
-		time_t min_time = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[3]).value);
-		time_t max_time = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[4]).value);
-		size_t min_rows = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[5]).value);
-		size_t max_rows = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[6]).value);
-		size_t min_bytes = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[7]).value);
-		size_t max_bytes = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[8]).value);
+		time_t min_time = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[3]).value);
+		time_t max_time = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[4]).value);
+		size_t min_rows = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[5]).value);
+		size_t max_rows = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[6]).value);
+		size_t min_bytes = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[7]).value);
+		size_t max_bytes = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[8]).value);
 
 		return StorageBuffer::create(
 			table_name, columns,
@@ -530,7 +538,7 @@ StoragePtr StorageFactory::get(
 		  * SummingMergeTree(date, [sample_key], primary_key, index_granularity, [columns_to_sum])
 		  * AggregatingMergeTree(date, [sample_key], primary_key, index_granularity)
 		  * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column])
-		  * GraphiteMergeTree(date, [sample_key], primary_key, index_granularity, Path, Time, Value, Version)
+		  * GraphiteMergeTree(date, [sample_key], primary_key, index_granularity, 'config_element')
 		  * UnsortedMergeTree(date, index_granularity)	TODO Добавить описание ниже.
 		  */
 
@@ -629,27 +637,26 @@ For further info please read the documentation: https://clickhouse.yandex/
 		if (args_func.size() == 1)
 			args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
-		/// NOTE Слегка запутанно.
+		/// NOTE Quite complicated.
 		size_t num_additional_params = (replicated ? 2 : 0)
 			+ (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
 			+ (merging_params.mode == MergeTreeData::MergingParams::Graphite);
 
-		if (merging_params.mode == MergeTreeData::MergingParams::Unsorted
-			&& args.size() != num_additional_params + 2)
-		{
-			String params;
-
-			if (replicated)
-				params +=
+		String params_for_replicated;
+		if (replicated)
+			params_for_replicated =
 				"\npath in ZooKeeper,"
 				"\nreplica name,";
 
-			params +=
+		if (merging_params.mode == MergeTreeData::MergingParams::Unsorted
+			&& args.size() != num_additional_params + 2)
+		{
+			String params =
 				"\nname of column with date,"
 				"\nindex granularity\n";
 
 			throw Exception("Storage " + name + " requires "
-				+ toString(num_additional_params + 2) + " parameters: " + params + verbose_help,
+				+ toString(num_additional_params + 2) + " parameters: " + params_for_replicated + params + verbose_help,
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
 
@@ -659,25 +666,21 @@ For further info please read the documentation: https://clickhouse.yandex/
 			&& args.size() != num_additional_params + 3
 			&& args.size() != num_additional_params + 4)
 		{
-			String params;
-
-			if (replicated)
-				params +=
-					"\npath in ZooKeeper,"
-					"\nreplica name,";
-
-			params +=
+			String params =
 				"\nname of column with date,"
 				"\n[sampling element of primary key],"
 				"\nprimary key expression,"
 				"\nindex granularity\n";
 
 			if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
-				params += ", sign column";
+				params += ", sign column\n";
+
+			if (merging_params.mode == MergeTreeData::MergingParams::Graphite)
+				params += ", 'config_element_for_graphite_schema'\n";
 
 			throw Exception("Storage " + name + " requires "
 				+ toString(num_additional_params + 3) + " or "
-				+ toString(num_additional_params + 4) + " parameters: " + params + verbose_help,
+				+ toString(num_additional_params + 4) + " parameters: " + params_for_replicated + params + verbose_help,
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
 
@@ -687,14 +690,7 @@ For further info please read the documentation: https://clickhouse.yandex/
 			&& args.size() != num_additional_params + 4
 			&& args.size() != num_additional_params + 5)
 		{
-			String params;
-
-			if (replicated)
-				params +=
-					"\npath in ZooKeeper,"
-					"\nreplica name,";
-
-			params +=
+			String params =
 				"\nname of column with date,"
 				"\n[sampling element of primary key],"
 				"\nprimary key expression,"
@@ -708,7 +704,7 @@ For further info please read the documentation: https://clickhouse.yandex/
 			throw Exception("Storage " + name + " requires "
 				+ toString(num_additional_params + 3) + " or "
 				+ toString(num_additional_params + 4) + " or "
-				+ toString(num_additional_params + 5) + " parameters: " + params + verbose_help,
+				+ toString(num_additional_params + 5) + " parameters: " + params_for_replicated + params + verbose_help,
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
 
@@ -776,11 +772,18 @@ For further info please read the documentation: https://clickhouse.yandex/
 		else if (merging_params.mode == MergeTreeData::MergingParams::Graphite)
 		{
 			String graphite_config_name;
+			String error_msg = "Last parameter of GraphiteMergeTree must be name (in single quotes) of element in configuration file with Graphite options";
+			error_msg += verbose_help;
 
 			if (auto ast = typeid_cast<ASTLiteral *>(&*args.back()))
+			{
+				if (ast->value.getType() != Field::Types::String)
+					throw Exception(error_msg, ErrorCodes::BAD_ARGUMENTS);
+
 				graphite_config_name = ast->value.get<String>();
+			}
 			else
-				throw Exception(String("Last parameter of GraphiteMergeTree must be name (in single quotes) of element in configuration file with Graphite options") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+				throw Exception(error_msg, ErrorCodes::BAD_ARGUMENTS);
 
 			args.pop_back();
 			setGraphitePatternsFromConfig(context, graphite_config_name, merging_params.graphite_params);

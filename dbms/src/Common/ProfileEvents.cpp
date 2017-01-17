@@ -46,6 +46,8 @@
 	M(ReplicatedPartChecksFailed) \
 	M(ReplicatedDataLoss) \
 	\
+	M(InsertedRows) \
+	M(InsertedBytes) \
 	M(DelayedInserts) \
 	M(RejectedInserts) \
 	M(DelayedInsertsMilliseconds) \
@@ -86,7 +88,7 @@
 	\
 	M(MergedRows) \
 	M(MergedUncompressedBytes) \
-	M(MergesTime)\
+	M(MergesTimeMilliseconds)\
 	\
 	M(MergeTreeDataWriterRows) \
 	M(MergeTreeDataWriterUncompressedBytes) \
@@ -100,6 +102,8 @@
 	\
 	M(RegexpCreated) \
 	M(ContextLock) \
+	\
+	M(StorageBufferErrorOnFlush) \
 
 namespace ProfileEvents
 {

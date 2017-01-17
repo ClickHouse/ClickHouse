@@ -8,6 +8,14 @@ add_definitions(
     -fno-builtin-memalign -fno-builtin-posix_memalign -fno-builtin-valloc -fno-builtin-pvalloc
 )
 
+if(CMAKE_SYSTEM MATCHES "FreeBSD" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+	add_definitions(-Wno-unused-but-set-variable)
+endif()
+
+if(CMAKE_SYSTEM MATCHES "FreeBSD")
+	add_definitions(-D_GNU_SOURCE)
+endif()
+
 include_directories (include src)
 
 message(STATUS "Building: tcmalloc_minimal_internal")

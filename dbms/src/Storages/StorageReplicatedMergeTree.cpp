@@ -16,6 +16,7 @@
 
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/ASTInsertQuery.h>
+#include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/queryToString.h>
 
 #include <DB/IO/ReadBufferFromString.h>
@@ -32,6 +33,7 @@
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Common/formatReadable.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/escapeForFileName.h>
 #include <DB/Common/StringUtils.h>
 
 #include <Poco/DirectoryIterator.h>
@@ -1145,7 +1147,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
 			auto table_lock = lockStructure(false);
 
-			const auto & merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name);
+			MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name);
 			MergeTreeData::Transaction transaction;
 			size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
 
@@ -1624,6 +1626,21 @@ bool StorageReplicatedMergeTree::canMergeParts(
 
 		ActiveDataPartSet::Part part_info;
 		ActiveDataPartSet::parsePartName(quorum_entry.part_name, part_info);
+
+		if (part_info.left != part_info.right)
+			throw Exception("Logical error: part written with quorum covers more than one block numbers", ErrorCodes::LOGICAL_ERROR);
+
+		if (left->right <= part_info.left && right->left >= part_info.right)
+			return false;
+	}
+
+	/// Won't merge last_part even if quorum is satisfied, because we gonna check if replica has this part
+	/// on SELECT execution.
+	String quorum_last_part;
+	if (zookeeper->tryGet(zookeeper_path + "/quorum/last_part", quorum_last_part) && quorum_last_part.empty() == false)
+	{
+		ActiveDataPartSet::Part part_info;
+		ActiveDataPartSet::parsePartName(quorum_last_part, part_info);
 
 		if (part_info.left != part_info.right)
 			throw Exception("Logical error: part written with quorum covers more than one block numbers", ErrorCodes::LOGICAL_ERROR);
@@ -2289,7 +2306,7 @@ bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, 
 
 		if (unreplicated_merger->selectPartsToMerge(parts, merged_name, true, 0, always_can_merge))
 		{
-			const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
+			MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
 
 			auto new_part = unreplicated_merger->mergePartsToTemporaryPart(
 				parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io, time(0));
@@ -2559,7 +2576,7 @@ void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partiti
 			unreplicated_data->replaceParts({part}, {}, false);
 	}
 
-	LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " unreplicated parts inside " << apply_visitor(FieldVisitorToString(), partition) << ".");
+	LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " unreplicated parts inside " << applyVisitor(FieldVisitorToString(), partition) << ".");
 }
 
 

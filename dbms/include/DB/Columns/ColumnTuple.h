@@ -35,7 +35,7 @@ public:
 		size_t size = data.columns();
 		columns.resize(size);
 		for (size_t i = 0; i < size; ++i)
-			columns[i] = data.unsafeGetByPosition(i).column;
+			columns[i] = data.getByPosition(i).column;
 	}
 
 	std::string getName() const override { return "Tuple"; }
@@ -137,8 +137,8 @@ public:
 	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
 	{
 		for (size_t i = 0; i < columns.size(); ++i)
-			data.unsafeGetByPosition(i).column->insertRangeFrom(
-				*static_cast<const ColumnTuple &>(src).data.unsafeGetByPosition(i).column.get(),
+			data.getByPosition(i).column->insertRangeFrom(
+				*static_cast<const ColumnTuple &>(src).data.getByPosition(i).column.get(),
 				start, length);
 	}
 
@@ -147,7 +147,7 @@ public:
 		Block res_block = data.cloneEmpty();
 
 		for (size_t i = 0; i < columns.size(); ++i)
-			res_block.unsafeGetByPosition(i).column = data.unsafeGetByPosition(i).column->filter(filt, result_size_hint);
+			res_block.getByPosition(i).column = data.getByPosition(i).column->filter(filt, result_size_hint);
 
 		return std::make_shared<ColumnTuple>(res_block);
 	}
@@ -157,7 +157,7 @@ public:
 		Block res_block = data.cloneEmpty();
 
 		for (size_t i = 0; i < columns.size(); ++i)
-			res_block.unsafeGetByPosition(i).column = data.unsafeGetByPosition(i).column->permute(perm, limit);
+			res_block.getByPosition(i).column = data.getByPosition(i).column->permute(perm, limit);
 
 		return std::make_shared<ColumnTuple>(res_block);
 	}
@@ -167,7 +167,7 @@ public:
 		Block res_block = data.cloneEmpty();
 
 		for (size_t i = 0; i < columns.size(); ++i)
-			res_block.unsafeGetByPosition(i).column = data.unsafeGetByPosition(i).column->replicate(offsets);
+			res_block.getByPosition(i).column = data.getByPosition(i).column->replicate(offsets);
 
 		return std::make_shared<ColumnTuple>(res_block);
 	}
@@ -251,8 +251,8 @@ public:
 	{
 		Block materialized = data;
 		for (size_t i = 0, size = materialized.columns(); i < size; ++i)
-			if (auto converted = materialized.unsafeGetByPosition(i).column->convertToFullColumnIfConst())
-				materialized.unsafeGetByPosition(i).column = converted;
+			if (auto converted = materialized.getByPosition(i).column->convertToFullColumnIfConst())
+				materialized.getByPosition(i).column = converted;
 
 		return std::make_shared<ColumnTuple>(materialized);
 	}

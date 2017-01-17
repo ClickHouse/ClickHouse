@@ -26,6 +26,7 @@
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/ReadBufferFromMemory.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 
@@ -252,7 +253,7 @@ private:
 					<< e.getStackTrace().toString();
 			}
 
-			/// В случае нулевого кода исключения, надо всё-равно вернуть ненулевой код возврата.
+			/// If exception code isn't zero, we should return non-zero return code anyway.
 			return e.code() ? e.code() : -1;
 		}
 		catch (const Poco::Exception & e)
@@ -795,7 +796,7 @@ private:
 		if (parsed_insert_query->data)
 		{
 			/// Отправляем данные из запроса.
-			ReadBuffer data_in(const_cast<char *>(parsed_insert_query->data), parsed_insert_query->end - parsed_insert_query->data, 0);
+			ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
 			sendDataFrom(data_in, sample);
 		}
 		else if (!is_interactive)
@@ -1189,14 +1190,33 @@ public:
 				in_external_group = true;
 				external_tables_arguments.emplace_back(Arguments{""});
 			}
+			/// Options with value after equal sign.
 			else if (in_external_group
-				&& (0 == strncmp(arg, "--file", 		strlen("--file"))	/// slightly inaccurate because --filesuffix is also matched.
-				 || 0 == strncmp(arg, "--name", 		strlen("--name"))
-				 || 0 == strncmp(arg, "--format", 		strlen("--format"))
-				 || 0 == strncmp(arg, "--structure", 	strlen("--structure"))
-				 || 0 == strncmp(arg, "--types", 		strlen("--types"))))
+				&& (0 == strncmp(arg, "--file=", 		strlen("--file="))
+				 || 0 == strncmp(arg, "--name=", 		strlen("--name="))
+				 || 0 == strncmp(arg, "--format=", 		strlen("--format="))
+				 || 0 == strncmp(arg, "--structure=", 	strlen("--structure="))
+				 || 0 == strncmp(arg, "--types=", 		strlen("--types="))))
 			{
 				external_tables_arguments.back().emplace_back(arg);
+			}
+			/// Options with value after whitespace.
+			else if (in_external_group
+				&& (0 == strcmp(arg, "--file")
+				 || 0 == strcmp(arg, "--name")
+				 || 0 == strcmp(arg, "--format")
+				 || 0 == strcmp(arg, "--structure")
+				 || 0 == strcmp(arg, "--types")))
+			{
+				if (arg_num + 1 < argc)
+				{
+					external_tables_arguments.back().emplace_back(arg);
+					++arg_num;
+					arg = argv[arg_num];
+					external_tables_arguments.back().emplace_back(arg);
+				}
+				else
+					break;
 			}
 			else
 			{
@@ -1304,14 +1324,14 @@ public:
 		/// Сохраняем полученные данные во внутренний конфиг
 		if (options.count("config-file"))
 			config().setString("config-file", options["config-file"].as<std::string>());
-		if (options.count("host"))
+		if (options.count("host") && !options["host"].defaulted())
 			config().setString("host", options["host"].as<std::string>());
 		if (options.count("query"))
 			config().setString("query", options["query"].as<std::string>());
 		if (options.count("database"))
 			config().setString("database", options["database"].as<std::string>());
 
-		if (options.count("port"))
+		if (options.count("port") && !options["port"].defaulted())
 			config().setInt("port", options["port"].as<int>());
 		if (options.count("user"))
 			config().setString("user", options["user"].as<std::string>());

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/get_revision_lib.sh"
 

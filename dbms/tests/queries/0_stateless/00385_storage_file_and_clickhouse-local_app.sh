@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
 TABLE_HASH="cityHash64(groupArray(cityHash64(*)))"

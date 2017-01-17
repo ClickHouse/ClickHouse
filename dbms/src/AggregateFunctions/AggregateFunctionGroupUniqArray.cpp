@@ -8,10 +8,22 @@ namespace DB
 namespace
 {
 
+/// Substitute return type for Date and DateTime
+class AggregateFunctionGroupUniqArrayDate : public AggregateFunctionGroupUniqArray<DataTypeDate::FieldType>
+{
+	DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDate>()); }
+};
+
+class AggregateFunctionGroupUniqArrayDateTime : public AggregateFunctionGroupUniqArray<DataTypeDateTime::FieldType>
+{
+	DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()); }
+};
+
+
 static IAggregateFunction * createWithExtraTypes(const IDataType & argument_type)
 {
-		 if (typeid_cast<const DataTypeDateTime *>(&argument_type))	return new AggregateFunctionGroupUniqArray<DataTypeDateTime::FieldType>;
-	else if (typeid_cast<const DataTypeDate *>(&argument_type)) 	return new AggregateFunctionGroupUniqArray<DataTypeDate::FieldType>;
+		 if (typeid_cast<const DataTypeDate *>(&argument_type)) 	return new AggregateFunctionGroupUniqArrayDate;
+	else if (typeid_cast<const DataTypeDateTime *>(&argument_type))	return new AggregateFunctionGroupUniqArrayDateTime;
 	else
 	{
 		/// Check that we can use plain version of AggreagteFunctionGroupUniqArrayGeneric

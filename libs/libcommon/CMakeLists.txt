@@ -9,7 +9,10 @@ set_source_files_properties(
 	src/ClickHouseRevision.cpp PROPERTIES OBJECT_DEPENDS ${REVISIONFILE}
 )
 
+include_directories (include)
+# for generated revision.h:
 include_directories (${CMAKE_CURRENT_BINARY_DIR}/src/)
+include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 if (APPLE)
 	if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.1.0")
@@ -27,6 +30,7 @@ endif()
 add_library (common
 	src/DateLUT.cpp
 	src/DateLUTImpl.cpp
+	src/exp10.cpp
 	src/ClickHouseRevision.cpp
 	src/JSON.cpp
 
@@ -37,6 +41,7 @@ add_library (common
 	include/common/LocalDate.h
 	include/common/LocalDateTime.h
 	include/common/ErrorHandlers.h
+	include/common/exp10.h
 	include/common/likely.h
 	include/common/logger_useful.h
 	include/common/MultiVersion.h
@@ -66,7 +71,7 @@ if (ENABLE_LIBTCMALLOC)
 		set (MALLOC_LIBRARIES libtcmalloc_minimal_debug.a)
 	else ()
 		message (STATUS "Link libtcmalloc_minimal")
-		set (MALLOC_LIBRARIES tcmalloc_minimal_internal)
+		set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC})
 	endif ()
 else ()
 	message (STATUS "Disabling libtcmalloc for valgrind better analysis")
@@ -74,11 +79,13 @@ endif ()
 
 include (${ClickHouse_SOURCE_DIR}/cmake/find_glib.cmake)
 
+find_package (Threads)
+
 target_link_libraries (
 	common
 	pocoext
 	${MALLOC_LIBRARIES}
-	pthread
+	${CMAKE_THREAD_LIBS_INIT}
 	${GLIB_LIBS}
 	${ICU_LIBS}
 	${RT_LIBRARIES})

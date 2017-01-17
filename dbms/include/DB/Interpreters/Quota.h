@@ -22,11 +22,13 @@
 namespace DB
 {
 
-/** Квота на потребление ресурсов за заданный интервал - часть настроек.
-  * Используются, чтобы ограничить потребление ресурсов пользователем.
-  * Квота действует "мягко" - может быть немного превышена, так как проверяется, как правило, на каждый блок.
-  * Квота не сохраняется при перезапуске сервера.
-  * Квота распространяется только на один сервер.
+/** Quota for resources consumption for specific interval.
+  * Used to limit resource usage by user.
+  * Quota is applied "softly" - could be slightly exceed, because it is checked usually only on each block of processed data.
+  * Accumulated values are not persisted and are lost on server restart.
+  * Quota is local to server,
+  *  but for distributed queries, accumulated values for read rows and bytes
+  *  are collected from all participating servers and accumulated locally.
   */
 
 /// Used both for maximum allowed values and for counters of current accumulated values.
@@ -34,13 +36,13 @@ template <typename Counter>		/// either size_t or std::atomic<size_t>
 struct QuotaValues
 {
 	/// Zero values (for maximums) means no limit.
-	Counter queries;				/// Количество запросов.
-	Counter errors;					/// Количество запросов с эксепшенами.
-	Counter result_rows;			/// Количество строк, отданных в качестве результата.
-	Counter result_bytes;			/// Количество байт, отданных в качестве результата.
-	Counter read_rows;				/// Количество строк, прочитанных из таблиц.
-	Counter read_bytes;				/// Количество байт, прочитанных из таблиц.
-	Counter execution_time_usec;	/// Суммарное время выполнения запросов в микросекундах.
+	Counter queries;				/// Number of queries.
+	Counter errors;					/// Number of queries with exceptions.
+	Counter result_rows;			/// Number of rows returned as result.
+	Counter result_bytes;			/// Number of bytes returned as result.
+	Counter read_rows;				/// Number of rows read from tables.
+	Counter read_bytes;				/// Number of bytes read from tables.
+	Counter execution_time_usec;	/// Total amount of query execution time in microseconds.
 
 	QuotaValues()
 	{
@@ -96,7 +98,7 @@ inline auto QuotaValues<std::atomic<size_t>>::tuple() const
 }
 
 
-/// Время, округлённое до границы интервала, квота за интервал и накопившиеся за этот интервал значения.
+/// Time, rounded down to start of interval; limits for that interval and accumulated values.
 struct QuotaForInterval
 {
 	time_t rounded_time = 0;
@@ -110,19 +112,19 @@ struct QuotaForInterval
 
 	void initFromConfig(const String & config_elem, time_t duration_, time_t offset_, Poco::Util::AbstractConfiguration & config);
 
-	/// Увеличить соответствующее значение.
-	void addQuery(time_t current_time, const String & quota_name);
-	void addError(time_t current_time, const String & quota_name) noexcept;
+	/// Increase current value.
+	void addQuery() noexcept;
+	void addError() noexcept;
 
-	/// Проверить, не превышена ли квота уже. Если превышена - кидает исключение.
-	void checkExceeded(time_t current_time, const String & quota_name);
+	/// Check if quota is already exceeded. If that, throw an exception.
+	void checkExceeded(time_t current_time, const String & quota_name, const String & user_name);
 
-	/// Проверить соответствующее значение. Если превышено - кинуть исключение. Иначе - увеличить его.
-	void checkAndAddResultRowsBytes(time_t current_time, const String & quota_name, size_t rows, size_t bytes);
-	void checkAndAddReadRowsBytes(time_t current_time, const String & quota_name, size_t rows, size_t bytes);
-	void checkAndAddExecutionTime(time_t current_time, const String & quota_name, Poco::Timespan amount);
+	/// Check corresponding value. If exceeded, throw an exception. Otherwise, increase that value.
+	void checkAndAddResultRowsBytes(time_t current_time, const String & quota_name, const String & user_name, size_t rows, size_t bytes);
+	void checkAndAddReadRowsBytes(time_t current_time, const String & quota_name, const String & user_name, size_t rows, size_t bytes);
+	void checkAndAddExecutionTime(time_t current_time, const String & quota_name, const String & user_name, Poco::Timespan amount);
 
-	/// Получить текст, описывающий, какая часть квоты израсходована.
+	/// Get a text, describing what quota is exceeded.
 	String toString() const;
 
 	bool operator== (const QuotaForInterval & rhs) const
@@ -134,9 +136,10 @@ struct QuotaForInterval
 			used			== rhs.used;
 	}
 private:
-	/// Сбросить счётчик использованных ресурсов, если соответствующий интервал, за который считается квота, прошёл.
+	/// Reset counters of used resources, if interval for quota is expired.
 	void updateTime(time_t current_time);
-	void check(size_t max_amount, size_t used_amount, time_t current_time, const String & quota_name, const char * resource_name);
+	void check(size_t max_amount, size_t used_amount, time_t current_time,
+		const String & quota_name, const String & user_name, const char * resource_name);
 };
 
 
@@ -151,10 +154,21 @@ private:
 	using Container = std::map<size_t, QuotaForInterval>;
 	Container cont;
 
-	std::string name;
+	std::string quota_name;
+	std::string user_name;	/// user name is set only for current counters for user, not for object that contain maximum values (limits).
 
 public:
-	QuotaForIntervals(const std::string & name_ = "") : name(name_) {}
+	QuotaForIntervals(const std::string & quota_name_, const std::string & user_name_)
+		: quota_name(quota_name_), user_name(user_name_) {}
+
+	QuotaForIntervals(const QuotaForIntervals & other, const std::string & user_name_)
+		: QuotaForIntervals(other)
+	{
+		user_name = user_name_;
+	}
+
+	QuotaForIntervals() = default;
+	QuotaForIntervals(const QuotaForIntervals & other) = default;
 
 	/// Is there at least one interval for counting quota?
 	bool empty() const
@@ -164,12 +178,12 @@ public:
 
 	void initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config, std::mt19937 & rng);
 
-	/// Обновляет максимальные значения значениями из quota.
-	/// Удаляет интервалы, которых нет в quota, добавляет интревалы, которых нет здесь, но есть в quota.
+	/// Set maximum values (limits) from passed argument.
+	/// Remove intervals that does not exist in argument. Add intervals from argument, that we don't have.
 	void setMax(const QuotaForIntervals & quota);
 
-	void addQuery(time_t current_time);
-	void addError(time_t current_time) noexcept;
+	void addQuery() noexcept;
+	void addError() noexcept;
 
 	void checkExceeded(time_t current_time);
 
@@ -182,7 +196,7 @@ public:
 
 	bool operator== (const QuotaForIntervals & rhs) const
 	{
-		return cont == rhs.cont && name == rhs.name;
+		return cont == rhs.cont && quota_name == rhs.quota_name;
 	}
 };
 

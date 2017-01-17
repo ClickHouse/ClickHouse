@@ -56,7 +56,7 @@ public:
 	  * offset - начальное место курсора. ReadBuffer должен установить его в конец диапазона, а WriteBuffer - в начало.
 	  */
 	BufferBase(Position ptr, size_t size, size_t offset)
-		: internal_buffer(ptr, ptr + size), working_buffer(ptr, ptr + size), pos(ptr + offset),	bytes(0) {}
+		: internal_buffer(ptr, ptr + size), working_buffer(ptr, ptr + size), pos(ptr + offset) {}
 
 	void set(Position ptr, size_t size, size_t offset)
 	{
@@ -106,7 +106,7 @@ protected:
 	/** Сколько байт было прочитано/записано, не считая тех, что сейчас в буфере.
 	  * (считая те, что были уже использованы и "удалены" из буфера)
 	  */
-	size_t bytes;
+	size_t bytes = 0;
 };
 
 

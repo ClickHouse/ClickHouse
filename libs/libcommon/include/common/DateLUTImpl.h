@@ -32,20 +32,23 @@ public:
 public:
 	struct Values
 	{
-		/// 32 бита из time_t начала дня.
-		/// Знаковость важна, чтобы поддержать начало 1970-01-01 MSK, которое имело time_t == -10800.
-		/// Измените на time_t, если надо поддержать времена после 2038 года.
+		/// Least significat 32 bits from time_t at beginning of the day.
+		/// Signedness is important to support 1970-01-01 MSK, where time_t == -10800.
+		/// Change to time_t; change constants above; and recompile the sources if you need to support time after 2038 year.
 		Int32 date;
 
+		/// Properties of the day.
 		UInt16 year;
 		UInt8 month;
 		UInt8 day_of_month;
 		UInt8 day_of_week;
+
+		/// For days, when offset from UTC was changed due to daylight saving time or permanent change, following values could be non zero.
+		UInt16 time_at_offset_change;	/// In seconds from beginning of the day. Assuming offset never changed close to the end of day (so, value < 65536).
+		Int16 amount_of_offset_change;	/// Usually -3600 or 3600, but look at Lord Howe Island.
 	};
 
 private:
-	std::string time_zone;
-
 	/// Сравнительно много данных. То есть, лучше не класть объект на стек.
 	/// По сравнению с std::vector, на один indirection меньше.
 	Values lut[DATE_LUT_MAX_DAY_NUM + 1];
@@ -56,25 +59,28 @@ private:
 	/// Смещение от UTC в начале Unix эпохи.
 	time_t offset_at_start_of_epoch;
 
+	std::string time_zone;
+
+
 	inline size_t findIndex(time_t t) const
 	{
-		/// первое приближение
-		size_t precision = t / 86400;
-		if (precision >= DATE_LUT_MAX_DAY_NUM)
+		/// First guess.
+		size_t guess = t / 86400;
+		if (guess >= DATE_LUT_MAX_DAY_NUM)
 			return 0;
-		if (t >= lut[precision].date && t < lut[precision + 1].date)
-			return precision;
+		if (t >= lut[guess].date && t < lut[guess + 1].date)
+			return guess;
 
 		for (size_t i = 1;; ++i)
 		{
-			if (precision + i >= DATE_LUT_MAX_DAY_NUM)
+			if (guess + i >= DATE_LUT_MAX_DAY_NUM)
 				return 0;
-			if (t >= lut[precision + i].date && t < lut[precision + i + 1].date)
-				return precision + i;
-			if (precision < i)
+			if (t >= lut[guess + i].date && t < lut[guess + i + 1].date)
+				return guess + i;
+			if (guess < i)
 				return 0;
-			if (t >= lut[precision - i].date && t < lut[precision - i + 1].date)
-				return precision - i;
+			if (t >= lut[guess - i].date && t < lut[guess - i + 1].date)
+				return guess - i;
 		}
 	}
 
@@ -271,38 +277,26 @@ public:
 		return lut[findIndex(t) + days].date;
 	}
 
-	/** функции ниже исходят из допущения, что перевод стрелок вперёд, если осуществляется, то на час, в два часа ночи,
-	  *  а перевод стрелок назад, если осуществляется, то на час, в три часа ночи.
-	  * (что, в общем, не верно, так как в Москве один раз перевод стрелок был осуществлён в другое время)
-	  */
-
-	inline time_t 		toTimeInaccurate(time_t t)		const
+	inline time_t 		toTime(time_t t)		const
 	{
 		size_t index = findIndex(t);
-		time_t day_length = lut[index + 1].date - lut[index].date;
-
 		time_t res = t - lut[index].date;
 
-		if (unlikely(day_length == 90000 && res >= 10800))		/// был произведён перевод стрелок назад
-			res -= 3600;
-		else if (unlikely(day_length == 82800 && res >= 7200))	/// был произведён перевод стрелок вперёд
-			res += 3600;
+		if (res >= lut[index].time_at_offset_change)
+			res += lut[index].amount_of_offset_change;
 
 		return res - offset_at_start_of_epoch; /// Отсчёт от 1970-01-01 00:00:00 по локальному времени
 	}
 
-	inline unsigned 	toHourInaccurate(time_t t)		const
+	inline unsigned 	toHour(time_t t)		const
 	{
 		size_t index = findIndex(t);
-		time_t day_length = lut[index + 1].date - lut[index].date;
-		unsigned res = (t - lut[index].date) / 3600;
+		time_t res = t - lut[index].date;
 
-		if (unlikely(day_length == 90000 && res >= 3))		/// был произведён перевод стрелок назад
-			--res;
-		else if (unlikely(day_length == 82800 && res >= 2))	/// был произведён перевод стрелок вперёд
-			++res;
+		if (res >= lut[index].time_at_offset_change)
+			res += lut[index].amount_of_offset_change;
 
-		return res;
+		return res / 3600;
 	}
 
 	inline unsigned 	toMinute(time_t t)	const {	return ((t - find(t).date) % 3600) / 60; }
@@ -357,23 +351,17 @@ public:
 		return lut[makeDayNum(year, month, day_of_month)].date;
 	}
 
-	/** Функция ниже исходит из допущения, что перевод стрелок вперёд, если осуществляется, то на час, в два часа ночи,
-	  *  а перевод стрелок назад, если осуществляется, то на час, в три часа ночи.
-	  * (что, в общем, не верно, так как в Москве один раз перевод стрелок был осуществлён в другое время).
-	  * Также, выдаётся лишь один из двух возможных вариантов при переводе стрелок назад.
+	/** Does not accept daylight saving time as argument: in case of ambiguity, it choose greater timestamp.
 	  */
 	inline time_t		makeDateTime(short year, char month, char day_of_month, char hour, char minute, char second) const
 	{
 		size_t index = makeDayNum(year, month, day_of_month);
-		time_t res = lut[index].date + hour * 3600 + minute * 60 + second;
-		time_t day_length = lut[index + 1].date - lut[index].date;
+		time_t time_offset = hour * 3600 + minute * 60 + second;
 
-		if (unlikely(day_length == 90000 && hour >= 3))			/// был произведён перевод стрелок назад
-			res += 3600;
-		else if (unlikely(day_length == 82800 && hour >= 2))	/// был произведён перевод стрелок вперёд
-			res -= 3600;
+		if (time_offset >= lut[index].time_at_offset_change)
+			time_offset -= lut[index].amount_of_offset_change;
 
-		return res;
+		return lut[index].date + time_offset;
 	}
 
 
@@ -406,7 +394,7 @@ public:
 		return
 			  toSecondInaccurate(t)
 			+ toMinuteInaccurate(t) 		* 100
-			+ toHourInaccurate(t) 			* 10000
+			+ toHour(t) 					* 10000
 			+ UInt64(values.day_of_month)	* 1000000
 			+ UInt64(values.month) 			* 100000000
 			+ UInt64(values.year)			* 10000000000;
@@ -439,7 +427,7 @@ public:
 		s[8] += values.day_of_month / 10;
 		s[9] += values.day_of_month % 10;
 
-		auto hour = toHourInaccurate(t);
+		auto hour = toHour(t);
 		auto minute = toMinuteInaccurate(t);
 		auto second = toSecondInaccurate(t);
 
