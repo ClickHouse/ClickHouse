@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <ctime>
 #include <vector>
 #include <functional>
 
