@@ -181,16 +181,16 @@ if (ENABLE_LIBTCMALLOC)
     include (cmake/find_gperftools.cmake)
 endif ()
 
-add_subdirectory (contrib)
-add_subdirectory (libs)
-add_subdirectory (utils)
-add_subdirectory (dbms)
-
 # Directory for Yandex specific files
 set (CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)
 if (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
 	add_subdirectory (${CLICKHOUSE_PRIVATE_DIR})
 endif ()
+
+add_subdirectory (contrib)
+add_subdirectory (libs)
+add_subdirectory (utils)
+add_subdirectory (dbms)
 
 message (STATUS "C_FLAGS    = ${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE}}")
 message (STATUS "CXX_FLAGS  = ${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}}")
