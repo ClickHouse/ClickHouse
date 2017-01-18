@@ -1,5 +1,8 @@
-set(VERSION_DESCRIBE v1.1.54154-testing)
-set(VERSION_REVISION 54154)
+#This strings autochanged from release_lib.sh :
+set(VERSION_DESCRIBE v1.1.54134-testing)
+set(VERSION_REVISION 54134)
+#===end of autochange
+
 set(VERSION_MAJOR 1)
 set(VERSION_MINOR 1)
 set(VERSION_PATCH ${VERSION_REVISION})
