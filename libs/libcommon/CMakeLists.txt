@@ -21,7 +21,6 @@ if (APPLE)
 		set (APPLE_SIERRA_OR_NEWER 0)
 	endif ()
 	configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/apple_version.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/common/apple_version.h)
-	include_directories (${CMAKE_CURRENT_BINARY_DIR}/include)
 	add_library (apple_rt
 		src/apple_rt.cpp
 		include/common/apple_rt.h
