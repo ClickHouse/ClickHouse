@@ -1,6 +1,9 @@
 #!/usr/bin/make -f
 # -*- makefile -*-
 
+include /usr/share/dpkg/pkg-info.mk
+export LIBCOMMON_REVISION=$(DEB_VERSION_UPSTREAM)
+
 # Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
 ifndef THREADS_COUNT
