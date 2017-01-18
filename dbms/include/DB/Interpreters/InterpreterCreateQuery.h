@@ -55,13 +55,11 @@ public:
 private:
 	void createDatabase(ASTCreateQuery & create);
 	BlockIO createTable(ASTCreateQuery & create);
+	BlockIO createTableOnCluster(ASTCreateQuery & create);
 
 	/// Calculate list of columns of table and return it.
 	ColumnsInfo setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
 	String setEngine(ASTCreateQuery & create, const StoragePtr & as_storage) const;
-
-	/// Makes structure of Distributed engine for the given CREATE ... ON CLUSTER.
-	ASTPtr createDistributedEngine(ASTCreateQuery & create) const;
 
 	ASTPtr query_ptr;
 	Context context;

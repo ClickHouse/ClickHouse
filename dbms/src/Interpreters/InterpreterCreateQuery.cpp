@@ -29,6 +29,7 @@
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/System/StorageSystemNumbers.h>
 
+#include <DB/Interpreters/Cluster.h>
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
@@ -561,6 +562,43 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 	return {};
 }
 
+static std::string createQueryWithoutCluster(ASTCreateQuery & create)
+{
+	ASTPtr cloned = create.clone();
+	ASTCreateQuery & tmp = typeid_cast<ASTCreateQuery &>(*cloned);
+	tmp.cluster.clear();
+	return formatASTToString(tmp);
+}
+
+BlockIO InterpreterCreateQuery::createTableOnCluster(ASTCreateQuery & create)
+{
+	ClusterPtr cluster = context.getCluster(create.cluster);
+	Cluster::AddressesWithFailover addresses = cluster->getShardsWithFailoverAddresses();
+	std::string query = createQueryWithoutCluster(create);
+
+	for (const auto & s : addresses)
+	{
+		for (const auto & a : s)
+		{
+			try
+			{
+				// TODO get current database
+
+				Connection conn(a.host_name, a.port, create.database, a.user, a.password);
+				conn.sendQuery(query);
+				// TODO receive result
+			}
+			catch (...)
+			{
+				// TODO save command to the zookeeper.
+				std::cerr << "got exception" << std::endl;
+			}
+		}
+	}
+
+	return {};
+}
+
 
 BlockIO InterpreterCreateQuery::execute()
 {
@@ -573,52 +611,9 @@ BlockIO InterpreterCreateQuery::execute()
 		return {};
 	}
 	else if (!create.cluster.empty())
-	{
-		// 1.
-		ASTPtr cloned_ptr = create.clone();
-		ASTCreateQuery & create_local = typeid_cast<ASTCreateQuery &>(*cloned_ptr);
-		create_local.cluster.clear();
-		create_local.table += "_local";
-
-		createTable(create_local);
-
-		// 2.
-		create.storage = createDistributedEngine(create);
-
-		createTable(create);
-
-		return {};
-	}
+		return createTableOnCluster(create);
 	else
 		return createTable(create);
-}
-
-ASTPtr InterpreterCreateQuery::createDistributedEngine(ASTCreateQuery & create) const
-{
-	std::string query("ENGINE = Distributed(");
-	ASTPtr engine_ast;
-
-	query += create.cluster;
-	query += ", ";
-
-	if (!create.database.empty())
-	{
-		query += create.database;
-		query += ".";
-	}
-
-	query += create.table;
-	query += ")";
-
-	Expected expected = "";
-	IParser::Pos pos = query.data();
-	IParser::Pos end = pos + query.size();
-	IParser::Pos max_parsed_pos = pos;
-
-	if (!ParserEngine().parse(pos, end, engine_ast, max_parsed_pos, expected))
-		return nullptr;
-
-	return engine_ast;
 }
 
 }
