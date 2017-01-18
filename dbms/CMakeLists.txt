@@ -11,17 +11,15 @@ include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libre2/)
 include_directories (BEFORE ${ClickHouse_BINARY_DIR}/contrib/libre2/)
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include/)
 
-add_subdirectory (src)
-
 if (NOT ENABLE_LIBTCMALLOC)
 	add_definitions(-DNO_TCMALLOC)
 endif ()
 
+add_subdirectory (src)
 
 add_library(string_utils
 	include/DB/Common/StringUtils.h
 	src/Common/StringUtils.cpp)
-
 
 set(dbms_headers)
 set(dbms_sources)
