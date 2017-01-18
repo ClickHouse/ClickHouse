@@ -2,8 +2,6 @@ SET(CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_version.h)
 SET(CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
 
 include_directories (include)
-# for generated config_version.h and config_common.h:
-include_directories (${CMAKE_CURRENT_BINARY_DIR}/include)
 include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 if (APPLE)
