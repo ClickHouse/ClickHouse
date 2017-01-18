@@ -1,5 +1,7 @@
+include (${CMAKE_SOURCE_DIR}/cmake/find_readline_edit.cmake)
+
 add_executable(zkutil_test zkutil_test.cpp)
-target_link_libraries(zkutil_test zkutil dbms readline)
+target_link_libraries(zkutil_test zkutil dbms ${LINE_EDITING_LIBS})
 
 add_executable(zkutil_test_commands zkutil_test_commands.cpp)
 target_link_libraries(zkutil_test_commands zkutil dbms)

@@ -63,6 +63,11 @@ public:
 		return chars.size() + offsets.size() * sizeof(offsets[0]);
 	}
 
+	size_t allocatedSize() const override
+	{
+		return chars.allocated_size() + offsets.allocated_size() * sizeof(offsets[0]);
+	}
+
 	ColumnPtr cloneResized(size_t size) const override
 	{
 		ColumnPtr new_col_holder = std::make_shared<ColumnString>();

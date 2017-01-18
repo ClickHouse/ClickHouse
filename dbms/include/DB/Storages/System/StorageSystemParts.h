@@ -10,7 +10,7 @@ namespace DB
 class Context;
 
 
-/** Реализует системную таблицу tables, которая позволяет получить информацию о всех таблицах.
+/** Implements system table 'parts' which allows to get information about data parts for tables of MergeTree family.
   */
 class StorageSystemParts : private ext::shared_ptr_helper<StorageSystemParts>, public IStorage
 {
