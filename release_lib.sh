@@ -94,6 +94,17 @@ function gen_revision_author {
 			echo "Fail to create tag"
 			exit 1
 		fi
+
+		auto_message="Auto version update to"
+		git_log_grep=`git log --oneline --max-count=1 | grep "$auto_message"`
+		if [ "$git_log_grep" == "" ]; then
+			git_describe=`git describe`
+			sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g" libs/libcommon/cmake/version.cmake
+			sed -i -- "s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" libs/libcommon/cmake/version.cmake
+			git commit -m "$auto_message [$REVISION]" libs/libcommon/cmake/version.cmake
+			git push
+		fi
+
 	fi
 
 	AUTHOR=$(git config --get user.name)

@@ -6,7 +6,7 @@
   * To use, include this file with -include compiler parameter.
   */
 
-#include <common/apple_version.h>
+#include <common/config_common.h>
 
 #if APPLE_SIERRA_OR_NEWER == 0
 /**
