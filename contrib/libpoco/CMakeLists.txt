@@ -133,7 +133,7 @@ endif(WIN32)
 
 if (UNIX AND NOT ANDROID )
 	add_definitions( -DPOCO_OS_FAMILY_UNIX )
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-private-field -Wno-unused-local-typedef -Wno-for-loop-analysis -Wno-unknown-pragmas -Wno-unused-variable -Wno-deprecated-declarations")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-private-field -Wno-unused-local-typedef -Wno-for-loop-analysis -Wno-unknown-pragmas -Wno-unused-variable")
 	if (APPLE)
 		set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
 	endif ()
