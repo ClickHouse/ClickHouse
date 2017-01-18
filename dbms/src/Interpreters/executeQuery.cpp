@@ -91,12 +91,12 @@ static void logException(Context & context, QueryLogElement & elem)
 
 static void onExceptionBeforeStart(const String & query, Context & context, time_t current_time)
 {
-	/// Эксепшен до начала выполнения запроса.
+	/// Exception before the query execution.
 	context.getQuota().addError();
 
 	bool log_queries = context.getSettingsRef().log_queries;
 
-	/// Логгируем в таблицу начало выполнения запроса, если нужно.
+	/// Log the start of query execution into the table if necessary.
 	if (log_queries)
 	{
 		QueryLogElement elem;
@@ -358,7 +358,6 @@ void executeQuery(
 	WriteBuffer & ostr,
 	bool allow_into_outfile,
 	Context & context,
-	BlockInputStreamPtr & query_plan,
 	std::function<void(const String &)> set_content_type)
 {
 	PODArray<char> parse_buf;
