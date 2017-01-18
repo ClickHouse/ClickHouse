@@ -74,10 +74,6 @@ endif ()
 option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ON)
 option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ON)
 
-option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan." OFF)
-if ($ENV{GLIBC_COMPATIBILITY})
-	set (GLIBC_COMPATIBILITY TRUE)
-endif ()
 
 option (ENABLE_LIBTCMALLOC "Set to TRUE to enable libtcmalloc." ON)
 if (NOT $ENV{ENABLE_LIBTCMALLOC})
@@ -87,6 +83,11 @@ endif ()
 option (DEBUG_LIBTCMALLOC "Set to TRUE to use debug version of libtcmalloc." OFF)
 if ($ENV{DEBUG_LIBTCMALLOC})
 	set (DEBUG_LIBTCMALLOC TRUE)
+endif ()
+
+option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan." OFF)
+if ($ENV{GLIBC_COMPATIBILITY})
+	set (GLIBC_COMPATIBILITY TRUE)
 endif ()
 
 if (GLIBC_COMPATIBILITY)
@@ -135,12 +136,21 @@ if (USE_STATIC_LIBRARIES AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 endif ()
 
 
-# -fuse-ld=gold - fix linkage for gcc-5.4, gcc-6.1
-# See more in http://stackoverflow.com/questions/37603238/fsanitize-not-using-gold-linker-in-gcc-6-1
-set (CMAKE_CXX_FLAGS_ASAN                "${CMAKE_CXX_FLAGS_ASAN} ${COMPILER_FLAGS} -O3 -g -fsanitize=address -fno-omit-frame-pointer -fuse-ld=gold")
-set (CMAKE_CXX_FLAGS_UBSAN               "${CMAKE_CXX_FLAGS_UBSAN} ${COMPILER_FLAGS} -O3 -g -fsanitize=undefined -fno-omit-frame-pointer")
-set (CMAKE_C_FLAGS_ASAN                  "${CMAKE_C_FLAGS_ASAN} ${COMPILER_FLAGS} -O3 -g -fsanitize=address -fno-omit-frame-pointer -fuse-ld=gold")
-set (CMAKE_C_FLAGS_UBSAN                 "${CMAKE_C_FLAGS_UBSAN} ${COMPILER_FLAGS} -O3 -g -fsanitize=undefined -fno-omit-frame-pointer")
+set (SAN_FLAGS "-O3 -g -fno-omit-frame-pointer")
+set (CMAKE_CXX_FLAGS_ASAN                "${CMAKE_CXX_FLAGS_ASAN}  ${SAN_FLAGS} -fsanitize=address")
+set (CMAKE_C_FLAGS_ASAN                  "${CMAKE_C_FLAGS_ASAN}    ${SAN_FLAGS} -fsanitize=address")
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+	# -fuse-ld=gold - fix linkage for gcc-5.4, gcc-6.1
+	# See more in http://stackoverflow.com/questions/37603238/fsanitize-not-using-gold-linker-in-gcc-6-1
+	set (CMAKE_CXX_FLAGS_ASAN            "${CMAKE_CXX_FLAGS_ASAN} -fuse-ld=gold")
+	set (CMAKE_C_FLAGS_ASAN              "${CMAKE_C_FLAGS_ASAN}   -fuse-ld=gold")
+endif ()
+set (CMAKE_CXX_FLAGS_UBSAN               "${CMAKE_CXX_FLAGS_UBSAN} ${SAN_FLAGS} -fsanitize=undefined")
+set (CMAKE_C_FLAGS_UBSAN                 "${CMAKE_C_FLAGS_UBSAN}   ${SAN_FLAGS} -fsanitize=undefined")
+set (CMAKE_CXX_FLAGS_MSAN                "${CMAKE_CXX_FLAGS_MSAN}  ${SAN_FLAGS} -fsanitize=memory")
+set (CMAKE_C_FLAGS_MSAN                  "${CMAKE_C_FLAGS_MSAN}    ${SAN_FLAGS} -fsanitize=memory")
+set (CMAKE_CXX_FLAGS_TSAN                "${CMAKE_CXX_FLAGS_TSAN}  ${SAN_FLAGS} -fsanitize=thread")
+set (CMAKE_C_FLAGS_TSAN                  "${CMAKE_C_FLAGS_TSAN}    ${SAN_FLAGS} -fsanitize=thread")
 
 # Flags for test coverage
 if (TEST_COVERAGE)
@@ -182,8 +192,8 @@ if (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
 	add_subdirectory (${CLICKHOUSE_PRIVATE_DIR})
 endif ()
 
-message (STATUS "C_FLAGS    = ${CMAKE_C_FLAGS}")
-message (STATUS "CXX_FLAGS  = ${CMAKE_CXX_FLAGS}")
+message (STATUS "C_FLAGS    = ${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE}}")
+message (STATUS "CXX_FLAGS  = ${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}}")
 message (STATUS "LINK_FLAGS = ${CMAKE_EXE_LINKER_FLAGS}")
 
 include (cmake/print_include_directories.cmake)

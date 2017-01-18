@@ -14,7 +14,7 @@ include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include/)
 add_subdirectory (src)
 
 if (NOT ENABLE_LIBTCMALLOC)
-	add_definitions(-D NO_TCMALLOC)
+	add_definitions(-DNO_TCMALLOC)
 endif ()
 
 
