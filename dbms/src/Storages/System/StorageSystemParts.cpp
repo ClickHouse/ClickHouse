@@ -33,6 +33,8 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
 		{"min_block_number",	std::make_shared<DataTypeInt64>()},
 		{"max_block_number",	std::make_shared<DataTypeInt64>()},
 		{"level",				std::make_shared<DataTypeUInt32>()},
+		{"primary_key_bytes_in_memory", std::make_shared<DataTypeUInt64>()},
+		{"primary_key_bytes_in_memory_allocated", std::make_shared<DataTypeUInt64>()},
 
 		{"database", 			std::make_shared<DataTypeString>()},
 		{"table", 				std::make_shared<DataTypeString>()},
@@ -59,30 +61,30 @@ BlockInputStreams StorageSystemParts::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	/// Будем поочередно применять WHERE к подмножеству столбцов и добавлять столбцы.
-	/// Получилось довольно запутанно, но условия в WHERE учитываются почти везде, где можно.
+	/// Will apply WHERE to subset of columns and then add more columns.
+	/// This is kind of complicated, but we use WHERE to do less work.
 
-	Block block;
+	Block block_to_filter;
 
 	std::map<std::pair<String, String>, StoragePtr> storages;
 
 	{
 		Databases databases = context.getDatabases();
 
-		/// Добавим столбец database.
+		/// Add column 'database'.
 		ColumnPtr database_column = std::make_shared<ColumnString>();
 		for (const auto & database : databases)
 			database_column->insert(database.first);
-		block.insert(ColumnWithTypeAndName(database_column, std::make_shared<DataTypeString>(), "database"));
+		block_to_filter.insert(ColumnWithTypeAndName(database_column, std::make_shared<DataTypeString>(), "database"));
 
-		/// Отфильтруем блок со столбцом database.
-		VirtualColumnUtils::filterBlockWithQuery(query, block, context);
+		/// Filter block_to_filter with column 'database'.
+		VirtualColumnUtils::filterBlockWithQuery(query, block_to_filter, context);
 
-		if (!block.rows())
+		if (!block_to_filter.rows())
 			return BlockInputStreams();
 
-		/// Добавим столбцы table и engine, active и replicated.
-		database_column = block.getByName("database").column;
+		/// Add columns 'table', 'engine', 'active', 'replicated'.
+		database_column = block_to_filter.getByName("database").column;
 		size_t rows = database_column->size();
 
 		IColumn::Offsets_t offsets(rows);
@@ -109,7 +111,7 @@ BlockInputStreams StorageSystemParts::read(
 
 				storages[std::make_pair(database_name, iterator->name())] = storage;
 
-				/// Добавим все 4 комбинации флагов replicated и active.
+				/// Add all four combinations of flags 'replicated' and 'active'.
 				for (UInt64 replicated : {0, 1})
 				{
 					for (UInt64 active : {0, 1})
@@ -125,54 +127,40 @@ BlockInputStreams StorageSystemParts::read(
 			}
 		}
 
-		for (size_t i = 0; i < block.columns(); ++i)
+		for (size_t i = 0; i < block_to_filter.columns(); ++i)
 		{
-			ColumnPtr & column = block.safeGetByPosition(i).column;
+			ColumnPtr & column = block_to_filter.safeGetByPosition(i).column;
 			column = column->replicate(offsets);
 		}
 
-		block.insert(ColumnWithTypeAndName(table_column, std::make_shared<DataTypeString>(), "table"));
-		block.insert(ColumnWithTypeAndName(engine_column, std::make_shared<DataTypeString>(), "engine"));
-		block.insert(ColumnWithTypeAndName(replicated_column, std::make_shared<DataTypeUInt8>(), "replicated"));
-		block.insert(ColumnWithTypeAndName(active_column, std::make_shared<DataTypeUInt8>(), "active"));
+		block_to_filter.insert(ColumnWithTypeAndName(table_column, std::make_shared<DataTypeString>(), "table"));
+		block_to_filter.insert(ColumnWithTypeAndName(engine_column, std::make_shared<DataTypeString>(), "engine"));
+		block_to_filter.insert(ColumnWithTypeAndName(replicated_column, std::make_shared<DataTypeUInt8>(), "replicated"));
+		block_to_filter.insert(ColumnWithTypeAndName(active_column, std::make_shared<DataTypeUInt8>(), "active"));
 	}
 
-	/// Отфильтруем блок со столбцами database, table, engine, replicated и active.
-	VirtualColumnUtils::filterBlockWithQuery(query, block, context);
+	/// Filter block_to_filter with columns 'database', 'table', 'engine', 'replicated', 'active'.
+	VirtualColumnUtils::filterBlockWithQuery(query, block_to_filter, context);
 
-	if (!block.rows())
-		return BlockInputStreams();
+	/// If all was filtered out.
+	if (!block_to_filter.rows())
+		return {};
 
-	ColumnPtr filtered_database_column = block.getByName("database").column;
-	ColumnPtr filtered_table_column = block.getByName("table").column;
-	ColumnPtr filtered_replicated_column = block.getByName("replicated").column;
-	ColumnPtr filtered_active_column = block.getByName("active").column;
+	ColumnPtr filtered_database_column = block_to_filter.getByName("database").column;
+	ColumnPtr filtered_table_column = block_to_filter.getByName("table").column;
+	ColumnPtr filtered_replicated_column = block_to_filter.getByName("replicated").column;
+	ColumnPtr filtered_active_column = block_to_filter.getByName("active").column;
 
-	/// Наконец составим результат.
-	ColumnPtr database_column = std::make_shared<ColumnString>();
-	ColumnPtr table_column = std::make_shared<ColumnString>();
-	ColumnPtr engine_column = std::make_shared<ColumnString>();
-	ColumnPtr partition_column = std::make_shared<ColumnString>();
-	ColumnPtr name_column = std::make_shared<ColumnString>();
-	ColumnPtr replicated_column = std::make_shared<ColumnUInt8>();
-	ColumnPtr active_column = std::make_shared<ColumnUInt8>();
-	ColumnPtr marks_column = std::make_shared<ColumnUInt64>();
-	ColumnPtr bytes_column = std::make_shared<ColumnUInt64>();
-	ColumnPtr modification_time_column = std::make_shared<ColumnUInt32>();
-	ColumnPtr remove_time_column = std::make_shared<ColumnUInt32>();
-	ColumnPtr refcount_column = std::make_shared<ColumnUInt32>();
-	ColumnPtr min_date_column = std::make_shared<ColumnUInt16>();
-	ColumnPtr max_date_column = std::make_shared<ColumnUInt16>();
-	ColumnPtr min_block_number_column = std::make_shared<ColumnInt64>();
-	ColumnPtr max_block_number_column = std::make_shared<ColumnInt64>();
-	ColumnPtr level_column = std::make_shared<ColumnUInt32>();
+	/// Finally, create the result.
+
+	Block block = getSampleBlock();
 
 	for (size_t i = 0; i < filtered_database_column->size();)
 	{
 		String database = (*filtered_database_column)[i].get<String>();
 		String table = (*filtered_table_column)[i].get<String>();
 
-		/// Посмотрим, какие комбинации значений replicated, active нам нужны.
+		/// What combinations of 'replicated' and 'active' values we need.
 		bool need[2][2]{}; /// [replicated][active]
 		for (; i < filtered_database_column->size() &&
 			(*filtered_database_column)[i].get<String>() == database &&
@@ -193,10 +181,10 @@ BlockInputStreams StorageSystemParts::read(
 		catch (const Exception & e)
 		{
 			/** There are case when IStorage::drop was called,
-			 *  but we still own the object.
-			 * Then table will throw exception at attempt to lock it.
-			 * Just skip the table.
-			 */
+			  *  but we still own the object.
+			  * Then table will throw exception at attempt to lock it.
+			  * Just skip the table.
+			  */
 			if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
 				continue;
 			else
@@ -234,52 +222,36 @@ BlockInputStreams StorageSystemParts::read(
 			/// Наконец пройдем по списку кусочков.
 			for (const MergeTreeData::DataPartPtr & part : all_parts)
 			{
-				database_column->insert(database);
-				table_column->insert(table);
-				engine_column->insert(engine);
-
 				LocalDate partition_date {part->month};
 				String partition = toString(partition_date.year()) + (partition_date.month() < 10 ? "0" : "") + toString(partition_date.month());
-				partition_column->insert(partition);
 
-				name_column->insert(part->name);
-				replicated_column->insert(replicated);
-				active_column->insert(static_cast<UInt64>(!need[replicated][0] || active_parts.count(part)));
-				marks_column->insert(part->size);
-				bytes_column->insert(static_cast<size_t>(part->size_in_bytes));
-				modification_time_column->insert(part->modification_time);
-				remove_time_column->insert(part->remove_time);
-				min_date_column->insert(static_cast<UInt64>(part->left_date));
-				max_date_column->insert(static_cast<UInt64>(part->right_date));
-				min_block_number_column->insert(part->left);
-				max_block_number_column->insert(part->right);
-				level_column->insert(static_cast<UInt64>(part->level));
+				size_t i = 0;
+				block.getByPosition(i++).column->insert(partition);
+				block.getByPosition(i++).column->insert(part->name);
+				block.getByPosition(i++).column->insert(replicated);
+				block.getByPosition(i++).column->insert(static_cast<UInt64>(!need[replicated][0] || active_parts.count(part)));
+				block.getByPosition(i++).column->insert(part->size);
+				block.getByPosition(i++).column->insert(static_cast<size_t>(part->size_in_bytes));
+				block.getByPosition(i++).column->insert(part->modification_time);
+				block.getByPosition(i++).column->insert(part->remove_time);
 
-				/// В выводимом refcount, для удобства, не учиытываем тот, что привнесён локальными переменными all_parts, active_parts.
-				refcount_column->insert(part.use_count() - (active_parts.count(part) ? 2 : 1));
+				/// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
+				block.getByPosition(i++).column->insert(part.use_count() - (active_parts.count(part) ? 2 : 1));
+
+				block.getByPosition(i++).column->insert(static_cast<UInt64>(part->left_date));
+				block.getByPosition(i++).column->insert(static_cast<UInt64>(part->right_date));
+				block.getByPosition(i++).column->insert(part->left);
+				block.getByPosition(i++).column->insert(part->right);
+				block.getByPosition(i++).column->insert(static_cast<UInt64>(part->level));
+				block.getByPosition(i++).column->insert(part->getIndexSizeInBytes());
+				block.getByPosition(i++).column->insert(part->getIndexSizeInAllocatedBytes());
+
+				block.getByPosition(i++).column->insert(database);
+				block.getByPosition(i++).column->insert(table);
+				block.getByPosition(i++).column->insert(engine);
 			}
 		}
 	}
-
-	block.clear();
-
-	block.insert(ColumnWithTypeAndName(partition_column, 			std::make_shared<DataTypeString>(), 	"partition"));
-	block.insert(ColumnWithTypeAndName(name_column, 				std::make_shared<DataTypeString>(), 	"name"));
-	block.insert(ColumnWithTypeAndName(replicated_column, 			std::make_shared<DataTypeUInt8>(),		"replicated"));
-	block.insert(ColumnWithTypeAndName(active_column, 				std::make_shared<DataTypeUInt8>(), 		"active"));
-	block.insert(ColumnWithTypeAndName(marks_column, 				std::make_shared<DataTypeUInt64>(), 	"marks"));
-	block.insert(ColumnWithTypeAndName(bytes_column, 				std::make_shared<DataTypeUInt64>(), 	"bytes"));
-	block.insert(ColumnWithTypeAndName(modification_time_column, 	std::make_shared<DataTypeDateTime>(), 	"modification_time"));
-	block.insert(ColumnWithTypeAndName(remove_time_column, 			std::make_shared<DataTypeDateTime>(), 	"remove_time"));
-	block.insert(ColumnWithTypeAndName(refcount_column, 			std::make_shared<DataTypeUInt32>(), 	"refcount"));
-	block.insert(ColumnWithTypeAndName(min_date_column,				std::make_shared<DataTypeDate>(),		"min_date"));
-	block.insert(ColumnWithTypeAndName(max_date_column,				std::make_shared<DataTypeDate>(),		"max_date"));
-	block.insert(ColumnWithTypeAndName(min_block_number_column,		std::make_shared<DataTypeInt64>(),		"min_block_number"));
-	block.insert(ColumnWithTypeAndName(max_block_number_column,		std::make_shared<DataTypeInt64>(),		"max_block_number"));
-	block.insert(ColumnWithTypeAndName(level_column,				std::make_shared<DataTypeUInt32>(),		"level"));
-	block.insert(ColumnWithTypeAndName(database_column, 			std::make_shared<DataTypeString>(), 	"database"));
-	block.insert(ColumnWithTypeAndName(table_column, 				std::make_shared<DataTypeString>(), 	"table"));
-	block.insert(ColumnWithTypeAndName(engine_column, 				std::make_shared<DataTypeString>(), 	"engine"));
 
 	return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
 }

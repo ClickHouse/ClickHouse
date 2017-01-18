@@ -259,8 +259,14 @@ public:
 	  */
 	virtual void reserve(size_t n) {};
 
-	/** Приблизительный размер столбца в оперативке в байтах - для профайлинга. 0 - если неизвестно. */
+	/** Size of column data in memory (may be approximate) - for profiling. Zero, if could not be determined. */
 	virtual size_t byteSize() const = 0;
+
+	/** Size of memory, allocated for column.
+	  * This is greater or equals to byteSize due to memory reservation in containers.
+	  * Zero, if could be determined.
+	  */
+	virtual size_t allocatedSize() const = 0;
 
 	virtual ~IColumn() {}
 };
