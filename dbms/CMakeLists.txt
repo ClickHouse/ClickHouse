@@ -15,6 +15,11 @@ if (NOT ENABLE_LIBTCMALLOC)
 	add_definitions(-DNO_TCMALLOC)
 endif ()
 
+if (NOT NO_WERROR)
+	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
+	set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
+endif ()
+
 add_subdirectory (src)
 
 add_library(string_utils

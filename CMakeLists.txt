@@ -50,7 +50,7 @@ if (NOT AARCH64)
 	set (MACHINE_FLAGS "-msse4 -mpopcnt")
 endif ()
 
-set (COMMON_WARNING_FLAGS "-Wall -Werror")
+set (COMMON_WARNING_FLAGS "-Wall")
 set (CXX_WARNING_FLAGS "-Wnon-virtual-dtor")
 
 set (CXX11_ABI "ENABLE" CACHE STRING "Use C++11 ABI: DEFAULT, ENABLE, DISABLE")
