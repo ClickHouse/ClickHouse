@@ -45,8 +45,6 @@ void HTTPHandler::processQuery(
 
 	std::istream & istr = request.stream();
 
-	BlockInputStreamPtr query_plan;
-
 	/// Part of the query can be passed in the 'query' parameter and the rest in the request body
 	/// (http method need not necessarily be POST). In this case the entire query consists of the
 	/// contents of the 'query' parameter, a line break and the request body.
@@ -257,7 +255,7 @@ void HTTPHandler::processQuery(
 	client_info.http_method = http_method;
 	client_info.http_user_agent = request.get("User-Agent", "");
 
-	executeQuery(*in, *used_output.out_maybe_compressed, context, query_plan,
+	executeQuery(*in, *used_output.out_maybe_compressed, /* allow_into_outfile = */ false, context,
 		[&response] (const String & content_type) { response.setContentType(content_type); });
 
 	/// Send HTTP headers with code 200 if no exception happened and the data is still not sent to

@@ -1352,29 +1352,29 @@ Possible values: 0 - do not wait, 1 - wait for own completion (default), 2 - wai
 
 ===SHOW DATABASES===
 
-%%SHOW DATABASES [FORMAT format]%%
+%%SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]%%
 
 Prints a list of all databases.
-This query is identical to the query SELECT name FROM system.databases [FORMAT format]
+This query is identical to the query SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]
 See the section &quot;Formats&quot;.
 
 
 ===SHOW TABLES===
 
-%%SHOW TABLES [FROM db] [LIKE &#39;pattern&#39;] [FORMAT format]%%
+%%SHOW TABLES [FROM db] [LIKE &#39;pattern&#39;] [INTO OUTFILE filename] [FORMAT format]%%
 
 Outputs a list of
 - tables from the current database, or from the &#39;db&#39; database if &quot;FROM db&quot; is specified.
 - all tables, or tables whose name matches the pattern, if &quot;LIKE &#39;pattern&#39;&quot; is specified.
 
 The query is identical to the query  SELECT name FROM system.tables
-WHERE database = &#39;db&#39; [AND name LIKE &#39;pattern&#39;] [FORMAT format]
+WHERE database = &#39;db&#39; [AND name LIKE &#39;pattern&#39;] [INTO OUTFILE filename] [FORMAT format]
 See the section &quot;LIKE operator&quot;.
 
 
 ===SHOW PROCESSLIST===
 
-%%SHOW PROCESSLIST [FORMAT format]%%
+%%SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]%%
 
 Outputs a list of queries currently being processed, other than SHOW PROCESSLIST queries.
 
@@ -1394,7 +1394,7 @@ Prints a table containing the columns:
 
 <b>query_id</b> - The query identifier. Non-empty only if it was explicitly defined by the user. For distributed processing, the query ID is not passed to remote servers.
 
-This query is exactly the same as: SELECT * FROM system.processes [FORMAT format].
+This query is exactly the same as: SELECT * FROM system.processes [INTO OUTFILE filename] [FORMAT format].
 
 Tip (execute in the console):
 %%watch -n1 &quot;clickhouse-client --query=&#39;SHOW PROCESSLIST&#39;&quot;%%
@@ -1402,14 +1402,14 @@ Tip (execute in the console):
 
 ===SHOW CREATE TABLE===
 
-%%SHOW CREATE TABLE [db.]table [FORMAT format]%%
+%%SHOW CREATE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]%%
 
 Returns a single String-type &#39;statement&#39; column, which contains a single value - the CREATE query used for creating the specified table.
 
 
 ===DESCRIBE TABLE===
 
-%%DESC|DESCRIBE TABLE [db.]table [FORMAT format]%%
+%%DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]%%
 
 Returns two String-type columns: &#39;name&#39; and &#39;type&#39;, which indicate the names and types of columns in the specified table.
 
@@ -1418,7 +1418,7 @@ Nested data structures are output in &quot;expanded&quot; format. Each column is
 
 ===EXISTS===
 
-%%EXISTS TABLE [db.]name [FORMAT format]%%
+%%EXISTS TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]%%
 
 Returns a single UInt8-type column, which contains the single value 0 if the table or database doesn&#39;t exist, or 1 if the table exists in the specified database.
 
@@ -1511,6 +1511,7 @@ His Highness, the SELECT query.
     [ORDER BY expr_list]
     [LIMIT [n, ]m]
     [UNION ALL ...]
+    [INTO OUTFILE filename]
     [FORMAT format]%%
 
 All the clauses are optional, except for the required list of expressions immediately after SELECT.
@@ -2081,6 +2082,14 @@ The structure of results (the number and type of columns) must match for the que
 
 Queries that are parts of UNION ALL can&#39;t be enclosed in brackets. ORDER BY and LIMIT are applied to separate queries, not to the final result. If you need to apply a conversion to the final result, you can put all the queries with UNION ALL in a subquery in the FROM clause.
 
+
+<h4>INTO OUTFILE clause</h4>
+
+Add %%INTO OUTFILE filename%% clause (where filename is a string literal) to redirect query output to a file filename.
+In contrast to MySQL the file is created on a client host. The query will fail if a file with the same filename already exists.
+INTO OUTFILE is available in the command-line client and clickhouse-local (a query sent via HTTP interface will fail).
+
+Default output format is TabSeparated (the same as in the batch mode of command-line client).
 
 <h4>FORMAT clause</h4>
 

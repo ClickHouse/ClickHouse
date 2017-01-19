@@ -434,12 +434,11 @@ void LocalServer::processQueries()
 	{
 		ReadBufferFromString read_buf(query);
 		WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
-		BlockInputStreamPtr plan;
 
 		if (verbose)
 			LOG_INFO(log, "Executing query: " << query);
 
-		executeQuery(read_buf, write_buf, *context, plan, nullptr);
+		executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, *context, {});
 	}
 }
 

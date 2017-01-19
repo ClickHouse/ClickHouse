@@ -10,7 +10,7 @@ namespace DB
 
 /** Запрос (EXISTS | SHOW CREATE | (DESCRIBE | DESC) ) [TABLE] [db.]name [FORMAT format]
   */
-class ParserTablePropertiesQuery : public ParserQueryWithOutput
+class ParserTablePropertiesQuery : public IParserBase
 {
 protected:
 	const char * getName() const { return "EXISTS, SHOW CREATE or DESCRIBE query"; }

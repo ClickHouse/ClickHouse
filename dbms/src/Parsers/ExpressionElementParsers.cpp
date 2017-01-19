@@ -642,6 +642,7 @@ const char * ParserAliasBase::restricted_keywords[] =
 	"SETTINGS",
 	"FORMAT",
 	"UNION",
+	"INTO",
 	nullptr
 };
 

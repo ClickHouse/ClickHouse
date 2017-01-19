@@ -7,12 +7,13 @@
 namespace DB
 {
 
-/** Парсер для запросов поддерживающих секцию FORMAT.
-  */
+/// Parse queries supporting [INTO OUTFILE 'file_name'] [FORMAT format_name] suffix.
 class ParserQueryWithOutput : public IParserBase
 {
 protected:
-	bool parseFormat(ASTQueryWithOutput & query, Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+	const char * getName() const override { return "Query with output"; }
+
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) override;
 
 protected:
 	ParserWhiteSpaceOrComments ws;
