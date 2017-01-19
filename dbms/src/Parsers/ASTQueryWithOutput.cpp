@@ -3,7 +3,7 @@
 namespace DB
 {
 
-void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput& cloned) const
+void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
 {
 	if (out_file)
 	{

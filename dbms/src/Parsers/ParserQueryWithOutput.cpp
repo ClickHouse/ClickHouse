@@ -38,8 +38,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 	{
 		ws.ignore(pos, end);
 
-		ParserString s_into("OUTFILE", true, true);
-		if (!s_into.ignore(pos, end, max_parsed_pos, expected))
+		ParserString s_outfile("OUTFILE", true, true);
+		if (!s_outfile.ignore(pos, end, max_parsed_pos, expected))
 		{
 			expected = "OUTFILE";
 			return false;

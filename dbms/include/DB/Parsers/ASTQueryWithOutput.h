@@ -19,7 +19,7 @@ public:
 
 protected:
 	/// NOTE: call this helper at the end of the clone() method of descendant class.
-	void cloneOutputOptions(ASTQueryWithOutput& cloned) const;
+	void cloneOutputOptions(ASTQueryWithOutput & cloned) const;
 
 	/// Format only the query part of the AST (without output options).
 	virtual void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
