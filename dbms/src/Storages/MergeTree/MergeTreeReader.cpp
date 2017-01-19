@@ -134,7 +134,7 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
 
 			try
 			{
-				readData(column.name, *column.type, *column.column, from_mark, max_rows_to_read, 0, read_offsets);
+				readData(column.name, *column.type, *column.column, from_mark, to_mark, max_rows_to_read, 0, read_offsets);
 			}
 			catch (Exception & e)
 			{
@@ -178,15 +178,15 @@ void MergeTreeReader::fillMissingColumnsAndReorder(Block & res, const Names & or
 
 
 MergeTreeReader::Stream::Stream(
-	const String & path_prefix_, const String & extension_,
+	const String & path_prefix_, const String & extension_, size_t marks_count_,
+	const MarkRanges & all_mark_ranges,
+	MarkCache * mark_cache_, bool save_marks_in_cache_,
 	UncompressedCache * uncompressed_cache,
-	MarkCache * mark_cache, bool save_marks_in_cache,
-	const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size,
+	size_t aio_threshold, size_t max_read_buffer_size,
 	const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
-	: path_prefix(path_prefix_), extension(extension_)
+	: path_prefix(path_prefix_), extension(extension_), marks_count(marks_count_)
+	, mark_cache(mark_cache_), save_marks_in_cache(save_marks_in_cache_)
 {
-	loadMarks(mark_cache, save_marks_in_cache, isNullStream(extension));
-
 	/// Compute the size of the buffer.
 	size_t max_mark_range = 0;
 
@@ -195,28 +195,28 @@ MergeTreeReader::Stream::Stream(
 		size_t right = all_mark_ranges[i].end;
 
 		/// Если правая граница лежит внутри блока, то его тоже придется читать.
-		if (right < (*marks).size() && (*marks)[right].offset_in_decompressed_block > 0)
+		if (right < marks_count && getMark(right).offset_in_decompressed_block > 0)
 		{
-			while (right < (*marks).size()
-				&& (*marks)[right].offset_in_compressed_file
-					== (*marks)[all_mark_ranges[i].end].offset_in_compressed_file)
+			while (right < marks_count
+				   && getMark(right).offset_in_compressed_file
+					   == getMark(all_mark_ranges[i].end).offset_in_compressed_file)
 			{
 				++right;
 			}
 		}
 
 		/// Если правее засечек нет, просто используем max_read_buffer_size
-		if (right >= (*marks).size()
-			|| (right + 1 == (*marks).size()
-				&& (*marks)[right].offset_in_compressed_file
-					== (*marks)[all_mark_ranges[i].end].offset_in_compressed_file))
+		if (right >= marks_count
+			|| (right + 1 == marks_count
+				&& getMark(right).offset_in_compressed_file
+					== getMark(all_mark_ranges[i].end).offset_in_compressed_file))
 		{
 			max_mark_range = max_read_buffer_size;
 			break;
 		}
 
 		max_mark_range = std::max(max_mark_range,
-			(*marks)[right].offset_in_compressed_file - (*marks)[all_mark_ranges[i].begin].offset_in_compressed_file);
+			getMark(right).offset_in_compressed_file - getMark(all_mark_ranges[i].begin).offset_in_compressed_file);
 	}
 
 	size_t buffer_size = std::min(max_read_buffer_size, max_mark_range);
@@ -227,15 +227,15 @@ MergeTreeReader::Stream::Stream(
 	{
 		for (const auto & mark_range : all_mark_ranges)
 		{
-			size_t offset_begin = (*marks)[mark_range.begin].offset_in_compressed_file;
+			size_t offset_begin = (mark_range.begin > 0)
+				? getMark(mark_range.begin).offset_in_compressed_file
+				: 0;
 
-			size_t offset_end;
-			if (mark_range.end < (*marks).size())
-				offset_end = (*marks)[mark_range.end].offset_in_compressed_file;
-			else
-				offset_end = Poco::File(path_prefix + extension).getSize();
+			size_t offset_end = (mark_range.end < marks_count)
+				? getMark(mark_range.end).offset_in_compressed_file
+				: Poco::File(path_prefix + extension).getSize();
 
-			if (offset_end > 0)
+			if (offset_end > offset_begin)
 				estimated_size += offset_end - offset_begin;
 		}
 	}
@@ -272,21 +272,27 @@ std::unique_ptr<MergeTreeReader::Stream> MergeTreeReader::Stream::createEmptyPtr
 	return res;
 }
 
+const MarkInCompressedFile & MergeTreeReader::Stream::getMark(size_t index)
+{
+	if (!marks)
+		loadMarks();
+	return (*marks)[index];
+}
 
-void MergeTreeReader::Stream::loadMarks(MarkCache * cache, bool save_in_cache, bool is_null_stream)
+void MergeTreeReader::Stream::loadMarks()
 {
 	std::string path;
 
-	if (is_null_stream)
+	if (isNullStream(extension))
 		path = path_prefix + ".null.mrk";
 	else
 		path = path_prefix + ".mrk";
 
 	UInt128 key;
-	if (cache)
+	if (mark_cache)
 	{
-		key = cache->hash(path);
-		marks = cache->get(key);
+		key = mark_cache->hash(path);
+		marks = mark_cache->get(key);
 		if (marks)
 			return;
 	}
@@ -295,13 +301,13 @@ void MergeTreeReader::Stream::loadMarks(MarkCache * cache, bool save_in_cache, b
 	TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
 
 	size_t file_size = Poco::File(path).getSize();
+	size_t expected_file_size = sizeof(MarkInCompressedFile) * marks_count;
+	if (expected_file_size != file_size)
+		throw Exception(
+				"bad size of marks file `" + path + "':" + std::to_string(file_size) + ", must be: "  + std::to_string(expected_file_size),
+				ErrorCodes::CORRUPTED_DATA);
 
-	if (file_size % sizeof(MarkInCompressedFile) != 0)
-		throw Exception("Size of " + path + " file is not divisable by size of MarkInCompressedFile structure.", ErrorCodes::CORRUPTED_DATA);
-
-	size_t num_marks = file_size / sizeof(MarkInCompressedFile);
-
-	marks = std::make_shared<MarksInCompressedFile>(num_marks);
+	marks = std::make_shared<MarksInCompressedFile>(marks_count);
 
 	/// Read directly to marks.
 	ReadBufferFromFile buffer(path, file_size, -1, reinterpret_cast<char *>(marks->data()));
@@ -309,14 +315,17 @@ void MergeTreeReader::Stream::loadMarks(MarkCache * cache, bool save_in_cache, b
 	if (buffer.eof() || buffer.buffer().size() != file_size)
 		throw Exception("Cannot read all marks from file " + path, ErrorCodes::CANNOT_READ_ALL_DATA);
 
-	if (cache && save_in_cache)
-		cache->set(key, marks);
+	if (mark_cache && save_marks_in_cache)
+		mark_cache->set(key, marks);
 }
 
 
 void MergeTreeReader::Stream::seekToMark(size_t index)
 {
-	MarkInCompressedFile mark = (*marks)[index];
+	if (index == cur_mark_idx)
+		return;
+
+	MarkInCompressedFile mark = getMark(index);
 
 	try
 	{
@@ -324,6 +333,7 @@ void MergeTreeReader::Stream::seekToMark(size_t index)
 			cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
 		if (non_cached_buffer)
 			non_cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+		cur_mark_idx = index;
 	}
 	catch (Exception & e)
 	{
@@ -365,8 +375,9 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 		std::string filename = name + NULL_MAP_EXTENSION;
 
 		streams.emplace(filename, std::make_unique<Stream>(
-			path + escaped_column_name, NULL_MAP_EXTENSION, uncompressed_cache, mark_cache, save_marks_in_cache,
-			all_mark_ranges, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+			path + escaped_column_name, NULL_MAP_EXTENSION, data_part->size,
+			all_mark_ranges, mark_cache, save_marks_in_cache,
+			uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
 
 		/// Then create the stream that handles the data of the given column.
 		addStream(name, nested_type, all_mark_ranges, profile_callback, clock_type, level);
@@ -386,8 +397,9 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 
 		if (!streams.count(size_name))
 			streams.emplace(size_name, std::make_unique<Stream>(
-				path + escaped_size_name, DATA_FILE_EXTENSION, uncompressed_cache, mark_cache, save_marks_in_cache,
-				all_mark_ranges, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+				path + escaped_size_name, DATA_FILE_EXTENSION, data_part->size,
+				all_mark_ranges, mark_cache, save_marks_in_cache,
+				uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
 
 		if (data_file_exists)
 			addStream(name, *type_arr->getNestedType(), all_mark_ranges, profile_callback, clock_type, level + 1);
@@ -396,13 +408,16 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 	}
 	else
 		streams.emplace(name, std::make_unique<Stream>(
-			path + escaped_column_name, DATA_FILE_EXTENSION, uncompressed_cache, mark_cache, save_marks_in_cache,
-			all_mark_ranges, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+			path + escaped_column_name, DATA_FILE_EXTENSION, data_part->size,
+			all_mark_ranges, mark_cache, save_marks_in_cache,
+			uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
 }
 
 
-void MergeTreeReader::readData(const String & name, const IDataType & type, IColumn & column,
-	size_t from_mark, size_t max_rows_to_read, size_t level, bool read_offsets)
+void MergeTreeReader::readData(
+		const String & name, const IDataType & type, IColumn & column,
+		size_t from_mark, size_t to_mark, size_t max_rows_to_read,
+		size_t level, bool read_offsets)
 {
 	if (type.isNullable())
 	{
@@ -419,9 +434,10 @@ void MergeTreeReader::readData(const String & name, const IDataType & type, ICol
 		stream.seekToMark(from_mark);
 		IColumn & col8 = nullable_col.getNullMapConcreteColumn();
 		DataTypeUInt8{}.deserializeBinaryBulk(col8, *stream.data_buffer, max_rows_to_read, 0);
+		stream.cur_mark_idx = to_mark;
 
 		/// Then read data.
-		readData(name, nested_type, nested_col, from_mark, max_rows_to_read, level, read_offsets);
+		readData(name, nested_type, nested_col, from_mark, to_mark, max_rows_to_read, level, read_offsets);
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
@@ -434,6 +450,7 @@ void MergeTreeReader::readData(const String & name, const IDataType & type, ICol
 				column,
 				*stream.data_buffer,
 				max_rows_to_read);
+			stream.cur_mark_idx = to_mark;
 		}
 
 		if (column.size())
@@ -447,7 +464,7 @@ void MergeTreeReader::readData(const String & name, const IDataType & type, ICol
 					name,
 					*type_arr->getNestedType(),
 					array.getData(),
-					from_mark,
+					from_mark, to_mark,
 					required_internal_size - array.getData().size(),
 					level + 1);
 
@@ -485,6 +502,7 @@ void MergeTreeReader::readData(const String & name, const IDataType & type, ICol
 		double & avg_value_size_hint = avg_value_size_hints[name];
 		stream.seekToMark(from_mark);
 		type.deserializeBinaryBulk(column, *stream.data_buffer, max_rows_to_read, avg_value_size_hint);
+		stream.cur_mark_idx = to_mark;
 
 		/// Вычисление подсказки о среднем размере значения.
 		size_t column_size = column.size();
