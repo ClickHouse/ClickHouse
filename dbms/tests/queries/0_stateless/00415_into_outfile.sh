@@ -17,7 +17,7 @@ function perform()
 
 perform "select" "SELECT 1, 2, 3 INTO OUTFILE './test_into_outfile_select.out'"
 
-perform "union_all" "SELECT 1, 2 UNION ALL SELECT 3, 4 INTO OUTFILE './test_into_outfile_union_all.out' FORMAT TSV"
+perform "union_all" "SELECT 1, 2 UNION ALL SELECT 3, 4 INTO OUTFILE './test_into_outfile_union_all.out' FORMAT TSV" | sort --numeric-sort
 
 perform "bad_union_all" "SELECT 1, 2 INTO OUTFILE './test_into_outfile_bad_union_all.out' UNION ALL SELECT 3, 4"
 
