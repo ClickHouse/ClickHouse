@@ -126,6 +126,8 @@ BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query, const Settings & sett
 
 void StorageMergeTree::drop()
 {
+	context.checkTableCanBeDropped(database_name, table_name, getData().getColumnsTotalSize());
+
 	shutdown();
 	data.dropAllData();
 }

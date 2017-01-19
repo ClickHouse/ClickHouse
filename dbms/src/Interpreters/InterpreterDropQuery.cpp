@@ -98,11 +98,11 @@ BlockIO InterpreterDropQuery::execute()
 		}
 		else
 		{
-			/// Удаляем метаданные и саму таблицу из оперативки.
+			/// Delete table data
+			table.first->drop();
+			/// Delete table metdata and table itself from memory
 			database->removeTable(current_table_name);
 
-			/// Удаляем данные таблицы
-			table.first->drop();		/// TODO Не удалять метаданные, если таблицу не получилось удалить.
 			table.first->is_dropped = true;
 
 			String current_data_path = data_path + escapeForFileName(current_table_name);
