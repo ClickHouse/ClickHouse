@@ -60,15 +60,14 @@ private:
 	{
 	public:
 		Stream(
-			const String & path_prefix_, const String & extension_,
-			UncompressedCache * uncompressed_cache,
+			const String & path_prefix_, const String & extension_, size_t marks_count_,
+			const MarkRanges & all_mark_ranges,
 			MarkCache * mark_cache, bool save_marks_in_cache,
-			const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size,
+			UncompressedCache * uncompressed_cache,
+			size_t aio_threshold, size_t max_read_buffer_size,
 			const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
 		static std::unique_ptr<Stream> createEmptyPtr();
-
-		void loadMarks(MarkCache * cache, bool save_in_cache, bool is_null_stream);
 
 		void seekToMark(size_t index);
 
@@ -76,14 +75,30 @@ private:
 
 		ReadBuffer * data_buffer;
 
+		/// NOTE: cur_mark_idx must be manually updated after reading from data_buffer.
+		/// It is assumed that the amount of data read from data_buffer always corresponds to an integer number of marks.
+		size_t cur_mark_idx = 0;
+
 	private:
 		Stream() = default;
 
-		MarkCache::MappedPtr marks;
-		std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
-		std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
+		/// NOTE: lazily loads marks from the marks cache.
+		const MarkInCompressedFile & getMark(size_t index);
+
+		void loadMarks();
+
 		std::string path_prefix;
 		std::string extension;
+
+		size_t marks_count;
+
+		MarkCache * mark_cache;
+		bool save_marks_in_cache;
+		MarkCache::MappedPtr marks;
+
+		std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
+		std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
+
 		bool is_empty = false;
 	};
 
@@ -112,8 +127,10 @@ private:
 		const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
 		size_t level = 0);
 
-	void readData(const String & name, const IDataType & type, IColumn & column, size_t from_mark, size_t max_rows_to_read,
-		size_t level = 0, bool read_offsets = true);
+	void readData(
+			const String & name, const IDataType & type, IColumn & column,
+			size_t from_mark, size_t to_mark, size_t max_rows_to_read,
+			size_t level = 0, bool read_offsets = true);
 
 	void fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder);
 };
