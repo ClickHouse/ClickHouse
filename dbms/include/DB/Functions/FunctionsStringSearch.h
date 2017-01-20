@@ -61,14 +61,14 @@ namespace DB
   */
 
 
-/** Детали реализации функций семейства position в зависимости от ASCII/UTF8 и case sensitiveness.
+/** Implementation details for functions of 'position' family depending on ASCII/UTF8 and case sensitiveness.
   */
 struct PositionCaseSensitiveASCII
 {
-	/// Объект для поиска одной подстроки среди большого количества данных, уложенных подряд. Может слегка сложно инициализироваться.
+	/// For searching single substring inside big-enough contiguous chunk of data. Coluld have slightly expensive initialization.
 	using SearcherInBigHaystack = VolnitskyImpl<true, true>;
 
-	/// Объект для поиска каждый раз разных подстрок, создаваемый на каждую подстроку. Не должен сложно инициализироваться.
+	/// For searching single substring, that is different each time. This object is created for each row of data. It must have cheap initialization.
 	using SearcherInSmallHaystack = LibCASCIICaseSensitiveStringSearcher;
 
 	static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
@@ -81,13 +81,14 @@ struct PositionCaseSensitiveASCII
 		return SearcherInSmallHaystack(needle_data, needle_size);
 	}
 
-	/// Посчитать число символов от begin до end.
+	/// Number of code points between 'begin' and 'end' (this has different behaviour for ASCII and UTF-8).
 	static size_t countChars(const char * begin, const char * end)
 	{
 		return end - begin;
 	}
 
-	/// Перевести строку в нижний регистр. Только для регистронезависимого поиска. Можно неэффективно, так как вызывается от одиночной строки.
+	/// Convert string to lowercase. Only for case-insensitive search.
+	/// Implementation is permitted to be inefficient because it is called for single string.
 	static void toLowerIfNeed(std::string & s)
 	{
 	}
@@ -759,15 +760,13 @@ struct ReplaceRegexpImpl
 					if (it.first >= 0)
 					{
 						res_data.resize(res_data.size() + matches[it.first].length());
-						memcpySmallAllowWriteOverflow15(
-							&res_data[res_offset], matches[it.first].data(), matches[it.first].length());
+						memcpy(&res_data[res_offset], matches[it.first].data(), matches[it.first].length());
 						res_offset += matches[it.first].length();
 					}
 					else
 					{
 						res_data.resize(res_data.size() + it.second.size());
-						memcpySmallAllowWriteOverflow15(
-							&res_data[res_offset], it.second.data(), it.second.size());
+						memcpy(&res_data[res_offset], it.second.data(), it.second.size());
 						res_offset += it.second.size();
 					}
 				}
@@ -859,7 +858,7 @@ struct ReplaceRegexpImpl
 };
 
 
-/** Заменить все вхождения подстроки needle на строку replacement. needle и replacement - константы.
+/** Replace one or all occurencies of substring 'needle' to 'replacement'. 'needle' and 'replacement' are constants.
   */
 template <bool replaceOne = false>
 struct ReplaceStringImpl
