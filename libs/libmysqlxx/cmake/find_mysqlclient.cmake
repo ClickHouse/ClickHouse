@@ -28,4 +28,4 @@ endif ()
 
 include_directories (${MYSQL_INCLUDE_DIR})
 
-message (STATUS "mysqlclient found: ${MYSQL_INCLUDE_DIR}; ${MYSQLCLIENT_LIB}; static=${STATIC_MYSQLCLIENT_LIB}")
+message (STATUS "Using mysqlclient: ${MYSQL_INCLUDE_DIR} : ${MYSQLCLIENT_LIB}; static=${STATIC_MYSQLCLIENT_LIB}")
