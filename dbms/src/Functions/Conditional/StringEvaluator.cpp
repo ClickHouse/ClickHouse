@@ -61,6 +61,7 @@ public:
 using StringSourcePtr = std::unique_ptr<StringSource>;
 using StringSources = std::vector<StringSourcePtr>;
 
+
 /// Implementation of StringSource specific to constant strings.
 class ConstStringSource final : public StringSource
 {
@@ -116,6 +117,7 @@ private:
 	size_t index;
 	UInt64 type;
 };
+
 
 /// Implementation of StringSource specific to fixed strings.
 class FixedStringSource final : public StringSource
@@ -174,6 +176,7 @@ private:
 	size_t i = 0;
 };
 
+
 /// Implementation of StringSource specific to variable strings.
 class VarStringSource final : public StringSource
 {
@@ -228,6 +231,7 @@ private:
 	size_t i = 0;
 };
 
+
 /// Access provider to the target array that receives the results of the
 /// execution of the function multiIf.
 class StringSink
@@ -236,6 +240,7 @@ public:
 	virtual ~StringSink() {}
 	virtual void store(const StringChunk & chunk) = 0;
 };
+
 
 /// Implementation of StringSink for the case when the result column
 /// has the fixed string type. It happens only if all the branches of
@@ -259,11 +264,12 @@ public:
 	void store(const StringChunk & chunk) override
 	{
 		if (!(chunk.type & StringType::FIXED))
-			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+			throw Exception{"Logical error in implementation of multiIf: one of arguments to build a FixedString is not fixed-size",
+				ErrorCodes::LOGICAL_ERROR};
 
 		size_t size_to_write = chunk.pos_end - chunk.pos_begin;
 		data.resize(data.size() + size_to_write);
-		memcpySmallAllowReadWriteOverflow15(&data[i * size], chunk.pos_begin,
+		memcpy(&data[i * size], chunk.pos_begin,
 			size_to_write * sizeof(StringChunk::value_type));
 		++i;
 	}
@@ -273,6 +279,7 @@ private:
 	size_t size;
 	size_t i = 0;
 };
+
 
 /// Implementation of StringSink for the case when the result column
 /// has the variable string type.
@@ -307,7 +314,7 @@ public:
 		{
 			size_t size_to_write = chunk.pos_end - chunk.pos_begin + 1;
 			data.resize(data.size() + size_to_write);
-			memcpySmallAllowReadWriteOverflow15(&data[prev_offset], chunk.pos_begin,
+			memcpy(&data[prev_offset], chunk.pos_begin,		/// constant string have no padding bytes for memcpySmall... function.
 				size_to_write * sizeof(StringChunk::value_type));
 			prev_offset += size_to_write;
 		}
@@ -334,6 +341,7 @@ private:
 	size_t i = 0;
 };
 
+
 /// Create accessors for condition values.
 CondSources createConds(const Block & block, const ColumnNumbers & args)
 {
@@ -345,7 +353,8 @@ CondSources createConds(const Block & block, const ColumnNumbers & args)
 	return conds;
 }
 
-const std::string null_string = "";
+const std::string null_string;
+
 
 /// Create accessors for branch values.
 bool createStringSources(StringSources & sources, const Block & block,
@@ -398,6 +407,7 @@ bool createStringSources(StringSources & sources, const Block & block,
 	}
 	return append_source(elseArg(args));
 }
+
 
 size_t computeResultSize(const StringSources & sources, size_t row_count)
 {
