@@ -8,10 +8,10 @@ int main(int argc, char ** argv)
 
 	Field f;
 
-	f = std::string("Hello, world");
-	std::cerr << f.get<std::string>() << "\n";
-	f = std::string("Hello, world!");
-	std::cerr << f.get<std::string>() << "\n";
+	f = Field{String{"Hello, world"}};
+	std::cerr << f.get<String>() << "\n";
+	f = Field{String{"Hello, world!"}};
+	std::cerr << f.get<String>() << "\n";
 
 	return 0;
 }
