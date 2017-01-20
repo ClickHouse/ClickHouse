@@ -79,6 +79,7 @@ public:
 		}
 	};
 
+
 	/// Позволяет получить идентификатор для типа или наоборот.
 	template <typename T> struct TypeToEnum;
 	template <Types::Which which> struct EnumToType;
@@ -99,13 +100,19 @@ public:
 
 	Field(Field && rhs)
 	{
-		move(std::move(rhs));
+		create(std::move(rhs));
 	}
 
 	template <typename T>
 	Field(const T & rhs)
 	{
 		create(rhs);
+	}
+
+	template <typename T>
+	Field(T && rhs)
+	{
+		create(std::move(rhs));
 	}
 
 	/// Создать строку inplace.
@@ -119,6 +126,7 @@ public:
 		create(data, size);
 	}
 
+	/// NOTE In case when field already has string type, more direct assign is possible.
 	void assignString(const char * data, size_t size)
 	{
 		destroy();
@@ -135,8 +143,13 @@ public:
 	{
 		if (this != &rhs)
 		{
-			destroy();
-			create(rhs);
+			if (which != rhs.which)
+			{
+				destroy();
+				create(rhs);
+			}
+			else
+				assign(rhs);	/// This assigns string or vector without deallocation of existing buffer.
 		}
 		return *this;
 	}
@@ -145,7 +158,13 @@ public:
 	{
 		if (this != &rhs)
 		{
-			move(std::move(rhs));
+			if (which != rhs.which)
+			{
+				destroy();
+				create(std::move(rhs));
+			}
+			else
+				assign(std::move(rhs));
 		}
 		return *this;
 	}
@@ -153,8 +172,28 @@ public:
 	template <typename T>
 	Field & operator= (const T & rhs)
 	{
-		destroy();
-		create(rhs);
+		if (which != TypeToEnum<T>::value)
+		{
+			destroy();
+			create(rhs);
+		}
+		else
+			assign(rhs);
+
+		return *this;
+	}
+
+	template <typename T>
+	Field & operator= (T && rhs)
+	{
+		if (which != TypeToEnum<T>::value)
+		{
+			destroy();
+			create(std::move(rhs));
+		}
+		else
+			assign(std::move(rhs));
+
 		return *this;
 	}
 
@@ -289,6 +328,7 @@ private:
 	Types::Which which;
 
 
+	/// Assuming there was no allocated state or it was deallocated (see destroy).
 	template <typename T>
 	void create(const T & x)
 	{
@@ -297,24 +337,69 @@ private:
 		new (ptr) T(x);
 	}
 
-	void create(const Null & x)
+	template <typename T>
+	void create(T && x)
 	{
-		which = Types::Null;
+		which = TypeToEnum<T>::value;
+		T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(storage);
+		new (ptr) T(std::move(x));
 	}
+
+	/// Assuming same types.
+	template <typename T>
+	void assign(const T & x)
+	{
+		T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(storage);
+		*ptr = x;
+	}
+
+	template <typename T>
+	void assign(T && x)
+	{
+		T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(storage);
+		*ptr = std::move(x);
+	}
+
+
+	template <typename F, typename Field>	/// Field template parameter may be const or non-const Field.
+	static void dispatch(F && f, Field & field)
+	{
+		switch (field.which)
+		{
+			case Types::Null: 		f(field.get<Null>());		return;
+			case Types::UInt64: 	f(field.get<UInt64>());		return;
+			case Types::Int64: 		f(field.get<Int64>());		return;
+			case Types::Float64: 	f(field.get<Float64>());	return;
+			case Types::String: 	f(field.get<String>());		return;
+			case Types::Array: 		f(field.get<Array>());		return;
+			case Types::Tuple: 		f(field.get<Tuple>());		return;
+
+			default:
+				throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
+		}
+	}
+
 
 	void create(const Field & x)
 	{
-		switch (x.which)
-		{
-			case Types::Null: 				create(Null());							break;
-			case Types::UInt64: 			create(x.get<UInt64>());				break;
-			case Types::Int64: 				create(x.get<Int64>());					break;
-			case Types::Float64: 			create(x.get<Float64>());				break;
-			case Types::String: 			create(x.get<String>());				break;
-			case Types::Array: 				create(x.get<Array>());					break;
-			case Types::Tuple: 				create(x.get<Tuple>());					break;
-		}
+		dispatch([this] (auto & value) { create(value); }, x);
 	}
+
+	void create(Field && x)
+	{
+		dispatch([this] (auto & value) { create(std::move(value)); }, x);
+	}
+
+	void assign(const Field & x)
+	{
+		dispatch([this] (auto & value) { assign(value); }, x);
+	}
+
+	void assign(Field && x)
+	{
+		dispatch([this] (auto & value) { assign(std::move(value)); }, x);
+	}
+
 
 	void create(const char * data, size_t size)
 	{
@@ -347,6 +432,8 @@ private:
 			default:
  				break;
 		}
+
+		which = Types::Null;	/// for exception safety in subsequent calls to destroy and create, when create fails.
 	}
 
 	template <typename T>
@@ -354,31 +441,6 @@ private:
 	{
 		T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(storage);
 		ptr->~T();
-	}
-
-	template <typename T>
-	void moveValue(Field && x)
-	{
-		T * __attribute__((__may_alias__)) ptr_this = reinterpret_cast<T*>(storage);
-		T * __attribute__((__may_alias__)) ptr_x    = reinterpret_cast<T*>(x.storage);
-
-		new (ptr_this) T(std::move(*ptr_x));
-	}
-
-	void move(Field && x)
-	{
-		which = x.which;
-
-		switch (x.which)
-		{
-			case Types::Null: 				create(Null());							break;
-			case Types::UInt64: 			create(x.get<UInt64>());				break;
-			case Types::Int64: 				create(x.get<Int64>());					break;
-			case Types::Float64: 			create(x.get<Float64>());				break;
-			case Types::String: 			moveValue<String>(std::move(x));		break;
-			case Types::Array: 				moveValue<Array>(std::move(x));			break;
-			case Types::Tuple: 				moveValue<Tuple>(std::move(x));			break;
-		}
 	}
 };
 
@@ -393,7 +455,7 @@ template <> struct Field::TypeToEnum<String> 							{ static const Types::Which 
 template <> struct Field::TypeToEnum<Array> 							{ static const Types::Which value = Types::Array; };
 template <> struct Field::TypeToEnum<Tuple> 							{ static const Types::Which value = Types::Tuple; };
 
-template <> struct Field::EnumToType<Field::Types::Null> 				{ using Type = Null 					; };
+template <> struct Field::EnumToType<Field::Types::Null> 				{ using Type = Null 				; };
 template <> struct Field::EnumToType<Field::Types::UInt64> 				{ using Type = UInt64 				; };
 template <> struct Field::EnumToType<Field::Types::Int64> 				{ using Type = Int64 				; };
 template <> struct Field::EnumToType<Field::Types::Float64> 			{ using Type = Float64 				; };
