@@ -16,6 +16,7 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/FileChannel.h>
 #include <Poco/SyslogChannel.h>
+#include <Poco/Version.h>
 
 #include <common/Common.h>
 #include <common/logger_useful.h>
@@ -142,7 +143,7 @@ protected:
 	virtual void handleSignal(int signal_id);
 
 	/// реализация обработки сигналов завершения через pipe не требует блокировки сигнала с помощью sigprocmask во всех потоках
-	void waitForTerminationRequest() override
+	void waitForTerminationRequest()
 #if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000 // in old upstream poco not vitrual
 	override
 #endif

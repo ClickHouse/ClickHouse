@@ -9,23 +9,25 @@
 #include <emmintrin.h>
 
 
-/** Функция memcpy может работать неоптимально при выполнении одновременно следующих условий:
-  * 1. Размер куска памяти сравнительно небольшой (как правило меньше, приблизительно, 50 байт).
-  * 2. Размер куска памяти неизвестен во время компиляции.
+/** memcpy function could work suboptimal if all the following conditions are met:
+  * 1. Size of memory region is relatively small (approximately, under 50 bytes).
+  * 2. Size of memory region is not known at compile-time.
   *
-  * В этом случае, она работает неоптимально по следующим причинам:
-  * 1. Функция не инлайнится.
-  * 2. Тратится много времени/инструкций на обработку "хвостиков" данных.
+  * In that case, memcpy works suboptimal by following reasons:
+  * 1. Function is not inlined.
+  * 2. Much time/instructions are spend to process "tails" of data.
   *
-  * Существуют ситуации, когда функцию можно сделать быстрее, воспользовавшись некоторыми допущениями.
-  * Одно из таких допущений - возможность читать и писать какое-то количество байт после конца соответствующих диапазонов памяти.
-  * Тогда можно не тратить код на обработку хвостиков, а выполнять копирование всегда большими кусками.
+  * There are cases when function could be implemented in more optimal way, with help of some assumptions.
+  * One of that assumptions - ability to read and write some number of bytes after end of passed memory regions.
+  * Under that assumption, it is possible not to implement difficult code to process tails of data and do copy always by big chunks.
   *
-  * Эта ситуация является типичной, например, когда короткие куски памяти копируются подряд в один непрервыный кусок памяти
-  * - так как каждое следующее копирование будет перетирать лишние данные от предыдущего копирования.
+  * This case is typical, for example, when many small pieces of data are gathered to single contiguous piece of memory in a loop.
+  * - because each next copy will overwrite excessive data after previous copy.
   *
-  * Допущение о том, что размер небольшой, позволяет нам не разворачивать цикл.
-  * Это работает медленее, когда размер, на самом деле, большой.
+  * Assumption that size of memory region is small enough allows us to not unroll the loop.
+  * This is slower, when size of memory is actually big.
+  *
+  * Use with caution.
   */
 
 namespace detail
@@ -44,33 +46,21 @@ namespace detail
 	}
 }
 
-/** Исходит из допущения, что можно читать до 15 лишних байт после конца массива src,
-  *  и записывать любой мусор до 15 байт после конца массива dst.
+/** Works under assumption, that it's possible to read up to 15 excessive bytes after end of 'src' region
+  *  and to write any garbage into up to 15 bytes after end of 'dst' region.
   */
 inline void memcpySmallAllowReadWriteOverflow15(void * __restrict dst, const void * __restrict src, size_t n)
 {
 	detail::memcpySmallAllowReadWriteOverflow15Impl(reinterpret_cast<char *>(dst), reinterpret_cast<const char *>(src), n);
 }
 
-/** Исходит из допущения, что можно записывать любой мусор до 15 байт после конца массива dst.
+/** NOTE There was also a function, that assumes, that you could read any bytes inside same memory page of src.
+  * This function was unused, and also it requires special handling for Valgrind and ASan.
   */
-inline void memcpySmallAllowWriteOverflow15(void * __restrict dst, const void * __restrict src, size_t n)
-{
-	if (reinterpret_cast<intptr_t>(src) % 4096 <= 4096 - 16)
-		memcpySmallAllowReadWriteOverflow15(dst, src, n);
-	else
-		memcpy(dst, src, n);
-}
 
-
-#else	/// Реализации для других платформ.
+#else	/// Implementation for other platforms.
 
 inline void memcpySmallAllowReadWriteOverflow15(void * __restrict dst, const void * __restrict src, size_t n)
-{
-	memcpy(dst, src, n);
-}
-
-inline void memcpySmallAllowWriteOverflow15(void * __restrict dst, const void * __restrict src, size_t n)
 {
 	memcpy(dst, src, n);
 }
