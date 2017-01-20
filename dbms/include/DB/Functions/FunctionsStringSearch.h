@@ -616,7 +616,7 @@ struct MatchImpl
 		throw Exception("Functions 'like' and 'match' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
 	}
 
-	/// Поиск многих подстрок в одной строке.
+	/// Search different needles in single haystack.
 	static void constant_vector(
 		const String & haystack,
 		const ColumnString::Chars_t & needle_data, const ColumnString::Offsets_t & needle_offsets,
@@ -860,7 +860,7 @@ struct ReplaceRegexpImpl
 
 /** Replace one or all occurencies of substring 'needle' to 'replacement'. 'needle' and 'replacement' are constants.
   */
-template <bool replaceOne = false>
+template <bool replace_one = false>
 struct ReplaceStringImpl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
@@ -912,7 +912,7 @@ struct ReplaceStringImpl
 				memcpy(&res_data[res_offset], replacement.data(), replacement.size());
 				res_offset += replacement.size();
 				pos = match + needle.size();
-				if (replaceOne)
+				if (replace_one)
 					can_finish_current_string = true;
 			}
 			else
@@ -982,7 +982,7 @@ struct ReplaceStringImpl
 				memcpy(&res_data[res_offset], replacement.data(), replacement.size());
 				res_offset += replacement.size();
 				pos = match + needle.size();
-				if (replaceOne)
+				if (replace_one)
 					can_finish_current_string = true;
 			}
 			else
@@ -1014,7 +1014,7 @@ struct ReplaceStringImpl
 		for (size_t i = 0; i < data.size(); ++i)
 		{
 			bool match = true;
-			if (i + needle.size() > data.size() || (replaceOne && replace_cnt > 0))
+			if (i + needle.size() > data.size() || (replace_one && replace_cnt > 0))
 				match = false;
 			for (size_t j = 0; match && j < needle.size(); ++j)
 				if (data[i + j] != needle[j])
