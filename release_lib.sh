@@ -4,7 +4,7 @@ function add_daemon_impl {
 	local daemon=$1
 	local control=$CONTROL
 	local dependencies=$2
-	local description_short="${daemon%-metrika-yandex/ daemon}"
+	local description_short="${daemon%/ daemon}"
 	local description_full=$3
 
 	echo -e "\n\n" >> $control;
@@ -48,7 +48,7 @@ function make_control {
 			#skip it explicitly
 		;;
 		* )
-			add_daemon_impl "${DAEMON_PKG}-metrika-yandex"
+			add_daemon_impl "${DAEMON_PKG}"
 		;;
 		esac
 	done

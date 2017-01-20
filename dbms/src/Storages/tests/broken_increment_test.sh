@@ -18,8 +18,8 @@ echo 'Inserting without increment.txt'
 echo "2014-01-01	41" | clickhouse-client --query="INSERT INTO increment.a FORMAT TabSeparated"
 ls /opt/clickhouse/data/increment/a/
 cat /opt/clickhouse/data/increment/a/increment.txt
-sudo /etc/init.d/clickhouse-server-metrika-yandex stop
-sudo /etc/init.d/clickhouse-server-metrika-yandex start
+sudo /etc/init.d/clickhouse-server stop
+sudo /etc/init.d/clickhouse-server start
 sleep 10s
 ls /opt/clickhouse/data/increment/a/
 cat /opt/clickhouse/data/increment/a/increment.txt
