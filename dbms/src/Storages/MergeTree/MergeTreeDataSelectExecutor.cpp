@@ -864,7 +864,8 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
 }
 
 
-/// Получает набор диапазонов засечек, вне которых не могут находиться ключи из заданного диапазона.
+/// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
+/// In other words, it removes subranges from whole range, that defenitely could not contain required keys.
 MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 	const MergeTreeData::DataPart::Index & index, const PKCondition & key_condition, const Settings & settings) const
 {
@@ -875,7 +876,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 	size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
 	size_t marks_count = index.at(0).get()->size();
 
-	/// Если индекс не используется.
+	/// If index is not used.
 	if (key_condition.alwaysUnknownOrTrue())
 	{
 		res.push_back(MarkRange(0, marks_count));
@@ -889,7 +890,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 			*/
 		std::vector<MarkRange> ranges_stack{ {0, marks_count} };
 
-		/// NOTE Лишнее копирование объектов типа Field для передачи в PKCondition.
+		/// NOTE Creating temporary Field objects to pass to PKCondition.
 		Row index_left(used_key_size);
 		Row index_right(used_key_size);
 
@@ -903,7 +904,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 			{
 				for (size_t i = 0; i < used_key_size; ++i)
 				{
-					index_left[i] = (*index[i].get())[range.begin];
+					index[i]->get(range.begin, index_left[i]);
 				}
 
 				may_be_true = key_condition.mayBeTrueAfter(
@@ -913,8 +914,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 			{
 				for (size_t i = 0; i < used_key_size; ++i)
 				{
-					index_left[i] = (*index[i].get())[range.begin];
-					index_right[i] = (*index[i].get())[range.end];
+					index[i]->get(range.begin, index_left[i]);
+					index[i]->get(range.end, index_right[i]);
 				}
 
 				may_be_true = key_condition.mayBeTrueInRange(
