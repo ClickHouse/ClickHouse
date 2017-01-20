@@ -70,20 +70,26 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
 			" (data.size() = " + toString(from_concrete.getData().size()) + ").",
 			ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-	if (src && src.get() != &from_concrete)
+	if (!empty() && src.get() != &from_concrete)
 	{
-		throw Exception("ColumnAggregateFunction could have only one source that owns aggregation states", ErrorCodes::BAD_ARGUMENTS);
+		/// Must create new states of aggregate function and take ownership of it,
+		///  because ownership of states of aggregate function cannot be shared for individual rows,
+		///  (only as a whole).
+
+		size_t end = start + length;
+		for (size_t i = start; i < end; ++i)
+			insertFrom(from, i);
 	}
 	else
 	{
 		/// Keep shared ownership of aggregation states.
 		src = from_concrete.shared_from_this();
-	}
 
-	auto & data = getData();
-	size_t old_size = data.size();
-	data.resize(old_size + length);
-	memcpy(&data[old_size], &from_concrete.getData()[start], length * sizeof(data[0]));
+		auto & data = getData();
+		size_t old_size = data.size();
+		data.resize(old_size + length);
+		memcpy(&data[old_size], &from_concrete.getData()[start], length * sizeof(data[0]));
+	}
 }
 
 
