@@ -168,7 +168,7 @@ public:
 	typename std::enable_if<!std::is_same<typename std::decay<T>::type, Field>::value, Field &>::type
 	operator= (T && rhs)
 	{
-		if (which != TypeToEnum<T>::value)
+		if (which != TypeToEnum<typename std::decay<T>::type>::value)
 		{
 			destroy();
 			createConcrete(std::forward<T>(rhs));
