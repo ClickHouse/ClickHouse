@@ -335,13 +335,13 @@ private:
 	{
 		switch (field.which)
 		{
-			case Types::Null: 		f(field.get<Null>());		return;
-			case Types::UInt64: 	f(field.get<UInt64>());		return;
-			case Types::Int64: 		f(field.get<Int64>());		return;
-			case Types::Float64: 	f(field.get<Float64>());	return;
-			case Types::String: 	f(field.get<String>());		return;
-			case Types::Array: 		f(field.get<Array>());		return;
-			case Types::Tuple: 		f(field.get<Tuple>());		return;
+			case Types::Null: 		f(field.template get<Null>());		return;
+			case Types::UInt64: 	f(field.template get<UInt64>());	return;
+			case Types::Int64: 		f(field.template get<Int64>());		return;
+			case Types::Float64: 	f(field.template get<Float64>());	return;
+			case Types::String: 	f(field.template get<String>());	return;
+			case Types::Array: 		f(field.template get<Array>());		return;
+			case Types::Tuple: 		f(field.template get<Tuple>());		return;
 
 			default:
 				throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
