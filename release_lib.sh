@@ -102,7 +102,7 @@ function gen_revision_author {
 			sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g" libs/libcommon/cmake/version.cmake
 			sed -i -- "s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" libs/libcommon/cmake/version.cmake
 			git commit -m "$auto_message [$REVISION]" libs/libcommon/cmake/version.cmake
-			git push
+			# git push
 		fi
 
 	fi
