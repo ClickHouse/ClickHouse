@@ -9,7 +9,9 @@
 #include <DB/Databases/IDatabase.h>
 #include <chrono>
 
-#ifndef NO_TCMALLOC
+#include <common/config_common.h>
+
+#if ENABLE_LIBTCMALLOC
 	#include <gperftools/malloc_extension.h>
 
 	/// Initializing malloc extension in global constructor as required.
@@ -197,7 +199,7 @@ void AsynchronousMetrics::update()
 		set("MaxPartCountForPartition", max_part_count_for_partition);
 	}
 
-#ifndef NO_TCMALLOC
+#if ENABLE_LIBTCMALLOC
 	{
 		/// tcmalloc related metrics. Remove if you switch to different allocator.
 
