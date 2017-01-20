@@ -231,32 +231,7 @@ public:
 		return res;
 	}
 
-	void insertRangeFrom(const IColumn & from, size_t start, size_t length) override
-	{
-		const ColumnAggregateFunction & from_concrete = static_cast<const ColumnAggregateFunction &>(from);
-
-		if (start + length > from_concrete.getData().size())
-			throw Exception("Parameters start = "
-				+ toString(start) + ", length = "
-				+ toString(length) + " are out of bound in ColumnAggregateFunction::insertRangeFrom method"
-				" (data.size() = " + toString(from_concrete.getData().size()) + ").",
-				ErrorCodes::PARAMETER_OUT_OF_BOUND);
-
-		if (src && src.get() != &from_concrete)
-		{
-			throw Exception("ColumnAggregateFunction could have only one source that owns aggregation states", ErrorCodes::BAD_ARGUMENTS);
-		}
-		else
-		{
-			/// Keep shared ownership of aggregation states.
-			src = from_concrete.shared_from_this();
-		}
-
-		auto & data = getData();
-		size_t old_size = data.size();
-		data.resize(old_size + length);
-		memcpy(&data[old_size], &from_concrete.getData()[start], length * sizeof(data[0]));
-	}
+	void insertRangeFrom(const IColumn & from, size_t start, size_t length) override;
 
 	void popBack(size_t n) override
 	{
@@ -270,53 +245,9 @@ public:
 		data.resize_assume_reserved(new_size);
 	}
 
-	ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override
-	{
-		size_t size = getData().size();
-		if (size != filter.size())
-			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+	ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
 
-		std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
-
-		if (size == 0)
-			return res;
-
-		auto & res_data = res->getData();
-
-		if (result_size_hint)
-			res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
-
-		for (size_t i = 0; i < size; ++i)
-			if (filter[i])
-				res_data.push_back(getData()[i]);
-
-		/// Для экономии оперативки в случае слишком сильной фильтрации.
-		if (res_data.size() * 2 < res_data.capacity())
-			res_data = Container_t(res_data.cbegin(), res_data.cend());
-
-		return res;
-	}
-
-	ColumnPtr permute(const Permutation & perm, size_t limit) const override
-	{
-		size_t size = getData().size();
-
-		if (limit == 0)
-			limit = size;
-		else
-			limit = std::min(size, limit);
-
-		if (perm.size() < limit)
-			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-		std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
-
-		res->getData().resize(limit);
-		for (size_t i = 0; i < limit; ++i)
-			res->getData()[i] = getData()[perm[i]];
-
-		return res;
-	}
+	ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
 	ColumnPtr replicate(const Offsets_t & offsets) const override
 	{
