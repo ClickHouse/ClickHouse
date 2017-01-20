@@ -315,9 +315,9 @@ private:
 	void createConcrete(T && x)
 	{
 		using JustT = typename std::decay<T>::type;
-		which = TypeToEnum<JustT>::value;
 		JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(storage);
 		new (ptr) JustT(std::forward<T>(x));
+		which = TypeToEnum<JustT>::value;
 	}
 
 	/// Assuming same types.
@@ -372,9 +372,9 @@ private:
 
 	void create(const char * data, size_t size)
 	{
-		which = Types::String;
 		String * __attribute__((__may_alias__)) ptr = reinterpret_cast<String*>(storage);
 		new (ptr) String(data, size);
+		which = Types::String;
 	}
 
 	void create(const unsigned char * data, size_t size)
