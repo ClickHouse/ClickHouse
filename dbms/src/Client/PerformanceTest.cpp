@@ -46,8 +46,7 @@ public:
         const std::vector<std::string> & names,
         const std::vector<std::string> & without_names,
         const std::vector<std::string> & names_regexp,
-        const std::vector<std::string> & without_names_regexp,
-		const Settings & settings_
+        const std::vector<std::string> & without_names_regexp
 	):
 	   concurrency(concurrency_),
 	   connections(concurrency, host_, port_, default_database_, user_, password_),
@@ -65,41 +64,179 @@ public:
 private:
 	unsigned concurrency;
 	ConnectionPool connections;
-	Settings settings;
 	ThreadPool pool;
 
-	using XMLConfiguration = Poco::Util::XMLConfiguration;
-	using Config = Poco::AutoPtr<XMLConfiguration>;
+	using XMLConfiguration  = Poco::Util::XMLConfiguration;
+	using AbstractConfiguration = Poco::Util::AbstractConfiguration;
+	using Config            = Poco::AutoPtr<XMLConfiguration>;
+	using Paths             = std::vector<std::string>;
+	using StringToVector    = std::map< std::string, std::vector<std::string> >;
 	std::vector<Config> testsConfigurations;
 
-	void readTestsConfiguration(const std::vector<std::string> & input_files)
+	void readTestsConfiguration(const Paths & input_files)
 	{
-		for (auto path : input_files) {
-			// testsConfigurations.emplace_back(new XMLConfiguration(path));
-			Poco::AutoPtr<XMLConfiguration> config(new XMLConfiguration(path));
-			std::cout << config->getString("name") << std::endl;
+		testsConfigurations.resize(input_files.size());
+
+		for (size_t i = 0; i != input_files.size(); ++i) {
+			const std::string path = input_files[i];
+			testsConfigurations[i] = Config(new XMLConfiguration(path));
 		}
 
-		// here will be tests filtering on tags, names, regexp matching, etc.
+		// TODO: here will be tests filter on tags, names, regexp matching, etc.
 		// { ... }
 
 		// for now let's launch one test only
-		// if (testsConfigurations.size()) {
-		// 	for (auto testConfig : testsConfigurations) {
-		// 		runTest(testConfig);
-		// 	}
-		// }
+		if (testsConfigurations.size()) {
+			for (auto testConfig : testsConfigurations) {
+				runTest(testConfig);
+			}
+		}
 	}
 
-	// void runTest(const Config & testConfig)
-	// {
-	// 	std::cout << "Running: " << testConfig->getString("name") << "\n";
+	void runTest(const Config & testConfig)
+	{
+		std::cout << "Running: " << testConfig->getString("name") << "\n";
 
-	// 	std::cout << "Check behaviour when attribute does not exist: " << testConfig->getString("someAttr") << "\n";
-	// }
+		Settings settingsPerTest;
+		using Keys = std::vector<std::string>;
+
+		if (testConfig->has("settings")) {
+			Keys settings;
+			testConfig->keys("settings", settings);
+
+			/// This macro goes through all settings in the Settings.h
+			/// and, if found any settings in test's xml configuration
+			/// with the same name, sets its value to settingsPerTest
+			std::vector<std::string>::iterator it;
+			#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+				it = std::find(settings.begin(), settings.end(), #NAME); \
+				if (it != settings.end()) \
+					settingsPerTest.set( \
+						#NAME, testConfig->getString("settings."#NAME) \
+					);
+				APPLY_FOR_SETTINGS(EXTRACT_SETTING)
+				APPLY_FOR_LIMITS(EXTRACT_SETTING)
+			#undef EXTRACT_SETTING
+
+			if (std::find(settings.begin(), settings.end(), "profile") !=
+				settings.end()) {
+				// proceed profile settings in a proper way
+			}
+		}
+
+		std::string query;
+
+		if (testConfig->has("query")) {
+			query = testConfig->getString("query");
+
+			if (query.empty()) {
+				throw Poco::Exception("The query is empty", 1);
+			}
+		}
+
+		if (testConfig->has("substitutions")) {
+			const AbstractConfiguration * substitutionsView =
+									    testConfig->createView("substitutions");
+
+			StringToVector substitutions;
+			constructSubstitutions(substitutionsView, substitutions);
+
+			std::vector<std::string> queries = formatQueries(query, substitutions);
+
+			std::cout << std::endl;
+			for (size_t i = 0; i != queries.size(); ++i) {
+				std::cout << queries[i] << std::endl;
+			}
+		}
+	}
+
+	void constructSubstitutions(const AbstractConfiguration * substitutionsView,
+						        StringToVector & substitutions)
+	{
+		using Keys = std::vector<std::string>;
+		Keys xml_substitutions;
+		substitutionsView->keys(xml_substitutions);
+
+		for (size_t i = 0; i != xml_substitutions.size(); ++i) {
+			const AbstractConfiguration * xml_substitution =
+					   substitutionsView->createView("substitution[" +
+					   								 std::to_string(i) + "]");
+
+			std::vector<std::string> xml_values;
+			xml_substitution->keys("values", xml_values);
+
+			std::string name = xml_substitution->getString("name");
+
+			for (size_t j = 0; j != xml_values.size(); ++j) {
+				substitutions[name].push_back(
+					xml_substitution->getString("values.value[" +
+											    std::to_string(j) + "]")
+				);
+			}
+
+			for (size_t k = 0; k != substitutions[name].size(); ++k) {
+				std::cout << "name: " << name << " --> " << substitutions[name][k] << std::endl;
+			}
+		}
+	}
+
+	std::vector<std::string> formatQueries(const std::string & query,
+					   					   StringToVector substitutions) const
+	{
+		std::vector<std::string> queries;
+
+		StringToVector::iterator substitutions_first = substitutions.begin();
+		StringToVector::iterator substitutions_last  = substitutions.end();
+		--substitutions_last;
+
+		runThroughAllOptionsAndPush(
+			substitutions_first, substitutions_last, query, queries
+		);
+
+		return queries;
+	}
+
+	void runThroughAllOptionsAndPush(
+		StringToVector::iterator substitutions_left,
+		StringToVector::iterator substitutions_right,
+		const std::string & template_query,
+		std::vector<std::string> & queries
+	) const
+	{
+		std::string name = substitutions_left->first;
+		std::vector<std::string> values = substitutions_left->second;
+
+		for (auto value = values.begin(); value != values.end(); ++value) {
+			std::string query = template_query;
+			size_t substrPos  = 0;
+
+			while (substrPos != std::string::npos) {
+				substrPos = query.find("{" + name + "}");
+
+				if (substrPos != std::string::npos) {
+					query.replace(
+						substrPos, 2 + name.length(),
+						*value
+					);
+				}
+			}
+
+			if (substitutions_left == substitutions_right) {
+				queries.push_back(query);
+			} else {
+				StringToVector::iterator next_it = substitutions_left;
+				++next_it;
+
+				runThroughAllOptionsAndPush(
+					next_it, substitutions_right, query, queries
+				);
+			}
+		}
+	}
 };
 
 }
+
 
 int mainEntryClickhousePerformanceTest(int argc, char ** argv) {
 	using namespace DB;
@@ -124,14 +261,7 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv) {
 			("without-name",		value<Strings>(),									"Do not run tests with name")
 			("name-regexp",			value<Strings>(),									"Run tests with names matching regexp")
 			("without-name-regexp",	value<Strings>(),									"Do not run tests with names matching regexp")
-
-		#define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
-		#define   DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
-			APPLY_FOR_SETTINGS(DECLARE_SETTING)
-			APPLY_FOR_LIMITS(DECLARE_LIMIT)
-		#undef DECLARE_SETTING
-		#undef DECLARE_LIMIT
-		;
+			;
 
 		/// These options will not be displayed in --help
 		boost::program_options::options_description hidden("Hidden options");
@@ -168,16 +298,6 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv) {
 			return 1;
 		}
 
-		/// Extract settings and limits from given options
-		Settings settings;
-
-		#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
-			if (options.count(#NAME)) \
-				settings.set(#NAME, options[#NAME].as<std::string>());
-			APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-			APPLY_FOR_LIMITS(EXTRACT_SETTING)
-		#undef EXTRACT_SETTING
-
 		Strings tests_tags;
 		Strings skip_tags;
 		Strings tests_names;
@@ -209,8 +329,6 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv) {
 			skip_matching_regexp = options["without-name-regexp"].as<Strings>();
 		}
 
-
-
 		PerformanceTest performanceTest(
 			options["concurrency"].as<unsigned>(),
 			options["host"       ].as<std::string>(),
@@ -224,8 +342,7 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv) {
 			tests_names,
 			skip_names,
 			name_regexp,
-			skip_matching_regexp,
-			settings
+			skip_matching_regexp
 		);
 	}
 	catch (const Exception & e)
