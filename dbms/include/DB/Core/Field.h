@@ -44,7 +44,7 @@ class Field
 public:
 	struct Types
 	{
-		/// Идентификатор типа.
+		/// Type tag.
 		enum Which
 		{
 			Null 				= 0,
@@ -52,7 +52,7 @@ public:
 			Int64				= 2,
 			Float64				= 3,
 
-			/// не POD типы. Для них предполагается relocatable.
+			/// Non-POD types.
 
 			String				= 16,
 			Array				= 17,
@@ -104,15 +104,10 @@ public:
 	}
 
 	template <typename T>
-	Field(const T & rhs)
+	Field(T && rhs,
+		typename std::enable_if<!std::is_same<typename std::decay<T>::type, Field>::value, void>::type * unused = nullptr)
 	{
-		create(rhs);
-	}
-
-	template <typename T>
-	Field(T && rhs)
-	{
-		create(std::move(rhs));
+		createConcrete(std::forward<T>(rhs));
 	}
 
 	/// Создать строку inplace.
@@ -170,29 +165,16 @@ public:
 	}
 
 	template <typename T>
-	Field & operator= (const T & rhs)
+	typename std::enable_if<!std::is_same<typename std::decay<T>::type, Field>::value, Field &>::type
+	operator= (T && rhs)
 	{
 		if (which != TypeToEnum<T>::value)
 		{
 			destroy();
-			create(rhs);
+			createConcrete(std::forward<T>(rhs));
 		}
 		else
-			assign(rhs);
-
-		return *this;
-	}
-
-	template <typename T>
-	Field & operator= (T && rhs)
-	{
-		if (which != TypeToEnum<T>::value)
-		{
-			destroy();
-			create(std::move(rhs));
-		}
-		else
-			assign(std::move(rhs));
+			assignConcrete(std::forward<T>(rhs));
 
 		return *this;
 	}
@@ -225,7 +207,7 @@ public:
 
 	template <typename T> T & safeGet()
 	{
-		const Types::Which requested = TypeToEnum<typename std::remove_cv<typename std::remove_reference<T>::type>::type>::value;
+		const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
 		if (which != requested)
 			throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
 		return get<T>();
@@ -233,7 +215,7 @@ public:
 
 	template <typename T> const T & safeGet() const
 	{
-		const Types::Which requested = TypeToEnum<typename std::remove_cv<typename std::remove_reference<T>::type>::type>::value;
+		const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
 		if (which != requested)
 			throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
 		return get<T>();
@@ -330,34 +312,21 @@ private:
 
 	/// Assuming there was no allocated state or it was deallocated (see destroy).
 	template <typename T>
-	void create(const T & x)
+	void createConcrete(T && x)
 	{
-		which = TypeToEnum<T>::value;
-		T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(storage);
-		new (ptr) T(x);
-	}
-
-	template <typename T>
-	void create(T && x)
-	{
-		which = TypeToEnum<T>::value;
-		T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(storage);
-		new (ptr) T(std::move(x));
+		using JustT = typename std::decay<T>::type;
+		which = TypeToEnum<JustT>::value;
+		JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(storage);
+		new (ptr) JustT(std::forward<T>(x));
 	}
 
 	/// Assuming same types.
 	template <typename T>
-	void assign(const T & x)
+	void assignConcrete(T && x)
 	{
-		T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(storage);
-		*ptr = x;
-	}
-
-	template <typename T>
-	void assign(T && x)
-	{
-		T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(storage);
-		*ptr = std::move(x);
+		using JustT = typename std::decay<T>::type;
+		JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(storage);
+		*ptr = std::forward<T>(x);
 	}
 
 
@@ -382,22 +351,22 @@ private:
 
 	void create(const Field & x)
 	{
-		dispatch([this] (auto & value) { create(value); }, x);
+		dispatch([this] (auto & value) { createConcrete(value); }, x);
 	}
 
 	void create(Field && x)
 	{
-		dispatch([this] (auto & value) { create(std::move(value)); }, x);
+		dispatch([this] (auto & value) { createConcrete(std::move(value)); }, x);
 	}
 
 	void assign(const Field & x)
 	{
-		dispatch([this] (auto & value) { assign(value); }, x);
+		dispatch([this] (auto & value) { assignConcrete(value); }, x);
 	}
 
 	void assign(Field && x)
 	{
-		dispatch([this] (auto & value) { assign(std::move(value)); }, x);
+		dispatch([this] (auto & value) { assignConcrete(std::move(value)); }, x);
 	}
 
 
@@ -509,7 +478,7 @@ template <> struct NearestFieldType<String> 	{ using Type = String ; };
 template <> struct NearestFieldType<Array> 		{ using Type = Array ; };
 template <> struct NearestFieldType<Tuple> 		{ using Type = Tuple	; };
 template <> struct NearestFieldType<bool> 		{ using Type = UInt64 ; };
-template <> struct NearestFieldType<Null>	{ using Type = Null; };
+template <> struct NearestFieldType<Null>		{ using Type = Null; };
 
 
 template <typename T>
