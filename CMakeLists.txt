@@ -172,7 +172,6 @@ else ()
 endif ()
 
 include (cmake/find_openssl.cmake)
-include (cmake/find_icu4c.cmake)
 include (cmake/find_boost.cmake)
 include (cmake/find_poco.cmake)
 include (cmake/find_libtool.cmake)
