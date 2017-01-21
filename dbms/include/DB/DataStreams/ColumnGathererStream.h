@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/Storages/IStorage.h>
 #include <DB/Common/PODArray.h>
 
 

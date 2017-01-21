@@ -7,11 +7,16 @@
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/ClientInfo.h>
-#include <DB/Storages/IStorage.h>
 #include <DB/IO/CompressedStream.h>
 
-#include <Poco/Net/IPAddress.h>
 
+namespace Poco
+{
+	namespace Net
+	{
+		class IPAddress;
+	}
+}
 
 namespace zkutil
 {
@@ -45,6 +50,15 @@ class QueryLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
+using Tables = std::map<String, StoragePtr>;
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
+class IBlockInputStream;
+class IBlockOutputStream;
+using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
+using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 
 
 /// (имя базы данных, имя таблицы)

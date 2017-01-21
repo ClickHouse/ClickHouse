@@ -1,5 +1,7 @@
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/Settings.h>
+#include <DB/Common/Exception.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB
