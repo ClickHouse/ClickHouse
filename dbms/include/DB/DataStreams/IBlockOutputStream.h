@@ -16,7 +16,7 @@ class TableStructureReadLock;
 using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
 using TableStructureReadLocks = std::vector<TableStructureReadLockPtr>;
 
-class Progress;
+struct Progress;
 
 
 /** Interface of stream for writing data (into table, filesystem, network, terminal, etc.)
