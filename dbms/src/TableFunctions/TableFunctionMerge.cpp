@@ -7,6 +7,7 @@
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/TableFunctions/ITableFunction.h>
 #include <DB/Interpreters/evaluateConstantExpression.h>
+#include <DB/Interpreters/Context.h>
 #include <DB/Databases/IDatabase.h>
 #include <DB/TableFunctions/TableFunctionMerge.h>
 
