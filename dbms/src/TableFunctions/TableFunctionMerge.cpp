@@ -4,6 +4,7 @@
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <DB/TableFunctions/ITableFunction.h>
 #include <DB/Interpreters/evaluateConstantExpression.h>
 #include <DB/Databases/IDatabase.h>

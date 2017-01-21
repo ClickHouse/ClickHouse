@@ -59,6 +59,7 @@ class IBlockInputStream;
 class IBlockOutputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
+class Block;
 
 
 /// (имя базы данных, имя таблицы)

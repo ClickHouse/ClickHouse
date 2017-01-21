@@ -24,6 +24,8 @@ namespace DB
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
+using Tables = std::map<String, StoragePtr>;
+struct Settings;
 
 
 /** List of currently executing queries.
