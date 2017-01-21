@@ -7,7 +7,6 @@ add_library(cctz
     src/time_zone_info.cc
     src/time_zone_if.cc
     src/time_zone_format.cc
-    src/time_tool.cc
     src/time_zone_impl.cc
 
     src/time_zone_libc.h
