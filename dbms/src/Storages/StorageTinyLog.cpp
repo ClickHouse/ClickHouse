@@ -28,6 +28,8 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnNullable.h>
 
+#include <DB/Interpreters/Settings.h>
+
 #include <DB/Storages/StorageTinyLog.h>
 #include <Poco/DirectoryIterator.h>
 

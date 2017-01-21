@@ -5,7 +5,12 @@ clickhouse-client -n --query="
     CREATE VIEW test.numbers_100k AS SELECT * FROM system.numbers LIMIT 100000;
 ";
 
-for i in $(seq 1000000 20000 10000000 && seq 10100000 100000 20000000); do
+STEP_MULTIPLIER=1
+if [ "$VALGRIND" -eq "1" ]; then
+    STEP_MULTIPLIER=50
+fi
+
+for i in $(seq 1000000 $((20000 * $STEP_MULTIPLIER)) 10000000 && seq 10100000 $((100000 * $STEP_MULTIPLIER)) 20000000); do
     clickhouse-client --max_memory_usage=$i --query="
         SELECT intDiv(number, 5) AS k, max(toString(number)) FROM remote('127.0.0.{1,2}', test.numbers_100k) GROUP BY k ORDER BY k LIMIT 1;
     " 2> /dev/null;

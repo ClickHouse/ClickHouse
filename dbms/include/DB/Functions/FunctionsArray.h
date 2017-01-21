@@ -21,8 +21,6 @@
 #include <DB/Functions/FunctionsConditional.h>
 #include <DB/Functions/FunctionsConversion.h>
 #include <DB/Functions/Conditional/getArrayType.h>
-#include <DB/AggregateFunctions/IAggregateFunction.h>
-#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/Parsers/ExpressionListParsers.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ASTExpressionList.h>
@@ -1431,6 +1429,9 @@ private:
 		ColumnNullable * nullable_res_col);
 };
 
+
+class IAggregateFunction;
+using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 
 /** Применяет к массиву агрегатную функцию и возвращает её результат.
   * Также может быть применена к нескольким массивам одинаковых размеров, если агрегатная функция принимает несколько аргументов.

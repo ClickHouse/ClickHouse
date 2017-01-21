@@ -6,6 +6,9 @@
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/DataStreams/IBlockInputStream.h>
 
+
+namespace Poco { class Logger; }
+
 namespace DB
 {
 
@@ -196,12 +199,12 @@ private:
 
 	/// Таблица, откуда читать данные, если не подзапрос.
 	StoragePtr storage;
-	IStorage::TableStructureReadLockPtr table_lock;
+	TableStructureReadLockPtr table_lock;
 
 	/// Выполнить объединение потоков внутри запроса SELECT?
 	bool union_within_single_query = false;
 
-	Logger * log;
+	Poco::Logger * log;
 };
 
 }

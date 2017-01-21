@@ -1,4 +1,5 @@
 #include <DB/Core/Defines.h>
+#include <DB/Core/Block.h>
 
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/VarInt.h>

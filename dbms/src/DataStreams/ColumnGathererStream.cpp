@@ -1,5 +1,7 @@
 #include <DB/DataStreams/ColumnGathererStream.h>
+#include <common/logger_useful.h>
 #include <iomanip>
+
 
 namespace DB
 {
@@ -15,7 +17,7 @@ namespace ErrorCodes
 
 ColumnGathererStream::ColumnGathererStream(const BlockInputStreams & source_streams, const String & column_name_,
 										   const MergedRowSources & row_source_, size_t block_preferred_size_)
-: name(column_name_), row_source(row_source_), block_preferred_size(block_preferred_size_)
+	: name(column_name_), row_source(row_source_), block_preferred_size(block_preferred_size_), log(&Logger::get("ColumnGathererStream"))
 {
 	if (source_streams.empty())
 		throw Exception("There are no streams to gather", ErrorCodes::EMPTY_DATA_PASSED);

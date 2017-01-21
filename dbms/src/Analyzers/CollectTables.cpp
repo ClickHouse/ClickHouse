@@ -6,6 +6,7 @@
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTTablesInSelectQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/ASTSubquery.h>
 #include <DB/IO/WriteBuffer.h>

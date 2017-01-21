@@ -2,6 +2,7 @@
 #include <DB/Interpreters/Join.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/DataStreams/CreatingSetsBlockInputStream.h>
+#include <DB/Storages/IStorage.h>
 #include <iomanip>
 
 

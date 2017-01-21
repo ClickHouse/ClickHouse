@@ -1,10 +1,11 @@
 #pragma once
 
-#include <common/logger_useful.h>
+#include <Poco/RWLock.h>
 
 #include <DB/Parsers/ASTTablesInSelectQuery.h>
 
 #include <DB/Interpreters/AggregationCommon.h>
+#include <DB/Interpreters/SettingsCommon.h>
 
 #include <DB/Common/Arena.h>
 #include <DB/Common/HashTable/HashMap.h>
@@ -14,6 +15,8 @@
 
 namespace DB
 {
+
+struct Limits;
 
 
 /** Структура данных для реализации JOIN-а.
@@ -62,16 +65,7 @@ class Join
 {
 public:
 	Join(const Names & key_names_left_, const Names & key_names_right_,
-		 const Limits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_)
-		: kind(kind_), strictness(strictness_),
-		key_names_left(key_names_left_),
-		key_names_right(key_names_right_),
-		log(&Logger::get("Join")),
-		max_rows(limits.max_rows_in_join),
-		max_bytes(limits.max_bytes_in_join),
-		overflow_mode(limits.join_overflow_mode)
-	{
-	}
+		 const Limits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_);
 
 	bool empty() { return type == Type::EMPTY; }
 
@@ -229,7 +223,7 @@ private:
 	Block sample_block_with_columns_to_add;
 	Block sample_block_with_keys;
 
-	Logger * log;
+	Poco::Logger * log;
 
 	/// Ограничения на максимальный размер множества
 	size_t max_rows;

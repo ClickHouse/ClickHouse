@@ -5,6 +5,7 @@
 #include <Poco/Mutex.h>
 #include <Poco/File.h>
 #include <Poco/UUIDGenerator.h>
+#include <Poco/Net/IPAddress.h>
 
 #include <common/logger_useful.h>
 
@@ -24,7 +25,7 @@
 #include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/Users.h>
 #include <DB/Interpreters/Quota.h>
-#include <DB/Interpreters/Dictionaries.h>
+#include <DB/Interpreters/EmbeddedDictionaries.h>
 #include <DB/Interpreters/ExternalDictionaries.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/Cluster.h>
@@ -83,7 +84,8 @@ struct ContextShared
 
 	/// For access of most of shared objects. Recursive mutex.
 	mutable Poco::Mutex mutex;
-	/// Separate mutex for access of external dictionaries. Separate mutex to avoid locks when server doing request to itself.
+	/// Separate mutex for access of dictionaries. Separate mutex to avoid locks when server doing request to itself.
+	mutable std::mutex embedded_dictionaries_mutex;
 	mutable std::mutex external_dictionaries_mutex;
 	/// Separate mutex for re-initialization of zookeer session. This operation could take a long time and must not interfere with another operations.
 	mutable std::mutex zookeeper_mutex;
@@ -100,7 +102,7 @@ struct ContextShared
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
 	FormatFactory format_factory;							/// Форматы.
-	mutable std::shared_ptr<Dictionaries> dictionaries;		/// Словари Метрики. Инициализируются лениво.
+	mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;	/// Словари Метрики. Инициализируются лениво.
 	mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
 	Users users;											/// Известные пользователи.
 	Quotas quotas;											/// Известные квоты на использование ресурсов.
@@ -788,9 +790,9 @@ Context & Context::getGlobalContext()
 }
 
 
-const Dictionaries & Context::getDictionaries() const
+const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
 {
-	return getDictionariesImpl(false);
+	return getEmbeddedDictionariesImpl(false);
 }
 
 
@@ -800,14 +802,14 @@ const ExternalDictionaries & Context::getExternalDictionaries() const
 }
 
 
-const Dictionaries & Context::getDictionariesImpl(const bool throw_on_error) const
+const EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
 {
-	auto lock = getLock();
+	std::lock_guard<std::mutex> lock(shared->embedded_dictionaries_mutex);
 
-	if (!shared->dictionaries)
-		shared->dictionaries = std::make_shared<Dictionaries>(throw_on_error);
+	if (!shared->embedded_dictionaries)
+		shared->embedded_dictionaries = std::make_shared<EmbeddedDictionaries>(throw_on_error);
 
-	return *shared->dictionaries;
+	return *shared->embedded_dictionaries;
 }
 
 
@@ -826,9 +828,9 @@ const ExternalDictionaries & Context::getExternalDictionariesImpl(const bool thr
 }
 
 
-void Context::tryCreateDictionaries() const
+void Context::tryCreateEmbeddedDictionaries() const
 {
-	static_cast<void>(getDictionariesImpl(true));
+	static_cast<void>(getEmbeddedDictionariesImpl(true));
 }
 
 

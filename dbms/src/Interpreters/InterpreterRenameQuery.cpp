@@ -1,6 +1,7 @@
 #include <DB/Parsers/ASTRenameQuery.h>
 #include <DB/Databases/IDatabase.h>
 #include <DB/Interpreters/InterpreterRenameQuery.h>
+#include <DB/Storages/IStorage.h>
 
 
 
@@ -89,7 +90,7 @@ BlockIO InterpreterRenameQuery::execute()
 					"Some table right now is being renamed to " + to.database_name + "." + to.table_name));
 	}
 
-	std::vector<IStorage::TableFullWriteLockPtr> locks;
+	std::vector<TableFullWriteLockPtr> locks;
 	locks.reserve(unique_tables_from.size());
 
 	for (const auto & names : unique_tables_from)

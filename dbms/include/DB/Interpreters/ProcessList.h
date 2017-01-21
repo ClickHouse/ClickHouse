@@ -5,16 +5,12 @@
 #include <memory>
 #include <mutex>
 #include <Poco/Condition.h>
-#include <Poco/Net/IPAddress.h>
 #include <DB/Common/Stopwatch.h>
 #include <DB/Core/Defines.h>
 #include <DB/Core/Progress.h>
-#include <DB/Common/Exception.h>
 #include <DB/Common/MemoryTracker.h>
-#include <DB/IO/WriteHelpers.h>
 #include <DB/Interpreters/QueryPriorities.h>
 #include <DB/Interpreters/ClientInfo.h>
-#include <DB/Storages/IStorage.h>
 #include <DB/Common/CurrentMetrics.h>
 
 
@@ -25,6 +21,12 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
+using Tables = std::map<String, StoragePtr>;
+struct Settings;
+
 
 /** List of currently executing queries.
   * Also implements limit on their number.
