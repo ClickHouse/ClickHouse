@@ -282,6 +282,8 @@ protected:
 	using std::enable_shared_from_this<IStorage>::shared_from_this;
 
 private:
+	friend class TableStructureReadLock;
+
 	/// Брать следующие два лока всегда нужно в этом порядке.
 
 	/** Берется на чтение на все время запроса INSERT и на все время слияния кусков (для MergeTree).
