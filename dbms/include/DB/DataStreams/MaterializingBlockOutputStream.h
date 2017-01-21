@@ -15,7 +15,10 @@ public:
 	MaterializingBlockOutputStream(const BlockOutputStreamPtr & output)
 		: output{output} {}
 
-	void write(const Block & block) override;
+	void write(const Block & block) override
+	{
+		output->write(materialize(block));
+	}
 
 	void flush() 										override { output->flush(); }
 	void writePrefix() 									override { output->writePrefix(); }
