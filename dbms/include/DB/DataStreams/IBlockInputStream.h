@@ -21,7 +21,7 @@ class TableStructureReadLock;
 using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
 using TableStructureReadLocks = std::vector<TableStructureReadLockPtr>;
 
-class Progress;
+struct Progress;
 
 
 
