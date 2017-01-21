@@ -10,6 +10,9 @@
 #include <DB/DataStreams/IBlockOutputStream.h>
 
 
+namespace Poco { class Logger; }
+
+
 namespace DB
 {
 
@@ -115,7 +118,7 @@ private:
 	const String destination_table;
 	bool no_destination;	/// Если задано - не записывать данные из буфера, а просто опустошать буфер.
 
-	Logger * log;
+	Poco::Logger * log;
 
 	Poco::Event shutdown_event;
 	/// Выполняет сброс данных по таймауту.
