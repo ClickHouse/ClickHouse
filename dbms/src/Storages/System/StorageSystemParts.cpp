@@ -172,7 +172,7 @@ BlockInputStreams StorageSystemParts::read(
 		}
 
 		StoragePtr storage = storages.at(std::make_pair(database, table));
-		IStorage::TableStructureReadLockPtr table_lock;
+		TableStructureReadLockPtr table_lock;
 
 		try
 		{

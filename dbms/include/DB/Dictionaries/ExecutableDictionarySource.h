@@ -3,9 +3,12 @@
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 
+
+namespace Poco { class Logger; }
+
+
 namespace DB
 {
-
 
 /// Allows loading dictionaries from executable
 class ExecutableDictionarySource final : public IDictionarySource
@@ -16,8 +19,7 @@ public:
 		const Poco::Util::AbstractConfiguration & config,
 		const std::string & config_prefix,
 		Block & sample_block,
-		const Context & context
-	);
+		const Context & context);
 
 	ExecutableDictionarySource(const ExecutableDictionarySource & other);
 
@@ -37,7 +39,7 @@ public:
 	std::string toString() const override;
 
 private:
-	Logger * log = &Logger::get("ExecutableDictionarySource");
+	Poco::Logger * log;
 
 	const DictionaryStructure dict_struct;
 	const std::string command;

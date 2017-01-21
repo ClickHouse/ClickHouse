@@ -1,4 +1,8 @@
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
+#include <DB/Core/Block.h>
 #include <DB/DataStreams/ODBCDriverBlockOutputStream.h>
+
 
 namespace DB
 {
@@ -16,15 +20,15 @@ void ODBCDriverBlockOutputStream::write(const Block & block)
 	size_t rows = block.rows();
 	size_t columns = block.columns();
 
-	/// Заголовок.
+	/// Header.
 	if (is_first)
 	{
 		is_first = false;
 
-		/// Количество столбцов.
+		/// Number of columns.
 		writeVarUInt(columns, out);
 
-		/// Имена и типы столбцов.
+		/// Names and types of columns.
 		for (size_t j = 0; j < columns; ++j)
 		{
 			const ColumnWithTypeAndName & col = block.getByPosition(j);

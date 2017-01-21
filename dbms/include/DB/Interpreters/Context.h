@@ -26,7 +26,7 @@ struct ContextShared;
 class QuotaForIntervals;
 class TableFunctionFactory;
 class AggregateFunctionFactory;
-class Dictionaries;
+class EmbeddedDictionaries;
 class ExternalDictionaries;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
@@ -172,9 +172,9 @@ public:
 
 	const TableFunctionFactory & getTableFunctionFactory() const;
 	const AggregateFunctionFactory & getAggregateFunctionFactory() const;
-	const Dictionaries & getDictionaries() const;
+	const EmbeddedDictionaries & getEmbeddedDictionaries() const;
 	const ExternalDictionaries & getExternalDictionaries() const;
-	void tryCreateDictionaries() const;
+	void tryCreateEmbeddedDictionaries() const;
 	void tryCreateExternalDictionaries() const;
 
 	/// Форматы ввода-вывода.
@@ -294,7 +294,7 @@ private:
 	  */
 	void checkDatabaseAccessRights(const std::string & database_name) const;
 
-	const Dictionaries & getDictionariesImpl(bool throw_on_error) const;
+	const EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 	const ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
 
 	StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;

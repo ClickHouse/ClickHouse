@@ -1,4 +1,6 @@
 #include <DB/Interpreters/ProcessList.h>
+#include <DB/Interpreters/Settings.h>
+
 
 namespace DB
 {

@@ -1,3 +1,6 @@
+#include <DB/AggregateFunctions/IAggregateFunction.h>
+#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
+
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/FunctionsArray.h>
 

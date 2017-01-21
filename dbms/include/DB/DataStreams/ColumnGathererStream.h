@@ -5,6 +5,9 @@
 #include <DB/Common/PODArray.h>
 
 
+namespace Poco { class Logger; }
+
+
 namespace DB
 {
 
@@ -102,7 +105,7 @@ private:
 	size_t pos_global_start = 0;
 	size_t block_preferred_size;
 
-	Logger * log = &Logger::get("ColumnGathererStream");
+	Poco::Logger * log;
 };
 
 }

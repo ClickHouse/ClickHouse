@@ -1,4 +1,7 @@
+#include <common/logger_useful.h>
+
 #include <DB/Dictionaries/MySQLDictionarySource.h>
+#include <DB/Dictionaries/MySQLBlockInputStream.h>
 
 
 namespace DB
@@ -11,29 +14,31 @@ static const size_t max_block_size = 8192;
 MySQLDictionarySource::MySQLDictionarySource(const DictionaryStructure & dict_struct_,
 	const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
 	const Block & sample_block)
-	: dict_struct{dict_struct_},
-	  db{config.getString(config_prefix + ".db", "")},
-	  table{config.getString(config_prefix + ".table")},
-	  where{config.getString(config_prefix + ".where", "")},
-	  dont_check_update_time{config.getBool(config_prefix + ".dont_check_update_time", false)},
-	  sample_block{sample_block},
-	  pool{config, config_prefix},
-	  query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
-	  load_all_query{query_builder.composeLoadAllQuery()}
+	: log(&Logger::get("MySQLDictionarySource")),
+	dict_struct{dict_struct_},
+	db{config.getString(config_prefix + ".db", "")},
+	table{config.getString(config_prefix + ".table")},
+	where{config.getString(config_prefix + ".where", "")},
+	dont_check_update_time{config.getBool(config_prefix + ".dont_check_update_time", false)},
+	sample_block{sample_block},
+	pool{config, config_prefix},
+	query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
+	load_all_query{query_builder.composeLoadAllQuery()}
 {
 }
 
 /// copy-constructor is provided in order to support cloneability
 MySQLDictionarySource::MySQLDictionarySource(const MySQLDictionarySource & other)
-	: dict_struct{other.dict_struct},
-	  db{other.db},
-	  table{other.table},
-	  where{other.where},
-	  dont_check_update_time{other.dont_check_update_time},
-	  sample_block{other.sample_block},
-	  pool{other.pool},
-	  query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
-	  load_all_query{other.load_all_query}, last_modification{other.last_modification}
+	: log(&Logger::get("MySQLDictionarySource")),
+	dict_struct{other.dict_struct},
+	db{other.db},
+	table{other.table},
+	where{other.where},
+	dont_check_update_time{other.dont_check_update_time},
+	sample_block{other.sample_block},
+	pool{other.pool},
+	query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
+	load_all_query{other.load_all_query}, last_modification{other.last_modification}
 {
 }
 

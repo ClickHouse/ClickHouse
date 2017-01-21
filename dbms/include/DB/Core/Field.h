@@ -487,55 +487,32 @@ typename NearestFieldType<T>::Type nearestFieldType(const T & x)
 	return typename NearestFieldType<T>::Type(x);
 }
 
-}
 
+class ReadBuffer;
+class WriteBuffer;
 
-/// Заглушки, чтобы DBObject-ы с полем типа Array компилировались.
-#include <mysqlxx/Manip.h>
+/// Предполагается что у всех элементов массива одинаковый тип.
+void readBinary(Array & x, ReadBuffer & buf);
 
-namespace mysqlxx
-{
-	std::ostream & operator<< (mysqlxx::EscapeManipResult res, const DB::Array & value);
-	std::ostream & operator<< (mysqlxx::QuoteManipResult res, const DB::Array & value);
-	std::istream & operator>> (mysqlxx::UnEscapeManipResult res, DB::Array & value);
-	std::istream & operator>> (mysqlxx::UnQuoteManipResult res, DB::Array & value);
+inline void readText(Array & x, ReadBuffer & buf) 			{ throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
+inline void readQuoted(Array & x, ReadBuffer & buf) 		{ throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
 
-	std::ostream & operator<< (mysqlxx::EscapeManipResult res, const DB::Tuple & value);
-	std::ostream & operator<< (mysqlxx::QuoteManipResult res, const DB::Tuple & value);
-	std::istream & operator>> (mysqlxx::UnEscapeManipResult res, DB::Tuple & value);
-	std::istream & operator>> (mysqlxx::UnQuoteManipResult res, DB::Tuple & value);
-}
+/// Предполагается что у всех элементов массива одинаковый тип.
+void writeBinary(const Array & x, WriteBuffer & buf);
 
+void writeText(const Array & x, WriteBuffer & buf);
 
-namespace DB
-{
-	class ReadBuffer;
-	class WriteBuffer;
+inline void writeQuoted(const Array & x, WriteBuffer & buf) { throw Exception("Cannot write Array quoted.", ErrorCodes::NOT_IMPLEMENTED); }
 
-	/// Предполагается что у всех элементов массива одинаковый тип.
-	void readBinary(Array & x, ReadBuffer & buf);
+void readBinary(Tuple & x, ReadBuffer & buf);
 
-	inline void readText(Array & x, ReadBuffer & buf) 			{ throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
-	inline void readQuoted(Array & x, ReadBuffer & buf) 		{ throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
+inline void readText(Tuple & x, ReadBuffer & buf) 			{ throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
+inline void readQuoted(Tuple & x, ReadBuffer & buf) 		{ throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
 
-	/// Предполагается что у всех элементов массива одинаковый тип.
-	void writeBinary(const Array & x, WriteBuffer & buf);
+void writeBinary(const Tuple & x, WriteBuffer & buf);
 
-	void writeText(const Array & x, WriteBuffer & buf);
+void writeText(const Tuple & x, WriteBuffer & buf);
 
-	inline void writeQuoted(const Array & x, WriteBuffer & buf) { throw Exception("Cannot write Array quoted.", ErrorCodes::NOT_IMPLEMENTED); }
-}
+inline void writeQuoted(const Tuple & x, WriteBuffer & buf) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
 
-namespace DB
-{
-	void readBinary(Tuple & x, ReadBuffer & buf);
-
-	inline void readText(Tuple & x, ReadBuffer & buf) 			{ throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
-	inline void readQuoted(Tuple & x, ReadBuffer & buf) 		{ throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
-
-	void writeBinary(const Tuple & x, WriteBuffer & buf);
-
-	void writeText(const Tuple & x, WriteBuffer & buf);
-
-	inline void writeQuoted(const Tuple & x, WriteBuffer & buf) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
 }

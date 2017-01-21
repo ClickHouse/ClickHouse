@@ -1,7 +1,11 @@
 #pragma once
 
+#include <mutex>
 #include <DB/Databases/IDatabase.h>
 #include <DB/Storages/IStorage.h>
+
+
+namespace Poco { class Logger; }
 
 
 namespace DB
@@ -19,7 +23,7 @@ protected:
 	mutable std::mutex mutex;
 	Tables tables;
 
-	Logger * log;
+	Poco::Logger * log;
 
 public:
 
