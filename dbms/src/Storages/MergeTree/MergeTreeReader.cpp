@@ -9,6 +9,7 @@
 #include <DB/Interpreters/evaluateMissingDefaults.h>
 #include <DB/Storages/MergeTree/MergeTreeReader.h>
 #include <DB/Columns/ColumnNullable.h>
+#include <Poco/File.h>
 
 
 namespace DB

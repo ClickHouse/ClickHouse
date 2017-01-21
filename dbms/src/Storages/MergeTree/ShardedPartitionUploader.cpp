@@ -3,8 +3,8 @@
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
-
 #include <DB/IO/InterserverWriteBuffer.h>
+#include <Poco/File.h>
 
 
 namespace CurrentMetrics
