@@ -13,7 +13,7 @@ echo "('2014-01-01', 'key1', 1, 'val1')" | clickhouse-client --query="INSERT INT
 echo "('2014-01-01', 'key1', -1, 'val1'),('2014-01-01', 'key1', 1, 'val2')" | clickhouse-client --query="INSERT INTO collapsing_test.p1 VALUES" || exit 7
 echo "('2014-01-01', 'key1', -1, 'val2')" | clickhouse-client --query="INSERT INTO collapsing_test.p2 VALUES" || exit 8
 
-sudo /etc/init.d/clickhouse-server-metrika-yandex stop || exit 10
+sudo /etc/init.d/clickhouse-server stop || exit 10
 
 sudo -u metrika cp -r /opt/clickhouse/data/collapsing_test/{p0/20140101_20140101_1_1_0,m0/} || exit 12
 sudo -u metrika cp -r /opt/clickhouse/data/collapsing_test/{p1/20140101_20140101_1_1_0,m0/20140101_20140101_2_2_0} || exit 13
@@ -21,19 +21,19 @@ sudo -u metrika cp -r /opt/clickhouse/data/collapsing_test/{p1/20140101_20140101
 sudo -u metrika cp -r /opt/clickhouse/data/collapsing_test/{p2/20140101_20140101_1_1_0,m1/20140101_20140101_3_3_0} || exit 15
 rm /opt/clickhouse/data/collapsing_test/m{0,1}/increment.txt || exit 29
 
-sudo /etc/init.d/clickhouse-server-metrika-yandex start || exit 16
+sudo /etc/init.d/clickhouse-server start || exit 16
 
 sleep 10s
 echo "OPTIMIZE TABLE collapsing_test.m0" | clickhouse-client || exit 17
 echo "OPTIMIZE TABLE collapsing_test.m1" | clickhouse-client || exit 18
 
-sudo /etc/init.d/clickhouse-server-metrika-yandex stop || exit 19
+sudo /etc/init.d/clickhouse-server stop || exit 19
 
 sudo -u metrika cp -r /opt/clickhouse/data/collapsing_test/{p0/20140101_20140101_1_1_0,m1/} || exit 20
 sudo -u metrika cp -r /opt/clickhouse/data/collapsing_test/{p2/20140101_20140101_1_1_0,m0/20140101_20140101_3_3_0} || exit 21
 rm /opt/clickhouse/data/collapsing_test/m{0,1}/increment.txt || exit 29
 
-sudo /etc/init.d/clickhouse-server-metrika-yandex start || exit 22
+sudo /etc/init.d/clickhouse-server start || exit 22
 
 sleep 10s
 echo "OPTIMIZE TABLE collapsing_test.m0" | clickhouse-client || exit 23

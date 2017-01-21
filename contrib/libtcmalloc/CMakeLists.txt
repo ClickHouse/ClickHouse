@@ -1,5 +1,5 @@
 add_definitions(
-    -DNO_TCMALLOC_SAMPLES -DNO_TCMALLOC_SAMPLES
+    -DNO_TCMALLOC_SAMPLES
     -DNDEBUG -DNO_FRAME_POINTER
     -Wwrite-strings -Wno-sign-compare -Wno-unused-result
     -Wno-deprecated-declarations -Wno-unused-function

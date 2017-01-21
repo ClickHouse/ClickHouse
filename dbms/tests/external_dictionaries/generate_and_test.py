@@ -179,19 +179,20 @@ def generate_data(args):
         call([ args.client, '--port', args.port, '--query', query ], 'generated/' + file)
 
     # create MySQL table from complete_query
-    print 'Creating MySQL table'
-    subprocess.check_call('echo "'
-              'create database if not exists test;'
-              'drop table if exists test.dictionary_source;'
-              'create table test.dictionary_source ('
-                    'id tinyint unsigned, key0 tinyint unsigned, key0_str text, key1 tinyint unsigned, '
-                    'UInt8_ tinyint unsigned, UInt16_ smallint unsigned, UInt32_ int unsigned, UInt64_ bigint unsigned, '
-                    'Int8_ tinyint, Int16_ smallint, Int32_ int, Int64_ bigint, '
-                    'Float32_ float, Float64_ double, '
-                    'String_ text, Date_ date, DateTime_ datetime, Parent bigint unsigned'
-              ');'
-              'load data local infile \'{0}/source.tsv\' into table test.dictionary_source;" | mysql $MYSQL_OPTIONS --local-infile=1'
-              .format(prefix), shell=True)
+    if use_mysql:
+        print 'Creating MySQL table'
+        subprocess.check_call('echo "'
+                  'create database if not exists test;'
+                  'drop table if exists test.dictionary_source;'
+                  'create table test.dictionary_source ('
+                        'id tinyint unsigned, key0 tinyint unsigned, key0_str text, key1 tinyint unsigned, '
+                        'UInt8_ tinyint unsigned, UInt16_ smallint unsigned, UInt32_ int unsigned, UInt64_ bigint unsigned, '
+                        'Int8_ tinyint, Int16_ smallint, Int32_ int, Int64_ bigint, '
+                        'Float32_ float, Float64_ double, '
+                        'String_ text, Date_ date, DateTime_ datetime, Parent bigint unsigned'
+                  ');'
+                  'load data local infile \'{0}/source.tsv\' into table test.dictionary_source;" | mysql $MYSQL_OPTIONS --local-infile=1'
+                  .format(prefix), shell=True)
 
     # create MongoDB collection from complete_query via JSON file
     if use_mongo:
@@ -266,7 +267,7 @@ def generate_dictionaries(args):
 
     source_clickhouse = '''
     <clickhouse>
-        <host>127.0.0.1</host>
+        <host>localhost</host>
         <port>%s</port>
         <user>default</user>
         <password></password>
@@ -277,7 +278,7 @@ def generate_dictionaries(args):
 
     source_mysql = '''
     <mysql>
-        <host>127.0.0.1</host>
+        <host>localhost</host>
         <port>3306</port>
         <user>root</user>
         <password></password>
@@ -288,7 +289,7 @@ def generate_dictionaries(args):
 
     source_mongodb = '''
     <mongodb>
-        <host>127.0.0.1</host>
+        <host>localhost</host>
         <port>27017</port>
         <user></user>
         <password></password>
@@ -567,8 +568,8 @@ def run_tests(args):
 
 
 def main(args):
-    generate_data(args)
     generate_dictionaries(args)
+    generate_data(args)
     run_tests(args)
 
 

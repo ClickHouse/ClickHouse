@@ -1,4 +1,5 @@
-#ifndef NO_TCMALLOC
+#include <common/config_common.h>
+#if ENABLE_LIBTCMALLOC
 #include <gperftools/malloc_extension.h>
 #endif
 #include "Server.h"
@@ -36,7 +37,7 @@ static bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> 
 
 int main(int argc_, char ** argv_)
 {
-#ifndef NO_TCMALLOC
+#if ENABLE_LIBTCMALLOC
 	MallocExtension::instance()->SetNumericProperty("tcmalloc.aggressive_memory_decommit", false);
 #endif
 
