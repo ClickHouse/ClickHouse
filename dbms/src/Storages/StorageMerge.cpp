@@ -125,7 +125,7 @@ BlockInputStreams StorageMerge::read(
 			if (!table->supportsPrewhere())
 				throw Exception("Storage " + table->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
 
-	TableLocks table_locks;
+	TableStructureReadLocks table_locks;
 
 	/// Нельзя, чтобы эти таблицы кто-нибудь удалил, пока мы их читаем.
 	for (auto & table : selected_tables)

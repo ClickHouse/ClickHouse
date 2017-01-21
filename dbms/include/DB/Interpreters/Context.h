@@ -7,11 +7,16 @@
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/ClientInfo.h>
-#include <DB/Storages/IStorage.h>
 #include <DB/IO/CompressedStream.h>
 
-#include <Poco/Net/IPAddress.h>
 
+namespace Poco
+{
+	namespace Net
+	{
+		class IPAddress;
+	}
+}
 
 namespace zkutil
 {
@@ -26,7 +31,7 @@ struct ContextShared;
 class QuotaForIntervals;
 class TableFunctionFactory;
 class AggregateFunctionFactory;
-class Dictionaries;
+class EmbeddedDictionaries;
 class ExternalDictionaries;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
@@ -45,6 +50,16 @@ class QueryLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
+using Tables = std::map<String, StoragePtr>;
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
+class IBlockInputStream;
+class IBlockOutputStream;
+using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
+using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
+class Block;
 
 
 /// (имя базы данных, имя таблицы)
@@ -172,9 +187,9 @@ public:
 
 	const TableFunctionFactory & getTableFunctionFactory() const;
 	const AggregateFunctionFactory & getAggregateFunctionFactory() const;
-	const Dictionaries & getDictionaries() const;
+	const EmbeddedDictionaries & getEmbeddedDictionaries() const;
 	const ExternalDictionaries & getExternalDictionaries() const;
-	void tryCreateDictionaries() const;
+	void tryCreateEmbeddedDictionaries() const;
 	void tryCreateExternalDictionaries() const;
 
 	/// Форматы ввода-вывода.
@@ -294,7 +309,7 @@ private:
 	  */
 	void checkDatabaseAccessRights(const std::string & database_name) const;
 
-	const Dictionaries & getDictionariesImpl(bool throw_on_error) const;
+	const EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 	const ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
 
 	StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;

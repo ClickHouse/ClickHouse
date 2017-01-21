@@ -516,7 +516,7 @@ int Server::main(const std::vector<std::string> & args)
 		{
 			if (!config().getBool("dictionaries_lazy_load", true))
 			{
-				global_context->tryCreateDictionaries();
+				global_context->tryCreateEmbeddedDictionaries();
 				global_context->tryCreateExternalDictionaries();
 			}
 		}

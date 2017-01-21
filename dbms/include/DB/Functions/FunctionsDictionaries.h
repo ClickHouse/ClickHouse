@@ -13,10 +13,14 @@
 #include <DB/Columns/ColumnTuple.h>
 
 #include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/Dictionaries.h>
+#include <DB/Interpreters/EmbeddedDictionaries.h>
 #include <DB/Interpreters/ExternalDictionaries.h>
 
 #include <DB/Functions/IFunction.h>
+#include <DB/Dictionaries/Embedded/RegionsHierarchy.h>
+#include <DB/Dictionaries/Embedded/RegionsHierarchies.h>
+#include <DB/Dictionaries/Embedded/RegionsNames.h>
+#include <DB/Dictionaries/Embedded/TechDataHierarchy.h>
 #include <DB/Dictionaries/FlatDictionary.h>
 #include <DB/Dictionaries/HashedDictionary.h>
 #include <DB/Dictionaries/CacheDictionary.h>
@@ -553,7 +557,7 @@ struct FunctionRegionToCity :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -562,7 +566,7 @@ struct FunctionRegionToArea :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -571,7 +575,7 @@ struct FunctionRegionToDistrict :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -580,7 +584,7 @@ struct FunctionRegionToCountry :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -589,7 +593,7 @@ struct FunctionRegionToContinent :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -598,7 +602,7 @@ struct FunctionRegionToTopContinent :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -607,7 +611,7 @@ struct FunctionRegionToPopulation :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -616,7 +620,7 @@ struct FunctionOSToRoot :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -625,7 +629,7 @@ struct FunctionSEToRoot :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -634,7 +638,7 @@ struct FunctionRegionIn :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -643,7 +647,7 @@ struct FunctionOSIn :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -652,7 +656,7 @@ struct FunctionSEIn :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -661,7 +665,7 @@ struct FunctionRegionHierarchy :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -670,7 +674,7 @@ struct FunctionOSHierarchy :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -679,7 +683,7 @@ struct FunctionSEHierarchy :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -691,7 +695,7 @@ public:
 	static constexpr auto name = "regionToName";
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<FunctionRegionToName>(context.getDictionaries().getRegionsNames());
+		return std::make_shared<FunctionRegionToName>(context.getEmbeddedDictionaries().getRegionsNames());
 	}
 
 private:

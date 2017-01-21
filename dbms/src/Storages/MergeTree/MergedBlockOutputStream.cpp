@@ -6,8 +6,9 @@
 #include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnNullable.h>
-
 #include <DB/Common/StringUtils.h>
+#include <Poco/File.h>
+
 
 namespace DB
 {

@@ -2,6 +2,8 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 #include <DB/DataTypes/DataTypeFactory.h>
+#include <DB/Storages/IStorage.h>
+#include <DB/Parsers/IAST.h>
 
 #include <DB/TableFunctions/getStructureOfRemoteTable.h>
 

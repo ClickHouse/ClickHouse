@@ -12,7 +12,7 @@ class TableFunctionFactory
 {
 public:
 	TableFunctionPtr get(
-		const String & name,
+		const std::string & name,
 		const Context & context) const;
 };
 

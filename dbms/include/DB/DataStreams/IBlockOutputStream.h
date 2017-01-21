@@ -1,13 +1,21 @@
 #pragma once
 
+#include <string>
+#include <vector>
+#include <memory>
 #include <boost/noncopyable.hpp>
-#include <DB/Storages/IStorage.h>
 
 
 namespace DB
 {
 
 class Block;
+struct Progress;
+
+class TableStructureReadLock;
+using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
+using TableStructureReadLocks = std::vector<TableStructureReadLockPtr>;
+
 struct Progress;
 
 
@@ -44,16 +52,16 @@ public:
 
 	/** Content-Type to set when sending HTTP response.
 	  */
-	virtual String getContentType() const { return "text/plain; charset=UTF-8"; }
+	virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
 
 	virtual ~IBlockOutputStream() {}
 
 	/** Don't let to alter table while instance of stream is alive.
 	  */
-	void addTableLock(const IStorage::TableStructureReadLockPtr & lock) { table_locks.push_back(lock); }
+	void addTableLock(const TableStructureReadLockPtr & lock) { table_locks.push_back(lock); }
 
 protected:
-	IStorage::TableStructureReadLocks table_locks;
+	TableStructureReadLocks table_locks;
 };
 
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;

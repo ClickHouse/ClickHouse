@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/DataStreams/IBlockOutputStream.h>
+#include <DB/Core/NamesAndTypes.h>
 
 
 namespace DB
@@ -22,14 +23,7 @@ public:
 	}
 
 private:
-	void write(const Block & block) override
-	{
-		for (const auto & column : columns)
-			if (block.has(column.name))
-				throw Exception{"Cannot insert column " + column.name, ErrorCodes::ILLEGAL_COLUMN};
-
-		output->write(block);
-	}
+	void write(const Block & block) override;
 
 	void flush() override { output->flush(); }
 

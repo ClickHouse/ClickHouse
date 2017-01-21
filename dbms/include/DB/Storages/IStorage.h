@@ -1,18 +1,9 @@
 #pragma once
 
-#include <common/logger_useful.h>
-
-#include <DB/Core/Defines.h>
 #include <DB/Core/Names.h>
-#include <DB/Core/NamesAndTypes.h>
 #include <DB/Common/Exception.h>
 #include <DB/Core/QueryProcessingStage.h>
-#include <DB/Parsers/IAST.h>
-#include <DB/Parsers/ASTAlterQuery.h>
-#include <DB/Interpreters/Settings.h>
 #include <DB/Storages/ITableDeclaration.h>
-#include <DB/Storages/AlterCommands.h>
-#include <Poco/File.h>
 #include <Poco/RWLock.h>
 #include <memory>
 #include <experimental/optional>
@@ -38,6 +29,47 @@ using BlockInputStreams = std::vector<BlockInputStreamPtr>;
 class IStorage;
 
 using StoragePtr = std::shared_ptr<IStorage>;
+
+class IAST;
+
+using ASTPtr = std::shared_ptr<IAST>;
+
+struct Settings;
+
+class AlterCommands;
+
+/// For RESHARD PARTITION.
+using WeightedZooKeeperPath = std::pair<String, UInt64>;
+using WeightedZooKeeperPaths = std::vector<WeightedZooKeeperPath>;
+
+
+
+/** Не дает изменять описание таблицы (в том числе переименовывать и удалять таблицу).
+  * Если в течение какой-то операции структура таблицы должна оставаться неизменной, нужно держать такой лок на все ее время.
+  * Например, нужно держать такой лок на время всего запроса SELECT или INSERT и на все время слияния набора кусков
+  *  (но между выбором кусков для слияния и их слиянием структура таблицы может измениться).
+  * NOTE: Это лок на "чтение" описания таблицы. Чтобы изменить описание таблицы, нужно взять TableStructureWriteLock.
+  */
+class TableStructureReadLock
+{
+private:
+	friend class IStorage;
+
+	StoragePtr storage;
+	/// Порядок важен.
+	std::experimental::optional<Poco::ScopedReadRWLock> data_lock;
+	std::experimental::optional<Poco::ScopedReadRWLock> structure_lock;
+
+public:
+	TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data);
+};
+
+using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
+using TableStructureReadLocks = std::vector<TableStructureReadLockPtr>;
+
+using TableStructureWriteLockPtr = std::unique_ptr<Poco::ScopedWriteRWLock>;
+using TableDataWriteLockPtr = std::unique_ptr<Poco::ScopedWriteRWLock>;
+using TableFullWriteLockPtr = std::pair<TableDataWriteLockPtr, TableStructureWriteLockPtr>;
 
 
 /** Хранилище. Отвечает за:
@@ -68,35 +100,6 @@ public:
 	/** Возвращает true, если хранилище поддерживает несколько реплик. */
 	virtual bool supportsParallelReplicas() const { return false; }
 
-	/** Не дает изменять описание таблицы (в том числе переименовывать и удалять таблицу).
-	  * Если в течение какой-то операции структура таблицы должна оставаться неизменной, нужно держать такой лок на все ее время.
-	  * Например, нужно держать такой лок на время всего запроса SELECT или INSERT и на все время слияния набора кусков
-	  *  (но между выбором кусков для слияния и их слиянием структура таблицы может измениться).
-	  * NOTE: Это лок на "чтение" описания таблицы. Чтобы изменить описание таблицы, нужно взять TableStructureWriteLock.
-	  */
-	class TableStructureReadLock
-	{
-	private:
-		friend class IStorage;
-
-		StoragePtr storage;
-		/// Порядок важен.
-		std::experimental::optional<Poco::ScopedReadRWLock> data_lock;
-		std::experimental::optional<Poco::ScopedReadRWLock> structure_lock;
-
-	public:
-		TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data) : storage(storage_)
-		{
-			if (lock_data)
-				data_lock.emplace(storage->data_lock);
-			if (lock_structure)
-				structure_lock.emplace(storage->structure_lock);
-		}
-	};
-
-	using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
-	using TableStructureReadLocks = std::vector<TableStructureReadLockPtr>;
-
 	/** Не дает изменять структуру или имя таблицы.
 	  * Если в рамках этого лока будут изменены данные в таблице, нужно указать will_modify_data=true.
 	  * Это возьмет дополнительный лок, не позволяющий начать ALTER MODIFY.
@@ -111,10 +114,6 @@ public:
 			throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 		return res;
 	}
-
-	using TableStructureWriteLockPtr = std::unique_ptr<Poco::ScopedWriteRWLock>;
-	using TableDataWriteLockPtr = std::unique_ptr<Poco::ScopedWriteRWLock>;
-	using TableFullWriteLockPtr = std::pair<TableDataWriteLockPtr, TableStructureWriteLockPtr>;
 
 	/** Не дает читать структуру таблицы. Берется для ALTER, RENAME и DROP.
 	  */
@@ -283,6 +282,8 @@ protected:
 	using std::enable_shared_from_this<IStorage>::shared_from_this;
 
 private:
+	friend class TableStructureReadLock;
+
 	/// Брать следующие два лока всегда нужно в этом порядке.
 
 	/** Берется на чтение на все время запроса INSERT и на все время слияния кусков (для MergeTree).
@@ -307,7 +308,6 @@ private:
 };
 
 using StorageVector = std::vector<StoragePtr>;
-using TableLocks = IStorage::TableStructureReadLocks;
 
 /// имя таблицы -> таблица
 using Tables = std::map<String, StoragePtr>;

@@ -9,6 +9,7 @@
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Common/setThreadName.h>
 #include <DB/Common/CurrentMetrics.h>
+#include <common/logger_useful.h>
 #include <Poco/Ext/ThreadNumber.h>
 
 #include <ext/range.hpp>

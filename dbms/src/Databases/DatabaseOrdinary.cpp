@@ -1,5 +1,5 @@
-#include <future>
 #include <Poco/DirectoryIterator.h>
+#include <common/logger_useful.h>
 
 #include <DB/Databases/DatabaseOrdinary.h>
 #include <DB/Databases/DatabaseMemory.h>

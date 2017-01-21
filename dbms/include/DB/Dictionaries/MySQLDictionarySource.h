@@ -1,12 +1,14 @@
 #pragma once
 
 #include <DB/Dictionaries/IDictionarySource.h>
-#include <DB/Dictionaries/MySQLBlockInputStream.h>
 #include <DB/Dictionaries/ExternalQueryBuilder.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <ext/range.hpp>
-#include <mysqlxx/Pool.h>
+#include <mysqlxx/PoolWithFailover.h>
 #include <Poco/Util/AbstractConfiguration.h>
+
+
+namespace Poco { class Logger; }
 
 
 namespace DB
@@ -40,7 +42,7 @@ public:
 	std::string toString() const override;
 
 private:
-	Logger * log = &Logger::get("MySQLDictionarySource");
+	Poco::Logger * log;
 
 	static std::string quoteForLike(const std::string s);
 

@@ -126,7 +126,7 @@ BlockInputStreams StorageSystemColumns::read(
 
 		{
 			StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-			IStorage::TableStructureReadLockPtr table_lock;
+			TableStructureReadLockPtr table_lock;
 
 			try
 			{
