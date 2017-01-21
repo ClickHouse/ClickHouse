@@ -223,7 +223,7 @@ private:
 	Block sample_block_with_columns_to_add;
 	Block sample_block_with_keys;
 
-	Logger * log;
+	Poco::Logger * log;
 
 	/// Ограничения на максимальный размер множества
 	size_t max_rows;
