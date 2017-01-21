@@ -22,6 +22,8 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnNullable.h>
 
+#include <DB/Interpreters/Settings.h>
+
 #include <Poco/Path.h>
 #include <Poco/DirectoryIterator.h>
 
