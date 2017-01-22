@@ -562,7 +562,7 @@ template void readJSONStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & 
 template void readJSONStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
 
 
-void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf)
+void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
 	static constexpr auto DATE_TIME_BROKEN_DOWN_LENGTH = 19;
 	static constexpr auto UNIX_TIMESTAMP_MAX_LENGTH = 10;
@@ -600,7 +600,7 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf)
 		if (unlikely(year == 0))
 			datetime = 0;
 		else
-			datetime = DateLUT::instance().makeDateTime(year, month, day, hour, minute, second);
+			datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 	}
 	else
 		datetime = parse<time_t>(s, s_pos - s);
