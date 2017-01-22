@@ -32,8 +32,8 @@ const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) co
 {
 	std::lock_guard<std::mutex> lock(mutex);
 
-	auto it = impls.find(time_zone);
-	if (it == impls.end())
+	auto it = impls.emplace(time_zone, nullptr);
+	if (!it->second)
 		it->second = std::make_unique<DateLUTImpl>(time_zone);
 
 	return *it->second;
