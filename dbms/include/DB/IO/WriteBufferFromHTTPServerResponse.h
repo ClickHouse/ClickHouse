@@ -54,7 +54,8 @@ private:
 
 	WriteBuffer * out = nullptr; 	/// Uncompressed HTTP body is written to this buffer. Points to out_raw or possibly to deflating_buf.
 
-	bool body_started_sending = false;	/// If true, you could not add any headers.
+	bool headers_started_sending = false;
+	bool headers_finished_sending = false;	/// If true, you could not add any headers.
 
 	Progress accumulated_progress;
 	size_t send_progress_interval_ms = 100;
@@ -68,48 +69,27 @@ private:
 	///  but not finish them with \r\n, allowing to send more headers subsequently.
 	void startSendHeaders()
 	{
-		if (!out)
+		if (!headers_started_sending)
 		{
+			headers_started_sending = true;
+
 			if (add_cors_header)
-			{
-				response.set("Access-Control-Allow-Origin","*");
-			}
+				response.set("Access-Control-Allow-Origin", "*");
 
 			setResponseDefaultHeaders(response);
 
-			if (compress && offset())	/// Empty response need not be compressed.
-			{
-				if (compression_method == ZlibCompressionMethod::Gzip)
-					response.set("Content-Encoding", "gzip");
-				else if (compression_method == ZlibCompressionMethod::Zlib)
-					response.set("Content-Encoding", "deflate");
-				else
-					throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
-						ErrorCodes::LOGICAL_ERROR);
-
-				std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
-				out_raw.emplace(*response_body_ostr);
-				/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
-				deflating_buf.emplace(out_raw.value(), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
-				out = &deflating_buf.value();
-			}
-			else
-			{
-				std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
-				out_raw.emplace(*response_body_ostr, working_buffer.size(), working_buffer.begin());
-				out = &out_raw.value();
-			}
+			std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
+			out_raw.emplace(*response_body_ostr);
 		}
 	}
 
-	/// This method send headers, if this was not done already, and finish them with \r\n, allowing to start to send body.
-	void sendAllHeaders()
+	/// This method finish headers with \r\n, allowing to start to send body.
+	void finishSendHeaders()
 	{
-		startSendHeaders();
-
-		if (!body_started_sending)
+		if (!headers_finished_sending)
 		{
-			body_started_sending = true;
+			headers_finished_sending = true;
+
 			/// Send end of headers delimiter.
 			*response_header_ostr << "\r\n" << std::flush;
 		}
@@ -122,7 +102,31 @@ private:
 
 		std::lock_guard<std::mutex> lock(mutex);
 
-		sendAllHeaders();
+		startSendHeaders();
+
+		if (!out)
+		{
+			if (compress)
+			{
+				if (compression_method == ZlibCompressionMethod::Gzip)
+					*response_header_ostr << "Content-Encoding: gzip\r\n";
+				else if (compression_method == ZlibCompressionMethod::Zlib)
+					*response_header_ostr << "Content-Encoding: deflate\r\n";
+				else
+					throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
+						ErrorCodes::LOGICAL_ERROR);
+
+				/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
+				deflating_buf.emplace(out_raw.value(), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
+				out = &deflating_buf.value();
+			}
+			else
+			{
+				out = &out_raw.value();
+			}
+		}
+
+		finishSendHeaders();
 
 		out->position() = position();
 		out->next();
@@ -143,7 +147,7 @@ public:
 		std::lock_guard<std::mutex> lock(mutex);
 
 		/// Cannot add new headers if body was started to send.
-		if (body_started_sending)
+		if (headers_finished_sending)
 			return;
 
 		accumulated_progress.incrementPiecewiseAtomically(progress);
@@ -171,7 +175,9 @@ public:
 	void finalize()
 	{
 		std::lock_guard<std::mutex> lock(mutex);
-		sendAllHeaders();
+
+		startSendHeaders();
+		finishSendHeaders();
 	}
 
 	/// Turn compression on or off.
