@@ -427,7 +427,7 @@ void executeQuery(
 				auto previous_progress_callback = context.getProgressCallback();
 
 				/// NOTE Progress callback takes shared ownership of 'out'.
-				stream->setProgressCallback([out, &previous_progress_callback] (const Progress & progress)
+				stream->setProgressCallback([out, previous_progress_callback] (const Progress & progress)
 				{
 					if (previous_progress_callback)
 						previous_progress_callback(progress);
