@@ -49,8 +49,10 @@ public:
 	};
 
 private:
-	/// Сравнительно много данных. То есть, лучше не класть объект на стек.
-	/// По сравнению с std::vector, на один indirection меньше.
+	/// Lookup table is indexed by DayNum.
+	/// Day nums are the same in all time zones. 1970-01-01 is 0 and so on.
+	/// Table is relatively large (~30 000 elements), so better not to place object on stack.
+	/// In comparison to std::vector, it is cheaper by one indirection.
 	Values lut[DATE_LUT_MAX_DAY_NUM + 1];
 
 	/// lookup таблица начал годов

@@ -44,9 +44,9 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
 		throw Poco::Exception("Cannot load time zone " + time_zone_);
 
 	cctz::time_zone::absolute_lookup start_of_epoch_lookup = cctz_time_zone.lookup(std::chrono::system_clock::from_time_t(start_of_day));
-	cctz::civil_day date{start_of_epoch_lookup.cs};
-
 	offset_at_start_of_epoch = start_of_epoch_lookup.offset;
+
+	cctz::civil_day date{1970, 1, 1};
 
 	do
 	{
