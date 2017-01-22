@@ -116,6 +116,8 @@ std::pair<std::ostream *, std::ostream *> HTTPServerResponseImpl::beginSend()
 	poco_assert (!_pStream);
 	poco_assert (!_pHeaderStream);
 
+	// NOTE Code is not exception safe.
+
 	if ((_pRequest && _pRequest->getMethod() == HTTPRequest::HTTP_HEAD) ||
 		getStatus() < 200 ||
 		getStatus() == HTTPResponse::HTTP_NO_CONTENT ||
