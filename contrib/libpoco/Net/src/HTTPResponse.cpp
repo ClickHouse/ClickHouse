@@ -89,7 +89,7 @@ HTTPResponse::HTTPResponse():
 {
 }
 
-	
+
 HTTPResponse::HTTPResponse(HTTPStatus status, const std::string& reason):
 	_status(status),
 	_reason(reason)
@@ -97,7 +97,7 @@ HTTPResponse::HTTPResponse(HTTPStatus status, const std::string& reason):
 }
 
 
-	
+
 HTTPResponse::HTTPResponse(const std::string& version, HTTPStatus status, const std::string& reason):
 	HTTPMessage(version),
 	_status(status),
@@ -105,7 +105,7 @@ HTTPResponse::HTTPResponse(const std::string& version, HTTPStatus status, const 
 {
 }
 
-	
+
 HTTPResponse::HTTPResponse(HTTPStatus status):
 	_status(status),
 	_reason(getReasonForStatus(status))
@@ -136,8 +136,8 @@ void HTTPResponse::setStatus(const std::string& status)
 {
 	setStatus((HTTPStatus) NumberParser::parse(status));
 }
-	
-	
+
+
 void HTTPResponse::setReason(const std::string& reason)
 {
 	_reason = reason;
@@ -150,7 +150,7 @@ void HTTPResponse::setStatusAndReason(HTTPStatus status, const std::string& reas
 	_reason = reason;
 }
 
-	
+
 void HTTPResponse::setStatusAndReason(HTTPStatus status)
 {
 	setStatusAndReason(status, getReasonForStatus(status));
@@ -162,7 +162,7 @@ void HTTPResponse::setDate(const Poco::Timestamp& dateTime)
 	set(DATE, DateTimeFormatter::format(dateTime, DateTimeFormat::HTTP_FORMAT));
 }
 
-	
+
 Poco::Timestamp HTTPResponse::getDate() const
 {
 	const std::string& dateTime = get(DATE);
@@ -193,9 +193,15 @@ void HTTPResponse::getCookies(std::vector<HTTPCookie>& cookies) const
 
 void HTTPResponse::write(std::ostream& ostr) const
 {
+	beginWrite(ostr);
+	ostr << "\r\n";
+}
+
+
+void HTTPResponse::beginWrite(std::ostream& ostr) const
+{
 	ostr << getVersion() << " " << static_cast<int>(_status) << " " << _reason << "\r\n";
 	HTTPMessage::write(ostr);
-	ostr << "\r\n";
 }
 
 
@@ -206,7 +212,7 @@ void HTTPResponse::read(std::istream& istr)
 	std::string version;
 	std::string status;
 	std::string reason;
-	
+
 	int ch =  istr.get();
 	if (istr.bad()) throw NetException("Error reading HTTP response header");
 	if (ch == eof) throw NoMessageException();
@@ -235,87 +241,87 @@ const std::string& HTTPResponse::getReasonForStatus(HTTPStatus status)
 {
 	switch (status)
 	{
-	case HTTP_CONTINUE: 
+	case HTTP_CONTINUE:
 		return HTTP_REASON_CONTINUE;
-	case HTTP_SWITCHING_PROTOCOLS: 
+	case HTTP_SWITCHING_PROTOCOLS:
 		return HTTP_REASON_SWITCHING_PROTOCOLS;
-	case HTTP_OK: 
+	case HTTP_OK:
 		return HTTP_REASON_OK;
-	case HTTP_CREATED: 
+	case HTTP_CREATED:
 		return HTTP_REASON_CREATED;
-	case HTTP_ACCEPTED: 
+	case HTTP_ACCEPTED:
 		return HTTP_REASON_ACCEPTED;
-	case HTTP_NONAUTHORITATIVE:	
+	case HTTP_NONAUTHORITATIVE:
 		return HTTP_REASON_NONAUTHORITATIVE;
-	case HTTP_NO_CONTENT: 
+	case HTTP_NO_CONTENT:
 		return HTTP_REASON_NO_CONTENT;
-	case HTTP_RESET_CONTENT: 
+	case HTTP_RESET_CONTENT:
 		return HTTP_REASON_RESET_CONTENT;
-	case HTTP_PARTIAL_CONTENT: 
+	case HTTP_PARTIAL_CONTENT:
 		return HTTP_REASON_PARTIAL_CONTENT;
-	case HTTP_MULTIPLE_CHOICES: 
+	case HTTP_MULTIPLE_CHOICES:
 		return HTTP_REASON_MULTIPLE_CHOICES;
-	case HTTP_MOVED_PERMANENTLY: 
+	case HTTP_MOVED_PERMANENTLY:
 		return HTTP_REASON_MOVED_PERMANENTLY;
-	case HTTP_FOUND: 
+	case HTTP_FOUND:
 		return HTTP_REASON_FOUND;
-	case HTTP_SEE_OTHER: 
+	case HTTP_SEE_OTHER:
 		return HTTP_REASON_SEE_OTHER;
-	case HTTP_NOT_MODIFIED: 
+	case HTTP_NOT_MODIFIED:
 		return HTTP_REASON_NOT_MODIFIED;
-	case HTTP_USEPROXY: 
+	case HTTP_USEPROXY:
 		return HTTP_REASON_USEPROXY;
-	case HTTP_TEMPORARY_REDIRECT: 
+	case HTTP_TEMPORARY_REDIRECT:
 		return HTTP_REASON_TEMPORARY_REDIRECT;
-	case HTTP_BAD_REQUEST: 
+	case HTTP_BAD_REQUEST:
 		return HTTP_REASON_BAD_REQUEST;
-	case HTTP_UNAUTHORIZED: 
+	case HTTP_UNAUTHORIZED:
 		return HTTP_REASON_UNAUTHORIZED;
-	case HTTP_PAYMENT_REQUIRED: 
+	case HTTP_PAYMENT_REQUIRED:
 		return HTTP_REASON_PAYMENT_REQUIRED;
-	case HTTP_FORBIDDEN: 
+	case HTTP_FORBIDDEN:
 		return HTTP_REASON_FORBIDDEN;
-	case HTTP_NOT_FOUND: 
+	case HTTP_NOT_FOUND:
 		return HTTP_REASON_NOT_FOUND;
 	case HTTP_METHOD_NOT_ALLOWED:
 		return HTTP_REASON_METHOD_NOT_ALLOWED;
-	case HTTP_NOT_ACCEPTABLE: 
+	case HTTP_NOT_ACCEPTABLE:
 		return HTTP_REASON_NOT_ACCEPTABLE;
-	case HTTP_PROXY_AUTHENTICATION_REQUIRED: 
+	case HTTP_PROXY_AUTHENTICATION_REQUIRED:
 		return HTTP_REASON_PROXY_AUTHENTICATION_REQUIRED;
-	case HTTP_REQUEST_TIMEOUT: 
+	case HTTP_REQUEST_TIMEOUT:
 		return HTTP_REASON_REQUEST_TIMEOUT;
-	case HTTP_CONFLICT: 
+	case HTTP_CONFLICT:
 		return HTTP_REASON_CONFLICT;
-	case HTTP_GONE: 
+	case HTTP_GONE:
 		return HTTP_REASON_GONE;
-	case HTTP_LENGTH_REQUIRED: 
+	case HTTP_LENGTH_REQUIRED:
 		return HTTP_REASON_LENGTH_REQUIRED;
-	case HTTP_PRECONDITION_FAILED: 
+	case HTTP_PRECONDITION_FAILED:
 		return HTTP_REASON_PRECONDITION_FAILED;
-	case HTTP_REQUESTENTITYTOOLARGE: 
+	case HTTP_REQUESTENTITYTOOLARGE:
 		return HTTP_REASON_REQUESTENTITYTOOLARGE;
-	case HTTP_REQUESTURITOOLONG: 
+	case HTTP_REQUESTURITOOLONG:
 		return HTTP_REASON_REQUESTURITOOLONG;
-	case HTTP_UNSUPPORTEDMEDIATYPE: 
+	case HTTP_UNSUPPORTEDMEDIATYPE:
 		return HTTP_REASON_UNSUPPORTEDMEDIATYPE;
-	case HTTP_REQUESTED_RANGE_NOT_SATISFIABLE: 
+	case HTTP_REQUESTED_RANGE_NOT_SATISFIABLE:
 		return HTTP_REASON_REQUESTED_RANGE_NOT_SATISFIABLE;
-	case HTTP_EXPECTATION_FAILED: 
+	case HTTP_EXPECTATION_FAILED:
 		return HTTP_REASON_EXPECTATION_FAILED;
-	case HTTP_INTERNAL_SERVER_ERROR: 
+	case HTTP_INTERNAL_SERVER_ERROR:
 		return HTTP_REASON_INTERNAL_SERVER_ERROR;
-	case HTTP_NOT_IMPLEMENTED: 
+	case HTTP_NOT_IMPLEMENTED:
 		return HTTP_REASON_NOT_IMPLEMENTED;
-	case HTTP_BAD_GATEWAY: 
+	case HTTP_BAD_GATEWAY:
 		return HTTP_REASON_BAD_GATEWAY;
 	case HTTP_SERVICE_UNAVAILABLE:
 		return HTTP_REASON_SERVICE_UNAVAILABLE;
-	case HTTP_GATEWAY_TIMEOUT: 
+	case HTTP_GATEWAY_TIMEOUT:
 		return HTTP_REASON_GATEWAY_TIMEOUT;
-	case HTTP_VERSION_NOT_SUPPORTED: 
+	case HTTP_VERSION_NOT_SUPPORTED:
 		return HTTP_REASON_VERSION_NOT_SUPPORTED;
-	default: 
+	default:
 		return HTTP_REASON_UNKNOWN;
 	}
 }
