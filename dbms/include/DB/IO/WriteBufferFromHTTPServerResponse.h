@@ -57,7 +57,7 @@ private:
 
 
 	/// Must be called under locked mutex.
-	void sendHeaders()
+	void startSendHeaders()
 	{
 		if (!out)
 		{
@@ -93,6 +93,18 @@ private:
 		}
 	}
 
+	void sendAllHeaders()
+	{
+		startSendHeaders();
+
+		if (!body_started_sending)
+		{
+			body_started_sending = true;
+			/// Send end of headers delimiter.
+			*response_ostr << "\r\n" << std::flush;
+		}
+	}
+
 	void nextImpl() override
 	{
 		if (!offset())
@@ -100,14 +112,7 @@ private:
 
 		std::lock_guard<std::mutex> lock(mutex);
 
-		sendHeaders();
-
-		if (!body_started_sending)
-		{
-			body_started_sending = true;
-			/// Send end of headers delimiter.
-			*response_ostr << "\r\n";
-		}
+		sendAllHeaders();
 
 		out->position() = position();
 		out->next();
@@ -131,7 +136,7 @@ public:
 		if (body_started_sending)
 			return;
 
-		sendHeaders();
+		startSendHeaders();
 
 		std::string progress_string;
 		{
@@ -148,7 +153,7 @@ public:
 	void finalize()
 	{
 		std::lock_guard<std::mutex> lock(mutex);
-		sendHeaders();
+		sendAllHeaders();
 	}
 
 	/// Turn compression on or off.
