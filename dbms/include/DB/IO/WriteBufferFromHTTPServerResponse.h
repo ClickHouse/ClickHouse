@@ -88,7 +88,7 @@ private:
 			{
 				response_ostr = &response.beginSend();
 				out_raw.emplace(*response_ostr, working_buffer.size(), working_buffer.begin());
-				out = out_raw.value();
+				out = &out_raw.value();
 			}
 		}
 	}
@@ -130,7 +130,7 @@ private:
 			progress.writeJSON(progress_string_writer);
 		}
 
-		response_ostr << "X-ClickHouse-Progress: " << progress_string << "\r\n" << std::flush;
+		*response_ostr << "X-ClickHouse-Progress: " << progress_string << "\r\n" << std::flush;
 	}
 
 public:
