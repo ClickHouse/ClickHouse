@@ -149,6 +149,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 
 	factory.registerFunction<FunctionVersion>();
 	factory.registerFunction<FunctionUptime>();
+	factory.registerFunction<FunctionTimeZone>();
 
 	factory.registerFunction<FunctionRunningAccumulate>();
 	factory.registerFunction<FunctionRunningDifference>();
