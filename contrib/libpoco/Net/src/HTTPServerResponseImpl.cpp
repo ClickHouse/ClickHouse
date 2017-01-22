@@ -141,7 +141,7 @@ std::pair<std::ostream *, std::ostream *> HTTPServerResponseImpl::beginSend()
 		beginWrite(*_pStream);
 	}
 
-	return std::make_pair(out_header_stream, out_body_stream);
+	return std::make_pair(_pHeaderStream, _pStream);
 }
 
 
