@@ -45,7 +45,9 @@ private:
 	ZlibCompressionMethod compression_method;
 	int compression_level = Z_DEFAULT_COMPRESSION;
 
-	std::ostream * response_ostr = nullptr;
+	std::ostream * response_body_ostr = nullptr;
+	std::ostream * response_header_ostr = nullptr;
+
 	std::experimental::optional<WriteBufferFromOStream> out_raw;
 	std::experimental::optional<ZlibDeflatingWriteBuffer> deflating_buf;
 
@@ -57,6 +59,8 @@ private:
 
 
 	/// Must be called under locked mutex.
+	/// This method send headers, if this was not done already,
+	///  but not finish them with \r\n, allowing to send more headers subsequently.
 	void startSendHeaders()
 	{
 		if (!out)
@@ -78,21 +82,22 @@ private:
 					throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
 						ErrorCodes::LOGICAL_ERROR);
 
-				response_ostr = &response.beginSend();
-				out_raw.emplace(*response_ostr);
+				response.beginSend(response_header_ostr, response_body_ostr);
+				out_raw.emplace(*response_body_ostr);
 				/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
 				deflating_buf.emplace(out_raw.value(), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
 				out = &deflating_buf.value();
 			}
 			else
 			{
-				response_ostr = &response.beginSend();
-				out_raw.emplace(*response_ostr, working_buffer.size(), working_buffer.begin());
+				response.beginSend(response_header_ostr, response_body_ostr);
+				out_raw.emplace(*response_body_ostr, working_buffer.size(), working_buffer.begin());
 				out = &out_raw.value();
 			}
 		}
 	}
 
+	/// This method send headers, if this was not done already, and finish them with \r\n, allowing to start to send body.
 	void sendAllHeaders()
 	{
 		startSendHeaders();
@@ -101,7 +106,7 @@ private:
 		{
 			body_started_sending = true;
 			/// Send end of headers delimiter.
-			*response_ostr << "\r\n" << std::flush;
+			*response_header_ostr << "\r\n" << std::flush;
 		}
 	}
 
@@ -136,6 +141,7 @@ public:
 		if (body_started_sending)
 			return;
 
+		/// Send all common headers before our special progress headers.
 		startSendHeaders();
 
 		std::string progress_string;
@@ -144,7 +150,7 @@ public:
 			progress.writeJSON(progress_string_writer);
 		}
 
-		*response_ostr << "X-ClickHouse-Progress: " << progress_string << "\r\n" << std::flush;
+		*response_header_ostr << "X-ClickHouse-Progress: " << progress_string << "\r\n" << std::flush;
 	}
 
 	/// Send at least HTTP headers if no data has been sent yet.

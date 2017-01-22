@@ -48,14 +48,18 @@ namespace Net {
 HTTPServerResponseImpl::HTTPServerResponseImpl(HTTPServerSession& session):
 	_session(session),
 	_pRequest(0),
-	_pStream(0)
+	_pStream(0),
+	_pHeaderStream(0)
 {
 }
 
 
 HTTPServerResponseImpl::~HTTPServerResponseImpl()
 {
-	delete _pStream;
+	if (_pHeaderStream && _pHeaderStream != _pStream)
+		delete _pHeaderStream;
+	if (_pStream)
+		delete _pStream;
 }
 
 
@@ -107,44 +111,38 @@ std::ostream& HTTPServerResponseImpl::send()
 }
 
 
-std::ostream& HTTPServerResponseImpl::beginSend()
+void HTTPServerResponseImpl::beginSend(std::ostream * out_header_stream, std::ostream * out_body_stream)
 {
 	poco_assert (!_pStream);
+	poco_assert (!_pHeaderStream);
 
 	if ((_pRequest && _pRequest->getMethod() == HTTPRequest::HTTP_HEAD) ||
 		getStatus() < 200 ||
 		getStatus() == HTTPResponse::HTTP_NO_CONTENT ||
 		getStatus() == HTTPResponse::HTTP_NOT_MODIFIED)
 	{
-		Poco::CountingOutputStream cs;
-		beginWrite(cs);
-		_pStream = new HTTPFixedLengthOutputStream(_session, cs.chars());
-		beginWrite(*_pStream);
+		throw Exception("HTTPServerResponse::beginSend is invalid for HEAD request");
 	}
 	else if (getChunkedTransferEncoding())
 	{
-		HTTPHeaderOutputStream hs(_session);
-		beginWrite(hs);
+		_pHeaderStream = new HTTPHeaderOutputStream(_session);
+		beginWrite(*_pHeaderStream);
 		_pStream = new HTTPChunkedOutputStream(_session);
 	}
 	else if (hasContentLength())
 	{
-		Poco::CountingOutputStream cs;
-		beginWrite(cs);
-#if defined(POCO_HAVE_INT64)
-		_pStream = new HTTPFixedLengthOutputStream(_session, getContentLength64() + cs.chars());
-#else
-		_pStream = new HTTPFixedLengthOutputStream(_session, getContentLength() + cs.chars());
-#endif
-		beginWrite(*_pStream);
+		throw Exception("HTTPServerResponse::beginSend is invalid for response with Content-Length header");
 	}
 	else
 	{
 		_pStream = new HTTPOutputStream(_session);
+		_pHeaderStream = _pStream;
 		setKeepAlive(false);
 		beginWrite(*_pStream);
 	}
-	return *_pStream;
+
+	out_header_stream = _pHeaderStream;
+	out_body_stream = _pStream;
 }
 
 
