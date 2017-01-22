@@ -1204,9 +1204,6 @@ public:
 	{
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(block.rows(), DateLUT::instance().getTimeZone());
 	}
-
-private:
-	time_t uptime;
 };
 
 
