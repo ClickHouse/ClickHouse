@@ -113,6 +113,15 @@ private:
 		out->next();
 	}
 
+public:
+	WriteBufferFromHTTPServerResponse(
+		Poco::Net::HTTPServerResponse & response_,
+		bool compress_ = false,		/// If true - set Content-Encoding header and compress the result.
+		ZlibCompressionMethod compression_method_ = ZlibCompressionMethod::Gzip,
+		size_t size = DBMS_DEFAULT_BUFFER_SIZE)
+		: BufferWithOwnMemory<WriteBuffer>(size), response(response_),
+		compress(compress_), compression_method(compression_method_) {}
+
 	/// Writes progess in repeating HTTP headers.
 	void onProgress(const Progress & progress)
 	{
@@ -132,15 +141,6 @@ private:
 
 		*response_ostr << "X-ClickHouse-Progress: " << progress_string << "\r\n" << std::flush;
 	}
-
-public:
-	WriteBufferFromHTTPServerResponse(
-		Poco::Net::HTTPServerResponse & response_,
-		bool compress_ = false,		/// If true - set Content-Encoding header and compress the result.
-		ZlibCompressionMethod compression_method_ = ZlibCompressionMethod::Gzip,
-		size_t size = DBMS_DEFAULT_BUFFER_SIZE)
-		: BufferWithOwnMemory<WriteBuffer>(size), response(response_),
-		compress(compress_), compression_method(compression_method_) {}
 
 	/// Send at least HTTP headers if no data has been sent yet.
 	/// Use after the data has possibly been sent and no error happened (and thus you do not plan
