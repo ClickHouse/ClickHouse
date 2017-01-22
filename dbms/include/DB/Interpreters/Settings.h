@@ -237,7 +237,10 @@ struct Settings
 	M(SettingUInt64, output_format_pretty_max_rows, 10000) \
 	\
 	/** Use client timezone for interpreting DateTime string values, instead of adopting server timezone. */ \
-	M(SettingBool, use_client_time_zone, false)
+	M(SettingBool, use_client_time_zone, false) \
+	\
+	/** Do not send HTTP headers X-ClickHouse-Progress more frequently than at each specified interval. */ \
+	M(SettingUInt64, http_headers_progress_interval_ms, 100) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

@@ -14,6 +14,7 @@
 #include <DB/IO/ZlibDeflatingWriteBuffer.h>
 #include <DB/IO/HTTPCommon.h>
 #include <DB/Common/NetException.h>
+#include <DB/Common/Stopwatch.h>
 #include <DB/Core/Progress.h>
 
 
@@ -56,6 +57,8 @@ private:
 	bool body_started_sending = false;	/// If true, you could not add any headers.
 
 	Progress accumulated_progress;
+	size_t send_progress_interval_ms = 100;
+	Stopwatch progress_watch;
 
 	std::mutex mutex;	/// progress callback could be called from different threads.
 
@@ -143,18 +146,23 @@ public:
 		if (body_started_sending)
 			return;
 
-		/// Send all common headers before our special progress headers.
-		startSendHeaders();
-
 		accumulated_progress.incrementPiecewiseAtomically(progress);
 
-		std::string progress_string;
+		if (progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
 		{
-			WriteBufferFromString progress_string_writer(progress_string);
-			accumulated_progress.writeJSON(progress_string_writer);
-		}
+			progress_watch.restart();
 
-		*response_header_ostr << "X-ClickHouse-Progress: " << progress_string << "\r\n" << std::flush;
+			/// Send all common headers before our special progress headers.
+			startSendHeaders();
+
+			std::string progress_string;
+			{
+				WriteBufferFromString progress_string_writer(progress_string);
+				accumulated_progress.writeJSON(progress_string_writer);
+			}
+
+			*response_header_ostr << "X-ClickHouse-Progress: " << progress_string << "\r\n" << std::flush;
+		}
 	}
 
 	/// Send at least HTTP headers if no data has been sent yet.
@@ -186,6 +194,13 @@ public:
 	{
 		add_cors_header = enable_cors;
 	}
+
+	/// Don't send HTTP headers with progress more frequently.
+	void setSendProgressInterval(size_t send_progress_interval_ms_)
+	{
+		send_progress_interval_ms = send_progress_interval_ms_;
+	}
+
 
 	~WriteBufferFromHTTPServerResponse()
 	{

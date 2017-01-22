@@ -229,6 +229,8 @@ void HTTPHandler::processQuery(
 	if (client_supports_http_compression)
 		used_output.out->setCompressionLevel(context.getSettingsRef().http_zlib_compression_level);
 
+	used_output.out->setSendProgressInterval(context.getSettingsRef().http_headers_progress_interval_ms);
+
 	/// If 'http_native_compression_disable_checksumming_on_decompress' setting is turned on,
 	/// checksums of client data compressed with internal algorithm are not checked.
 	if (in_post_compressed && context.getSettingsRef().http_native_compression_disable_checksumming_on_decompress)
