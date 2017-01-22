@@ -4,6 +4,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <Poco/Condition.h>
 #include <DB/Common/Stopwatch.h>
 #include <DB/Core/Defines.h>
