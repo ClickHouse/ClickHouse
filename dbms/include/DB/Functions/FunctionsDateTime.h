@@ -70,9 +70,9 @@ struct ZeroTransform
 
 struct ToDateImpl
 {
-	static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
+	static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
 	{
-		return time_zone.toDate(t);
+		return UInt16(time_zone.toDayNum(t));
 	}
 	static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
 	{
