@@ -122,6 +122,8 @@ private:
 		if (body_started_sending)
 			return;
 
+		sendHeaders();
+
 		std::string progress_string;
 		{
 			WriteBufferFromString progress_string_writer;
