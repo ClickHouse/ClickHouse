@@ -520,7 +520,7 @@ struct ConvertImplGenericFromString
 struct NameToUnixTimestamp	{ static constexpr auto name = "toUnixTimestamp"; };
 
 template <>
-struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
+struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp>
 	: ConvertImpl<DataTypeString, DataTypeDateTime, NameToUnixTimestamp> {};
 
 
@@ -1157,7 +1157,7 @@ using FunctionToFloat64 	= FunctionConvert<DataTypeFloat64,	NameToFloat64,	Posit
 using FunctionToDate 		= FunctionConvert<DataTypeDate,		NameToDate,		ToIntMonotonicity<UInt16>>;
 using FunctionToDateTime 	= FunctionConvert<DataTypeDateTime,	NameToDateTime,	ToIntMonotonicity<UInt32>>;
 using FunctionToString 		= FunctionConvert<DataTypeString,	NameToString, 	ToStringMonotonicity>;
-using FunctionToUnixTimestamp = FunctionConvert<DataTypeInt32,	NameToUnixTimestamp, ToIntMonotonicity<UInt32>>;
+using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32,	NameToUnixTimestamp, ToIntMonotonicity<UInt32>>;
 
 template <typename DataType> struct FunctionTo;
 template <> struct FunctionTo<DataTypeUInt8> { using Type = FunctionToUInt8; };
