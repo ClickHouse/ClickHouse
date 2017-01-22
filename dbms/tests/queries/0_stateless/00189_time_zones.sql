@@ -40,11 +40,11 @@ SELECT toStartOfQuarter(toDateTime(1412106600), 'Pacific/Pitcairn');
 
 /* toTime */
 
-SELECT toTime(toDateTime(1420102800), 'Europe/Moscow'), toTime(toDateTime(1428310800), 'Europe/Moscow');
-SELECT toTime(toDateTime(1420102800), 'Europe/Paris'), toTime(toDateTime(1428310800), 'Europe/Paris');
-SELECT toTime(toDateTime(1420102800), 'Europe/London'), toTime(toDateTime(1428310800), 'Europe/London');
-SELECT toTime(toDateTime(1420102800), 'Asia/Tokyo'), toTime(toDateTime(1428310800), 'Asia/Tokyo');
-SELECT toTime(toDateTime(1420102800), 'Pacific/Pitcairn'), toTime(toDateTime(1428310800), 'Pacific/Pitcairn');
+SELECT toString(toTime(toDateTime(1420102800), 'Europe/Moscow'), 'Europe/Moscow'), toString(toTime(toDateTime(1428310800), 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toTime(toDateTime(1420102800), 'Europe/Paris'), 'Europe/Paris'), toString(toTime(toDateTime(1428310800), 'Europe/Paris'), 'Europe/Paris');
+SELECT toString(toTime(toDateTime(1420102800), 'Europe/London'), 'Europe/London'), toString(toTime(toDateTime(1428310800), 'Europe/London'), 'Europe/London');
+SELECT toString(toTime(toDateTime(1420102800), 'Asia/Tokyo'), 'Asia/Tokyo'), toString(toTime(toDateTime(1428310800), 'Asia/Tokyo'), 'Asia/Tokyo');
+SELECT toString(toTime(toDateTime(1420102800), 'Pacific/Pitcairn'), 'Pacific/Pitcairn'), toString(toTime(toDateTime(1428310800), 'Pacific/Pitcairn'), 'Pacific/Pitcairn');
 
 /* toYear */
 
@@ -104,19 +104,19 @@ SELECT toSecond(toDateTime(1412106600), 'Pacific/Pitcairn');
 
 /* toStartOfMinute */
 
-SELECT toStartOfMinute(toDateTime(1412106600), 'Europe/Moscow');
-SELECT toStartOfMinute(toDateTime(1412106600), 'Europe/Paris');
-SELECT toStartOfMinute(toDateTime(1412106600), 'Europe/London');
-SELECT toStartOfMinute(toDateTime(1412106600), 'Asia/Tokyo');
-SELECT toStartOfMinute(toDateTime(1412106600), 'Pacific/Pitcairn');
+SELECT toString(toStartOfMinute(toDateTime(1412106600), 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfMinute(toDateTime(1412106600), 'Europe/Paris'), 'Europe/Paris');
+SELECT toString(toStartOfMinute(toDateTime(1412106600), 'Europe/London'), 'Europe/London');
+SELECT toString(toStartOfMinute(toDateTime(1412106600), 'Asia/Tokyo'), 'Asia/Tokyo');
+SELECT toString(toStartOfMinute(toDateTime(1412106600), 'Pacific/Pitcairn'), 'Pacific/Pitcairn');
 
 /* toStartOfHour */
 
-SELECT toStartOfHour(toDateTime(1412106600), 'Europe/Moscow');
-SELECT toStartOfHour(toDateTime(1412106600), 'Europe/Paris');
-SELECT toStartOfHour(toDateTime(1412106600), 'Europe/London');
-SELECT toStartOfHour(toDateTime(1412106600), 'Asia/Tokyo');
-SELECT toStartOfHour(toDateTime(1412106600), 'Pacific/Pitcairn');
+SELECT toString(toStartOfHour(toDateTime(1412106600), 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfHour(toDateTime(1412106600), 'Europe/Paris'), 'Europe/Paris');
+SELECT toString(toStartOfHour(toDateTime(1412106600), 'Europe/London'), 'Europe/London');
+SELECT toString(toStartOfHour(toDateTime(1412106600), 'Asia/Tokyo'), 'Asia/Tokyo');
+SELECT toString(toStartOfHour(toDateTime(1412106600), 'Pacific/Pitcairn'), 'Pacific/Pitcairn');
 
 /* toRelativeYearNum */
 
