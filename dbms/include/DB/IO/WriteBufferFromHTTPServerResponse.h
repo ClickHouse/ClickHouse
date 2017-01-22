@@ -126,7 +126,7 @@ private:
 
 		std::string progress_string;
 		{
-			WriteBufferFromString progress_string_writer;
+			WriteBufferFromString progress_string_writer(progress_string);
 			progress.writeJSON(progress_string_writer);
 		}
 
