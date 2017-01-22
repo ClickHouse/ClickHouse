@@ -55,6 +55,8 @@ private:
 
 	bool body_started_sending = false;	/// If true, you could not add any headers.
 
+	Progress accumulated_progress;
+
 	std::mutex mutex;	/// progress callback could be called from different threads.
 
 
@@ -144,10 +146,12 @@ public:
 		/// Send all common headers before our special progress headers.
 		startSendHeaders();
 
+		accumulated_progress.incrementPiecewiseAtomically(progress);
+
 		std::string progress_string;
 		{
 			WriteBufferFromString progress_string_writer(progress_string);
-			progress.writeJSON(progress_string_writer);
+			accumulated_progress.writeJSON(progress_string_writer);
 		}
 
 		*response_header_ostr << "X-ClickHouse-Progress: " << progress_string << "\r\n" << std::flush;
