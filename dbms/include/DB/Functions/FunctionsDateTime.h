@@ -506,9 +506,9 @@ public:
 		}
 		else if (arguments.size() == 2)
 		{
-			if (typeid_cast<const DataTypeDate *>(arguments[0].get())
-				|| typeid_cast<const DataTypeDateTime *>(arguments[0].get())
-				|| typeid_cast<const DataTypeString *>(arguments[1].get()))
+			if (!(typeid_cast<const DataTypeDate *>(arguments[0].get())
+					|| typeid_cast<const DataTypeDateTime *>(arguments[0].get()))
+				|| !typeid_cast<const DataTypeString *>(arguments[1].get()))
 				throw Exception{
 					"Function " + getName() + " supports 1 or 2 arguments. The 1st argument "
 					"must be of type Date or DateTime. The 2nd argument (optional) must be "
