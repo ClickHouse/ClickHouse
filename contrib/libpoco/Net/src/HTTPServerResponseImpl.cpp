@@ -111,7 +111,7 @@ std::ostream& HTTPServerResponseImpl::send()
 }
 
 
-void HTTPServerResponseImpl::beginSend(std::ostream * out_header_stream, std::ostream * out_body_stream)
+std::pair<std::ostream *, std::ostream *> HTTPServerResponseImpl::beginSend()
 {
 	poco_assert (!_pStream);
 	poco_assert (!_pHeaderStream);
@@ -141,8 +141,7 @@ void HTTPServerResponseImpl::beginSend(std::ostream * out_header_stream, std::os
 		beginWrite(*_pStream);
 	}
 
-	out_header_stream = _pHeaderStream;
-	out_body_stream = _pStream;
+	return std::make_pair(out_header_stream, out_body_stream);
 }
 
 

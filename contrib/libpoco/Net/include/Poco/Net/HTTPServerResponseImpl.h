@@ -65,7 +65,7 @@ public:
 		/// Must not be called after beginSend(), sendFile(), sendBuffer()
 		/// or redirect() has been called.
 
-	void beginSend(std::ostream * out_header_stream, std::ostream * out_body_stream);
+	std::pair<std::ostream *, std::ostream *> beginSend();
 		/// Sends the response headers to the client
 		/// but do not finish headers with \r\n,
 		/// allowing to continue sending additional header fields.

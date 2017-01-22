@@ -82,7 +82,7 @@ private:
 					throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
 						ErrorCodes::LOGICAL_ERROR);
 
-				response.beginSend(response_header_ostr, response_body_ostr);
+				std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
 				out_raw.emplace(*response_body_ostr);
 				/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
 				deflating_buf.emplace(out_raw.value(), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
@@ -90,7 +90,7 @@ private:
 			}
 			else
 			{
-				response.beginSend(response_header_ostr, response_body_ostr);
+				std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
 				out_raw.emplace(*response_body_ostr, working_buffer.size(), working_buffer.begin());
 				out = &out_raw.value();
 			}
