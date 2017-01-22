@@ -81,14 +81,14 @@ private:
 				response_ostr = &response.beginSend();
 				out_raw.emplace(*response_ostr);
 				/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
-				deflating_buf.emplace(*out_raw, compression_method, compression_level, working_buffer.size(), working_buffer.begin());
+				deflating_buf.emplace(out_raw.value(), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
 				out = &deflating_buf.value();
 			}
 			else
 			{
 				response_ostr = &response.beginSend();
 				out_raw.emplace(*response_ostr, working_buffer.size(), working_buffer.begin());
-				out = out_raw.get();
+				out = out_raw.value();
 			}
 		}
 	}
