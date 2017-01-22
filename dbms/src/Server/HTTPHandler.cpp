@@ -12,6 +12,7 @@
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/WriteBufferFromHTTPServerResponse.h>
 #include <DB/IO/WriteHelpers.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
@@ -254,6 +255,9 @@ void HTTPHandler::processQuery(
 
 	client_info.http_method = http_method;
 	client_info.http_user_agent = request.get("User-Agent", "");
+
+	/// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
+	context.setProgressCallback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
 
 	executeQuery(*in, *used_output.out_maybe_compressed, /* allow_into_outfile = */ false, context,
 		[&response] (const String & content_type) { response.setContentType(content_type); });

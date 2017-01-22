@@ -1,6 +1,7 @@
 #pragma once
 
 #include <experimental/optional>
+#include <mutex>
 
 #include <Poco/Net/HTTPServerResponse.h>
 
@@ -9,9 +10,11 @@
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <DB/IO/WriteBufferFromOStream.h>
+#include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/ZlibDeflatingWriteBuffer.h>
 #include <DB/IO/HTTPCommon.h>
 #include <DB/Common/NetException.h>
+#include <DB/Core/Progress.h>
 
 
 namespace DB
@@ -42,11 +45,18 @@ private:
 	ZlibCompressionMethod compression_method;
 	int compression_level = Z_DEFAULT_COMPRESSION;
 
-	std::unique_ptr<WriteBufferFromOStream> out_raw;
+	std::ostream * response_ostr = nullptr;
+	std::experimental::optional<WriteBufferFromOStream> out_raw;
 	std::experimental::optional<ZlibDeflatingWriteBuffer> deflating_buf;
 
 	WriteBuffer * out = nullptr; 	/// Uncompressed HTTP body is written to this buffer. Points to out_raw or possibly to deflating_buf.
 
+	bool body_started_sending = false;	/// If true, you could not add any headers.
+
+	std::mutex mutex;	/// progress callback could be called from different threads.
+
+
+	/// Must be called under locked mutex.
 	void sendHeaders()
 	{
 		if (!out)
@@ -68,14 +78,16 @@ private:
 					throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
 						ErrorCodes::LOGICAL_ERROR);
 
-				out_raw = std::make_unique<WriteBufferFromOStream>(response.send());
+				response_ostr = &response.beginSend();
+				out_raw.emplace(*response_ostr);
 				/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
 				deflating_buf.emplace(*out_raw, compression_method, compression_level, working_buffer.size(), working_buffer.begin());
 				out = &deflating_buf.value();
 			}
 			else
 			{
-				out_raw = std::make_unique<WriteBufferFromOStream>(response.send(), working_buffer.size(), working_buffer.begin());
+				response_ostr = &response.beginSend();
+				out_raw.emplace(*response_ostr, working_buffer.size(), working_buffer.begin());
 				out = out_raw.get();
 			}
 		}
@@ -86,10 +98,37 @@ private:
 		if (!offset())
 			return;
 
+		std::lock_guard<std::mutex> lock(mutex);
+
 		sendHeaders();
+
+		if (!body_started_sending)
+		{
+			body_started_sending = true;
+			/// Send end of headers delimiter.
+			*response_ostr << "\r\n";
+		}
 
 		out->position() = position();
 		out->next();
+	}
+
+	/// Writes progess in repeating HTTP headers.
+	void onProgress(const Progress & progress)
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+
+		/// Cannot add new headers if body was started to send.
+		if (body_started_sending)
+			return;
+
+		std::string progress_string;
+		{
+			WriteBufferFromString progress_string_writer;
+			progress.writeJSON(progress_string_writer);
+		}
+
+		response_ostr << "X-ClickHouse-Progress: " << progress_string << "\r\n" << std::flush;
 	}
 
 public:
@@ -106,6 +145,7 @@ public:
 	/// to change response HTTP code.
 	void finalize()
 	{
+		std::lock_guard<std::mutex> lock(mutex);
 		sendHeaders();
 	}
 
