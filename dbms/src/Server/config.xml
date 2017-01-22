@@ -65,6 +65,17 @@
 	<!-- Default database. -->
 	<default_database>default</default_database>
 
+	<!-- Server time zone could be set here.
+
+	     Time zone is used when converting between String and DateTime types,
+		  when printing DateTime in text formats and parsing DateTime from text,
+		  it is used in date and time related functions, if specific time zone was not passed as an argument.
+
+		 Time zone is specified as identifier from IANA time zone database, like UTC or Africa/Abidjan.
+		 If not specified, system time zone at server startup is used.
+	-->
+	<!-- <timezone>Europe/Moscow</timezone> -->
+
 	<!-- Configuration of clusters that could be used in Distributed tables.
 		 https://clickhouse.yandex/reference_en.html#Distributed
 	  -->

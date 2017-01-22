@@ -745,6 +745,15 @@ void BaseDaemon::initialize(Application& self)
 		}
 	}
 
+	/// This must be done before any usage of DateLUT. In particular, before any logging.
+	if (config().has("timezone"))
+	{
+		if (0 != setenv("TZ", config().getString("timezone").data(), 1))
+			throw Poco::Exception("Cannot setenv TZ variable");
+
+		tzset();
+	}
+
 	std::string log_path = config().getString("logger.log", "");
 	if (!log_path.empty())
 		log_path = Poco::Path(log_path).setFileName("").toString();
