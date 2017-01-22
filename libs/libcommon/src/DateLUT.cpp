@@ -36,5 +36,5 @@ const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) co
 	if (it == impls.end())
 		it->second = std::make_unique<DateLUTImpl>(time_zone);
 
-	return it->second;
+	return *it->second;
 }
