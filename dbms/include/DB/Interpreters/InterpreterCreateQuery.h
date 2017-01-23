@@ -57,6 +57,8 @@ private:
 	BlockIO createTable(ASTCreateQuery & create);
 	BlockIO createTableOnCluster(ASTCreateQuery & create);
 
+	std::string createQueryWithoutCluster(ASTCreateQuery & create) const;
+
 	/// Calculate list of columns of table and return it.
 	ColumnsInfo setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
 	String setEngine(ASTCreateQuery & create, const StoragePtr & as_storage) const;

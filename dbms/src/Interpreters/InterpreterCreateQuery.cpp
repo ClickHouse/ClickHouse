@@ -58,6 +58,22 @@ namespace ErrorCodes
 	extern const int DUPLICATE_COLUMN;
 }
 
+static void ExecuteQuery(const Cluster::Address & addr, const std::string & query)
+{
+	Connection conn(addr.host_name, addr.port, "", addr.user, addr.password);
+	conn.sendQuery(query);
+
+	while (true)
+	{
+		Connection::Packet packet = conn.receivePacket();
+
+		if (packet.type == Protocol::Server::Exception)
+			throw Exception(*packet.exception.get());
+		else if (packet.type == Protocol::Server::EndOfStream)
+			break;
+	}
+}
+
 
 InterpreterCreateQuery::InterpreterCreateQuery(ASTPtr query_ptr_, Context & context_)
 	: query_ptr(query_ptr_), context(context_)
@@ -562,38 +578,43 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 	return {};
 }
 
-static std::string createQueryWithoutCluster(ASTCreateQuery & create)
+std::string InterpreterCreateQuery::createQueryWithoutCluster(ASTCreateQuery & create) const
 {
 	ASTPtr cloned = create.clone();
 	ASTCreateQuery & tmp = typeid_cast<ASTCreateQuery &>(*cloned);
 	tmp.cluster.clear();
+	if (tmp.database.empty())
+		tmp.database = context.getCurrentDatabase();
 	return formatASTToString(tmp);
 }
 
 BlockIO InterpreterCreateQuery::createTableOnCluster(ASTCreateQuery & create)
 {
 	ClusterPtr cluster = context.getCluster(create.cluster);
-	Cluster::AddressesWithFailover addresses = cluster->getShardsWithFailoverAddresses();
+	Cluster::AddressesWithFailover shards = cluster->getShardsWithFailoverAddresses();
 	std::string query = createQueryWithoutCluster(create);
+	std::vector<Cluster::Address> failed;
 
-	for (const auto & s : addresses)
+	for (const auto & shard : shards)
 	{
-		for (const auto & a : s)
+		for (const auto & addr : shard)
 		{
 			try
 			{
-				// TODO get current database
-
-				Connection conn(a.host_name, a.port, create.database, a.user, a.password);
-				conn.sendQuery(query);
-				// TODO receive result
+				ExecuteQuery(addr, query);
 			}
 			catch (...)
 			{
-				// TODO save command to the zookeeper.
-				std::cerr << "got exception" << std::endl;
+				failed.push_back(addr);
 			}
 		}
+	}
+
+	for (const auto & addr : failed)
+	{
+		(void)addr;
+		// TODO save command to the zookeeper.
+		std::cerr << "got exception" << std::endl;
 	}
 
 	return {};
