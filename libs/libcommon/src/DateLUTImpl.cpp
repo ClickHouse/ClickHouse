@@ -44,15 +44,12 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
 		throw Poco::Exception("Cannot load time zone " + time_zone_);
 
 	cctz::time_zone::absolute_lookup start_of_epoch_lookup = cctz_time_zone.lookup(std::chrono::system_clock::from_time_t(start_of_day));
-	cctz::civil_day date{start_of_epoch_lookup.cs};
-
 	offset_at_start_of_epoch = start_of_epoch_lookup.offset;
+
+	cctz::civil_day date{1970, 1, 1};
 
 	do
 	{
-		if (i > DATE_LUT_MAX_DAY_NUM)
-			throw Poco::Exception("Cannot create DateLUTImpl: i > DATE_LUT_MAX_DAY_NUM.");
-
 		cctz::time_zone::civil_lookup lookup = cctz_time_zone.lookup(date);
 
 		start_of_day = std::chrono::system_clock::to_time_t(lookup.pre);	/// Ambiguouty is possible.
@@ -103,7 +100,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
 		++date;
 		++i;
 	}
-	while (start_of_day <= DATE_LUT_MAX);
+	while (start_of_day <= DATE_LUT_MAX && i <= DATE_LUT_MAX_DAY_NUM);
 
 	/// Заполняем lookup таблицу для годов
 	::memset(years_lut, 0, DATE_LUT_YEARS * sizeof(years_lut[0]));

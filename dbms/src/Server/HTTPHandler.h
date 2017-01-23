@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DB/IO/WriteBufferFromHTTPServerResponse.h>
 #include <DB/Common/CurrentMetrics.h>
 #include "Server.h"
 
@@ -13,6 +12,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
+class WriteBufferFromHTTPServerResponse;
 
 class HTTPHandler : public Poco::Net::HTTPRequestHandler
 {

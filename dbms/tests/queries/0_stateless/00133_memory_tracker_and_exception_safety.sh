@@ -6,7 +6,7 @@ clickhouse-client -n --query="
 ";
 
 STEP_MULTIPLIER=1
-if [ "$VALGRIND" -eq "1" ]; then
+if [ -n "$VALGRIND" ]; then
     STEP_MULTIPLIER=50
 fi
 

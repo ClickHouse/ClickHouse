@@ -518,7 +518,7 @@ inline void writeDateText(LocalDate date, WriteBuffer & buf)
 
 /// в формате YYYY-MM-DD HH:MM:SS, согласно текущему часовому поясу
 template <char date_delimeter = '-', char time_delimeter = ':'>
-inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
+inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
 	char s[19] = {'0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0', ' ', '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'};
 
@@ -528,7 +528,6 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 		return;
 	}
 
-	const auto & date_lut = DateLUT::instance();
 	const auto & values = date_lut.getValues(datetime);
 
 	s[0] += values.year / 1000;
