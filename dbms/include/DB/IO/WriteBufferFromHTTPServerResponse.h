@@ -79,7 +79,6 @@ private:
 			setResponseDefaultHeaders(response);
 
 			std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
-			out_raw.emplace(*response_body_ostr);
 		}
 	}
 
@@ -117,11 +116,13 @@ private:
 						ErrorCodes::LOGICAL_ERROR);
 
 				/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
+				out_raw.emplace(*response_body_ostr);
 				deflating_buf.emplace(out_raw.value(), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
 				out = &deflating_buf.value();
 			}
 			else
 			{
+				out_raw.emplace(*response_body_ostr, working_buffer.size(), working_buffer.begin());
 				out = &out_raw.value();
 			}
 		}
