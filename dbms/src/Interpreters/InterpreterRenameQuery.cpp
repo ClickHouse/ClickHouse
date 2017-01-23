@@ -97,10 +97,10 @@ BlockIO InterpreterRenameQuery::execute()
 		if (auto table = context.tryGetTable(names.database_name, names.table_name))
 			locks.emplace_back(table->lockForAlter());
 
-	/** Все таблицы заблокированы. Если переименований больше одного в цепочке, то
-	  *  на время их проведения, надо взять глобальную блокировку. Порядок важен, чтобы избежать deadlock-ов.
-	  * Это обеспечивает атомарность всех указанных RENAME с точки зрения пользователя СУБД,
-	  *  но лишь в случаях, когда в процессе переименования не было исключений и сервер не падал.
+	/** All tables are locked. If there are more than one rename in chain,
+	  *  we need to hold global lock while doing all renames. Order matters to avoid deadlocks.
+	  * It provides atomicity of all RENAME chain as a whole, from the point of view of DBMS client,
+	  *  but only in cases when there was no exceptions during this process and server does not fall.
 	  */
 
 	decltype(context.getLock()) lock;
