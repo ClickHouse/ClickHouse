@@ -81,7 +81,7 @@ void DatabaseMemory::removeTable(const String & table_name)
 }
 
 void DatabaseMemory::renameTable(
-	const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name)
+	const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name, const Settings & settings)
 {
 	throw Exception("DatabaseMemory: renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }

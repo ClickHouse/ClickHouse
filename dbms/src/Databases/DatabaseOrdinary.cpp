@@ -11,6 +11,7 @@
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadBufferFromFile.h>
@@ -280,7 +281,7 @@ static ASTPtr getCreateQueryImpl(const String & path, const String & table_name)
 
 
 void DatabaseOrdinary::renameTable(
-	const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name)
+	const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name, const Settings & settings)
 {
 	DatabaseOrdinary * to_database_concrete = typeid_cast<DatabaseOrdinary *>(&to_database);
 
@@ -310,7 +311,7 @@ void DatabaseOrdinary::renameTable(
 	ast_create_query.table = to_table_name;
 
 	/// NOTE Неатомарно.
-	to_database_concrete->createTable(to_table_name, table, ast, table->getName());
+	to_database_concrete->createTable(to_table_name, table, ast, table->getName(), settings);
 	removeTable(table_name);
 }
 

@@ -22,7 +22,7 @@ using StoragePtr = std::shared_ptr<IStorage>;
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 
-class Settings;
+struct Settings;
 
 
 /** Allows to iterate over tables.
@@ -75,7 +75,8 @@ public:
 	virtual bool empty() const = 0;
 
 	/// Добавить таблицу в базу данных. Прописать её наличие в метаданных.
-	virtual void createTable(const String & name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings) = 0;
+	virtual void createTable(
+		const String & name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings) = 0;
 
 	/// Удалить таблицу из базы данных и вернуть её. Удалить метаданные.
 	virtual void removeTable(const String & name) = 0;
@@ -87,7 +88,8 @@ public:
 	virtual StoragePtr detachTable(const String & name) = 0;
 
 	/// Переименовать таблицу и, возможно, переместить таблицу в другую БД.
-	virtual void renameTable(const Context & context, const String & name, IDatabase & to_database, const String & to_name) = 0;
+	virtual void renameTable(
+		const Context & context, const String & name, IDatabase & to_database, const String & to_name, const Settings & settings) = 0;
 
 	/// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
 	virtual time_t getTableMetadataModificationTime(const String & name) = 0;

@@ -722,7 +722,8 @@ void DatabaseCloud::removeTable(const String & table_name)
 }
 
 
-void DatabaseCloud::renameTable(const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name)
+void DatabaseCloud::renameTable(
+	const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name, const Settings & settings)
 {
 	/// Переименовывать можно только облачные таблицы.
 	/// Перенос между БД не поддерживается.
