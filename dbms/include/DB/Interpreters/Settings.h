@@ -241,6 +241,11 @@ struct Settings
 	\
 	/** Do not send HTTP headers X-ClickHouse-Progress more frequently than at each specified interval. */ \
 	M(SettingUInt64, http_headers_progress_interval_ms, 100) \
+	\
+	/** Do fsync after changing metadata for tables and databases (.sql files). \
+	  * Could be disabled in case of poor latency on server with high load of DDL queries and high load of disk subsystem. \
+	  */ \
+	M(SettingBool, fsync_metadata, 1) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

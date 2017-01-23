@@ -69,7 +69,8 @@ void DatabaseMemory::attachTable(const String & table_name, const StoragePtr & t
 		throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
-void DatabaseMemory::createTable(const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine)
+void DatabaseMemory::createTable(
+	const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings)
 {
 	attachTable(table_name, table);
 }

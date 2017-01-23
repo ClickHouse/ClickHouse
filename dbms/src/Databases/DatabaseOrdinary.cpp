@@ -188,7 +188,8 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
 }
 
 
-void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine)
+void DatabaseOrdinary::createTable(
+	const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings)
 {
 	/// Создаём файл с метаданными, если нужно - если запрос не ATTACH.
 	/// В него записывается запрос на ATTACH таблицы.
@@ -219,7 +220,8 @@ void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr &
 		WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
 		writeString(statement, out);
 		out.next();
-		out.sync();
+		if (settings.fsync_metadata)
+			out.sync();
 		out.close();
 	}
 
@@ -403,7 +405,8 @@ void DatabaseOrdinary::alterTable(
 		WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
 		writeString(statement, out);
 		out.next();
-		out.sync();
+		if (context.getSettingsRef().fsync_metadata)
+			out.sync();
 		out.close();
 	}
 

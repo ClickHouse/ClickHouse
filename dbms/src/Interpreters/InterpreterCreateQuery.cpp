@@ -124,8 +124,10 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 		/// Exclusive flag guarantees, that database is not created right now in another thread.
 		WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
 		writeString(statement, out);
+
 		out.next();
-		out.sync();
+		if (context.getSettingsRef().fsync_metadata)
+			out.sync();
 		out.close();
 	}
 

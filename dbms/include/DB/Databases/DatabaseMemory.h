@@ -40,7 +40,7 @@ public:
 
 	bool empty() const override;
 
-	void createTable(const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine) override;
+	void createTable(const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings) override;
 	void removeTable(const String & table_name) override;
 
 	void attachTable(const String & table_name, const StoragePtr & table) override;

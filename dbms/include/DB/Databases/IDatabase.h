@@ -22,8 +22,10 @@ using StoragePtr = std::shared_ptr<IStorage>;
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 
+class Settings;
 
-/** Позволяет проитерироваться по списку таблиц.
+
+/** Allows to iterate over tables.
   */
 class IDatabaseIterator
 {
@@ -40,19 +42,19 @@ public:
 using DatabaseIteratorPtr = std::unique_ptr<IDatabaseIterator>;
 
 
-/** Движок баз данных.
-  * Отвечает за:
-  * - инициализацию множества таблиц;
-  * - проверку существования и получение таблицы для работы;
-  * - получение списка всех таблиц;
-  * - создание и удаление таблиц;
-  * - переименовывание таблиц и перенос между БД с одинаковыми движками.
+/** Database engine.
+  * It is responsible for:
+  * - initialization of set of known tables;
+  * - checking existence of a table and getting a table object;
+  * - retrieving a list of all tables;
+  * - creating and dropping tables;
+  * - renaming tables and moving between databases with same engine.
   */
 
 class IDatabase : public std::enable_shared_from_this<IDatabase>
 {
 public:
-	/// Получить имя движка базы данных.
+	/// Get name of database engine.
 	virtual String getEngineName() const = 0;
 
 	/// Загрузить множество существующих таблиц. Если задан thread_pool - использовать его.
@@ -73,7 +75,7 @@ public:
 	virtual bool empty() const = 0;
 
 	/// Добавить таблицу в базу данных. Прописать её наличие в метаданных.
-	virtual void createTable(const String & name, const StoragePtr & table, const ASTPtr & query, const String & engine) = 0;
+	virtual void createTable(const String & name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings) = 0;
 
 	/// Удалить таблицу из базы данных и вернуть её. Удалить метаданные.
 	virtual void removeTable(const String & name) = 0;

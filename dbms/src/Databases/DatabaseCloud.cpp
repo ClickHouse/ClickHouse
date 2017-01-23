@@ -592,7 +592,8 @@ Hash DatabaseCloud::getHashForTableDefinition(const String & definition) const
 }
 
 
-void DatabaseCloud::createTable(const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine)
+void DatabaseCloud::createTable(
+	const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings)
 {
 	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 
