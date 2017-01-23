@@ -29,7 +29,6 @@
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/System/StorageSystemNumbers.h>
 
-#include <DB/Interpreters/Cluster.h>
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
@@ -41,6 +40,7 @@
 #include <DB/Databases/DatabaseFactory.h>
 #include <DB/Databases/IDatabase.h>
 
+#include <zkutil/ZooKeeper.h>
 
 namespace DB
 {
@@ -578,21 +578,37 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 	return {};
 }
 
-std::string InterpreterCreateQuery::createQueryWithoutCluster(ASTCreateQuery & create) const
+ASTPtr InterpreterCreateQuery::createQueryWithoutCluster(ASTCreateQuery & create) const
 {
 	ASTPtr cloned = create.clone();
 	ASTCreateQuery & tmp = typeid_cast<ASTCreateQuery &>(*cloned);
 	tmp.cluster.clear();
 	if (tmp.database.empty())
 		tmp.database = context.getCurrentDatabase();
-	return formatASTToString(tmp);
+	return cloned;
+}
+
+void InterpreterCreateQuery::writeToZookeeper(ASTPtr query, const std::vector<Cluster::Address> & addrs)
+{
+	auto zookeeper = context.getZooKeeper();
+	ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query);
+	const std::string base_path = "/clickhouse/task_queue/ddl/create/" + create.table;
+
+	zookeeper->createAncestors(base_path);
+	zookeeper->createIfNotExists(base_path, "");
+
+	for (const auto & addr : addrs)
+	{
+		zookeeper->create(base_path + "/" + addr.host_name, "", 0);
+	}
 }
 
 BlockIO InterpreterCreateQuery::createTableOnCluster(ASTCreateQuery & create)
 {
 	ClusterPtr cluster = context.getCluster(create.cluster);
 	Cluster::AddressesWithFailover shards = cluster->getShardsWithFailoverAddresses();
-	std::string query = createQueryWithoutCluster(create);
+	ASTPtr query_ptr = createQueryWithoutCluster(create);
+	std::string query = formatASTToString(*query_ptr);
 	std::vector<Cluster::Address> failed;
 
 	for (const auto & shard : shards)
@@ -607,15 +623,12 @@ BlockIO InterpreterCreateQuery::createTableOnCluster(ASTCreateQuery & create)
 			{
 				failed.push_back(addr);
 			}
+
+			failed.push_back(addr);
 		}
 	}
 
-	for (const auto & addr : failed)
-	{
-		(void)addr;
-		// TODO save command to the zookeeper.
-		std::cerr << "got exception" << std::endl;
-	}
+	writeToZookeeper(query_ptr, failed);
 
 	return {};
 }
