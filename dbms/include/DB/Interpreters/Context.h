@@ -284,6 +284,7 @@ public:
 	QueryLog & getQueryLog();
 	const MergeTreeSettings & getMergeTreeSettings();
 
+	/// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
 	void setMaxTableSizeToDrop(size_t max_size);
 	void checkTableCanBeDropped(const String & database, const String & table, size_t table_size);
 

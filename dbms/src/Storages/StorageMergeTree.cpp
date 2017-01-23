@@ -124,10 +124,14 @@ BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query, const Settings & sett
 	return std::make_shared<MergeTreeBlockOutputStream>(*this);
 }
 
-void StorageMergeTree::drop()
+bool StorageMergeTree::checkTableCanBeDropped() const
 {
 	context.checkTableCanBeDropped(database_name, table_name, getData().getColumnsTotalSize());
+	return true;
+}
 
+void StorageMergeTree::drop()
+{
 	shutdown();
 	data.dropAllData();
 }
