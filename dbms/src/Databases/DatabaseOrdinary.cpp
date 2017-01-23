@@ -215,7 +215,7 @@ void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr &
 	{
 		statement = getTableDefinitionFromCreateQuery(query);
 
-		/// Гарантирует, что таблица не создаётся прямо сейчас.
+		/// Exclusive flags guarantees, that table is not created right now in another thread. Otherwise, exception will be thrown.
 		WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
 		writeString(statement, out);
 		out.next();
@@ -225,15 +225,15 @@ void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr &
 
 	try
 	{
-		/// Добавляем таблицу в набор.
+		/// Add a table to the map of known tables.
 		{
 			std::lock_guard<std::mutex> lock(mutex);
 			if (!tables.emplace(table_name, table).second)
 				throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 		}
 
-		/// Если запрос ATTACH, и метаданные таблицы уже существуют
-		/// (то есть, ATTACH сделан после DETACH), то rename атомарно заменяет старый файл новым.
+		/// If it was ATTACH query and file with table metadata already exist
+		/// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
 		Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
 	}
 	catch (...)
