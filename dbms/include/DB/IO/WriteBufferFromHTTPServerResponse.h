@@ -96,38 +96,37 @@ private:
 
 	void nextImpl() override
 	{
-		if (!offset())
-			return;
-
-		std::lock_guard<std::mutex> lock(mutex);
-
-		startSendHeaders();
-
-		if (!out)
 		{
-			if (compress)
+			std::lock_guard<std::mutex> lock(mutex);
+
+			startSendHeaders();
+
+			if (!out)
 			{
-				if (compression_method == ZlibCompressionMethod::Gzip)
-					*response_header_ostr << "Content-Encoding: gzip\r\n";
-				else if (compression_method == ZlibCompressionMethod::Zlib)
-					*response_header_ostr << "Content-Encoding: deflate\r\n";
+				if (compress)
+				{
+					if (compression_method == ZlibCompressionMethod::Gzip)
+						*response_header_ostr << "Content-Encoding: gzip\r\n";
+					else if (compression_method == ZlibCompressionMethod::Zlib)
+						*response_header_ostr << "Content-Encoding: deflate\r\n";
+					else
+						throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
+										ErrorCodes::LOGICAL_ERROR);
+
+						/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
+						out_raw.emplace(*response_body_ostr);
+					deflating_buf.emplace(out_raw.value(), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
+					out = &deflating_buf.value();
+				}
 				else
-					throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
-						ErrorCodes::LOGICAL_ERROR);
+				{
+					out_raw.emplace(*response_body_ostr, working_buffer.size(), working_buffer.begin());
+					out = &out_raw.value();
+				}
+			}
 
-				/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
-				out_raw.emplace(*response_body_ostr);
-				deflating_buf.emplace(out_raw.value(), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
-				out = &deflating_buf.value();
-			}
-			else
-			{
-				out_raw.emplace(*response_body_ostr, working_buffer.size(), working_buffer.begin());
-				out = &out_raw.value();
-			}
+			finishSendHeaders();
 		}
-
-		finishSendHeaders();
 
 		out->position() = position();
 		out->next();
@@ -173,12 +172,20 @@ public:
 	/// Send at least HTTP headers if no data has been sent yet.
 	/// Use after the data has possibly been sent and no error happened (and thus you do not plan
 	/// to change response HTTP code.
+	/// This method is idempotent.
 	void finalize()
 	{
-		std::lock_guard<std::mutex> lock(mutex);
-
-		startSendHeaders();
-		finishSendHeaders();
+		if (offset())
+		{
+			next();
+		}
+		else
+		{
+			/// If no remaining data, just send headers.
+			std::lock_guard<std::mutex> lock(mutex);
+			startSendHeaders();
+			finishSendHeaders();
+		}
 	}
 
 	/// Turn compression on or off.
@@ -211,12 +218,9 @@ public:
 
 	~WriteBufferFromHTTPServerResponse()
 	{
-		if (!offset())
-			return;
-
 		try
 		{
-			next();
+			finalize();
 		}
 		catch (...)
 		{
