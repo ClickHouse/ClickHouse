@@ -113,8 +113,8 @@ private:
 						throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
 										ErrorCodes::LOGICAL_ERROR);
 
-						/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
-						out_raw.emplace(*response_body_ostr);
+					/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
+					out_raw.emplace(*response_body_ostr);
 					deflating_buf.emplace(out_raw.value(), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
 					out = &deflating_buf.value();
 				}
