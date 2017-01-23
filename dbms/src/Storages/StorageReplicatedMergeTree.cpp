@@ -2803,6 +2803,12 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 	}
 }
 
+bool StorageReplicatedMergeTree::checkTableCanBeDropped() const
+{
+	/// Consider only synchronized data
+	context.checkTableCanBeDropped(database_name, table_name, getData().getColumnsTotalSize());
+	return true;
+}
 
 void StorageReplicatedMergeTree::drop()
 {
@@ -2812,8 +2818,7 @@ void StorageReplicatedMergeTree::drop()
 		if (is_readonly || !zookeeper)
 			throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
 
-		/// Consider only synchronized data
-		context.checkTableCanBeDropped(database_name, table_name, getData().getColumnsTotalSize());
+		// checkTableCanBeDropped(); // uncomment to feel yourself safe
 
 		shutdown();
 

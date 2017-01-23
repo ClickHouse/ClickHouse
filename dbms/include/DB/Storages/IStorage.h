@@ -271,11 +271,16 @@ public:
 
 	bool is_dropped{false};
 
-	/// Поддерживается ли индекс в секции IN
+	/// Does table support index for IN sections
 	virtual bool supportsIndexForIn() const { return false; }
 
-	/// проверяет валидность данных
+	/// Checks validity of the data
 	virtual bool checkData() const { throw DB::Exception("Check query is not supported for " + getName() + " storage"); }
+
+	/// Checks that table could be dropped right now
+	/// If it can - returns true
+	/// Otherwise - throws an exception with detailed information or returns false
+	virtual bool checkTableCanBeDropped() const { return true; }
 
 protected:
 	using ITableDeclaration::ITableDeclaration;

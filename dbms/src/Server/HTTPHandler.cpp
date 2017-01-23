@@ -294,8 +294,7 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 
 		if (auth_fail)
 		{
-			response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED);
-			used_output.out->addAuthenticateRequest();
+			response.requireAuthentication("ClickHouse server HTTP API");
 		}
 		else
 		{
