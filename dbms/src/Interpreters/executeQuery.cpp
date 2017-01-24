@@ -182,6 +182,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 		{
 			process_list_entry = context.getProcessList().insert(
 				query,
+				ast.get(),
 				context.getClientInfo(),
 				settings);
 

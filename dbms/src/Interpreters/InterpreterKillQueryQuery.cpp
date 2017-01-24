@@ -150,7 +150,8 @@ public:
 				/// Wait if QueryIsNotInitializedYet or CancelSended
 			}
 
-			/// Kill query could be stopped also
+			/// KILL QUERY could be killed also
+			/// Probably interpreting KILL QUERIES as complete (not internal) queries is extra functionality
 			if (is_cancelled)
 				break;
 
