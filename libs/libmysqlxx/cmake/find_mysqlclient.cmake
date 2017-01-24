@@ -18,7 +18,7 @@ set (MYSQL_INCLUDE_PATHS
 	"/usr/include/mysql"
 )
 
-find_path (MYSQL_INCLUDE_DIR NAMES mysql.h PATH_SUFFIXES mysql PATHS ${MYSQL_INCLUDE_PATHS})
+find_path (MYSQL_INCLUDE_DIR NAMES mysql/mysql.h PATHS ${MYSQL_INCLUDE_PATHS})
 
 if (USE_STATIC_LIBRARIES)
 	find_library (STATIC_MYSQLCLIENT_LIB libmysqlclient.a PATHS ${MYSQL_LIB_PATHS})

@@ -1,4 +1,4 @@
-#include <mysql.h>
+#include <mysql/mysql.h>
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/StoreQueryResult.h>
 
