@@ -28,7 +28,7 @@ class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 using Tables = std::map<String, StoragePtr>;
 struct Settings;
-struct BlockIO;
+struct IAST;
 
 
 /** List of currently executing queries.
@@ -216,6 +216,9 @@ private:
 	/// Limit and counter for memory of all simultaneously running queries.
 	MemoryTracker total_memory_tracker;
 
+	/// Call under lock
+	ProcessListElement * tryGetProcessListElement(const String & current_query_id, const String & current_user);
+
 public:
 	ProcessList(size_t max_size_ = 0) : cur_size(0), max_size(max_size_) {}
 
@@ -224,8 +227,9 @@ public:
 	/** Register running query. Returns refcounted object, that will remove element from list in destructor.
 	  * If too much running queries - wait for not more than specified (see settings) amount of time.
 	  * If timeout is passed - throw an exception.
+	  * Don't count KILL QUERY queries.
 	  */
-	EntryPtr insert(const String & query_, const ClientInfo & client_info, const Settings & settings);
+	EntryPtr insert(const String & query_, const IAST * ast, const ClientInfo & client_info, const Settings & settings);
 
 	/// Number of currently executing queries.
 	size_t size() const { return cur_size; }
