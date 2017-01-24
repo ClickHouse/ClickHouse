@@ -116,6 +116,7 @@ struct ContextShared
 	Macros macros;											/// Подстановки из конфига.
 	std::unique_ptr<Compiler> compiler;						/// Для динамической компиляции частей запроса, при необходимости.
 	std::unique_ptr<QueryLog> query_log;					/// Для логгирования запросов.
+	std::shared_ptr<DDLWorker> ddl_worker;
 	/// Правила для выбора метода сжатия в зависимости от размера куска.
 	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
 	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Настройки для движка MergeTree.
@@ -918,6 +919,22 @@ ReshardingWorker & Context::getReshardingWorker()
 		throw Exception("Resharding background thread not initialized: resharding missing in configuration file.",
 			ErrorCodes::LOGICAL_ERROR);
 	return *shared->resharding_worker;
+}
+
+void Context::setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker)
+{
+	auto lock = getLock();
+	if (shared->ddl_worker)
+		throw Exception("DDL background thread has already been initialized.", ErrorCodes::LOGICAL_ERROR);
+	shared->ddl_worker = ddl_worker;
+}
+
+DDLWorker & Context::getDDLWorker()
+{
+	auto lock = getLock();
+	if (!shared->ddl_worker)
+		throw Exception("DDL background thread not initialized.", ErrorCodes::LOGICAL_ERROR);
+	return *shared->ddl_worker;
 }
 
 void Context::resetCaches() const

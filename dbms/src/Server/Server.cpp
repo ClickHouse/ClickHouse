@@ -22,6 +22,7 @@
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/AsynchronousMetrics.h>
+#include <DB/Interpreters/DDLWorker.h>
 
 #include <DB/Storages/System/StorageSystemNumbers.h>
 #include <DB/Storages/System/StorageSystemTables.h>
@@ -374,6 +375,12 @@ int Server::main(const std::vector<std::string> & args)
 		global_context->setReshardingWorker(resharding_worker);
 		resharding_worker->start();
 		has_resharding_worker = true;
+	}
+	// TODO read from config
+	if (has_zookeeper)
+	{
+		auto ddl_worker = std::make_shared<DDLWorker>(global_context.get(), "localhost", 9000);
+		global_context->setDDLWorker(ddl_worker);
 	}
 
 	SCOPE_EXIT(

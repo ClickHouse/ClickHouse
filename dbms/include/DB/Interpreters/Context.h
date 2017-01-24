@@ -45,6 +45,7 @@ class QueryLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
+class DDLWorker;
 
 
 /// (имя базы данных, имя таблицы)
@@ -251,6 +252,9 @@ public:
 
 	void setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker);
 	ReshardingWorker & getReshardingWorker();
+
+	void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
+	DDLWorker & getDDLWorker();
 
 	/** Очистить кэши разжатых блоков и засечек.
 	  * Обычно это делается при переименовании таблиц, изменении типа столбцов, удалении таблицы.
