@@ -73,10 +73,6 @@ private:
 
 		ReadBuffer * data_buffer;
 
-		/// NOTE: cur_mark_idx must be manually updated after reading from data_buffer.
-		/// It is assumed that the amount of data read from data_buffer always corresponds to an integer number of marks.
-		size_t cur_mark_idx = 0;
-
 	private:
 		Stream() = default;
 
@@ -106,7 +102,9 @@ private:
 	ValueSizeMap avg_value_size_hints;
 	String path;
 	MergeTreeData::DataPartPtr data_part;
+
 	FileStreams streams;
+	size_t cur_mark_idx = 0; /// Mark index corresponding to the current position for all streams.
 
 	/// Columns that are read.
 	NamesAndTypesList columns;
@@ -127,7 +125,7 @@ private:
 
 	void readData(
 			const String & name, const IDataType & type, IColumn & column,
-			size_t from_mark, size_t to_mark, size_t max_rows_to_read,
+			size_t from_mark, size_t max_rows_to_read,
 			size_t level = 0, bool read_offsets = true);
 
 	void fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder);
