@@ -216,7 +216,7 @@ private:
 	/// Limit and counter for memory of all simultaneously running queries.
 	MemoryTracker total_memory_tracker;
 
-	/// Call under lock
+	/// Call under lock. Finds process with specified current_user and current_query_id.
 	ProcessListElement * tryGetProcessListElement(const String & current_query_id, const String & current_user);
 
 public:
@@ -265,7 +265,8 @@ public:
 		NotFound = 0, 					/// already cancelled
 		QueryIsNotInitializedYet = 1,
 		CancelCannotBeSended = 2,
-		CancelSended = 3
+		CancelSended = 3,
+		Unknown
 	};
 
 	/// Try call cancel() for input and output streams of query with specified id and user

@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/** KILL QUERY WHERE <logical expression upon system.processes fields> [SYNC|ASYNC]
+/** KILL QUERY WHERE <logical expression upon system.processes fields> [SYNC|ASYNC|TEST]
   */
 class ParserKillQueryQuery : public IParserBase
 {

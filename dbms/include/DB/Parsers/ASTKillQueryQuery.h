@@ -8,7 +8,8 @@ class ASTKillQueryQuery : public ASTQueryWithOutput
 {
 public:
 	ASTPtr where_expression;
-	bool sync;
+	bool sync = false;
+	bool test = false;
 
 	ASTKillQueryQuery() = default;
 

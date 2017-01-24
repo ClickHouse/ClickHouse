@@ -23,3 +23,4 @@ clickhouse-client -q "SELECT countIf(query = 'SELECT sleep(1) FROM system.number
 clickhouse-client -q "KILL QUERY WHERE 0 ASYNC"
 clickhouse-client -q "KILL QUERY WHERE 0 FORMAT TabSeparated"
 clickhouse-client -q "KILL QUERY WHERE 0 SYNC FORMAT TabSeparated"
+clickhouse-client -q "KILL QUERY WHERE 1 TEST" &>/dev/null
