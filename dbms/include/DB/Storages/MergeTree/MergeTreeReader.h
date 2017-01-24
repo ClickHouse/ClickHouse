@@ -15,15 +15,16 @@ class CompressedReadBufferFromFile;
 
 class IDataType;
 
-/** Умеет читать данные между парой засечек из одного куска. При чтении последовательных отрезков не делает лишних seek-ов.
-  * При чтении почти последовательных отрезков делает seek-и быстро, не выбрасывая содержимое буфера.
-  */
+
+/// Reads the data between pairs of marks in the same part. When reading consecutive ranges, avoids unnecessary seeks.
+/// When ranges are almost consecutive, seeks are fast because they are performed inside the buffer.
+/// Avoids loading the marks file if it is not needed (e.g. when reading the whole part).
 class MergeTreeReader : private boost::noncopyable
 {
 public:
 	using ValueSizeMap = std::map<std::string, double>;
 
-	MergeTreeReader(const String & path, /// Путь к куску
+	MergeTreeReader(const String & path, /// Path to the directory containing the part
 		const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
 		UncompressedCache * uncompressed_cache,
 		MarkCache * mark_cache,
@@ -38,21 +39,18 @@ public:
 
 	const ValueSizeMap & getAvgValueSizeHints() const;
 
-	/** Если столбцов нет в блоке, добавляет их, если есть - добавляет прочитанные значения к ним в конец.
-	  * Не добавляет столбцы, для которых нет файлов. Чтобы их добавить, нужно вызвать fillMissingColumns.
-	  * В блоке должно быть либо ни одного столбца из columns, либо все, для которых есть файлы.
-	  */
+	/// If columns are not present in the block, adds them. If they are present - appends the values that have been read.
+	/// Do not adds columns, if the files are not present for them (to add them, call fillMissingColumns).
+	/// Block should contain either no columns from the columns field, or all columns for which files are present.
 	void readRange(size_t from_mark, size_t to_mark, Block & res);
 
-	/** Добавляет в блок недостающие столбцы из ordered_names, состоящие из значений по-умолчанию.
-	  * Недостающие столбцы добавляются в позиции, такие же как в ordered_names.
-	  * Если был добавлен хотя бы один столбец - то все столбцы в блоке переупорядочиваются как в ordered_names.
-	  */
+	/// Add columns from ordered_names that are not present in the block.
+	/// Missing columns are added in the order specified by ordered_names.
+	/// If at least one column was added, reorders all columns in the block according to ordered_names.
 	void fillMissingColumns(Block & res, const Names & ordered_names, const bool always_reorder = false);
 
-	/** То же самое, но всегда переупорядочивает столбцы в блоке, как в ordered_names
-	  *  (даже если не было недостающих столбцов).
-	  */
+	/// The same as fillMissingColumns(), but always reorders columns according to ordered_names
+	/// (even if no columns were added).
 	void fillMissingColumnsAndReorder(Block & res, const Names & ordered_names);
 
 private:
@@ -104,18 +102,18 @@ private:
 
 	using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
 
-	/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
+	/// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
 	ValueSizeMap avg_value_size_hints;
 	String path;
 	MergeTreeData::DataPartPtr data_part;
 	FileStreams streams;
 
-	/// Запрашиваемые столбцы.
+	/// Columns that are read.
 	NamesAndTypesList columns;
 
 	UncompressedCache * uncompressed_cache;
 	MarkCache * mark_cache;
-	/// Если выставлено в false - при отсутствии засечек в кэше, считавать засечки, но не сохранять их в кэш, чтобы не вымывать оттуда другие данные.
+	/// If save_marks_in_cache is false, then, if marks are not in cache, we will load them but won't save in the cache, to avoid evicting other data.
 	bool save_marks_in_cache;
 
 	MergeTreeData & storage;

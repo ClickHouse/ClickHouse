@@ -38,7 +38,7 @@ namespace ErrorCodes
 MergeTreeReader::~MergeTreeReader() = default;
 
 
-MergeTreeReader::MergeTreeReader(const String & path, /// Путь к куску
+MergeTreeReader::MergeTreeReader(const String & path,
 	const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
 	UncompressedCache * uncompressed_cache, MarkCache * mark_cache, bool save_marks_in_cache,
 	MergeTreeData & storage, const MarkRanges & all_mark_ranges,
@@ -77,8 +77,9 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
 	{
 		size_t max_rows_to_read = (to_mark - from_mark) * storage.index_granularity;
 
-		/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
-		/// Если append, все значения nullptr, и offset_columns используется только для проверки, что столбец смещений уже прочитан.
+		/// Pointers to offset columns that are common to the nested data structure columns.
+		/// If append is true, then the value will be equal to nullptr and will be used only to
+		/// check that the offsets column has been already read.
 		OffsetColumns offset_columns;
 
 		for (const NameAndTypePair & it : columns)
@@ -86,7 +87,7 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
 			if (streams.end() == streams.find(it.name))
 				continue;
 
-			/// Все столбцы уже есть в блоке. Будем добавлять значения в конец.
+			/// The column is already present in the block so we will append the values to the end.
 			bool append = res.has(it.name);
 
 			ColumnWithTypeAndName column;
@@ -112,7 +113,7 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
 				is_nullable = false;
 			}
 
-			/// Для вложенных структур запоминаем указатели на столбцы со смещениями
+			/// For nested data structures collect pointers to offset columns.
 			if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(observed_type))
 			{
 				String name = DataTypeNested::extractNestedTableName(column.name);
@@ -120,7 +121,7 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
 				if (offset_columns.count(name) == 0)
 					offset_columns[name] = append ? nullptr : std::make_shared<ColumnArray::ColumnOffsets_t>();
 				else
-					read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
+					read_offsets = false; /// offsets have already been read on the previous iteration
 
 				if (!append)
 				{
@@ -138,7 +139,7 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
 			}
 			catch (Exception & e)
 			{
-				/// Более хорошая диагностика.
+				/// Better diagnostics.
 				e.addMessage("(while reading column " + column.name + ")");
 				throw;
 			}
@@ -152,7 +153,7 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
 		if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
 			storage.reportBrokenPart(data_part->name);
 
-		/// Более хорошая диагностика.
+		/// Better diagnostics.
 		e.addMessage("(while reading from part " + path + " from mark " + toString(from_mark) + " to " + toString(to_mark) + ")");
 		throw;
 	}
@@ -194,7 +195,7 @@ MergeTreeReader::Stream::Stream(
 	{
 		size_t right = all_mark_ranges[i].end;
 
-		/// Если правая граница лежит внутри блока, то его тоже придется читать.
+		/// If the end of range is inside the block, we will need to read it too.
 		if (right < marks_count && getMark(right).offset_in_decompressed_block > 0)
 		{
 			while (right < marks_count
@@ -205,7 +206,7 @@ MergeTreeReader::Stream::Stream(
 			}
 		}
 
-		/// Если правее засечек нет, просто используем max_read_buffer_size
+		/// If there are no marks after the end of range, just use max_read_buffer_size
 		if (right >= marks_count
 			|| (right + 1 == marks_count
 				&& getMark(right).offset_in_compressed_file
@@ -221,7 +222,7 @@ MergeTreeReader::Stream::Stream(
 
 	size_t buffer_size = std::min(max_read_buffer_size, max_mark_range);
 
-	/// Compute the estimated size of the data to be read.
+	/// Estimate size of the data to be read.
 	size_t estimated_size = 0;
 	if (aio_threshold > 0)
 	{
@@ -337,7 +338,7 @@ void MergeTreeReader::Stream::seekToMark(size_t index)
 	}
 	catch (Exception & e)
 	{
-		/// Более хорошая диагностика.
+		/// Better diagnostics.
 		if (e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND)
 			e.addMessage("(while seeking to mark " + toString(index)
 				+ " of column " + path_prefix + "; offsets are: "
@@ -382,7 +383,7 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 		/// Then create the stream that handles the data of the given column.
 		addStream(name, nested_type, all_mark_ranges, profile_callback, clock_type, level);
 	}
-	/// Для массивов используются отдельные потоки для размеров.
+	/// For arrays separate streams for sizes are used.
 	else if (type_arr)
 	{
 		String size_name = DataTypeNested::extractNestedTableName(name)
@@ -391,7 +392,7 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 			+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		String size_path = path + escaped_size_name + DATA_FILE_EXTENSION;
 
-		/// We don't have neither offsets neither data -> skipping, default values will be filled after
+		/// We have neither offsets nor data -> skipping, default values will be filled after
 		if (!data_file_exists && !Poco::File(size_path).exists())
 			return;
 
@@ -441,7 +442,7 @@ void MergeTreeReader::readData(
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-		/// Для массивов требуется сначала десериализовать размеры, а потом значения.
+		/// For arrays the sizes must be deserialized first, then the values.
 		if (read_offsets)
 		{
 			Stream & stream = *streams[DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)];
@@ -470,9 +471,8 @@ void MergeTreeReader::readData(
 
 				size_t read_internal_size = array.getData().size();
 
-				/** Исправление для ошибочно записанных пустых файлов с данными массива.
-					* Такое бывает после ALTER с добавлением новых столбцов во вложенную структуру данных.
-					*/
+				/// Fix for erroneously written empty files with array data.
+				/// This can happen after ALTER that adds new columns to nested data structures.
 				if (required_internal_size != read_internal_size)
 				{
 					if (read_internal_size != 0)
@@ -484,9 +484,8 @@ void MergeTreeReader::readData(
 							required_internal_size,
 							type_arr->getNestedType()->getDefault())).convertToFullColumn();
 
-					/** NOTE Можно было бы занулять этот столбец, чтобы он не добавлялся в блок,
-					  *  а впоследствии создавался с более правильными (из определения таблицы) значениями по-умолчанию.
-					  */
+					/// NOTE: we could zero this column so that it won't get added to the block
+					/// and later be recreated with more correct default values (from the table definition).
 				}
 			}
 		}
@@ -504,13 +503,13 @@ void MergeTreeReader::readData(
 		type.deserializeBinaryBulk(column, *stream.data_buffer, max_rows_to_read, avg_value_size_hint);
 		stream.cur_mark_idx = to_mark;
 
-		/// Вычисление подсказки о среднем размере значения.
+		/// Calculate the average value size hint.
 		size_t column_size = column.size();
 		if (column_size)
 		{
 			double current_avg_value_size = static_cast<double>(column.byteSize()) / column_size;
 
-			/// Эвристика, чтобы при изменениях, значение avg_value_size_hint быстро росло, но медленно уменьшалось.
+			/// Heuristic is chosen so that avg_value_size_hint increases rapidly but decreases slowly.
 			if (current_avg_value_size > avg_value_size_hint)
 				avg_value_size_hint = current_avg_value_size;
 			else if (current_avg_value_size * 2 < avg_value_size_hint)
@@ -527,14 +526,13 @@ void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_
 
 	try
 	{
-		/** Для недостающих столбцов из вложенной структуры нужно создавать не столбец пустых массивов, а столбец массивов
-		  * правильных длин.
-		  * TODO: Если для какой-то вложенной структуры были запрошены только отсутствующие столбцы, для них вернутся пустые
-		  * массивы, даже если в куске есть смещения для этой вложенной структуры. Это можно исправить.
-		  * NOTE: Похожий код есть в Block::addDefaults, но он немного отличается.
-		  */
+		/// For a missing column of a nested data structure we must create not a column of empty
+		/// arrays, but a column of arrays of correct length.
+		/// TODO: If for some nested data structure only missing columns were selected, the arrays in these columns will be empty,
+		/// even if the offsets for this nested structure are present in the current part. This can be fixed.
+		/// NOTE: Similar, but slightly different code is present in Block::addDefaults.
 
-		/// Сначала запомним столбцы смещений для всех массивов в блоке.
+		/// First, collect offset columns for all arrays in the block.
 		OffsetColumns offset_columns;
 		for (size_t i = 0; i < res.columns(); ++i)
 		{
@@ -559,7 +557,8 @@ void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_
 				String offsets_name = DataTypeNested::extractNestedTableName(column_name);
 				auto & offsets_column = offset_columns[offsets_name];
 
-				/// Если почему-то есть разные столбцы смещений для одной вложенной структуры, то берём непустой.
+				/// If for some reason multiple offsets columns are present for the same nested data structure,
+				/// choose the one that is not empty.
 				if (!offsets_column || offsets_column->empty())
 					offsets_column = array->getOffsetsColumn();
 			}
@@ -599,9 +598,8 @@ void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_
 				}
 				else
 				{
-					/** Нужно превратить константный столбец в полноценный, так как в части блоков (из других кусков),
-					  * он может быть полноценным (а то интерпретатор может посчитать, что он константный везде).
-					  */
+					/// We must turn a constant column into a full column because the interpreter could infer that it is constant everywhere
+					/// but in some blocks (from other parts) it can be a full column.
 					column_to_add.column = dynamic_cast<IColumnConst &>(*column_to_add.type->createConstColumn(
 						res.rows(), column_to_add.type->getDefault())).convertToFullColumn();
 				}
@@ -628,7 +626,7 @@ void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_
 	}
 	catch (Exception & e)
 	{
-		/// Более хорошая диагностика.
+		/// Better diagnostics.
 		e.addMessage("(while reading from part " + path + ")");
 		throw;
 	}
