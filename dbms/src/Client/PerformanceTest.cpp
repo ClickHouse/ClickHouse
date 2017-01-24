@@ -67,7 +67,7 @@ private:
 	ThreadPool pool;
 
 	using XMLConfiguration  = Poco::Util::XMLConfiguration;
-	using AbstractConfiguration = Poco::Util::AbstractConfiguration;
+	using AbstractConfig    = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 	using Config            = Poco::AutoPtr<XMLConfiguration>;
 	using Paths             = std::vector<std::string>;
 	using StringToVector    = std::map< std::string, std::vector<std::string> >;
@@ -87,13 +87,13 @@ private:
 
 		// for now let's launch one test only
 		if (testsConfigurations.size()) {
-			for (auto testConfig : testsConfigurations) {
+			for (auto & testConfig : testsConfigurations) {
 				runTest(testConfig);
 			}
 		}
 	}
 
-	void runTest(const Config & testConfig)
+	void runTest(Config & testConfig)
 	{
 		std::cout << "Running: " << testConfig->getString("name") << "\n";
 
@@ -135,22 +135,18 @@ private:
 		}
 
 		if (testConfig->has("substitutions")) {
-			const AbstractConfiguration * substitutionsView =
-									    testConfig->createView("substitutions");
+			/// Make "subconfig" of inner xml block
+			AbstractConfig substitutionsView(testConfig
+											 ->createView("substitutions"));
 
 			StringToVector substitutions;
 			constructSubstitutions(substitutionsView, substitutions);
 
 			std::vector<std::string> queries = formatQueries(query, substitutions);
-
-			std::cout << std::endl;
-			for (size_t i = 0; i != queries.size(); ++i) {
-				std::cout << queries[i] << std::endl;
-			}
 		}
 	}
 
-	void constructSubstitutions(const AbstractConfiguration * substitutionsView,
+	void constructSubstitutions(AbstractConfig & substitutionsView,
 						        StringToVector & substitutions)
 	{
 		using Keys = std::vector<std::string>;
@@ -158,10 +154,13 @@ private:
 		substitutionsView->keys(xml_substitutions);
 
 		for (size_t i = 0; i != xml_substitutions.size(); ++i) {
-			const AbstractConfiguration * xml_substitution =
-					   substitutionsView->createView("substitution[" +
-					   								 std::to_string(i) + "]");
+			const AbstractConfig xml_substitution(
+				substitutionsView->createView("substitution[" +
+			   								  std::to_string(i) + "]")
+			);
 
+			/// Property values for substitution will be stored in a vector
+			/// accessible by property name
 			std::vector<std::string> xml_values;
 			xml_substitution->keys("values", xml_values);
 
@@ -172,10 +171,6 @@ private:
 					xml_substitution->getString("values.value[" +
 											    std::to_string(j) + "]")
 				);
-			}
-
-			for (size_t k = 0; k != substitutions[name].size(); ++k) {
-				std::cout << "name: " << name << " --> " << substitutions[name][k] << std::endl;
 			}
 		}
 	}
@@ -196,6 +191,8 @@ private:
 		return queries;
 	}
 
+	/// Recursive method which goes through all substitution blocks in xml
+	/// and replaces property {names} by their values
 	void runThroughAllOptionsAndPush(
 		StringToVector::iterator substitutions_left,
 		StringToVector::iterator substitutions_right,
@@ -207,6 +204,7 @@ private:
 		std::vector<std::string> values = substitutions_left->second;
 
 		for (auto value = values.begin(); value != values.end(); ++value) {
+			/// Copy query string for each unique permutation
 			std::string query = template_query;
 			size_t substrPos  = 0;
 
@@ -215,12 +213,13 @@ private:
 
 				if (substrPos != std::string::npos) {
 					query.replace(
-						substrPos, 2 + name.length(),
+						substrPos, 1 + name.length() + 1,
 						*value
 					);
 				}
 			}
 
+			/// If we've reached the end of substitution chain
 			if (substitutions_left == substitutions_right) {
 				queries.push_back(query);
 			} else {
