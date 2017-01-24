@@ -592,14 +592,18 @@ void InterpreterCreateQuery::writeToZookeeper(ASTPtr query, const std::vector<Cl
 {
 	auto zookeeper = context.getZooKeeper();
 	ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query);
-	const std::string base_path = "/clickhouse/task_queue/ddl/create/" + create.table;
-
-	zookeeper->createAncestors(base_path);
-	zookeeper->createIfNotExists(base_path, "");
+	std::string table_name = create.database + "." + create.table;
 
 	for (const auto & addr : addrs)
 	{
-		zookeeper->create(base_path + "/" + addr.host_name, "", 0);
+		const std::string & path =
+			"/clickhouse/task_queue/ddl/" +
+			addr.host_name + ":" + std::to_string(addr.port) +
+			"/create/" + table_name;
+
+		// TODO catch exceptions
+		zookeeper->createAncestors(path);
+		zookeeper->create(path, formatASTToString(*query), 0);
 	}
 }
 
@@ -623,8 +627,6 @@ BlockIO InterpreterCreateQuery::createTableOnCluster(ASTCreateQuery & create)
 			{
 				failed.push_back(addr);
 			}
-
-			failed.push_back(addr);
 		}
 	}
 
