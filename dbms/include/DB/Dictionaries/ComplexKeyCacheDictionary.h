@@ -9,13 +9,10 @@
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Core/StringRef.h>
-#include <ext/enumerate.hpp>
 #include <ext/scope_guard.hpp>
 #include <ext/bit_cast.hpp>
-#include <ext/range.hpp>
 #include <ext/map.hpp>
 #include <Poco/RWLock.h>
-#include <cmath>
 #include <atomic>
 #include <chrono>
 #include <vector>
@@ -23,6 +20,23 @@
 #include <tuple>
 #include <random>
 
+namespace ProfileEvents
+{
+	extern const Event DictCacheKeysRequested;
+	extern const Event DictCacheKeysRequestedMiss;
+	extern const Event DictCacheKeysRequestedFound;
+	extern const Event DictCacheKeysExpired;
+	extern const Event DictCacheKeysNotFound;
+	extern const Event DictCacheKeysHit;
+	extern const Event DictCacheRequestTimeNs;
+	extern const Event DictCacheLockWriteNs;
+	extern const Event DictCacheLockReadNs;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric DictCacheRequests;
+}
 
 namespace DB
 {

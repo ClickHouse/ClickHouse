@@ -33,6 +33,7 @@
 	M(ContextLockWait) \
 	M(StorageBufferRows) \
 	M(StorageBufferBytes) \
+	M(DictCacheRequests) \
 
 
 namespace CurrentMetrics

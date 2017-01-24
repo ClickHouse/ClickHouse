@@ -1,6 +1,9 @@
 #include <DB/Dictionaries/ComplexKeyCacheDictionary.h>
 #include <DB/Common/BitHelpers.h>
 #include <DB/Common/randomSeed.h>
+#include <DB/Common/Stopwatch.h>
+#include <DB/Common/ProfilingScopedRWLock.h>
+#include <ext/range.hpp>
 
 
 namespace DB
@@ -184,8 +187,11 @@ void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, co
 	Arena temporary_keys_pool;
 	PODArray<StringRef> keys_array(rows);
 
+	size_t cache_expired = 0;
+	size_t cache_not_found = 0;
+	size_t cache_hit = 0;
 	{
-		const Poco::ScopedReadRWLock read_lock{rw_lock};
+		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
 		const auto now = std::chrono::system_clock::now();
 		/// fetch up-to-date values, decide which ones require update
@@ -201,12 +207,26 @@ void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, co
 				*	1. keys (or hash) do not match,
 				*	2. cell has expired,
 				*	3. explicit defaults were specified and cell was set default. */
-			if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
+			if (cell.hash != hash || cell.key != key)
+			{
+				++cache_not_found;
 				outdated_keys[key].push_back(row);
+			}
+			else if (cell.expiresAt() < now)
+			{
+				++cache_expired;
+				outdated_keys[key].push_back(row);
+			}
 			else
+			{
+				++cache_hit;
 				out[row] = !cell.isDefault();
+			}
 		}
 	}
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
 	query_count.fetch_add(rows, std::memory_order_relaxed);
 	hit_count.fetch_add(rows - outdated_keys.size(), std::memory_order_release);
@@ -365,7 +385,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 	PODArray<StringRef> keys_array(rows);
 
 	{
-		const Poco::ScopedReadRWLock read_lock{rw_lock};
+		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
 		const auto now = std::chrono::system_clock::now();
 		/// fetch up-to-date values, decide which ones require update
@@ -432,7 +452,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 
 	/// perform optimistic version, fallback to pessimistic if failed
 	{
-		const Poco::ScopedReadRWLock read_lock{rw_lock};
+		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
 		const auto now = std::chrono::system_clock::now();
 		/// fetch up-to-date values, discard on fail
@@ -477,7 +497,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 
 	size_t total_length = 0;
 	{
-		const Poco::ScopedReadRWLock read_lock{rw_lock};
+		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
 		const auto now = std::chrono::system_clock::now();
 		for (const auto row : ext::range(0, rows))
@@ -558,8 +578,9 @@ void ComplexKeyCacheDictionary::update(
 		dict_lifetime.max_sec
 	};
 
-	const Poco::ScopedWriteRWLock write_lock{rw_lock};
-
+	const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+	{
+	Stopwatch watch;
 	auto stream = source_ptr->loadKeys(in_key_columns, in_requested_rows);
 	stream->readPrefix();
 
@@ -637,11 +658,23 @@ void ComplexKeyCacheDictionary::update(
 
 	stream->readSuffix();
 
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, in_requested_rows.size());
+	ProfileEvents::increment(ProfileEvents::DictCacheRequestTimeNs, watch.elapsed());
+	}
+
+	size_t found_num = 0;
+	size_t not_found_num = 0;
+
 	/// Check which ids have not been found and require setting null_value
 	for (const auto key_found_pair : remaining_keys)
 	{
 		if (key_found_pair.second)
+		{
+			++found_num;
 			continue;
+		}
+
+		++not_found_num;
 
 		auto key = key_found_pair.first;
 		const auto hash = StringRefHash{}(key);
@@ -680,6 +713,10 @@ void ComplexKeyCacheDictionary::update(
 		/// inform caller that the cell has not been found
 		on_key_not_found(key, cell_idx);
 	}
+
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, found_num);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
+
 }
 
 

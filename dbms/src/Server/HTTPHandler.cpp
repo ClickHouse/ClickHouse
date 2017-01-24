@@ -2,7 +2,6 @@
 
 #include <Poco/Net/HTTPBasicCredentials.h>
 
-#include <DB/Common/Stopwatch.h>
 #include <DB/Common/StringUtils.h>
 
 #include <DB/IO/ReadBufferFromIStream.h>
