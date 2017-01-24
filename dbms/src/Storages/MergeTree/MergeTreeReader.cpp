@@ -194,6 +194,8 @@ MergeTreeReader::Stream::Stream(
 	for (size_t i = 0; i < all_mark_ranges.size(); ++i)
 	{
 		size_t right = all_mark_ranges[i].end;
+		/// NOTE: if we are reading the whole file, then right == marks_count
+		/// and we will use max_read_buffer_size for buffer size, thus avoiding the need to load marks.
 
 		/// If the end of range is inside the block, we will need to read it too.
 		if (right < marks_count && getMark(right).offset_in_decompressed_block > 0)
