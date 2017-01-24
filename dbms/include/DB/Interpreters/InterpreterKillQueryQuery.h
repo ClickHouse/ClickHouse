@@ -18,7 +18,6 @@ public:
 
 private:
 
-	String getSelectFromSystemProcessesQuery();
 	Block getSelectFromSystemProcessesResult();
 
 	ASTPtr query_ptr;

@@ -4,6 +4,7 @@
 #include <DB/Parsers/ParserTablePropertiesQuery.h>
 #include <DB/Parsers/ParserShowProcesslistQuery.h>
 #include <DB/Parsers/ParserCheckQuery.h>
+#include <DB/Parsers/ParserKillQueryQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Common/typeid_cast.h>
@@ -19,6 +20,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 	ParserTablePropertiesQuery table_p;
 	ParserShowProcesslistQuery show_processlist_p;
 	ParserCheckQuery check_p;
+	ParserKillQueryQuery kill_query_p;
 
 	ASTPtr query;
 
@@ -26,7 +28,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 		|| show_tables_p.parse(pos, end, query, max_parsed_pos, expected)
 		|| table_p.parse(pos, end, query, max_parsed_pos, expected)
 		|| show_processlist_p.parse(pos, end, query, max_parsed_pos, expected)
-		|| check_p.parse(pos, end, query, max_parsed_pos, expected);
+		|| check_p.parse(pos, end, query, max_parsed_pos, expected)
+		|| kill_query_p.parse(pos, end, query, max_parsed_pos, expected);
 
 	if (!parsed)
 		return false;

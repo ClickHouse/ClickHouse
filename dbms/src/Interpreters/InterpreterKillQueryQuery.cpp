@@ -1,5 +1,6 @@
 #include <DB/Interpreters/InterpreterKillQueryQuery.h>
 #include <DB/Parsers/ASTKillQueryQuery.h>
+#include <DB/Parsers/queryToString.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Columns/ColumnString.h>
@@ -175,12 +176,14 @@ BlockIO InterpreterKillQueryQuery::execute()
 {
 	ASTKillQueryQuery & query = typeid_cast<ASTKillQueryQuery &>(*query_ptr);
 
+	BlockIO res_io;
 	Block processes_block = getSelectFromSystemProcessesResult();
+	if (!processes_block)
+		return res_io;
 
 	ProcessList & process_list = context.getProcessList();
 	QueryDescriptors queries_to_stop = extractQueriesExceptMeAndCheckAccess(processes_block, context);
 
-	BlockIO res_io;
 	res_io.in_sample = processes_block.cloneEmpty();
 	res_io.in_sample.insert(0, {std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "kill_status"});
 
@@ -205,28 +208,18 @@ BlockIO InterpreterKillQueryQuery::execute()
 	return res_io;
 }
 
-String InterpreterKillQueryQuery::getSelectFromSystemProcessesQuery()
-{
-	std::stringstream system_processes_query;
-	system_processes_query << "SELECT query_id, user, query FROM system.processes WHERE ";
-
-	IAST::FormatSettings ast_format_settings(system_processes_query, false, true);
-	static_cast<ASTKillQueryQuery &>(*query_ptr).where_expression->format(ast_format_settings);
-
-	return system_processes_query.str();
-}
-
 Block InterpreterKillQueryQuery::getSelectFromSystemProcessesResult()
 {
-	String system_processes_query = getSelectFromSystemProcessesQuery();
+	String system_processes_query = "SELECT query_id, user, query FROM system.processes WHERE "
+		+ queryToString(static_cast<ASTKillQueryQuery &>(*query_ptr).where_expression);
 
 	// std::cerr << "executing: " << system_processes_query << "\n";
 
 	BlockIO system_processes_io = executeQuery(system_processes_query, context, true);
 	Block res = system_processes_io.in->read();
 
-	if (!res || system_processes_io.in->read())
-		throw Exception("Expected only one block from input stream", ErrorCodes::LOGICAL_ERROR);
+	if (res && system_processes_io.in->read())
+		throw Exception("Expected one block from input stream", ErrorCodes::LOGICAL_ERROR);
 
 	return res;
 }
