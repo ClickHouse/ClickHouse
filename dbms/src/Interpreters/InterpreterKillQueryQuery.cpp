@@ -115,12 +115,12 @@ public:
 
 	String getName() const override
 	{
-		return "SyncronizedQueryKiller";
+		return "SynchronousQueryKiller";
 	}
 
 	String getID() const override
 	{
-		return "SyncronizedQueryKiller_" + toString(this);
+		return "SynchronousQueryKiller_" + toString(this);
 	}
 
 	Block readImpl() override
@@ -188,13 +188,13 @@ BlockIO InterpreterKillQueryQuery::execute()
 	res_io.in_sample = processes_block.cloneEmpty();
 	res_io.in_sample.insert(0, {std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "kill_status"});
 
-	if (!query.sync)
+	if (!query.sync || query.test)
 	{
 		Block res = res_io.in_sample.cloneEmpty();
 
 		for (const auto & query_desc : queries_to_stop)
 		{
-			auto code = process_list.sendCancelToQuery(query_desc.query_id, query_desc.user);
+			auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user);
 			insertResultRow(query_desc.source_num, code, processes_block, res);
 		}
 
@@ -213,8 +213,6 @@ Block InterpreterKillQueryQuery::getSelectFromSystemProcessesResult()
 {
 	String system_processes_query = "SELECT query_id, user, query FROM system.processes WHERE "
 		+ queryToString(static_cast<ASTKillQueryQuery &>(*query_ptr).where_expression);
-
-	// std::cerr << "executing: " << system_processes_query << "\n";
 
 	BlockIO system_processes_io = executeQuery(system_processes_query, context, true);
 	Block res = system_processes_io.in->read();

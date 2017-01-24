@@ -46,13 +46,14 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 
 	ws.ignore(pos, end);
 
-	query->sync = false;
 	if (ParserString{"SYNC", true, true}.ignore(pos, end))
 		query->sync = true;
 	else if (ParserString{"ASYNC", true, true}.ignore(pos, end))
 		query->sync = false;
+	else if (ParserString{"TEST", true, true}.ignore(pos, end))
+		query->test = true;
 	else
-		expected = "[SYNC|ASYNC]";
+		expected = "[SYNC|ASYNC|TEST]";
 
 	ws.ignore(pos, end);
 

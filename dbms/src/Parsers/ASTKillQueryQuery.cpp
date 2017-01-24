@@ -15,7 +15,7 @@ void ASTKillQueryQuery::formatQueryImpl(const FormatSettings & settings, FormatS
 	if (where_expression)
 		where_expression->formatImpl(settings, state, frame);
 
-	settings.ostr << (sync ? " SYNC" : " ASYNC");
+	settings.ostr << " " << (test ? "TEST" : (sync ? "SYNC" : "ASYNC"));
 }
 
 }
