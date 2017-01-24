@@ -39,14 +39,14 @@ BlockIO InterpreterRenameQuery::execute()
 
 	ASTRenameQuery & rename = typeid_cast<ASTRenameQuery &>(*query_ptr);
 
-	/** Если в процессе переименования произошла ошибка, то может быть переименована только часть таблиц,
-	  *  или состояние может стать неконсистентным. (Это имеет смысл исправить.)
+	/** In case of error while renaming, it is possible that only part of tables was renamed
+	  *  or we will be in inconsistent state. (It is worth to be fixed.)
 	  */
 
 	std::vector<RenameDescription> descriptions;
 	descriptions.reserve(rename.elements.size());
 
-	/// Для того, чтобы захватывать блокировки таблиц в одном и том же порядке в разных RENAME-ах.
+	/// To avoid deadlocks, we must acquire locks for tables in same order in any different RENAMES.
 	struct UniqueTableName
 	{
 		String database_name;
@@ -63,7 +63,7 @@ BlockIO InterpreterRenameQuery::execute()
 
 	std::set<UniqueTableName> unique_tables_from;
 
-	/// Не даёт удалять переименовываемые таблицы или создавать таблицы на месте, куда они переименовываются.
+	/// Don't allow to drop tables (that we are renaming); do't allow to create tables in places where tables will be renamed.
 	std::map<UniqueTableName, std::unique_ptr<DDLGuard>> table_guards;
 
 	for (const auto & elem : rename.elements)
@@ -97,10 +97,10 @@ BlockIO InterpreterRenameQuery::execute()
 		if (auto table = context.tryGetTable(names.database_name, names.table_name))
 			locks.emplace_back(table->lockForAlter());
 
-	/** Все таблицы заблокированы. Если переименований больше одного в цепочке, то
-	  *  на время их проведения, надо взять глобальную блокировку. Порядок важен, чтобы избежать deadlock-ов.
-	  * Это обеспечивает атомарность всех указанных RENAME с точки зрения пользователя СУБД,
-	  *  но лишь в случаях, когда в процессе переименования не было исключений и сервер не падал.
+	/** All tables are locked. If there are more than one rename in chain,
+	  *  we need to hold global lock while doing all renames. Order matters to avoid deadlocks.
+	  * It provides atomicity of all RENAME chain as a whole, from the point of view of DBMS client,
+	  *  but only in cases when there was no exceptions during this process and server does not fall.
 	  */
 
 	decltype(context.getLock()) lock;
@@ -113,7 +113,7 @@ BlockIO InterpreterRenameQuery::execute()
 		context.assertTableDoesntExist(elem.to_database_name, elem.to_table_name);
 
 		context.getDatabase(elem.from_database_name)->renameTable(
-			context, elem.from_table_name, *context.getDatabase(elem.to_database_name), elem.to_table_name);
+			context, elem.from_table_name, *context.getDatabase(elem.to_database_name), elem.to_table_name, context.getSettingsRef());
 	}
 
 	return {};

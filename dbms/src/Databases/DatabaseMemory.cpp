@@ -69,7 +69,8 @@ void DatabaseMemory::attachTable(const String & table_name, const StoragePtr & t
 		throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
-void DatabaseMemory::createTable(const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine)
+void DatabaseMemory::createTable(
+	const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings)
 {
 	attachTable(table_name, table);
 }
@@ -80,7 +81,7 @@ void DatabaseMemory::removeTable(const String & table_name)
 }
 
 void DatabaseMemory::renameTable(
-	const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name)
+	const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name, const Settings & settings)
 {
 	throw Exception("DatabaseMemory: renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
