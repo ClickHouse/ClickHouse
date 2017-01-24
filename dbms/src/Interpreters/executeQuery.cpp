@@ -191,12 +191,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 		auto interpreter = InterpreterFactory::get(ast, context, stage);
 		res = interpreter->execute();
 
-		/// Hold element of process list till end of query execution.
-		res.process_list_entry = process_list_entry;
-
 		/// Delayed initialization of query streams (required for KILL QUERY purposes)
 		if (!internal)
-			(*res.process_list_entry)->setQueryStreams(res);
+			(*process_list_entry)->setQueryStreams(res);
+
+		/// Hold element of process list till end of query execution.
+		res.process_list_entry = process_list_entry;
 
 		if (res.in)
 		{

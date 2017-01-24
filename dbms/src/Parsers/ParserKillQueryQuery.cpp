@@ -19,7 +19,7 @@ namespace DB
 bool ParserKillQueryQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
-	auto query = std::make_shared<ASTKillQueryQuery>(StringRange(begin, pos));
+	auto query = std::make_shared<ASTKillQueryQuery>();
 
 	ParserWhiteSpaceOrComments ws;
 
@@ -53,6 +53,10 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 		query->sync = false;
 	else
 		expected = "[SYNC|ASYNC]";
+
+	ws.ignore(pos, end);
+
+	query->range = StringRange(begin, pos);
 
 	node = std::move(query);
 
