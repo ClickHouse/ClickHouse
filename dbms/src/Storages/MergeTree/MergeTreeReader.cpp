@@ -148,6 +148,8 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
 				res.insert(std::move(column));
 		}
 
+		/// NOTE: positions for all streams must be kept in sync. In particular, even if for some streams there are no rows to be read,
+		/// you must ensure that no seeks are skipped and at this point they all point to to_mark.
 		cur_mark_idx = to_mark;
 	}
 	catch (Exception & e)
@@ -454,39 +456,33 @@ void MergeTreeReader::readData(
 				max_rows_to_read);
 		}
 
-		if (column.size())
+		ColumnArray & array = typeid_cast<ColumnArray &>(column);
+		const size_t required_internal_size = array.getOffsets().size() ? array.getOffsets()[array.getOffsets().size() - 1] : 0;
+
+		readData(
+			name,
+			*type_arr->getNestedType(),
+			array.getData(),
+			from_mark, required_internal_size - array.getData().size(),
+			level + 1);
+
+		size_t read_internal_size = array.getData().size();
+
+		/// Fix for erroneously written empty files with array data.
+		/// This can happen after ALTER that adds new columns to nested data structures.
+		if (required_internal_size != read_internal_size)
 		{
-			ColumnArray & array = typeid_cast<ColumnArray &>(column);
-			const size_t required_internal_size = array.getOffsets()[column.size() - 1];
+			if (read_internal_size != 0)
+				LOG_ERROR((&Logger::get("MergeTreeReader")),
+					"Internal size of array " + name + " doesn't match offsets: corrupted data, filling with default values.");
 
-			if (required_internal_size)
-			{
-				readData(
-					name,
-					*type_arr->getNestedType(),
-					array.getData(),
-					from_mark, required_internal_size - array.getData().size(),
-					level + 1);
+			array.getDataPtr() = dynamic_cast<IColumnConst &>(
+				*type_arr->getNestedType()->createConstColumn(
+					required_internal_size,
+					type_arr->getNestedType()->getDefault())).convertToFullColumn();
 
-				size_t read_internal_size = array.getData().size();
-
-				/// Fix for erroneously written empty files with array data.
-				/// This can happen after ALTER that adds new columns to nested data structures.
-				if (required_internal_size != read_internal_size)
-				{
-					if (read_internal_size != 0)
-						LOG_ERROR((&Logger::get("MergeTreeReader")),
-							"Internal size of array " + name + " doesn't match offsets: corrupted data, filling with default values.");
-
-					array.getDataPtr() = dynamic_cast<IColumnConst &>(
-						*type_arr->getNestedType()->createConstColumn(
-							required_internal_size,
-							type_arr->getNestedType()->getDefault())).convertToFullColumn();
-
-					/// NOTE: we could zero this column so that it won't get added to the block
-					/// and later be recreated with more correct default values (from the table definition).
-				}
-			}
+			/// NOTE: we could zero this column so that it won't get added to the block
+			/// and later be recreated with more correct default values (from the table definition).
 		}
 	}
 	else
