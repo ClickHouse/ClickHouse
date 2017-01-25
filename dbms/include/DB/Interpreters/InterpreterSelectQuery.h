@@ -145,7 +145,7 @@ private:
 	void executeLimit();
 	void executeProjection(ExpressionActionsPtr expression);
 	void executeDistinct(bool before_order, Names columns);
-	void executeSubqueriesInSetsAndJoins(std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+	void executeSubqueriesInSetsAndJoins(std::map<std::pair<UInt64, UInt64>, SubqueryForSet> & subqueries_for_sets);
 
 	template <typename Transform>
 	void transformStreams(Transform && transform);
