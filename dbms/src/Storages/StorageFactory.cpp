@@ -467,7 +467,8 @@ StoragePtr StorageFactory::get(
 		const auto & sharding_key = args.size() == 4 ? args[3] : nullptr;
 
 		/// Check that sharding_key exists in the table and has numeric type.
-		if (sharding_key) {
+		if (sharding_key)
+		{
 			auto ci = std::find_if(columns->begin(), columns->end(), [sharding_key] (const auto & column)
 				{
 					return column.name == sharding_key->getColumnName();
