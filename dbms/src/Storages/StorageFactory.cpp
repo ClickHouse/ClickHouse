@@ -5,6 +5,7 @@
 #include <DB/Common/StringUtils.h>
 
 #include <DB/Parsers/ASTCreateQuery.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
 
@@ -49,6 +50,7 @@ namespace ErrorCodes
 	extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 	extern const int UNKNOWN_IDENTIFIER;
 	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
+	extern const int TYPE_MISMATCH;
 }
 
 
@@ -463,6 +465,22 @@ StoragePtr StorageFactory::get(
 		String remote_table 	= static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
 
 		const auto & sharding_key = args.size() == 4 ? args[3] : nullptr;
+
+		/// Check that sharding_key exists in the table and has numeric type.
+		if (sharding_key) {
+			auto ci = std::find_if(columns->begin(), columns->end(), [sharding_key] (const auto & column)
+				{
+					return column.name == sharding_key->getColumnName();
+				}
+			);
+
+			if (ci == columns->end())
+				throw Exception("Sharding key column " + sharding_key->getColumnName() +
+				                " doesn't exists in the list of table's columns.", ErrorCodes::BAD_ARGUMENTS);
+			if (!ci->type->isNumeric())
+				throw Exception("Type of sharding key is " + ci->type->getName() +
+				                ", but should be one of integer type.", ErrorCodes::TYPE_MISMATCH);
+		}
 
 		return StorageDistributed::create(
 			table_name, columns,

@@ -66,12 +66,11 @@ std::vector<IColumn::Filter> DistributedBlockOutputStream::createFilters(Block b
 	/// check that key column has valid type
 	const auto it = creators.find(key_column.type->getName());
 
-	return it != std::end(creators)
-		? (*it->second)(block.rows(), key_column.column.get(), *cluster)
-		: throw Exception{
-			"Sharding key expression does not evaluate to an integer type",
-			ErrorCodes::TYPE_MISMATCH
-		};
+	if (it == std::end(creators))
+		throw Exception{"Sharding key expression does not evaluate to an integer type",
+			ErrorCodes::TYPE_MISMATCH};
+
+	return (*it->second)(block.rows(), key_column.column.get(), *cluster);
 }
 
 void DistributedBlockOutputStream::writeSplit(const Block & block)
