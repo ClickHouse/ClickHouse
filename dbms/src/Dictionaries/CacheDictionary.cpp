@@ -3,6 +3,11 @@
 #include <DB/Common/BitHelpers.h>
 #include <DB/Common/randomSeed.h>
 #include <DB/Common/HashTable/Hash.h>
+#include <DB/Common/Stopwatch.h>
+#include <DB/Common/ProfilingScopedRWLock.h>
+#include <ext/size.hpp>
+#include <ext/range.hpp>
+#include <ext/map.hpp>
 
 
 namespace DB
@@ -173,9 +178,12 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 	/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
 	std::unordered_map<Key, std::vector<std::size_t>> outdated_ids;
 
+	size_t cache_expired = 0;
+	size_t cache_not_found = 0;
+	size_t cache_hit = 0;
 	const auto rows = ext::size(ids);
 	{
-		const Poco::ScopedReadRWLock read_lock{rw_lock};
+		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
 		const auto now = std::chrono::system_clock::now();
 		/// fetch up-to-date values, decide which ones require update
@@ -189,12 +197,27 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 				*	1. ids do not match,
 				*	2. cell has expired,
 				*	3. explicit defaults were specified and cell was set default. */
-			if (cell.id != id || cell.expiresAt() < now)
+			if (cell.id != id)
+			{
+				++cache_not_found;
 				outdated_ids[id].push_back(row);
+			}
+			else if (cell.expiresAt() < now)
+			{
+				++cache_expired;
+				outdated_ids[id].push_back(row);
+			}
 			else
+			{
+				++cache_hit;
 				out[row] = !cell.isDefault();
+			}
 		}
 	}
+
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
 	query_count.fetch_add(rows, std::memory_order_relaxed);
 	hit_count.fetch_add(rows - outdated_ids.size(), std::memory_order_release);
@@ -350,7 +373,7 @@ void CacheDictionary::getItemsNumberImpl(
 	const auto rows = ext::size(ids);
 
 	{
-		const Poco::ScopedReadRWLock read_lock{rw_lock};
+		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
 		const auto now = std::chrono::system_clock::now();
 		/// fetch up-to-date values, decide which ones require update
@@ -411,7 +434,7 @@ void CacheDictionary::getItemsString(
 
 	/// perform optimistic version, fallback to pessimistic if failed
 	{
-		const Poco::ScopedReadRWLock read_lock{rw_lock};
+		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
 		const auto now = std::chrono::system_clock::now();
 		/// fetch up-to-date values, discard on fail
@@ -453,7 +476,7 @@ void CacheDictionary::getItemsString(
 
 	std::size_t total_length = 0;
 	{
-		const Poco::ScopedReadRWLock read_lock{rw_lock};
+		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
 		const auto now = std::chrono::system_clock::now();
 		for (const auto row : ext::range(0, ids.size()))
@@ -523,64 +546,78 @@ void CacheDictionary::update(
 		dict_lifetime.max_sec
 	};
 
-	const Poco::ScopedWriteRWLock write_lock{rw_lock};
+	const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
-	auto stream = source_ptr->loadIds(requested_ids);
-	stream->readPrefix();
-
-	while (const auto block = stream->read())
 	{
-		const auto id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
-		if (!id_column)
-			throw Exception{
-				name + ": id column has type different from UInt64.",
-				ErrorCodes::TYPE_MISMATCH};
+		CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
+		Stopwatch watch;
+		auto stream = source_ptr->loadIds(requested_ids);
+		stream->readPrefix();
 
-		const auto & ids = id_column->getData();
-
-		/// cache column pointers
-		const auto column_ptrs = ext::map<std::vector>(ext::range(0, attributes.size()), [&block] (const auto & i) {
-			return block.safeGetByPosition(i + 1).column.get();
-		});
-
-		for (const auto i : ext::range(0, ids.size()))
+		while (const auto block = stream->read())
 		{
-			const auto id = ids[i];
-			const auto cell_idx = getCellIdx(id);
-			auto & cell = cells[cell_idx];
+			const auto id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
+			if (!id_column)
+				throw Exception{
+					name + ": id column has type different from UInt64.",
+					ErrorCodes::TYPE_MISMATCH};
 
-			for (const auto attribute_idx : ext::range(0, attributes.size()))
+			const auto & ids = id_column->getData();
+
+			/// cache column pointers
+			const auto column_ptrs = ext::map<std::vector>(ext::range(0, attributes.size()), [&block] (const auto & i) {
+				return block.safeGetByPosition(i + 1).column.get();
+			});
+
+			for (const auto i : ext::range(0, ids.size()))
 			{
-				const auto & attribute_column = *column_ptrs[attribute_idx];
-				auto & attribute = attributes[attribute_idx];
+				const auto id = ids[i];
+				const auto cell_idx = getCellIdx(id);
+				auto & cell = cells[cell_idx];
 
-				setAttributeValue(attribute, cell_idx, attribute_column[i]);
+				for (const auto attribute_idx : ext::range(0, attributes.size()))
+				{
+					const auto & attribute_column = *column_ptrs[attribute_idx];
+					auto & attribute = attributes[attribute_idx];
+
+					setAttributeValue(attribute, cell_idx, attribute_column[i]);
+				}
+
+				/// if cell id is zero and zero does not map to this cell, then the cell is unused
+				if (cell.id == 0 && cell_idx != zero_cell_idx)
+					element_count.fetch_add(1, std::memory_order_relaxed);
+
+				cell.id = id;
+				if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
+					cell.setExpiresAt(std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)});
+				else
+					cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
+
+				/// inform caller
+				on_cell_updated(id, cell_idx);
+				/// mark corresponding id as found
+				remaining_ids[id] = 1;
 			}
-
-			/// if cell id is zero and zero does not map to this cell, then the cell is unused
-			if (cell.id == 0 && cell_idx != zero_cell_idx)
-				element_count.fetch_add(1, std::memory_order_relaxed);
-
-			cell.id = id;
-			if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
-				cell.setExpiresAt(std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)});
-			else
-				cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
-
-			/// inform caller
-			on_cell_updated(id, cell_idx);
-			/// mark corresponding id as found
-			remaining_ids[id] = 1;
 		}
+
+		stream->readSuffix();
+
+		ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, requested_ids.size());
+		ProfileEvents::increment(ProfileEvents::DictCacheRequestTimeNs, watch.elapsed());
 	}
 
-	stream->readSuffix();
+	size_t not_found_num = 0;
+	size_t found_num = 0;
 
 	/// Check which ids have not been found and require setting null_value
 	for (const auto id_found_pair : remaining_ids)
 	{
 		if (id_found_pair.second)
+		{
+			++found_num;
 			continue;
+		}
+		++not_found_num;
 
 		const auto id = id_found_pair.first;
 		const auto cell_idx = getCellIdx(id);
@@ -605,6 +642,10 @@ void CacheDictionary::update(
 		/// inform caller that the cell has not been found
 		on_id_not_found(id, cell_idx);
 	}
+
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_num);
+	ProfileEvents::increment(ProfileEvents::DictCacheRequests);
 }
 
 
