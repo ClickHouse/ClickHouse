@@ -16,6 +16,7 @@
 #include <DB/Storages/System/StorageSystemDictionaries.h>
 #include <DB/Storages/System/StorageSystemColumns.h>
 #include <DB/Storages/System/StorageSystemFunctions.h>
+#include <DB/Storages/System/StorageSystemBuildOptions.h>
 
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ProcessList.h>
@@ -410,6 +411,7 @@ void LocalServer::attachSystemTables()
 	system_database->attachTable("functions", 	StorageSystemFunctions::create("functions"));
 	system_database->attachTable("events", 		StorageSystemEvents::create("events"));
 	system_database->attachTable("settings", 	StorageSystemSettings::create("settings"));
+	system_database->attachTable("build_options", 	StorageSystemBuildOptions::create("build_options"));
 }
 
 

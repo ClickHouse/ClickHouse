@@ -1,5 +1,6 @@
-SET(CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_version.h)
-SET(CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
+set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_version.h)
+set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
+set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_build.h)
 
 include_directories (include)
 include_directories (BEFORE ${CMAKE_SOURCE_DIR}/contrib/libcctz/include)
@@ -12,19 +13,25 @@ if (APPLE)
 	else ()
 		set (APPLE_SIERRA_OR_NEWER 0)
 	endif ()
-endif()
+endif ()
 
-include(cmake/version.cmake)
-message(STATUS "Will build ${VERSION_FULL}")
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_common.h.in ${CONFIG_COMMON})
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_version.h.in ${CONFIG_VERSION})
+include (cmake/version.cmake)
+message (STATUS "Will build ${VERSION_FULL}")
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_common.h.in ${CONFIG_COMMON})
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_version.h.in ${CONFIG_VERSION})
+
+get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
+get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+
+string (TIMESTAMP BUILD_DATE UTC)
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_build.h.in ${CONFIG_BUILD})
 
 if (APPLE)
 	add_library (apple_rt
 		src/apple_rt.cpp
 		include/common/apple_rt.h
 	)
-endif()
+endif ()
 
 add_library (common
 	src/DateLUT.cpp

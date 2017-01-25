@@ -10,16 +10,16 @@ namespace DB
 class Context;
 
 
-/** implements system table "settings", which allows to get information about the current settings.
+/** System table "build_options" with many params used for clickhouse building
   */
-class StorageSystemSettings : private ext::shared_ptr_helper<StorageSystemSettings>, public IStorage
+class StorageSystemBuildOptions : private ext::shared_ptr_helper<StorageSystemBuildOptions>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageSystemSettings>;
+friend class ext::shared_ptr_helper<StorageSystemBuildOptions>;
 
 public:
 	static StoragePtr create(const std::string & name_);
 
-	std::string getName() const override { return "SystemSettings"; }
+	std::string getName() const override { return "SystemBuildOptions"; }
 	std::string getTableName() const override { return name; }
 
 	const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
@@ -37,7 +37,7 @@ private:
 	const std::string name;
 	NamesAndTypesList columns;
 
-	StorageSystemSettings(const std::string & name_);
+	StorageSystemBuildOptions(const std::string & name_);
 };
 
 }

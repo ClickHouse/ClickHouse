@@ -41,6 +41,7 @@
 #include <DB/Storages/System/StorageSystemClusters.h>
 #include <DB/Storages/System/StorageSystemMetrics.h>
 #include <DB/Storages/System/StorageSystemAsynchronousMetrics.h>
+#include <DB/Storages/System/StorageSystemBuildOptions.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReshardingWorker.h>
 #include <DB/Databases/DatabaseOrdinary.h>
@@ -367,6 +368,7 @@ int Server::main(const std::vector<std::string> & args)
 	system_database->attachTable("columns",   	StorageSystemColumns::create("columns"));
 	system_database->attachTable("functions", 	StorageSystemFunctions::create("functions"));
 	system_database->attachTable("clusters", 	StorageSystemClusters::create("clusters", *global_context));
+	system_database->attachTable("build_options", 	StorageSystemBuildOptions::create("build_options"));
 
 	if (has_zookeeper)
 		system_database->attachTable("zookeeper", StorageSystemZooKeeper::create("zookeeper"));
