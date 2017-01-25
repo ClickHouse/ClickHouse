@@ -229,6 +229,7 @@ if __name__ == '__main__':
 	group.add_argument('--zookeeper', action = 'store_true', default = None, dest = 'zookeeper', help = 'Run zookeeper related tests')
 	group.add_argument('--no-zookeeper', action = 'store_false', default = None, dest = 'zookeeper', help = 'Do not run zookeeper related tests')
 	group.add_argument('--shard', action = 'store_true', default = None, dest = 'shard', help = 'Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
+	group.add_argument('--no-shard', action = 'store_false', default = None, dest = 'shard', help = 'Do not run shard related tests')
 
 	args = parser.parse_args()
 
