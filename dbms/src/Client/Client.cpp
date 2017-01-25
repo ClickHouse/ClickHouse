@@ -60,6 +60,7 @@
 
 #include <DB/Common/NetException.h>
 
+#include <common/config_common.h>
 
 /// Different line editing libraries can be used depending on the environment.
 #ifdef USE_READLINE
@@ -497,7 +498,7 @@ private:
 					std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
 					add_history(logged_query.c_str());
 
-#ifdef USE_READLINE
+#if USE_READLINE && HAVE_READLINE_HISTORY
 					if (!history_file.empty() && append_history(1, history_file.c_str()))
 						throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
 #endif
