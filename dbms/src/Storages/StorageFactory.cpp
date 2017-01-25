@@ -11,6 +11,7 @@
 
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/evaluateConstantExpression.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/getClusterName.h>
 
 #include <DB/Storages/StorageLog.h>
@@ -469,18 +470,17 @@ StoragePtr StorageFactory::get(
 		/// Check that sharding_key exists in the table and has numeric type.
 		if (sharding_key)
 		{
-			auto ci = std::find_if(columns->begin(), columns->end(), [sharding_key] (const auto & column)
-				{
-					return column.name == sharding_key->getColumnName();
-				}
-			);
+			auto sharding_expr = ExpressionAnalyzer(sharding_key, context, nullptr, *columns).getActions(false);
+			const Block & block = sharding_expr->getSampleBlock();
 
-			if (ci == columns->end())
-				throw Exception("Sharding key column " + sharding_key->getColumnName() +
-				                " doesn't exists in the list of table's columns.", ErrorCodes::BAD_ARGUMENTS);
-			if (!ci->type->isNumeric())
-				throw Exception("Type of sharding key is " + ci->type->getName() +
-				                ", but should be one of integer type.", ErrorCodes::TYPE_MISMATCH);
+			if (block.columns() != 0)
+			{
+				auto type = block.getColumns().back().type;
+
+				if (!type->isNumeric())
+					throw Exception("Sharding expression has type " + type->getName() +
+									", but should be one of integer type", ErrorCodes::TYPE_MISMATCH);
+			}
 		}
 
 		return StorageDistributed::create(
