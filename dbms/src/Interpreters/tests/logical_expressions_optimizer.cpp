@@ -252,7 +252,7 @@ bool equals(const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
 	DB::ASTPtr rhs_reordered = rhs->clone();
 	reorder(&*rhs_reordered);
 
-	return lhs_reordered->getTreeID() == rhs_reordered->getTreeID();
+	return lhs_reordered->getTreeHash() == rhs_reordered->getTreeHash();
 }
 
 void reorderImpl(DB::IAST * ast)
@@ -269,7 +269,7 @@ void reorderImpl(DB::IAST * ast)
 
 	std::sort(children.begin(), children.end(), [](const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
 	{
-		return lhs->getTreeID() < rhs->getTreeID();
+		return lhs->getTreeHash() < rhs->getTreeHash();
 	});
 }
 
