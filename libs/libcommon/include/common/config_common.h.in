@@ -4,3 +4,7 @@
 
 #cmakedefine01 APPLE_SIERRA_OR_NEWER
 #cmakedefine01 ENABLE_LIBTCMALLOC
+
+#cmakedefine01 USE_READLINE
+#cmakedefine01 USE_LIBEDIT
+#cmakedefine01 HAVE_READLINE_HISTORY
