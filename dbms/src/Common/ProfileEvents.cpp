@@ -104,6 +104,18 @@
 	M(ContextLock) \
 	\
 	M(StorageBufferErrorOnFlush) \
+	\
+	M(DictCacheKeysRequested) \
+	M(DictCacheKeysRequestedMiss) \
+	M(DictCacheKeysRequestedFound) \
+	M(DictCacheKeysExpired) \
+	M(DictCacheKeysNotFound) \
+	M(DictCacheKeysHit) \
+	M(DictCacheRequestTimeNs) \
+	M(DictCacheRequests) \
+	M(DictCacheLockWriteNs) \
+	M(DictCacheLockReadNs) \
+
 
 namespace ProfileEvents
 {
