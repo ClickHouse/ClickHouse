@@ -54,8 +54,7 @@ struct SubqueryForSet
 };
 
 /// ID подзапроса -> что с ним делать.
-using ASTHash = std::pair<UInt64, UInt64>;
-using SubqueriesForSets = std::map<ASTHash, SubqueryForSet>;
+using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
 
 /** Превращает выражение из синтаксического дерева в последовательность действий для его выполнения.

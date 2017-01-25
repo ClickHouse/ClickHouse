@@ -2204,7 +2204,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		getRootActions(join_params.using_expression_list, only_types, false, step.actions);
 
 	/// Не поддерживается два JOIN-а с одинаковым подзапросом, но разными USING-ами.
-	String join_id = join_element.getTreeHash();
+	String join_id = join_element.getTreeID();
 
 	SubqueryForSet & subquery_for_set = subqueries_for_sets[join_id];
 
