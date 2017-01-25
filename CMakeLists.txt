@@ -172,10 +172,13 @@ else ()
 endif ()
 
 include (cmake/find_openssl.cmake)
+include (cmake/find_icu4c.cmake)
 include (cmake/find_boost.cmake)
 include (cmake/find_poco.cmake)
 include (cmake/find_libtool.cmake)
 include (cmake/find_rt.cmake)
+include (cmake/find_readline_edit.cmake)
+
 if (ENABLE_LIBTCMALLOC)
     include (cmake/find_gperftools.cmake)
 endif ()
