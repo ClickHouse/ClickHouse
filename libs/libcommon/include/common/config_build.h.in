@@ -5,7 +5,7 @@
 #include <utility>
 #include <array>
 
-const std::array<std::pair<const char *, const char *>, 18> auto_config_build { {
+const std::array<std::pair<const char *, const char *>, 16> auto_config_build { {
 	{"BUILD_DATE", "@BUILD_DATE@"},
 	{"CMAKE_VERSION", "@CMAKE_VERSION@"},
 	{"SYSTEM_NAME", "@CMAKE_SYSTEM_NAME@"},
