@@ -229,7 +229,9 @@ struct SimpleHash
 
 		if (size < 8)
 		{
+#if defined(__x86_64__)
 			return hashLessThan8(x.data, x.size);
+#endif
 		}
 
 		while (pos + 8 < end)
@@ -264,7 +266,9 @@ struct VerySimpleHash
 
 		if (size < 8)
 		{
+#if defined(__x86_64__)
 			return hashLessThan8(x.data, x.size);
+#endif
 		}
 
 		while (pos + 8 < end)
