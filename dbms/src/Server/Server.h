@@ -44,19 +44,19 @@ public:
 	std::unique_ptr<Context> global_context;
 
 protected:
-	void initialize(Application & self)
+	void initialize(Application & self) override
 	{
 		BaseDaemon::initialize(self);
 		logger().information("starting up");
 	}
 
-	void uninitialize()
+	void uninitialize() override
 	{
 		logger().information("shutting down");
 		BaseDaemon::uninitialize();
 	}
 
-	int main(const std::vector<std::string> & args);
+	int main(const std::vector<std::string> & args) override;
 
 private:
 

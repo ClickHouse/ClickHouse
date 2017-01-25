@@ -1,17 +1,26 @@
-include_directories (BEFORE include)
-#include_directories (/usr/include/mysql)
+include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
 
-add_subdirectory (src)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/liblz4/include/)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include/)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libzstd/include/)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libsparsehash)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libre2/)
+include_directories (BEFORE ${ClickHouse_BINARY_DIR}/contrib/libre2/)
+include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include/)
 
-if (NOT ENABLE_LIBTCMALLOC)
-	add_definitions(-D NO_TCMALLOC)
+if (NOT NO_WERROR)
+	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
+	set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif ()
 
+add_subdirectory (src)
 
 add_library(string_utils
 	include/DB/Common/StringUtils.h
 	src/Common/StringUtils.cpp)
-
 
 set(dbms_headers)
 set(dbms_sources)

@@ -1,6 +1,7 @@
 #include <DB/Analyzers/CollectAliases.h>
 #include <DB/Analyzers/CollectTables.h>
 #include <DB/Analyzers/AnalyzeColumns.h>
+#include <DB/Analyzers/AnalyzeLambdas.h>
 #include <DB/Analyzers/TypeAndConstantInference.h>
 #include <DB/Analyzers/TranslatePositionalArguments.h>
 #include <DB/Analyzers/OptimizeGroupOrderLimitBy.h>
@@ -41,6 +42,9 @@ try
 	system_database->attachTable("numbers", 	StorageSystemNumbers::create("numbers"));
 	context.setCurrentDatabase("system");
 
+	AnalyzeLambdas analyze_lambdas;
+	analyze_lambdas.process(ast);
+
 	CollectAliases collect_aliases;
 	collect_aliases.process(ast);
 
@@ -51,7 +55,7 @@ try
 	analyze_columns.process(ast, collect_aliases, collect_tables);
 
 	TypeAndConstantInference inference;
-	inference.process(ast, context, collect_aliases, analyze_columns);
+	inference.process(ast, context, collect_aliases, analyze_columns, analyze_lambdas);
 
 	TranslatePositionalArguments translation;
 	translation.process(ast);

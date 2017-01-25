@@ -2,11 +2,12 @@
 
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/MergeTree/RangesInDataPart.h>
-#include <DB/Storages/MergeTree/PKCondition.h>
 
 
 namespace DB
 {
+
+class PKCondition;
 
 
 /** Выполняет запросы SELECT на данных из merge-дерева.

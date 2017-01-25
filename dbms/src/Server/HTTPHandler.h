@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DB/IO/WriteBufferFromHTTPServerResponse.h>
 #include <DB/Common/CurrentMetrics.h>
 #include "Server.h"
 
@@ -13,6 +12,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
+class WriteBufferFromHTTPServerResponse;
 
 class HTTPHandler : public Poco::Net::HTTPRequestHandler
 {
@@ -32,7 +32,7 @@ public:
 
 	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 
-	void trySendExceptionToClient(const std::string & s,
+	void trySendExceptionToClient(const std::string & s, int exception_code,
 		Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
 		Output & used_output);
 

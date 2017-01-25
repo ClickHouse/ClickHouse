@@ -3,6 +3,7 @@
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
 #include <DB/Storages/MergeTree/MergeTreePartChecker.h>
+#include <DB/Storages/AlterCommands.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
@@ -19,6 +20,7 @@
 #include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/Common/localBackup.h>
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
 #include <Poco/DirectoryIterator.h>
 #include <DB/Common/Increment.h>
 #include <DB/Common/escapeForFileName.h>

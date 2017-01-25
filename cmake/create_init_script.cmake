@@ -6,7 +6,7 @@
 # Будет создан init.d скрипт с названием divider для демона (бинарника) Divider
 
 macro (create_init_script daemonname)
-	set (filename ${daemonname}-metrika-yandex)
+	set (filename ${daemonname})
 	# Опционально принимаем filename вторым аргументом.
 	set (extra_args ${ARGN})
 	list (LENGTH extra_args num_extra_args)

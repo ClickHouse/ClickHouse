@@ -14,6 +14,7 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Common/CurrentMetrics.h>
 #include <DB/Common/escapeForFileName.h>
+#include <Poco/File.h>
 
 
 namespace CurrentMetrics

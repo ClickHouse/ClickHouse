@@ -1,7 +1,11 @@
 #pragma once
 
+#include <mutex>
 #include <DB/Databases/IDatabase.h>
 #include <DB/Storages/IStorage.h>
+
+
+namespace Poco { class Logger; }
 
 
 namespace DB
@@ -19,7 +23,7 @@ protected:
 	mutable std::mutex mutex;
 	Tables tables;
 
-	Logger * log;
+	Poco::Logger * log;
 
 public:
 
@@ -36,13 +40,16 @@ public:
 
 	bool empty() const override;
 
-	void createTable(const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine) override;
+	void createTable(
+		const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings) override;
+
 	void removeTable(const String & table_name) override;
 
 	void attachTable(const String & table_name, const StoragePtr & table) override;
 	StoragePtr detachTable(const String & table_name) override;
 
-	void renameTable(const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name) override;
+	void renameTable(
+		const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name, const Settings & settings) override;
 
 	time_t getTableMetadataModificationTime(const String & table_name) override;
 

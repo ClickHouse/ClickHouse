@@ -1,7 +1,6 @@
 #pragma once
 
-#include <city.h>
-#include <openssl/md5.h>
+#include <array>
 
 #include <DB/Common/SipHash.h>
 #include <DB/Common/Arena.h>

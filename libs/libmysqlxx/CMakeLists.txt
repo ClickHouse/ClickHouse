@@ -1,10 +1,20 @@
+
+include (cmake/find_mysqlclient.cmake)
+
+include_directories (include)
+include_directories (${CMAKE_SOURCE_DIR}/libs/libcommon/include)
+include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
+
 add_library (mysqlxx
 	src/Connection.cpp
+	src/Exception.cpp
 	src/Query.cpp
 	src/ResultBase.cpp
 	src/StoreQueryResult.cpp
 	src/UseQueryResult.cpp
+	src/Row.cpp
 	src/Value.cpp
+	src/Pool.cpp
 	src/PoolWithFailover.cpp
 
 	include/mysqlxx/Connection.h

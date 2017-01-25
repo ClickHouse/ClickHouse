@@ -1,6 +1,7 @@
 #include <DB/Analyzers/CollectAliases.h>
 #include <DB/Analyzers/CollectTables.h>
 #include <DB/Analyzers/AnalyzeColumns.h>
+#include <DB/Analyzers/AnalyzeLambdas.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
@@ -37,6 +38,9 @@ try
 	system_database->attachTable("one",			StorageSystemOne::create("one"));
 	system_database->attachTable("numbers", 	StorageSystemNumbers::create("numbers"));
 	context.setCurrentDatabase("system");
+
+	AnalyzeLambdas analyze_lambdas;
+	analyze_lambdas.process(ast);
 
 	CollectAliases collect_aliases;
 	collect_aliases.process(ast);

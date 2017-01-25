@@ -9,7 +9,6 @@ function get_revision {
 	CURDIR=`pwd`
 	cd ${BASEDIR}
 	git rev-parse --git-dir >/dev/null 2>/dev/null || cd ${CURDIR}
-	git fetch --tags
 	git tag | tag_filter | tail -1 | sed 's/^v1\.1\.\(.*\)-testing$/\1/'
 	cd ${CURDIR}
 }

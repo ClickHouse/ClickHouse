@@ -1,3 +1,4 @@
+#include <DB/Core/Block.h>
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 
 

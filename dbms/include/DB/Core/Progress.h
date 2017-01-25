@@ -1,14 +1,16 @@
 #pragma once
 
+#include <atomic>
+#include <common/Common.h>
+
 #include <DB/Core/Defines.h>
-#include <DB/IO/ReadBuffer.h>
-#include <DB/IO/WriteBuffer.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB
 {
+
+class ReadBuffer;
+class WriteBuffer;
 
 
 /** Progress of query execution.
@@ -30,31 +32,11 @@ struct Progress
 	Progress(size_t rows_, size_t bytes_, size_t total_rows_ = 0)
 		: rows(rows_), bytes(bytes_), total_rows(total_rows_) {}
 
-	void read(ReadBuffer & in, UInt64 server_revision)
-	{
-		size_t new_rows = 0;
-		size_t new_bytes = 0;
-		size_t new_total_rows = 0;
+	void read(ReadBuffer & in, UInt64 server_revision);
+	void write(WriteBuffer & out, UInt64 client_revision) const;
 
-		readVarUInt(new_rows, in);
-		readVarUInt(new_bytes, in);
-
-		if (server_revision >= DBMS_MIN_REVISION_WITH_TOTAL_ROWS_IN_PROGRESS)
-			readVarUInt(new_total_rows, in);
-
-		rows = new_rows;
-		bytes = new_bytes;
-		total_rows = new_total_rows;
-	}
-
-	void write(WriteBuffer & out, UInt64 client_revision) const
-	{
-		writeVarUInt(rows, out);
-		writeVarUInt(bytes, out);
-
-		if (client_revision >= DBMS_MIN_REVISION_WITH_TOTAL_ROWS_IN_PROGRESS)
-			writeVarUInt(total_rows, out);
-	}
+	/// Progress in JSON format (single line, without whitespaces) is used in HTTP headers.
+	void writeJSON(WriteBuffer & out) const;
 
 	/// Each value separately is changed atomically (but not whole object).
 	void incrementPiecewiseAtomically(const Progress & rhs)

@@ -50,7 +50,7 @@ if (NOT AARCH64)
 	set (MACHINE_FLAGS "-msse4 -mpopcnt")
 endif ()
 
-set (COMMON_WARNING_FLAGS "-Wall -Werror")
+set (COMMON_WARNING_FLAGS "-Wall")	# -Werror is also added inside directories with our own code.
 set (CXX_WARNING_FLAGS "-Wnon-virtual-dtor")
 
 set (CXX11_ABI "ENABLE" CACHE STRING "Use C++11 ABI: DEFAULT, ENABLE, DISABLE")
@@ -61,8 +61,6 @@ option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
 if (NOT $ENV{USE_STATIC_LIBRARIES})
 	set (USE_STATIC_LIBRARIES FALSE)
 endif ()
-
-
 
 set (USE_INTERNAL_BOOST_LIBRARY TRUE CACHE BOOL "Set to FALSE to use system boost library instead of bundled")
 if (NOT $ENV{USE_INTERNAL_BOOST_LIBRARY})
@@ -76,10 +74,6 @@ endif ()
 option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ON)
 option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ON)
 
-option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan." OFF)
-if ($ENV{GLIBC_COMPATIBILITY})
-	set (GLIBC_COMPATIBILITY TRUE)
-endif ()
 
 option (ENABLE_LIBTCMALLOC "Set to TRUE to enable libtcmalloc." ON)
 if (NOT $ENV{ENABLE_LIBTCMALLOC})
@@ -89,6 +83,11 @@ endif ()
 option (DEBUG_LIBTCMALLOC "Set to TRUE to use debug version of libtcmalloc." OFF)
 if ($ENV{DEBUG_LIBTCMALLOC})
 	set (DEBUG_LIBTCMALLOC TRUE)
+endif ()
+
+option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan." OFF)
+if ($ENV{GLIBC_COMPATIBILITY})
+	set (GLIBC_COMPATIBILITY TRUE)
 endif ()
 
 if (GLIBC_COMPATIBILITY)
@@ -104,16 +103,24 @@ else ()
 	set (CXX11_ABI_FLAGS "")
 endif ()
 
-set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
-set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} -std=gnu++1y ${PLATFORM_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI_FLAGS}")
-#set (CMAKE_CXX_FLAGS_RELEASE            "${CMAKE_CXX_FLAGS_RELEASE}")
-set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3")
-set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline")
+set (COMPILER_FLAGS                       "${COMPILER_FLAGS} ${CXX11_ABI_FLAGS}")
 
-set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI_FLAGS}")
-#set (CMAKE_C_FLAGS_RELEASE              "${CMAKE_C_FLAGS_RELEASE}")
-set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3")
-set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline")
+option (PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
+if (PIPE)
+	set (COMPILER_FLAGS                   "${COMPILER_FLAGS} -pipe")
+endif ()
+
+
+set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
+set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} -std=gnu++1y ${PLATFORM_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
+set (CMAKE_CXX_FLAGS_RELEASE             "${CMAKE_CXX_FLAGS_RELEASE} ${COMPILER_FLAGS}")
+set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${COMPILER_FLAGS} -O3")
+set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} ${COMPILER_FLAGS} -O0 -g3 -ggdb3 -fno-inline")
+
+set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
+set (CMAKE_C_FLAGS_RELEASE               "${CMAKE_C_FLAGS_RELEASE} ${COMPILER_FLAGS}")
+set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${COMPILER_FLAGS} -O3")
+set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} ${COMPILER_FLAGS} -O0 -g3 -ggdb3 -fno-inline")
 
 if (NOT APPLE AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_SYSTEM MATCHES "FreeBSD"))
 	set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
@@ -123,16 +130,31 @@ if (NOT APPLE)
 	set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI_FLAGS}")
 endif ()
 
-# -fuse-ld=gold - fix linkage for gcc-5.4, gcc-6.1
-# See more in http://stackoverflow.com/questions/37603238/fsanitize-not-using-gold-linker-in-gcc-6-1
-set (CMAKE_CXX_FLAGS_ASAN                "${CMAKE_CXX_FLAGS_ASAN} -O3 -g -fsanitize=address -fno-omit-frame-pointer -fuse-ld=gold ${CXX11_ABI_FLAGS}")
-set (CMAKE_CXX_FLAGS_UBSAN               "${CMAKE_CXX_FLAGS_UBSAN} -O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI_FLAGS}")
-set (CMAKE_C_FLAGS_ASAN                  "${CMAKE_C_FLAGS_ASAN} -O3 -g -fsanitize=address -fno-omit-frame-pointer -fuse-ld=gold ${CXX11_ABI_FLAGS}")
-set (CMAKE_C_FLAGS_UBSAN                 "${CMAKE_C_FLAGS_UBSAN} -O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI_FLAGS}")
+if (USE_STATIC_LIBRARIES AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+	set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} -no-pie")
+	set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} -no-pie")
+endif ()
+
+
+set (SAN_FLAGS "-O3 -g -fno-omit-frame-pointer")
+set (CMAKE_CXX_FLAGS_ASAN                "${CMAKE_CXX_FLAGS_ASAN}  ${SAN_FLAGS} -fsanitize=address")
+set (CMAKE_C_FLAGS_ASAN                  "${CMAKE_C_FLAGS_ASAN}    ${SAN_FLAGS} -fsanitize=address")
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+	# -fuse-ld=gold - fix linkage for gcc-5.4, gcc-6.1
+	# See more in http://stackoverflow.com/questions/37603238/fsanitize-not-using-gold-linker-in-gcc-6-1
+	set (CMAKE_CXX_FLAGS_ASAN            "${CMAKE_CXX_FLAGS_ASAN} -fuse-ld=gold")
+	set (CMAKE_C_FLAGS_ASAN              "${CMAKE_C_FLAGS_ASAN}   -fuse-ld=gold")
+endif ()
+set (CMAKE_CXX_FLAGS_UBSAN               "${CMAKE_CXX_FLAGS_UBSAN} ${SAN_FLAGS} -fsanitize=undefined")
+set (CMAKE_C_FLAGS_UBSAN                 "${CMAKE_C_FLAGS_UBSAN}   ${SAN_FLAGS} -fsanitize=undefined")
+set (CMAKE_CXX_FLAGS_MSAN                "${CMAKE_CXX_FLAGS_MSAN}  ${SAN_FLAGS} -fsanitize=memory")
+set (CMAKE_C_FLAGS_MSAN                  "${CMAKE_C_FLAGS_MSAN}    ${SAN_FLAGS} -fsanitize=memory")
+set (CMAKE_CXX_FLAGS_TSAN                "${CMAKE_CXX_FLAGS_TSAN}  ${SAN_FLAGS} -fsanitize=thread")
+set (CMAKE_C_FLAGS_TSAN                  "${CMAKE_C_FLAGS_TSAN}    ${SAN_FLAGS} -fsanitize=thread")
 
 # Flags for test coverage
 if (TEST_COVERAGE)
-	set (CMAKE_CXX_FLAGS_DEBUG "-O0 -g -fprofile-arcs -ftest-coverage -fPIC -DIS_DEBUG ${CXX11_ABI_FLAGS}")
+	set (CMAKE_CXX_FLAGS_DEBUG "${COMPILER_FLAGS} -O0 -g -fprofile-arcs -ftest-coverage -fPIC -DIS_DEBUG")
 endif (TEST_COVERAGE)
 
 # Run tests with "make check"
@@ -149,33 +171,10 @@ else ()
 	set (CLICKHOUSE_ETC_DIR ${CMAKE_INSTALL_PREFIX}/etc)
 endif ()
 
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcityhash/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/liblz4/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdouble-conversion/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libzstd/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libsparsehash/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libre2/)
-include_directories (BEFORE ${ClickHouse_BINARY_DIR}/contrib/libre2/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libzookeeper/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/libs/libcommon/include/)
-include_directories (BEFORE ${ClickHouse_BINARY_DIR}/libs/libcommon/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/libs/libpocoext/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/libs/libmysqlxx/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/libs/libzkutil/include/)
-
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/dbms/include)
-
 include (cmake/find_openssl.cmake)
-include (cmake/find_icu4c.cmake)
 include (cmake/find_boost.cmake)
 include (cmake/find_poco.cmake)
 include (cmake/find_libtool.cmake)
-include (cmake/find_mysqlclient.cmake)
 include (cmake/find_rt.cmake)
 if (ENABLE_LIBTCMALLOC)
     include (cmake/find_gperftools.cmake)
@@ -183,17 +182,17 @@ endif ()
 
 # Directory for Yandex specific files
 set (CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)
+if (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
+	add_subdirectory (${CLICKHOUSE_PRIVATE_DIR})
+endif ()
 
 add_subdirectory (contrib)
 add_subdirectory (libs)
 add_subdirectory (utils)
 add_subdirectory (dbms)
 
-if (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
-	add_subdirectory (private)
-endif ()
-
-message (STATUS "C_FLAGS:  =${CMAKE_C_FLAGS}")
-message (STATUS "CXX_FLAGS:=${CMAKE_CXX_FLAGS}")
+message (STATUS "C_FLAGS    = ${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE}}")
+message (STATUS "CXX_FLAGS  = ${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}}")
+message (STATUS "LINK_FLAGS = ${CMAKE_EXE_LINKER_FLAGS}")
 
 include (cmake/print_include_directories.cmake)

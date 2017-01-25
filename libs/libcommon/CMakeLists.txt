@@ -1,15 +1,12 @@
-SET(REVISIONFILE ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h)
+include (${CMAKE_SOURCE_DIR}/cmake/find_icu4c.cmake)
 
-ADD_CUSTOM_COMMAND(
-    OUTPUT ${REVISIONFILE}
-    COMMAND bash -f -v -x ${CMAKE_CURRENT_SOURCE_DIR}/src/create_revision.sh ${REVISIONFILE} ${USE_DBMS_TCP_PROTOCOL_VERSION_AS_CLICKHOUSE_REVISION}
-)
+SET(CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_version.h)
+SET(CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
 
-set_source_files_properties(
-	src/ClickHouseRevision.cpp PROPERTIES OBJECT_DEPENDS ${REVISIONFILE}
-)
+include_directories (include)
+include_directories (BEFORE ${CMAKE_SOURCE_DIR}/contrib/libcctz/include)
 
-include_directories (${CMAKE_CURRENT_BINARY_DIR}/src/)
+include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 if (APPLE)
 	if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.1.0")
@@ -17,7 +14,14 @@ if (APPLE)
 	else ()
 		set (APPLE_SIERRA_OR_NEWER 0)
 	endif ()
-	configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/apple_version.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/common/apple_version.h)
+endif()
+
+include(cmake/version.cmake)
+message(STATUS "Will build ${VERSION_FULL}")
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_common.h.in ${CONFIG_COMMON})
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_version.h.in ${CONFIG_VERSION})
+
+if (APPLE)
 	add_library (apple_rt
 		src/apple_rt.cpp
 		include/common/apple_rt.h
@@ -58,7 +62,8 @@ add_library (common
 	include/ext/size.hpp
 	include/ext/unlock_guard.hpp
 
-	${REVISIONFILE}
+	${CONFIG_VERSION}
+	${CONFIG_COMMON}
 )
 
 # When testing for memory leaks, disable libtcmalloc.
@@ -74,16 +79,14 @@ else ()
 	message (STATUS "Disabling libtcmalloc for valgrind better analysis")
 endif ()
 
-include (${ClickHouse_SOURCE_DIR}/cmake/find_glib.cmake)
-
 find_package (Threads)
 
 target_link_libraries (
 	common
 	pocoext
+	cctz
 	${MALLOC_LIBRARIES}
 	${CMAKE_THREAD_LIBS_INIT}
-	${GLIB_LIBS}
 	${ICU_LIBS}
 	${RT_LIBRARIES})
 

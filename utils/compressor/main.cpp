@@ -75,7 +75,7 @@ int main(int argc, char ** argv)
 
 	try
 	{
-		bool decompress = options.count("d");
+		bool decompress = options.count("decompress");
 
 	#ifdef USE_QUICKLZ
 		bool use_qlz = options.count("qlz");

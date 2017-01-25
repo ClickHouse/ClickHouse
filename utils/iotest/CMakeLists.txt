@@ -1,3 +1,6 @@
+include_directories (${CMAKE_SOURCE_DIR}/dbms/include)
+include_directories (${CMAKE_SOURCE_DIR}/libs/libcommon/include)
+
 add_executable (iotest iotest.cpp ${SRCS})
 target_link_libraries (iotest dbms)
 

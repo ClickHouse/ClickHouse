@@ -676,13 +676,13 @@ public:
 					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 			if (!arguments[0].column)
-				throw Exception("First argument for function " + getName() + " must be an expression.",
+				throw Exception("Type of first argument for function " + getName() + " must be an expression.",
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 			const ColumnExpression * column_expression = typeid_cast<const ColumnExpression *>(arguments[0].column.get());
 
 			if (!column_expression)
-				throw Exception("First argument for function " + getName() + " must be an expression.",
+				throw Exception("Column of first argument for function " + getName() + " must be an expression.",
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 			/// Типы остальных аргументов уже проверены в getLambdaArgumentTypes.

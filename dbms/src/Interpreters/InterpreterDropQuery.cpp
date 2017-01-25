@@ -86,23 +86,27 @@ BlockIO InterpreterDropQuery::execute()
 	{
 		table.first->shutdown();
 
-		/// Если кто-то успел удалить эту таблицу, выбросит исключение.
+		/// If table was already dropped by anyone, an exception will be thrown
 		auto table_lock = table.first->lockForAlter();
 
 		String current_table_name = table.first->getTableName();
 
 		if (drop.detach)
 		{
-			/// Удаляем таблицу из оперативки, метаданные и данные не трогаем.
+			/// Drop table from memory, don't touch data and metadata
 			database->detachTable(current_table_name);
 		}
 		else
 		{
-			/// Удаляем метаданные и саму таблицу из оперативки.
-			database->removeTable(current_table_name);
+			if (!table.first->checkTableCanBeDropped())
+				throw Exception("Table " + database_name  + "." + current_table_name + " couldn't be dropped due to failed pre-drop check",
+								ErrorCodes::TABLE_WAS_NOT_DROPPED);
 
-			/// Удаляем данные таблицы
-			table.first->drop();		/// TODO Не удалять метаданные, если таблицу не получилось удалить.
+			/// Delete table metdata and table itself from memory
+			database->removeTable(current_table_name);
+			/// Delete table data
+			table.first->drop();
+
 			table.first->is_dropped = true;
 
 			String current_data_path = data_path + escapeForFileName(current_table_name);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <experimental/optional>
+#include <mutex>
 
 #include <Poco/Net/HTTPServerResponse.h>
 
@@ -9,9 +10,12 @@
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <DB/IO/WriteBufferFromOStream.h>
+#include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/ZlibDeflatingWriteBuffer.h>
 #include <DB/IO/HTTPCommon.h>
 #include <DB/Common/NetException.h>
+#include <DB/Common/Stopwatch.h>
+#include <DB/Core/Progress.h>
 
 
 namespace DB
@@ -42,51 +46,87 @@ private:
 	ZlibCompressionMethod compression_method;
 	int compression_level = Z_DEFAULT_COMPRESSION;
 
-	std::unique_ptr<WriteBufferFromOStream> out_raw;
+	std::ostream * response_body_ostr = nullptr;
+	std::ostream * response_header_ostr = nullptr;
+
+	std::experimental::optional<WriteBufferFromOStream> out_raw;
 	std::experimental::optional<ZlibDeflatingWriteBuffer> deflating_buf;
 
 	WriteBuffer * out = nullptr; 	/// Uncompressed HTTP body is written to this buffer. Points to out_raw or possibly to deflating_buf.
 
-	void sendHeaders()
+	bool headers_started_sending = false;
+	bool headers_finished_sending = false;	/// If true, you could not add any headers.
+
+	Progress accumulated_progress;
+	size_t send_progress_interval_ms = 100;
+	Stopwatch progress_watch;
+
+	std::mutex mutex;	/// progress callback could be called from different threads.
+
+
+	/// Must be called under locked mutex.
+	/// This method send headers, if this was not done already,
+	///  but not finish them with \r\n, allowing to send more headers subsequently.
+	void startSendHeaders()
 	{
-		if (!out)
+		if (!headers_started_sending)
 		{
+			headers_started_sending = true;
+
 			if (add_cors_header)
-			{
-				response.set("Access-Control-Allow-Origin","*");
-			}
+				response.set("Access-Control-Allow-Origin", "*");
 
 			setResponseDefaultHeaders(response);
 
-			if (compress && offset())	/// Empty response need not be compressed.
-			{
-				if (compression_method == ZlibCompressionMethod::Gzip)
-					response.set("Content-Encoding", "gzip");
-				else if (compression_method == ZlibCompressionMethod::Zlib)
-					response.set("Content-Encoding", "deflate");
-				else
-					throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
-						ErrorCodes::LOGICAL_ERROR);
+			std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
+		}
+	}
 
-				out_raw = std::make_unique<WriteBufferFromOStream>(response.send());
-				/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
-				deflating_buf.emplace(*out_raw, compression_method, compression_level, working_buffer.size(), working_buffer.begin());
-				out = &deflating_buf.value();
-			}
-			else
-			{
-				out_raw = std::make_unique<WriteBufferFromOStream>(response.send(), working_buffer.size(), working_buffer.begin());
-				out = out_raw.get();
-			}
+	/// This method finish headers with \r\n, allowing to start to send body.
+	void finishSendHeaders()
+	{
+		if (!headers_finished_sending)
+		{
+			headers_finished_sending = true;
+
+			/// Send end of headers delimiter.
+			*response_header_ostr << "\r\n" << std::flush;
 		}
 	}
 
 	void nextImpl() override
 	{
-		if (!offset())
-			return;
+		{
+			std::lock_guard<std::mutex> lock(mutex);
 
-		sendHeaders();
+			startSendHeaders();
+
+			if (!out)
+			{
+				if (compress)
+				{
+					if (compression_method == ZlibCompressionMethod::Gzip)
+						*response_header_ostr << "Content-Encoding: gzip\r\n";
+					else if (compression_method == ZlibCompressionMethod::Zlib)
+						*response_header_ostr << "Content-Encoding: deflate\r\n";
+					else
+						throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
+										ErrorCodes::LOGICAL_ERROR);
+
+					/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
+					out_raw.emplace(*response_body_ostr);
+					deflating_buf.emplace(out_raw.value(), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
+					out = &deflating_buf.value();
+				}
+				else
+				{
+					out_raw.emplace(*response_body_ostr, working_buffer.size(), working_buffer.begin());
+					out = &out_raw.value();
+				}
+			}
+
+			finishSendHeaders();
+		}
 
 		out->position() = position();
 		out->next();
@@ -101,12 +141,51 @@ public:
 		: BufferWithOwnMemory<WriteBuffer>(size), response(response_),
 		compress(compress_), compression_method(compression_method_) {}
 
+	/// Writes progess in repeating HTTP headers.
+	void onProgress(const Progress & progress)
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+
+		/// Cannot add new headers if body was started to send.
+		if (headers_finished_sending)
+			return;
+
+		accumulated_progress.incrementPiecewiseAtomically(progress);
+
+		if (progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
+		{
+			progress_watch.restart();
+
+			/// Send all common headers before our special progress headers.
+			startSendHeaders();
+
+			std::string progress_string;
+			{
+				WriteBufferFromString progress_string_writer(progress_string);
+				accumulated_progress.writeJSON(progress_string_writer);
+			}
+
+			*response_header_ostr << "X-ClickHouse-Progress: " << progress_string << "\r\n" << std::flush;
+		}
+	}
+
 	/// Send at least HTTP headers if no data has been sent yet.
 	/// Use after the data has possibly been sent and no error happened (and thus you do not plan
 	/// to change response HTTP code.
+	/// This method is idempotent.
 	void finalize()
 	{
-		sendHeaders();
+		if (offset())
+		{
+			next();
+		}
+		else
+		{
+			/// If no remaining data, just send headers.
+			std::lock_guard<std::mutex> lock(mutex);
+			startSendHeaders();
+			finishSendHeaders();
+		}
 	}
 
 	/// Turn compression on or off.
@@ -130,14 +209,17 @@ public:
 		add_cors_header = enable_cors;
 	}
 
+	/// Don't send HTTP headers with progress more frequently.
+	void setSendProgressInterval(size_t send_progress_interval_ms_)
+	{
+		send_progress_interval_ms = send_progress_interval_ms_;
+	}
+
 	~WriteBufferFromHTTPServerResponse()
 	{
-		if (!offset())
-			return;
-
 		try
 		{
-			next();
+			finalize();
 		}
 		catch (...)
 		{

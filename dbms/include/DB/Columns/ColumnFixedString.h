@@ -84,6 +84,11 @@ public:
 		return chars.size() + sizeof(n);
 	}
 
+	size_t allocatedSize() const override
+	{
+		return chars.allocated_size() + sizeof(n);
+	}
+
 	Field operator[](size_t index) const override
 	{
 		return String(reinterpret_cast<const char *>(&chars[n * index]), n);

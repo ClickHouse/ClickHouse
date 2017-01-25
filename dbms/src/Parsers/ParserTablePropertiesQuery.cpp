@@ -15,6 +15,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
 {
 	Pos begin = pos;
 
+	ParserWhiteSpaceOrComments ws;
 	ParserString s_exists("EXISTS", true, true);
 	ParserString s_describe("DESCRIBE", true, true);
 	ParserString s_desc("DESC", true, true);
@@ -26,17 +27,17 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
 
 	ASTPtr database;
 	ASTPtr table;
-	ASTPtr query_ptr;
+	std::shared_ptr<ASTQueryWithTableAndOutput> query;
 
 	ws.ignore(pos, end);
 
 	if (s_exists.ignore(pos, end, max_parsed_pos, expected))
 	{
-		query_ptr = std::make_shared<ASTExistsQuery>();
+		query = std::make_shared<ASTExistsQuery>();
 	}
 	else if (s_describe.ignore(pos, end, max_parsed_pos, expected) || s_desc.ignore(pos, end, max_parsed_pos, expected))
 	{
-		query_ptr = std::make_shared<ASTDescribeQuery>();
+		query = std::make_shared<ASTDescribeQuery>();
 	}
 	else if (s_show.ignore(pos, end, max_parsed_pos, expected))
 	{
@@ -45,14 +46,12 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
 		if (!s_create.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 
-		query_ptr = std::make_shared<ASTShowCreateQuery>();
+		query = std::make_shared<ASTShowCreateQuery>();
 	}
 	else
 	{
 		return false;
 	}
-
-	ASTQueryWithTableAndOutput * query = dynamic_cast<ASTQueryWithTableAndOutput *>(&*query_ptr);
 
 	ws.ignore(pos, end);
 
@@ -76,20 +75,14 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
 
 	ws.ignore(pos, end);
 
-	/// FORMAT format_name
-	if (!parseFormat(*query, pos, end, node, max_parsed_pos, expected))
-		return false;
-
 	query->range = StringRange(begin, pos);
 
 	if (database)
 		query->database = typeid_cast<ASTIdentifier &>(*database).name;
 	if (table)
 		query->table = typeid_cast<ASTIdentifier &>(*table).name;
-	if (query->format)
-		query->children.push_back(query->format);
 
-	node = query_ptr;
+	node = query;
 
 	return true;
 }

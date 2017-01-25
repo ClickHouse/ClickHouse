@@ -128,8 +128,9 @@ public:
 		out_return_type = getReturnTypeImpl(types);
 	}
 
-	/// Вызывается, если хоть один агрумент функции - лямбда-выражение.
-	/// Для аргументов-лямбда-выражений определяет типы аргументов этих выражений и кладет результат в arguments.
+	/// For higher-order functions (functions, that have lambda expression as at least one argument).
+	/// You pass data types with empty DataTypeExpression for lambda arguments.
+	/// This function will replace it with DataTypeExpression containing actual types.
 	void getLambdaArgumentTypes(DataTypes & arguments) const;
 
 	virtual void getLambdaArgumentTypesImpl(DataTypes & arguments) const

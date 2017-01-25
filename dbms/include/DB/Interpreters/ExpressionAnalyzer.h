@@ -1,22 +1,37 @@
 #pragma once
 
-#include <DB/Parsers/IAST.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-
-#include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/AggregateDescription.h>
-#include <DB/Interpreters/Set.h>
-#include <DB/Interpreters/Join.h>
+#include <DB/Interpreters/Settings.h>
+#include <DB/Core/Block.h>
 
 
 namespace DB
 {
 
+class Context;
 
 class ExpressionActions;
 struct ExpressionActionsChain;
+
+class Set;
+using SetPtr = std::shared_ptr<Set>;
+
+class Join;
+using JoinPtr = std::shared_ptr<Join>;
+
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
+
+class IBlockInputStream;
+using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
+
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
+using Tables = std::map<String, StoragePtr>;
+
+class ASTFunction;
+class ASTExpressionList;
+class ASTSelectQuery;
 
 
 /** Информация о том, что делать при выполнении подзапроса в секции [GLOBAL] IN/JOIN.
@@ -58,15 +73,7 @@ public:
 		StoragePtr storage_,
 		const NamesAndTypesList & columns_,
 		size_t subquery_depth_ = 0,
-		bool do_global_ = false)
-		:
-		ast(ast_), context(context_), settings(context.getSettings()),
-		subquery_depth(subquery_depth_), columns(columns_),
-		storage(storage_ ? storage_ : getTable()),
-		do_global(do_global_)
-	{
-		init();
-	}
+		bool do_global_ = false);
 
 	/// Есть ли в выражении агрегатные функции или секция GROUP BY или HAVING.
 	bool hasAggregation() const { return has_aggregation; }

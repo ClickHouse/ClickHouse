@@ -16,6 +16,7 @@
 
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/ASTInsertQuery.h>
+#include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/queryToString.h>
 
 #include <DB/IO/ReadBufferFromString.h>
@@ -32,6 +33,7 @@
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Common/formatReadable.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/escapeForFileName.h>
 #include <DB/Common/StringUtils.h>
 
 #include <Poco/DirectoryIterator.h>
@@ -1145,7 +1147,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
 			auto table_lock = lockStructure(false);
 
-			MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name);
+			MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name, parts);
 			MergeTreeData::Transaction transaction;
 			size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
 
@@ -2304,7 +2306,7 @@ bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, 
 
 		if (unreplicated_merger->selectPartsToMerge(parts, merged_name, true, 0, always_can_merge))
 		{
-			MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
+			MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, merged_name, parts);
 
 			auto new_part = unreplicated_merger->mergePartsToTemporaryPart(
 				parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io, time(0));
@@ -2801,6 +2803,12 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 	}
 }
 
+bool StorageReplicatedMergeTree::checkTableCanBeDropped() const
+{
+	/// Consider only synchronized data
+	context.checkTableCanBeDropped(database_name, table_name, getData().getColumnsTotalSize());
+	return true;
+}
 
 void StorageReplicatedMergeTree::drop()
 {
@@ -2809,6 +2817,8 @@ void StorageReplicatedMergeTree::drop()
 
 		if (is_readonly || !zookeeper)
 			throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
+
+		// checkTableCanBeDropped(); // uncomment to feel yourself safe
 
 		shutdown();
 

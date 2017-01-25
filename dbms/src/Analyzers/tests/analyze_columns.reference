@@ -10,9 +10,9 @@ SELECT dummy, number, one.dummy, numbers.number, system.one.dummy, system.number
 
 c -> c UInt8. Database name: (none). Table name: (none). Alias: (none). Storage: (none). AST: c
 
-SELECT arrayMap((x, y) -> arrayMap((y, z) -> x[y], x, c), [[1], [2, 3]]) FROM (SELECT 1 AS c, 2 AS d) 
+SELECT arrayMap((_lambda0_arg0, _lambda0_arg1) -> arrayMap((_lambda1_arg0, _lambda1_arg1) -> _lambda0_arg0[_lambda1_arg0], _lambda0_arg0, c), [[1], [2, 3]]) FROM (SELECT 1 AS c, 2 AS d) 
 
 c -> c UInt8. Database name: (none). Table name: (none). Alias: (none). Storage: (none). AST: c
 x -> x UInt8. Database name: (none). Table name: (none). Alias: (none). Storage: (none). AST: x
 
-SELECT x, arrayMap((x, y) -> (x + y), x, c) FROM (SELECT 1 AS x, 2 AS c) 
+SELECT x, arrayMap((_lambda0_arg0, _lambda0_arg1) -> (_lambda0_arg0 + _lambda0_arg1), x, c) FROM (SELECT 1 AS x, 2 AS c) 

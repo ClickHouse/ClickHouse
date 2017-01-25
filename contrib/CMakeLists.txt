@@ -17,6 +17,7 @@ add_subdirectory (libcityhash)
 add_subdirectory (libfarmhash)
 add_subdirectory (libmetrohash)
 add_subdirectory (libzlib-ng)
+add_subdirectory (libcctz)
 
 if (ENABLE_LIBTCMALLOC AND USE_INTERNAL_GPERFTOOLS_LIBRARY)
 	add_subdirectory (libtcmalloc)

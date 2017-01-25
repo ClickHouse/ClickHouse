@@ -16,6 +16,7 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/FileChannel.h>
 #include <Poco/SyslogChannel.h>
+#include <Poco/Version.h>
 
 #include <common/Common.h>
 #include <common/logger_useful.h>

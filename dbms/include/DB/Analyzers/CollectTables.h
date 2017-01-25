@@ -9,7 +9,7 @@ namespace DB
 {
 
 class Context;
-class CollectAliases;
+struct CollectAliases;
 class WriteBuffer;
 
 

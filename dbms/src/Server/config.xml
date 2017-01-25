@@ -65,6 +65,17 @@
 	<!-- Default database. -->
 	<default_database>default</default_database>
 
+	<!-- Server time zone could be set here.
+
+	     Time zone is used when converting between String and DateTime types,
+		  when printing DateTime in text formats and parsing DateTime from text,
+		  it is used in date and time related functions, if specific time zone was not passed as an argument.
+
+		 Time zone is specified as identifier from IANA time zone database, like UTC or Africa/Abidjan.
+		 If not specified, system time zone at server startup is used.
+	-->
+	<!-- <timezone>Europe/Moscow</timezone> -->
+
 	<!-- Configuration of clusters that could be used in Distributed tables.
 		 https://clickhouse.yandex/reference_en.html#Distributed
 	  -->
@@ -167,6 +178,14 @@
 		<max_suspicious_broken_parts>5</max_suspicious_broken_parts>
 	</merge_tree>
 	-->
+
+	<!-- Protection from accidental DROP.
+		 If size of a MergeTree table is greater than max_table_size_to_drop (in bytes) than table could not be dropped with any DROP query.
+		 If you want do delete one table and don't want to restart clickhouse-server, you could create special file <clickhouse-path>/flags/force_drop_table and make DROP once.
+		 By default max_table_size_to_drop is 50GB, max_table_size_to_drop=0 allows to DROP any tables.
+		 Uncomment to disable protection.
+	-->
+	<!-- <max_table_size_to_drop>0</max_table_size_to_drop> -->
 
 	<!-- Example of parameters for GraphiteMergeTree table engine -->
 	<graphite_rollup_example>

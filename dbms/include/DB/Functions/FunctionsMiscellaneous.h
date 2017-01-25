@@ -26,9 +26,12 @@
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/ObjectPool.h>
 #include <DB/Interpreters/ExpressionActions.h>
+#include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/Set.h>
 #include <ext/range.hpp>
 
 #include <cmath>
+
 
 namespace DB
 {
@@ -390,7 +393,7 @@ public:
 	}
 
 	/// Do not sleep during query analysis.
-	bool isSuitableForConstantFolding() const { return false; }
+	bool isSuitableForConstantFolding() const override { return false; }
 
 	size_t getNumberOfArguments() const override { return 1; }
 
@@ -799,7 +802,7 @@ public:
 	}
 
 	/// Because of function cannot be executed directly.
-	bool isSuitableForConstantFolding() const { return false; }
+	bool isSuitableForConstantFolding() const override { return false; }
 };
 
 
@@ -1178,6 +1181,29 @@ public:
 
 private:
 	time_t uptime;
+};
+
+
+/** Returns the server time zone.
+  */
+class FunctionTimeZone : public IFunction
+{
+public:
+	static constexpr auto name = "timezone";
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTimeZone>(); }
+
+	String getName() const override { return name; }
+	size_t getNumberOfArguments() const override { return 0; }
+
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
+		return std::make_shared<DataTypeString>();
+	}
+
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(block.rows(), DateLUT::instance().getTimeZone());
+	}
 };
 
 

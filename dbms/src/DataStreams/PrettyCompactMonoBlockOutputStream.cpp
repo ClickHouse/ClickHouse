@@ -1,6 +1,5 @@
-#include <sys/ioctl.h>
-#include <unistd.h>
-
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
 #include <DB/DataStreams/PrettyCompactMonoBlockOutputStream.h>
 
 

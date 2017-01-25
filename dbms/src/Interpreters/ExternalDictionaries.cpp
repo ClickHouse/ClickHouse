@@ -6,6 +6,7 @@
 #include <ext/scope_guard.hpp>
 #include <Poco/Util/Application.h>
 #include <Poco/Glob.h>
+#include <Poco/File.h>
 
 
 namespace

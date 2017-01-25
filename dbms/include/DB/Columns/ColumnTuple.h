@@ -247,6 +247,14 @@ public:
 		return res;
 	}
 
+	size_t allocatedSize() const override
+	{
+		size_t res = 0;
+		for (const auto & column : columns)
+			res += column->allocatedSize();
+		return res;
+	}
+
 	ColumnPtr convertToFullColumnIfConst() const override
 	{
 		Block materialized = data;

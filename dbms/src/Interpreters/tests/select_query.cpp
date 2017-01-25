@@ -43,18 +43,8 @@ try
 
 	ReadBufferFromIStream in(std::cin);
 	WriteBufferFromOStream out(std::cout);
-	BlockInputStreamPtr query_plan;
 
-	executeQuery(in, out, context, query_plan, {});
-
-	if (query_plan)
-	{
-/*			std::cerr << std::endl;
-		query_plan->dumpTreeWithProfile(std::cerr);*/
-		std::cerr << std::endl;
-		query_plan->dumpTree(std::cerr);
-		std::cerr << std::endl;
-	}
+	executeQuery(in, out, /* allow_into_outfile = */ false, context, {});
 
 	return 0;
 }

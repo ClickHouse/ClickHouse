@@ -2,6 +2,9 @@
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Common/NetException.h>
+#include <DB/Interpreters/Context.h>
+#include <DB/Storages/IStorage.h>
+
 
 namespace DB
 {

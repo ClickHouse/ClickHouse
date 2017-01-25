@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/Core/Block.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 
 

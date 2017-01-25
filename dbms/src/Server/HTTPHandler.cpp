@@ -12,6 +12,7 @@
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/WriteBufferFromHTTPServerResponse.h>
 #include <DB/IO/WriteHelpers.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
@@ -32,6 +33,10 @@ namespace ErrorCodes
 {
 	extern const int READONLY;
 	extern const int UNKNOWN_COMPRESSION_METHOD;
+
+	extern const int UNKNOWN_USER;
+	extern const int WRONG_PASSWORD;
+	extern const int REQUIRED_PASSWORD;
 }
 
 
@@ -44,8 +49,6 @@ void HTTPHandler::processQuery(
 	LOG_TRACE(log, "Request URI: " << request.getURI());
 
 	std::istream & istr = request.stream();
-
-	BlockInputStreamPtr query_plan;
 
 	/// Part of the query can be passed in the 'query' parameter and the rest in the request body
 	/// (http method need not necessarily be POST). In this case the entire query consists of the
@@ -230,6 +233,8 @@ void HTTPHandler::processQuery(
 	if (client_supports_http_compression)
 		used_output.out->setCompressionLevel(context.getSettingsRef().http_zlib_compression_level);
 
+	used_output.out->setSendProgressInterval(context.getSettingsRef().http_headers_progress_interval_ms);
+
 	/// If 'http_native_compression_disable_checksumming_on_decompress' setting is turned on,
 	/// checksums of client data compressed with internal algorithm are not checked.
 	if (in_post_compressed && context.getSettingsRef().http_native_compression_disable_checksumming_on_decompress)
@@ -257,7 +262,10 @@ void HTTPHandler::processQuery(
 	client_info.http_method = http_method;
 	client_info.http_user_agent = request.get("User-Agent", "");
 
-	executeQuery(*in, *used_output.out_maybe_compressed, context, query_plan,
+	/// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
+	context.setProgressCallback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
+
+	executeQuery(*in, *used_output.out_maybe_compressed, /* allow_into_outfile = */ false, context,
 		[&response] (const String & content_type) { response.setContentType(content_type); });
 
 	/// Send HTTP headers with code 200 if no exception happened and the data is still not sent to
@@ -266,7 +274,7 @@ void HTTPHandler::processQuery(
 }
 
 
-void HTTPHandler::trySendExceptionToClient(const std::string & s,
+void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_code,
 	Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
 	Output & used_output)
 {
@@ -281,7 +289,17 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s,
 			request.stream().ignore(std::numeric_limits<std::streamsize>::max());
 		}
 
-		response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+		bool auth_fail = exception_code == ErrorCodes::UNKNOWN_USER || exception_code == ErrorCodes::WRONG_PASSWORD
+						 || exception_code == ErrorCodes::REQUIRED_PASSWORD;
+
+		if (auth_fail)
+		{
+			response.requireAuthentication("ClickHouse server HTTP API");
+		}
+		else
+		{
+			response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+		}
 
 		if (!response.sent() && !used_output.out_maybe_compressed)
 		{
@@ -313,6 +331,24 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s,
 	}
 }
 
+static int getCurrentExceptionCode()
+{
+	try
+	{
+		throw;
+	}
+	catch (const Exception & e)
+	{
+		return e.code();
+	}
+	catch (...)
+	{
+
+	}
+
+	return 0;
+}
+
 
 void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
@@ -340,6 +376,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 		tryLogCurrentException(log);
 
 		std::string exception_message = getCurrentExceptionMessage(with_stacktrace);
+		int exception_code = getCurrentExceptionCode();
 
 		/** If exception is received from remote server, then stack trace is embedded in message.
 		  * If exception is thrown on local server, then stack trace is in separate field.
@@ -349,7 +386,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 		if (std::string::npos != embedded_stack_trace_pos && !with_stacktrace)
 			exception_message.resize(embedded_stack_trace_pos);
 
-		trySendExceptionToClient(exception_message, request, response, used_output);
+		trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
 	}
 }
 

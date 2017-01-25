@@ -6,6 +6,7 @@
 #include <DB/Functions/DataTypeTraits.h>
 #include <DB/DataTypes/DataTypeEnum.h>
 #include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/Storages/IStorage.h>
 #include <DB/Columns/ColumnNullable.h>
 #include <common/ClickHouseRevision.h>
 #include <ext/enumerate.hpp>
@@ -148,6 +149,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 
 	factory.registerFunction<FunctionVersion>();
 	factory.registerFunction<FunctionUptime>();
+	factory.registerFunction<FunctionTimeZone>();
 
 	factory.registerFunction<FunctionRunningAccumulate>();
 	factory.registerFunction<FunctionRunningDifference>();

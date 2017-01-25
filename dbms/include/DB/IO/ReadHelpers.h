@@ -585,12 +585,12 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 
-void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf);
+void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);
 
 /** In YYYY-MM-DD hh:mm:ss format, according to current time zone.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
-inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
+inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
 	/** Read 10 characters, that could represent unix timestamp.
 	  * Only unix timestamp of 5-10 characters is supported.
@@ -615,7 +615,7 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 			if (unlikely(year == 0))
 				datetime = 0;
 			else
-				datetime = DateLUT::instance().makeDateTime(year, month, day, hour, minute, second);
+				datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
 			buf.position() += 19;
 		}
@@ -624,7 +624,7 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 			readIntText(datetime, buf);
 	}
 	else
-		readDateTimeTextFallback(datetime, buf);
+		readDateTimeTextFallback(datetime, buf, date_lut);
 }
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)

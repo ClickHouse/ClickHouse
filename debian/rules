@@ -66,7 +66,7 @@ clean:
 	find ./debian/ -name "*.docs" -type l -delete
 	rm -f ./debian/copyright
 	# Удалим созданные *.install файлы
-	for DAEMON_PKG in ${DAEMONS}; do AUTO=`grep "# automatically created" debian/$$DAEMON_PKG-metrika-yandex.install`; if [ "x$$AUTO" != "x" ]; then rm -f debian/$$DAEMON_PKG-metrika-yandex.install; fi; done
+	for DAEMON_PKG in ${DAEMONS}; do AUTO=`grep "# automatically created" debian/$$DAEMON_PKG.install`; if [ "x$$AUTO" != "x" ]; then rm -f debian/$$DAEMON_PKG.install; fi; done
 	dh_clean
 
 install: build
@@ -82,7 +82,7 @@ install: build
 	if [ -e debian/tmp/etc/init.d/clickhouse-server ]; then ln -s tmp/etc/init.d/clickhouse-server debian/clickhouse-server-base.clickhouse-server.init; fi
 
 	# создаем дефолтный cron, если нет крон-файла созданного пользователем
-	# cron_name имеет вид daemonname-metrika-yandex
+	# cron_name имеет вид daemonname
 	# Для ClickHouse не должно быть лишних зависимостей.
 	for I in debian/tmp/etc/init.d/*; \
 	do \
@@ -94,38 +94,36 @@ install: build
 			echo "#*/10 * * * * root /etc/init.d/$$cron_name condstart 1>/dev/null 2>&1" > debian/tmp/etc/cron.d/$$cron_name; \
 		fi; \
 	done; \
-	# Создаём нужные *.install файлы
-	# Только для демонов, т.к. пакеты ClickHouse не имеют суффикса metrika-yandex
+	# Making necessary *.install files
 	for DAEMON_PKG in ${DAEMONS}; do \
-		if [ ! -e "debian/$$DAEMON_PKG-metrika-yandex.install" ]; then \
-			echo "# automatically created" > debian/$$DAEMON_PKG-metrika-yandex.install; \
-			echo "/etc/$$DAEMON_PKG/config.xml" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
-			echo "/usr/bin/$$DAEMON_PKG" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
-			echo "/etc/cron.d/$$DAEMON_PKG-metrika-yandex" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
+		if [ ! -e "debian/$$DAEMON_PKG.install" ]; then \
+			echo "# automatically created" > debian/$$DAEMON_PKG.install; \
+			echo "/etc/$$DAEMON_PKG/config.xml" >> debian/$$DAEMON_PKG.install; \
+			echo "/usr/bin/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.install; \
+			echo "/etc/cron.d/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.install; \
 			if [ -e "debian/tmp/etc/monrun/conf.d/$$DAEMON_PKG.conf" ]; then \
-				echo "/etc/monrun/conf.d/$$DAEMON_PKG.conf" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
+				echo "/etc/monrun/conf.d/$$DAEMON_PKG.conf" >> debian/$$DAEMON_PKG.install; \
 			fi;\
 		fi;  \
 	done
 
-	# Создаём нужные *.postinst файлы
-	# Note: Только для демонов, т.к. пакеты ClickHouse не имеют суффикса metrika-yandex
+	# Making necessary *.postinst files
 	for DAEMON_PKG in ${DAEMONS}; do \
-		if [ ! -e "debian/$$DAEMON_PKG-metrika-yandex.postinst" ]; then \
-			echo "# automatically created" > debian/$$DAEMON_PKG-metrika-yandex.postinst; \
-			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
-			echo "chown -R metrika: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
-			if [ -e "debian/tmp/etc/init.d/$$DAEMON_PKG-metrika-yandex" ]; then \
+		if [ ! -e "debian/$$DAEMON_PKG.postinst" ]; then \
+			echo "# automatically created" > debian/$$DAEMON_PKG.postinst; \
+			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d" >> debian/$$DAEMON_PKG.postinst; \
+			echo "chown -R metrika: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.postinst; \
+			if [ -e "debian/tmp/etc/init.d/$$DAEMON_PKG" ]; then \
 				if echo $$DAEMON_PKG | grep server > /dev/null; then\
-					echo "update-rc.d $$DAEMON_PKG-metrika-yandex defaults > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
+					echo "update-rc.d $$DAEMON_PKG defaults > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG.postinst; \
 				else\
-					echo "update-rc.d $$DAEMON_PKG-metrika-yandex start 30 2 3 4 5 . stop 70 0 1 6 . > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
+					echo "update-rc.d $$DAEMON_PKG start 30 2 3 4 5 . stop 70 0 1 6 . > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG.postinst; \
 				fi\
 			fi\
 			\
 		else \
-			echo >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
-			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d; chown -R metrika: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
+			echo >> debian/$$DAEMON_PKG.postinst; \
+			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d; chown -R metrika: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.postinst; \
 		fi;  \
 	done
 
