@@ -658,7 +658,7 @@ void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
 	String alias = ast->tryGetAlias();
 	if (!alias.empty())
 	{
-		if (aliases.count(alias) && ast->getTreeID() != aliases[alias]->getTreeID())
+		if (aliases.count(alias) && ast->getTreeHash() != aliases[alias]->getTreeHash())
 			throw Exception("Different expressions with the same alias " + alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 
 		aliases[alias] = ast;
@@ -2204,7 +2204,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		getRootActions(join_params.using_expression_list, only_types, false, step.actions);
 
 	/// Не поддерживается два JOIN-а с одинаковым подзапросом, но разными USING-ами.
-	String join_id = join_element.getTreeID();
+	String join_id = join_element.getTreeHash();
 
 	SubqueryForSet & subquery_for_set = subqueries_for_sets[join_id];
 

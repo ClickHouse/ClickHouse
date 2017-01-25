@@ -9,6 +9,9 @@
 #include <DB/Parsers/StringRange.h>
 
 
+class SipHash;
+
+
 namespace DB
 {
 
@@ -24,6 +27,8 @@ using IdentifierNameSet = std::set<String>;
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 using ASTs = std::vector<ASTPtr>;
+
+class WriteBuffer;
 
 
 /** Элемент синтаксического дерева (в дальнейшем - направленного ациклического графа с элементами семантики)
@@ -64,10 +69,17 @@ public:
 	/** Получить глубокую копию дерева. */
 	virtual ASTPtr clone() const = 0;
 
-	/** Получить текст, который идентифицирует этот элемент и всё поддерево.
-	  * Обычно он содержит идентификатор элемента и getTreeID от всех детей.
+	/** Get text, describing and identifying this element and its subtree.
+	  * Usually it consist of element's id and getTreeID of all children.
 	  */
 	String getTreeID() const;
+	void getTreeIDImpl(WriteBuffer & out) const;
+
+	/** Get hash code, identifying this element and its subtree.
+	  */
+	using Hash = std::pair<UInt64, UInt64>;
+	Hash getTreeHash() const;
+	void getTreeHashImpl(SipHash & hash_state) const;
 
 	void dumpTree(std::ostream & ostr, size_t indent = 0) const
 	{
