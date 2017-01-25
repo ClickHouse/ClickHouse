@@ -111,7 +111,7 @@
 
 	<!-- Uncomment if use_graphite.
 	<graphite>
-		<host>127.0.0.1</host>
+		<host>localhost</host>
 		<port>42000</port>
 		<root_path>one_min</root_path>
 		<timeout>0.1</timeout>
