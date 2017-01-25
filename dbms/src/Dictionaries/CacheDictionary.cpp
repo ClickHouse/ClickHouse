@@ -549,61 +549,61 @@ void CacheDictionary::update(
 	const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
 	{
-	CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
-	Stopwatch watch;
-	auto stream = source_ptr->loadIds(requested_ids);
-	stream->readPrefix();
+		CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
+		Stopwatch watch;
+		auto stream = source_ptr->loadIds(requested_ids);
+		stream->readPrefix();
 
-	while (const auto block = stream->read())
-	{
-		const auto id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
-		if (!id_column)
-			throw Exception{
-				name + ": id column has type different from UInt64.",
-				ErrorCodes::TYPE_MISMATCH};
-
-		const auto & ids = id_column->getData();
-
-		/// cache column pointers
-		const auto column_ptrs = ext::map<std::vector>(ext::range(0, attributes.size()), [&block] (const auto & i) {
-			return block.safeGetByPosition(i + 1).column.get();
-		});
-
-		for (const auto i : ext::range(0, ids.size()))
+		while (const auto block = stream->read())
 		{
-			const auto id = ids[i];
-			const auto cell_idx = getCellIdx(id);
-			auto & cell = cells[cell_idx];
+			const auto id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
+			if (!id_column)
+				throw Exception{
+					name + ": id column has type different from UInt64.",
+					ErrorCodes::TYPE_MISMATCH};
 
-			for (const auto attribute_idx : ext::range(0, attributes.size()))
+			const auto & ids = id_column->getData();
+
+			/// cache column pointers
+			const auto column_ptrs = ext::map<std::vector>(ext::range(0, attributes.size()), [&block] (const auto & i) {
+				return block.safeGetByPosition(i + 1).column.get();
+			});
+
+			for (const auto i : ext::range(0, ids.size()))
 			{
-				const auto & attribute_column = *column_ptrs[attribute_idx];
-				auto & attribute = attributes[attribute_idx];
+				const auto id = ids[i];
+				const auto cell_idx = getCellIdx(id);
+				auto & cell = cells[cell_idx];
 
-				setAttributeValue(attribute, cell_idx, attribute_column[i]);
+				for (const auto attribute_idx : ext::range(0, attributes.size()))
+				{
+					const auto & attribute_column = *column_ptrs[attribute_idx];
+					auto & attribute = attributes[attribute_idx];
+
+					setAttributeValue(attribute, cell_idx, attribute_column[i]);
+				}
+
+				/// if cell id is zero and zero does not map to this cell, then the cell is unused
+				if (cell.id == 0 && cell_idx != zero_cell_idx)
+					element_count.fetch_add(1, std::memory_order_relaxed);
+
+				cell.id = id;
+				if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
+					cell.setExpiresAt(std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)});
+				else
+					cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
+
+				/// inform caller
+				on_cell_updated(id, cell_idx);
+				/// mark corresponding id as found
+				remaining_ids[id] = 1;
 			}
-
-			/// if cell id is zero and zero does not map to this cell, then the cell is unused
-			if (cell.id == 0 && cell_idx != zero_cell_idx)
-				element_count.fetch_add(1, std::memory_order_relaxed);
-
-			cell.id = id;
-			if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
-				cell.setExpiresAt(std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)});
-			else
-				cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
-
-			/// inform caller
-			on_cell_updated(id, cell_idx);
-			/// mark corresponding id as found
-			remaining_ids[id] = 1;
 		}
-	}
 
-	stream->readSuffix();
+		stream->readSuffix();
 
-	ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, requested_ids.size());
-	ProfileEvents::increment(ProfileEvents::DictCacheRequestTimeNs, watch.elapsed());
+		ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, requested_ids.size());
+		ProfileEvents::increment(ProfileEvents::DictCacheRequestTimeNs, watch.elapsed());
 	}
 
 	size_t not_found_num = 0;

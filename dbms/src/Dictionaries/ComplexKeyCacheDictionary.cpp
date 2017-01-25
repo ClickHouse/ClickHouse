@@ -580,86 +580,86 @@ void ComplexKeyCacheDictionary::update(
 
 	const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 	{
-	Stopwatch watch;
-	auto stream = source_ptr->loadKeys(in_key_columns, in_requested_rows);
-	stream->readPrefix();
+		Stopwatch watch;
+		auto stream = source_ptr->loadKeys(in_key_columns, in_requested_rows);
+		stream->readPrefix();
 
-	const auto keys_size = dict_struct.key.value().size();
-	StringRefs keys(keys_size);
+		const auto keys_size = dict_struct.key.value().size();
+		StringRefs keys(keys_size);
 
-	const auto attributes_size = attributes.size();
+		const auto attributes_size = attributes.size();
 
-	while (const auto block = stream->read())
-	{
-		/// cache column pointers
-		const auto key_columns = ext::map<ConstColumnPlainPtrs>(
-			ext::range(0, keys_size),
-			[&] (const size_t attribute_idx)
-			{
-				return block.safeGetByPosition(attribute_idx).column.get();
-			});
-
-		const auto attribute_columns = ext::map<ConstColumnPlainPtrs>(
-			ext::range(0, attributes_size),
-			[&] (const size_t attribute_idx)
-			{
-				return block.safeGetByPosition(keys_size + attribute_idx).column.get();
-			});
-
-		const auto rows = block.rows();
-
-		for (const auto row : ext::range(0, rows))
+		while (const auto block = stream->read())
 		{
-			auto key = allocKey(row, key_columns, keys);
-			const auto hash = StringRefHash{}(key);
-			const size_t cell_idx = hash & (size - 1);
-			auto & cell = cells[cell_idx];
+			/// cache column pointers
+			const auto key_columns = ext::map<ConstColumnPlainPtrs>(
+				ext::range(0, keys_size),
+				[&] (const size_t attribute_idx)
+				{
+					return block.safeGetByPosition(attribute_idx).column.get();
+				});
 
-			for (const auto attribute_idx : ext::range(0, attributes.size()))
+			const auto attribute_columns = ext::map<ConstColumnPlainPtrs>(
+				ext::range(0, attributes_size),
+				[&] (const size_t attribute_idx)
+				{
+					return block.safeGetByPosition(keys_size + attribute_idx).column.get();
+				});
+
+			const auto rows = block.rows();
+
+			for (const auto row : ext::range(0, rows))
 			{
-				const auto & attribute_column = *attribute_columns[attribute_idx];
-				auto & attribute = attributes[attribute_idx];
+				auto key = allocKey(row, key_columns, keys);
+				const auto hash = StringRefHash{}(key);
+				const size_t cell_idx = hash & (size - 1);
+				auto & cell = cells[cell_idx];
 
-				setAttributeValue(attribute, cell_idx, attribute_column[row]);
+				for (const auto attribute_idx : ext::range(0, attributes.size()))
+				{
+					const auto & attribute_column = *attribute_columns[attribute_idx];
+					auto & attribute = attributes[attribute_idx];
+
+					setAttributeValue(attribute, cell_idx, attribute_column[row]);
+				}
+
+				/// if cell id is zero and zero does not map to this cell, then the cell is unused
+				if (cell.key == StringRef{} && cell_idx != zero_cell_idx)
+					element_count.fetch_add(1, std::memory_order_relaxed);
+
+				/// handle memory allocated for old key
+				if (key == cell.key)
+				{
+					freeKey(key);
+					key = cell.key;
+				}
+				else
+				{
+					/// new key is different from the old one
+					if (cell.key.data)
+						freeKey(cell.key);
+
+					cell.key = key;
+				}
+
+				cell.hash = hash;
+
+				if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
+					cell.setExpiresAt(std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)});
+				else
+					cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
+
+				/// inform caller
+				on_cell_updated(key, cell_idx);
+				/// mark corresponding id as found
+				remaining_keys[key] = true;
 			}
-
-			/// if cell id is zero and zero does not map to this cell, then the cell is unused
-			if (cell.key == StringRef{} && cell_idx != zero_cell_idx)
-				element_count.fetch_add(1, std::memory_order_relaxed);
-
-			/// handle memory allocated for old key
-			if (key == cell.key)
-			{
-				freeKey(key);
-				key = cell.key;
-			}
-			else
-			{
-				/// new key is different from the old one
-				if (cell.key.data)
-					freeKey(cell.key);
-
-				cell.key = key;
-			}
-
-			cell.hash = hash;
-
-			if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
-				cell.setExpiresAt(std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)});
-			else
-				cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
-
-			/// inform caller
-			on_cell_updated(key, cell_idx);
-			/// mark corresponding id as found
-			remaining_keys[key] = true;
 		}
-	}
 
-	stream->readSuffix();
+		stream->readSuffix();
 
-	ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, in_requested_rows.size());
-	ProfileEvents::increment(ProfileEvents::DictCacheRequestTimeNs, watch.elapsed());
+		ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, in_requested_rows.size());
+		ProfileEvents::increment(ProfileEvents::DictCacheRequestTimeNs, watch.elapsed());
 	}
 
 	size_t found_num = 0;
