@@ -215,7 +215,6 @@ public:
 		send_progress_interval_ms = send_progress_interval_ms_;
 	}
 
-
 	~WriteBufferFromHTTPServerResponse()
 	{
 		try

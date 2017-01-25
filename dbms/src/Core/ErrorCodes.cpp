@@ -361,6 +361,7 @@ namespace ErrorCodes
 	extern const int BAD_LAMBDA = 356;
 	extern const int RESERVED_IDENTIFIER_NAME = 357;
 	extern const int INTO_OUTFILE_NOT_ALLOWED = 358;
+	extern const int TABLE_SIZE_EXCEED_MAX_DROP_SIZE_LIMIT = 359;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;

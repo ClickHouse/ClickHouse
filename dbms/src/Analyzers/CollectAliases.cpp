@@ -22,7 +22,7 @@ static void processImpl(const ASTPtr & ast, CollectAliases::Aliases & aliases, C
 	{
 		auto it_inserted = aliases.emplace(alias, CollectAliases::AliasInfo(ast, kind));
 
-		if (!it_inserted.second && ast->getTreeID() != it_inserted.first->second.node->getTreeID())
+		if (!it_inserted.second && ast->getTreeHash() != it_inserted.first->second.node->getTreeHash())
 		{
 			std::stringstream message;
 			message << "Different expressions with the same alias " << backQuoteIfNeed(alias) << ":\n";

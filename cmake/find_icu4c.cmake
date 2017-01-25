@@ -11,6 +11,6 @@ else ()
 endif ()
 set (ICU_LIBS ${ICUI18N} ${ICUUC} ${ICUDATA})
 
-find_path (ICU_INCLUDE_DIR NAMES unistr.h PATH_SUFFIXES unicode PATHS ${ICU_INCLUDE_PATHS})
+find_path (ICU_INCLUDE_DIR NAMES unicode/unistr.h PATHS ${ICU_INCLUDE_PATHS})
 message(STATUS "Using icu: ${ICU_INCLUDE_DIR} : ${ICU_LIBS}")
 include_directories (${ICU_INCLUDE_DIR})

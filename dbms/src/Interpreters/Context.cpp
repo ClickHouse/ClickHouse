@@ -12,6 +12,7 @@
 #include <DB/Common/Macros.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/Stopwatch.h>
+#include <DB/Common/formatReadable.h>
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
@@ -65,11 +66,13 @@ namespace ErrorCodes
 	extern const int UNKNOWN_DATABASE;
 	extern const int UNKNOWN_TABLE;
 	extern const int TABLE_ALREADY_EXISTS;
+	extern const int TABLE_WAS_NOT_DROPPED;
 	extern const int DATABASE_ALREADY_EXISTS;
 	extern const int TABLE_METADATA_DOESNT_EXIST;
 	extern const int THERE_IS_NO_SESSION;
 	extern const int NO_ELEMENTS_IN_CONFIG;
 	extern const int DDL_GUARD_IS_ACTIVE;
+	extern const int TABLE_SIZE_EXCEED_MAX_DROP_SIZE_LIMIT;
 }
 
 class TableFunctionFactory;
@@ -115,12 +118,13 @@ struct ContextShared
 	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
 	BackgroundProcessingPoolPtr background_pool;			/// Пул потоков для фоновой работы, выполняемой таблицами.
 	ReshardingWorkerPtr resharding_worker;
-	Macros macros;											/// Подстановки из конфига.
-	std::unique_ptr<Compiler> compiler;						/// Для динамической компиляции частей запроса, при необходимости.
-	std::unique_ptr<QueryLog> query_log;					/// Для логгирования запросов.
+	Macros macros;											/// Substitutions extracted from config.
+	std::unique_ptr<Compiler> compiler;						/// Used for dynamic compilation of queries' parts if it necessary.
+	std::unique_ptr<QueryLog> query_log;					/// Used to log queries.
 	/// Правила для выбора метода сжатия в зависимости от размера куска.
 	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
-	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Настройки для движка MergeTree.
+	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Settings of MergeTree* engines.
+	size_t max_table_size_to_drop = 50lu * 1024*1024*1024;	/// Protects MergeTree tables from accidental DROP (50GB by default)
 
 	/// Clusters for distributed tables
 	/// Initialized on demand (on distributed storages initialization) since Settings should be initialized
@@ -1088,6 +1092,55 @@ const MergeTreeSettings & Context::getMergeTreeSettings()
 	}
 
 	return *shared->merge_tree_settings;
+}
+
+
+void Context::setMaxTableSizeToDrop(size_t max_size)
+{
+	// Is initialized at server startup
+	shared->max_table_size_to_drop = max_size;
+}
+
+void Context::checkTableCanBeDropped(const String & database, const String & table, size_t table_size)
+{
+	size_t max_table_size_to_drop = shared->max_table_size_to_drop;
+
+	if (!max_table_size_to_drop || table_size <= max_table_size_to_drop)
+		return;
+
+	Poco::File force_file(getFlagsPath() + "force_drop_table");
+	bool force_file_exists = force_file.exists();
+
+	if (force_file_exists)
+	{
+		try
+		{
+			force_file.remove();
+			return;
+		}
+		catch (...)
+		{
+			/// User should recreate force file on each drop, it shouldn't be protected
+			tryLogCurrentException("Drop table check", "Can't remove force file to enable table drop");
+		}
+	}
+
+	String table_size_str = formatReadableSizeWithDecimalSuffix(table_size);
+	String max_table_size_to_drop_str = formatReadableSizeWithDecimalSuffix(max_table_size_to_drop);
+	std::stringstream ostr;
+
+	ostr << "Table " << database << "." << table << " was not dropped.\n"
+		 << "Reason:\n"
+		 << "1. Table size (" << table_size_str << ") is greater than max_table_size_to_drop (" << max_table_size_to_drop_str << ")\n"
+		 << "2. File " << force_file.path() << " intedned to force DROP "
+			<< (force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist") << "\n";
+
+	ostr << "How to fix this:\n"
+		 << "1. Either increase (or set to zero) max_table_size_to_drop in server config and restart clickhouse\n"
+		 << "2. Either create forcing file " << force_file.path() << " and make sure that clickhouse has written permission for it.\n"
+		 << "2. bash example: touch '" << force_file.path() << "' && chmod 0777 '" << force_file.path() << "'";
+
+	throw Exception(ostr.str(), ErrorCodes::TABLE_SIZE_EXCEED_MAX_DROP_SIZE_LIMIT);
 }
 
 

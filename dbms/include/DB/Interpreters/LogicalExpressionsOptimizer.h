@@ -41,12 +41,12 @@ private:
 	*/
 	struct OrWithExpression
 	{
-		OrWithExpression(ASTFunction * or_function_, const std::string & expression_,
+		OrWithExpression(ASTFunction * or_function_, const IAST::Hash & expression_,
 			const std::string & alias_);
 		bool operator<(const OrWithExpression & rhs) const;
 
 		ASTFunction * or_function;
-		const std::string expression;
+		const IAST::Hash expression;
 		const std::string alias;
 	};
 

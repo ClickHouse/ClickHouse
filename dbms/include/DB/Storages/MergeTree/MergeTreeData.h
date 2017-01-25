@@ -451,6 +451,16 @@ public:
 		return column_sizes;
 	}
 
+	size_t getColumnsTotalSize() const
+	{
+		std::lock_guard<std::mutex> lock{data_parts_mutex};
+		size_t total_size = 0;
+
+		for (const auto & col : column_sizes)
+			total_size += col.second;
+		return total_size;
+	}
+
 	/// Для ATTACH/DETACH/DROP/RESHARD PARTITION.
 	static String getMonthName(const Field & partition);
 	static String getMonthName(DayNum_t month);

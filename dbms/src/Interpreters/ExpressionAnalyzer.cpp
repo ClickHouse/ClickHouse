@@ -658,7 +658,7 @@ void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
 	String alias = ast->tryGetAlias();
 	if (!alias.empty())
 	{
-		if (aliases.count(alias) && ast->getTreeID() != aliases[alias]->getTreeID())
+		if (aliases.count(alias) && ast->getTreeHash() != aliases[alias]->getTreeHash())
 			throw Exception("Different expressions with the same alias " + alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 
 		aliases[alias] = ast;
