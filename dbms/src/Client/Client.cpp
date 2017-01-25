@@ -60,6 +60,7 @@
 
 #include <DB/Common/NetException.h>
 
+#include <common/config_common.h>
 
 /// Different line editing libraries can be used depending on the environment.
 #ifdef USE_READLINE
