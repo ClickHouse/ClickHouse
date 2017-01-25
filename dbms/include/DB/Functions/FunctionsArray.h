@@ -7,26 +7,15 @@
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypeNullable.h>
 
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnTuple.h>
+#include <DB/Columns/ColumnNullable.h>
 
 #include <DB/Functions/IFunction.h>
-#include <DB/Functions/Conditional/CondException.h>
-#include <DB/Common/HashTable/HashMap.h>
-#include <DB/Common/HashTable/ClearableHashMap.h>
+#include <DB/Functions/DataTypeTraits.h>
 #include <DB/Common/StringUtils.h>
-#include <DB/Interpreters/AggregationCommon.h>
-#include <DB/Functions/FunctionsConditional.h>
-#include <DB/Functions/FunctionsConversion.h>
-#include <DB/Functions/Conditional/getArrayType.h>
-#include <DB/AggregateFunctions/IAggregateFunction.h>
-#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
-#include <DB/Parsers/ExpressionListParsers.h>
-#include <DB/Parsers/parseQuery.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTLiteral.h>
 
 #include <ext/range.hpp>
 
@@ -1431,6 +1420,9 @@ private:
 		ColumnNullable * nullable_res_col);
 };
 
+
+class IAggregateFunction;
+using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 
 /** Применяет к массиву агрегатную функцию и возвращает её результат.
   * Также может быть применена к нескольким массивам одинаковых размеров, если агрегатная функция принимает несколько аргументов.

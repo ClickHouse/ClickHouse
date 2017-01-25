@@ -3,6 +3,7 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/IO/HashingWriteBuffer.h>
+#include <Poco/File.h>
 
 
 namespace ProfileEvents

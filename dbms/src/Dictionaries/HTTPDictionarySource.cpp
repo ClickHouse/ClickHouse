@@ -12,6 +12,9 @@
 
 #include <DB/Dictionaries/ExecutableDictionarySource.h> // idsToBuffer, columnsToBuffer
 
+#include <common/logger_useful.h>
+
+
 namespace DB
 {
 
@@ -19,8 +22,9 @@ static const size_t max_block_size = 8192;
 
 
 HTTPDictionarySource::HTTPDictionarySource(const DictionaryStructure & dict_struct_,
-		const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-		Block & sample_block, const Context & context) :
+	const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+	Block & sample_block, const Context & context)
+	: log(&Logger::get("HTTPDictionarySource")),
 	dict_struct{dict_struct_},
 	url{config.getString(config_prefix + ".url", "")},
 	format{config.getString(config_prefix + ".format")},
@@ -29,7 +33,8 @@ HTTPDictionarySource::HTTPDictionarySource(const DictionaryStructure & dict_stru
 {
 }
 
-HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other) :
+HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
+	: log(&Logger::get("HTTPDictionarySource")),
 	dict_struct{other.dict_struct},
 	url{other.url},
 	sample_block{other.sample_block},

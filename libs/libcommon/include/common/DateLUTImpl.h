@@ -14,8 +14,8 @@
 #define DATE_LUT_MAX (0x7FFFFFFF - 86400)
 #define DATE_LUT_MAX_DAY_NUM (0x7FFFFFFF / 86400)
 #define DATE_LUT_MIN_YEAR 1970
-#define DATE_LUT_MAX_YEAR 2037	/// Последний полный год
-#define DATE_LUT_YEARS 68		/// Количество лет в lookup таблице
+#define DATE_LUT_MAX_YEAR 2037	/// Last supported year
+#define DATE_LUT_YEARS 68		/// Number of years in lookup table
 
 
 STRONG_TYPEDEF(UInt16, DayNum_t);
@@ -49,16 +49,19 @@ public:
 	};
 
 private:
-	/// Сравнительно много данных. То есть, лучше не класть объект на стек.
-	/// По сравнению с std::vector, на один indirection меньше.
+	/// Lookup table is indexed by DayNum.
+	/// Day nums are the same in all time zones. 1970-01-01 is 0 and so on.
+	/// Table is relatively large (~30 000 elements), so better not to place object on stack.
+	/// In comparison to std::vector, plain array is cheaper by one indirection.
 	Values lut[DATE_LUT_MAX_DAY_NUM + 1];
 
-	/// lookup таблица начал годов
+	/// Year number after DATE_LUT_MIN_YEAR -> day num for start of year.
 	DayNum_t years_lut[DATE_LUT_YEARS];
 
-	/// Смещение от UTC в начале Unix эпохи.
+	/// UTC offset at beginning of the Unix epoch.
 	time_t offset_at_start_of_epoch;
 
+	/// Time zone name.
 	std::string time_zone;
 
 

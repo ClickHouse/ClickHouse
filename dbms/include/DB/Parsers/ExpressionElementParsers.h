@@ -100,7 +100,7 @@ protected:
 };
 
 
-/** NULL.
+/** NULL literal.
   */
 class ParserNull : public IParserBase
 {
@@ -110,7 +110,7 @@ protected:
 };
 
 
-/** Число.
+/** Numeric literal.
   */
 class ParserNumber : public IParserBase
 {
@@ -119,7 +119,7 @@ protected:
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
-/** Беззнаковое целое число, используется в качестве правой части оператора взятия элемента кортежа (x.1).
+/** Unsigned integer, used in right hand side of tuple access operator (x.1).
   */
 class ParserUnsignedInteger : public IParserBase
 {
@@ -129,7 +129,7 @@ protected:
 };
 
 
-/** Строка в одинарных кавычках.
+/** String in single quotes.
   */
 class ParserStringLiteral : public IParserBase
 {

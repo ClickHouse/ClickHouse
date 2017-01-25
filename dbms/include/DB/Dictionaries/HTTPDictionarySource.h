@@ -3,9 +3,12 @@
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 
+
+namespace Poco { class Logger; }
+
+
 namespace DB
 {
-
 
 /// Allows loading dictionaries from executable
 class HTTPDictionarySource final : public IDictionarySource
@@ -35,7 +38,7 @@ public:
 	std::string toString() const override;
 
 private:
-	Logger * log = &Logger::get("HTTPDictionarySource");
+	Poco::Logger * log;
 
 	LocalDateTime getLastModification() const;
 

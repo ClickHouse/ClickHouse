@@ -1,5 +1,5 @@
-#include <future>
 #include <Poco/DirectoryIterator.h>
+#include <common/logger_useful.h>
 
 #include <DB/Databases/DatabaseOrdinary.h>
 #include <DB/Databases/DatabaseMemory.h>
@@ -11,6 +11,7 @@
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadBufferFromFile.h>
@@ -188,7 +189,8 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
 }
 
 
-void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine)
+void DatabaseOrdinary::createTable(
+	const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings)
 {
 	/// Создаём файл с метаданными, если нужно - если запрос не ATTACH.
 	/// В него записывается запрос на ATTACH таблицы.
@@ -215,25 +217,26 @@ void DatabaseOrdinary::createTable(const String & table_name, const StoragePtr &
 	{
 		statement = getTableDefinitionFromCreateQuery(query);
 
-		/// Гарантирует, что таблица не создаётся прямо сейчас.
+		/// Exclusive flags guarantees, that table is not created right now in another thread. Otherwise, exception will be thrown.
 		WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
 		writeString(statement, out);
 		out.next();
-		out.sync();
+		if (settings.fsync_metadata)
+			out.sync();
 		out.close();
 	}
 
 	try
 	{
-		/// Добавляем таблицу в набор.
+		/// Add a table to the map of known tables.
 		{
 			std::lock_guard<std::mutex> lock(mutex);
 			if (!tables.emplace(table_name, table).second)
 				throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 		}
 
-		/// Если запрос ATTACH, и метаданные таблицы уже существуют
-		/// (то есть, ATTACH сделан после DETACH), то rename атомарно заменяет старый файл новым.
+		/// If it was ATTACH query and file with table metadata already exist
+		/// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
 		Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
 	}
 	catch (...)
@@ -278,7 +281,7 @@ static ASTPtr getCreateQueryImpl(const String & path, const String & table_name)
 
 
 void DatabaseOrdinary::renameTable(
-	const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name)
+	const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name, const Settings & settings)
 {
 	DatabaseOrdinary * to_database_concrete = typeid_cast<DatabaseOrdinary *>(&to_database);
 
@@ -308,7 +311,7 @@ void DatabaseOrdinary::renameTable(
 	ast_create_query.table = to_table_name;
 
 	/// NOTE Неатомарно.
-	to_database_concrete->createTable(to_table_name, table, ast, table->getName());
+	to_database_concrete->createTable(to_table_name, table, ast, table->getName(), settings);
 	removeTable(table_name);
 }
 
@@ -403,7 +406,8 @@ void DatabaseOrdinary::alterTable(
 		WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
 		writeString(statement, out);
 		out.next();
-		out.sync();
+		if (context.getSettingsRef().fsync_metadata)
+			out.sync();
 		out.close();
 	}
 

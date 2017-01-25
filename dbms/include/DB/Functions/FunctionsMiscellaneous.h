@@ -1184,6 +1184,29 @@ private:
 };
 
 
+/** Returns the server time zone.
+  */
+class FunctionTimeZone : public IFunction
+{
+public:
+	static constexpr auto name = "timezone";
+	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTimeZone>(); }
+
+	String getName() const override { return name; }
+	size_t getNumberOfArguments() const override { return 0; }
+
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
+		return std::make_shared<DataTypeString>();
+	}
+
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(block.rows(), DateLUT::instance().getTimeZone());
+	}
+};
+
+
 /** Quite unusual function.
   * Takes state of aggregate function (example runningAccumulate(uniqState(UserID))),
   *  and for each row of block, return result of aggregate function on merge of states of all previous rows and current row.

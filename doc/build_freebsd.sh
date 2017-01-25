@@ -7,7 +7,7 @@
 # curl https://raw.githubusercontent.com/yandex/ClickHouse/master/doc/build_freebsd.sh | sh
 
 # install compiler and libs
-sudo pkg install git cmake bash glib mysql57-client icu libltdl unixODBC google-perftools
+sudo pkg install git cmake bash mysql57-client icu libltdl unixODBC google-perftools
 
 # install testing only stuff if you want:
 sudo pkg install python py27-lxml py27-termcolor curl perl5

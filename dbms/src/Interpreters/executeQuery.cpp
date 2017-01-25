@@ -423,8 +423,16 @@ void executeQuery(
 
 			if (auto stream = dynamic_cast<IProfilingBlockInputStream *>(streams.in.get()))
 			{
+				/// Save previous progress callback if any. TODO Do it more conveniently.
+				auto previous_progress_callback = context.getProgressCallback();
+
 				/// NOTE Progress callback takes shared ownership of 'out'.
-				stream->setProgressCallback([out] (const Progress & progress) { out->onProgress(progress); });
+				stream->setProgressCallback([out, previous_progress_callback] (const Progress & progress)
+				{
+					if (previous_progress_callback)
+						previous_progress_callback(progress);
+					out->onProgress(progress);
+				});
 			}
 
 			if (set_content_type)

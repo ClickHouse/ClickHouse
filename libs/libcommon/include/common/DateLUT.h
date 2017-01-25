@@ -3,13 +3,12 @@
 #include <common/DateLUTImpl.h>
 #include <common/singleton.h>
 #include <DB/Core/Defines.h>
-#include <Poco/Exception.h>
 
 #include <unordered_map>
-#include <vector>
 #include <atomic>
 #include <mutex>
 #include <memory>
+
 
 /// This class provides lazy initialization and lookup of singleton DateLUTImpl objects for a given timezone.
 class DateLUT : public Singleton<DateLUT>
@@ -48,34 +47,13 @@ protected:
 	DateLUT();
 
 private:
-	ALWAYS_INLINE const DateLUTImpl & getImplementation(const std::string & time_zone) const
-	{
-		auto it = time_zone_to_group.find(time_zone);
-		if (it == time_zone_to_group.end())
-			throw Poco::Exception("Invalid time zone " + time_zone);
-		size_t group_id = it->second;
-
-		auto initialize_impl = [this, group_id, &time_zone]()
-		{
-			date_lut_impls[group_id] = std::make_unique<DateLUTImpl>(time_zone);
-		};
-
-		std::call_once(initialized_flags[group_id], initialize_impl);
-		return *date_lut_impls[group_id];
-	}
-
-private:
-	/// A mapping of a time zone name into a group id of equivalent time zones.
-	/// Two time zones are considered equivalent if they have the same properties.
-	using TimeZoneToGroup = std::unordered_map<std::string, size_t>;
-
-	TimeZoneToGroup time_zone_to_group;
+	const DateLUTImpl & getImplementation(const std::string & time_zone) const;
 
 	using DateLUTImplPtr = std::unique_ptr<DateLUTImpl>;
 
-	/// A vector of lookup tables indexed by group id and their initialization flags.
-	mutable std::vector<DateLUTImplPtr> date_lut_impls;
-	mutable std::vector<std::once_flag> initialized_flags;
+	/// Time zone name -> implementation.
+	mutable std::unordered_map<std::string, DateLUTImplPtr> impls;
+	mutable std::mutex mutex;
 
 	std::atomic<const DateLUTImpl *> default_impl;
 };

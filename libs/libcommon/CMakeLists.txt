@@ -3,7 +3,9 @@ set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
 set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_build.h)
 
 include_directories (include)
-include (${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
+include_directories (BEFORE ${CMAKE_SOURCE_DIR}/contrib/libcctz/include)
+
+include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 if (APPLE)
 	if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.1.0")
@@ -82,16 +84,14 @@ else ()
 	message (STATUS "Disabling libtcmalloc for valgrind better analysis")
 endif ()
 
-include (${ClickHouse_SOURCE_DIR}/cmake/find_glib.cmake)
-
 find_package (Threads)
 
 target_link_libraries (
 	common
 	pocoext
+	cctz
 	${MALLOC_LIBRARIES}
 	${CMAKE_THREAD_LIBS_INIT}
-	${GLIB_LIBS}
 	${ICU_LIBS}
 	${RT_LIBRARIES})
 

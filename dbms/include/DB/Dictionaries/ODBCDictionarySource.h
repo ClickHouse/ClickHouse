@@ -16,6 +16,8 @@ namespace Poco
 	{
 		class AbstractConfiguration;
 	}
+
+	class Logger;
 }
 
 
@@ -50,7 +52,7 @@ public:
 	std::string toString() const override;
 
 private:
-	Logger * log = &Logger::get("ODBCDictionarySource");
+	Poco::Logger * log;
 
 	const DictionaryStructure dict_struct;
 	const std::string db;

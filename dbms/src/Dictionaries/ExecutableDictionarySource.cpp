@@ -7,6 +7,9 @@
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
+#include <common/logger_useful.h>
+
+
 namespace DB
 {
 
@@ -15,7 +18,8 @@ static const size_t max_block_size = 8192;
 
 ExecutableDictionarySource::ExecutableDictionarySource(const DictionaryStructure & dict_struct_,
 	const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-	Block & sample_block, const Context & context) :
+	Block & sample_block, const Context & context)
+	: log(&Logger::get("ExecutableDictionarySource")),
 	dict_struct{dict_struct_},
 	command{config.getString(config_prefix + ".command")},
 	format{config.getString(config_prefix + ".format")},
@@ -24,12 +28,13 @@ ExecutableDictionarySource::ExecutableDictionarySource(const DictionaryStructure
 {
 }
 
-ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionarySource & other) :
-	  dict_struct{other.dict_struct},
-	  command{other.command},
-	  format{other.format},
-	  sample_block{other.sample_block},
-	  context(other.context)
+ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionarySource & other)
+	: log(&Logger::get("ExecutableDictionarySource")),
+	dict_struct{other.dict_struct},
+	command{other.command},
+	format{other.format},
+	sample_block{other.sample_block},
+	context(other.context)
 {
 }
 
@@ -93,12 +98,6 @@ BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64
 	idsToBuffer(context, format, sample_block, process->in, ids);
 	process->in.close();
 
-	/*
-	std::string process_err;
-	readStringUntilEOF(process_err, process->err);
-	std::cerr << "readed STDERR [" <<  process_err  << "] " << std::endl;
-	*/
-
 	auto stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
 	return std::make_shared<OwningBlockInputStream<ShellCommand>>(stream, std::move(process));
 }
@@ -111,12 +110,6 @@ BlockInputStreamPtr ExecutableDictionarySource::loadKeys(
 
 	columnsToBuffer(context, format, sample_block, process->in, dict_struct, key_columns, requested_rows);
 	process->in.close();
-
-	/*
-	std::string process_err;
-	readStringUntilEOF(process_err, process->err);
-	std::cerr << "readed STDERR [" <<  process_err  << "] " << std::endl;
-	*/
 
 	auto stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
 	return std::make_shared<OwningBlockInputStream<ShellCommand>>(stream, std::move(process));

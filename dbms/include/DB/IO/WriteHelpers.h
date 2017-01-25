@@ -7,10 +7,9 @@
 
 #include <common/Common.h>
 #include <common/DateLUT.h>
+#include <common/LocalDate.h>
+#include <common/LocalDateTime.h>
 #include <common/find_first_symbols.h>
-
-#include <mysqlxx/Row.h>
-#include <mysqlxx/Null.h>
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
@@ -519,7 +518,7 @@ inline void writeDateText(LocalDate date, WriteBuffer & buf)
 
 /// в формате YYYY-MM-DD HH:MM:SS, согласно текущему часовому поясу
 template <char date_delimeter = '-', char time_delimeter = ':'>
-inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
+inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
 	char s[19] = {'0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0', ' ', '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'};
 
@@ -529,7 +528,6 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 		return;
 	}
 
-	const auto & date_lut = DateLUT::instance();
 	const auto & values = date_lut.getValues(datetime);
 
 	s[0] += values.year / 1000;
@@ -577,25 +575,6 @@ inline void writeDateTimeText(LocalDateTime datetime, WriteBuffer & buf)
 	s[18] += datetime.second() % 10;
 
 	buf.write(s, 19);
-}
-
-
-/// Вывести mysqlxx::Row в tab-separated виде
-inline void writeEscapedRow(const mysqlxx::Row & row, WriteBuffer & buf)
-{
-	for (size_t i = 0; i < row.size(); ++i)
-	{
-		if (i != 0)
-			buf.write('\t');
-
-		if (unlikely(row[i].isNull()))
-		{
-			buf.write("\\N", 2);
-			continue;
-		}
-
-		writeAnyEscapedString<'\''>(row[i].data(), row[i].data() + row[i].length(), buf);
-	}
 }
 
 
@@ -649,15 +628,6 @@ inline void writeText(const VisitID_t & x, 	WriteBuffer & buf) { writeIntText(st
 inline void writeText(const LocalDate & x,		WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x,	WriteBuffer & buf) { writeDateTimeText(x, buf); }
 
-template<typename T>
-inline void writeText(const mysqlxx::Null<T> & x,	WriteBuffer & buf)
-{
-	if (x.isNull())
-		writeCString("\\N", buf);
-	else
-		writeText(static_cast<const T &>(x), buf);
-}
-
 
 /// Строки, даты, даты-с-временем - в одинарных кавычках с C-style эскейпингом. Числа - без.
 inline void writeQuoted(const UInt8 & x, 	WriteBuffer & buf) { writeText(x, buf); }
@@ -690,15 +660,6 @@ inline void writeQuoted(const LocalDateTime & x,	WriteBuffer & buf)
 	writeChar('\'', buf);
 	writeDateTimeText(x, buf);
 	writeChar('\'', buf);
-}
-
-template <typename T>
-inline void writeQuoted(const mysqlxx::Null<T> & x,		WriteBuffer & buf)
-{
-	if (x.isNull())
-		writeCString("NULL", buf);
-	else
-		writeText(static_cast<const T &>(x), buf);
 }
 
 

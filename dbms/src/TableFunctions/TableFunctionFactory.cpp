@@ -1,3 +1,6 @@
+#include <DB/Common/Exception.h>
+#include <DB/Interpreters/Context.h>
+
 #include <DB/TableFunctions/TableFunctionMerge.h>
 #include <DB/TableFunctions/TableFunctionRemote.h>
 #include <DB/TableFunctions/TableFunctionShardByHash.h>
@@ -16,7 +19,7 @@ namespace ErrorCodes
 
 
 TableFunctionPtr TableFunctionFactory::get(
-	const String & name,
+	const std::string & name,
 	const Context & context) const
 {
 	if (context.getSettings().limits.readonly == 1)		/** Например, для readonly = 2 - разрешено. */

@@ -73,7 +73,7 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 	String database_engine_name;
 	if (!create.storage)
 	{
-		database_engine_name = "Ordinary";	/// Движок баз данных по-умолчанию.
+		database_engine_name = "Ordinary";	/// Default database engine.
 		auto func = std::make_shared<ASTFunction>();
 		func->name = database_engine_name;
 		create.storage = func;
@@ -82,7 +82,7 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 	{
 		const ASTFunction & engine_id = typeid_cast<const ASTFunction &>(*create.storage);
 
-		/// На данный момент, движков таблиц с аргументами не бывает.
+		/// Currently, there are no database engines, that support any arguments.
 		if (engine_id.arguments || engine_id.parameters)
 		{
 			std::stringstream ostr;
@@ -95,7 +95,7 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
 	String database_name_escaped = escapeForFileName(database_name);
 
-	/// Создаём директории с данными и метаданными таблиц.
+	/// Create directories for tables data and metadata.
 	String path = context.getPath();
 	String data_path = path + "data/" + database_name_escaped + "/";
 	String metadata_path = path + "metadata/" + database_name_escaped + "/";
@@ -105,7 +105,7 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
 	DatabasePtr database = DatabaseFactory::get(database_engine_name, database_name, metadata_path, context);
 
-	/// Записываем файл с метаданными, если нужно.
+	/// Will write file with database metadata, if needed.
 	String metadata_file_tmp_path = path + "metadata/" + database_name_escaped + ".sql.tmp";
 	String metadata_file_path = path + "metadata/" + database_name_escaped + ".sql";
 
@@ -121,11 +121,13 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 		statement_stream << '\n';
 		String statement = statement_stream.str();
 
-		/// Гарантирует, что база данных не создаётся прямо сейчас.
+		/// Exclusive flag guarantees, that database is not created right now in another thread.
 		WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
 		writeString(statement, out);
+
 		out.next();
-		out.sync();
+		if (context.getSettingsRef().fsync_metadata)
+			out.sync();
 		out.close();
 	}
 
@@ -482,7 +484,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 	String as_table_name = create.as_table;
 
 	StoragePtr as_storage;
-	IStorage::TableStructureReadLockPtr as_storage_lock;
+	TableStructureReadLockPtr as_storage_lock;
 	if (!as_table_name.empty())
 	{
 		as_storage = context.getTable(as_database_name, as_table_name);
@@ -529,7 +531,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 		if (create.is_temporary)
 			context.getSessionContext().addExternalTable(table_name, res);
 		else
-			context.getDatabase(database_name)->createTable(table_name, res, query_ptr, storage_name);
+			context.getDatabase(database_name)->createTable(table_name, res, query_ptr, storage_name, context.getSettingsRef());
 	}
 
 	/// Если запрос CREATE SELECT, то вставим в таблицу данные

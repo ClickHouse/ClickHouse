@@ -1,3 +1,5 @@
+#include <common/logger_useful.h>
+
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 
@@ -16,6 +18,19 @@ namespace ErrorCodes
 	extern const int SET_SIZE_LIMIT_EXCEEDED;
 	extern const int TYPE_MISMATCH;
 	extern const int ILLEGAL_COLUMN;
+}
+
+
+Join::Join(const Names & key_names_left_, const Names & key_names_right_,
+	const Limits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_)
+	: kind(kind_), strictness(strictness_),
+	key_names_left(key_names_left_),
+	key_names_right(key_names_right_),
+	log(&Logger::get("Join")),
+	max_rows(limits.max_rows_in_join),
+	max_bytes(limits.max_bytes_in_join),
+	overflow_mode(limits.join_overflow_mode)
+{
 }
 
 
