@@ -19,6 +19,7 @@
 #include <DB/Core/StringRef.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Interpreters/AggregationCommon.h>
+#include <common/config_common.h>
 
 
 struct SmallStringRef
@@ -64,7 +65,7 @@ inline bool operator==(SmallStringRef lhs, SmallStringRef rhs)
 	if (lhs.size == 0)
 		return true;
 
-#if __x86_64__
+#if HAVE_SSE2
 	return memequalSSE2Wide(lhs.data(), rhs.data(), lhs.size);
 #else
 	return false;
