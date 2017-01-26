@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 import os
+import socket
 import BaseHTTPServer
 import SocketServer
 
 PORT_NUMBER = 58000
 
 class myHTTPServer(SocketServer.ForkingMixIn, BaseHTTPServer.HTTPServer):
+    address_family = socket.AF_INET6
     pass
 
 class myHandler(BaseHTTPServer.BaseHTTPRequestHandler):
