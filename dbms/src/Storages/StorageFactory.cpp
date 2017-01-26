@@ -52,6 +52,7 @@ namespace ErrorCodes
 	extern const int UNKNOWN_IDENTIFIER;
 	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 	extern const int TYPE_MISMATCH;
+	extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
 
 
@@ -473,14 +474,14 @@ StoragePtr StorageFactory::get(
 			auto sharding_expr = ExpressionAnalyzer(sharding_key, context, nullptr, *columns).getActions(false);
 			const Block & block = sharding_expr->getSampleBlock();
 
-			if (block.columns() != 0)
-			{
-				auto type = block.getColumns().back().type;
+			if (block.columns() != 1)
+				throw Exception("Sharding expression must return exactly one column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
 
-				if (!type->isNumeric())
-					throw Exception("Sharding expression has type " + type->getName() +
-									", but should be one of integer type", ErrorCodes::TYPE_MISMATCH);
-			}
+			auto type = block.getByPosition(0).type;
+
+			if (!type->isNumeric())
+				throw Exception("Sharding expression has type " + type->getName() +
+					", but should be one of integer type", ErrorCodes::TYPE_MISMATCH);
 		}
 
 		return StorageDistributed::create(
