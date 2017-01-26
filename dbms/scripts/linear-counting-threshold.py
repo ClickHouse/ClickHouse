@@ -126,7 +126,7 @@ def dump_graphs(data, count):
 
 def start():
 	parser = argparse.ArgumentParser(description = "Generate graphs that help to determine the linear counting threshold.")
-	parser.add_argument("-x", "--host", default="127.0.0.1", help="clickhouse host name");
+	parser.add_argument("-x", "--host", default="localhost", help="clickhouse host name");
 	parser.add_argument("-p", "--port", type=int, default=9000, help="clickhouse client TCP port");
 	parser.add_argument("-t", "--http_port", type=int, default=8123, help="clickhouse HTTP port");
 	parser.add_argument("-i", "--iterations", type=int, default=5000, help="number of iterations");
