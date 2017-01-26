@@ -307,7 +307,7 @@ def generate_dictionaries(args):
 
     source_http = '''
     <http>
-        <url>http://localhost:58000/generated/%s</url>
+        <url>http://localhost:58001/generated/%s</url>
         <format>TabSeparated</format>
     </http>
     '''
