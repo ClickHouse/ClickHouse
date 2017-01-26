@@ -72,12 +72,16 @@ add_library (common
 )
 
 # When testing for memory leaks, disable libtcmalloc.
-if (ENABLE_LIBTCMALLOC)
+
+if (USE_JEMALLOC)
+		message (STATUS "Link jemalloc : ${JEMALLOC_LIBRARIES}")
+	set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
+elseif (USE_TCMALLOC)
 	if (DEBUG_LIBTCMALLOC)
 		message (STATUS "Link libtcmalloc_minimal_debug for testing")
 		set (MALLOC_LIBRARIES libtcmalloc_minimal_debug.a)
 	else ()
-		message (STATUS "Link libtcmalloc_minimal")
+		message (STATUS "Link libtcmalloc_minimal : ${GPERFTOOLS_TCMALLOC}")
 		set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC})
 	endif ()
 else ()
