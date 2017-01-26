@@ -1,10 +1,13 @@
 #!/usr/bin/env python
 import os
 import socket
+import sys
 import BaseHTTPServer
 import SocketServer
 
-PORT_NUMBER = 58000
+PORT_NUMBER = 80
+if len(sys.argv) > 1 and int(sys.argv[1]):
+    PORT_NUMBER = int(sys.argv[1])
 
 class myHTTPServer(SocketServer.ForkingMixIn, BaseHTTPServer.HTTPServer):
     address_family = socket.AF_INET6
@@ -33,7 +36,7 @@ class myHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
 try:
     server = myHTTPServer(('', PORT_NUMBER), myHandler)
-    print 'Started httpserver on port ' , PORT_NUMBER
+    print 'Started httpserver on port' , PORT_NUMBER
     server.serve_forever()
 
 except KeyboardInterrupt:
