@@ -235,7 +235,7 @@ def dump_arrays(data):
 
 def start():
 	parser = argparse.ArgumentParser(description = "Generate bias correction tables for HyperLogLog-based functions.")
-	parser.add_argument("-x", "--host", default="127.0.0.1", help="ClickHouse server host name");
+	parser.add_argument("-x", "--host", default="localhost", help="ClickHouse server host name");
 	parser.add_argument("-p", "--port", type=int, default=9000, help="ClickHouse server TCP port");
 	parser.add_argument("-t", "--http_port", type=int, default=8123, help="ClickHouse server HTTP port");
 	parser.add_argument("-i", "--iterations", type=int, default=5000, help="number of iterations");
