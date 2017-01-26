@@ -1,6 +1,9 @@
-#if defined(__x86_64__)
+/*
+#include <common/config_common.h>
+#if HAVE_SSE42
 	#include <nmmintrin.h>
 #endif
+*/
 
 #include <string>
 #include <iostream>

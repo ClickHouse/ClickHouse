@@ -62,7 +62,3 @@ check_cxx_source_runs("
 		append_history(1,nullptr);
 	}
 " HAVE_READLINE_HISTORY)
-
-#if (HAVE_READLINE_HISTORY)
-#	add_definitions (-D HAVE_READLINE_HISTORY)
-#endif ()

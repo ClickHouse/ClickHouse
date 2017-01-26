@@ -3,9 +3,8 @@
 #include <string.h>
 #include <DB/Core/Defines.h>
 
-
-#if defined(__x86_64__)
-
+#include <common/config_common.h>
+#if HAVE_SSE2
 #include <emmintrin.h>
 
 

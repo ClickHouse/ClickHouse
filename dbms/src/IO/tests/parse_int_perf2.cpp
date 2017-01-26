@@ -1,4 +1,5 @@
-#if defined(__x86_64__)
+#include <common/config_common.h>
+#if HAVE_SSE2
 	#include <emmintrin.h>
 #endif
 
@@ -11,7 +12,7 @@
 #include <DB/Common/Stopwatch.h>
 
 
-#if defined(__x86_64__)
+#if HAVE_SSE2
 std::ostream & operator<< (std::ostream & ostr, const __m128i vec)
 {
 	char digits[16];

@@ -5,7 +5,8 @@
 #include <functional>
 #include <ostream>
 
-#if defined(__x86_64__)
+#include <common/config_common.h>
+#if HAVE_SSE2
 	#include <emmintrin.h>
 #endif
 
@@ -35,7 +36,7 @@ using StringRefs = std::vector<StringRef>;
 
 using UInt64 = DB::UInt64;
 
-#if defined(__x86_64__)
+#if HAVE_SSE2
 
 /** Сравнение строк на равенство.
   * Подход является спорным и выигрывает не во всех случаях.
@@ -128,7 +129,7 @@ inline bool operator== (StringRef lhs, StringRef rhs)
 	if (lhs.size == 0)
 		return true;
 
-#if defined(__x86_64__)
+#if HAVE_SSE2
 	return memequalSSE2Wide(lhs.data, rhs.data, lhs.size);
 #else
 	return 0 == memcmp(lhs.data, rhs.data, lhs.size);
@@ -169,7 +170,7 @@ struct StringRefHash64
 	}
 };
 
-#if defined(__x86_64__)
+#if __SSE4_2__
 
 #ifdef __SSE4_1__
 #include <smmintrin.h>

@@ -1,6 +1,8 @@
+/*
 #if defined(__x86_64__)
 	#include <emmintrin.h>
 #endif
+*/
 
 #include <sstream>
 

@@ -10,7 +10,8 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/VarInt.h>
 
-#if defined(__x86_64__)
+#include <common/config_common.h>
+#if HAVE_SSE2
 	#include <emmintrin.h>
 #endif
 
@@ -125,7 +126,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, Column
 
 		if (size)
 		{
-#if defined(__x86_64__)
+#if HAVE_SSE2
 			/// Оптимистичная ветка, в которой возможно более эффективное копирование.
 			if (offset + 16 * UNROLL_TIMES <= data.allocated_size() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
 			{
