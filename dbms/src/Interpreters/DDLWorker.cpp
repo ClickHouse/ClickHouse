@@ -1,4 +1,5 @@
 #include <DB/Interpreters/DDLWorker.h>
+#include <DB/Interpreters/executeQuery.h>
 
 namespace DB
 {
@@ -9,45 +10,49 @@ DDLWorker::DDLWorker(Context * ctx, const std::string & host, int port)
 	, thread(&DDLWorker::run, this)
 {
 	local_addr = host + ":" + std::to_string(port);
+	base_path = "/clickhouse/task_queue/ddl/";
 }
 
-DDLWorker::~DDLWorker()
-{
+DDLWorker::~DDLWorker() {
 	stop_flag = true;
 	cond_var.notify_one();
 	thread.join();
 }
 
-void DDLWorker::processTasks()
-{
+void DDLWorker::processTasks() {
+	const std::string path = base_path + local_addr;
+
+	processCreate(path + "/create");
+}
+
+void DDLWorker::processCreate(const std::string & path) {
 	auto zookeeper = context->getZooKeeper();
-	const std::string & base_path =
-		"/clickhouse/task_queue/ddl/" + local_addr + "/create";
+	const Strings & children = zookeeper->getChildren(path);
 
-	const Strings & children = zookeeper->getChildren(base_path);
+	for (const auto & name : children) {
+		try {
+			std::string path = path + "/" + name;
+			std::string value = zookeeper->get(path);
 
-	for (const auto & name : children)
-	{
-		std::string value = zookeeper->get(base_path + "/" + name);
+			if (!value.empty()) {
+				executeQuery(value, *context);
+			}
 
-		std::cerr << name << std::endl;
-		std::cerr << value << std::endl;
+			zookeeper->remove(path);
+		} catch (const std::exception& e) {
+			std::cerr << "execption " << e.what() << std::endl;
+		}
 	}
 }
 
-void DDLWorker::run()
-{
+void DDLWorker::run() {
 	using namespace std::chrono_literals;
 
-	while (!stop_flag)
-	{
-		try
-		{
+	while (!stop_flag) {
+		try {
 			processTasks();
-		}
-		catch (...)
-		{
-			// TODO
+		} catch (const std::exception& e) {
+			std::cerr << "execption " << e.what() << std::endl;
 		}
 
 		std::unique_lock<std::mutex> g(lock);

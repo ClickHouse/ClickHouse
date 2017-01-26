@@ -21,12 +21,14 @@ public:
 
 private:
 	void processTasks();
+	void processCreate(const std::string & path);
 
 	void run();
 
 private:
 	Context * context;
 	std::string local_addr;
+	std::string base_path;
 
 	std::atomic<bool> stop_flag;
 	std::condition_variable cond_var;
