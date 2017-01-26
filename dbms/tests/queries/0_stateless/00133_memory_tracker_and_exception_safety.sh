@@ -6,7 +6,7 @@ clickhouse-client -n --query="
 ";
 
 STEP_MULTIPLIER=1
-if [ -n "$VALGRIND" ]; then
+if [ -n "$DBMS_TESTS_UNDER_VALGRIND" ]; then
     STEP_MULTIPLIER=50
 fi
 
