@@ -127,8 +127,9 @@ inline const char * find_first_symbols_sse42(const char * begin, const char * en
 	return find_first_symbols_sse42_impl<sizeof...(symbols), symbols...>(begin, end);
 }
 
-}
 #endif
+
+}
 
 
 template <char... symbols>
