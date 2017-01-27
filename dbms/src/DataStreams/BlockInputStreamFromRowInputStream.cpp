@@ -12,7 +12,6 @@ namespace ErrorCodes
 	extern const int CANNOT_PARSE_DATE;
 	extern const int CANNOT_PARSE_DATETIME;
 	extern const int CANNOT_READ_ARRAY_FROM_TEXT;
-	extern const int LOGICAL_ERROR;
 }
 
 
@@ -75,7 +74,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 
 				row_input->syncAfterError();
 
-				/// Truncate all columns in block to minimal size (remove values, that was appended to part of columns).
+				/// Truncate all columns in block to minimal size (remove values, that was appended to only part of columns).
 
 				size_t columns = res.columns();
 				size_t min_size = std::numeric_limits<size_t>::max();
@@ -86,12 +85,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 				{
 					auto & column = res.getByPosition(column_idx).column;
 					if (column->size() > min_size)
-					{
-						if (column->size() == min_size + 1)
-							column->popBack();
-						else
-							throw Exception("Unexpected column size while reading from text format", ErrorCodes::LOGICAL_ERROR);
-					}
+						column->popBack(column->size() - min_size);
 				}
 			}
 		}
