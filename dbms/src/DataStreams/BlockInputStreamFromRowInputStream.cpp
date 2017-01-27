@@ -27,7 +27,7 @@ BlockInputStreamFromRowInputStream::BlockInputStreamFromRowInputStream(
 }
 
 
-static void isParseError(int code)
+static bool isParseError(int code)
 {
 	return code == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
 		|| code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
