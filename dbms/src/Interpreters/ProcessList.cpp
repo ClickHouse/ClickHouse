@@ -1,7 +1,9 @@
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/Settings.h>
+#include <DB/Parsers/ASTKillQueryQuery.h>
 #include <DB/Common/Exception.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB
@@ -15,14 +17,15 @@ namespace ErrorCodes
 
 
 ProcessList::EntryPtr ProcessList::insert(
-	const String & query_, const ClientInfo & client_info, const Settings & settings)
+	const String & query_, const IAST * ast, const ClientInfo & client_info, const Settings & settings)
 {
 	EntryPtr res;
+	bool is_kill_query = ast && typeid_cast<const ASTKillQueryQuery *>(ast);
 
 	{
 		std::lock_guard<std::mutex> lock(mutex);
 
-		if (max_size && cur_size >= max_size
+		if (!is_kill_query && max_size && cur_size >= max_size
 			&& (!settings.queue_max_wait_ms.totalMilliseconds() || !have_space.tryWait(mutex, settings.queue_max_wait_ms.totalMilliseconds())))
 			throw Exception("Too much simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
@@ -37,11 +40,12 @@ ProcessList::EntryPtr ProcessList::insert(
 		  */
 
 		{
-			UserToQueries::iterator user_process_list = user_to_queries.find(client_info.current_user);
+			auto user_process_list = user_to_queries.find(client_info.current_user);
 
 			if (user_process_list != user_to_queries.end())
 			{
-				if (settings.max_concurrent_queries_for_user && user_process_list->second.queries.size() >= settings.max_concurrent_queries_for_user)
+				if (!is_kill_query && settings.max_concurrent_queries_for_user
+					&& user_process_list->second.queries.size() >= settings.max_concurrent_queries_for_user)
 					throw Exception("Too much simultaneous queries for user " + client_info.current_user
 						+ ". Current: " + toString(user_process_list->second.queries.size())
 						+ ", maximum: " + toString(settings.max_concurrent_queries_for_user),
@@ -49,13 +53,14 @@ ProcessList::EntryPtr ProcessList::insert(
 
 				if (!client_info.current_query_id.empty())
 				{
-					ProcessListForUser::QueryToElement::iterator element = user_process_list->second.queries.find(client_info.current_query_id);
+					auto element = user_process_list->second.queries.find(client_info.current_query_id);
 					if (element != user_process_list->second.queries.end())
 					{
 						if (!settings.replace_running_query)
 							throw Exception("Query with id = " + client_info.current_query_id + " is already running.",
 								ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
 
+						/// Kill query could be replaced since system.processes is continuously updated
 						element->second->is_cancelled = true;
 						/// В случае если запрос отменяется, данные о нем удаляются из мапа в момент отмены.
 						user_process_list->second.queries.erase(element);
@@ -142,6 +147,24 @@ ProcessListEntry::~ProcessListEntry()
 }
 
 
+void ProcessListElement::setQueryStreams(const BlockIO & io)
+{
+	query_stream_in = io.in;
+	query_stream_out = io.out;
+	query_streams_initialized = true; // forces strict memory ordering
+}
+
+bool ProcessListElement::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const
+{
+	if (!query_streams_initialized)
+		return false;
+
+	in = query_stream_in;
+	out = query_stream_out;
+	return true;
+}
+
+
 void ProcessList::addTemporaryTable(ProcessListElement & elem, const String & table_name, StoragePtr storage)
 {
 	std::lock_guard<std::mutex> lock(mutex);
@@ -169,6 +192,48 @@ StoragePtr ProcessList::tryGetTemporaryTable(const String & query_id, const Stri
 	}
 
 	return {};
+}
+
+
+ProcessListElement * ProcessList::tryGetProcessListElement(const String & current_query_id, const String & current_user)
+{
+	auto user_it = user_to_queries.find(current_user);
+	if (user_it != user_to_queries.end())
+	{
+		const auto & user_queries = user_it->second.queries;
+		auto query_it = user_queries.find(current_query_id);
+
+		if (query_it != user_queries.end())
+			return query_it->second;
+	}
+
+	return nullptr;
+}
+
+
+ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user)
+{
+	std::lock_guard<std::mutex> lock(mutex);
+
+	ProcessListElement * elem = tryGetProcessListElement(current_query_id, current_user);
+
+	if (!elem)
+		return CancellationCode::NotFound;
+
+	BlockInputStreamPtr input_stream;
+	BlockOutputStreamPtr output_stream;
+	IProfilingBlockInputStream * input_stream_casted;
+
+	if (elem->tryGetQueryStreams(input_stream, output_stream))
+	{
+		if (input_stream && (input_stream_casted = dynamic_cast<IProfilingBlockInputStream *>(input_stream.get())))
+		{
+			input_stream_casted->cancel();
+			return CancellationCode::CancelSent;
+		}
+		return CancellationCode::CancelCannotBeSent;
+	}
+	return CancellationCode::QueryIsNotInitializedYet;
 }
 
 }

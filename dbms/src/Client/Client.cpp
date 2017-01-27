@@ -33,7 +33,6 @@
 #include <DB/IO/WriteHelpers.h>
 
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
-#include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
 
 #include <DB/Parsers/ParserQuery.h>

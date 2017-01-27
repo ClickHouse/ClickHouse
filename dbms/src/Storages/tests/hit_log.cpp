@@ -118,7 +118,7 @@ try
 		ReadBufferFromIStream in_buf(std::cin);
 
 		RowInputStreamPtr in_ = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample);
-		BlockInputStreamFromRowInputStream in(in_, sample);
+		BlockInputStreamFromRowInputStream in(in_, sample, DEFAULT_INSERT_BLOCK_SIZE, 0, 0);
 		BlockOutputStreamPtr out = table->write({}, {});
 		copyData(in, *out);
 	}
