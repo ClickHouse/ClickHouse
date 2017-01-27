@@ -312,7 +312,7 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
 
 void TabSeparatedRowInputStream::syncAfterError()
 {
-	skipToUnescapedNextLineOrEOF(*istr);
+	skipToUnescapedNextLineOrEOF(istr);
 }
 
 }
