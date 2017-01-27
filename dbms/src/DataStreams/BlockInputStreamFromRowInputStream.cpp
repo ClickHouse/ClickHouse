@@ -27,6 +27,16 @@ BlockInputStreamFromRowInputStream::BlockInputStreamFromRowInputStream(
 }
 
 
+static void isParseError(int code)
+{
+	return e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
+		|| e.code() == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
+		|| e.code() == ErrorCodes::CANNOT_PARSE_DATE
+		|| e.code() == ErrorCodes::CANNOT_PARSE_DATETIME
+		|| e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT;
+}
+
+
 Block BlockInputStreamFromRowInputStream::readImpl()
 {
 	Block res = sample.cloneEmpty();
@@ -44,11 +54,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 			{
 				/// Logic for possible skipping of errors.
 
-				if (!(e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
-					|| e.code() == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
-					|| e.code() == ErrorCodes::CANNOT_PARSE_DATE
-					|| e.code() == ErrorCodes::CANNOT_PARSE_DATETIME
-					|| e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT))
+				if (!isParseError(e.code()))
 					throw;
 
 				if (allow_errors_num == 0 && allow_errors_ratio == 0)
@@ -92,7 +98,20 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 	}
 	catch (Exception & e)
 	{
-		e.addMessage("(at row " + toString(total_rows + 1) + ")");
+		if (!isParseError(e.code()))
+			throw;
+
+		String verbose_diagnostic;
+		try
+		{
+			verbose_diagnostic = row_input->getDiagnosticInfo();
+		}
+		catch (...)
+		{
+			/// Error while trying to obtain verbose diagnostic. Ok to ignore.
+		}
+
+		e.addMessage("(at row " + toString(total_rows + 1) + ")\n" + verbose_diagnostic);
 		throw;
 	}
 

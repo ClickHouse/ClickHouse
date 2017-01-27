@@ -10,6 +10,8 @@ namespace DB
 
 /** Makes block-oriented stream on top of row-oriented stream.
   * It is used to read data from text formats.
+  *
+  * Also controls over parsing errors and prints diagnostic information about them.
   */
 class BlockInputStreamFromRowInputStream : public IProfilingBlockInputStream
 {
