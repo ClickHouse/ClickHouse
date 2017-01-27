@@ -28,7 +28,7 @@ class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 using Tables = std::map<String, StoragePtr>;
 struct Settings;
-struct IAST;
+class IAST;
 
 
 /** List of currently executing queries.
