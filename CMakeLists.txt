@@ -46,10 +46,6 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*)")
 	set (AARCH64 1)
 endif ()
 
-#if (NOT AARCH64)
-#	set (MACHINE_FLAGS "-msse4 -mpopcnt")
-#endif ()
-
 set (COMMON_WARNING_FLAGS "-Wall")	# -Werror is also added inside directories with our own code.
 set (CXX_WARNING_FLAGS "-Wnon-virtual-dtor")
 

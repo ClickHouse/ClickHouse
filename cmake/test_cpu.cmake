@@ -53,14 +53,13 @@ endif ()
 # gcc -dM -E -mpopcnt - < /dev/null | sort > gcc-dump-popcnt
 #define __POPCNT__ 1
 
-include (CheckCXXSourceCompiles)
-
 set (TEST_FLAG "-mpopcnt")
 
 set (CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} ${TEST_FLAG}")
 check_cxx_source_compiles("
 	int main() {
 		__builtin_popcountll(0);
+		return 0;
 	}
 " HAVE_POPCNT)
 
