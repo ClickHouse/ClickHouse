@@ -20,7 +20,7 @@ check_cxx_source_compiles("
 #define __SSE4_1__ 1
 
 set (TEST_FLAG "-msse4.1")
-set (CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} ${TEST_FLAG}")
+set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
 check_cxx_source_compiles("
 	#include <smmintrin.h>
 	int main() {
@@ -37,7 +37,7 @@ endif ()
 #define __SSE4_2__ 1
 
 set (TEST_FLAG "-msse4.2")
-set (CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} ${TEST_FLAG}")
+set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
 check_cxx_source_compiles("
 	#include <nmmintrin.h>
 	int main() {
@@ -55,7 +55,7 @@ endif ()
 
 set (TEST_FLAG "-mpopcnt")
 
-set (CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} ${TEST_FLAG}")
+set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
 check_cxx_source_compiles("
 	int main() {
 		__builtin_popcountll(0);
@@ -67,5 +67,6 @@ if (HAVE_POPCNT AND NOT AARCH64)
 	set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
 endif ()
 
+set (CMAKE_REQUIRED_FLAGS "")
 
 # TODO: add here sse3 test if you want use it
