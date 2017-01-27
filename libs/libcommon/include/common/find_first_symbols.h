@@ -134,8 +134,10 @@ inline const char * find_first_symbols_sse42(const char * begin, const char * en
 template <char... symbols>
 inline const char * find_first_symbols(const char * begin, const char * end)
 {
+#if __SSE4_2__
 	if (sizeof...(symbols) >= 5)
 		return detail::find_first_symbols_sse42<symbols...>(begin, end);
 	else
+#endif
 		return detail::find_first_symbols_sse2<symbols...>(begin, end);
 }
