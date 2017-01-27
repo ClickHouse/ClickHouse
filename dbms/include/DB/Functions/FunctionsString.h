@@ -16,9 +16,8 @@
 #include <DB/Functions/IFunction.h>
 #include <ext/range.hpp>
 
-#if defined(__x86_64__)
+#if __SSE2__
 	#include <emmintrin.h>
-	#include <nmmintrin.h>
 #endif
 
 
@@ -232,7 +231,7 @@ private:
 	{
 		const auto flip_case_mask = 'A' ^ 'a';
 
-#if defined(__x86_64__)
+#if __SSE2__
 		const auto bytes_sse = sizeof(__m128i);
 		const auto src_end_sse = src_end - (src_end - src) % bytes_sse;
 
@@ -393,7 +392,7 @@ private:
 
 	static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 	{
-#if defined(__x86_64__)
+#if __SSE2__
 		const auto bytes_sse = sizeof(__m128i);
 		auto src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse;
 

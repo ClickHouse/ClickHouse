@@ -1,7 +1,7 @@
 #include <iostream>
 #include <iomanip>
 
-#if defined(__x86_64__)
+#if __SSE2__
 #include <emmintrin.h>
 #endif
 
@@ -15,7 +15,7 @@
 
 int main(int argc, char ** argv)
 {
-#if defined(__x86_64__)
+#if __SSE2__
 	try
 	{
 		DB::ReadBufferFromFileDescriptor in(STDIN_FILENO);
