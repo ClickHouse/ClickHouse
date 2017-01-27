@@ -31,6 +31,8 @@ MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) +
 #Not complete disable
 use_mysql = True
 use_mongo = True
+use_http  = True
+http_port = 58000
 
 wait_for_loading_sleep_time_sec = 3
 
@@ -307,10 +309,10 @@ def generate_dictionaries(args):
 
     source_http = '''
     <http>
-        <url>http://localhost:58001/generated/%s</url>
+        <url>http://localhost:{http_port}/generated/%s</url>
         <format>TabSeparated</format>
     </http>
-    '''
+    '''.format(http_port=http_port)
 
     layout_flat = '<flat />'
     layout_hashed = '<hashed />'
@@ -421,6 +423,8 @@ def generate_dictionaries(args):
 
 
 def run_tests(args):
+    if use_http:
+        http_server = subprocess.Popen(["python", "http_server.py", str(http_port)]);
     keys = [ 'toUInt64(n)', '(n, n)', '(toString(n), n)' ]
     dict_get_query_skeleton = "select dictGet{type}('{name}', '{type}_', {key}) from system.one array join range(8) as n;"
     dict_has_query_skeleton = "select dictHas('{name}', {key}) from system.one array join range(8) as n;"
@@ -558,6 +562,9 @@ def run_tests(args):
             test_query(name,
                 dict_hierarchy_query_skeleton.format(**locals()),
                 'hierarchy', ' for dictGetHierarchy, dictIsIn')
+
+    if use_http:
+        http_server.kill()
 
     if failures > 0:
         print(colored("\nHaving {0} errors!".format(failures), "red", attrs=["bold"]))
