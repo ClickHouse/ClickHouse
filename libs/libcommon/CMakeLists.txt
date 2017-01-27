@@ -71,7 +71,7 @@ add_library (common
 	${CONFIG_COMMON}
 )
 
-# When testing for memory leaks, disable libtcmalloc.
+# When testing for memory leaks, dont link tcmalloc or jemalloc.
 
 if (USE_JEMALLOC)
 		message (STATUS "Link jemalloc : ${JEMALLOC_LIBRARIES}")

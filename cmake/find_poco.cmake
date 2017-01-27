@@ -29,4 +29,3 @@ else ()
 endif ()
 
 message(STATUS "Using Poco: ${Poco_INCLUDE_DIRS} : ${Poco_Net_LIBRARY},${Poco_Util_LIBRARY},${Poco_XML_LIBRARY},${Poco_Data_LIBRARY},${Poco_DataODBC_LIBRARY},${Poco_MongoDB_LIBRARY},${Poco_Foundation_LIBRARY}")
-

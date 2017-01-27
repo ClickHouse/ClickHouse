@@ -58,6 +58,10 @@ option (TEST_COVERAGE "Enables flags for test coverage" OFF)
 option (ENABLE_TESTS "Enables tests" ON)
 
 option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
+if (USE_STATIC_LIBRARIES)
+	set (CMAKE_FIND_LIBRARY_SUFFIXES ".a;.so")
+endif ()
+
 #if (NOT $ENV{USE_STATIC_LIBRARIES})
 #	set (USE_STATIC_LIBRARIES FALSE)
 #endif ()

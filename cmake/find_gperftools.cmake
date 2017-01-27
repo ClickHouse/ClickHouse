@@ -12,5 +12,5 @@ if (ENABLE_LIBTCMALLOC)
 		set (USE_TCMALLOC 1)
 	endif ()
 
-	message(STATUS "Using tcmalloc=${USE_TCMALLOC} : ${GPERFTOOLS_INCLUDE_DIR} : ${GPERFTOOLS_TCMALLOC}")
+	message(STATUS "Using tcmalloc=${USE_TCMALLOC}: ${GPERFTOOLS_INCLUDE_DIR} : ${GPERFTOOLS_TCMALLOC}")
 endif ()
