@@ -971,4 +971,11 @@ inline void skipBOMIfExists(ReadBuffer & buf)
 	}
 }
 
+
+/// Skip to next character after next \n. If no \n in stream, skip to end.
+void skipToNextLineOrEOF(ReadBuffer & buf);
+
+/// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
+void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
+
 }

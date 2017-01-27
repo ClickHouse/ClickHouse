@@ -62,6 +62,14 @@ def main(args):
 		except CalledProcessError:
 			args.zookeeper = False
 
+	if args.shard is None:
+		try:
+			check_call(['grep', '-qE', '"127.0.0.2|<listen_host>::</listen_host>"', '/etc/clickhouse-server/config-preprocessed.xml'], )
+			args.shard = True
+		except CalledProcessError:
+			# TODO: false here after setting <listen_host>::1</listen_host>
+			args.shard = True
+
 	base_dir = os.path.abspath(args.queries)
 
 	failures_total = 0
@@ -98,6 +106,9 @@ def main(args):
 					if not args.zookeeper and 'zookeeper' in name:
 						report_testcase.append(et.Element("skipped", attrib = {"message": "no zookeeper"}))
 						print(MSG_SKIPPED + " - no zookeeper")
+					elif not args.shard and 'shard' in name:
+						report_testcase.append(et.Element("skipped", attrib = {"message": "no shard"}))
+						print(MSG_SKIPPED + " - no shard")
 					else:
 						reference_file = os.path.join(suite_dir, name) + '.reference'
 						stdout_file = os.path.join(suite_dir, name) + '.stdout'
@@ -218,6 +229,8 @@ if __name__ == '__main__':
 	group = parser.add_mutually_exclusive_group(required = False)
 	group.add_argument('--zookeeper', action = 'store_true', default = None, dest = 'zookeeper', help = 'Run zookeeper related tests')
 	group.add_argument('--no-zookeeper', action = 'store_false', default = None, dest = 'zookeeper', help = 'Do not run zookeeper related tests')
+	group.add_argument('--shard', action = 'store_true', default = None, dest = 'shard', help = 'Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
+	group.add_argument('--no-shard', action = 'store_false', default = None, dest = 'shard', help = 'Do not run shard related tests')
 
 	args = parser.parse_args()
 

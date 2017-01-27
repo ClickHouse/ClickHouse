@@ -11,10 +11,10 @@ class ProcessListEntry;
 
 struct BlockIO
 {
-	/** process_list_entry должен уничтожаться позже, чем in и out,
-	  *  так как внутри in и out есть ссылка на объект внутри process_list_entry
+	/** process_list_entry should be destroyed after in and after out,
+	  *  since in and out contain pointer to an object inside process_list_entry
 	  *  (MemoryTracker * current_memory_tracker),
-	  *  которая может использоваться до уничтожения in и out.
+	  *  which could be used before destroying of in and out.
 	  */
 	std::shared_ptr<ProcessListEntry> process_list_entry;
 

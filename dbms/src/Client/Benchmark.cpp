@@ -387,7 +387,6 @@ private:
 
 		json_out << "},\n";
 
-
 		json_out << double_quote << "query_time_percentiles" << ": {\n";
 
 		for (int percent = 0; percent <= 90; percent += 10)

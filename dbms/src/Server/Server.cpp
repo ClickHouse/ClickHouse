@@ -234,10 +234,9 @@ int Server::main(const std::vector<std::string> & args)
 			rlim.rlim_cur = config().getUInt("max_open_files", rlim.rlim_max);
 			int rc = setrlimit(RLIMIT_NOFILE, &rlim);
 			if (rc != 0)
-				//throwFromErrno(std::string("Cannot setrlimit (tried rlim_cur = ") + std::to_string(rlim.rlim_cur) + "). Try to specify max_open_files according to your system limits");
-				throw DB::Exception(std::string("Cannot setrlimit (tried rlim_cur = ") + std::to_string(rlim.rlim_cur) + "). Try to specify max_open_files according to your system limits. error: " + strerror(errno));
-
-			LOG_DEBUG(log, "Set rlimit on number of file descriptors to " << rlim.rlim_cur << " (was " << old << ").");
+				LOG_WARNING(log, std::string("Cannot setrlimit (tried rlim_cur = ") + std::to_string(rlim.rlim_cur) + "). Try to specify max_open_files according to your system limits. error: " + strerror(errno));
+			else
+				LOG_DEBUG(log, "Set rlimit on number of file descriptors to " << rlim.rlim_cur << " (was " << old << ").");
 		}
 	}
 

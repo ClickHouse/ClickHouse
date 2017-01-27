@@ -774,7 +774,6 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 HTTP интерфейс позволяет передать внешние данные (внешние временные таблицы) для использования запроса. Подробнее смотрите раздел "Внешние данные для обработки запроса"
 
-
 ==JDBC драйвер==
 
 Для ClickHouse существует официальный JDBC драйвер. Смотрите <a href="https://github.com/yandex/clickhouse-jdbc">здесь</a>.
@@ -782,7 +781,7 @@ HTTP интерфейс позволяет передать внешние да�
 
 ==Библиотеки от сторонних разработчиков==
 
-Существуют библиотеки для работы с ClickHouse для Python (<a href="https://github.com/Infinidat/infi.clickhouse_orm">1</a>), PHP (<a href="https://github.com/8bitov/clickhouse-php-client">1</a>, <a href="https://github.com/SevaCode/PhpClickHouseClient">2</a>, <a href="https://github.com/smi2/phpClickHouse">3</a>), Go (<a href="https://github.com/roistat/go-clickhouse">1</a>), Node.js (<a href="https://github.com/TimonKK/clickhouse">1</a>, <a href="https://github.com/apla/node-clickhouse">2</a>), Perl (<a href="https://github.com/elcamlost/perl-DBD-ClickHouse">1</a>, <a href="https://metacpan.org/release/HTTP-ClickHouse">2</a>, <a href="https://metacpan.org/release/AnyEvent-ClickHouse">3</a>), Ruby (<a href="https://github.com/archan937/clickhouse">1</a>), R (<a href="https://github.com/hannesmuehleisen/clickhouse-r">1</a>).
+Существуют библиотеки для работы с ClickHouse для Python (<a href="https://github.com/Infinidat/infi.clickhouse_orm">1</a>, <a href="https://github.com/cloudflare/sqlalchemy-clickhouse">2</a>), PHP (<a href="https://github.com/8bitov/clickhouse-php-client">1</a>, <a href="https://github.com/SevaCode/PhpClickHouseClient">2</a>, <a href="https://github.com/smi2/phpClickHouse">3</a>), Go (<a href="https://github.com/kshvakov/clickhouse/">1</a>, <a href="https://github.com/roistat/go-clickhouse">2</a>), Node.js (<a href="https://github.com/TimonKK/clickhouse">1</a>, <a href="https://github.com/apla/node-clickhouse">2</a>), Perl (<a href="https://github.com/elcamlost/perl-DBD-ClickHouse">1</a>, <a href="https://metacpan.org/release/HTTP-ClickHouse">2</a>, <a href="https://metacpan.org/release/AnyEvent-ClickHouse">3</a>), Ruby (<a href="https://github.com/archan937/clickhouse">1</a>), R (<a href="https://github.com/hannesmuehleisen/clickhouse-r">1</a>).
 
 Библиотеки не тестировались нами. Порядок перечисления произвольный.
 
@@ -2302,6 +2301,21 @@ ORDER BY EventDate ASC
 - при наличии сильной фильтрации по небольшому количеству столбцов с помощью PREWHERE;
 - в подзапросах (так как из подзапросов выкидываются столбцы, не нужные для внешнего запроса).
 В других случаях использование звёздочки является издевательством над системой, так как вместо преимуществ столбцовой СУБД вы получаете недостатки. То есть использовать звёздочку не рекомендуется.
+
+
+===KILL QUERY===
+%%KILL QUERY WHERE expression_for_system.processes [SYNC|ASYNC|TEST] [FORMAT format]%%
+
+Пытается завершить исполняющиеся в данный момент запросы.
+Запросы для завершения выбираются из таблицы system.processes для которых выражение expression_for_system.processes истинно.
+Readonly-пользователи могут совершать только свои запросы.
+По-умолчанию используется асинхронный вариант запроса (ASYNC), который завершается не ожидая завершения запросов.
+Синхронный вариант (SYNC) ожидает завершения всех запросов и построчно выводит информацию о процессах по ходу их завершения.
+Ответ содержит колонку kill_status, которая может принимать следующие значения:
+1. 'finished' - запрос успешно завершился;
+2. 'waiting' - запросу отправлен сигнал завершения, ожидается его завершение;
+3. остальные значения описывают причину невозможности завершения запроса.
+Тестовый вариант запроса (TEST) только проверяет права пользователя и выводит список запросов для завершения.
 
 
 </div>

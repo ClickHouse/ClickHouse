@@ -45,7 +45,7 @@ try
 	WriteBufferFromOStream out_buf(ostr);
 
 	RowInputStreamPtr row_input = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample);
-	BlockInputStreamFromRowInputStream block_input(row_input, sample);
+	BlockInputStreamFromRowInputStream block_input(row_input, sample, DEFAULT_INSERT_BLOCK_SIZE, 0, 0);
 	RowOutputStreamPtr row_output = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
 	BlockOutputStreamFromRowOutputStream block_output(row_output);
 

@@ -5,11 +5,13 @@
 #include <DB/Common/StringUtils.h>
 
 #include <DB/Parsers/ASTCreateQuery.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
 
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/evaluateConstantExpression.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/getClusterName.h>
 
 #include <DB/Storages/StorageLog.h>
@@ -49,6 +51,8 @@ namespace ErrorCodes
 	extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 	extern const int UNKNOWN_IDENTIFIER;
 	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
+	extern const int TYPE_MISMATCH;
+	extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
 
 
@@ -463,6 +467,22 @@ StoragePtr StorageFactory::get(
 		String remote_table 	= static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
 
 		const auto & sharding_key = args.size() == 4 ? args[3] : nullptr;
+
+		/// Check that sharding_key exists in the table and has numeric type.
+		if (sharding_key)
+		{
+			auto sharding_expr = ExpressionAnalyzer(sharding_key, context, nullptr, *columns).getActions(false);
+			const Block & block = sharding_expr->getSampleBlock();
+
+			if (block.columns() != 1)
+				throw Exception("Sharding expression must return exactly one column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+
+			auto type = block.getByPosition(0).type;
+
+			if (!type->isNumeric())
+				throw Exception("Sharding expression has type " + type->getName() +
+					", but should be one of integer type", ErrorCodes::TYPE_MISMATCH);
+		}
 
 		return StorageDistributed::create(
 			table_name, columns,

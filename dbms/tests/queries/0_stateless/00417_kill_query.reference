@@ -1,0 +1,6 @@
+SELECT sleep(1) FROM system.numbers LIMIT 6
+SELECT sleep(2) FROM system.numbers LIMIT 3
+SELECT sleep(3) FROM system.numbers LIMIT 2
+0
+SELECT sleep(1) FROM system.numbers LIMIT 999
+0
