@@ -5,7 +5,7 @@
 #include <type_traits>
 #include <array>
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 	#include <smmintrin.h>
 #endif
 
@@ -268,7 +268,7 @@ namespace DB
 		}
 	};
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 	template <typename T>
 	class BaseFloatRoundingComputation;
 
