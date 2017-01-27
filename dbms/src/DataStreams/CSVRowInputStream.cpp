@@ -334,4 +334,10 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
 	return true;
 }
 
+
+void CSVRowInputStream::syncAfterError()
+{
+	skipToNextLineOrEOF(istr);
+}
+
 }

@@ -83,8 +83,7 @@ bool ValuesRowInputStream::read(Block & block)
 				|| e.code() == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
 				|| e.code() == ErrorCodes::CANNOT_PARSE_DATE
 				|| e.code() == ErrorCodes::CANNOT_PARSE_DATETIME
-				|| e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
-				|| e.code() == ErrorCodes::CANNOT_PARSE_DATE)
+				|| e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT)
 			{
 				/// TODO Работоспособность, если выражение не помещается целиком до конца буфера.
 

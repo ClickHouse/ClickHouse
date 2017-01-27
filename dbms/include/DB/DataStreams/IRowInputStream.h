@@ -9,20 +9,24 @@ namespace DB
 
 class Block;
 
-/** Интерфейс потока для чтения данных по строкам.
+/** Interface of stream, that allows to read data by rows.
   */
 class IRowInputStream : private boost::noncopyable
 {
 public:
-	/** Прочитать следующую строку и положить её в блок.
-	  * Если строк больше нет - вернуть false.
+	/** Read next row and append it to block.
+	  * If no more rows - return false.
 	  */
 	virtual bool read(Block & block) = 0;
 
-	/// Прочитать разделитель
-	virtual void readRowBetweenDelimiter() {};	/// разделитель между строками
-	virtual void readPrefix() {};				/// разделитель перед началом результата
-	virtual void readSuffix() {};				/// разделитель после конца результата
+	virtual void readPrefix() {};				/// delimiter before begin of result
+	virtual void readSuffix() {};				/// delimiter after end of result
+
+	/// Skip data until next row.
+	/// This is intended for text streams, that allow skipping of errors.
+	/// By default - throws not implemented exception.
+	virtual bool allowSyncAfterError() const { return false; }
+	virtual void syncAfterError();
 
 	virtual ~IRowInputStream() {}
 };

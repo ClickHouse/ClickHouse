@@ -23,6 +23,8 @@ public:
 
 	bool read(Block & block) override;
 	void readPrefix() override;
+	bool allowSyncAfterError() const override { return true; };
+	void syncAfterError() override;
 
 private:
 	ReadBuffer & istr;

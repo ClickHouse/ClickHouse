@@ -102,7 +102,7 @@ try
 		WriteBufferFromOStream out_buf(std::cout);
 
 		RowInputStreamPtr row_in = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample);
-		BlockInputStreamFromRowInputStream in(row_in, sample);
+		BlockInputStreamFromRowInputStream in(row_in, sample, DEFAULT_INSERT_BLOCK_SIZE, 0, 0);
 		TabSeparatedBlockOutputStream out(out_buf);
 		copyData(in, out);
 	}
