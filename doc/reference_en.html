@@ -2727,11 +2727,15 @@ Note that in most cases, using AggregatingMergeTree is not justified, since quer
 
 ==ReplacingMergeTree==
 
-This engine differs from MergeTree in that it can deduplicate data by primary key while merging. Last write wins.
+This engine differs from MergeTree in that it can deduplicate data by primary key while merging.
 
-%%ReplacingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192)%%
+For ReplacingMergeTree mode, last parameter is optional name of 'version' column. While merging, for all rows with same primary key, only one row is selected: last row, if version column was not specified, or last row with maximum version value, if specified.
 
-In order to do this ReplacingMergeTree engine reads all data, so should be used with caution. It's recommended to model your data model with CollapsingMergeTree
+Version column must have type of UInt family or Date or DateTime.
+
+%%ReplacingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, ver)%%
+
+In order to do this ReplacingMergeTree engine reads all data, so should be used with caution. It's recommended to model your data model with CollapsingMergeTree. Merge process should be triggered manually.
 
 Developed for special purposes of not Yandex.Metrica department.
 
