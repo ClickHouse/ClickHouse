@@ -58,7 +58,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 	}
 	else if (name == "RowBinary")
 	{
-		return wrap_row_stream(std::make_shared<BinaryRowInputStream>(buf);
+		return wrap_row_stream(std::make_shared<BinaryRowInputStream>(buf));
 	}
 	else if (name == "TabSeparated" || name == "TSV") /// TSV is a synonym/alias for the original TabSeparated format
 	{
