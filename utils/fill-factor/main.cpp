@@ -1,7 +1,6 @@
 #include <iostream>
 #include <iomanip>
 
-#include <common/config_common.h>
 #if HAVE_SSE2
 #include <emmintrin.h>
 #endif

@@ -7,7 +7,6 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <common/config_common.h>
 #if HAVE_SSE41
 	#include <smmintrin.h>
 #endif

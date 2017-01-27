@@ -5,7 +5,6 @@
 #include <type_traits>
 #include <array>
 
-#include <common/config_common.h>
 #if HAVE_SSE41
 	#include <smmintrin.h>
 #endif

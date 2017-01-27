@@ -19,7 +19,6 @@
 #include <DB/Core/StringRef.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Interpreters/AggregationCommon.h>
-#include <common/config_common.h>
 
 
 struct SmallStringRef

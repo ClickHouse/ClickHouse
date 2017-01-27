@@ -15,7 +15,6 @@
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Interpreters/AggregationCommon.h>
 
-#include <common/config_common.h>
 #if HAVE_SSE41
 	#include <smmintrin.h>
 #endif

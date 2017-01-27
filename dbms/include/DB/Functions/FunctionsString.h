@@ -16,7 +16,6 @@
 #include <DB/Functions/IFunction.h>
 #include <ext/range.hpp>
 
-#include <common/config_common.h>
 #if HAVE_SSE2
 	#include <emmintrin.h>
 #endif

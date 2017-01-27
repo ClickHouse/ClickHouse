@@ -10,7 +10,6 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/VarInt.h>
 
-#include <common/config_common.h>
 #if HAVE_SSE2
 	#include <emmintrin.h>
 #endif

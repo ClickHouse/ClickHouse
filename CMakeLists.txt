@@ -110,8 +110,7 @@ if (PIPE)
 	set (COMPILER_FLAGS                   "${COMPILER_FLAGS} -pipe")
 endif ()
 
-include (cmake/test_popcnt.cmake)
-include (cmake/test_sse.cmake)
+include (cmake/test_cpu.cmake)
 
 option (ARCHNATIVE "Enable -march=native compiler flag" OFF)
 if (ARCHNATIVE)

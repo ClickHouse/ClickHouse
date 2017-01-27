@@ -2,7 +2,6 @@
 #include <DB/IO/WriteBufferValidUTF8.h>
 #include <DB/Core/Types.h>
 
-#include <common/config_common.h>
 #if HAVE_SSE2
 	#include <emmintrin.h>
 #endif
