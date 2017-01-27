@@ -63,7 +63,7 @@ check_cxx_source_compiles("
 	}
 " HAVE_POPCNT)
 
-if (HAVE_POPCNT)
+if (HAVE_POPCNT AND NOT AARCH64)
 	set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
 endif ()
 
