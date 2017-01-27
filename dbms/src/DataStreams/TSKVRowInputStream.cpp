@@ -171,4 +171,10 @@ bool TSKVRowInputStream::read(Block & block)
 	return true;
 }
 
+
+void TSKVRowInputStream::syncAfterError()
+{
+	skipToUnescapedNextLineOrEOF(istr);
+}
+
 }

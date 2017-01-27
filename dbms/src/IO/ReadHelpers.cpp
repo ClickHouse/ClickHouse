@@ -335,7 +335,7 @@ void readEscapedStringInto(Vector & s, ReadBuffer & buf)
 		const char * next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
 
 		appendToStringOrVector(s, buf.position(), next_pos);
-		buf.position() += next_pos - buf.position();
+		buf.position() += next_pos - buf.position();	/// Code looks complicated, because "buf.position() = next_pos" doens't work due to const-ness.
 
 		if (!buf.hasPendingData())
 			continue;
@@ -754,6 +754,56 @@ void assertNaN(ReadBuffer & buf)
 {
 	if (!parseNaN(buf))
 		throw Exception("Cannot parse NaN.", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+}
+
+
+void skipToNextLineOrEOF(ReadBuffer & buf)
+{
+	while (!buf.eof())
+	{
+		const char * next_pos = find_first_symbols<'\n'>(buf.position(), buf.buffer().end());
+		buf.position() += next_pos - buf.position();
+
+		if (!buf.hasPendingData())
+			continue;
+
+		if (*buf.position() == '\n')
+		{
+			++buf.position();
+			return;
+		}
+	}
+}
+
+
+void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
+{
+	while (!buf.eof())
+	{
+		const char * next_pos = find_first_symbols<'\n', '\\'>(buf.position(), buf.buffer().end());
+		buf.position() += next_pos - buf.position();
+
+		if (!buf.hasPendingData())
+			continue;
+
+		if (*buf.position() == '\n')
+		{
+			++buf.position();
+			return;
+		}
+
+		if (*buf.position() == '\\')
+		{
+			++buf.position();
+			if (buf.eof())
+				return;
+
+			/// Skip escaped character. We do not consider escape sequences with more than one charater after backslash (\x01).
+			/// It's ok for the purpose of this function, because we are interested only in \n and \\.
+			++buf.position();
+			continue;
+		}
+	}
 }
 
 }

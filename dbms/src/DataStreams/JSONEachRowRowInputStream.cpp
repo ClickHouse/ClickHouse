@@ -135,4 +135,10 @@ bool JSONEachRowRowInputStream::read(Block & block)
 	return true;
 }
 
+
+void JSONEachRowRowInputStream::syncAfterError()
+{
+	skipToUnescapedNextLineOrEOF(istr);
+}
+
 }

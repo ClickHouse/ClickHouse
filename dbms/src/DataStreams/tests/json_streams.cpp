@@ -56,12 +56,8 @@ try
 		ReadBufferFromIStream in_buf(istr);
 		WriteBufferFromOStream out_buf(ostr);
 
-		//TabSeparatedRowInputStream row_input(in_buf, sample, true, true);
-		//JSONRowOutputStream row_output(out_buf, sample);
-		//JSONCompactRowOutputStream row_output(out_buf, sample);
-		//copyData(row_input, row_output);
-
-		BlockInputStreamFromRowInputStream in(std::make_shared<TabSeparatedRowInputStream>(in_buf, sample, true, true), sample);
+		BlockInputStreamFromRowInputStream in(std::make_shared<TabSeparatedRowInputStream>(in_buf, sample, true, true),
+			sample, DEFAULT_INSERT_BLOCK_SIZE, 0, 0);
 		BlockOutputStreamFromRowOutputStream out(std::make_shared<JSONRowOutputStream>(out_buf, sample, false, true));
 		copyData(in, out);
 	}

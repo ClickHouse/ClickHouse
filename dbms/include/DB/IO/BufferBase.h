@@ -83,7 +83,7 @@ public:
 		return bytes + offset();
 	}
 
-	/** Проверить, есть ли данные в буфере. */
+	/** Check that there is more bytes in buffer after cursor. */
 	bool ALWAYS_INLINE hasPendingData() const
 	{
 		return pos != working_buffer.end();
