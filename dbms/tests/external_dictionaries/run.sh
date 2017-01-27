@@ -81,7 +81,6 @@ else
     echo 'MongoDB already started'
 fi
 
-python http_server.py 58001 &
 http_pid=$!
 
 # ClickHouse
