@@ -149,6 +149,11 @@ public:
 		limits = limits_;
 	}
 
+	const LocalLimits & getLimits() const
+	{
+		return limits;
+	}
+
 	/** Установить квоту. Если устанавливается квота на объём исходных данных,
 	  * то следует ещё установить mode = LIMITS_TOTAL в LocalLimits с помощью setLimits.
 	  */
