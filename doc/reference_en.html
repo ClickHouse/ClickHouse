@@ -2725,6 +2725,17 @@ You can create a materialized view like this and assign a normal view to it that
 Note that in most cases, using AggregatingMergeTree is not justified, since queries can be run efficiently enough on non-aggregated data.
 
 
+==ReplacingMergeTree==
+
+This engine differs from MergeTree in that it can deduplicate data by primary key while merging. Last write wins.
+
+%%ReplacingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192)%%
+
+In order to do this ReplacingMergeTree engine reads all data, so should be used with caution. It's recommended to model your data model with CollapsingMergeTree
+
+Developed for special purposes of not Yandex.Metrica department.
+
+
 ==Null==
 
 When writing to a Null table, data is ignored. When reading from a Null table, the response is empty.
