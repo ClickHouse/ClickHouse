@@ -471,7 +471,7 @@ StoragePtr StorageFactory::get(
 		/// Check that sharding_key exists in the table and has numeric type.
 		if (sharding_key)
 		{
-			auto sharding_expr = ExpressionAnalyzer(sharding_key, context, nullptr, *columns).getActions(false);
+			auto sharding_expr = ExpressionAnalyzer(sharding_key, context, nullptr, *columns).getActions(true);
 			const Block & block = sharding_expr->getSampleBlock();
 
 			if (block.columns() != 1)
