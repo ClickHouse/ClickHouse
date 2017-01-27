@@ -29,11 +29,11 @@ BlockInputStreamFromRowInputStream::BlockInputStreamFromRowInputStream(
 
 static void isParseError(int code)
 {
-	return e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
-		|| e.code() == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
-		|| e.code() == ErrorCodes::CANNOT_PARSE_DATE
-		|| e.code() == ErrorCodes::CANNOT_PARSE_DATETIME
-		|| e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT;
+	return code == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
+		|| code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
+		|| code == ErrorCodes::CANNOT_PARSE_DATE
+		|| code == ErrorCodes::CANNOT_PARSE_DATETIME
+		|| code == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT;
 }
 
 
