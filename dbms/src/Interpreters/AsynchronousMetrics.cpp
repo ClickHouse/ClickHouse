@@ -11,7 +11,7 @@
 
 #include <common/config_common.h>
 
-#if ENABLE_LIBTCMALLOC
+#if USE_TCMALLOC
 	#include <gperftools/malloc_extension.h>
 
 	/// Initializing malloc extension in global constructor as required.
@@ -199,7 +199,7 @@ void AsynchronousMetrics::update()
 		set("MaxPartCountForPartition", max_part_count_for_partition);
 	}
 
-#if ENABLE_LIBTCMALLOC
+#if USE_TCMALLOC
 	{
 		/// tcmalloc related metrics. Remove if you switch to different allocator.
 

@@ -1,12 +1,10 @@
 if (APPLE)
-	set (RT_LIBRARIES "apple_rt")
+	find_library (RT_LIBRARIES apple_rt)
 else ()
-	if (USE_STATIC_LIBRARIES)
-		set (RT_LIBRARIES "librt.a")
-	else ()
-		set (RT_LIBRARIES "rt")
-	endif ()
+	find_library (RT_LIBRARIES rt)
 endif ()
+
+message(STATUS "Using rt: ${RT_LIBRARIES}")
 
 function (target_link_rt_by_force TARGET)
 	if (NOT APPLE)
