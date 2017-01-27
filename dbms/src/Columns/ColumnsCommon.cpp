@@ -20,7 +20,7 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
 	const Int8 * pos = reinterpret_cast<const Int8 *>(&filt[0]);
 	const Int8 * end = pos + filt.size();
 
-#if __SSE2__
+#if __SSE2__ && __POPCNT__
 	const __m128i zero16 = _mm_setzero_si128();
 	const Int8 * end64 = pos + filt.size() / 64 * 64;
 

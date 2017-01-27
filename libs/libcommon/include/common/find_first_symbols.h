@@ -56,10 +56,10 @@ inline __m128i mm_is_in(__m128i bytes)
 #endif
 
 
+#if __SSE2__
 template <char... symbols>
 inline const char * find_first_symbols_sse2(const char * begin, const char * end)
 {
-#if __SSE2__
 	for (; begin + 15 < end; begin += 16)
 	{
 		__m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(begin));
@@ -70,15 +70,16 @@ inline const char * find_first_symbols_sse2(const char * begin, const char * end
 		if (bit_mask)
 			return begin + __builtin_ctz(bit_mask);
 	}
-#endif
 
 	for (; begin < end; ++begin)
 		if (is_in<symbols...>(*begin))
 			return begin;
 	return end;
 }
+#endif
 
 
+#if __SSE4_2__
 template <size_t num_chars,
 	char c01,     char c02 = 0, char c03 = 0, char c04 = 0,
 	char c05 = 0, char c06 = 0, char c07 = 0, char c08 = 0,
@@ -86,7 +87,6 @@ template <size_t num_chars,
 	char c13 = 0, char c14 = 0, char c15 = 0, char c16 = 0>
 inline const char * find_first_symbols_sse42_impl(const char * begin, const char * end)
 {
-#if __SSE4_2__
 #define MODE (_SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT)
 	__m128i set = _mm_setr_epi8(c01, c02, c03, c04, c05, c06, c07, c08, c09, c10, c11, c12, c13, c14, c15, c16);
 
@@ -98,7 +98,6 @@ inline const char * find_first_symbols_sse42_impl(const char * begin, const char
 			return begin + _mm_cmpestri(set, num_chars, bytes, 16, MODE);
 	}
 #undef MODE
-#endif
 
 	for (; begin < end; ++begin)
 		if (   (num_chars >= 1 && *begin == c01)
@@ -129,13 +128,19 @@ inline const char * find_first_symbols_sse42(const char * begin, const char * en
 }
 
 }
+#endif
 
 
 template <char... symbols>
 inline const char * find_first_symbols(const char * begin, const char * end)
 {
+
+#if __SSE4_2__
 	if (sizeof...(symbols) >= 5)
 		return detail::find_first_symbols_sse42<symbols...>(begin, end);
 	else
+#endif
+#if __SSE2__
 		return detail::find_first_symbols_sse2<symbols...>(begin, end);
+#endif
 }
