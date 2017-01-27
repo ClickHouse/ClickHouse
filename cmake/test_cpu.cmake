@@ -7,16 +7,7 @@ include (CheckCXXSourceCompiles)
 #define __SSE2__ 1
 #define __SSE2_MATH__ 1
 
-check_cxx_source_compiles("
-	#include <emmintrin.h>
-	int main() {
-		_mm_loadu_si128(NULL);
-		return 0;
-	}
-" HAVE_SSE2)
-
-
-#gcc -dM -E -msse4.1 - < /dev/null | sort > gcc-dump-sse41
+# gcc -dM -E -msse4.1 - < /dev/null | sort > gcc-dump-sse41
 #define __SSE4_1__ 1
 
 set (TEST_FLAG "-msse4.1")
@@ -33,7 +24,7 @@ if (HAVE_SSE41)
 endif ()
 
 
-#gcc -dM -E -msse4.2 - < /dev/null | sort > gcc-dump-sse42
+# gcc -dM -E -msse4.2 - < /dev/null | sort > gcc-dump-sse42
 #define __SSE4_2__ 1
 
 set (TEST_FLAG "-msse4.2")
