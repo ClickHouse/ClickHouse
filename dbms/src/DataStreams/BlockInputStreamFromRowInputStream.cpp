@@ -43,10 +43,11 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 
 	try
 	{
-		for (size_t rows = 0; rows < max_block_size; ++rows, ++total_rows)
+		for (size_t rows = 0; rows < max_block_size; ++rows)
 		{
 			try
 			{
+				++total_rows;
 				if (!row_input->read(res))
 					break;
 			}
@@ -111,7 +112,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 			/// Error while trying to obtain verbose diagnostic. Ok to ignore.
 		}
 
-		e.addMessage("(at row " + toString(total_rows + 1) + ")\n" + verbose_diagnostic);
+		e.addMessage("(at row " + toString(total_rows) + ")\n" + verbose_diagnostic);
 		throw;
 	}
 
