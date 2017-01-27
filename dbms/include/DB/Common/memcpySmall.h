@@ -3,7 +3,7 @@
 #include <string.h>
 #include <DB/Core/Defines.h>
 
-#if HAVE_SSE2
+#if __SSE2__
 #include <emmintrin.h>
 
 

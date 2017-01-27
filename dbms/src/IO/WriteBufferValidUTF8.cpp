@@ -2,7 +2,7 @@
 #include <DB/IO/WriteBufferValidUTF8.h>
 #include <DB/Core/Types.h>
 
-#if HAVE_SSE2
+#if __SSE2__
 	#include <emmintrin.h>
 #endif
 
@@ -69,7 +69,7 @@ void WriteBufferValidUTF8::nextImpl()
 
 	while (p < pos)
 	{
-#if HAVE_SSE2
+#if __SSE2__
 		/// Fast skip of ASCII
 		static constexpr size_t SIMD_BYTES = 16;
 		const char * simd_end = p + (pos - p) / SIMD_BYTES * SIMD_BYTES;

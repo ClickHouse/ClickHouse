@@ -16,12 +16,9 @@
 #include <DB/Functions/IFunction.h>
 #include <ext/range.hpp>
 
-#if HAVE_SSE2
+#if __SSE2__
 	#include <emmintrin.h>
 #endif
-//#if HAVE_SSE42
-//	#include <nmmintrin.h>
-//#endif
 
 
 namespace DB
@@ -234,7 +231,7 @@ private:
 	{
 		const auto flip_case_mask = 'A' ^ 'a';
 
-#if HAVE_SSE2
+#if __SSE2__
 		const auto bytes_sse = sizeof(__m128i);
 		const auto src_end_sse = src_end - (src_end - src) % bytes_sse;
 
@@ -395,7 +392,7 @@ private:
 
 	static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 	{
-#if HAVE_SSE2
+#if __SSE2__
 		const auto bytes_sse = sizeof(__m128i);
 		auto src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse;
 

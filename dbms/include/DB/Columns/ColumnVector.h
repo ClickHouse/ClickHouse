@@ -12,7 +12,7 @@
 
 #include <DB/Columns/IColumn.h>
 
-#if HAVE_SSE2
+#if __SSE2__
 	#include <emmintrin.h>
 #endif
 
@@ -357,7 +357,7 @@ public:
 		const UInt8 * filt_end = filt_pos + size;
 		const T * data_pos = &data[0];
 
-#if HAVE_SSE2
+#if __SSE2__
 		/** Чуть более оптимизированная версия.
 		 * Исходит из допущения, что часто куски последовательно идущих значений
 		 *  полностью проходят или полностью не проходят фильтр.
