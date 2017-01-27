@@ -12,6 +12,7 @@ namespace ErrorCodes
 	extern const int CANNOT_PARSE_DATE;
 	extern const int CANNOT_PARSE_DATETIME;
 	extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+	extern const int LOGICAL_ERROR;
 }
 
 
@@ -51,7 +52,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 					|| e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT))
 					throw;
 
-				if (allow_errors_num == 0 || allow_errors_ratio == 0)
+				if (allow_errors_num == 0 && allow_errors_ratio == 0)
 					throw;
 
 				++num_errors;
@@ -73,6 +74,25 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 				}
 
 				row_input->syncAfterError();
+
+				/// Truncate all columns in block to minimal size (remove values, that was appended to part of columns).
+
+				size_t columns = res.columns();
+				size_t min_size = std::numeric_limits<size_t>::max();
+				for (size_t column_idx = 0; column_idx < columns; ++column_idx)
+					min_size = std::min(min_size, res.getByPosition(column_idx).column->size());
+
+				for (size_t column_idx = 0; column_idx < columns; ++column_idx)
+				{
+					auto & column = res.getByPosition(column_idx).column;
+					if (column->size() > min_size)
+					{
+						if (column->size() == min_size + 1)
+							column->popBack();
+						else
+							throw Exception("Unexpected column size while reading from text format", ErrorCodes::LOGICAL_ERROR);
+					}
+				}
 			}
 		}
 	}
