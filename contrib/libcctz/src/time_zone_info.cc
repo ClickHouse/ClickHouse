@@ -359,45 +359,76 @@ bool TimeZoneInfo::Load(const std::string& name, FILE* fp) {
   // Read and validate the header.
   tzhead tzh;
   if (fread(&tzh, 1, sizeof tzh, fp) != sizeof tzh)
+  {
+	std::cerr << "Cannot read tz header\n";
     return false;
+  }
   if (strncmp(tzh.tzh_magic, TZ_MAGIC, sizeof(tzh.tzh_magic)) != 0)
+  {
+	std::cerr << "Cannot read tz magic\n";
     return false;
+  }
   Header hdr;
   hdr.Build(tzh);
   std::size_t time_len = 4;
   if (tzh.tzh_version[0] != '\0') {
     // Skip the 4-byte data.
     if (fseek(fp, static_cast<long>(hdr.DataLength(time_len)), SEEK_CUR) != 0)
-      return false;
+	{
+		std::cerr << "Cannot seek\n";
+		return false;
+	}
     // Read and validate the header for the 8-byte data.
     if (fread(&tzh, 1, sizeof tzh, fp) != sizeof tzh)
-      return false;
+	{
+		std::cerr << "Cannot read tz header, again\n";
+		return false;
+	}
     if (strncmp(tzh.tzh_magic, TZ_MAGIC, sizeof(tzh.tzh_magic)) != 0)
-      return false;
+	{
+		std::cerr << "Cannot read tz magic (again)\n";
+		return false;
+	}
     if (tzh.tzh_version[0] == '\0')
+	{
+		std::cerr << "tzh version != 0\n";
       return false;
+	}
     hdr.Build(tzh);
     time_len = 8;
   }
   if (hdr.timecnt < 0 || hdr.typecnt <= 0)
+  {
+	  std::cerr << "Wrong cnt\n";
     return false;
+  }
   if (hdr.leapcnt != 0) {
     // This code assumes 60-second minutes so we do not want
     // the leap-second encoded zoneinfo. We could reverse the
     // compensation, but it's never in a Google zoneinfo anyway,
     // so currently we simply reject such data.
+	std::cerr << "Doesnt support leap second encoded tzinfo\n";
     return false;
   }
   if (hdr.ttisstdcnt != 0 && hdr.ttisstdcnt != hdr.typecnt)
+  {
+	  std::cerr << "Wrong cnt (2)\n";
     return false;
+  }
   if (hdr.ttisgmtcnt != 0 && hdr.ttisgmtcnt != hdr.typecnt)
+  {
+	  std::cerr << "Wrong cnt (3)\n";
     return false;
+  }
 
   // Read the data into a local buffer.
   std::size_t len = hdr.DataLength(time_len);
   std::vector<char> tbuf(len);
   if (fread(tbuf.data(), 1, len, fp) != len)
+  {
+	  std::cerr << "Cannot read data\n";
     return false;
+  }
   const char* bp = tbuf.data();
 
   // Decode and validate the transitions.
@@ -409,14 +440,20 @@ bool TimeZoneInfo::Load(const std::string& name, FILE* fp) {
     if (i != 0) {
       // Check that the transitions are ordered by time (as zic guarantees).
       if (!Transition::ByUnixTime()(transitions_[i - 1], transitions_[i]))
+	  {
+		  std::cerr << "Data is out of order\n";
         return false;  // out of order
+	  }
     }
   }
   bool seen_type_0 = false;
   for (std::int_fast32_t i = 0; i != hdr.timecnt; ++i) {
     transitions_[i].type_index = Decode8(bp++);
     if (transitions_[i].type_index >= hdr.typecnt)
+	{
+		std::cerr << "Type index is out of range\n";
       return false;
+	}
     if (transitions_[i].type_index == 0)
       seen_type_0 = true;
   }
@@ -427,12 +464,18 @@ bool TimeZoneInfo::Load(const std::string& name, FILE* fp) {
     transition_types_[i].utc_offset = Decode32(bp);
     if (transition_types_[i].utc_offset >= SECSPERDAY ||
         transition_types_[i].utc_offset <= -SECSPERDAY)
+	{
+		std::cerr << "Wrong transition offset\n";
       return false;
+	}
     bp += 4;
     transition_types_[i].is_dst = (Decode8(bp++) != 0);
     transition_types_[i].abbr_index = Decode8(bp++);
     if (transition_types_[i].abbr_index >= hdr.charcnt)
+	{
+		std::cerr << "Transition abbr index is out of range\n";
       return false;
+	}
   }
 
   // Determine the before-first-transition type.
@@ -467,10 +510,16 @@ bool TimeZoneInfo::Load(const std::string& name, FILE* fp) {
     // Snarf up the NL-enclosed future POSIX spec. Note
     // that version '3' files utilize an extended format.
     if (fgetc(fp) != '\n')
+	{
+		std::cerr << "Cannot read posix spec (1)\n";
       return false;
+	}
     for (int c = fgetc(fp); c != '\n'; c = fgetc(fp)) {
       if (c == EOF)
+	  {
+		  std::cerr << "Cannot read posix spec (2)\n";
         return false;
+	  }
       future_spec_.push_back(static_cast<char>(c));
     }
   }
@@ -519,7 +568,10 @@ bool TimeZoneInfo::Load(const std::string& name, FILE* fp) {
       // this means that an offset change cannot cross another such change.
       // No one does this in practice, and we depend on it in MakeTime().
       if (!Transition::ByDateTime()(transitions_[i - 1], tr))
+	  {
+		  std::cerr << "Out of order (2)\n";
         return false;  // out of order
+	  }
     }
   }
 
