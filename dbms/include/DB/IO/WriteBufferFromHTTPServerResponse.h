@@ -36,13 +36,17 @@ namespace ErrorCodes
 ///
 /// Additionally, supports HTTP response compression (in this case corresponding Content-Encoding
 /// header will be set).
+///
+/// Also this class write and flush special X-ClickHouse-Progress HTTP headers
+///  if no data was sent at the time of progress notification.
+/// This allows to implement progress bar in HTTP clients.
 class WriteBufferFromHTTPServerResponse : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
 	Poco::Net::HTTPServerResponse & response;
 
-	bool add_cors_header;
-	bool compress;
+	bool add_cors_header = false;
+	bool compress = false;
 	ZlibCompressionMethod compression_method;
 	int compression_level = Z_DEFAULT_COMPRESSION;
 
