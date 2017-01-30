@@ -175,11 +175,13 @@ This table is needed to select better data types for fields, and if possible, ge
 
 ```
 time clickhouse-client --query="INSERT INTO trips FORMAT TabSeparated" < trips.tsv
+
+real    75m56.214s
 ```
 
-Data is read at 112-140 MB/sec. It will take about two hours.
-
-Loading data into Log table in single thread took
+Data is read at 112-140 MB/sec.
+Loading data into Log table in single thread took 76 minutes.
+Data inside Log table takes 142 GB.
 
 (You could also import data directly from Postgres, using `COPY ... TO PROGRAM`.)
 
