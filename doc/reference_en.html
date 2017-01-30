@@ -2481,7 +2481,7 @@ The Distributed engine allows working with a cluster like a local server. Howeve
 
 There is no support for Distributed tables that look at other Distributed tables (except in cases when a Distributed table only has one shard). As an alternative, make the Distributed table look at the &quot;final&quot; tables.
 
-The Distributed engine requires writing clusters to the config file. Adding clusters and servers requires restarting. If you need to send a query to an unknown set of shards and replicas each time, you don&#39;t need to create a Distributed table - use the &#39;remote&#39; table function instead. See the section &quot;Table functions&quot;.
+The Distributed engine requires writing clusters to the config file. Clusters from config are updated on the fly, it does not require server restart. If you need to send a query to an unknown set of shards and replicas each time, you don&#39;t need to create a Distributed table - use the &#39;remote&#39; table function instead. See the section &quot;Table functions&quot;.
 
 There are two methods for writing data to a cluster:
 
