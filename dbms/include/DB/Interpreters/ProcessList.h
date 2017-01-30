@@ -84,9 +84,8 @@ protected:
 	BlockInputStreamPtr query_stream_in;
 	BlockOutputStreamPtr query_stream_out;
 
-	/// Abovemetioned streams have delayed initialization, this flag indicates thier initialization
-	/// It is better to use atomic (instead of raw bool) with tryGet/setQueryStreams() thread-safe methods despite that
-	///  now in all contexts ProcessListElement is always used under ProcessList::mutex (and raw bool is also Ok)
+	/// Abovemetioned streams haved delayed initialization, use this flag to track initialization
+	/// Can be set to true by single thread, can be read from multiple
 	std::atomic<bool> query_streams_initialized{false};
 
 public:
@@ -147,7 +146,7 @@ public:
 		return res;
 	}
 
-	/// Copies pointers to in/out streams, it can be called once
+	/// Copies pointers to in/out streams
 	void setQueryStreams(const BlockIO & io);
 	/// Get query in/out pointers
 	bool tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const;
@@ -265,13 +264,13 @@ public:
 	{
 		NotFound = 0, 					/// already cancelled
 		QueryIsNotInitializedYet = 1,
-		CancelCannotBeSent = 2,
-		CancelSent = 3,
+		CancelCannotBeSended = 2,
+		CancelSended = 3,
 		Unknown
 	};
 
 	/// Try call cancel() for input and output streams of query with specified id and user
-	CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
+	CancellationCode sendCancelToQuery(const String & query_id, const String & intial_user);
 };
 
 }

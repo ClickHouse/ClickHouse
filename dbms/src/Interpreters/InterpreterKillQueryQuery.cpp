@@ -32,9 +32,9 @@ static const char * cancellationCodeToStatus(CancellationCode code)
 			return "finished";
 		case CancellationCode::QueryIsNotInitializedYet:
 			return "pending";
-		case CancellationCode::CancelCannotBeSent:
+		case CancellationCode::CancelCannotBeSended:
 			return "error";
-		case CancellationCode::CancelSent:
+		case CancellationCode::CancelSended:
 			return "waiting";
 		default:
 			return "unknown_status";
@@ -141,13 +141,13 @@ public:
 
 				auto code = process_list.sendCancelToQuery(curr_process.query_id, curr_process.user);
 
-				if (code != CancellationCode::QueryIsNotInitializedYet && code != CancellationCode::CancelSent)
+				if (code != CancellationCode::QueryIsNotInitializedYet && code != CancellationCode::CancelSended)
 				{
 					curr_process.processed = true;
 					insertResultRow(curr_process.source_num, code, processes_block, res);
 					++num_processed_queries;
 				}
-				/// Wait if QueryIsNotInitializedYet or CancelSent
+				/// Wait if QueryIsNotInitializedYet or CancelSended
 			}
 
 			/// KILL QUERY could be killed also
