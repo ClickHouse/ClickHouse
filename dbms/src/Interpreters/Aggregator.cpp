@@ -461,17 +461,6 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 				return AggregatedDataVariants::Type::nullable_keys256;
 		}
 
-		/// XXX Aggregation with Array(Nullable(T)) keys can be done much more efficiently.
-		if (has_arrays_of_nullable)
-			return AggregatedDataVariants::Type::serialized;
-
-		/// For the following two cases, see the comments below on the non-nullable variant,
-		/// since it is similar.
-		if (num_array_keys == 1 && !has_arrays_of_non_fixed_elems && all_non_array_keys_are_fixed)
-			return AggregatedDataVariants::Type::nullable_concat;
-		if (num_array_keys == 0 && !has_tuples)
-			return AggregatedDataVariants::Type::nullable_concat;
-
 		/// Fallback case.
 		return AggregatedDataVariants::Type::serialized;
 	}
