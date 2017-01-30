@@ -110,7 +110,7 @@ COPY
 ```
 
 Dump is created at speed about 50 MB/sec. While creating dump, PostgreSQL reads data from disk at about 28 MB/sec.
-Resulting tsv file is 590 612 904 969 bytes.
+It takes about 5 hours. Resulting tsv file is 590 612 904 969 bytes.
 
 Create temporary table in ClickHouse:
 
@@ -177,7 +177,7 @@ This table is needed to select better data types for fields, and if possible, ge
 time clickhouse-client --query="INSERT INTO trips FORMAT TabSeparated" < trips.tsv
 ```
 
-Data is read at 112-140 MB/sec. It will took about two hours.
+Data is read at 112-140 MB/sec. It will take about two hours.
 
 Loading data into Log table in single thread took
 
