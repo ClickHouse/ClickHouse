@@ -20,7 +20,7 @@ ProcessList::EntryPtr ProcessList::insert(
 	const String & query_, const IAST * ast, const ClientInfo & client_info, const Settings & settings)
 {
 	EntryPtr res;
-	bool is_kill_query = ast && typeid_cast<const ASTKillQueryQuery *>(ast);
+	bool is_kill_query = ast && dynamic_cast<const ASTKillQueryQuery *>(ast);
 
 	{
 		std::lock_guard<std::mutex> lock(mutex);
@@ -151,7 +151,7 @@ void ProcessListElement::setQueryStreams(const BlockIO & io)
 {
 	query_stream_in = io.in;
 	query_stream_out = io.out;
-	query_streams_initialized = true; // forces strict memory ordering
+	query_streams_initialized = true;
 }
 
 bool ProcessListElement::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const
@@ -229,9 +229,9 @@ ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & curr
 		if (input_stream && (input_stream_casted = dynamic_cast<IProfilingBlockInputStream *>(input_stream.get())))
 		{
 			input_stream_casted->cancel();
-			return CancellationCode::CancelSent;
+			return CancellationCode::CancelSended;
 		}
-		return CancellationCode::CancelCannotBeSent;
+		return CancellationCode::CancelCannotBeSended;
 	}
 	return CancellationCode::QueryIsNotInitializedYet;
 }
