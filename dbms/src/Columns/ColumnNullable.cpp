@@ -148,12 +148,6 @@ void ColumnNullable::insertFrom(const IColumn & src, size_t n)
 	getNullMap().push_back(src_concrete.getNullMap()[n]);
 }
 
-void ColumnNullable::insertDefault()
-{
-	nested_column->insertDefault();
-	getNullMap().push_back(1);
-}
-
 void ColumnNullable::popBack(size_t n)
 {
 	nested_column->popBack(n);
