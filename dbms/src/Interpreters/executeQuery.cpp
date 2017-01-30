@@ -193,7 +193,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 		res = interpreter->execute();
 
 		/// Delayed initialization of query streams (required for KILL QUERY purposes)
-		if (!internal)
+		if (!internal && nullptr == typeid_cast<const ASTShowProcesslistQuery *>(&*ast))
 			(*process_list_entry)->setQueryStreams(res);
 
 		/// Hold element of process list till end of query execution.
