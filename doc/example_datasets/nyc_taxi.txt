@@ -1,0 +1,185 @@
+How to create dataset from raw data
+===================================
+
+Look at https://github.com/toddwschneider/nyc-taxi-data
+and http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html
+for description of the dataset and loading instructions.
+
+Data will download to ~227 GB of uncompressed CSV files. It takes about one hour on 1 Gbit connection.
+(Parallel download from s3.amazonaws.com saturate at least half of one gigabit.)
+Some files could be downloaded incompletely. Look at suspicious file sizes and repeat downloading of incomplete files.
+
+Some files contain broken rows. To correct them, run:
+```
+sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-02.csv > data/yellow_tripdata_2010-02.csv_
+sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-03.csv > data/yellow_tripdata_2010-03.csv_
+mv data/yellow_tripdata_2010-02.csv_ data/yellow_tripdata_2010-02.csv
+mv data/yellow_tripdata_2010-03.csv_ data/yellow_tripdata_2010-03.csv
+```
+
+Then data must be preprocessed inside PostgreSQL. It will do point-in-polygon lookups (map points to areas of New York), and finally JOIN all data to single denormalized flat table. You must install PostgreSQL with PostGIS support.
+
+When running `initialize_database.sh` script, be careful and check manually, that all tables get created successfully.
+
+Processing of each month of yellow taxi data in PostgreSQL takes about 20-30 minutes, about 48 hours in total.
+
+Check exact amount of loaded rows:
+```
+time psql nyc-taxi-data -c "SELECT count(*) FROM trips;"
+   count
+------------
+ 1298979494
+(1 row)
+
+real    7m9.164s
+```
+(this is slightly more than 1.1 billion rows reported by Mark Litwintschik in a series of blog posts)
+
+Data in PostgreSQL takes 370 GB (346 GiB).
+
+Export data from PostgreSQL:
+
+```
+COPY
+(
+	SELECT trips.id,
+           trips.vendor_id,
+           trips.pickup_datetime,
+           trips.dropoff_datetime,
+           trips.store_and_fwd_flag,
+           trips.rate_code_id,
+           trips.pickup_longitude,
+           trips.pickup_latitude,
+           trips.dropoff_longitude,
+           trips.dropoff_latitude,
+           trips.passenger_count,
+           trips.trip_distance,
+           trips.fare_amount,
+           trips.extra,
+           trips.mta_tax,
+           trips.tip_amount,
+           trips.tolls_amount,
+           trips.ehail_fee,
+           trips.improvement_surcharge,
+           trips.total_amount,
+           trips.payment_type,
+           trips.trip_type,
+           trips.pickup,
+           trips.dropoff,
+
+           cab_types.type cab_type,
+
+           weather.precipitation_tenths_of_mm rain,
+           weather.snow_depth_mm,
+           weather.snowfall_mm,
+           weather.max_temperature_tenths_degrees_celsius max_temp,
+           weather.min_temperature_tenths_degrees_celsius min_temp,
+           weather.average_wind_speed_tenths_of_meters_per_second wind,
+
+           pick_up.gid pickup_nyct2010_gid,
+           pick_up.ctlabel pickup_ctlabel,
+           pick_up.borocode pickup_borocode,
+           pick_up.boroname pickup_boroname,
+           pick_up.ct2010 pickup_ct2010,
+           pick_up.boroct2010 pickup_boroct2010,
+           pick_up.cdeligibil pickup_cdeligibil,
+           pick_up.ntacode pickup_ntacode,
+           pick_up.ntaname pickup_ntaname,
+           pick_up.puma pickup_puma,
+
+           drop_off.gid dropoff_nyct2010_gid,
+           drop_off.ctlabel dropoff_ctlabel,
+           drop_off.borocode dropoff_borocode,
+           drop_off.boroname dropoff_boroname,
+           drop_off.ct2010 dropoff_ct2010,
+           drop_off.boroct2010 dropoff_boroct2010,
+           drop_off.cdeligibil dropoff_cdeligibil,
+           drop_off.ntacode dropoff_ntacode,
+           drop_off.ntaname dropoff_ntaname,
+           drop_off.puma dropoff_puma
+    FROM trips
+    LEFT JOIN cab_types
+        ON trips.cab_type_id = cab_types.id
+    LEFT JOIN central_park_weather_observations_raw weather
+        ON weather.date = trips.pickup_datetime::date
+    LEFT JOIN nyct2010 pick_up
+        ON pick_up.gid = trips.pickup_nyct2010_gid
+    LEFT JOIN nyct2010 drop_off
+        ON drop_off.gid = trips.dropoff_nyct2010_gid
+) TO '/opt/milovidov/nyc-taxi-data/trips.tsv';
+```
+
+Dump is created at speed about 50 MB/sec. While creating dump, PostgreSQL reads data from disk at about 28 MB/sec.
+It takes about 5 hours. Resulting tsv file is 590 612 904 969 bytes.
+
+Create temporary table in ClickHouse:
+
+```
+CREATE TABLE trips
+(
+trip_id                 UInt32,
+vendor_id               FixedString(3),
+pickup_datetime         DateTime,
+dropoff_datetime        DateTime,
+store_and_fwd_flag      Nullable(FixedString(1)),
+rate_code_id            Nullable(UInt8),
+pickup_longitude        Nullable(Float64),
+pickup_latitude         Nullable(Float64),
+dropoff_longitude       Nullable(Float64),
+dropoff_latitude        Nullable(Float64),
+passenger_count         Nullable(UInt8),
+trip_distance           Nullable(Float64),
+fare_amount             Nullable(Float32),
+extra                   Nullable(Float32),
+mta_tax                 Nullable(Float32),
+tip_amount              Nullable(Float32),
+tolls_amount            Nullable(Float32),
+ehail_fee               Nullable(Float32),
+improvement_surcharge   Nullable(Float32),
+total_amount            Nullable(Float32),
+payment_type            Nullable(String),
+trip_type               Nullable(UInt8),
+pickup                  Nullable(String),
+dropoff                 Nullable(String),
+cab_type                Nullable(String),
+precipitation           Nullable(UInt8),
+snow_depth              Nullable(UInt8),
+snowfall                Nullable(UInt8),
+max_temperature         Nullable(UInt8),
+min_temperature         Nullable(UInt8),
+average_wind_speed      Nullable(UInt8),
+pickup_nyct2010_gid     Nullable(UInt8),
+pickup_ctlabel          Nullable(String),
+pickup_borocode         Nullable(UInt8),
+pickup_boroname         Nullable(String),
+pickup_ct2010           Nullable(String),
+pickup_boroct2010       Nullable(String),
+pickup_cdeligibil       Nullable(FixedString(1)),
+pickup_ntacode          Nullable(String),
+pickup_ntaname          Nullable(String),
+pickup_puma             Nullable(String),
+dropoff_nyct2010_gid    Nullable(UInt8),
+dropoff_ctlabel         Nullable(String),
+dropoff_borocode        Nullable(UInt8),
+dropoff_boroname        Nullable(String),
+dropoff_ct2010          Nullable(String),
+dropoff_boroct2010      Nullable(String),
+dropoff_cdeligibil      Nullable(String),
+dropoff_ntacode         Nullable(String),
+dropoff_ntaname         Nullable(String),
+dropoff_puma            Nullable(String)
+) ENGINE = Log;
+```
+
+This table is needed to select better data types for fields, and if possible, get rid of NULLs.
+
+```
+time clickhouse-client --query="INSERT INTO trips FORMAT TabSeparated" < trips.tsv
+```
+
+Data is read at 112-140 MB/sec. It will take about two hours.
+
+Loading data into Log table in single thread took
+
+(You could also import data directly from Postgres, using `COPY ... TO PROGRAM`.)
+
