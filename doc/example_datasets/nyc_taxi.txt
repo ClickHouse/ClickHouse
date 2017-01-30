@@ -118,9 +118,9 @@ Create temporary table in ClickHouse:
 CREATE TABLE trips
 (
 trip_id                 UInt32,
-vendor_id               FixedString(3),
+vendor_id               String,
 pickup_datetime         DateTime,
-dropoff_datetime        DateTime,
+dropoff_datetime        Nullable(DateTime),
 store_and_fwd_flag      Nullable(FixedString(1)),
 rate_code_id            Nullable(UInt8),
 pickup_longitude        Nullable(Float64),
