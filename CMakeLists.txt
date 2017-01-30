@@ -125,11 +125,11 @@ if (NOT APPLE)
 	set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI_FLAGS}")
 endif ()
 
-if (USE_STATIC_LIBRARIES AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+include (cmake/test_compiler.cmake)
+if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
 	set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} --no-pie")
 	set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} --no-pie")
 endif ()
-
 
 set (SAN_FLAGS "-O3 -g -fno-omit-frame-pointer")
 set (CMAKE_CXX_FLAGS_ASAN                "${CMAKE_CXX_FLAGS_ASAN}  ${SAN_FLAGS} -fsanitize=address")

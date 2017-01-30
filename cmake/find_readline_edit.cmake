@@ -5,12 +5,13 @@ if (NOT READLINE_LIB)
 	find_library (READLINE_LIB NAMES readline PATHS ${READLINE_PATHS})
 endif ()
 
-find_library (TERMCAP_LIB NAMES termcap)
+list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.2)
 
+find_library (TERMCAP_LIB NAMES termcap)
 find_library (EDIT_LIB NAMES edit)
 
 set(READLINE_INCLUDE_PATHS "/usr/local/opt/readline/include")
-if (READLINE_LIB)
+if (READLINE_LIB AND TERMCAP_LIB)
 	find_path (READLINE_INCLUDE_DIR NAMES readline/readline.h PATHS ${READLINE_INCLUDE_PATHS} NO_DEFAULT_PATH)
 	if (NOT READLINE_INCLUDE_DIR)
 		find_path (READLINE_INCLUDE_DIR NAMES readline/readline.h PATHS ${READLINE_INCLUDE_PATHS})
@@ -40,5 +41,6 @@ check_cxx_source_runs("
 	int main() {
 		add_history(nullptr);
 		append_history(1,nullptr);
+		return 0;
 	}
 " HAVE_READLINE_HISTORY)
