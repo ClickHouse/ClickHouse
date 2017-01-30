@@ -127,8 +127,8 @@ endif ()
 
 include (cmake/test_compiler.cmake)
 if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
-	set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} --no-pie")
-	set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} --no-pie")
+	set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} -no-pie")
+	set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} -no-pie")
 endif ()
 
 set (SAN_FLAGS "-O3 -g -fno-omit-frame-pointer")

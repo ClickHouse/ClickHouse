@@ -1,6 +1,6 @@
 include (CheckCXXSourceCompiles)
 
-set (TEST_FLAG "--no-pie")
+set (TEST_FLAG "-no-pie")
 set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
 check_cxx_source_compiles("
 	int main() {
