@@ -55,7 +55,7 @@ option (ENABLE_TESTS "Enables tests" ON)
 
 option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
 if (USE_STATIC_LIBRARIES)
-	set (CMAKE_FIND_LIBRARY_SUFFIXES ".a;.so")
+	list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
 set (USE_INTERNAL_BOOST_LIBRARY TRUE CACHE BOOL "Set to FALSE to use system boost library instead of bundled")
