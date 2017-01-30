@@ -1,6 +1,14 @@
 #pragma once
 
-#include <Poco/Net/HTTPServerResponse.h> 
+
+namespace Poco
+{
+	namespace Net
+	{
+		class HTTPServerResponse;
+	}
+}
+
 
 namespace DB
 {
