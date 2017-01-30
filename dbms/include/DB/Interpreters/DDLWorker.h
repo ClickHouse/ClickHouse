@@ -16,7 +16,9 @@ namespace DB
 class DDLWorker
 {
 public:
-	DDLWorker(Context * ctx, const std::string & host, int port);
+	DDLWorker(const Poco::Util::AbstractConfiguration & config,
+			  const std::string & config_name, Context & context_,
+			  const std::string & host, int port);
 	~DDLWorker();
 
 private:
@@ -26,7 +28,7 @@ private:
 	void run();
 
 private:
-	Context * context;
+	Context & context;
 	std::string local_addr;
 	std::string base_path;
 

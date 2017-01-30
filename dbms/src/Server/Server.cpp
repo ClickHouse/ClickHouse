@@ -377,9 +377,9 @@ int Server::main(const std::vector<std::string> & args)
 		has_resharding_worker = true;
 	}
 	// TODO read from config
-	if (has_zookeeper)
+	if (has_zookeeper && config().has("distributed_ddl"))
 	{
-		auto ddl_worker = std::make_shared<DDLWorker>(global_context.get(), "localhost", 9000);
+		auto ddl_worker = std::make_shared<DDLWorker>(config(), "distributed_ddl", *global_context, "localhost", 9000);
 		global_context->setDDLWorker(ddl_worker);
 	}
 
