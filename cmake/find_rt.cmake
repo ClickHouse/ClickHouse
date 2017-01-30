@@ -1,5 +1,6 @@
 if (APPLE)
-	find_library (RT_LIBRARIES apple_rt)
+	# lib from libs/libcommon
+	set (RT_LIBRARIES "apple_rt")
 else ()
 	find_library (RT_LIBRARIES rt)
 endif ()
