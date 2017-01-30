@@ -187,6 +187,7 @@ Data inside Log table takes 142 GB.
 
 Sadly, all weather-related fields (precipitation...average_wind_speed) are NULLs. We will omit them from final dataset.
 
+For the first time, we will create a table on single server. Later we will distribute the table.
 Create and fill final table:
 
 ```
@@ -250,3 +251,60 @@ toUInt16(ifNull(dropoff_puma, '0')) AS dropoff_puma
 
 FROM trips
 ```
+
+This is done in 3030 sec at about 428 000 rows/sec.
+If you want faster load time, you may create table with `Log` engine instead of `MergeTree`. In that case, load is under 200 sec.
+
+Table has used 126 GiB of disk space.
+
+```
+:) SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mergetree' AND active
+
+SELECT formatReadableSize(sum(bytes))
+FROM system.parts
+WHERE (table = 'trips_mergetree') AND active
+
+┌─formatReadableSize(sum(bytes))─┐
+│ 126.18 GiB                     │
+└────────────────────────────────┘
+```
+
+BTW, you could run OPTIMIZE for MergeTree table. But this is not necessary, everything will be fine.
+
+Results on single server:
+
+Q1:
+```
+SELECT cab_type, count(*) FROM trips_mergetree GROUP BY cab_type
+```
+0.490 sec.
+
+Q2:
+```
+SELECT passenger_count, avg(total_amount) FROM trips_mergetree GROUP BY passenger_count
+```
+1.224 sec.
+
+Q3:
+```
+SELECT passenger_count, toYear(pickup_date) AS year, count(*) FROM trips_mergetree GROUP BY passenger_count, year
+```
+2.104 sec.
+
+Q4:
+```
+SELECT passenger_count, toYear(pickup_date) AS year, round(trip_distance) AS distance, count(*)
+FROM trips_mergetree
+GROUP BY passenger_count, year, distance
+ORDER BY year, count(*) DESC
+```
+3.593 sec.
+
+The server is:
+
+two-socket Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz, total 16 physical cores,
+128 GiB RAM,
+8x6 TB HDD in software RAID-5
+
+Query time is best of three runs.
+Actually, starting from second run, the query reads data from OS page cache. No further caching happens: data is read and processed in each run.
