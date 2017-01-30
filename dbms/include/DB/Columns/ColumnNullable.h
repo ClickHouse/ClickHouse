@@ -40,7 +40,13 @@ public:
 	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;;
 	void insert(const Field & x) override;
 	void insertFrom(const IColumn & src, size_t n) override;
-	void insertDefault() override;
+
+	void insertDefault() override
+	{
+		nested_column->insertDefault();
+		getNullMap().push_back(1);
+	}
+
 	void popBack(size_t n) override;
 	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 	ColumnPtr permute(const Permutation & perm, size_t limit) const override;

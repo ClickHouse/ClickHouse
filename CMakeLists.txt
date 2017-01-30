@@ -126,8 +126,8 @@ if (NOT APPLE)
 endif ()
 
 if (USE_STATIC_LIBRARIES AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-	set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} -no-pie")
-	set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} -no-pie")
+	set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} --no-pie")
+	set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} --no-pie")
 endif ()
 
 

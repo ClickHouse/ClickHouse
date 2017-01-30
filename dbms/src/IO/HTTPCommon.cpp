@@ -1,6 +1,8 @@
 #include <DB/IO/HTTPCommon.h>
 
 #include <Poco/Util/Application.h>
+#include <Poco/Net/HTTPServerResponse.h>
+
 
 namespace DB
 {
