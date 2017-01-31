@@ -40,10 +40,12 @@ BlockInputStreams StorageSystemBuildOptions::read(
 	ColumnWithTypeAndName col_name{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "name"};
 	ColumnWithTypeAndName col_value{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "value"};
 
-	for (const auto & option : auto_config_build)
-	{
-		col_name.column->insert(String(option.first));
-		col_value.column->insert(String(option.second));
+	for (auto it = auto_config_build.begin(); it != auto_config_build.end(); ++it) {
+		col_name.column->insert(String(*it));
+		++it;
+		if (it == auto_config_build.end())
+			break;
+		col_value.column->insert(String(*it));
 	}
 
 	Block block{
