@@ -5,7 +5,7 @@ CLICKHOUSE_USER=clickhouse
 CLICKHOUSE_GROUP=${CLICKHOUSE_USER}
 CLICKHOUSE_DATADIR=/var/lib/clickhouse
 CLICKHOUSE_DATADIR_OLD=/opt/clickhouse  # remove after 2017-06-01
-CLICKHOUSE_LOGDIR=/var/log/clickhouse
+CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 CLICKHOUSE_SERVER_ETCDIR=/etc/clickhouse-server
 
 
