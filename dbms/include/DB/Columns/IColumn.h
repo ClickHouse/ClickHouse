@@ -245,6 +245,14 @@ public:
 	using Offsets_t = PaddedPODArray<Offset_t>;
 	virtual ColumnPtr replicate(const Offsets_t & offsets) const = 0;
 
+	/** Split column to smaller columns. Each value goes to column index, selected by corresponding element of 'selector'.
+	  * Selector must contain values from 0 to num_columns - 1.
+	  * For default implementation, see scatterImpl.
+	  */
+	using ColumnIndex = UInt64;
+	using Selector = PaddedPODArray<ColumnIndex>;
+	virtual Columns scatter(ColumnIndex num_columns, const Selector & selector) const = 0;
+
 	/** Посчитать минимум и максимум по столбцу.
 	  * Функция должна быть реализована полноценно только для числовых столбцов, а также дат/дат-с-временем.
 	  * Для строк и массивов функция должна возвращать значения по-умолчанию
@@ -269,6 +277,31 @@ public:
 	virtual size_t allocatedSize() const = 0;
 
 	virtual ~IColumn() {}
+
+protected:
+
+	/// Template is to devirtualize calls to insertFrom method.
+	/// In derived classes (that use final keyword), implement scatter method as call to scatterImpl.
+	template <typename Derived>
+	Columns IColumn::scatterImpl(ColumnIndex num_columns, const Selector & selector) const
+	{
+		Columns columns(num_columns, cloneEmpty());
+
+		size_t num_rows = size();
+
+		{
+			size_t reserve_size = num_rows / num_columns * 1.1;	/// 1.1 is just a guess. Better to use n-sigma rule.
+
+			if (reserve_size > 1)
+				for (auto & column : columns)
+					column->reserve(reserve_size);
+		}
+
+		for (size_t i = 0; i < num_rows; ++i)
+			static_cast<Derived &>(*columns[selector[i]]).insertFrom(*this, i);
+
+		return columns;
+	}
 };
 
 

@@ -497,6 +497,12 @@ public:
 	}
 
 
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		return this->scatterImpl<Self>(num_columns, selector);
+	}
+
+
 	/** Более эффективные методы манипуляции */
 	Container_t & getData()
 	{
