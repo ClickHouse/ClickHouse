@@ -329,3 +329,16 @@ This will distribute the data:
 ```
 INSERT INTO trips_mergetree_x3 SELECT * FROM trips_mergetree
 ```
+
+This takes 2454 sec.
+
+On three servers:
+
+Q1: 0.212 sec.
+Q2: 0.438 sec.
+Q3: 0.733 sec.
+Q4: 1.241 sec.
+
+No surprise, as queries are linearly scalable.
+
+
