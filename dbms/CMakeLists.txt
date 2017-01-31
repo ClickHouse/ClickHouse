@@ -114,11 +114,6 @@ if (NOT AARCH64)
 	set (LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
 endif()
 
-set (APPLE_ICONV_LIB "")
-if (APPLE)
-	set(APPLE_ICONV_LIB iconv)
-endif()
-
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
     set(PLATFORM_LIBS "execinfo")
 else()
@@ -132,6 +127,7 @@ else()
 	find_library (Z_LIB z HINTS ${Z_HINTS})
 endif ()
 
+include (${CMAKE_SOURCE_DIR}/cmake/find_iconv.cmake)
 find_package (Threads)
 
 target_link_libraries(dbms
@@ -151,7 +147,7 @@ target_link_libraries(dbms
 	${Poco_DataODBC_LIBRARY}
 	${Poco_MongoDB_LIBRARY}
 	${Poco_Foundation_LIBRARY}
-	${APPLE_ICONV_LIB}
+	${ICONV_LIBRARY}
 	${PLATFORM_LIBS}
 	${CMAKE_DL_LIBS}
 	${LTDL_LIB}
