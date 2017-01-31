@@ -1,6 +1,6 @@
 set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_version.h)
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
-set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_build.h)
+set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/src/config_build.cpp)
 
 include_directories (include)
 include_directories (BEFORE ${CMAKE_SOURCE_DIR}/contrib/libcctz/include)
@@ -23,8 +23,8 @@ configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_version.h.in $
 get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
 get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
 
-string (TIMESTAMP BUILD_DATE UTC)
-configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_build.h.in ${CONFIG_BUILD})
+string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/config_build.cpp.in ${CONFIG_BUILD})
 
 if (APPLE)
 	add_library (apple_rt
@@ -55,6 +55,7 @@ add_library (common
 	include/common/singleton.h
 	include/common/strong_typedef.h
 	include/common/JSON.h
+	include/common/config_build.h
 
 	include/ext/bit_cast.hpp
 	include/ext/collection_cast.hpp
@@ -69,6 +70,7 @@ add_library (common
 
 	${CONFIG_VERSION}
 	${CONFIG_COMMON}
+	${CONFIG_BUILD}
 )
 
 # When testing for memory leaks, dont link tcmalloc or jemalloc.
