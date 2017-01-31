@@ -84,16 +84,6 @@ install: build
 	# создаем дефолтный cron, если нет крон-файла созданного пользователем
 	# cron_name имеет вид daemonname
 	# Для ClickHouse не должно быть лишних зависимостей.
-	for I in debian/tmp/etc/init.d/*; \
-	do \
-		cron_name=`basename $$I`; \
-		if [ ! -d debian/tmp/etc/cron.d ]; then \
-			mkdir -p debian/tmp/etc/cron.d; \
-		fi; \
-		if [ ! -f debian/tmp/etc/cron.d/$$cron_name ]; then \
-			echo "#*/10 * * * * root /etc/init.d/$$cron_name condstart 1>/dev/null 2>&1" > debian/tmp/etc/cron.d/$$cron_name; \
-		fi; \
-	done; \
 	# Making necessary *.install files
 	for DAEMON_PKG in ${DAEMONS}; do \
 		if [ ! -e "debian/$$DAEMON_PKG.install" ]; then \
@@ -112,7 +102,7 @@ install: build
 		if [ ! -e "debian/$$DAEMON_PKG.postinst" ]; then \
 			echo "# automatically created" > debian/$$DAEMON_PKG.postinst; \
 			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d" >> debian/$$DAEMON_PKG.postinst; \
-			echo "chown -R metrika: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.postinst; \
+			echo "chown -R clickhouse: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.postinst; \
 			if [ -e "debian/tmp/etc/init.d/$$DAEMON_PKG" ]; then \
 				if echo $$DAEMON_PKG | grep server > /dev/null; then\
 					echo "update-rc.d $$DAEMON_PKG defaults > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG.postinst; \
@@ -123,19 +113,17 @@ install: build
 			\
 		else \
 			echo >> debian/$$DAEMON_PKG.postinst; \
-			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d; chown -R metrika: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.postinst; \
+			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d; chown -R clickhouse: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.postinst; \
 		fi;  \
 	done
 
 
-	# В случае сборки clickhouse-server, добавим в пакет бинарник clang-а, ld и заголовочные файлы - для динамической компиляции.
-	if [ -e debian/tmp/etc/init.d/clickhouse-server ]; then \
-		mkdir -p debian/tmp/usr/share/clickhouse/bin debian/tmp/usr/share/clickhouse/headers; \
-		debian/copy_clang_binaries.sh debian/tmp/usr/share/clickhouse/bin/; \
-		./copy_headers.sh . debian/tmp/usr/share/clickhouse/headers; \
-	fi;
+	# In case building clickhouse-server, adding to package binary of clang, ld and header files - for dynamic compilation.
+	mkdir -p debian/tmp/usr/share/clickhouse/bin debian/tmp/usr/share/clickhouse/headers
+	debian/copy_clang_binaries.sh debian/tmp/usr/share/clickhouse/bin/
+	./copy_headers.sh . debian/tmp/usr/share/clickhouse/headers
 
-	# Создаём документацию
+	# Making docs
 	cp LICENSE debian/copyright
 
 	for DAEMON_PKG in ${DAEMONS}; do \
@@ -147,6 +135,13 @@ install: build
 	ln -s clickhouse-server.docs debian/clickhouse-server-base.docs
 	ln -s clickhouse-server.docs debian/clickhouse-server-common.docs
 	ln -s clickhouse-server.docs debian/clickhouse-server-metrika.docs
+
+	mkdir -p debian/tmp/etc/security/limits.d
+	cp tools/etc/security/limits.d/clickhouse.conf debian/tmp/etc/security/limits.d
+	mkdir -p debian/tmp/etc/init.d
+	cp tools/etc/init.d/clickhouse-server debian/tmp/etc/init.d
+	mkdir -p debian/tmp/etc/cron.d
+	cp tools/etc/cron.d/clickhouse-server debian/tmp/etc/cron.d
 
 # Build architecture-independent files here.
 binary-indep: build install
