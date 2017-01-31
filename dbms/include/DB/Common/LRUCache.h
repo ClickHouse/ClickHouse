@@ -21,11 +21,13 @@ struct TrivialWeightFunction
 	}
 };
 
-/** Кеш, вытесняющий долго не использовавшиеся и устаревшие записи. thread-safe.
-  * WeightFunction - тип, оператор () которого принимает Mapped и возвращает "вес" (примерный размер) этого значения.
-  * Кеш начинает выбрасывать значения, когда их суммарный вес превышает max_size и срок годности этих значений истёк.
-  * После вставки значения его вес не должен меняться.
-  */
+
+/// Thread-safe cache that evicts entries which are not used for a long time or are expired.
+/// WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size)
+/// of that value.
+/// Cache starts to evict entries when their total weight exceeds max_size and when expiration time of these
+/// entries is due.
+/// Value weight should not change after insertion.
 template <typename TKey, typename TMapped, typename HashFunction = std::hash<TMapped>, typename WeightFunction = TrivialWeightFunction<TMapped> >
 class LRUCache
 {
@@ -148,9 +150,9 @@ public:
 	}
 
 protected:
+	/// Total weight of evicted values. This value is reset every time it is sent to profile events.
 	size_t current_weight_lost = 0;
-	/// Суммарный вес выброшенных из кеша элементов.
-	/// Обнуляется каждый раз, когда информация добавляется в Profile events
+
 private:
 
 	/// Represents pending insertion attempt.
@@ -243,7 +245,7 @@ private:
 	LRUQueue queue;
 	Cells cells;
 
-	/// Суммарный вес значений.
+	/// Total weight of values.
 	size_t current_size = 0;
 	const size_t max_size;
 	const Delay expiration_delay;
@@ -265,7 +267,7 @@ private:
 		Cell & cell = it->second;
 		updateCellTimestamp(cell);
 
-		/// Переместим ключ в конец очереди. Итератор остается валидным.
+		/// Move the key to the end of the queue. The iterator remains valid.
 		queue.splice(queue.end(), queue, cell.queue_iterator);
 
 		return cell.value;
