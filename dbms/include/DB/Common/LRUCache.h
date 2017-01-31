@@ -71,14 +71,16 @@ public:
 	/// others will wait for that call to complete and will use its result (this helps prevent cache stampede).
 	/// Exceptions occuring in load_func will be propagated to the caller. Another thread from the
 	/// set of concurrent threads will then try to call its load_func etc.
+	///
+	/// Returns std::pair of the cached value and a bool indicating whether the value was produced during this call.
 	template<typename LoadFunc>
 	std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc&& load_func)
 	{
 		InsertTokenHolder token_holder;
 		{
-			std::lock_guard<std::mutex> lock(mutex);
+			std::lock_guard<std::mutex> cache_lock(mutex);
 
-			auto val = getImpl(key, lock);
+			auto val = getImpl(key, cache_lock);
 			if (val)
 			{
 				++hits;
@@ -89,7 +91,7 @@ public:
 			if (!token)
 				token = std::make_shared<InsertToken>(*this);
 
-			token_holder.acquire(&key, token, lock);
+			token_holder.acquire(&key, token, cache_lock);
 		}
 
 		InsertToken * token = token_holder.token.get();
@@ -110,7 +112,11 @@ public:
 
 		std::lock_guard<std::mutex> cache_lock(mutex);
 
-		setImpl(key, token->value, cache_lock);
+		/// Insert the new value only if the token is still in present in insert_tokens.
+		/// (The token may be absent because of a concurrent reset() call).
+		auto token_it = insert_tokens.find(key);
+		if (token_it != insert_tokens.end() && token_it->second.get() == token)
+			setImpl(key, token->value, cache_lock);
 
 		if (!token->cleaned_up)
 			token_holder.cleanup(token_lock, cache_lock);
@@ -190,10 +196,7 @@ private:
 
 		void cleanup(std::lock_guard<std::mutex> & token_lock, std::lock_guard<std::mutex> & cache_lock)
 		{
-			auto it = token->cache.insert_tokens.find(*key);
-			if (it != token->cache.insert_tokens.end())
-				token->cache.insert_tokens.erase(it);
-
+			token->cache.insert_tokens.erase(*key);
 			token->cleaned_up = true;
 			cleaned_up = true;
 		}
