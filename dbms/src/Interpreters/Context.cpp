@@ -124,7 +124,7 @@ struct ContextShared
 	/// Правила для выбора метода сжатия в зависимости от размера куска.
 	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
 	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Settings of MergeTree* engines.
-	size_t max_table_size_to_drop = 50lu * 1024*1024*1024;	/// Protects MergeTree tables from accidental DROP (50GB by default)
+	size_t max_table_size_to_drop = 50000000000lu;			/// Protects MergeTree tables from accidental DROP (50GB by default)
 
 	/// Clusters for distributed tables
 	/// Initialized on demand (on distributed storages initialization) since Settings should be initialized
@@ -1132,12 +1132,12 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
 	ostr << "Table " << database << "." << table << " was not dropped.\n"
 		 << "Reason:\n"
 		 << "1. Table size (" << table_size_str << ") is greater than max_table_size_to_drop (" << max_table_size_to_drop_str << ")\n"
-		 << "2. File " << force_file.path() << " intedned to force DROP "
+		 << "2. File '" << force_file.path() << "' intedned to force DROP "
 			<< (force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist") << "\n";
 
 	ostr << "How to fix this:\n"
 		 << "1. Either increase (or set to zero) max_table_size_to_drop in server config and restart clickhouse\n"
-		 << "2. Either create forcing file " << force_file.path() << " and make sure that clickhouse has written permission for it.\n"
+		 << "2. Either create forcing file " << force_file.path() << " and make sure that clickhouse has write permission for it.\n"
 		 << "2. bash example: touch '" << force_file.path() << "' && chmod 0777 '" << force_file.path() << "'";
 
 	throw Exception(ostr.str(), ErrorCodes::TABLE_SIZE_EXCEED_MAX_DROP_SIZE_LIMIT);

@@ -45,12 +45,14 @@ struct BlockStreamProfileInfo
 
 	void update(Block & block);
 
-	/// Методы для бинарной [де]сериализации. Передаются не все поля.
+	/// Binary serialization and deserialization of main fields.
+	/// Writes only main fields i.e. fields that required by internal transmission protocol.
 	void read(ReadBuffer & in);
 	void write(WriteBuffer & out) const;
 
-	/// Установить поля из другого объекта, но только те, которые передаются по сети (методами выше).
-	void setFrom(const BlockStreamProfileInfo & rhs);
+	/// Sets main fields from other object (see methods above).
+	/// If skip_block_size_info if true, then rows, bytes and block fields are ignored.
+	void setFrom(const BlockStreamProfileInfo & rhs, bool skip_block_size_info);
 
 private:
 	void calculateRowsBeforeLimit() const;
