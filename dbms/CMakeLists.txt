@@ -127,7 +127,7 @@ else()
 	find_library (Z_LIB z HINTS ${Z_HINTS})
 endif ()
 
-include (cmake/find_iconv.cmake)
+include (${CMAKE_SOURCE_DIR}/cmake/find_iconv.cmake)
 find_package (Threads)
 
 target_link_libraries(dbms
