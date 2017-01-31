@@ -284,6 +284,24 @@ bool test_concurrent()
 	ASSERT_CHECK((thrown2 == true), res);
 	ASSERT_CHECK((cache.get("key") == nullptr), res);
 
+	/// Case 4: Concurrent reset.
+
+	cache.reset();
+
+	thread1 = std::thread([&]()
+	{
+		result1 = cache.getOrSet("key", [&]() { return load_func("val1", 2s, false); });
+	});
+
+	std::this_thread::sleep_for(1s);
+	cache.reset();
+
+	thread1.join();
+
+	ASSERT_CHECK((result1.second == true), res);
+	ASSERT_CHECK((*result1.first == "val1"), res);
+	ASSERT_CHECK((cache.get("key") == nullptr), res);
+
 	return res;
 }
 

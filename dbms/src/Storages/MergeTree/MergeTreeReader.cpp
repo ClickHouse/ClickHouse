@@ -298,8 +298,6 @@ void MergeTreeReader::Stream::loadMarks()
 
 	auto load = [&]() -> MarkCache::MappedPtr
 	{
-		LOG_TRACE(&Logger::get("MergeTreeReader::Stream"), "Loading marks: " + path);
-
 		/// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
 		TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
 
