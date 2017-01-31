@@ -4,7 +4,6 @@
 #include <sstream>
 #include <Poco/ConsoleChannel.h>
 #include <common/logger_useful.h>
-#include <common/config_common.h>
 #include <common/readline_use.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/ReadBufferFromString.h>
