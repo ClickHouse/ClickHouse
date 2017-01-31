@@ -211,25 +211,9 @@ public:
 		throw Exception("Method updateHashWithValue is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	size_t byteSize() const override
-	{
-		size_t res = getData().size() * sizeof(getData()[0]);
+	size_t byteSize() const override;
 
-		for (const auto & arena : arenas)
-			res += arena.get()->size();
-
-		return res;
-	}
-
-	size_t allocatedSize() const override
-	{
-		size_t res = getData().allocated_size() * sizeof(getData()[0]);
-
-		for (const auto & arena : arenas)
-			res += arena.get()->size();
-
-		return res;
-	}
+	size_t allocatedSize() const override;
 
 	void insertRangeFrom(const IColumn & from, size_t start, size_t length) override;
 
