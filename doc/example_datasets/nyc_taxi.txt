@@ -342,3 +342,9 @@ Q4: 1.241 sec.
 No surprise, as queries are linearly scalable.
 
 
+Also there are results for 140-node cluster:
+
+Q1: 0.028 sec.
+Q2: 0.043 sec.
+Q3: 0.051 sec.
+Q4: 0.072 sec.
