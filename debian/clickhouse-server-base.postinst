@@ -66,6 +66,11 @@ Please fix this and reinstall this package." >&2
 		chmod 1770 ${CLICKHOUSE_LOGDIR}
 	fi
 
+
+	# only for compatibility for old metrika user, remove string after 2017-06-01 :
+	su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}" || chown -R root:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}; chmod -R 1770 ${CLICKHOUSE_LOGDIR}
+
+
 	# -R only for compatibility for old metrika user, remove -R after 2017-06-01
 	su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_SERVER_ETCDIR}" || chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_SERVER_ETCDIR}
 
