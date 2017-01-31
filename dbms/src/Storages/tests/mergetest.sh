@@ -3,7 +3,7 @@
 # См. таску CONV-8849.
 # Симулируем ситуацию, когда половина одного файла с засечками не успела записаться на диск
 
-path='/opt/clickhouse/data/mergetest/a/'
+path='/var/lib/clickhouse/data/mergetest/a/'
 
 echo 'Creating table'
 echo 'CREATE DATABASE IF NOT EXISTS mergetest' | clickhouse-client || exit 1
