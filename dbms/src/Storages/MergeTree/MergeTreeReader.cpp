@@ -30,6 +30,7 @@ namespace
 
 namespace ErrorCodes
 {
+	extern const int LOGICAL_ERROR;
 	extern const int NOT_FOUND_EXPECTED_DATA_PART;
 	extern const int MEMORY_LIMIT_EXCEEDED;
 }
@@ -45,9 +46,9 @@ MergeTreeReader::MergeTreeReader(const String & path,
 	size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints,
 	const ReadBufferFromFileBase::ProfileCallback & profile_callback,
 	clockid_t clock_type)
-	: avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns),
-		uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), save_marks_in_cache(save_marks_in_cache), storage(storage),
-		all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
+	: avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns)
+	, uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), save_marks_in_cache(save_marks_in_cache), storage(storage)
+	, all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
 {
 	try
 	{
@@ -295,35 +296,48 @@ void MergeTreeReader::Stream::loadMarks()
 	else
 		path = path_prefix + ".mrk";
 
-	UInt128 key;
+	auto load = [&]() -> MarkCache::MappedPtr
+	{
+		/// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
+		TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
+
+		size_t file_size = Poco::File(path).getSize();
+		size_t expected_file_size = sizeof(MarkInCompressedFile) * marks_count;
+		if (expected_file_size != file_size)
+			throw Exception(
+					"bad size of marks file `" + path + "':" + std::to_string(file_size) + ", must be: "  + std::to_string(expected_file_size),
+					ErrorCodes::CORRUPTED_DATA);
+
+		auto res = std::make_shared<MarksInCompressedFile>(marks_count);
+
+		/// Read directly to marks.
+		ReadBufferFromFile buffer(path, file_size, -1, reinterpret_cast<char *>(res->data()));
+
+		if (buffer.eof() || buffer.buffer().size() != file_size)
+			throw Exception("Cannot read all marks from file " + path, ErrorCodes::CANNOT_READ_ALL_DATA);
+
+		return res;
+	};
+
 	if (mark_cache)
 	{
-		key = mark_cache->hash(path);
-		marks = mark_cache->get(key);
-		if (marks)
-			return;
+		auto key = mark_cache->hash(path);
+		if (save_marks_in_cache)
+		{
+			marks = mark_cache->getOrSet(key, load);
+		}
+		else
+		{
+			marks = mark_cache->get(key);
+			if (!marks)
+				marks = load();
+		}
 	}
+	else
+		marks = load();
 
-	/// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
-	TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
-
-	size_t file_size = Poco::File(path).getSize();
-	size_t expected_file_size = sizeof(MarkInCompressedFile) * marks_count;
-	if (expected_file_size != file_size)
-		throw Exception(
-				"bad size of marks file `" + path + "':" + std::to_string(file_size) + ", must be: "  + std::to_string(expected_file_size),
-				ErrorCodes::CORRUPTED_DATA);
-
-	marks = std::make_shared<MarksInCompressedFile>(marks_count);
-
-	/// Read directly to marks.
-	ReadBufferFromFile buffer(path, file_size, -1, reinterpret_cast<char *>(marks->data()));
-
-	if (buffer.eof() || buffer.buffer().size() != file_size)
-		throw Exception("Cannot read all marks from file " + path, ErrorCodes::CANNOT_READ_ALL_DATA);
-
-	if (mark_cache && save_marks_in_cache)
-		mark_cache->set(key, marks);
+	if (!marks)
+		throw Exception("Failed to load marks: " + path, ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -473,7 +487,7 @@ void MergeTreeReader::readData(
 		if (required_internal_size != read_internal_size)
 		{
 			if (read_internal_size != 0)
-				LOG_ERROR((&Logger::get("MergeTreeReader")),
+				LOG_ERROR(&Logger::get("MergeTreeReader"),
 					"Internal size of array " + name + " doesn't match offsets: corrupted data, filling with default values.");
 
 			array.getDataPtr() = dynamic_cast<IColumnConst &>(
