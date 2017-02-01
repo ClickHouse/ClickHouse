@@ -37,6 +37,7 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
 	: log(&Logger::get("HTTPDictionarySource")),
 	dict_struct{other.dict_struct},
 	url{other.url},
+	format{other.format},
 	sample_block{other.sample_block},
 	context(other.context)
 {
