@@ -1129,16 +1129,16 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
 	String max_table_size_to_drop_str = formatReadableSizeWithDecimalSuffix(max_table_size_to_drop);
 	std::stringstream ostr;
 
-	ostr << "Table " << database << "." << table << " was not dropped.\n"
+	ostr << "Table " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(table) << " was not dropped.\n"
 		 << "Reason:\n"
 		 << "1. Table size (" << table_size_str << ") is greater than max_table_size_to_drop (" << max_table_size_to_drop_str << ")\n"
 		 << "2. File '" << force_file.path() << "' intedned to force DROP "
 			<< (force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist") << "\n";
 
 	ostr << "How to fix this:\n"
-		 << "1. Either increase (or set to zero) max_table_size_to_drop in server config and restart clickhouse\n"
-		 << "2. Either create forcing file " << force_file.path() << " and make sure that clickhouse has write permission for it.\n"
-		 << "2. bash example: touch '" << force_file.path() << "' && chmod 0777 '" << force_file.path() << "'";
+		 << "1. Either increase (or set to zero) max_table_size_to_drop in server config and restart ClickHouse\n"
+		 << "2. Either create forcing file " << force_file.path() << " and make sure that ClickHouse has write permission for it.\n"
+		 << "Example:\nsudo touch '" << force_file.path() << "' && sudo chmod 666 '" << force_file.path() << "'";
 
 	throw Exception(ostr.str(), ErrorCodes::TABLE_SIZE_EXCEED_MAX_DROP_SIZE_LIMIT);
 }
