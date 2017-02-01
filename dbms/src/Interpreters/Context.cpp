@@ -72,7 +72,7 @@ namespace ErrorCodes
 	extern const int THERE_IS_NO_SESSION;
 	extern const int NO_ELEMENTS_IN_CONFIG;
 	extern const int DDL_GUARD_IS_ACTIVE;
-	extern const int TABLE_SIZE_EXCEED_MAX_DROP_SIZE_LIMIT;
+	extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
 }
 
 class TableFunctionFactory;
