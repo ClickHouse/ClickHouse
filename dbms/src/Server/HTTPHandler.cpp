@@ -226,22 +226,24 @@ void HTTPHandler::processQuery(
 		}
 	}
 
+	const Settings & settings = context.getSettingsRef();
+
 	/// HTTP response compression is turned on only if the client signalled that they support it
 	/// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.
-	used_output.out->setCompression(client_supports_http_compression && context.getSettingsRef().enable_http_compression);
+	used_output.out->setCompression(client_supports_http_compression && settings.enable_http_compression);
 	if (client_supports_http_compression)
-		used_output.out->setCompressionLevel(context.getSettingsRef().http_zlib_compression_level);
+		used_output.out->setCompressionLevel(settings.http_zlib_compression_level);
 
-	used_output.out->setSendProgressInterval(context.getSettingsRef().http_headers_progress_interval_ms);
+	used_output.out->setSendProgressInterval(settings.http_headers_progress_interval_ms);
 
 	/// If 'http_native_compression_disable_checksumming_on_decompress' setting is turned on,
 	/// checksums of client data compressed with internal algorithm are not checked.
-	if (in_post_compressed && context.getSettingsRef().http_native_compression_disable_checksumming_on_decompress)
+	if (in_post_compressed && settings.http_native_compression_disable_checksumming_on_decompress)
 		static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
 	/// Add CORS header if 'add_http_cors_header' setting is turned on and the client passed
 	/// Origin header.
-	used_output.out->addHeaderCORS( context.getSettingsRef().add_http_cors_header && !request.get("Origin", "").empty() );
+	used_output.out->addHeaderCORS(settings.add_http_cors_header && !request.get("Origin", "").empty());
 
 	ClientInfo & client_info = context.getClientInfo();
 	client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
@@ -262,7 +264,8 @@ void HTTPHandler::processQuery(
 	client_info.http_user_agent = request.get("User-Agent", "");
 
 	/// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
-	context.setProgressCallback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
+	if (settings.send_progress_in_http_headers)
+		context.setProgressCallback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
 
 	executeQuery(*in, *used_output.out_maybe_compressed, /* allow_into_outfile = */ false, context,
 		[&response] (const String & content_type) { response.setContentType(content_type); });
