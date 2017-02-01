@@ -33,6 +33,13 @@ BlockInputStreams Query::execute()
 	/// Does not matter on remote servers, because queries are sent under different user.
 	new_settings.max_concurrent_queries_for_user = 0;
 	new_settings.limits.max_memory_usage_for_user = 0;
+	/// This setting is really not for user and should not be sent to remote server.
+	new_settings.limits.max_memory_usage_for_all_queries = 0;
+
+	/// Set as unchanged to avoid sending to remote server.
+	new_settings.max_concurrent_queries_for_user.changed = false;
+	new_settings.limits.max_memory_usage_for_user.changed = false;
+	new_settings.limits.max_memory_usage_for_all_queries.changed = false;
 
 	/// Network bandwidth limit, if needed.
 	ThrottlerPtr throttler;
