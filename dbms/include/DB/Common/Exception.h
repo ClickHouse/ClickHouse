@@ -80,7 +80,7 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "");
 
 std::string getCurrentExceptionMessage(bool with_stacktrace);
-
+int getCurrentExceptionCode();
 
 void tryLogException(std::exception_ptr e, const char * log_name, const std::string & start_of_message = "");
 void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::string & start_of_message = "");
