@@ -132,6 +132,24 @@ std::string getCurrentExceptionMessage(bool with_stacktrace)
 }
 
 
+int getCurrentExceptionCode()
+{
+	try
+	{
+		throw;
+	}
+	catch (const Poco::Exception & e)
+	{
+		/// Use the same error codes for DB::Exception and Poco::Exception
+		return e.code();
+	}
+	catch (...)
+	{
+		return -1;
+	}
+}
+
+
 std::unique_ptr<Poco::Exception> convertCurrentException()
 {
 	try
