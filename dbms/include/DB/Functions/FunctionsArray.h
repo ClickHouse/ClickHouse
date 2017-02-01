@@ -15,6 +15,7 @@
 
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/DataTypeTraits.h>
+#include <DB/Functions/ObjectPool.h>
 #include <DB/Common/StringUtils.h>
 
 #include <ext/range.hpp>
@@ -1424,8 +1425,8 @@ private:
 class IAggregateFunction;
 using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 
-/** Применяет к массиву агрегатную функцию и возвращает её результат.
-  * Также может быть применена к нескольким массивам одинаковых размеров, если агрегатная функция принимает несколько аргументов.
+/** Applies an aggregate function to array and returns its result.
+  * If aggregate function has multiple arguments, then this function can be applied to multiple arrays with the same size.
   */
 class FunctionArrayReduce : public IFunction
 {

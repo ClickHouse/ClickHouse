@@ -172,6 +172,10 @@ static void appendGraphitePattern(const Context & context,
 		throw Exception("Aggregate function is mandatory for retention patterns in GraphiteMergeTree",
 			ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
+	if (pattern.function->allocatesMemoryInArena())
+		throw Exception("Aggregate function " + pattern.function->getName() + " isn't supported in GraphiteMergeTree",
+						ErrorCodes::NOT_IMPLEMENTED);
+
 	/// retention-ы должны идти по убыванию возраста.
 	std::sort(pattern.retentions.begin(), pattern.retentions.end(),
 		[] (const Graphite::Retention & a, const Graphite::Retention & b) { return a.age > b.age; });
