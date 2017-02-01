@@ -142,4 +142,30 @@ ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limi
 	return res;
 }
 
+
+/// NOTE: Highly overestimates size of a column if it was produced in AggregatingBlockInputStream (it contains size of other columns)
+size_t ColumnAggregateFunction::byteSize() const
+{
+	size_t res = getData().size() * sizeof(getData()[0]);
+
+	for (const auto & arena : arenas)
+		res += arena.get()->size();
+
+	return res;
+}
+
+
+/// Like byteSize(), highly overestimates size
+size_t ColumnAggregateFunction::allocatedSize() const
+{
+	size_t res = getData().allocated_size() * sizeof(getData()[0]);
+
+	for (const auto & arena : arenas)
+		res += arena.get()->size();
+
+	return res;
+}
+
+
+
 }

@@ -15,11 +15,11 @@ echo "('2014-01-01', 'key1', -1, 'val2')" | clickhouse-client --query="INSERT IN
 
 sudo /etc/init.d/clickhouse-server stop || exit 10
 
-sudo -u metrika cp -r /opt/clickhouse/data/collapsing_test/{p0/20140101_20140101_1_1_0,m0/} || exit 12
-sudo -u metrika cp -r /opt/clickhouse/data/collapsing_test/{p1/20140101_20140101_1_1_0,m0/20140101_20140101_2_2_0} || exit 13
-sudo -u metrika cp -r /opt/clickhouse/data/collapsing_test/{p1/20140101_20140101_1_1_0,m1/20140101_20140101_2_2_0} || exit 14
-sudo -u metrika cp -r /opt/clickhouse/data/collapsing_test/{p2/20140101_20140101_1_1_0,m1/20140101_20140101_3_3_0} || exit 15
-rm /opt/clickhouse/data/collapsing_test/m{0,1}/increment.txt || exit 29
+sudo -u clickhouse cp -r /var/lib/clickhouse/data/collapsing_test/{p0/20140101_20140101_1_1_0,m0/} || exit 12
+sudo -u clickhouse cp -r /var/lib/clickhouse/data/collapsing_test/{p1/20140101_20140101_1_1_0,m0/20140101_20140101_2_2_0} || exit 13
+sudo -u clickhouse cp -r /var/lib/clickhouse/data/collapsing_test/{p1/20140101_20140101_1_1_0,m1/20140101_20140101_2_2_0} || exit 14
+sudo -u clickhouse cp -r /var/lib/clickhouse/data/collapsing_test/{p2/20140101_20140101_1_1_0,m1/20140101_20140101_3_3_0} || exit 15
+rm /var/lib/clickhouse/data/collapsing_test/m{0,1}/increment.txt || exit 29
 
 sudo /etc/init.d/clickhouse-server start || exit 16
 
@@ -29,9 +29,9 @@ echo "OPTIMIZE TABLE collapsing_test.m1" | clickhouse-client || exit 18
 
 sudo /etc/init.d/clickhouse-server stop || exit 19
 
-sudo -u metrika cp -r /opt/clickhouse/data/collapsing_test/{p0/20140101_20140101_1_1_0,m1/} || exit 20
-sudo -u metrika cp -r /opt/clickhouse/data/collapsing_test/{p2/20140101_20140101_1_1_0,m0/20140101_20140101_3_3_0} || exit 21
-rm /opt/clickhouse/data/collapsing_test/m{0,1}/increment.txt || exit 29
+sudo -u clickhouse cp -r /var/lib/clickhouse/data/collapsing_test/{p0/20140101_20140101_1_1_0,m1/} || exit 20
+sudo -u clickhouse cp -r /var/lib/clickhouse/data/collapsing_test/{p2/20140101_20140101_1_1_0,m0/20140101_20140101_3_3_0} || exit 21
+rm /var/lib/clickhouse/data/collapsing_test/m{0,1}/increment.txt || exit 29
 
 sudo /etc/init.d/clickhouse-server start || exit 22
 
@@ -39,7 +39,7 @@ sleep 10s
 echo "OPTIMIZE TABLE collapsing_test.m0" | clickhouse-client || exit 23
 echo "OPTIMIZE TABLE collapsing_test.m1" | clickhouse-client || exit 23
 
-ls /opt/clickhouse/data/collapsing_test/m{0,1}
+ls /var/lib/clickhouse/data/collapsing_test/m{0,1}
 
 echo "SELECT * FROM collapsing_test.m0" | clickhouse-client || exit 24
 echo
@@ -51,7 +51,7 @@ echo "('2014-01-01', 'key2', 1, 'val')" | clickhouse-client --query="INSERT INTO
 echo "OPTIMIZE TABLE collapsing_test.m0" | clickhouse-client || exit 30
 echo "OPTIMIZE TABLE collapsing_test.m1" | clickhouse-client || exit 31
 
-ls /opt/clickhouse/data/collapsing_test/m{0,1}
+ls /var/lib/clickhouse/data/collapsing_test/m{0,1}
 
 echo "SELECT * FROM collapsing_test.m0" | clickhouse-client | tee /tmp/t1 || exit 24
 echo
