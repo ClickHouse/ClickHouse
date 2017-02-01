@@ -1,4 +1,7 @@
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/libs/libcommon/src/get_revision_lib.sh"
+function get_revision {
+	BASEDIR=$(dirname "${BASH_SOURCE[0]}")
+	grep "set(VERSION_REVISION" ${BASEDIR}/libs/libcommon/cmake/version.cmake | sed 's/^.*VERSION_REVISION \(.*\))$/\1/'
+}
 
 function add_daemon_impl {
 	local daemon=$1
@@ -61,7 +64,6 @@ function gen_revision_author {
 
 	if [[ $STANDALONE != 'yes' ]]
 	then
-		#needed for libs/libcommon/src/get_revision_lib.sh
 		git fetch --tags
 
 		# Создадим номер ревизии и попытаемся залить на сервер.
