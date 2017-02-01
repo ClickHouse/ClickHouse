@@ -2735,7 +2735,9 @@ Version column must have type of UInt family or Date or DateTime.
 
 %%ReplacingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, ver)%%
 
-In order to do this ReplacingMergeTree engine reads all data, so should be used with caution. It's recommended to model your data model with CollapsingMergeTree. Merge process should be triggered manually.
+Please note, that data is deduplicated only while merging process. Merges are processed in background. Exact time of merge is unspecified and you could not rely on it. Some part of data could be not merged at all. While you could trigger extra merge with OPTIMIZE query, it is not recommended, as OPTIMIZE will read and write vast amount of data.
+
+This table engine is suitable for background removal of duplicate data to save space, but not suitable to guarantee of deduplication.
 
 Developed for special purposes of not Yandex.Metrica department.
 
