@@ -55,7 +55,7 @@ private:
 	};
 
 	/// Separate converter is created for each thread.
-	using Pool = ObjectPool<IConv, CharsetsFromTo>;
+	using Pool = ObjectPoolMap<IConv, CharsetsFromTo>;
 
 	Pool::Pointer getConverter(const CharsetsFromTo & charsets)
 	{
