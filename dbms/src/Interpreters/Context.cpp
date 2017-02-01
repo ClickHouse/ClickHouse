@@ -1140,7 +1140,7 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
 		 << "2. Either create forcing file " << force_file.path() << " and make sure that ClickHouse has write permission for it.\n"
 		 << "Example:\nsudo touch '" << force_file.path() << "' && sudo chmod 666 '" << force_file.path() << "'";
 
-	throw Exception(ostr.str(), ErrorCodes::TABLE_SIZE_EXCEED_MAX_DROP_SIZE_LIMIT);
+	throw Exception(ostr.str(), ErrorCodes::TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT);
 }
 
 
