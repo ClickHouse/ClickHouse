@@ -19,7 +19,7 @@ class MemoryTracker
 {
 	std::atomic<Int64> amount {0};
 	std::atomic<Int64> peak {0};
-	Int64 limit {0};
+	std::atomic<Int64> limit {0};
 
 	/// To test exception safety of calling code, memory tracker throws an exception on each memory allocation with specified probability.
 	double fault_probability = 0;
@@ -65,8 +65,13 @@ public:
 
 	void setLimit(Int64 limit_)
 	{
-		limit = limit_;
+		limit.store(limit_, std::memory_order_relaxed);
 	}
+
+	/** Set limit if it was not set.
+	  * Otherwise, set limit to new value, if new value is greater than previous limit.
+	  */
+	void setOrRaiseLimit(Int64 value);
 
 	void setFaultProbability(double value)
 	{

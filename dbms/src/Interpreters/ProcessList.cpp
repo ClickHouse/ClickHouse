@@ -83,13 +83,20 @@ ProcessList::EntryPtr ProcessList::insert(
 
 			if (current_memory_tracker)
 			{
-				/// Отслеживаем суммарное потребление оперативки на одновременно выполняющиеся запросы одного пользователя.
-				user_process_list.user_memory_tracker.setLimit(settings.limits.max_memory_usage_for_user);
+				/// Limits are only raised (to be more relaxed) or set to something instead of zero,
+				///  because settings for different queries will interfere each other:
+				///  setting from one query effectively sets values for all other queries.
+
+				/// Track memory usage for all simultaneously running queries from single user.
+				user_process_list.user_memory_tracker.setOrRaiseLimit(settings.limits.max_memory_usage_for_user);
 				user_process_list.user_memory_tracker.setDescription("(for user)");
 				current_memory_tracker->setNext(&user_process_list.user_memory_tracker);
 
-				/// Отслеживаем суммарное потребление оперативки на все одновременно выполняющиеся запросы.
-				total_memory_tracker.setLimit(settings.limits.max_memory_usage_for_all_queries);
+				/// Track memory usage for all simultaneously running queries.
+				/// You should specify this value in configuration for default profile,
+				///  not for specific users, sessions or queries,
+				///  because this setting is effectively global.
+				total_memory_tracker.setOrRaiseLimit(settings.limits.max_memory_usage_for_all_queries);
 				total_memory_tracker.setDescription("(total)");
 				user_process_list.user_memory_tracker.setNext(&total_memory_tracker);
 			}
