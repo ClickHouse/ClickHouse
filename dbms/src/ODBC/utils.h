@@ -2,8 +2,8 @@
 
 #include <string.h>
 #include <sql.h>
-
 #include "Log.h"
+#include "StringRef.h"
 
 
 /** Проверяет handle. Ловит исключения и засовывает их в DiagnosticRecord.

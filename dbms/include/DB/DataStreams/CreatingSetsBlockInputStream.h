@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Poco/Logger.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 

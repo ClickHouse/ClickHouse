@@ -34,6 +34,7 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
 		std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
 #else
 		response_body_ostr = &(response.send());
+		response_header_ostr = response_body_ostr;
 #endif
 	}
 }

@@ -2,15 +2,12 @@
 
 #include <DB/Core/Protocol.h>
 #include <DB/Core/QueryProcessingStage.h>
-
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
-
 #include <DB/DataStreams/BlockIO.h>
-
 #include <DB/Common/Stopwatch.h>
 #include <DB/Common/CurrentMetrics.h>
-
+#include <DB/Core/Progress.h>
 #include "Server.h"
 
 
