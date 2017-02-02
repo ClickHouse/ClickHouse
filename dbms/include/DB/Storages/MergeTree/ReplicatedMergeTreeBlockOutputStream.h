@@ -3,6 +3,8 @@
 #include <DB/DataStreams/IBlockOutputStream.h>
 
 
+namespace Poco { class Logger; }
+
 namespace DB
 {
 
