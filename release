@@ -27,6 +27,11 @@ do
 	then
 		DEBUILD_NODEPS_OPTIONS="-d"
 		shift
+	elif [[ $1 == '--version' ]]
+	then
+		gen_revision_author
+		git push
+		exit 0
 	else
 		echo "Unknown option $1"
 		exit 2
