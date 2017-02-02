@@ -9,6 +9,7 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Interpreters/PartLog.h>
 #include <DB/Parsers/ASTFunction.h>
 #include <Poco/DirectoryIterator.h>
 
@@ -47,7 +48,7 @@ StorageMergeTree::StorageMergeTree(
 		 context_, primary_expr_ast_, date_column_name_,
 		 sampling_expression_, index_granularity_, merging_params_,
 		 settings_, database_name_ + "." + table_name, false),
-	reader(data), writer(data), merger(data, context.getBackgroundPool()),
+	reader(data), writer(data, context), merger(data, context.getBackgroundPool()),
 	increment(0),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
@@ -341,10 +342,29 @@ bool StorageMergeTree::merge(
 
 	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
 
+    /// Logging
+    PartLogElement elem;
+    Stopwatch stopwatch;
+    stopwatch.restart();
+
+    elem.event_type = PartLogElement::MERGE_PARTS;
+    elem.event_time = time(0);
+
+    elem.merged_from.reserve(merging_tagger->parts.size());
+    for (const auto & part : merging_tagger->parts)
+      elem.merged_from.push_back(part->name);
+
 	auto new_part = merger.mergePartsToTemporaryPart(
 		merging_tagger->parts, merged_name, *merge_entry, aio_threshold, time(0), merging_tagger->reserved_space.get());
 
 	merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
+
+    elem.size_in_bytes = new_part->size_in_bytes;
+    elem.part_name = new_part->name;
+    stopwatch.stop();
+    elem.act_time_ms = stopwatch.elapsed() / 1000000;
+
+    context.getPartLog().add(elem);
 
 	return true;
 }

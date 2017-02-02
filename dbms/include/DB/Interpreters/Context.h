@@ -42,6 +42,7 @@ class Macros;
 struct Progress;
 class Clusters;
 class QueryLog;
+class PartLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
@@ -267,6 +268,7 @@ public:
 
 	Compiler & getCompiler();
 	QueryLog & getQueryLog();
+	PartLog & getPartLog();
 	const MergeTreeSettings & getMergeTreeSettings();
 
 	/// Позволяет выбрать метод сжатия по условиям, описанным в конфигурационном файле.

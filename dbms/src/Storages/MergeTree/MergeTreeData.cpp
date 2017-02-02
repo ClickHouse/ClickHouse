@@ -23,6 +23,7 @@
 #include <DB/Common/Increment.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/StringUtils.h>
+#include <DB/Common/Stopwatch.h>
 #include <DB/IO/Operators.h>
 
 #include <algorithm>

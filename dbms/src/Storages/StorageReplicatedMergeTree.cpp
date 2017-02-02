@@ -22,6 +22,7 @@
 #include <DB/IO/Operators.h>
 
 #include <DB/Interpreters/InterpreterAlterQuery.h>
+#include <DB/Interpreters/PartLog.h>
 
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/DataStreams/RemoteBlockInputStream.h>
@@ -216,7 +217,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		sampling_expression_, index_granularity_, merging_params_,
 		settings_, database_name_ + "." + table_name, true,
 		[this] (const std::string & name) { enqueuePartForCheck(name); }),
-	reader(data), writer(data), merger(data, context.getBackgroundPool()), fetcher(data), sharded_partition_uploader_client(*this),
+	reader(data), writer(data, context), merger(data, context.getBackgroundPool()), fetcher(data), sharded_partition_uploader_client(*this),
 	shutdown_event(false), part_check_thread(*this),
 	log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
@@ -2033,8 +2034,22 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
 	ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
 
+    Stopwatch stopwatch;
+    stopwatch.restart();
+
 	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(
 		part_name, replica_path, address.host, address.replication_port, to_detached);
+    
+    stopwatch.stop();
+    PartLogElement elem;
+
+    elem.event_type = PartLogElement::DOWNLOAD_PART;
+    elem.event_time = time(0);
+    elem.size_in_bytes = part->size_in_bytes;
+    elem.act_time_ms = stopwatch.elapsed() / 10000000;
+    elem.part_name = part->name;
+
+    context.getPartLog().add(elem);
 
 	if (!to_detached)
 	{

@@ -31,6 +31,7 @@
 #include <DB/Interpreters/InterserverIOHandler.h>
 #include <DB/Interpreters/Compiler.h>
 #include <DB/Interpreters/QueryLog.h>
+#include <DB/Interpreters/PartLog.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/UncompressedCache.h>
@@ -115,6 +116,7 @@ struct ContextShared
 	Macros macros;											/// Подстановки из конфига.
 	std::unique_ptr<Compiler> compiler;						/// Для динамической компиляции частей запроса, при необходимости.
 	std::unique_ptr<QueryLog> query_log;					/// Для логгирования запросов.
+    std::unique_ptr<PartLog> part_log;                      /// Для логгирования работы с кусками
 	/// Правила для выбора метода сжатия в зависимости от размера куска.
 	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
 	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Настройки для движка MergeTree.
@@ -1041,6 +1043,32 @@ QueryLog & Context::getQueryLog()
 	}
 
 	return *shared->query_log;
+}
+
+
+PartLog & Context::getPartLog()
+{
+    auto lock = getLock();
+
+    if (!shared->part_log)
+    {
+        if (shared->shutdown_called)
+            throw Exception("Will not get part_log because shutdown was called", ErrorCodes::LOGICAL_ERROR);
+
+        if (!global_context)
+            throw Exception("Logical error: no global context for part log", ErrorCodes::LOGICAL_ERROR);
+
+        auto & config = Poco::Util::Application::instance().config();
+
+        String database = config.getString("part_log.database", "system");
+        String table = config.getString("part_log.table", "part_log");
+        size_t flush_interval_milliseconds = parse<size_t>(
+            config.getString("part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS_STR));
+        shared->part_log = std::make_unique<PartLog>(
+            *global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
+    }
+
+    return *shared->part_log;
 }
 
 
