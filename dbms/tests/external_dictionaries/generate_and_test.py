@@ -38,6 +38,7 @@ wait_for_loading_sleep_time_sec = 3
 
 failures = 0
 SERVER_DIED = False
+no_break = False
 
 prefix = base_dir = os.path.dirname(os.path.realpath(__file__))
 generated_prefix = prefix + '/generated/'
@@ -538,7 +539,7 @@ def run_tests(args):
 
     # the actual tests
     for (name, key_idx, has_parent) in dictionaries:
-        if SERVER_DIED:
+        if SERVER_DIED and not no_break:
             break
         key = keys[key_idx]
         print 'Testing dictionary', name
@@ -548,7 +549,7 @@ def run_tests(args):
 
         # query dictGet*
         for type, default in zip(types, explicit_defaults):
-            if SERVER_DIED:
+            if SERVER_DIED and not no_break:
                 break
             test_query(name,
                 dict_get_query_skeleton.format(**locals()),
