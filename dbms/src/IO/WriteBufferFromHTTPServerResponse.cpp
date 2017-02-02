@@ -30,7 +30,11 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
 
 		setResponseDefaultHeaders(response);
 
+#if POCO_CLICKHOUSE_PATCH
 		std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
+#else
+		response_body_ostr = &(response.send());
+#endif
 	}
 }
 
