@@ -6,6 +6,7 @@
 #include <list>
 #include <condition_variable>
 #include <mutex>
+#include <atomic>
 #include <Poco/RWLock.h>
 #include <Poco/Event.h>
 #include <Poco/Timestamp.h>

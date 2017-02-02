@@ -1,4 +1,6 @@
 #pragma once
+
+#include <limits>
 #include <DB/Core/Types.h>
 
 /** Preceptually-correct number comparisons.
