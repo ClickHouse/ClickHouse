@@ -8,6 +8,7 @@ import lxml.etree as et
 from argparse import ArgumentParser
 from argparse import FileType
 from pprint import pprint
+import subprocess
 from subprocess import check_call
 from subprocess import Popen
 from subprocess import PIPE
@@ -187,9 +188,11 @@ def main(args):
 								report_testcase.append(skipped)
 								print("{0} - no reference file".format(MSG_UNKNOWN))
 							else:
-								(diff, _) = Popen(['diff', reference_file, stdout_file], stdout = PIPE).communicate()
+								result_is_different = subprocess.call(['cmp', '--quiet', reference_file, stdout_file], stdout = PIPE)
 
-								if diff:
+								if result_is_different:
+									(diff, _) = Popen(['diff', '--side-by-side', reference_file, stdout_file], stdout = PIPE).communicate()
+
 									failure = et.Element("failure", attrib = {"message": "result differs with reference"})
 									report_testcase.append(failure)
 
