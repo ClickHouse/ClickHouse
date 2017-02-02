@@ -313,6 +313,7 @@ private:
 };
 
 using StorageVector = std::vector<StoragePtr>;
+using StorageList = std::list<StoragePtr>;
 
 /// имя таблицы -> таблица
 using Tables = std::map<String, StoragePtr>;
