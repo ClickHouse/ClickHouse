@@ -1498,6 +1498,22 @@ private:
 		};
 	}
 
+	/// Only trivial NULL -> NULL case
+	WrapperType createNullWrapper(const DataTypePtr & from_type, const DataTypeNull * to_type)
+	{
+		if (!typeid_cast<const DataTypeNull *>(from_type.get()))
+			throw Exception("Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
+				ErrorCodes::CANNOT_CONVERT_TYPE);
+
+		return [] (Block & block, const ColumnNumbers & arguments, const size_t result)
+		{
+			// just copy pointer to Null column
+			ColumnWithTypeAndName & res_col = block.safeGetByPosition(result);
+			const ColumnWithTypeAndName & src_col = block.safeGetByPosition(arguments.front());
+			res_col.column = src_col.column;
+		};
+	}
+
 	/// Actions to be taken when performing a conversion.
 	struct Action
 	{
@@ -1622,6 +1638,8 @@ private:
 			return createEnumWrapper(from_type, type_enum);
 		else if (const auto type_enum = typeid_cast<const DataTypeEnum16 *>(to_type))
 			return createEnumWrapper(from_type, type_enum);
+		else if (const auto type_null = typeid_cast<const DataTypeNull *>(to_type))
+			return createNullWrapper(from_type, type_null);
 
 		/// It's possible to use ConvertImplGenericFromString to convert from String to AggregateFunction,
 		///  but it is disabled because deserializing aggregate functions state might be unsafe.
@@ -1704,7 +1722,7 @@ public:
 
 		if (from_type->isNullable())
 			action |= Action::UNWRAP_NULLABLE_INPUT;
-		else if (from_type->isNull())
+		else if (from_type->isNull() && !out_return_type->isNull())
 			action |= Action::CONVERT_NULL;
 
 		if (out_return_type->isNullable())
