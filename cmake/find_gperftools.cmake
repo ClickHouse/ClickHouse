@@ -6,6 +6,13 @@ if (ENABLE_LIBTCMALLOC)
 	else ()
 		find_package (Gperftools REQUIRED)
 		include_directories (${GPERFTOOLS_INCLUDE_DIR})
+
+		if (CMAKE_SYSTEM MATCHES "FreeBSD")
+			find_library (UNWIND_LIBRARY unwind)
+			find_library (LZMA_LIBRARY lzma)
+			list (APPEND GPERFTOOLS_TCMALLOC ${UNWIND_LIBRARY} ${LZMA_LIBRARY})
+		endif ()
+
 	endif ()
 
 	if (GPERFTOOLS_INCLUDE_DIR AND GPERFTOOLS_TCMALLOC)
