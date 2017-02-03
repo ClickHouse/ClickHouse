@@ -78,11 +78,8 @@ struct ProcessListElement
 
 protected:
 
-	/// Streams with query results, point to BlockIO from executeQuery()
-	/// This declaration is compatible with notes about BlockIO::process_list_entry:
-	///  there are no cyclic dependencies: BlockIO::in,out point to objects inside ProcessListElement (not whole object)
-	BlockInputStreamPtr query_stream_in;
-	BlockOutputStreamPtr query_stream_out;
+	/// ProcessListElement should be destroyed before (or inside) query BlockIO
+	const BlockIO * parent_block_io = nullptr;
 
 	/// Abovemetioned streams have delayed initialization, this flag indicates thier initialization
 	/// It is better to use atomic (instead of raw bool) with tryGet/setQueryStreams() thread-safe methods despite that
@@ -147,9 +144,10 @@ public:
 		return res;
 	}
 
-	/// Copies pointers to in/out streams, it can be called once
+	/// Just remembers raw pointer to BlockIO
+	/// Therefore ProcessListElement should be destroyed before (or inside) BlockIO
 	void setQueryStreams(const BlockIO & io);
-	/// Get query in/out pointers
+	/// Get query in/out pointers from BlockIO
 	bool tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const;
 };
 
