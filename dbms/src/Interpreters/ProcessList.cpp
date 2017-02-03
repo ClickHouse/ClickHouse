@@ -149,8 +149,7 @@ ProcessListEntry::~ProcessListEntry()
 
 void ProcessListElement::setQueryStreams(const BlockIO & io)
 {
-	query_stream_in = io.in;
-	query_stream_out = io.out;
+	parent_block_io = &io;
 	query_streams_initialized = true; // forces strict memory ordering
 }
 
