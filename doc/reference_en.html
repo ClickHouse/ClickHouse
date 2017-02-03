@@ -1520,7 +1520,7 @@ All the clauses are optional, except for the required list of expressions immedi
 The clauses below are described in almost the same order as in the query execution conveyor.
 
 If the query omits the DISTINCT, GROUP BY, and ORDER BY clauses and the IN and JOIN subqueries, the query will be completely stream processed, using O(1) amount of RAM.
-Otherwise, the query may consume too much RAM, if appropriate restrictions are not defined (max_memory_usage, max_rows_to_group_by, max_rows_to_sort, max_rows_in_distinct, max_bytes_in_distinct, max_rows_in_set, max_bytes_in_set, max_rows_in_join, max_bytes_in_join, max_bytes_before_external_sort). For more information, see the section &quot;Settings&quot;. It is possible to use external sorting (saving temporary tables to a disk). The system does not have external aggregation or merge join.
+Otherwise, the query may consume too much RAM, if appropriate restrictions are not defined (max_memory_usage, max_rows_to_group_by, max_rows_to_sort, max_rows_in_distinct, max_bytes_in_distinct, max_rows_in_set, max_bytes_in_set, max_rows_in_join, max_bytes_in_join, max_bytes_before_external_sort, max_bytes_before_external_group_by). For more information, see the section &quot;Settings&quot;. It is possible to use external sorting (saving temporary tables to a disk) and external aggregation. Merge join is not implemented.
 
 <h4>FROM clause</h4>
 
@@ -2005,6 +2005,21 @@ The other alternatives include only the rows that pass through HAVING in &#39;to
 If &#39;max_rows_to_group_by&#39; and &#39;group_by_overflow_mode = &#39;any&#39;&#39; are not used, all variations of &#39;after_having&#39; are the same, and you can use any of them (for example, &#39;after_having_auto&#39;).
 
 You can use WITH TOTALS in subqueries, including subqueries in the JOIN clause. In this case, the respective total values are combined.
+
+
+<h5>external memory GROUP BY</h5>
+
+It is possible to turn on spilling temporary data to disk to limit memory consumption during the execution of GROUP BY. Value of %%max_bytes_before_external_group_by%% setting determines the maximum memory consumption before temporary data is dumped to the file system. If it is 0 (the default value), the feature is turned off.
+
+When using %%max_bytes_before_external_group_by%% it is advisable to set %%max_memory_usage%% to an approximately twice greater value. The reason for this is that aggregation is executed in two stages: reading and generation of intermediate data (1) and merging of intermediate data (2). Spilling data to the filesystem can be performed only on stage 1. If the spilling did not happen, then stage 2 could consume up to the same amount of memory as stage 1.
+
+For example: if %%max_memory_usage%% is equal to 10000000000 and you want to use external aggregation, it makes sense to set %%max_bytes_before_external_group_by%% to 10000000000 and %%max_memory_usage%% to 20000000000. If dumping data to the file system happened at least once during the execution, maximum memory consumption would be just a little bit higher than %%max_bytes_before_external_group_by%%.
+
+During distributed query execution external aggregation is performed on the remote servers. If you want the memory consumption on the originating server to be small, set %%distributed_aggregation_memory_efficient%% to 1. If %%distributed_aggregation_memory_efficient%% is turned on then during merging of the dumped data and also during merging of the query results from the remote servers, total memory consumption is no more than 1/256 * number of threads of the total amount of memory.
+
+If external aggregation is turned on and total memory consumption was less than %%max_bytes_before_external_group_by%% (meaning that no spilling took place), the query performance is the same as when external aggregation is turned off. If some data was dumped, then execution time will be several times longer (approximately 3x).
+
+If you have an ORDER BY clause with some small LIMIT after a GROUP BY, then ORDER BY will not consume significant amount of memory. But if no LIMIT is provided, don't forget to turn on external sorting (%%max_bytes_before_external_sort%%).
 
 
 <h4>HAVING clause</h4>
