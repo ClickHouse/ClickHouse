@@ -14,7 +14,7 @@ CLICKHOUSE_GROUP=${CLICKHOUSE_USER}
 SHELL=/bin/bash
 PROGRAM=clickhouse-server
 SYSCONFDIR=/etc/$PROGRAM
-CLICKHOUSE_LOGDIR=/var/log/$CLICKHOUSE_USER
+CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 CLICKHOUSE_LOGDIR_USER=root
 CLICKHOUSE_DATADIR=/var/lib/$CLICKHOUSE_USER
 CLICKHOUSE_DATADIR_OLD=/opt/clickhouse
@@ -24,7 +24,6 @@ CLICKHOUSE_CRONFILE=/etc/cron.d/clickhouse-server
 CLICKHOUSE_CONFIG=$SYSCONFDIR/config.xml
 LOCKFILE=$LOCALSTATEDIR/$PROGRAM
 RETVAL=0
-LOG_FILE=""
 
 CLICKHOUSE_PIDDIR=/var/run/$PROGRAM
 CLICKHOUSE_PIDFILE="$CLICKHOUSE_PIDDIR/$PROGRAM.pid"
@@ -55,12 +54,6 @@ if uname -mpi | grep -q 'x86_64'; then
 	fi
 fi
 
-# С помощью xmlstarlet пытаемся взять некоторые параметры из конфига
-if command -v xmlstarlet >/dev/null 2>&1; then
-	LOG_FILE=$(xmlstarlet sel -t -v "/yandex/logger/log" $CLICKHOUSE_CONFIG || echo $LOG_FILE)
-fi
-
-
 SUPPORTED_COMMANDS="{start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload|initdb}"
 is_supported_command()
 {
@@ -82,11 +75,6 @@ specific_log_file_for_each_process()
 	echo ""
 }
 
-find_pid_files()
-{
-	[ -e $CLICKHOUSE_PIDDIR ] && find $CLICKHOUSE_PIDFILE
-}
-
 is_running()
 {
 	pidfile=$1
@@ -96,7 +84,6 @@ is_running()
 
 running_processes()
 {
-	pidfiles=$(find_pid_files)
 	running=0
 	if is_running $CLICKHOUSE_PIDFILE; then
 		running=$(($running + 1))
@@ -148,7 +135,7 @@ initdb()
 	fi
 
 	#Temporary fix for old metrika user, remove after 2017-06-01
-	if [ ! -z ${CLICKHOUSE_DATADIR_OLD} ] && [ -d ${CLICKHOUSE_DATADIR_OLD} ] && [ ! `su -s $SHELL ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}"` ]; then
+	if [ ! -z ${CLICKHOUSE_DATADIR_OLD} ] && [ -d ${CLICKHOUSE_DATADIR_OLD} ] && [ ! `su -s $SHELL ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_DATADIR_OLD}"` ]; then
 		echo "Changing owner of old [${CLICKHOUSE_DATADIR_OLD}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
 		chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR_OLD}
 	fi
@@ -195,13 +182,16 @@ stop()
 	local EXIT_STATUS
 	EXIT_STATUS=0
 
-	echo -n "Stop $PROGRAM service: "
+	if [ -f $CLICKHOUSE_PIDFILE ]; then
 
-	kill -TERM `cat "$CLICKHOUSE_PIDFILE"`
+		echo -n "Stop $PROGRAM service: "
 
-	wait4done
+		kill -TERM `cat "$CLICKHOUSE_PIDFILE"`
 
-	echo "DONE"
+		wait4done
+
+		echo "DONE"
+	fi
 	return $EXIT_STATUS
 }
 
@@ -299,18 +289,18 @@ status()
 		if is_cron_disabled; then
 			echo "$PROGRAM service is stopped";
 		else
-			echo "$PROGRAM: $((1 - $(running_processes))) of 1 processes unexpectedly terminated"
+			echo "$PROGRAM: process unexpectedly terminated"
 		fi
 	fi
 }
 
-# выполняем команды, не нуждающиеся в блокировке
+# Running commands whith not need blocking
 if ! is_supported_command "$1"; then
 	echo "Usage: ${0##*/} $SUPPORTED_COMMANDS"
 	exit 2
 fi
 
-if "$1" == "status"; then
+if [ "$1" == "status" ]; then
 	status
 	exit 0
 fi

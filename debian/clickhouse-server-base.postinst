@@ -57,18 +57,18 @@ Please fix this and reinstall this package." >&2
 		# ensure home directory ownership
 		#su -s /bin/sh clickhouse -c "test -O /var/lib/clickhouse && test -G /var/lib/clickhouse" || \
 		chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR}
-		chmod 0700 ${CLICKHOUSE_DATADIR}
+		chmod 700 ${CLICKHOUSE_DATADIR}
 	fi
 
 	if [ ! -d ${CLICKHOUSE_LOGDIR} ]; then
 		mkdir -p ${CLICKHOUSE_LOGDIR}
 		chown root:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}
-		chmod 1770 ${CLICKHOUSE_LOGDIR}
+		chmod 770 ${CLICKHOUSE_LOGDIR}
 	fi
 
 
 	# only for compatibility for old metrika user, remove string after 2017-06-01 :
-	su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}" || chown -R root:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}; chmod -R 1770 ${CLICKHOUSE_LOGDIR}
+	su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}" || chown -R root:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}; chmod -R ug+rw ${CLICKHOUSE_LOGDIR}
 
 
 	# -R only for compatibility for old metrika user, remove -R after 2017-06-01
