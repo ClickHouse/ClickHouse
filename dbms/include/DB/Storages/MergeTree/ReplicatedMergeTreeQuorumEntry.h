@@ -1,5 +1,6 @@
 #pragma once
 
+#include <set>
 #include <DB/Core/Types.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/ReadBufferFromString.h>

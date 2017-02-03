@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Poco/RWLock.h>
-
 #include <DB/Common/ProfileEvents.h>
+#include <DB/Common/Stopwatch.h>
 
 /*
  TODO: replace locks with std::shared_mutex - std::unique_lock - std::shared_lock when c++17

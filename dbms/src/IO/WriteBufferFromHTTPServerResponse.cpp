@@ -34,6 +34,7 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
 		std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
 #else
 		response_body_ostr = &(response.send());
+		response_header_ostr = response_body_ostr;
 #endif
 	}
 }
@@ -45,8 +46,12 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 	{
 		headers_finished_sending = true;
 
+#if POCO_CLICKHOUSE_PATCH
 		/// Send end of headers delimiter.
 		*response_header_ostr << "\r\n" << std::flush;
+#else
+		/// Newline autosent by response.send()
+#endif
 	}
 }
 

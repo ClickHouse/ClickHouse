@@ -5,6 +5,9 @@
 namespace DB
 {
 
+class IDataType;
+using DataTypePtr = std::shared_ptr<IDataType>;
+
 namespace Conditional
 {
 
