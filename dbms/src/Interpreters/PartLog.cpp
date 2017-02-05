@@ -24,12 +24,14 @@ Block PartLogElement::createBlock()
         {std::make_shared<ColumnUInt16>(),  std::make_shared<DataTypeDate>(),       "event_date"},
         {std::make_shared<ColumnUInt32>(),  std::make_shared<DataTypeDateTime>(),   "event_time"},
 
-        {std::make_shared<ColumnUInt64>(),   std::make_shared<DataTypeUInt64>(),    "size_in_bytes"},
+        {std::make_shared<ColumnUInt64>(),  std::make_shared<DataTypeUInt64>(),     "size_in_bytes"},
         {std::make_shared<ColumnUInt64>(),  std::make_shared<DataTypeUInt64>(),     "act_time_ms"},
 
+        {std::make_shared<ColumnString>(),  std::make_shared<DataTypeString>(),     "database"},
+        {std::make_shared<ColumnString>(),  std::make_shared<DataTypeString>(),     "table"},
         {std::make_shared<ColumnString>(),  std::make_shared<DataTypeString>(),     "part_name"},
         {std::make_shared<ColumnArray>(std::make_shared<ColumnString>()),
-            std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),   "merged_from"},
+            std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),    "merged_from"},
   };
 }
 
@@ -45,6 +47,16 @@ void PartLogElement::appendToBlock(Block & block) const
     block.getByPosition(i++).column->insert(UInt64(size_in_bytes));
     block.getByPosition(i++).column->insert(UInt64(act_time_ms));
 
+    String tmp_path = path;
+    tmp_path = tmp_path.substr(0, tmp_path.size() - 1);
+    std::size_t slash_place = tmp_path.find_last_of("/");
+    String table = tmp_path.substr(slash_place + 1);
+    tmp_path = tmp_path.substr(0, slash_place);
+    slash_place = tmp_path.find_last_of("/");
+    String database = tmp_path.substr(slash_place + 1);
+
+    block.getByPosition(i++).column->insert(database);
+    block.getByPosition(i++).column->insert(table);
     block.getByPosition(i++).column->insert(part_name);
 
     Array merged_from_array;

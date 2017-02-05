@@ -360,6 +360,7 @@ bool StorageMergeTree::merge(
 	merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
 
     elem.size_in_bytes = new_part->size_in_bytes;
+    elem.path = new_part->storage.getFullPath();
     elem.part_name = new_part->name;
     stopwatch.stop();
     elem.act_time_ms = stopwatch.elapsed() / 1000000;

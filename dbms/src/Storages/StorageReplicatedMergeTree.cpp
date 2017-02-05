@@ -2047,6 +2047,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     elem.event_time = time(0);
     elem.size_in_bytes = part->size_in_bytes;
     elem.act_time_ms = stopwatch.elapsed() / 10000000;
+    elem.path = part->storage.getFullPath();
     elem.part_name = part->name;
 
     context.getPartLog().add(elem);

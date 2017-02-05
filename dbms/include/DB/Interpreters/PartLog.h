@@ -22,7 +22,8 @@ struct PartLogElement
 	UInt64 size_in_bytes{};
 	UInt64 act_time_ms{};
 
-	String part_name;
+    String path;
+    String part_name;
 	Strings merged_from;
 
 	static std::string name() { return "PartLog"; }

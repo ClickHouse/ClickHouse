@@ -169,6 +169,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
     elem.event_time = time(0);
     elem.size_in_bytes = new_data_part->size_in_bytes;
     elem.act_time_ms = stopwatch.elapsed() / 1000000;
+
+    elem.path = new_data_part->storage.getFullPath();
     elem.part_name = new_data_part->name;
 
     context.getPartLog().add(elem);
