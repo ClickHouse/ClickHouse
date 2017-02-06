@@ -1,5 +1,5 @@
 include_directories (include)
-include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
+include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 add_library (daemon
 	src/BaseDaemon.cpp

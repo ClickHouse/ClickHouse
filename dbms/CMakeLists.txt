@@ -1,4 +1,4 @@
-include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
+include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/liblz4/include/)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
@@ -127,7 +127,7 @@ else()
 	find_library (Z_LIB z HINTS ${Z_HINTS})
 endif ()
 
-include (${CMAKE_SOURCE_DIR}/cmake/find_iconv.cmake)
+include (${ClickHouse_SOURCE_DIR}/cmake/find_iconv.cmake)
 find_package (Threads)
 
 target_link_libraries(dbms
