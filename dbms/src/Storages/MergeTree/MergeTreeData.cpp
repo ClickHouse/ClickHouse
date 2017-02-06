@@ -54,6 +54,7 @@ namespace ErrorCodes
 
 
 MergeTreeData::MergeTreeData(
+    const String & database_, const String & table_,
 	const String & full_path_, NamesAndTypesListPtr columns_,
 	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
@@ -73,6 +74,7 @@ MergeTreeData::MergeTreeData(
 	merging_params(merging_params_),
 	settings(settings_), primary_expr_ast(primary_expr_ast_ ? primary_expr_ast_->clone() : nullptr),
 	require_part_metadata(require_part_metadata_),
+    database_name(database_), table_name(table_),
 	full_path(full_path_), columns(columns_),
 	broken_part_callback(broken_part_callback_),
 	log_name(log_name_), log(&Logger::get(log_name + " (Data)"))

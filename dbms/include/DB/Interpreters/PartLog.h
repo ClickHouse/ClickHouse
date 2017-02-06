@@ -22,7 +22,8 @@ struct PartLogElement
 	UInt64 size_in_bytes{};
 	UInt64 act_time_ms{};
 
-    String path;
+    String database_name;
+    String table_name;
     String part_name;
 	Strings merged_from;
 

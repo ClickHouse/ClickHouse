@@ -235,7 +235,8 @@ public:
 	  * index_granularity 	- на сколько строчек пишется одно значение индекса.
 	  * require_part_metadata - обязательно ли в директории с куском должны быть checksums.txt и columns.txt
 	  */
-	MergeTreeData(	const String & full_path_, NamesAndTypesListPtr columns_,
+	MergeTreeData(	const String & database_, const String & table_,
+                    const String & full_path_, NamesAndTypesListPtr columns_,
 					const NamesAndTypesList & materialized_columns_,
 					const NamesAndTypesList & alias_columns_,
 					const ColumnDefaults & column_defaults_,
@@ -266,10 +267,10 @@ public:
 
 	Int64 getMaxDataPartIndex();
 
-	std::string getTableName() const override
-	{
-		throw Exception("Logical error: calling method getTableName of not a table.", ErrorCodes::LOGICAL_ERROR);
-	}
+	//std::string getTableName() const override
+	//{
+//		throw Exception("Logical error: calling method getTableName of not a table.", ErrorCodes::LOGICAL_ERROR);
+//	}
 
 	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 
@@ -292,6 +293,10 @@ public:
 			|| column_name == "_part_index"
 			|| column_name == "_sample_factor";
 	}
+
+    String getDatabaseName() const { return database_name; }
+
+    String getTableName() const override { return table_name; }
 
 	String getFullPath() const { return full_path; }
 
@@ -483,7 +488,9 @@ private:
 	ExpressionActionsPtr primary_expr;
 	SortDescription sort_descr;
 
-	String full_path;
+	String database_name;
+    String table_name;
+    String full_path;
 
 	NamesAndTypesListPtr columns;
 	/// Актуальные размеры столбцов в сжатом виде

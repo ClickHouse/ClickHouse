@@ -43,7 +43,8 @@ StorageMergeTree::StorageMergeTree(
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
 	context(context_), background_pool(context_.getBackgroundPool()),
-	data(full_path, columns_,
+	data(database_name, table_name,
+         full_path, columns_,
 		 materialized_columns_, alias_columns_, column_defaults_,
 		 context_, primary_expr_ast_, date_column_name_,
 		 sampling_expression_, index_granularity_, merging_params_,
@@ -360,8 +361,11 @@ bool StorageMergeTree::merge(
 	merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
 
     elem.size_in_bytes = new_part->size_in_bytes;
-    elem.path = new_part->storage.getFullPath();
+    
+    elem.database_name = new_part->storage.getDatabaseName();
+    elem.table_name = new_part->storage.getTableName();
     elem.part_name = new_part->name;
+    
     stopwatch.stop();
     elem.act_time_ms = stopwatch.elapsed() / 1000000;
 

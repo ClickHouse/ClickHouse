@@ -47,16 +47,8 @@ void PartLogElement::appendToBlock(Block & block) const
     block.getByPosition(i++).column->insert(UInt64(size_in_bytes));
     block.getByPosition(i++).column->insert(UInt64(act_time_ms));
 
-    String tmp_path = path;
-    tmp_path = tmp_path.substr(0, tmp_path.size() - 1);
-    std::size_t slash_place = tmp_path.find_last_of("/");
-    String table = tmp_path.substr(slash_place + 1);
-    tmp_path = tmp_path.substr(0, slash_place);
-    slash_place = tmp_path.find_last_of("/");
-    String database = tmp_path.substr(slash_place + 1);
-
-    block.getByPosition(i++).column->insert(database);
-    block.getByPosition(i++).column->insert(table);
+    block.getByPosition(i++).column->insert(database_name);
+    block.getByPosition(i++).column->insert(table_name);
     block.getByPosition(i++).column->insert(part_name);
 
     Array merged_from_array;

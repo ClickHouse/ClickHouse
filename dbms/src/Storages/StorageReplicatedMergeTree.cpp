@@ -211,7 +211,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
 	zookeeper_path(context.getMacros().expand(zookeeper_path_)),
 	replica_name(context.getMacros().expand(replica_name_)),
-	data(full_path, columns_,
+	data(database_name, table_name,
+        full_path, columns_,
 		materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_, merging_params_,
@@ -290,7 +291,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	String unreplicated_path = full_path + "unreplicated/";
 	if (Poco::File(unreplicated_path).exists())
 	{
-		unreplicated_data = std::make_unique<MergeTreeData>(unreplicated_path, columns_,
+		unreplicated_data = std::make_unique<MergeTreeData>(
+            database_name, table_name,
+            unreplicated_path, columns_,
 			materialized_columns_, alias_columns_, column_defaults_,
 			context_, primary_expr_ast_,
 			date_column_name_, sampling_expression_, index_granularity_, merging_params_, settings_,
@@ -2047,7 +2050,8 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     elem.event_time = time(0);
     elem.size_in_bytes = part->size_in_bytes;
     elem.act_time_ms = stopwatch.elapsed() / 10000000;
-    elem.path = part->storage.getFullPath();
+    elem.database_name = part->storage.getDatabaseName();
+    elem.table_name = part->storage.getTableName();
     elem.part_name = part->name;
 
     context.getPartLog().add(elem);
